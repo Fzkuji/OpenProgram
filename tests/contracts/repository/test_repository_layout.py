@@ -38,6 +38,7 @@ CURRENT_STRUCTURE_GUIDES = (
 
 WORKSPACE_READMES = (
     "openprogram/README.md",
+    "apps/server/README.md",
     "apps/web/README.md",
     "apps/desktop/README.md",
     "apps/cli/README.md",
@@ -117,12 +118,15 @@ def test_workspace_entry_readmes_describe_current_ownership() -> None:
     assert missing == []
 
     python_readme = (ROOT / "openprogram/README.md").read_text(encoding="utf-8")
+    server_readme = (ROOT / "apps/server/README.md").read_text(encoding="utf-8")
     web_readme = (ROOT / "apps/web/README.md").read_text(encoding="utf-8")
     desktop_readme = (ROOT / "apps/desktop/README.md").read_text(encoding="utf-8")
     cli_readme = (ROOT / "apps/cli/README.md").read_text(encoding="utf-8")
 
     assert "programs/" in python_readme
     assert "skills_bundled/" in python_readme
+    assert "FastAPI" in server_readme
+    assert "openprogram_server" in server_readme
     assert "OpenProgram Web workspace" in web_readme
     assert "create-next-app" not in web_readme
     assert "Electron" in desktop_readme

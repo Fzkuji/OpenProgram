@@ -1,10 +1,9 @@
 # `openprogram/`
 
-This directory is the Python product package. It owns the agent runtime,
-worker and HTTP API, persistence, providers, Programs, integrations, and the
-Python command entry points. The Web, Ink TUI, and Electron sources remain in
-their top-level workspaces and communicate with this package through stable
-HTTP, WebSocket, or CLI boundaries.
+This directory is the reusable Python Agent Core and its compatibility APIs. It
+owns the agent runtime, persistence, providers, Programs, integrations, worker
+lifecycle, and Python command entry points. The FastAPI application assembly,
+Web, Ink TUI, and Electron sources live under `apps/` and depend on this core.
 
 ## Package map
 
@@ -13,7 +12,7 @@ HTTP, WebSocket, or CLI boundaries.
 | Agent execution | `agent/`, `agentic_programming/`, `context/`, `events/` |
 | Programs and commands | `programs/`, `commands/`, `cli/` |
 | Models and credentials | `providers/`, `auth/`, `credential_files/`, `backend/` |
-| Persistent services | `worker/`, `webui/`, `channels/`, `scheduler/`, `proactive/` |
+| Persistent services | `worker/`, `channels/`, `scheduler/`, `proactive/` |
 | State | `store/`, `memory/`, `usage/`, `contextgit/` |
 | Integrations | `skills/`, `plugins/`, `mcp/`, `mcp_server/`, `acp/`, `lsp/` |
 | Platform boundaries | `sandbox/`, `security/`, `worktree/`, `updater/` |
@@ -21,6 +20,11 @@ HTTP, WebSocket, or CLI boundaries.
 `skills_bundled/` contains the default skills shipped as package data.
 The repository-level `skills/` directory is a project-level source-checkout
 skill location and does not replace the bundled defaults.
+
+`webui/` temporarily preserves established imports for Server routes and
+extensions. New FastAPI application assembly belongs in
+`apps/server/openprogram_server/`; the compatibility package is removed after
+the remaining route migration.
 
 The public command starts at `openprogram/__main__.py` and the
 `openprogram/cli/` package. Parser construction lives in `cli/parser.py`;

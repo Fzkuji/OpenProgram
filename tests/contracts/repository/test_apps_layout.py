@@ -96,6 +96,20 @@ def test_desktop_is_owned_by_apps_workspace() -> None:
     assert not (ROOT / "desktop/package.json").exists()
 
 
+def test_server_application_assembly_is_owned_by_apps_workspace() -> None:
+    from openprogram_server import server as canonical_server
+    from openprogram.webui import server as compatibility_server
+
+    assert canonical_server is compatibility_server
+    assert canonical_server.__file__ is not None
+    assert Path(canonical_server.__file__).resolve() == (
+        ROOT / "apps/server/openprogram_server/server.py"
+    )
+    assert (ROOT / "openprogram/webui/server.py").read_text(
+        encoding="utf-8"
+    ).count("sys.modules[__name__] = _server") == 1
+
+
 def test_current_developer_commands_use_apps_workspaces() -> None:
     current_docs = (
         "AGENTS.md",

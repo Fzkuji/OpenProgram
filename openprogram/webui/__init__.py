@@ -1,9 +1,9 @@
 """
-OpenProgram Web API and static-interface host.
+Compatibility entry points for the OpenProgram Server application.
 
-This package exposes the worker's HTTP and WebSocket surface and serves the
-prebuilt Next.js export. Core runtime modules do not eagerly import the server;
-the CLI and worker load it only when the Web service is requested.
+The application assembly lives in :mod:`openprogram_server`. Existing
+``openprogram.webui`` imports remain available while the route modules migrate
+out of the Agent Core package.
 
 Usage:
     from openprogram.webui import start_web
@@ -15,7 +15,7 @@ Or from CLI:
 """
 
 # ponytail: PEP 562 lazy export instead of an eager
-# ``from openprogram.webui.server import ...``. The eager form made merely
+# ``from openprogram_server.server import ...``. The eager form made merely
 # *touching* any submodule of this package (e.g. the models.dev base-url
 # lookup in providers/metadata.py) drag in webui.server, which imports
 # functions.agentics.ask_user, which fires the whole agentic registry load

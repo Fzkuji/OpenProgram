@@ -29,7 +29,8 @@ jobs:
       - name: Verify wheel contents
         run: |
           python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram/webui/_frontend/index.html'
-          uv run --with "$(find dist -name 'openprogram-*.whl' -print -quit)" --no-project -- python -c 'import openprogram.webui.server; from openprogram.webui.frontend import out_dir; assert (out_dir() / "index.html").is_file()'
+          python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram_server/server.py'
+          uv run --with "$(find dist -name 'openprogram-*.whl' -print -quit)" --no-project -- python -c 'import openprogram_server.server as canonical; import openprogram.webui.server as legacy; from openprogram.webui.frontend import out_dir; assert canonical is legacy; assert (out_dir() / "index.html").is_file()'
       - uses: actions/upload-artifact@v7
         with:
           name: developer-python-distributions

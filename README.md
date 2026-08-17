@@ -395,7 +395,7 @@ The detailed tour of each one — code samples, design rationale, where to look 
 <summary><strong>Project Structure</strong></summary>
 
 ```
-openprogram/                         # Python product package
+openprogram/                         # reusable Agent Core and compatibility APIs
 ├── agent/                         # model loop, tool execution, goals, compaction
 ├── agentic_programming/           # @agentic_function runtime and context
 ├── programs/
@@ -407,9 +407,10 @@ openprogram/                         # Python product package
 │   └── applications/              # complete Programs, optionally with UI
 ├── channels/                       # external chat transports
 ├── scheduler/                      # durable schedules and execution
-└── webui/                          # worker API and WebSocket layer
+└── webui/                          # temporary Server compatibility package
 apps/
 ├── cli/                            # TypeScript Ink terminal client
+├── server/                         # FastAPI HTTP and WebSocket application
 ├── web/                            # Next.js web interface
 └── desktop/                        # Electron desktop shell
 tests/                               # pytest: <layer>/<product-domain>

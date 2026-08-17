@@ -216,7 +216,8 @@ Discussions = "https://github.com/Fzkuji/OpenProgram/discussions"
 Paper = "https://arxiv.org/abs/2606.15874"
 
 [tool.setuptools.packages.find]
-include = ["openprogram*"]
+where = [".", "apps/server"]
+include = ["openprogram*", "openprogram_server*"]
 # Core agentic functions such as ask_user and goal are imported by the worker
 # and must ship in the wheel. External Programs live under the gitignored
 # programs/applications directory and are not discovered as release packages.
@@ -253,7 +254,7 @@ include = ["openprogram*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = [".", "apps/server"]
 markers = [
     "slow: tests whose expected runtime is materially longer than the layer default",
     "browser: tests that require the built Web and Playwright test environment",
@@ -314,6 +315,7 @@ select = ["E722", "S110"]
 "openprogram/skills/*" = ["E722", "S110"]
 "openprogram/usage/*" = ["E722", "S110"]
 "openprogram/webui/*" = ["E722", "S110"]
+"apps/server/openprogram_server/*" = ["E722", "S110"]
 "openprogram/worker/*" = ["E722", "S110"]
 "openprogram/worktree/*" = ["E722", "S110"]
 "openprogram/{__init__,__main__,_compat,_ports,config_schema,paths,setup,tts}.py" = ["E722", "S110"]
