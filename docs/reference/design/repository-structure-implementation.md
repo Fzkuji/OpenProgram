@@ -96,6 +96,8 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Legacy cleanup F1: static Web interface | `23ac60c2` | implemented; reviewed | Removes the unreferenced 9,227-line static HTML/CSS/JS interface and its obsolete settings-page test. Current source, package and runtime paths continue to serve the `apps/web` build. |
 | Apps migration B2: Python CLI application | `2a790501`, `91be4353`, `51303ea8`, `09eb3732`, `252fb4fa`, `a459c443` | implemented; reviewed | Moves parser, dispatch, Rich fallback, Ink launcher and setup flows into the installable `openprogram_cli` application package. `openprogram.cli` remains a bounded compatibility loader; a code-free root module supports raw source checkouts; editable and wheel installs use the application package. |
 | Legacy cleanup F2: profile state | `f0e07310`, `fb490561`, `2849fd85` | implemented; reviewed | Removes tracked mutable tool-profile state from the core package. One-time migration resolves the actual legacy compatibility package even though the Server module now lives under `apps/server`; package-data exclusion remains enforced and both legacy state paths remain ignored. |
+| Browser v0.7.0 policy closure | `bf7dd2ad` through `537b20aa` | implemented; reviewed; released | Removes the post-release experimental browser-extension installer and management surface, preserves the released Browser, profile import and Agent WebTab capabilities, rejects obsolete persisted Extensions tabs, and records the unsupported-extension boundary in the product and design documentation. The published v0.7.0 assets predate the experimental installer and already match this boundary. |
+| Post-migration CI repair | `15fd5e1f`, `c7a494ef`, `eaf34a1b`, `63c65ad8`, `35d7edc2`, `2f40f948` | implemented; reviewed | Aligns landing-page checks, migrated Server test paths, documentation navigation, runtime HTTP inventory and doctor checks with `apps/`; keeps App package locks portable; moves subprocess coverage to component; and verifies macOS installer behavior on a native runner rather than Ubuntu. |
 
 ## Implemented task brief: Legacy cleanup F2
 
@@ -247,6 +249,13 @@ pass — independent specification review for Legacy cleanup F2 through `8843ae1
 changes required — first quality review found the deleted legacy profile path missing from `.gitignore`
 1 passed; pass — executable ignore contract, Ruff and diff check after `2849fd85`
 pass — independent quality re-review for Legacy cleanup F2 through `2849fd85`
+pass — browser extension negative contract, Browser/Web/Desktop focused checks, TypeScript and documentation links for `bf7dd2ad` through `537b20aa`
+pass — independent specification and quality review of the browser extension removal and documentation boundary
+published — v0.7.0 stable GitHub Release is non-draft and non-prerelease with 17 assets; the release contains the complete built-in Browser experience and no extension manager
+2587 passed, 3 skipped — complete local unit suite after the apps migration and CI repairs
+8 passed — native macOS Desktop installation, downgrade, rollback, concurrency and stable-lock tests
+pass — CI run 32077688937: quality, Python 3.11/3.12/3.13 unit, component, integration, e2e, coverage, Web, CLI, Desktop, Browser and macOS Desktop installation jobs
+pass — independent quality review for `2f40f948`
 ```
 
 ## Deferred boundaries
