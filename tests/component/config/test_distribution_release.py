@@ -17,6 +17,10 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[3]
+MACOS_DESKTOP_INSTALL = pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="requires macOS app bundle and LaunchServices tools",
+)
 
 
 def _desktop_package() -> dict:
@@ -76,6 +80,8 @@ def _fake_desktop_app(root: Path, version: str, *, app_id: str = "ai.openprogram
     return app
 
 
+@pytest.mark.macos
+@MACOS_DESKTOP_INSTALL
 def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
     package = _desktop_package()
     assert package["scripts"]["dist"] == "npm run app:install"
@@ -186,6 +192,8 @@ def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
         assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
 
 
+@pytest.mark.macos
+@MACOS_DESKTOP_INSTALL
 def test_local_desktop_install_compares_numeric_versions_as_decimal(
     tmp_path: Path,
 ) -> None:
@@ -218,6 +226,8 @@ def test_local_desktop_install_compares_numeric_versions_as_decimal(
         assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.9.0"
 
 
+@pytest.mark.macos
+@MACOS_DESKTOP_INSTALL
 def test_local_desktop_install_preserves_an_invalid_existing_app(
     tmp_path: Path,
 ) -> None:
@@ -258,6 +268,8 @@ def test_local_desktop_install_preserves_an_invalid_existing_app(
         assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.4"
     assert runtime_python.read_text(encoding="utf-8").endswith("'0.6.1'\n")
 
+@pytest.mark.macos
+@MACOS_DESKTOP_INSTALL
 def test_local_desktop_install_preserves_recovery_copy_when_restore_fails(
     tmp_path: Path,
 ) -> None:
@@ -311,6 +323,8 @@ def test_local_desktop_install_preserves_recovery_copy_when_restore_fails(
     assert str(recovered_app) in failed_restore.stderr
 
 
+@pytest.mark.macos
+@MACOS_DESKTOP_INSTALL
 def test_concurrent_local_desktop_install_cannot_nest_the_canonical_app(
     tmp_path: Path,
 ) -> None:
@@ -385,6 +399,8 @@ def test_concurrent_local_desktop_install_cannot_nest_the_canonical_app(
     assert not (target.parent / ".openprogram-app-install.lock").exists()
 
 
+@pytest.mark.macos
+@MACOS_DESKTOP_INSTALL
 def test_local_desktop_install_rechecks_downgrade_after_lock(
     tmp_path: Path,
 ) -> None:
@@ -443,6 +459,8 @@ def test_local_desktop_install_rechecks_downgrade_after_lock(
         assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.3"
 
 
+@pytest.mark.macos
+@MACOS_DESKTOP_INSTALL
 def test_local_desktop_install_compares_the_staged_candidate(
     tmp_path: Path,
 ) -> None:
@@ -520,6 +538,8 @@ def test_local_desktop_install_compares_the_staged_candidate(
         assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.3"
 
 
+@pytest.mark.macos
+@MACOS_DESKTOP_INSTALL
 def test_packager_honors_one_stable_user_lock_across_worktrees(
     tmp_path: Path,
 ) -> None:

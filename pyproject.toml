@@ -263,6 +263,7 @@ markers = [
     "browser: tests that require the built Web and Playwright test environment",
     "sandbox: tests that require the host sandbox implementation",
     "live: tests that require external services, network access, or credentials",
+    "macos: tests that require macOS system tools",
 ]
 addopts = "-m 'not live and not browser' --strict-markers --strict-config"
 xfail_strict = true
