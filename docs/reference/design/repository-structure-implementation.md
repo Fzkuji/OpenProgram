@@ -98,6 +98,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Legacy cleanup F2: profile state | `f0e07310`, `fb490561`, `2849fd85` | implemented; reviewed | Removes tracked mutable tool-profile state from the core package. One-time migration resolves the actual legacy compatibility package even though the Server module now lives under `apps/server`; package-data exclusion remains enforced and both legacy state paths remain ignored. |
 | Browser v0.7.0 policy closure | `bf7dd2ad` through `537b20aa` | implemented; reviewed; released | Removes the post-release experimental browser-extension installer and management surface, preserves the released Browser, profile import and Agent WebTab capabilities, rejects obsolete persisted Extensions tabs, and records the unsupported-extension boundary in the product and design documentation. The published v0.7.0 assets predate the experimental installer and already match this boundary. |
 | Post-migration CI repair | `15fd5e1f`, `c7a494ef`, `eaf34a1b`, `63c65ad8`, `35d7edc2`, `2f40f948` | implemented; reviewed | Aligns landing-page checks, migrated Server test paths, documentation navigation, runtime HTTP inventory and doctor checks with `apps/`; keeps App package locks portable; moves subprocess coverage to component; and verifies macOS installer behavior on a native runner rather than Ubuntu. |
+| Desktop menu geometry extraction | `ec8a988f`, `ab2fef3b` | implemented; reviewed | Moves three pure placement functions to a directly executable CommonJS module without changing menu behavior; includes the module in packaged and local-refresh file closures and makes the refresh test verify the staged file. |
 
 ## Implemented task brief: Legacy cleanup F2
 
@@ -131,7 +132,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 - Exclude Server route migration, CLI behavior changes, UI changes and
   decomposition of cohesive command handlers from this batch.
 
-## Active task brief: Desktop menu geometry extraction
+## Implemented task brief: Desktop menu geometry extraction
 
 - Approved source: `repository-structure.html`; base: current `main` after the
   browser and CI closure.
@@ -275,12 +276,21 @@ published — v0.7.0 stable GitHub Release is non-draft and non-prerelease with 
 8 passed — native macOS Desktop installation, downgrade, rollback, concurrency and stable-lock tests
 pass — CI run 32077688937: quality, Python 3.11/3.12/3.13 unit, component, integration, e2e, coverage, Web, CLI, Desktop, Browser and macOS Desktop installation jobs
 pass — independent quality review for `2f40f948`
+1 failed — public RED: `check-webtab-zoom-bounds` could not import the not-yet-created `menu-geometry.js`
+pass — Desktop full `npm run check` after extracting menu geometry
+3 passed — packaged-file closure and local-App refresh staging contracts
+pass — independent specification review for `ec8a988f`
+changes required — first independent quality review found that the refresh fixture did not assert the staged module
+1 passed — refresh staging regression after `ab2fef3b`
+pass — independent quality re-review through `ab2fef3b`
 ```
 
 ## Deferred boundaries
 
-- `apps/desktop/main.js`: extract existing window lifecycle, native WebView, tab
-  transfer, and menu responsibilities after the current Desktop work lands.
+- `apps/desktop/main.js`: pure menu geometry now lives in
+  `apps/desktop/menu-geometry.js`; keep window lifecycle, native WebView, tab
+  transfer and menu-host orchestration in place until each boundary has direct
+  executable coverage.
 - `apps/web/lib/desktop-bridge.ts`: establish executable state/transfer tests before
   moving types, view state, and transfer coordination.
 - Long cohesive Python state machines remain intact until a separately tested
