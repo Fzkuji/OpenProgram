@@ -8,9 +8,9 @@ import asyncio
 from openprogram.agent.run_control import _current_session_id
 from openprogram.agent.job.types import Job, JobStatus
 from openprogram.agent.types import AgentToolResult
-from openprogram.programs.functions.agent.job_output.job_output import _job_output_impl
-from openprogram.programs.functions.agent.job_stop.job_stop import job_stop
-from openprogram.programs.functions.agent.list_jobs.list_jobs import _list_jobs_impl
+from openprogram.programs.functions.vanilla.agent.job_output.job_output import _job_output_impl
+from openprogram.programs.functions.vanilla.agent.job_stop.job_stop import job_stop
+from openprogram.programs.functions.vanilla.agent.list_jobs.list_jobs import _list_jobs_impl
 
 
 def _task(tid: str, status: JobStatus, prompt: str = "do a thing") -> Job:
@@ -123,7 +123,7 @@ def test_job_stop_returns_post_cancel_resource_view(monkeypatch) -> None:
     runner = _FakeRunner([_task("t1", JobStatus.RUNNING)])
     _with_runner(monkeypatch, runner)
     monkeypatch.setattr(
-        "openprogram.programs.functions.agent._ownership.check_job_ownership",
+        "openprogram.programs.functions.vanilla.agent._ownership.check_job_ownership",
         lambda *_args: None,
     )
 

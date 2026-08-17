@@ -118,7 +118,7 @@ def _has_default_provider() -> bool:
 # ---------------------------------------------------------------------------
 #
 # The tool registry is process-global and populated once, at import, by the
-# @function side-effect imports in openprogram.programs.functions. Several tests
+# @function side-effect imports in openprogram.programs.functions.vanilla. Several tests
 # legitimately clear / rebuild / channel-filter the registry to exercise it in
 # isolation; if any of them leaks (restores an incomplete snapshot, drops a
 # tool, or leaves a channel blacklist behind), every *later* test sees a
@@ -204,7 +204,7 @@ def _reset_spawn_fanout():
     this, the ninth such test in a session would be refused by a counter
     the previous eight filled.
     """
-    from openprogram.programs.functions.agent.agent.agent import _fanout_used
+    from openprogram.programs.functions.vanilla.agent.agent.agent import _fanout_used
     _fanout_used.clear()
     yield
     _fanout_used.clear()

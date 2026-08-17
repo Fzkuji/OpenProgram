@@ -9,7 +9,7 @@
 </style>
 </head>
 <body><div class="page">
-  <nav class="set-nav" aria-label="Self-Programming Workflow 文档集"><a href="./self-programmed-agentic-workflow.html">总览</a><a href="./self-programming-workflow-model.html">编程模型与组合</a><a href="./self-programming-workflow-authoring.html">创建、隔离与发布</a><a href="./self-programming-workflow-ui.html" aria-current="page">DAG 与 Programs</a><a href="./agent-tool-configuration-ui.html">Agent 工具配置</a></nav>
+  <nav class="set-nav" aria-label="Self-Programming Workflow 文档集"><a href="./self-programmed-agentic-workflow.html">总览</a><a href="./programs-architecture.html">Programs 代码结构</a><a href="./self-programming-workflow-model.html">编程模型与组合</a><a href="./self-programming-workflow-authoring.html">创建、隔离与发布</a><a href="./self-programming-workflow-ui.html" aria-current="page">DAG 与 Programs</a><a href="./agent-tool-configuration-ui.html">Agent 工具配置</a></nav>
   <header><div class="eyebrow">Self-Programming Workflow · 3 / 3</div><h1>DAG 与管理网页</h1><p class="lead">本页分别定义会话中的实际运行父子关系，以及 Programs 中从静态imports得到的Calls / Used by。两类关系不共用同一份状态。</p></header>
 
   <section id="dag"><h2>1. 代码关系与运行关系分开</h2>
@@ -25,9 +25,9 @@ research_pipeline  #run-42
     └── paper_search  #call-13</code></pre>
   </section>
 
-  <section id="management"><h2>2. Programs → Applications 网页原型</h2>
-    <p>Programs不再增加单独的Workflows分类。一级类型只有Functions、Agentic Functions和Applications；Self-Programming Workflow是Application的一种实现形式，在详情中显示源码类型、Git、依赖关系和测试状态。</p>
-    <div class="callout"><strong>分类合同：</strong>分类列表只显示Functions、Agentic Functions和Applications三种互斥类型，不增加All Programs汇总入口。默认内容区同时显示这三类的完整列表，左侧类型只负责定位对应段落，不能把另外两类从页面隐藏；搜索跨三类匹配名称与说明。Favorites是独立的用户视图，只显示已收藏项目。Agent能使用哪些Programs由独立的 <a href="./agent-tool-configuration-ui.html">Agents → Tools &amp; Programs</a> 配置，不在此页显示Profile或权限状态。</div>
+  <section id="management"><h2>2. Programs 管理网页原型</h2>
+    <p>Programs一级实体为Functions、Workflows和Applications。Functions继续按Vanilla与Agentic显示来源差异；Workflow是可被其他Workflow和Application import的代码实体，不并入Application。</p>
+    <div class="callout"><strong>分类合同：</strong>分类列表显示Functions、Workflows和Applications三种实体类型，不增加All Programs汇总入口。默认内容区同时显示三类完整列表，左侧类型只负责定位对应段落；Functions段落内部再区分Vanilla与Agentic。搜索跨三类匹配名称与说明。Favorites是独立的用户视图。Agent能使用哪些Programs由独立的 <a href="./agent-tool-configuration-ui.html">Agents → Tools &amp; Programs</a> 配置。</div>
     <div class="prototype" aria-label="Programs Applications 管理界面原型">
       <div class="review"><span class="review-label">Review state · 仅用于查看界面状态</span><div class="tabs" role="tablist" aria-label="切换原型状态"><button class="tab" type="button" role="tab" tabindex="0" aria-selected="true" aria-controls="workflow-demo" data-state="ready">Default</button><button class="tab" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="workflow-demo" data-state="testing">Testing</button><button class="tab" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="workflow-demo" data-state="failure">Failure</button><button class="tab" type="button" role="tab" tabindex="-1" aria-selected="false" aria-controls="workflow-demo" data-state="empty">Empty</button></div></div>
       <div class="programs-top"><span class="programs-title">Programs</span><div class="toolbar" aria-hidden="true"><span class="fake-control search">Search programs…</span><span class="fake-control">Sort: Name</span><span class="fake-control">List</span><span class="fake-control">Refresh</span></div></div>

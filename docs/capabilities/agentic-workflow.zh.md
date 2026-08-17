@@ -5,7 +5,7 @@
 在Programs面板里以`agentic_workflow`运行，或从Python调用：
 
 ```python
-from openprogram.programs.agentic_functions.agentic_workflow import agentic_workflow
+from openprogram.programs.functions.agentic.agentic_workflow import agentic_workflow
 
 # 新建workflow
 result = agentic_workflow("把 auth 模块迁到新客户端并更新它的测试")

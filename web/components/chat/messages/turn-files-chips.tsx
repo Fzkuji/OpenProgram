@@ -80,7 +80,7 @@ function basename(p: string): string {
 }
 
 /** Tools whose whole job is writing to a file — the same three that call
- *  `checkpoint_before_edit` on the backend (openprogram/programs/functions). */
+ *  `checkpoint_before_edit` on the backend (openprogram/programs/functions/vanilla). */
 const FILE_WRITING_TOOLS = new Set(["write", "edit", "apply_patch"]);
 
 /**

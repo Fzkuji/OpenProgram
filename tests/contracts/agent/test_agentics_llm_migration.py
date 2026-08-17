@@ -11,30 +11,30 @@ import pytest
 from tests.support.repository import tracked_python_files
 
 MIGRATED_FUNCTIONS = {
-    "openprogram.programs.agentic_functions.deep_work": ("_clarify", "_evaluate"),
-    "openprogram.programs.agentic_functions.extract_pdf_figures": ("extract_pdf_figures",),
-    "openprogram.programs.agentic_functions.extract_pdf_tables": ("extract_pdf_tables",),
-    "openprogram.programs.agentic_functions.llm_call_example": (
+    "openprogram.programs.functions.agentic.deep_work": ("_clarify", "_evaluate"),
+    "openprogram.programs.functions.agentic.extract_pdf_figures": ("extract_pdf_figures",),
+    "openprogram.programs.functions.agentic.extract_pdf_tables": ("extract_pdf_tables",),
+    "openprogram.programs.functions.agentic.llm_call_example": (
         "summarize_text",
         "translate_to_chinese",
         "polish_text",
     ),
-    "openprogram.programs.agentic_functions.research.evaluate": ("_evaluate_candidates",),
-    "openprogram.programs.agentic_functions.research.stages.idea": (
+    "openprogram.programs.functions.agentic.research.evaluate": ("_evaluate_candidates",),
+    "openprogram.programs.functions.agentic.research.stages.idea": (
         "generate_ideas",
         "check_novelty",
         "rank_ideas",
     ),
-    "openprogram.programs.agentic_functions.research.stages.literature": (
+    "openprogram.programs.functions.agentic.research.stages.literature": (
         "survey_topic",
         "identify_gaps",
     ),
-    "openprogram.programs.agentic_functions.research.stages.experiment": (
+    "openprogram.programs.functions.agentic.research.stages.experiment": (
         "design_experiments",
         "run_experiment",
         "check_training",
     ),
-    "openprogram.programs.agentic_functions.research.stages.writing": (
+    "openprogram.programs.functions.agentic.research.stages.writing": (
         "write_section",
         "translate_zh2en",
         "translate_en2zh",
@@ -45,11 +45,11 @@ MIGRATED_FUNCTIONS = {
         "compress_text",
         "expand_text",
     ),
-    "openprogram.programs.agentic_functions.research.stages.review": (
+    "openprogram.programs.functions.agentic.research.stages.review": (
         "review_paper",
         "fix_paper",
     ),
-    "openprogram.programs.agentic_functions.research.stages.submission": (
+    "openprogram.programs.functions.agentic.research.stages.submission": (
         "check_submission",
     ),
 }
@@ -77,7 +77,7 @@ def test_migrated_function_passes_content_blocks_to_llm(monkeypatch):
         return "summary"
 
     module = importlib.import_module(
-        "openprogram.programs.agentic_functions.llm_call_example"
+        "openprogram.programs.functions.agentic.llm_call_example"
     )
     monkeypatch.setattr(module, "llm", fake_llm)
 
@@ -94,7 +94,8 @@ def test_only_deferred_tool_loops_still_call_runtime_exec():
         Path(__file__).parents[3]
         / "openprogram"
         / "programs"
-        / "agentic_functions"
+        / "functions"
+        / "agentic"
     )
     excluded = {
         "Research-Agent-Harness",

@@ -505,9 +505,9 @@ The work, in dependency order:
 | 3 | new `openprogram/worktree/_paths.py` | worktree path policy: `~/.openprogram/worktrees/<id>-<slug>/`; isolation check (D4) |
 | 4 | edit `openprogram/agent/internals/_workdir.py` | `apply_default_workdir` prefers returning the active worktree path |
 | 5 | edit `openprogram/agent/dispatcher.py` | at the start of a turn, read session.meta.active_worktree_id → set the `_current_worktree_path` ContextVar |
-| 6 | edit `openprogram/programs/functions/bash/bash.py` | call `backend.run(cmd, cwd=_current_worktree_path.get())` |
-| 7 | edit `openprogram/programs/functions/edit/edit.py` + write/read | warning when path outside worktree (D6) |
-| 8 | new `openprogram/programs/functions/worktree/` | 4 @function tools: worktree_create / worktree_merge / worktree_discard / worktree_list; go through WorktreeManager |
+| 6 | edit `openprogram/programs/functions/vanilla/bash/bash.py` | call `backend.run(cmd, cwd=_current_worktree_path.get())` |
+| 7 | edit `openprogram/programs/functions/vanilla/edit/edit.py` + write/read | warning when path outside worktree (D6) |
+| 8 | new `openprogram/programs/functions/vanilla/worktree/` | 4 @function tools: worktree_create / worktree_merge / worktree_discard / worktree_list; go through WorktreeManager |
 | 9 | edit `openprogram/store/session/session_store.py` | add an `active_worktree_id` field to session.meta; helpers `set_active_worktree` / `get_active_worktree` |
 | 10 | new `openprogram/webui/ws_actions/worktree.py` | `list_worktrees` / `keep_worktree` / `discard_worktree` (user manual UI operations) |
 | 11 | new `web/components/chat/composer/worktree-chip.tsx` | chip component + hover panel + Merge/Discard/Keep buttons |

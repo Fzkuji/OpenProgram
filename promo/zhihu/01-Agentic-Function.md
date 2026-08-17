@@ -128,7 +128,7 @@ gate ✓ → branch taken in Python
 
 agent写成函数之后，软件工程几十年攒下的工具链全部直接可用：单元测试给它写断言，类型检查器检查它的签名，import把它组合进别的模块，git管它的版本。别的代码调它的时候，不需要知道里面有agent。
 
-复用面也跟着展开。一个`@agentic_function`放进`openprogram/programs/agentic_functions/<name>/__init__.py`，并在`openprogram/programs/_registry.py`中注册模块，同一份代码有三种用法：
+复用面也跟着展开。一个`@agentic_function`放进`openprogram/programs/functions/agentic/<name>/__init__.py`，并在`openprogram/programs/_registry.py`中注册模块，同一份代码有三种用法：
 
 ```bash
 # 1. 在聊天界面里,agent按名字挑它当工具用

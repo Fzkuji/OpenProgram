@@ -40,7 +40,7 @@ def _run_followup(job, monkeypatch, inside=None):
     def fake_turn(req, on_event=None):
         from openprogram.agent.run_control import get_current_session_id
         from openprogram.agent.job.runner import _current_job_id
-        from openprogram.programs.functions.send_message.send_message.depth import (
+        from openprogram.programs.functions.vanilla.send_message.send_message.depth import (
             current_chain_generations, current_chain_messages,
         )
         seen["session_id"] = get_current_session_id()
@@ -153,7 +153,7 @@ def test_followup_can_create_the_next_wave_of_agents(tmp_db, monkeypatch):
         # itself is faked out here, so bind what the tool reads.
         from openprogram.agent.run_control import set_current_session_id
         from openprogram.store import _current_turn_id
-        from openprogram.programs.functions.agent.agent.agent import _agent_impl
+        from openprogram.programs.functions.vanilla.agent.agent.agent import _agent_impl
         set_current_session_id(req.session_id)
         _current_turn_id.set("a1")
         return _agent_impl(prompt="second wave", start_from="clean")

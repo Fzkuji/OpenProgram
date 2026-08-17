@@ -122,7 +122,7 @@ BOUNDARY_MANIFEST = (
         ),
     ),
     BoundaryExclusion(
-        path="programs/functions/browser/_chrome_bootstrap.py",
+        path="programs/functions/vanilla/browser/_chrome_bootstrap.py",
         boundary_owner="browser-control",
         reason="browser bootstrap/navigation is outside Runtime URL fetch policy",
         kinds=frozenset({"socket.create_connection", "urllib.request.build_opener"}),
@@ -229,8 +229,8 @@ _MANAGED_FACTORY_NAMES = frozenset(
 )
 _MANAGED_CONSUMER_CALL_NAMES = frozenset(
     {
-        "openprogram.programs.functions.web_search._http.get_json",
-        "openprogram.programs.functions.web_search._http.post_json",
+        "openprogram.programs.functions.vanilla.web_search._http.get_json",
+        "openprogram.programs.functions.vanilla.web_search._http.post_json",
     }
 )
 _SDK_CONSTRUCTORS = frozenset(

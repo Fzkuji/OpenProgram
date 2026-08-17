@@ -7,7 +7,7 @@ import threading
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
-from openprogram.programs.agentic_functions.ask_user import ask_user, set_ask_user
+from openprogram.programs.functions.agentic.ask_user import ask_user, set_ask_user
 from openprogram.webui import server
 
 

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.programs.functions.browser._actions import open_action
+from openprogram.programs.functions.vanilla.browser._actions import open_action
 from openprogram.webui.ws_actions import webtab
 
 
@@ -147,6 +147,7 @@ def test_app_attach_matches_control_plane_target_across_all_electron_pages():
         / "openprogram"
         / "programs"
         / "functions"
+        / "vanilla"
         / "browser"
         / "_actions"
         / "open_action.py"

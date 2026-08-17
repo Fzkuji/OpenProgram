@@ -9,7 +9,7 @@
 </style>
 </head>
 <body><div class="page">
-  <nav class="set-nav" aria-label="Self-Programming Workflow 文档集"><a href="./self-programmed-agentic-workflow.html">总览</a><a href="./self-programming-workflow-model.html">编程模型与组合</a><a href="./self-programming-workflow-authoring.html" aria-current="page">创建、隔离与发布</a><a href="./self-programming-workflow-ui.html">DAG 与 Programs</a><a href="./agent-tool-configuration-ui.html">Agent 工具配置</a></nav>
+  <nav class="set-nav" aria-label="Self-Programming Workflow 文档集"><a href="./self-programmed-agentic-workflow.html">总览</a><a href="./programs-architecture.html">Programs 代码结构</a><a href="./self-programming-workflow-model.html">编程模型与组合</a><a href="./self-programming-workflow-authoring.html" aria-current="page">创建、隔离与发布</a><a href="./self-programming-workflow-ui.html">DAG 与 Programs</a><a href="./agent-tool-configuration-ui.html">Agent 工具配置</a></nav>
   <header><div class="eyebrow">Self-Programming Workflow · 2 / 3</div><h1>创建、隔离与发布</h1><p class="lead">本页只定义 <code>agentic_workflow(task)</code> 如何复用、修改或创建项目，以及candidate隔离、可执行测试门、发布判定与实现交付顺序。</p></header>
 
   <section id="author"><h2>1. 一次调用只使用一个 authoring Agent</h2>
@@ -43,7 +43,7 @@
   </section>
 
   <section id="handoff"><h2>5. 实现交付顺序</h2>
-    <table><thead><tr><th>任务</th><th>代码边界</th><th>完成证据</th></tr></thead><tbody><tr><td>A · 单一Agent authoring</td><td><code>openprogram/programs/agentic_functions/agentic_workflow/__init__.py</code></td><td>直接复用、修改现有项目、创建组合项目三条公共RED。</td></tr><tr><td>B · 可执行测试门</td><td>同一Workflow runtime与component测试</td><td>失败、超时、取消保持HEAD不变；通过时只发布一个commit。</td></tr><tr><td>C · 只读管理视图</td><td>仓库扫描结果由Programs route与前端共用</td><td>详见<a href="./self-programming-workflow-ui.html">DAG与管理网页</a>。</td></tr></tbody></table>
+    <table><thead><tr><th>任务</th><th>代码边界</th><th>完成证据</th></tr></thead><tbody><tr><td>A · 单一Agent authoring</td><td><code>openprogram/programs/functions/agentic/agentic_workflow/__init__.py</code></td><td>直接复用、修改现有项目、创建组合项目三条公共RED。</td></tr><tr><td>B · 可执行测试门</td><td>同一Workflow runtime与component测试</td><td>失败、超时、取消保持HEAD不变；通过时只发布一个commit。</td></tr><tr><td>C · 只读管理视图</td><td>仓库扫描结果由Programs route与前端共用</td><td>详见<a href="./self-programming-workflow-ui.html">DAG与管理网页</a>。</td></tr></tbody></table>
     <h3>明确不做</h3><ul><li>不增加 <code>@workflow</code>、<code>call_workflow()</code>、<code>invoke_workflow()</code> 或字符串dispatcher。</li><li>不建立项目数据库、测试结果数据库、后台Git轮询、远程push或Marketplace。</li><li>不改变旧run的显式resume兼容；历史 <code>workflow.json</code> / <code>entry.py</code> 不参与新任务。</li></ul>
   </section>
 </div></body></html>

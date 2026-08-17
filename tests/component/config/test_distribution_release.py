@@ -679,7 +679,7 @@ def test_launchd_worker_preserves_packaged_python_flags(monkeypatch) -> None:
 
 def test_core_agentic_functions_are_not_excluded_from_wheel() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'exclude = ["openprogram.programs.agentic_functions.*"]' not in pyproject
+    assert 'exclude = ["openprogram.programs.functions.agentic.*"]' not in pyproject
 
 
 def test_packaged_worker_uses_isolated_embedded_python() -> None:
@@ -1496,8 +1496,8 @@ def test_missing_bundled_pdf_dependency_requires_complete_reinstall(
 ) -> None:
     import sys
 
-    from openprogram.programs.functions.pdf.pdf import execute as pdf_extract
-    from openprogram.programs.functions.read.read import _read_pdf
+    from openprogram.programs.functions.vanilla.pdf.pdf import execute as pdf_extract
+    from openprogram.programs.functions.vanilla.read.read import _read_pdf
 
     pdf_path = tmp_path / "probe.pdf"
     pdf_path.write_bytes(b"%PDF-1.4\n%%EOF\n")

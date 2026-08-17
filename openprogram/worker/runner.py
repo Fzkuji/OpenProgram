@@ -239,7 +239,7 @@ def run_foreground() -> int:
     scheduler_stop = None
     scheduler_thread = None
     try:
-        from openprogram.programs.functions.cron.worker import start_in_worker
+        from openprogram.programs.functions.vanilla.cron.worker import start_in_worker
 
         scheduler_stop, scheduler_thread = start_in_worker()
         print("[worker] scheduler: running")

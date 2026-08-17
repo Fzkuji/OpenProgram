@@ -126,7 +126,7 @@ def send_to_branch(target_branch: str, message: str, wait_reply: bool = False) -
 | DAG 连线 | `web/lib/runtime-bridge/dag/render/edges.ts` |
 | DAG 形状 | `web/lib/runtime-bridge/dag/shapes.ts` |
 | 布局（merge 节点 lane） | `openprogram/webui/graph_layout/{lane,__init__}.py` |
-| send_to_branch 工具 | 待在 `openprogram/programs/functions/` 下新建 |
+| send_to_branch 工具 | 待在 `openprogram/programs/functions/vanilla/` 下新建 |
 | 验证 | `tools/dag_dump.py` |
 
 ## 附录：实现状态

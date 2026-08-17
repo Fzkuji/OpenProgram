@@ -352,7 +352,7 @@ def _risk_level(tool_name: str, args: dict) -> str:
 
 `_approval_detail` (`internals/_approval.py:232-242`, producing "tool name + full arguments, head and tail truncated when too long") gives the approval card a readable summary (the first version does not highlight dangerous tokens). The `question.asked` frame from `_on_asked` (inside `await_user_approval`) carries `tool`/`args`/`risk_level`, which the frontend uses for coloring (§4.2).
 
-**Path safety** (`openprogram/programs/functions/file_safety.py`):
+**Path safety** (`openprogram/programs/functions/vanilla/file_safety.py`):
 
 ```python
 # file_safety.py:20-40, 63
@@ -611,13 +611,13 @@ Attended mode lives in `openprogram/agent/attended.py`. The core (`attended.py:1
 |---|---|
 | Decision chain `_gated_execute` / `_match_rule` / `await_user_approval` / `_persist_always_allow_rule` / `_risk_level` | `openprogram/agent/internals/_approval.py` |
 | Rule string parsing, matching, multi-layer merging | `openprogram/programs/permission_rule.py` (`parse_rule` / `parse_command` / `pattern_matches` / `load_merged_rules`) |
-| Path safety / dangerous files and directories / Windows bypass | `openprogram/programs/functions/file_safety.py` |
+| Path safety / dangerous files and directories / Windows bypass | `openprogram/programs/functions/vanilla/file_safety.py` |
 | gate hard block | `openprogram/events/tool_gate.py` |
 | Permission mode legal values + normalization + SessionRunConfig fields | `openprogram/agent/session_config.py` |
 | `PermissionMode` type + TurnRequest fields and defaults | `openprogram/agent/dispatcher/types.py` |
 | Schemaless session meta storage | `openprogram/store/session/session_store.py` |
 | Project-level settings read/write + `project_for_session` | `openprogram/store/project/project_store.py` |
-| `accept_edits_safe` declaration + per-tool `requires_approval` | `openprogram/programs/_runtime.py`; tool markings in `openprogram/programs/functions/{read,write,edit,glob,grep,list}/` |
+| `accept_edits_safe` declaration + per-tool `requires_approval` | `openprogram/programs/_runtime.py`; tool markings in `openprogram/programs/functions/vanilla/{read,write,edit,glob,grep,list}/` |
 | Web default bypass + effective_permission | `openprogram/webui/_execute/__init__.py`; `additional_working_dirs` populated in `_execute/chat.py`, `channels/_conversation.py` |
 | WS: approval replies + project rule list/add/remove | `openprogram/webui/ws_actions/session.py`, `chat.py` |
 | Attended mode (orthogonal mechanism) | `openprogram/agent/attended.py`, `openprogram/webui/ws_actions/runtime.py` |

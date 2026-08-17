@@ -51,8 +51,8 @@ def _verify_openprogram_version(expected: object) -> None:
 def _probe_pdf_tools() -> None:
     from pypdf import PdfWriter
 
-    from openprogram.programs.functions.pdf.pdf import execute as pdf_extract
-    from openprogram.programs.functions.read.read import _read_pdf
+    from openprogram.programs.functions.vanilla.pdf.pdf import execute as pdf_extract
+    from openprogram.programs.functions.vanilla.read.read import _read_pdf
 
     with tempfile.TemporaryDirectory(prefix="openprogram-pdf-probe-") as temp_dir:
         pdf_path = Path(temp_dir) / "probe.pdf"

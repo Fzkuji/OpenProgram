@@ -27,7 +27,7 @@ _BUILTIN_SPECS: list[tuple[str, tuple[str, ...], str, str]] = [
     ("copy", (), "", "copy the last assistant reply to the clipboard"),
     ("tools", (), "", "list available tools"),
     ("skills", (), "", "list discovered skills"),
-    ("functions", ("fns",), "", "list agentic functions (programs/agentic_functions/)"),
+    ("functions", ("fns",), "", "list agentic functions (programs/functions/agentic/)"),
     ("apps", ("applications",), "",
      "list installed programs (gui/research/wiki agents)"),
     ("mcp", (), "[verb]",

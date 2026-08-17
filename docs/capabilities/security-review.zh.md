@@ -5,7 +5,7 @@
 在 Functions 面板里以 `run_security_review` 运行，或从 Python 调用：
 
 ```python
-from openprogram.programs.agentic_functions.security_review import run_security_review
+from openprogram.programs.functions.agentic.security_review import run_security_review
 
 result = run_security_review()
 ```

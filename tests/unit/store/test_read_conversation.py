@@ -175,7 +175,7 @@ def test_missing_session_returns_notice_not_error(db):
 
 
 def test_tool_is_registered_with_a_valid_schema():
-    import openprogram.programs.functions  # noqa: F401 — fires registration
+    import openprogram.programs.functions.vanilla  # noqa: F401 — fires registration
     from openprogram.programs import _runtime
 
     tool = _runtime.get("read_conversation")

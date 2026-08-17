@@ -15,7 +15,7 @@ OpenProgram — Agentic Programming 理念的产品化实现。
 ``decision`` / ``Session``。其它符号（``ask_user`` / 各 provider helper 等）
 走全路径：
 
-    from openprogram.programs.agentic_functions.ask_user import ask_user
+    from openprogram.programs.functions.agentic.ask_user import ask_user
     from openprogram.providers.registry import create_runtime
 
 四个名字都经模块级 ``__getattr__`` 懒加载：``import openprogram`` 本身不拉起

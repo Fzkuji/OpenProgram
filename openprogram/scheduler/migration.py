@@ -9,7 +9,7 @@ from pathlib import Path
 import shutil
 from typing import Any
 
-from openprogram.programs.functions.cron import cron as cron_tool
+from openprogram.programs.functions.vanilla.cron import cron as cron_tool
 
 from . import service
 

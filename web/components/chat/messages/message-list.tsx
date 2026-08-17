@@ -52,7 +52,7 @@ import { UserBubble } from "./user-bubble";
 import { QueuedMessages } from "./queued-messages";
 import { MessageTimestamp } from "./message-actions";
 
-/** goal 循环的内部 spawn 轮 label（openprogram/programs/agentic_functions/goal/
+/** goal 循环的内部 spawn 轮 label（openprogram/programs/functions/agentic/goal/
  *  __init__.py 的 run_agent_turn(label=...)，经 spawnedFrom.label 到达）。
  *  只有这些轮才做 JSON 尾巴折叠——绝不按"内容长得像 JSON"匹配普通消息。 */
 const GOAL_SPAWN_LABELS = new Set(["goal 判定", "goal 完善"]);

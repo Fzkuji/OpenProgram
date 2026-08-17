@@ -19,7 +19,7 @@
   <header><div class="eyebrow">OpenProgram · Target UI · Programs section</div><h1>Agent Programs 配置：与实体目录分开</h1><p class="lead">本页是完整<a href="./agent-configuration-ui.html">Agent配置框架</a>中的Programs下钻设计。Programs回答“系统中存在哪些可调用实体”；Agents回答“某个Agent允许发现和调用哪些实体”。页面与数据归属分开，实际调用仍使用同一套AgentTool registry、resolver和executor。</p></header>
 
   <section id="boundary"><h2>1. 页面与数据边界</h2>
-    <div class="boundary"><div class="boundary-card"><span class="label">Programs · entity catalog</span><h3>管理实体</h3><p>Functions、Agentic Functions和Applications是系统中的可调用对象。</p><ul><li>源码、export、schema、Git状态和测试</li><li>静态Calls / Used by关系</li><li>安装、编辑、收藏、运行和删除</li></ul></div><div class="boundary-card"><span class="label">Agents · configuration</span><h3>管理使用策略</h3><p>Agent配置决定模型、指令、Skills、MCP及允许访问的Programs。</p><ul><li>默认访问模式和可复用Access preset</li><li>允许、排除和全局不可用项</li><li>首轮上下文与按需发现策略</li></ul></div></div>
+    <div class="boundary"><div class="boundary-card"><span class="label">Programs · entity catalog</span><h3>管理实体</h3><p>Functions（Vanilla / Agentic）、Workflows和Applications是系统中的可调用对象。</p><ul><li>源码、export、schema、Git状态和测试</li><li>静态Calls / Used by关系</li><li>安装、编辑、收藏、运行和删除</li></ul></div><div class="boundary-card"><span class="label">Agents · configuration</span><h3>管理使用策略</h3><p>Agent配置决定模型、指令、Skills、MCP及允许访问的Programs。</p><ul><li>默认访问模式和可复用Access preset</li><li>允许、排除和全局不可用项</li><li>首轮上下文与按需发现策略</li></ul></div></div>
     <div class="callout"><strong>不复制实体：</strong>Agent配置只保存工具访问意图或工具名引用，不复制Program schema、description、Python源码或Workflow仓库。删除或禁用Program后，所有Agent在下一次解析时得到一致结果。</div>
   </section>
 

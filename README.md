@@ -200,13 +200,13 @@ Four levels, from a one-line edit to a distributable package. Start at the top a
 
 ### Level 1 — Write your own agentic function
 
-Add a directory under `openprogram/programs/agentic_functions/<your_function>/`
+Add a directory under `openprogram/programs/functions/agentic/<your_function>/`
 with the code in `__init__.py`, then add its module name to
 `openprogram/programs/_registry.py::AGENTIC_MODULES`. The registry imports the
 module on startup and exposes its decorated functions.
 
 ```python
-# openprogram/programs/agentic_functions/changelog/__init__.py
+# openprogram/programs/functions/agentic/changelog/__init__.py
 import subprocess
 from openprogram import agentic_function
 
@@ -400,9 +400,11 @@ openprogram/                         # Python product package
 ├── agentic_programming/           # @agentic_function runtime and context
 ├── programs/
 │   ├── _registry.py               # internal agentic-function registry
-│   ├── agentic_functions/         # internal @agentic_function modules
-│   ├── functions/                 # deterministic @function tools
-│   └── applications/              # owner-recorded external Program checkouts
+│   ├── functions/
+│   │   ├── vanilla/               # deterministic @function tools
+│   │   └── agentic/               # internal @agentic_function modules
+│   ├── workflows/                 # reusable agent-authored Python projects
+│   └── applications/              # complete Programs, optionally with UI
 ├── channels/                       # external chat transports
 ├── scheduler/                      # durable schedules and execution
 └── webui/                          # worker API and WebSocket layer

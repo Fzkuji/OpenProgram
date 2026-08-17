@@ -9,10 +9,10 @@ import json
 
 import pytest
 
-from openprogram.programs.functions.todo import shared
-from openprogram.programs.functions.todo.todo_create.todo_create import _todo_create_impl
-from openprogram.programs.functions.todo.todo_list.todo_list import _todo_list_impl
-from openprogram.programs.functions.todo.todo_update.todo_update import _todo_update_impl
+from openprogram.programs.functions.vanilla.todo import shared
+from openprogram.programs.functions.vanilla.todo.todo_create.todo_create import _todo_create_impl
+from openprogram.programs.functions.vanilla.todo.todo_list.todo_list import _todo_list_impl
+from openprogram.programs.functions.vanilla.todo.todo_update.todo_update import _todo_update_impl
 
 
 @pytest.fixture

@@ -21,7 +21,7 @@ import pytest
 
 from openprogram.agentic_programming.function import _call_id
 from openprogram.store import SessionNodeWriter, SessionStore, _store as _store_var
-from openprogram.programs.agentic_functions.ask_user import (
+from openprogram.programs.functions.agentic.ask_user import (
     ask_user, set_ask_user,
 )
 
@@ -43,7 +43,7 @@ def store(tmp_path: Path):
 def _install_handler(handler):
     """Set a global ask_user handler for the scope of the test, restore
     whatever was there before on exit."""
-    from openprogram.programs.agentic_functions import ask_user as _au
+    from openprogram.programs.functions.agentic import ask_user as _au
     with _au._ask_user_lock:
         prev = _au._ask_user_handler_global
     set_ask_user(handler)

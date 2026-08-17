@@ -133,7 +133,7 @@ def read_disabled_tools() -> set[str]:
     cfg = _read_config()
     disabled = set(cfg.get("tools", {}).get("disabled", []) or [])
     if (cfg.get("memory", {}) or {}).get("backend") == "none":
-        from openprogram.programs.functions.memory import MEMORY_TOOL_NAMES
+        from openprogram.programs.functions.vanilla.memory import MEMORY_TOOL_NAMES
 
         disabled.update(MEMORY_TOOL_NAMES)
     return disabled

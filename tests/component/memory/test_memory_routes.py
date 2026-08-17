@@ -358,7 +358,7 @@ def test_topic_edit_uses_configured_recent_view_limit(
 def test_memory_update_schema_constructs_a_google_function_declaration():
     from google.genai import types as gtypes
 
-    from openprogram.programs.functions.memory.memory import UPDATE_SPEC
+    from openprogram.programs.functions.vanilla.memory.memory import UPDATE_SPEC
     from openprogram.providers._schema import normalize
 
     parameters = normalize(UPDATE_SPEC["parameters"], "gemini_openapi")

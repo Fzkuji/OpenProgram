@@ -21,7 +21,7 @@ import traceback
 import uuid
 from typing import Any, Optional
 
-from openprogram.programs.agentic_functions.ask_user import set_ask_user, ask_user
+from openprogram.programs.functions.agentic.ask_user import set_ask_user, ask_user
 from openprogram.agentic_programming.function import agentic_function
 from openprogram.agentic_programming.runtime import Runtime
 

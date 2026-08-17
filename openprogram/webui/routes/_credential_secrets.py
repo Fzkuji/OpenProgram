@@ -55,8 +55,8 @@ def declared_credential_names() -> frozenset[str]:
         pass
 
     # Importing the provider package performs the registry registrations.
-    import openprogram.programs.functions.web_search.providers  # noqa: F401
-    from openprogram.programs.functions.web_search.registry import registry
+    import openprogram.programs.functions.vanilla.web_search.providers  # noqa: F401
+    from openprogram.programs.functions.vanilla.web_search.registry import registry
 
     for provider in registry.all():
         names.update(getattr(provider, "requires_env", ()) or ())

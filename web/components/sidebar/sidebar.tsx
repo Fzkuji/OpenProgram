@@ -161,7 +161,7 @@ export function Sidebar() {
 
   // Auto-refresh the function catalogue: poll every 30s + refetch
   // whenever the tab regains focus. Drops new external harnesses
-  // (symlinks added under openprogram/programs/agentic_functions/) into the
+  // (symlinks added under openprogram/programs/functions/agentic/) into the
   // sidebar without the user having to hit the refresh button.
   useEffect(() => {
     let cancelled = false;

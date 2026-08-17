@@ -93,7 +93,7 @@ def _path_is_safe(tool_name: str, args: dict, req: "TurnRequest") -> bool:
     无 Windows 绕过）。完整规则集在 file_safety.check_path_safety。"""
     import os
     from openprogram.programs.permission_rule import parse_command
-    from openprogram.programs.functions.file_safety import check_path_safety
+    from openprogram.programs.functions.vanilla.file_safety import check_path_safety
     from openprogram.worktree.context import current_worktree_path
     path = parse_command(tool_name, args)
     if not path:

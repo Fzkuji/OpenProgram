@@ -77,8 +77,8 @@ def test_developer_scripts_do_not_live_at_the_repository_root() -> None:
 def test_current_structure_guides_do_not_reference_removed_roots() -> None:
     removed_roots = (
         "openprogram/functions/",
-        "openprogram/programs/agentic_functions/<Repo-Name>",
-        "openprogram/programs/agentic_functions/{GUI,Research}",
+        "openprogram/programs/functions/agentic/<Repo-Name>",
+        "openprogram/programs/functions/agentic/{GUI,Research}",
     )
     stale_references = sorted(
         f"{relative}: {removed}"

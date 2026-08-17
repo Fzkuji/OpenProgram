@@ -182,7 +182,7 @@ def applications_dir() -> Optional[str]:
 
     Computed from the top-level ``openprogram`` package so it works for
     both editable and site-packages installs, and *without* importing
-    ``openprogram.programs.agentic_functions`` (which would recurse — this module
+    ``openprogram.programs.functions.agentic`` (which would recurse — this module
     is imported during that package's load).
     """
     try:

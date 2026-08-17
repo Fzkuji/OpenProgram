@@ -15,7 +15,7 @@ import time
 
 import pytest
 
-from openprogram.programs.agentic_functions.ask_user import (
+from openprogram.programs.functions.agentic.ask_user import (
     FollowUp,
     ask_user,
     run_with_follow_up,

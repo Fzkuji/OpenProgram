@@ -5,7 +5,7 @@
 Run it as `run_docs_question` in the Programs panel, or from Python:
 
 ```python
-from openprogram.programs.agentic_functions.docs_question import run_docs_question
+from openprogram.programs.functions.agentic.docs_question import run_docs_question
 
 result = run_docs_question("Can I keep a session working until a condition holds?")
 ```

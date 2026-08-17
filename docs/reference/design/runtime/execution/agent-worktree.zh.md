@@ -500,9 +500,9 @@ dependencies 里，它只通过`semble`（一个 MCP 开发工具）传递引入
 | 3 | 新建 `openprogram/worktree/_paths.py` | worktree path 策略：`~/.openprogram/worktrees/<id>-<slug>/`；隔离校验（D4）|
 | 4 | 改 `openprogram/agent/internals/_workdir.py` | `apply_default_workdir` 优先返回 active worktree path |
 | 5 | 改 `openprogram/agent/dispatcher.py` | turn 开始时读 session.meta.active_worktree_id → 设 `_current_worktree_path` ContextVar |
-| 6 | 改 `openprogram/programs/functions/bash/bash.py` | 调 `backend.run(cmd, cwd=_current_worktree_path.get())` |
-| 7 | 改 `openprogram/programs/functions/edit/edit.py` + write/read | 路径落在 worktree 之外时写 warning（D6）|
-| 8 | 新建 `openprogram/programs/functions/worktree/` | 4 个 @function 工具：worktree_create / worktree_merge / worktree_discard / worktree_list；走 WorktreeManager |
+| 6 | 改 `openprogram/programs/functions/vanilla/bash/bash.py` | 调 `backend.run(cmd, cwd=_current_worktree_path.get())` |
+| 7 | 改 `openprogram/programs/functions/vanilla/edit/edit.py` + write/read | 路径落在 worktree 之外时写 warning（D6）|
+| 8 | 新建 `openprogram/programs/functions/vanilla/worktree/` | 4 个 @function 工具：worktree_create / worktree_merge / worktree_discard / worktree_list；走 WorktreeManager |
 | 9 | 改 `openprogram/store/session/session_store.py` | session.meta 加 `active_worktree_id` 字段；helper `set_active_worktree` / `get_active_worktree` |
 | 10 | 新建 `openprogram/webui/ws_actions/worktree.py` | `list_worktrees` / `keep_worktree` / `discard_worktree`（用户手动 UI 操作）|
 | 11 | 新建 `web/components/chat/composer/worktree-chip.tsx` | chip 组件 + hover panel + Merge/Discard/Keep 按钮 |

@@ -9,7 +9,7 @@ The design is deliberately thin. One new module renders a session as text; every
 | Piece | Where | What it does |
 |---|---|---|
 | Transcript renderer | `openprogram/store/session/transcript.py` | `render_read_conversation()` — one branch of a session as LLM-readable plain text |
-| Model-facing tool | `openprogram/programs/functions/read_conversation/` | `read_conversation` — the renderer as a `@function`, defaulting to the current session |
+| Model-facing tool | `openprogram/programs/functions/vanilla/read_conversation/` | `read_conversation` — the renderer as a `@function`, defaulting to the current session |
 | The distill skill | `openprogram/skills_bundled/distill/` | Instructions for extracting a procedure and writing it out |
 | Product page | `docs/capabilities/distill.md` | User-facing documentation |
 

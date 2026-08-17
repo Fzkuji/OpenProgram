@@ -47,7 +47,7 @@ gate ✓ → branch taken in Python
 
 OpenProgram 里的完整链路是：
 
-1. agent 用普通文件工具，在 `openprogram/programs/agentic_functions/<name>/__init__.py` 写一个新的 `@agentic_function`（写法由内置的 `agentic-programming` skill 教给它）；
+1. agent 用普通文件工具，在 `openprogram/programs/functions/agentic/<name>/__init__.py` 写一个新的 `@agentic_function`（写法由内置的 `agentic-programming` skill 教给它）；
 2. 一个 file watcher 检测到文件变化，热加载这个模块；
 3. 下一轮对话，新函数已经出现在可调用的工具列表里。
 

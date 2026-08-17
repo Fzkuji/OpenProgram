@@ -1,5 +1,5 @@
 """Unit tests for the docs_question agentic function
-(``openprogram/programs/agentic_functions/docs_question/``): the entry point's
+(``openprogram/programs/functions/agentic/docs_question/``): the entry point's
 input validation, the page listing it builds its prompt from, source
 path normalization, and the shape it returns once the spawned agent has
 replied.
@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-import openprogram.programs.agentic_functions.docs_question as DQ
+import openprogram.programs.functions.agentic.docs_question as DQ
 
 
 @pytest.fixture

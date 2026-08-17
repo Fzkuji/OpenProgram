@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 def test_worker_web_use_route_preserves_images_and_server_owner(monkeypatch):
     from openprogram.programs import ToolReturn
-    from openprogram.programs.agentic_functions import browser_agent
+    from openprogram.programs.functions.agentic import browser_agent
     from openprogram.webui.routes.web_use import register
 
     calls = []
@@ -53,7 +53,7 @@ def test_worker_web_use_route_rejects_non_mcp_owner():
 
 
 def test_legacy_computer_use_route_is_hidden_and_maps_session_field(monkeypatch):
-    from openprogram.programs.agentic_functions import browser_agent
+    from openprogram.programs.functions.agentic import browser_agent
     from openprogram.webui.routes.web_use import register
 
     calls = []
@@ -84,7 +84,7 @@ def test_legacy_computer_use_route_is_hidden_and_maps_session_field(monkeypatch)
 
 
 def test_internal_release_pages_route_revokes_exact_owner_tokens(monkeypatch):
-    from openprogram.programs.agentic_functions.browser_agent import web_use_runtime
+    from openprogram.programs.functions.agentic.browser_agent import web_use_runtime
     from openprogram.webui.routes.web_use import register
 
     calls = []

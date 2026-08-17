@@ -35,7 +35,7 @@ def _allow_binding(_binding_id):
 
 
 def test_registry_releases_only_requested_unconsumed_page_capabilities():
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         SUPPORTED_BACKENDS,
         WebUseSessionRegistry,
     )
@@ -76,7 +76,7 @@ def test_registry_releases_only_requested_unconsumed_page_capabilities():
 
 
 def test_registry_supports_three_backends_and_freezes_one_per_session():
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         WebUseSessionRegistry,
         SUPPORTED_BACKENDS,
     )
@@ -128,7 +128,7 @@ def test_registry_supports_three_backends_and_freezes_one_per_session():
 
 
 def test_registry_preserves_one_argument_binding_validator_compatibility():
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         WebUseSessionRegistry,
     )
 
@@ -155,7 +155,7 @@ def test_registry_preserves_one_argument_binding_validator_compatibility():
 
 
 def test_registry_rejects_action_when_bound_page_revision_changes():
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         WebUseSessionRegistry,
     )
 
@@ -199,7 +199,7 @@ def test_registry_rejects_action_when_bound_page_revision_changes():
 
 
 def test_registry_revalidates_visibility_before_each_existing_session_command():
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         WebUseSessionRegistry,
     )
 
@@ -237,7 +237,7 @@ def test_registry_revalidates_visibility_before_each_existing_session_command():
 
 
 def test_page_capability_revisions_cross_the_session_validation_boundary(monkeypatch):
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         WebUseSessionRegistry,
     )
     from openprogram.webui.ws_actions import webtab
@@ -297,7 +297,7 @@ def test_page_capability_revisions_cross_the_session_validation_boundary(monkeyp
 
 
 def test_first_observe_rejects_stale_geometry_before_backend(monkeypatch):
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         WebUseSessionRegistry,
     )
     from openprogram.webui.ws_actions import webtab
@@ -353,7 +353,7 @@ def test_first_observe_rejects_stale_geometry_before_backend(monkeypatch):
 
 
 def test_geometry_changed_during_activation_blocks_backend_action(monkeypatch):
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         WebUseSessionRegistry,
     )
     from openprogram.webui.ws_actions import webtab
@@ -404,7 +404,7 @@ def test_geometry_changed_during_activation_blocks_backend_action(monkeypatch):
 
 
 def test_registry_leases_one_exact_page_to_one_session_until_close():
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         WebUseSessionRegistry,
     )
 
@@ -446,7 +446,7 @@ def test_registry_leases_one_exact_page_to_one_session_until_close():
 
 
 def test_page_lease_remains_held_until_close_cleanup_finishes():
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         WebUseSessionRegistry,
     )
 
@@ -502,7 +502,7 @@ def test_page_lease_remains_held_until_close_cleanup_finishes():
 
 @pytest.mark.parametrize("cleanup", ["release_owner", "close_all"])
 def test_cleanup_waits_for_inflight_action_before_releasing_page(cleanup):
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         WebUseSessionRegistry,
     )
 
@@ -576,7 +576,7 @@ def test_cleanup_waits_for_inflight_action_before_releasing_page(cleanup):
 
 
 def test_close_failure_still_releases_page_lease_and_context():
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         WebUseSessionRegistry,
     )
 
@@ -618,7 +618,7 @@ def test_close_failure_still_releases_page_lease_and_context():
 
 
 def test_close_all_releases_sessions_capabilities_and_page_leases():
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         WebUseSessionRegistry,
     )
 
@@ -778,13 +778,13 @@ class _PlaywrightClient:
 
 
 def test_official_playwright_adapter_binds_marker_and_routes_one_action(monkeypatch):
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         WebUseSession,
     )
-    from openprogram.programs.agentic_functions.browser_agent.mcp_backends import (
+    from openprogram.programs.functions.agentic.browser_agent.mcp_backends import (
         OfficialMCPPageBackend,
     )
-    from openprogram.programs.functions.browser import _chrome_bootstrap
+    from openprogram.programs.functions.vanilla.browser import _chrome_bootstrap
 
     controller = _Controller()
     client = _PlaywrightClient(controller.page)
@@ -812,7 +812,7 @@ def test_official_playwright_adapter_binds_marker_and_routes_one_action(monkeypa
 
 
 def test_registry_binds_session_to_owner_and_consumes_exact_page_capability():
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         WebUseSessionRegistry,
     )
 
@@ -865,7 +865,7 @@ def test_registry_binds_session_to_owner_and_consumes_exact_page_capability():
 
 
 def test_list_pages_returns_group_aware_snapshot_with_page_tokens():
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         WebUseSessionRegistry,
     )
 
@@ -925,7 +925,7 @@ def test_list_pages_returns_group_aware_snapshot_with_page_tokens():
 
 
 def test_closing_one_page_session_keeps_sibling_page_binding_alive(monkeypatch):
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         WebUseSessionRegistry,
     )
     from openprogram.webui.ws_actions import webtab
@@ -987,7 +987,7 @@ def test_closing_one_page_session_keeps_sibling_page_binding_alive(monkeypatch):
 
 
 def test_failed_first_observe_releases_session_and_page_context():
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         WebUseSessionRegistry,
     )
 
@@ -1028,7 +1028,7 @@ def test_failed_first_observe_releases_session_and_page_context():
 
 
 def test_sync_mcp_client_cleans_thread_when_start_fails(monkeypatch):
-    from openprogram.programs.agentic_functions.browser_agent import mcp_backends
+    from openprogram.programs.functions.agentic.browser_agent import mcp_backends
 
     instances = []
 
@@ -1064,7 +1064,7 @@ def test_sync_mcp_client_cleans_thread_when_start_fails(monkeypatch):
 
 def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
     from openprogram.programs import _runtime
-    from openprogram.programs.agentic_functions import browser_agent as browser_module
+    from openprogram.programs.functions.agentic import browser_agent as browser_module
     from openprogram.programs.gui_harness_bridge import (
         install_gui_harness_web_use,
     )
@@ -1099,8 +1099,8 @@ def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
 
 def test_direct_list_pages_releases_capture_when_registry_rejects(monkeypatch):
     from openprogram.agent import surface_context
-    from openprogram.programs.agentic_functions import browser_agent as module
-    from openprogram.programs.agentic_functions.browser_agent import (
+    from openprogram.programs.functions.agentic import browser_agent as module
+    from openprogram.programs.functions.agentic.browser_agent import (
         web_use_runtime,
     )
 
@@ -1125,7 +1125,7 @@ def test_direct_list_pages_releases_capture_when_registry_rejects(monkeypatch):
 
 
 def test_direct_list_pages_returns_empty_inventory_without_mounted_page(monkeypatch):
-    from openprogram.programs.agentic_functions import browser_agent as module
+    from openprogram.programs.functions.agentic import browser_agent as module
     from openprogram.webui import server
     from openprogram.webui.ws_actions import webtab
 
@@ -1167,8 +1167,8 @@ def test_direct_list_pages_returns_empty_inventory_without_mounted_page(monkeypa
 
 def test_public_page_token_keeps_the_turn_owner_across_calls(monkeypatch):
     from openprogram.agent import surface_context
-    from openprogram.programs.agentic_functions import browser_agent as module
-    from openprogram.programs.agentic_functions.browser_agent import (
+    from openprogram.programs.functions.agentic import browser_agent as module
+    from openprogram.programs.functions.agentic.browser_agent import (
         web_use_runtime,
     )
 
@@ -1212,8 +1212,8 @@ def test_public_page_token_keeps_the_turn_owner_across_calls(monkeypatch):
 @pytest.mark.parametrize("route", ["harness", "public"])
 def test_temporary_page_capture_is_released_when_lease_rejects(monkeypatch, route):
     from openprogram.agent import surface_context
-    from openprogram.programs.agentic_functions import browser_agent as module
-    from openprogram.programs.agentic_functions.browser_agent import (
+    from openprogram.programs.functions.agentic import browser_agent as module
+    from openprogram.programs.functions.agentic.browser_agent import (
         web_use_runtime,
     )
 
@@ -1329,7 +1329,7 @@ def test_temporary_page_capture_is_released_when_binding_resolution_fails(
     monkeypatch, route,
 ):
     from openprogram.agent import surface_context
-    from openprogram.programs.agentic_functions import browser_agent as module
+    from openprogram.programs.functions.agentic import browser_agent as module
 
     context = {"context_id": "ctx-temp", "surfaces": [{}]}
     released = []
@@ -1359,10 +1359,10 @@ def test_temporary_page_capture_is_released_when_binding_resolution_fails(
 
 
 def test_official_backend_rejects_stale_frame_before_upstream_call(monkeypatch):
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         WebUseSession,
     )
-    from openprogram.programs.agentic_functions.browser_agent.mcp_backends import (
+    from openprogram.programs.functions.agentic.browser_agent.mcp_backends import (
         OfficialMCPPageBackend,
     )
 
@@ -1385,8 +1385,8 @@ def test_official_backend_rejects_stale_frame_before_upstream_call(monkeypatch):
 
 def test_gui_agent_harness_uses_selected_computer_use_backend(monkeypatch):
     from openprogram.agent import surface_context
-    from openprogram.programs.agentic_functions import browser_agent as module
-    from openprogram.programs.agentic_functions.browser_agent import (
+    from openprogram.programs.functions.agentic import browser_agent as module
+    from openprogram.programs.functions.agentic.browser_agent import (
         web_use_runtime,
     )
 
@@ -1449,8 +1449,8 @@ def test_gui_agent_harness_uses_selected_computer_use_backend(monkeypatch):
 
 def test_gui_agent_prompt_receives_group_aware_page_inventory(monkeypatch):
     from openprogram.agent import surface_context
-    from openprogram.programs.agentic_functions import browser_agent as module
-    from openprogram.programs.agentic_functions.browser_agent import (
+    from openprogram.programs.functions.agentic import browser_agent as module
+    from openprogram.programs.functions.agentic.browser_agent import (
         web_use_runtime,
     )
 
@@ -1550,8 +1550,8 @@ def test_gui_agent_prompt_receives_group_aware_page_inventory(monkeypatch):
 
 def test_gui_agent_discovers_popup_and_switches_by_exact_page_token(monkeypatch):
     from openprogram.agent import surface_context
-    from openprogram.programs.agentic_functions import browser_agent as module
-    from openprogram.programs.agentic_functions.browser_agent import (
+    from openprogram.programs.functions.agentic import browser_agent as module
+    from openprogram.programs.functions.agentic.browser_agent import (
         web_use_runtime,
     )
 
@@ -1642,8 +1642,8 @@ def test_gui_agent_discovers_popup_and_switches_by_exact_page_token(monkeypatch)
 def test_gui_harness_screenshot_capability_is_one_request_only(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.programs import ToolReturn
-    from openprogram.programs.agentic_functions import browser_agent as module
-    from openprogram.programs.agentic_functions.browser_agent import (
+    from openprogram.programs.functions.agentic import browser_agent as module
+    from openprogram.programs.functions.agentic.browser_agent import (
         web_use_runtime,
     )
 
@@ -1714,8 +1714,8 @@ def test_gui_harness_screenshot_capability_is_one_request_only(monkeypatch):
 def test_gui_harness_releases_unsent_final_screenshot(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.programs import ToolReturn
-    from openprogram.programs.agentic_functions import browser_agent as module
-    from openprogram.programs.agentic_functions.browser_agent import (
+    from openprogram.programs.functions.agentic import browser_agent as module
+    from openprogram.programs.functions.agentic.browser_agent import (
         web_use_runtime,
     )
 
@@ -1772,8 +1772,8 @@ def test_gui_harness_releases_same_request_screenshot_on_runtime_error(
 ):
     from openprogram.agent import surface_context
     from openprogram.programs import ToolReturn
-    from openprogram.programs.agentic_functions import browser_agent as module
-    from openprogram.programs.agentic_functions.browser_agent import (
+    from openprogram.programs.functions.agentic import browser_agent as module
+    from openprogram.programs.functions.agentic.browser_agent import (
         web_use_runtime,
     )
     from openprogram.providers.utils.errors import ExecInterrupt

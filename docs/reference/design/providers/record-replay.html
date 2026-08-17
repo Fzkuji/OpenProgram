@@ -525,7 +525,7 @@ git diff --check</pre>
     <div class="value"><span class="pill ok">可靠性修订已实现</span></div><div class="value">异常、取消、提前关闭和同步启动失败写唯一带 outcome 的 call_end 并关闭 source；重复 terminal 在首个 terminal 后停止；source close 失败保留。配置激活失败时原子替换已有 registry transform 为 fail-closed provider；mismatch 不消费调用，匹配的中断调用消费一次并报告。</div><div class="value"><code>c26df53a</code>、<code>a4f27b3b</code>、<code>fe727546</code>、<code>6595d444</code>；公共入口 RED/GREEN、规格复审 PASS、质量复审 PASS。</div>
     <div class="value"><span class="pill warn">兼容边界</span></div><div class="value">保留 v1 构造器、属性、异常、旧 header 和 mismatch 行为；新增严格检查会拒绝旧 reader 曾忽略的损坏行。严格离线仍只覆盖 LLM provider 层；跨进程调度顺序不保证复现。</div><div class="value"><code>test_record_replay.py</code> 继续覆盖库级录制、两轮 tool loop、版本拒绝和字段差异。</div>
     <div class="value"><span class="pill plan">明确不做</span></div><div class="value">Web UI、全进程 HTTP 录制、tool/MCP 录制、模糊 request 匹配、自动网络 fallback、自动上传、Windows 专项实现或验证。</div><div class="value">超出本阶段边界。</div>
-    <div class="value"><span class="pill ok">验证完成</span></div><div class="value">相关 pytest、完整 unit/providers、changed-file Ruff、docs build、link checker、CLI smoke 与 diff whitespace。</div><div class="value">仓库根级 pytest 另被既有缺失模块 <code>openprogram.programs.agentic_functions.test_framework</code> 阻断于 integration collection；本变更未修改该入口。</div>
+    <div class="value"><span class="pill ok">验证完成</span></div><div class="value">相关 pytest、完整 unit/providers、changed-file Ruff、docs build、link checker、CLI smoke 与 diff whitespace。</div><div class="value">仓库根级 pytest 另被既有缺失模块 <code>openprogram.programs.functions.agentic.test_framework</code> 阻断于 integration collection；本变更未修改该入口。</div>
   </div>
 
   <p class="foot">设计来源：当前 OpenProgram provider 实现、CLI/config 入口、测试，以及仓内 <code>references/pi-ai</code> 快照。更新实现状态时必须附代码符号、测试或 commit；不得把“设计已写”标为“功能已实现”。</p>

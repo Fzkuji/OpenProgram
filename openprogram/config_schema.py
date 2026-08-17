@@ -344,8 +344,8 @@ def _search_choices() -> list[str]:
     import failure degrades to just ``auto`` rather than breaking the
     whole settings read."""
     try:
-        from openprogram.programs.functions.web_search.registry import registry as _wsr
-        import openprogram.programs.functions.web_search.providers  # noqa: F401
+        from openprogram.programs.functions.vanilla.web_search.registry import registry as _wsr
+        import openprogram.programs.functions.vanilla.web_search.providers  # noqa: F401
         names = [getattr(p, "name", "") for p in _wsr.all()]
         return ["auto"] + [n for n in names if n]
     except Exception:

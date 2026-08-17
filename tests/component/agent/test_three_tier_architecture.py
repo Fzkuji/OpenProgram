@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-import openprogram.programs.agentic_functions.agentic_workflow as TL
+import openprogram.programs.functions.agentic.agentic_workflow as TL
 
 
 @pytest.fixture

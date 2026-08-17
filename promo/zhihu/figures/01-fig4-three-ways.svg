@@ -17,7 +17,7 @@
 
   <!-- 文件卡 -->
   <rect x="48" y="248" width="576" height="224" rx="12" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
-  <text x="76" y="292" font-family="Menlo, monospace" font-size="17" fill="#6b7280">openprogram/programs/agentic_functions/triage/__init__.py</text>
+  <text x="76" y="292" font-family="Menlo, monospace" font-size="17" fill="#6b7280">openprogram/programs/functions/agentic/triage/__init__.py</text>
   <line x1="76" y1="312" x2="596" y2="312" stroke="#93c5fd" stroke-width="1"/>
   <text x="76" y="352" font-family="Menlo, monospace" font-size="17" fill="#2563eb">@agentic_function</text>
   <text x="76" y="384" font-family="Menlo, monospace" font-size="17" fill="#1f2937">def triage(ticket: str, runtime=None) -&gt; str:</text>

@@ -8,7 +8,7 @@ Usage:
 import subprocess
 import json
 from openprogram import agentic_function, Runtime
-from openprogram.programs.functions.meta import create
+from openprogram.programs.functions.vanilla.meta import create
 
 
 # ── LLM Provider: Claude Code CLI ───────────────────────────────

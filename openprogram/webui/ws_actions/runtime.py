@@ -190,7 +190,7 @@ async def handle_browser(ws, cmd: dict):
         }))
         return
     try:
-        from openprogram.programs.functions.browser.browser import execute as _br_exec
+        from openprogram.programs.functions.vanilla.browser.browser import execute as _br_exec
         result = _br_exec(action=verb, **kwargs)
     except Exception as e:  # noqa: BLE001
         result = f"Error: {type(e).__name__}: {e}"

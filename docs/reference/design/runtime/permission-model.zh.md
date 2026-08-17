@@ -345,7 +345,7 @@ def _risk_level(tool_name: str, args: dict) -> str:
 
 `_approval_detail`（`internals/_approval.py:232-242`，生成"工具名 + 参数全文，超长首尾截断"）给审批卡片一段可读摘要（第一版不做危险 token 高亮）。`_on_asked`（`await_user_approval` 内）的 `question.asked` 帧带上 `tool`/`args`/`risk_level`，前端据此上色（§4.2）。
 
-**路径安全**（`openprogram/programs/functions/file_safety.py`）：
+**路径安全**（`openprogram/programs/functions/vanilla/file_safety.py`）：
 
 ```python
 # file_safety.py:20-40, 63
@@ -603,13 +603,13 @@ hook 返回 `{mode, options, set}`。
 |---|---|
 | 判定链 `_gated_execute` / `_match_rule` / `await_user_approval` / `_persist_always_allow_rule` / `_risk_level` | `openprogram/agent/internals/_approval.py` |
 | 规则字符串解析、匹配、多层合并 | `openprogram/programs/permission_rule.py`（`parse_rule` / `parse_command` / `pattern_matches` / `load_merged_rules`） |
-| 路径安全 / 危险文件目录 / Windows 绕过 | `openprogram/programs/functions/file_safety.py` |
+| 路径安全 / 危险文件目录 / Windows 绕过 | `openprogram/programs/functions/vanilla/file_safety.py` |
 | gate 硬拦截 | `openprogram/events/tool_gate.py` |
 | 权限模式合法值 + 规范化 + SessionRunConfig 字段 | `openprogram/agent/session_config.py` |
 | `PermissionMode` 类型 + TurnRequest 字段/默认 | `openprogram/agent/dispatcher/types.py` |
 | 会话 meta schemaless 存储 | `openprogram/store/session/session_store.py` |
 | 项目级 settings 读写 + `project_for_session` | `openprogram/store/project/project_store.py` |
-| `accept_edits_safe` 声明 + per-tool `requires_approval` | `openprogram/programs/_runtime.py`；工具标记在 `openprogram/programs/functions/{read,write,edit,glob,grep,list}/` |
+| `accept_edits_safe` 声明 + per-tool `requires_approval` | `openprogram/programs/_runtime.py`；工具标记在 `openprogram/programs/functions/vanilla/{read,write,edit,glob,grep,list}/` |
 | web 默认 bypass + effective_permission | `openprogram/webui/_execute/__init__.py`；`additional_working_dirs` 填充在 `_execute/chat.py`、`channels/_conversation.py` |
 | WS：审批应答 + 项目规则 list/add/remove | `openprogram/webui/ws_actions/session.py`、`chat.py` |
 | 值守（正交机制） | `openprogram/agent/attended.py`、`openprogram/webui/ws_actions/runtime.py` |

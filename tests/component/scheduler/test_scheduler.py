@@ -15,7 +15,7 @@ import pytest
 def scheduler_env(tmp_path, monkeypatch):
     import openprogram.paths as paths
     from openprogram.agent import authority
-    from openprogram.programs.functions.cron import cron as cron_tool
+    from openprogram.programs.functions.vanilla.cron import cron as cron_tool
 
     schedule = tmp_path / "scheduler" / "tasks.json"
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
@@ -86,7 +86,7 @@ def test_scheduler_rejects_cron_that_the_worker_cannot_execute(
 
 def test_scheduler_default_path_is_profile_scoped(tmp_path, monkeypatch):
     import openprogram.paths as paths
-    from openprogram.programs.functions.cron import cron as cron_tool
+    from openprogram.programs.functions.vanilla.cron import cron as cron_tool
 
     monkeypatch.delenv(cron_tool.DEFAULT_SCHEDULER_ENV, raising=False)
     monkeypatch.delenv(cron_tool.DEFAULT_CRON_ENV, raising=False)
@@ -98,7 +98,7 @@ def test_scheduler_default_path_is_profile_scoped(tmp_path, monkeypatch):
 
 def test_scheduler_moves_legacy_cron_store_with_signing_state(tmp_path, monkeypatch):
     import openprogram.paths as paths
-    from openprogram.programs.functions.cron import cron as cron_tool
+    from openprogram.programs.functions.vanilla.cron import cron as cron_tool
 
     monkeypatch.delenv(cron_tool.DEFAULT_SCHEDULER_ENV, raising=False)
     monkeypatch.delenv(cron_tool.DEFAULT_CRON_ENV, raising=False)
@@ -120,7 +120,7 @@ def test_scheduler_moves_legacy_cron_store_with_signing_state(tmp_path, monkeypa
 
 def test_legacy_cron_store_migration_is_concurrency_safe(tmp_path, monkeypatch):
     import openprogram.paths as paths
-    from openprogram.programs.functions.cron import cron as cron_tool
+    from openprogram.programs.functions.vanilla.cron import cron as cron_tool
 
     monkeypatch.delenv(cron_tool.DEFAULT_SCHEDULER_ENV, raising=False)
     monkeypatch.delenv(cron_tool.DEFAULT_CRON_ENV, raising=False)
@@ -217,7 +217,7 @@ def test_once_task_fires_only_once_and_recurring_task_keeps_running(
     scheduler_env, monkeypatch,
 ):
     from openprogram.agent.authority import local_owner_authority
-    from openprogram.programs.functions.cron import worker
+    from openprogram.programs.functions.vanilla.cron import worker
     from openprogram.scheduler import service
 
     tmp_path, _schedule = scheduler_env
@@ -259,7 +259,7 @@ def test_worker_persists_each_claim_and_continues_after_spawn_failure(
     scheduler_env, monkeypatch,
 ):
     from openprogram.agent.authority import local_owner_authority
-    from openprogram.programs.functions.cron import worker
+    from openprogram.programs.functions.vanilla.cron import worker
     from openprogram.scheduler import service
 
     tmp_path, _schedule = scheduler_env
@@ -299,7 +299,7 @@ def test_worker_persists_each_claim_and_continues_after_spawn_failure(
 
 def test_two_workers_claim_a_once_task_only_once(scheduler_env, monkeypatch):
     from openprogram.agent.authority import local_owner_authority
-    from openprogram.programs.functions.cron import worker
+    from openprogram.programs.functions.vanilla.cron import worker
     from openprogram.scheduler import service
 
     tmp_path, _schedule = scheduler_env
@@ -332,7 +332,7 @@ def test_claim_write_failure_does_not_spawn_or_block_later_task(
     scheduler_env, monkeypatch,
 ):
     from openprogram.agent.authority import local_owner_authority
-    from openprogram.programs.functions.cron import worker
+    from openprogram.programs.functions.vanilla.cron import worker
     from openprogram.scheduler import service
 
     tmp_path, _schedule = scheduler_env
@@ -380,7 +380,7 @@ def test_claim_write_failure_does_not_spawn_or_block_later_task(
 
 def test_scheduler_concurrent_creates_do_not_lose_tasks(scheduler_env, monkeypatch):
     from openprogram.agent.authority import local_owner_authority
-    from openprogram.programs.functions.cron import cron as cron_tool
+    from openprogram.programs.functions.vanilla.cron import cron as cron_tool
     from openprogram.scheduler import service
 
     tmp_path, _schedule = scheduler_env

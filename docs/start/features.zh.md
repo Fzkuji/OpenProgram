@@ -42,7 +42,7 @@ def navigate(target): ...
 自主的「规划—执行—评估」循环，直到结果达到指定的质量等级：
 
 ```python
-from openprogram.programs.agentic_functions.deep_work import deep_work
+from openprogram.programs.functions.agentic.deep_work import deep_work
 
 result = deep_work(
     task="Write a survey on context management in LLM agents.",

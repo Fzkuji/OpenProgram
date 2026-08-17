@@ -32,14 +32,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.programs.functions.agent.agent.agent import _agent_impl
-from openprogram.programs.functions.send_message.archive_agent.archive_agent import (
+from openprogram.programs.functions.vanilla.agent.agent.agent import _agent_impl
+from openprogram.programs.functions.vanilla.send_message.archive_agent.archive_agent import (
     _archive_agent_impl,
 )
-from openprogram.programs.functions.send_message.list_agents.list_agents import (
+from openprogram.programs.functions.vanilla.send_message.list_agents.list_agents import (
     _list_agents_impl,
 )
-from openprogram.programs.functions.send_message.send_message.send_message import (
+from openprogram.programs.functions.vanilla.send_message.send_message.send_message import (
     _send_message_impl,
 )
 

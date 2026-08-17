@@ -48,7 +48,7 @@ def install_gui_harness_web_use(original: Callable | None = None):
                 runtime=runtime,
                 allow_general=allow_general,
             )
-        from openprogram.programs.agentic_functions.browser_agent import (
+        from openprogram.programs.functions.agentic.browser_agent import (
             _run_browser_task_commands,
         )
         return _run_browser_task_commands(

@@ -23,8 +23,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from openprogram.programs.functions.agent.agent.agent import _agent_impl
-from openprogram.programs.functions.agent._ownership import check_job_ownership
+from openprogram.programs.functions.vanilla.agent.agent.agent import _agent_impl
+from openprogram.programs.functions.vanilla.agent._ownership import check_job_ownership
 
 
 @pytest.fixture
@@ -113,7 +113,7 @@ def test_to_dispatch_creates_no_generation(parent_turn):
     """agent(to=…) hands work to an agent that already exists, so it
     spends a message and leaves the generation count alone — the target
     and the reply turn both run at the dispatcher's count."""
-    from openprogram.programs.functions.send_message.send_message.depth import (
+    from openprogram.programs.functions.vanilla.send_message.send_message.depth import (
         set_chain_generations,
     )
     tok = set_chain_generations(1)
@@ -218,7 +218,7 @@ def test_to_ignores_run_in_background(parent_turn):
 
 
 def test_to_message_budget_guard(parent_turn):
-    from openprogram.programs.functions.send_message.send_message.depth import (
+    from openprogram.programs.functions.vanilla.send_message.send_message.depth import (
         set_chain_messages, _chain_messages, MAX_MESSAGES,
     )
     tok = set_chain_messages(MAX_MESSAGES)
@@ -375,7 +375,7 @@ def test_ownership_rejects_foreign_session(parent_turn):
     from openprogram.agent import run_control
     from openprogram.agent.job.store import save_job
     from openprogram.agent.job.types import Job, JobStatus
-    from openprogram.programs.functions.agent.job_output.job_output import (
+    from openprogram.programs.functions.vanilla.agent.job_output.job_output import (
         _job_output_impl,
     )
     save_job("p2", Job(id="t_theirs", parent_session_id="p2", prompt="x",

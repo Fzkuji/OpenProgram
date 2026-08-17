@@ -362,7 +362,7 @@ cat /tmp/openprogram-events.jsonl</div>
 // 子系统定义（顺序 = 页面顺序 = 导航顺序）
 const SUBS = [
   {id:"agentloop", key:"c-agentloop", title:"agent 主循环", where:"openprogram/agent/agent_loop.py · dispatcher/", desc:"一次对话 turn 的核心：用户消息进来、模型回复、工具调用、turn 结束——事件层最密集的来源，全部带 session/turn 关联。"},
-  {id:"tools", key:"c-tools", title:"工具", where:"openprogram/programs/functions/{write,edit,apply_patch}", desc:"写文件的工具改动磁盘后发出信号，让别处知道某文件被改了。"},
+  {id:"tools", key:"c-tools", title:"工具", where:"openprogram/programs/functions/vanilla/{write,edit,apply_patch}", desc:"写文件的工具改动磁盘后发出信号，让别处知道某文件被改了。"},
   {id:"task", key:"c-task", title:"子任务 runner", where:"openprogram/agent/job/runner.py · sub_agent_run.py", desc:"后台子任务（subagent）的生命周期：起、止，以及 spawn 后通知前端重载 DAG。"},
   {id:"auth", key:"c-auth", title:"凭据 auth", where:"openprogram/agent/event_bridges.py（桥）", desc:"凭据池的限流/轮换/耗尽。auth 自带规范的发布订阅，由一座「桥」翻译进总线（只桥有响应价值的三种）。"},
   {id:"context", key:"c-context", title:"上下文 context", where:"openprogram/context/engine.py", desc:"上下文预算逼近上限时建议压缩、以及压缩完成。"},

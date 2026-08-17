@@ -5,7 +5,7 @@
 Run it from the Programs panel as `agentic_workflow`, or call it from Python:
 
 ```python
-from openprogram.programs.agentic_functions.agentic_workflow import agentic_workflow
+from openprogram.programs.functions.agentic.agentic_workflow import agentic_workflow
 
 # Start a new workflow
 result = agentic_workflow("port the auth module to the new client and update its tests")

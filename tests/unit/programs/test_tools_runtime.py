@@ -540,7 +540,7 @@ def test_governed_sync_tool_without_process_boundary_is_rejected(
 
 def test_bash_sandbox_denial_uses_typed_error(monkeypatch) -> None:
     bash_module = importlib.import_module(
-        "openprogram.programs.functions.bash.bash"
+        "openprogram.programs.functions.vanilla.bash.bash"
     )
 
     class DeniedBackend:
@@ -585,7 +585,7 @@ def test_bash_execution_failures_use_typed_error(
     monkeypatch, run_result, detail_key
 ) -> None:
     bash_module = importlib.import_module(
-        "openprogram.programs.functions.bash.bash"
+        "openprogram.programs.functions.vanilla.bash.bash"
     )
 
     class FailedBackend:

@@ -5,7 +5,7 @@
 在 Functions 面板里以 `run_docs_question` 运行，或从 Python 调用：
 
 ```python
-from openprogram.programs.agentic_functions.docs_question import run_docs_question
+from openprogram.programs.functions.agentic.docs_question import run_docs_question
 
 result = run_docs_question("能让一个会话一直做到条件成立吗？")
 ```

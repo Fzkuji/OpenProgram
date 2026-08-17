@@ -3,7 +3,7 @@
 Two mechanisms, in order:
 
   1. **AGENTIC_MODULES** — hand-maintained list of internal agentic
-     module names (``openprogram/programs/agentic_functions/<name>/``). Loaded
+     module names (``openprogram/programs/functions/agentic/<name>/``). Loaded
      explicitly so that import order and dependency conditions are
      obvious.
 
@@ -93,7 +93,7 @@ def load_agentic_modules(
     for mod_name in AGENTIC_MODULES:
         try:
             importlib.import_module(
-                f"openprogram.programs.agentic_functions.{mod_name}"
+                f"openprogram.programs.functions.agentic.{mod_name}"
             )
         except Exception as e:
             _debug_registry_error(mod_name, e)
@@ -296,7 +296,7 @@ def _load_external_file(
     if sys_path_root not in sys.path:
         sys.path.insert(0, sys_path_root)
 
-    full_mod = f"openprogram.programs.agentic_functions.{mod_name}"
+    full_mod = f"openprogram.programs.functions.agentic.{mod_name}"
     spec = importlib.util.spec_from_file_location(full_mod, abs_path)
     if spec is None or spec.loader is None:
         return
@@ -393,10 +393,10 @@ def _debug_registry_error(name: str, e: Exception) -> None:
 
 
 def _default_agentic_functions_dir() -> Optional[str]:
-    """The live ``programs/agentic_functions/`` directory, or None if it can't be
+    """The live ``programs/functions/agentic/`` directory, or None if it can't be
     located. Used as :func:`rescan`'s default scan root."""
     try:
-        from openprogram.programs import agentic_functions as _ag
+        from openprogram.programs.functions import agentic as _ag
         return os.path.dirname(_ag.__file__)
     except Exception:
         return None

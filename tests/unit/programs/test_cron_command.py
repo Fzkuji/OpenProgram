@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.programs.functions.cron import cron as cron_tool
-from openprogram.programs.functions.cron import worker
+from openprogram.programs.functions.vanilla.cron import cron as cron_tool
+from openprogram.programs.functions.vanilla.cron import worker
 
 
 @pytest.fixture

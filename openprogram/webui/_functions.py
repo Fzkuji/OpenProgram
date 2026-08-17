@@ -18,7 +18,7 @@ from typing import Optional
 from openprogram.agentic_programming.runtime import Runtime
 
 
-# Base of the openprogram package. Discovery scans under programs/agentic_functions/.
+# Base of the openprogram package. Discovery scans under programs/functions/agentic/.
 import openprogram as _op_pkg
 _PKG_BASE = os.path.dirname(os.path.abspath(_op_pkg.__file__))
 
@@ -28,7 +28,7 @@ _PKG_BASE = os.path.dirname(os.path.abspath(_op_pkg.__file__))
 # ---------------------------------------------------------------------------
 
 def _discover_functions() -> list[dict]:
-    """Scan openprogram/programs/agentic_functions/ to build the function list.
+    """Scan openprogram/programs/functions/agentic/ to build the function list.
 
     Each agentic function lives in its own directory with code in
     ``__init__.py``. Harness apps (e.g. Research-Agent-Harness) are
@@ -47,7 +47,7 @@ def _discover_functions() -> list[dict]:
     # more buildin/third_party split; that distinction is gone after
     # the function-calling unification.
     from openprogram.programs._registry import iter_agentic_files
-    from openprogram.programs import agentic_functions as _agentics_pkg
+    from openprogram.programs.functions import agentic as _agentics_pkg
     import os as _os
     agentics_dir = _os.path.dirname(_agentics_pkg.__file__)
     for mod_name, full_path, is_harness in iter_agentic_files(agentics_dir):
@@ -472,7 +472,7 @@ def _load_function(func_name: str):
     Search target: every module listed in
     ``openprogram.programs._registry.AGENTIC_MODULES`` (covers both
     flat agentic functions and the harness apps under the unified
-    ``programs/agentic_functions/`` tree). For each registered module we import,
+    ``programs/functions/agentic/`` tree). For each registered module we import,
     reload, and look up ``func_name`` as a top-level attribute. Harness
     apps go through the same path but are loaded via
     ``spec_from_file_location`` since their external dirs have hyphen
@@ -485,12 +485,12 @@ def _load_function(func_name: str):
     from openprogram.programs._registry import (
         iter_agentic_files, _load_external_file,
     )
-    from openprogram.programs import agentic_functions as _agentics_pkg
+    from openprogram.programs.functions import agentic as _agentics_pkg
     agentics_dir = os.path.dirname(_agentics_pkg.__file__)
     import importlib.util as _imputil
 
     for mod_name, fpath, is_harness in iter_agentic_files(agentics_dir):
-        full_mod = f"openprogram.programs.agentic_functions.{mod_name}"
+        full_mod = f"openprogram.programs.functions.agentic.{mod_name}"
         try:
             if is_harness:
                 # Re-execute the file under its registered module name

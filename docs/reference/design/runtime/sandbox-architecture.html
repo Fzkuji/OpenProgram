@@ -579,7 +579,7 @@
 
     <rect x="24" y="58" width="248" height="92" rx="10" fill="#12110b" stroke="#e0445a" stroke-width="1.4"/>
     <text x="42" y="84" fill="#f0eee6" font-size="13" font-weight="700">01 模型调 write</text>
-    <text x="42" y="107" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">programs/agentic_functions/x.py</text>
+    <text x="42" y="107" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">programs/functions/agentic/x.py</text>
     <text x="42" y="130" fill="#8a8675" font-size="11.5">写文件这个动作本身不可疑</text>
     <line x1="272" y1="104" x2="300" y2="104" stroke="#e0445a" stroke-width="1.6" marker-end="url(#p-rd)"/>
 
@@ -613,7 +613,7 @@
   <table>
     <tr><th>实施前P0缺口</th><th>实施前源码行为</th><th>影响</th><th>当前闭合方式</th></tr>
     <tr><td><b>“Always allow”过宽</b></td><td>审批持久化时只保存工具名；一次bash批准会得到<code>allow bash</code></td><td class="n">后续任意bash都可跳过审批，范围大于原命令</td><td class="y">已完成：只保存规范化后的精确操作；复杂shell只允许单次批准</td></tr>
-    <tr><td><b>文件工具与watcher组合</b></td><td>文件工具可写工作区外；watcher对<code>programs/agentic_functions/</code>变化调用<code>exec_module</code></td><td class="n">模型可写Python并由宿主进程自动导入</td><td class="y">已完成：文件工具统一写入根检查；自动导入只接受owner登记来源</td></tr>
+    <tr><td><b>文件工具与watcher组合</b></td><td>文件工具可写工作区外；watcher对<code>programs/functions/agentic/</code>变化调用<code>exec_module</code></td><td class="n">模型可写Python并由宿主进程自动导入</td><td class="y">已完成：文件工具统一写入根检查；自动导入只接受owner登记来源</td></tr>
     <tr><td><b>cron无人值守执行</b></td><td>direct job使用<code>Popen(..., shell=True)</code>；prompt job启动分离CLI</td><td class="n">触发时没有交互审批路径，也没有统一沙箱</td><td class="y">已完成：签名执行spec、固化owner档、强制沙箱、ask与升级均deny</td></tr>
     <tr><td><b>execute_code本地执行</b></td><td>模型给代码和解释器路径，随后<code>subprocess.run</code></td><td class="n">不经过<code>Backend._invocation</code></td><td class="y">已完成：复用local backend及同一份SandboxPolicy</td></tr>
     <tr><td><b>命令规则按原字符串前缀匹配</b></td><td>未先处理ANSI、NUL、Unicode NFKC或<code>env X=1</code>包装</td><td class="n">保存规则与实际argv不一致；复杂shell文本也不能靠前缀安全解析</td><td class="y">已完成：规范化、shell解析、透明env包装与精确规则</td></tr>
@@ -1248,7 +1248,7 @@
   <div class="legend"><b>默认开启的两个准入条件已满足</b>：安全准入中的第04步、05A、身份批次I、05B、第06和第07步、共享记忆pending/trusted边界及U01—U23清单均已实现；可用性准入已在macOS Seatbelt和Linux bubblewrap真实子进程上执行上述矩阵。平台固有限制仍按第11节单独报告。</div>
 
   <div class="note"><b>配套的profile修补清单已完成</b>：工作目录拼进profile前先转义；放开exec之前补上限定在同沙箱内的<code>signal</code>和<code>process-info*</code>；
-  Linux加<code>--new-session --die-with-parent --unshare-pid --unshare-ipc --unshare-uts --cap-drop ALL</code>；<code>programs/agentic_functions/</code>禁写；两条沙箱路径统一用<code>/bin/bash</code>；
+  Linux加<code>--new-session --die-with-parent --unshare-pid --unshare-ipc --unshare-uts --cap-drop ALL</code>；<code>programs/functions/agentic/</code>禁写；两条沙箱路径统一用<code>/bin/bash</code>；
   macOS的<code>sysctl-read</code>已收窄到硬件前缀和四个uname名字，通用<code>mach-lookup</code>已删除，<code>/private/var/folders</code>已限制到本进程<code>TMPDIR</code>。
   <code>--unshare-user</code>不在清单里：非setuid的bubblewrap构建自己就会建用户命名空间，setuid的构建不接受这个参数。</div>
 

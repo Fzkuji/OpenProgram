@@ -302,11 +302,11 @@ git commit -m "feat(security): bound managed HTTP requests"
 ### Task 4: Migrate arbitrary and derived URL consumers
 
 **Files:**
-- Modify: `openprogram/programs/functions/web_fetch/web_fetch.py`
+- Modify: `openprogram/programs/functions/vanilla/web_fetch/web_fetch.py`
 - Modify: `openprogram/channels/_attachments.py`
 - Modify: `openprogram/channels/_transport.py`
-- Modify: `openprogram/programs/functions/image_generate/image_generate.py`
-- Modify: `openprogram/programs/functions/image_analyze/providers/gemini.py`
+- Modify: `openprogram/programs/functions/vanilla/image_generate/image_generate.py`
+- Modify: `openprogram/programs/functions/vanilla/image_analyze/providers/gemini.py`
 - Create: `tests/security/test_web_fetch_consumer.py`
 - Create: `tests/security/test_runtime_derived_url_consumers.py`
 
@@ -342,7 +342,7 @@ Remove each local redirect, byte-limit, and URL-scheme implementation after the 
 
 ```bash
 uv run pytest -q tests/security/test_web_fetch_consumer.py tests/security/test_runtime_derived_url_consumers.py tests/unit/test_channels_attachments.py tests/unit/test_channels_transport_retry.py tests/unit/test_channels_telegram_semantics.py
-uv run ruff check openprogram/programs/functions/web_fetch openprogram/channels openprogram/programs/functions/image_generate openprogram/programs/functions/image_analyze tests/security/test_runtime_derived_url_consumers.py
+uv run ruff check openprogram/programs/functions/vanilla/web_fetch openprogram/channels openprogram/programs/functions/vanilla/image_generate openprogram/programs/functions/vanilla/image_analyze tests/security/test_runtime_derived_url_consumers.py
 ```
 
 Expected: commands exit 0.
@@ -350,30 +350,30 @@ Expected: commands exit 0.
 **Step 5: Commit**
 
 ```bash
-git add openprogram/programs/functions/web_fetch openprogram/channels openprogram/programs/functions/image_generate openprogram/programs/functions/image_analyze tests
+git add openprogram/programs/functions/vanilla/web_fetch openprogram/channels openprogram/programs/functions/vanilla/image_generate openprogram/programs/functions/vanilla/image_analyze tests
 git commit -m "refactor(security): protect derived URL fetches"
 ```
 
 ### Task 5: Migrate fixed API, configured API, catalog, and updater consumers
 
 **Files:**
-- Modify: `openprogram/programs/functions/web_search/_http.py`
-- Modify: `openprogram/programs/functions/web_search/providers/brave.py`
-- Modify: `openprogram/programs/functions/web_search/providers/exa.py`
-- Modify: `openprogram/programs/functions/web_search/providers/firecrawl.py`
-- Modify: `openprogram/programs/functions/web_search/providers/google.py`
-- Modify: `openprogram/programs/functions/web_search/providers/minimax.py`
-- Modify: `openprogram/programs/functions/web_search/providers/moonshot.py`
-- Modify: `openprogram/programs/functions/web_search/providers/ollama.py`
-- Modify: `openprogram/programs/functions/web_search/providers/perplexity.py`
-- Modify: `openprogram/programs/functions/web_search/providers/searxng.py`
-- Modify: `openprogram/programs/functions/web_search/providers/tavily.py`
-- Modify: `openprogram/programs/functions/image_generate/providers/fal.py`
-- Modify: `openprogram/programs/functions/image_generate/providers/gemini.py`
-- Modify: `openprogram/programs/functions/image_generate/providers/openai.py`
-- Modify: `openprogram/programs/functions/image_analyze/providers/anthropic.py`
-- Modify: `openprogram/programs/functions/image_analyze/providers/gemini.py`
-- Modify: `openprogram/programs/functions/image_analyze/providers/openai.py`
+- Modify: `openprogram/programs/functions/vanilla/web_search/_http.py`
+- Modify: `openprogram/programs/functions/vanilla/web_search/providers/brave.py`
+- Modify: `openprogram/programs/functions/vanilla/web_search/providers/exa.py`
+- Modify: `openprogram/programs/functions/vanilla/web_search/providers/firecrawl.py`
+- Modify: `openprogram/programs/functions/vanilla/web_search/providers/google.py`
+- Modify: `openprogram/programs/functions/vanilla/web_search/providers/minimax.py`
+- Modify: `openprogram/programs/functions/vanilla/web_search/providers/moonshot.py`
+- Modify: `openprogram/programs/functions/vanilla/web_search/providers/ollama.py`
+- Modify: `openprogram/programs/functions/vanilla/web_search/providers/perplexity.py`
+- Modify: `openprogram/programs/functions/vanilla/web_search/providers/searxng.py`
+- Modify: `openprogram/programs/functions/vanilla/web_search/providers/tavily.py`
+- Modify: `openprogram/programs/functions/vanilla/image_generate/providers/fal.py`
+- Modify: `openprogram/programs/functions/vanilla/image_generate/providers/gemini.py`
+- Modify: `openprogram/programs/functions/vanilla/image_generate/providers/openai.py`
+- Modify: `openprogram/programs/functions/vanilla/image_analyze/providers/anthropic.py`
+- Modify: `openprogram/programs/functions/vanilla/image_analyze/providers/gemini.py`
+- Modify: `openprogram/programs/functions/vanilla/image_analyze/providers/openai.py`
 - Modify: `openprogram/skills/discovery.py`
 - Modify: `openprogram/plugins/marketplace.py`
 - Modify: `openprogram/plugins/autoupdate.py`
@@ -410,7 +410,7 @@ At each configured-service constructor or request boundary, normalize and freeze
 
 ```bash
 uv run pytest -q tests/security/test_runtime_catalog_consumers.py tests/security/test_runtime_api_consumers.py tests/unit/test_skills_cli.py tests/unit/test_skills_registry.py tests/unit/test_web_config_schema.py tests/providers/test_models_dev_cache.py
-uv run ruff check openprogram/programs/functions/web_search openprogram/programs/functions/image_generate/providers openprogram/programs/functions/image_analyze/providers openprogram/skills openprogram/plugins openprogram/updater openprogram/webui/routes/mcp.py openprogram/webui/_model_listing tests/security
+uv run ruff check openprogram/programs/functions/vanilla/web_search openprogram/programs/functions/vanilla/image_generate/providers openprogram/programs/functions/vanilla/image_analyze/providers openprogram/skills openprogram/plugins openprogram/updater openprogram/webui/routes/mcp.py openprogram/webui/_model_listing tests/security
 ```
 
 Expected: commands exit 0.

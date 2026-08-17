@@ -272,7 +272,7 @@
   <text x="716" y="90" fill="#a5a190" font-size="11">最少成功数闸门，再一次聚合调用。它写成了工具。</text>
 </svg>
 <div class="legend">
-<code>mixture_of_agents</code>（<code>openprogram/programs/functions/mixture_of_agents/mixture_of_agents.py:290</code>）用<code>asyncio.gather</code>并行发N个模型，
+<code>mixture_of_agents</code>（<code>openprogram/programs/functions/vanilla/mixture_of_agents/mixture_of_agents.py:290</code>）用<code>asyncio.gather</code>并行发N个模型，
 用<code>MIN_SUCCESSFUL_REFERENCES</code>做闸门，再调一次聚合模型。步骤、扇出、闸门全在代码里，站在谱的最右端，
 但它经<code>complete_simple</code>直连provider，不经<code>runtime.exec</code>，所以一个ModelCall节点都不落。
 <b>结论：装饰器选的是「内部要不要记账」，和「多少写进代码」是两个维度。</b>
@@ -375,7 +375,7 @@
 
 <div class="fw">
   <h4>extract_pdf_figures</h4>
-  <p class="sig">openprogram/programs/agentic_functions/extract_pdf_figures/__init__.py:98</p>
+  <p class="sig">openprogram/programs/functions/agentic/extract_pdf_figures/__init__.py:98</p>
   <p class="why">整份文件里唯一需要判断的是看图给框。翻页、映射坐标、裁剪、写盘全是代码。模型答错一页不影响其余页。</p>
   <div class="flow">
     <div class="fx code"><div class="k">CODE</div><div class="t">_parse_pages</div><div class="d">页码范围解析成 lo, hi</div></div>
@@ -393,7 +393,7 @@
 
 <div class="fw">
   <h4>goal</h4>
-  <p class="sig">openprogram/programs/agentic_functions/goal/__init__.py:312</p>
+  <p class="sig">openprogram/programs/functions/agentic/goal/__init__.py:312</p>
   <p class="why">只有一个判断，判断本身派一个子agent去做（带只读工具），回来解析成定死的JSON。所有记账、重试计数、预算、停机规则都在<code>goal.py</code>里，在模型外面。</p>
   <div class="flow">
     <div class="fx code"><div class="k">CODE</div><div class="t">render_session_view</div><div class="d">压缩上下文视图（摘要+尾巴）</div></div>
@@ -1189,7 +1189,7 @@ project来源盖过bundled，所以模型看到的是前者。
   <text x="40" y="347" fill="#a5a190" font-size="11.5">（每轮都在系统提示里，30 和 31 处）、6 条错误串。约40处。<tspan fill="#e0445a">这不是重构，是改提示词。改完模型行为会变，得重新看效果。</tspan></text>
 </svg>
 <div class="legend">
-<b>层4（不建议做）：目录名与线上格式。</b><code>openprogram/programs/agentic_functions/</code>被132处斜杠路径引用（61个文件），牵到
+<b>层4（不建议做）：目录名与线上格式。</b><code>openprogram/programs/functions/agentic/</code>被132处斜杠路径引用（61个文件），牵到
 <code>.gitignore:51,57,58</code>和<code>pyproject.toml:201,215,216</code>；<code>kind="agentic_function"</code>（<code>streaming/__init__.py:24</code>）是跨进程流协议里的枚举值。
 共170处以上，改了只换来一次全仓大改，目录名和线上枚举本来就不是概念名。
 <br>另一个要一起处理的：<code>skills/agentic-programming/SKILL.md</code>和<code>skills_bundled/agentic-programming/SKILL.md</code>是两份已经漂开的近似副本（30处和31处），
@@ -1222,7 +1222,7 @@ project来源盖过bundled，所以模型看到的是前者。
 
 <div class="note">
 实现文件：<code>openprogram/agentic_programming/function.py</code>、<code>runtime.py</code>、<code>decision.py</code>、<code>session.py</code>；
-<code>openprogram/programs/_runtime.py</code>、<code>openprogram/programs/agentic_functions/</code>、<code>openprogram/programs/functions/</code>（技能加载动词在<code>tools/skill/</code>）；
+<code>openprogram/programs/_runtime.py</code>、<code>openprogram/programs/functions/agentic/</code>、<code>openprogram/programs/functions/vanilla/</code>（技能加载动词在<code>tools/skill/</code>）；
 <code>openprogram/skills/loader.py</code>、<code>openprogram/skills/tool.py</code>；<code>openprogram/context/components.py</code>；
 <code>openprogram/skills_bundled/distill/SKILL.md</code>。
 相关设计页：<a href="calling-unification.html">函数与工具调用的统一</a>、<a href="../runtime/agent-collaboration.html">Agent协作</a>。

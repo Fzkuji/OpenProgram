@@ -19,16 +19,16 @@ import textwrap
 
 import pytest
 
-from openprogram.programs.functions.lsp import shared
+from openprogram.programs.functions.vanilla.lsp import shared
 # The impl functions are the tool bodies as plain Python; the
 # @function-wrapped names are AgentTool objects for LLM dispatch.
-from openprogram.programs.functions.lsp.lsp_definition.lsp_definition import (
+from openprogram.programs.functions.vanilla.lsp.lsp_definition.lsp_definition import (
     _definition_impl as lsp_definition,
 )
-from openprogram.programs.functions.lsp.lsp_diagnostics.lsp_diagnostics import (
+from openprogram.programs.functions.vanilla.lsp.lsp_diagnostics.lsp_diagnostics import (
     _diagnostics_impl as lsp_diagnostics,
 )
-from openprogram.programs.functions.lsp.lsp_references.lsp_references import (
+from openprogram.programs.functions.vanilla.lsp.lsp_references.lsp_references import (
     _references_impl as lsp_references,
 )
 from openprogram.lsp import client as lsp_client
