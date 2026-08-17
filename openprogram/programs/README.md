@@ -43,5 +43,6 @@ relies on.
 - **`agentic_functions/`** — @agentic_function bodies
 - **`applications/`** — Complete programs installed and loaded through their package entry points
 - **`functions/`** — Leaf LLM-callable tools
+- **`workflows/`** — Reusable self-programming Workflow projects
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

@@ -662,7 +662,7 @@ from openprogram.webui._functions import (
 
 
 # ---------------------------------------------------------------------------
-# (Function discovery & loading moved to agentic_web._functions)
+# Function discovery and loading live in openprogram.webui._functions.
 # ---------------------------------------------------------------------------
 
 

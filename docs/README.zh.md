@@ -206,32 +206,30 @@ openprogram --print --resume local_d9a16a6b06 "and now?"
 <summary><strong>项目结构</strong></summary>
 
 ```
-openprogram/
-├── __init__.py                      # agentic_function 再导出
-├── cli.py                           # `openprogram` 命令入口
-├── agentic_programming/             # 引擎 — 范式必需的原语
-│   ├── function.py                  #   @agentic_function 装饰器
-│   ├── runtime.py                   #   Runtime（exec + retry + DAG 上下文）
-│   ├── session.py                   #   会话生命周期
-│   └── skills.py                    #   SKILL.md 发现
-├── context/                         # 扁平 DAG 上下文模型 — nodes, storage, render, compute_reads
-├── providers/                       # Anthropic、OpenAI、Gemini、Claude Code、Codex、Gemini CLI
-├── functions/
-│   ├── _registry.py                 #   tools + agentic functions 的统一注册表
-│   ├── tools/                       #   @function 叶子工具 — bash、read、edit、grep、semble_search、web_search 等
-│   └── agentics/                    #   @agentic_function 模块（每个一个目录，代码写在 __init__.py）
-│       ├── ask_user/                #     向用户提澄清问题
-│       ├── deep_work/               #     自主计划-执行-评估循环
-│       ├── extract_pdf_figures/     #     PDF 图表抽取
-│       ├── …                        #     其它 agentics …
-│       ├── GUI-Agent-Harness/       #     GUI agent（独立仓库，克隆进来）
-│       ├── Research-Agent-Harness/  #     研究 agent（独立仓库，克隆进来）
-│       └── Wiki-Agent-Harness/      #     Wiki agent（独立仓库，克隆进来）
-└── webui/                           # `openprogram web` — 浏览器 UI
-skills/                              # 用于 agent 集成的 SKILL.md 文件
-examples/                            # 可运行的示例
-tests/                               # pytest 测试套件
+openprogram/                         # Python 产品包
+├── agent/                           # 模型循环、工具、目标与压缩
+├── agentic_programming/             # @agentic_function 运行时与上下文
+├── programs/
+│   ├── _registry.py                 # 内置 Agentic Function 注册表
+│   ├── agentic_functions/           # 内置 @agentic_function 模块
+│   ├── functions/                   # 确定性 @function 工具
+│   └── applications/                # 用户登记的外部 Program checkout
+├── channels/                        # 外部聊天渠道
+├── scheduler/                       # 持久化调度与执行
+└── webui/                           # worker API 与 WebSocket 层
+cli/                                 # TypeScript Ink 终端客户端
+web/                                 # Next.js 界面
+desktop/                             # Electron 桌面宿主
+tests/                               # pytest：<layer>/<product-domain>
+scripts/                             # 可执行的仓库维护工具
+tools/                               # 可导入的发布和文档工具
 ```
+
+各 workspace 的入口说明见
+[`openprogram/`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/README.md)、
+[`web/`](https://github.com/Fzkuji/OpenProgram/blob/main/web/README.md) 和
+[`cli/`](https://github.com/Fzkuji/OpenProgram/blob/main/cli/README.md)。完整归属规则见
+[Repository Structure](reference/design/repository-structure.html)。
 
 </details>
 
