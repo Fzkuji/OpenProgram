@@ -12,56 +12,11 @@ import { ChevronRight, ChevronDown } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
 import { useSessionStore } from "@/lib/session-store";
 import { MENU_SEPARATOR } from "@/components/chat/top-bar/menu-styles";
-
-interface ToolItem {
-  name: string;
-  tokens: number;
-  deferred: boolean;
-}
-interface SkillItem {
-  name: string;
-  source: string;
-  tokens: number;
-}
-interface MemItem {
-  path: string;
-  tokens: number;
-}
-interface McpItem {
-  server: string;
-  name: string;
-  tokens: number;
-  deferred: boolean;
-}
-
-interface Breakdown {
-  messages?: number;
-  system_prompt?: number;
-  skills?: number;
-  memory?: number;
-  tools_schema?: number;
-  tools_deferred_catalog?: number;
-  mcp_tools?: number;
-  mcp_tools_deferred?: number;
-  unclassified?: number;
-  classified_estimate?: number;
-  classification_scale?: number;
-  input_used?: number;
-  free_space?: number;
-  /** 服务端的统一占用记录 —— 和圆环读的是同一个字段，两处永远一致。
-   *  basis="measured" 表示来自刚完成的真实请求，"estimated" 表示图变了
-   *  之后按当前图重估。 */
-  total_used?: number;
-  window?: number;
-  basis?: string;
-  tools?: ToolItem[];
-  skills_detail?: SkillItem[];
-  memory_detail?: MemItem[];
-  mcp_detail?: McpItem[];
-  context_window?: number;
-  model?: string;
-  error?: string;
-}
+import {
+  readContextBreakdownCache,
+  refreshContextBreakdown,
+  type ContextBreakdown as Breakdown,
+} from "@/lib/state/context-breakdown-cache";
 
 interface Props {
   sessionId: string | null;
@@ -163,11 +118,18 @@ function Section({
 
 export function ContextBreakdownPanel({ sessionId, headId }: Props) {
   const { text } = useTranslation();
-  const [data, setData] = useState<Breakdown | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<Breakdown | null>(() =>
+    readContextBreakdownCache(sessionId, headId),
+  );
+  const [loading, setLoading] = useState(() =>
+    readContextBreakdownCache(sessionId, headId) === null,
+  );
   const [open, setOpen] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
+    const cached = readContextBreakdownCache(sessionId, headId);
+    setData(cached);
+    setLoading(cached === null);
     if (!sessionId) {
       // 新会话还没有 id：没有东西可取，直接落空态——否则初始
       // loading=true 永远悬着，空会话点开就是一张永久 Loading 卡。
@@ -175,11 +137,10 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
       setLoading(false);
       return;
     }
-    setLoading(true);
-    const qs = headId ? `?head_id=${encodeURIComponent(headId)}` : "";
-    fetch(`/api/sessions/${encodeURIComponent(sessionId)}/context${qs}`)
-      .then((r) => r.json())
-      .then((d: Breakdown) => {
+    const controller = new AbortController();
+    refreshContextBreakdown(sessionId, headId, controller.signal)
+      .then((d) => {
+        if (!d || controller.signal.aborted) return;
         setData(d);
         // Same record, one writer: whatever the panel just read becomes
         // what the ring shows too, so opening the panel can never reveal
@@ -193,8 +154,10 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
           );
         }
       })
-      .catch((e) => setData({ error: String(e) }))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
   }, [sessionId, headId]);
 
   // 窗口和总占用都用服务端 stats 里的那一份（圆环读的同一个字段）。

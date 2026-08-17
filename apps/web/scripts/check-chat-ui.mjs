@@ -31,6 +31,8 @@ const runtimeHelpers = source("lib/runtime-bridge/helpers.ts");
 const markdownRenderer = source("lib/runtime-bridge/markdown-render.ts");
 const chatVisualSpec = source("../../docs/reference/design/ui/chat-turn-visual-spec.html");
 const controlsCluster = source("components/chat/composer/controls/controls-cluster.tsx");
+const contextBreakdownPanel = source("components/chat/context-breakdown-panel.tsx");
+const contextBadge = source("components/chat/context-badge.tsx");
 const composerCss = source("components/chat/composer/composer.module.css");
 const workingDirChips = source("components/chat/top-bar/working-dir-chips.tsx");
 const chatCss = readChatCss(root);
@@ -41,6 +43,127 @@ const lightTheme = source("app/styles/themes/light.css");
 const beigeDarkTheme = source("app/styles/themes/beige-dark.css");
 const beigeLightTheme = source("app/styles/themes/beige-light.css");
 const auroraTheme = source("app/styles/themes/aurora.css");
+
+// Context statistics use stale-while-revalidate semantics. Once a session
+// branch has loaded successfully, reopening its panel must synchronously show
+// that value while a fresh request runs in the background.
+const contextBreakdownCache = await import("../lib/state/context-breakdown-cache.ts");
+const cachedBreakdown = { total_used: 12_345, window: 200_000 };
+contextBreakdownCache.writeContextBreakdownCache("session-a", "head-a", cachedBreakdown);
+assert.deepEqual(
+  contextBreakdownCache.readContextBreakdownCache("session-a", "head-a"),
+  cachedBreakdown,
+);
+assert.equal(contextBreakdownCache.readContextBreakdownCache("session-a", "head-b"), null);
+assert.equal(contextBreakdownCache.readContextBreakdownCache("session-b", "head-a"), null);
+const cachedRefresh = { total_used: 13_000, window: 200_000 };
+contextBreakdownCache.writeContextBreakdownCache("session-c", "head-c", cachedRefresh);
+assert.deepEqual(
+  await contextBreakdownCache.refreshContextBreakdown(
+    "session-c",
+    "head-c",
+    new AbortController().signal,
+    async () => { throw new Error("offline"); },
+  ),
+  cachedRefresh,
+  "a failed background refresh must retain the last successful value",
+);
+let resolveLate;
+const lateResponse = new Promise((resolve) => { resolveLate = resolve; });
+const staleController = new AbortController();
+const staleRefresh = contextBreakdownCache.refreshContextBreakdown(
+  "session-stale",
+  "head-old",
+  staleController.signal,
+  () => lateResponse,
+);
+staleController.abort();
+resolveLate({ json: async () => ({ total_used: 99_999, window: 200_000 }) });
+assert.equal(await staleRefresh, null, "an aborted old request must not publish its result");
+assert.equal(
+  contextBreakdownCache.readContextBreakdownCache("session-stale", "head-old"),
+  null,
+  "an aborted old request must not write the cache",
+);
+let resolveOlder;
+let resolveNewer;
+const older = contextBreakdownCache.refreshContextBreakdown(
+  "session-race",
+  "head-race",
+  new AbortController().signal,
+  () => new Promise((resolve) => { resolveOlder = resolve; }),
+);
+const newer = contextBreakdownCache.refreshContextBreakdown(
+  "session-race",
+  "head-race",
+  new AbortController().signal,
+  () => new Promise((resolve) => { resolveNewer = resolve; }),
+);
+resolveNewer({ json: async () => ({ total_used: 200, window: 1_000 }) });
+assert.equal((await newer).total_used, 200);
+resolveOlder({ json: async () => ({ total_used: 100, window: 1_000 }) });
+assert.equal(await older, null, "an older same-key response must be discarded");
+assert.equal(
+  contextBreakdownCache.readContextBreakdownCache("session-race", "head-race").total_used,
+  200,
+  "an older same-key response must not overwrite the newer cache value",
+);
+for (let i = 0; i < 32; i += 1) {
+  contextBreakdownCache.writeContextBreakdownCache(`lru-${i}`, null, { total_used: i });
+}
+assert.equal(contextBreakdownCache.readContextBreakdownCache("lru-0", null).total_used, 0);
+contextBreakdownCache.writeContextBreakdownCache("lru-32", null, { total_used: 32 });
+assert.equal(
+  contextBreakdownCache.readContextBreakdownCache("lru-1", null),
+  null,
+  "the 33rd value must evict the least-recently-used entry",
+);
+assert.equal(
+  contextBreakdownCache.readContextBreakdownCache("lru-0", null).total_used,
+  0,
+  "reading an entry must promote it before capacity eviction",
+);
+assert.equal(contextBreakdownCache.readContextBreakdownCache("lru-2", null).total_used, 2);
+assert.equal(contextBreakdownCache.readContextBreakdownCache("lru-31", null).total_used, 31);
+assert.equal(contextBreakdownCache.readContextBreakdownCache("lru-32", null).total_used, 32);
+let resolveEvictedOlder;
+let resolveEvictedNewer;
+const evictedOlder = contextBreakdownCache.refreshContextBreakdown(
+  "session-evicted-race",
+  "head",
+  new AbortController().signal,
+  () => new Promise((resolve) => { resolveEvictedOlder = resolve; }),
+);
+for (let i = 0; i < 32; i += 1) {
+  contextBreakdownCache.writeContextBreakdownCache(`race-fill-${i}`, null, { total_used: i });
+}
+const evictedNewer = contextBreakdownCache.refreshContextBreakdown(
+  "session-evicted-race",
+  "head",
+  new AbortController().signal,
+  () => new Promise((resolve) => { resolveEvictedNewer = resolve; }),
+);
+resolveEvictedNewer({ json: async () => ({ total_used: 400, window: 1_000 }) });
+assert.equal((await evictedNewer).total_used, 400);
+resolveEvictedOlder({ json: async () => ({ total_used: 300, window: 1_000 }) });
+assert.equal(await evictedOlder, null);
+assert.equal(
+  contextBreakdownCache.readContextBreakdownCache("session-evicted-race", "head").total_used,
+  400,
+  "LRU eviction must not reset same-key request ordering",
+);
+assert.match(
+  contextBreakdownPanel,
+  /useState<Breakdown \| null>\(\(\)\s*=>\s*readContextBreakdownCache\(sessionId, headId\),?\s*\)/,
+);
+assert.match(contextBreakdownPanel, /refreshContextBreakdown\(sessionId, headId, controller\.signal\)/);
+assert.match(contextBreakdownPanel, /new AbortController\(\)/);
+assert.doesNotMatch(contextBreakdownPanel, /if \(!sessionId\)[\s\S]{0,300}setLoading\(true\)/);
+assert.match(
+  contextBadge,
+  /<ContextBreakdownPanel\s+key=\{JSON\.stringify\(\[sid, headId \?\? null\]\)\}/,
+  "changing the open panel's session/head must synchronously remount it with the new cache key",
+);
 
 // Mouse focus and non-tab buttons never draw an outer halo. Top tabs retain a
 // theme-owned focus cue, so focus does not impose one fixed product colour.

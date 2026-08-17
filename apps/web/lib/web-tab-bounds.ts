@@ -17,21 +17,19 @@ export function measureWebTabBounds(
   };
 }
 
-export function overlayIntersectsWebTab(
+export function isWebTabOccluded(
   bounds: WebTabBounds,
-  overlays: Iterable<Pick<Element, "getBoundingClientRect">>,
+  occluders: Iterable<Pick<Element, "getBoundingClientRect">>,
 ): boolean {
-  const pageRight = bounds.x + bounds.width;
-  const pageBottom = bounds.y + bounds.height;
-  for (const overlay of overlays) {
-    const rect = overlay.getBoundingClientRect();
+  const right = bounds.x + bounds.width;
+  const bottom = bounds.y + bounds.height;
+  for (const occluder of occluders) {
+    const rect = occluder.getBoundingClientRect();
     if (
       rect.width > 0
       && rect.height > 0
-      && rect.left < pageRight
-      && rect.left + rect.width > bounds.x
-      && rect.top < pageBottom
-      && rect.top + rect.height > bounds.y
+      && Math.max(bounds.x, rect.left) < Math.min(right, rect.right)
+      && Math.max(bounds.y, rect.top) < Math.min(bottom, rect.bottom)
     ) {
       return true;
     }

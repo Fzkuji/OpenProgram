@@ -87,6 +87,16 @@
     <tr><td>窄态</td><td>与常态同一 surface，不因文字视觉隐藏而改变</td><td>四个核心触发器仍为 20px 图标按钮</td></tr>
   </tbody></table></div>
 
+  <h2>Context 统计弹层的数据时序</h2>
+  <p><code>ContextBreakdownPanel</code> 在关闭时会卸载。若每次挂载都把已有结果清空并进入 <code>loading</code>，用户重复打开同一会话、同一 DAG 分支时会先看到一张只有“Loading…”的卡片，再看到统计内容。网络请求即使很短，这次整卡替换仍然可见。</p>
+  <div class="table-wrap"><table><thead><tr><th>场景</th><th>立即显示</th><th>后台行为</th></tr></thead><tbody>
+    <tr><td>同一会话、同一分支再次打开</td><td>上一次成功取得的完整统计</td><td>重新请求并原位更新，不进入整卡 loading</td></tr>
+    <tr><td>首次打开或缓存不存在</td><td>既有 loading 空态</td><td>请求当前统计，成功后写入缓存</td></tr>
+    <tr><td>切换会话或 DAG 分支</td><td>只读取新 <code>sessionId + headId</code> 对应的缓存</td><td>取消旧请求；旧响应不得覆盖当前面板</td></tr>
+    <tr><td>请求失败且已有缓存</td><td>继续保留缓存内容</td><td>本次刷新失败不得用错误页替换可用统计</td></tr>
+  </tbody></table></div>
+  <p>缓存只驻留当前前端进程，按最近使用顺序保留 32 个会话分支，不写入持久存储，不设置定时刷新，不新增依赖。同一 key 的并发刷新只允许最新请求更新缓存。服务端仍是统计数据的唯一来源；缓存只消除重复打开时的过渡画面。</p>
+
   <div class="grid">
     <section class="card"><h3>收缩规则</h3><ol><li>environment chips 的 label 不参与 flex 收缩，不出现半截文字。</li><li>完整内容溢出时，全部 label 同时执行淡出和宽度收起；空间恢复后同时反向恢复。</li><li>各图标触发器保持尺寸、原顺序和操作能力。</li></ol></section>
     <section class="card"><h3>交互与无障碍</h3><ul><li>点击图标打开原菜单。</li><li>chat 与 execution 使用不同图标。</li><li>effort 图标颜色继续反映当前级别。</li><li>focus、tooltip 和 accessible name 不随文字隐藏而消失。</li></ul></section>
@@ -94,7 +104,7 @@
   </div>
 
   <h2>实施 brief 与验收</h2>
-  <p>上排实现集中在 <code>apps/web/components/chat/composer/environment-row/</code>：组件、测量 hook、样式和两个专用 chip 按职责分文件。<code>composer/index.tsx</code> 只渲染 EnvironmentRow；独立检查由 <code>scripts/check-composer-environment-row.mjs</code> 提供，并纳入现有 <code>check:chat-ui</code> 入口。不修改 Popover、Menu、provider、session store、提交逻辑或底部 controls。</p>
+  <p>上排实现集中在 <code>apps/web/components/chat/composer/environment-row/</code>：组件、测量 hook、样式和两个专用 chip 按职责分文件。<code>composer/index.tsx</code> 只渲染 EnvironmentRow。Context 缓存批次限定为 <code>apps/web/components/chat/context-badge.tsx</code>、<code>context-breakdown-panel.tsx</code> 和 <code>apps/web/lib/state/context-breakdown-cache.ts</code>。独立检查由 <code>apps/web/scripts/check-composer-environment-row.mjs</code> 提供，并纳入 <code>npm --prefix apps/web run check:chat-ui</code>。这些批次不修改 Popover、Menu、provider、session store 或提交逻辑。</p>
   <ol>
     <li>public-entry 检查必须证明 environment chips 由实际溢出切换单一 <code>data-compact</code> 状态，不存在固定宽度特例或 label 的 <code>flex-shrink:1</code>。</li>
     <li>状态、surface、项目、目录、Fit、缩放百分比和 Legend 必须共用同一动画规则；不得使用 <code>display:none</code> 或只收起其中一部分。</li>
@@ -102,6 +112,8 @@
     <li>分别点击 permission、chat model、execution model 和 effort 图标，原菜单或面板正常展开。</li>
     <li>把 pane 拉宽到完整内容可容纳后，所有文字一起恢复；重新选择 split、切换聊天/DAG 和刷新不改变该行为。</li>
     <li>底部所有可见控制按钮在未 hover 时均有非透明的 <code>--chip-bg</code> surface，computed border 为 0 且 shadow 为 none；hover 或菜单展开时背景必须比常态更明显。键盘 <code>focus-visible</code> 指示不属于常态边框，继续保留。</li>
+    <li>Context 统计第一次成功加载后，关闭并重新打开同一会话、同一分支必须立即复用缓存；后台刷新完成后更新缓存和圆环统计。</li>
+    <li>Context 缓存必须按会话与分支隔离；快速切换时取消过期请求，失败刷新不得覆盖已有缓存。</li>
   </ol>
 
   <h2>实现状态</h2>
@@ -112,6 +124,7 @@
     <tr><td>完整检查与默认安装版可见验收</td><td class="ok">完成：Web 全量检查、TypeScript、构建、desktop webtab/transfer、单元测试和默认安装版 CDP 验收均通过。</td></tr>
     <tr><td>底部控制按钮常态 surface</td><td class="ok">完成：常态仅使用 <code>--chip-bg</code> 填充，不增加边框或内描边；真实 App computed style 验证 border 为 0、shadow 为 none，hover/open 仅增强背景。</td></tr>
     <tr><td>Composer 职责目录</td><td class="ok">完成：输入、提交、mode、session state、附件和环境 chips 分别归入职责目录；输入、粘贴、图片附件与问题面板使用同目录 CSS Module。EnvironmentRow 只接受通用尾部内容，不包含 DAG id 或控制逻辑。</td></tr>
+    <tr><td>Context 统计重复打开</td><td class="ok">已实现：缓存按会话与分支隔离；重复打开立即显示上次结果并后台刷新。<code>check:chat-ui</code> 可执行验证缓存隔离、迟到请求取消、同 key 反序响应、刷新失败保留、32 项容量淘汰，并约束面板按会话与分支 key 同步重建。</td></tr>
   </tbody></table></div>
   <p class="sub">可见验收使用实际 <code>/Applications/OpenProgram.app</code>、默认 <code>18100</code> 页面和 <code>9223</code> CDP。测试操作真实 permission、more、active tool、chat model、execution model、effort 与 context 触发器，确认常态无边框、hover/open 背景增强、窄态无重叠且菜单可打开，并在结束时关闭菜单、恢复焦点与原始页面样式。</p>
 </main></body></html>

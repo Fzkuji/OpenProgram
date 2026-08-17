@@ -36,6 +36,7 @@ export function ScopedDropOverlay() {
   };
   return (
     <div
+      data-native-view-occluder="true"
       style={{
         ...style,
         zIndex: 10_000,

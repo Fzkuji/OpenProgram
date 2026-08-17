@@ -163,6 +163,7 @@ export function PermissionBadge() {
       {bypassConfirm && typeof document !== "undefined"
         ? createPortal(
             <div
+              data-native-view-occluder="true"
               onClick={() => setBypassConfirm(false)}
               style={{
                 position: "fixed",
