@@ -78,6 +78,7 @@ openprogram/webui/_frontend/
 apps/cli/vendor/ink/package-lock.json
 
 # Per-user webui runtime state (favourites, folders, icons) — not code
+openprogram/webui/functions_meta.json
 openprogram/webui/programs_meta.json
 .agent_cron_test/
 .agent_tmp/

@@ -274,8 +274,17 @@ def test_mutable_profile_state_is_not_tracked_in_the_core_package() -> None:
             text=True,
         ).stdout.splitlines()
     )
-    assert "openprogram/webui/functions_meta.json" not in tracked
-    assert "openprogram/webui/programs_meta.json" not in tracked
+    for relative in (
+        "openprogram/webui/functions_meta.json",
+        "openprogram/webui/programs_meta.json",
+    ):
+        assert relative not in tracked
+        subprocess.run(
+            ["git", "check-ignore", "--no-index", "--", relative],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+        )
 
 
 def test_source_checkout_server_wins_over_an_older_installed_package(
