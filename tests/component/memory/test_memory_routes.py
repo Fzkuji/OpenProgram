@@ -172,6 +172,15 @@ def test_memory_refs_expose_stable_block_identity(client):
     assert rows[0]["workspace_id"].startswith("w-")
 
 
+def test_topics_list_excludes_the_dedicated_core_topic(client, memory):
+    (memory / "topics/core.md").write_text("# Core\n", encoding="utf-8")
+
+    response = client.get("/api/memory/topics")
+
+    assert response.status_code == 200
+    assert [page["path"] for page in response.json()] == ["note.md"]
+
+
 def test_ensure_initializes_git_and_snapshots_existing_memory(
     tmp_path, monkeypatch,
 ):
