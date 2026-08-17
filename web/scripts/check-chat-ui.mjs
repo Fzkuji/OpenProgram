@@ -30,6 +30,7 @@ const markdownRenderer = source("lib/runtime-bridge/markdown-render.ts");
 const chatVisualSpec = source("../docs/reference/design/ui/chat-turn-visual-spec.html");
 const controlsCluster = source("components/chat/composer/controls/controls-cluster.tsx");
 const contextBreakdownPanel = source("components/chat/context-breakdown-panel.tsx");
+const contextBadge = source("components/chat/context-badge.tsx");
 const composerCss = source("components/chat/composer/composer.module.css");
 const chatCss = readChatCss(root);
 const baseCss = source("app/styles/base.css");
@@ -52,13 +53,47 @@ assert.deepEqual(
 );
 assert.equal(contextBreakdownCache.readContextBreakdownCache("session-a", "head-b"), null);
 assert.equal(contextBreakdownCache.readContextBreakdownCache("session-b", "head-a"), null);
+const cachedRefresh = { total_used: 13_000, window: 200_000 };
+contextBreakdownCache.writeContextBreakdownCache("session-c", "head-c", cachedRefresh);
+assert.deepEqual(
+  await contextBreakdownCache.refreshContextBreakdown(
+    "session-c",
+    "head-c",
+    new AbortController().signal,
+    async () => { throw new Error("offline"); },
+  ),
+  cachedRefresh,
+  "a failed background refresh must retain the last successful value",
+);
+let resolveLate;
+const lateResponse = new Promise((resolve) => { resolveLate = resolve; });
+const staleController = new AbortController();
+const staleRefresh = contextBreakdownCache.refreshContextBreakdown(
+  "session-stale",
+  "head-old",
+  staleController.signal,
+  () => lateResponse,
+);
+staleController.abort();
+resolveLate({ json: async () => ({ total_used: 99_999, window: 200_000 }) });
+assert.equal(await staleRefresh, null, "an aborted old request must not publish its result");
+assert.equal(
+  contextBreakdownCache.readContextBreakdownCache("session-stale", "head-old"),
+  null,
+  "an aborted old request must not write the cache",
+);
 assert.match(
   contextBreakdownPanel,
   /useState<Breakdown \| null>\(\(\)\s*=>\s*readContextBreakdownCache\(sessionId, headId\),?\s*\)/,
 );
-assert.match(contextBreakdownPanel, /writeContextBreakdownCache\(sessionId, headId, d\)/);
+assert.match(contextBreakdownPanel, /refreshContextBreakdown\(sessionId, headId, controller\.signal\)/);
 assert.match(contextBreakdownPanel, /new AbortController\(\)/);
 assert.doesNotMatch(contextBreakdownPanel, /if \(!sessionId\)[\s\S]{0,300}setLoading\(true\)/);
+assert.match(
+  contextBadge,
+  /<ContextBreakdownPanel\s+key=\{JSON\.stringify\(\[sid, headId \?\? null\]\)\}/,
+  "changing the open panel's session/head must synchronously remount it with the new cache key",
+);
 
 // Mouse focus and non-tab buttons never draw an outer halo. Top tabs retain a
 // theme-owned focus cue, so focus does not impose one fixed product colour.

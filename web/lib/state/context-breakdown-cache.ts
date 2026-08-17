@@ -42,3 +42,33 @@ export function writeContextBreakdownCache(
 ): void {
   cache.set(JSON.stringify([sessionId, headId ?? null]), value);
 }
+
+type ContextBreakdownFetcher = (
+  url: string,
+  init: { signal: AbortSignal },
+) => Promise<{ json: () => Promise<ContextBreakdown> }>;
+
+export async function refreshContextBreakdown(
+  sessionId: string,
+  headId: string | null | undefined,
+  signal: AbortSignal,
+  fetcher: ContextBreakdownFetcher = (url, init) => fetch(url, init),
+): Promise<ContextBreakdown | null> {
+  const cached = readContextBreakdownCache(sessionId, headId);
+  const qs = headId ? `?head_id=${encodeURIComponent(headId)}` : "";
+  try {
+    const response = await fetcher(
+      `/api/sessions/${encodeURIComponent(sessionId)}/context${qs}`,
+      { signal },
+    );
+    if (signal.aborted) return null;
+    const data = await response.json();
+    if (signal.aborted) return null;
+    if (data.error) return cached ?? data;
+    writeContextBreakdownCache(sessionId, headId, data);
+    return data;
+  } catch (error) {
+    if (signal.aborted) return null;
+    return cached ?? { error: String(error) };
+  }
+}

@@ -87,7 +87,7 @@
   </div>
 
   <h2>实施 brief 与验收</h2>
-  <p>生产文件限定为 <code>web/components/chat/composer/composer.module.css</code>、<code>controls/controls-cluster.tsx</code>、<code>controls/thinking-effort-pill.tsx</code> 和纯函数 <code>web/lib/effort-color.ts</code>。纯函数只抽取既有 effort 逐级颜色计算，让原 pill 与窄宽度图标使用同一来源。回归入口使用现有 <code>npm --prefix web run check:chat-ui</code>。不修改 Popover、Menu、provider、session store 或提交逻辑。</p>
+  <p>响应式控制栏批次的生产文件限定为 <code>web/components/chat/composer/composer.module.css</code>、<code>controls/controls-cluster.tsx</code>、<code>controls/thinking-effort-pill.tsx</code> 和纯函数 <code>web/lib/effort-color.ts</code>。Context 缓存批次限定为 <code>web/components/chat/context-badge.tsx</code>、<code>context-breakdown-panel.tsx</code> 和 <code>web/lib/state/context-breakdown-cache.ts</code>。回归入口共用现有 <code>npm --prefix web run check:chat-ui</code>。不修改 Popover、Menu、provider、session store、CSS 或提交逻辑。</p>
   <ol>
     <li>public-entry RED 必须证明 <code>.composer-bottom-row ≤ 560px</code> 时 permission、chat model、execution model 和 effort 的文字均视觉隐藏。</li>
     <li>同一规则必须证明四个触发器的图标仍显示；不得使用 <code>display:none</code> 隐藏完整 badge 或 effort host。至少两个非 <code>max</code> effort 级别必须生成不同图标颜色。</li>

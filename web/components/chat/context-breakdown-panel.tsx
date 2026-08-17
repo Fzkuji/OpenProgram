@@ -14,7 +14,7 @@ import { useSessionStore } from "@/lib/session-store";
 import { MENU_SEPARATOR } from "@/components/chat/top-bar/menu-styles";
 import {
   readContextBreakdownCache,
-  writeContextBreakdownCache,
+  refreshContextBreakdown,
   type ContextBreakdown as Breakdown,
 } from "@/lib/state/context-breakdown-cache";
 
@@ -138,18 +138,9 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
       return;
     }
     const controller = new AbortController();
-    const qs = headId ? `?head_id=${encodeURIComponent(headId)}` : "";
-    fetch(`/api/sessions/${encodeURIComponent(sessionId)}/context${qs}`, {
-      signal: controller.signal,
-    })
-      .then((r) => r.json())
-      .then((d: Breakdown) => {
-        if (controller.signal.aborted) return;
-        if (d.error) {
-          if (!cached) setData(d);
-          return;
-        }
-        writeContextBreakdownCache(sessionId, headId, d);
+    refreshContextBreakdown(sessionId, headId, controller.signal)
+      .then((d) => {
+        if (!d || controller.signal.aborted) return;
         setData(d);
         // Same record, one writer: whatever the panel just read becomes
         // what the ring shows too, so opening the panel can never reveal
@@ -162,9 +153,6 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
             d.window || d.context_window || null,
           );
         }
-      })
-      .catch((e) => {
-        if (!controller.signal.aborted && !cached) setData({ error: String(e) });
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);

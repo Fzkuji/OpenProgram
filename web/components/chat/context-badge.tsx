@@ -186,6 +186,7 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
               onClick={(e) => e.stopPropagation()}
             >
               <ContextBreakdownPanel
+                key={JSON.stringify([sid, headId ?? null])}
                 sessionId={sid}
                 headId={headId ?? null}
                 onClose={() => setPanelOpen(false)}
