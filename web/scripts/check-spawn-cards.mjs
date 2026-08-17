@@ -73,6 +73,51 @@ applyChatWsMessage({
   data: { session_id: SID, msg_id: UID },
 });
 
+// A function invoked by this assistant sends tree_update with the assistant
+// id as its owner. It must enrich the existing Functions timeline, never
+// create a second top-level runtime row below the assistant message.
+send({
+  type: "tool_use",
+  tool: "web_use",
+  tool_call_id: "tc_web_use",
+  input: '{"command":"list_pages"}',
+});
+applyChatWsMessage({
+  type: "chat_response",
+  data: {
+    type: "tree_update",
+    session_id: SID,
+    msg_id: RID,
+    function: "web_use",
+    tree: { path: "web-use-running", name: "web_use", status: "running" },
+  },
+});
+assert.equal(
+  useSessionStore.getState().messagesById[`${RID}_reply`],
+  undefined,
+  "an agent-owned function tree must not create a standalone runtime row",
+);
+assert.deepEqual(
+  reply().callRoots,
+  [{ path: "web-use-running", name: "web_use", status: "running" }],
+  "the function tree must attach to the owning assistant timeline",
+);
+applyChatWsMessage({
+  type: "chat_response",
+  data: {
+    type: "tree_update",
+    session_id: SID,
+    msg_id: RID,
+    function: "web_use",
+    tree: { path: "web-use-node-1", name: "web_use", status: "completed" },
+  },
+});
+assert.deepEqual(
+  reply().callRoots,
+  [{ path: "web-use-node-1", name: "web_use", status: "completed" }],
+  "the terminal exact tree must replace its synthetic running tree",
+);
+
 // The spawning tool call, then the spawn announcing itself as running.
 send({ type: "tool_use", tool: "task", tool_call_id: "tc_1", input: "{}" });
 const runStartedAt = reply().timestamp;

@@ -299,6 +299,29 @@ function handleResponse(d: ChatResponseData | undefined): void {
     // creating a phantom `<runtime_id>_reply` placeholder.
     const store0 = useSessionStore.getState();
     const existingRuntime = d.msg_id ? store0.messagesById[d.msg_id] : undefined;
+    // A model-issued function is owned by the assistant reply whose id is
+    // carried in msg_id. Keep its live DAG in that reply's execution strip;
+    // creating `<assistant-id>_reply` here duplicates the same call as a
+    // standalone RuntimeBlock below the assistant message.
+    if (existingRuntime?.role === "assistant" && existingRuntime.display !== "runtime") {
+      const incoming = d.tree as { path?: string; name?: string; status?: string };
+      const roots = [
+        ...((existingRuntime.callRoots as typeof incoming[] | undefined) ?? []),
+      ];
+      const exact = incoming.path
+        ? roots.findIndex((root) => root.path === incoming.path)
+        : -1;
+      const runningSameFunction = exact < 0
+        ? roots.findIndex((root) =>
+            root.status === "running"
+            && root.name === (incoming.name || d.function))
+        : -1;
+      const replaceAt = exact >= 0 ? exact : runningSameFunction;
+      if (replaceAt >= 0) roots[replaceAt] = incoming;
+      else roots.push(incoming);
+      store0.updateMessage(sid, d.msg_id!, { callRoots: roots as never });
+      return;
+    }
     if (existingRuntime && existingRuntime.display === "runtime") {
       store0.updateMessage(sid, d.msg_id!, {
         function: d.function ?? existingRuntime.function,
