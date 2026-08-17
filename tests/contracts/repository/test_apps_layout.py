@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import re
+import subprocess
+import sys
 
 import openprogram
 
@@ -108,6 +111,40 @@ def test_server_application_assembly_is_owned_by_apps_workspace() -> None:
     assert (ROOT / "openprogram/webui/server.py").read_text(
         encoding="utf-8"
     ).count("sys.modules[__name__] = _server") == 1
+
+
+def test_source_checkout_server_wins_over_an_older_installed_package(
+    tmp_path,
+) -> None:
+    stale_package = tmp_path / "openprogram_server"
+    stale_package.mkdir()
+    (stale_package / "__init__.py").write_text("", encoding="utf-8")
+    (stale_package / "server.py").write_text("STALE = True\n", encoding="utf-8")
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(tmp_path)
+    code = """
+import pathlib
+import openprogram_server.server as stale
+assert stale.STALE is True
+import openprogram.webui.server as legacy
+import openprogram_server.server as canonical
+assert canonical is legacy
+assert not hasattr(canonical, 'STALE')
+assert pathlib.Path(canonical.__file__).resolve() == pathlib.Path(
+    'apps/server/openprogram_server/server.py'
+).resolve()
+"""
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_current_developer_commands_use_apps_workspaces() -> None:

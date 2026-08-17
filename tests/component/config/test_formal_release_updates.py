@@ -38,6 +38,16 @@ def test_worker_start_does_not_apply_product_updates():
     assert "background_check_and_apply" not in source
 
 
+def test_release_wheel_probe_runs_outside_the_checkout():
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+
+    assert 'probe_dir="$(mktemp -d)"' in workflow
+    assert '(cd "$probe_dir"' in workflow
+    assert "python -P -c" in workflow
+    assert "assert canonical is legacy" in workflow
+    assert "is_relative_to(checkout)" in workflow
+
+
 def test_system_version_reports_managed_release(monkeypatch):
     from openprogram.updater.detect import InstallMethod
     from openprogram.webui.routes.config import register

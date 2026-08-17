@@ -30,7 +30,10 @@ jobs:
         run: |
           python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram/webui/_frontend/index.html'
           python -m zipfile -l dist/openprogram-*.whl | grep 'openprogram_server/server.py'
-          uv run --with "$(find dist -name 'openprogram-*.whl' -print -quit)" --no-project -- python -c 'import openprogram_server.server as canonical; import openprogram.webui.server as legacy; from openprogram.webui.frontend import out_dir; assert canonical is legacy; assert (out_dir() / "index.html").is_file()'
+          wheel_path="$(realpath "$(find dist -name 'openprogram-*.whl' -print -quit)")"
+          checkout_path="$GITHUB_WORKSPACE"
+          probe_dir="$(mktemp -d)"
+          (cd "$probe_dir" && OPENPROGRAM_CHECKOUT="$checkout_path" uv run --with "$wheel_path" --no-project -- python -P -c 'from pathlib import Path; import os, openprogram, openprogram_server.server as canonical; import openprogram.webui.server as legacy; import openprogram.webui.frontend as frontend; checkout = Path(os.environ["OPENPROGRAM_CHECKOUT"]).resolve(); modules = (openprogram, canonical, legacy, frontend); assert canonical is legacy; assert all(not Path(module.__file__).resolve().is_relative_to(checkout) for module in modules); assert (frontend.out_dir() / "index.html").is_file()')
       - uses: actions/upload-artifact@v7
         with:
           name: developer-python-distributions
