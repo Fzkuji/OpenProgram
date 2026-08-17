@@ -33,6 +33,14 @@ export function TabButton({ active, onClick, icon, children }: { active: boolean
   );
 }
 
+export function DisclosureChevron({ className }: { className: string }) {
+  return (
+    <svg viewBox="0 0 10 10" fill="currentColor" width="8" height="8" className={className} aria-hidden="true" focusable="false">
+      <path d="M2 3l3 4 3-4H2z"/>
+    </svg>
+  );
+}
+
 export function TreeGroup({ folder, pages, expanded, onToggle, selected, onSelect, forceOpen }: {
   folder: string;
   pages: TopicPage[];
@@ -48,9 +56,7 @@ export function TreeGroup({ folder, pages, expanded, onToggle, selected, onSelec
     <div className={styles.treeGroup}>
       {folder && (
         <button className={`${styles.folderRow} ${styles.sidebarRow}`} onClick={() => onToggle(folder)}>
-          <svg viewBox="0 0 10 10" fill="currentColor" width="8" height="8" className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ""}`}>
-            <path d="M2 3l3 4 3-4H2z"/>
-          </svg>
+          <DisclosureChevron className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ""}`} />
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" width="12" height="12">
             <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5H13A1.5 1.5 0 0 1 14.5 6v6A1.5 1.5 0 0 1 13 13.5H3.5A1.5 1.5 0 0 1 2 12V4.5z"/>
           </svg>

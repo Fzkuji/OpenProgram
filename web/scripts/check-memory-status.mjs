@@ -88,6 +88,15 @@ assert.match(memoryParts, /styles\.fileRow[^\n]*styles\.sidebarRow/);
 assert.match(memoryPage, /styles\.timelineYearSummary[^\n]*styles\.sidebarRow/);
 assert.match(memoryPage, /styles\.timelineDay[^\n]*styles\.sidebarRow/);
 assert.match(memoryPage, /styles\.contextHeader[^\n]*styles\.sidebarRow/);
+assert.match(memoryParts, /export function DisclosureChevron/);
+assert.match(memoryParts, /<path d="M2 3l3 4 3-4H2z"\/>/);
+assert.match(memoryParts, /<DisclosureChevron className=\{`\$\{styles\.chevron\}/);
+assert.match(memoryPage, /DisclosureChevron,/);
+assert.equal((memoryPage.match(/<DisclosureChevron className=\{styles\.timelineChevron\}/g) || []).length, 2);
+assert.doesNotMatch(memoryCss, /content:\s*["']›["']/);
+assert.match(cssRule(".timelineChevron"), /width:\s*8px/);
+assert.match(cssRule(".timelineChevron"), /height:\s*8px/);
+assert.match(memoryCss, /\.timelineYear\[open\][\s\S]*\.timelineChevron[\s\S]*transform:\s*rotate\(0deg\)/);
 assert.match(memoryCss, /@media\s*\(max-width:\s*720px\)[\s\S]*\.editorHeader\s*\{[^}]*flex-wrap:\s*wrap/);
 assert.match(memoryCss, /@media\s*\(max-width:\s*720px\)[\s\S]*\.editorActions\s*\{[^}]*width:\s*100%[^}]*flex-wrap:\s*wrap/);
 

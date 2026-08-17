@@ -760,17 +760,18 @@
   display: none;
 }
 
-.timelineYearSummary::before,
-.timelineMonthSummary::before {
-  content: "›";
-  width: 9px;
+.timelineChevron {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
   color: var(--text-muted);
-  transform: rotate(0deg);
+  transform: rotate(-90deg);
+  transition: transform 0.15s;
 }
 
-.timelineYear[open] > .timelineYearSummary::before,
-.timelineMonth[open] > .timelineMonthSummary::before {
-  transform: rotate(90deg);
+.timelineYear[open] > .timelineYearSummary > .timelineChevron,
+.timelineMonth[open] > .timelineMonthSummary > .timelineChevron {
+  transform: rotate(0deg);
 }
 
 .timelineYearSummary > span:last-child,
