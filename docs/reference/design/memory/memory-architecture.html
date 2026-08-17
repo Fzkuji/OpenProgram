@@ -1362,7 +1362,7 @@
   </div>
 
   <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；Timeline 按年、月、日折叠且不把派生文件重建时间显示成记录时间；Core 明确区分只读 Prompt preview 与可编辑 Source records；Topics 列表不显示 <code>core.md</code>，同一项目的不同 test 工作区必须在名称中可区分；小于 720px 时列表与详情互斥显示并提供返回路径；页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
-  <div class="legend"><b>实现状态：</b>本轮 Core、Timeline 与 Topic 整理方案已进入实现，尚未完成生产页面与正式 Memory 验收。</div>
+  <div class="legend"><b>本轮实现状态：</b>Core 的 Prompt preview / Source records 命名、注入状态卡和 Timeline 年/月/日折叠已进入生产代码，仍待默认 App 可视验收。三个项目 Topic 的目标名称与压缩后计数仍只是样稿数据，必须由后续结构化 Memory 事务写入正式工作区后才能标记完成。小于 720px 的列表/详情互斥结构属于整页改版目标，本轮没有实现，生产页面仍沿用现有纵向布局。</div>
 
   <h2 id="changes"><span class="num">10</span>统一修改接口</h2>
   <p class="lead">Memory 同时支持模型直接编辑 Topic 文件，以及模型或其他程序调用结构化接口。两种方式不互相替代；区别只在于调用方如何表达修改。所有修改最终进入同一套 Runtime 暂存、校验、派生视图、原子安装和 Git 流程。</p>
