@@ -20,7 +20,7 @@
  */
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 
@@ -84,6 +84,90 @@ function wsSend(payload: unknown): boolean {
 }
 
 const noop = () => {};
+
+const ENV_CHIP_COMPACT_HYSTERESIS = 12;
+
+/**
+ * Keep the environment row in one of two states: complete labels or icons.
+ * The row's contents differ between chat and DAG, so a fixed pane breakpoint
+ * cannot describe when it is full. Measure the row itself instead. The small
+ * hysteresis prevents repeated switching at the exact overflow boundary.
+ */
+function useCompactEnvironmentRow(ref: React.RefObject<HTMLDivElement | null>) {
+  useLayoutEffect(() => {
+    const row = ref.current;
+    if (!row) return;
+
+    let frame = 0;
+    let expandedWidth = 0;
+
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const available = row.clientWidth;
+        if (available <= 0) return;
+
+        const compact = row.dataset.compact === "true";
+        if (!compact) {
+          expandedWidth = Math.ceil(row.scrollWidth);
+          if (expandedWidth > available + 1) row.dataset.compact = "true";
+          return;
+        }
+
+        if (available >= expandedWidth + ENV_CHIP_COMPACT_HYSTERESIS) {
+          delete row.dataset.compact;
+          // Re-check after the labels occupy space again. This also handles a
+          // content change that happened while the row was compact.
+          frame = requestAnimationFrame(measure);
+        }
+      });
+    };
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    resizeObserver?.observe(row);
+
+    const mutationObserver =
+      typeof MutationObserver === "undefined"
+        ? null
+        : new MutationObserver((records) => {
+            // The zoom readout changes on every wheel gesture. Its text does
+            // not change the control's intrinsic width, so it must not reset
+            // the compact state while the user zooms.
+            const isInside = (node: Node, selector: string) =>
+              node instanceof Element
+                ? Boolean(node.closest(selector))
+                : Boolean(node.parentElement?.closest(selector));
+            if (
+              records.every(
+                (record) =>
+                  isInside(record.target, ".dag-hud-zoom") ||
+                  isInside(record.target, ".dag-legend"),
+              )
+            ) {
+              return;
+            }
+            // DAG controls are portaled into this row. Re-expand once so their
+            // new intrinsic width is measured, then settle into the same state.
+            expandedWidth = 0;
+            delete row.dataset.compact;
+            measure();
+          });
+    mutationObserver?.observe(row, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+
+    measure();
+    return () => {
+      cancelAnimationFrame(frame);
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
+      delete row.dataset.compact;
+    };
+  }, [ref]);
+}
 
 /**
  * @param boundSessionId  Render this composer against a SPECIFIC session
@@ -389,6 +473,8 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // The stick-to-bottom ResizeObserver on #chatMessages then re-pins, so
   // a reader parked at the bottom gets the last message pushed fully out.
   const inputAreaRef = useRef<HTMLDivElement | null>(null);
+  const envChipsRef = useRef<HTMLDivElement | null>(null);
+  useCompactEnvironmentRow(envChipsRef);
   useEffect(() => {
     // Split-pane composers measure into their own pane var — only the
     // focused shell's composer owns the root-level var.
@@ -811,7 +897,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           still lands on the wrapper top edge; .inputArea is bottom-
           anchored absolute, so this row grows the composer upward
           without shifting the transcript. */}
-      <div className={styles.envChips}>
+      <div ref={envChipsRef} className={styles.envChips}>
         <StatusChip owningId={bound === null} />
         <SurfaceChip
           sessionId={currentSessionId}
