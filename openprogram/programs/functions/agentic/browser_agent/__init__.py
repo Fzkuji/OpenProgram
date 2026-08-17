@@ -1349,6 +1349,44 @@ def _run_browser_task_commands(
             "arguments": {"type": "object", "additionalProperties": True},
         },
         "required": ["command"],
+        "allOf": [{
+            "if": {
+                "properties": {"command": {"const": "act"}},
+                "required": ["command"],
+            },
+            "then": {
+                "required": ["web_session_id", "arguments"],
+                "properties": {
+                    "arguments": {
+                        "type": "object",
+                        "properties": {
+                            "action": {
+                                "type": "string",
+                                "enum": [
+                                    "screenshot", "navigate", "click", "type",
+                                    "press", "scroll", "hover", "select",
+                                ],
+                            },
+                            "expected_frame_id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "description": "Latest frame_id returned by observe",
+                            },
+                            "ref": {"type": "string"},
+                            "x": {"type": "number"},
+                            "y": {"type": "number"},
+                            "url": {"type": "string"},
+                            "text": {"type": "string"},
+                            "key": {"type": "string"},
+                            "value": {"type": "string"},
+                            "amount": {"type": "integer"},
+                        },
+                        "required": ["action", "expected_frame_id"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+        }],
         "additionalProperties": False,
     },
     input={
@@ -1356,7 +1394,12 @@ def _run_browser_task_commands(
         "backend": {"description": "Backend used when observe creates a session"},
         "page": {"description": "Turn Page alias used by observe; never a URL"},
         "web_session_id": {"description": "Session returned by observe"},
-        "arguments": {"description": "Command-specific arguments"},
+        "arguments": {
+            "description": (
+                "Command-specific arguments. act requires action and the latest "
+                "expected_frame_id returned by observe."
+            ),
+        },
         "runtime": {"hidden": True},
     },
 )

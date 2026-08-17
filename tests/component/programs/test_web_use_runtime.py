@@ -117,13 +117,17 @@ def test_registry_supports_three_backends_and_freezes_one_per_session():
     acted = registry.execute(
         command="act",
         web_session_id=session_id,
-        arguments={"action": "click", "ref": "e1"},
+        arguments={
+            "action": "click", "expected_frame_id": "frame-1", "ref": "e1",
+        },
     )
     assert acted["ok"] is True
     assert acted["backend"] == "chrome_devtools_mcp"
     assert adapters["chrome_devtools_mcp"].calls == [
         ("observe", {"detail": "interactive"}),
-        ("act", {"action": "click", "ref": "e1"}),
+        ("act", {
+            "action": "click", "expected_frame_id": "frame-1", "ref": "e1",
+        }),
     ]
 
 
@@ -148,7 +152,7 @@ def test_registry_preserves_one_argument_binding_validator_compatibility():
 
     acted = registry.execute(
         command="act", web_session_id=observed["web_session_id"],
-        arguments={"action": "click"},
+        arguments={"action": "click", "expected_frame_id": "frame-1"},
     )
 
     assert acted["ok"] is True
@@ -185,7 +189,9 @@ def test_registry_rejects_action_when_bound_page_revision_changes():
     revisions["access_revision"] = 13
     rejected = registry.execute(
         command="act", web_session_id=observed["web_session_id"],
-        owner_id="owner-1", arguments={"action": "click"},
+        owner_id="owner-1", arguments={
+            "action": "click", "expected_frame_id": "frame-1",
+        },
     )
 
     assert rejected["reason_code"] == "page_context_stale"
@@ -281,7 +287,9 @@ def test_page_capability_revisions_cross_the_session_validation_boundary(monkeyp
 
     acted = registry.execute(
         command="act", web_session_id=observed["web_session_id"],
-        owner_id="owner-1", arguments={"action": "click"},
+        owner_id="owner-1", arguments={
+            "action": "click", "expected_frame_id": "frame-1",
+        },
     )
 
     assert acted["ok"] is True
@@ -396,7 +404,7 @@ def test_geometry_changed_during_activation_blocks_backend_action(monkeypatch):
     rejected = registry.execute(
         command="act",
         web_session_id=observed["web_session_id"],
-        arguments={"action": "click"},
+        arguments={"action": "click", "expected_frame_id": "frame-1"},
     )
 
     assert rejected["reason_code"] == "page_context_stale"
@@ -534,7 +542,9 @@ def test_cleanup_waits_for_inflight_action_before_releasing_page(cleanup):
     )
     action_thread = threading.Thread(target=lambda: registry.execute(
         command="act", web_session_id=observed["web_session_id"],
-        owner_id="owner-1", arguments={"action": "click"},
+        owner_id="owner-1", arguments={
+            "action": "click", "expected_frame_id": "frame-1",
+        },
     ))
     action_thread.start()
     assert blocking.entered.wait(2)
@@ -677,6 +687,14 @@ def test_public_web_use_schema_is_command_based_and_legacy_name_is_hidden():
     assert "web_session_id" in properties
     assert "computer_session_id" not in properties
     assert tool.parameters["required"] == ["command"]
+    act_rule = next(
+        rule["then"] for rule in tool.parameters["allOf"]
+        if rule["if"]["properties"]["command"].get("const") == "act"
+    )
+    act_arguments = act_rule["properties"]["arguments"]
+    assert act_rule["required"] == ["web_session_id", "arguments"]
+    assert act_arguments["required"] == ["action", "expected_frame_id"]
+    assert act_arguments["additionalProperties"] is False
 
 
 def test_openprogram_mcp_exposes_only_web_use_as_browser_control_tool():
@@ -977,7 +995,9 @@ def test_closing_one_page_session_keeps_sibling_page_binding_alive(monkeypatch):
     )
     acted = registry.execute(
         command="act", web_session_id=second["web_session_id"],
-        owner_id="owner-1", arguments={"action": "click"},
+        owner_id="owner-1", arguments={
+            "action": "click", "expected_frame_id": "frame-1",
+        },
     )
 
     assert acted["ok"] is True

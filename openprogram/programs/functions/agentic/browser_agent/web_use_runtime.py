@@ -359,6 +359,21 @@ class WebUseSessionRegistry:
                     "backend": session.backend,
                 }
 
+            if command == "act":
+                missing = [
+                    name for name in ("action", "expected_frame_id")
+                    if not isinstance(params.get(name), str)
+                    or not params[name].strip()
+                ]
+                if missing:
+                    return {
+                        "ok": False,
+                        "reason_code": "invalid_arguments",
+                        "missing_arguments": missing,
+                        "web_session_id": session.id,
+                        "backend": session.backend,
+                    }
+
             if command in {"observe", "act", "verify"}:
                 revisions = self._binding_revision_resolver(session.binding_id)
                 revision_changed = bool(revisions) and ((

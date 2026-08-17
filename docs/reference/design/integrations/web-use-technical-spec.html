@@ -193,7 +193,7 @@ web_use({ command: "close", web_session_id: "cs_…" })</pre>
     <div class="table-scroll"><table><thead><tr><th>场景</th><th>三个 backend 的共同结果</th><th>额外不变量</th></tr></thead><tbody>
       <tr><td><code>observe</code></td><td>返回非空 <code>web_session_id</code>、冻结后的 <code>backend</code>、当前 <code>frame_id</code> 与结构化页面观察</td><td>只绑定授权的 exact Page；不调用 tab select、<code>bringToFront()</code> 或 OS input</td></tr>
       <tr><td>allowlisted action</td><td><code>ok=true</code>、<code>observe_required=true</code>，旧 frame 立即失效</td><td><code>navigate/click/type/press/scroll/hover/select</code> 各产生一次且仅一次 backend write；不自动 fallback</td></tr>
-      <tr><td>stale / unsupported</td><td>分别返回 <code>stale_observation</code> 与 <code>unsupported_action</code></td><td>在 backend write 前拒绝，调用次数为 0</td></tr>
+      <tr><td>invalid / stale / unsupported</td><td>缺少 <code>action</code> 或 <code>expected_frame_id</code> 时返回 <code>invalid_arguments</code> 与完整 <code>missing_arguments</code>；真实旧 frame 返回 <code>stale_observation</code>；未知 action 返回 <code>unsupported_action</code></td><td>均在 backend write 前拒绝，调用次数为 0；参数缺失不得清除当前有效 observation，调用方补齐参数后可继续使用同一 frame</td></tr>
       <tr><td>backend action error</td><td>返回 <code>backend_action_failed</code> 与 <code>observe_required=true</code></td><td>当前 frame 失效；其他两个 backend 调用次数为 0</td></tr>
       <tr><td><code>verify</code></td><td>同一 assertion 得到相同 <code>passed</code>、evidence 与 frame 语义</td><td>不通过的 assertion 不能形成 succeeded 终态</td></tr>
       <tr><td><code>screenshot</code></td><td>一个当前 viewport PNG；tool-result 仅保留 <code>frame_id</code>、<code>viewport</code>、<code>image_attached</code></td><td>图片只进入紧邻一次 provider request，并按视觉 artifact 生命周期释放</td></tr>

@@ -292,6 +292,19 @@ def test_backend_parity_lifecycle(monkeypatch, backend):
     assert observed["aria_snapshot"]
 
     writes_before_rejections = _write_count(backend, controllers, clients)
+    missing = registry.execute(
+        command="act", web_session_id=session_id, owner_id="owner-1",
+        arguments={"ref": "e1"},
+    )
+    assert missing == {
+        "ok": False,
+        "reason_code": "invalid_arguments",
+        "missing_arguments": ["action", "expected_frame_id"],
+        "web_session_id": session_id,
+        "backend": backend,
+    }
+    assert _write_count(backend, controllers, clients) == writes_before_rejections
+
     stale = registry.execute(
         command="act", web_session_id=session_id, owner_id="owner-1",
         arguments={"action": "click", "expected_frame_id": "old", "ref": "e1"},
