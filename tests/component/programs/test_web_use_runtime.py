@@ -1188,11 +1188,15 @@ def test_public_page_token_keeps_the_turn_owner_across_calls(monkeypatch):
             return {"frame_id": "frame-popup", "web_session_id": "cs-popup"}
 
     registry = _Registry()
+    captures = []
     monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
     monkeypatch.setattr(surface_context, "current", lambda: turn_context)
-    monkeypatch.setattr(
-        surface_context, "capture_pages", lambda context: inventory_context,
-    )
+
+    def capture_pages(context=None):
+        captures.append(context)
+        return inventory_context
+
+    monkeypatch.setattr(surface_context, "capture_pages", capture_pages)
 
     listed = module.web_use(command="list_pages")
     observed = module.web_use(
@@ -1202,6 +1206,7 @@ def test_public_page_token_keeps_the_turn_owner_across_calls(monkeypatch):
 
     assert observed["web_session_id"] == "cs-popup"
     assert registry.owners == ["turn:turn-1", "turn:turn-1"]
+    assert captures == [None]
 
 
 @pytest.mark.parametrize("route", ["harness", "public"])

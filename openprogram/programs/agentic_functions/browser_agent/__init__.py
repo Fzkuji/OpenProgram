@@ -1391,7 +1391,9 @@ def web_use(
 
     if command == "list_pages":
         if not captured_here:
-            context = surface_context.capture_pages(context)
+            context = surface_context.capture_pages(
+                context if surface_context.tool_enabled(context) else None
+            )
             captured_here = True
         context = context or {}
         owner_id = "turn:" + (owner_context_id or str(
