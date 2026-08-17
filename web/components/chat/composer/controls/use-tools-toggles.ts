@@ -14,7 +14,7 @@ import { useCallback } from "react";
 import {
   useBoundComposerSettings,
   useBoundSetComposerSettings,
-} from "../composer-session";
+} from "../state/use-composer-settings";
 
 export interface ToolsTogglesHook {
   tools: boolean;
@@ -25,7 +25,7 @@ export interface ToolsTogglesHook {
 
 export function useToolsToggles(): ToolsTogglesHook {
   // Bound to this composer subtree's session — the focused one unless a
-  // split-view pane provided its own (see ../composer-session).
+  // split-view pane provided its own session scope.
   const settings = useBoundComposerSettings();
   const setComposerSettings = useBoundSetComposerSettings();
   const { tools, webSearch } = settings;

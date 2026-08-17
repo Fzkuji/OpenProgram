@@ -12,14 +12,14 @@
  */
 import React from "react";
 
-import { FunctionForm } from "./modes/fn-form/fn-form";
-import { QuestionMode } from "./modes/question/question-mode";
-import { ChatInputRow } from "./chat-input-row";
-import type { useFnFormState } from "./modes/fn-form/use-fn-form-state";
-import type { useFileMention } from "./attach/use-file-mention";
-import type { useSlashMenu } from "./slash/use-slash-menu";
-import type { usePasteTokens } from "./paste/use-paste-tokens";
-import styles from "./composer.module.css";
+import { FunctionForm } from "./fn-form/fn-form";
+import { QuestionMode } from "./question/question-mode";
+import { ChatInputRow } from "../input/chat-input-row";
+import type { useFnFormState } from "./fn-form/use-fn-form-state";
+import type { useFileMention } from "../attach/use-file-mention";
+import type { useSlashMenu } from "../slash/use-slash-menu";
+import type { usePasteTokens } from "../paste/use-paste-tokens";
+import styles from "../composer.module.css";
 
 const noop = () => {};
 

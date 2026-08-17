@@ -1,0 +1,54 @@
+.inputTopRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 12px 42px 12px 14px;
+  flex-shrink: 0;
+}
+
+.inputField {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.chatInput {
+  width: 100%;
+  display: block;
+  background: none;
+  border: none;
+  color: var(--text-bright);
+  font-size: 15px;
+  font-family: var(--font-sans);
+  outline: none;
+  resize: none;
+  min-height: 22px;
+  max-height: 200px;
+  padding: 0 2px;
+  line-height: 22px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.chatPlaceholder {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  right: 2px;
+  transform: translateY(-50%);
+  line-height: 22px;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  overflow: hidden;
+  pointer-events: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chatInput::placeholder {
+  color: var(--text-secondary);
+}

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parseHTML } from "linkedom";
 import "./check-composer-environment-row.mjs";
+import "./check-composer-structure.mjs";
 
 import { readCenterTabStripSource } from "./center-tab-strip-source.mjs";
 import { readChatCss } from "./_chat-css.mjs";

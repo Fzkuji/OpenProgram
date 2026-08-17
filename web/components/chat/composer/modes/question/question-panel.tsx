@@ -17,9 +17,9 @@
 
 import React from "react";
 
-import q from "./modes/question/question-mode.module.css";
-import form from "./modes/question/form-mode.module.css";
-import styles from "./composer.module.css";
+import q from "./question-mode.module.css";
+import form from "./form-mode.module.css";
+import styles from "./question-panel.module.css";
 
 export interface QuestionPanelOption {
   label: string;

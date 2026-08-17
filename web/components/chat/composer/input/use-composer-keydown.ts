@@ -13,10 +13,10 @@
  */
 import React from "react";
 
-import type { SlashCommand } from "./slash/slash-commands";
-import type { useFileMention } from "./attach/use-file-mention";
+import type { SlashCommand } from "../slash/slash-commands";
+import type { useFileMention } from "../attach/use-file-mention";
 import type { useHistoryRecall } from "./use-history-recall";
-import type { useSlashMenu } from "./slash/use-slash-menu";
+import type { useSlashMenu } from "../slash/use-slash-menu";
 
 export interface ComposerKeyDownOptions {
   input: string;

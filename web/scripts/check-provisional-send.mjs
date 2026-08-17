@@ -70,7 +70,7 @@ setSocket({ readyState: 1, send: (payload) => sent.push(JSON.parse(payload)) });
 runtimeState.currentSessionId = null;
 
 const { sendChatMessage } = await import(
-  "../components/chat/composer/legacy-send.ts"
+  "../components/chat/composer/submit/send-chat-message.ts"
 );
 // The ack-pairing reservations live in lib/pending-user-text now.
 const pendingUserText = await import("../lib/pending-user-text.ts");
@@ -713,7 +713,7 @@ assert.match(
 // stops being guarded, sending from a peer pane corrupts the focused chat:
 // its welcome panel would hide and its send button would flip to Stop.
 const legacySend = readFileSync(
-  new URL("../components/chat/composer/legacy-send.ts", import.meta.url),
+  new URL("../components/chat/composer/submit/send-chat-message.ts", import.meta.url),
   "utf8",
 );
 assert.match(

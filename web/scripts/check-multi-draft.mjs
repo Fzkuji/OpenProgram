@@ -60,7 +60,7 @@ globalThis.localStorage = {
 
 const tabsModule = await import("../lib/state/center-tabs-store.ts");
 const sessionModule = await import("../lib/session-store/index.ts");
-const sendModule = await import("../components/chat/composer/legacy-send.ts");
+const sendModule = await import("../components/chat/composer/submit/send-chat-message.ts");
 const { useCenterTabs, sessionTabId, sessionAckIsActive, webTabId, builtinTabId } =
   tabsModule;
 const { useSessionStore } = sessionModule;

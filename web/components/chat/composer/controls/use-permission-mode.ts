@@ -10,7 +10,7 @@ import { useCallback, useState } from "react";
 import {
   useBoundComposerSettings,
   useBoundSetComposerSettings,
-} from "../composer-session";
+} from "../state/use-composer-settings";
 import { useTranslation } from "@/lib/i18n";
 
 export type PermissionMode =
@@ -44,7 +44,7 @@ export interface PermissionModeHook {
 }
 
 export function usePermissionMode(): PermissionModeHook {
-  // Bound to this composer subtree's session (../composer-session).
+  // Bound to this composer subtree's session scope.
   const stored = useBoundComposerSettings().permission_mode;
   const setComposerSettings = useBoundSetComposerSettings();
   const { text } = useTranslation();

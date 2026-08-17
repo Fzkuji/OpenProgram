@@ -17,7 +17,7 @@ import { runtimeState } from "@/lib/runtime-bridge/state";
 import {
   useBoundComposerSettings,
   useBoundSetComposerSettings,
-} from "../composer-session";
+} from "../state/use-composer-settings";
 
 const DEFAULT_THINKING: ThinkingEffort = "medium";
 const FALLBACK_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
@@ -70,7 +70,7 @@ export function useThinkingEffort(): ThinkingEffortHook {
   // "no explicit pick" → fall through to DEFAULT/backend default below.
   // It is NOT sent as-is — the exposed `thinking` is always re-derived
   // against the CURRENT model's options (clamp).
-  // Bound to this composer subtree's session (../composer-session).
+  // Bound to this composer subtree's session scope.
   const storedRaw = useBoundComposerSettings().thinking;
   const setComposerSettings = useBoundSetComposerSettings();
   const stored: ThinkingEffort = storedRaw || DEFAULT_THINKING;

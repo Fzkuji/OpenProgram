@@ -554,7 +554,7 @@ The 5 tier labels use Claude Code's official names (`MODE_LABELS` in `use-permis
 (`use-permission-mode.ts:48`) — bound to the current session, so switching sessions switches the value.
 
 **Chat frames do not carry `permission_mode`.** The frame builder
-`composer/legacy-send.ts:136-238` (`sendChatMessage`) has no `permission_mode` field —
+`composer/submit/send-chat-message.ts` (`sendChatMessage`) has no `permission_mode` field —
 frames carry only text / thinking / tools / web_search / service_tier / attachments and similar.
 The backend `webui/ws_actions/chat.py:312` still reads `cmd.get("permission_mode")`, but nothing on the frontend fills it,
 so this path is permanently `None`: dead code left uncleaned, not a live mechanism.

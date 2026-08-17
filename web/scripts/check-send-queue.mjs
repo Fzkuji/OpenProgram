@@ -66,9 +66,9 @@ const sent = [];
 const { setSocket } = await import("../lib/runtime-bridge/state.ts");
 setSocket({ readyState: 1, send: (payload) => sent.push(JSON.parse(payload)) });
 
-// Importing legacy-send is what registers the real chat sender with the
+// Importing send-chat-message registers the real chat sender with the
 // queue — the same wiring the app relies on.
-await import("../components/chat/composer/legacy-send.ts");
+await import("../components/chat/composer/submit/send-chat-message.ts");
 const {
   useSendQueue,
   enqueueMessage,
@@ -79,7 +79,7 @@ const {
   await import("../lib/state/send-queue.ts");
 const { useSessionStore } = await import("../lib/session-store/index.ts");
 const { stopSession } = await import(
-  "../components/chat/composer/use-chat-submit.ts"
+  "../components/chat/composer/submit/use-chat-submit.ts"
 );
 const { handleRunningTaskClear } = await import(
   "../lib/runtime-bridge/chat-handlers.ts"

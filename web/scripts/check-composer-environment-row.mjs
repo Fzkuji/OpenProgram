@@ -20,16 +20,17 @@ assert.match(composer, /<EnvironmentRow/);
 assert.doesNotMatch(composer, /function useCompactEnvironmentRow/);
 assert.doesNotMatch(composer, /envChipsRef/);
 assert.doesNotMatch(composer, /<StatusChip|<SurfaceChip|<ProjectBadge|<WorkingDirChips|<GoalChip/);
-assert.doesNotMatch(composerCss, /\.envChips|\.surfaceChip|\.dagHudSlot/);
+assert.doesNotMatch(composerCss, /\.envChips|\.surfaceChip|\.trailingControls/);
 
 assert.match(environmentRow, /function EnvironmentRow/);
 assert.match(environmentRow, /useCompactEnvironmentRow/);
-assert.match(environmentRow, /<StatusChip/);
-assert.match(environmentRow, /<SurfaceChip/);
+assert.match(environmentRow, /<ConnectionStatusChip/);
+assert.match(environmentRow, /<WebSurfaceChip/);
 assert.match(environmentRow, /<ProjectBadge/);
 assert.match(environmentRow, /<WorkingDirChips/);
 assert.match(environmentRow, /<GoalChip/);
-assert.match(environmentRow, /id="dagHudSlot"/);
+assert.match(environmentRow, /trailingControls/);
+assert.doesNotMatch(environmentRow, /dagHudSlot|DAG/i);
 assert.match(environmentRow, /data-environment-row/);
 
 assert.match(compactHook, /new ResizeObserver\(measure\)/);
@@ -53,7 +54,7 @@ assert.match(environmentCss, /\.envChips\[data-compact="true"\][\s\S]*opacity:\s
 assert.match(environmentCss, /button\.dag-hud-chip[\s\S]*min-width:\s*24px/);
 const compactCss = environmentCss.slice(
   environmentCss.indexOf('.envChips[data-compact="true"]'),
-  environmentCss.indexOf(".dagHudSlot"),
+  environmentCss.indexOf(".trailingControls"),
 );
 assert.doesNotMatch(compactCss, /display:\s*none/);
 

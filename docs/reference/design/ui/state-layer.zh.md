@@ -220,7 +220,7 @@ const input = useSessionStore((s) =>
 );
 ```
 
-同样的三行三元在 `fast` 和 `unattended` 上重复，在 `composer-session.tsx` 里又重复一次。
+同样的三行三元在 `fast` 和 `unattended` 上重复，在 `composer/state/use-composer-settings.ts` 里又重复一次。
 每一次重复都是一次把兜底写错的机会，而且 `bound === null` 那一支意味着写错的后果是
 "静默用聚焦会话"，而不是报错。跨窗口搬移会话的路径（`desktop-bridge.ts`、
 `tab-transfer-journal.ts`）也不得不重建这份镜像。

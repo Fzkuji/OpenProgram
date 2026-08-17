@@ -18,7 +18,7 @@
 import React from "react";
 
 import type { PastedEntry } from "./paste-store";
-import styles from "../composer.module.css";
+import styles from "./paste-chips.module.css";
 
 interface PasteChipsProps {
   entries: PastedEntry[];

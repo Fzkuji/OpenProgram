@@ -13,11 +13,11 @@
  */
 import type React from "react";
 
-import { FileMenu, type FileMatch } from "./attach/file-menu";
-import { useFileMention } from "./attach/use-file-mention";
-import { PasteChips } from "./paste/paste-chips";
-import type { PastedEntry } from "./paste/paste-store";
-import styles from "./composer.module.css";
+import { FileMenu, type FileMatch } from "../attach/file-menu";
+import { useFileMention } from "../attach/use-file-mention";
+import { PasteChips } from "../paste/paste-chips";
+import type { PastedEntry } from "../paste/paste-store";
+import styles from "./chat-input-row.module.css";
 
 interface ChatInputRowProps {
   /* ---- textarea ---------------------------------------------------- */

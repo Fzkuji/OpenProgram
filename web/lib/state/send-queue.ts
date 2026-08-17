@@ -18,7 +18,7 @@
 
 import { create } from "zustand";
 
-// ponytail: `legacy-send` imports back into this module (it records the
+// ponytail: `send-chat-message` imports back into this module (it records the
 // per-session turn settings), so the send function is reached through a
 // registered callback rather than a static import. One indirection beats
 // an import cycle between a store and the socket writer.
@@ -37,7 +37,7 @@ type SendFn = (args: {
 
 let sendImpl: SendFn | null = null;
 
-/** Wired once by `legacy-send` on module load. */
+/** Wired once by `send-chat-message` on module load. */
 export function registerChatSender(fn: SendFn): void {
   sendImpl = fn;
 }

@@ -33,7 +33,7 @@ import {
 import { useTranslation } from "@/lib/i18n";
 import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
 import { promoteToHead } from "@/lib/state/send-queue";
-import { stopSession } from "@/components/chat/composer/use-chat-submit";
+import { stopSession } from "@/components/chat/composer/submit/use-chat-submit";
 import { useAgentProfile } from "@/lib/format-utils/agent-style";
 import {
   readChatScroll,

@@ -1,11 +1,11 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 
 import { GoalChip } from "../../goal-chip";
 import { ProjectBadge, WorkingDirChips } from "../../top-bar";
-import { StatusChip } from "./status-chip";
-import { SurfaceChip } from "./surface-chip";
+import { ConnectionStatusChip } from "./chips/connection-status-chip";
+import { WebSurfaceChip } from "./chips/web-surface-chip";
 import { useCompactEnvironmentRow } from "./use-compact-environment-row";
 import styles from "./environment-row.module.css";
 
@@ -14,6 +14,7 @@ interface EnvironmentRowProps {
   toolsEnabled: boolean;
   owningStatusId: boolean;
   onToggleAccess(): void;
+  trailingControls?: ReactNode;
 }
 
 export function EnvironmentRow({
@@ -21,14 +22,15 @@ export function EnvironmentRow({
   toolsEnabled,
   owningStatusId,
   onToggleAccess,
+  trailingControls,
 }: EnvironmentRowProps) {
   const rowRef = useRef<HTMLDivElement | null>(null);
   useCompactEnvironmentRow(rowRef);
 
   return (
     <div ref={rowRef} className={styles.envChips} data-environment-row>
-      <StatusChip owningId={owningStatusId} />
-      <SurfaceChip
+      <ConnectionStatusChip owningId={owningStatusId} />
+      <WebSurfaceChip
         sessionId={sessionId}
         toolsEnabled={toolsEnabled}
         onToggleAccess={onToggleAccess}
@@ -36,7 +38,9 @@ export function EnvironmentRow({
       <ProjectBadge />
       <WorkingDirChips />
       <GoalChip />
-      <div id="dagHudSlot" className={styles.dagHudSlot} />
+      {trailingControls ? (
+        <div className={styles.trailingControls}>{trailingControls}</div>
+      ) : null}
     </div>
   );
 }

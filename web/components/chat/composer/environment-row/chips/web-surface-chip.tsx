@@ -6,9 +6,9 @@ import { HoverTip } from "@/components/ui/tooltip";
 import { surfaceRefForChat } from "@/lib/desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
-import styles from "./environment-row.module.css";
+import styles from "../environment-row.module.css";
 
-export function SurfaceChip({
+export function WebSurfaceChip({
   sessionId,
   toolsEnabled,
   onToggleAccess,

@@ -266,7 +266,7 @@ const input = useSessionStore((s) =>
 ```
 
 The same three-line ternary repeats for `fast` and `unattended`, and again
-inside `composer-session.tsx`. Each repetition is an opportunity to get the
+inside `composer/state/use-composer-settings.ts`. Each repetition is an opportunity to get the
 fallback wrong, and the `bound === null` arm makes the wrong answer "silently
 use the focused session" rather than an error. A mirror is also something the
 window-to-window transfer path (`desktop-bridge.ts`,

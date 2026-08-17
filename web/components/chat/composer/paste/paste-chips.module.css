@@ -1,0 +1,39 @@
+.pasteChipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: var(--composer-bottom-row-pad) var(--composer-bottom-row-pad) 0;
+}
+
+.pasteChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 4px 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.missing {
+  border-color: var(--accent-red);
+  color: var(--accent-red);
+}
+
+.pasteChipRemove {
+  margin-left: 2px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.pasteChipRemove:hover {
+  color: var(--text-bright);
+}

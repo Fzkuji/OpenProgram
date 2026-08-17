@@ -5,12 +5,12 @@
  * Search), thinking-effort selector, token badge, send/stop button.
  * Submits chat turns directly via the WS channel; no legacy globals.
  *
- * The pieces live next door: ./use-chat-submit (submit + stop),
+ * The pieces are grouped by responsibility: ./submit (submit + stop),
  * ./modes/fn-form/use-fn-form-submit (function dispatch),
- * ./paste/use-paste-tokens (long-paste chips), ./use-history-recall
- * (↑/↓), ./use-composer-keydown (key precedence),
+ * ./paste/use-paste-tokens (long-paste chips), ./input (textarea,
+ * history recall and key precedence),
  * ./controls/controls-cluster (the bottom control row),
- * ./environment-row/environment-row and ./scoped-drop-overlay. This file owns the mode
+ * ./environment-row/environment-row and ./attach/scoped-drop-overlay. This file owns the mode
  * switch, the wrapper layout, and the send/stop affordance.
  *
  * The shell styles live in ./composer.module.css; component-specific styles
@@ -22,13 +22,10 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useQuery } from "@tanstack/react-query";
 
 import { useSessionStore } from "@/lib/session-store";
 import { useSessionScope } from "@/lib/session-store/session-scope";
 import { getSocket } from "@/lib/runtime-bridge/state";
-import { api } from "@/lib/net/api";
-import { showToast } from "@/lib/format-utils/toast";
 import { useTranslation } from "@/lib/i18n";
 
 // Session-scope chips relocated from the dismantled 48px topbar row —
@@ -52,16 +49,20 @@ import { useFnFormSubmit } from "./modes/fn-form/use-fn-form-submit";
 import { useSlashMenu } from "./slash/use-slash-menu";
 import { useThinkingEffort } from "./controls/use-thinking-effort";
 import { useToolsToggles } from "./controls/use-tools-toggles";
+import { useModelAvailability } from "./controls/use-model-availability";
+import { useToolProfiles } from "./controls/use-tool-profiles";
+import { useUnattendedMode } from "./controls/use-unattended-mode";
 import { ControlsCluster } from "./controls/controls-cluster";
 import { usePasteTokens } from "./paste/use-paste-tokens";
-import { useHistoryRecall } from "./use-history-recall";
-import { useChatSubmit } from "./use-chat-submit";
-import { useComposerKeyDown } from "./use-composer-keydown";
+import { useHistoryRecall } from "./input/use-history-recall";
+import { useChatSubmit } from "./submit/use-chat-submit";
+import { useComposerKeyDown } from "./input/use-composer-keydown";
+import { useComposerInputEffects } from "./input/use-composer-input-effects";
 import { EnvironmentRow } from "./environment-row/environment-row";
-import { ScopedDropOverlay } from "./scoped-drop-overlay";
-import { ComposerBody } from "./composer-body";
-import { QuestionPanel } from "./question-panel";
-import { sendChatMessage } from "./legacy-send";
+import { ScopedDropOverlay } from "./attach/scoped-drop-overlay";
+import { ComposerBody } from "./modes/composer-body";
+import { QuestionPanel } from "./modes/question/question-panel";
+import { sendChatMessage } from "./submit/send-chat-message";
 import { enqueueMessage } from "@/lib/state/send-queue";
 import styles from "./composer.module.css";
 
@@ -241,37 +242,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const agentSettings = useSessionStore((s) => s.agentSettings);
   const chatAgent = agentSettings.chat || {};
   const execAgent = agentSettings.exec || {};
-  // Authoritative "is there a model to run at all" signal — the SAME
-  // enabled-models list the top-bar picker reads. ``providerInfo.model``
-  // is NOT enough: it reflects whatever model the last runtime used
-  // (often an agent-pinned default), so it stays truthy even after the
-  // user disables every provider — and a send would then silently run
-  // on that pinned model. Keying off the enabled list means "picker is
-  // empty" ⇒ "send is blocked", matching what the user sees up top.
-  const { data: enabledModels } = useQuery({
-    queryKey: ["models-enabled"],
-    queryFn: api.listEnabledModels,
-  });
-  const noEnabledModels = (enabledModels ?? []).length === 0;
-  // Block a send/run when nothing is enabled and explain why with a
-  // transient top toast — only fired on the send/run ATTEMPT, never a
-  // persistent badge/hint — instead of silently routing the turn to a
-  // pinned default.
-  const promptNeedModel = useCallback(() => {
-    showToast(
-      text(
-        "No model configured — enable one before sending.",
-        "还没配置模型 — 发送前请先启用一个模型。",
-      ),
-      {
-        tone: "warn",
-        link: {
-          label: text("Open Providers →", "去配置 Provider →"),
-          href: "/settings/providers",
-        },
-      },
-    );
-  }, [text]);
+  const { noEnabledModels, promptNeedModel } = useModelAvailability();
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const {
     tools: toolsEnabled,
@@ -289,44 +260,12 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const fastSupported = useSessionStore((s) => !!s.agentSettings?.chat?.fast);
   const setComposerSettings = useSessionScope((s) => s.patchSettings);
   const toggleFast = () => setComposerSettings({ fast: !fastEnabled });
-  // Unattended toggle: nobody watching → withhold the agent's user-question
-  // tool. Mirror the per-session UI flag to the backend via set_attended so
-  // the tool-resolution gate matches (attended = !unattended).
-  const unattended = useSessionScope((s) => s.settings.unattended);
-  const toggleUnattended = () => {
-    const next = !unattended;
-    setComposerSettings({ unattended: next });
-    if (currentSessionId) {
-      send({ action: "set_attended", session_id: currentSessionId, attended: !next });
-    }
-  };
-  // Sync the persisted per-session unattended flag to the backend whenever the
-  // session changes (a fresh worker defaults to attended; this restores the
-  // user's choice for this chat so the ask-tool gate matches the UI).
-  useEffect(() => {
-    if (currentSessionId) {
-      send({ action: "set_attended", session_id: currentSessionId, attended: !unattended });
-    }
-  }, [currentSessionId, unattended, send]);
-
-  // Tool profiles — fetch the list on mount so the "+" menu can show
-  // a profile picker. The active profile determines which tools the
-  // model gets for this conversation.
-  const [toolProfiles, setToolProfiles] = useState<Record<string, string[]>>({});
-  const [activeProfile, setActiveProfile] = useState("__agent__");
-  useEffect(() => {
-    fetch("/api/tool-profiles")
-      .then((r) => r.json())
-      .then((d) => {
-        setToolProfiles(d.profiles ?? {});
-      })
-      .catch(() => {});
-  }, []);
-
-  const switchProfile = (name: string) => {
-    setActiveProfile(name);
-  };
-  useEffect(() => setActiveProfile("__agent__"), [currentSessionId]);
+  const { unattended, toggleUnattended } = useUnattendedMode(
+    currentSessionId,
+    send,
+  );
+  const { toolProfiles, activeProfile, switchProfile } =
+    useToolProfiles(currentSessionId);
 
   // Slash-menu state lives in its own hook (./use-slash-menu).
   // fn-form field state (values, workdir, error highlight, closing
@@ -376,57 +315,12 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     decisionKey: activeDecision?.id ?? null,
   });
 
-  // Publish the composer's REAL height as a root CSS var so the
-  // transcript's bottom padding can reserve it. The main shell's
-  // `.chat-messages` historically reserved a flat 25vh — enough for the
-  // normal composer, but the question panel (goal 挂起 / ask) can grow the
-  // stack past that and cover the last message's tail. Same mechanism the
-  // split pane already uses (`--peer-composer-h` in peer-session-pane).
-  // transcript.css takes max(25vh, this + 24px), so normal chats are
-  // pixel-identical and only an overgrown composer widens the reserve.
-  // The stick-to-bottom ResizeObserver on #chatMessages then re-pins, so
-  // a reader parked at the bottom gets the last message pushed fully out.
-  const inputAreaRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    // Split-pane composers measure into their own pane var — only the
-    // focused shell's composer owns the root-level var.
-    if (bound !== null) return;
-    const el = inputAreaRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const apply = () => {
-      const h = el.offsetHeight;
-      if (h > 0) {
-        document.documentElement.style.setProperty(
-          "--main-composer-height",
-          `${Math.round(h)}px`,
-        );
-      }
-    };
-    apply();
-    const ro = new ResizeObserver(apply);
-    ro.observe(el);
-    return () => {
-      ro.disconnect();
-      document.documentElement.style.removeProperty("--main-composer-height");
-    };
-  }, [bound]);
-
-  // Auto-resize the textarea as content changes.
-  useEffect(() => {
-    const t = textareaRef.current;
-    if (!t) return;
-    t.style.height = "auto";
-    const nextHeight = Math.min(t.scrollHeight, 200);
-    t.style.height = `${nextHeight}px`;
-    t.style.overflowY = t.scrollHeight > 200 ? "auto" : "hidden";
-  }, [input]);
-
-  // External focus requests via the store (welcome buttons,
-  // retry helpers, etc.).
-  useEffect(() => {
-    if (focusTick === 0) return;
-    textareaRef.current?.focus();
-  }, [focusTick]);
+  const inputAreaRef = useComposerInputEffects({
+    bound,
+    input,
+    focusTick,
+    textareaRef,
+  });
 
   // Close the effort pill on outside click. It's INLINE inside the
   // composer wrapper, so a click in the textarea or on any other
@@ -806,6 +700,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
         toolsEnabled={toolsEnabled}
         owningStatusId={bound === null}
         onToggleAccess={toggleTools}
+        trailingControls={<div id="dagHudSlot" />}
       />
       {/* composerStack wraps {slashClip, inputWrapper} so the slash
           menu's vertical anchor is the wrapper's top edge — not a

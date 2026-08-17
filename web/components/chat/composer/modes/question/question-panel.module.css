@@ -1,0 +1,39 @@
+.questionPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px var(--composer-bottom-row-pad);
+  border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
+}
+
+.questionPanelBadge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--accent-orange);
+}
+
+.questionPanelBadge svg {
+  flex-shrink: 0;
+}
+
+.questionPanelBadge span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.questionPanel .questionPanelOpt {
+  height: auto;
+  min-height: 30px;
+  line-height: 1.5;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  white-space: normal;
+  text-align: left;
+}

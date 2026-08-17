@@ -11,7 +11,7 @@
  * handling. The base64 + MIME conversion is the only piece we share.
  */
 
-import type { ChatAttachment } from "../legacy-send";
+import type { ChatAttachment } from "../submit/send-chat-message";
 
 /** Max single-image size before we refuse the attach. 5 MiB matches
  *  what most LLM provider APIs accept inline; larger files should be

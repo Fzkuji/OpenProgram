@@ -546,7 +546,7 @@ hook 返回 `{mode, options, set}`。
 （`use-permission-mode.ts:48`）——绑定当前会话，切会话即换值。
 
 **聊天帧不承载 `permission_mode`。** 构帧的
-`composer/legacy-send.ts:136-238`（`sendChatMessage`）不含 `permission_mode` 字段——
+`composer/submit/send-chat-message.ts`（`sendChatMessage`）不含 `permission_mode` 字段——
 帧只带 text / thinking / tools / web_search / service_tier / attachments 等。
 后端 `webui/ws_actions/chat.py:312` 仍读 `cmd.get("permission_mode")`，但没有任何前端填它，
 这一路恒为 `None`，属未清理的无效代码，不是生效机制。

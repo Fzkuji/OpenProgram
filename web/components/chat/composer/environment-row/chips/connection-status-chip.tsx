@@ -12,7 +12,7 @@ import {
 import { useSessionStore } from "@/lib/session-store";
 import { closeAllPopovers } from "@/lib/runtime-bridge/ui";
 import { useTranslation } from "@/lib/i18n";
-import { ChannelMenu } from "../../top-bar/channel-menu";
+import { ChannelMenu } from "../../../top-bar/channel-menu";
 
 /** Status chip — the old topbar StatusBadge chip form (tone-tinted
  *  chip + indicator dot + channel label, ChannelMenu popover), re-hosted
@@ -30,7 +30,7 @@ import { ChannelMenu } from "../../top-bar/channel-menu";
  *  `.indicator-dot` inside it. In a split view both panes render a chip,
  *  so only the unbound (focused-following) one claims the id via
  *  `owningId`; the other renders the same chrome without it. */
-export function StatusChip({ owningId = true }: { owningId?: boolean }) {
+export function ConnectionStatusChip({ owningId = true }: { owningId?: boolean }) {
   const { text } = useTranslation();
   const statusBadge = useSessionStore((s) => s.statusBadge);
   const [open, setOpen] = useState(false);

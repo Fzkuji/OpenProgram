@@ -12,16 +12,16 @@ import { readFileSync } from "node:fs";
 const COMPOSER_PARTS = [
   // use-chat-submit first: `stop()` has to precede index.tsx's
   // "Pick a slash command" marker, as it did before the split.
-  "use-chat-submit.ts",
+  "submit/use-chat-submit.ts",
   "index.tsx",
   "paste/use-paste-tokens.ts",
-  "use-history-recall.ts",
-  "use-composer-keydown.ts",
-  "composer-body.tsx",
+  "input/use-history-recall.ts",
+  "input/use-composer-keydown.ts",
+  "modes/composer-body.tsx",
   "modes/fn-form/use-fn-form-submit.ts",
   "controls/controls-cluster.tsx",
-  "environment-row/status-chip.tsx",
-  "scoped-drop-overlay.tsx",
+  "environment-row/chips/connection-status-chip.tsx",
+  "attach/scoped-drop-overlay.tsx",
 ];
 
 export function readComposerSource(importMetaUrl) {

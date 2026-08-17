@@ -22,12 +22,12 @@ import { useCallback } from "react";
 import { useSessionStore } from "@/lib/session-store";
 import { enqueueMessage } from "@/lib/state/send-queue";
 import { buildAttachmentEnvelope } from "@/lib/attachment-marker";
-import { expandAtMentions } from "./attach/at-mention";
-import { expandPasteTokens, missingPasteIds } from "./paste/paste-store";
-import { sendChatMessage } from "./legacy-send";
-import { resolveFnFormSessionId } from "./modes/fn-form/session-target";
-import type { useComposerAttachments } from "./attach/use-composer-attachments";
-import type { useSlashMenu } from "./slash/use-slash-menu";
+import { expandAtMentions } from "../attach/at-mention";
+import { expandPasteTokens, missingPasteIds } from "../paste/paste-store";
+import { sendChatMessage } from "./send-chat-message";
+import { resolveFnFormSessionId } from "../modes/fn-form/session-target";
+import type { useComposerAttachments } from "../attach/use-composer-attachments";
+import type { useSlashMenu } from "../slash/use-slash-menu";
 
 type Attachments = ReturnType<typeof useComposerAttachments>;
 

@@ -12,7 +12,7 @@
  * Persistence follows the working-dir contract: optimistic store write
  * first (instant UI); real sessions then send `set_working_dirs` whose
  * `working_dirs` broadcast is authoritative. Drafts only write the
- * store — the first chat frame carries the list (legacy-send.ts).
+ * store — the first chat frame carries the list (send-chat-message.ts).
  */
 import { useCallback, useEffect, useState } from "react";
 import { Folder, FolderPlus, X } from "lucide-react";

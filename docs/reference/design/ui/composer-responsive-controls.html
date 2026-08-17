@@ -45,12 +45,18 @@
   <p>现有组件已经提供四类互异图标：Shield 表示权限，Message 表示 chat model，Terminal 表示 execution model，Biceps 表示 effort。所有触发器已经具备 Popover/Menu、tooltip 或 accessible name，因此不新增图标组件和菜单。</p>
 
   <h2>组件边界</h2>
-  <p>环境栏按真实调用关系形成独立组件目录，不把宽度测量、环境栏 JSX 或环境栏 CSS 留在 Composer 根组件中。只被环境栏使用的 StatusChip 与 SurfaceChip 归入该目录；ProjectBadge、WorkingDirChips、GoalChip 和 DAG HUD 仍保留在各自的共享或业务模块，由 EnvironmentRow 组合。</p>
+  <p>Composer 按交互职责组织目录：输入编辑归入 <code>input/</code>，提交链路归入 <code>submit/</code>，模式分发归入 <code>modes/</code>，会话设置归入 <code>state/</code>，附件、粘贴、slash 与 controls 沿用各自现有目录。环境栏内部再区分整体布局与单个 chip；ProjectBadge、WorkingDirChips 和 GoalChip 保留在其共享业务模块。DAG HUD 由 DAG 模块负责，通过 EnvironmentRow 的通用尾部内容插槽接入，EnvironmentRow 不包含 DAG 名称、DOM id 或控制逻辑。</p>
   <div class="table-wrap"><table><thead><tr><th>目录或文件</th><th>唯一职责</th><th>不负责</th></tr></thead><tbody>
-    <tr><td><code>composer/environment-row/environment-row.tsx</code></td><td>组合环境栏子组件并提供 DAG portal slot。</td><td>不判断聊天提交、DAG 数据或项目状态。</td></tr>
+    <tr><td><code>composer/environment-row/environment-row.tsx</code></td><td>组合环境栏子组件并渲染调用方提供的尾部内容。</td><td>不包含 DAG 名称、portal id、聊天提交或项目状态。</td></tr>
     <tr><td><code>composer/environment-row/use-compact-environment-row.ts</code></td><td>测量环境栏实际宽度并维护 compact 属性。</td><td>不渲染组件、不定义视觉样式。</td></tr>
     <tr><td><code>composer/environment-row/environment-row.module.css</code></td><td>环境栏布局、pill surface、两态动画和 DAG slot 样式。</td><td>不包含输入框、底部 controls 或其他 Composer 模式。</td></tr>
-    <tr><td><code>composer/environment-row/status-chip.tsx</code>、<code>surface-chip.tsx</code></td><td>各自负责单个环境入口。</td><td>不控制环境栏整体响应状态。</td></tr>
+    <tr><td><code>composer/environment-row/chips/connection-status-chip.tsx</code>、<code>web-surface-chip.tsx</code></td><td>分别负责连接状态入口和当前网页 surface 入口。</td><td>不控制环境栏整体响应状态。</td></tr>
+    <tr><td><code>composer/input/</code></td><td>textarea、键盘事件与历史回调。</td><td>不发送消息或切换 Composer mode。</td></tr>
+    <tr><td><code>composer/attach/</code>、<code>paste/</code>、<code>modes/question/</code></td><td>组件实现与其专用 CSS Module 放在同一职责目录。</td><td>不把组件专用选择器留在根 <code>composer.module.css</code>。</td></tr>
+    <tr><td><code>composer/submit/</code></td><td>构造并提交聊天消息，维护提交副作用。</td><td>不渲染输入区。</td></tr>
+    <tr><td><code>composer/modes/composer-body.tsx</code></td><td>根据派生 mode 选择普通输入、函数表单或问题表单。</td><td>不拥有输入、附件或会话状态。</td></tr>
+    <tr><td><code>composer/state/use-composer-settings.ts</code></td><td>读取和更新当前 SessionScope 的 Composer 设置。</td><td>不提供全局 focused-session fallback。</td></tr>
+    <tr><td><code>composer/controls/use-*.ts</code></td><td>分别管理模型可用性、工具 profile、无人值守状态及既有控制项。</td><td>不在 Composer 根组件中直接请求或同步这些状态。</td></tr>
     <tr><td><code>composer/index.tsx</code></td><td>传入 session、tools 和 toggle 参数，渲染一个 EnvironmentRow。</td><td>不持有环境栏 ref、observer 或内部 JSX。</td></tr>
     <tr><td><code>scripts/check-composer-environment-row.mjs</code></td><td>只检查环境栏组件边界和响应契约。</td><td>不累积其他聊天 UI 检查。</td></tr>
   </tbody></table></div>
@@ -105,7 +111,7 @@
     <tr><td>specification review / quality review</td><td class="ok">完成：规格审查与修复后的独立质量审查均通过。</td></tr>
     <tr><td>完整检查与默认安装版可见验收</td><td class="ok">完成：Web 全量检查、TypeScript、构建、desktop webtab/transfer、单元测试和默认安装版 CDP 验收均通过。</td></tr>
     <tr><td>底部控制按钮常态 surface</td><td class="ok">完成：常态仅使用 <code>--chip-bg</code> 填充，不增加边框或内描边；真实 App computed style 验证 border 为 0、shadow 为 none，hover/open 仅增强背景。</td></tr>
-    <tr><td>EnvironmentRow 组件化</td><td class="ok">完成：组件、测量 hook、CSS Module、专用 chips 和独立检查均位于 <code>composer/environment-row/</code>；Composer 根文件只保留组件调用。定向检查、TypeScript 和生产构建通过。</td></tr>
+    <tr><td>Composer 职责目录</td><td class="ok">完成：输入、提交、mode、session state、附件和环境 chips 分别归入职责目录；输入、粘贴、图片附件与问题面板使用同目录 CSS Module。EnvironmentRow 只接受通用尾部内容，不包含 DAG id 或控制逻辑。</td></tr>
   </tbody></table></div>
   <p class="sub">可见验收使用实际 <code>/Applications/OpenProgram.app</code>、默认 <code>18100</code> 页面和 <code>9223</code> CDP。测试操作真实 permission、more、active tool、chat model、execution model、effort 与 context 触发器，确认常态无边框、hover/open 背景增强、窄态无重叠且菜单可打开，并在结束时关闭菜单、恢复焦点与原始页面样式。</p>
 </main></body></html>

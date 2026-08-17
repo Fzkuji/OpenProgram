@@ -14,12 +14,12 @@ const attachmentHook = readFileSync(
   "utf8",
 );
 const submit = readFileSync(
-  new URL("components/chat/composer/use-chat-submit.ts", root),
+  new URL("components/chat/composer/submit/use-chat-submit.ts", root),
   "utf8",
 );
 const bridge = readFileSync(new URL("lib/desktop-bridge.ts", root), "utf8");
 const legacySend = readFileSync(
-  new URL("components/chat/composer/legacy-send.ts", root),
+  new URL("components/chat/composer/submit/send-chat-message.ts", root),
   "utf8",
 );
 const preload = readFileSync(new URL("../desktop/preload.js", root), "utf8");

@@ -1,0 +1,108 @@
+.imageAttachStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 16px 16px 8px;
+}
+
+.imageAttachChip {
+  position: relative;
+  display: inline-flex;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  box-shadow: 0 0 0 1px var(--border);
+  transition: box-shadow 120ms ease;
+}
+
+.imageAttachChip:hover {
+  box-shadow: 0 0 0 1px var(--border-light);
+}
+
+.imageAttachImg {
+  height: 64px;
+  width: 64px;
+  object-fit: cover;
+  display: block;
+}
+
+.imageAttachImg[data-loading="true"] {
+  background: linear-gradient(
+    90deg,
+    var(--bg-tertiary) 0%,
+    var(--bg-secondary) 50%,
+    var(--bg-tertiary) 100%
+  );
+  background-size: 200% 100%;
+  animation: imageSkeletonShimmer 1.2s ease-in-out infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.imageAttachImg[data-loading="true"]::after {
+  content: "";
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--text-secondary);
+  animation: composerAttachSpin 0.8s linear infinite;
+}
+
+@keyframes imageSkeletonShimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@keyframes composerAttachSpin {
+  to { transform: rotate(360deg); }
+}
+
+.imageAttachRemove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: var(--scrim);
+  color: #fff;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+
+.imageAttachChip:hover .imageAttachRemove,
+.imageAttachChip:focus-within .imageAttachRemove {
+  opacity: 1;
+}
+
+.imageAttachRemove:hover {
+  background: var(--scrim-strong);
+}
+
+.imageAttachError {
+  font-size: 11px;
+  color: var(--accent-red);
+  margin-left: 4px;
+}
+
+.imageAttachErrorDismiss {
+  margin-left: 4px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--accent-red);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
