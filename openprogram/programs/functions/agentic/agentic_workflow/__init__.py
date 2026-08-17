@@ -32,7 +32,7 @@ from typing import Callable, Optional
 
 from openprogram.agentic_programming.function import (
     CancelledError,
-    agentic_function as _real_agentic_function,
+    agentic_function,
     current_session_id,
 )
 from openprogram.store.session.git_session import atomic_write_text
@@ -2354,7 +2354,7 @@ def _execute_workflow(
         )
 
 
-@_real_agentic_function(input={
+@agentic_function(input={
     "task": {"description": "The task to plan and execute", "multiline": True},
 })
 def agentic_workflow(task: str) -> dict:
