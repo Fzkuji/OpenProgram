@@ -987,7 +987,10 @@ def test_local_app_refresh_restarts_worker_after_runtime_install() -> None:
 def test_local_app_refresh_rejects_a_different_product_version_before_build(
     tmp_path: Path,
 ) -> None:
-    installed = _fake_desktop_app(tmp_path, "0.6.7")
+    source_version = _desktop_package()["version"]
+    major, minor, patch = (int(part) for part in source_version.split("."))
+    installed_version = f"{major}.{minor}.{patch + 1}"
+    installed = _fake_desktop_app(tmp_path, installed_version)
     verifier = ROOT / "scripts" / "verify-release-version.py"
     result = subprocess.run(
         [
@@ -1002,7 +1005,10 @@ def test_local_app_refresh_rejects_a_different_product_version_before_build(
         text=True,
     )
     assert result.returncode != 0
-    assert "source version 0.6.6 != installed App version 0.6.7" in result.stderr
+    assert (
+        f"source version {source_version} != installed App version "
+        f"{installed_version}"
+    ) in result.stderr
 
     refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
@@ -1025,7 +1031,8 @@ def test_local_app_refresh_rejects_a_different_product_version_before_build(
 def test_release_version_verifier_rejects_a_mismatched_built_wheel(
     tmp_path: Path,
 ) -> None:
-    installed = _fake_desktop_app(tmp_path / "installed", "0.6.6")
+    source_version = _desktop_package()["version"]
+    installed = _fake_desktop_app(tmp_path / "installed", source_version)
     wheel = tmp_path / "openprogram-0.6.1-py3-none-any.whl"
     with zipfile.ZipFile(wheel, "w") as archive:
         archive.writestr(
@@ -1047,7 +1054,7 @@ def test_release_version_verifier_rejects_a_mismatched_built_wheel(
         text=True,
     )
     assert result.returncode != 0
-    assert "wheel version 0.6.1 != source version 0.6.6" in result.stderr
+    assert f"wheel version 0.6.1 != source version {source_version}" in result.stderr
 
 
 def test_local_app_refresh_rejects_dirty_version_change_after_build(
@@ -1071,6 +1078,10 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     stage_assets = scripts / "stage-release-assets.sh"
     stage_assets.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     stage_assets.chmod(0o755)
+    (scripts / "install-release.sh").write_text(
+        'OPENPROGRAM_VERSION="${OPENPROGRAM_VERSION:-0.6.6}"\n',
+        encoding="utf-8",
+    )
     (repo / "pyproject.toml").write_text(
         '[project]\nname = "openprogram"\nversion = "0.6.6"\n',
         encoding="utf-8",
