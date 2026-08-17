@@ -31,6 +31,7 @@ import {
   SparklesIcon,
 } from "@/components/animated-icons";
 import {
+  DisclosureChevron,
   EditorPanel,
   EmptyState,
   LoadingSkeleton,
@@ -394,6 +395,7 @@ export function MemoryPage() {
                   {timelineGroups.map((year, yearIndex) => (
                     <details key={year.year} className={styles.timelineYear} open={yearIndex === 0}>
                       <summary className={`${styles.timelineYearSummary} ${styles.sidebarRow}`}>
+                        <DisclosureChevron className={styles.timelineChevron} />
                         <span>{year.year}</span>
                         <span>{year.entryCount} {text(year.entryCount === 1 ? "entry" : "entries", "条")}</span>
                       </summary>
@@ -407,6 +409,7 @@ export function MemoryPage() {
                       {year.months.map((month, monthIndex) => (
                         <details key={month.key} className={styles.timelineMonth} open={yearIndex === 0 && monthIndex === 0}>
                           <summary className={`${styles.timelineMonthSummary} ${styles.sidebarRow}`}>
+                            <DisclosureChevron className={styles.timelineChevron} />
                             <span>{month.label}</span>
                             <span>{month.entries.length + month.days.length} {text(month.entries.length + month.days.length === 1 ? "entry" : "entries", "条")}</span>
                           </summary>
