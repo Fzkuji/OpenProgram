@@ -79,6 +79,8 @@ assert.equal((memoryPage.match(/injectedTokens\.toLocaleString\(\)/g) || []).len
 assert.match(memoryCss, /@media\s*\(max-width:\s*720px\)[\s\S]*\.treeEmpty\s*\{\s*display:\s*none/);
 assert.match(memoryCss, /\.treeEmpty\s*\+\s*\.rightPane\s*\{[^}]*grid-row:\s*2\s*\/\s*-1/);
 assert.match(memoryPage, /styles\.recentEvent/);
+assert.match(memoryPage, /r\.headers\.get\("X-Memory-Recent-Limit"\)/);
+assert.match(memoryPage, /recentEvents\.length\} \/ \{recentLimit\}/);
 assert.doesNotMatch(memoryPage, /style=\{\{ marginBottom: "1rem" \}\}/);
 assert.doesNotMatch(memoryParts, /styles\.editorMeta/);
 assert.doesNotMatch(memoryParts, /<div className=\{styles\.editorMeta\}/);

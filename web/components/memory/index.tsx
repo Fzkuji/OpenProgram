@@ -71,6 +71,7 @@ export function MemoryPage() {
 
   // Recent state
   const [recentEvents, setRecentEvents] = useState<RecentEvent[]>([]);
+  const [recentLimit, setRecentLimit] = useState(50);
   const [recentLoading, setRecentLoading] = useState(true);
 
   // Core state
@@ -118,7 +119,11 @@ export function MemoryPage() {
 
   useEffect(() => {
     fetch("/api/memory/recent")
-      .then((r) => r.json())
+      .then((r) => {
+        const limit = Number(r.headers.get("X-Memory-Recent-Limit"));
+        if (Number.isInteger(limit) && limit > 0) setRecentLimit(limit);
+        return r.json();
+      })
       .then((data) => { setRecentEvents(Array.isArray(data) ? data : []); setRecentLoading(false); })
       .catch(() => setRecentLoading(false));
   }, []);
@@ -478,7 +483,9 @@ export function MemoryPage() {
                         <span className={styles.editorTitle}>{text("Recent", "最近")}</span>
                       </div>
                       <div className={styles.editorActions}>
-                        <span className={styles.fileMeta}>{recentEvents.length} {text("entries", "条")}</span>
+                        <span className={styles.fileMeta}>
+                          {recentEvents.length} / {recentLimit} {text("records", "条记录")}
+                        </span>
                       </div>
                     </div>
                     <div className={styles.preview}>

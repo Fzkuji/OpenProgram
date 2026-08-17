@@ -1252,7 +1252,7 @@
           </section>
 
           <section class="m-panel" data-memory-panel="recent">
-            <header class="m-detail-head"><div class="m-detail-copy"><div class="m-detail-title">Recent memory</div><div class="m-detail-sub">Newest durable records first · derived from Topics</div></div></header>
+            <header class="m-detail-head"><div class="m-detail-copy"><div class="m-detail-title">Recent memory</div><div class="m-detail-sub">3 / 50 records · newest durable records first · derived from Topics</div></div></header>
             <div class="m-doc-wrap"><article class="m-doc"><div class="m-recent-card"><div class="m-record-meta"><span class="m-badge">CORE</span><span>2026-08-15</span></div><p>Never fabricate tool calls or tool results. Report observed results and state when no available tool returns a result.</p></div><div class="m-recent-card"><div class="m-record-meta"><span class="m-badge">CORE</span><span>2026-08-15</span></div><p>Use plain 你 with no invented honorific unless the owner explicitly chooses one.</p></div><div class="m-recent-card"><div class="m-record-meta"><span class="m-badge">CORE</span><span>2026-08-10</span></div><p>Use Chinese by default when discussing Memory and other operational work.</p></div></article></div>
           </section>
 
@@ -1340,8 +1340,8 @@
     </div>
   </div>
 
-  <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；Recent 与 Core 不在中间栏重复标题、数量、视图切换或注入状态，Core 的切换和状态只在右侧内容头部出现一次；顶部不把受截断的 Recent 数量表述为 Memory 总量；右侧 Preview、Timeline、Recent 与 Core 使用居中的文档面，空 Topics 使用独立空状态卡；Timeline 按年、月、日折叠且不把派生文件重建时间显示成记录时间；Core 明确区分只读 Prompt preview 与可编辑 Source records；Topics 列表不显示 <code>core.md</code>；小于 720px 时不得产生横向重叠，编辑器操作进入独立下一行并可换行。页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
-  <div class="legend"><b>本轮实现状态：</b>Recent 和 Core 已删除中间栏的重复上下文块；Recent 的标题与数量只在右侧内容头部显示，Core 的 Prompt preview / Source records 切换、注入状态和 token 用量也只在右侧显示一次。Timeline 年/月/日折叠继续保留。正式 Memory 已通过结构化事务删除 survey test 项目记录；后台 writer 后续仍可按正常行为生成新 Topic。居中文档面、卡片化空状态、76px 单一标题区、780px 阅读宽度和窄窗编辑操作换行已经进入生产代码。Topics 文件行、Timeline 年/月/日入口继续复用 36px 行高、10px 横向内边距、8px 圆角和 13px 字号的侧栏行；Folder、Timeline 年和 Timeline 月也已复用同一个 14×14 线性 ChevronRight 与数字徽标，Timeline 只以缩进表达层级。小于 720px 的完整列表/详情互斥仍不在本轮生产实现范围。</div>
+  <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；Recent 与 Core 不在中间栏重复标题、数量、视图切换或注入状态，Core 的切换和状态只在右侧内容头部出现一次；Recent 右侧标题显示当前记录数与实时 <code>memory.recent.limit</code>，例如 <code>7 / 50 records</code>，不把记录条数误写成 token 预算；顶部不把受截断的 Recent 数量表述为 Memory 总量；右侧 Preview、Timeline、Recent 与 Core 使用居中的文档面，空 Topics 使用独立空状态卡；Timeline 按年、月、日折叠且不把派生文件重建时间显示成记录时间；Core 明确区分只读 Prompt preview 与可编辑 Source records；Topics 列表不显示 <code>core.md</code>；小于 720px 时不得产生横向重叠，编辑器操作进入独立下一行并可换行。页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
+  <div class="legend"><b>本轮实现状态：</b>Recent 和 Core 已删除中间栏的重复上下文块；Recent 的标题与容量只在右侧内容头部显示，并从 Recent API 响应头读取当前 <code>memory.recent.limit</code>，呈现为“当前记录数 / 配置上限”；Core 的 Prompt preview / Source records 切换、注入状态和 token 用量也只在右侧显示一次。Timeline 年/月/日折叠继续保留。正式 Memory 已通过结构化事务删除 survey test 项目记录；后台 writer 后续仍可按正常行为生成新 Topic。居中文档面、卡片化空状态、76px 单一标题区、780px 阅读宽度和窄窗编辑操作换行已经进入生产代码。Topics 文件行、Timeline 年/月/日入口继续复用 36px 行高、10px 横向内边距、8px 圆角和 13px 字号的侧栏行；Folder、Timeline 年和 Timeline 月也已复用同一个 14×14 线性 ChevronRight 与数字徽标，Timeline 只以缩进表达层级。小于 720px 的完整列表/详情互斥仍不在本轮生产实现范围。</div>
 
   <div class="grid2">
     <div class="oc">

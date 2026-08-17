@@ -339,9 +339,14 @@ def register(app):
         memory learned lately rather than a store of its own.
         """
         from openprogram.memory import store
+        from openprogram.memory.management.config import load_memory_config
+
+        headers = {
+            "X-Memory-Recent-Limit": str(load_memory_config().recent_limit),
+        }
         path = store.root() / "recent_events.jsonl"
         if not path.is_file():
-            return JSONResponse(content=[])
+            return JSONResponse(content=[], headers=headers)
         events = []
         for line in path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -352,7 +357,7 @@ def register(app):
             except json.JSONDecodeError:
                 continue
         events.reverse()
-        return JSONResponse(content=events)
+        return JSONResponse(content=events, headers=headers)
 
     # -- core --------------------------------------------------------------
 
