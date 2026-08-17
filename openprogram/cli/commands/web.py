@@ -4,9 +4,9 @@ Single-port architecture: the FastAPI worker serves the API, ``/ws`` AND
 the Next.js static export (``apps/web/out/``) on one port, so this command
 just spawns the detached worker and opens the browser at that port.
 
-The frontend is auto-started only for a source checkout (the ``web/``
+The frontend is auto-started only for a source checkout (the ``apps/web/``
 dir with ``node_modules`` sits next to the package — true for an editable
-install). It is skipped when :18100 is already serving, when ``web/`` /
+install). It is skipped when :18100 is already serving, when ``apps/web/`` /
 ``node_modules`` is absent (a packaged release), or when
 ``OPENPROGRAM_WEB_NO_FRONTEND`` is set.
 """
@@ -173,7 +173,7 @@ def _start_frontend(backend_port: int, web_port: int | None = None) -> subproces
         a traceback) when node / the frontend deps aren't installed.
 
     Skipped when explicitly disabled, when OUR frontend is already serving
-    :18100, or when there's no ``web/`` source (a plain wheel install). The
+    :18100, or when there's no ``apps/web/`` source (a plain wheel install). The
     child is put in its own process group / job so the whole tree tears
     down together on exit (see ``_stop_frontend``).
     """
@@ -183,7 +183,7 @@ def _start_frontend(backend_port: int, web_port: int | None = None) -> subproces
         web_port = _FRONTEND_PORT
     web = _find_web_dir()
     if web is None:
-        return None  # no web/ source — backend only
+        return None  # no apps/web/ source — backend only
     # Something on the frontend port already? Only reuse it when it actually
     # answers like our frontend — a bare ``connect`` would happily "reuse"
     # an unrelated program squatting it and desync every proxied URL.

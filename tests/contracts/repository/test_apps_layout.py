@@ -7,6 +7,7 @@ import openprogram
 
 from openprogram.cli import ink
 from openprogram.cli.commands import rescue
+from openprogram.cli.commands import web as cli_web
 from openprogram.worker import web as worker_web
 
 
@@ -62,6 +63,23 @@ def test_rescue_probe_reports_the_apps_web_bundle_path(tmp_path, monkeypatch) ->
     )
 
 
+def test_web_command_reports_the_apps_workspace_when_node_is_missing(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    web = tmp_path / "apps" / "web"
+    web.mkdir(parents=True)
+    monkeypatch.delenv("OPENPROGRAM_WEB_NO_FRONTEND", raising=False)
+    monkeypatch.setattr(cli_web, "_find_web_dir", lambda: web)
+    monkeypatch.setattr(cli_web, "_port_in_use", lambda _port: False)
+    monkeypatch.setattr("shutil.which", lambda _name: None)
+
+    assert cli_web._start_frontend(backend_port=18100, web_port=18101) is None
+
+    output = capsys.readouterr().out
+    assert "npm --prefix apps/web run dev" in output
+    assert "cd web" not in output
+
+
 def test_web_frontend_is_owned_by_apps_workspace() -> None:
     assert (ROOT / "apps/web/package.json").is_file()
     assert (ROOT / "apps/web/app").is_dir()
@@ -88,6 +106,7 @@ def test_current_developer_commands_use_apps_workspaces() -> None:
         "docs/reference/design/ui/browser-extensions.html",
         "docs/reference/design/ui/theme-system.html",
         "docs/reference/design/ui/center-tabs-and-split-layout.html",
+        "docs/reference/design/ui/send-queue-reliability.html",
         "docs/reference/design/distribution/installation-packaging.html",
     )
     removed_commands = (
