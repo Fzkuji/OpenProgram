@@ -397,7 +397,7 @@ export function MemoryPage() {
                       <summary className={`${styles.timelineYearSummary} ${styles.sidebarRow}`}>
                         <DisclosureChevron className={styles.timelineChevron} />
                         <span>{year.year}</span>
-                        <span>{year.entryCount} {text(year.entryCount === 1 ? "entry" : "entries", "条")}</span>
+                        <span className={styles.sidebarCount}>{year.entryCount}</span>
                       </summary>
                       <div className={styles.timelinePeriodEntries}>
                         {year.entries.map((entry) => (
@@ -411,7 +411,7 @@ export function MemoryPage() {
                           <summary className={`${styles.timelineMonthSummary} ${styles.sidebarRow}`}>
                             <DisclosureChevron className={styles.timelineChevron} />
                             <span>{month.label}</span>
-                            <span>{month.entries.length + month.days.length} {text(month.entries.length + month.days.length === 1 ? "entry" : "entries", "条")}</span>
+                            <span className={styles.sidebarCount}>{month.entries.length + month.days.length}</span>
                           </summary>
                           <div className={styles.timelineDays}>
                             {month.entries.map((entry) => (

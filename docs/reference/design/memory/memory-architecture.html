@@ -102,7 +102,7 @@
   .m-year-summary,.m-month-summary{height:34px;padding:0 8px;display:flex;align-items:center;gap:7px;color:#555760}
   .m-year-summary{font-size:12px;font-weight:700}
   .m-month-summary{padding-left:22px;color:#73757e;font-size:11px;font-weight:650}
-  .m-disclosure{width:8px;height:8px;flex:0 0 8px;color:#9a9ca4;transform:rotate(-90deg);transition:transform .12s ease}
+  .m-disclosure{width:14px;height:14px;flex:0 0 14px;color:#858891;transform:rotate(-90deg);transition:transform .12s ease}
   details[open]>.m-year-summary>.m-disclosure,details[open]>.m-month-summary>.m-disclosure{transform:rotate(0)}
   .m-time-days{padding:0 0 5px 27px}
   .m-time-day{min-height:42px;padding:6px 8px;display:grid;grid-template-columns:25px minmax(0,1fr) auto;align-items:center;gap:8px;border-radius:8px;color:#62646c}
@@ -1211,9 +1211,9 @@
           <div class="m-context" data-memory-context="timeline">
             <div class="m-time-tree">
               <details open>
-                <summary class="m-year-summary"><svg class="m-disclosure" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true"><path d="M2 3l3 4 3-4H2z"></path></svg>2026 <span class="m-count">2 days</span></summary>
+                <summary class="m-year-summary"><svg class="m-disclosure" viewBox="0 0 10 10" fill="none" stroke="currentColor" aria-hidden="true"><path d="M3 2l3 3-3 3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>2026 <span class="m-count">2</span></summary>
                 <details open>
-                  <summary class="m-month-summary"><svg class="m-disclosure" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true"><path d="M2 3l3 4 3-4H2z"></path></svg>August <span class="m-count">2 days</span></summary>
+                  <summary class="m-month-summary"><svg class="m-disclosure" viewBox="0 0 10 10" fill="none" stroke="currentColor" aria-hidden="true"><path d="M3 2l3 3-3 3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>August <span class="m-count">2</span></summary>
                   <div class="m-time-days">
                     <div class="m-time-day active"><span class="m-time-number">15</span><span class="m-time-name">Saturday</span><span class="m-time-size">734 B</span></div>
                     <div class="m-time-day"><span class="m-time-number">10</span><span class="m-time-name">Monday</span><span class="m-time-size">316 B</span></div>
@@ -1336,7 +1336,7 @@
       <thead><tr><th>区域</th><th>目标结构</th><th>避免的问题</th></tr></thead>
       <tbody>
         <tr><td><b>顶部标题栏</b></td><td>页面标题与 Memory settings</td><td>不显示无法由现有 API 准确计算的总量，也不放 writer 状态、刷新状态或重复说明</td></tr>
-        <tr><td><b>二级栏</b></td><td>分区下面的 Folder、Topic、Timeline 年/月/日、Recent 与 Core 入口全部使用同一套 36px 行高、10px 横向内边距、8px 圆角、13px 字号和选中背景。Folder 与 Timeline 年/月必须复用同一个 8×8 实心三角 disclosure SVG、路径和展开旋转规则；Timeline 只用缩进表达层级；Topics 不重复显示由 Core 分区管理的 <code>topics/core.md</code></td><td>不再让 Topics、Timeline、Recent 和 Core 使用不同的行样式或不同形状的展开箭头</td></tr>
+        <tr><td><b>二级栏</b></td><td>分区下面的 Folder、Topic、Timeline 年/月/日、Recent 与 Core 入口全部使用同一套 36px 行高、10px 横向内边距、8px 圆角、13px 字号和选中背景。Folder 与 Timeline 年/月必须复用同一个 14×14 线性 ChevronRight SVG、路径和展开旋转规则，并使用相同的数字徽标；Timeline 只用缩进表达层级；Topics 不重复显示由 Core 分区管理的 <code>topics/core.md</code></td><td>展开控件不再使用过小的实心三角，Timeline 不再显示与 Topics 不同的计数文本</td></tr>
         <tr><td><b>内容标题</b></td><td>名称、类型、路径、修改时间、视图与编辑操作集中在一个 76px 区域</td><td>删除独立 meta 横条和分散的 Core 状态</td></tr>
         <tr><td><b>正文</b></td><td>Preview/Timeline/Recent/Core 使用最大 780px 阅读面；Edit 保持全宽等宽字体编辑器</td><td>避免超宽文本和大片无结构空白</td></tr>
         <tr><td><b>窄宽度</b></td><td>分区图标栏 + 列表/详情单页切换</td><td>不自动折叠桌面栏，不把三块上下堆叠，不允许内容区重叠</td></tr>
@@ -1356,7 +1356,7 @@
   </div>
 
   <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；顶部不把受截断的 Recent 数量表述为 Memory 总量；右侧 Preview、Timeline、Recent 与 Core 使用居中的文档面，空 Topics 使用独立空状态卡；Timeline 按年、月、日折叠且不把派生文件重建时间显示成记录时间；Core 明确区分只读 Prompt preview 与可编辑 Source records；Topics 列表不显示 <code>core.md</code>；小于 720px 时不得产生横向重叠，编辑器操作进入独立下一行并可换行。页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
-  <div class="legend"><b>本轮实现状态：</b>Core 的 Prompt preview / Source records 命名、注入状态卡和 Timeline 年/月/日折叠继续保留。正式 Memory 已通过结构化事务删除 survey test 项目记录；后台 writer 后续仍可按正常行为生成新 Topic。居中文档面、卡片化空状态、76px 单一标题区、780px 阅读宽度和窄窗编辑操作换行已经进入生产代码。Topics 文件行、Timeline 年/月/日、Recent 与 Core 入口现已统一复用 36px 行高、10px 横向内边距、8px 圆角和 13px 字号的侧栏行；Folder、Timeline 年和 Timeline 月也已复用同一个 8×8 实心三角 disclosure SVG，Timeline 只以缩进表达层级。小于 720px 的完整列表/详情互斥仍不在本轮生产实现范围。</div>
+  <div class="legend"><b>本轮实现状态：</b>Core 的 Prompt preview / Source records 命名、注入状态卡和 Timeline 年/月/日折叠继续保留。正式 Memory 已通过结构化事务删除 survey test 项目记录；后台 writer 后续仍可按正常行为生成新 Topic。居中文档面、卡片化空状态、76px 单一标题区、780px 阅读宽度和窄窗编辑操作换行已经进入生产代码。Topics 文件行、Timeline 年/月/日、Recent 与 Core 入口现已统一复用 36px 行高、10px 横向内边距、8px 圆角和 13px 字号的侧栏行；Folder、Timeline 年和 Timeline 月也已复用同一个 14×14 线性 ChevronRight 与数字徽标，Timeline 只以缩进表达层级。小于 720px 的完整列表/详情互斥仍不在本轮生产实现范围。</div>
 
   <div class="grid2">
     <div class="oc">

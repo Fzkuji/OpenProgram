@@ -278,9 +278,12 @@
   color: var(--text-bright);
 }
 
-.chevron {
+.disclosureChevron {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  color: var(--text-muted);
   transition: transform 0.15s;
-  flex-shrink: 0;
 }
 
 .chevronOpen {
@@ -298,12 +301,18 @@
   white-space: nowrap;
 }
 
-.folderCount {
+.sidebarCount {
+  min-width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 12px;
-  padding: 0 5px;
-  border-radius: 8px;
+  line-height: 1;
+  padding: 0 6px;
+  border-radius: 10px;
   background: var(--bg-tertiary);
-  color: var(--text-primary);
+  color: var(--text-secondary);
   flex-shrink: 0;
 }
 
@@ -761,12 +770,7 @@
 }
 
 .timelineChevron {
-  width: 8px;
-  height: 8px;
-  flex: 0 0 8px;
-  color: var(--text-muted);
   transform: rotate(-90deg);
-  transition: transform 0.15s;
 }
 
 .timelineYear[open] > .timelineYearSummary > .timelineChevron,
@@ -774,12 +778,9 @@
   transform: rotate(0deg);
 }
 
-.timelineYearSummary > span:last-child,
-.timelineMonthSummary > span:last-child {
+.timelineYearSummary > .sidebarCount,
+.timelineMonthSummary > .sidebarCount {
   margin-left: auto;
-  color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 500;
 }
 
 .timelineDays {
