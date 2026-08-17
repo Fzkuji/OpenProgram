@@ -14,6 +14,15 @@ lock_root="$HOME/Library/Caches/OpenProgram"
 lock_file="$lock_root/app-package.lock"
 lock_owned=0
 
+acquire_pid_lock() {
+  local path="$1"
+  if [[ -x /usr/bin/shlock ]]; then
+    /usr/bin/shlock -p "$$" -f "$path"
+  else
+    (set -o noclobber; printf '%s\n' "$$" > "$path") 2>/dev/null
+  fi
+}
+
 release_package_lock() {
   if [[ "$lock_owned" == 1 && "$(sed -n '1p' "$lock_file" 2>/dev/null || :)" == "$$" ]]; then
     rm -f "$lock_file" || :
@@ -25,7 +34,7 @@ release_package_lock() {
   exit 1
 }
 mkdir -p "$desktop_dir/build" "$lock_root"
-if ! /usr/bin/shlock -p "$$" -f "$lock_file"; then
+if ! acquire_pid_lock "$lock_file"; then
   lock_pid="$(sed -n '1p' "$lock_file" 2>/dev/null || :)"
   printf 'another OpenProgram App package is running%s\n' \
     "${lock_pid:+ (pid $lock_pid)}" >&2

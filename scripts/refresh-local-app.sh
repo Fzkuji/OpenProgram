@@ -63,6 +63,14 @@ test -x "$app_python" || {
 wheel_dir="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-local-wheel.XXXXXX")"
 install_lock_file="$(dirname -- "$app_path")/.openprogram-app-install.lock"
 install_lock_owned=0
+acquire_pid_lock() {
+  local path="$1"
+  if test -x /usr/bin/shlock; then
+    /usr/bin/shlock -p "$$" -f "$path"
+  else
+    (set -o noclobber; printf '%s\n' "$$" > "$path") 2>/dev/null
+  fi
+}
 release_install_lock() {
   if test "$install_lock_owned" = 1 && \
     test "$(sed -n '1p' "$install_lock_file" 2>/dev/null || :)" = "$$"; then
@@ -126,7 +134,7 @@ while true; do
   printf 'HEAD changed during packaging; rebuilding the current checkout\n'
 done
 
-if ! /usr/bin/shlock -p "$$" -f "$install_lock_file"; then
+if ! acquire_pid_lock "$install_lock_file"; then
   lock_pid="$(sed -n '1p' "$install_lock_file" 2>/dev/null || :)"
   printf 'another OpenProgram App installation is running%s\n' \
     "${lock_pid:+ (pid $lock_pid)}" >&2

@@ -129,7 +129,7 @@ def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
         'env -u DESTDIR bash "$script_dir/install-app.sh" "$built_app"'
     )
     assert 'lock_root="$HOME/Library/Caches/OpenProgram"' in packager
-    assert '/usr/bin/shlock -p "$$" -f "$lock_file"' in packager
+    assert 'acquire_pid_lock "$lock_file"' in packager
     assert '"$web_build_dir" "$web_output_dir" "$frontend_stage_dir"' in packager
     assert 'rm -rf "$repo_root/build"' in (
         ROOT / "scripts" / "build-product-runtime.sh"
@@ -526,10 +526,7 @@ def test_packager_honors_one_stable_user_lock_across_worktrees(
     home = tmp_path / "home"
     lock_file = home / "Library" / "Caches" / "OpenProgram" / "app-package.lock"
     lock_file.parent.mkdir(parents=True)
-    subprocess.run(
-        ["/usr/bin/shlock", "-p", str(os.getpid()), "-f", str(lock_file)],
-        check=True,
-    )
+    lock_file.write_text(f"{os.getpid()}\n", encoding="utf-8")
     env = {
         "HOME": str(home),
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
@@ -1018,7 +1015,7 @@ def test_local_app_refresh_rejects_a_different_product_version_before_build(
     assert gate < refresh.index('"$repo_root/scripts/stage-release-assets.sh"')
     assert gate < refresh.index("openprogram worker stop")
     post_build_gate = refresh.index('--wheel "$wheel"')
-    lock = refresh.index('/usr/bin/shlock -p "$$" -f "$install_lock_file"')
+    lock = refresh.index('acquire_pid_lock "$install_lock_file"')
     archive = refresh.index('node "$asar_cli" pack')
     first_worker_mutation = refresh.index("pgrep -x OpenProgram")
     first_pip_mutation = refresh.index('"$local_python" -m pip install')
@@ -1197,10 +1194,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         encoding="utf-8",
     )
     lock_file = app.parent / ".openprogram-app-install.lock"
-    subprocess.run(
-        ["/usr/bin/shlock", "-p", str(os.getpid()), "-f", str(lock_file)],
-        check=True,
-    )
+    lock_file.write_text(f"{os.getpid()}\n", encoding="utf-8")
     try:
         blocked = subprocess.run(
             ["bash", str(scripts / "refresh-local-app.sh")],

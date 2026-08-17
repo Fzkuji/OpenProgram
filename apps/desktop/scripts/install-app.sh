@@ -135,12 +135,20 @@ reject_downgrade "$source_app"
 mkdir -p "$applications_dir"
 install_lock_file="$applications_dir/.openprogram-app-install.lock"
 install_lock_owned=0
+acquire_pid_lock() {
+  local path="$1"
+  if [[ -x /usr/bin/shlock ]]; then
+    /usr/bin/shlock -p "$$" -f "$path"
+  else
+    (set -o noclobber; printf '%s\n' "$$" > "$path") 2>/dev/null
+  fi
+}
 release_install_lock() {
   if [[ "$install_lock_owned" == 1 && "$(sed -n '1p' "$install_lock_file" 2>/dev/null || :)" == "$$" ]]; then
     rm -f "$install_lock_file" || :
   fi
 }
-if ! /usr/bin/shlock -p "$$" -f "$install_lock_file"; then
+if ! acquire_pid_lock "$install_lock_file"; then
   lock_pid="$(sed -n '1p' "$install_lock_file" 2>/dev/null || :)"
   printf 'another OpenProgram App installation is running%s\n' \
     "${lock_pid:+ (pid $lock_pid)}" >&2
