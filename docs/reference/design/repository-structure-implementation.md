@@ -32,6 +32,7 @@ current design contract; this file is operational history.
 | Test and top-level structure maintenance | `codex/test-structure-20260817` / `dbe752eb` | implemented | Declares tracked top-level directories, relocates two root scripts, refreshes generated package READMEs, and removes obsolete active-guide paths. |
 | Post-merge suite repair | `codex/test-structure-20260817` / `d04aa050` | implemented | Moves two real workflow execution tests to component, updates their package schema, and repairs merged documentation, distribution, and optional-dependency regressions. |
 | Documentation entry points and Programs alias | `codex/repository-structure-batch1-20260817` / `d9cc9933` | implemented | Refreshes the bilingual project map and workspace READMEs; removes only the confirmed re-export and unused stylesheet. |
+| Documentation-entry main integration | `29f8186d` | integrated | Two-parent merge with current `main` at `e2041770`; unrelated local icon and output files remain outside Git. |
 
 ## Verification record
 
@@ -62,6 +63,9 @@ pass — Web full check, 10 unit tests, TypeScript no-emit check, and 31-page pr
 0 new, 0 refreshed — second package README generator run for the candidate
 pass — independent specification review for d9cc9933
 pass — independent quality review for d9cc9933, including distribution, Web build, README fact, and HTML structure probes
+10 passed — post-merge repository-layout and documentation-information-architecture selection
+pass — post-merge Web full check, 10 unit tests, TypeScript no-emit check, and 31-page production build
+505 pages; 0 broken links; landing and language checks pass — post-merge documentation build
 ```
 
 ## Deferred boundaries
