@@ -1251,6 +1251,79 @@ def test_temporary_page_capture_is_released_when_lease_rejects(monkeypatch, rout
     assert released == [context]
 
 
+def test_same_owner_repeated_observe_reuses_exact_page_session():
+    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+        WebUseSessionRegistry,
+    )
+
+    released = []
+    registry = WebUseSessionRegistry(
+        adapters={name: _Adapter(name) for name in (
+            "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
+        )},
+        release_context=lambda context: released.append(context["context_id"]),
+        binding_validator=_allow_binding,
+    )
+    first = registry.execute(
+        command="observe", backend="playwright_mcp",
+        binding_id="binding-1", page_key="page-1", owner_id="turn:one",
+        page_context={"context_id": "ctx-first"},
+    )
+    repeated = registry.execute(
+        command="observe", backend="playwright_mcp",
+        binding_id="binding-2", page_key="page-1", owner_id="turn:one",
+        page_context={"context_id": "ctx-unused"},
+    )
+    other_owner = registry.execute(
+        command="observe", backend="playwright_mcp",
+        binding_id="binding-3", page_key="page-1", owner_id="turn:two",
+        page_context={"context_id": "ctx-other"},
+    )
+
+    assert repeated["web_session_id"] == first["web_session_id"]
+    assert repeated["session_reused"] is True
+    assert other_owner == {"ok": False, "reason_code": "page_in_use"}
+    registry.execute(
+        command="close", web_session_id=first["web_session_id"],
+        owner_id="turn:one",
+    )
+    assert released == ["ctx-first"]
+
+
+def test_public_repeated_observe_releases_unused_capture(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.agentic_functions import browser_agent as module
+    from openprogram.programs.agentic_functions.browser_agent import (
+        web_use_runtime,
+    )
+
+    context = {"context_id": "ctx-unused", "surfaces": [{}]}
+    released = []
+
+    class _Registry:
+        def execute(self, **_kwargs):
+            return {
+                "ok": True, "frame_id": "frame-2",
+                "web_session_id": "cs-existing", "session_reused": True,
+            }
+
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
+    monkeypatch.setattr(surface_context, "current", lambda: None)
+    monkeypatch.setattr(surface_context, "capture_active", lambda: context)
+    monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "binding-2")
+    monkeypatch.setattr(surface_context, "resolve_page_key", lambda _page="": "page-1")
+    monkeypatch.setattr(
+        surface_context, "release_bindings", lambda value: released.append(value),
+    )
+
+    result = module.web_use(
+        command="observe", backend="playwright_mcp", page="p1",
+    )
+
+    assert result["web_session_id"] == "cs-existing"
+    assert released == [context]
+
+
 @pytest.mark.parametrize("route", ["harness", "public"])
 def test_temporary_page_capture_is_released_when_binding_resolution_fails(
     monkeypatch, route,

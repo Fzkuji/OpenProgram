@@ -1441,7 +1441,9 @@ def web_use(
         if captured_here:
             surface_context.release_bindings(context)
         raise
-    if captured_here and command == "observe" and not result.get("web_session_id"):
+    if captured_here and command == "observe" and (
+        not result.get("web_session_id") or result.get("session_reused")
+    ):
         surface_context.release_bindings(context)
     return result
 

@@ -255,6 +255,7 @@ class WebUseSessionRegistry:
     ) -> dict[str, Any]:
         params = dict(arguments or {})
         created_session = command == "observe" and not web_session_id
+        reused_session = False
         if created_session:
             revisions: Mapping[str, int] = {}
             selected = backend or DEFAULT_BACKEND
@@ -298,11 +299,25 @@ class WebUseSessionRegistry:
                 owner_id=owner_id,
                 page_context=page_context,
             )
+            unused_capability_context = None
             with self._lock:
                 if self._closing_all or owner_id in self._closing_owners:
                     return {"ok": False, "reason_code": "owner_closing"}
-                if page_key in self._page_leases:
-                    return {"ok": False, "reason_code": "page_in_use"}
+                leased_session_id = self._page_leases.get(page_key, "")
+                leased_session = self._sessions.get(leased_session_id)
+                if leased_session_id:
+                    if leased_session is None:
+                        return {"ok": False, "reason_code": "page_in_use"}
+                    if (
+                        leased_session.owner_id != owner_id
+                        or leased_session.backend != selected
+                        or leased_session.closing
+                        or leased_session.closed
+                    ):
+                        return {"ok": False, "reason_code": "page_in_use"}
+                    session = leased_session
+                    created_session = False
+                    reused_session = True
                 if page_context_token:
                     capability = self._page_capabilities.get(page_context_token)
                     if capability is None:
@@ -311,9 +326,16 @@ class WebUseSessionRegistry:
                         return {"ok": False, "reason_code": "page_context_owner_mismatch"}
                     if capability["consumed"]:
                         return {"ok": False, "reason_code": "page_context_consumed"}
-                    capability["consumed"] = True
-                self._sessions[session.id] = session
-                self._page_leases[page_key] = session.id
+                    if reused_session:
+                        unused_capability_context = capability["context"]
+                        self._page_capabilities.pop(page_context_token, None)
+                    else:
+                        capability["consumed"] = True
+                if not reused_session:
+                    self._sessions[session.id] = session
+                    self._page_leases[page_key] = session.id
+            if unused_capability_context is not None:
+                self._release_context(unused_capability_context)
         else:
             with self._lock:
                 session = self._sessions.get(web_session_id)
@@ -430,11 +452,15 @@ class WebUseSessionRegistry:
             )
             metadata.setdefault("web_session_id", session.id)
             metadata.setdefault("backend", session.backend)
+            if reused_session:
+                metadata["session_reused"] = True
             result.json_data = metadata
             return result
         payload = dict(result) if isinstance(result, dict) else {"result": result}
         payload.setdefault("web_session_id", session.id)
         payload.setdefault("backend", session.backend)
+        if reused_session:
+            payload["session_reused"] = True
         return payload
 
     def close_all(self) -> None:
