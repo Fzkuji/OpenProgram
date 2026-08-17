@@ -9,7 +9,7 @@ runtime_dir="$desktop_dir/build/runtime"
 python_build_dir="$repo_root/build"
 web_build_dir="$repo_root/apps/web/.next"
 web_output_dir="$repo_root/apps/web/out"
-frontend_stage_dir="$repo_root/openprogram/webui/_frontend"
+frontend_stage_dir="$repo_root/apps/server/openprogram_server/_webui/_frontend"
 lock_root="$HOME/Library/Caches/OpenProgram"
 lock_file="$lock_root/app-package.lock"
 lock_owned=0
@@ -48,7 +48,7 @@ cleanup() {
   [[ "$python_build_dir" == "$repo_root/build" ]] || { release_package_lock; exit "$status"; }
   [[ "$web_build_dir" == "$repo_root/apps/web/.next" ]] || { release_package_lock; exit "$status"; }
   [[ "$web_output_dir" == "$repo_root/apps/web/out" ]] || { release_package_lock; exit "$status"; }
-  [[ "$frontend_stage_dir" == "$repo_root/openprogram/webui/_frontend" ]] || { release_package_lock; exit "$status"; }
+  [[ "$frontend_stage_dir" == "$repo_root/apps/server/openprogram_server/_webui/_frontend" ]] || { release_package_lock; exit "$status"; }
   rm -rf "$work_dir" "$runtime_dir" "$python_build_dir" \
     "$web_build_dir" "$web_output_dir" "$frontend_stage_dir" || :
   release_package_lock

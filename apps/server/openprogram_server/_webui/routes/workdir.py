@@ -10,6 +10,7 @@ import os
 import sys
 
 from fastapi.responses import JSONResponse
+from openprogram.paths import get_default_workdir
 
 
 def _pick_folder_native(start: str):
@@ -250,9 +251,7 @@ def register(app):
     async def workdir_defaults(session_id: str = None, function_name: str = None):
         import pathlib
         from openprogram.webui import server as _s
-        repo_root = os.path.abspath(os.path.join(
-            os.path.dirname(_s.__file__), "..", ".."
-        ))
+        repo_root = get_default_workdir()
         last = None
         if session_id and function_name:
             with _s._sessions_lock:

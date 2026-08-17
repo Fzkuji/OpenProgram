@@ -45,6 +45,9 @@ def test_release_wheel_probe_runs_outside_the_checkout():
     assert '(cd "$probe_dir"' in workflow
     assert "python -P -c" in workflow
     assert "assert canonical is legacy" in workflow
+    assert "openprogram_server/_webui/_frontend/index.html" in workflow
+    assert "openprogram_server/_webui/routes/tree.py" in workflow
+    assert "openprogram_server/_webui/ws_actions/webtab.py" in workflow
     assert "openprogram_cli/_impl/application.py" in workflow
     assert "assert openprogram_cli.main is legacy_cli.main" in workflow
     assert 'openprogram_cli.build_parser().prog == "openprogram"' in workflow

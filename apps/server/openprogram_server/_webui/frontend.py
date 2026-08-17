@@ -19,9 +19,9 @@ from pathlib import Path
 
 
 def web_dir() -> Path:
-    """Repo-root ``web/`` directory."""
-    # openprogram/webui/frontend.py → repo_root/apps/web
-    return Path(__file__).resolve().parents[2] / "apps" / "web"
+    """Repo-root ``apps/web`` directory for a source checkout."""
+    # apps/server/openprogram_server/_webui/frontend.py → repo_root/apps/web
+    return Path(__file__).resolve().parents[3] / "web"
 
 
 def packaged_out_dir() -> Path:

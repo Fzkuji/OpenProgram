@@ -115,7 +115,13 @@ def test_build_gate_errors_without_out_and_npm(out_tree, monkeypatch):
 
 
 def test_installed_package_prefers_bundled_frontend(tmp_path, monkeypatch):
-    bundled = tmp_path / "site-packages" / "openprogram" / "webui" / "_frontend"
+    bundled = (
+        tmp_path
+        / "site-packages"
+        / "openprogram_server"
+        / "_webui"
+        / "_frontend"
+    )
     bundled.mkdir(parents=True)
     (bundled / "index.html").write_text("bundled", encoding="utf-8")
     checkout = tmp_path / "checkout" / "web" / "out"

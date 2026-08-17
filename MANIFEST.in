@@ -1,1 +1,1 @@
-recursive-include openprogram/webui/_frontend *
+recursive-include apps/server/openprogram_server/_webui/_frontend *

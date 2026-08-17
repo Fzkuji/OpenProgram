@@ -514,7 +514,7 @@
     </div>
 
     <div class="grid3">
-      <article class="card cyan"><div class="k">Public allowlist</div><h3>仅四个公共类别</h3><p>静态 shell/asset（包括只读取预构建文件的 <code>GET/HEAD /docs</code> 文档站）、ownership challenge、bootstrap、最小 health。源码 checkout 读取 <code>docs/_site</code>，安装包读取发布阶段放入 <code>openprogram/webui/_frontend/docs</code> 的同一份预构建站点。文档过期检查只在源码 worker 注册路由时运行，不由 HTTP 请求触发。Shell 使用 CSP <code>frame-ancestors 'none'</code> 与 <code>X-Frame-Options: DENY</code>。</p></article>
+      <article class="card cyan"><div class="k">Public allowlist</div><h3>仅四个公共类别</h3><p>静态 shell/asset（包括只读取预构建文件的 <code>GET/HEAD /docs</code> 文档站）、ownership challenge、bootstrap、最小 health。源码 checkout 读取 <code>docs/_site</code>，安装包读取发布阶段放入 <code>openprogram_server/_webui/_frontend/docs</code> 的同一份预构建站点。文档过期检查只在源码 worker 注册路由时运行，不由 HTTP 请求触发。Shell 使用 CSP <code>frame-ancestors 'none'</code> 与 <code>X-Frame-Options: DENY</code>。</p></article>
       <article class="card amber"><div class="k">Browser cookie</div><h3>CSRF 校验保留</h3><p><code>GET/HEAD/OPTIONS</code> 必须无副作用。Unsafe method 与 WS 要求 Origin 等于 <code>request_origin</code>；safe 请求只允许省略 Origin。</p></article>
       <article class="card violet"><div class="k">Native client</div><h3>Header-only Bearer</h3><p>HTTP、SSE 和原生 WS 使用 Bearer。不接受 query token；除 bootstrap 外，一旦存在 Authorization，错误 Bearer 不能回退 cookie。Bootstrap 出现 Authorization 时直接返回同一 401。</p></article>
     </div>
@@ -580,7 +580,7 @@ openprogram web auth-url \
       <li>Loopback HTTP、SSE、WS 无 credential 时失败。</li>
       <li>正确 Bearer 在无 Origin 时成功；错误 token 无动作且返回相同 401。</li>
       <li>Fragment 在其他 fetch 前清除；bootstrap 只接受精确有界 JSON，拒绝混合 Authorization，并派生规定 HMAC cookie。</li>
-      <li>未认证的 <code>GET/HEAD /docs</code> 与 <code>/docs/**</code> 在源码 checkout 和安装包中都可以读取预构建静态文档，且请求不会扫描源码或触发构建；安装包的 wheel 必须包含 <code>webui/_frontend/docs/index.html</code>。Host 校验继续生效，非安全方法和所有私有 API 不进入该例外。</li>
+      <li>未认证的 <code>GET/HEAD /docs</code> 与 <code>/docs/**</code> 在源码 checkout 和安装包中都可以读取预构建静态文档，且请求不会扫描源码或触发构建；安装包的 wheel 必须包含 <code>openprogram_server/_webui/_frontend/docs/index.html</code>。Host 校验继续生效，非安全方法和所有私有 API 不进入该例外。</li>
       <li>Cookie unsafe HTTP 与 WS 拒绝 missing、opaque、cross-site Origin。</li>
       <li>Loopback、direct bind、proxy 都拒绝外部、重复、unspecified 与 multicast Host，并验证 HTTP/WS scheme 映射。</li>
       <li>默认 loopback 只接受隐式 Origin；其他 SSH 本地端口必须显式配置。</li>

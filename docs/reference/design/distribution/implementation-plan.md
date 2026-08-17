@@ -280,13 +280,13 @@ The platform runtime and public desktop artifact probes run on native release ru
 
 ### Prior-batch files
 
-- Production: `openprogram/webui/frontend.py`, `pyproject.toml`, `apps/desktop/main.js`, `apps/desktop/package.json`, release staging scripts, and the release workflow.
+- Production: `apps/server/openprogram_server/_webui/frontend.py`, `pyproject.toml`, `apps/desktop/main.js`, `apps/desktop/package.json`, release staging scripts, and the release workflow.
 - Tests: frontend package-resource tests, desktop packaged-runtime checks, and release configuration checks.
 - Documentation: the distribution HTML design, related design links, and install/upgrade/desktop/server product pages.
 
 ### Prior-batch public-entry acceptance
 
-1. A wheel built after release asset staging contains `openprogram/webui/_frontend/index.html` and hashed Next.js assets; an isolated wheel install serves `/chat` without repository sources or Node.js.
+1. A wheel built after release asset staging contains `openprogram_server/_webui/_frontend/index.html` and hashed Next.js assets; an isolated wheel install serves `/chat` without repository sources or Node.js.
 2. A packaged Electron launch resolves the Python executable exclusively from `process.resourcesPath`, invokes `-I -B -m openprogram worker start`, does not fall back to `PATH`, and does not write bytecode into the signed application.
 3. `electron-builder` declares macOS DMG/ZIP and Linux AppImage targets and includes the staged runtime as an immutable resource.
 4. A tag-triggered release workflow builds each platform on its native runner, runs focused acceptance checks, and publishes checksums only after artifacts exist.

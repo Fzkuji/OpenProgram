@@ -18,6 +18,7 @@ import uuid
 import os
 
 from fastapi.responses import JSONResponse
+from openprogram.paths import get_default_workdir
 
 
 _FUNCTION_BODY_CONTROL_KEYS = {
@@ -29,6 +30,16 @@ _FUNCTION_BODY_CONTROL_KEYS = {
     "workdir",
     "response_format",
 }
+
+
+def _resolve_work_dir(conv: dict, name: str, work_dir: str | None) -> str:
+    if not work_dir or not str(work_dir).strip():
+        work_dir = (conv.get("last_workdirs") or {}).get(name)
+    if not work_dir or not str(work_dir).strip():
+        work_dir = get_default_workdir()
+    resolved = os.path.abspath(os.path.expanduser(str(work_dir)))
+    conv.setdefault("last_workdirs", {})[name] = resolved
+    return resolved
 
 
 def register(app):
@@ -124,7 +135,7 @@ def register(app):
           ``kwargs`` (dict)         — function arguments.
           ``work_dir`` (str, optional) — workdir bound to the call.
             Falls back to the session's last workdir for this function,
-            then the repo root.
+            then the configured default project directory.
         """
         body = body or {}
         response_format = None
@@ -310,17 +321,7 @@ def run_agentic_function_call(
     # the run's caller so it forks as a sibling of the original.
     if anchor_msg_id is None:
         anchor_msg_id = ""
-    if not work_dir or not str(work_dir).strip():
-        work_dir = (conv.get("last_workdirs") or {}).get(name)
-    if not work_dir or not str(work_dir).strip():
-        work_dir = os.path.abspath(
-            os.path.join(os.path.dirname(_s.__file__), "..", "..")
-        )
-    work_dir = os.path.abspath(os.path.expanduser(str(work_dir)))
-    try:
-        conv.setdefault("last_workdirs", {})[name] = work_dir
-    except Exception:
-        pass
+    work_dir = _resolve_work_dir(conv, name, work_dir)
     # msg_id is only a WS-routing handle for the response stream;
     # it is never written to the DAG. The code node written by the
     # @agentic_function is the canonical record: a NEW run (empty anchor)

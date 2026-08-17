@@ -1,9 +1,8 @@
-"""
-Compatibility entry points for the OpenProgram Server application.
+"""Compatibility namespace for the OpenProgram Server application.
 
-The application assembly lives in :mod:`openprogram_server`. Existing
-``openprogram.webui`` imports remain available while the route modules migrate
-out of the Agent Core package.
+Server source lives in :mod:`openprogram_server`.  This package preserves the
+established ``openprogram.webui.*`` module names while loading their single
+implementation from the Server application package.
 
 Usage:
     from openprogram.webui import start_web
@@ -13,6 +12,58 @@ Or from CLI:
     openprogram web
     python -m openprogram.webui
 """
+
+from importlib import util
+from pathlib import Path
+import sys
+
+
+def _load_server_package():
+    """Resolve this checkout's Server package, rejecting mixed installations."""
+    package_dir = Path(__file__).resolve().parents[2] / "apps/server/openprogram_server"
+    existing = sys.modules.get("openprogram_server")
+    if existing is not None:
+        existing_file = getattr(existing, "__file__", None)
+        if existing_file is None:
+            raise ImportError(
+                "openprogram_server was already imported from an unknown location"
+            )
+        try:
+            if Path(existing_file).resolve().is_relative_to(package_dir.resolve()):
+                return existing
+        except OSError:
+            pass
+        if package_dir.is_dir():
+            raise ImportError(
+                "openprogram_server was already imported from a different location: "
+                f"{existing_file}"
+            )
+        return existing
+
+    if not (package_dir / "__init__.py").is_file():
+        from importlib import import_module
+
+        return import_module("openprogram_server")
+
+    spec = util.spec_from_file_location(
+        "openprogram_server",
+        package_dir / "__init__.py",
+        submodule_search_locations=[str(package_dir)],
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load OpenProgram Server package from {package_dir}")
+    package = util.module_from_spec(spec)
+    sys.modules["openprogram_server"] = package
+    spec.loader.exec_module(package)
+    return package
+
+
+_server_package = _load_server_package()
+_implementation_dir = Path(_server_package.__file__).resolve().parent / "_webui"
+if not _implementation_dir.is_dir():
+    raise ImportError(f"OpenProgram Server implementation is missing: {_implementation_dir}")
+if str(_implementation_dir) not in __path__:
+    __path__.append(str(_implementation_dir))
 
 # ponytail: PEP 562 lazy export instead of an eager
 # ``from openprogram_server.server import ...``. The eager form made merely

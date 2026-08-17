@@ -1334,6 +1334,14 @@ def test_release_frontend_staging_removes_stale_export_before_build() -> None:
     assert cleanup < build
 
 
+def test_release_frontend_staging_removes_legacy_package_assets() -> None:
+    staging = (ROOT / "scripts" / "stage-release-assets.sh").read_text(
+        encoding="utf-8"
+    )
+    assert 'legacy_target_dir="$repo_root/openprogram/webui/_frontend"' in staging
+    assert 'rm -rf "$target_dir" "$legacy_target_dir"' in staging
+
+
 def test_release_frontend_staging_includes_prebuilt_docs() -> None:
     staging = (ROOT / "scripts" / "stage-release-assets.sh").read_text(
         encoding="utf-8"

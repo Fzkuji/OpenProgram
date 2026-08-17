@@ -73,7 +73,7 @@ real work keeps a `generateStaticParams` returning one placeholder instead.
 
 ### 3.2 The worker serves the export
 
-`openprogram/webui/frontend.py`, mounted last in `create_app()`:
+`apps/server/openprogram_server/_webui/frontend.py`, mounted last in `create_app()`:
 
 - Static files from `apps/web/out/` (immutable cache headers for `/_next/static`,
   no-cache for HTML).

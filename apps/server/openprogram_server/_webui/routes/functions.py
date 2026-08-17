@@ -14,8 +14,14 @@ import re
 import sys
 import threading
 import uuid
+from pathlib import Path
 
+import openprogram
 from fastapi.responses import JSONResponse
+
+
+def _programs_root() -> Path:
+    return Path(openprogram.__file__).resolve().parent / "programs"
 
 
 def register(app):
@@ -33,11 +39,11 @@ def register(app):
     async def get_function_source(name: str):
         """Return full source code of a function."""
         from openprogram.webui import server as _s
-        base = os.path.dirname(os.path.dirname(_s.__file__))
+        programs_root = os.fspath(_programs_root())
         # Unified agentics layout: each function is its own package
         # (programs/functions/agentic/<name>/__init__.py), or a flat
         # programs/functions/agentic/<name>.py for legacy entries.
-        agentics_base = os.path.join(base, "programs", "functions", "agentic")
+        agentics_base = os.path.join(programs_root, "functions", "agentic")
         candidates = [
             (os.path.join(agentics_base, name, "__init__.py"), "agentic"),
             (os.path.join(agentics_base, f"{name}.py"), "agentic"),
@@ -53,7 +59,7 @@ def register(app):
                     "category": category,
                 })
         # Harness apps: <applications>/<package>/.../main.py
-        applications_base = os.path.join(base, "programs", "applications")
+        applications_base = os.path.join(programs_root, "applications")
         if os.path.isdir(applications_base):
             for d in os.listdir(applications_base):
                 full_path = os.path.join(applications_base, d)
@@ -105,7 +111,7 @@ def register(app):
                 pass
 
         # Grep harness-app directories (handles symlinked externals)
-        apps_dir = os.path.join(base, "programs", "applications")
+        apps_dir = os.path.join(programs_root, "applications")
         func_pattern = re.compile(rf'def\s+{re.escape(name)}\s*\(')
         if os.path.isdir(apps_dir):
             for root, dirs, files in os.walk(apps_dir, followlinks=True):
@@ -136,14 +142,13 @@ def register(app):
     @app.post("/api/function/{name}/edit")
     async def edit_function_source(name: str, body: dict = None):
         """Save edited source code for a function."""
-        from openprogram.webui import server as _s
         if not body or "source" not in body:
             return JSONResponse(content={"error": "no source provided"}, status_code=400)
-        base = os.path.dirname(os.path.dirname(_s.__file__))
+        programs_root = os.fspath(_programs_root())
         # Save edited source to the unified agentics layout. Prefer the
         # package form (<name>/__init__.py); fall back to a flat file
         # only when one already exists from a legacy path.
-        agentics_base = os.path.join(base, "programs", "functions", "agentic")
+        agentics_base = os.path.join(programs_root, "functions", "agentic")
         pkg_init = os.path.join(agentics_base, name, "__init__.py")
         flat_py = os.path.join(agentics_base, f"{name}.py")
         filepath = flat_py if os.path.isfile(flat_py) else pkg_init
@@ -187,15 +192,14 @@ def register(app):
     @app.delete("/api/function/{name}")
     async def delete_function(name: str):
         """Delete a user function file."""
-        from openprogram.webui import server as _s
-        base = os.path.dirname(os.path.dirname(_s.__file__))
+        programs_root = os.fspath(_programs_root())
         # Agentic functions live as packages under programs/functions/agentic/<name>/__init__.py.
         agentics_dir = os.path.join(
-            base, "programs", "functions", "agentic", name
+            programs_root, "functions", "agentic", name
         )
         filepath_pkg = os.path.join(agentics_dir, "__init__.py")
         filepath_flat = os.path.join(
-            base, "programs", "functions", "agentic", f"{name}.py"
+            programs_root, "functions", "agentic", f"{name}.py"
         )
         if os.path.isfile(filepath_pkg):
             filepath = filepath_pkg

@@ -22,10 +22,11 @@ import os
 from collections import deque
 from pathlib import Path
 
+import openprogram
 from fastapi.responses import JSONResponse
 
 
-PROGRAMS_ROOT = Path(__file__).resolve().parents[2] / "programs"
+PROGRAMS_ROOT = Path(openprogram.__file__).resolve().parent / "programs"
 _IGNORED = {
     ".git", ".pytest_cache", "__pycache__", "node_modules", "build", "dist",
     "output", "runs", ".venv", "venv",

@@ -16,8 +16,9 @@ from pathlib import Path
 
 
 def _repo_root() -> Path:
-    # openprogram/webui/routes/docs.py → repo_root/
-    return Path(__file__).resolve().parents[3]
+    from openprogram.updater.detect import package_root, repo_root
+
+    return repo_root() or package_root().parent
 
 
 def _docs_dir() -> Path:

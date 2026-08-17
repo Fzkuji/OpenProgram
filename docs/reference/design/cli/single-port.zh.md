@@ -66,7 +66,7 @@ Electron 壳 → Python worker（FastAPI，单端口）
 
 ### 3.2 worker 托管导出产物
 
-`openprogram/webui/frontend.py`，在 `create_app()` 最后挂载：
+`apps/server/openprogram_server/_webui/frontend.py`，在 `create_app()` 最后挂载：
 
 - 静态文件来自 `apps/web/out/`（`/_next/static` 加 immutable 缓存头，HTML
   no-cache）。

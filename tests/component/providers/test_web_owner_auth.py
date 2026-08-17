@@ -357,7 +357,14 @@ def test_public_docs_requests_only_read_prebuilt_files(tmp_path, monkeypatch):
 def test_installed_package_prefers_bundled_docs(tmp_path, monkeypatch):
     checkout = tmp_path / "checkout"
     source = checkout / "docs" / "_site"
-    bundled = tmp_path / "site-packages" / "openprogram" / "webui" / "_frontend" / "docs"
+    bundled = (
+        tmp_path
+        / "site-packages"
+        / "openprogram_server"
+        / "_webui"
+        / "_frontend"
+        / "docs"
+    )
     source.mkdir(parents=True)
     bundled.mkdir(parents=True)
     (source / "index.html").write_text("source", encoding="utf-8")

@@ -5,7 +5,8 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 web_dir="$repo_root/apps/web"
 source_dir="$web_dir/out"
 next_build_dir="$web_dir/.next"
-target_dir="$repo_root/openprogram/webui/_frontend"
+target_dir="$repo_root/apps/server/openprogram_server/_webui/_frontend"
+legacy_target_dir="$repo_root/openprogram/webui/_frontend"
 docs_source_dir="$repo_root/docs/_site"
 docs_target_dir="$target_dir/docs"
 
@@ -38,7 +39,7 @@ test -f "$docs_source_dir/index.html" || {
   exit 1
 }
 
-rm -rf "$target_dir"
+rm -rf "$target_dir" "$legacy_target_dir"
 mkdir -p "$target_dir"
 cp -R "$source_dir/." "$target_dir/"
 mkdir -p "$docs_target_dir"
