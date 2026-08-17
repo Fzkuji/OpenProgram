@@ -133,7 +133,7 @@
     <tr><td>首轮页面感知</td><td>安装版 chat command 包含 exact surface；服务端向同一 originating WebSocket 发出 <code>preview</code>，provider 在首个回复前获得 Bilibili title、origin、DOM excerpt、ARIA landmarks 和 <code>web_use</code> schema。</td><td class="pass">PASS，无 screenshot</td></tr>
     <tr><td>绑定页面点击</td><td>Session <code>local_340bc50ccd2c4eafb1fc12378e0489ab</code>；模型调用 <code>web_use</code>，内部以 DOM ref 点击首页导航“番剧”。命令记录同时包含 exact window/tab 的 <code>preview</code> 和 <code>activate</code>。</td><td class="pass">PASS</td></tr>
     <tr><td>确定性结果</td><td>目标变为 <code>https://www.bilibili.com/anime/?spm_id_from=333.1007.0.0</code>；<code>title_contains=番剧</code> 在 <code>frame_6_a628e0d2</code> 返回 <code>passed=true</code>。外层工具结果为 <code>status=succeeded</code>、<code>reason_code=verified</code>。</td><td class="pass">PASS</td></tr>
-    <tr><td>无需应用置顶</td><td><code>test_web_use_occluded_app.py</code> 只在 Quartz 证明安装版 renderer client area 被另一个前台窗口完整覆盖后运行。它在后台临时 Page 上执行 <code>list_pages → observe → viewport screenshot → DOM ref click → observe → verify → close</code>，并在建页、截图、点击、验证和清理后逐次断言前台应用、前台窗口 ID/边界及目标 OpenProgram 窗口 ID/边界均未变化。CDP attach 不调用 <code>browser.close()</code>、<code>bringToFront()</code>、窗口 focus、整屏截图或 OS input。</td><td class="pending">独立自动化 E2E 已加入；本轮因 OpenProgram 位于前台而在任何 Page 变更前跳过</td></tr>
+    <tr><td>窗口状态不参与执行</td><td><code>test_web_use_background_app.py</code> 自行创建临时 Page 后立即切回原 tab，使目标 Page 成为 <code>visible=false</code> 的后台 WebContents。随后执行 <code>list_pages → observe → viewport screenshot → DOM ref click → observe → verify → close</code>；每个 Agent 动作后都要求原 tab 仍然可见。截图由 exact Page 的 CDP session 直接生成；Web Use 不读取系统屏幕，也不查询或改变系统窗口的层级、位置、遮挡、最小化或置顶状态，不调用 <code>browser.close()</code>、<code>bringToFront()</code>、窗口 focus、整屏截图或 OS input。</td><td class="pass">独立后台 Page 自动化 E2E</td></tr>
   </tbody>
 </table>
 
@@ -144,13 +144,13 @@
   <li><code>npm --prefix web run build</code></li>
   <li><code>node desktop/scripts/check-webtab-navigation.js</code></li>
   <li><code>node web/scripts/check-web-split.mjs</code></li>
-  <li><code>OPENPROGRAM_TEST_LIVE=1 python -m pytest -q -m live tests/live/app/test_web_use_occluded_app.py</code>：独立安装版遮挡 E2E；仅在 OpenProgram 被前台窗口完整覆盖时执行。</li>
+  <li><code>OPENPROGRAM_TEST_LIVE=1 OPENPROGRAM_TEST_REAL_HOME=1 python -m pytest -q -m live tests/live/app/test_web_use_background_app.py</code>：独立安装版后台 Page E2E；使用默认安装版 profile，自行构造后台 Page，不要求改变桌面窗口状态。</li>
   <li><code>python -m tools.docs_site.checklinks</code>：当前仅报告未修改的 <code>chat-turn-visual-spec.raw.html</code> 中 4 个既有源码相对链接；本任务涉及页面没有新增失效链接。</li>
   <li><code>git diff --check</code></li>
 </ul>
 
 <h2>任务 2 当前范围与剩余项</h2>
-<p>当前实现支持 turn-scoped exact Page binding、server-owned connection/Page/access monotonic revision、renderer-owned monotonic geometry revision、基于 Page revision canonical key 的 WebSession 排他 lease，以及显式 <code>screenshot</code> 的单张当前 viewport 原生视觉输入。session 内 action、verify、observe 与 close 串行执行；首次 observe 以及后续每次 observe、act 和 verify 都在 backend 前重新验证 exact visible binding。Page capability 保存 page/access/geometry revision，agentic 子进程把期望值经父子进程 bridge 传回父 worker；父 worker 比较 Page/access revision，exact renderer 在 native preview/activate 前以及异步完成后复核实际可见性与 geometry revision。任一不一致即返回 <code>page_context_stale</code>，不进入 backend；异步完成后的过期结果不包含 preview 或 target。pane bounds 或可见性变化只使旧 WebSession 失效，不重建 Page identity。真实 hide/occlusion 以 ready 与当前 bounds 共同判定；旧客户端的 revision <code>0</code> 仍跳过 geometry 比较，但不能绕过可见性检查。close、首次 observe 失败、owner disconnect 或进程清理完成前 lease 不会提前释放。target replacement 会撤销旧 Page identity；owner WebSocket disconnect 会立即撤销该连接的全部 binding 并唤醒 pending exact-socket request。两个 connection、48 个 binding 的 component 并发验证确认命令只发送到 originating connection，断开其中一个不影响另一个。安装版双窗口 transfer/rollback、截图 artifact 临时保留策略与三个 backend 的统一 parity suite 已完成。专用 permission card 属于 UI 后续项，不在本次仅实现功能的范围内。</p>
+<p>当前实现支持 turn-scoped exact Page binding、server-owned connection/Page/access monotonic revision、renderer-owned monotonic geometry revision、基于 Page revision canonical key 的 WebSession 排他 lease，以及显式 <code>screenshot</code> 的单张当前 viewport 原生视觉输入。session 内 action、verify、observe 与 close 串行执行；首次 observe 以及后续每次 observe、act 和 verify 都在 backend 前重新验证 exact binding。Page capability 保存 page/access/geometry revision，agentic 子进程把期望值经父子进程 bridge 传回父 worker；父 worker 比较 Page/access revision，exact renderer 在 native preview/activate 前以及异步完成后复核应用内 pane 状态与 geometry revision。任一不一致即返回 <code>page_context_stale</code>，不进入 backend；异步完成后的过期结果不包含 preview 或 target。pane bounds 或应用内可见性变化只使旧 WebSession 失效，不重建 Page identity；后台 Page 通过 <code>resolve</code> 直接取得 exact target。macOS 窗口层级、遮挡、位置和最小化状态不进入 binding 或 screenshot 判断。close、首次 observe 失败、owner disconnect 或进程清理完成前 lease 不会提前释放。target replacement 会撤销旧 Page identity；owner WebSocket disconnect 会立即撤销该连接的全部 binding 并唤醒 pending exact-socket request。两个 connection、48 个 binding 的 component 并发验证确认命令只发送到 originating connection，断开其中一个不影响另一个。安装版双窗口 transfer/rollback、截图 artifact 临时保留策略与三个 backend 的统一 parity suite 已完成。专用 permission card 属于 UI 后续项，不在本次仅实现功能的范围内。</p>
 
 <h2>任务 2 审查记录</h2>
 <table>
@@ -159,7 +159,7 @@
     <tr><td>Specification review</td><td>首轮发现目标设计仍保留旧的“Surface Awareness 未实现”和“完整 registry 完成前不得向 provider 注入”表述。已改为当前 turn-scoped baseline 与后续完整架构分别记录；复核未发现新矛盾。</td><td class="pass">PASS，zero findings</td></tr>
     <tr><td>Quality review</td><td>复核确认跨进程 revision 字段完整传递，并发现自定义一参数 <code>binding_validator</code> 的兼容回归。Runtime 现在只对默认生产 validator 传 revision 关键字，自定义 validator 继续使用原一参数契约；legacy 与 revision-aware 路径均有回归测试。</td><td class="pass">PASS，zero findings</td></tr>
     <tr><td>Geometry specification review</td><td>对 <code>47fad4a5</code>、<code>33dd8f75</code>、<code>d77a17c3</code>、<code>9c826f0c</code>、<code>4ac96a21</code> 与 <code>2b3dda2e</code> 复核首次 observe、二次 attach、preview/activate Promise、revision 0 与真实 hide 生命周期；最终未发现剩余规格偏差。</td><td class="pass">PASS</td></tr>
-    <tr><td>Geometry quality review</td><td>独立复核先后复现激活期间 geometry 变化、首次 observe 缺少校验、preview 缓存旧 revision、revision 0 兼容偏差与真实 occlusion 误判；对应回归全部加入后 fresh review 通过。</td><td class="pass">PASS</td></tr>
+    <tr><td>Geometry quality review</td><td>独立复核先后复现激活期间 geometry 变化、首次 observe 缺少校验、preview 缓存旧 revision、revision 0 兼容偏差与应用内 pane 可见性误判；对应回归全部加入后 fresh review 通过。</td><td class="pass">PASS</td></tr>
     <tr><td>视觉 artifact review</td><td>截图只进入紧邻的一次 provider request；Runtime/DAG 文本仅保留 frame、viewport 与已附图标记。正常返回、provider error、timeout 与 cancel 都清除原始 image block、<code>ToolReturn.images</code> 和坐标权限。</td><td class="pass">Specification 与 Quality 均 PASS</td></tr>
   </tbody>
 </table>
@@ -205,7 +205,7 @@
   <tbody>
     <tr><td class="pass">IMPLEMENTED · INSTALLED E2E PASS</td><td><code>d2e9baa2</code> 定义跨窗口数据模型；<code>348e07f3</code> 实现 Desktop <code>window_id</code> 登记和聚合；<code>67e6ed09</code> 以 <code>window_id + tab_id</code> 标记 GUI Agent 当前 Page；<code>833c2314</code>、<code>1699fb03</code> 保持窗口独立生命周期和 primary fail-closed；<code>26c662e9</code>、<code>d4c4337e</code> 以 connection revision CAS 拒绝断线后的延迟 binding。</td></tr>
     <tr><td class="pass">自动验证与复核</td><td>Browser Agent、Web Use Runtime、Page surface 和 process bridge 相关测试 123 passed；Ruff、Web split/compound/WS action、TypeScript 与生产 Web build 通过。Specification 与 Quality 独立复核均为 PASS，覆盖未登记客户端、跨窗口同名 <code>tab_id</code>、origin disconnect/timeout、materialization race 和 direct preview/active late result。</td></tr>
-    <tr><td class="pass">安装版验证</td><td>只使用默认 <code>~/.openprogram</code>、18100 与当前主分支重新生成的 <code>/Applications/OpenProgram.app</code>。真实 <code>list_pages</code> 返回 <code>main</code> 和 detached window 两个 snapshot；选择 detached window 的 Microsoft Edge Add-ons Page 执行 <code>observe → screenshot → close</code>，得到一张 <code>image/png</code> 当前 viewport。调用前后系统前台应用均为 ChatGPT，证明该路径未置前 OpenProgram、未使用整屏截图。</td></tr>
+    <tr><td class="pass">安装版验证</td><td>只使用默认 <code>~/.openprogram</code>、18100 与当前主分支重新生成的 <code>/Applications/OpenProgram.app</code>。真实 <code>list_pages</code> 返回 <code>main</code> 和 detached window 两个 snapshot；选择 detached window 的 Microsoft Edge Add-ons Page 执行 <code>observe → screenshot → close</code>，得到一张 exact Page 的 <code>image/png</code> 当前 viewport。执行路径没有窗口 focus、<code>bringToFront()</code>、整屏截图或 OS input。</td></tr>
   </tbody>
 </table>
 
