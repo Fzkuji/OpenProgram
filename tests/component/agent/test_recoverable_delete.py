@@ -692,11 +692,14 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
         "openprogram/programs/functions/agentic/browser_agent/__init__.py",
         "openprogram/programs/functions/agentic/browser_agent/playwright_exact_page_mcp.cjs",
         "openprogram/sandbox/recoverable_delete.py",
-        "openprogram/webui/__init__.py", "openprogram/webui/functions_meta.json",
+        "openprogram/webui/__init__.py",
     ):
         destination = project / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(repo / relative, destination)
+    (project / "openprogram/webui/functions_meta.json").write_text(
+        '{"profiles": {"must-not-ship": []}}\n', encoding="utf-8"
+    )
     (project / "openprogram/webui/programs_meta.json").write_text(
         '{"favorites": ["must-not-ship"]}\n', encoding="utf-8",
     )

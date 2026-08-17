@@ -34,9 +34,14 @@ def test_python_cli_application_is_owned_by_apps_workspace() -> None:
     assert (app / "_impl/setup_sections").is_dir()
 
     compatibility_files = {
-        path.relative_to(ROOT / "openprogram/cli").as_posix()
-        for path in (ROOT / "openprogram/cli").rglob("*")
-        if path.is_file() and "__pycache__" not in path.parts
+        path.removeprefix("openprogram/cli/")
+        for path in subprocess.run(
+            ["git", "ls-files", "--", "openprogram/cli"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
     }
     assert compatibility_files == {"README.md", "__init__.py", "__main__.py"}
 
@@ -257,6 +262,20 @@ def test_removed_legacy_static_ui_does_not_return() -> None:
         path.is_file() for path in (ROOT / "openprogram/webui/static").rglob("*")
     )
     assert (ROOT / "apps/web/app").is_dir()
+
+
+def test_mutable_profile_state_is_not_tracked_in_the_core_package() -> None:
+    tracked = set(
+        subprocess.run(
+            ["git", "ls-files", "--", "openprogram/webui"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+    )
+    assert "openprogram/webui/functions_meta.json" not in tracked
+    assert "openprogram/webui/programs_meta.json" not in tracked
 
 
 def test_source_checkout_server_wins_over_an_older_installed_package(

@@ -19,9 +19,11 @@ def _state_path(filename: str) -> Path:
 
 
 def _legacy_path(filename: str) -> Path:
-    from openprogram.webui import server
+    import openprogram.webui as compatibility_webui
 
-    return Path(server.__file__).resolve().parent / filename
+    package_file = compatibility_webui.__file__
+    assert package_file is not None
+    return Path(package_file).resolve().parent / filename
 
 
 def load_meta(filename: str, default: dict[str, Any]) -> dict[str, Any]:

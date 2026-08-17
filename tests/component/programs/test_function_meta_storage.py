@@ -17,11 +17,21 @@ def meta_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("OPENPROGRAM_PROFILE", raising=False)
 
     import openprogram.paths as paths
+    import openprogram.webui as compatibility_webui
     from openprogram.webui import server
     from openprogram.webui.routes import tree
 
     monkeypatch.setattr(paths, "_migration_checked", True)
-    monkeypatch.setattr(server, "__file__", str(legacy_dir / "server.py"))
+    monkeypatch.setattr(
+        compatibility_webui,
+        "__file__",
+        str(legacy_dir / "__init__.py"),
+    )
+    monkeypatch.setattr(
+        server,
+        "__file__",
+        str(tmp_path / "apps/server/openprogram_server/server.py"),
+    )
     app = FastAPI()
     tree.register(app)
     return TestClient(app), home, legacy_dir
