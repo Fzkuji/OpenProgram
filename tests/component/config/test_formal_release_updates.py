@@ -91,7 +91,7 @@ def test_automatic_update_design_is_one_accessible_review_page():
         'data-update-state="error"',
         'prefers-reduced-motion',
         'https://github.com/Fzkuji/OpenProgram/blob/main/desktop/update-service.js',
-        'https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/_cli_cmds/upgrade.py',
+        'https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/cli/commands/upgrade.py',
     ):
         assert contract in design
 
@@ -169,7 +169,7 @@ def _release_manifest(version="0.6.7"):
 
 
 def test_managed_release_check_is_read_only(monkeypatch, capsys):
-    from openprogram._cli_cmds import upgrade as up
+    from openprogram.cli.commands import upgrade as up
 
     monkeypatch.setattr(up, "_installed_version", lambda: "0.6.6")
     monkeypatch.setattr(up, "_platform_runtime_names", lambda version: (
@@ -188,7 +188,7 @@ def test_managed_release_check_is_read_only(monkeypatch, capsys):
 
 
 def test_managed_release_dry_run_never_reads_or_executes_installer(monkeypatch, capsys):
-    from openprogram._cli_cmds import upgrade as up
+    from openprogram.cli.commands import upgrade as up
 
     monkeypatch.setattr(up, "_managed_release_status", lambda: {
         "current_version": "0.6.6",
@@ -217,7 +217,7 @@ def test_managed_release_dry_run_never_reads_or_executes_installer(monkeypatch, 
 
 
 def test_managed_release_upgrade_sanitizes_installer_environment(monkeypatch, capsys):
-    from openprogram._cli_cmds import upgrade as up
+    from openprogram.cli.commands import upgrade as up
 
     monkeypatch.setenv("OPENPROGRAM_REPOSITORY", "attacker/repo")
     monkeypatch.setenv("OPENPROGRAM_RUNTIME_ARCHIVE", "/tmp/untrusted.tar.gz")
@@ -260,7 +260,7 @@ def test_managed_release_upgrade_sanitizes_installer_environment(monkeypatch, ca
 
 
 def test_managed_release_rejects_missing_manifest_asset(monkeypatch):
-    from openprogram._cli_cmds import upgrade as up
+    from openprogram.cli.commands import upgrade as up
 
     release = _latest_release()
     release["assets"] = release["assets"][1:]
@@ -275,7 +275,7 @@ def test_managed_release_rejects_missing_manifest_asset(monkeypatch):
 
 
 def test_managed_release_rejects_duplicate_assets(monkeypatch):
-    from openprogram._cli_cmds import upgrade as up
+    from openprogram.cli.commands import upgrade as up
 
     release = _latest_release()
     release["assets"].append(dict(release["assets"][1]))
@@ -290,7 +290,7 @@ def test_managed_release_rejects_duplicate_assets(monkeypatch):
 
 
 def test_cmd_managed_dry_run_is_forwarded(monkeypatch):
-    from openprogram._cli_cmds import upgrade as up
+    from openprogram.cli.commands import upgrade as up
     from openprogram.updater import detect
 
     monkeypatch.setattr(
@@ -316,7 +316,7 @@ def test_cmd_managed_dry_run_is_forwarded(monkeypatch):
 
 
 def test_cmd_managed_errors_remain_json(monkeypatch, capsys):
-    from openprogram._cli_cmds import upgrade as up
+    from openprogram.cli.commands import upgrade as up
     from openprogram.updater import detect
 
     monkeypatch.setattr(
@@ -335,7 +335,7 @@ def test_cmd_managed_errors_remain_json(monkeypatch, capsys):
 
 
 def test_cmd_unknown_install_error_remains_json(monkeypatch, capsys):
-    from openprogram._cli_cmds import upgrade as up
+    from openprogram.cli.commands import upgrade as up
     from openprogram.updater import detect
 
     monkeypatch.setattr(
@@ -354,7 +354,7 @@ def test_cmd_unknown_install_error_remains_json(monkeypatch, capsys):
 
 
 def test_managed_release_json_is_a_single_document(monkeypatch, capsys):
-    from openprogram._cli_cmds import upgrade as up
+    from openprogram.cli.commands import upgrade as up
 
     monkeypatch.setattr(up, "_managed_release_status", lambda: {
         "current_version": "0.6.6",
@@ -373,7 +373,7 @@ def test_managed_release_json_is_a_single_document(monkeypatch, capsys):
 
 
 def test_managed_release_execution_error_remains_json(monkeypatch, capsys):
-    from openprogram._cli_cmds import upgrade as up
+    from openprogram.cli.commands import upgrade as up
 
     monkeypatch.setattr(up, "_managed_release_status", lambda: {
         "current_version": "0.6.6",
@@ -396,7 +396,7 @@ def test_managed_release_execution_error_remains_json(monkeypatch, capsys):
 
 
 def test_source_unknown_channel_error_remains_json(monkeypatch, capsys):
-    from openprogram._cli_cmds import upgrade as up
+    from openprogram.cli.commands import upgrade as up
     from openprogram.updater import detect
 
     monkeypatch.setattr(

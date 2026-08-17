@@ -151,7 +151,7 @@ def _handle_slash(cmd: str, console, rt,
         if agent is None or not session_id:
             console.print("[yellow]No active session to run this command in.[/]")
             return False
-        from openprogram._cli_chat.turn import _run_turn_with_history
+        from openprogram.cli.repl.turn import _run_turn_with_history
         console.print(f"[dim]Expanding /{res.command_name} ({res.source})...[/]")
         _run_turn_with_history(agent, session_id, res.rendered, console=console)
         return False
@@ -213,7 +213,7 @@ def _handle_web(args: list[str], console) -> bool:
 
 
 def _handle_tools_list(console) -> bool:
-    from openprogram._cli_chat.banner import _tool_inventory
+    from openprogram.cli.repl.banner import _tool_inventory
     count, names = _tool_inventory()
     console.print(f"[bold]{count} tools[/]")
     for n in names:
@@ -222,7 +222,7 @@ def _handle_tools_list(console) -> bool:
 
 
 def _handle_skills_list(console) -> bool:
-    from openprogram._cli_chat.banner import _skill_inventory
+    from openprogram.cli.repl.banner import _skill_inventory
     count, items = _skill_inventory()
     console.print(f"[bold]{count} skills[/]")
     for name, desc in items:
@@ -232,7 +232,7 @@ def _handle_skills_list(console) -> bool:
 
 
 def _handle_functions_list(console) -> bool:
-    from openprogram._cli_chat.banner import _function_inventory
+    from openprogram.cli.repl.banner import _function_inventory
     count, names = _function_inventory()
     console.print(f"[bold]{count} functions[/]")
     for n in names:
@@ -241,7 +241,7 @@ def _handle_functions_list(console) -> bool:
 
 
 def _handle_apps_list(console) -> bool:
-    from openprogram._cli_chat.banner import _application_inventory
+    from openprogram.cli.repl.banner import _application_inventory
     count, names = _application_inventory()
     console.print(f"[bold]{count} applications[/]")
     for n in names:
@@ -286,7 +286,7 @@ def _handle_profile(args: list[str], console) -> bool:
 
 def _handle_jobs(args: list[str], console, session_id: str) -> bool:
     """Print the same JobResourceView DTO consumed by other surfaces."""
-    from openprogram._cli_cmds.jobs import job_resource_payload
+    from openprogram.cli.commands.jobs import job_resource_payload
 
     payload = job_resource_payload(
         job_id=args[0] if args else None,
@@ -891,7 +891,7 @@ def _handle_mcp(args: list[str], console) -> bool:
     Verbs reuse the CLI implementations (which HTTP-hit the running
     worker), so behaviour matches `openprogram mcp ...` exactly.
     """
-    from openprogram._cli_cmds.mcp import (
+    from openprogram.cli.commands.mcp import (
         _cmd_mcp_list, _cmd_mcp_show, _cmd_mcp_restart,
         _cmd_mcp_enable, _cmd_mcp_disable, _cmd_mcp_rm,
     )

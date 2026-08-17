@@ -361,7 +361,7 @@ title = result["title"]</pre>
       <tr><td>openprogram/agent/types.py<br>openprogram/agent/agent_loop.py<br>openprogram/agent/internals/_event_parsing.py</td><td>透传 schema；实现 no-tool terminal 校验、hidden tool、一次修复、派生事件和最终 parsed message。</td></tr>
       <tr><td>openprogram/agentic_programming/runtime.py<br>openprogram/providers/callable_model.py</td><td>修复 provider 路径静默忽略；增加 overload/parsed return；对 callable model 应用同一最终校验。</td></tr>
       <tr><td>openprogram/providers/recording.py<br>openprogram/providers/replay.py</td><td>format v2、规范化 option 比较、validation retry 多 call 测试；provider raw event 集合保持不变。</td></tr>
-      <tr><td>openprogram/_cli_cmds/chat.py<br>openprogram/cli.py<br>openprogram/cli_chat.py<br>openprogram/_cli_chat/turn.py</td><td>one-shot schema 参数、typed result、stdout/stderr/exit code、session persistence。</td></tr>
+      <tr><td>openprogram/cli/commands/chat.py<br>openprogram/cli/__init__.py<br>openprogram/cli/chat.py<br>openprogram/cli/repl/turn.py</td><td>one-shot schema 参数、typed result、stdout/stderr/exit code、session persistence。</td></tr>
       <tr><td>openprogram/webui/ws_actions/chat.py<br>openprogram/webui/routes/chat.py<br>openprogram/webui/_execute/chat.py<br>openprogram/webui/server.py</td><td>请求校验、schema 透传、structured stream/result/error envelope。</td></tr>
       <tr><td>cli/src/ws/client.ts<br>cli/src/screens/repl/wsHandlers/handleChatResponse.ts<br>cli/src/screens/repl/wsHandlers/streamingHelpers.ts</td><td>TS 请求/事件类型、retry 清空候选、typed result 接收；不增加 schema 编辑 UI。</td></tr>
       <tr><td>openprogram/agent/dispatcher/titles.py</td><td>迁移 title consumer，删除文本格式清理，保留长度与 best-effort 边界。</td></tr>

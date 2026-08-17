@@ -99,7 +99,7 @@ def test_merge_auth_still_replaces_and_deletes_real_values() -> None:
 
 def test_mcp_cli_has_no_raw_file_editor() -> None:
     """The product must not hand the raw secret file to $EDITOR."""
-    from openprogram._cli_cmds import mcp as mcp_cmd
+    from openprogram.cli.commands import mcp as mcp_cmd
 
     assert not hasattr(mcp_cmd, "_cmd_mcp_edit")
 
@@ -107,7 +107,7 @@ def test_mcp_cli_has_no_raw_file_editor() -> None:
 def test_mcp_edit_verb_reports_the_structured_alternative(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from openprogram._cli_cmds.mcp import _cmd_mcp_edit_removed
+    from openprogram.cli.commands.mcp import _cmd_mcp_edit_removed
 
     code = _cmd_mcp_edit_removed()
 

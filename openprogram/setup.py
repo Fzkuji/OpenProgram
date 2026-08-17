@@ -493,12 +493,12 @@ def _password(prompt: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Section runners + wizard orchestrator live in openprogram/_setup_sections/.
+# Section runners + wizard orchestrator live in openprogram/cli/setup_sections/.
 # Re-exported here under the names cli.py and tests import directly off
 # ``openprogram.setup``.
 # ---------------------------------------------------------------------------
 
-from openprogram._setup_sections.sections import (  # noqa: E402,F401
+from openprogram.cli.setup_sections.sections import (  # noqa: E402,F401
     _ensure_default_agent,
     run_providers_section,
     run_model_section,
@@ -511,13 +511,13 @@ from openprogram._setup_sections.sections import (  # noqa: E402,F401
     run_search_section,
     run_tts_section,
 )
-from openprogram._setup_sections.channels import (  # noqa: E402,F401
+from openprogram.cli.setup_sections.channels import (  # noqa: E402,F401
     run_channels_section,
 )
-from openprogram._setup_sections.backend import (  # noqa: E402,F401
+from openprogram.cli.setup_sections.backend import (  # noqa: E402,F401
     run_backend_section,
 )
-from openprogram._setup_sections.wizard import (  # noqa: E402,F401
+from openprogram.cli.setup_sections.wizard import (  # noqa: E402,F401
     run_full_setup,
     run_configure_menu,
 )

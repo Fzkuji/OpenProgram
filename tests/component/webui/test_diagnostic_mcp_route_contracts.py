@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 
 
 def test_doctor_route_contract(monkeypatch):
-    from openprogram._cli_cmds import doctor
+    from openprogram.cli.commands import doctor
     from openprogram.webui.routes import misc
 
     results = [

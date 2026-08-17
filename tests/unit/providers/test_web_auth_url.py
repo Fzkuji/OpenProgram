@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from openprogram.cli import build_parser
-from openprogram._cli_cmds.web import _cmd_web_auth_url
+from openprogram.cli.commands.web import _cmd_web_auth_url
 from openprogram.backend_endpoint import (
     ActiveWebAccess,
     OwnerAuthError,
@@ -70,7 +70,7 @@ def test_web_auth_url_command_prints_only_the_requested_bootstrap_url(
         lambda: 18100,
     )
     monkeypatch.setattr(
-        "openprogram._cli_cmds.web._backend_is_ours",
+        "openprogram.cli.commands.web._backend_is_ours",
         lambda _port: True,
     )
     monkeypatch.setattr(
@@ -129,7 +129,7 @@ def test_web_auth_url_does_not_disclose_token_to_an_unowned_port(
         lambda: 18100,
     )
     monkeypatch.setattr(
-        "openprogram._cli_cmds.web._backend_is_ours",
+        "openprogram.cli.commands.web._backend_is_ours",
         lambda _port: False,
     )
     monkeypatch.setattr(

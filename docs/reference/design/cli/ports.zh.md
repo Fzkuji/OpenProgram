@@ -57,7 +57,7 @@ openprogram ports --port 9100     # 设置并持久化
 
 | 入口点 | 端口 |
 |-------------|--------------|
-| `openprogram web`（`_cli_cmds/web.py:_cmd_web`） | `--web-port` → `resolve_worker_port()` |
+| `openprogram web`（`cli/commands/web.py:_cmd_web`） | `--web-port` → `resolve_worker_port()` |
 | `openprogram worker`（`worker/runner.py`） | `resolve_worker_port()` |
 
 `openprogram/worker/lifecycle.py` 中的 `resolve_worker_port()` 是唯一的解析

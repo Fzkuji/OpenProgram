@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import pytest
 from rich.console import Console
 
-from openprogram._cli_chat import handlers
+from openprogram.cli.repl import handlers
 from openprogram.commands import registry as _reg
 from openprogram.commands.dispatch import invoke
 from openprogram.commands.frontmatter import ParsedCommand
@@ -136,7 +136,7 @@ def test_prompt_command_expands_into_turn(clean_registry, monkeypatch):
         sent.update(agent=agent.id, session_id=session_id, message=message)
         return "ok"
 
-    import openprogram._cli_chat.turn as _turn
+    import openprogram.cli.repl.turn as _turn
     monkeypatch.setattr(_turn, "_run_turn_with_history", _fake_turn)
 
     console = _console()

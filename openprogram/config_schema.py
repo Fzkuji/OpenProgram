@@ -368,7 +368,7 @@ def _update_channels() -> list[str]:
     broken import degrades to the built-in default rather than breaking
     the whole settings read."""
     try:
-        from openprogram._cli_cmds.upgrade import CHANNELS
+        from openprogram.cli.commands.upgrade import CHANNELS
         return sorted(CHANNELS)
     except Exception:
         return ["stable"]

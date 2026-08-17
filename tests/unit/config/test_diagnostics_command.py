@@ -79,7 +79,7 @@ def _bundle_texts(zip_path):
 
 def test_no_secret_survives_into_the_bundle(isolated_home, tmp_path):
     """No planted credential appears verbatim anywhere in the zip."""
-    from openprogram._cli_cmds.diagnostics import build_bundle
+    from openprogram.cli.commands.diagnostics import build_bundle
 
     _write_config(isolated_home)
     # A log line carrying a secret with no dict key to match on.
@@ -105,7 +105,7 @@ def test_no_secret_survives_into_the_bundle(isolated_home, tmp_path):
 
 def test_credential_files_are_not_collected(isolated_home, tmp_path):
     """The auth store is reported by name and count, never by content."""
-    from openprogram._cli_cmds.diagnostics import build_bundle
+    from openprogram.cli.commands.diagnostics import build_bundle
 
     _write_config(isolated_home)
     auth = isolated_home / ".openprogram" / "auth" / "anthropic"
@@ -126,7 +126,7 @@ def test_credential_files_are_not_collected(isolated_home, tmp_path):
 
 
 def test_bundle_has_expected_files_and_manifest(isolated_home, tmp_path):
-    from openprogram._cli_cmds.diagnostics import build_bundle
+    from openprogram.cli.commands.diagnostics import build_bundle
 
     _write_config(isolated_home)
     out = tmp_path / "bundle.zip"
@@ -148,14 +148,14 @@ def test_bundle_has_expected_files_and_manifest(isolated_home, tmp_path):
 
 
 def test_redact_text_leaves_ordinary_text_alone():
-    from openprogram._cli_cmds.diagnostics import redact_text
+    from openprogram.cli.commands.diagnostics import redact_text
 
     line = "Traceback: FileNotFoundError: /Users/me/projects/app/main.py line 42"
     assert redact_text(line) == line
 
 
 def test_command_prints_contents_and_review_warning(isolated_home, tmp_path, capsys):
-    from openprogram._cli_cmds.diagnostics import _cmd_diagnostics
+    from openprogram.cli.commands.diagnostics import _cmd_diagnostics
 
     _write_config(isolated_home)
     out = tmp_path / "named.zip"

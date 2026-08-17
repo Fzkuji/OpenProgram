@@ -19,6 +19,9 @@ current design contract; this file is operational history.
   packaged-skill, Web, and TUI ownership boundaries.
 - Remove the Web Programs re-export directory when the public route can import
   the existing implementation directly.
+- Consolidate Python CLI parser, handlers, REPL, Ink launcher, and setup
+  sections under the stable `openprogram.cli` package without changing the
+  public command tree.
 
 ## Workstreams
 
@@ -33,6 +36,7 @@ current design contract; this file is operational history.
 | Post-merge suite repair | `codex/test-structure-20260817` / `d04aa050` | implemented | Moves two real workflow execution tests to component, updates their package schema, and repairs merged documentation, distribution, and optional-dependency regressions. |
 | Documentation entry points and Programs alias | `codex/repository-structure-batch1-20260817` / `d9cc9933` | implemented | Refreshes the bilingual project map and workspace READMEs; removes only the confirmed re-export and unused stylesheet. |
 | Documentation-entry main integration | `29f8186d` | integrated | Two-parent merge with current `main` at `e2041770`; unrelated local icon and output files remain outside Git. |
+| Python CLI package consolidation | `codex/python-package-layout-cli-20260817` / `d2ae71cc`, `5bd809e8`, `4051edaf` | implemented; reviewed | Replaces three first-level internal CLI directories and four implementation files with one `openprogram/cli/` package; keeps `openprogram.cli`, the console script, and both module entry points; repairs current documentation references and adds the executable interactive-import contract required by review. |
 
 ## Verification record
 
@@ -66,6 +70,17 @@ pass — independent quality review for d9cc9933, including distribution, Web bu
 10 passed — post-merge repository-layout and documentation-information-architecture selection
 pass — post-merge Web full check, 10 unit tests, TypeScript no-emit check, and 31-page production build
 505 pages; 0 broken links; landing and language checks pass — post-merge documentation build
+388 passed, 4 skipped — all tests directly changed by the Python CLI package consolidation
+5664 passed, 11 skipped, 1 xfailed — complete contracts, unit, and component suites for `d2ae71cc`
+pass — Ruff on every changed Python file and `git diff --check`
+pass — wheel contains the new CLI package paths and no removed implementation paths; isolated import and `python -m openprogram.cli --help` succeed
+506 pages; 0 broken links; landing and language checks pass — Python CLI package consolidation documentation build
+changes required — first independent specification review of `d2ae71cc` found only current-document path and evidence-record repairs; code and package compatibility passed
+pass — independent specification re-review at `5bd809e8`
+changes required — first independent quality review of `5bd809e8` found only the missing executable TTY library-import regression; the implementation's dynamic no-side-effect probe passed
+15 passed — CLI entrypoint recognition, interactive library-import side-effect, parser, and repository-layout contracts after the quality repair
+pass — independent specification confirmation at `4051edaf`
+pass — independent quality re-review at `4051edaf`, including a mutation-sensitive interactive-import probe
 ```
 
 ## Deferred boundaries

@@ -558,9 +558,9 @@
     <tr><td><b>U17</b></td><td><code>programs/functions/worktree</code></td><td>模型参数 / 固定git argv</td><td>仅允许受管仓库与固定子命令；保持argv调用并测试路径规范化</td></tr>
     <tr><td><b>U18</b></td><td><code>programs/functions/agent_browser</code></td><td>模型参数 / 浏览器进程</td><td>浏览器profile与下载路径使用独立策略；启动参数保持argv并进入工具审批</td></tr>
     <tr><td><b>U19</b></td><td>session/project/shadow store的git plumbing</td><td>第一方确定性argv</td><td>保留宿主执行；不接受模型shell字符串，测试参数分隔和仓库范围</td></tr>
-    <tr><td><b>U20</b></td><td><code>_cli_cmds/programs.py</code></td><td>owner主动安装 / 更新</td><td>保留管理员CLI权限；与agent工具不可互调，记录安装来源</td></tr>
-    <tr><td><b>U21</b></td><td><code>_cli_cmds/browser.py</code></td><td>owner主动安装</td><td>保留管理员CLI权限；安装命令不暴露给模型</td></tr>
-    <tr><td><b>U22</b></td><td><code>_cli_cmds/upgrade.py</code>与updater</td><td>owner主动升级</td><td>保留管理员CLI权限；下载、替换和重启必须来自显式升级操作</td></tr>
+    <tr><td><b>U20</b></td><td><code>cli/commands/programs.py</code></td><td>owner主动安装 / 更新</td><td>保留管理员CLI权限；与agent工具不可互调，记录安装来源</td></tr>
+    <tr><td><b>U21</b></td><td><code>cli/commands/browser.py</code></td><td>owner主动安装</td><td>保留管理员CLI权限；安装命令不暴露给模型</td></tr>
+    <tr><td><b>U22</b></td><td><code>cli/commands/upgrade.py</code>与updater</td><td>owner主动升级</td><td>保留管理员CLI权限；下载、替换和重启必须来自显式升级操作</td></tr>
     <tr><td><b>U23</b></td><td><code>plugins/installer.py</code></td><td>owner主动安装</td><td>保留管理员CLI权限；安装入口不暴露给模型，安装后由U10约束加载</td></tr>
   </table>
   </div>

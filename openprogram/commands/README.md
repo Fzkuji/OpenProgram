@@ -23,7 +23,7 @@ list anywhere:
   (theme, pickers, ...) stay in ``cli/src/commands/``, everything
   else expands into the chat turn.
 * Rich REPL — registers its local actions into the builtin layer
-  (``openprogram/_cli_chat/handlers.py:register_repl_builtins``) and
+  (``openprogram/cli/repl/handlers.py:register_repl_builtins``) and
   dispatches every ``/slash`` through ``dispatch.invoke``; ``/help``
   is rendered from ``list_all()``.
 

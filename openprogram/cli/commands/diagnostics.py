@@ -158,7 +158,7 @@ def _credentials_report() -> dict[str, Any]:
 
 def _log_excerpts(max_lines: int) -> list[tuple[str, str]]:
     """Return ``[(archive_name, redacted_tail), ...]`` for each known log."""
-    from openprogram._cli_cmds.logs import _log_targets
+    from openprogram.cli.commands.logs import _log_targets
     out: list[tuple[str, str]] = []
     for name, path in _log_targets():
         if not path.exists():
@@ -179,7 +179,7 @@ def _environment_probes() -> dict[str, Any]:
     doctor`` can never disagree about what healthy means, then adds the
     filesystem details doctor has no reason to print.
     """
-    from openprogram._cli_cmds.doctor import run_checks
+    from openprogram.cli.commands.doctor import run_checks
     from openprogram.paths import get_logs_dir, get_state_dir
 
     probes: dict[str, Any] = {"doctor_checks": run_checks()}

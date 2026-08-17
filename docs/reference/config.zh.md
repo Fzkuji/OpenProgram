@@ -47,7 +47,7 @@ openprogram config set ui.web_port 8101
 | `default_model` | 默认模型（setup 向导写入） | `openprogram/setup.py` |
 | `default_workdir` | agent 的默认工作目录 | `openprogram/paths.py` |
 | `providers` | 每个 provider 的设置子树（启用的模型、自定义模型等），由 Web UI 模型列表管理 | `openprogram/providers/_config_read.py`、`openprogram/providers/storage.py` |
-| `api_keys` | 环境变量名 → API key 的映射，setup 向导写入，worker 启动时导出到环境。用于 web 搜索 / TTS 的 key；LLM provider 的 key 存在凭据库（`openprogram providers login`），不在这里 | `openprogram/_setup_sections/sections.py`、`openprogram/webui/server.py` |
+| `api_keys` | 环境变量名 → API key 的映射，setup 向导写入，worker 启动时导出到环境。用于 web 搜索 / TTS 的 key；LLM provider 的 key 存在凭据库（`openprogram providers login`），不在这里 | `openprogram/cli/setup_sections/sections.py`、`openprogram/webui/server.py` |
 | `spec_migration_version` | 模型 spec 迁移的一次性标记，含义见代码 | `openprogram/providers/storage.py` |
 
 ## 环境变量
@@ -66,16 +66,16 @@ openprogram config set ui.web_port 8101
 
 | 变量 | 用途 | 代码 |
 |------|------|------|
-| `OPENPROGRAM_WEB_PORT` | worker 单端口（默认 18100）；优先级低于显式参数、高于持久化偏好 | `openprogram/worker/lifecycle.py`、`openprogram/_cli_cmds/web.py` |
+| `OPENPROGRAM_WEB_PORT` | worker 单端口（默认 18100）；优先级低于显式参数、高于持久化偏好 | `openprogram/worker/lifecycle.py`、`openprogram/cli/commands/web.py` |
 | `OPENPROGRAM_NO_WEB` | `1` = worker 跳过前端构建检查，不提供 web UI | `openprogram/worker/runner.py` |
-| `OPENPROGRAM_WEB_NO_FRONTEND` | `1` = `openprogram web` 跳过前端只起 backend | `openprogram/_cli_cmds/web.py` |
+| `OPENPROGRAM_WEB_NO_FRONTEND` | `1` = `openprogram web` 跳过前端只起 backend | `openprogram/cli/commands/web.py` |
 | `OPENPROGRAM_DOCS_BASE` | 文档站的挂载路径（默认 `/docs/`，须以 `/` 开头和结尾） | `tools/docs_site/build.py` |
 
 ### 行为开关
 
 | 变量 | 用途 | 代码 |
 |------|------|------|
-| `OPENPROGRAM_NO_AUTO_WORKER` | `1` = TUI 不自动拉起 worker，只连已有的 | `openprogram/cli_ink.py` |
+| `OPENPROGRAM_NO_AUTO_WORKER` | `1` = TUI 不自动拉起 worker，只连已有的 | `openprogram/cli/ink.py` |
 | `OPENPROGRAM_NO_SLEEP` | `1` = 禁用记忆的 sleep 整理调度器 | `openprogram/memory/scheduler.py` |
 | `OPENPROGRAM_NO_PROGRAMS_WATCH` | `1` = 禁用 programs 目录的文件监听 | `openprogram/programs/watcher.py` |
 | `OPENPROGRAM_PROJECT_AUTOCOMMIT` | `0` = 关闭项目自动 commit | `openprogram/store/project/project_commit.py` |

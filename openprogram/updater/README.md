@@ -10,7 +10,7 @@ Strategy is install-method aware:
   * source checkout         → explicit gated source upgrade
   * anything else           → no product update path
 
-The command implementation lives in ``openprogram._cli_cmds.upgrade``.
+The command implementation lives in ``openprogram.cli.commands.upgrade``.
 Nothing in this package applies an update during worker startup.
 
 ## Files in this directory

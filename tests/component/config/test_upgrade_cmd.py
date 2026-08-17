@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from openprogram._cli_cmds import upgrade as up
+from openprogram.cli.commands import upgrade as up
 
 
 # ------------------------------------------------------------ helpers

@@ -83,7 +83,7 @@ openprogram tools login github                   (future)
    就复用现有的命名空间。
 2. 选定动词。优先选用 CLI 中其他地方已用过的动词
    （`list`、`add`、`remove`、`set`、`status`），而非发明新词。
-3. 将其挂接到合适的 `argparse` 子解析器树下，遵循
-   同样的双文件布局：
-   - 命令元数据 + argparse 接线：CLI 入口
-   - 逻辑：一个专门的模块（`cli.py` 中不放逻辑）
+3. 将其挂接到合适的 `argparse` 子解析器树下，遵循 package 边界：
+   - 命令元数据 + argparse 接线：`openprogram/cli/parser.py`
+   - 命令逻辑：`openprogram/cli/commands/` 下的对应模块
+   - 顶层分派：`openprogram/cli/__init__.py`

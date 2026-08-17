@@ -1,6 +1,6 @@
-"""Internal CLI subcommand handlers, split out of openprogram/cli.py.
+"""Internal CLI subcommand handlers for :mod:`openprogram.cli`.
 
-cli.py keeps the argparse setup, the dispatch chain, the TUI-tty
+The package entry point keeps the argparse setup, the dispatch chain, the TUI-tty
 globals, and the public ``main`` entry point. All ``_cmd_<verb>`` and
 ``_dispatch_<group>_verb`` handler bodies live in topic modules here:
 
@@ -14,7 +14,7 @@ globals, and the public ``main`` entry point. All ``_cmd_<verb>`` and
     chat.py      — interactive cli chat
     cron.py      — scheduler-worker
 
-cli.py re-exports these at module level so external callers
-(``openprogram.cli_chat``, tests, ``openprogram.cli_ink``) that import
+``openprogram.cli`` re-exports these at module level so external callers
+(``openprogram.cli.chat``, tests, ``openprogram.cli.ink``) that import
 ``_cmd_<name>`` from ``openprogram.cli`` keep working.
 """

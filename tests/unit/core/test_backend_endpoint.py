@@ -167,7 +167,7 @@ def test_resolve_backend_endpoint_never_transmits_the_token(
 
 def test_mcp_cli_sends_bearer_only_to_the_verified_endpoint(monkeypatch):
     """``openprogram mcp`` authenticates instead of assuming 127.0.0.1."""
-    from openprogram._cli_cmds import mcp as mcp_cli
+    from openprogram.cli.commands import mcp as mcp_cli
     from openprogram.backend_endpoint import BackendEndpoint
 
     endpoint = BackendEndpoint(
@@ -218,7 +218,7 @@ def test_mcp_cli_sends_bearer_only_to_the_verified_endpoint(monkeypatch):
 
 
 def test_mcp_cli_exits_when_no_verified_endpoint(monkeypatch, capsys):
-    from openprogram._cli_cmds import mcp as mcp_cli
+    from openprogram.cli.commands import mcp as mcp_cli
 
     def refuse(*_args, **_kwargs):
         raise OwnerAuthError("no active Web access snapshot")
@@ -335,7 +335,7 @@ def test_browser_url_follows_the_bind_instead_of_assuming_localhost(
     explicit allowed origin, so printing it sends the user to a dead page
     and minting a token URL for it raises outright.
     """
-    from openprogram._cli_cmds import web as web_cli
+    from openprogram.cli.commands import web as web_cli
 
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
     lan_origin = f"http://192.168.1.20:{EPHEMERAL_PORT}"
@@ -365,7 +365,7 @@ def test_token_url_requires_the_target_origin_to_prove_itself(
     configured DNS/proxy Origin, so that exact URL must pass its own
     challenge before a token is minted for it.
     """
-    from openprogram._cli_cmds import web as web_cli
+    from openprogram.cli.commands import web as web_cli
 
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
     external = "https://agent.example.com"
@@ -404,7 +404,7 @@ def test_mcp_detail_never_prints_env_values():
     A server's env is where credentials live; the rendered detail keeps
     the key names (which the user needs) and masks the values.
     """
-    from openprogram._cli_cmds import mcp as mcp_cli
+    from openprogram.cli.commands import mcp as mcp_cli
 
     secret = "sk-live-01234567890123456789"
     rendered = mcp_cli._render_detail({

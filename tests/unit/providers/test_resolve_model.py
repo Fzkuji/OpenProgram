@@ -1,7 +1,7 @@
 """Regression tests for ``dispatcher._resolve_model``.
 
 Background: agent.json now stores ``model`` as a ``{"provider", "id"}``
-dict (cli_chat.py and setup.py both write that shape). The dispatcher
+dict (cli/chat.py and setup.py both write that shape). The dispatcher
 historically only handled the legacy string form, so a dict reached
 ``Model(id=requested, name=requested, ...)`` and pydantic blew up the
 moment a channels-routed message arrived ("Input should be a valid

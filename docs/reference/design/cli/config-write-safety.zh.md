@@ -12,7 +12,7 @@
   以及 `openprogram config`。
 - `routes/config.py:save_config` —— web 端的 "Save API keys" 表单。
 - `setup.py:set_ui_ports` 与 `write_search_default_provider`。
-- `_setup_sections/*` —— `openprogram setup` 向导。
+- `cli/setup_sections/*` —— `openprogram setup` 向导。
 - `storage.py` —— providers 段。
 
 对共享文件做 read-modify-write，只有在一把覆盖整个序列的锁之下才是正确的。
@@ -76,6 +76,6 @@ mutator 这种形式正是让该 API 难以被误用的原因。调用方拿不�
 `set_ui_ports` / `write_search_default_provider`。所有面向 web 的配置写入路径
 都已原子化。
 
-尚未迁移：`_setup_sections/*` 向导的写入方，以及 `storage.py` 的 providers 段
+尚未迁移：`cli/setup_sections/*` 向导的写入方，以及 `storage.py` 的 providers 段
 写入。两者目前在进程内是安全的（后者依靠 `_cache_lock`）；未闭合的缺口是来自
 另一个进程的 CLI 或向导并发写入。

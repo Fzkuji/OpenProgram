@@ -729,7 +729,7 @@ def test_linux_worker_process_probe_treats_zombie_as_stopped(monkeypatch) -> Non
 
 
 def test_packaged_runtime_rejects_program_mutation(monkeypatch, capsys) -> None:
-    from openprogram._cli_cmds.programs import _cmd_install, _cmd_uninstall
+    from openprogram.cli.commands.programs import _cmd_install, _cmd_uninstall
 
     monkeypatch.setenv("OPENPROGRAM_IMMUTABLE_RUNTIME", "1")
     with pytest.raises(SystemExit) as install_exit:
@@ -1454,7 +1454,8 @@ def test_packaged_cli_falls_back_when_ink_runtime_is_absent(
 ) -> None:
     from types import SimpleNamespace
 
-    from openprogram import cli_chat, cli_ink
+    from openprogram.cli import chat as cli_chat
+    from openprogram.cli import ink as cli_ink
     from openprogram.agent.management import manager
 
     monkeypatch.setenv("OPENPROGRAM_IMMUTABLE_RUNTIME", "1")
@@ -1857,11 +1858,11 @@ def test_public_product_surfaces_do_not_offer_python_package_install() -> None:
         ROOT / "docs" / "integrations" / "openclaw.zh.md",
     ]
     internal_python_installers = {
-        ROOT / "openprogram" / "_cli_cmds" / "browser.py",
-        ROOT / "openprogram" / "_cli_cmds" / "plugins.py",
-        ROOT / "openprogram" / "_cli_cmds" / "programs.py",
-        ROOT / "openprogram" / "_cli_cmds" / "upgrade.py",
-        ROOT / "openprogram" / "_setup_sections" / "sections.py",
+        ROOT / "openprogram" / "cli" / "commands" / "browser.py",
+        ROOT / "openprogram" / "cli" / "commands" / "plugins.py",
+        ROOT / "openprogram" / "cli" / "commands" / "programs.py",
+        ROOT / "openprogram" / "cli" / "commands" / "upgrade.py",
+        ROOT / "openprogram" / "cli" / "setup_sections" / "sections.py",
         ROOT / "openprogram" / "programs" / "_programs.py",
         ROOT / "openprogram" / "programs" / "_registry.py",
         ROOT / "openprogram" / "updater" / "detect.py",
@@ -1913,11 +1914,11 @@ def test_python_import_troubleshooting_distinguishes_managed_and_source() -> Non
 def test_packaged_browser_install_does_not_modify_python_environment(
     monkeypatch, capsys
 ) -> None:
-    from openprogram._cli_cmds.browser import _cmd_browser_install
+    from openprogram.cli.commands.browser import _cmd_browser_install
 
     monkeypatch.setenv("OPENPROGRAM_IMMUTABLE_RUNTIME", "1")
     monkeypatch.setattr(
-        "openprogram._cli_cmds.browser._pip_install",
+        "openprogram.cli.commands.browser._pip_install",
         lambda _spec: (_ for _ in ()).throw(AssertionError("pip invoked")),
     )
 

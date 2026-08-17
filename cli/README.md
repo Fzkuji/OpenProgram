@@ -9,7 +9,7 @@ backend or own product state.
 - `src/` contains the TypeScript and TSX source.
 - `src/index.tsx` is the executable entry point.
 - `dist/index.js` is the generated Node.js bundle and is not edited by hand.
-- `openprogram/cli_ink.py` resolves and launches the bundle from a source
+- `openprogram/cli/ink.py` resolves and launches the bundle from a source
   checkout. If the Ink runtime is unavailable in an immutable release,
   `openprogram` uses the built-in Rich terminal interface.
 

@@ -23,7 +23,7 @@ export function backendBase(): string {
 
 /**
  * Owner token for the backend, handed down by the Python launcher through
- * the environment (openprogram/cli_ink.py). Empty when the TUI was started
+ * the environment (openprogram/cli/ink.py). Empty when the TUI was started
  * without a verified backend endpoint.
  */
 export function backendToken(): string {

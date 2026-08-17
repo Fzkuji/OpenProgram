@@ -355,7 +355,7 @@ agent 调 `worktree_create` 创建独立工作目录副本，改好了 `worktree
 - **网络**：默认禁止
 - **实现**：macOS 用 Seatbelt（sandbox-exec），Linux 用 bubblewrap
 - **代码**：`openprogram/sandbox/__init__.py`（`resolve_policy` + `wrap_command`）、`backend/local.py`（`_invocation` 集成）
-- **命令**：`/sandbox` 开关（CLI `_cli_chat/handlers.py` + webui `ws_actions/chat.py`）
+- **命令**：`/sandbox` 开关（CLI `cli/repl/handlers.py` + webui `ws_actions/chat.py`）
 
 这是OpenProgram已确定的运行时边界：命令直接使用宿主已安装的Git、Python、Conda、npm和编译器。macOS与Linux分别实现；不支持的平台默认拒绝受沙箱命令，Docker不是自动回退后端。
 
