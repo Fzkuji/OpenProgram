@@ -23,15 +23,21 @@ export interface TimelineDisplayDay extends TimelineDay {
   weekday: string;
 }
 
+export interface TimelinePeriodEntry extends TimelineDay {
+  label: string;
+}
+
 export interface TimelineMonthGroup {
   key: string;
   label: string;
+  entries: TimelinePeriodEntry[];
   days: TimelineDisplayDay[];
 }
 
 export interface TimelineYearGroup {
   year: string;
-  dayCount: number;
+  entryCount: number;
+  entries: TimelinePeriodEntry[];
   months: TimelineMonthGroup[];
 }
 

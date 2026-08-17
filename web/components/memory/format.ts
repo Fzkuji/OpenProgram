@@ -52,42 +52,71 @@ export function groupTimelineDays(
   locale: "en" | "zh" = "en",
 ): TimelineYearGroup[] {
   const language = locale === "zh" ? "zh-CN" : "en-US";
-  const years = new Map<string, Map<string, TimelineYearGroup["months"][number]>>();
+  const years = new Map<string, {
+    entries: TimelineYearGroup["entries"];
+    months: Map<string, TimelineYearGroup["months"][number]>;
+  }>();
 
   for (const day of [...days].sort((a, b) => b.date.localeCompare(a.date))) {
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day.date);
+    const match = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$/.exec(day.date);
     if (!match) continue;
     const [, year, month, dayLabel] = match;
     const yearNumber = Number(year);
+    if (yearNumber < 1) continue;
+    const yearGroup: {
+      entries: TimelineYearGroup["entries"];
+      months: Map<string, TimelineYearGroup["months"][number]>;
+    } = years.get(year) ?? { entries: [], months: new Map() };
+    if (month === undefined) {
+      yearGroup.entries.push({ ...day, label: locale === "zh" ? "全年记录" : "Year overview" });
+      years.set(year, yearGroup);
+      continue;
+    }
     const monthNumber = Number(month);
+    if (monthNumber < 1 || monthNumber > 12) continue;
+    const monthDate = new Date(0);
+    monthDate.setUTCHours(0, 0, 0, 0);
+    monthDate.setUTCFullYear(yearNumber, monthNumber - 1, 1);
+    const monthKey = `${year}-${month}`;
+    const group: TimelineYearGroup["months"][number] = yearGroup.months.get(monthKey) ?? {
+      key: monthKey,
+      label: new Intl.DateTimeFormat(language, { month: "long", timeZone: "UTC" }).format(monthDate),
+      entries: [],
+      days: [],
+    };
+    if (dayLabel === undefined) {
+      group.entries.push({ ...day, label: locale === "zh" ? "月度记录" : "Month overview" });
+      yearGroup.months.set(monthKey, group);
+      years.set(year, yearGroup);
+      continue;
+    }
     const dayNumber = Number(dayLabel);
-    const date = new Date(Date.UTC(yearNumber, monthNumber - 1, dayNumber));
+    const date = new Date(0);
+    date.setUTCHours(0, 0, 0, 0);
+    date.setUTCFullYear(yearNumber, monthNumber - 1, dayNumber);
     if (
       date.getUTCFullYear() !== yearNumber
       || date.getUTCMonth() !== monthNumber - 1
       || date.getUTCDate() !== dayNumber
     ) continue;
-    const monthKey = `${year}-${month}`;
-    const months = years.get(year) ?? new Map();
-    const group = months.get(monthKey) ?? {
-      key: monthKey,
-      label: new Intl.DateTimeFormat(language, { month: "long", timeZone: "UTC" }).format(date),
-      days: [],
-    };
     group.days.push({
       ...day,
       dayLabel,
       weekday: new Intl.DateTimeFormat(language, { weekday: "long", timeZone: "UTC" }).format(date),
     });
-    months.set(monthKey, group);
-    years.set(year, months);
+    yearGroup.months.set(monthKey, group);
+    years.set(year, yearGroup);
   }
 
-  return Array.from(years, ([year, months]) => {
-    const groupedMonths = Array.from(months.values());
+  return Array.from(years, ([year, group]) => {
+    const groupedMonths = Array.from(group.months.values());
     return {
       year,
-      dayCount: groupedMonths.reduce((total, month) => total + month.days.length, 0),
+      entryCount: group.entries.length + groupedMonths.reduce(
+        (total, month) => total + month.entries.length + month.days.length,
+        0,
+      ),
+      entries: group.entries,
       months: groupedMonths,
     };
   });

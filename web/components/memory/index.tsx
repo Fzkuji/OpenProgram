@@ -390,15 +390,27 @@ export function MemoryPage() {
                     <details key={year.year} className={styles.timelineYear} open={yearIndex === 0}>
                       <summary className={styles.timelineYearSummary}>
                         <span>{year.year}</span>
-                        <span>{year.dayCount} {text(year.dayCount === 1 ? "day" : "days", "天")}</span>
+                        <span>{year.entryCount} {text(year.entryCount === 1 ? "entry" : "entries", "条")}</span>
                       </summary>
+                      <div className={styles.timelinePeriodEntries}>
+                        {year.entries.map((entry) => (
+                          <button key={entry.date} className={`${styles.timelinePeriod} ${selectedDate === entry.date ? styles.timelinePeriodActive : ""}`} onClick={() => openTimelineDay(entry.date)}>
+                            <span>{entry.label}</span><span className={styles.fileMeta}>{formatSize(entry.size)}</span>
+                          </button>
+                        ))}
+                      </div>
                       {year.months.map((month, monthIndex) => (
                         <details key={month.key} className={styles.timelineMonth} open={yearIndex === 0 && monthIndex === 0}>
                           <summary className={styles.timelineMonthSummary}>
                             <span>{month.label}</span>
-                            <span>{month.days.length} {text(month.days.length === 1 ? "day" : "days", "天")}</span>
+                            <span>{month.entries.length + month.days.length} {text(month.entries.length + month.days.length === 1 ? "entry" : "entries", "条")}</span>
                           </summary>
                           <div className={styles.timelineDays}>
+                            {month.entries.map((entry) => (
+                              <button key={entry.date} className={`${styles.timelinePeriod} ${selectedDate === entry.date ? styles.timelinePeriodActive : ""}`} onClick={() => openTimelineDay(entry.date)}>
+                                <span>{entry.label}</span><span className={styles.fileMeta}>{formatSize(entry.size)}</span>
+                              </button>
+                            ))}
                             {month.days.map((day) => (
                               <button
                                 key={day.date}
