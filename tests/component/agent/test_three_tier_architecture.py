@@ -32,7 +32,7 @@ def test_workflow_can_call_all_three_tiers(
             return json.dumps({"action": "create"})
         return json.dumps({
             "project_metadata": {
-                "name": "Three tier workflow",
+                "name": "three_tier_workflow",
                 "summary": "Exercise llm, agent, and goal",
                 "tags": ["test"],
             },
@@ -44,7 +44,22 @@ def test_workflow_can_call_all_three_tiers(
                     "    agent('执行任务：' + summary)\n"
                     "    return goal('优化结果', '测试通过')\n"
                 ),
-                "entry.py": "def workflow():\n    return run_tiers()\n",
+                "__init__.py": (
+                    "from .workflow import three_tier_workflow\n\n"
+                    "__all__ = ['three_tier_workflow']\n"
+                ),
+                "workflow.py": (
+                    "from openprogram.agentic_programming import agentic_function\n"
+                    "from .steps.tiers import run_tiers\n\n"
+                    "@agentic_function\n"
+                    "def three_tier_workflow(task):\n"
+                    "    return run_tiers()\n"
+                ),
+                "tests/test_workflow.py": (
+                    "from workflows.three_tier_workflow import three_tier_workflow\n\n"
+                    "def test_three_tier_workflow():\n"
+                    "    assert callable(three_tier_workflow)\n"
+                ),
             },
         }, ensure_ascii=False)
 
@@ -65,10 +80,8 @@ def test_workflow_can_call_all_three_tiers(
         return "优化完成"
 
     monkeypatch.setattr(TL, "_run_planner_turn", _planner)
-
-    # Mock the factory functions that workflow calls
     monkeypatch.setattr(TL, "_llm_function", lambda: fake_llm)
-    monkeypatch.setattr(TL, "_agent_function", lambda _sid, _spawn: fake_agent)
+    monkeypatch.setattr(TL, "_agent_loop_function", lambda: fake_agent)
     monkeypatch.setattr(TL, "_goal_function", lambda: fake_goal)
 
     result = TL.agentic_workflow("测试三层调用")

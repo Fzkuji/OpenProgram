@@ -24,6 +24,7 @@ repositories. See ``docs/design/runtime/agent-worktree.md`` Part 1 D4.
 ## Files in this directory
 
 - **`context.py`** — ``_current_worktree_path`` ContextVar
+- **`include_sync.py`** — ``.worktreeinclude``
 - **`manager.py`** — WorktreeManager
 - **`path_resolve.py`** — Path resolution helper for worktree-aware tools
 - **`pr_ref.py`** — Resolve a PR reference (``123`` / ``#123`` / a GitHub PR URL) into a

@@ -38,6 +38,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "update-service.js",
       "browser-extension-manager.js",
       "packaged-runtime.js",
       "worker-start-url.js",

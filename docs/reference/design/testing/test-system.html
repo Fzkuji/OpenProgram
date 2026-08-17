@@ -47,15 +47,10 @@
   <h1>OpenProgram 测试系统</h1>
   <p class="lead">本页定义测试分类、目录、依赖边界、执行命令和 CI 职责。测试层级由运行时依赖决定，产品域沿用 <code>openprogram/</code> 的模块名称。结构迁移不改变产品行为；测试发现的真实产品缺陷按独立批次修复和验证。</p>
 
-  <h2>1. 当前实现与已验证差距</h2>
-  <div class="cards">
-    <div class="card"><b>Python 规模</b>383 个 tracked Python 测试文件，约 10.5 万行。大部分集中在 <code>tests/unit</code>，但其中包含 HTTP client、subprocess、临时状态库和真实线程。</div>
-    <div class="card"><b>共享状态</b><code>tests/conftest.py</code> 在 collection 阶段修改代理、HOME 和多个进程全局对象。临时 HOME 未自动删除，局部状态恢复依赖全局 autouse fixture。</div>
-    <div class="card"><b>并发与等待</b>测试中存在固定 <code>time.sleep</code>，部分测试替换全局 <code>threading.Thread</code>。这会影响 pytest-xdist 的控制线程和失败诊断。</div>
-    <div class="card"><b>仓库扫描</b>部分检查通过 <code>Path.rglob</code> 扫描工作目录，会包含 ignored Finder 副本和嵌套 application repository，因此相同 commit 可产生不同结果。</div>
-    <div class="card"><b>JavaScript</b>CLI 已使用 Vitest；Web 主要使用读取源代码后执行正则断言的脚本；desktop 主要使用 Node VM 和 fake Electron，CI 只执行其中一个脚本。</div>
-    <div class="card"><b>CI</b>Python matrix 排除 integration；未执行 Ruff、CLI test/build 和完整 desktop checks；Web 构建与 Python frontend integration fixture 没有统一契约。</div>
-  </div>
+  <h2>1. 当前实现</h2>
+  <p>当前共有 394 个 Git tracked Python 测试文件：226 个 unit、138 个 component、14 个 contracts、9 个 integration、4 个 e2e 和 3 个 live。执行层用例全部位于 <code>tests/&lt;layer&gt;/&lt;product-domain&gt;/</code>，没有直接放在层级根目录的 tracked test 文件。</p>
+  <p>仓库 contract 只枚举 Git tracked 文件，unit 的 TestClient、subprocess、socket、真实线程/线程池、固定等待和全局线程类替换由结构 contract 与 autouse 运行时 guard 共同阻止。CI 分别执行 contracts、三个 Python 版本的 unit、component、integration、非 browser e2e、built-Web browser、Web、CLI、Desktop 和 coverage。</p>
+  <p>当前剩余结构差距不是测试层级本身，而是仓库顶层结构约束：需要阻止新的根目录开发脚本、未声明顶层目录和已删除源码路径重新进入有效指南。</p>
 
   <h2>2. 参考框架及职责边界</h2>
   <p>参考信息来自各项目官方文档。仓库继续使用现有工具；本设计不增加新的通用 test runner。</p>
@@ -164,8 +159,8 @@
       <tr><td>Python 目录迁移</td><td><span class="tag ok">已完成</span></td><td>目录与 marker 迁移完成；HTTP inventory 重复实现、agentic context 结构契约误报和 retry 测试隔离问题已修复；最终 required suite 为 5356 passed、10 skipped、1 xfailed，独立规格与质量审查通过</td></tr>
       <tr><td>Web/CLI/desktop</td><td><span class="tag ok">已完成</span></td><td>Web pure helper 使用 node:test，component 与 built-Web/browser e2e 分离；当前 Scheduler view-model 为 4 个 Node 单元测试，Web check/build、CLI typecheck/Vitest/build、desktop check 与独立审查通过</td></tr>
       <tr><td>CI 与贡献文档</td><td><span class="tag ok">已完成</span></td><td>十类独立 CI 结果、三版本 unit matrix、locked uv、非 browser e2e、完整 Web/CLI/desktop/browser 命令与贡献文档 contract；独立审查通过</td></tr>
-      <tr><td>等待、并发与大文件</td><td><span class="tag ok">已完成</span></td><td>结构契约覆盖资源导入、固定等待与全局线程类替换；unit autouse guard 检查测试直接创建线程/线程池、固定等待、生产资源 teardown 和全局状态恢复；5 个真实 runner/threadpool 文件共 104 个测试迁至 component；最终 required suite 为 5370 passed、10 skipped、2 deselected、1 xfailed</td></tr>
-      <tr><td>覆盖率和最终验证</td><td><span class="tag ok">已完成</span></td><td>API-key CLI unit 已隔离远程模型列表获取；Python 3.12 串行 unit branch-mode coverage 重复基线为 42.267228%，CI 先生成并上传 XML artifact，再以 6 位精度执行 40% floor；固定 <code>-n 4</code> required selection 连续三次为 5370 passed、10 skipped、1 xfailed、0 worker crash；最终 Python、JavaScript、browser、docs、example、Desktop 目录包和静态检查门禁全部通过</td></tr>
+      <tr><td>等待、并发与大文件</td><td><span class="tag ok">已完成</span></td><td>结构契约覆盖资源导入、固定等待与全局线程类替换；unit autouse guard 检查测试直接创建线程/线程池、固定等待、生产资源 teardown 和全局状态恢复；7 个实际依赖 runner、threadpool 或 workflow 执行的文件共 109 个测试迁至 component；当前 required selection 为 5699 passed、16 skipped、1 xfailed</td></tr>
+      <tr><td>覆盖率和最终验证</td><td><span class="tag ok">已完成</span></td><td>Python 3.12.13 locked 环境连续两次串行 unit 均为 2560 passed、3 skipped，branch-mode coverage 均为 42.402765%；CI 先生成并上传 XML artifact，再以 6 位精度执行 40% floor；固定 <code>-n 4</code> required selection 连续三次均为 5699 passed、16 skipped、1 xfailed、0 worker crash</td></tr>
     </tbody>
   </table></div>
 
@@ -176,9 +171,10 @@
     <tbody>
       <tr><td>required suite 归零</td><td>移除未被注册表使用的旧 channel 实现；修正 <code>@function</code> / <code>@agentic_function</code> 结构契约误报；隔离 retry 测试状态</td><td>不改变受管理 channel 实现和公开 API</td><td>4 个失败节点专项通过；最终 required suite 为 5356 passed、10 skipped、1 xfailed；独立规格与质量审查通过</td><td><span class="tag ok">已完成</span></td></tr>
       <tr><td>结构与等待契约</td><td>识别别名资源导入、线程类替换和非零异步等待；运行时拦截测试直接创建线程或线程池；迁移或改写实际违规测试</td><td>不实现 Python 控制流解释器，不按文件行数机械拆分测试</td><td>结构与运行时契约通过；unit 为 2434 passed、3 skipped；5 个迁移 component 文件为 104 passed；独立规格和质量审查通过</td><td><span class="tag ok">已完成</span></td></tr>
-      <tr><td>覆盖率门禁</td><td>记录精确 branch baseline；设置防回退阈值；只补关键未覆盖分支</td><td>不追求任意高覆盖率数字，不为覆盖率复制断言</td><td>隔离 Python 3.12.13 locked 环境连续两次均为 unit 2434 passed、3 skipped，branch-mode baseline 42.267228%；6 位精度的 40% floor 通过，43% 对照以退出码 2 失败；XML 在 floor 前上传，CI contract 通过</td><td><span class="tag ok">已完成</span></td></tr>
+      <tr><td>覆盖率门禁</td><td>记录精确 branch baseline；设置防回退阈值；只补关键未覆盖分支</td><td>不追求任意高覆盖率数字，不为覆盖率复制断言</td><td>隔离 Python 3.12.13 locked 环境连续两次均为 unit 2560 passed、3 skipped，branch-mode baseline 42.402765%；6 位精度的 40% floor 通过；XML 仍在 floor 前上传，CI contract 通过</td><td><span class="tag ok">已完成</span></td></tr>
       <tr><td>JavaScript 依赖风险</td><td>分别审计 Web、CLI、desktop；升级可兼容依赖并验证 lockfile</td><td>不执行 <code>npm audit fix --force</code>，不引入新 runner</td><td>兼容升级后 Web 从 8 high 降至 5 high，CLI 从 4 high + 1 moderate 降至 1 moderate，desktop 从 5 high + 2 moderate 降至 2 high；剩余项分别要求 Next/eslint-config-next 16、esbuild 0.28、Electron 43 的独立兼容迁移；三个 workspace 的 npm ci 与既有 check/test/typecheck/build 全部通过</td><td><span class="tag ok">已完成</span></td></tr>
-      <tr><td>最终集成</td><td>合入最新 main，执行 Python、Web、CLI、desktop、browser、docs、examples 和 diff/status 门禁</td><td>不覆盖主工作区未提交修改，不远程 push</td><td>串行 required suite 为 5370 passed、10 skipped、2 deselected、1 xfailed；固定 <code>-n 4</code> 连续三次均为 5370 passed、10 skipped、1 xfailed、0 worker crash；非 browser e2e 4 passed、2 deselected；unit coverage 两次为 42.267228%；Web 4 tests/typecheck/check/build、CLI 140 passed + 2 skipped/typecheck/build、desktop check 与 <code>dist:dir</code>、browser 2 passed、docs build/landing/0 broken links、example、Ruff 与 diff-check 全部通过；最终候选独立规格和质量审查通过，工作树 clean</td><td><span class="tag ok">已完成</span></td></tr>
+      <tr><td>2026-08-15 最终集成</td><td>合入当时的 main，执行 Python、Web、CLI、desktop、browser、docs、examples 和 diff/status 门禁</td><td>不覆盖主工作区未提交修改，不远程 push</td><td>历史候选证据：串行 required suite 为 5370 passed、10 skipped、2 deselected、1 xfailed；固定 <code>-n 4</code> 连续三次均为 5370 passed、10 skipped、1 xfailed、0 worker crash；Web、CLI、desktop、browser、docs、example、Ruff 与 diff-check 门禁通过，独立规格和质量审查通过</td><td><span class="tag ok">已完成</span></td></tr>
+      <tr><td>2026-08-17 结构维护</td><td>清理根目录开发脚本、同步路径与目录 README、增加仓库结构 contract，并修复 main 合并后的测试回退</td><td>不重排产品模块，不覆盖主工作区其他任务</td><td>contracts 442 passed、1 skipped；固定 <code>-n 4</code> 连续三次均为 5699 passed、16 skipped、1 xfailed、0 worker crash；Python 3.12 unit coverage 连续两次为 42.402765%；docs 503 页、0 断链；Desktop 完整 <code>npm run check</code> 通过</td><td><span class="tag warn">待独立复核</span></td></tr>
     </tbody>
   </table></div>
 </main>

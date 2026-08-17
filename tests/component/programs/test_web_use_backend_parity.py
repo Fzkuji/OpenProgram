@@ -434,7 +434,8 @@ def test_backend_parity_normalizes_action_failure_without_fallback(
 
 
 def test_open_claude_backend_normalizes_real_playwright_timeout(monkeypatch):
-    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+    playwright = pytest.importorskip("playwright.sync_api")
+    PlaywrightTimeoutError = playwright.TimeoutError
 
     registry, controllers, clients, _released = _registry(monkeypatch)
     backend = "open_claude_chrome"

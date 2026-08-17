@@ -62,6 +62,9 @@
   th { color: var(--muted); font-size: 12px; letter-spacing: .05em; }
   tr:last-child td { border-bottom: 0; }
   code { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  pre { margin: 12px 0; padding: 16px 18px; overflow-x: auto; border: 1px solid var(--line);
+    border-radius: 12px; background: #0a101a; color: var(--text);
+    font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
   .state { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
   .now { color: var(--green); background: color-mix(in srgb, var(--green) 12%, transparent); }
   .later { color: var(--amber); background: color-mix(in srgb, var(--amber) 12%, transparent); }
@@ -108,12 +111,24 @@
   </div>
 
   <h2>2. 顶层职责</h2>
-  <div class="flow" aria-label="OpenProgram top-level repository areas">
-    <div><strong>Product core</strong><br><code>openprogram/</code><br>Python 运行时、服务端、内置能力</div>
-    <div><strong>User surfaces</strong><br><code>web/</code> · <code>cli/</code> · <code>desktop/</code><br>浏览器、终端和桌面宿主</div>
-    <div><strong>Verification</strong><br><code>tests/</code><br>unit、component、integration、contract</div>
-    <div><strong>Delivery</strong><br><code>scripts/</code> · <code>tools/</code> · <code>docs/</code><br>发布、维护工具和文档</div>
-  </div>
+  <pre>OpenProgram/
+  openprogram/   Python 产品运行时与服务端
+  web/           Next.js Web 客户端
+  cli/           Ink 终端客户端
+  desktop/       Electron 宿主与桌面检查
+  tests/         Python 测试：层级 / 产品域
+  docs/          用户文档与设计记录
+  scripts/       可直接执行的开发、验证和发布脚本
+  tools/         可导入的仓库维护工具
+  examples/      面向用户的最小可运行示例
+  skills/        随产品分发的技能
+  config/        产品运行时构建清单
+  experiments/   可复现实验，不参与产品运行时
+  references/    参考实现快照与本地比较语料
+  promo/         发布与宣传源文件
+  site/          静态站点入口</pre>
+  <p><code>.github/</code>、<code>.codegraph/</code> 和 <code>.superpowers/</code> 是仓库基础设施，不是产品运行时目录。根目录只保留项目元数据、入口文档、依赖锁和构建配置；可执行的 <code>.py</code>、<code>.ps1</code> 和 <code>.sh</code> 工具进入 <code>scripts/</code> 或对应 workspace 的 <code>scripts/</code>。</p>
+  <p><code>tests/</code> 中的 Python 用例使用 <code>tests/&lt;layer&gt;/&lt;product-domain&gt;/test_*.py</code>，按最强实际依赖选择层级。具体边界由 <a href="testing/test-system.html">Testing system</a> 和仓库 contracts 维护。</p>
 
   <h2>3. 超长文件处理</h2>
   <div class="table-wrap">
@@ -194,6 +209,9 @@
     <li><code>openprogram/cli.py</code> 不再包含大段 parser 声明，命令执行仍位于该文件。</li>
     <li>公开文档构建不包含 <code>docs/superpowers/</code>，所有公开链接有效。</li>
     <li>设计导航按产品功能分组；源文件路径保持不变。</li>
+    <li>Git tracked 顶层目录必须在结构 contract 中声明，根目录不出现开发脚本。</li>
+    <li>有效 README、技能和安装说明不得引用已删除的源码根路径。</li>
+    <li>一级 Python 包的目录 README 与 <code>__init__.py</code> docstring 保持同步。</li>
     <li>每个结构批次独立提交，先通过直接相关测试，再进入规格与质量复核。</li>
   </ul>
 

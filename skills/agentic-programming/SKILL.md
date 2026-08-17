@@ -35,12 +35,12 @@ That's it. Every step is something you do with your normal tools.
 | Situation | Where the file goes |
 |---|---|
 | User said "save to X" | Exactly X. |
-| Brand new general-purpose function in core | `openprogram/functions/agentics/<name>/__init__.py` |
+| Brand new general-purpose function in core | `openprogram/programs/agentic_functions/<name>/__init__.py` |
 | New function in an external harness package | `<harness>/<pkg>/agentics/<name>/__init__.py`, and `<pkg>/agentics/__init__.py` must export it via `AGENTIC_FUNCTIONS = [...]` (see §1.1 below) |
 | Editing an existing function | The file you found it in (don't move it). |
 | User's project / non-framework function | Wherever fits their layout (ask if unclear). |
 
-Directory + filename convention: lowercase snake_case folder matching the function name (e.g. `analyze_sentiment/__init__.py` contains `def analyze_sentiment`). The folder layout (one directory per agentic function, code in `__init__.py`) replaced the old flat `<name>.py` layout in the function-calling unification — see ``docs/design/function/calling-unification.md``. Single-file helpers inside the same logical agentic can sit next to ``__init__.py`` (e.g. ``analyze_sentiment/_prompt.py``) without polluting the top-level namespace.
+Directory + filename convention: lowercase snake_case folder matching the function name (e.g. `analyze_sentiment/__init__.py` contains `def analyze_sentiment`). The folder layout (one directory per agentic function, code in `__init__.py`) replaced the old flat `<name>.py` layout in the function-calling unification — see ``docs/reference/design/function/calling-unification.html``. Single-file helpers inside the same logical agentic can sit next to ``__init__.py`` (e.g. ``analyze_sentiment/_prompt.py``) without polluting the top-level namespace.
 
 ### 1.1. External harness convention — `AGENTIC_FUNCTIONS`
 
@@ -64,19 +64,29 @@ from .my_agent import my_agent
 AGENTIC_FUNCTIONS = [my_agent]
 ```
 
-OpenProgram auto-discovers any harness symlinked (or cloned as a plain directory) into `openprogram/functions/agentics/`: it scans for `<pkg>/agentics/__init__.py` inside each such directory, imports it, and the `@agentic_function` decorators inside fire and self-register. **No edit to `_registry.py::AGENTIC_MODULES` is needed for external harnesses** — that list is now only for internal `openprogram/functions/agentics/<name>/` modules.
+OpenProgram discovers owner-recorded external harnesses under
+`openprogram/programs/applications/`: it scans each recorded checkout for
+`<pkg>/agentics/__init__.py`, imports it, and the `@agentic_function`
+decorators register their functions. **No edit to
+`_registry.py::AGENTIC_MODULES` is needed for external harnesses** — that list
+is only for internal `openprogram/programs/agentic_functions/<name>/` modules.
 
-To wire a new external harness in, use `openprogram programs install file:///path/to/Your-Harness`; the Program installer prepares its isolated environment and records the source. A plain `git clone` into `openprogram/functions/agentics/` is also auto-discovered, and symlinks (`ln -s /path/to/Your-Harness openprogram/functions/agentics/`) remain supported for local development. Restart the server after any of these (see `openprogram/functions/_registry.py`).
+To wire a new external harness in, use `openprogram programs install
+file:///path/to/Your-Harness`; the Program installer validates the checkout,
+prepares its environment, and records the source under
+`openprogram/programs/applications/`. Developer symlinks are supported only
+after the installer records them. Restart the server afterward (see
+`openprogram/programs/_registry.py`).
 
 ## 2. agentic_function vs plain Python vs @function
 
 | What you're building | Decorator | Where it lives |
 |---|---|---|
-| LLM-reasoning logic (analyze / classify / generate / decide) | `@agentic_function` + `runtime: Runtime` + `runtime.exec(content=[...])` | `openprogram/functions/agentics/<name>/__init__.py` |
+| LLM-reasoning logic (analyze / classify / generate / decide) | `@agentic_function` + `runtime: Runtime` + `runtime.exec(content=[...])` | `openprogram/programs/agentic_functions/<name>/__init__.py` |
 | Deterministic helper (parsing / math / file munging / API wrapper) | plain function, no decorator, no `runtime` parameter | wherever it's used; if shared, `agentics/_utils/`-style |
-| **Framework-level deterministic LLM tool** (bash / read / web_search / etc.) | `@function` (different decorator!) | `openprogram/functions/tools/<name>/` |
+| **Framework-level deterministic LLM tool** (bash / read / web_search / etc.) | `@function` (different decorator!) | `openprogram/programs/functions/<name>/` |
 
-**This skill is about `@agentic_function`.** The `@function` decorator is a different mechanism for framework-level leaf tools and is out of scope here — see ``docs/design/function/calling-unification.md`` if you need it. Both decorators ultimately produce ``AgentTool`` entries in the same shared registry, but they target different kinds of work: `@function` for deterministic Python tools called by the LLM, `@agentic_function` for higher-order functions whose body itself drives an LLM round.
+**This skill is about `@agentic_function`.** The `@function` decorator is a different mechanism for framework-level leaf tools and is out of scope here — see ``docs/reference/design/function/calling-unification.html`` if you need it. Both decorators ultimately produce ``AgentTool`` entries in the same shared registry, but they target different kinds of work: `@function` for deterministic Python tools called by the LLM, `@agentic_function` for higher-order functions whose body itself drives an LLM round.
 
 Don't decorate a function just to "make it discoverable"; `@agentic_function` implies an LLM call inside the body.
 
@@ -338,7 +348,10 @@ If it crashes, read the traceback and fix before declaring done. For functions w
 
 Once a function is saved, there are two ways to run it.
 
-**CLI** — for functions discoverable under `openprogram/functions/agentics/` (either listed in `openprogram/functions/_registry.py::AGENTIC_MODULES`, or auto-discovered as an external-harness symlink per §1.1):
+**CLI** — for internal functions discoverable under
+`openprogram/programs/agentic_functions/` (listed in
+`openprogram/programs/_registry.py::AGENTIC_MODULES`) and installed external
+Programs recorded under `openprogram/programs/applications/`:
 
 ```bash
 openprogram programs list                       # see what's available
@@ -352,7 +365,7 @@ LLM if the function calls one.
 **Python** — import and call directly (any function, anywhere):
 
 ```python
-from openprogram.functions.agentics.<name> import <name>
+from openprogram.programs.agentic_functions.<name> import <name>
 from openprogram.providers.registry import create_runtime
 
 rt = create_runtime()
@@ -402,6 +415,6 @@ If you remember nothing else from this skill, remember these:
 4. No `system=` kwarg on `runtime.exec`.
 5. Every LLM-visible parameter needs a `description` in `input={...}`.
 6. No `Args:` / `Returns:` sections in the docstring.
-7. **Internal** function → save to `openprogram/functions/agentics/<name>/__init__.py` AND add `"<name>"` to `openprogram/functions/_registry.py::AGENTIC_MODULES`.
+7. **Internal** function → save to `openprogram/programs/agentic_functions/<name>/__init__.py` AND add `"<name>"` to `openprogram/programs/_registry.py::AGENTIC_MODULES`.
    **External harness** function → save to `<harness>/<pkg>/agentics/<name>/__init__.py` AND make sure `<pkg>/agentics/__init__.py` exports it via `AGENTIC_FUNCTIONS = [...]`. No edit to `AGENTIC_MODULES` needed — auto-discovered (§1.1).
 8. A registered function is LLM-visible by default. To keep one Python-only (an internal helper), register it with `expose=False`; `exposed_names()` is the live set of what LLMs can see.

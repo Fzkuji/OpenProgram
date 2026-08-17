@@ -7,7 +7,7 @@
 See ``docs/design/context/contextgit.md`` for the full design. TL;DR:
 
 - Every conversation is a DAG of "commits" (user messages, assistant
-  replies, function runs). Each commit has a ``parent_id``; siblings
+  replies, function runs). Each commit has a ``predecessor``; siblings
   (same parent) represent retries / edits / alternate versions.
 - A conversation carries a ``head_id`` — the commit currently displayed.
 - Switching ``head_id`` (checkout) is pure UI; nothing re-executes.
@@ -16,8 +16,8 @@ See ``docs/design/context/contextgit.md`` for the full design. TL;DR:
 
 The v1 implementation is *not* a separate persistent object store yet —
 it's DAG metadata layered on top of the existing conversation messages
-dict (see :mod:`openprogram.webui.server`). Each message dict
-gets a ``parent_id`` field (optional; legacy messages default to their
+dict (see :mod:`openprogram.webui.server`). Each message dict gets a
+``predecessor`` field (optional; legacy messages default to their
 list-order predecessor on load) and each conversation carries
 ``head_id``.
 

@@ -1,23 +1,21 @@
 # `openprogram/updater/`
 
-> Release metadata and installation-type helpers for explicit updates.
+> Shared helpers for OpenProgram's explicit update commands.
 
 ## Overview
 
-Product updates are install-method aware:
+Strategy is install-method aware:
 
-  * managed release runtime → latest stable GitHub Release and versioned installer
-  * source checkout → the gated source pipeline in `_cli_cmds/upgrade.py`
-  * unknown installation → no product update path
+  * managed release runtime → formal GitHub Release updater
+  * source checkout         → explicit gated source upgrade
+  * anything else           → no product update path
 
-Worker startup never checks or applies product updates. `openprogram upgrade`
-is the public command, and `openprogram update` is its compatibility alias.
-
-    detect_install_method() — managed_release | source_checkout | unknown
+The command implementation lives in ``openprogram._cli_cmds.upgrade``.
+Nothing in this package applies an update during worker startup.
 
 ## Files in this directory
 
 - **`detect.py`** — Detect how OpenProgram is installed on this machine
-- **`github.py`** — GitHub Releases lookup
+- **`github.py`** — Validated metadata and small files from formal GitHub Releases
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

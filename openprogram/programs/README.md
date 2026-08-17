@@ -33,10 +33,15 @@ relies on.
 - **`_providers.py`** — Shared provider-registry scaffolding for tools with pluggable backends
 - **`_registry.py`** — Explicit + auto-discovered registry of @agentic_function modules
 - **`_runtime.py`** — @function decorator + runtime layer
+- **`gui_harness_bridge.py`** — Optional adapter from the installed GUI Agent Harness to web_use
+- **`meta_storage.py`** — Profile-scoped persistence for tool profiles and Functions UI metadata
+- **`permission_rule.py`** — 权限规则字符串的解析、序列化、匹配。
+- **`watcher.py`** — Background watcher
 
 ## Sub-packages
 
-- **`agentics/`** — @agentic_function bodies
-- **`tools/`** — Leaf LLM-callable tools
+- **`agentic_functions/`** — @agentic_function bodies
+- **`applications/`** — Complete programs installed and loaded through their package entry points
+- **`functions/`** — Leaf LLM-callable tools
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

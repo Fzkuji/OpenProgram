@@ -1,0 +1,96 @@
+from __future__ import annotations
+
+from pathlib import Path
+import runpy
+import subprocess
+
+
+ROOT = Path(__file__).resolve().parents[3]
+TOP_LEVEL_DIRECTORIES = {
+    ".codegraph",
+    ".github",
+    ".superpowers",
+    "cli",
+    "config",
+    "desktop",
+    "docs",
+    "examples",
+    "experiments",
+    "openprogram",
+    "promo",
+    "references",
+    "scripts",
+    "site",
+    "skills",
+    "tests",
+    "tools",
+    "web",
+}
+CURRENT_STRUCTURE_GUIDES = (
+    "README.md",
+    "skills/agentic-programming/SKILL.md",
+    "openprogram/skills_bundled/agentic-programming/SKILL.md",
+    "docs/capabilities/installing-harnesses.md",
+    "docs/capabilities/installing-harnesses.zh.md",
+    "docs/server/troubleshooting.md",
+    "docs/server/troubleshooting.zh.md",
+)
+
+
+def _tracked_paths() -> tuple[str, ...]:
+    result = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+    )
+    return tuple(raw.decode() for raw in result.stdout.split(b"\0") if raw)
+
+
+def test_tracked_top_level_directories_are_declared() -> None:
+    actual = {path.split("/", 1)[0] for path in _tracked_paths() if "/" in path}
+
+    assert actual == TOP_LEVEL_DIRECTORIES
+
+
+def test_developer_scripts_do_not_live_at_the_repository_root() -> None:
+    script_suffixes = {".py", ".ps1", ".sh"}
+    misplaced = sorted(
+        relative
+        for relative in _tracked_paths()
+        if "/" not in relative
+        and (ROOT / relative).is_file()
+        and Path(relative).suffix in script_suffixes
+    )
+
+    assert misplaced == []
+
+
+def test_current_structure_guides_do_not_reference_removed_roots() -> None:
+    removed_roots = (
+        "openprogram/functions/",
+        "openprogram/programs/agentic_functions/<Repo-Name>",
+        "openprogram/programs/agentic_functions/{GUI,Research}",
+    )
+    stale_references = sorted(
+        f"{relative}: {removed}"
+        for relative in CURRENT_STRUCTURE_GUIDES
+        for removed in removed_roots
+        if removed in (ROOT / relative).read_text(encoding="utf-8")
+    )
+
+    assert stale_references == []
+
+
+def test_generated_package_readmes_are_current() -> None:
+    generator = runpy.run_path(str(ROOT / "scripts/gen_dir_readmes.py"))
+    render = generator["_readme_for"]
+    marker = "Auto-generated from `__init__.py`"
+    stale = []
+
+    for readme in sorted((ROOT / "openprogram").glob("*/README.md")):
+        current = readme.read_text(encoding="utf-8")
+        if marker in current and current != render(readme.parent):
+            stale.append(readme.relative_to(ROOT).as_posix())
+
+    assert stale == []
