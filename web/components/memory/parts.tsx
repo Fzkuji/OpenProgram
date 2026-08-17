@@ -101,8 +101,15 @@ export function EditorPanel({ title, badge, meta, state, onChange, onSave, onVie
       <div className={styles.editorHeader}>
         <div className={styles.editorHeaderLeft}>
           <DocIcon className={styles.fileIcon} />
-          <span className={styles.editorTitle}>{title}</span>
-          {badge}
+          <div className={styles.editorIdentity}>
+            <div className={styles.editorTitleRow}>
+              <span className={styles.editorTitle}>{title}</span>
+              {badge}
+            </div>
+            {meta.length > 0 && (
+              <div className={styles.editorHeaderMeta}>{meta.map((m, i) => <span key={i}>{m}</span>)}</div>
+            )}
+          </div>
         </div>
         <div className={styles.editorActions}>
           <div className={styles.modeSwitcher}>
@@ -127,9 +134,6 @@ export function EditorPanel({ title, badge, meta, state, onChange, onSave, onVie
           )}
         </div>
       </div>
-      {meta.length > 0 && (
-        <div className={styles.editorMeta}>{meta.map((m, i) => <span key={i}>{m}</span>)}</div>
-      )}
       {state.viewMode === "edit" ? (
         <textarea
           className={styles.textarea}

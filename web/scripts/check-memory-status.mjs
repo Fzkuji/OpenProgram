@@ -10,6 +10,10 @@ const memoryCss = readFileSync(
   new URL("../components/memory/memory-page.module.css", import.meta.url),
   "utf8",
 );
+const memoryParts = readFileSync(
+  new URL("../components/memory/parts.tsx", import.meta.url),
+  "utf8",
+);
 const memoryMarkdown = readFileSync(
   new URL("../components/memory/markdown.ts", import.meta.url),
   "utf8",
@@ -61,13 +65,18 @@ assert.match(cssRule(".rightPane"), /padding:\s*14px/);
 assert.match(cssRule(".rightPane"), /background:\s*var\(--bg-secondary\)/);
 assert.match(cssRule(".editor"), /border:\s*1px solid var\(--border\)/);
 assert.match(cssRule(".editor"), /border-radius:\s*12px/);
-assert.ok(cssRules(".markdown").some((rule) => /max-width:\s*820px/.test(rule) && /margin:\s*0 auto/.test(rule)));
+assert.ok(cssRules(".markdown").some((rule) => /max-width:\s*780px/.test(rule) && /margin:\s*0 auto/.test(rule)));
 assert.match(cssRule(".emptyPanel"), /max-width:\s*560px/);
 assert.match(cssRule(".emptyPanel"), /border:\s*1px solid var\(--border\)/);
 assert.match(cssRule(".emptyPanel"), /border-radius:\s*14px/);
 assert.match(memoryPage, /styles\.contextHeader/);
 assert.match(memoryPage, /styles\.recentEvent/);
 assert.doesNotMatch(memoryPage, /style=\{\{ marginBottom: "1rem" \}\}/);
+assert.doesNotMatch(memoryParts, /styles\.editorMeta/);
+assert.doesNotMatch(memoryParts, /<div className=\{styles\.editorMeta\}/);
+assert.match(memoryParts, /styles\.editorHeaderMeta/);
+assert.match(cssRule(".editorHeader"), /min-height:\s*76px/);
+assert.match(cssRule(".tabBtn"), /height:\s*36px/);
 
 const groupedTimeline = groupTimelineDays([
   { date: "2026-08-07", size: 20, mtime: 2 },
