@@ -12,7 +12,7 @@ import {
 import { useSessionStore } from "@/lib/session-store";
 import { closeAllPopovers } from "@/lib/runtime-bridge/ui";
 import { useTranslation } from "@/lib/i18n";
-import { ChannelMenu } from "../top-bar/channel-menu";
+import { ChannelMenu } from "../../top-bar/channel-menu";
 
 /** Status chip — the old topbar StatusBadge chip form (tone-tinted
  *  chip + indicator dot + channel label, ChannelMenu popover), re-hosted

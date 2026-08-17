@@ -1,0 +1,175 @@
+.surfaceChip {
+  max-width: none;
+  cursor: pointer;
+  font: inherit;
+}
+
+.surfaceChipLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+/* The legend panel opens upward from this row and must not be clipped. */
+.envChips:has(:global(.dag-legend) [aria-expanded="true"]) {
+  overflow: visible;
+}
+
+.envChips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(calc(var(--chat-column-max) + 2px), calc(100% - 62px));
+  margin: 0 auto 10px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  --env-pill-bg: var(--chip-bg);
+  --env-pill-ring: var(--chip-ring);
+}
+
+.envChips::-webkit-scrollbar { display: none; }
+.envChips > * { flex-shrink: 0; }
+
+/* Labels are either complete or hidden; they never flex into fragments. */
+.envChips > .surfaceChip,
+.envChips :global(.status-badge),
+.envChips :global(.runtime-badge.project-badge),
+.envChips :global(.runtime-badge.workdir-badge) {
+  flex-shrink: 0;
+  min-width: 24px;
+}
+
+.envChips .surfaceChipLabel,
+.envChips :global(.status-badge .badge-short),
+.envChips :global(.project-badge .badge-short),
+.envChips :global(.workdir-badge .badge-short),
+.envChips :global(.dag-hud-chip > span),
+.envChips :global(.dag-hud-zoom) {
+  flex: 0 0 auto;
+  max-width: 40ch;
+  opacity: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  transform: translateX(0);
+  transition:
+    max-width 170ms ease,
+    opacity 130ms ease,
+    padding 170ms ease,
+    margin 170ms ease,
+    transform 170ms ease;
+}
+
+.envChips :global(.dag-hud-zoom) {
+  max-width: 48px;
+}
+
+.envChips[data-compact="true"] .surfaceChipLabel,
+.envChips[data-compact="true"] :global(.status-badge .badge-short),
+.envChips[data-compact="true"] :global(.project-badge .badge-short),
+.envChips[data-compact="true"] :global(.workdir-badge .badge-short),
+.envChips[data-compact="true"] :global(.dag-hud-chip > span),
+.envChips[data-compact="true"] :global(.dag-hud-zoom) {
+  max-width: 0;
+  min-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  margin-left: 0;
+  margin-right: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-2px);
+}
+
+.envChips[data-compact="true"] > .surfaceChip,
+.envChips[data-compact="true"] :global(.status-badge),
+.envChips[data-compact="true"] :global(.runtime-badge.project-badge),
+.envChips[data-compact="true"] :global(.runtime-badge.workdir-badge),
+.envChips[data-compact="true"] :global(button.dag-hud-chip) {
+  min-width: 24px;
+  padding-left: 5px;
+  padding-right: 5px;
+  gap: 0;
+  justify-content: center;
+}
+
+.dagHudSlot {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+/* Status, project, working-directory, and DAG controls share one pill. */
+.envChips :global(.status-badge),
+.envChips :global(.status-badge.connecting),
+.envChips :global(.status-badge.disconnected),
+.envChips :global(.status-badge.paused),
+.envChips :global(.runtime-badge.project-badge),
+.envChips :global(.runtime-badge.workdir-badge),
+.envChips :global(.dag-hud-chip) {
+  height: 24px;
+  min-height: 24px;
+  max-height: 24px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  gap: 6px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 22px;
+  background: var(--env-pill-bg);
+  box-shadow:
+    inset 0 0 0 1px var(--env-pill-ring),
+    var(--shadow-sm);
+  color: var(--ink-80);
+  transition:
+    padding 170ms ease,
+    gap 170ms ease,
+    background-color 130ms ease,
+    color 130ms ease;
+}
+
+.envChips :global(.status-badge) svg,
+.envChips :global(.runtime-badge.project-badge) svg,
+.envChips :global(.runtime-badge.workdir-badge) svg {
+  width: 14px;
+  height: 14px;
+}
+
+.envChips :global(.indicator-dot) {
+  width: 8px;
+  height: 8px;
+}
+
+.envChips :global(.badge-short) {
+  padding: 0 2px;
+}
+
+.envChips :global(.status-badge:hover),
+.envChips :global(.status-badge[aria-expanded="true"]),
+.envChips :global(.status-badge.connecting:hover),
+.envChips :global(.status-badge.connecting[aria-expanded="true"]),
+.envChips :global(.runtime-badge.project-badge:hover),
+.envChips :global(.runtime-badge.project-badge[aria-expanded="true"]),
+.envChips :global(.runtime-badge.workdir-badge:hover),
+.envChips :global(button.dag-hud-chip:hover),
+.envChips :global(.dag-hud-chip[aria-expanded="true"]) {
+  background: color-mix(in srgb, var(--text-bright) 6%, var(--env-pill-bg));
+  color: var(--text-bright);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .envChips .surfaceChipLabel,
+  .envChips :global(.status-badge .badge-short),
+  .envChips :global(.project-badge .badge-short),
+  .envChips :global(.workdir-badge .badge-short),
+  .envChips :global(.dag-hud-chip > span),
+  .envChips :global(.dag-hud-zoom),
+  .envChips :global(.status-badge),
+  .envChips :global(.runtime-badge.project-badge),
+  .envChips :global(.runtime-badge.workdir-badge),
+  .envChips :global(.dag-hud-chip) {
+    transition: none;
+  }
+}

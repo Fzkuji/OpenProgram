@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parseHTML } from "linkedom";
+import "./check-composer-environment-row.mjs";
 
 import { readCenterTabStripSource } from "./center-tab-strip-source.mjs";
 import { readChatCss } from "./_chat-css.mjs";
@@ -29,7 +30,6 @@ const runtimeHelpers = source("lib/runtime-bridge/helpers.ts");
 const markdownRenderer = source("lib/runtime-bridge/markdown-render.ts");
 const chatVisualSpec = source("../docs/reference/design/ui/chat-turn-visual-spec.html");
 const controlsCluster = source("components/chat/composer/controls/controls-cluster.tsx");
-const composer = source("components/chat/composer/index.tsx");
 const composerCss = source("components/chat/composer/composer.module.css");
 const workingDirChips = source("components/chat/top-bar/working-dir-chips.tsx");
 const chatCss = readChatCss(root);
@@ -403,38 +403,9 @@ assert.match(compactControls, /\.permission-badge[\s\S]*width:\s*20px/);
 assert.match(compactControls, /\.agent-badge[\s\S]*width:\s*20px/);
 assert.doesNotMatch(compactControls, /\.(?:permission-badge|agent-badge|effort-pill-host)[^{]*\{[^}]*display:\s*none/s);
 
-const compactEnvStart = composerCss.indexOf("/* One responsive state for chat");
-const compactEnvEnd = composerCss.indexOf("/* DAG 画布控件的落点", compactEnvStart);
-assert.ok(
-  compactEnvStart >= 0 && compactEnvEnd > compactEnvStart,
-  "environment chips must have one bounded responsive-state block",
-);
-const compactEnv = composerCss.slice(compactEnvStart, compactEnvEnd);
-assert.doesNotMatch(compactEnv, /@container/);
-assert.doesNotMatch(compactEnv, /flex-shrink:\s*1/);
-assert.match(compactEnv, /\.status-badge \.badge-short/);
-assert.match(compactEnv, /\.surfaceChipLabel/);
-assert.match(compactEnv, /\.project-badge \.badge-short/);
-assert.match(compactEnv, /\.workdir-badge \.badge-short/);
-assert.match(compactEnv, /\.dag-hud-chip > span/);
-assert.match(compactEnv, /\.dag-hud-zoom/);
-assert.match(compactEnv, /transition:[\s\S]*max-width 170ms ease[\s\S]*opacity 130ms ease/);
-assert.match(compactEnv, /\.envChips\[data-compact="true"\][\s\S]*max-width:\s*0/);
-assert.match(compactEnv, /\.envChips\[data-compact="true"\][\s\S]*opacity:\s*0/);
-assert.match(compactEnv, /button\.dag-hud-chip[\s\S]*min-width:\s*24px/);
-assert.doesNotMatch(compactEnv, /display:\s*none/);
-assert.match(composer, /function useCompactEnvironmentRow/);
-assert.match(composer, /new ResizeObserver\(measure\)/);
-assert.match(composer, /new MutationObserver/);
-assert.match(composer, /row\.scrollWidth/);
-assert.match(composer, /row\.clientWidth/);
-assert.match(composer, /row\.dataset\.compact = "true"/);
-assert.match(composer, /delete row\.dataset\.compact/);
-assert.match(composer, /ref=\{envChipsRef\} className=\{styles\.envChips\}/);
 assert.match(workingDirChips, /className="workdir-remove"/);
 assert.match(workingDirChips, /aria-label=\{text\("Remove folder", "移除文件夹"\)\}/);
 assert.match(workingDirChips, /tabIndex=\{0\}/);
-assert.doesNotMatch(compactEnv, /\.badge-short[^{]*\{[^}]*display:\s*none/s);
 const { effortLevelColor } = await import("../lib/effort-color.ts");
 const effortOptions = ["low", "medium", "high", "max"].map((value) => ({ value }));
 const nonMaxColors = effortOptions

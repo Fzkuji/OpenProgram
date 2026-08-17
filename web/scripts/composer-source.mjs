@@ -20,7 +20,7 @@ const COMPOSER_PARTS = [
   "composer-body.tsx",
   "modes/fn-form/use-fn-form-submit.ts",
   "controls/controls-cluster.tsx",
-  "status-chip.tsx",
+  "environment-row/status-chip.tsx",
   "scoped-drop-overlay.tsx",
 ];
 

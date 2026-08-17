@@ -10,17 +10,17 @@
  * ./paste/use-paste-tokens (long-paste chips), ./use-history-recall
  * (↑/↓), ./use-composer-keydown (key precedence),
  * ./controls/controls-cluster (the bottom control row),
- * ./status-chip and ./scoped-drop-overlay. This file owns the mode
+ * ./environment-row/environment-row and ./scoped-drop-overlay. This file owns the mode
  * switch, the wrapper layout, and the send/stop affordance.
  *
- * Styling lives in ./composer.module.css. The page-level chat layout
- * (chat-area, welcome screen, message list, etc.) is still rendered
- * by the legacy template for the moment and will be migrated in
- * subsequent slices.
+ * The shell styles live in ./composer.module.css; component-specific styles
+ * live beside their components. The page-level chat layout (chat-area,
+ * welcome screen, message list, etc.) is still rendered by the legacy
+ * template for the moment.
  */
 "use client";
 
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 
@@ -34,8 +34,7 @@ import { useTranslation } from "@/lib/i18n";
 // Session-scope chips relocated from the dismantled 48px topbar row —
 // each carries its own popover menu (project-menu / agent-selector /
 // permission-menu submodules under ../top-bar).
-import { ProjectBadge, WorkingDirChips } from "../top-bar";
-import { GoalChip, useSessionGoal } from "../goal-chip";
+import { useSessionGoal } from "../goal-chip";
 import { CircleHelp, Target } from "lucide-react";
 import { visibleParams } from "./modes/fn-form/fn-form";
 import { resolveComposerMode } from "./modes/resolve-mode";
@@ -58,8 +57,7 @@ import { usePasteTokens } from "./paste/use-paste-tokens";
 import { useHistoryRecall } from "./use-history-recall";
 import { useChatSubmit } from "./use-chat-submit";
 import { useComposerKeyDown } from "./use-composer-keydown";
-import { StatusChip } from "./status-chip";
-import { SurfaceChip } from "./surface-chip";
+import { EnvironmentRow } from "./environment-row/environment-row";
 import { ScopedDropOverlay } from "./scoped-drop-overlay";
 import { ComposerBody } from "./composer-body";
 import { QuestionPanel } from "./question-panel";
@@ -84,90 +82,6 @@ function wsSend(payload: unknown): boolean {
 }
 
 const noop = () => {};
-
-const ENV_CHIP_COMPACT_HYSTERESIS = 12;
-
-/**
- * Keep the environment row in one of two states: complete labels or icons.
- * The row's contents differ between chat and DAG, so a fixed pane breakpoint
- * cannot describe when it is full. Measure the row itself instead. The small
- * hysteresis prevents repeated switching at the exact overflow boundary.
- */
-function useCompactEnvironmentRow(ref: React.RefObject<HTMLDivElement | null>) {
-  useLayoutEffect(() => {
-    const row = ref.current;
-    if (!row) return;
-
-    let frame = 0;
-    let expandedWidth = 0;
-
-    const measure = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        const available = row.clientWidth;
-        if (available <= 0) return;
-
-        const compact = row.dataset.compact === "true";
-        if (!compact) {
-          expandedWidth = Math.ceil(row.scrollWidth);
-          if (expandedWidth > available + 1) row.dataset.compact = "true";
-          return;
-        }
-
-        if (available >= expandedWidth + ENV_CHIP_COMPACT_HYSTERESIS) {
-          delete row.dataset.compact;
-          // Re-check after the labels occupy space again. This also handles a
-          // content change that happened while the row was compact.
-          frame = requestAnimationFrame(measure);
-        }
-      });
-    };
-
-    const resizeObserver =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
-    resizeObserver?.observe(row);
-
-    const mutationObserver =
-      typeof MutationObserver === "undefined"
-        ? null
-        : new MutationObserver((records) => {
-            // The zoom readout changes on every wheel gesture. Its text does
-            // not change the control's intrinsic width, so it must not reset
-            // the compact state while the user zooms.
-            const isInside = (node: Node, selector: string) =>
-              node instanceof Element
-                ? Boolean(node.closest(selector))
-                : Boolean(node.parentElement?.closest(selector));
-            if (
-              records.every(
-                (record) =>
-                  isInside(record.target, ".dag-hud-zoom") ||
-                  isInside(record.target, ".dag-legend"),
-              )
-            ) {
-              return;
-            }
-            // DAG controls are portaled into this row. Re-expand once so their
-            // new intrinsic width is measured, then settle into the same state.
-            expandedWidth = 0;
-            delete row.dataset.compact;
-            measure();
-          });
-    mutationObserver?.observe(row, {
-      childList: true,
-      characterData: true,
-      subtree: true,
-    });
-
-    measure();
-    return () => {
-      cancelAnimationFrame(frame);
-      resizeObserver?.disconnect();
-      mutationObserver?.disconnect();
-      delete row.dataset.compact;
-    };
-  }, [ref]);
-}
 
 /**
  * @param boundSessionId  Render this composer against a SPECIFIC session
@@ -473,8 +387,6 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // The stick-to-bottom ResizeObserver on #chatMessages then re-pins, so
   // a reader parked at the bottom gets the last message pushed fully out.
   const inputAreaRef = useRef<HTMLDivElement | null>(null);
-  const envChipsRef = useRef<HTMLDivElement | null>(null);
-  useCompactEnvironmentRow(envChipsRef);
   useEffect(() => {
     // Split-pane composers measure into their own pane var — only the
     // focused shell's composer owns the root-level var.
@@ -889,28 +801,12 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
             document.body,
           )
         : null}
-      {/* Env chips — floating row ABOVE the input box (Claude Code
-          arrangement): filled pill chips [Local] [📁 project] only.
-          The add-folder entry stays inside the ProjectMenu popover
-          ("Open folder…"), it is not a standalone control. Sits
-          OUTSIDE .composerStack so the slash menu's bottom:100% anchor
-          still lands on the wrapper top edge; .inputArea is bottom-
-          anchored absolute, so this row grows the composer upward
-          without shifting the transcript. */}
-      <div ref={envChipsRef} className={styles.envChips}>
-        <StatusChip owningId={bound === null} />
-        <SurfaceChip
-          sessionId={currentSessionId}
-          toolsEnabled={toolsEnabled}
-          onToggleAccess={toggleTools}
-        />
-        <ProjectBadge />
-        <WorkingDirChips />
-        <GoalChip />
-        {/* DAG 视角的画布控件（Fit / 缩放 / 图例）从 dag-view.tsx
-            portal 进来，落在输入框右上角——env chip 行的右端。 */}
-        <div id="dagHudSlot" className={styles.dagHudSlot} />
-      </div>
+      <EnvironmentRow
+        sessionId={currentSessionId}
+        toolsEnabled={toolsEnabled}
+        owningStatusId={bound === null}
+        onToggleAccess={toggleTools}
+      />
       {/* composerStack wraps {slashClip, inputWrapper} so the slash
           menu's vertical anchor is the wrapper's top edge — not a
           magic-number offset from the inputArea bottom. composerStack

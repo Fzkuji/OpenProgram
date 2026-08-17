@@ -3,10 +3,10 @@
 import { Globe2 } from "lucide-react";
 
 import { HoverTip } from "@/components/ui/tooltip";
-import { useTranslation } from "@/lib/i18n";
 import { surfaceRefForChat } from "@/lib/desktop-bridge";
+import { useTranslation } from "@/lib/i18n";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
-import styles from "./composer.module.css";
+import styles from "./environment-row.module.css";
 
 export function SurfaceChip({
   sessionId,
@@ -28,7 +28,8 @@ export function SurfaceChip({
   const stateLabel = toolsEnabled
     ? text("Agent can access", "Agent 可访问")
     : text("Web control disabled", "网页控制未启用");
-  const title = surface.title || new URL(surface.url || "about:blank").hostname || "Web";
+  const title =
+    surface.title || new URL(surface.url || "about:blank").hostname || "Web";
   const regionLabel = surface.region === "left"
     ? text("Left", "左侧")
     : surface.region === "right"
