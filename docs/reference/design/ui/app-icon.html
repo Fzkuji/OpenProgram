@@ -68,9 +68,9 @@
   <header>
     <div>
       <h1>macOS App 图标规范</h1>
-      <p>面向 desktop 打包与品牌资源维护。现代 macOS 使用 Apple Icon Composer 分层资源；OpenProgram 提供背景定义与四个独立品牌深度层。素材不预画最外层系统轮廓，内部节点保留用于表达凸起体积的受光渐变。</p>
+      <p>面向 desktop 打包与品牌资源维护。现代 macOS 使用 Apple Icon Composer 分层资源；OpenProgram 提供深蓝背景与四个独立品牌深度层。素材不预画最外层系统轮廓，圆环和三个节点使用高饱和蓝紫色与凸起受光。</p>
     </div>
-    <div class="status">凸起圆环预览通过 · 安装待 Xcode license</div>
+    <div class="status">参考图比例与深蓝配色已应用</div>
   </header>
 
   <section aria-labelledby="gap">
@@ -78,9 +78,10 @@
     <table>
       <thead><tr><th>项目</th><th>当前实现</th><th>官方设计要求</th><th>目标</th></tr></thead>
       <tbody>
-        <tr><td>深度结构</td><td>轨道与三个节点合并在一个 SVG、一个 group 中，Icon Composer 只能把整个品牌符号视为同一深度面。</td><td>背景与一个或多个前景层共同形成空间层级；group 按从后到前的顺序成为系统渲染的深度层。</td><td>轨道、大节点、中节点和小节点分别进入四个 group。</td></tr>
-        <tr><td>材质</td><td>节点已有凸起明暗，圆环仍只有蓝紫色相过渡，截面明暗不足。</td><td>最外层 squircle 与其边缘效果由系统生成；内部品牌层可使用独立明暗表达前后关系。</td><td>四组均关闭 Specular；节点保留左上受光的径向渐变；圆环使用左上亮、右下暗的蓝紫渐变，并在截面两侧叠加低透明度暗部，形成凸起厚度但不生成白色光圈。</td></tr>
-        <tr><td>内部占比</td><td>轨道外缘约占画布宽度 64%，与 System Settings 的内部主体相比仍偏小。</td><td>主体需要在系统遮罩的安全范围内保持清晰，并与相邻系统图标形成稳定的视觉尺寸。</td><td>轨道外缘扩大到约 69%，三个节点同步小幅放大，保留约 15% 的单侧安全边距。</td></tr>
+        <tr><td>深度结构</td><td>轨道、主节点、中节点和小节点分别位于四个 SVG 与四个 group。</td><td>背景与多个前景层共同形成空间层级；节点必须位于包含深色内场的轨道层之前。</td><td>保持四层结构，只调整顺序、比例和材质。</td></tr>
+        <tr><td>材质</td><td>节点已有凸起明暗，但整体颜色偏灰，圆环右下段过暗。</td><td>最外层 squircle 与其边缘效果由系统生成；内部品牌层可使用独立明暗表达前后关系。</td><td>四组均关闭 Specular；节点保留左上受光的径向渐变；圆环从青蓝过渡到亮紫，暗部只用于表达截面，不形成灰黑段或白色光圈。</td></tr>
+        <tr><td>内部占比</td><td>轨道外缘约占画布宽度 69%，三个节点也偏大。</td><td>主体需要在系统遮罩的安全范围内保持清晰，并与相邻系统图标形成稳定的视觉尺寸。</td><td>参考提供图将轨道外缘调整到约 64%，主节点、中节点和小节点同步缩放，增加背景留白。</td></tr>
+        <tr><td>背景</td><td>Icon Composer 基色接近灰黑蓝，Dock 中显示偏暗。</td><td>背景由系统生成外形和材质，但品牌基色由图标源定义。</td><td>改为高饱和深蓝基色；上方受光后保持亮蓝，底部保持深蓝，不过渡到灰色或浅蓝色。</td></tr>
         <tr><td>品牌边界</td><td>蓝紫轨道和三个节点已稳定，背景由 automatic gradient 生成。</td><td>素材保持未遮罩的方形画布，主体居中，前景边缘清晰，系统负责最终裁切。</td><td>不复制 System Settings 的齿轮造型，仅采用其分层、遮挡和系统材质方法。</td></tr>
       </tbody>
     </table>
@@ -98,7 +99,7 @@
       <article class="stage">
         <small>2 · 四个透明品牌层</small>
         <div class="canvas transparent" aria-label="透明画布上的 OpenProgram 品牌符号"><i class="mark"></i><i class="node a"></i><i class="node b"></i><i class="node c"></i></div>
-        <p class="caption">轨道与三个节点分别使用独立 SVG，并按从后到前的顺序进入四个 Icon Composer group。</p>
+        <p class="caption">轨道与三个节点分别使用独立 SVG。三个节点位于前景，包含深色内场的轨道层位于其后。</p>
       </article>
       <div class="arrow" aria-hidden="true">→</div>
       <article class="stage">
@@ -112,7 +113,7 @@
   <section aria-labelledby="rules">
     <h2 id="rules">素材边界</h2>
     <div class="rule-grid">
-      <div class="rule do"><b>源素材保留</b><span>1024 × 1024 画布、带方向性受光和暗边截面的蓝紫轨道、三个带凸起受光渐变的独立节点、透明前景、安全边距和清晰轮廓。</span></div>
+      <div class="rule do"><b>源素材保留</b><span>1024 × 1024 画布、深蓝背景基色、带方向性受光的高饱和蓝紫轨道、三个带凸起受光渐变的独立节点、透明前景、安全边距和清晰轮廓。</span></div>
       <div class="rule dont"><b>源素材禁止</b><span>外部 squircle、圆角矩形、外框、最外层轮廓高光、预画投影、模糊、系统容器材质和预合成背景。</span></div>
       <div class="rule do"><b>Apple 工具链负责</b><span>最终遮罩、组间深度、系统高光、折射、透明度、投影、平台外形、显示模式适配以及兼容资源生成。</span></div>
       <div class="rule dont"><b>组件资源不得替代</b><span>Web favicon、侧边栏图标和加载动画继续使用各自尺寸的现有资源，不从 App 图标截图导出。</span></div>
@@ -124,9 +125,9 @@
     <table>
       <thead><tr><th>路径</th><th>输入</th><th>用途</th><th>约束</th></tr></thead>
       <tbody>
-        <tr><td>当前发布</td><td><code>build/AppIcon.icon</code></td><td>Electron Builder 调用 Xcode 26 <code>actool</code> 生成 <code>Assets.car</code> 与兼容图标。</td><td>GitHub Actions 使用 macOS 26 runner。</td></tr>
-        <tr><td>旧系统回退</td><td>同一份 <code>AppIcon.icon</code></td><td>Xcode 从现代源包生成兼容表示；仓库不再维护第二份手绘 `.icns` 源图。</td><td>兼容结果仍由 Apple 工具链输出，不允许新增独立 squircle 素材。</td></tr>
-        <tr><td>本机开发</td><td>Xcode 26 的 <code>Icon Composer.app</code> 与 <code>ictool</code></td><td>直接导出 macOS Default/Dark/Mono 预览，并在打包后检查 Dock、Finder 与 About。</td><td>本机必须完成 Xcode license 接受后才能执行完整 Electron Builder 打包。</td></tr>
+        <tr><td>当前发布</td><td><code>build/icon.icns</code></td><td>Electron Builder 直接读取已生成的多尺寸 macOS 图标。</td><td><code>package.json</code> 固定指向该文件。</td></tr>
+        <tr><td>可维护源</td><td><code>build/AppIcon.icon</code></td><td>Icon Composer 文档保留背景定义、分层结构和矢量素材。</td><td><code>icon.icns</code> 必须由该源导出，不维护另一套图形设计。</td></tr>
+        <tr><td>本机开发</td><td>Xcode 26 的 <code>Icon Composer.app</code> 与 <code>ictool</code></td><td>导出 macOS Default 预览并生成多尺寸 <code>icon.icns</code>，随后检查 Dock、Finder 与 About。</td><td>不手绘外部 squircle 或系统边缘效果。</td></tr>
       </tbody>
     </table>
   </section>
@@ -140,7 +141,7 @@
       <div class="file"><code>apps/desktop/build/AppIcon.icon/Assets/03-node-purple.svg</code><span>第三层辅助节点。</span></div>
       <div class="file"><code>apps/desktop/build/AppIcon.icon/Assets/04-node-indigo.svg</code><span>最前层小节点。</span></div>
       <div class="file"><code>apps/desktop/scripts/check-icon.sh</code><span>阻止圆角、边框、阴影等重新进入现代素材。</span></div>
-      <div class="file"><code>apps/desktop/package.json</code><span>macOS 打包入口固定为 <code>AppIcon.icon</code>。</span></div>
+      <div class="file"><code>apps/desktop/package.json</code><span>macOS 打包入口固定为 <code>build/icon.icns</code>。</span></div>
       <div class="file"><code>.github/workflows/release.yml</code><span>使用带 Xcode 26 的 macOS 26 runner。</span></div>
     </div>
   </section>
@@ -148,7 +149,7 @@
   <section aria-labelledby="evidence">
     <h2 id="evidence">依据与验收</h2>
     <p class="lead">设计依据为 Apple 的 <a href="https://developer.apple.com/design/human-interface-guidelines/app-icons">App icons HIG</a>、<a href="https://developer.apple.com/icon-composer/">Icon Composer</a> 与 <a href="https://developer.apple.com/documentation/Xcode/creating-your-app-icon-using-icon-composer">Xcode 图标创建说明</a>。打包能力依据 <a href="https://www.electron.build/docs/features/icons-and-images/">Electron Builder 图标文档</a>。</p>
-    <p class="lead">聚焦校验必须确认：四个现代 SVG 均使用 1024 × 1024 透明画布且不含外部 squircle、外框或最外层高光；三个节点使用左上受光的径向渐变；圆环同时包含方向性蓝紫渐变和不含白色的暗边截面渐变；<code>icon.json</code> 按轨道、大节点、中节点、小节点的顺序声明四个 group，四组均关闭 Specular，并使用 42% neutral Shadow；package 配置使用 <code>.icon</code>；发布 runner 提供 Xcode 26。<code>ictool</code> 必须成功导出 Default、Dark 与 Mono，最终视觉验收检查 Dock、Finder、About 面板和相邻官方图标下的尺寸与层次。</p>
+    <p class="lead">聚焦校验必须确认：四个现代 SVG 均使用 1024 × 1024 透明画布且不含外部 squircle、外框或最外层高光；三个节点使用左上受光的径向渐变；圆环同时包含深色内场、方向性蓝紫渐变和不含白色的暗边截面渐变；<code>icon.json</code> 将三个节点置于前景、轨道置于后景，四组均关闭 Specular，并使用 42% neutral Shadow；发布 runner 提供 Xcode 26。<code>ictool</code> 必须成功导出 1024 × 1024 Default 预览，最终视觉验收检查 Dock、Finder、About 面板和相邻官方图标下的尺寸与层次。</p>
   </section>
 
   <section aria-labelledby="status">
@@ -156,12 +157,12 @@
     <table>
       <thead><tr><th>范围</th><th>状态</th><th>证据</th></tr></thead>
       <tbody>
-        <tr><td>Apple Icon Composer 构建入口与 automatic gradient 背景</td><td>已实现</td><td><code>apps/desktop/package.json</code> 与当前 <code>AppIcon.icon</code></td></tr>
-        <tr><td>四个前景深度 group</td><td>已实现</td><td><code>icon:check</code> 通过；四组关闭 Specular，取消节点圆周光圈；四组使用 42% neutral Shadow，并按从后到前顺序声明</td></tr>
+        <tr><td>Apple Icon Composer 可维护源与 automatic gradient 背景</td><td>已实现</td><td>当前 <code>AppIcon.icon</code> 与由其导出的 <code>icon.icns</code></td></tr>
+        <tr><td>四个前景深度 group</td><td>已实现</td><td>四组关闭 Specular，取消节点圆周光圈；四组使用 42% neutral Shadow，节点位于包含深色内场的轨道层之前</td></tr>
         <tr><td>源素材明暗</td><td>已实现</td><td>三个节点使用左上受光、右下压暗的径向渐变；圆环使用方向性受光与不含白色的暗边截面；最外层系统轮廓不进入 SVG</td></tr>
-        <tr><td>主体视觉占比</td><td>已实现</td><td>轨道外缘约占画布 69%，三个节点同步放大；单侧保留约 15% 安全边距</td></tr>
+        <tr><td>主体视觉占比</td><td>已实现</td><td>轨道外缘约占画布 64%，三个节点的位置与尺寸已按参考图同步调整</td></tr>
         <tr><td>本机 Default/Dark/Mono 导出</td><td>已验收</td><td>Xcode 26.3 <code>ictool</code> 均成功导出 1024 × 1024 预览；另验收 128 × 128 Dock 尺寸</td></tr>
-        <tr><td>安装版 Dock、Finder 与 About</td><td>阻塞</td><td><code>actool</code> 返回 Xcode license 未接受；接受后执行完整 Electron Builder 打包</td></tr>
+        <tr><td>安装版 Dock、Finder 与 About</td><td>待验收</td><td>覆盖安装 <code>/Applications/OpenProgram.app</code> 后检查实际系统显示</td></tr>
       </tbody>
     </table>
   </section>

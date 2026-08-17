@@ -46,9 +46,11 @@ node_count="$(grep -hEo 'id="op-node-[abc]"' "${modern_symbol_svgs[@]}" | wc -l 
   || fail "Apple icon artwork must contain exactly three brand nodes"
 grep -q 'id="op-orbit"' "${modern_symbol_svgs[0]}" \
   || fail "Apple icon artwork must preserve the brand orbit"
-grep -q 'r="326"' "${modern_symbol_svgs[0]}" \
-  || fail "Apple icon orbit must use the approved larger footprint"
-grep -q '<radialGradient id="op-ring-depth" cx="512" cy="512" r="354" gradientUnits="userSpaceOnUse">' "${modern_symbol_svgs[0]}" \
+grep -q 'id="op-orbit-well"' "${modern_symbol_svgs[0]}" \
+  || fail "Apple icon artwork must preserve the dark inner field"
+grep -q 'r="300"' "${modern_symbol_svgs[0]}" \
+  || fail "Apple icon orbit must use the approved reference footprint"
+grep -q '<radialGradient id="op-ring-depth" cx="512" cy="488" r="328" gradientUnits="userSpaceOnUse">' "${modern_symbol_svgs[0]}" \
   || fail "Apple icon orbit must use the approved convex cross-section shading"
 grep -q 'id="op-orbit-depth"' "${modern_symbol_svgs[0]}" \
   || fail "Apple icon orbit must apply its convex cross-section shading"
@@ -57,12 +59,12 @@ grep -q 'stroke="url(#op-ring-depth)"' "${modern_symbol_svgs[0]}" \
 if grep -Eqi 'stop-color="(#fff|#ffffff|white)"' "${modern_symbol_svgs[0]}"; then
   fail "Apple icon orbit depth shading must not introduce a white circular halo"
 fi
-grep -q 'r="140"' "${modern_symbol_svgs[1]}" \
-  || fail "Apple icon blue node must use the approved larger footprint"
-grep -q 'r="105"' "${modern_symbol_svgs[2]}" \
-  || fail "Apple icon purple node must use the approved larger footprint"
-grep -q 'r="55"' "${modern_symbol_svgs[3]}" \
-  || fail "Apple icon indigo node must use the approved larger footprint"
+grep -q 'r="125"' "${modern_symbol_svgs[1]}" \
+  || fail "Apple icon blue node must use the approved reference footprint"
+grep -q 'r="97"' "${modern_symbol_svgs[2]}" \
+  || fail "Apple icon purple node must use the approved reference footprint"
+grep -q 'r="52"' "${modern_symbol_svgs[3]}" \
+  || fail "Apple icon indigo node must use the approved reference footprint"
 node_gradient_ids=(op-node-blue op-node-purple op-node-indigo)
 for index in 1 2 3; do
   node_svg="${modern_symbol_svgs[$index]}"
@@ -98,10 +100,10 @@ if (!icon.fill?.["automatic-gradient"]) {
   throw new Error("AppIcon.icon must delegate its background treatment to Icon Composer");
 }
 const expectedLayers = [
-  "01-orbit.svg",
   "02-node-blue.svg",
   "03-node-purple.svg",
   "04-node-indigo.svg",
+  "01-orbit.svg",
 ];
 if (icon.groups?.length !== expectedLayers.length) {
   throw new Error("AppIcon.icon must use four ordered depth groups");
