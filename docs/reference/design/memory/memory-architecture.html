@@ -131,6 +131,12 @@
   .m-doc-wrap{min-height:0;flex:1;overflow:auto;padding:28px 34px 56px;background:#fafafa}
   .m-doc{max-width:780px;margin:0 auto;padding:30px 34px;border:1px solid #e4e4e7;border-radius:12px;background:#fff;
     box-shadow:0 1px 2px rgba(0,0,0,.035)}
+  .m-empty-card{max-width:560px;margin:64px auto;padding:28px;border:1px solid #e4e4e7;border-radius:14px;background:#fff;
+    box-shadow:0 1px 2px rgba(0,0,0,.035);text-align:left}
+  .m-empty-card .m-glyph{width:40px;height:40px;margin-bottom:18px;display:flex;align-items:center;justify-content:center;
+    border:1px solid #e4e4e7;border-radius:10px;background:#f6f6f7;color:#676971;font-size:18px}
+  .m-empty-card h4{margin:0 0 7px;font-size:17px}
+  .m-empty-card p{max-width:420px;margin:0 0 18px;color:#74767e;font-size:12.5px;line-height:1.6}
   .m-doc-kicker{margin-bottom:8px;color:#8b8d95;font-size:10px;font-weight:700;letter-spacing:.11em;text-transform:uppercase}
   .m-doc h4{margin:0 0 10px;color:#202126;font-size:22px;line-height:1.25;letter-spacing:-.015em}
   .m-doc .m-lede{margin:0 0 22px;color:#6e7078;font-size:13px;line-height:1.6}
@@ -1174,15 +1180,13 @@
         <h3 id="memory-target-title">目标页面 · 宽屏结构</h3>
         <p>点击左侧四个分区，可检查对应的列表与内容状态。</p>
       </div>
-      <p>非空样例：3 个名称明确的项目 Topics / 5 条项目记录 / 3 条 Core 规则</p>
+      <p>当前数据：0 Topics / 3 条 Core records / 2 个 Timeline 日期</p>
     </div>
 
     <div class="m-frame" id="memoryPrototype">
       <header class="m-top">
         <div class="m-title">Memory</div>
         <div class="m-top-meta">
-          <span>3 topics</span>
-          <span>8 records</span>
           <a class="m-settings" href="memory-settings-ui.html">Memory settings</a>
         </div>
       </header>
@@ -1190,33 +1194,29 @@
       <div class="m-shell">
         <aside class="m-rail" aria-label="Memory sections">
           <nav class="m-nav" aria-label="Memory views">
-            <button class="m-nav-item active" type="button" aria-pressed="true" data-memory-proto="topics"><span class="m-glyph">▤</span><span>Topics</span><span class="m-count">3</span></button>
+            <button class="m-nav-item active" type="button" aria-pressed="true" data-memory-proto="topics"><span class="m-glyph">▤</span><span>Topics</span><span class="m-count">0</span></button>
             <button class="m-nav-item" type="button" aria-pressed="false" data-memory-proto="timeline"><span class="m-glyph">◷</span><span>Timeline</span></button>
-            <button class="m-nav-item" type="button" aria-pressed="false" data-memory-proto="recent"><span class="m-glyph">⌁</span><span>Recent</span><span class="m-count">8</span></button>
+            <button class="m-nav-item" type="button" aria-pressed="false" data-memory-proto="recent"><span class="m-glyph">⌁</span><span>Recent</span><span class="m-count">3</span></button>
             <button class="m-nav-item" type="button" aria-pressed="false" data-memory-proto="core"><span class="m-glyph">✦</span><span>Core</span><span class="m-count">3</span></button>
           </nav>
 
           <div class="m-context active" data-memory-context="topics">
             <div class="m-search">⌕ <span>Search topics</span></div>
-            <div class="m-section-label">PROJECTS</div>
+            <div class="m-section-label">SAVED TOPICS</div>
             <div class="m-list">
-              <div class="m-row active"><span class="m-glyph">▧</span><div class="m-row-main"><span class="m-row-title">Agent memory survey · test6 manuscript</span><span class="m-row-sub">2 current records</span></div></div>
-              <div class="m-row"><span class="m-glyph">▧</span><div class="m-row-main"><span class="m-row-title">Agent memory survey · test3 LaTeX</span><span class="m-row-sub">2 current records</span></div></div>
-              <div class="m-row"><span class="m-glyph">▧</span><div class="m-row-main"><span class="m-row-title">Agent memory survey · test2 LaTeX</span><span class="m-row-sub">1 completed record</span></div></div>
+              <div class="m-row"><span class="m-glyph">▧</span><div class="m-row-main"><span class="m-row-title">No topics yet</span><span class="m-row-sub">New durable topics appear here</span></div></div>
             </div>
           </div>
 
           <div class="m-context" data-memory-context="timeline">
             <div class="m-time-tree">
               <details open>
-                <summary class="m-year-summary">2026 <span class="m-count">4 days</span></summary>
+                <summary class="m-year-summary">2026 <span class="m-count">2 days</span></summary>
                 <details open>
-                  <summary class="m-month-summary">August <span class="m-count">4 days</span></summary>
+                  <summary class="m-month-summary">August <span class="m-count">2 days</span></summary>
                   <div class="m-time-days">
                     <div class="m-time-day active"><span class="m-time-number">15</span><span class="m-time-name">Saturday</span><span class="m-time-size">734 B</span></div>
                     <div class="m-time-day"><span class="m-time-number">10</span><span class="m-time-name">Monday</span><span class="m-time-size">316 B</span></div>
-                    <div class="m-time-day"><span class="m-time-number">08</span><span class="m-time-name">Saturday</span><span class="m-time-size">11.1 KB</span></div>
-                    <div class="m-time-day"><span class="m-time-number">07</span><span class="m-time-name">Friday</span><span class="m-time-size">2.0 KB</span></div>
                   </div>
                 </details>
               </details>
@@ -1226,8 +1226,7 @@
           <div class="m-context" data-memory-context="recent">
             <div class="m-section-label" style="padding-top:13px">FILTER BY TOPIC</div>
             <div class="m-list">
-              <div class="m-row active"><span class="m-glyph">●</span><div class="m-row-main"><span class="m-row-title">All memory</span><span class="m-row-sub">8 records</span></div></div>
-              <div class="m-row"><span class="m-glyph">○</span><div class="m-row-main"><span class="m-row-title">Projects</span><span class="m-row-sub">5 records</span></div></div>
+              <div class="m-row active"><span class="m-glyph">●</span><div class="m-row-main"><span class="m-row-title">All memory</span><span class="m-row-sub">3 records</span></div></div>
               <div class="m-row"><span class="m-glyph">○</span><div class="m-row-main"><span class="m-row-title">Core</span><span class="m-row-sub">3 records</span></div></div>
             </div>
           </div>
@@ -1249,19 +1248,16 @@
           <section class="m-panel active" data-memory-panel="topics">
             <header class="m-detail-head">
               <div class="m-detail-copy">
-                <div class="m-detail-title">Agent memory survey · test6 manuscript <span class="m-badge">PROJECTS</span></div>
-                <div class="m-detail-sub">projects/agent_memory_survey_test6.md · 2 current records</div>
+                <div class="m-detail-title">Topics</div>
+                <div class="m-detail-sub">Durable project, preference, and relationship memory</div>
               </div>
-              <div class="m-actions"><div class="m-segment"><span class="active">Preview</span><span>Edit</span></div></div>
             </header>
             <div class="m-doc-wrap">
-              <article class="m-doc">
-                <div class="m-doc-kicker">Project memory</div>
-                <h4>Agent memory survey</h4>
-                <p class="m-lede">Durable decisions and current research context. File metadata stays in the header; the reading surface contains only memory content.</p>
-                <div class="m-record"><div class="m-record-meta"><span>Research scope</span><span>·</span><span>Aug 17</span></div><p>The survey compares memory systems through a shared evidence framework and separates architecture claims from implementation status.</p></div>
-                <div class="m-record"><div class="m-record-meta"><span>Writing rule</span><span>·</span><span>Aug 17</span></div><p>Use source-faithful terminology and keep unsupported capabilities marked as absent rather than inferring them from adjacent features.</p></div>
-                <div class="m-record"><div class="m-record-meta"><span>Current state</span><span>·</span><span>Aug 16</span></div><p>The main survey and two LaTeX workspaces remain separate Topics because their validation state differs.</p></div>
+              <article class="m-empty-card">
+                <span class="m-glyph">▧</span>
+                <h4>No topics yet</h4>
+                <p>Durable memory created by conversations and the background writer will appear here. Core rules are managed separately.</p>
+                <a class="m-settings" href="memory-settings-ui.html">Open Memory settings</a>
               </article>
             </div>
           </section>
@@ -1273,7 +1269,7 @@
 
           <section class="m-panel" data-memory-panel="recent">
             <header class="m-detail-head"><div class="m-detail-copy"><div class="m-detail-title">Recent memory</div><div class="m-detail-sub">Newest durable records first · derived from Topics</div></div></header>
-            <div class="m-doc-wrap"><article class="m-doc"><div class="m-recent-card"><div class="m-record-meta"><span class="m-badge">CORE</span><span>2026-08-10</span></div><p>Use Chinese by default when discussing Memory and other operational work.</p></div><div class="m-recent-card"><div class="m-record-meta"><span class="m-badge">PROJECTS</span><span>2026-08-08</span></div><p>The survey uses a shared evidence framework and separates architecture claims from implementation status.</p></div><div class="m-recent-card"><div class="m-record-meta"><span class="m-badge">PROJECTS</span><span>2026-08-08</span></div><p>The main survey and LaTeX workspaces remain separate Topics because their validation state differs.</p></div></article></div>
+            <div class="m-doc-wrap"><article class="m-doc"><div class="m-recent-card"><div class="m-record-meta"><span class="m-badge">CORE</span><span>2026-08-15</span></div><p>Never fabricate tool calls or tool results. Report observed results and state when no available tool returns a result.</p></div><div class="m-recent-card"><div class="m-record-meta"><span class="m-badge">CORE</span><span>2026-08-15</span></div><p>Use plain 你 with no invented honorific unless the owner explicitly chooses one.</p></div><div class="m-recent-card"><div class="m-record-meta"><span class="m-badge">CORE</span><span>2026-08-10</span></div><p>Use Chinese by default when discussing Memory and other operational work.</p></div></article></div>
           </section>
 
           <section class="m-panel" data-memory-panel="core">
@@ -1303,9 +1299,7 @@
           </nav>
           <div class="m-mobile-body m-mobile-context" data-mobile-context="topics">
             <div class="m-search" style="margin:0 0 12px">⌕ <span>Search topics</span></div>
-            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Agent memory survey · test6 manuscript" data-mobile-label="Current state" data-mobile-content="The test6 manuscript keeps its goal and latest verified status."><strong>Agent memory survey · test6 manuscript</strong><span>2 current records</span></button>
-            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Agent memory survey · test3 LaTeX" data-mobile-label="Current state" data-mobile-content="The test3 LaTeX conversion remains incomplete."><strong>Agent memory survey · test3 LaTeX</strong><span>2 current records</span></button>
-            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Agent memory survey · test2 LaTeX" data-mobile-label="Completed" data-mobile-content="The test2 LaTeX conversion compiled successfully."><strong>Agent memory survey · test2 LaTeX</strong><span>1 completed record</span></button>
+            <div class="m-empty-card" style="margin:24px 0;padding:20px"><span class="m-glyph">▧</span><h4>No topics yet</h4><p>New durable topics appear here.</p></div>
           </div>
           <div class="m-mobile-body m-mobile-context" data-mobile-context="timeline" hidden>
             <div class="m-doc-kicker">2026 / August</div>
@@ -1314,7 +1308,7 @@
           </div>
           <div class="m-mobile-body m-mobile-context" data-mobile-context="recent" hidden>
             <div class="m-doc-kicker">Recent memory</div>
-            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Recent memory" data-mobile-label="Core · 2026-08-10" data-mobile-content="Use Chinese by default when discussing Memory and other operational work."><strong>All recent memory</strong><span>8 records · derived from Topics</span></button>
+            <button class="m-mobile-row" type="button" data-mobile-open data-mobile-title="Recent memory" data-mobile-label="Core · 2026-08-10" data-mobile-content="Use Chinese by default when discussing Memory and other operational work."><strong>All recent memory</strong><span>3 records · derived from Core</span></button>
           </div>
           <div class="m-mobile-body m-mobile-context" data-mobile-context="core" hidden>
             <div class="m-doc-kicker">Core memory</div>
@@ -1322,8 +1316,8 @@
           </div>
         </div>
         <div class="m-mobile-view" data-mobile-view="detail" hidden>
-          <div class="m-mobile-head"><button class="m-back" type="button" aria-label="Back to memory list" data-mobile-back>‹</button><span data-mobile-detail-title>Agent memory survey</span></div>
-          <div class="m-mobile-body"><div class="m-doc-kicker">Memory detail</div><h4 data-mobile-detail-heading>Agent memory survey</h4><p>Durable decisions and current context.</p><div class="m-mobile-row"><strong data-mobile-detail-label>Research scope</strong><span data-mobile-detail-content>The survey compares memory systems through a shared evidence framework.</span></div></div>
+          <div class="m-mobile-head"><button class="m-back" type="button" aria-label="Back to memory list" data-mobile-back>‹</button><span data-mobile-detail-title>Memory detail</span></div>
+          <div class="m-mobile-body"><div class="m-doc-kicker">Memory detail</div><h4 data-mobile-detail-heading>Memory detail</h4><p>Durable decisions and current context.</p><div class="m-mobile-row"><strong data-mobile-detail-label>Record</strong><span data-mobile-detail-content>Select a Memory item to view its content.</span></div></div>
         </div>
       </div>
     </div>
@@ -1341,7 +1335,7 @@
     <table>
       <thead><tr><th>区域</th><th>目标结构</th><th>避免的问题</th></tr></thead>
       <tbody>
-        <tr><td><b>顶部标题栏</b></td><td>页面标题、低权重总量、Memory settings</td><td>不放 writer 状态、刷新状态或重复说明</td></tr>
+        <tr><td><b>顶部标题栏</b></td><td>页面标题与 Memory settings</td><td>不显示无法由现有 API 准确计算的总量，也不放 writer 状态、刷新状态或重复说明</td></tr>
         <tr><td><b>二级栏</b></td><td>四个 36px 分区行；Timeline 使用年、月、日三级原生折叠；Topics 不重复显示由 Core 分区管理的 <code>topics/core.md</code></td><td>日期不再平铺，分区标签和 Topic 文件不再混成同一层级</td></tr>
         <tr><td><b>内容标题</b></td><td>名称、类型、路径、修改时间、视图与编辑操作集中在一个 76px 区域</td><td>删除独立 meta 横条和分散的 Core 状态</td></tr>
         <tr><td><b>正文</b></td><td>Preview/Timeline/Recent/Core 使用最大 780px 阅读面；Edit 保持全宽等宽字体编辑器</td><td>避免超宽文本和大片无结构空白</td></tr>
@@ -1361,8 +1355,19 @@
     </div>
   </div>
 
-  <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；Timeline 按年、月、日折叠且不把派生文件重建时间显示成记录时间；Core 明确区分只读 Prompt preview 与可编辑 Source records；Topics 列表不显示 <code>core.md</code>，同一项目的不同 test 工作区必须在名称中可区分；小于 720px 时列表与详情互斥显示并提供返回路径；页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
-  <div class="legend"><b>本轮实现状态：</b>Core 的 Prompt preview / Source records 命名、注入状态卡和 Timeline 年/月/日折叠已进入生产代码，并已在默认 18100 页面完成可视与 DOM 验收。正式 Memory 已通过结构化事务删除全部 survey test 项目记录，当前 Topics 为 0、Core 为 3 条；Timeline 与 Recent 已在同一事务重建，Git 提交为 <code>7faa128</code>。上方三个项目 Topic 仅用于展示非空列表状态。小于 720px 的列表/详情互斥结构属于整页改版目标，本轮没有实现，生产页面仍沿用现有纵向布局。</div>
+  <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；顶部不把受截断的 Recent 数量表述为 Memory 总量；右侧 Preview、Timeline、Recent 与 Core 使用居中的文档面，空 Topics 使用独立空状态卡；Timeline 按年、月、日折叠且不把派生文件重建时间显示成记录时间；Core 明确区分只读 Prompt preview 与可编辑 Source records；Topics 列表不显示 <code>core.md</code>；小于 720px 时不得产生横向重叠，编辑器操作进入独立下一行并可换行。页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
+  <div class="legend"><b>本轮实现状态：</b>Core 的 Prompt preview / Source records 命名、注入状态卡和 Timeline 年/月/日折叠继续保留。正式 Memory 已通过结构化事务删除全部 survey test 项目记录，当前 Topics 为 0、Core 为 3 条；Timeline 与 Recent 已在同一事务重建，Git 提交为 <code>7faa128</code>。居中文档面、卡片化空状态、紧凑 Core/Recent 上下文栏、36px 分区行、76px 单一标题区、780px 阅读宽度和窄窗编辑操作换行已经进入生产代码。小于 720px 的完整列表/详情互斥仍不在本轮生产实现范围。</div>
+
+  <div class="grid2">
+    <div class="oc">
+      <h4>实现证据</h4>
+      <div class="d">提交 <code>5f1f06c4</code> 实现文档面、空状态和紧凑上下文栏；<code>1c770a4e</code> 将路径元数据合入 76px 标题区并统一 36px/780px 尺寸；<code>b583833d</code> 删除不准确的顶部总量并补齐窄窗操作换行。<code>check-memory-status</code> 从父提交 RED 变为 GREEN；Memory 设置、Markdown 清洗、TypeScript、production build、HTML、链接与 diff 检查通过；独立规格复核与质量复核均为 PASS。默认 18100 App 的最终可视验收在合并刷新后执行。</div>
+    </div>
+    <div class="oc">
+      <h4>兼容要求</h4>
+      <div class="d">保留四个分区、全部现有请求、Core 保存 compare-and-set、Markdown 清洗、Timeline partial date、键盘焦点、Topics 排除 Core 与现有设置跳转。不新增组件库、API、数据库字段、自动栏状态或测试 Memory。</div>
+    </div>
+  </div>
 
   <h2 id="changes"><span class="num">10</span>统一修改接口</h2>
   <p class="lead">Memory 同时支持模型直接编辑 Topic 文件，以及模型或其他程序调用结构化接口。两种方式不互相替代；区别只在于调用方如何表达修改。所有修改最终进入同一套 Runtime 暂存、校验、派生视图、原子安装和 Git 流程。</p>

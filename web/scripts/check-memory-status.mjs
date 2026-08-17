@@ -10,16 +10,33 @@ const memoryCss = readFileSync(
   new URL("../components/memory/memory-page.module.css", import.meta.url),
   "utf8",
 );
+const memoryParts = readFileSync(
+  new URL("../components/memory/parts.tsx", import.meta.url),
+  "utf8",
+);
 const memoryMarkdown = readFileSync(
   new URL("../components/memory/markdown.ts", import.meta.url),
   "utf8",
 );
+
+function cssRules(selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const matches = [...memoryCss.matchAll(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, "g"))];
+  assert.ok(matches.length, `missing CSS rule: ${selector}`);
+  return matches.map((match) => match[1]);
+}
+
+function cssRule(selector) {
+  return cssRules(selector)[0];
+}
 assert.doesNotMatch(memoryPage, /styles\.writerStatus/);
 assert.doesNotMatch(memoryPage, /pending turns/);
 assert.doesNotMatch(memoryCss, /\.writerStatus/);
 assert.doesNotMatch(memoryPage, /\/api\/memory\/status/);
 assert.doesNotMatch(memoryPage, /Commitments|commitments/);
 assert.doesNotMatch(memoryCss, /commitment/);
+assert.doesNotMatch(memoryPage, /Memory totals/);
+assert.doesNotMatch(memoryPage, /styles\.headerStats/);
 assert.match(memoryPage, /useState<"injected" \| "records">\("injected"\)/);
 assert.match(memoryPage, /renderedTokens/);
 assert.match(memoryPage, /topics\/core\.md/);
@@ -46,6 +63,24 @@ assert.match(memoryCss, /\.coreTokenMeter\s*\{/);
 assert.match(memoryCss, /\.timelineYear\s*\{/);
 assert.match(memoryCss, /\.timelineMonth\s*\{/);
 assert.match(memoryCss, /\.timelineDay:focus-visible::after,[\s\S]*border:\s*2px solid var\(--accent-blue\)/);
+assert.match(cssRule(".rightPane"), /padding:\s*14px/);
+assert.match(cssRule(".rightPane"), /background:\s*var\(--bg-secondary\)/);
+assert.match(cssRule(".editor"), /border:\s*1px solid var\(--border\)/);
+assert.match(cssRule(".editor"), /border-radius:\s*12px/);
+assert.ok(cssRules(".markdown").some((rule) => /max-width:\s*780px/.test(rule) && /margin:\s*0 auto/.test(rule)));
+assert.match(cssRule(".emptyPanel"), /max-width:\s*560px/);
+assert.match(cssRule(".emptyPanel"), /border:\s*1px solid var\(--border\)/);
+assert.match(cssRule(".emptyPanel"), /border-radius:\s*14px/);
+assert.match(memoryPage, /styles\.contextHeader/);
+assert.match(memoryPage, /styles\.recentEvent/);
+assert.doesNotMatch(memoryPage, /style=\{\{ marginBottom: "1rem" \}\}/);
+assert.doesNotMatch(memoryParts, /styles\.editorMeta/);
+assert.doesNotMatch(memoryParts, /<div className=\{styles\.editorMeta\}/);
+assert.match(memoryParts, /styles\.editorHeaderMeta/);
+assert.ok(cssRules(".editorHeader").some((rule) => /min-height:\s*76px/.test(rule)));
+assert.match(cssRule(".tabBtn"), /height:\s*36px/);
+assert.match(memoryCss, /@media\s*\(max-width:\s*720px\)[\s\S]*\.editorHeader\s*\{[^}]*flex-wrap:\s*wrap/);
+assert.match(memoryCss, /@media\s*\(max-width:\s*720px\)[\s\S]*\.editorActions\s*\{[^}]*width:\s*100%[^}]*flex-wrap:\s*wrap/);
 
 const groupedTimeline = groupTimelineDays([
   { date: "2026-08-07", size: 20, mtime: 2 },
