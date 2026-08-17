@@ -1167,10 +1167,14 @@ def test_direct_list_pages_returns_empty_inventory_without_mounted_page(monkeypa
 
 def test_public_page_token_keeps_the_turn_owner_across_calls(monkeypatch):
     from openprogram.agent import surface_context
+    from openprogram.agent.run_control import (
+        reset_current_session_id, set_current_session_id,
+    )
     from openprogram.programs.functions.agentic import browser_agent as module
     from openprogram.programs.functions.agentic.browser_agent import (
         web_use_runtime,
     )
+    from openprogram.store import _current_turn_id
 
     turn_context = {"context_id": "turn-1", "surfaces": []}
     inventory_context = {"context_id": "inventory-1", "surfaces": []}
@@ -1198,14 +1202,20 @@ def test_public_page_token_keeps_the_turn_owner_across_calls(monkeypatch):
 
     monkeypatch.setattr(surface_context, "capture_pages", capture_pages)
 
-    listed = module.web_use(command="list_pages")
-    observed = module.web_use(
-        command="observe", backend="playwright_mcp",
-        page_context_token=listed["pages"][0]["page_context_token"],
-    )
+    session_token = set_current_session_id("chat-1")
+    turn_token = _current_turn_id.set("turn-1")
+    try:
+        listed = module.web_use(command="list_pages")
+        observed = module.web_use(
+            command="observe", backend="playwright_mcp",
+            page_context_token=listed["pages"][0]["page_context_token"],
+        )
+    finally:
+        _current_turn_id.reset(turn_token)
+        reset_current_session_id(session_token)
 
     assert observed["web_session_id"] == "cs-popup"
-    assert registry.owners == ["turn:turn-1", "turn:turn-1"]
+    assert registry.owners == ["turn:chat-1:turn-1", "turn:chat-1:turn-1"]
     assert captures == [None]
 
 
@@ -1252,7 +1262,7 @@ def test_temporary_page_capture_is_released_when_lease_rejects(monkeypatch, rout
 
 
 def test_same_owner_repeated_observe_reuses_exact_page_session():
-    from openprogram.programs.agentic_functions.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
         WebUseSessionRegistry,
     )
 
@@ -1292,8 +1302,8 @@ def test_same_owner_repeated_observe_reuses_exact_page_session():
 
 def test_public_repeated_observe_releases_unused_capture(monkeypatch):
     from openprogram.agent import surface_context
-    from openprogram.programs.agentic_functions import browser_agent as module
-    from openprogram.programs.agentic_functions.browser_agent import (
+    from openprogram.programs.functions.agentic import browser_agent as module
+    from openprogram.programs.functions.agentic.browser_agent import (
         web_use_runtime,
     )
 

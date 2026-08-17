@@ -1396,9 +1396,9 @@ def web_use(
             )
             captured_here = True
         context = context or {}
-        owner_id = "turn:" + (owner_context_id or str(
-            context.get("context_id") or "unknown"
-        ))
+        owner_id = surface_context.web_use_owner_id(
+            {"context_id": owner_context_id} if owner_context_id else context
+        )
         try:
             result = get_registry().list_pages(context=context, owner_id=owner_id)
         except Exception:
@@ -1429,10 +1429,9 @@ def web_use(
             web_session_id=web_session_id,
             binding_id=binding_id,
             page_key=page_key,
-            owner_id=("turn:" + (
-                owner_context_id
-                or str((context or {}).get("context_id") or "")
-            )),
+            owner_id=surface_context.web_use_owner_id(
+                {"context_id": owner_context_id} if owner_context_id else context
+            ),
             page_context_token=page_context_token,
             page_context=context,
             arguments=arguments,

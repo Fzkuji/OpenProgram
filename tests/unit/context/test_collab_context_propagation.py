@@ -194,6 +194,33 @@ def test_dispatcher_binds_the_session_id_when_nothing_did(tmp_db):
     assert _in_empty_context(_go) == ("s9", None)
 
 
+def test_dispatcher_releases_web_use_owner_at_turn_end(tmp_db, monkeypatch):
+    from openprogram.agent.dispatcher.turn_context import TurnBindings
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.programs.functions.agentic.browser_agent import web_use_runtime
+
+    released = []
+
+    monkeypatch.setattr(
+        web_use_runtime, "release_owner_if_initialized", released.append,
+    )
+
+    def _go():
+        binding = TurnBindings.bind(
+            req=TurnRequest(session_id="chat-1", user_text="hi",
+                            agent_id="main", source="test"),
+            assistant_msg_id="turn-1", db=tmp_db,
+        )
+        from openprogram.agent.surface_context import web_use_owner_id
+        assert web_use_owner_id({"context_id": "different"}) == (
+            "turn:chat-1:turn-1"
+        )
+        binding.release()
+
+    _in_empty_context(_go)
+    assert released == ["turn:chat-1:turn-1"]
+
+
 def test_dispatcher_leaves_an_outer_binding_alone(tmp_db):
     """An entry point that bound the id for a scope wider than the turn
     stays in charge: a nested turn for another session must not repoint

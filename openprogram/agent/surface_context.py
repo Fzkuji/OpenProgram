@@ -255,6 +255,18 @@ def current() -> dict | None:
     return _current.get()
 
 
+def web_use_owner_id(context: dict | None = None) -> str:
+    """Return the exact owner released with the current dispatcher turn."""
+    from openprogram.agent.run_control import get_current_session_id
+    from openprogram.store import _current_turn_id
+
+    session_id = get_current_session_id() or ""
+    turn_id = _current_turn_id.get() or ""
+    if session_id and turn_id:
+        return f"turn:{session_id}:{turn_id}"
+    return "turn:" + str((context or {}).get("context_id") or "unknown")
+
+
 def resolve_binding(surface: str = "") -> str:
     context = current()
     if not tool_enabled(context):

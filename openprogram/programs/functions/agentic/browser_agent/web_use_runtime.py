@@ -576,9 +576,18 @@ def get_registry() -> WebUseSessionRegistry:
         return _registry
 
 
+def release_owner_if_initialized(owner_id: str) -> None:
+    """Release a turn owner without creating Web Use state for ordinary turns."""
+    with _registry_lock:
+        registry = _registry
+    if registry is not None:
+        registry.release_owner(owner_id)
+
+
 __all__ = [
     "WebUseSessionRegistry",
     "DEFAULT_BACKEND",
     "SUPPORTED_BACKENDS",
     "get_registry",
+    "release_owner_if_initialized",
 ]

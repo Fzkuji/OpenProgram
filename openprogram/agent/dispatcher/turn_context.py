@@ -41,6 +41,7 @@ class TurnBindings:
         self._turn_request_token = None
         self._render_range_token = None
         self._surface_token = None
+        self._web_use_owner_id = None
         self._req_session_id: Optional[str] = None
 
     @classmethod
@@ -159,6 +160,8 @@ class TurnBindings:
         self._render_range_token = _render_range_var.set(req.render_range)
         from openprogram.agent.surface_context import bind as _bind_surface
         self._surface_token = _bind_surface(req.surface_context)
+        from openprogram.agent.surface_context import web_use_owner_id
+        self._web_use_owner_id = web_use_owner_id(req.surface_context)
         return self
 
     def release(self) -> None:
@@ -178,6 +181,11 @@ class TurnBindings:
             _render_range_override as _render_range_var,
         )
         try:
+            if self._web_use_owner_id is not None:
+                from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
+                    release_owner_if_initialized as _release_web_use_owner,
+                )
+                _release_web_use_owner(self._web_use_owner_id)
             if self._surface_token is not None:
                 from openprogram.agent.surface_context import (
                     current as _current_surface,
