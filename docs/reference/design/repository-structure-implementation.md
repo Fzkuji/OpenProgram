@@ -92,6 +92,22 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Apps migration C1: Server application assembly | `6b981b32`, `6dc2f1e6`, `34966b16`, `c09b7933` | implemented; reviewed | Moves the FastAPI assembly into the installable `openprogram_server` application package. The legacy import resolves to the same module object, source checkouts reject an already-loaded foreign package, and the release probe imports only from the built wheel outside the checkout. Route and WebSocket modules remain for C2 because one route has unrelated active changes. |
 | Legacy cleanup F1: static Web interface | `23ac60c2` | implemented; reviewed | Removes the unreferenced 9,227-line static HTML/CSS/JS interface and its obsolete settings-page test. Current source, package and runtime paths continue to serve the `apps/web` build. |
 
+## Active task brief: Apps migration B2
+
+- Approved source: `repository-structure.html`; base: `2ba6f078`.
+- Move the Python CLI application files from `openprogram/cli/` to the
+  installable `apps/cli/python/openprogram_cli/` package. Keep only bounded
+  compatibility entry files under `openprogram/cli/`.
+- Preserve `openprogram`, `python -m openprogram`, `python -m openprogram.cli`,
+  `openprogram.cli.build_parser`, and existing `openprogram.cli.*` imports.
+- Preserve command grammar, output, profile/state paths, TUI selection and the
+  existing Node launcher. Do not redesign commands or add dependencies.
+- RED/GREEN boundaries: repository ownership contract, parser snapshot and
+  dispatch tests, module-entry subprocesses, source-checkout precedence, wheel
+  contents, isolated wheel imports and CLI `--help`/`--version` execution.
+- Exclude Server route migration, CLI behavior changes, UI changes and
+  decomposition of cohesive command handlers from this batch.
+
 ## Verification record
 
 ```text
