@@ -393,14 +393,24 @@ def register(app):
         from openprogram.webui import server as _s
 
         try:
-            bd = _cs.compute_breakdown(session_id, head_id)
+            conv = _s._sessions.get(session_id) or {}
+            bd = _cs.compute_breakdown(
+                session_id,
+                head_id,
+                context_window=_s._conv_context_window(conv),
+            )
         except Exception as e:
             return JSONResponse(
                 status_code=200,
                 content={"error": f"{type(e).__name__}: {e}", "tools": []},
             )
-        bd.update(_s.session_context_stats(session_id, head_id=head_id))
-        return JSONResponse(content=bd)
+        occupancy = _s.session_context_stats(
+            session_id,
+            head_id=head_id,
+            estimated_total=int(bd.get("input_used") or 0),
+            window=int(bd.get("context_window") or 0),
+        )
+        return JSONResponse(content=_cs.finalize_breakdown(bd, occupancy))
 
     @app.get("/api/sessions/{session_id}/dag")
     async def get_session_dag(session_id: str):

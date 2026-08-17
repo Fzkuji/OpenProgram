@@ -43,6 +43,9 @@ interface Breakdown {
   tools_deferred_catalog?: number;
   mcp_tools?: number;
   mcp_tools_deferred?: number;
+  unclassified?: number;
+  classified_estimate?: number;
+  classification_scale?: number;
   input_used?: number;
   free_space?: number;
   /** 服务端的统一占用记录 —— 和圆环读的是同一个字段，两处永远一致。
@@ -215,6 +218,7 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
       [text("Memory files", "记忆文件"), d.memory || 0],
       [text("Skills", "技能"), d.skills || 0],
       [text("Messages", "对话消息"), d.messages || 0],
+      [text("Other context (estimated)", "其他上下文（估算）"), d.unclassified || 0],
       // 空闲 = 窗口 − 顶部那个总占用，跟着 total_used 走而不是跟着分项
       // 加总走 —— 否则实测总数和估算分项对不上时，头行和这一行互相打架。
       [text("Free space", "空闲"), Math.max(0, win - totalUsed)],

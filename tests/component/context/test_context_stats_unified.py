@@ -149,6 +149,10 @@ def test_refresh_broadcasts_a_fresh_estimate(session):
 def test_refresh_tracks_a_model_switch_window(monkeypatch, session):
     """Switching model changes the denominator without any request running."""
     conv, sent = session
+    conv["_last_context_stats"] = {
+        "basis": "measured", "total_used": 99_999,
+        "window": 200_000, "calibration": 2.0,
+    }
     monkeypatch.setattr(
         srv, "_resolve_context_window",
         lambda provider, model: 1_000_000 if model == "big" else 200_000,
@@ -157,6 +161,9 @@ def test_refresh_tracks_a_model_switch_window(monkeypatch, session):
     srv.refresh_context_stats("ctx-test")
     assert sent[-1]["window"] == 1_000_000
     assert sent[-1]["context_window"] == 1_000_000
+    assert sent[-1]["basis"] == "estimated"
+    assert sent[-1]["total_used"] != 99_999
+    assert "calibration" not in sent[-1]
 
 
 def test_refresh_on_an_unknown_session_is_a_no_op(session):

@@ -29,12 +29,31 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Optional
 
 _log = logging.getLogger(__name__)
 
 
-def compute_breakdown(session_id: str, head_id: Optional[str] = None) -> dict:
+BREAKDOWN_CATEGORY_KEYS = (
+    "system_prompt",
+    "tools_schema",
+    "tools_deferred_catalog",
+    "mcp_tools",
+    "mcp_tools_deferred",
+    "memory",
+    "skills",
+    "messages",
+    "unclassified",
+)
+
+
+def compute_breakdown(
+    session_id: str,
+    head_id: Optional[str] = None,
+    *,
+    context_window: Optional[int] = None,
+) -> dict:
     """Per-category input-token breakdown for a session branch.
 
     Storage rule: nothing is stored, everything is recomputed from the
@@ -51,16 +70,27 @@ def compute_breakdown(session_id: str, head_id: Optional[str] = None) -> dict:
     from openprogram.context.tokens import real_context_window
 
     db = default_db()
-    branch = db.get_branch(session_id, head_id) or []
+    from openprogram.context.persistence import rendered_history
+    branch = rendered_history(db, session_id, head_id) or []
     sess = db.get_session(session_id) or {}
+    from openprogram.context.system_prompt_node import latest_recorded_prompt
+    from openprogram.context.tool_snapshot_node import (
+        latest_recorded_tool_snapshot,
+    )
+    latest_system = latest_recorded_prompt(db, session_id, head_id) or ""
+    tool_snapshot = latest_recorded_tool_snapshot(db, session_id, head_id)
+    has_tool_snapshot = tool_snapshot is not None
+    recorded_tool_rows = list((tool_snapshot or {}).get("tools") or [])
 
     # 分支消息 + 从 extra(JSON) 里挖最近一次调用记下的原料
     # （tools_available / system_prompt）。
     msgs = []
     latest_tools = []
-    latest_system = ""
     for m in branch:
         content = m.get("content") or ""
+        prefetch = m.get("memory_prefetch") or ""
+        if prefetch:
+            content = f"{prefetch.rstrip()}\n\n{content}"
         # content 只是**可见文本**。一条 assistant 消息回填进下一轮
         # context 时还带着 thinking 块和 tool_call 的 JSON —— 这些都
         # 占 token。extra.blocks 里存了完整结构（thinking / text /
@@ -71,11 +101,12 @@ def compute_breakdown(session_id: str, head_id: Optional[str] = None) -> dict:
             try:
                 ex = json.loads(extra) if isinstance(extra, str) else extra
                 if isinstance(ex, dict):
-                    if ex.get("tools_available"):
+                    if not has_tool_snapshot and ex.get("tools_available"):
                         latest_tools = ex["tools_available"]
-                    if ex.get("system_prompt"):
+                    if not latest_system and ex.get("system_prompt"):
                         latest_system = ex["system_prompt"]
                     parts = [content]
+                    has_tool_blocks = False
                     for blk in ex.get("blocks") or []:
                         if not isinstance(blk, dict):
                             continue
@@ -87,7 +118,25 @@ def compute_breakdown(session_id: str, head_id: Optional[str] = None) -> dict:
                             # content 为空时补，避免重复计数。
                             if not content:
                                 parts.append(blk.get("text") or "")
-                    for tc in ex.get("tool_calls") or []:
+                        elif bt in {"tool", "tool_result"}:
+                            has_tool_blocks = True
+                            try:
+                                parts.append(json.dumps(
+                                    {
+                                        "tool": blk.get("tool") or blk.get("name"),
+                                        "input": blk.get("input"),
+                                        "result": blk.get("result", blk.get("content")),
+                                        "is_error": blk.get("is_error", False),
+                                    },
+                                    ensure_ascii=False,
+                                    default=str,
+                                ))
+                            except (TypeError, ValueError):
+                                _log.debug(
+                                    "tool block not counted for session %s",
+                                    session_id, exc_info=True,
+                                )
+                    for tc in ([] if has_tool_blocks else ex.get("tool_calls") or []):
                         try:
                             parts.append(
                                 json.dumps(tc, ensure_ascii=False, default=str)
@@ -123,14 +172,16 @@ def compute_breakdown(session_id: str, head_id: Optional[str] = None) -> dict:
                      if provider_id and model_id else None)
     except Exception:
         model_obj = None
-    ctx_window = real_context_window(model_obj)
+    ctx_window = int(context_window or 0) or real_context_window(model_obj)
 
     # 工具集：优先用节点存的原料（精确）；没有（如 codex 等自带
     # runtime 的 provider 没走采集路径）就回退到会话当前 toolset，
     # 这样 /context 对所有 provider 都能显示 tools/per-tool。
     try:
         from openprogram.programs import agent_tools as _agent_tools
-        if latest_tools:
+        if has_tool_snapshot:
+            tools = []
+        elif latest_tools:
             tools = _agent_tools(names=list(latest_tools))
         elif sess.get("tools_enabled", True):
             tools = _agent_tools(toolset="full")
@@ -170,14 +221,20 @@ def compute_breakdown(session_id: str, head_id: Optional[str] = None) -> dict:
     bd["session_id"] = session_id
     bd["model"] = model_id
     bd["context_window"] = ctx_window
-    bd["tools_source"] = "recorded" if latest_tools else "session_default"
+    bd["tools_source"] = (
+        "recorded_snapshot" if has_tool_snapshot else
+        ("recorded" if latest_tools else "session_default")
+    )
 
     # 完整 /context（对齐 Claude Code）：补 skills / memory / mcp 明细，
     # 每项列名字 + token。best-effort，任一块失败不影响主分类。
-    from openprogram.context.tokens import estimate_message_tokens as _tok
+    from openprogram.context.tokens import _text_tokens
 
     def _t(s: str) -> int:
-        return _tok({"role": "system", "content": s or ""})
+        # Skills / memory / deferred catalogs are substrings of the one
+        # system message. Count their text only; adding message overhead to
+        # every subcomponent would count the same envelope several times.
+        return _text_tokens(s or "")
 
     # Skills：按 source 分组，列每个 skill。口径对齐 Claude Code——
     # 系统提示里每个 skill 只占「name: 一行描述」的索引条目（skill
@@ -185,8 +242,15 @@ def compute_breakdown(session_id: str, head_id: Optional[str] = None) -> dict:
     try:
         from openprogram.skills import loader as _sl
         sk_items = []
-        for s in _sl.list_skills():
+        skill_match = re.search(
+            r"<available_skills>[\s\S]*?</available_skills>",
+            latest_system,
+        )
+        skill_block = skill_match.group(0) if skill_match else ""
+        for s in (_sl.list_skills() if skill_block else []):
             name = getattr(s, "name", "") or ""
+            if name not in skill_block:
+                continue
             desc = (getattr(s, "description", "") or "").splitlines()
             line = f"{name}: {desc[0] if desc else ''}"
             sk_items.append({
@@ -196,7 +260,7 @@ def compute_breakdown(session_id: str, head_id: Optional[str] = None) -> dict:
             })
         sk_items.sort(key=lambda x: -x["tokens"])
         bd["skills_detail"] = sk_items
-        bd["skills"] = sum(x["tokens"] for x in sk_items)
+        bd["skills"] = _t(skill_block)
     except Exception:
         bd["skills_detail"] = []
 
@@ -206,8 +270,6 @@ def compute_breakdown(session_id: str, head_id: Optional[str] = None) -> dict:
     # 当前 context（算全库会虚高到几十万 token）。对齐 Claude Code
     # 只列实际加载进 prompt 的 memory 文件。
     try:
-        import os as _os
-        from openprogram.paths import get_state_dir as _gsd
         from openprogram.memory import get_backend as _mprovider
         block = ""
         try:
@@ -215,71 +277,84 @@ def compute_breakdown(session_id: str, head_id: Optional[str] = None) -> dict:
         except Exception:
             block = ""
         mem_items = []
-        if block:
+        if block and block in latest_system:
             mem_items.append({"path": "core.md", "tokens": _t(block)})
         bd["memory_detail"] = mem_items
         bd["memory"] = sum(x["tokens"] for x in mem_items)
     except Exception:
         bd["memory_detail"] = []
 
-    # MCP tools：像 System tools 一样统计每个 MCP 工具的 schema
-    # token，并按 _defer 分 loaded / deferred（MCP 也走同一套 defer
-    # 机制，见 mcp/adapter.py：非 always_load 的 MCP 工具默认 defer）。
-    # 从 all_tools() 筛带 _mcp_server 属性的注册工具（MCP 工具只在本
-    # webui 进程连着 server 时才注册）。loaded 计完整 schema token，
-    # deferred 只计 catalog 一行。
-    try:
-        import json as _json
-        from openprogram.programs._runtime import all_tools as _all
-        mcp_items = []
-        mcp_loaded_total = 0
-        mcp_deferred_total = 0
-        for t in (_all() or []):
-            server = getattr(t, "_mcp_server", None)
-            if not server:
-                continue  # 只要 MCP 工具
-            is_def = bool(getattr(t, "_defer", False))
-            name = getattr(t, "name", "") or ""
-            desc = getattr(t, "description", "") or ""
-            if is_def:
-                # deferred：只占 catalog 一行 `name: desc`
-                tk = _t(f"{name}: {desc.splitlines()[0] if desc else ''}")
-                mcp_deferred_total += tk
-            else:
-                # loaded：完整 schema
-                schema = getattr(t, "schema", None) or getattr(t, "spec", None) or {}
-                try:
-                    body = _json.dumps(schema, default=str, ensure_ascii=False)
-                except Exception:
-                    body = name + desc
-                tk = _t(body) + 5
-                mcp_loaded_total += tk
-            mcp_items.append({
-                "server": server,
-                "name": name,
-                "tokens": tk,
-                "deferred": is_def,
+    # Loaded/deferred and built-in/MCP are mutually exclusive top-level
+    # categories. compute_call_breakdown already prices each tool with the
+    # same rule used for its aggregate, so split that frozen list instead of
+    # reading the live global registry a second time.
+    if has_tool_snapshot:
+        tool_rows = [
+            {
+                "name": str(row.get("name") or ""),
+                "tokens": max(0, int(row.get("tokens") or 0)),
+                "deferred": bool(row.get("deferred")),
+                "server": str(row.get("server") or ""),
+            }
+            for row in recorded_tool_rows if isinstance(row, dict)
+        ]
+        bd["tools"] = [
+            {key: row[key] for key in ("name", "tokens", "deferred")}
+            for row in tool_rows
+        ]
+    else:
+        tool_rows = []
+        for tool, row in zip(tools, list(bd.get("tools") or [])):
+            tool_rows.append({
+                **row,
+                "server": str(getattr(tool, "_mcp_server", None) or ""),
             })
-        mcp_items.sort(key=lambda x: -x["tokens"])
-        bd["mcp_detail"] = mcp_items
-        bd["mcp_tools"] = mcp_loaded_total            # loaded 那档
-        bd["mcp_tools_deferred"] = mcp_deferred_total  # deferred 那档
-    except Exception:
-        bd["mcp_detail"] = []
+    system_loaded = 0
+    system_deferred = 0
+    mcp_loaded = 0
+    mcp_deferred = 0
+    mcp_items = []
+    for row in tool_rows:
+        tokens = int(row.get("tokens") or 0)
+        deferred = bool(row.get("deferred"))
+        server = row.get("server") or ""
+        if server:
+            if deferred:
+                mcp_deferred += tokens
+            else:
+                mcp_loaded += tokens
+            mcp_items.append({
+                "server": str(server),
+                "name": row.get("name") or "",
+                "tokens": tokens,
+                "deferred": deferred,
+            })
+        elif deferred:
+            system_deferred += tokens
+        else:
+            system_loaded += tokens
+    mcp_items.sort(key=lambda x: -x["tokens"])
+    bd["mcp_detail"] = mcp_items
+    bd["tools_schema"] = system_loaded
+    bd["tools_deferred_catalog"] = system_deferred
+    bd["mcp_tools"] = mcp_loaded
+    bd["mcp_tools_deferred"] = mcp_deferred
 
-    # input_used 重算：compute_call_breakdown 只把 system_prompt +
-    # history + loaded tool schema 算进 input_used，没算这里事后补的
-    # deferred catalog / skills / memory / mcp。所以要把所有真实分类
-    # 重新加总，否则上半部「已用量」会比下半部分类总和偏小。
-    bd["input_used"] = (
-        bd.get("system_prompt", 0)
-        + bd.get("messages", 0)
-        + bd.get("tools_schema", 0)
-        + bd.get("tools_deferred_catalog", 0)
-        + bd.get("mcp_tools", 0)
-        + bd.get("mcp_tools_deferred", 0)
-        + bd.get("memory", 0)
-        + bd.get("skills", 0)
+    # The recorded system prompt already contains Skills, always-on Memory,
+    # and the deferred-tool catalog. Expose them as rows by subtracting them
+    # from the parent row; do not add them to the total a second time.
+    full_system = int(bd.get("system_prompt") or 0)
+    nested_system = (
+        int(bd.get("skills") or 0)
+        + int(bd.get("memory") or 0)
+        + system_deferred
+        + mcp_deferred
+    )
+    bd["system_prompt"] = max(0, full_system - nested_system)
+
+    bd["unclassified"] = 0
+    bd["input_used"] = sum(
+        int(bd.get(key) or 0) for key in BREAKDOWN_CATEGORY_KEYS
     )
     bd["input_used_pct"] = (
         round(bd["input_used"] / ctx_window, 4) if ctx_window else 0
@@ -302,6 +377,7 @@ def build_stats(
     head_id: Optional[str] = None,
     measured_total: Optional[int] = None,
     window: Optional[int] = None,
+    estimated_total: Optional[int] = None,
 ) -> dict:
     """The one context-occupancy record both frontends read.
 
@@ -310,7 +386,11 @@ def build_stats(
     estimate is still computed alongside so ``calibration`` can report the
     ratio between them. Omitting it selects ``estimated``.
     """
-    estimated, est_window = estimate_total_used(session_id, head_id)
+    if estimated_total is None:
+        estimated, est_window = estimate_total_used(session_id, head_id)
+    else:
+        estimated = int(estimated_total)
+        est_window = int(window or 0)
     window = int(window or 0) or est_window
 
     if measured_total and measured_total > 0:
@@ -329,3 +409,59 @@ def build_stats(
     if basis == "measured" and estimated > 0:
         stats["calibration"] = round(total_used / estimated, 4)
     return stats
+
+
+def _scale_categories(values: dict[str, int], target: int) -> dict[str, int]:
+    """Scale positive category estimates to an exact integer ``target``."""
+    source = sum(values.values())
+    if source <= 0 or source == target:
+        return dict(values)
+    raw = {key: value * target / source for key, value in values.items()}
+    scaled = {key: int(value) for key, value in raw.items()}
+    remainder = target - sum(scaled.values())
+    if remainder > 0:
+        order = sorted(
+            values,
+            key=lambda key: (raw[key] - scaled[key], values[key]),
+            reverse=True,
+        )
+        for key in order[:remainder]:
+            scaled[key] += 1
+    return scaled
+
+
+def finalize_breakdown(breakdown: dict, occupancy: dict) -> dict:
+    """Merge one local breakdown with the matching occupancy snapshot.
+
+    Provider usage owns the headline total. Locally reconstructable rows keep
+    their estimates; a positive provider residual is explicit. If the local
+    estimate is higher, rows are proportionally calibrated so displayed rows
+    still add up to the provider total without inventing a negative category.
+    """
+    result = dict(breakdown)
+    result.update(occupancy)
+    values = {
+        key: max(0, int(breakdown.get(key) or 0))
+        for key in BREAKDOWN_CATEGORY_KEYS
+        if key != "unclassified"
+    }
+    classified_estimate = sum(values.values())
+    total = max(0, int(result.get("total_used") or classified_estimate))
+    measured = result.get("basis") == "measured"
+
+    scale = 1.0
+    if measured and classified_estimate > total:
+        scale = total / classified_estimate if classified_estimate else 1.0
+        values = _scale_categories(values, total)
+
+    result.update(values)
+    result["classified_estimate"] = classified_estimate
+    result["classified_used"] = sum(values.values())
+    result["classification_scale"] = round(scale, 6)
+    result["unclassified"] = (
+        max(0, total - result["classified_used"]) if measured else 0
+    )
+    result["input_used"] = classified_estimate
+    window = int(result.get("window") or result.get("context_window") or 0)
+    result["free_space"] = max(0, window - total)
+    return result

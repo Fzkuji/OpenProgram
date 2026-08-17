@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>上下文统计口径 — OpenProgram 设计</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --surface: #fff; --text: #202124; --muted: #6b7280;
+    --line: #deded9; --blue: #2563eb; --blue-soft: #eff6ff;
+    --green: #15803d; --green-soft: #f0fdf4; --amber: #a16207;
+    --amber-soft: #fffbeb; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 48px 24px 96px; }
+  header { max-width: 760px; margin-bottom: 32px; }
+  .eyebrow { color: var(--blue); font: 600 12px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+  h1 { margin: 10px 0 12px; font-size: clamp(30px, 5vw, 44px); line-height: 1.12; letter-spacing: -.03em; }
+  h2 { margin: 0 0 12px; font-size: 21px; }
+  p { margin: 0 0 12px; }
+  code { font-family: var(--mono); font-size: .9em; background: #eeeeeb; padding: 2px 5px; border-radius: 4px; }
+  .meta, .status { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pill { border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; background: var(--surface); color: var(--muted); font-size: 12px; }
+  .pill.active { color: var(--green); border-color: #bbdfc5; background: var(--green-soft); }
+  section { margin-top: 42px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .card { min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+  .card strong { display: block; margin-bottom: 6px; }
+  .card p { color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+  .flow { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: stretch; gap: 10px; }
+  .flow .step { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .flow .arrow { align-self: center; color: var(--muted); font-family: var(--mono); }
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); }
+  th, td { padding: 12px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; background: #f1f1ee; }
+  tr:last-child td { border-bottom: 0; }
+  .note { border-left: 4px solid var(--blue); background: var(--blue-soft); padding: 14px 16px; }
+  .warning { border-left-color: var(--amber); background: var(--amber-soft); }
+  ul { margin: 8px 0 0; padding-left: 20px; }
+  li { margin: 5px 0; }
+  .formula { padding: 15px 18px; background: #202124; color: #f8fafc; border-radius: 10px; overflow-x: auto; font-family: var(--mono); font-size: 13px; white-space: pre-wrap; }
+  @media (max-width: 760px) {
+    main { padding: 28px 16px 64px; }
+    .grid { grid-template-columns: 1fr; }
+    .flow { grid-template-columns: 1fr; }
+    .flow .arrow { transform: rotate(90deg); justify-self: center; }
+    table { table-layout: fixed; font-size: 12px; }
+    th, td { padding: 9px 7px; overflow-wrap: anywhere; }
+    .pill { max-width: 100%; overflow-wrap: anywhere; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Context · Measurement contract</div>
+    <h1>上下文统计口径</h1>
+    <p>面向使用者和实现者，定义底部 Context 面板如何报告真实总量、可分类内容和无法直接重建的差额。</p>
+    <div class="meta">
+      <span class="pill active">状态：已实现</span>
+      <span class="pill">范围：Web / App 共用接口</span>
+      <span class="pill">不包含：新的 UI 样式</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>01 · 结果必须回答三个问题</h2>
+    <div class="grid">
+      <article class="card"><strong>总共占用了多少？</strong><p>优先使用 provider 返回的真实 input token；没有实测时才使用本地估算。</p></article>
+      <article class="card"><strong>内容来自哪里？</strong><p>按互斥分类展示 system、tools、MCP、skills、memory、messages，禁止重复计数。</p></article>
+      <article class="card"><strong>哪些无法还原？</strong><p>实测总量与已分类估算之间的正差额显示为“其他上下文（估算）”，不隐藏。</p></article>
+    </div>
+  </section>
+
+  <section>
+    <h2>02 · 单次快照</h2>
+    <div class="flow" aria-label="统计数据流">
+      <div class="step"><strong>当前分支</strong><br>读取已压缩后的 rendered history、最近一次 system prompt 和冻结工具集。</div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="step"><strong>本地分类</strong><br>计算消息结构、工具 schema、Skills、Memory；嵌套项从父分类扣除。</div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="step"><strong>provider 校准</strong><br>合并同一 HEAD 的最近实测总量并计算未分类差额。</div>
+    </div>
+    <p class="note" style="margin-top:14px">一个 API 响应只计算一次本地 breakdown。面板不能在同一响应中再次读取动态工具注册表，否则分类和 <code>estimated</code> 可能来自两个不同时间点。</p>
+  </section>
+
+  <section>
+    <h2>03 · 互斥分类</h2>
+    <table>
+      <thead><tr><th>分类</th><th>原料</th><th>精度与边界</th></tr></thead>
+      <tbody>
+        <tr><td>Messages</td><td>rendered history；可见文本、thinking、tool input/result、memory prefetch</td><td>文本可重建；未持久化的原始图片按差额处理。</td></tr>
+        <tr><td>System prompt</td><td>最近一次实际记录的完整 system prompt</td><td>先计算完整值，再扣除 Skills、常驻 Memory 和 deferred catalog，避免重复。</td></tr>
+        <tr><td>Skills / Memory</td><td>实际注入 system prompt 的索引与常驻块</td><td>它们是 System prompt 的子组成，不得再次增加总量。</td></tr>
+        <tr><td>System tools / MCP tools</td><td>本轮冻结工具集的 provider schema</td><td>按工具的 <code>_mcp_server</code> 归入二者之一。</td></tr>
+        <tr><td>Deferred tools</td><td>system prompt 内的工具名目录</td><td>按实际发送的名称目录计，不按完整 description/schema 计。</td></tr>
+        <tr><td>Other context (estimated)</td><td><code>provider total - classified estimate</code></td><td>包含未持久化图片、provider 包装开销、临时 surface prompt 等无法可靠重建内容。</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>04 · 计算规则</h2>
+    <div class="formula">classified = system_other + skills + memory + tools + mcp + deferred + messages
+other = max(0, provider_total - classified)
+displayed_used = provider_total if measured else classified
+free = max(0, window - displayed_used)</div>
+    <p class="note warning" style="margin-top:14px">若本地分类估算高于 provider 实测，保留 provider 总量作为占用真值，并按统一比例收缩分类显示值；响应同时保留原始估算和校准系数，不能显示负数差额。</p>
+  </section>
+
+  <section>
+    <h2>05 · 验收条件</h2>
+    <ul>
+      <li>同一响应中的 <code>estimated</code> 与分类原始合计来自同一次计算。</li>
+      <li>实测状态下，各展示分类之和等于 <code>total_used</code>；估算状态下等于 <code>input_used</code>。</li>
+      <li>切换分支或图发生变化后，旧 provider 实测不复用到新的 HEAD。</li>
+      <li>切换模型后立即使用新模型的 context window，并将旧模型实测降级为当前模型下的重新估算；下一次请求完成后再采用新模型的 provider 实测。</li>
+      <li>工具 input/result、thinking 和 memory prefetch 会改变 Messages 数值。</li>
+      <li>App 与 Web 只消费同一个 <code>/api/sessions/{id}/context</code> 合同，不各自重新估算。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>06 · 实施证据</h2>
+    <div class="grid">
+      <article class="card"><strong>记录真实输入</strong><p><code>system_prompt_node.py</code> 按分支 HEAD 读取实际 system prompt；<code>tool_snapshot_node.py</code> 保存本轮冻结工具及其计价结果。</p></article>
+      <article class="card"><strong>统一计算与校准</strong><p><code>session_stats.py</code> 负责分类、去重和 provider 总量校准；<code>budget.py</code> 负责冻结工具 schema 的估算。</p></article>
+      <article class="card"><strong>同一接口消费</strong><p><code>tree.py</code> 只计算一次 breakdown，App 与 Web 由 <code>context-breakdown-panel.tsx</code> 展示同一响应。</p></article>
+    </div>
+    <p class="note" style="margin-top:14px"><code>test_session_stats_accuracy.py</code> 覆盖结构化消息、未分类差额、超额校准、分支 ancestry、旧快照兼容、非推进 HEAD 子 Agent、冻结工具、动态注册表和模型切换；相关 Context 定向测试共 51 项通过。</p>
+  </section>
+</main>
+</body>
+</html>

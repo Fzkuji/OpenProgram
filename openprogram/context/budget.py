@@ -65,7 +65,7 @@ class BudgetAllocator:
         """
         sys_tokens = self._estimate_text(system_prompt)
         hist_tokens = estimate_history_tokens(history)
-        tools_tokens = self._estimate_tools(tools or [])
+        tools_tokens = self._estimate_provider_tools(tools or [])
         out_reserve = (output_reserve if output_reserve is not None
                        else self._default_output_reserve)
         # Clamp the reserve: never give back more than 25% of the
@@ -95,8 +95,17 @@ class BudgetAllocator:
         breakdown (:func:`estimate_tools_breakdown`), by construction."""
         return sum(_estimate_one_tool(t)[0] for t in tools)
 
+    @staticmethod
+    def _estimate_provider_tools(tools: list[Any]) -> int:
+        """Price a provider-resident subset, including loaded deferred tools."""
+        return sum(_estimate_one_tool(t, deferred=False)[0] for t in tools)
 
-def _estimate_one_tool(t: Any) -> tuple[int, bool]:
+
+def _estimate_one_tool(
+    t: Any,
+    *,
+    deferred: bool | None = None,
+) -> tuple[int, bool]:
     """(tokens, deferred) for one tool — THE single pricing rule.
 
     Price what actually goes on the wire, per tool:
@@ -115,7 +124,8 @@ def _estimate_one_tool(t: Any) -> tuple[int, bool]:
     """
     import json as _json
 
-    deferred = bool(getattr(t, "_defer", False))
+    if deferred is None:
+        deferred = bool(getattr(t, "_defer", False))
     if deferred:
         # One name per line in the catalog block — no description, and no
         # per-message overhead: the whole catalog is a few lines inside ONE
@@ -157,9 +167,18 @@ def estimate_tools_breakdown(tools: list[Any]) -> list[dict]:
     """Per-tool token 明细。口径 = _estimate_one_tool（与
     BudgetAllocator._estimate_tools 共用同一条计价规则）。
     返回 [{"name","tokens","deferred"}, ...]，顺序同入参。"""
+    try:
+        from openprogram.programs import split_tools_for_dispatch
+        provider_tools, _catalog = split_tools_for_dispatch(tools)
+        resident_ids = {id(tool) for tool in provider_tools}
+    except Exception:
+        resident_ids = {
+            id(tool) for tool in tools if not getattr(tool, "_defer", False)
+        }
     out: list[dict] = []
     for t in tools:
-        tokens, deferred = _estimate_one_tool(t)
+        is_deferred = id(t) not in resident_ids
+        tokens, deferred = _estimate_one_tool(t, deferred=is_deferred)
         out.append({
             "name": getattr(t, "name", "") or "",
             "tokens": tokens,

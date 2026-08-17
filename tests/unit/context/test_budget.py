@@ -4,22 +4,26 @@ from openprogram.context.budget import (
     BudgetAllocator,
     estimate_tools_breakdown,
 )
+from openprogram.context.types import UsageState
 
 
 class _FakeTool:
     """budget 只读 .schema/.spec、.name、_defer —— 无需真 AgentTool。"""
     def __init__(self, name, schema, defer=False):
         self.name = name
+        self.description = ""
         self.schema = schema
         self._defer = defer
 
 
 def _tool(name, defer=False):
-    return _FakeTool(
+    tool = _FakeTool(
         name,
         {"name": name, "description": "x" * 40, "parameters": {"type": "object"}},
         defer=defer,
     )
+    tool.description = "x" * 40
+    return tool
 
 
 def test_breakdown_sum_equals_estimate_tools():
@@ -40,6 +44,38 @@ def test_breakdown_marks_deferred_and_names():
 
 def test_breakdown_empty():
     assert estimate_tools_breakdown([]) == []
+
+
+def test_default_engine_budgets_only_provider_resident_tools(monkeypatch):
+    from types import SimpleNamespace
+    import openprogram.context.engine as engine_module
+    from openprogram.context.engine import DefaultContextEngine
+    from openprogram.programs import (
+        install_loaded_deferred, release_turn_tools, split_tools_for_dispatch,
+    )
+
+    tools = [_tool("resident"), _tool("deferred", defer=True)]
+    release_turn_tools()
+    install_loaded_deferred()
+    provider_tools, catalog = split_tools_for_dispatch(tools)
+    assert [tool.name for tool in provider_tools] == ["resident"]
+    assert [name for name, _description in catalog] == ["deferred"]
+
+    context_engine = DefaultContextEngine(
+        usage_tracker=SimpleNamespace(get=lambda _session_id: UsageState()),
+        references=SimpleNamespace(build=lambda _history: SimpleNamespace(
+            cited_tool_use_ids=set(),
+        )),
+    )
+    monkeypatch.setattr(context_engine, "_build_messages_from_dag", lambda **_kwargs: [])
+    monkeypatch.setattr(engine_module, "real_context_window", lambda _model: 100_000)
+
+    prep = context_engine.prepare(
+        agent=SimpleNamespace(), session={"id": "session"}, history=[],
+        model=SimpleNamespace(), tools=tools, system_prompt="prompt",
+    )
+
+    assert prep.budget.tools_schema == BudgetAllocator._estimate_provider_tools(provider_tools)
 
 
 class _ParametersTool:

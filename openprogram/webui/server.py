@@ -1103,7 +1103,7 @@ def _resolve_context_window(provider_name, model) -> int | None:
 
 
 def _build_context_occupancy(session_id, conv, *, measured_total=None,
-                             window=None) -> dict:
+                             window=None, estimated_total=None) -> dict:
     """``{window, total_used, basis, estimated[, calibration]}`` for a session.
 
     Falls back to the last broadcast record when the estimate cannot be
@@ -1118,6 +1118,7 @@ def _build_context_occupancy(session_id, conv, *, measured_total=None,
             head_id=(conv or {}).get("head_id"),
             measured_total=measured_total,
             window=window,
+            estimated_total=estimated_total,
         )
     except Exception:
         prev = (conv or {}).get("_last_context_stats") or {}
@@ -1147,7 +1148,13 @@ def _conv_context_window(conv) -> int | None:
     return _resolve_context_window(provider, model)
 
 
-def session_context_stats(session_id: str, head_id: str | None = None) -> dict:
+def session_context_stats(
+    session_id: str,
+    head_id: str | None = None,
+    *,
+    estimated_total: int | None = None,
+    window: int | None = None,
+) -> dict:
     """The occupancy record for a session, recomputed against the graph now.
 
     ``/context`` calls this so the panel's headline total is byte-identical
@@ -1160,13 +1167,23 @@ def session_context_stats(session_id: str, head_id: str | None = None) -> dict:
     if prev.get("basis") == "measured" and (
         head_id is None or head_id == conv.get("head_id")
     ):
-        return {k: prev[k] for k in
+        out = {k: prev[k] for k in
                 ("window", "total_used", "basis", "estimated", "calibration")
                 if k in prev}
+        if estimated_total is not None:
+            out["estimated"] = int(estimated_total)
+            if int(estimated_total) > 0:
+                out["calibration"] = round(
+                    int(out.get("total_used") or 0) / int(estimated_total), 4
+                )
+        if window:
+            out["window"] = int(window)
+        return out
     return _build_context_occupancy(
         session_id,
         {**conv, "head_id": head_id or conv.get("head_id")},
-        window=_conv_context_window(conv),
+        window=window or _conv_context_window(conv),
+        estimated_total=estimated_total,
     )
 
 

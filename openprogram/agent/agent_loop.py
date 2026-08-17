@@ -353,6 +353,21 @@ async def _run_loop(
         # the schema tool_search returns. See tool-toggle-management.md §6.
         from openprogram.programs import freeze_turn_tools
         freeze_turn_tools(list(current_context.tools or []))
+        # Persist the priced provider/deferred split after freezing it. The
+        # /context panel can then reproduce this HEAD even if the live tool
+        # profile or MCP registry changes later.
+        try:
+            from openprogram.agent.session_db import default_db
+            from openprogram.context.tool_snapshot_node import (
+                record_tool_snapshot,
+            )
+            record_tool_snapshot(
+                default_db(),
+                config.session_id,
+                list(current_context.tools or []),
+            )
+        except Exception:
+            pass
 
         has_more_tool_calls = True
         steering_after_tools: list[AgentMessage] | None = None

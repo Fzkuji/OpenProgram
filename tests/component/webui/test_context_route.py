@@ -76,3 +76,26 @@ def test_context_endpoint_no_tools(client, monkeypatch):
     d = r.json()
     assert d["tools"] == []
     assert d["tools_schema"] == 0
+
+
+def test_context_endpoint_uses_the_current_model_window(client, monkeypatch):
+    from openprogram.webui import server as srv
+
+    srv._sessions["s1"] = {
+        "provider_name": "provider",
+        "model_override": "large-model",
+    }
+    monkeypatch.setattr(
+        srv,
+        "_resolve_context_window",
+        lambda provider, model: 1_000_000
+        if (provider, model) == ("provider", "large-model") else 200_000,
+    )
+    try:
+        response = client.get("/api/sessions/s1/context")
+    finally:
+        srv._sessions.pop("s1", None)
+
+    assert response.status_code == 200
+    assert response.json()["context_window"] == 1_000_000
+    assert response.json()["window"] == 1_000_000

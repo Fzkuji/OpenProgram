@@ -235,11 +235,13 @@ class DefaultContextEngine(ContextEngine):
             system_prompt = self._build_system_prompt(agent, tools=tools)
 
         # 4. Allocate budget.
+        from openprogram.programs import split_tools_for_dispatch
+        provider_tools, _deferred_catalog = split_tools_for_dispatch(tools or [])
         budget = self.budgets.allocate(
             context_window=real_context_window(model),
             system_prompt=system_prompt,
             history=compacted_history,
-            tools=tools,
+            tools=provider_tools,
         )
 
         # 5. Hybridise with provider-reported usage if we have it.
