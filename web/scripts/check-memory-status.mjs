@@ -97,19 +97,19 @@ assert.match(memoryParts, /className=\{`\$\{styles\.folderRow\}[^\n]*aria-expand
 assert.match(memoryPage, /DisclosureChevron,/);
 assert.equal((memoryPage.match(/<DisclosureChevron className=\{styles\.timelineChevron\}/g) || []).length, 2);
 assert.doesNotMatch(memoryCss, /content:\s*["']›["']/);
-assert.match(cssRule(".chevronOpen"), /transform:\s*rotate\(0deg\)/);
-assert.match(memoryCss, /\.chevron:not\(\.chevronOpen\)\s*\{[^}]*transform:\s*rotate\(-90deg\)/);
+assert.match(cssRule(".chevronOpen"), /transform:\s*rotate\(90deg\)/);
+assert.match(memoryCss, /\.chevron:not\(\.chevronOpen\)\s*\{[^}]*transform:\s*rotate\(0deg\)/);
 assert.match(cssRule(".disclosureChevron"), /width:\s*14px/);
 assert.match(cssRule(".disclosureChevron"), /height:\s*14px/);
 assert.match(memoryParts, /styles\.disclosureChevron/);
 assert.equal((memoryPage.match(/styles\.sidebarCount/g) || []).length, 2);
 assert.match(memoryParts, /styles\.sidebarCount/);
 assert.doesNotMatch(memoryPage, /entryCount\}\s*\{text\(/);
-assert.match(cssRule(".timelineChevron"), /transform:\s*rotate\(-90deg\)/);
+assert.match(cssRule(".timelineChevron"), /transform:\s*rotate\(0deg\)/);
 assert.match(cssRule(".timelineYearSummary,\n.timelineMonthSummary"), /list-style:\s*none/);
 assert.match(memoryCss, /\.timelineYearSummary::\-webkit-details-marker,[\s\S]*\.timelineMonthSummary::\-webkit-details-marker\s*\{[^}]*display:\s*none/);
 assert.match(memoryCss, /\.timelineYear\[open\]\s*>\s*\.timelineYearSummary\s*>\s*\.timelineChevron/);
-assert.match(memoryCss, /\.timelineMonth\[open\]\s*>\s*\.timelineMonthSummary\s*>\s*\.timelineChevron\s*\{[^}]*transform:\s*rotate\(0deg\)/);
+assert.match(memoryCss, /\.timelineMonth\[open\]\s*>\s*\.timelineMonthSummary\s*>\s*\.timelineChevron\s*\{[^}]*transform:\s*rotate\(90deg\)/);
 assert.match(memoryCss, /@media\s*\(max-width:\s*720px\)[\s\S]*\.editorHeader\s*\{[^}]*flex-wrap:\s*wrap/);
 assert.match(memoryCss, /@media\s*\(max-width:\s*720px\)[\s\S]*\.editorActions\s*\{[^}]*width:\s*100%[^}]*flex-wrap:\s*wrap/);
 

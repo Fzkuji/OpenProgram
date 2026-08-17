@@ -287,11 +287,11 @@
 }
 
 .chevronOpen {
-  transform: rotate(0deg);
+  transform: rotate(90deg);
 }
 
 .chevron:not(.chevronOpen) {
-  transform: rotate(-90deg);
+  transform: rotate(0deg);
 }
 
 .folderName {
@@ -770,12 +770,12 @@
 }
 
 .timelineChevron {
-  transform: rotate(-90deg);
+  transform: rotate(0deg);
 }
 
 .timelineYear[open] > .timelineYearSummary > .timelineChevron,
 .timelineMonth[open] > .timelineMonthSummary > .timelineChevron {
-  transform: rotate(0deg);
+  transform: rotate(90deg);
 }
 
 .timelineYearSummary > .sidebarCount,
