@@ -18,7 +18,7 @@
 ├── available/workflows/&lt;package&gt;/   # 固定HEAD的只读git archive快照
 └── candidate/                       # 唯一可写根项目；初始为空</code></pre>
     <div class="choices"><div class="choice"><strong>直接复用</strong><p>调用一个现有公开入口；无源码变化，不创建仓库。</p></div><div class="choice"><strong>修改现有项目</strong><p>把一个只读快照复制到candidate后修改；依赖项目保持只读。</p></div><div class="choice"><strong>创建组合项目</strong><p>写一个多文件package，通过静态Python import复用已有Workflow。</p></div></div>
-    <div class="callout">外部进程在authoring期间提交新代码不会改变本次快照。Agent不能直接写 <code>~/.openprogram/workflows</code>，也不能产生多个candidate根项目。</div>
+    <div class="callout">外部进程在authoring期间提交新代码不会改变本次快照。Agent不能直接写 <code>openprogram/programs/workflows</code>，也不能产生多个candidate根项目。</div>
   </section>
 
   <section id="decision"><h2>2. Runtime 根据事实判定结果</h2>

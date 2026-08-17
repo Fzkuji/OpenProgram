@@ -15,6 +15,12 @@ import pytest
 import openprogram.programs.agentic_functions.agentic_workflow as TL
 
 
+def test_workflow_projects_live_under_openprogram_programs() -> None:
+    programs_dir = Path(TL.__file__).resolve().parents[2]
+
+    assert TL._workflow_projects_root() == programs_dir / "workflows"
+
+
 def _code(body: str, helpers: str = "") -> str:
     source = textwrap.dedent(helpers).strip()
     if source:

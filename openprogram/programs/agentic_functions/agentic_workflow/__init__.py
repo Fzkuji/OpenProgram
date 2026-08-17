@@ -409,9 +409,7 @@ def _validated_reply(reply: str) -> str:
 
 
 def _workflow_projects_root() -> Path:
-    from openprogram.paths import get_state_dir
-
-    return get_state_dir() / "workflows"
+    return Path(__file__).resolve().parents[2] / "workflows"
 
 
 def _safe_project_id(value: object) -> str:
