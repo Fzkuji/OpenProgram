@@ -4,7 +4,7 @@
  * Two pieces:
  *
  *   * :func:`findAtToken` — locate an ``@partial`` token immediately
- *     before the caret. Port of ``cli/src/utils/fileCompletions.ts``
+ *     before the caret. Port of ``apps/cli/src/utils/fileCompletions.ts``
  *     so web + tui agree on what counts as an open mention.
  *   * :func:`expandAtMentions` — at submit time, replace each
  *     ``@path/to/file`` token with a ``[attachment: name (type, KB) @

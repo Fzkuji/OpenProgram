@@ -1,4 +1,6 @@
 import { spawn, spawnSync } from 'child_process';
+import { existsSync } from 'fs';
+import { join } from 'path';
 import { fileURLToPath } from 'url';
 
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -154,7 +156,11 @@ describe('webUiUrls', () => {
 describe('against the real backend listener', () => {
   // fileURLToPath, not .pathname: a repo path containing spaces comes
   // back percent-encoded from .pathname and no longer exists on disk.
-  const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
+  const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
+  expect(existsSync(join(repoRoot, 'openprogram'))).toBe(true);
+  expect(
+    existsSync(join(repoRoot, 'tests/support/helpers/owner_auth_listener.py')),
+  ).toBe(true);
   const python = (() => {
     const r = spawnSync('python3', ['-c', 'import openprogram, uvicorn'], {
       cwd: repoRoot,

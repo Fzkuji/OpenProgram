@@ -408,7 +408,8 @@ openprogram/                         # Python product package
 ├── channels/                       # external chat transports
 ├── scheduler/                      # durable schedules and execution
 └── webui/                          # worker API and WebSocket layer
-cli/                                 # TypeScript CLI client
+apps/
+└── cli/                            # TypeScript Ink terminal client
 web/                                 # Next.js web interface
 desktop/                             # Electron desktop shell
 tests/                               # pytest: <layer>/<product-domain>

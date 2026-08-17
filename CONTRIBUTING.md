@@ -50,7 +50,7 @@ public APIs, installation profiles, and current capabilities.
    npm run build
    ```
 
-6. For CLI changes, run from `cli/`:
+6. For CLI changes, run from `apps/cli/`:
 
    ```bash
    npm ci

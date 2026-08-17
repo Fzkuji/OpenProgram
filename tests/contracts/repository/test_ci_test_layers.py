@@ -65,6 +65,26 @@ def test_ci_assigns_each_test_runtime_to_an_explicit_job() -> None:
     assert "-m browser tests/e2e/web" in browser
 
 
+def test_ci_runs_every_cli_step_from_the_apps_workspace() -> None:
+    steps = _workflow()["jobs"]["cli"]["steps"]
+    setup_node = next(
+        step for step in steps
+        if str(step.get("uses", "")).startswith("actions/setup-node@")
+    )
+    run_steps = [step for step in steps if step.get("run")]
+
+    assert setup_node["with"]["cache-dependency-path"] == (
+        "apps/cli/package-lock.json"
+    )
+    assert [step["run"] for step in run_steps] == [
+        "npm ci",
+        "npm run typecheck",
+        "npm test",
+        "npm run build",
+    ]
+    assert {step.get("working-directory") for step in run_steps} == {"apps/cli"}
+
+
 def test_ci_python_jobs_use_the_checked_lock() -> None:
     jobs = _workflow()["jobs"]
     for name in (
