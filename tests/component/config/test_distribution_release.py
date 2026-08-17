@@ -1108,6 +1108,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     )
     desktop_files = [
         "main.js",
+        "menu-geometry.js",
         "preload.js",
         "update-service.js",
         "packaged-runtime.js",

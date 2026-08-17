@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
+const { cascadeMenuGeometry } = require("../menu-geometry.js");
 
 const source = fs.readFileSync(require.resolve("../main.js"), "utf8");
 const paneSource = fs.readFileSync(
@@ -50,23 +51,20 @@ const sandbox = {
     callback({ view: { setBounds: (bounds) => setBoundsCalls.push(bounds) } });
   },
 };
-const cascadeMenuGeometrySource = declaration("cascadeMenuGeometry");
 vm.runInNewContext(
   `${declaration("normalizedBounds")}\n${declaration("rendererZoomFactor")}\n`
     + `${declaration("normalizedRendererBounds")}\n`
     + `${declaration("normalizedRendererMenuOptions")}\n`
-    + `${cascadeMenuGeometrySource}\n`
     + `${declaration("registerWebTabIpc")}\n`
     + "this.normalizedRendererBounds = normalizedRendererBounds;"
     + "this.normalizedRendererMenuOptions = normalizedRendererMenuOptions;"
-    + "this.cascadeMenuGeometry = cascadeMenuGeometry;"
     + "this.registerWebTabIpc = registerWebTabIpc;",
   sandbox,
 );
 const plain = (value) => JSON.parse(JSON.stringify(value));
 
 assert.deepEqual(
-  plain(sandbox.cascadeMenuGeometry(
+  plain(cascadeMenuGeometry(
     { x: 250, y: 80 },
     1250,
     875,
@@ -79,7 +77,7 @@ assert.deepEqual(
   "cascading menu hosts must begin below the bookmark bar and use a view-local anchor",
 );
 assert.deepEqual(
-  plain(sandbox.cascadeMenuGeometry({ x: -50, y: -20 }, 800, 600, 1)),
+  plain(cascadeMenuGeometry({ x: -50, y: -20 }, 800, 600, 1)),
   {
     bounds: { x: 0, y: 0, width: 800, height: 600 },
     anchor: { x: 0, y: 0 },
@@ -87,7 +85,7 @@ assert.deepEqual(
   "top and left overflow must fall back to a usable host and clamp the local anchor",
 );
 assert.deepEqual(
-  plain(sandbox.cascadeMenuGeometry({ x: 900, y: 590 }, 800, 600, 1)),
+  plain(cascadeMenuGeometry({ x: 900, y: 590 }, 800, 600, 1)),
   {
     bounds: { x: 0, y: 0, width: 800, height: 600 },
     anchor: { x: 799, y: 590 },
@@ -95,7 +93,7 @@ assert.deepEqual(
   "an anchor near the bottom must use the full usable window instead of a clipped strip",
 );
 assert.deepEqual(
-  plain(sandbox.cascadeMenuGeometry({ x: 100, y: 700 }, 800, 600, 1)),
+  plain(cascadeMenuGeometry({ x: 100, y: 700 }, 800, 600, 1)),
   {
     bounds: { x: 0, y: 0, width: 800, height: 600 },
     anchor: { x: 100, y: 599 },
@@ -103,7 +101,7 @@ assert.deepEqual(
   "an anchor below the window must stay inside a usable host viewport",
 );
 assert.deepEqual(
-  plain(sandbox.cascadeMenuGeometry({ x: 1500, y: 850 }, 1250, 875, 1.25)),
+  plain(cascadeMenuGeometry({ x: 1500, y: 850 }, 1250, 875, 1.25)),
   {
     bounds: { x: 0, y: 0, width: 1250, height: 875 },
     anchor: { x: 999, y: 680 },

@@ -24,8 +24,8 @@ current design contract; this file is operational history.
   section.
 - Group the existing UI design pages in navigation without moving their source
   files.
-- Record, but do not perform, Desktop and Web bridge splits while those areas
-  have active product changes.
+- Split Desktop and Web bridge code only at independently executable boundaries;
+  preserve orchestration in place until its own behavior has direct coverage.
 - Keep the root and workspace READMEs aligned with the current Programs,
   packaged-skill, Web, and TUI ownership boundaries.
 - Remove the Web Programs re-export directory when the public route can import
@@ -130,6 +130,25 @@ adapted. Large-file decomposition is not part of the directory migration.
   contents, isolated wheel imports and CLI `--help`/`--version` execution.
 - Exclude Server route migration, CLI behavior changes, UI changes and
   decomposition of cohesive command handlers from this batch.
+
+## Active task brief: Desktop menu geometry extraction
+
+- Approved source: `repository-structure.html`; base: current `main` after the
+  browser and CI closure.
+- Move only the pure menu placement functions from `apps/desktop/main.js` to
+  `apps/desktop/menu-geometry.js`: requested horizontal placement, bounded
+  context-menu placement and cascading bookmark-menu host geometry.
+- Keep `openMainMenu`, `resizeMenuOverlay`, Electron view ownership, timers,
+  IPC registration, constants and renderer behavior in `main.js`.
+- Preserve every current numeric result for start/end alignment, zoom,
+  negative coordinates, near-bottom anchors and anchors outside the window.
+- Make the existing Desktop checks execute the exported module directly;
+  package and local-App refresh lists must include the new runtime file.
+- RED boundary: the public CommonJS module import and package-file contract fail
+  before the module exists. GREEN boundary: geometry checks, WebTab navigation,
+  packaged-file tests, local refresh file-list contract and full Desktop checks.
+- Exclude visual changes, new menu behavior, Browser toolbar changes,
+  `openMainMenu` orchestration and the unrelated active App icon work.
 
 ## Active task brief: Apps migration C2
 

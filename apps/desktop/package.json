@@ -37,6 +37,7 @@
     "productName": "OpenProgram",
     "files": [
       "main.js",
+      "menu-geometry.js",
       "preload.js",
       "update-service.js",
       "packaged-runtime.js",
