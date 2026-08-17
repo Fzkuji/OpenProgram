@@ -132,7 +132,7 @@ BOUNDARY_MANIFEST = (
         ),
     ),
     BoundaryExclusion(
-        path="cli/commands/mcp.py",
+        path="apps/cli/python/openprogram_cli/_impl/commands/mcp.py",
         boundary_owner="owner-control-plane",
         reason="owner CLI calls the authenticated OpenProgram backend",
         kinds=frozenset({"urllib.request.build_opener"}),
@@ -144,19 +144,19 @@ BOUNDARY_MANIFEST = (
         kinds=frozenset({"urllib.request.build_opener"}),
     ),
     BoundaryExclusion(
-        path="cli/ink.py",
+        path="apps/cli/python/openprogram_cli/_impl/ink.py",
         boundary_owner="owner-control-plane",
         reason="loopback worker liveness probe does not fetch a URL",
         kinds=frozenset({"socket.connect"}),
     ),
     BoundaryExclusion(
-        path="cli/commands/doctor.py",
+        path="apps/cli/python/openprogram_cli/_impl/commands/doctor.py",
         boundary_owner="owner-control-plane",
         reason="loopback worker liveness probe does not fetch a URL",
         kinds=frozenset({"socket.connect"}),
     ),
     BoundaryExclusion(
-        path="cli/commands/rescue.py",
+        path="apps/cli/python/openprogram_cli/_impl/commands/rescue.py",
         boundary_owner="owner-control-plane",
         reason="loopback worker liveness probe does not fetch a URL",
         kinds=frozenset({"socket.connect"}),
@@ -1011,6 +1011,7 @@ def _expected_exclusion_counts(
 def scan_runtime_http(
     root: Path,
     *,
+    additional_roots: Mapping[str, Path] | None = None,
     exclusions: tuple[BoundaryExclusion, ...] = BOUNDARY_MANIFEST,
     registry: Mapping[str, object] = CONSUMER_REGISTRY,
 ) -> RuntimeHTTPInventory:
@@ -1020,9 +1021,21 @@ def scan_runtime_http(
     unregistered: list[RuntimeHTTPCall] = []
     consumers: set[str] = set()
     unmanaged: set[str] = set()
+    observed_paths: set[str] = set()
 
-    for source_path in _source_files(root):
-        relative = source_path.relative_to(root).as_posix()
+    source_roots = [("", root)]
+    source_roots.extend(
+        (prefix.strip("/") + "/", Path(path))
+        for prefix, path in (additional_roots or {}).items()
+    )
+    sources = (
+        (prefix, source_root, source_path)
+        for prefix, source_root in source_roots
+        for source_path in _source_files(source_root)
+    )
+    for prefix, source_root, source_path in sources:
+        relative = prefix + source_path.relative_to(source_root).as_posix()
+        observed_paths.add(relative)
         try:
             tree = ast.parse(source_path.read_text(encoding="utf-8"))
         except (OSError, SyntaxError):
@@ -1081,7 +1094,7 @@ def scan_runtime_http(
             unmanaged.add(consumer)
     stale_items: list[str] = []
     for path, boundary in excluded.items():
-        if not (root / path).is_file():
+        if path not in observed_paths:
             stale_items.append(path)
             continue
         expected = _expected_exclusion_counts(boundary)

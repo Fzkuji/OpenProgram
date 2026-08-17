@@ -14,7 +14,17 @@ from openprogram.security.runtime_http_audit import scan_runtime_http
 
 def main() -> int:
     root = ROOT / "openprogram"
-    result = scan_runtime_http(root)
+    result = scan_runtime_http(
+        root,
+        additional_roots={
+            "apps/server/openprogram_server": (
+                ROOT / "apps/server/openprogram_server"
+            ),
+            "apps/cli/python/openprogram_cli": (
+                ROOT / "apps/cli/python/openprogram_cli"
+            ),
+        },
+    )
     print(
         "runtime-http inventory: "
         f"unregistered={len(result.unregistered)} "

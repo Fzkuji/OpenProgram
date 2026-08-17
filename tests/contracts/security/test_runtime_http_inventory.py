@@ -13,7 +13,17 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_runtime_http_inventory_has_no_unclassified_calls():
-    result = runtime_http_audit.scan_runtime_http(ROOT / "openprogram")
+    result = runtime_http_audit.scan_runtime_http(
+        ROOT / "openprogram",
+        additional_roots={
+            "apps/server/openprogram_server": (
+                ROOT / "apps/server/openprogram_server"
+            ),
+            "apps/cli/python/openprogram_cli": (
+                ROOT / "apps/cli/python/openprogram_cli"
+            ),
+        },
+    )
 
     assert result.unregistered == ()
     assert result.active_unmanaged_transports == ()
@@ -52,6 +62,35 @@ def test_runtime_http_inventory_ignores_unowned_source_trees(tmp_path):
     )
 
     assert result.unregistered == ()
+
+
+def test_runtime_http_inventory_combines_application_source_roots(tmp_path):
+    core = tmp_path / "core"
+    server = tmp_path / "server"
+    core.mkdir()
+    server.mkdir()
+    (core / "empty.py").write_text("value = 1\n", encoding="utf-8")
+    (server / "catalog.py").write_text(
+        """
+from openprogram.security import safe_http
+
+safe_http.configured_safe_client(
+    "server.catalog", "https://catalog.example"
+)
+""",
+        encoding="utf-8",
+    )
+
+    result = runtime_http_audit.scan_runtime_http(
+        core,
+        additional_roots={"apps/server": server},
+        exclusions=(),
+        registry={"server.catalog": object()},
+    )
+
+    assert result.unregistered == ()
+    assert result.registry_without_consumer == ()
+    assert result.stale_exclusions == ()
 
 
 def test_scanner_fails_closed_for_representative_raw_network_calls(tmp_path):
