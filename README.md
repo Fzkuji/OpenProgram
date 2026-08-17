@@ -7,8 +7,7 @@
 </p>
 
 <p align="center">
-  <b>OpenProgram: Self-Programming AI Agent Framework</b><br/>
-  Agents create and refine their own workflows · Any LLM · macOS and Linux releases
+  <b>Self-Programming AI Assistant. Capture, automate, and refine all your workflows.</b>
 </p>
 
 <p align="center">
