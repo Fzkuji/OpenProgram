@@ -105,15 +105,24 @@ assert.equal(
   200,
   "an older same-key response must not overwrite the newer cache value",
 );
-for (let i = 0; i < 40; i += 1) {
-  contextBreakdownCache.writeContextBreakdownCache(`evict-${i}`, null, { total_used: i });
+for (let i = 0; i < 32; i += 1) {
+  contextBreakdownCache.writeContextBreakdownCache(`lru-${i}`, null, { total_used: i });
 }
+assert.equal(contextBreakdownCache.readContextBreakdownCache("lru-0", null).total_used, 0);
+contextBreakdownCache.writeContextBreakdownCache("lru-32", null, { total_used: 32 });
 assert.equal(
-  contextBreakdownCache.readContextBreakdownCache("evict-0", null),
+  contextBreakdownCache.readContextBreakdownCache("lru-1", null),
   null,
-  "the bounded cache must evict its least-recently-used entry",
+  "the 33rd value must evict the least-recently-used entry",
 );
-assert.equal(contextBreakdownCache.readContextBreakdownCache("evict-39", null).total_used, 39);
+assert.equal(
+  contextBreakdownCache.readContextBreakdownCache("lru-0", null).total_used,
+  0,
+  "reading an entry must promote it before capacity eviction",
+);
+assert.equal(contextBreakdownCache.readContextBreakdownCache("lru-2", null).total_used, 2);
+assert.equal(contextBreakdownCache.readContextBreakdownCache("lru-31", null).total_used, 31);
+assert.equal(contextBreakdownCache.readContextBreakdownCache("lru-32", null).total_used, 32);
 let resolveEvictedOlder;
 let resolveEvictedNewer;
 const evictedOlder = contextBreakdownCache.refreshContextBreakdown(
