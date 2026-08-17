@@ -1,7 +1,8 @@
 /** Every `action: "…"` the frontend sends must name a real backend handler.
  *
  *  `_handle_ws_command` looks the action up in `WS_ACTIONS` — the union
- *  of the `ACTIONS` dicts in `openprogram/webui/ws_actions/*.py`. An
+ *  of the `ACTIONS` dicts in
+ *  `apps/server/openprogram_server/_webui/ws_actions/*.py`. An
  *  action with no entry there now gets an `action_error` frame back, but
  *  for a long time it was dropped in total silence: no handler, no error,
  *  no log. `/branch` shipped that way, sending `create_branch` to a
@@ -18,7 +19,7 @@ import { fileURLToPath } from "node:url";
 // percent-encoded otherwise and every readdir misses.
 const webRoot = fileURLToPath(new URL("../", import.meta.url));
 const wsActionsDir = fileURLToPath(
-  new URL("../../../openprogram/webui/ws_actions/", import.meta.url),
+  new URL("../../server/openprogram_server/_webui/ws_actions/", import.meta.url),
 );
 const SKIP_DIRS = new Set(["node_modules", ".next", "out", "dist"]);
 
@@ -118,7 +119,8 @@ for (const path of sources(webRoot)) {
 assert.deepEqual(
   hits,
   [],
-  "these actions have no handler in openprogram/webui/ws_actions/*.py "
+  "these actions have no handler in "
+    + "apps/server/openprogram_server/_webui/ws_actions/*.py "
     + `ACTIONS — the backend will answer with action_error:\n${hits.join("\n")}`,
 );
 
