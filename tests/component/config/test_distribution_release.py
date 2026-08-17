@@ -1614,7 +1614,8 @@ def test_release_workflow_publishes_structured_release_notes() -> None:
     assert "- **Linux**" in notes
     assert "  - **Command-line / Server installation**" in notes
     assert notes.count("  - **Development installation**") == 2
-    assert "Package and command-line installations contain the same complete product" in notes
+    assert "share the same complete runtime and browser backend" in notes
+    assert "built-in Browser Pane are available only in the macOS Desktop App" in notes
     assert "| User type |" not in notes
     assert "curl -fsSL https://openprogram.io/install | sh" in notes
 

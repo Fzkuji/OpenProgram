@@ -2,13 +2,13 @@
 
 升级行为取决于安装类型。stable 安装只在已发布版本之间变更，不跟随 `origin/main`。
 
-首个支持 updater 的版本需要从 v0.6.6 做一次过渡：Desktop 用户手动安装该版本的 DMG；CLI/server 用户重新执行一次完整 release installer：
+0.7.0 是从 v0.6.6 进入 updater release 线的一次性过渡：Desktop 用户手动安装 v0.7.0 DMG；CLI/server 用户重新执行一次完整 release installer：
 
 ```bash
 curl -fsSL https://openprogram.io/install | sh
 ```
 
-完成这次过渡后，后续 stable release 可使用下面的 Desktop 设置和 `openprogram upgrade` 命令。
+安装 v0.7.0 后，后续 stable release 可使用下面的 Desktop 设置和 `openprogram upgrade` 命令。
 
 ## 桌面 release
 

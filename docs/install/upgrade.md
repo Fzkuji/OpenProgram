@@ -2,13 +2,13 @@
 
 Upgrade behavior depends on the installation type. A stable installation always moves between published versions; it never follows `origin/main`.
 
-The first updater-enabled release needs one transition from v0.6.6: Desktop users install that release's DMG manually; CLI/server users rerun the complete release installer once:
+Version 0.7.0 is the one-time transition from v0.6.6 to the updater-enabled release line: Desktop users install the v0.7.0 DMG manually; CLI/server users rerun the complete release installer once:
 
 ```bash
 curl -fsSL https://openprogram.io/install | sh
 ```
 
-After that transition, the Desktop settings and `openprogram upgrade` commands below handle later stable releases.
+After installing v0.7.0, the Desktop settings and `openprogram upgrade` commands below handle later stable releases.
 
 ## Desktop release
 

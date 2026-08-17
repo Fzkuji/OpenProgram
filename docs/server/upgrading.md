@@ -6,8 +6,8 @@ unchanged until you restart it explicitly. A source checkout uses the gated Git
 pipeline documented on this page: it updates the code and restarts the service
 only after proving the new code boots.
 
-For Desktop and managed CLI/server releases, including the one-time v0.6.6
-transition, see [Upgrading a release installation](../install/upgrade.md).
+For Desktop and managed CLI/server releases, including the one-time v0.6.6 to
+v0.7.0 transition, see [Upgrading a release installation](../install/upgrade.md).
 
 ## Source checkout behavior
 
