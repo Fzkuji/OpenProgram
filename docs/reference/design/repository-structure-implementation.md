@@ -95,6 +95,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Apps migration C2: Server transport implementation | `bd8a9e30`, `b294256b`, `72f4cbf4`, `7e55a38e` | implemented; reviewed | Moves Server-owned routes, WebSocket actions, owner auth, frontend mounting and helpers into `openprogram_server/_webui`; preserves legacy module names through one shared package path. Review added the missing ignore contract for the generated release staging tree. The independently edited `routes/agents.py` remains the only temporary exception. |
 | Legacy cleanup F1: static Web interface | `23ac60c2` | implemented; reviewed | Removes the unreferenced 9,227-line static HTML/CSS/JS interface and its obsolete settings-page test. Current source, package and runtime paths continue to serve the `apps/web` build. |
 | Apps migration B2: Python CLI application | `2a790501`, `91be4353`, `51303ea8`, `09eb3732`, `252fb4fa`, `a459c443` | implemented; reviewed | Moves parser, dispatch, Rich fallback, Ink launcher and setup flows into the installable `openprogram_cli` application package. `openprogram.cli` remains a bounded compatibility loader; a code-free root module supports raw source checkouts; editable and wheel installs use the application package. |
+| Legacy cleanup F2: profile state | `f0e07310`, `fb490561` | implemented; review pending | Removes tracked mutable tool-profile state from the core package. One-time migration resolves the actual legacy compatibility package even though the Server module now lives under `apps/server`; package-data exclusion remains enforced. |
 
 ## Active task brief: Legacy cleanup F2
 
@@ -239,6 +240,9 @@ pass — independent specification review for Server C2 through `72f4cbf4`
 changes required — first independent quality review found only the generated Server release staging directory missing from `.gitignore`
 4 passed — executable release-staging cleanup and ignore contracts after `7e55a38e`
 pass — independent quality re-review for Server C2 through `7e55a38e`
+2 failed — public RED proved legacy profile migration followed the moved Server module and package-local state was still tracked
+28 passed — profile migration, profile isolation, atomic writes, apps-layout and wheel package-data checks after `fb490561`
+pass — Ruff and git diff check for Legacy cleanup F2
 ```
 
 ## Deferred boundaries
