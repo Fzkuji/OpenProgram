@@ -1476,7 +1476,7 @@ const {
   visibleWebTab,
   waitForWebTabReady,
 } = await import("../lib/desktop-bridge.ts");
-const { measureWebTabBounds } = await import("../lib/web-tab-bounds.ts");
+const { measureWebTabBounds, overlayIntersectsWebTab } = await import("../lib/web-tab-bounds.ts");
 const {
   focusCenterTabGroupMember,
   resolveCenterTabPanes,
@@ -1728,6 +1728,20 @@ assert.deepEqual(narrowPanes, [{ key: "w:two", kind: "tab", tabId: "w:two" }]);
     }),
   });
   const boundsTwo = { x: 506, y: 40, width: 600, height: 600 };
+  assert.equal(
+    overlayIntersectsWebTab(boundsOne, [{
+      getBoundingClientRect: () => ({ left: 560, top: 720, width: 180, height: 120 }),
+    }]),
+    false,
+    "a composer popover outside the native Page must not hide it",
+  );
+  assert.equal(
+    overlayIntersectsWebTab(boundsOne, [{
+      getBoundingClientRect: () => ({ left: 780, top: 200, width: 120, height: 160 }),
+    }]),
+    true,
+    "an overlay intersecting the native Page must hide it",
+  );
   registerVisibleWebTabBounds(bridge, "w:one", boundsOne);
   registerVisibleWebTabBounds(bridge, "w:two", boundsTwo);
   await Promise.resolve();
@@ -2204,7 +2218,8 @@ assert.doesNotMatch(
   webTabPaneSource,
   /bridge\.webTab\.navigate\(tabId, viewUrlRef\.current\);/,
 );
-assert.match(webTabPaneSource, /const occluded = !!document\.querySelector/);
+assert.match(webTabPaneSource, /const occluded = overlayIntersectsWebTab\(/);
+assert.match(webTabPaneSource, /document\.querySelectorAll\(/);
 assert.match(
   webTabPaneSource,
   /\[role="dialog"\], \.branches-merge-modal-backdrop, \[data-native-view-occluder="true"\]/,
