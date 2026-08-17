@@ -28,6 +28,7 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 import time
 import uuid
 
@@ -85,8 +86,8 @@ class Session:
         Returns the answer text, or None on timeout.
         """
         path = self._answer_path()
-        deadline = time.time() + timeout
-        while time.time() < deadline:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
             if os.path.exists(path):
                 with open(path, encoding="utf-8") as f:
                     answer = f.read()
@@ -98,8 +99,21 @@ class Session:
     def send_answer(self, answer: str):
         """Write the answer file (called by `agentic resume`)."""
         os.makedirs(self.dir, exist_ok=True)
-        with open(self._answer_path(), "w", encoding="utf-8") as f:
-            f.write(answer)
+        staged_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self.dir,
+                prefix=".answer.",
+                delete=False,
+            ) as stream:
+                staged_path = stream.name
+                stream.write(answer)
+            os.replace(staged_path, self._answer_path())
+        finally:
+            if staged_path and os.path.exists(staged_path):
+                os.remove(staged_path)
 
     def cleanup(self):
         """Remove the session directory."""

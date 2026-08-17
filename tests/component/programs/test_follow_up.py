@@ -15,6 +15,7 @@ import time
 
 import pytest
 
+import openprogram.agentic_programming.session as session_module
 from openprogram.programs.functions.agentic.ask_user import (
     FollowUp,
     ask_user,
@@ -197,6 +198,27 @@ class TestSessionResume:
         assert answer == "the answer"
         t.join()
         session.cleanup()
+
+    def test_session_publishes_only_a_complete_answer(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(session_module, "_sessions_dir", lambda: str(tmp_path))
+        session = Session("atomic-answer")
+        answer_path = session._answer_path()
+        real_replace = os.replace
+        observed = []
+
+        def inspect_replace(source, destination):
+            assert destination == answer_path
+            assert not os.path.exists(destination)
+            with open(source, encoding="utf-8") as stream:
+                observed.append(stream.read())
+            real_replace(source, destination)
+
+        monkeypatch.setattr(session_module.os, "replace", inspect_replace)
+
+        session.send_answer("the complete answer")
+
+        assert observed == ["the complete answer"]
+        assert session.wait_for_answer(timeout=0.1) == "the complete answer"
 
     def test_session_timeout(self):
         session = Session("_test_timeout")
