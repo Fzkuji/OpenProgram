@@ -1342,6 +1342,18 @@ def test_release_frontend_staging_removes_legacy_package_assets() -> None:
     assert 'rm -rf "$target_dir" "$legacy_target_dir"' in staging
 
 
+def test_release_frontend_staging_directory_is_ignored() -> None:
+    generated = "apps/server/openprogram_server/_webui/_frontend/index.html"
+    result = subprocess.run(
+        ["git", "check-ignore", "-q", generated],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_release_frontend_staging_includes_prebuilt_docs() -> None:
     staging = (ROOT / "scripts" / "stage-release-assets.sh").read_text(
         encoding="utf-8"

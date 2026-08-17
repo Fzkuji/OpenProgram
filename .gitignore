@@ -69,6 +69,8 @@ apps/web/.next/
 apps/web/next-env.d.ts
 apps/web/tsconfig.tsbuildinfo
 # Release staging copies web/out here before building the wheel.
+apps/server/openprogram_server/_webui/_frontend/
+# Keep ignoring staging produced by releases before the Server migration.
 openprogram/webui/_frontend/
 
 # macOS Finder duplicates ("foo 2.py", "foo 3.json") — never source
