@@ -188,7 +188,11 @@ for _ in {1..50}; do
   sleep 0.2
 done
 curl -fsS http://127.0.0.1:18100/healthz >/dev/null
-open -a "$app_path"
+if test "${OPENPROGRAM_REFRESH_BACKGROUND:-0}" = 1; then
+  open -g -a "$app_path"
+else
+  open -a "$app_path"
+fi
 
 cleanup
 trap - EXIT HUP INT TERM
