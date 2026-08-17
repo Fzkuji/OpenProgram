@@ -91,7 +91,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Apps migration D/E: Web and Desktop workspaces | `44765788`, `f4e44429`, `e0a4825e` | implemented; reviewed | Moves the complete Next.js and Electron workspaces to `apps/web/` and `apps/desktop/`; updates runtime discovery, CI, packaging, release scripts, cross-workspace checks, tests and current documentation references. Existing UI and protocol behavior are unchanged. |
 | Apps migration C1: Server application assembly | `6b981b32`, `6dc2f1e6`, `34966b16`, `c09b7933` | implemented; reviewed | Moves the FastAPI assembly into the installable `openprogram_server` application package. The legacy import resolves to the same module object, source checkouts reject an already-loaded foreign package, and the release probe imports only from the built wheel outside the checkout. Route and WebSocket modules remain for C2 because one route has unrelated active changes. |
 | Legacy cleanup F1: static Web interface | `23ac60c2` | implemented; reviewed | Removes the unreferenced 9,227-line static HTML/CSS/JS interface and its obsolete settings-page test. Current source, package and runtime paths continue to serve the `apps/web` build. |
-| Apps migration B2: Python CLI application | `2a790501`, `91be4353`, `51303ea8`, `09eb3732`, `252fb4fa` | implemented; re-review pending | Moves parser, dispatch, Rich fallback, Ink launcher and setup flows into the installable `openprogram_cli` application package. `openprogram.cli` remains a bounded compatibility loader; a code-free root module supports raw source checkouts; editable and wheel installs use the application package. |
+| Apps migration B2: Python CLI application | `2a790501`, `91be4353`, `51303ea8`, `09eb3732`, `252fb4fa`, `a459c443` | implemented; reviewed | Moves parser, dispatch, Rich fallback, Ink launcher and setup flows into the installable `openprogram_cli` application package. `openprogram.cli` remains a bounded compatibility loader; a code-free root module supports raw source checkouts; editable and wheel installs use the application package. |
 
 ## Implemented task brief: Apps migration B2
 
@@ -108,6 +108,31 @@ adapted. Large-file decomposition is not part of the directory migration.
   contents, isolated wheel imports and CLI `--help`/`--version` execution.
 - Exclude Server route migration, CLI behavior changes, UI changes and
   decomposition of cohesive command handlers from this batch.
+
+## Active task brief: Apps migration C2
+
+- Approved source: `repository-structure.html`; base: `a459c443`.
+- Move FastAPI routes, WebSocket actions, owner authentication, static Web
+  mounting, response shaping and their Server-only helpers to
+  `apps/server/openprogram_server/_webui/` without changing their established
+  `openprogram.webui.*` import names during the compatibility period.
+- Keep `openprogram/webui/` as a bounded source-checkout and module-entry
+  compatibility package. It may locate the installed or checkout Server
+  package, but it must not duplicate mutable Server state or eagerly initialize
+  the application during an Agent Core import.
+- Preserve route order, WebSocket action registration, shared module globals,
+  owner-auth enforcement, port `18100`, static asset lookup, CLI/TUI imports and
+  worker startup. Release wheels must contain the moved Python modules and Web
+  assets, and isolated imports must resolve outside the checkout.
+- First sub-batch excludes only `routes/agents.py`, whose unrelated active
+  worktree changes predate this migration. The route package remains a split
+  compatibility path until that file is committed and moved in the final C2
+  sub-batch.
+- RED/GREEN boundaries: physical ownership contract, legacy import source
+  resolution, route/WS application tests, owner-auth tests, built-frontend
+  tests, clean wheel contents and isolated wheel import/startup probes.
+- Exclude transport behavior redesign, new dependencies, UI changes and
+  decomposition based only on line count.
 
 ## Verification record
 
@@ -186,7 +211,8 @@ pass — isolated wheel executes console script plus `python -m openprogram`, `p
 510 pages; 0 broken links — documentation candidate build
 changes required — first independent specification review found raw-checkout discovery, canonical TUI detection, release execution and clean-README gaps
 49 passed — raw checkout, stale-package rejection, all module-entry recognition, release and clean README repair contracts
-pending — independent specification re-review and independent quality review for the B2 review repair
+pass — independent specification re-review for B2 through `a459c443`
+pass — independent quality review for B2 through `a459c443`
 ```
 
 ## Deferred boundaries

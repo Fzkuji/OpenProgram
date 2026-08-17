@@ -232,6 +232,26 @@ def test_server_application_assembly_is_owned_by_apps_workspace() -> None:
     ).count("sys.modules[__name__] = _server") == 1
 
 
+def test_server_transport_implementation_is_owned_by_apps_workspace() -> None:
+    implementation = ROOT / "apps/server/openprogram_server/_webui"
+
+    assert (implementation / "routes/tree.py").is_file()
+    assert (implementation / "ws_actions/webtab.py").is_file()
+    assert (implementation / "frontend.py").is_file()
+    assert (implementation / "owner_auth.py").is_file()
+
+
+def test_legacy_server_transport_imports_load_the_apps_sources() -> None:
+    from openprogram.webui import frontend, owner_auth
+    from openprogram.webui.routes import tree
+    from openprogram.webui.ws_actions import webtab
+
+    implementation = ROOT / "apps/server/openprogram_server/_webui"
+    for module in (frontend, owner_auth, tree, webtab):
+        assert module.__file__ is not None
+        assert Path(module.__file__).resolve().is_relative_to(implementation)
+
+
 def test_removed_legacy_static_ui_does_not_return() -> None:
     assert not any(
         path.is_file() for path in (ROOT / "openprogram/webui/static").rglob("*")
