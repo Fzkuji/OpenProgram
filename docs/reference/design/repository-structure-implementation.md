@@ -37,6 +37,7 @@ current design contract; this file is operational history.
 | Documentation entry points and Programs alias | `codex/repository-structure-batch1-20260817` / `d9cc9933` | implemented | Refreshes the bilingual project map and workspace READMEs; removes only the confirmed re-export and unused stylesheet. |
 | Documentation-entry main integration | `29f8186d` | integrated | Two-parent merge with current `main` at `e2041770`; unrelated local icon and output files remain outside Git. |
 | Python CLI package consolidation | `codex/python-package-layout-cli-20260817` / `d2ae71cc`, `5bd809e8`, `4051edaf` | implemented; reviewed | Replaces three first-level internal CLI directories and four implementation files with one `openprogram/cli/` package; keeps `openprogram.cli`, the console script, and both module entry points; repairs current documentation references and adds the executable interactive-import contract required by review. |
+| Python CLI package main integration | `f5878426` | integrated | Two-parent merge with current `main` at `c45617a4`; unrelated local icon, runtime-design, promo, and output changes remain outside the integration tree. |
 
 ## Verification record
 
@@ -81,6 +82,9 @@ changes required — first independent quality review of `5bd809e8` found only t
 15 passed — CLI entrypoint recognition, interactive library-import side-effect, parser, and repository-layout contracts after the quality repair
 pass — independent specification confirmation at `4051edaf`
 pass — independent quality re-review at `4051edaf`, including a mutation-sensitive interactive-import probe
+166 passed — post-merge CLI parser, repository, formal release, distribution, upgrade, and runtime HTTP catalog selection
+506 pages; 0 broken links; landing and language checks pass — post-merge documentation build
+pass — post-merge Ruff and `git diff --check`
 ```
 
 ## Deferred boundaries
