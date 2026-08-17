@@ -134,6 +134,9 @@ def test_python_cli_rejects_an_already_loaded_foreign_canonical_package(
 def test_python_cli_process_detection_includes_every_module_entry(monkeypatch) -> None:
     import openprogram.cli as cli
 
+    monkeypatch.setattr(sys, "argv", [str(ROOT / "openprogram_cli.py")])
+    assert cli._is_cli_process()
+
     for parent in ("openprogram", "cli", "openprogram_cli"):
         monkeypatch.setattr(sys, "argv", [f"/tmp/{parent}/__main__.py"])
         assert cli._is_cli_process()

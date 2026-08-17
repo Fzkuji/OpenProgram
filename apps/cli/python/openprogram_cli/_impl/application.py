@@ -138,7 +138,12 @@ def _maybe_redirect_for_tui() -> None:
 def _is_cli_process() -> bool:
     """Return whether this package was imported by an OpenProgram entry point."""
     executable = Path(sys.argv[0]).name.lower()
-    if executable in {"openprogram", "openprogram.exe", "openprogram-script.py"}:
+    if executable in {
+        "openprogram",
+        "openprogram.exe",
+        "openprogram-script.py",
+        "openprogram_cli.py",
+    }:
         return True
     if executable != "__main__.py":
         return False
