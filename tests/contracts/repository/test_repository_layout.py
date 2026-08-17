@@ -146,6 +146,18 @@ def test_python_cli_implementation_has_one_package_root() -> None:
     )
 
 
+def test_generated_cli_reference_names_the_current_parser_source(tmp_path) -> None:
+    generator = runpy.run_path(str(ROOT / "tools" / "docs_site" / "generate_reference.py"))
+    generator["generate_cli"](tmp_path)
+    pages = sorted((tmp_path / "reference" / "cli").glob("*.md"))
+
+    assert pages
+    for page in pages:
+        text = page.read_text(encoding="utf-8")
+        assert "from openprogram/cli/parser.py" in text
+        assert "from openprogram/cli.py" not in text
+
+
 def test_programs_route_has_no_reexport_only_component_directory() -> None:
     route = (ROOT / "web/app/(shell)/programs/page.tsx").read_text(encoding="utf-8")
 

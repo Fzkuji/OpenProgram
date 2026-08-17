@@ -87,6 +87,7 @@ auth-adjacent.
 2. Pick the verb. Prefer verbs already used elsewhere in the CLI
    (`list`, `add`, `remove`, `set`, `status`) over inventing new ones.
 3. Wire it under the appropriate `argparse` subparser tree, following
-   the same two-file layout:
-   - Command metadata + argparse wiring: the CLI entrypoint
-   - Logic: a dedicated module (no logic in `cli.py`)
+   the package boundary:
+   - Command metadata + argparse wiring: `openprogram/cli/parser.py`
+   - Command logic: a topic module under `openprogram/cli/commands/`
+   - Top-level dispatch only: `openprogram/cli/__init__.py`

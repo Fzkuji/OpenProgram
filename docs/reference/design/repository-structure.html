@@ -215,7 +215,7 @@
   <h2>6. 验收合同</h2>
   <ul>
     <li><code>openprogram.cli.build_parser</code> 保持可导入，完整命令树与拆分前一致。</li>
-    <li><code>openprogram/cli/</code> 是 Python CLI 的唯一实现根；<code>openprogram.cli.repl</code>、<code>openprogram.cli.commands</code>、<code>openprogram.cli.setup_sections</code>、<code>openprogram.cli.chat</code> 和 <code>openprogram.cli.ink</code> 不再存在。</li>
+    <li><code>openprogram/cli/</code> 是 Python CLI 的唯一实现根；旧的 <code>openprogram._cli_chat</code>、<code>openprogram._cli_cmds</code>、<code>openprogram._setup_sections</code>、<code>openprogram.cli_chat</code> 和 <code>openprogram.cli_ink</code> 不再存在。</li>
     <li>tracked 的 <code>openprogram/</code> 一级 package 目录由 33 个降为 31 个；产品域的公开 import 不因视觉分组改变。</li>
     <li>公开文档构建不包含 <code>docs/superpowers/</code>，所有公开链接有效。</li>
     <li>设计导航按产品功能分组；源文件路径保持不变。</li>
