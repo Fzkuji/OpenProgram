@@ -10,10 +10,12 @@
  * default arrow over text.
  *
  * `direction`:
- *   `+1`  → handle sits to the RIGHT of the target (e.g. left sidebar
- *           — drag right grows it).
+ *   `+1`  → handle sits to the RIGHT of the target.
  *   `-1`  → handle sits to the LEFT  of the target (e.g. right
  *           detail panel — drag left grows it).
+ *
+ * React side rails use `components/layout/use-resizable-rail.ts`; this hook
+ * remains only for legacy DOM-owned panels such as `detailPanel`.
  *
  * Migrated from the IIFE at the bottom of `web/public/js/chat/init.js`.
  */

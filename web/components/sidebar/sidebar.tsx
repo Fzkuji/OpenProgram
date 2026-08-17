@@ -79,6 +79,7 @@ import {
 import { useWindowGlobals } from "./use-window-globals";
 import { runtimeState } from "@/lib/runtime-bridge/state";
 import { newSession } from "@/lib/runtime-bridge/conversations";
+import { useResizableRail } from "../layout/use-resizable-rail";
 
 function readPersistedSidebarOpen(): boolean {
   if (typeof window === "undefined") return true;
@@ -89,17 +90,18 @@ function readPersistedSidebarOpen(): boolean {
   }
 }
 
-const LEFT_W_MIN = 180;
-const LEFT_W_MAX = 480;
-const LEFT_W_DEFAULT = 288;
-
 export function Sidebar() {
   const pathname = usePathname();
   const { t, text } = useTranslation();
 
   const [open, setOpen] = useState<boolean>(true);
-  const [width, setWidth] = useState<number>(LEFT_W_DEFAULT);
-  const dragRef = useRef<{ startX: number; startW: number } | null>(null);
+  const { style: railStyle, resizeHandleProps } = useResizableRail({
+    open,
+    minWidth: 180,
+    maxWidth: 480,
+    defaultWidth: 288,
+    direction: 1,
+  });
   const [favCollapsed, setFavCollapsed] = useState(false);
   // 下面滚动区一旦向下滚动就为 true —— 驱动固定 New chat 行底部的
   // 分隔线（Claude 风格）。
@@ -151,29 +153,6 @@ export function Sidebar() {
       document.documentElement.removeAttribute("data-sidebar-closed");
     }
   }, [open]);
-
-  const onResizeMouseDown = (event: React.MouseEvent) => {
-    event.preventDefault();
-    dragRef.current = { startX: event.clientX, startW: width };
-    const onMove = (move: MouseEvent) => {
-      if (!dragRef.current) return;
-      const next = Math.max(
-        LEFT_W_MIN,
-        Math.min(
-          LEFT_W_MAX,
-          dragRef.current.startW + move.clientX - dragRef.current.startX,
-        ),
-      );
-      setWidth(next);
-    };
-    const onUp = () => {
-      dragRef.current = null;
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-  };
 
   function toggleSidebar() {
     setOpen((prev) => {
@@ -299,20 +278,13 @@ export function Sidebar() {
         // collapsed-state rules in 02-sidebar.css.
         "sidebar relative flex shrink-0 flex-col overflow-hidden " +
         "bg-bg-secondary border-r border-[var(--border)] " +
-        // 150ms is the sweet spot — visible enough to feel intentional
-        // (so the icons don't pop), short enough not to drag. Same
-        // cubic-bezier Claude uses on its info-opacity fade for a
-        // consistent timing feel.
-        (dragRef.current ? "" : "[transition:width_0.15s_cubic-bezier(0.165,0.84,0.44,1),min-width_0.15s_cubic-bezier(0.165,0.84,0.44,1)] ") +
         (open ? "" : "collapsed")
       }
-      style={open
-        ? { width: `${width}px`, minWidth: `${LEFT_W_MIN}px` }
-        : { width: "49px", minWidth: "49px" }}
+      style={railStyle}
     >
       {open && (
         <div
-          onMouseDown={onResizeMouseDown}
+          {...resizeHandleProps}
           className="absolute inset-y-0 right-0 z-10 w-[6px] cursor-ew-resize"
           title={text("Resize sidebar", "调整侧边栏宽度")}
         />

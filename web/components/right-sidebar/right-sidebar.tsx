@@ -25,7 +25,7 @@
  * are registered on mount — see `setRightDockApi` below.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { ContextCommitTimeline } from "./context-commit-timeline";
@@ -49,6 +49,7 @@ import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useCurrentProject } from "@/lib/state/files-shared";
 import { setRightDockApi } from "@/lib/right-dock";
 import { activateOnKey } from "@/lib/utils";
+import { useResizableRail } from "../layout/use-resizable-rail";
 
 // View IDs that round-trip through the `data-view` attribute — e.g.
 // "detail" picks `<div data-view="detail">`.
@@ -56,21 +57,19 @@ const VIEW_DETAIL = "detail";
 const VIEW_CONTEXT = "context";
 const VIEW_FILES = "files";
 
-// Right sidebar mirrors the left's default width (288px) so the page
-// loads symmetric. Users can drag-widen it, but the width is not
-// persisted — every reload resets to the default, by request.
-const RIGHT_W_MIN = 240;
-const RIGHT_W_MAX = 720;
-const RIGHT_W_DEFAULT = 288;
-
 export function RightSidebar() {
   const { t, text } = useTranslation();
   const open = useSessionStore((s) => s.rightDock.open);
   const view = useSessionStore((s) => s.rightDock.view);
   const setRightDockOpen = useSessionStore((s) => s.setRightDockOpen);
   const setRightDockView = useSessionStore((s) => s.setRightDockView);
-  const [width, setWidth] = useState<number>(RIGHT_W_DEFAULT);
-  const dragRef = useRef<{ startX: number; startW: number } | null>(null);
+  const { style: railStyle, resizeHandleProps } = useResizableRail({
+    open,
+    minWidth: 240,
+    maxWidth: 720,
+    defaultWidth: 288,
+    direction: -1,
+  });
   // Animated nav icons (pqoqubbw/icons), driven from each row's / the
   // toggle button's hover.
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
@@ -85,27 +84,6 @@ export function RightSidebar() {
     activeTab?.kind === "file"
       ? (activeTab.projectId ?? null)
       : (currentProject?.id ?? null);
-
-  const onResizeMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    dragRef.current = { startX: e.clientX, startW: width };
-    const onMove = (ev: MouseEvent) => {
-      if (!dragRef.current) return;
-      const delta = dragRef.current.startX - ev.clientX;
-      const next = Math.max(
-        RIGHT_W_MIN,
-        Math.min(RIGHT_W_MAX, dragRef.current.startW + delta),
-      );
-      setWidth(next);
-    };
-    const onUp = () => {
-      dragRef.current = null;
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-  };
 
   // Register the imperative rightDock handle so callers that don't own
   // this component (e.g. the turn file chips' "reveal in tree") can
@@ -178,16 +156,9 @@ export function RightSidebar() {
       className={
         "sidebar right-sidebar relative flex shrink-0 flex-col overflow-hidden " +
         "bg-bg-secondary border-l border-[var(--border)] " +
-        // Skip the width transition while dragging so the handle
-        // feels responsive; the only transition we still want is the
-        // open/close collapse animation. 150ms matches the left
-        // sidebar so both panels feel like the same component.
-        (dragRef.current ? "" : "[transition:width_0.15s_cubic-bezier(0.165,0.84,0.44,1),min-width_0.15s_cubic-bezier(0.165,0.84,0.44,1)] ") +
         (open ? "" : "collapsed")
       }
-      style={open
-        ? { width: `${width}px`, minWidth: `${RIGHT_W_MIN}px` }
-        : { width: "49px", minWidth: "49px" }}
+      style={railStyle}
       data-view={view}
     >
       {/* Resize handle — 6px-wide strip on the LEFT edge, drag
@@ -196,7 +167,7 @@ export function RightSidebar() {
           is open; in collapsed state the icon rail handles itself. */}
       {open && (
         <div
-          onMouseDown={onResizeMouseDown}
+          {...resizeHandleProps}
           style={{
             position: "absolute",
             left: 0,

@@ -319,9 +319,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [router]);
 
-  // Column-resize handles (sidebar / right detail). Replaces the IIFE
-  // at the bottom of init.js. Each call attaches a `mousedown` listener
-  // to the handle and drags the target element's `width`.
+  // Legacy detail-panel resize handle. React side rails own their resize
+  // behavior through `components/layout/use-resizable-rail.ts`.
   useColResize({
     handleId: "detailResize",
     targetId: "detailPanel",
