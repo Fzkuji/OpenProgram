@@ -38,5 +38,6 @@ agentic_programming, never the other way around.
 ## Sub-packages
 
 - **`control_flow/`** — Control flow primitives for agentic workflows
+- **`logs/`**
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

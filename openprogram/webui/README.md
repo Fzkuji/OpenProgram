@@ -1,12 +1,12 @@
 # `openprogram/webui/`
 
-> Compatibility package for the OpenProgram Server application.
+> Compatibility entry points for the OpenProgram Server application.
 
 ## Overview
 
-This package exposes the worker's HTTP and WebSocket surface and serves the
-prebuilt Next.js export. Core runtime modules do not eagerly import the server;
-the CLI and worker load it only when the Web service is requested.
+The application assembly lives in :mod:`openprogram_server`. Existing
+``openprogram.webui`` imports remain available while the route modules migrate
+out of the Agent Core package.
 
 Usage:
     from openprogram.webui import start_web
@@ -33,14 +33,16 @@ Or from CLI:
 - **`messages.py`** — v2 message model + authoritative in-memory store
 - **`owner_auth.py`** — Single-owner authentication and request policy for the Web server
 - **`persistence.py`** — Per-session persistence
-- **`server.py`** — Compatibility alias for `apps/server/openprogram_server/server.py`
+- **`server.py`** — Compatibility alias for :mod:`openprogram_server.server`
 
 ## Sub-packages
 
 - **`_execute/`** — execute_in_context
+- **`_frontend/`**
 - **`_model_listing/`** — Unified provider + model listing for the webui
 - **`graph_layout/`** — DAG layout pipeline
 - **`routes/`** — FastAPI route registrations split out from server.py by topic
+- **`static/`**
 - **`ws_actions/`** — WebSocket action handlers, split out from server._handle_ws_command
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
