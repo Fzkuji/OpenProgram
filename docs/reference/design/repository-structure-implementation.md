@@ -56,8 +56,10 @@ adapted. Large-file decomposition is not part of the directory migration.
   `openprogram/webui/routes/agents.py`, `apps/web/components/agents/`,
   `apps/web/scripts/check-agent-tool-configuration.mjs`,
   `apps/desktop/build/icon.icns`, runtime design pages, and promotional assets.
-- These changes overlap batches C, D, and E. They must reach an owner commit or
-  otherwise leave the working tree before those directory moves are staged.
+- Batch D/E preserved those worktree versions while staging their prior Git
+  baselines at the new application paths; none of the unrelated content entered
+  the migration commit. Batch C remains deferred while its Server files are
+  under active modification.
 - System Git is blocked by the host's unaccepted Xcode licence. The bundled
   fallback Git executable is available for status, diff, staging and commits;
   the migration does not change host licence state.
@@ -78,6 +80,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Python CLI package consolidation | `codex/python-package-layout-cli-20260817` / `d2ae71cc`, `5bd809e8`, `4051edaf` | implemented; reviewed | Replaces three first-level internal CLI directories and four implementation files with one `openprogram/cli/` package; keeps `openprogram.cli`, the console script, and both module entry points; repairs current documentation references and adds the executable interactive-import contract required by review. |
 | Python CLI package main integration | `f5878426` | integrated | Two-parent merge with current `main` at `c45617a4`; unrelated local icon, runtime-design, promo, and output changes remain outside the integration tree. |
 | Apps migration B1: Ink TUI workspace | `f4a3ea0e`, `669f5445` | implemented; reviewed | Moves the existing Node workspace from `cli/` to `apps/cli/`; updates the Python launcher, rescue probe, source installer, CI cache/working directories, repository contracts and current documentation paths. No UI or protocol behavior changes. |
+| Apps migration D/E: Web and Desktop workspaces | `44765788` | implemented; review pending | Moves the complete Next.js and Electron workspaces to `apps/web/` and `apps/desktop/`; updates runtime discovery, CI, packaging, release scripts, cross-workspace checks, tests and documentation references. Existing UI and protocol behavior are unchanged. |
 
 ## Verification record
 
@@ -131,6 +134,12 @@ pass — `apps/cli` production bundle build
 15 passed, 1 deselected — apps-layout, exact CI path and repository contracts after review repair; the deselected generated-README check is affected by unrelated in-progress Python docstring edits
 pass — independent specification re-review at `669f5445`
 pass — independent quality re-review at `669f5445`
+pass — staged-candidate Web full check and TypeScript no-emit check for `44765788`
+14 passed — Web unit tests after the application-root migration
+pass — Web 31-page production build from `apps/web`
+pass — staged-candidate Desktop full npm check for `44765788`
+37 passed — static frontend, upgrade, Desktop harness, packaged-file and Memory cross-language tests
+18 passed, 1 deselected — apps-layout, CI-layer and repository-layout contracts; generated README check excluded because unrelated Python docstrings are in progress
 ```
 
 ## Deferred boundaries
