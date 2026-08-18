@@ -102,6 +102,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Desktop bridge WebTab type extraction | `9bdc4a93` | implemented; reviewed | Moves the five public WebTab contracts to a type-only module, preserves re-exports from the established bridge entry and leaves all renderer state and transfer runtime code unchanged. |
 | Desktop bridge service type extraction | `f6ede2a7` | implemented; reviewed | Moves history, downloads, updates, browser import/data, terminal and menu contracts to the same type-only module; direct and compatibility type consumers compile while transfer and runtime coordination remain in place. |
 | Desktop bridge transfer type extraction | `2d2ec81a`, `b8c97d41` | implemented; reviewed | Moves the preload-facing transfer receipt and API contracts to a dedicated type-only module, preserves the established bridge re-exports and leaves the journal, aggregate bridge and transfer runtime unchanged. |
+| Desktop worker recovery-state extraction | `4e018891` | implemented; reviewed | Moves five pure recovery-state helpers to a directly executable module, preserves one shared spawn coordinator and per-window recovery state, and includes the module in package and refresh closures. |
 
 ## Implemented task brief: Legacy cleanup F2
 
@@ -208,7 +209,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 - Exclude transfer state-machine changes, UI/CSS changes and unrelated active
   Agent configuration work.
 
-## Active task brief: Desktop worker recovery-state extraction
+## Implemented task brief: Desktop worker recovery-state extraction
 
 - Approved source: `repository-structure.html`; base: current `main` after the
   Desktop bridge transfer-contract extraction.
@@ -368,14 +369,20 @@ pass — independent quality review for `f6ede2a7`
 pass — complete Web `npm run check`, executable Web split checks and TypeScript no-emit check through `b8c97d41`
 pass — independent specification review through `b8c97d41`
 pass — independent quality review through `b8c97d41`
+1 failed — public RED: the worker recovery check could not resolve the not-yet-created `worker-recovery-state` module
+pass — complete Desktop `npm run check` after extracting worker recovery state
+2 passed — Desktop package-file and local refresh staging contracts for `4e018891`
+pass — independent specification review for `4e018891`
+pass — independent quality review for `4e018891`
 ```
 
 ## Deferred boundaries
 
-- `apps/desktop/main.js`: pure menu geometry now lives in
-  `apps/desktop/menu-geometry.js`; keep window lifecycle, native WebView, tab
-  transfer and menu-host orchestration in place until each boundary has direct
-  executable coverage.
+- `apps/desktop/main.js`: pure menu geometry lives in
+  `apps/desktop/menu-geometry.js`, and pure worker recovery state lives in
+  `apps/desktop/worker-recovery-state.js`. Keep HTTP probes, process/window
+  lifecycle, native WebView, tab transfer and menu-host orchestration in place
+  until each boundary has direct executable coverage.
 - `apps/web/lib/desktop-bridge.ts`: WebTab and Desktop service contracts now
   live in `apps/web/lib/desktop-bridge-types.ts`; preload-facing transfer
   contracts live in `apps/web/lib/desktop-transfer-types.ts`. Keep the aggregate
