@@ -113,7 +113,6 @@
   <h2>2. 顶层职责</h2>
   <pre>OpenProgram/
   openprogram/   OpenProgram Agent 核心与 Python SDK
-  openprogram_cli.py  未安装 source checkout 的 Python CLI 入口
   apps/
     server/      FastAPI、HTTP、WebSocket、认证与静态资源托管
     web/         Next.js Web 应用
@@ -126,7 +125,7 @@
   references/    参考实现快照与本地比较语料
   promo/         发布与宣传源文件
   website/       官网源码</pre>
-  <p><code>.github/</code>、<code>.codegraph/</code> 和 <code>.superpowers/</code> 是仓库基础设施，不是产品运行时目录。根目录只保留核心 package、应用 workspace、共享 package、项目元数据、入口文档、依赖锁和必要的源码入口。发布记录与 release notes 统一放在 <code>.github/</code>；Python package data 只由 <code>pyproject.toml</code> 声明，不保留重复的 <code>MANIFEST.in</code>。<code>openprogram_cli.py</code> 只为未安装 checkout 提供导入和 <code>python -m</code> 入口，不包含应用实现，也不进入 wheel。应用专用脚本放在对应 <code>apps/&lt;name&gt;/scripts/</code>，跨应用的可执行命令、可导入维护模块及其构建清单统一放在 <code>scripts/</code>；仓库不再保留含义重叠的根目录 <code>tools/</code> 或单文件 <code>config/</code>。</p>
+  <p><code>.github/</code>、<code>.codegraph/</code> 和 <code>.superpowers/</code> 是仓库基础设施，不是产品运行时目录。根目录只保留核心 package、应用 workspace、共享 package、项目元数据、入口文档和依赖锁。发布记录与 release notes 统一放在 <code>.github/</code>；Python package data 只由 <code>pyproject.toml</code> 声明，不保留重复的 <code>MANIFEST.in</code>。未安装 checkout 使用 <code>python -m openprogram</code> 或 <code>python -m openprogram.cli</code>，不再为安装后才存在的 canonical <code>openprogram_cli</code> package 保留根目录转发模块。应用专用脚本放在对应 <code>apps/&lt;name&gt;/scripts/</code>，跨应用的可执行命令、可导入维护模块及其构建清单统一放在 <code>scripts/</code>；仓库不再保留含义重叠的根目录 <code>tools/</code> 或单文件 <code>config/</code>。</p>
   <p>正式内置技能统一位于 <code>openprogram/skills_bundled/</code> 并作为 package data 分发。用户技能位于 <code>~/.openprogram/skills/</code>，项目技能位于用户当前项目的 <code>&lt;cwd&gt;/skills/</code>；OpenProgram 仓库不再保留第二份根目录技能副本。</p>
   <p><code>tests/</code> 中的 Python 用例使用 <code>tests/&lt;layer&gt;/&lt;product-domain&gt;/test_*.py</code>，按最强实际依赖选择层级。具体边界由 <a href="testing/test-system.html">Testing system</a> 和仓库 contracts 维护。</p>
 
@@ -146,7 +145,7 @@
           <td><code>openprogram/cli/</code></td>
           <td>只保留兼容 loader、<code>python -m openprogram.cli</code> 入口和边界说明</td>
           <td><span class="state now">已迁移</span></td>
-          <td>应用实现位于 <code>apps/cli/python/openprogram_cli/</code>；raw checkout、editable install 与 wheel 保留既有导入、三个 module entry 和 console script 行为。</td>
+          <td>应用实现位于 <code>apps/cli/python/openprogram_cli/</code>；raw checkout 保留 <code>python -m openprogram</code> 与 <code>python -m openprogram.cli</code>，editable install 与 wheel 额外保留 canonical <code>python -m openprogram_cli</code> 和 console script。</td>
         </tr>
         <tr>
           <td><code>apps/desktop/main.js</code></td>

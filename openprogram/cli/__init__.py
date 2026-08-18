@@ -13,7 +13,6 @@ def _validate_loaded_canonical(package_root: Path) -> None:
         raise ImportError("refusing an already-loaded foreign openprogram_cli package")
     loaded = Path(loaded_file).resolve()
     allowed = {
-        (package_root / "openprogram_cli.py").resolve(),
         (package_root / "apps/cli/python/openprogram_cli/__init__.py").resolve(),
         (package_root / "openprogram_cli/__init__.py").resolve(),
     }

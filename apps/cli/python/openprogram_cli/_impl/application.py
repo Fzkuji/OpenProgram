@@ -142,7 +142,6 @@ def _is_cli_process() -> bool:
         "openprogram",
         "openprogram.exe",
         "openprogram-script.py",
-        "openprogram_cli.py",
     }:
         return True
     if executable != "__main__.py":
