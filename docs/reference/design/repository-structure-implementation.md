@@ -104,6 +104,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Desktop bridge transfer type extraction | `2d2ec81a`, `b8c97d41` | implemented; reviewed | Moves the preload-facing transfer receipt and API contracts to a dedicated type-only module, preserves the established bridge re-exports and leaves the journal, aggregate bridge and transfer runtime unchanged. |
 | Desktop worker recovery-state extraction | `4e018891` | implemented; reviewed | Moves five pure recovery-state helpers to a directly executable module, preserves one shared spawn coordinator and per-window recovery state, and includes the module in package and refresh closures. |
 | Desktop transfer validation extraction | `01d36045` | implemented; reviewed | Moves transfer payload validation and normalization to a directly executable module, preserves every limit and ownership check, and leaves IPC authorization, coordination and rollback unchanged. |
+| Root metadata cleanup | `ab386e10` | implemented; reviewed | Co-locates the changelog with GitHub release notes, removes the redundant MANIFEST file, and enforces the intentional root-file set without changing the source-checkout CLI entry. Wheel packaging, source-checkout CLI, documentation links, specification review and quality review pass. |
 
 ## Implemented task brief: Legacy cleanup F2
 
