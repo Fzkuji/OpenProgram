@@ -82,7 +82,7 @@ LLM 调用的运行时抽象。负责：
 
 ### LLM 也写代码
 
-LLM 不只是运行时的推理引擎，它也可以**写代码**——生成、修改、修复符合规范的 `@agentic_function`。这件事不需要专门的 `create()` / `fix()` 框架函数；agent 直接用普通文件编辑工具完成，遵循 [`agentic-programming` skill](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/skills_bundled/agentic-programming/SKILL.md) 这份规范——文件放哪、装饰器元数据、docstring 与 `content` 的分工、校验清单。后台 watcher 会重扫 `programs/functions/agentic/` 并热加载新模块：import 时 `@agentic_function` 装饰器触发、自行注册，刚写完的函数无需重启即可调用。
+LLM 不只是运行时的推理引擎，它也可以**写代码**——生成、修改、修复符合规范的 `@agentic_function`。这件事不需要专门的 `create()` / `fix()` 框架函数；agent 直接用普通文件编辑工具完成，遵循 [`agentic-programming` skill](https://github.com/Fzkuji/OpenProgram/blob/main/packages/core/src/openprogram/skills_bundled/agentic-programming/SKILL.md) 这份规范——文件放哪、装饰器元数据、docstring 与 `content` 的分工、校验清单。后台 watcher 会重扫 `programs/functions/agentic/` 并热加载新模块：import 时 `@agentic_function` 装饰器触发、自行注册，刚写完的函数无需重启即可调用。
 
 代码是数据，LLM 是编译器，函数是产品 —— 循环闭合。
 

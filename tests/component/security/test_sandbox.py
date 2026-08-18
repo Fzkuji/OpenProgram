@@ -298,7 +298,10 @@ def test_grep_tool_drops_denied_files(cfg, monkeypatch, tmp_path):
 def test_sandbox_module_does_not_import_function_registry():
     """A broken tool import must not be able to break policy construction."""
     import ast
-    source = Path(__file__).resolve().parents[3] / "openprogram/sandbox/__init__.py"
+    source = (
+        Path(__file__).resolve().parents[3]
+        / "packages/core/src/openprogram/sandbox/__init__.py"
+    )
     with open(source, encoding="utf-8") as handle:
         tree = ast.parse(handle.read())
     imported = {

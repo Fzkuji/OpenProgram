@@ -92,6 +92,9 @@ def test_migrated_function_passes_content_blocks_to_llm(monkeypatch):
 def test_only_deferred_tool_loops_still_call_runtime_exec():
     root = (
         Path(__file__).parents[3]
+        / "packages"
+        / "core"
+        / "src"
         / "openprogram"
         / "programs"
         / "functions"

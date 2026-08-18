@@ -373,6 +373,10 @@ def test_installed_package_prefers_bundled_docs(tmp_path, monkeypatch):
     package_json.parent.mkdir(parents=True)
     package_json.write_text("{}", encoding="utf-8")
 
+    monkeypatch.setattr(
+        "openprogram.updater.detect.repo_root",
+        lambda: checkout if package_json.is_file() else None,
+    )
     monkeypatch.setattr(docs_route, "_repo_root", lambda: checkout)
     monkeypatch.setattr(docs_route, "_packaged_site_dir", lambda: bundled)
     assert docs_route._site_dir() == source

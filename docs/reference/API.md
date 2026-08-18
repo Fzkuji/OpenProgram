@@ -14,7 +14,7 @@ The session context is a flat DAG (nodes = user messages / LLM calls / function 
 
 ## Writing Functions
 
-There are no meta functions like `create()` / `fix()` — writing, modifying, and validating an `@agentic_function` is done directly with ordinary file-editing tools, following [`openprogram/skills_bundled/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/skills_bundled/agentic-programming/SKILL.md). That skill is the complete specification: file layout, decorator metadata, the division of labor between the docstring and `content`, the validation checklist, and smoke tests.
+There are no meta functions like `create()` / `fix()` — writing, modifying, and validating an `@agentic_function` is done directly with ordinary file-editing tools, following [`openprogram/skills_bundled/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/packages/core/src/openprogram/skills_bundled/agentic-programming/SKILL.md). That skill is the complete specification: file layout, decorator metadata, the division of labor between the docstring and `content`, the validation checklist, and smoke tests.
 
 ## Imports
 

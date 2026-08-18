@@ -78,9 +78,9 @@ def test_lobe_icon_map_carries_token_plan_logo():
     renders logo-less (the 'china' entry the user reported)."""
     from pathlib import Path
 
-    import openprogram
+    from openprogram.updater.detect import require_repo_root
 
-    root = Path(openprogram.__file__).parent.parent
+    root = require_repo_root()
     icons = (root / "apps/web/components/settings/lobe-icons.ts").read_text()
     assert '"alibaba-token-plan-cn": { slug: "alibaba"' in icons
     assert '"alibaba-token-plan": { slug: "alibaba"' in icons

@@ -21,12 +21,15 @@ def test_mcp_server_lives_inside_the_mcp_domain() -> None:
     tracked = set(_tracked_paths())
 
     assert {
-        "openprogram/mcp/server/__init__.py",
-        "openprogram/mcp/server/contracts.py",
-        "openprogram/mcp/server/server.py",
-        "openprogram/mcp/server/service.py",
+        "packages/core/src/openprogram/mcp/server/__init__.py",
+        "packages/core/src/openprogram/mcp/server/contracts.py",
+        "packages/core/src/openprogram/mcp/server/server.py",
+        "packages/core/src/openprogram/mcp/server/service.py",
     } <= tracked
-    assert not any(path.startswith("openprogram/mcp_server/") for path in tracked)
+    assert not any(
+        path.startswith("packages/core/src/openprogram/mcp_server/")
+        for path in tracked
+    )
 
 
 def test_repository_does_not_import_the_removed_mcp_server_package() -> None:

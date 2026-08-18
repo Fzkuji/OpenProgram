@@ -107,7 +107,7 @@ Writing your own installable harness is one layout contract away — the
 full guide (install, manage, author, test, publish) is
 **[installing-harnesses.md](capabilities/installing-harnesses.md)**.
 
-> Need a workflow of your own? Just ask the agent in chat — the bundled [`agentic-programming` skill](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/skills_bundled/agentic-programming/SKILL.md) handles the rest.
+> Need a workflow of your own? Just ask the agent in chat — the bundled [`agentic-programming` skill](https://github.com/Fzkuji/OpenProgram/blob/main/packages/core/src/openprogram/skills_bundled/agentic-programming/SKILL.md) handles the rest.
 
 ## Troubleshooting
 

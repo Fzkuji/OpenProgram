@@ -113,7 +113,7 @@ uv run --project ~/.openclaw/workspace/OpenProgram python \
 该命令使用源码 checkout 的锁定环境运行脚本。不要使用系统 Python；系统
 Python 不包含 OpenProgram 的依赖。
 
-OpenClaw 和 OpenProgram 使用同一套 AgentSkills 兼容的 `SKILL.md` 格式，为其中一方写的 skill 在另一方也能加载。OpenProgram 的内置 skill 位于 [`openprogram/skills_bundled/`](https://github.com/Fzkuji/OpenProgram/tree/main/openprogram/skills_bundled)，可以原样复制进任何 OpenClaw skill 根目录。
+OpenClaw 和 OpenProgram 使用同一套 AgentSkills 兼容的 `SKILL.md` 格式，为其中一方写的 skill 在另一方也能加载。OpenProgram 的内置 skill 位于 [`openprogram/skills_bundled/`](https://github.com/Fzkuji/OpenProgram/tree/main/packages/core/src/openprogram/skills_bundled)，可以原样复制进任何 OpenClaw skill 根目录。
 
 ## 用法 2：在 Agent 脚本中作为 Python 库
 

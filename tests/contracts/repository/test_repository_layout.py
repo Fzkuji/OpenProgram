@@ -13,7 +13,7 @@ TOP_LEVEL_DIRECTORIES = {
     ".superpowers",
     "apps",
     "docs",
-    "openprogram",
+    "packages",
     "promo",
     "references",
     "scripts",
@@ -44,7 +44,7 @@ CURRENT_STRUCTURE_GUIDES = (
     "README.md",
     "docs/README.md",
     "docs/README.zh.md",
-    "openprogram/skills_bundled/agentic-programming/SKILL.md",
+    "packages/core/src/openprogram/skills_bundled/agentic-programming/SKILL.md",
     "docs/capabilities/installing-harnesses.md",
     "docs/capabilities/installing-harnesses.zh.md",
     "docs/server/troubleshooting.md",
@@ -52,7 +52,7 @@ CURRENT_STRUCTURE_GUIDES = (
 )
 
 WORKSPACE_READMES = (
-    "openprogram/README.md",
+    "packages/core/README.md",
     "apps/server/README.md",
     "apps/web/README.md",
     "apps/desktop/README.md",
@@ -69,24 +69,24 @@ PYTHON_CLI_PATHS = (
     "apps/cli/python/openprogram_cli/_impl/commands/__init__.py",
     "apps/cli/python/openprogram_cli/_impl/repl/__init__.py",
     "apps/cli/python/openprogram_cli/_impl/setup_sections/__init__.py",
-    "openprogram/cli/__init__.py",
-    "openprogram/cli/__main__.py",
+    "packages/core/src/openprogram/cli/__init__.py",
+    "packages/core/src/openprogram/cli/__main__.py",
 )
 
 REMOVED_PYTHON_CLI_PATHS = (
-    "openprogram/cli.py",
-    "openprogram/_cli_parser.py",
-    "openprogram/cli_chat.py",
-    "openprogram/cli_ink.py",
-    "openprogram/_cli_chat",
-    "openprogram/_cli_cmds",
-    "openprogram/_setup_sections",
-    "openprogram/cli/parser.py",
-    "openprogram/cli/chat.py",
-    "openprogram/cli/ink.py",
-    "openprogram/cli/commands",
-    "openprogram/cli/repl",
-    "openprogram/cli/setup_sections",
+    "packages/core/src/openprogram/cli.py",
+    "packages/core/src/openprogram/_cli_parser.py",
+    "packages/core/src/openprogram/cli_chat.py",
+    "packages/core/src/openprogram/cli_ink.py",
+    "packages/core/src/openprogram/_cli_chat",
+    "packages/core/src/openprogram/_cli_cmds",
+    "packages/core/src/openprogram/_setup_sections",
+    "packages/core/src/openprogram/cli/parser.py",
+    "packages/core/src/openprogram/cli/chat.py",
+    "packages/core/src/openprogram/cli/ink.py",
+    "packages/core/src/openprogram/cli/commands",
+    "packages/core/src/openprogram/cli/repl",
+    "packages/core/src/openprogram/cli/setup_sections",
 )
 
 
@@ -122,9 +122,11 @@ def test_repository_maintenance_tools_live_under_scripts() -> None:
 def test_context_git_lives_inside_the_context_domain() -> None:
     tracked = set(_tracked_paths())
 
-    assert "openprogram/context/git/__init__.py" in tracked
-    assert "openprogram/context/git/dag.py" in tracked
-    assert not any(path.startswith("openprogram/contextgit/") for path in tracked)
+    assert "packages/core/src/openprogram/context/git/__init__.py" in tracked
+    assert "packages/core/src/openprogram/context/git/dag.py" in tracked
+    assert not any(
+        path.startswith("packages/core/src/openprogram/contextgit/") for path in tracked
+    )
 
 
 def test_developer_scripts_do_not_live_at_the_repository_root() -> None:
@@ -163,7 +165,7 @@ def test_workspace_entry_readmes_describe_current_ownership() -> None:
 
     assert missing == []
 
-    python_readme = (ROOT / "openprogram/README.md").read_text(encoding="utf-8")
+    python_readme = (ROOT / "packages/core/README.md").read_text(encoding="utf-8")
     server_readme = (ROOT / "apps/server/README.md").read_text(encoding="utf-8")
     web_readme = (ROOT / "apps/web/README.md").read_text(encoding="utf-8")
     desktop_readme = (ROOT / "apps/desktop/README.md").read_text(encoding="utf-8")
@@ -183,9 +185,9 @@ def test_workspace_entry_readmes_describe_current_ownership() -> None:
 def test_python_cli_implementation_is_owned_by_the_cli_app() -> None:
     tracked = set(_tracked_paths())
     first_level_packages = {
-        path.split("/", 2)[1]
+        path.removeprefix("packages/core/src/openprogram/").split("/", 1)[0]
         for path in tracked
-        if path.startswith("openprogram/") and path.count("/") >= 2
+        if path.startswith("packages/core/src/openprogram/")
     }
 
     assert "cli" in first_level_packages
@@ -225,7 +227,7 @@ def test_generated_package_readmes_are_current() -> None:
     marker = "Auto-generated from `__init__.py`"
     stale = []
 
-    for readme in sorted((ROOT / "openprogram").glob("*/README.md")):
+    for readme in sorted((ROOT / "packages/core/src/openprogram").glob("*/README.md")):
         current = readme.read_text(encoding="utf-8")
         if marker in current and current != render(readme.parent):
             stale.append(readme.relative_to(ROOT).as_posix())

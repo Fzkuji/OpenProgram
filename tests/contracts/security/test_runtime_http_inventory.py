@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 def test_runtime_http_inventory_has_no_unclassified_calls():
     result = runtime_http_audit.scan_runtime_http(
-        ROOT / "openprogram",
+        ROOT / "packages/core/src/openprogram",
         additional_roots={
             "apps/server/openprogram_server": (
                 ROOT / "apps/server/openprogram_server"

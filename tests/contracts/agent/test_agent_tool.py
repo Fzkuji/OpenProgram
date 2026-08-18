@@ -268,7 +268,7 @@ def test_no_function_tool_declares_a_parameter_the_runtime_drops():
         listing = subprocess.run(
             ["git", "-C", str(repo), "ls-files", "-z",
              "--cached", "--others", "--exclude-standard",
-             "--", "openprogram/*.py"],
+             "--", "packages/core/src/openprogram/*.py"],
             capture_output=True, text=True, timeout=60,
         )
     except (OSError, subprocess.SubprocessError) as exc:  # pragma: no cover

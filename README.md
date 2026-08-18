@@ -191,7 +191,7 @@ Writing your own installable harness is one layout contract away — the
 full guide (install, manage, author, test, publish) is
 **[docs/capabilities/installing-harnesses.md](docs/capabilities/installing-harnesses.md)**.
 
-> Need a workflow of your own? Just ask the agent in chat — the bundled [`agentic-programming` skill](openprogram/skills_bundled/agentic-programming/SKILL.md) handles the rest.
+> Need a workflow of your own? Just ask the agent in chat — the bundled [`agentic-programming` skill](packages/core/src/openprogram/skills_bundled/agentic-programming/SKILL.md) handles the rest.
 
 ## Customizing
 
@@ -225,7 +225,7 @@ Call it three ways — the agent picks it in chat by name, you run it headlessly
 openprogram programs run changelog --arg tag=v0.5.0
 ```
 
-> Prefer not to write it yourself? Ask the agent in chat: *"add an agentic function that summarizes commits since a tag."* It writes the file, the watcher loads it, and it's callable immediately — the bundled [`agentic-programming` skill](openprogram/skills_bundled/agentic-programming/SKILL.md) teaches it the conventions.
+> Prefer not to write it yourself? Ask the agent in chat: *"add an agentic function that summarizes commits since a tag."* It writes the file, the watcher loads it, and it's callable immediately — the bundled [`agentic-programming` skill](packages/core/src/openprogram/skills_bundled/agentic-programming/SKILL.md) teaches it the conventions.
 
 ### Level 2 — Control the context each call sees
 

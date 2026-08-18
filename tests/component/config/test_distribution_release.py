@@ -1456,7 +1456,10 @@ def test_release_frontend_staging_removes_legacy_package_assets() -> None:
     staging = (ROOT / "scripts" / "release" / "stage-release-assets.sh").read_text(
         encoding="utf-8"
     )
-    assert 'legacy_target_dir="$repo_root/openprogram/webui/_frontend"' in staging
+    assert (
+        'legacy_target_dir="$repo_root/packages/core/src/openprogram/webui/_frontend"'
+        in staging
+    )
     assert 'rm -rf "$target_dir" "$legacy_target_dir"' in staging
 
 
@@ -1990,20 +1993,20 @@ def test_public_product_surfaces_do_not_offer_python_package_install() -> None:
         ROOT / "docs" / "integrations" / "openclaw.zh.md",
     ]
     internal_python_installers = {
-        ROOT / "openprogram" / "cli" / "commands" / "browser.py",
-        ROOT / "openprogram" / "cli" / "commands" / "plugins.py",
-        ROOT / "openprogram" / "cli" / "commands" / "programs.py",
-        ROOT / "openprogram" / "cli" / "commands" / "upgrade.py",
-        ROOT / "openprogram" / "cli" / "setup_sections" / "sections.py",
-        ROOT / "openprogram" / "programs" / "_programs.py",
-        ROOT / "openprogram" / "programs" / "_registry.py",
-        ROOT / "openprogram" / "updater" / "detect.py",
+        ROOT / "packages/core/src/openprogram" / "cli" / "commands" / "browser.py",
+        ROOT / "packages/core/src/openprogram" / "cli" / "commands" / "plugins.py",
+        ROOT / "packages/core/src/openprogram" / "cli" / "commands" / "programs.py",
+        ROOT / "packages/core/src/openprogram" / "cli" / "commands" / "upgrade.py",
+        ROOT / "packages/core/src/openprogram" / "cli" / "setup_sections" / "sections.py",
+        ROOT / "packages/core/src/openprogram" / "programs" / "_programs.py",
+        ROOT / "packages/core/src/openprogram" / "programs" / "_registry.py",
+        ROOT / "packages/core/src/openprogram" / "updater" / "detect.py",
     }
     public_files.extend(
         path
-        for path in (ROOT / "openprogram").rglob("*.py")
+        for path in (ROOT / "packages/core/src/openprogram").rglob("*.py")
         if path not in internal_python_installers
-        and ROOT / "openprogram" / "programs" / "applications" not in path.parents
+        and ROOT / "packages/core/src/openprogram" / "programs" / "applications" not in path.parents
     )
     forbidden = (
         "pip install",

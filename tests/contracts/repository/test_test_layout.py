@@ -301,7 +301,7 @@ def test_unit_runtime_guard_rejects_process_global_thread_replacement() -> None:
 
 def _production_probe(source: str, name: str):
     namespace: dict[str, object] = {}
-    path = ROOT / "openprogram" / "_test_runtime_probe.py"
+    path = ROOT / "packages/core/src/openprogram" / "_test_runtime_probe.py"
     exec(compile(source, str(path), "exec"), namespace)
     return namespace[name]
 

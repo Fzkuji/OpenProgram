@@ -245,7 +245,7 @@ install_extras() {
 install_first_party_programs() {
   step "installing GUI, Research, and Wiki Programs"
   "$PY" -m openprogram programs install all
-  local applications="$HOST_ROOT/openprogram/programs/applications"
+  local applications="$HOST_ROOT/packages/core/src/openprogram/programs/applications"
   local gui_installer="$applications/gui_harness/scripts/install.sh"
   [ -f "$gui_installer" ] || die "GUI Program source is missing after install"
   bash "$gui_installer" --no-host --python "$PY"

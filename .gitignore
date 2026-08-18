@@ -17,24 +17,21 @@ tmp/
 
 # Runtime/generated artifacts — generated functions live in third_party/
 # (the framework-provided buildin/meta functions are always tracked)
-openprogram/programs/functions/vanilla/third_party/*.py
-!openprogram/programs/functions/vanilla/third_party/__init__.py
-!openprogram/programs/functions/vanilla/third_party/llm_call_example.py
-!openprogram/programs/functions/vanilla/third_party/sentiment.py
-!openprogram/programs/functions/vanilla/third_party/sentiment_v2.py
-!openprogram/programs/functions/vanilla/third_party/word_count.py
-!openprogram/programs/functions/vanilla/third_party/test.py
-!openprogram/programs/functions/vanilla/third_party/test_framework.py
-!openprogram/programs/functions/vanilla/third_party/test_resume.py
-
-# Scratch skill
-skills/init-research/
+packages/core/src/openprogram/programs/functions/vanilla/third_party/*.py
+!packages/core/src/openprogram/programs/functions/vanilla/third_party/__init__.py
+!packages/core/src/openprogram/programs/functions/vanilla/third_party/llm_call_example.py
+!packages/core/src/openprogram/programs/functions/vanilla/third_party/sentiment.py
+!packages/core/src/openprogram/programs/functions/vanilla/third_party/sentiment_v2.py
+!packages/core/src/openprogram/programs/functions/vanilla/third_party/word_count.py
+!packages/core/src/openprogram/programs/functions/vanilla/third_party/test.py
+!packages/core/src/openprogram/programs/functions/vanilla/third_party/test_framework.py
+!packages/core/src/openprogram/programs/functions/vanilla/third_party/test_resume.py
 
 # Runtime test logs (historical — current default is ~/.agentic/logs/,
 # outside the workspace; keep entries here in case someone sets
 # AGENTIC_LOGS_DIR back to these paths)
-openprogram/agentic_programming/logs/
-openprogram/logs/
+packages/core/src/openprogram/agentic_programming/logs/
+packages/core/src/openprogram/logs/
 
 # Full upstream clones kept locally for reference while designing new
 # tools/providers. Not committed — too large and rot against upstream.
@@ -51,10 +48,10 @@ references/opencode/
 # untracked package directories while preserving flat bundled modules;
 # tracked bundled directories remain tracked. New bundled directories
 # need one explicit `git add -f`.
-openprogram/programs/functions/agentic/*
-!openprogram/programs/functions/agentic/*.py
-openprogram/programs/applications/*
-!openprogram/programs/applications/__init__.py
+packages/core/src/openprogram/programs/functions/agentic/*
+!packages/core/src/openprogram/programs/functions/agentic/*.py
+packages/core/src/openprogram/programs/applications/*
+!packages/core/src/openprogram/programs/applications/__init__.py
 
 # Local OpenProgram runtime state
 .openprogram/
@@ -71,15 +68,15 @@ apps/web/tsconfig.tsbuildinfo
 # Release staging copies web/out here before building the wheel.
 apps/server/openprogram_server/_webui/_frontend/
 # Keep ignoring staging produced by releases before the Server migration.
-openprogram/webui/_frontend/
+packages/core/src/openprogram/webui/_frontend/
 
 # macOS Finder duplicates ("foo 2.py", "foo 3.json") — never source
 * [0-9].*
 apps/cli/vendor/ink/package-lock.json
 
 # Per-user webui runtime state (favourites, folders, icons) — not code
-openprogram/webui/functions_meta.json
-openprogram/webui/programs_meta.json
+packages/core/src/openprogram/webui/functions_meta.json
+packages/core/src/openprogram/webui/programs_meta.json
 .agent_cron_test/
 .agent_tmp/
 .cron-test.log
@@ -87,7 +84,7 @@ openprogram/webui/programs_meta.json
 .claude/worktrees/
 
 # fetched per-provider model lists (runtime, user-specific — not source)
-openprogram/providers/_catalog/fetched/
+packages/core/src/openprogram/providers/_catalog/fetched/
 
 # local agent working notes
 .superpowers/
