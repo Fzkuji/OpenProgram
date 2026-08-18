@@ -189,6 +189,24 @@ adapted. Large-file decomposition is not part of the directory migration.
 - Exclude transfer protocol changes, runtime imports, UI/CSS changes and
   unrelated active Agent configuration work.
 
+## Active task brief: Desktop bridge transfer-contract extraction
+
+- Approved source: `repository-structure.html`; base: current `main` after the
+  Desktop service-contract extraction.
+- Move only `DesktopTransferReceipt` and `DesktopTabTransferApi` to
+  `apps/web/lib/desktop-transfer-types.ts`. These preload-facing contracts may
+  depend type-only on the journal payload and placement types.
+- Keep journal persistence types and functions in `tab-transfer-journal.ts`;
+  keep the aggregate `DesktopBridge` interface and every transfer runtime
+  function in `desktop-bridge.ts`.
+- Re-export both moved types from `desktop-bridge.ts`; no runtime import or
+  protocol change is allowed.
+- RED boundary: `desktop-bridge.ts` imports the not-yet-created type module and
+  TypeScript fails resolution. GREEN boundary: TypeScript, executable Web split
+  and complete Web checks.
+- Exclude transfer state-machine changes, UI/CSS changes and unrelated active
+  Agent configuration work.
+
 ## Active task brief: Apps migration C2
 
 - Approved source: `repository-structure.html`; base: `a459c443`.
