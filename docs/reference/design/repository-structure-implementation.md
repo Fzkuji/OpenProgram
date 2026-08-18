@@ -107,11 +107,12 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Root metadata cleanup | `ab386e10` | implemented; reviewed | Co-locates the changelog with GitHub release notes, removes the redundant MANIFEST file, and enforces the intentional root-file set without changing the source-checkout CLI entry. Wheel packaging, source-checkout CLI, documentation links, specification review and quality review pass. |
 | Raw-checkout CLI alias cleanup | `daf97a8d` | implemented; reviewed | Removes only the root <code>openprogram_cli.py</code> forwarder and its dedicated raw-checkout compatibility logic. Source checkouts retain <code>python -m openprogram</code> and <code>python -m openprogram.cli</code>; fresh editable installs and wheels retain the console script and canonical <code>python -m openprogram_cli</code>. The retained entries, canonical/compatibility identity, foreign-package rejection, TUI detection, root-file structure, documentation links, Ruff, specification review and quality review pass. |
 | Core package cleanup G1: Context Git DAG | `41151c50` | implemented; reviewed | Moves the two-file ContextGit implementation into `openprogram/context/git/`, updates every repository-owned import and current path reference, removes the old first-level package without a duplicate compatibility layer, and preserves DAG behavior and wheel discovery. The focused DAG, Server, dispatcher, Ruff, link, wheel, specification and quality gates pass. |
-| Standard polyglot workspace G2 | base `62126943`; implementation pending | active; design under review | Defines the target as applications under `apps/`, the shared Agent Core source under `packages/core/src/openprogram`, one aggregate Python distribution, one npm workspace lock, and formal distribution commands under `scripts/release/`. Review rejected a direct three-distribution Python split and identified public-installer and hoisted-Node compatibility work; no production path has moved yet. |
+| Standard polyglot workspace G2 | design `23525cc7`; prerequisite `0017c241`; G2a `2256d647` | G2a implemented; reviewed | Defines the target as applications under `apps/`, the shared Agent Core source under `packages/core/src/openprogram`, one aggregate Python distribution, one npm workspace lock, and formal distribution commands under `scripts/release/`. G2a groups the release implementation while preserving the published installer URL; G2b and G2c remain pending. |
 
 ## Active task brief: Standard polyglot workspace G2
 
-- Approved source: `repository-structure.html`; base: `62126943`.
+- Approved source: `repository-structure.html`; design commit: `23525cc7`;
+  G2a base after reviewed repository-contract repair: `0017c241`.
 - Batch G2a moves exactly these formal distribution implementations under
   `scripts/release/`: `build-product-runtime.sh`,
   `archive-product-runtime.sh`, `prepare-desktop-runtime.sh`,
@@ -167,9 +168,9 @@ adapted. Large-file decomposition is not part of the directory migration.
   compilation; release-version verification; Desktop/runtime callers; docs
   links; stale old-path search.
 - Exact G2a RED command (new ownership/wrapper assertions must fail on base):
-  `uv run --locked pytest -q tests/contracts/repository/test_repository_layout.py tests/component/config/test_distribution_release.py tests/component/config/test_formal_release_updates.py`.
+  `uv run --locked --extra dev pytest -q tests/contracts/repository/test_repository_layout.py tests/component/config/test_distribution_release.py tests/component/config/test_formal_release_updates.py`.
 - Exact G2a GREEN/affected commands after implementation:
-  `uv run --locked pytest -q tests/contracts/repository/test_repository_layout.py tests/component/config/test_distribution_release.py tests/component/config/test_formal_release_updates.py`;
+  `uv run --locked --extra dev pytest -q tests/contracts/repository/test_repository_layout.py tests/component/config/test_distribution_release.py tests/component/config/test_formal_release_updates.py`;
   `bash -n scripts/install.sh scripts/refresh-local-app.sh scripts/promote_stable.sh scripts/install-release.sh scripts/release/*.sh` (the platform-neutral distribution contract continues to inspect `scripts/install.ps1`);
   `python -m compileall -q scripts/release`;
   `python scripts/release/verify-release-version.py --tag v0.7.0`;
@@ -198,6 +199,23 @@ adapted. Large-file decomposition is not part of the directory migration.
   diff and worktree status.
 - Each batch receives its own implementation commit, specification review,
   quality review and full affected gate before the next batch begins.
+
+### G2a implementation evidence
+
+- Implementation: `2256d647`, based on reviewed prerequisite `0017c241`.
+- RED: the new release-ownership contract failed because
+  `scripts/release/` did not exist; standalone and checkout-wrapper assertions
+  also failed before the compatibility entry was implemented.
+- GREEN: `uv run --locked --extra dev pytest -q
+  tests/contracts/repository/test_repository_layout.py
+  tests/component/config/test_distribution_release.py
+  tests/component/config/test_formal_release_updates.py` — `103 passed`.
+- Static/entry gates: shell syntax PASS; `compileall scripts/release` PASS;
+  release version `v0.7.0` PASS; documentation links `0 broken link(s)`;
+  stale internal moved-path scan empty; `git diff --check` PASS.
+- Specification review: PASS. Quality review: PASS.
+- Remaining G2a concerns: none. G2b npm workspace and G2c Core relocation
+  remain separate pending batches.
 
 ## Implemented task brief: Legacy cleanup F2
 
