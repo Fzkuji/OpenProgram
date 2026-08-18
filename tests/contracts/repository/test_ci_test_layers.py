@@ -128,7 +128,7 @@ def test_ci_enforces_the_verified_unit_coverage_floor() -> None:
 
 
 def test_contributor_commands_match_required_ci_entrypoints() -> None:
-    contributing = (ROOT / "CONTRIBUTING.md").read_text()
+    contributing = (ROOT / ".github" / "CONTRIBUTING.md").read_text()
     for command in (
         "uv run --locked --extra dev python -m pytest -q tests/contracts",
         "uv run --locked --extra dev python -m pytest -q tests/unit",

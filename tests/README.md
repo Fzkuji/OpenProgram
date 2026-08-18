@@ -3,7 +3,7 @@
 Read this file before adding, moving, or reviewing tests. The canonical design
 and implementation record is
 [`docs/reference/design/testing/test-system.html`](../docs/reference/design/testing/test-system.html).
-Local and CI commands are maintained in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
+Local and CI commands are maintained in [`CONTRIBUTING.md`](../.github/CONTRIBUTING.md).
 
 ## Choose the layer first
 

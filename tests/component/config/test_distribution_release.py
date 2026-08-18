@@ -1871,7 +1871,7 @@ def test_public_docs_describe_one_complete_release_product() -> None:
 
 def test_public_product_surfaces_do_not_offer_python_package_install() -> None:
     public_files = [
-        ROOT / "CONTRIBUTING.md",
+        ROOT / ".github" / "CONTRIBUTING.md",
         ROOT / "docs" / "_static_root" / "llms.txt",
         ROOT / "docs" / "server" / "troubleshooting.md",
         ROOT / "docs" / "server" / "troubleshooting.zh.md",

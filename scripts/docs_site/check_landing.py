@@ -393,7 +393,7 @@ def main() -> int:
                 f"missing harness link {harness_url}", failures)
     for community_url in (
         "https://github.com/Fzkuji/OpenProgram/discussions",
-        "https://github.com/Fzkuji/OpenProgram/blob/main/CONTRIBUTING.md",
+        "https://github.com/Fzkuji/OpenProgram/blob/main/.github/CONTRIBUTING.md",
     ):
         require(community_url in page.anchors,
                 f"missing community link {community_url}", failures)

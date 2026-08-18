@@ -427,7 +427,7 @@ placement and allowed dependencies are summarized in [tests/README.md](tests/REA
 
 This is a **paradigm proposal** with a reference implementation. We welcome discussions, alternative implementations in other languages, use cases that validate or challenge the approach, and bug reports.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for details.
 
 ## Related projects
 

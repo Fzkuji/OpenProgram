@@ -389,7 +389,7 @@ assert stale.STALE is True
 def test_current_developer_commands_use_apps_workspaces() -> None:
     current_docs = (
         "AGENTS.md",
-        "CONTRIBUTING.md",
+        ".github/CONTRIBUTING.md",
         "apps/desktop/README.md",
         "scripts/docs_site/README.md",
         "docs/reference/design/integrations/web-use-implementation.html",

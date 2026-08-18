@@ -241,7 +241,7 @@ ownership rules are in
 
 This is a **paradigm proposal** with a reference implementation. We welcome discussions, alternative implementations in other languages, use cases that validate or challenge the approach, and bug reports.
 
-See [CONTRIBUTING.md](https://github.com/Fzkuji/OpenProgram/blob/main/CONTRIBUTING.md) for details.
+See [CONTRIBUTING.md](https://github.com/Fzkuji/OpenProgram/blob/main/.github/CONTRIBUTING.md) for details.
 
 ## Acknowledgements
 

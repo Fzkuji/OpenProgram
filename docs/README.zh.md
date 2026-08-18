@@ -237,7 +237,7 @@ scripts/                             # 可执行或可导入的仓库维护工�
 
 这是一个**范式提案**,附带参考实现。欢迎讨论、其他语言的替代实现、验证或挑战此方法的用例,以及 bug 报告。
 
-详见 [CONTRIBUTING.md](https://github.com/Fzkuji/OpenProgram/blob/main/CONTRIBUTING.md)。
+详见 [CONTRIBUTING.md](https://github.com/Fzkuji/OpenProgram/blob/main/.github/CONTRIBUTING.md)。
 
 ## 致谢
 
