@@ -107,7 +107,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Root metadata cleanup | `ab386e10` | implemented; reviewed | Co-locates the changelog with GitHub release notes, removes the redundant MANIFEST file, and enforces the intentional root-file set without changing the source-checkout CLI entry. Wheel packaging, source-checkout CLI, documentation links, specification review and quality review pass. |
 | Raw-checkout CLI alias cleanup | `daf97a8d` | implemented; reviewed | Removes only the root <code>openprogram_cli.py</code> forwarder and its dedicated raw-checkout compatibility logic. Source checkouts retain <code>python -m openprogram</code> and <code>python -m openprogram.cli</code>; fresh editable installs and wheels retain the console script and canonical <code>python -m openprogram_cli</code>. The retained entries, canonical/compatibility identity, foreign-package rejection, TUI detection, root-file structure, documentation links, Ruff, specification review and quality review pass. |
 | Core package cleanup G1: Context Git DAG | `41151c50` | implemented; reviewed | Moves the two-file ContextGit implementation into `openprogram/context/git/`, updates every repository-owned import and current path reference, removes the old first-level package without a duplicate compatibility layer, and preserves DAG behavior and wheel discovery. The focused DAG, Server, dispatcher, Ruff, link, wheel, specification and quality gates pass. |
-| Standard polyglot workspace G2 | design `23525cc7`; prerequisite `0017c241`; G2a `2256d647`; G2b `d70b6956`, `99fec982`, `9ac9d95d` | G2a and G2b implemented; reviewed | Defines the target as applications under `apps/`, the shared Agent Core source under `packages/core/src/openprogram`, one aggregate Python distribution, one npm workspace lock, and formal distribution commands under `scripts/release/`. G2a groups the release implementation while preserving the published installer URL; G2b establishes the root npm workspace and single lock; G2c remains pending. |
+| Standard polyglot workspace G2 | design `23525cc7`; prerequisite `0017c241`; G2a `2256d647`; G2b `d70b6956`, `99fec982`, `9ac9d95d`; G2c-0 `14f538b3` | G2a, G2b and G2c-0 implemented; reviewed | Defines the target as applications under `apps/`, the shared Agent Core source under `packages/core/src/openprogram`, one aggregate Python distribution, one npm workspace lock, and formal distribution commands under `scripts/release/`. G2a groups the release implementation while preserving the published installer URL; G2b establishes the root npm workspace and single lock; G2c-0 centralizes checkout/resource resolution; G2c-1 remains pending. |
 
 ## Active task brief: Standard polyglot workspace G2
 
@@ -246,6 +246,24 @@ adapted. Large-file decomposition is not part of the directory migration.
 - Remaining G2b concern: `npm audit` reports one moderate and seven high
   dependency advisories. No automatic major-version upgrade was applied in
   this structural batch. G2c Core relocation remains pending.
+
+### G2c-0 implementation evidence
+
+- Implementation: `14f538b3`, based on reviewed G2b ledger commit `4906e5ab`.
+- RED: src-layout probes showed CLI, Server, worker, docs and attachment paths
+  deriving the repository root from fixed `openprogram.__file__` parent counts.
+  Review then reproduced installed-wheel failures for bundled frontend/docs and
+  a foreign Git checkout misclassification.
+- GREEN: the centralized resolver accepts only the current flat Core location
+  or the planned `packages/core/src/openprogram` location. Installed wheels,
+  including wheels inside another repository's virtual environment, remain
+  outside the source-checkout path.
+- Affected gate: `116 passed`; Ruff PASS; `git diff --check` PASS. An isolated
+  wheel build and external-directory probe imported the aggregate packages,
+  selected bundled frontend/docs and completed without a source checkout.
+- Specification review: PASS. Quality/Ponytail full review: PASS.
+- Remaining G2c-0 concerns: none. G2c-1 physical Core relocation remains
+  pending and does not retain uninstalled bare-checkout imports.
 
 ## Implemented task brief: Legacy cleanup F2
 
