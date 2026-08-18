@@ -54,7 +54,8 @@ import {
   showBookmarksBar,
   subscribeBrowserPrefs,
 } from "@/lib/browser-prefs";
-import { desktopBridge, type DesktopContextMenuItem } from "@/lib/desktop-bridge";
+import { desktopBridge } from "@/lib/desktop-bridge";
+import type { DesktopContextMenuItem } from "@/lib/desktop-bridge-types";
 import {
   bookmarkFolderActionPrefix,
   browserActionPrefix,

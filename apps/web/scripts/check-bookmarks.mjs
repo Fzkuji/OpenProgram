@@ -19,6 +19,7 @@ const mainMenuPath = new URL("../components/center-tabs/main-menu.tsx", import.m
 const browserControlsPath = new URL("../components/center-tabs/browser-controls.tsx", import.meta.url);
 const contextMenuOverlayPath = new URL("../app/menu-overlay/context-menu/page.tsx", import.meta.url);
 const desktopBridgePath = new URL("../lib/desktop-bridge.ts", import.meta.url);
+const desktopBridgeTypesPath = new URL("../lib/desktop-bridge-types.ts", import.meta.url);
 const desktopMainPath = new URL("../../desktop/main.js", import.meta.url);
 const desktopPreloadPath = new URL("../../desktop/preload.js", import.meta.url);
 // The strip is split across center-tab-strip.tsx and its submodules;
@@ -67,6 +68,7 @@ const mainMenu = readFileSync(mainMenuPath, "utf8");
 const browserControls = readFileSync(browserControlsPath, "utf8");
 const contextMenuOverlay = readFileSync(contextMenuOverlayPath, "utf8");
 const desktopBridge = readFileSync(desktopBridgePath, "utf8");
+const desktopBridgeTypes = readFileSync(desktopBridgeTypesPath, "utf8");
 const desktopMain = readFileSync(desktopMainPath, "utf8");
 const desktopPreload = readFileSync(desktopPreloadPath, "utf8");
 const strip = readCenterTabStripSource(import.meta.url);
@@ -131,9 +133,9 @@ assert.match(contextMenuOverlay, /onPointerEnter=\{cancelHoverClose\}/,
   "desktop bookmark panels must cancel pending close when entered");
 assert.match(contextMenuOverlay, /onPointerLeave=\{scheduleHoverClose\}/,
   "desktop bookmark panels must schedule close when left");
-assert.match(desktopBridge, /scheduleClose\?\(delay\?: number\): void;/,
+assert.match(desktopBridgeTypes, /scheduleClose\?\(delay\?: number\): void;/,
   "desktop bridge must type the delayed menu-close command");
-assert.match(desktopBridge, /cancelClose\?\(\): void;/,
+assert.match(desktopBridgeTypes, /cancelClose\?\(\): void;/,
   "desktop bridge must type the menu-close cancellation command");
 assert.match(desktopPreload, /scheduleClose:\s*\(delay\)\s*=>\s*ipcRenderer\.send\("main-menu:schedule-close", delay\)/,
   "desktop preload must expose delayed menu close");
