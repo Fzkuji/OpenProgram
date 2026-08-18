@@ -9,6 +9,11 @@ const css = readFileSync(new URL("components/programs/programs-page.module.css",
 
 assert.match(route, /@\/components\/programs\/programs-page/);
 assert.match(page, /ManagePageHeader/);
+assert.match(page, /from "react-arborist"/);
+assert.match(page, /from "react-use-measure"/);
+assert.match(page, /<Tree<ProgramTreeEntry>/);
+assert.match(page, /openByDefault=\{false\}/);
+assert.doesNotMatch(page, /function renderDirectory/);
 assert.doesNotMatch(page, /Browse source files and inspect static call relationships/);
 assert.match(page, /\/api\/programs\/explorer/);
 assert.match(page, /\/api\/programs\/logic/);

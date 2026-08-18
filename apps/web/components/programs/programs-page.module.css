@@ -14,83 +14,42 @@
 .explorer {
   min-width: 0;
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
   border-right: 1px solid var(--border);
   background: var(--bg-secondary);
 }
 
-.explorerHeader {
-  min-height: 44px;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-  font-weight: 650;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-}
-
-.explorerHeader code {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-  font-weight: 500;
-  text-transform: none;
-}
-
 .tree {
+  width: 100%;
+  height: 100%;
   min-height: 0;
-  padding: 8px 6px 18px;
-  overflow: auto;
+  overflow: hidden;
 }
 
-.rootRow,
-.treeRow {
-  min-height: 30px;
+.fileTreeRow {
+  color: var(--text-secondary);
+  outline: none;
+}
+
+.fileTreeNode {
+  height: 100%;
+  min-width: 0;
   display: flex;
   align-items: center;
-  border-radius: 6px;
+  gap: 6px;
+  border-radius: 5px;
+  cursor: default;
 }
 
-.rootRow {
-  gap: 7px;
-  padding: 0 7px;
-  font-size: var(--fs-sm);
-}
-
-.treeNode {
-  min-width: 0;
-}
-
-.treeRow {
-  padding-left: calc(7px + var(--tree-depth) * 16px);
-}
-
-.treeRow:hover {
+.fileTreeRow:hover .fileTreeNode {
   background: var(--bg-hover);
 }
 
-.treeRowActive {
+.fileTreeNodeSelected,
+.fileTreeRow:hover .fileTreeNodeSelected {
   background: var(--bg-hover-contrast);
+  color: var(--text-primary);
 }
 
-.treeRowActive:hover {
-  background: var(--bg-hover-contrast);
-}
-
-.treeRowDim {
-  opacity: .42;
-}
-
-.caretButton,
-.entryButton,
 .viewSwitch button {
   border: 0;
   color: inherit;
@@ -98,77 +57,59 @@
   font: inherit;
 }
 
-.caretButton {
-  width: 20px;
-  height: 24px;
+.fileTreeToggle {
+  width: 16px;
+  height: 20px;
   padding: 0;
-  flex: 0 0 20px;
+  flex: 0 0 16px;
   display: grid;
   place-items: center;
-  border-radius: 4px;
+  border: 0;
   color: var(--text-muted);
+  background: transparent;
   cursor: pointer;
 }
 
-.caretButton:hover {
+.fileTreeToggle:hover {
   color: var(--text-primary);
-  background: var(--bg-hover);
 }
 
-.caretButton[aria-expanded="true"] svg {
-  transform: rotate(90deg);
-}
-
-.caretButton svg {
+.fileTreeToggle svg {
   transition: transform 120ms ease;
 }
 
-.caretSpacer {
-  width: 20px;
-  flex: 0 0 20px;
+.fileTreeNodeOpen .fileTreeToggle svg {
+  transform: rotate(90deg);
 }
 
-.entryButton {
-  min-width: 0;
-  min-height: 30px;
-  padding: 0 8px 0 0;
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  text-align: left;
-  cursor: pointer;
+.fileTreeToggleSpacer {
+  width: 16px;
+  flex: 0 0 16px;
 }
 
-.entryIcon {
-  width: 18px;
-  flex: 0 0 18px;
+.fileTreeIcon {
+  width: 16px;
+  flex: 0 0 16px;
   display: grid;
   place-items: center;
   color: var(--text-muted);
 }
 
-.treeRowActive .entryIcon {
+.fileTreeNodeSelected .fileTreeIcon {
   color: var(--theme-accent);
 }
 
-.entryName {
+.fileTreeName {
   min-width: 0;
   overflow: hidden;
+  padding-right: 8px;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--fs-sm);
 }
 
-.kindTag {
-  margin-left: auto;
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-  white-space: nowrap;
-}
-
 .treeMessage {
-  padding: 12px 34px;
+  padding: 16px;
   color: var(--text-muted);
   font-size: var(--fs-sm);
 }

@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
+import { Tree, type NodeRendererProps, type TreeApi } from "react-arborist";
+import useMeasure from "react-use-measure";
 import {
   Boxes,
   ChevronRight,
@@ -48,6 +50,10 @@ type ExplorerResponse = {
   default_selection?: string | null;
 };
 
+type ProgramTreeEntry = ExplorerEntry & {
+  children?: ProgramTreeEntry[];
+};
+
 const ROOT_LABEL = "openprogram/programs";
 
 function parentPaths(path: string) {
@@ -70,11 +76,40 @@ function EntryIcon({ entry, expanded }: { entry: ExplorerEntry; expanded: boolea
   return expanded ? <FolderOpen size={15} /> : <Folder size={15} />;
 }
 
+function ProgramTreeNode({ node, style, dragHandle }: NodeRendererProps<ProgramTreeEntry>) {
+  const entry = node.data;
+  return (
+    <div
+      ref={dragHandle}
+      className={`${styles.fileTreeNode} ${node.isSelected ? styles.fileTreeNodeSelected : ""} ${node.isOpen ? styles.fileTreeNodeOpen : ""}`}
+      style={style}
+      title={entry.path}
+    >
+      {node.isInternal ? (
+        <button
+          className={styles.fileTreeToggle}
+          type="button"
+          aria-label={node.isOpen ? "Collapse folder" : "Expand folder"}
+          onClick={(event) => {
+            event.stopPropagation();
+            node.toggle();
+          }}
+        >
+          <ChevronRight size={13} aria-hidden="true" />
+        </button>
+      ) : <span className={styles.fileTreeToggleSpacer} />}
+      <span className={styles.fileTreeIcon}>
+        <EntryIcon entry={entry} expanded={node.isOpen} />
+      </span>
+      <span className={styles.fileTreeName}>{entry.name}</span>
+    </div>
+  );
+}
+
 export function ProgramsPage() {
   const { t, text } = useTranslation();
   const router = useRouter();
   const [directories, setDirectories] = useState<Record<string, ExplorerEntry[]>>({});
-  const [expanded, setExpanded] = useState<Set<string>>(new Set([""]));
   const [selected, setSelected] = useState<string | null>(null);
   const [logic, setLogic] = useState<LogicResponse | null>(null);
   const [loadingTree, setLoadingTree] = useState(true);
@@ -84,6 +119,8 @@ export function ProgramsPage() {
   const [view, setView] = useState<"tree" | "graph">("tree");
   const [reloadToken, setReloadToken] = useState(0);
   const [meta, setMeta] = useState<FunctionsMeta>({ favorites: [], folders: {}, icons: {} });
+  const treeRef = useRef<TreeApi<ProgramTreeEntry>>();
+  const [treeMeasureRef, treeBounds] = useMeasure();
 
   const loadDirectory = useCallback(async (path: string, signal?: AbortSignal) => {
     const query = path ? `?${new URLSearchParams({ path })}` : "";
@@ -99,7 +136,6 @@ export function ProgramsPage() {
       setLoadingTree(true);
       setError("");
       setDirectories({});
-      setExpanded(new Set([""]));
       try {
         const root = await loadDirectory("", controller.signal);
         if (cancelled) return;
@@ -109,7 +145,6 @@ export function ProgramsPage() {
           await loadDirectory(parent, controller.signal);
         }
         if (cancelled) return;
-        setExpanded(new Set(["", ...parents]));
         setSelected(initial);
       } catch (cause) {
         if ((cause as Error).name !== "AbortError") setError(text("Programs could not be loaded.", "无法加载 Programs。"));
@@ -177,67 +212,33 @@ export function ProgramsPage() {
   const selectedNode = logic?.nodes.find((node) => node.id === logic.root) ?? null;
   const isFavorite = selectedNode ? meta.favorites.includes(selectedNode.name) : false;
   const callTree = useMemo(() => logic ? buildCallTreeRows(logic) : { rows: [], truncated: false }, [logic]);
-
-  async function toggleDirectory(path: string) {
-    if (expanded.has(path)) {
-      setExpanded((current) => {
-        const next = new Set(current);
-        next.delete(path);
-        return next;
-      });
-      return;
+  const treeEntriesByPath = useMemo(() => {
+    const entries = new Map<string, ExplorerEntry>();
+    for (const directoryEntries of Object.values(directories)) {
+      for (const entry of directoryEntries) entries.set(entry.path, entry);
     }
-    if (!directories[path]) {
-      try {
-        await loadDirectory(path);
-      } catch {
-        setError(text("Folder could not be loaded.", "无法加载文件夹。"));
-        return;
-      }
-    }
-    setExpanded((current) => new Set(current).add(path));
-  }
+    return entries;
+  }, [directories]);
+  const treeData = useMemo(() => {
+    const build = (path: string): ProgramTreeEntry[] => (directories[path] ?? []).map((entry) => ({
+      ...entry,
+      children: entry.kind === "folder" ? build(entry.path) : undefined,
+    }));
+    return build("");
+  }, [directories]);
 
-  function renderDirectory(path: string, depth: number): React.ReactNode {
-    const entries = directories[path] ?? [];
-    const query = search.trim().toLowerCase();
-    return entries.map((entry) => {
-      const isExpanded = expanded.has(entry.path);
-      const dimmed = query && !entry.name.toLowerCase().includes(query);
-      return (
-        <div key={entry.path} className={styles.treeNode}>
-          <div
-            className={`${styles.treeRow} ${selected === entry.path ? styles.treeRowActive : ""} ${dimmed ? styles.treeRowDim : ""}`}
-            style={{ "--tree-depth": depth } as CSSProperties}
-          >
-            {entry.kind === "folder" && entry.has_children ? (
-              <button
-                className={styles.caretButton}
-                type="button"
-                aria-label={isExpanded ? text("Collapse folder", "折叠文件夹") : text("Expand folder", "展开文件夹")}
-                aria-expanded={isExpanded}
-                onClick={() => void toggleDirectory(entry.path)}
-              >
-                <ChevronRight size={13} />
-              </button>
-            ) : <span className={styles.caretSpacer} />}
-            <button
-              className={styles.entryButton}
-              type="button"
-              onClick={() => {
-                if (entry.program_kind) setSelected(entry.path);
-                else if (entry.kind === "folder") void toggleDirectory(entry.path);
-              }}
-            >
-              <span className={styles.entryIcon}><EntryIcon entry={entry} expanded={isExpanded} /></span>
-              <span className={styles.entryName}>{entry.name}</span>
-              {entry.program_kind ? <span className={styles.kindTag}>{kindLabel(entry.program_kind, text)}</span> : null}
-            </button>
-          </div>
-          {entry.kind === "folder" && isExpanded ? renderDirectory(entry.path, depth + 1) : null}
-        </div>
-      );
-    });
+  useEffect(() => {
+    if (selected) treeRef.current?.openParents(selected);
+  }, [selected, treeData]);
+
+  async function loadOpenedDirectory(path: string) {
+    const entry = treeEntriesByPath.get(path);
+    if (!entry || entry.kind !== "folder" || directories[path]) return;
+    try {
+      await loadDirectory(path);
+    } catch {
+      setError(text("Folder could not be loaded.", "无法加载文件夹。"));
+    }
   }
 
   async function refreshPrograms() {
@@ -275,13 +276,37 @@ export function ProgramsPage() {
         />
         <div className={styles.workspace}>
           <aside className={styles.explorer} data-testid="programs-explorer">
-            <div className={styles.explorerHeader}><span>{text("Explorer", "文件")}</span><code>{ROOT_LABEL}</code></div>
-            <div className={styles.tree} aria-label={text("Programs files", "Programs 文件")}>
-              <div className={styles.rootRow}>
-                <button className={styles.caretButton} type="button" aria-label={expanded.has("") ? text("Collapse Programs folder", "折叠 Programs 文件夹") : text("Expand Programs folder", "展开 Programs 文件夹")} aria-expanded={expanded.has("")} onClick={() => void toggleDirectory("")}><ChevronRight size={13} /></button>
-                <FolderOpen size={15} /><strong>programs</strong>
-              </div>
-              {loadingTree ? <div className={styles.treeMessage}>{text("Loading…", "加载中…")}</div> : expanded.has("") ? renderDirectory("", 1) : null}
+            <div ref={treeMeasureRef} className={styles.tree}>
+              {loadingTree ? <div className={styles.treeMessage}>{text("Loading…", "加载中…")}</div> : (
+                <Tree<ProgramTreeEntry>
+                  ref={treeRef}
+                  data={treeData}
+                  idAccessor="path"
+                  childrenAccessor="children"
+                  width={treeBounds.width}
+                  height={treeBounds.height}
+                  rowHeight={28}
+                  indent={16}
+                  padding={6}
+                  openByDefault={false}
+                  selection={selected ?? undefined}
+                  searchTerm={search}
+                  searchMatch={(node, term) => node.data.name.toLowerCase().includes(term.trim().toLowerCase())}
+                  aria-label={text("Programs files", "Programs 文件")}
+                  rowClassName={styles.fileTreeRow}
+                  disableMultiSelection
+                  disableDrag
+                  disableDrop
+                  disableEdit
+                  onToggle={(path) => { void loadOpenedDirectory(path); }}
+                  onActivate={(node) => {
+                    if (node.data.program_kind) setSelected(node.data.path);
+                    else if (node.isInternal) node.toggle();
+                  }}
+                >
+                  {ProgramTreeNode}
+                </Tree>
+              )}
             </div>
           </aside>
           <section className={styles.logicPane}>
