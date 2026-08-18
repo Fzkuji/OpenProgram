@@ -20,6 +20,19 @@ TOP_LEVEL_DIRECTORIES = {
     "tests",
 }
 
+TOP_LEVEL_FILES = {
+    ".gitattributes",
+    ".gitignore",
+    "AGENTS.md",
+    "CITATION.cff",
+    "CLAUDE.md",
+    "LICENSE",
+    "README.md",
+    "openprogram_cli.py",
+    "pyproject.toml",
+    "uv.lock",
+}
+
 MAINTENANCE_TOOL_PATHS = (
     "scripts/dag_dump.py",
     "scripts/docs_site/__init__.py",
@@ -90,6 +103,12 @@ def test_tracked_top_level_directories_are_declared() -> None:
     actual = {path.split("/", 1)[0] for path in _tracked_paths() if "/" in path}
 
     assert actual == TOP_LEVEL_DIRECTORIES
+
+
+def test_tracked_top_level_files_are_intentional() -> None:
+    actual = {path for path in _tracked_paths() if "/" not in path}
+
+    assert actual == TOP_LEVEL_FILES
 
 
 def test_repository_maintenance_tools_live_under_scripts() -> None:

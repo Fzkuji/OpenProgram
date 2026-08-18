@@ -171,7 +171,7 @@ Beyond the chat UIs, the `openprogram` command runs headless — script it, pipe
 
 ```bash
 # One-shot: send a prompt, print the answer, exit (redirect or pipe it)
-openprogram --print "summarise CHANGELOG.md" > summary.md
+openprogram --print "summarise .github/CHANGELOG.md" > summary.md
 
 # Run a specific agentic function with key=value args
 openprogram programs run research --arg topic="state-space models"

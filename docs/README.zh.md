@@ -168,7 +168,7 @@ openprogram --print --resume <id>    # headless 接着之前的聊天继续
 
 ```bash
 # 一次性:发 prompt、打印答案、退出(可重定向或接管道)
-openprogram --print "summarise CHANGELOG.md" > summary.md
+openprogram --print "summarise .github/CHANGELOG.md" > summary.md
 
 # 用 key=value 参数运行指定 agentic function
 openprogram programs run research --arg topic="state-space models"
