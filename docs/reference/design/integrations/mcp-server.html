@@ -668,6 +668,8 @@
     编辑后以相同五条命令复验：MCP server focused <code>195 passed</code>；共享回归 <code>198 passed</code>；
     文档构建 <code>453 pages</code>；链接检查 <code>0 broken</code>；<code>git diff --check</code> PASS。</div>
 
+  <div class="note"><b>目录归属整理</b>：<code>53f77d74</code> 将服务端实现从独立一级目录合并到 <code>openprogram/mcp/server/</code>，不保留重复兼容包；CLI、协议、token 文件和 <code>mcp_servers.json</code> 数据路径不变。验证包括 174 项服务端单元/组件测试、65 项集成与 Web Use 回归、76 项 Runtime HTTP 安全清单与结构契约、Ruff、文档链接和 wheel 内容检查；规格与质量复核均通过。</div>
+
   <div class="note"><b>明确排除</b>：本次实现没有 HTTP、SSE、Streamable HTTP、OAuth、Web route、Web owner token 复用、
     ACP transport/contract 扩张、专属客户端 SDK 或 MCP SDK 依赖范围扩张。对外协议面仍只有认证 stdio 与上述六个 wrapper。</div>
 
