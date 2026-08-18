@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -28,6 +29,47 @@ def test_source_checkout_is_not_a_managed_release(monkeypatch):
     monkeypatch.setattr(detect, "is_pyinstaller_binary", lambda: False)
 
     assert detect.detect_install_method() is detect.InstallMethod.SOURCE_CHECKOUT
+
+
+def test_checkout_resolver_supports_core_src_layout(tmp_path, monkeypatch):
+    from openprogram.updater import detect
+
+    checkout = tmp_path / "checkout"
+    package = checkout / "packages" / "core" / "src" / "openprogram"
+    package.mkdir(parents=True)
+    (checkout / ".git").mkdir()
+    monkeypatch.setattr(detect, "package_root", lambda: package)
+
+    assert detect.repo_root() == checkout
+    assert detect.checkout_path("apps", "web") == checkout / "apps" / "web"
+
+
+def test_checkout_resolver_rejects_installed_package(tmp_path, monkeypatch):
+    from openprogram.updater import detect
+
+    package = tmp_path / "site-packages" / "openprogram"
+    package.mkdir(parents=True)
+    monkeypatch.setattr(detect, "package_root", lambda: package)
+
+    assert detect.repo_root() is None
+    with pytest.raises(FileNotFoundError, match="source checkout"):
+        detect.require_repo_root()
+
+
+def test_checkout_resolver_rejects_wheel_inside_foreign_git_repo(
+    tmp_path, monkeypatch
+):
+    from openprogram.updater import detect
+
+    foreign = tmp_path / "foreign-project"
+    package = foreign / ".venv/lib/python/site-packages/openprogram"
+    package.mkdir(parents=True)
+    (foreign / ".git").mkdir()
+    monkeypatch.setattr(detect, "package_root", lambda: package)
+
+    assert detect.repo_root() is None
+    with pytest.raises(FileNotFoundError, match="source checkout"):
+        detect.require_repo_root()
 
 
 def test_worker_start_does_not_apply_product_updates():

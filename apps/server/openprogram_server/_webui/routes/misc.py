@@ -18,9 +18,9 @@ def _head_sha() -> str:
     if _HEAD_SHA is None:
         _HEAD_SHA = ""
         try:
-            import openprogram
-            root = Path(openprogram.__file__).resolve().parents[1]
-            if (root / ".git").exists():
+            from openprogram.updater.detect import repo_root
+            root = repo_root()
+            if root is not None:
                 res = subprocess.run(
                     ["git", "rev-parse", "HEAD"], cwd=str(root),
                     capture_output=True, text=True, timeout=5,

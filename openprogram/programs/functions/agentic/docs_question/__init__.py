@@ -58,9 +58,10 @@ def docs_root() -> Path:
 
     ``openprogram/programs/functions/agentic/docs_question/__init__.py`` →
     repo root, the same walk-up ``webui/routes/docs.py`` does."""
-    import openprogram
+    from openprogram.updater.detect import package_root, repo_root
 
-    return Path(openprogram.__file__).resolve().parent.parent / "docs"
+    checkout = repo_root()
+    return checkout / "docs" if checkout is not None else package_root() / "docs"
 
 
 def _title_of(path: Path) -> str:

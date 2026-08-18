@@ -17,6 +17,22 @@ def test_moved_server_routes_resolve_source_and_core_roots() -> None:
     assert functions._programs_root() == CORE_PROGRAMS
 
 
+def test_installed_server_registers_bundled_docs(tmp_path, monkeypatch) -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    site = tmp_path / "bundled-docs"
+    site.mkdir()
+    (site / "index.html").write_text("bundled docs", encoding="utf-8")
+    monkeypatch.setattr(docs, "_packaged_site_dir", lambda: site)
+    monkeypatch.setattr("openprogram.updater.detect.repo_root", lambda: None)
+    app = FastAPI()
+
+    docs.register(app)
+
+    assert TestClient(app).get("/docs/").text == "bundled docs"
+
+
 def test_function_run_falls_back_to_configured_default_workdir(
     tmp_path: Path,
     monkeypatch,

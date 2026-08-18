@@ -119,9 +119,11 @@ def test_python_cli_process_detection_includes_every_module_entry(monkeypatch) -
 
 
 def test_python_cli_resolves_the_apps_cli_bundle(tmp_path, monkeypatch) -> None:
-    package_init = tmp_path / "openprogram" / "__init__.py"
-    bundle = tmp_path / "apps" / "cli" / "dist" / "index.js"
+    checkout = tmp_path / "checkout"
+    package_init = checkout / "packages/core/src/openprogram/__init__.py"
+    bundle = checkout / "apps" / "cli" / "dist" / "index.js"
     package_init.parent.mkdir(parents=True)
+    (checkout / ".git").mkdir()
     bundle.parent.mkdir(parents=True)
     package_init.touch()
     bundle.touch()
@@ -131,9 +133,11 @@ def test_python_cli_resolves_the_apps_cli_bundle(tmp_path, monkeypatch) -> None:
 
 
 def test_rescue_probe_resolves_the_apps_cli_bundle(tmp_path, monkeypatch) -> None:
-    package_init = tmp_path / "openprogram" / "__init__.py"
-    bundle = tmp_path / "apps" / "cli" / "dist" / "index.js"
+    checkout = tmp_path / "checkout"
+    package_init = checkout / "packages/core/src/openprogram/__init__.py"
+    bundle = checkout / "apps" / "cli" / "dist" / "index.js"
     package_init.parent.mkdir(parents=True)
+    (checkout / ".git").mkdir()
     bundle.parent.mkdir(parents=True)
     package_init.touch()
     bundle.touch()
@@ -146,15 +150,17 @@ def test_rescue_probe_resolves_the_apps_cli_bundle(tmp_path, monkeypatch) -> Non
 
 
 def test_rescue_probe_reports_the_apps_web_bundle_path(tmp_path, monkeypatch) -> None:
-    package_init = tmp_path / "openprogram" / "__init__.py"
+    checkout = tmp_path / "checkout"
+    package_init = checkout / "packages/core/src/openprogram/__init__.py"
     package_init.parent.mkdir(parents=True)
+    (checkout / ".git").mkdir()
     package_init.touch()
     monkeypatch.setattr(openprogram, "__file__", str(package_init))
 
     finding = rescue._probe_web_bundle()
 
     assert finding.level == "WARN"
-    assert str(tmp_path / "apps" / "web" / ".next") in finding.detail
+    assert str(checkout / "apps" / "web" / ".next") in finding.detail
     assert finding.fix == (
         "Auto-built on first `openprogram web` launch. Or manually: "
         "npm install && npm run build --workspace apps/web"
@@ -169,6 +175,17 @@ def test_web_frontend_is_owned_by_apps_workspace() -> None:
 
 def test_worker_resolves_the_apps_web_workspace() -> None:
     assert worker_web.web_dir() == ROOT / "apps/web"
+
+
+def test_worker_resolves_web_workspace_from_core_src_layout(tmp_path, monkeypatch) -> None:
+    checkout = tmp_path / "checkout"
+    package_init = checkout / "packages/core/src/openprogram/__init__.py"
+    package_init.parent.mkdir(parents=True)
+    package_init.touch()
+    (checkout / ".git").mkdir()
+    monkeypatch.setattr(openprogram, "__file__", str(package_init))
+
+    assert worker_web.web_dir() == checkout / "apps/web"
 
 
 def test_desktop_is_owned_by_apps_workspace() -> None:

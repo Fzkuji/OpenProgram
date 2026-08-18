@@ -29,11 +29,29 @@ def repo_root() -> Optional[Path]:
     ``.git`` directory. For wheel installs there is no ``.git`` anywhere
     along that path and we return None.
     """
-    cur = package_root().parent  # parent of openprogram/ → repo root candidate
+    package = package_root().resolve()
+    cur = package.parent
     for ancestor in [cur, *cur.parents]:
-        if (ancestor / ".git").exists():
+        supported_locations = {
+            (ancestor / "openprogram").resolve(),
+            (ancestor / "packages" / "core" / "src" / "openprogram").resolve(),
+        }
+        if (ancestor / ".git").exists() and package in supported_locations:
             return ancestor
     return None
+
+
+def require_repo_root() -> Path:
+    """Return the source checkout root or fail for an installed runtime."""
+    root = repo_root()
+    if root is None:
+        raise FileNotFoundError("OpenProgram source checkout not found")
+    return root
+
+
+def checkout_path(*parts: str) -> Path:
+    """Resolve a path owned by the source checkout."""
+    return require_repo_root().joinpath(*parts)
 
 
 def is_pyinstaller_binary() -> bool:

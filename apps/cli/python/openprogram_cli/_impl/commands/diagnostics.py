@@ -184,9 +184,12 @@ def _environment_probes() -> dict[str, Any]:
 
     probes: dict[str, Any] = {"doctor_checks": run_checks()}
 
-    import openprogram
+    from openprogram.updater.detect import checkout_path
 
-    web_out = Path(openprogram.__file__).resolve().parents[1] / "apps" / "web" / "out"
+    try:
+        web_out = checkout_path("apps", "web", "out")
+    except FileNotFoundError:
+        web_out = Path("<not-a-source-checkout>")
     probes["web_build"] = {
         "path": str(web_out),
         "exists": web_out.is_dir(),

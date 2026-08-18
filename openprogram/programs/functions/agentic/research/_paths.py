@@ -17,10 +17,6 @@ import os
 from pathlib import Path
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[4]
-
-
 def expanded_project_dir(project_dir: str) -> Path:
     return Path(os.path.expanduser(project_dir)).resolve(strict=False)
 

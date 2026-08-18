@@ -23,7 +23,10 @@ def _validate_loaded_canonical(package_root: Path) -> None:
 
 
 def _application_dir() -> Path:
-    package_root = Path(__file__).resolve().parents[2]
+    from openprogram.updater.detect import repo_root
+
+    checkout = repo_root()
+    package_root = checkout or Path(__file__).resolve().parents[2]
     _validate_loaded_canonical(package_root)
     source = package_root / "apps/cli/python/openprogram_cli/_impl"
     installed = package_root / "openprogram_cli/_impl"

@@ -20,7 +20,12 @@ import sys
 
 def _load_server_package():
     """Resolve this checkout's Server package, rejecting mixed installations."""
-    package_dir = Path(__file__).resolve().parents[2] / "apps/server/openprogram_server"
+    from openprogram.updater.detect import repo_root
+
+    checkout = repo_root()
+    package_dir = (
+        checkout / "apps/server/openprogram_server" if checkout is not None else None
+    )
     existing = sys.modules.get("openprogram_server")
     if existing is not None:
         existing_file = getattr(existing, "__file__", None)
@@ -29,18 +34,20 @@ def _load_server_package():
                 "openprogram_server was already imported from an unknown location"
             )
         try:
-            if Path(existing_file).resolve().is_relative_to(package_dir.resolve()):
+            if package_dir is not None and Path(existing_file).resolve().is_relative_to(
+                package_dir.resolve()
+            ):
                 return existing
         except OSError:
             pass
-        if package_dir.is_dir():
+        if package_dir is not None and package_dir.is_dir():
             raise ImportError(
                 "openprogram_server was already imported from a different location: "
                 f"{existing_file}"
             )
         return existing
 
-    if not (package_dir / "__init__.py").is_file():
+    if package_dir is None or not (package_dir / "__init__.py").is_file():
         from importlib import import_module
 
         return import_module("openprogram_server")
