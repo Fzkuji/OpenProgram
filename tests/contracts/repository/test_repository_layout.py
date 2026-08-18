@@ -236,22 +236,23 @@ def test_generated_package_readmes_are_current() -> None:
 
 
 def test_public_source_links_do_not_use_the_removed_flat_core_path() -> None:
-    result = subprocess.run(
-        [
-            "git",
-            "grep",
-            "-n",
-            "github.com/Fzkuji/OpenProgram/blob/main/openprogram/",
-            "--",
-            "README.md",
-            "docs",
-        ],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-    )
+    for link_kind in ("blob", "tree"):
+        result = subprocess.run(
+            [
+                "git",
+                "grep",
+                "-n",
+                f"github.com/Fzkuji/OpenProgram/{link_kind}/main/openprogram/",
+                "--",
+                "README.md",
+                "docs",
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+        )
 
-    assert result.returncode == 1, result.stdout
+        assert result.returncode == 1, result.stdout
 
 
 def test_formal_distribution_implementation_is_grouped_under_release() -> None:

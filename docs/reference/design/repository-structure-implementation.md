@@ -292,8 +292,7 @@ adapted. Large-file decomposition is not part of the directory migration.
   aggregate wheel, including bundled Web/docs assets, Python 3.12 runtime,
   Playwright assets and the GUI Agent Harness; runtime verification PASS.
 - Specification review: pending. Quality/Ponytail full review: pending.
-- Remaining G2c-1 concern: packaged Desktop runtime verification remains in
-  the final G2 review gate.
+- Remaining G2c-1 concerns: none.
 
 ## Implemented task brief: Legacy cleanup F2
 
