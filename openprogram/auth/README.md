@@ -60,7 +60,7 @@ sessions. One workspace profile can hold many credential accounts.
 
 ## Sub-packages
 
-- **`credentials/`** — Private credential-file persistence, inventory, redaction, and audit helpers
+- **`credentials/`** — Credential persistence without filesystem hardening policy
 - **`methods/`** — Auth v2
 - **`sources/`** — External credential sources
 
