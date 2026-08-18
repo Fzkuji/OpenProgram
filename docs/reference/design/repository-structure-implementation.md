@@ -107,6 +107,97 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Root metadata cleanup | `ab386e10` | implemented; reviewed | Co-locates the changelog with GitHub release notes, removes the redundant MANIFEST file, and enforces the intentional root-file set without changing the source-checkout CLI entry. Wheel packaging, source-checkout CLI, documentation links, specification review and quality review pass. |
 | Raw-checkout CLI alias cleanup | `daf97a8d` | implemented; reviewed | Removes only the root <code>openprogram_cli.py</code> forwarder and its dedicated raw-checkout compatibility logic. Source checkouts retain <code>python -m openprogram</code> and <code>python -m openprogram.cli</code>; fresh editable installs and wheels retain the console script and canonical <code>python -m openprogram_cli</code>. The retained entries, canonical/compatibility identity, foreign-package rejection, TUI detection, root-file structure, documentation links, Ruff, specification review and quality review pass. |
 | Core package cleanup G1: Context Git DAG | `41151c50` | implemented; reviewed | Moves the two-file ContextGit implementation into `openprogram/context/git/`, updates every repository-owned import and current path reference, removes the old first-level package without a duplicate compatibility layer, and preserves DAG behavior and wheel discovery. The focused DAG, Server, dispatcher, Ruff, link, wheel, specification and quality gates pass. |
+| Standard polyglot workspace G2 | base `62126943`; implementation pending | active; design under review | Defines the target as applications under `apps/`, the shared Agent Core source under `packages/core/src/openprogram`, one aggregate Python distribution, one npm workspace lock, and formal distribution commands under `scripts/release/`. Review rejected a direct three-distribution Python split and identified public-installer and hoisted-Node compatibility work; no production path has moved yet. |
+
+## Active task brief: Standard polyglot workspace G2
+
+- Approved source: `repository-structure.html`; base: `62126943`.
+- Batch G2a moves exactly these formal distribution implementations under
+  `scripts/release/`: `build-product-runtime.sh`,
+  `archive-product-runtime.sh`, `prepare-desktop-runtime.sh`,
+  `stage-release-assets.sh`, `verify-product-runtime.py`,
+  `verify-release-version.py`, `create-release-manifest.py`,
+  `smoke-packaged-runtime.sh`, `product-runtime.json`, and the full
+  `install-release.sh` implementation. `scripts/install.sh`,
+  `scripts/install.ps1`, `scripts/refresh-local-app.sh` and
+  `scripts/promote_stable.sh` keep their existing paths and behavior.
+- `scripts/install-release.sh` remains the single public compatibility entry.
+  In a checkout it dispatches to `scripts/release/install-release.sh`; when
+  downloaded alone from the existing immutable-tag URL, it downloads that
+  implementation from the same validated repository and tag into a temporary
+  file, propagates the environment and exit status, and removes the temporary
+  file. No other moved script receives a compatibility wrapper.
+- `stage-release-assets.sh` and `verify-release-version.py` are shared
+  distribution helpers, not CI-only files: `refresh-local-app.sh` continues to
+  call their new paths. Every moved shell/Python file updates its repository-root
+  calculation, and CI, Desktop packaging, documentation and distribution tests
+  update their internal paths without changing public installer URLs.
+- Batch G2b adds one private root npm workspace for `apps/web`,
+  `apps/desktop` and `apps/cli`, producing one root `package-lock.json` while
+  preserving each application's scripts, dependency versions, build output and
+  package identity. It does not add pnpm, Turborepo or another task runner.
+- G2b uses npm's default hoisted workspace installation and does not select
+  `install-strategy=nested`. It removes tracked assumptions that dependencies
+  or locks live below an application directory. Required production callers
+  include Server `_webui/frontend.py`, CLI `commands/web.py` and `ink.py`,
+  Desktop `scripts/package-and-install-app.sh`, root `refresh-local-app.sh`,
+  `install.sh`, `install.ps1`, `stage-release-assets.sh`, `upgrade.py`, and all
+  setup-node cache declarations. Dead child-node_modules helpers are deleted
+  instead of extended when no production caller remains. Required tests include
+  `tests/contracts/repository/test_ci_test_layers.py`,
+  `tests/component/config/test_upgrade_cmd.py`, repository/distribution
+  contracts and the local-refresh locator fixture. A non-history source scan
+  must find no child `package-lock.json` or fixed `apps/*/node_modules` lookup.
+- Batch G2c is split again before any source move. G2c-0 replaces every
+  repository-root calculation derived from `openprogram.__file__` with one
+  tested checkout/resource resolver, without moving source. G2c-1 then moves
+  only the Core source tree to `packages/core/src/openprogram/` while the root
+  `pyproject.toml` remains the actual aggregate `openprogram` distribution and
+  continues to package Core, Server and Python CLI into one wheel. Server and
+  CLI do not receive independent `pyproject.toml` files in G2. A later
+  multi-distribution split requires a separate product/release decision.
+- G2c explicitly changes raw source-checkout development to the standard
+  editable/`uv run` model required by `src` layout. Installed imports,
+  `python -m` entries, console entry, one-wheel contents, package data and
+  packaged runtime behavior remain unchanged. No root source forwarder or
+  second Core tree is added merely to preserve bare-Python imports.
+- G2a RED/GREEN: repository contract; standalone public installer wrapper in a
+  temporary directory with fake same-tag download; direct checkout wrapper;
+  distribution and formal-update component tests; shell syntax; Python
+  compilation; release-version verification; Desktop/runtime callers; docs
+  links; stale old-path search.
+- Exact G2a RED command (new ownership/wrapper assertions must fail on base):
+  `uv run --locked pytest -q tests/contracts/repository/test_repository_layout.py tests/component/config/test_distribution_release.py tests/component/config/test_formal_release_updates.py`.
+- Exact G2a GREEN/affected commands after implementation:
+  `uv run --locked pytest -q tests/contracts/repository/test_repository_layout.py tests/component/config/test_distribution_release.py tests/component/config/test_formal_release_updates.py`;
+  `bash -n scripts/install.sh scripts/refresh-local-app.sh scripts/promote_stable.sh scripts/install-release.sh scripts/release/*.sh` (the platform-neutral distribution contract continues to inspect `scripts/install.ps1`);
+  `python -m compileall -q scripts/release`;
+  `python scripts/release/verify-release-version.py --tag v0.7.0`;
+  `python -m scripts.docs_site.checklinks`;
+  `git grep -nE 'scripts/(build-product-runtime|archive-product-runtime|prepare-desktop-runtime|stage-release-assets|verify-product-runtime|verify-release-version|create-release-manifest|smoke-packaged-runtime)' -- ':!docs/reference/design/repository-structure-implementation.md'` must return no old implementation paths;
+  `git grep -n 'scripts/install-release.sh'` may retain only the public URL,
+  compatibility-wrapper contract and tests; `git diff --check`; and
+  `git status --short`. G2a does not run or claim G2b/G2c migration gates.
+- G2b RED/GREEN: root workspace/lock ownership contract; clean root `npm ci`;
+  `npm ls --workspaces`; Web test/typecheck/check/build; CLI
+  typecheck/test/build and cold autobuild; Server cold frontend build; Desktop
+  checks plus real Electron ABI rebuild/package verification for `node-pty`;
+  release staging; a second clean install with no lock diff.
+- G2c RED/GREEN: layout and repository-root resolver contracts; editable
+  install and `uv run`; isolated aggregate wheel/sdist build outside checkout;
+  `openprogram`, `openprogram_server`, `openprogram_cli`, console/module entries,
+  package data and packaged runtime construction. Bare, uninstalled
+  `python -m openprogram` is not an acceptance criterion after G2c-1.
+- Exact compatibility boundary: no UI, protocol, provider, browser, runtime
+  capability, installer URL, user-state path or release artifact behavior may
+  change. Generated `build/`, component output and `dist/` paths remain ignored.
+- Full gate manifest after all three batches: repository contracts and documentation links; release
+  distribution component tests; Web checks and TypeScript; Desktop checks and
+  packaged-file contracts; CLI typecheck/tests/build; Python unit/component/
+  integration contracts; isolated wheel and source-checkout entry probes; clean
+  diff and worktree status.
+- Each batch receives its own implementation commit, specification review,
+  quality review and full affected gate before the next batch begins.
 
 ## Implemented task brief: Legacy cleanup F2
 
