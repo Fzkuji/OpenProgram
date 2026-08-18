@@ -7,10 +7,8 @@ context — and nothing else. No web UI, no terminal UI, no CLI, and no
 `~/.openprogram` directory appearing behind your back.
 
 That is the embedded mode: OpenProgram used as a plain Python library inside
-somebody else's runtime. Five steps get you there, and every snippet below is
-lifted from the runnable example
-[`examples/embed_in_your_stack.py`](https://github.com/Fzkuji/OpenProgram/blob/main/examples/embed_in_your_stack.py),
-which executes offline against a fake client so you can run it with no API key.
+somebody else's runtime. Five steps get you there, using snippets that execute
+offline against a fake client and require no API key.
 
 ## When this is the right mode
 
@@ -174,7 +172,6 @@ embedded code that never touches them behaves correctly: nothing cancels, and
 
 ## See also
 
-- [`examples/embed_in_your_stack.py`](https://github.com/Fzkuji/OpenProgram/blob/main/examples/embed_in_your_stack.py) — the runnable version of this page
 - [`@agentic_function`](writing-functions/agentic-function.md) — the decorator in depth
 - [Runtime API](../../reference/api/runtime.md) — `exec()` parameters and behaviour
 - [Embedding seams](../../reference/design/runtime/overview.md) — the design contract behind this mode

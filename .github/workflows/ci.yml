@@ -19,7 +19,7 @@ jobs:
       - name: Install locked Python dependencies
         run: uv sync --locked --extra dev
       - name: Ruff
-        run: uv run --locked --extra dev ruff check openprogram tests scripts tools
+        run: uv run --locked --extra dev ruff check openprogram tests scripts
       - name: Repository contracts
         run: uv run --locked --extra dev python -m pytest -q tests/contracts
       - name: Build docs site
@@ -28,9 +28,6 @@ jobs:
         run: uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m scripts.docs_site.check_landing
       - name: Check docs links
         run: uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m scripts.docs_site.checklinks
-      - name: Examples smoke
-        run: uv run --locked python examples/embed_in_your_stack.py
-
   unit:
     runs-on: ubuntu-latest
     strategy:

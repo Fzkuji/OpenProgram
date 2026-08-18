@@ -6,9 +6,7 @@ OpenProgram 拿走的，是自己重写成本最高的那部分——`@agentic_f
 也不要背着你在 `~/.openprogram` 里写东西。
 
 这就是嵌入模式：把 OpenProgram 当作一个普通 Python 库，用在别人的运行时里面。
-五步走完即可，下面每段代码都出自可运行示例
-[`examples/embed_in_your_stack.py`](https://github.com/Fzkuji/OpenProgram/blob/main/examples/embed_in_your_stack.py)——
-它用一个假客户端离线执行，没有 API key 也能跑起来。
+下面五步使用假客户端离线执行，不需要 API key。
 
 ## 什么时候该用这个模式
 
@@ -152,7 +150,6 @@ headless 空实现——所以完全不碰它们的嵌入代码行为也是对�
 
 ## 延伸阅读
 
-- [`examples/embed_in_your_stack.py`](https://github.com/Fzkuji/OpenProgram/blob/main/examples/embed_in_your_stack.py) —— 本页的可运行版本
 - [`@agentic_function`](writing-functions/agentic-function.zh.md) —— 装饰器详解
 - [Runtime API](../../reference/api/runtime.zh.md) —— `exec()` 的参数与行为
 - [嵌入接缝](../../reference/design/runtime/overview.zh.md) —— 这个模式背后的设计契约

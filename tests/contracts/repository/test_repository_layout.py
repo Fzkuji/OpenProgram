@@ -13,7 +13,6 @@ TOP_LEVEL_DIRECTORIES = {
     "apps",
     "config",
     "docs",
-    "examples",
     "experiments",
     "openprogram",
     "promo",

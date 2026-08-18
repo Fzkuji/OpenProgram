@@ -104,6 +104,4 @@ apps/desktop/node_modules/
 apps/desktop/dist/
 apps/desktop/build/runtime/
 
-# Scratch state written by examples/embed_in_your_stack.py
-examples/embed_demo_state/
 references/codex-cli/

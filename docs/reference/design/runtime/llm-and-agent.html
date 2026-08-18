@@ -143,7 +143,7 @@ extract_pdf_*、research/、示例）、<code>memory/wiki/</code></td><td>约 20
 <tr><td>3</td><td>嵌套 harness 仓库（<code>programs/functions/agentic/</code> 下）：Research-Agent-Harness
 （约 80 处，stages 各目录）→ GUI-Agent-Harness（planning / benchmarks，截图调用靠 content blocks）→
 Wiki-Agent-Harness</td><td>逐仓一个子任务，嵌套仓库随改随同步。</td></tr>
-<tr><td>4</td><td>收尾</td><td>编排层无 <code>runtime.exec</code> 残留；<code>examples/</code> 与
+<tr><td>4</td><td>收尾</td><td>编排层无 <code>runtime.exec</code> 残留；
 provider/agent 内核明确保留 <code>Runtime</code>（嵌入与实现材料）；产品文档与本页同步。</td></tr>
 </table>
 <p>每批全绿才进下一批：批 2、3 是大面积机械替换，语义错误会成倍放大，串行是最便宜的隔离。</p>

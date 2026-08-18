@@ -344,7 +344,7 @@ with session_scope(store, "reviews"):
     summarize("The battery lasts all week.", runtime=runtime)
 ```
 
-The full guide — including handing your `@agentic_function`s to your own tool loop via `to_openai_tools` — is [docs/capabilities/agentic-programming/embedding-in-your-own-stack.md](docs/capabilities/agentic-programming/embedding-in-your-own-stack.md); the runnable version is [`examples/embed_in_your_stack.py`](examples/embed_in_your_stack.py).
+The full guide — including handing your `@agentic_function`s to your own tool loop via `to_openai_tools` — is [docs/capabilities/agentic-programming/embedding-in-your-own-stack.md](docs/capabilities/agentic-programming/embedding-in-your-own-stack.md).
 
 ---
 
