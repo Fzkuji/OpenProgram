@@ -88,4 +88,3 @@ export interface DesktopTabTransferApi {
     discardWindowState?: boolean;
   }) => void): () => void;
 }
-
