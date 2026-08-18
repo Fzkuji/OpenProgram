@@ -177,11 +177,11 @@ function Install-Web {
   if (-not (Have npm)) { Warn "npm missing - skipping web UI deps"; return }
   if (-not (Test-Path "$HostRoot\apps\web\package.json")) { Warn "apps/web/ not found - skipping"; return }
   Step "installing web UI deps (apps/web/ - Next.js)"
-  Push-Location "$HostRoot\apps\web"
+  Push-Location "$HostRoot"
   try {
     cmd /c "npm install"
     if ($Minimal) { Warn "skipping web production build (-Minimal) - the worker builds it on first start" }
-    else { Step "building web production bundle"; cmd /c "npm run build" }
+    else { Step "building web production bundle"; cmd /c "npm run build --workspace apps/web" }
   }
   finally { Pop-Location }
   Ok "web UI ready (:18100 serves both the UI and the API)"

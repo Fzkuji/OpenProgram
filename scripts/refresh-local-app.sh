@@ -86,9 +86,9 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-asar_cli="$repo_root/apps/desktop/node_modules/@electron/asar/bin/asar.js"
+asar_cli="$repo_root/node_modules/@electron/asar/bin/asar.js"
 if ! test -f "$asar_cli"; then
-  npm ci --prefix "$repo_root/apps/desktop" --ignore-scripts
+  (cd "$repo_root" && npm ci --workspace apps/desktop --include-workspace-root --ignore-scripts)
 fi
 test -f "$asar_cli" || {
   printf 'the Electron asar tool was not installed: %s\n' "$asar_cli" >&2

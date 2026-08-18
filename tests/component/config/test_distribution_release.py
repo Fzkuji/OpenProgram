@@ -129,7 +129,7 @@ def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
     wait_index = installer_text.index('wait_for_worker_health ||')
     assert wait_index < installer_text.index('open "$target_app"', wait_index)
     assert 'mktemp -d "${TMPDIR:-/tmp}/openprogram-app-package.XXXXXX"' in packager
-    assert '"$builder" --dir --mac --publish never' in packager
+    assert "npm exec --workspace apps/desktop -- electron-builder" in packager
     smoke = 'bash "$repo_root/scripts/release/smoke-packaged-runtime.sh" mac "$package_dir"'
     assert smoke in packager
     assert 'env -u DESTDIR bash "$script_dir/install-app.sh" "$built_app"' in packager
@@ -1239,7 +1239,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     ]
     for desktop_file in desktop_files:
         (desktop / desktop_file).write_text("module.exports = {};\n", encoding="utf-8")
-    asar_cli = desktop / "node_modules" / "@electron" / "asar" / "bin" / "asar.js"
+        asar_cli = repo / "node_modules" / "@electron" / "asar" / "bin" / "asar.js"
     asar_cli.parent.mkdir(parents=True)
     asar_cli.write_text("", encoding="utf-8")
     app = _fake_desktop_app(tmp_path / "installed", "0.6.6")
@@ -1448,7 +1448,7 @@ def test_release_frontend_staging_removes_stale_export_before_build() -> None:
         encoding="utf-8"
     )
     cleanup = staging.index('rm -rf "$source_dir"')
-    build = staging.index('npm run build --prefix "$web_dir"')
+    build = staging.index("npm run build --workspace apps/web")
     assert cleanup < build
 
 
@@ -1499,15 +1499,9 @@ def test_release_asset_staging_invokes_locked_docs_builder(tmp_path) -> None:
     fake_npm = fake_bin / "npm"
     fake_npm.write_text(
         """#!/bin/sh
-prefix=""
-previous=""
-for argument in "$@"; do
-  if [ "$previous" = "--prefix" ]; then prefix="$argument"; fi
-  previous="$argument"
-done
 if [ "$1" = "run" ] && [ "$2" = "build" ]; then
-  mkdir -p "$prefix/out"
-  printf '<html>web</html>\\n' > "$prefix/out/index.html"
+  mkdir -p "$PWD/apps/web/out"
+  printf '<html>web</html>\\n' > "$PWD/apps/web/out/index.html"
 fi
 """,
         encoding="utf-8",

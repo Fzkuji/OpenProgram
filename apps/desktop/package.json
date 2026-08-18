@@ -29,7 +29,7 @@
     "dist:mac": "npm run prepare:runtime && npm run icon:check && electron-builder --mac dmg zip"
   },
   "devDependencies": {
-    "electron": "^37.2.0",
+    "electron": "37.10.3",
     "electron-builder": "^26.0.12"
   },
   "build": {

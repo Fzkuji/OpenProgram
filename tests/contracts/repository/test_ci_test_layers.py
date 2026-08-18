@@ -74,15 +74,16 @@ def test_ci_runs_every_cli_step_from_the_apps_workspace() -> None:
     run_steps = [step for step in steps if step.get("run")]
 
     assert setup_node["with"]["cache-dependency-path"] == (
-        "apps/cli/package-lock.json"
+        "package-lock.json"
     )
     assert [step["run"] for step in run_steps] == [
-        "npm ci",
+        "npm ci --workspace apps/cli --include-workspace-root --ignore-scripts",
         "npm run typecheck",
         "npm test",
         "npm run build",
     ]
-    assert {step.get("working-directory") for step in run_steps} == {"apps/cli"}
+    assert run_steps[0].get("working-directory") is None
+    assert {step.get("working-directory") for step in run_steps[1:]} == {"apps/cli"}
 
 
 def test_ci_python_jobs_use_the_checked_lock() -> None:

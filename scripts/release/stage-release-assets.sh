@@ -15,9 +15,9 @@ command -v npm >/dev/null 2>&1 || {
   exit 1
 }
 
-npm ci --prefix "$web_dir"
+npm ci --workspace apps/web --include-workspace-root --ignore-scripts
 rm -rf "$source_dir" "$next_build_dir"
-npm run build --prefix "$web_dir"
+npm run build --workspace apps/web
 test -f "$source_dir/index.html" || {
   printf 'Next.js export did not produce %s/index.html\n' "$source_dir" >&2
   exit 1

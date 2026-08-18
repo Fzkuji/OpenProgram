@@ -16,7 +16,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+          cache-dependency-path: package-lock.json
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           version: "0.11.16"
@@ -71,7 +71,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+          cache-dependency-path: package-lock.json
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           version: "0.11.16"
@@ -127,7 +127,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: apps/desktop/package-lock.json
+          cache-dependency-path: package-lock.json
       - uses: actions/download-artifact@v8
         with:
           name: product-runtime-${{ matrix.runtime_platform }}-${{ matrix.arch }}
@@ -135,8 +135,7 @@ jobs:
       - name: Verify version
         run: python3 scripts/release/verify-release-version.py --tag "${GITHUB_REF_NAME}"
       - name: Install desktop dependencies
-        run: npm ci
-        working-directory: apps/desktop
+        run: npm ci --workspace apps/desktop --include-workspace-root
       - name: Prepare embedded runtime from release archive
         shell: bash
         run: |

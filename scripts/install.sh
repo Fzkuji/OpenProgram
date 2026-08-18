@@ -204,9 +204,9 @@ install_web() {
   command -v npm >/dev/null 2>&1 || die "npm is required to build the Web UI"
   [ -f "$HOST_ROOT/apps/web/package.json" ] || die "apps/web/package.json is missing"
   step "installing web UI deps (apps/web/ — Next.js)"
-  ( cd "$HOST_ROOT/apps/web" && npm install )
+  ( cd "$HOST_ROOT" && npm install )
   step "building web production bundle"
-  ( cd "$HOST_ROOT/apps/web" && npm run build )
+  ( cd "$HOST_ROOT" && npm run build --workspace apps/web )
   ok "web UI ready (single port :18100)"
 }
 
@@ -215,7 +215,7 @@ install_tui() {
   command -v npm >/dev/null 2>&1 || { warn "npm missing — skipping TUI"; return 0; }
   [ -f "$HOST_ROOT/apps/cli/package.json" ] || return 0
   step "installing + building Ink TUI (apps/cli/)"
-  ( cd "$HOST_ROOT/apps/cli" && npm install && npm run build )
+  ( cd "$HOST_ROOT" && npm install && npm run build --workspace apps/cli )
   ok "TUI built (apps/cli/dist/index.js)"
 }
 

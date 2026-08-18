@@ -216,8 +216,7 @@ def test_deps_run_only_when_manifests_change(repo, monkeypatch, capsys):
     on a manifest change and stay quiet otherwise."""
     head = _sha(repo)
     (repo / "pyproject.toml").write_text("[project]\nname='x'\n")
-    (repo / "apps" / "web").mkdir(parents=True)
-    (repo / "apps" / "web" / "package-lock.json").write_text("{}")
+    (repo / "package-lock.json").write_text("{}")
     subprocess.run(["git", "add", "-A"], cwd=str(repo), check=True,
                    capture_output=True)
     subprocess.run(["git", "commit", "-qm", "manifests"], cwd=str(repo),

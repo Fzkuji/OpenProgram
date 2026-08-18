@@ -145,9 +145,8 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: apps/web/package-lock.json
-      - run: npm ci
-        working-directory: apps/web
+          cache-dependency-path: package-lock.json
+      - run: npm ci --workspace apps/web --include-workspace-root --ignore-scripts
       - name: Unit tests
         run: npm test
         working-directory: apps/web
@@ -171,9 +170,8 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: apps/cli/package-lock.json
-      - run: npm ci
-        working-directory: apps/cli
+          cache-dependency-path: package-lock.json
+      - run: npm ci --workspace apps/cli --include-workspace-root --ignore-scripts
       - run: npm run typecheck
         working-directory: apps/cli
       - run: npm test
@@ -189,9 +187,8 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: apps/desktop/package-lock.json
-      - run: npm ci
-        working-directory: apps/desktop
+          cache-dependency-path: package-lock.json
+      - run: npm ci --workspace apps/desktop --include-workspace-root
       - run: npm run check
         working-directory: apps/desktop
 
@@ -209,13 +206,12 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+          cache-dependency-path: package-lock.json
       - name: Install locked Python dependencies
         run: uv sync --locked --extra dev --extra browser
       - name: Install managed Chromium
         run: uv run --locked --extra dev --extra browser playwright install --with-deps chromium
-      - run: npm ci
-        working-directory: apps/web
+      - run: npm ci --workspace apps/web --include-workspace-root --ignore-scripts
       - run: npm run build
         working-directory: apps/web
         env:

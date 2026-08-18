@@ -5,7 +5,7 @@ Electron shell around the OpenProgram web UI, with native browser tabs
 
 ## Run
 
-    npm --prefix apps/desktop install && npm --prefix apps/desktop run dev
+    npm install && npm run dev --workspace apps/desktop
 
 Loads `http://127.0.0.1:$OPENPROGRAM_WEB_PORT/chat` (default port 18100). If the
 worker is not reachable it spawns `openprogram worker start` and waits up to 30s.

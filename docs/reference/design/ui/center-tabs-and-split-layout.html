@@ -498,7 +498,7 @@
 npm --prefix apps/web run check:compound-tabs
 npm --prefix apps/web run check:web-split
 npm --prefix apps/web run check
-apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit
+npm exec --workspace apps/web -- tsc --noEmit
 npm --prefix apps/web run build
 npm --prefix apps/desktop run check:webtabs
 npm --prefix apps/desktop run check:tab-transfer-store

@@ -64,7 +64,7 @@ openprogram/programs/applications/*
 .backend.log.err
 
 # Frontend dependency/build artifacts
-apps/web/node_modules/
+/node_modules/
 apps/web/.next/
 apps/web/next-env.d.ts
 apps/web/tsconfig.tsbuildinfo
@@ -100,7 +100,6 @@ docs/reference/config-keys.md
 docs/reference/provider-registry.md
 
 # Electron desktop shell
-apps/desktop/node_modules/
 apps/desktop/dist/
 apps/desktop/build/runtime/
 

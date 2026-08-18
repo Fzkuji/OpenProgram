@@ -563,10 +563,11 @@ def test_snapshot_rejects_a_tampered_token_fingerprint(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 _NODE = shutil.which("node")
-_CLI_DIR = Path(__file__).resolve().parents[3] / "apps" / "cli"
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_CLI_DIR = _REPO_ROOT / "apps" / "cli"
 requires_node = pytest.mark.skipif(
-    _NODE is None or not (_CLI_DIR / "node_modules" / "ws").is_dir(),
-    reason="node with apps/cli/node_modules (for the real `ws` client) is required",
+    _NODE is None or not (_REPO_ROOT / "node_modules" / "ws").is_dir(),
+    reason="node with root workspace dependencies (for the real `ws` client) is required",
 )
 
 

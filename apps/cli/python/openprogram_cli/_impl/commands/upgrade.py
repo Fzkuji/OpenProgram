@@ -570,8 +570,8 @@ def run_upgrade(*, channel: Optional[str] = None, dry_run: bool = False,
             _run_or_fail([sys.executable, "-m", "pip", "install", "-e", "."],
                          root, "deps-failed")
             done.append("pip install -e .")
-        if "apps/web/package-lock.json" in changed:
-            _run_or_fail(["npm", "ci"], root / "apps" / "web", "deps-failed")
+        if "package-lock.json" in changed:
+            _run_or_fail(["npm", "ci"], root, "deps-failed")
             done.append("npm ci")
         steps.record("deps", True, ", ".join(done) or "unchanged", started)
 

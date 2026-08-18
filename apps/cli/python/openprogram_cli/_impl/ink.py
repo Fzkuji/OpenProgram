@@ -114,7 +114,8 @@ def _build_ink_bundle(cli_dir: Path, expected_bundle: Path) -> None:
     stdout_target = tty_out if tty_out is not None else None
     stderr_target = tty_err if tty_err is not None else None
 
-    node_modules = cli_dir / "node_modules"
+    repo_root = cli_dir.parents[1]
+    node_modules = repo_root / "node_modules"
     if not node_modules.exists():
         _tty_write(
             "openprogram: building Ink TUI (first run, ~1-2 minutes)…\n"
@@ -122,7 +123,7 @@ def _build_ink_bundle(cli_dir: Path, expected_bundle: Path) -> None:
         )
         rc = subprocess.run(
             node_tool_cmd([npm, "install", "--no-audit", "--no-fund", "--loglevel=error"]),
-            cwd=str(cli_dir),
+            cwd=str(repo_root),
             stdout=stdout_target,
             stderr=stderr_target,
         ).returncode
@@ -137,8 +138,8 @@ def _build_ink_bundle(cli_dir: Path, expected_bundle: Path) -> None:
 
     _tty_write("  → npm run build\n")
     rc = subprocess.run(
-        node_tool_cmd([npm, "run", "build"]),
-        cwd=str(cli_dir),
+        node_tool_cmd([npm, "run", "build", "--workspace", "apps/cli"]),
+        cwd=str(repo_root),
         stdout=stdout_target,
         stderr=stderr_target,
     ).returncode

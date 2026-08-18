@@ -205,7 +205,7 @@
         <p><code>THEME_PREFS</code> 现在是主题入口的唯一清单；五套内置主题各自完整定义 58 个契约 token；composer、provider icon 与 DAG 只消费角色 token，不再判断具体主题 ID；desktop menu overlay 接受并传播全部主题 ID。共享按钮只消费 <code>--primary</code>，由主题层统一映射主色，不在组件内维护主题分支。主题契约检查已纳入 Web 总检查，安装版验收结果记录在本节下方。</p>
         <ul>
           <li><code>npm --prefix apps/web run check</code>：通过，包括 <code>check:theme-contract</code>。</li>
-          <li><code>apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit</code>：通过。</li>
+          <li><code>npm exec --workspace apps/web -- tsc --noEmit</code>：通过。</li>
           <li><code>npm --prefix apps/web run build</code>：通过。</li>
           <li>默认安装版 <code>/Applications/OpenProgram.app</code>：五套内置主题均读取到完整 58 个 token，页面背景均按主题变化，原生按钮继承字体设置；Aurora 下 desktop main-menu overlay 收到 <code>theme=aurora</code> 并使用对应 token。</li>
           <li>默认安装版共享按钮实测：dark / light 使用蓝色，beige-dark / beige-light 使用橙色，aurora 使用青绿色；常态、填充、hover 均保持各自主题色族。Custom 主题原有 <code>--accent-orange</code>、<code>--accent-fill</code>、<code>--accent-orange-hover</code> 覆盖方式继续有效。</li>

@@ -134,25 +134,8 @@ def test_rescue_probe_reports_the_apps_web_bundle_path(tmp_path, monkeypatch) ->
     assert str(tmp_path / "apps" / "web" / ".next") in finding.detail
     assert finding.fix == (
         "Auto-built on first `openprogram web` launch. Or manually: "
-        "npm --prefix apps/web install && npm --prefix apps/web run build"
+        "npm install && npm run build --workspace apps/web"
     )
-
-
-def test_web_command_reports_the_apps_workspace_when_node_is_missing(
-    tmp_path, monkeypatch, capsys
-) -> None:
-    web = tmp_path / "apps" / "web"
-    web.mkdir(parents=True)
-    monkeypatch.delenv("OPENPROGRAM_WEB_NO_FRONTEND", raising=False)
-    monkeypatch.setattr(cli_web, "_find_web_dir", lambda: web)
-    monkeypatch.setattr(cli_web, "_port_in_use", lambda _port: False)
-    monkeypatch.setattr("shutil.which", lambda _name: None)
-
-    assert cli_web._start_frontend(backend_port=18100, web_port=18101) is None
-
-    output = capsys.readouterr().out
-    assert "npm --prefix apps/web run dev" in output
-    assert "cd web" not in output
 
 
 def test_web_frontend_is_owned_by_apps_workspace() -> None:

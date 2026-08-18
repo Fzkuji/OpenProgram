@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+          cache-dependency-path: package-lock.json
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           version: "0.11.16"

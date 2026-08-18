@@ -4,7 +4,6 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 desktop_dir="$(cd -- "$script_dir/.." && pwd)"
 repo_root="$(cd -- "$desktop_dir/../.." && pwd)"
-builder="$desktop_dir/node_modules/.bin/electron-builder"
 runtime_dir="$desktop_dir/build/runtime"
 python_build_dir="$repo_root/build"
 web_build_dir="$repo_root/apps/web/.next"
@@ -43,8 +42,8 @@ fi
 lock_owned=1
 trap release_package_lock EXIT
 
-[[ -x "$builder" ]] || {
-  printf 'missing electron-builder; run npm install in %s\n' "$desktop_dir" >&2
+command -v npm >/dev/null 2>&1 || {
+  printf 'missing npm; install Node.js and run npm install in %s\n' "$repo_root" >&2
   exit 1
 }
 
@@ -68,10 +67,11 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-cd "$desktop_dir"
-npm run prepare:runtime
-npm run icon:check
-"$builder" --dir --mac --publish never --config.directories.output="$package_dir"
+cd "$repo_root"
+npm run prepare:runtime --workspace apps/desktop
+npm run icon:check --workspace apps/desktop
+npm exec --workspace apps/desktop -- electron-builder \
+  --dir --mac --publish never --config.directories.output="$package_dir"
 
 app_list="$work_dir/apps.txt"
 find "$package_dir" -type d -name OpenProgram.app -prune -print >"$app_list"

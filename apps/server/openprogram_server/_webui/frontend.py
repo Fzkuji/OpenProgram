@@ -107,11 +107,16 @@ def ensure_frontend_built() -> None:
             "Install Node.js (build-time only) or ship a prebuilt apps/web/out/."
         )
 
-    if not (wd / "node_modules").exists():
+    repo_root = wd.parents[1]
+    if not (repo_root / "node_modules").exists():
         print("[worker] web: installing npm deps (first run, may take a while)…")
-        _run(["npm", "install", "--silent"], wd, "npm install")
-    print("[worker] web: building frontend export (npx next build)…")
-    _run(["npx", "next", "build"], wd, "next build")
+        _run(["npm", "install", "--silent"], repo_root, "npm install")
+    print("[worker] web: building frontend export (npm workspace build)…")
+    _run(
+        ["npm", "run", "build", "--workspace", "apps/web"],
+        repo_root,
+        "npm workspace build",
+    )
     if not marker.exists():
         raise RuntimeError(f"next build succeeded but {marker} was not produced")
     print("[worker] web: frontend export ready")

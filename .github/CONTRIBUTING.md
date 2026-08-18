@@ -72,7 +72,7 @@ public APIs, installation profiles, and current capabilities.
    ```bash
    uv sync --locked --extra dev --extra browser
    uv run --locked --extra dev --extra browser playwright install --with-deps chromium
-   npm --prefix apps/web ci
+   npm ci --workspace apps/web --include-workspace-root --ignore-scripts
    npm --prefix apps/web run build
    uv run --locked --extra dev --extra browser python -m pytest -q -m browser tests/e2e/web
    ```

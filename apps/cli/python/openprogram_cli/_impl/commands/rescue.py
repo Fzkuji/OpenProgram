@@ -104,7 +104,7 @@ def _probe_tui_bundle() -> Finding:
     return Finding(
         "WARN", "TUI bundle (Ink)", f"not built yet ({bundle})",
         fix="Auto-built on first `openprogram` launch on POSIX. "
-            "Or build manually: cd apps/cli && npm install && npm run build",
+            "Or build manually: npm install && npm run build --workspace apps/cli",
     )
 
 
@@ -122,7 +122,7 @@ def _probe_web_bundle() -> Finding:
     return Finding(
         "WARN", "Web bundle (Next.js)", f"not built ({root / 'apps' / 'web' / '.next'})",
         fix="Auto-built on first `openprogram web` launch. Or manually: "
-            "npm --prefix apps/web install && npm --prefix apps/web run build",
+            "npm install && npm run build --workspace apps/web",
     )
 
 

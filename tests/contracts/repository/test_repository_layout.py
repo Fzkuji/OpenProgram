@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import runpy
 import subprocess
@@ -252,3 +253,15 @@ def test_formal_distribution_implementation_is_grouped_under_release() -> None:
         for name in release_files - {"install-release.sh"}
     )
     assert (ROOT / "scripts" / "install-release.sh").is_file()
+
+
+def test_node_apps_share_one_root_npm_workspace_lock() -> None:
+    package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+
+    assert package["private"] is True
+    assert package["workspaces"] == ["apps/web", "apps/desktop", "apps/cli"]
+    assert (ROOT / "package-lock.json").is_file()
+    assert all(
+        not (ROOT / "apps" / app / "package-lock.json").exists()
+        for app in ("web", "desktop", "cli")
+    )
