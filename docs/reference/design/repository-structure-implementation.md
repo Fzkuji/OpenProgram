@@ -225,6 +225,23 @@ adapted. Large-file decomposition is not part of the directory migration.
 - Exclude recovery behavior changes, timing changes, UI changes and unrelated
   active Agent configuration work.
 
+## Active task brief: Desktop tab-transfer payload validation extraction
+
+- Approved source: `repository-structure.html`; base: current `main` after the
+  Desktop worker recovery-state extraction.
+- Move only transfer payload validation, normalization and its size/count
+  constants from `apps/desktop/main.js` to
+  `apps/desktop/tab-transfer-validation.js`.
+- Keep IPC authorization, transfer coordination, native view ownership changes,
+  journal persistence and rollback orchestration in their current modules.
+- Make the executable WebTab harness assert that `main.js` uses the exported
+  production validator; add the runtime file to Electron packaging and local-App
+  refresh closure.
+- RED boundary: the harness cannot import the not-yet-created validator module.
+  GREEN boundary: complete Desktop checks, package-file and refresh fixtures.
+- Exclude validation-rule changes, protocol changes, UI changes and unrelated
+  active Agent configuration work.
+
 ## Active task brief: Apps migration C2
 
 - Approved source: `repository-structure.html`; base: `a459c443`.

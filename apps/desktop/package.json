@@ -39,6 +39,7 @@
       "main.js",
       "menu-geometry.js",
       "worker-recovery-state.js",
+      "tab-transfer-validation.js",
       "preload.js",
       "update-service.js",
       "packaged-runtime.js",

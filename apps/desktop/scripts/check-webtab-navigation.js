@@ -4,6 +4,9 @@ const os = require("node:os");
 const path = require("node:path");
 const { EventEmitter } = require("node:events");
 const vm = require("node:vm");
+const {
+  validateTransferPayload: productionValidateTransferPayload,
+} = require("../tab-transfer-validation");
 
 const source = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
 const preloadSource = fs.readFileSync(
@@ -1863,6 +1866,7 @@ function assertTransferApiRegistered() {
   );
   assert.equal(typeof hooks.registerTabTransferIpc, "function");
   assert.equal(typeof hooks.validateTransferPayload, "function");
+  assert.strictEqual(hooks.validateTransferPayload, productionValidateTransferPayload);
   assert.equal(typeof hooks.reparentRecords, "function");
   assert.equal(typeof hooks.restoreRecords, "function");
   assert.ok(hooks.tabTransfers);
