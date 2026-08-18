@@ -63,7 +63,7 @@ class TurnRequest:
     #     replaced.
     #   - explicit None → root-level fork (the very first turn of a
     #     new conversation tree, or "retry the very first user
-    #     message" case from contextgit/dag.py).
+    #     message" case from context/git/dag.py).
     # Mirrors Claude Code's parentUuid chain: append-only, no mutation
     # of historical messages.
     branch_from: Any = INHERIT_PARENT

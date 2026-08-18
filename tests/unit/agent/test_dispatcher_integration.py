@@ -301,7 +301,7 @@ def test_caller_forks_sibling_branch(
 
     # Turn 2: branch-fork from BEFORE turn 1's user message
     # (caller=None recreates the root-level fork case — matches
-    # contextgit/dag.py's "first-turn retry" semantics where the
+    # context/git/dag.py's "first-turn retry" semantics where the
     # forked branch shares the conversation root, not turn 1's user).
     s2 = make_text_stream_fn(["beta"])
     def _w2(*, req, history, on_event, cancel_event, stream_fn=None, **_extra):

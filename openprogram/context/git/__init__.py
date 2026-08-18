@@ -1,6 +1,6 @@
 """ContextGit — context as a git repo.
 
-See ``docs/design/context/contextgit.md`` for the full design. TL;DR:
+See ``docs/reference/design/context/overview.md`` for the current design. TL;DR:
 
 - Every conversation is a DAG of "commits" (user messages, assistant
   replies, function runs). Each commit has a ``predecessor``; siblings
@@ -12,7 +12,7 @@ See ``docs/design/context/contextgit.md`` for the full design. TL;DR:
 
 The v1 implementation is *not* a separate persistent object store yet —
 it's DAG metadata layered on top of the existing conversation messages
-dict (see :mod:`openprogram.webui.server`). Each message dict gets a
+dict (see :mod:`openprogram_server.server`). Each message dict gets a
 ``predecessor`` field (optional; legacy messages default to their
 list-order predecessor on load) and each conversation carries
 ``head_id``.

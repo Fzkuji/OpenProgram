@@ -133,7 +133,7 @@
     <h4>会话是一张图，代码执行也是图上的节点</h4>
     <p>十二家里没有第二家把<b>函数调用树写进对话本身</b>。<code>@agentic_function</code>跑起来时，它自己的每一层调用都是会话DAG上的code节点，和用户消息、模型消息、工具结果共用一套caller/predecessor边，存在同一个git仓库里。分支就是一个head指针，同一个会话内可以长出多条互不污染的历史。</p>
     <p>最接近的是pi-mono的会话树（JSONL带parentId，<code>/tree</code>可切换、切换时会给废弃分支做摘要），但它树上只有对话条目。opencode的fork开的是新会话，hermes压缩时直接换session_id，codex的agent-graph-store记的是agent之间的图。</p>
-    <span class="ev">contextgit/dag.py · store/session/session_store.py · agentic_programming/function.py</span>
+    <span class="ev">context/git/dag.py · store/session/session_store.py · agentic_programming/function.py</span>
   </div>
   <div class="q" style="border-top-color:#e0445a">
     <div class="k">最弱</div>

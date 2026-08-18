@@ -92,7 +92,7 @@ def load_session(agent_id: str, session_id: str) -> Optional[dict]:
     surfaces agree on "this conversation" the way the web chat does.
     """
     from openprogram.agent.session_db import default_db
-    from openprogram.contextgit import active_branch_chain, head_or_tip
+    from openprogram.context.git import active_branch_chain, head_or_tip
     db = default_db()
     sess = db.get_session(session_id)
     if sess is None:

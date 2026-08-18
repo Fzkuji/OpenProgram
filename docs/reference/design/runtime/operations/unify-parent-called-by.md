@@ -1,6 +1,6 @@
 # Unifying parent_id and called_by — Design
 
-> Code: `store/session/_msg_adapter.py`, `webui/persistence.py`, `contextgit/dag.py`, `webui/ws_actions/session.py`
+> Code: `store/session/_msg_adapter.py`, `webui/persistence.py`, `context/git/dag.py`, `webui/ws_actions/session.py`
 
 ## 1. Two parent pointers, two meanings
 

@@ -35,7 +35,7 @@ This file records the divergences between the design docs and the actual code, o
 
 ### ~~context/contextgit.md → merged into context/storage-and-engine.md~~
 - ~~Doc marker: "Status: proposal, not implemented"~~
-- Status: ✅ Merged into `context/overview.md` together with context-commit-chain / context-engine-spec / context-attach-merge / cross-turn (the DAG foundation lives in `contextgit/dag.py`; the upper layer is not yet built).
+- Status: ✅ Merged into `context/overview.md` together with context-commit-chain / context-engine-spec / context-attach-merge / cross-turn (the DAG foundation lives in `context/git/dag.py`; the upper layer is not yet built).
 
 ---
 

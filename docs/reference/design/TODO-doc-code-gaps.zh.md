@@ -35,7 +35,7 @@
 
 ### ~~context/contextgit.md → 已并入 context/storage-and-engine.md~~
 - ~~文档标记: "Status: proposal, not implemented"~~
-- 状态: ✅ 已与 context-commit-chain / context-engine-spec / context-attach-merge / cross-turn 一并合入 `context/overview.md`（DAG 底座在 `contextgit/dag.py`，上层未建）
+- 状态: ✅ 已与 context-commit-chain / context-engine-spec / context-attach-merge / cross-turn 一并合入 `context/overview.md`（DAG 底座在 `context/git/dag.py`，上层未建）
 
 ---
 

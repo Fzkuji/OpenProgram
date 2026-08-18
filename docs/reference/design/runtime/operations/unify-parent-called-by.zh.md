@@ -1,6 +1,6 @@
 # 统一 parent_id 与 called_by — 设计方案
 
-> 代码: `store/session/_msg_adapter.py`、`webui/persistence.py`、`contextgit/dag.py`、`webui/ws_actions/session.py`
+> 代码: `store/session/_msg_adapter.py`、`webui/persistence.py`、`context/git/dag.py`、`webui/ws_actions/session.py`
 
 ## 一、两个父指针，两种含义
 

@@ -118,6 +118,14 @@ def test_repository_maintenance_tools_live_under_scripts() -> None:
     assert not any(path == "tools" or path.startswith("tools/") for path in tracked)
 
 
+def test_context_git_lives_inside_the_context_domain() -> None:
+    tracked = set(_tracked_paths())
+
+    assert "openprogram/context/git/__init__.py" in tracked
+    assert "openprogram/context/git/dag.py" in tracked
+    assert not any(path.startswith("openprogram/contextgit/") for path in tracked)
+
+
 def test_developer_scripts_do_not_live_at_the_repository_root() -> None:
     script_suffixes = {".py", ".ps1", ".sh"}
     source_entry_modules = {"openprogram_cli.py"}

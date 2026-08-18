@@ -16,7 +16,7 @@ the exact message shapes seen in real branched sessions.
 """
 from __future__ import annotations
 
-from openprogram.contextgit import active_branch_chain
+from openprogram.context.git import active_branch_chain
 
 
 def _msg(mid: str, role: str, pred: str | None, ts: int, content: str = ""):

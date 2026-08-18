@@ -31,7 +31,7 @@ codebase:
 | The gate's `ask` path | `ApprovalRegistry` + `_wrap_with_approval`: request, block and wait, approve or deny; a denial returns an is_error tool result | `openprogram/agent/internals/_approval.py` |
 | The observer's `Prepare` background task | `JobRunner.spawn_job` — ThreadPoolExecutor, state machine, job_status broadcast | `openprogram/agent/job/runner.py` |
 | Landing slot for `Inject` | memory prefetch into the system prompt plus steering messages | `openprogram/agent/agent_loop.py` |
-| Event causality, rewind, branching | the session git DAG, whose nodes carry parent_id / caller | `openprogram/contextgit/` |
+| Event causality, rewind, branching | the session git DAG, whose nodes carry parent_id / caller | `openprogram/context/git/` |
 | The gate's hard enforcement point | the single point every chat tool call passes through | `agent_loop.py` `_execute_tool_calls` |
 
 ## 3. Event taps

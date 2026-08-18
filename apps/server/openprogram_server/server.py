@@ -183,7 +183,7 @@ def _set_active_head(session_id: str, head_id: Optional[str]) -> None:
 def _deepest_leaf_db(session_id: str, root_id: str) -> Optional[str]:
     """SessionDB-backed deepest_leaf — finds the tip of the subtree
     under ``root_id`` so sibling-checkout lands on the latest reply,
-    not the fork point. Mirrors openprogram.contextgit.deepest_leaf
+    not the fork point. Mirrors openprogram.context.git.deepest_leaf
     but reads from SQL instead of an in-memory message list."""
     try:
         from openprogram.agent.session_db import default_db
@@ -455,7 +455,7 @@ def _restore_sessions():
             # ContextGit migration: backfill predecessor on legacy
             # messages and pick a head_id. Old conversations become a
             # straight linear chain (see docs/design/context/overview.md).
-            from openprogram.contextgit import (
+            from openprogram.context.git import (
                 normalize_parent_pointers,
                 head_or_tip,
             )
@@ -853,12 +853,12 @@ RUN_ACTIVE_ERROR = (
 )
 
 
-# DAG helpers live in openprogram.contextgit. We keep ``advance_head``
+# DAG helpers live in openprogram.context.git. We keep ``advance_head``
 # as the in-memory mutation primitive but wrap it in ``_append_msg``
 # below so every webui write also flows into SessionDB. That makes the
 # dispatcher / channels worker / TUI see writes from the webui WS
 # handlers without waiting for the next ``_save_session``.
-from openprogram.contextgit import (  # noqa: E402
+from openprogram.context.git import (  # noqa: E402
     advance_head as _raw_advance_head,
     head_or_tip as _head_or_tip,
     linear_history as _linear_history,

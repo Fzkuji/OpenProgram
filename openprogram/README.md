@@ -13,7 +13,7 @@ Web, Ink TUI, and Electron sources live under `apps/` and depend on this core.
 | Programs and commands | `programs/`, `commands/`, `cli/` |
 | Models and credentials | `providers/`, `auth/`, `credential_files/`, `backend/` |
 | Persistent services | `worker/`, `channels/`, `scheduler/`, `proactive/` |
-| State | `store/`, `memory/`, `usage/`, `contextgit/` |
+| State | `store/`, `memory/`, `usage/`, `context/git/` |
 | Integrations | `skills/`, `plugins/`, `mcp/`, `mcp_server/`, `acp/`, `lsp/` |
 | Platform boundaries | `sandbox/`, `security/`, `worktree/`, `updater/` |
 

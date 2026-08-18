@@ -1,11 +1,11 @@
-"""Tests for ``openprogram.contextgit.dag``.
+"""Tests for ``openprogram.context.git.dag``.
 
 Pure-function tests — no DB, no server. These lock down the semantics
 that retry / edit / checkout rely on.
 """
 from __future__ import annotations
 
-from openprogram.contextgit import (
+from openprogram.context.git import (
     advance_head,
     children,
     deepest_leaf,

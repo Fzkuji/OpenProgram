@@ -389,7 +389,7 @@ async def handle_load_session(ws, cmd: dict):
         if _exists:
             conv = _s._get_or_create_session(session_id)
     if conv:
-        from openprogram.contextgit import (
+        from openprogram.context.git import (
             active_branch_chain,
             deepest_leaf,
             head_or_tip,
