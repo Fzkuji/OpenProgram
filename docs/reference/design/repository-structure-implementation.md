@@ -100,6 +100,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Post-migration CI repair | `15fd5e1f`, `c7a494ef`, `eaf34a1b`, `63c65ad8`, `35d7edc2`, `2f40f948` | implemented; reviewed | Aligns landing-page checks, migrated Server test paths, documentation navigation, runtime HTTP inventory and doctor checks with `apps/`; keeps App package locks portable; moves subprocess coverage to component; and verifies macOS installer behavior on a native runner rather than Ubuntu. |
 | Desktop menu geometry extraction | `ec8a988f`, `ab2fef3b` | implemented; reviewed | Moves three pure placement functions to a directly executable CommonJS module without changing menu behavior; includes the module in packaged and local-refresh file closures and makes the refresh test verify the staged file. |
 | Desktop bridge WebTab type extraction | `9bdc4a93` | implemented; reviewed | Moves the five public WebTab contracts to a type-only module, preserves re-exports from the established bridge entry and leaves all renderer state and transfer runtime code unchanged. |
+| Desktop bridge service type extraction | `f6ede2a7` | implemented; reviewed | Moves history, downloads, updates, browser import/data, terminal and menu contracts to the same type-only module; direct and compatibility type consumers compile while transfer and runtime coordination remain in place. |
 
 ## Implemented task brief: Legacy cleanup F2
 
@@ -171,7 +172,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 - Exclude runtime behavior, store changes, transfer protocol changes, UI/CSS
   changes and unrelated active Agent configuration work.
 
-## Active task brief: Desktop bridge service-contract extraction
+## Implemented task brief: Desktop bridge service-contract extraction
 
 - Approved source: `repository-structure.html`; base: current `main` after the
   WebTab type-contract extraction.
@@ -324,6 +325,10 @@ pass — independent quality re-review through `ab2fef3b`
 pass — complete Web `npm run check`, executable Web split checks and TypeScript no-emit check for `9bdc4a93`
 pass — independent specification review for `9bdc4a93`
 pass — independent quality review for `9bdc4a93`
+1 failed — public RED: `browser-controls.tsx` requested the not-yet-exported `DesktopContextMenuItem`
+pass — complete Web `npm run check`, built-in Browser, bookmarks, theme, terminal, updates, Web split and TypeScript checks for `f6ede2a7`
+pass — independent specification review for `f6ede2a7`
+pass — independent quality review for `f6ede2a7`
 ```
 
 ## Deferred boundaries
@@ -332,8 +337,9 @@ pass — independent quality review for `9bdc4a93`
   `apps/desktop/menu-geometry.js`; keep window lifecycle, native WebView, tab
   transfer and menu-host orchestration in place until each boundary has direct
   executable coverage.
-- `apps/web/lib/desktop-bridge.ts`: WebTab contracts now live in
-  `apps/web/lib/desktop-bridge-types.ts`; extract the remaining contract groups,
-  view state and transfer coordination only in separately reviewed batches.
+- `apps/web/lib/desktop-bridge.ts`: WebTab and Desktop service contracts now
+  live in `apps/web/lib/desktop-bridge-types.ts`; transfer contracts, the
+  aggregate bridge, view state and transfer coordination remain for separately
+  reviewed batches.
 - Long cohesive Python state machines remain intact until a separately tested
   responsibility is identified; line count alone is not an implementation task.
