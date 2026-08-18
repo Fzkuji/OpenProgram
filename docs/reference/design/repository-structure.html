@@ -163,7 +163,7 @@
           <td><code>apps/web/lib/desktop-bridge.ts</code></td>
           <td>类型、视图状态和标签转移共处，接近 2,000 行</td>
           <td><span class="state later">分批实施</span></td>
-          <td>WebTab 与 Desktop 服务公共类型已提取到 <code>desktop-bridge-types.ts</code> 并由原文件 re-export；transfer contracts、view state 与 tab transfer 后续在执行级 Web split 测试保护下分别处理。</td>
+          <td>WebTab 与 Desktop 服务公共类型已提取到 <code>desktop-bridge-types.ts</code>，preload-facing transfer contracts 已提取到 <code>desktop-transfer-types.ts</code>，并由原文件 re-export；aggregate bridge、view state、journal persistence 与 tab transfer coordination 保持在原处，直到识别出可独立执行验证的职责。</td>
         </tr>
         <tr>
           <td><code>runtime.py</code>、<code>runner.py</code>、<code>resource_governance.py</code></td>

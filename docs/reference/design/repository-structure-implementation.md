@@ -101,6 +101,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Desktop menu geometry extraction | `ec8a988f`, `ab2fef3b` | implemented; reviewed | Moves three pure placement functions to a directly executable CommonJS module without changing menu behavior; includes the module in packaged and local-refresh file closures and makes the refresh test verify the staged file. |
 | Desktop bridge WebTab type extraction | `9bdc4a93` | implemented; reviewed | Moves the five public WebTab contracts to a type-only module, preserves re-exports from the established bridge entry and leaves all renderer state and transfer runtime code unchanged. |
 | Desktop bridge service type extraction | `f6ede2a7` | implemented; reviewed | Moves history, downloads, updates, browser import/data, terminal and menu contracts to the same type-only module; direct and compatibility type consumers compile while transfer and runtime coordination remain in place. |
+| Desktop bridge transfer type extraction | `2d2ec81a`, `b8c97d41` | implemented; reviewed | Moves the preload-facing transfer receipt and API contracts to a dedicated type-only module, preserves the established bridge re-exports and leaves the journal, aggregate bridge and transfer runtime unchanged. |
 
 ## Implemented task brief: Legacy cleanup F2
 
@@ -189,7 +190,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 - Exclude transfer protocol changes, runtime imports, UI/CSS changes and
   unrelated active Agent configuration work.
 
-## Active task brief: Desktop bridge transfer-contract extraction
+## Implemented task brief: Desktop bridge transfer-contract extraction
 
 - Approved source: `repository-structure.html`; base: current `main` after the
   Desktop service-contract extraction.
@@ -347,6 +348,10 @@ pass — independent quality review for `9bdc4a93`
 pass — complete Web `npm run check`, built-in Browser, bookmarks, theme, terminal, updates, Web split and TypeScript checks for `f6ede2a7`
 pass — independent specification review for `f6ede2a7`
 pass — independent quality review for `f6ede2a7`
+1 failed — public RED: `desktop-bridge.ts` could not resolve the not-yet-created `desktop-transfer-types` module
+pass — complete Web `npm run check`, executable Web split checks and TypeScript no-emit check through `b8c97d41`
+pass — independent specification review through `b8c97d41`
+pass — independent quality review through `b8c97d41`
 ```
 
 ## Deferred boundaries
@@ -356,8 +361,9 @@ pass — independent quality review for `f6ede2a7`
   transfer and menu-host orchestration in place until each boundary has direct
   executable coverage.
 - `apps/web/lib/desktop-bridge.ts`: WebTab and Desktop service contracts now
-  live in `apps/web/lib/desktop-bridge-types.ts`; transfer contracts, the
-  aggregate bridge, view state and transfer coordination remain for separately
-  reviewed batches.
+  live in `apps/web/lib/desktop-bridge-types.ts`; preload-facing transfer
+  contracts live in `apps/web/lib/desktop-transfer-types.ts`. Keep the aggregate
+  bridge, view state, journal persistence and transfer coordination in place
+  until an independently executable responsibility is identified.
 - Long cohesive Python state machines remain intact until a separately tested
   responsibility is identified; line count alone is not an implementation task.
