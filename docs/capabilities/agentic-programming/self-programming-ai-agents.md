@@ -52,7 +52,7 @@ test. Show me the diff before committing it.
 ```
 
 The bundled
-[`agentic-programming` skill](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md)
+[`agentic-programming` skill](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/skills_bundled/agentic-programming/SKILL.md)
 defines the file layout, decorator contract, validation steps, and smoke tests.
 A watcher can load an approved function without restarting the worker.
 

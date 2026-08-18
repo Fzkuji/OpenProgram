@@ -217,7 +217,7 @@
 存量按生产代码统计（不含测试）：<code>@function</code>共46个（32个<code>@function(...)</code>装饰器写法，
 14个<code>function(...)(fn)</code>模块级调用写法，两种写法进的是同一个注册表）；
 <code>@agentic_function</code>共4个（<code>extract_pdf_figures</code>、<code>extract_pdf_tables</code>、<code>interaction_demo</code>、<code>goal</code>）；
-技能<code>openprogram/skills_bundled/</code>下3份、仓库根<code>skills/</code>下4份，加上用户目录和远端缓存装的，
+技能<code>openprogram/skills_bundled/</code>下4份，加上用户项目、用户目录和远端缓存装的，
 全部经<code>skills/loader.py</code>进系统提示（见第4问）。
 <b>三个刻度不是仅有的三个位置。</b>骨架里放一个<code>decision.make</code>是硬里嵌软；技能第三步写「调<code>survey_references</code>」是软里嵌硬。所以谱是连续的。
 </div>
@@ -460,8 +460,8 @@
 <b>条数不截。</b>之前chat那条路截到20条，装了20份以上技能的用户后面那些模型根本看不见，而这正是要修的毛病。
 要让清单短，走<code>skills.disabled</code>（设置页、agent档案、Skills页开关都写这一个字段），不靠渲染器悄悄砍。
 代价看得见：只有3份自带技能时512 token；装满26份（自带加项目加19份远端拉的）是3055 token。这段在L0，是整段系统提示里最容易命中prefix cache的一段。
-还没合的一处：<code>skills/agentic-programming/SKILL.md</code>和<code>skills_bundled/agentic-programming/SKILL.md</code>是两份已经漂开的近似副本，
-project来源盖过bundled，所以模型看到的是前者。
+仓库根的旧技能副本已经删除；内置技能只有<code>openprogram/skills_bundled/</code>这一份权威来源，
+用户当前项目的<code>&lt;cwd&gt;/skills/</code>仍可按既有优先级覆盖内置技能。
 </div>
 </div>
 
@@ -1192,8 +1192,8 @@ project来源盖过bundled，所以模型看到的是前者。
 <b>层4（不建议做）：目录名与线上格式。</b><code>openprogram/programs/functions/agentic/</code>被132处斜杠路径引用（61个文件），牵到
 <code>.gitignore:51,57,58</code>和<code>pyproject.toml:201,215,216</code>；<code>kind="agentic_function"</code>（<code>streaming/__init__.py:24</code>）是跨进程流协议里的枚举值。
 共170处以上，改了只换来一次全仓大改，目录名和线上枚举本来就不是概念名。
-<br>另一个要一起处理的：<code>skills/agentic-programming/SKILL.md</code>和<code>skills_bundled/agentic-programming/SKILL.md</code>是两份已经漂开的近似副本（30处和31处），
-改名之前先把它们合成一份，否则改名等于把同一个错误抄两遍。
+<br>仓库根旧的<code>skills/agentic-programming/SKILL.md</code>副本已经删除；内置规范只维护
+<code>openprogram/skills_bundled/agentic-programming/SKILL.md</code>。
 </div>
 </div>
 

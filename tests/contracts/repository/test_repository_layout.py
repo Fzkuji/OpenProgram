@@ -18,7 +18,6 @@ TOP_LEVEL_DIRECTORIES = {
     "references",
     "scripts",
     "site",
-    "skills",
     "tests",
 }
 

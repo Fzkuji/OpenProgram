@@ -14,7 +14,7 @@
 
 ## 编写函数
 
-没有 `create()` / `fix()` 这类 meta 函数——编写、修改、校验 `@agentic_function` 直接用普通文件编辑工具完成,遵循 [`skills/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md)。该 skill 是完整规范:文件布局、装饰器元数据、docstring 与 `content` 的分工、校验清单、冒烟测试。
+没有 `create()` / `fix()` 这类 meta 函数——编写、修改、校验 `@agentic_function` 直接用普通文件编辑工具完成,遵循 [`openprogram/skills_bundled/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/skills_bundled/agentic-programming/SKILL.md)。该 skill 是完整规范:文件布局、装饰器元数据、docstring 与 `content` 的分工、校验清单、冒烟测试。
 
 ## 导入
 

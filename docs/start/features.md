@@ -64,7 +64,7 @@ so interrupted work resumes where it left off.
 Writing, fixing and scaffolding `@agentic_function`s is itself
 agent work — done with ordinary file-editing tools, guided by
 the **`agentic-programming` skill**
-([`skills/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md)).
+([`openprogram/skills_bundled/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/skills_bundled/agentic-programming/SKILL.md)).
 There are no dedicated `create()` / `fix()` framework calls:
 they only ever wrapped one LLM call plus a file write, which an
 agent does directly.

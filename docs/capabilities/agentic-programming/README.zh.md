@@ -32,6 +32,6 @@ OpenProgram 提供三种方式来决定函数内部“接下来执行什么”�
 
 - [`../../reference/api/agentic-function.md`](../../reference/api/agentic-function.md) —— 装饰器 API 速查
 - [`../../reference/api/runtime.md`](../../reference/api/runtime.md) —— `Runtime.exec()` 的参数与行为
-- [`skills/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md) —— agent 用于编写/校验函数的仓库内 skill（文件布局、规则清单、冒烟测试）
+- [`openprogram/skills_bundled/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/skills_bundled/agentic-programming/SKILL.md) —— agent 用于编写/校验函数的内置 skill（文件布局、规则清单、冒烟测试）
 - [`../../reference/design/function/calling-unification.md`](../../reference/design/function/calling-unification.md) —— 函数调用框架的内部设计笔记（演进 / 重构计划，编写函数时无需阅读）
 - *LLM-as-Code: Agentic Programming for Agent Harness*（[arXiv:2606.15874](https://arxiv.org/abs/2606.15874)）—— 描述该范式的论文，已被 KDD 2026 AgenticSE workshop 接收

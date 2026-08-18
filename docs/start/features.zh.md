@@ -60,7 +60,7 @@ agent 会先在前期厘清需求，然后完全自主地工作 —— 执行、
 编写、修复和搭建 `@agentic_function` 本身就是
 agent 的工作 —— 用普通的文件编辑工具完成，由
 **`agentic-programming` skill**
-（[`skills/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/skills/agentic-programming/SKILL.md)）指导。
+（[`openprogram/skills_bundled/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/skills_bundled/agentic-programming/SKILL.md)）指导。
 没有专门的 `create()` / `fix()` 框架调用：
 它们无非是包了一次 LLM 调用加一次文件写入，而 agent
 可以直接做这些事。
