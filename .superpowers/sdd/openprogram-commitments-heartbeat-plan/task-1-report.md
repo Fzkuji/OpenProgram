@@ -157,8 +157,8 @@ SHA，最终 report commit SHA 以任务最终回复为准。
   `components/animated-icons/index.tsx` unused imports、
   `components/center-tabs/file-tab-pane.tsx` unused variable、provider settings
   `no-explicit-any` 等；本任务 targeted files 无错误。
-- `python -m tools.docs_site.checklinks` → `0 broken link(s)`。
-- `python -m tools.docs_site.checklang` → failed with
+- `python -m scripts.docs_site.checklinks` → `0 broken link(s)`。
+- `python -m scripts.docs_site.checklang` → failed with
   `61 Chinese line(s) in default-English pages`，全部位于既有
   `capabilities/goal.md` 和 `superpowers/plans|specs`，不在本任务三份设计文档。
 - feature matrix mechanical parser →

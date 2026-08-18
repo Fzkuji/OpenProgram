@@ -15,8 +15,8 @@
 ```text
 pytest -q tests/agentic_programming/test_runtime_structured_output.py tests/unit/test_permanent_error_retryable.py tests/unit/test_error_taxonomy.py tests/unit/test_exec_timeout_code.py
 ruff check openprogram/agentic_programming/runtime.py tests/agentic_programming/test_runtime_structured_output.py
-python -m tools.docs_site.build
-python -m tools.docs_site.checklinks
+python -m scripts.docs_site.build
+python -m scripts.docs_site.checklinks
 git diff --check
 ```
 

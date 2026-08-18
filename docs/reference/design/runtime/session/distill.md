@@ -44,7 +44,7 @@ Two nodes get explicit labels rather than passing as ordinary turns, because in 
 
 Truncation is layered. Per-field caps stop one runaway tool result (a large file read) from evicting the reasoning around it; the total budget cuts at the last whole turn that fits and names the first dropped turn (`re-read with start_turn=N to continue`), so a truncated transcript never looks like a complete one and the reader can page on from where it stopped.
 
-`tools/dag_dump.py` remains the debugging view — node ids, lanes, tiers. The two do not overlap.
+`scripts/dag_dump.py` remains the debugging view — node ids, lanes, tiers. The two do not overlap.
 
 ## Discovery reuses existing tools
 

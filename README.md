@@ -413,8 +413,7 @@ apps/
 ├── web/                            # Next.js web interface
 └── desktop/                        # Electron desktop shell
 tests/                               # pytest: <layer>/<product-domain>
-scripts/                             # repository maintenance and diagnostics
-tools/                               # release and documentation tooling
+scripts/                             # repository maintenance, release, and documentation tooling
 docs/                                # user, operator, and design documentation
 ```
 

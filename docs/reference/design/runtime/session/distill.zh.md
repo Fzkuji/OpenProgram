@@ -44,7 +44,7 @@ store 走 `default_db()` 而不是写死 `~/.openprogram` 路径，这样绑定�
 
 截断分两层。单字段上限防止一次失控的工具结果（读了个大文件）把周围的推理挤掉；总预算切在最后一个放得下的完整轮次上，并写明第一个被丢的轮号（`re-read with start_turn=N to continue`），被截断的转写不会看起来像完整的，读者也能从断点接着翻。
 
-`tools/dag_dump.py` 仍是调试视图，看节点 id、lane、tier。两者不重叠。
+`scripts/dag_dump.py` 仍是调试视图，看节点 id、lane、tier。两者不重叠。
 
 ## 会话发现复用已有工具
 

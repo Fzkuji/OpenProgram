@@ -15,8 +15,8 @@
 ```text
 pytest -q tests/unit/test_session_index_consistency.py tests/unit/test_session_cache_lru.py tests/unit/test_session_branch_consistency.py tests/unit/test_archive_agent.py tests/unit/test_memory_written_marker.py tests/unit/test_list_agents.py
 ruff check openprogram/store/session/session_store.py openprogram/store/session/session_node_writer.py tests/unit/test_session_index_consistency.py
-python -m tools.docs_site.build
-python -m tools.docs_site.checklinks
+python -m scripts.docs_site.build
+python -m scripts.docs_site.checklinks
 git diff --check
 git status --short
 ```

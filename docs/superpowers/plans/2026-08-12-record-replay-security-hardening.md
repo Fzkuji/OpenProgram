@@ -16,8 +16,8 @@
 ```text
 pytest -q tests/providers/test_record_replay.py tests/providers/test_record_replay_cli.py tests/providers/test_record_replay_registry.py
 ruff check openprogram/providers/recording.py openprogram/providers/replay.py tests/providers/test_record_replay.py
-python -m tools.docs_site.build
-python -m tools.docs_site.checklinks
+python -m scripts.docs_site.build
+python -m scripts.docs_site.checklinks
 git diff --check
 ```
 

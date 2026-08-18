@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Do not copy `/Users/fzkuji/Downloads/sitemap (1).xml` into the repository.
-- Keep `tools/docs_site/build.py` as the only sitemap generator.
+- Keep `scripts/docs_site/build.py` as the only sitemap generator.
 - Publish the exact token `google-site-verification: google01b0015fda12129e.html`.
 - Add no dependencies.
 
@@ -24,7 +24,7 @@
 - Modify: `.github/workflows/docs-pages.yml`
 
 **Interfaces:**
-- Consumes: files copied by `tools.docs_site.build._copy_static_root()` into `docs/_site/`
+- Consumes: files copied by `scripts.docs_site.build._copy_static_root()` into `docs/_site/`
 - Produces: `_publish/google01b0015fda12129e.html` with the exact Google verification token
 
 - [ ] **Step 1: Verify the current assembly omits the proof**
@@ -60,8 +60,8 @@ Run:
 
 ```bash
 OPENPROGRAM_DOCS_BASE=/docs/ OPENPROGRAM_DOCS_ORIGIN=https://openprogram.io \
-  python -m tools.docs_site.build
-python -m tools.docs_site.checklinks
+  python -m scripts.docs_site.build
+python -m scripts.docs_site.checklinks
 ```
 
 Repeat the workflow assembly locally and verify the proof, sitemap, robots file, and that the URL count has not fallen below the pre-change count of 443.

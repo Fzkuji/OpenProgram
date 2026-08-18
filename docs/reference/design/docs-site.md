@@ -52,7 +52,7 @@ docs/                         ← source files (untouched)
   design/proactive/event-layer.html   ← hand-written html
   ...
 
-tools/docs_site/              ← new: build script (one small module)
+scripts/docs_site/              ← new: build script (one small module)
   build.py                    entry point: scan docs/ → render → write _site/
   template.py                 html shell template (shell + injection points)
   nav.py                      generate navigation data from directory tree + README
@@ -70,7 +70,7 @@ docs/_site/                   ← build output
   assets/...
 ```
 
-Build command: `python -m tools.docs_site.build`.
+Build command: `python -m scripts.docs_site.build`.
 
 ## 5. Page Skeleton (Three Columns)
 
@@ -137,4 +137,4 @@ The build output `docs/_site/` is committed to git and served by the worker's si
 The site is built and served. Two residual items:
 
 - `docs/reference/design/proactive/_research_archive/` still holds three files (`evaluation.md`, `replay.md`, `threat-model.md`). They are excluded from the site by the leading-underscore rule rather than by deletion.
-- The build has no `--watch` mode; every rebuild is a full run of `python -m tools.docs_site.build`.
+- The build has no `--watch` mode; every rebuild is a full run of `python -m scripts.docs_site.build`.

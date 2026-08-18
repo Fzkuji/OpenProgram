@@ -69,7 +69,7 @@ openprogram config set ui.web_port 8101
 | `OPENPROGRAM_WEB_PORT` | worker 单端口（默认 18100）；优先级低于显式参数、高于持久化偏好 | `openprogram/worker/lifecycle.py`、`apps/cli/python/openprogram_cli/_impl/commands/web.py` |
 | `OPENPROGRAM_NO_WEB` | `1` = worker 跳过前端构建检查，不提供 web UI | `openprogram/worker/runner.py` |
 | `OPENPROGRAM_WEB_NO_FRONTEND` | `1` = `openprogram web` 跳过前端只起 backend | `apps/cli/python/openprogram_cli/_impl/commands/web.py` |
-| `OPENPROGRAM_DOCS_BASE` | 文档站的挂载路径（默认 `/docs/`，须以 `/` 开头和结尾） | `tools/docs_site/build.py` |
+| `OPENPROGRAM_DOCS_BASE` | 文档站的挂载路径（默认 `/docs/`，须以 `/` 开头和结尾） | `scripts/docs_site/build.py` |
 
 ### 行为开关
 

@@ -6,7 +6,7 @@ on:
     paths:
       - "docs/**"
       - "site/**"
-      - "tools/docs_site/**"
+      - "scripts/docs_site/**"
       - "apps/web/app/favicon.ico"
       - ".github/workflows/docs-pages.yml"
   workflow_dispatch:
@@ -37,16 +37,16 @@ jobs:
         run: pip install -e . markdown-it-py mdit-py-plugins pygments
 
       - name: Generate reference pages
-        run: python -m tools.docs_site.generate_reference
+        run: python -m scripts.docs_site.generate_reference
 
       - name: Build docs site
-        run: python -m tools.docs_site.build
+        run: python -m scripts.docs_site.build
 
       - name: Check landing page
-        run: python -m tools.docs_site.check_landing
+        run: python -m scripts.docs_site.check_landing
 
       - name: Check docs links
-        run: python -m tools.docs_site.checklinks
+        run: python -m scripts.docs_site.checklinks
 
       # Final layout: the landing page and the root-level files (CNAME,
       # robots.txt, sitemap.xml) sit at /, the documentation under /docs/.
@@ -75,5 +75,5 @@ jobs:
       - name: Submit sitemap to IndexNow
         continue-on-error: true
         run: |
-          python -m tools.docs_site.indexnow \
+          python -m scripts.docs_site.indexnow \
             _publish/sitemap.xml _indexnow --submit

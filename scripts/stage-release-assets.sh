@@ -32,7 +32,7 @@ test -n "$uv_bin" || {
   cd "$repo_root"
   "$uv_bin" run --isolated --locked \
     --with markdown-it-py --with mdit-py-plugins --with pygments \
-    python -m tools.docs_site.build
+    python -m scripts.docs_site.build
 )
 test -f "$docs_source_dir/index.html" || {
   printf 'Docs build did not produce %s/index.html\n' "$docs_source_dir" >&2

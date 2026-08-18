@@ -86,7 +86,7 @@ Retain the existing near-black background, teal and violet accents, Inter body t
 
 ## Verification
 
-- Extend `tools.docs_site.check_landing` to assert the new product-first copy, harness links, Quick Start order, capability section, both arXiv links, and absence of workshop copy.
+- Extend `scripts.docs_site.check_landing` to assert the new product-first copy, harness links, Quick Start order, capability section, both arXiv links, and absence of workshop copy.
 - Run the landing-page check, documentation build, link check, and `git diff --check`.
 - Inspect desktop and 390px mobile screenshots.
 - Publish through the existing `Publish openprogram.io` workflow and verify the live HTML after GitHub Pages finishes building.

@@ -1,6 +1,6 @@
 """Check that default (English) doc sources contain no Chinese text.
 
-Run:  python -m tools.docs_site.checklang
+Run:  python -m scripts.docs_site.checklang
 Scans every product-area ``xxx.md`` (not ``xxx.zh.md``) for CJK characters.
 The design-notes archive (reference/design/) is exempt — its zh-only notes
 stay Chinese by design.

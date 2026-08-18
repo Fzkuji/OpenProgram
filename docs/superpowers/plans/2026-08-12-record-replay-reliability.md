@@ -20,8 +20,8 @@
 ```text
 pytest -q tests/providers/test_record_replay.py tests/providers/test_record_replay_registry.py tests/providers/test_record_replay_cli.py tests/unit/test_usage_stream_chokepoint.py
 ruff check openprogram/providers/recording.py openprogram/providers/replay.py openprogram/providers/api_registry.py openprogram/providers/__init__.py tests/providers/test_record_replay.py tests/providers/test_record_replay_registry.py
-python -m tools.docs_site.build
-python -m tools.docs_site.checklinks
+python -m scripts.docs_site.build
+python -m scripts.docs_site.checklinks
 git diff --check
 git status --short
 ```

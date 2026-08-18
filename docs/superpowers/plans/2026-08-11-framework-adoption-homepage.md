@@ -19,11 +19,11 @@
 ### Task 1: Specify the Product-First Landing Contract
 
 **Files:**
-- Modify: `tools/docs_site/check_landing.py`
+- Modify: `scripts/docs_site/check_landing.py`
 
 **Interfaces:**
 - Consumes: `site/index.html` through `LANDING` and `LandingParser`.
-- Produces: a failing then passing `python -m tools.docs_site.check_landing` contract.
+- Produces: a failing then passing `python -m scripts.docs_site.check_landing` contract.
 
 - [ ] **Step 1: Add failing product-positioning assertions**
 
@@ -50,7 +50,7 @@ require("Agents are just Python functions." not in visible_text,
 
 - [ ] **Step 2: Run the contract and confirm failure**
 
-Run: `python -m tools.docs_site.check_landing`
+Run: `python -m scripts.docs_site.check_landing`
 
 Expected: non-zero exit with missing new sections or product copy.
 
@@ -62,7 +62,7 @@ Do not commit a deliberately failing main branch. Stage this file only after Tas
 
 **Files:**
 - Modify: `site/index.html`
-- Test: `tools/docs_site/check_landing.py`
+- Test: `scripts/docs_site/check_landing.py`
 
 **Interfaces:**
 - Consumes: existing `/docs/` routes, `/docs/images/code_hero.png`, `/docs/images/chat_hero.png`, `/docs/images/tui_hero.png`, and the supported install script.
@@ -105,9 +105,9 @@ Reuse the existing card, grid, button, focus, and reduced-motion patterns. Add o
 Run:
 
 ```bash
-python -m tools.docs_site.check_landing
-python -m tools.docs_site.build
-python -m tools.docs_site.checklinks
+python -m scripts.docs_site.check_landing
+python -m scripts.docs_site.build
+python -m scripts.docs_site.checklinks
 git diff --check
 ```
 
@@ -116,7 +116,7 @@ Expected: `check-landing: ok`, successful build, `0 broken link(s)`, and no diff
 - [ ] **Step 8: Commit the implementation**
 
 ```bash
-git add site/index.html tools/docs_site/check_landing.py
+git add site/index.html scripts/docs_site/check_landing.py
 git commit -m "feat(site): present OpenProgram as an agent framework"
 ```
 

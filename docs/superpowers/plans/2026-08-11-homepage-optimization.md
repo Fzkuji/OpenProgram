@@ -21,14 +21,14 @@
 ### Task 1: Add the landing-page regression check
 
 **Files:**
-- Create: `tools/docs_site/check_landing.py`
+- Create: `scripts/docs_site/check_landing.py`
 
 **Interfaces:**
 - Consumes: `site/index.html`
 - Produces: exit code 0 only when the homepage contains required metadata, sections, installer, images, and no CSS that hides content
 
 - [ ] Write assertions for canonical and social metadata, JSON-LD, section ids, the documented installer, three existing screenshot paths, favicon, and visible content.
-- [ ] Run `python -m tools.docs_site.check_landing` and verify it fails against the current page.
+- [ ] Run `python -m scripts.docs_site.check_landing` and verify it fails against the current page.
 
 ### Task 2: Rebuild the landing page
 
@@ -42,12 +42,12 @@
 - [ ] Add complete metadata and JSON-LD.
 - [ ] Implement the approved information structure and accurate installation copy.
 - [ ] Keep content visible and make the ambient hero motion reduced-motion safe.
-- [ ] Run `python -m tools.docs_site.check_landing` until it passes.
+- [ ] Run `python -m scripts.docs_site.check_landing` until it passes.
 
 ### Task 3: Build, inspect, and publish
 
 **Files:**
-- Modify only if verification finds a defect: `site/index.html`, `tools/docs_site/check_landing.py`
+- Modify only if verification finds a defect: `site/index.html`, `scripts/docs_site/check_landing.py`
 
 **Interfaces:**
 - Consumes: finished homepage and current docs builder

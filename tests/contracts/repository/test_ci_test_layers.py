@@ -44,7 +44,7 @@ def test_ci_assigns_each_test_runtime_to_an_explicit_job() -> None:
     quality = _run_commands(jobs["quality"])
     assert "ruff check" in quality
     assert "tests/contracts" in quality
-    assert "tools.docs_site.build" in quality
+    assert "scripts.docs_site.build" in quality
     assert "tests/unit" in _run_commands(jobs["unit"])
     assert "tests/component" in _run_commands(jobs["component"])
     assert "tests/integration" in _run_commands(jobs["integration"])

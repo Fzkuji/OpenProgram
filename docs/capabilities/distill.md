@@ -56,11 +56,11 @@ The tool the distill skill uses is available on its own. `read_conversation` ren
 --- [2] assistant ---
 Building the site first, then rsyncing.
   [call] bash -> ok
-    args: {"command": "python -m tools.docs_site.build"}
+    args: {"command": "python -m scripts.docs_site.build"}
     result:
       wrote 214 pages to docs/_site
   [call] bash -> FAILED
-    args: {"command": "python -m tools.docs_site.checklinks"}
+    args: {"command": "python -m scripts.docs_site.checklinks"}
     result:
       2 dead links: capabilities/distill.md
 ```

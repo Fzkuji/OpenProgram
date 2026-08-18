@@ -1,6 +1,6 @@
 """Validate the published landing page's stable structure and metadata.
 
-Run:  python -m tools.docs_site.check_landing
+Run:  python -m scripts.docs_site.check_landing
 """
 
 from __future__ import annotations

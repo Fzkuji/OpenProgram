@@ -1,6 +1,6 @@
 """Check the built docs site for broken internal links.
 
-Run:  python -m tools.docs_site.checklinks
+Run:  python -m scripts.docs_site.checklinks
 Scans every href/src in docs/_site/*.html and reports targets that do not
 exist on disk. External URLs and pure-anchor links are skipped.
 """

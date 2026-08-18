@@ -1360,7 +1360,7 @@ def test_release_frontend_staging_includes_prebuilt_docs() -> None:
     staging = (ROOT / "scripts" / "stage-release-assets.sh").read_text(
         encoding="utf-8"
     )
-    assert "tools.docs_site.build" in staging
+    assert "scripts.docs_site.build" in staging
     assert 'docs_target_dir="$target_dir/docs"' in staging
     assert 'cp -R "$docs_source_dir/." "$docs_target_dir/"' in staging
 
@@ -1423,7 +1423,7 @@ printf '<html>docs</html>\\n' > "$PWD/docs/_site/index.html"
     )
     assert uv_log.read_text(encoding="utf-8").strip() == (
         "run --isolated --locked --with markdown-it-py --with mdit-py-plugins "
-        "--with pygments python -m tools.docs_site.build"
+        "--with pygments python -m scripts.docs_site.build"
     )
 
 

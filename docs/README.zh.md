@@ -222,8 +222,7 @@ apps/
 web/                                 # Next.js 界面
 desktop/                             # Electron 桌面宿主
 tests/                               # pytest：<layer>/<product-domain>
-scripts/                             # 可执行的仓库维护工具
-tools/                               # 可导入的发布和文档工具
+scripts/                             # 可执行或可导入的仓库维护工具
 ```
 
 各 workspace 的入口说明见

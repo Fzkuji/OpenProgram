@@ -242,8 +242,8 @@ duplicated in this historical distribution ledger.
 
 ```text
 python -m pytest tests/unit/test_distribution_release.py tests/unit/test_desktop_packaged_files.py tests/unit/test_webui_frontend.py
-python -m tools.docs_site.checklinks
-python -m tools.docs_site.build
+python -m scripts.docs_site.checklinks
+python -m scripts.docs_site.build
 python -m pytest tests/ --ignore=tests/integration
 npm run check --prefix desktop
 npm run check --prefix web
@@ -295,8 +295,8 @@ The platform runtime and public desktop artifact probes run on native release ru
 
 ```text
 python -m pytest tests/component/webui/test_webui_frontend.py tests/unit/webui/test_desktop_packaged_files.py tests/component/config/test_distribution_release.py
-python -m tools.docs_site.checklinks
-python -m tools.docs_site.build
+python -m scripts.docs_site.checklinks
+python -m scripts.docs_site.build
 python -m pytest tests/ --ignore=tests/integration
 npm run check --prefix desktop
 npm run check --prefix web

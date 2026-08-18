@@ -23,11 +23,11 @@ jobs:
       - name: Repository contracts
         run: uv run --locked --extra dev python -m pytest -q tests/contracts
       - name: Build docs site
-        run: uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m tools.docs_site.build
+        run: uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m scripts.docs_site.build
       - name: Check docs landing page
-        run: uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m tools.docs_site.check_landing
+        run: uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m scripts.docs_site.check_landing
       - name: Check docs links
-        run: uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m tools.docs_site.checklinks
+        run: uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m scripts.docs_site.checklinks
       - name: Examples smoke
         run: uv run --locked python examples/embed_in_your_stack.py
 

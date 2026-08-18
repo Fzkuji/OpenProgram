@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tools.docs_site import checklang
-from tools.docs_site.nav import build_tabs, discover
+from scripts.docs_site import checklang
+from scripts.docs_site.nav import build_tabs, discover
 
 
 ROOT = Path(__file__).resolve().parents[3]

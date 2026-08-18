@@ -52,7 +52,7 @@ docs/                         ← 源文件（不动）
   design/proactive/event-layer.html   ← 手写 html
   ...
 
-tools/docs_site/              ← 新增：构建脚本（一个小模块）
+scripts/docs_site/              ← 新增：构建脚本（一个小模块）
   build.py                    入口：扫描 docs/ → 渲染 → 写 _site/
   template.py                 html 外壳模板（壳 + 注入点）
   nav.py                      从目录树 + README 生成导航数据
@@ -70,7 +70,7 @@ docs/_site/                   ← 构建产物
   assets/...
 ```
 
-构建命令：`python -m tools.docs_site.build`。
+构建命令：`python -m scripts.docs_site.build`。
 
 ## 五、页面骨架（三栏）
 
@@ -137,4 +137,4 @@ docs/_site/                   ← 构建产物
 站点已构建并上线。两项残留：
 
 - `docs/reference/design/proactive/_research_archive/` 仍存有三个文件（`evaluation.md`、`replay.md`、`threat-model.md`）。它们靠下划线前缀规则被站点排除，而非删除。
-- 构建没有 `--watch` 模式，每次重建都是完整跑一遍 `python -m tools.docs_site.build`。
+- 构建没有 `--watch` 模式，每次重建都是完整跑一遍 `python -m scripts.docs_site.build`。

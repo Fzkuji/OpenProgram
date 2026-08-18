@@ -30,7 +30,7 @@ from pathlib import Path
 DOCS_ROOT = Path(__file__).resolve().parents[2] / "docs"
 GENERATED_NOTE = (
     "<!-- GENERATED FILE — do not edit. Rebuilt by "
-    "tools/docs_site/generate_reference.py from {source}. -->\n\n"
+    "scripts/docs_site/generate_reference.py from {source}. -->\n\n"
 )
 
 

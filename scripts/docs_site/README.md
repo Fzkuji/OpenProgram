@@ -9,7 +9,7 @@
 改完任何文档后，在仓库根目录跑：
 
 ```bash
-python -m tools.docs_site.build
+python -m scripts.docs_site.build
 ```
 
 它会扫描 `docs/`、重建整个 `docs/_site/`、刷新搜索索引。
@@ -70,7 +70,7 @@ python -m tools.docs_site.build
 ## 文件结构
 
 ```
-tools/docs_site/
+scripts/docs_site/
   build.py        入口：扫描 docs/ → 渲染 → 写 docs/_site/
   nav.py          从目录结构生成左侧导航树 + 根散页归类/显示名
   template.py     HTML 外壳模板（顶栏 + 三栏 + 主题/语言按钮）

@@ -62,7 +62,7 @@
 <ul>
   <li><code>python -m pytest -q tests/unit/test_browser_agent.py tests/unit/test_browser_tool.py tests/unit/test_webtab_control.py</code></li>
   <li><code>python -m pytest -q tests/unit/test_session_config_tools_intent.py tests/unit/test_tool_expansion_deterministic.py tests/agentic_programming/test_self_recursion_guard.py</code></li>
-  <li><code>python -m tools.docs_site.checklinks</code></li>
+  <li><code>python -m scripts.docs_site.checklinks</code></li>
   <li><code>git diff --check</code></li>
 </ul>
 
@@ -145,7 +145,7 @@
   <li><code>node apps/desktop/scripts/check-webtab-navigation.js</code></li>
   <li><code>node apps/web/scripts/check-web-split.mjs</code></li>
   <li><code>OPENPROGRAM_TEST_LIVE=1 OPENPROGRAM_TEST_REAL_HOME=1 python -m pytest -q -m live tests/live/app/test_web_use_background_app.py</code>：独立安装版后台 Page E2E；使用默认安装版 profile，自行构造后台 Page，不要求改变桌面窗口状态。</li>
-  <li><code>python -m tools.docs_site.checklinks</code>：当前仅报告未修改的 <code>chat-turn-visual-spec.raw.html</code> 中 4 个既有源码相对链接；本任务涉及页面没有新增失效链接。</li>
+  <li><code>python -m scripts.docs_site.checklinks</code>：当前仅报告未修改的 <code>chat-turn-visual-spec.raw.html</code> 中 4 个既有源码相对链接；本任务涉及页面没有新增失效链接。</li>
   <li><code>git diff --check</code></li>
 </ul>
 

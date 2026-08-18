@@ -35,9 +35,9 @@ public APIs, installation profiles, and current capabilities.
    uv run --locked --extra dev python -m pytest -q tests/component
    uv run --locked --extra dev python -m pytest -q tests/integration
    uv run --locked --extra dev python -m pytest -q -m "not browser" tests/e2e
-   uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m tools.docs_site.build
-   uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m tools.docs_site.check_landing
-   uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m tools.docs_site.checklinks
+   uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m scripts.docs_site.build
+   uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m scripts.docs_site.check_landing
+   uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m scripts.docs_site.checklinks
    ```
 
 5. For Web changes, also run from `apps/web/`:

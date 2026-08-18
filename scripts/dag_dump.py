@@ -3,8 +3,8 @@
 the browser.
 
 Usage:
-    python tools/dag_dump.py <session_id>
-    python tools/dag_dump.py            # newest session
+    python scripts/dag_dump.py <session_id>
+    python scripts/dag_dump.py            # newest session
 
 Shows, per node: id / role / caller / predecessor / lane / tier / depth,
 plus an ASCII grid placing each node at (lane+tier, depth) — the same

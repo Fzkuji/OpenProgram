@@ -6,7 +6,7 @@ Keep OpenProgram's build-generated sitemap as the canonical sitemap and publish 
 
 ## Design
 
-- `tools/docs_site/build.py` remains the only sitemap generator. Its current output contains all built English and Chinese documentation pages plus the landing page.
+- `scripts/docs_site/build.py` remains the only sitemap generator. Its current output contains all built English and Chinese documentation pages plus the landing page.
 - `docs/_static_root/google01b0015fda12129e.html` stores the ownership proof in source control.
 - The publish workflow promotes the proof from the documentation build output to `_publish/`, alongside `CNAME`, `robots.txt`, and `sitemap.xml`, so the deployed URL is `/google01b0015fda12129e.html` rather than `/docs/google01b0015fda12129e.html`.
 - The workflow checks the assembled proof contents before publishing.

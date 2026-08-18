@@ -7,7 +7,7 @@ that chain — they hang off the assistant turn that issued them via
 This module joins the two: walk the branch, and under each turn print
 the calls whose ``caller`` points at it.
 
-Written for reading, not debugging — ``tools/dag_dump.py`` covers the
+Written for reading, not debugging — ``scripts/dag_dump.py`` covers the
 coordinate/lane view. The output feeds the ``distill`` skill, which
 turns a past session into a reusable SKILL.md or agentic function.
 """

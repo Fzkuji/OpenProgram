@@ -13,7 +13,7 @@
     <dl>
       <dt>Approved design</dt><dd><a href="site-indexnow-discovery.html">IndexNow deployment discovery</a></dd>
       <dt>Base commit</dt><dd><code>8f888e37590fa4083e8f266c5f26e7cf2ef3a293</code></dd>
-      <dt>Production files</dt><dd><code>tools/docs_site/indexnow.py</code>, <code>.github/workflows/docs-pages.yml</code></dd>
+      <dt>Production files</dt><dd><code>scripts/docs_site/indexnow.py</code>, <code>.github/workflows/docs-pages.yml</code></dd>
       <dt>Test file</dt><dd><code>tests/unit/config/test_docs_publish_indexnow.py</code></dd>
       <dt>Required behavior</dt><dd>Build validated, deduplicated IndexNow batches from exact sitemap elements; submit every batch after the site-repository publish action, including later batches after an earlier failure; never block publication on notification failure.</dd>
       <dt>Public-entry RED</dt><dd>The unit test invokes the payload builder and the workflow test reads the published workflow.</dd>
@@ -37,10 +37,10 @@
       <li><code>uv sync --extra dev</code></li>
       <li><code>uv pip install markdown-it-py mdit-py-plugins pygments</code> (the same docs dependencies installed by the publication workflow)</li>
       <li><code>uv run pytest -q tests/unit/config/test_docs_publish_indexnow.py</code></li>
-      <li><code>uv run python -m tools.docs_site.build</code></li>
-      <li><code>uv run python -m tools.docs_site.check_landing</code></li>
-      <li><code>uv run python -m tools.docs_site.checklinks</code></li>
-      <li><code>uv run ruff check tools/docs_site/indexnow.py tests/unit/config/test_docs_publish_indexnow.py</code></li>
+      <li><code>uv run python -m scripts.docs_site.build</code></li>
+      <li><code>uv run python -m scripts.docs_site.check_landing</code></li>
+      <li><code>uv run python -m scripts.docs_site.checklinks</code></li>
+      <li><code>uv run ruff check scripts/docs_site/indexnow.py tests/unit/config/test_docs_publish_indexnow.py</code></li>
       <li>Parse <code>.github/workflows/docs-pages.yml</code> with PyYAML.</li>
       <li><code>git diff --check</code> and clean worktree after the reviewed commit.</li>
     </ul>

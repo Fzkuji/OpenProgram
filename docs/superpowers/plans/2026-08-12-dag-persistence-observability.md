@@ -14,8 +14,8 @@
 ```text
 pytest -q tests/agentic_programming/test_function_dag_persistence_observability.py tests/agentic_programming/test_function_dag_exit_node.py tests/agentic_programming/test_exec_breakdown.py tests/agentic_programming/test_ask_user_dag.py
 ruff check openprogram/agentic_programming/function.py tests/agentic_programming/test_function_dag_persistence_observability.py
-python -m tools.docs_site.build
-python -m tools.docs_site.checklinks
+python -m scripts.docs_site.build
+python -m scripts.docs_site.checklinks
 git diff --check
 git status --short
 ```

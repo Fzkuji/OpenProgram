@@ -694,8 +694,8 @@ uv run python scripts/check_feature_matrix.py docs/reference/design/feature-matr
 Run the repository-owned documentation commands and the source scan:
 
 ```bash
-uv run python -m tools.docs_site.build
-uv run python -m tools.docs_site.checklinks
+uv run python -m scripts.docs_site.build
+uv run python -m scripts.docs_site.checklinks
 rg -n "TODO|TBD|placeholder|partially implemented|unmanaged_transport" docs/reference/design/runtime/ssrf-protection.html docs/reference/design/feature-matrix.html
 ```
 
@@ -744,7 +744,7 @@ uv run ruff check openprogram tests scripts/check_runtime_http.py
 uv run python scripts/check_runtime_http.py
 ```
 
-Run `uv run python -m tools.docs_site.build`, `uv run python -m tools.docs_site.checklinks`, and `uv run python scripts/check_feature_matrix.py docs/reference/design/feature-matrix.html`. Record exit code, test counts, and output summaries in the final report.
+Run `uv run python -m scripts.docs_site.build`, `uv run python -m scripts.docs_site.checklinks`, and `uv run python scripts/check_feature_matrix.py docs/reference/design/feature-matrix.html`. Record exit code, test counts, and output summaries in the final report.
 
 **Step 3: Verify repository state and report integrity**
 

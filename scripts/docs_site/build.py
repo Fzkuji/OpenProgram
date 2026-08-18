@@ -4,7 +4,7 @@ Scans docs/ for markdown + hand-written html, renders each into one unified
 shell (left nav tree, right on-page toc, dark/light theme, search), and writes
 the static site to docs/_site/.
 
-Run:  python -m tools.docs_site.build
+Run:  python -m scripts.docs_site.build
 """
 
 from __future__ import annotations

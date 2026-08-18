@@ -69,7 +69,7 @@ Set these in the shell that launches `openprogram` (or the worker). Every one ha
 | `OPENPROGRAM_WEB_PORT` | the single worker port (default 18100); below explicit flags, above the persisted preference | `openprogram/worker/lifecycle.py`, `apps/cli/python/openprogram_cli/_impl/commands/web.py` |
 | `OPENPROGRAM_NO_WEB` | `1` = the worker skips the frontend build gate and does not serve the web UI | `openprogram/worker/runner.py` |
 | `OPENPROGRAM_WEB_NO_FRONTEND` | `1` = `openprogram web` skips the frontend and starts only the backend | `apps/cli/python/openprogram_cli/_impl/commands/web.py` |
-| `OPENPROGRAM_DOCS_BASE` | Mount path of the docs site (default `/docs/`; must start and end with `/`) | `tools/docs_site/build.py` |
+| `OPENPROGRAM_DOCS_BASE` | Mount path of the docs site (default `/docs/`; must start and end with `/`) | `scripts/docs_site/build.py` |
 
 ### Behavior switches
 

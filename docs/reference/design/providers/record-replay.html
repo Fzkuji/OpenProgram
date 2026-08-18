@@ -509,8 +509,8 @@ replay:
   pytest -q tests/component/providers/test_scripted_provider.py tests/component/providers/test_registry_from_config.py tests/unit/runtime/test_usage_stream_chokepoint.py tests/unit/providers/test_auth_methods.py tests/unit/webui/test_web_config_schema.py tests/component/config/test_config_write_safety.py
 python -m openprogram recordings --help
 python -m openprogram config get record_replay.mode
-python -m tools.docs_site.build
-python -m tools.docs_site.checklinks
+python -m scripts.docs_site.build
+python -m scripts.docs_site.checklinks
 git diff --check</pre>
 
   <h2 id="status">15 · 实现与验证记录</h2>

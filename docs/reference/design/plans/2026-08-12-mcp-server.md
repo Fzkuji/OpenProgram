@@ -444,8 +444,8 @@ git commit -m "feat: serve authenticated MCP over stdio"
 ```bash
 uv run --locked pytest -q tests/unit/test_mcp_server_contracts.py tests/unit/test_mcp_server_auth.py tests/unit/test_mcp_server_cli.py tests/unit/test_mcp_server_security.py tests/unit/test_mcp_server_tools.py tests/unit/test_mcp_server_turns.py tests/integration/test_mcp_server.py
 uv run --locked pytest -q tests/unit/test_authority_scope.py tests/unit/test_permission_rules.py tests/unit/test_spawn_hard_constraints.py tests/agent/test_questions.py tests/unit/test_acp_server.py tests/unit/test_tools_runtime.py
-uv run --locked --with mdit-py-plugins python -m tools.docs_site.build
-uv run --locked --with mdit-py-plugins python -m tools.docs_site.checklinks
+uv run --locked --with mdit-py-plugins python -m scripts.docs_site.build
+uv run --locked --with mdit-py-plugins python -m scripts.docs_site.checklinks
 git diff --check
 ```
 

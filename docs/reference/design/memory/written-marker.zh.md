@@ -557,7 +557,7 @@ head往回走会把整个会话都收进来。
 
 - `python -m pytest -q tests/unit/memory/test_memory_written_marker.py tests/unit/memory/test_memory_writing.py tests/unit/memory/test_memory_write_timing.py`：59项通过。
 - memory、DAG branch、predecessor和session branch相关回归组：159项通过。
-- `python -m tools.docs_site.build`构建415页；`python -m tools.docs_site.checklinks`
+- `python -m scripts.docs_site.build`构建415页；`python -m scripts.docs_site.checklinks`
   报告0条断链。修改的Python文件通过ruff、`py_compile`和`git diff --check`。
 - 迁移加固之前的全仓基线为2556项通过、7项跳过、2项deselected、1项xfail，
   另有11项已记录的origin-guard/403失败。合并分支在发布前重新执行全量验证，

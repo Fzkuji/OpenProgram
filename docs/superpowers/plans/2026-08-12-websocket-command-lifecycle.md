@@ -17,8 +17,8 @@
 ```text
 pytest -q tests/unit/test_websocket_command_lifecycle.py tests/unit/test_webui_head_mirror_and_run_guard.py tests/unit/test_turn_cancellation.py tests/meta_functions/test_follow_up.py
 ruff check openprogram/webui/server.py tests/unit/test_websocket_command_lifecycle.py
-python -m tools.docs_site.build
-python -m tools.docs_site.checklinks
+python -m scripts.docs_site.build
+python -m scripts.docs_site.checklinks
 git diff --check
 git status --short
 ```

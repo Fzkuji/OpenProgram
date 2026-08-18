@@ -44,8 +44,8 @@ body{max-width:980px;margin:40px auto;padding:0 24px;font:16px/1.6 system-ui,san
 
 <h2>Acceptance criteria</h2>
 <ol>
-<li><code>python -m tools.docs_site.check_landing</code> rejects the old landing markup and old bilingual build, then passes the final candidate.</li>
-<li><code>python -m tools.docs_site.build</code> and <code>python -m tools.docs_site.checklinks</code> pass.</li>
+<li><code>python -m scripts.docs_site.check_landing</code> rejects the old landing markup and old bilingual build, then passes the final candidate.</li>
+<li><code>python -m scripts.docs_site.build</code> and <code>python -m scripts.docs_site.checklinks</code> pass.</li>
 <li>The optimized hero is materially smaller than the existing PNG and has the declared intrinsic dimensions.</li>
 <li>Fresh mobile Lighthouse has no failures for unsized images, color contrast, label-content-name mismatch, image delivery, or LCP discovery; SEO and Best Practices remain 100.</li>
 <li>Full repository CI passes on the reviewed commit, the commit is contained in <code>origin/main</code>, and the deployed page reproduces the verified markup.</li>

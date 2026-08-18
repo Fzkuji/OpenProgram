@@ -127,7 +127,7 @@ Design points:
 | DAG shapes | `apps/web/lib/runtime-bridge/dag/shapes.ts` |
 | layout (merge node lane) | `openprogram/webui/graph_layout/{lane,__init__}.py` |
 | send_to_branch tool | to be created under `openprogram/programs/functions/vanilla/` |
-| verification | `tools/dag_dump.py` |
+| verification | `scripts/dag_dump.py` |
 
 ## Appendix: Implementation Status
 

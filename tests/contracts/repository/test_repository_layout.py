@@ -22,8 +22,13 @@ TOP_LEVEL_DIRECTORIES = {
     "site",
     "skills",
     "tests",
-    "tools",
 }
+
+MAINTENANCE_TOOL_PATHS = (
+    "scripts/dag_dump.py",
+    "scripts/docs_site/__init__.py",
+    "scripts/docs_site/build.py",
+)
 CURRENT_STRUCTURE_GUIDES = (
     "README.md",
     "docs/README.md",
@@ -89,6 +94,13 @@ def test_tracked_top_level_directories_are_declared() -> None:
     actual = {path.split("/", 1)[0] for path in _tracked_paths() if "/" in path}
 
     assert actual == TOP_LEVEL_DIRECTORIES
+
+
+def test_repository_maintenance_tools_live_under_scripts() -> None:
+    tracked = set(_tracked_paths())
+
+    assert set(MAINTENANCE_TOOL_PATHS) <= tracked
+    assert not any(path == "tools" or path.startswith("tools/") for path in tracked)
 
 
 def test_developer_scripts_do_not_live_at_the_repository_root() -> None:

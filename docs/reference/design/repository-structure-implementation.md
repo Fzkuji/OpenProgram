@@ -243,6 +243,22 @@ adapted. Large-file decomposition is not part of the directory migration.
 - Exclude validation-rule changes, protocol changes, UI changes and unrelated
   active Agent configuration work.
 
+## Active task brief: Repository maintenance tools consolidation
+
+- Approved source: `repository-structure.html`; base: current `main` after the
+  Desktop transfer validation extraction.
+- Remove the overlapping root `tools/` category by moving its existing contents
+  directly under `scripts/`: `tools/docs_site/` becomes `scripts/docs_site/`
+  and `tools/dag_dump.py` becomes `scripts/dag_dump.py`.
+- Update Python imports, module commands, CI workflows, documentation and
+  repository contracts without changing either tool's behavior.
+- RED boundary: the repository layout contract requires the `scripts/` paths
+  and rejects the root `tools/` directory before the move. GREEN boundary:
+  repository contracts, docs-site unit tests, docs build/check commands and
+  affected release checks.
+- Exclude product runtime behavior, generated frontend files, UI changes and
+  unrelated active Agent configuration work.
+
 ## Active task brief: Apps migration C2
 
 - Approved source: `repository-structure.html`; base: `a459c443`.
@@ -274,10 +290,10 @@ adapted. Large-file decomposition is not part of the directory migration.
 5 passed — focused CLI parser and documentation navigation contracts
 207 passed — post-main-merge CLI component/unit tests plus focused structure contracts
 158 passed, 2 skipped — independent quality selection of CLI-named and docs IA tests
-497 pages — python -m tools.docs_site.build
-0 broken links — python -m tools.docs_site.checklinks docs/_site
-ok — python -m tools.docs_site.check_landing
-0 Chinese lines — python -m tools.docs_site.checklang
+497 pages — python -m scripts.docs_site.build
+0 broken links — python -m scripts.docs_site.checklinks docs/_site
+ok — python -m scripts.docs_site.check_landing
+0 Chinese lines — python -m scripts.docs_site.checklang
 pass — Ruff and git diff --check
 pass — desktop render at 1280 × 720, no horizontal overflow
 pass — narrow render at 390 × 844, no page overflow; wide tables scroll locally

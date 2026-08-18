@@ -372,7 +372,7 @@ apps/web/lib/runtime-bridge/dag/
 后端 `openprogram/webui/graph_builder.py` 产出节点数组（含 `branch_name` stamp、
 caller/predecessor），`graph_layout/` 做 lane/tier/depth 标注——**tier 具体在
 `graph_layout/tier.py`**。验证工具：
-`python tools/dag_dump.py <session_id>` 打印 lane/tier/depth + ASCII 网格。
+`python scripts/dag_dump.py <session_id>` 打印 lane/tier/depth + ASCII 网格。
 
 ## 八、白点 = 上下文覆盖
 

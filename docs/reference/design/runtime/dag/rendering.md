@@ -458,7 +458,7 @@ apps/web/lib/runtime-bridge/dag/
 
 The backend `openprogram/webui/graph_builder.py` produces the node array (including the
 `branch_name` stamp, caller/predecessor), and `graph_layout/` does the lane/tier/depth
-annotation — **tier specifically in `graph_layout/tier.py`**. Verification tool: `python tools/dag_dump.py <session_id>` prints
+annotation — **tier specifically in `graph_layout/tier.py`**. Verification tool: `python scripts/dag_dump.py <session_id>` prints
 lane/tier/depth + an ASCII grid.
 
 ## 8. The white fill means context coverage

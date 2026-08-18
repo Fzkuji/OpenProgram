@@ -1,6 +1,6 @@
 """Serve the static design-documentation site at /docs.
 
-The site is built by ``tools.docs_site.build`` into ``docs/_site/``. We mount it
+The site is built by ``scripts.docs_site.build`` into ``docs/_site/``. We mount it
 as static files so every page, asset, and the search index are served from the
 same single port as the rest of the web UI.
 
@@ -63,7 +63,7 @@ def _rebuild() -> None:
     # keeps running — and re-emitting — the code it imported at startup, which
     # would overwrite freshly hand-built output with stale logic).
     import importlib
-    from tools.docs_site import nav, search, template, build as _build
+    from scripts.docs_site import nav, search, template, build as _build
     for m in (nav, search, template, _build):
         importlib.reload(m)
     _build.build()

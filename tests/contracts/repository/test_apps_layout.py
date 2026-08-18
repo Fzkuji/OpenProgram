@@ -391,7 +391,7 @@ def test_current_developer_commands_use_apps_workspaces() -> None:
         "AGENTS.md",
         "CONTRIBUTING.md",
         "apps/desktop/README.md",
-        "tools/docs_site/README.md",
+        "scripts/docs_site/README.md",
         "docs/reference/design/integrations/web-use-implementation.html",
         "docs/reference/design/ui/browser-extensions.html",
         "docs/reference/design/ui/theme-system.html",

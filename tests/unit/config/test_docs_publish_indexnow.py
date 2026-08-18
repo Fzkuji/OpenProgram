@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.docs_site.indexnow import (
+from scripts.docs_site.indexnow import (
     ENDPOINT,
     HOST,
     KEY,
@@ -32,7 +32,7 @@ def test_site_publish_notifies_indexnow_after_repository_publish() -> None:
     assert publish < notify
     assert "continue-on-error: true" in workflow[notify:]
     assert "_publish/sitemap.xml" in workflow[notify:]
-    assert "python -m tools.docs_site.indexnow" in workflow[notify:]
+    assert "python -m scripts.docs_site.indexnow" in workflow[notify:]
     assert "--submit" in workflow[notify:]
 
 

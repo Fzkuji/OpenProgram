@@ -15,8 +15,8 @@
 ```text
 pytest -q tests/unit/test_session_store_lock_scope.py tests/unit/test_mark_merged_atomicity.py tests/unit/test_session_cache_lru.py tests/unit/test_session_index_consistency.py
 ruff check openprogram/store/session/session_store.py tests/unit/test_session_store_lock_scope.py
-python -m tools.docs_site.build
-python -m tools.docs_site.checklinks
+python -m scripts.docs_site.build
+python -m scripts.docs_site.checklinks
 git diff --check
 ```
 

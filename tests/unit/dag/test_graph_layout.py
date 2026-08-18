@@ -10,7 +10,7 @@ Locks the layout rules from docs/design/runtime/dag/dag-layout-algorithm.md
     siblings each get their own column
   * a fork-branch continuation inherits the fork's lane (not lane 0)
 
-These were previously verified only by hand via tools/dag_dump.py; this
+These were previously verified only by hand via scripts/dag_dump.py; this
 suite makes them regression-proof.
 """
 from __future__ import annotations

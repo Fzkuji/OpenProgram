@@ -15,8 +15,8 @@
 ```text
 pytest -q tests/providers/test_provider_metadata_diagnostics.py tests/providers/test_models_dev_cache.py tests/unit/test_models_dev_disk_cache.py tests/providers/test_registry_from_config.py
 ruff check openprogram/providers/metadata.py openprogram/providers/sources/models_dev.py tests/providers/test_provider_metadata_diagnostics.py
-python -m tools.docs_site.build
-python -m tools.docs_site.checklinks
+python -m scripts.docs_site.build
+python -m scripts.docs_site.checklinks
 git diff --check
 ```
 

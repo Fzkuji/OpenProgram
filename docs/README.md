@@ -225,8 +225,7 @@ apps/
 web/                                 # Next.js interface
 desktop/                             # Electron desktop host
 tests/                               # pytest: <layer>/<product-domain>
-scripts/                             # executable repository maintenance tools
-tools/                               # importable release and documentation tooling
+scripts/                             # executable and importable repository maintenance tools
 ```
 
 See the workspace READMEs for
