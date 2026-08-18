@@ -157,7 +157,7 @@
           <td><code>apps/desktop/main.js</code></td>
           <td>窗口、更新、WebView、标签转移和菜单共处，接近 4,000 行</td>
           <td><span class="state later">分批实施</span></td>
-          <td>纯菜单几何计算已提取到 <code>menu-geometry.js</code>，纯 worker recovery 状态已提取到 <code>worker-recovery-state.js</code>；HTTP 探测、进程与窗口生命周期、原生 WebView、标签转移和菜单宿主只在各自具备执行级验收后移动。</td>
+          <td>纯菜单几何计算已提取到 <code>menu-geometry.js</code>，纯 worker recovery 状态已提取到 <code>worker-recovery-state.js</code>，transfer payload validation 已提取到 <code>tab-transfer-validation.js</code>；HTTP 探测、进程与窗口生命周期、原生 WebView 所有权变更、标签转移协调和菜单宿主只在各自具备执行级验收后移动。</td>
         </tr>
         <tr>
           <td><code>apps/web/lib/desktop-bridge.ts</code></td>

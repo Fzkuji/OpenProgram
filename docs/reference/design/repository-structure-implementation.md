@@ -103,6 +103,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Desktop bridge service type extraction | `f6ede2a7` | implemented; reviewed | Moves history, downloads, updates, browser import/data, terminal and menu contracts to the same type-only module; direct and compatibility type consumers compile while transfer and runtime coordination remain in place. |
 | Desktop bridge transfer type extraction | `2d2ec81a`, `b8c97d41` | implemented; reviewed | Moves the preload-facing transfer receipt and API contracts to a dedicated type-only module, preserves the established bridge re-exports and leaves the journal, aggregate bridge and transfer runtime unchanged. |
 | Desktop worker recovery-state extraction | `4e018891` | implemented; reviewed | Moves five pure recovery-state helpers to a directly executable module, preserves one shared spawn coordinator and per-window recovery state, and includes the module in package and refresh closures. |
+| Desktop transfer validation extraction | `01d36045` | implemented; reviewed | Moves transfer payload validation and normalization to a directly executable module, preserves every limit and ownership check, and leaves IPC authorization, coordination and rollback unchanged. |
 
 ## Implemented task brief: Legacy cleanup F2
 
@@ -225,7 +226,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 - Exclude recovery behavior changes, timing changes, UI changes and unrelated
   active Agent configuration work.
 
-## Active task brief: Desktop tab-transfer payload validation extraction
+## Implemented task brief: Desktop tab-transfer payload validation extraction
 
 - Approved source: `repository-structure.html`; base: current `main` after the
   Desktop worker recovery-state extraction.
@@ -391,15 +392,22 @@ pass — complete Desktop `npm run check` after extracting worker recovery state
 2 passed — Desktop package-file and local refresh staging contracts for `4e018891`
 pass — independent specification review for `4e018891`
 pass — independent quality review for `4e018891`
+1 failed — public RED: the WebTab harness could not resolve the not-yet-created `tab-transfer-validation` module
+pass — complete Desktop `npm run check` after extracting transfer validation
+2 passed — Desktop package-file and local refresh staging contracts for `01d36045`
+pass — independent specification review for `01d36045`
+pass — independent quality review for `01d36045`
 ```
 
 ## Deferred boundaries
 
 - `apps/desktop/main.js`: pure menu geometry lives in
   `apps/desktop/menu-geometry.js`, and pure worker recovery state lives in
-  `apps/desktop/worker-recovery-state.js`. Keep HTTP probes, process/window
-  lifecycle, native WebView, tab transfer and menu-host orchestration in place
-  until each boundary has direct executable coverage.
+  `apps/desktop/worker-recovery-state.js`; transfer payload validation lives in
+  `apps/desktop/tab-transfer-validation.js`. Keep HTTP probes, process/window
+  lifecycle, native WebView ownership changes, tab transfer coordination and
+  menu-host orchestration in place until each boundary has direct executable
+  coverage.
 - `apps/web/lib/desktop-bridge.ts`: WebTab and Desktop service contracts now
   live in `apps/web/lib/desktop-bridge-types.ts`; preload-facing transfer
   contracts live in `apps/web/lib/desktop-transfer-types.ts`. Keep the aggregate
