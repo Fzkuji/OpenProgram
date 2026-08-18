@@ -105,6 +105,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Desktop worker recovery-state extraction | `4e018891` | implemented; reviewed | Moves five pure recovery-state helpers to a directly executable module, preserves one shared spawn coordinator and per-window recovery state, and includes the module in package and refresh closures. |
 | Desktop transfer validation extraction | `01d36045` | implemented; reviewed | Moves transfer payload validation and normalization to a directly executable module, preserves every limit and ownership check, and leaves IPC authorization, coordination and rollback unchanged. |
 | Root metadata cleanup | `ab386e10` | implemented; reviewed | Co-locates the changelog with GitHub release notes, removes the redundant MANIFEST file, and enforces the intentional root-file set without changing the source-checkout CLI entry. Wheel packaging, source-checkout CLI, documentation links, specification review and quality review pass. |
+| Core package cleanup G1: Context Git DAG | `41151c50` | implemented; reviewed | Moves the two-file ContextGit implementation into `openprogram/context/git/`, updates every repository-owned import and current path reference, removes the old first-level package without a duplicate compatibility layer, and preserves DAG behavior and wheel discovery. The focused DAG, Server, dispatcher, Ruff, link, wheel, specification and quality gates pass. |
 
 ## Implemented task brief: Legacy cleanup F2
 
