@@ -208,6 +208,22 @@ adapted. Large-file decomposition is not part of the directory migration.
 - Exclude transfer state-machine changes, UI/CSS changes and unrelated active
   Agent configuration work.
 
+## Active task brief: Desktop worker recovery-state extraction
+
+- Approved source: `repository-structure.html`; base: current `main` after the
+  Desktop bridge transfer-contract extraction.
+- Move only the five pure worker-recovery state helpers from
+  `apps/desktop/main.js` to `apps/desktop/worker-recovery-state.js`.
+- Keep HTTP probes, worker process spawning, timers, BrowserWindow ownership and
+  recovery orchestration in `main.js`.
+- Make the existing recovery check import the production module directly; add
+  the runtime file to Electron packaging and local-App refresh closure.
+- RED boundary: the direct recovery module import fails before the module
+  exists. GREEN boundary: worker recovery, packaged-file, refresh fixture and
+  complete Desktop checks.
+- Exclude recovery behavior changes, timing changes, UI changes and unrelated
+  active Agent configuration work.
+
 ## Active task brief: Apps migration C2
 
 - Approved source: `repository-structure.html`; base: `a459c443`.

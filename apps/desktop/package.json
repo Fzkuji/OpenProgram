@@ -38,6 +38,7 @@
     "files": [
       "main.js",
       "menu-geometry.js",
+      "worker-recovery-state.js",
       "preload.js",
       "update-service.js",
       "packaged-runtime.js",

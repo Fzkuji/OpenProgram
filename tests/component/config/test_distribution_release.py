@@ -38,6 +38,7 @@ def test_desktop_targets_and_embedded_runtime_are_declared() -> None:
     assert "linux" not in build
     assert "dist:linux" not in package["scripts"]
     assert {item["to"] for item in build["extraResources"]} >= {"runtime"}
+    assert "worker-recovery-state.js" in build["files"]
     assert package["desktopName"] == "ai.openprogram.OpenProgram.desktop"
 
 
@@ -1109,6 +1110,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     desktop_files = [
         "main.js",
         "menu-geometry.js",
+        "worker-recovery-state.js",
         "preload.js",
         "update-service.js",
         "packaged-runtime.js",
@@ -1149,7 +1151,8 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         "set -eu\n"
         'case "$2" in\n'
         '  extract) mkdir -p "$4/node_modules" ;;\n'
-        '  pack) test -f "$3/menu-geometry.js" || exit 92; : > "$4" ;;\n'
+        '  pack) test -f "$3/menu-geometry.js" || exit 92; '
+        'test -f "$3/worker-recovery-state.js" || exit 93; : > "$4" ;;\n'
         '  *) printf "unexpected node call: %s\\n" "$*" >&2; exit 91 ;;\n'
         "esac\n",
         encoding="utf-8",

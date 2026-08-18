@@ -1,31 +1,11 @@
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const vm = require("node:vm");
-
-const source = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
-const helpers = source.match(
-  /\/\/ BEGIN WORKER RECOVERY STATE\n([\s\S]*?)\/\/ END WORKER RECOVERY STATE/,
-);
-assert.ok(helpers, "worker recovery state helpers are missing from main.js");
-
-const sandbox = { module: { exports: {} } };
-vm.runInNewContext(
-  `${helpers[1]}\nmodule.exports = {` +
-    "createRecoveryState, createRecoveryCoordinator, startRecoveryCycle, " +
-    "beginRecoveryProbe, finishRecoveryProbe" +
-    "};",
-  sandbox,
-  { filename: "apps/desktop/main.js#worker-recovery-state" },
-);
-
 const {
   createRecoveryState,
   createRecoveryCoordinator,
   startRecoveryCycle,
   beginRecoveryProbe,
   finishRecoveryProbe,
-} = sandbox.module.exports;
+} = require("../worker-recovery-state");
 
 const state = createRecoveryState();
 const coordinator = createRecoveryCoordinator();
