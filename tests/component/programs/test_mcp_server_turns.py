@@ -11,7 +11,7 @@ from mcp.shared.exceptions import McpError
 from openprogram.agent.authority import mcp_client_authority
 from openprogram.agent.dispatcher import TurnResult
 from openprogram.events import create_event_bus, make_event
-from openprogram.mcp_server.service import MCPClientContext, MCPService
+from openprogram.mcp.server.service import MCPClientContext, MCPService
 
 
 class FakeSessionDB:

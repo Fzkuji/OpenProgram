@@ -25,7 +25,7 @@ from openprogram.agent.authority import (
 )
 from openprogram.agent.session_db import SessionDB, default_db
 from openprogram.agent.types import AgentTool, AgentToolResult
-from openprogram.mcp_server.tools import json_result, prompt_result, to_mcp_content
+from openprogram.mcp.server.tools import json_result, prompt_result, to_mcp_content
 from openprogram.providers.types import TextContent
 
 

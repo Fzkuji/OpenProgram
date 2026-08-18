@@ -729,7 +729,7 @@ def test_public_web_use_schema_is_command_based_and_legacy_name_is_hidden():
 
 
 def test_openprogram_mcp_exposes_only_web_use_as_browser_control_tool():
-    from openprogram.mcp_server.contracts import get_mcp_tools
+    from openprogram.mcp.server.contracts import get_mcp_tools
 
     tools = {tool.name: tool for tool in get_mcp_tools()}
     assert "web_use" in tools

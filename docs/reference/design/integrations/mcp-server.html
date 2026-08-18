@@ -152,7 +152,7 @@
     <rect x="430" y="86" width="300" height="128" rx="12" fill="#131b2a" stroke="#4f8ef7" stroke-width="1.7"/>
     <text x="580" y="118" fill="#4f8ef7" font-size="15.5" font-weight="700" text-anchor="middle">OpenProgram</text>
     <text x="580" y="145" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace" text-anchor="middle">openprogram/mcp/  ← 客户端，8 个模块</text>
-    <text x="580" y="170" fill="#5aad4e" font-size="11.5" font-family="Menlo,monospace" text-anchor="middle">openprogram/mcp_server/  ← 服务端，已实现</text>
+    <text x="580" y="170" fill="#5aad4e" font-size="11.5" font-family="Menlo,monospace" text-anchor="middle">openprogram/mcp/server/  ← 服务端，已实现</text>
     <text x="580" y="194" fill="#8a8675" font-size="11.5" text-anchor="middle">工具注册表 _registry 两个方向共用</text>
 
     <!-- 已实现：消费外部工具 -->
@@ -520,7 +520,7 @@
     <div class="plat" style="border-top-color:#4f8ef7">
       <div class="k">TRANSPORT</div>
       <h3 style="color:#4f8ef7">stdio 单一传输</h3>
-      <div class="noun">openprogram mcp serve　模块 openprogram/mcp_server/</div>
+      <div class="noun">openprogram mcp serve　模块 openprogram/mcp/server/</div>
       <div class="row"><div class="t">为什么</div><div class="v">被调查的每个实现都最先支持 stdio；它<b>继承拉起进程那方的信任边界</b>；而且不把内部 full-owner Web API 暴露成 integration surface。</div></div>
       <div class="row"><div class="t">规范基线</div><div class="v">首版锁定仓库当前 <code>mcp 1.29.0</code> 与协议 <code>2025-11-25</code>；由 SDK 协商兼容版本，不自行扩展握手字段。</div></div>
       <div class="row"><div class="t">HTTP</div><div class="v">等 stdio contract 稳定后单独设计 Streamable HTTP、OAuth、Origin 校验与部署生命周期，不复用 Web owner token。</div></div>
@@ -645,7 +645,7 @@
   <div class="tbl">
   <table>
     <tr><th>项</th><th>状态</th><th>实现与证据</th></tr>
-    <tr><td><b><code>openprogram mcp serve</code> stdio 服务端</b></td><td class="y">已实施</td><td class="g"><code>openprogram/mcp_server/server.py</code>；认证在进入 SDK stdio 前完成</td></tr>
+    <tr><td><b><code>openprogram mcp serve</code> stdio 服务端</b></td><td class="y">已实施</td><td class="g"><code>openprogram/mcp/server/server.py</code>；认证在进入 SDK stdio 前完成</td></tr>
     <tr><td><b>六工具最小集</b></td><td class="y">已实施</td><td class="g"><code>sessions_list</code>、<code>session_get</code>、<code>prompt_send</code>、<code>prompt_cancel</code>、<code>tools_list</code>、<code>tool_call</code>；SDK <code>tools/list</code> 精确返回这六项</td></tr>
     <tr><td><b><code>mcp_server.exposed_tools</code> 白名单，默认为空</b></td><td class="y">已实施</td><td class="g">discovery 与 execution 每次取 configured allowlist ∩ live registry ∩ paired capability</td></tr>
     <tr><td><b><code>mcp token create</code> + stdio 启动环境认证，无关闭开关</b></td><td class="y">已实施</td><td class="g">独立 <code>0600</code> token；<code>OPENPROGRAM_MCP_TOKEN</code> 常量时间比较；身份为凭证 SHA-256 前 16 位小写十六进制</td></tr>

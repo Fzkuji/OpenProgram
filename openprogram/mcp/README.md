@@ -42,4 +42,8 @@ Public surface:
 - **`sampling.py`** — Sampling
 - **`token_storage.py`** — File-backed ``TokenStorage`` for the MCP SDK's ``OAuthClientProvider``,
 
+## Sub-packages
+
+- **`server/`** — Authenticated MCP server surface
+
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

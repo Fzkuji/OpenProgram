@@ -1,4 +1,4 @@
-# `openprogram/mcp_server/`
+# `openprogram/mcp/server/`
 
 > Authenticated MCP server surface.
 

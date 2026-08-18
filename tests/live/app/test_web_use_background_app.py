@@ -64,7 +64,7 @@ def _tool_json(payload: dict) -> dict:
 
 
 def _dispatch(arguments: dict, owner_id: str) -> tuple[dict, dict]:
-    from openprogram.mcp_server.service import _worker_web_use_request
+    from openprogram.mcp.server.service import _worker_web_use_request
 
     payload = _worker_web_use_request(
         "/api/web-use",
@@ -75,7 +75,7 @@ def _dispatch(arguments: dict, owner_id: str) -> tuple[dict, dict]:
 
 
 def _release_owner(owner_id: str) -> None:
-    from openprogram.mcp_server.service import _worker_web_use_request
+    from openprogram.mcp.server.service import _worker_web_use_request
 
     _worker_web_use_request(
         "/api/web-use/release-owner",

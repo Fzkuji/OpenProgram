@@ -13,10 +13,10 @@ from mcp.server.stdio import stdio_server
 from mcp.shared.exceptions import McpError
 
 from openprogram.agent.authority import mcp_client_authority
-from openprogram.mcp_server.auth import MCPTokenError, authenticate_from_environment
-from openprogram.mcp_server.contracts import get_mcp_tools, validate_tool_call
-from openprogram.mcp_server.service import MCPClientContext, MCPService
-from openprogram.mcp_server.tools import to_mcp_content
+from openprogram.mcp.server.auth import MCPTokenError, authenticate_from_environment
+from openprogram.mcp.server.contracts import get_mcp_tools, validate_tool_call
+from openprogram.mcp.server.service import MCPClientContext, MCPService
+from openprogram.mcp.server.tools import to_mcp_content
 
 
 _PROGRESS_DRAIN_TIMEOUT_S = 0.1

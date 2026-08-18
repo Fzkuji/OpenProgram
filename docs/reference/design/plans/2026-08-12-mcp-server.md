@@ -4,7 +4,7 @@
 
 **Goal:** Add an authenticated, stdio-only `openprogram mcp serve` endpoint that exposes exactly six fixed MCP tools and maps them onto existing sessions, Runtime tools, approval, cancellation, progress, and audit mechanisms without granting owner authority.
 
-**Architecture:** Add a sibling `openprogram/mcp_server/` package, separate from the existing MCP client package and Web owner control plane. The entrypoint authenticates before opening stdin, creates a credential-derived client identity with fixed `paired` authority and `non-interactive` interaction, and runs the locked MCP 1.29.0 SDK server at protocol baseline 2025-11-25. Six protocol-facing tools delegate to a service layer; underlying Runtime tool exposure is the intersection of the default-empty configuration allowlist, the live registry, and the fixed paired capability table. SDK cancellation owns the JSON-RPC cancellation error; OpenProgram only stops subsequent side effects, clears request/question state, and emits audit evidence.
+**Architecture:** Add a sibling `openprogram/mcp/server/` package, separate from the existing MCP client package and Web owner control plane. The entrypoint authenticates before opening stdin, creates a credential-derived client identity with fixed `paired` authority and `non-interactive` interaction, and runs the locked MCP 1.29.0 SDK server at protocol baseline 2025-11-25. Six protocol-facing tools delegate to a service layer; underlying Runtime tool exposure is the intersection of the default-empty configuration allowlist, the live registry, and the fixed paired capability table. SDK cancellation owns the JSON-RPC cancellation error; OpenProgram only stops subsequent side effects, clears request/question state, and emits audit evidence.
 
 **Tech Stack:** Python 3.11+, `mcp==1.29.0`, MCP 2025-11-25, AnyIO, Pydantic, jsonschema, pytest, stdio JSON-RPC, existing SessionDB/dispatcher/Runtime/event bus.
 
@@ -49,8 +49,8 @@ MCP `tools/list` itself always returns the six fixed wrapper tools. The wrapper 
 
 **Files:**
 
-- Create: `openprogram/mcp_server/__init__.py`
-- Create: `openprogram/mcp_server/contracts.py`
+- Create: `openprogram/mcp/server/__init__.py`
+- Create: `openprogram/mcp/server/contracts.py`
 - Create: `tests/unit/test_mcp_server_contracts.py`
 
 **Interfaces:**
@@ -71,7 +71,7 @@ Run:
 uv run --locked pytest -q tests/unit/test_mcp_server_contracts.py
 ```
 
-Expected: FAIL because `openprogram.mcp_server.contracts` does not exist.
+Expected: FAIL because `openprogram.mcp.server.contracts` does not exist.
 
 **GREEN:** Define the schemas as immutable module data, construct SDK `Tool` objects from them, and validate with `jsonschema.Draft202012Validator`. Normalize only `tool_call.arguments` from omitted/`None` to `{}`; reject every other undeclared or incorrectly typed field. Do not add server, transport, auth, or execution logic.
 
@@ -80,7 +80,7 @@ Run the same command; expected: PASS.
 **Commit:**
 
 ```bash
-git add openprogram/mcp_server/__init__.py openprogram/mcp_server/contracts.py tests/unit/test_mcp_server_contracts.py
+git add openprogram/mcp/server/__init__.py openprogram/mcp/server/contracts.py tests/unit/test_mcp_server_contracts.py
 git commit -m "feat: define MCP server tool contracts"
 ```
 
@@ -184,7 +184,7 @@ git commit -m "feat: add MCP server security boundary"
 
 **Files:**
 
-- Create: `openprogram/mcp_server/auth.py`
+- Create: `openprogram/mcp/server/auth.py`
 - Modify: `openprogram/_cli_cmds/mcp.py`
 - Modify: `openprogram/cli.py`
 - Create: `tests/unit/test_mcp_server_auth.py`
@@ -215,14 +215,14 @@ uv run --locked pytest -q tests/unit/test_mcp_server_auth.py tests/unit/test_mcp
 
 Expected: FAIL because token auth and the nested `mcp token create` verb do not exist.
 
-**GREEN:** Implement the standalone writer in `mcp_server/auth.py`; do not import Web auth helpers. Extend the existing `mcp` parser with `token create` while preserving all management verbs. Dispatch token creation directly before any backend HTTP helper.
+**GREEN:** Implement the standalone writer in `mcp/server/auth.py`; do not import Web auth helpers. Extend the existing `mcp` parser with `token create` while preserving all management verbs. Dispatch token creation directly before any backend HTTP helper.
 
 Run the same command; expected: PASS.
 
 **Commit:**
 
 ```bash
-git add openprogram/mcp_server/auth.py openprogram/_cli_cmds/mcp.py openprogram/cli.py tests/unit/test_mcp_server_auth.py tests/unit/test_mcp_server_cli.py
+git add openprogram/mcp/server/auth.py openprogram/_cli_cmds/mcp.py openprogram/cli.py tests/unit/test_mcp_server_auth.py tests/unit/test_mcp_server_cli.py
 git commit -m "feat: add MCP server token lifecycle"
 ```
 
@@ -230,8 +230,8 @@ git commit -m "feat: add MCP server token lifecycle"
 
 **Files:**
 
-- Create: `openprogram/mcp_server/service.py`
-- Create: `openprogram/mcp_server/tools.py`
+- Create: `openprogram/mcp/server/service.py`
+- Create: `openprogram/mcp/server/tools.py`
 - Create: `tests/unit/test_mcp_server_tools.py`
 
 **Interfaces:**
@@ -268,7 +268,7 @@ Run the same command; expected: PASS.
 **Commit:**
 
 ```bash
-git add openprogram/mcp_server/service.py openprogram/mcp_server/tools.py tests/unit/test_mcp_server_tools.py
+git add openprogram/mcp/server/service.py openprogram/mcp/server/tools.py tests/unit/test_mcp_server_tools.py
 git commit -m "feat: add MCP session and tool discovery"
 ```
 
@@ -276,8 +276,8 @@ git commit -m "feat: add MCP session and tool discovery"
 
 **Files:**
 
-- Modify: `openprogram/mcp_server/service.py`
-- Modify: `openprogram/mcp_server/tools.py`
+- Modify: `openprogram/mcp/server/service.py`
+- Modify: `openprogram/mcp/server/tools.py`
 - Modify: `tests/unit/test_mcp_server_tools.py`
 
 **Interfaces:**
@@ -315,7 +315,7 @@ Run the same command; expected: PASS.
 **Commit:**
 
 ```bash
-git add openprogram/mcp_server/service.py openprogram/mcp_server/tools.py tests/unit/test_mcp_server_tools.py
+git add openprogram/mcp/server/service.py openprogram/mcp/server/tools.py tests/unit/test_mcp_server_tools.py
 git commit -m "feat: add scoped MCP runtime tool calls"
 ```
 
@@ -323,8 +323,8 @@ git commit -m "feat: add scoped MCP runtime tool calls"
 
 **Files:**
 
-- Modify: `openprogram/mcp_server/service.py`
-- Modify: `openprogram/mcp_server/tools.py`
+- Modify: `openprogram/mcp/server/service.py`
+- Modify: `openprogram/mcp/server/tools.py`
 - Create: `tests/unit/test_mcp_server_turns.py`
 
 **Interfaces:**
@@ -363,7 +363,7 @@ Run the same command; expected: PASS.
 **Commit:**
 
 ```bash
-git add openprogram/mcp_server/service.py openprogram/mcp_server/tools.py tests/unit/test_mcp_server_turns.py
+git add openprogram/mcp/server/service.py openprogram/mcp/server/tools.py tests/unit/test_mcp_server_turns.py
 git commit -m "feat: add MCP prompt lifecycle and cancellation"
 ```
 
@@ -371,8 +371,8 @@ git commit -m "feat: add MCP prompt lifecycle and cancellation"
 
 **Files:**
 
-- Create: `openprogram/mcp_server/server.py`
-- Modify: `openprogram/mcp_server/__init__.py`
+- Create: `openprogram/mcp/server/server.py`
+- Modify: `openprogram/mcp/server/__init__.py`
 - Modify: `openprogram/_cli_cmds/mcp.py`
 - Modify: `openprogram/cli.py`
 - Modify: `tests/unit/test_mcp_server_cli.py`
@@ -427,7 +427,7 @@ Expected: PASS.
 **Commit:**
 
 ```bash
-git add openprogram/mcp_server/server.py openprogram/mcp_server/__init__.py openprogram/_cli_cmds/mcp.py openprogram/cli.py tests/unit/test_mcp_server_cli.py tests/integration/test_mcp_server.py
+git add openprogram/mcp/server/server.py openprogram/mcp/server/__init__.py openprogram/_cli_cmds/mcp.py openprogram/cli.py tests/unit/test_mcp_server_cli.py tests/integration/test_mcp_server.py
 git commit -m "feat: serve authenticated MCP over stdio"
 ```
 

@@ -15,7 +15,7 @@ import pytest
 
 
 def _auth():
-    return importlib.import_module("openprogram.mcp_server.auth")
+    return importlib.import_module("openprogram.mcp.server.auth")
 
 
 def _write_private(path, value: str) -> None:

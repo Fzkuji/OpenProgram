@@ -138,7 +138,7 @@ BOUNDARY_MANIFEST = (
         kinds=frozenset({"urllib.request.build_opener"}),
     ),
     BoundaryExclusion(
-        path="mcp_server/service.py",
+        path="mcp/server/service.py",
         boundary_owner="owner-control-plane",
         reason="stdio MCP calls the authenticated loopback OpenProgram worker",
         kinds=frozenset({"urllib.request.build_opener"}),

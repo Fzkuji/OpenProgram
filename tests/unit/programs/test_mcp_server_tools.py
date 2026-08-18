@@ -17,8 +17,8 @@ from openprogram.agent.authority import AuthorityError
 from openprogram.agent.session_config import PermissionRules
 from openprogram.agent.types import AgentTool, AgentToolResult
 from openprogram.programs._runtime import function
-from openprogram.mcp_server.service import MCPClientContext, MCPService
-from openprogram.mcp_server.tools import json_result, to_mcp_content
+from openprogram.mcp.server.service import MCPClientContext, MCPService
+from openprogram.mcp.server.tools import json_result, to_mcp_content
 from openprogram.providers.types import ImageContent, TextContent
 
 

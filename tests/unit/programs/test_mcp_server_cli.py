@@ -10,7 +10,7 @@ from openprogram.cli.commands import mcp as mcp_commands
 
 
 def _auth():
-    return importlib.import_module("openprogram.mcp_server.auth")
+    return importlib.import_module("openprogram.mcp.server.auth")
 
 
 def test_nested_token_create_parser_contract():
@@ -228,7 +228,7 @@ def test_mcp_serve_parser_and_local_dispatch(monkeypatch):
 def test_mcp_serve_authenticates_before_stdio_and_sanitizes_failure(
     monkeypatch, capsys
 ):
-    from openprogram.mcp_server import server
+    from openprogram.mcp.server import server
 
     entered = []
     monkeypatch.setattr(
