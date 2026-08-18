@@ -1239,7 +1239,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     ]
     for desktop_file in desktop_files:
         (desktop / desktop_file).write_text("module.exports = {};\n", encoding="utf-8")
-        asar_cli = repo / "node_modules" / "@electron" / "asar" / "bin" / "asar.js"
+    asar_cli = repo / "node_modules" / "@electron" / "asar" / "bin" / "asar.js"
     asar_cli.parent.mkdir(parents=True)
     asar_cli.write_text("", encoding="utf-8")
     app = _fake_desktop_app(tmp_path / "installed", "0.6.6")

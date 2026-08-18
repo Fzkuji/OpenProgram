@@ -47,7 +47,7 @@ def _resolve_cli_entry() -> Path:
 
     Fast path: ``apps/cli/dist/index.js`` already exists → return immediately
     (one stat call). Cold path (first run on a fresh clone, any platform):
-    transparently run ``npm install`` + ``npm run build`` in ``apps/cli/`` and
+    transparently verify root workspace dependencies and build ``apps/cli/`` and
     return the new bundle. Progress is streamed to the user's saved tty
     so they see it even after the TUI startup stdio redirect.
 
@@ -88,13 +88,12 @@ def _resolve_cli_entry() -> Path:
 
 
 def _build_ink_bundle(cli_dir: Path, expected_bundle: Path) -> None:
-    """Run ``npm install`` (if needed) + ``npm run build`` in ``cli_dir``.
+    """Verify root workspace dependencies and build the CLI bundle.
 
     Cross-platform. Streams npm's own output to the user's saved tty
     so they can see exactly what's happening (download progress,
-    esbuild lines, errors). Skipping ``npm install`` when
-    ``node_modules/`` already exists halves the cold-start cost on a
-    re-build after a pull.
+    esbuild lines and errors). npm performs an incremental install so a
+    partial install of another workspace cannot leave the CLI without esbuild.
     """
     from openprogram import cli as _cli
 
@@ -115,26 +114,22 @@ def _build_ink_bundle(cli_dir: Path, expected_bundle: Path) -> None:
     stderr_target = tty_err if tty_err is not None else None
 
     repo_root = cli_dir.parents[1]
-    node_modules = repo_root / "node_modules"
-    if not node_modules.exists():
-        _tty_write(
-            "openprogram: building Ink TUI (first run, ~1-2 minutes)…\n"
-            "  → npm install\n"
+    _tty_write(
+        "openprogram: building Ink TUI (apps/cli/dist/ missing)…\n"
+        "  → verifying npm workspace deps\n"
+    )
+    rc = subprocess.run(
+        node_tool_cmd([npm, "install", "--no-audit", "--no-fund", "--loglevel=error"]),
+        cwd=str(repo_root),
+        stdout=stdout_target,
+        stderr=stderr_target,
+    ).returncode
+    if rc != 0:
+        raise RuntimeError(
+            f"npm install failed (exit {rc}). Fix the error above and "
+            "retry — the next ``openprogram`` will resume from where "
+            "this left off."
         )
-        rc = subprocess.run(
-            node_tool_cmd([npm, "install", "--no-audit", "--no-fund", "--loglevel=error"]),
-            cwd=str(repo_root),
-            stdout=stdout_target,
-            stderr=stderr_target,
-        ).returncode
-        if rc != 0:
-            raise RuntimeError(
-                f"npm install failed (exit {rc}). Fix the error above and "
-                "retry — the next ``openprogram`` will resume from where "
-                "this left off."
-            )
-    else:
-        _tty_write("openprogram: rebuilding Ink TUI (apps/cli/dist/ missing)…\n")
 
     _tty_write("  → npm run build\n")
     rc = subprocess.run(

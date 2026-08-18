@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import os
 import re
+from types import SimpleNamespace
 import subprocess
 import sys
 import textwrap
@@ -22,6 +23,28 @@ def test_ink_cli_is_owned_by_apps_workspace() -> None:
     assert (ROOT / "apps/cli/package.json").is_file()
     assert (ROOT / "apps/cli/src/index.tsx").is_file()
     assert not (ROOT / "cli/package.json").exists()
+
+
+def test_ink_cold_build_always_verifies_root_workspace(tmp_path, monkeypatch) -> None:
+    cli_dir = tmp_path / "apps" / "cli"
+    cli_dir.mkdir(parents=True)
+    (tmp_path / "node_modules").mkdir()
+    calls: list[tuple[list[str], Path]] = []
+
+    monkeypatch.setattr(ink.shutil, "which", lambda _name: "/usr/bin/npm")
+    monkeypatch.setattr(ink, "_tty_write", lambda _message: None)
+
+    def fake_run(command, *, cwd, **_kwargs):
+        calls.append((command, Path(cwd)))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(ink.subprocess, "run", fake_run)
+    ink._build_ink_bundle(cli_dir, cli_dir / "dist" / "index.js")
+
+    assert calls[0][0][1:3] == ["install", "--no-audit"]
+    assert calls[0][1] == tmp_path
+    assert calls[1][0][-3:] == ["build", "--workspace", "apps/cli"]
+    assert calls[1][1] == tmp_path
 
 
 def test_python_cli_application_is_owned_by_apps_workspace() -> None:

@@ -4,28 +4,20 @@ Single-port architecture: the FastAPI worker serves the API, ``/ws`` AND
 the Next.js static export (``apps/web/out/``) on one port, so this command
 just spawns the detached worker and opens the browser at that port.
 
-The frontend is auto-started only for a source checkout (the ``apps/web/``
-dir with ``node_modules`` sits next to the package — true for an editable
-install). It is skipped when :18100 is already serving, when ``apps/web/`` /
-``node_modules`` is absent (a packaged release), or when
-``OPENPROGRAM_WEB_NO_FRONTEND`` is set.
+The detached worker owns the exported frontend and the API on the same port.
 """
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
-from pathlib import Path
 
 from openprogram._ports import (
     backend_is_ours as _backend_is_ours,
-    frontend_is_ours as _frontend_is_ours,
     port_in_use as _port_in_use,
     port_owner_hint,
 )
 
-# The Next.js dev server port. Matches every ``/api`` + ``/ws`` proxy
-# note in webui/server.py — the frontend lives on :18100.
+# The default single-port Web server address.
 _FRONTEND_PORT = 18100
 
 

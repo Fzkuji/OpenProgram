@@ -101,7 +101,7 @@ def test_build_gate_rebuilds_when_stale(out_tree, monkeypatch):
     monkeypatch.setattr(frontend, "_run", fake_run)
     monkeypatch.setattr(frontend.shutil, "which", lambda _: "/usr/bin/npm")
     frontend.ensure_frontend_built()
-    assert "next build" in calls
+    assert calls == ["npm install", "npm workspace build"]
 
 
 def test_build_gate_errors_without_out_and_npm(out_tree, monkeypatch):

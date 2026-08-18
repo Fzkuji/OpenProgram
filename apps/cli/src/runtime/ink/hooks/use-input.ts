@@ -1,5 +1,4 @@
-import { useEffect, useLayoutEffect } from 'react'
-import { useEventCallback } from 'usehooks-ts'
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 
 import type { InputEvent, Key } from '../events/input-event.js'
 
@@ -15,6 +14,20 @@ type Options = {
    * @default true
    */
   isActive?: boolean
+}
+
+const useEventCallback = <Arguments extends unknown[]>(
+  callback: (...arguments_: Arguments) => void,
+) => {
+  const callbackRef = useRef(callback)
+
+  useLayoutEffect(() => {
+    callbackRef.current = callback
+  }, [callback])
+
+  return useCallback((...arguments_: Arguments) => {
+    callbackRef.current(...arguments_)
+  }, [])
 }
 
 /**

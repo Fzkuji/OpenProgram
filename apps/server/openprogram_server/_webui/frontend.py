@@ -108,9 +108,8 @@ def ensure_frontend_built() -> None:
         )
 
     repo_root = wd.parents[1]
-    if not (repo_root / "node_modules").exists():
-        print("[worker] web: installing npm deps (first run, may take a while)…")
-        _run(["npm", "install", "--silent"], repo_root, "npm install")
+    print("[worker] web: verifying npm workspace deps…")
+    _run(["npm", "install", "--silent"], repo_root, "npm install")
     print("[worker] web: building frontend export (npm workspace build)…")
     _run(
         ["npm", "run", "build", "--workspace", "apps/web"],

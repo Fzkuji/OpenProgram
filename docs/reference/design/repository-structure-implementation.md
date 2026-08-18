@@ -107,7 +107,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Root metadata cleanup | `ab386e10` | implemented; reviewed | Co-locates the changelog with GitHub release notes, removes the redundant MANIFEST file, and enforces the intentional root-file set without changing the source-checkout CLI entry. Wheel packaging, source-checkout CLI, documentation links, specification review and quality review pass. |
 | Raw-checkout CLI alias cleanup | `daf97a8d` | implemented; reviewed | Removes only the root <code>openprogram_cli.py</code> forwarder and its dedicated raw-checkout compatibility logic. Source checkouts retain <code>python -m openprogram</code> and <code>python -m openprogram.cli</code>; fresh editable installs and wheels retain the console script and canonical <code>python -m openprogram_cli</code>. The retained entries, canonical/compatibility identity, foreign-package rejection, TUI detection, root-file structure, documentation links, Ruff, specification review and quality review pass. |
 | Core package cleanup G1: Context Git DAG | `41151c50` | implemented; reviewed | Moves the two-file ContextGit implementation into `openprogram/context/git/`, updates every repository-owned import and current path reference, removes the old first-level package without a duplicate compatibility layer, and preserves DAG behavior and wheel discovery. The focused DAG, Server, dispatcher, Ruff, link, wheel, specification and quality gates pass. |
-| Standard polyglot workspace G2 | design `23525cc7`; prerequisite `0017c241`; G2a `2256d647` | G2a implemented; reviewed | Defines the target as applications under `apps/`, the shared Agent Core source under `packages/core/src/openprogram`, one aggregate Python distribution, one npm workspace lock, and formal distribution commands under `scripts/release/`. G2a groups the release implementation while preserving the published installer URL; G2b and G2c remain pending. |
+| Standard polyglot workspace G2 | design `23525cc7`; prerequisite `0017c241`; G2a `2256d647`; G2b implementation pending commit | G2a reviewed; G2b implemented, review pending | Defines the target as applications under `apps/`, the shared Agent Core source under `packages/core/src/openprogram`, one aggregate Python distribution, one npm workspace lock, and formal distribution commands under `scripts/release/`. G2a groups the release implementation while preserving the published installer URL; G2b establishes the root npm workspace and single lock; G2c remains pending. |
 
 ## Active task brief: Standard polyglot workspace G2
 
@@ -149,6 +149,10 @@ adapted. Large-file decomposition is not part of the directory migration.
   `tests/component/config/test_upgrade_cmd.py`, repository/distribution
   contracts and the local-refresh locator fixture. A non-history source scan
   must find no child `package-lock.json` or fixed `apps/*/node_modules` lookup.
+  Because Web consumes React 18 while Ink CLI consumes React 19, the private
+  root package pins the React 18 peer/type layout and a compatible reconciler;
+  CLI retains its nested React 19/reconciler pair and carries no external hook
+  package that resolves the root React dispatcher.
 - Batch G2c is split again before any source move. G2c-0 replaces every
   repository-root calculation derived from `openprogram.__file__` with one
   tested checkout/resource resolver, without moving source. G2c-1 then moves

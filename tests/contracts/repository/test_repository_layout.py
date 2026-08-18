@@ -28,6 +28,8 @@ TOP_LEVEL_FILES = {
     "CITATION.cff",
     "CLAUDE.md",
     "LICENSE",
+    "package-lock.json",
+    "package.json",
     "README.md",
     "pyproject.toml",
     "uv.lock",
