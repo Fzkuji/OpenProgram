@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 runtime_root="${OPENPROGRAM_RUNTIME_ROOT:-$repo_root/apps/desktop/build/runtime}"
 output_dir="${OPENPROGRAM_RUNTIME_OUTPUT_DIR:-$repo_root/dist}"
 platform="${OPENPROGRAM_RUNTIME_PLATFORM:-}"

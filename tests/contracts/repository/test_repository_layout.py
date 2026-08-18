@@ -228,3 +228,27 @@ def test_generated_package_readmes_are_current() -> None:
             stale.append(readme.relative_to(ROOT).as_posix())
 
     assert stale == []
+
+
+def test_formal_distribution_implementation_is_grouped_under_release() -> None:
+    release_files = {
+        "archive-product-runtime.sh",
+        "build-product-runtime.sh",
+        "create-release-manifest.py",
+        "install-release.sh",
+        "prepare-desktop-runtime.sh",
+        "product-runtime.json",
+        "smoke-packaged-runtime.sh",
+        "stage-release-assets.sh",
+        "verify-product-runtime.py",
+        "verify-release-version.py",
+    }
+
+    assert all(
+        (ROOT / "scripts" / "release" / name).is_file() for name in release_files
+    )
+    assert all(
+        not (ROOT / "scripts" / name).exists()
+        for name in release_files - {"install-release.sh"}
+    )
+    assert (ROOT / "scripts" / "install-release.sh").is_file()

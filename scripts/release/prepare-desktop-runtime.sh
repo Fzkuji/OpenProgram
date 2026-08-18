@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 runtime_root="$repo_root/apps/desktop/build/runtime"
 archive="${OPENPROGRAM_RUNTIME_ARCHIVE:-}"
 
 if test -z "$archive"; then
   OPENPROGRAM_RUNTIME_ROOT="$runtime_root" \
-    "$repo_root/scripts/build-product-runtime.sh"
+    "$repo_root/scripts/release/build-product-runtime.sh"
   exit 0
 fi
 

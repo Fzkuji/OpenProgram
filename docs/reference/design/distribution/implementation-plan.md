@@ -203,7 +203,7 @@ duplicated in this historical distribution ledger.
 - Base commit: `c1886a3fdf7ba196c42ec9a2c19dca7fe86c12e7`.
 - Public command: `curl -fsSL https://openprogram.io/install | sh` for normal macOS/Linux CLI and server installations.
 - Boundary: the root script resolves the latest stable GitHub Release, validates a three-part numeric version, downloads the immutable tagged installer, and forwards the version. It does not assemble a second installer and does not weaken runtime checksum, capability-manifest, or worker cold-start verification.
-- Reproducibility: advanced users and CI may pass `OPENPROGRAM_VERSION=X.Y.Z` to the `sh` process. The tagged `scripts/install-release.sh` remains the authoritative versioned installer.
+- Reproducibility: advanced users and CI may pass `OPENPROGRAM_VERSION=X.Y.Z` to the `sh` process. The tagged `scripts/install-release.sh` remains the published compatibility URL and downloads the authoritative `scripts/release/install-release.sh` implementation from the same immutable tag.
 - Publication: `docs/_static_root/install.sh` must be renamed to the deployed site root as `/install`; `/docs/install/` remains the installation documentation directory.
 - Tests: execute the public root script with a fake `curl` for automatic latest-version resolution and explicit pinning, assert the tagged installer handoff, build the docs site, verify the assembled root file, and run the existing distribution release suite.
 - RED evidence: the two public-entry tests initially failed because the root bootstrap did not exist and the Pages workflow did not publish `/install`.
@@ -247,7 +247,7 @@ python -m scripts.docs_site.build
 python -m pytest tests/ --ignore=tests/integration
 npm run check --prefix desktop
 npm run check --prefix web
-bash -n scripts/build-product-runtime.sh scripts/install-release.sh scripts/prepare-desktop-runtime.sh
+bash -n scripts/release/build-product-runtime.sh scripts/install-release.sh scripts/release/prepare-desktop-runtime.sh
 git diff --check
 git status --short
 ```
@@ -309,7 +309,7 @@ Platform artifact builds run in the release workflow because a macOS host cannot
 ### Prior Linux completion batch
 
 - Base commit: `540591e9f628498dee87a1c2ebb30ab4c5e757f6`.
-- Production files: `apps/desktop/package.json`, `scripts/smoke-packaged-runtime.sh`, `scripts/install-release.sh`, `.github/workflows/release.yml`, and `.github/workflows/linux-release-smoke.yml`.
+- Production files: `apps/desktop/package.json`, `scripts/release/smoke-packaged-runtime.sh`, `scripts/install-release.sh`, `.github/workflows/release.yml`, and `.github/workflows/linux-release-smoke.yml`.
 - Test file: `tests/unit/test_distribution_release.py`.
 - Linux x86_64 acceptance: build the AppImage on a native x86_64 runner, execute its public entry under Xvfb, let Electron start the embedded worker, verify `/healthz`, `/chat`, immutable Program behavior, and matching freedesktop filename/`StartupWMClass` metadata.
 - Linux CLI acceptance: on native x86_64 and arm64 runners, install the release wheel with the pinned uv and managed CPython, cold-start the worker before switching `current`, and verify the installed launcher version.

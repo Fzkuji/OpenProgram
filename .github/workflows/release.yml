@@ -21,10 +21,10 @@ jobs:
         with:
           version: "0.11.16"
       - name: Verify version
-        run: python scripts/verify-release-version.py --tag "${GITHUB_REF_NAME}"
+        run: python scripts/release/verify-release-version.py --tag "${GITHUB_REF_NAME}"
       - name: Build developer Python distributions
         run: |
-          scripts/stage-release-assets.sh
+          scripts/release/stage-release-assets.sh
           rm -rf build
           uv build
       - name: Verify wheel contents
@@ -76,7 +76,7 @@ jobs:
         with:
           version: "0.11.16"
       - name: Verify version
-        run: python3 scripts/verify-release-version.py --tag "${GITHUB_REF_NAME}"
+        run: python3 scripts/release/verify-release-version.py --tag "${GITHUB_REF_NAME}"
       - name: Install Linux runtime test dependencies
         if: matrix.platform == 'linux'
         run: |
@@ -88,9 +88,9 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.platform }}" = linux ]; then
-            xvfb-run -a scripts/build-product-runtime.sh
+            xvfb-run -a scripts/release/build-product-runtime.sh
           else
-            scripts/build-product-runtime.sh
+            scripts/release/build-product-runtime.sh
           fi
       - name: Archive complete product runtime
         env:
@@ -98,7 +98,7 @@ jobs:
           OPENPROGRAM_RUNTIME_OUTPUT_DIR: ${{ runner.temp }}/runtime-artifacts
           OPENPROGRAM_RUNTIME_PLATFORM: ${{ matrix.platform }}
           OPENPROGRAM_RUNTIME_ARCH: ${{ matrix.arch }}
-        run: scripts/archive-product-runtime.sh
+        run: scripts/release/archive-product-runtime.sh
       - uses: actions/upload-artifact@v7
         with:
           name: product-runtime-${{ matrix.platform }}-${{ matrix.arch }}
@@ -133,7 +133,7 @@ jobs:
           name: product-runtime-${{ matrix.runtime_platform }}-${{ matrix.arch }}
           path: runtime-artifact
       - name: Verify version
-        run: python3 scripts/verify-release-version.py --tag "${GITHUB_REF_NAME}"
+        run: python3 scripts/release/verify-release-version.py --tag "${GITHUB_REF_NAME}"
       - name: Install desktop dependencies
         run: npm ci
         working-directory: apps/desktop
@@ -142,7 +142,7 @@ jobs:
         run: |
           archive="$(find "$GITHUB_WORKSPACE/runtime-artifact" -name '*.tar.gz' -print -quit)"
           test -n "$archive"
-          OPENPROGRAM_RUNTIME_ARCHIVE="$archive" scripts/prepare-desktop-runtime.sh
+          OPENPROGRAM_RUNTIME_ARCHIVE="$archive" scripts/release/prepare-desktop-runtime.sh
       - name: Build explicitly unsigned macOS artifacts
         working-directory: apps/desktop
         env:
@@ -155,7 +155,7 @@ jobs:
             mv "$artifact" "${artifact%.*}-unsigned.$extension"
           done
       - name: Verify embedded complete runtime
-        run: scripts/smoke-packaged-runtime.sh mac apps/desktop/dist
+        run: scripts/release/smoke-packaged-runtime.sh mac apps/desktop/dist
       - name: Create SHA-256 checksums
         shell: bash
         run: |
@@ -216,7 +216,7 @@ jobs:
           path: release-artifacts
       - name: Create release manifest
         run: |
-          python scripts/create-release-manifest.py release-artifacts \
+          python scripts/release/create-release-manifest.py release-artifacts \
             --version "$GITHUB_REF_NAME" \
             --output release-artifacts/release-manifest.json
       - name: Publish GitHub Release

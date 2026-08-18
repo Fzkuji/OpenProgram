@@ -12,7 +12,7 @@ from email.parser import BytesParser
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 
 
@@ -109,7 +109,7 @@ def main() -> int:
     desktop_version = json.loads(
         (ROOT / "apps" / "desktop" / "package.json").read_text(encoding="utf-8")
     )["version"]
-    installer = (ROOT / "scripts" / "install-release.sh").read_text(
+    installer = (ROOT / "scripts" / "release" / "install-release.sh").read_text(
         encoding="utf-8"
     )
     expected_tag = f"v{python_version}"

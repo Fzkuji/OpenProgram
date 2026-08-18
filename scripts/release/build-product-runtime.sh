@@ -4,8 +4,8 @@ set -euo pipefail
 # Pinned first-party inputs are declared beside this script in product-runtime.json:
 # GUI-Agent-Harness, Research-Agent-Harness, and Wiki-Agent-Harness.
 
-repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-product_config="$repo_root/scripts/product-runtime.json"
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+product_config="$repo_root/scripts/release/product-runtime.json"
 runtime_root="${OPENPROGRAM_RUNTIME_ROOT:-$repo_root/apps/desktop/build/runtime}"
 uv_bin="${OPENPROGRAM_UV_BIN:-$(command -v uv || true)}"
 json_python="${OPENPROGRAM_BUILD_PYTHON:-$(command -v python3 || true)}"
@@ -55,7 +55,7 @@ test "$actual_uv_version" = "$UV_VERSION" || {
   exit 1
 }
 
-"$repo_root/scripts/stage-release-assets.sh"
+"$repo_root/scripts/release/stage-release-assets.sh"
 rm -rf "$runtime_root"
 rm -rf "$repo_root/build"
 mkdir -p \
@@ -173,7 +173,7 @@ done < <(find "$runtime_root/python" -maxdepth 1 -type l -print0)
 cp "$uv_bin" "$runtime_root/bin/uv"
 cp "$product_config" "$runtime_root/product-runtime.json"
 cp "$repo_root/uv.lock" "$runtime_root/product-uv.lock"
-cp "$repo_root/scripts/verify-product-runtime.py" \
+cp "$repo_root/scripts/release/verify-product-runtime.py" \
   "$runtime_root/bin/verify-product-runtime.py"
 chmod 0755 "$runtime_root/bin/uv" "$runtime_root/bin/verify-product-runtime.py"
 

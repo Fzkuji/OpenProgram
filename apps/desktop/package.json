@@ -23,7 +23,7 @@
     "check:packaged-runtime": "node scripts/check-packaged-runtime.js",
     "check:updates": "node scripts/check-update-service.js",
     "icon:check": "bash scripts/check-icon.sh",
-    "prepare:runtime": "bash ../../scripts/prepare-desktop-runtime.sh",
+    "prepare:runtime": "bash ../../scripts/release/prepare-desktop-runtime.sh",
     "dist": "npm run app:install",
     "app:install": "bash scripts/package-and-install-app.sh",
     "dist:mac": "npm run prepare:runtime && npm run icon:check && electron-builder --mac dmg zip"

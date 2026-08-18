@@ -130,7 +130,7 @@ def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
     assert wait_index < installer_text.index('open "$target_app"', wait_index)
     assert 'mktemp -d "${TMPDIR:-/tmp}/openprogram-app-package.XXXXXX"' in packager
     assert '"$builder" --dir --mac --publish never' in packager
-    smoke = 'bash "$repo_root/scripts/smoke-packaged-runtime.sh" mac "$package_dir"'
+    smoke = 'bash "$repo_root/scripts/release/smoke-packaged-runtime.sh" mac "$package_dir"'
     assert smoke in packager
     assert 'env -u DESTDIR bash "$script_dir/install-app.sh" "$built_app"' in packager
     assert packager.index(smoke) < packager.index(
@@ -140,7 +140,7 @@ def test_local_desktop_build_installs_one_canonical_app(tmp_path: Path) -> None:
     assert 'acquire_pid_lock "$lock_file"' in packager
     assert '"$web_build_dir" "$web_output_dir" "$frontend_stage_dir"' in packager
     assert 'rm -rf "$repo_root/build"' in (
-        ROOT / "scripts" / "build-product-runtime.sh"
+        ROOT / "scripts" / "release" / "build-product-runtime.sh"
     ).read_text(encoding="utf-8")
     env = {
         "DESTDIR": str(tmp_path / "root"),
@@ -649,7 +649,7 @@ def test_packaged_runtime_smoke_rejects_an_incomplete_app_before_install(
     failed = subprocess.run(
         [
             "bash",
-            str(ROOT / "scripts" / "smoke-packaged-runtime.sh"),
+            str(ROOT / "scripts" / "release" / "smoke-packaged-runtime.sh"),
             "mac",
             str(package_dir),
         ],
@@ -763,7 +763,7 @@ def test_packaged_runtime_rejects_program_mutation(monkeypatch, capsys) -> None:
 
 
 def test_release_installer_is_versioned_and_source_free() -> None:
-    installer = (ROOT / "scripts" / "install-release.sh").read_text(encoding="utf-8")
+    installer = (ROOT / "scripts" / "release" / "install-release.sh").read_text(encoding="utf-8")
     assert "OPENPROGRAM_RUNTIME_ARCHIVE" in installer
     assert "runtime-${platform}-${arch}.tar.gz" in installer
     assert "runtime-manifest.json" in installer
@@ -777,7 +777,7 @@ def test_release_installer_is_versioned_and_source_free() -> None:
 
 
 def test_release_installer_cold_starts_before_switching_current() -> None:
-    installer = (ROOT / "scripts" / "install-release.sh").read_text(encoding="utf-8")
+    installer = (ROOT / "scripts" / "release" / "install-release.sh").read_text(encoding="utf-8")
     assert 'probe_home="$release_dir/.probe-home-$$"' in installer
     assert 'HOME="$probe_home" OPENPROGRAM_WEB_PORT="$probe_port"' in installer
     start = installer.index('"$python_bin" -I -B -m openprogram worker start')
@@ -785,6 +785,121 @@ def test_release_installer_cold_starts_before_switching_current() -> None:
     stop = installer.index('"$python_bin" -I -B -m openprogram worker stop', health)
     switch = installer.index("os.replace(sys.argv[1], sys.argv[2])", stop)
     assert start < health < stop < switch
+
+
+def _copied_public_installer(tmp_path: Path) -> Path:
+    wrapper = tmp_path / "install-release.sh"
+    wrapper.write_text(
+        (ROOT / "scripts" / "install-release.sh").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    return wrapper
+
+
+def test_public_release_installer_downloads_same_tag_implementation(
+    tmp_path: Path,
+) -> None:
+    wrapper = _copied_public_installer(tmp_path)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text(
+        "#!/bin/sh\noutput=\nurl=\n"
+        "while [ \"$#\" -gt 0 ]; do case \"$1\" in "
+        "--output) output=\"$2\"; shift 2 ;; https://*) url=\"$1\"; shift ;; "
+        "*) shift ;; esac; done\n"
+        "printf '%s\\n' \"$url\" > \"$FAKE_CURL_LOG\"\n"
+        "printf '#!/bin/sh\nprintf \"%%s|%%s\\\\n\" \"$OPENPROGRAM_VERSION\" \"$OPENPROGRAM_REPOSITORY\" > \"$FAKE_RESULT\"\\n' > \"$output\"\n",
+        encoding="utf-8",
+    )
+    fake_curl.chmod(0o755)
+    result = tmp_path / "result"
+    curl_log = tmp_path / "curl.log"
+    env = os.environ | {
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "OPENPROGRAM_VERSION": "1.2.3",
+        "OPENPROGRAM_REPOSITORY": "Example/OpenProgram",
+        "FAKE_CURL_LOG": str(curl_log),
+        "FAKE_RESULT": str(result),
+    }
+
+    subprocess.run(["sh", str(wrapper)], check=True, env=env)
+
+    assert curl_log.read_text(encoding="utf-8").strip() == (
+        "https://raw.githubusercontent.com/Example/OpenProgram/"
+        "v1.2.3/scripts/release/install-release.sh"
+    )
+    assert result.read_text(encoding="utf-8") == "1.2.3|Example/OpenProgram\n"
+
+
+@pytest.mark.parametrize("version", ["1", "1.2", "1.2.3.4", "1.2.x"])
+def test_public_release_installer_rejects_non_release_versions(
+    tmp_path: Path, version: str
+) -> None:
+    result = subprocess.run(
+        ["sh", str(_copied_public_installer(tmp_path))],
+        check=False,
+        env=os.environ | {"OPENPROGRAM_VERSION": version},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert f"invalid OpenProgram version: {version}" in result.stderr
+
+
+def test_public_release_installer_dispatches_to_checkout_implementation(
+    tmp_path: Path,
+) -> None:
+    scripts = tmp_path / "scripts"
+    release_scripts = scripts / "release"
+    release_scripts.mkdir(parents=True)
+    wrapper = scripts / "install-release.sh"
+    wrapper.write_text(
+        (ROOT / "scripts" / "install-release.sh").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (release_scripts / "install-release.sh").write_text(
+        "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$OPENPROGRAM_VERSION\" \"$1\" \"$2\" > \"$RESULT\"\nexit 23\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "result"
+    result = subprocess.run(
+        ["sh", str(wrapper), "first", "second"],
+        check=False,
+        env=os.environ
+        | {"OPENPROGRAM_VERSION": "1.2.3", "RESULT": str(output)},
+    )
+    assert result.returncode == 23
+    assert output.read_text(encoding="utf-8") == "1.2.3|first|second\n"
+
+
+def test_public_release_installer_stops_on_term(tmp_path: Path) -> None:
+    wrapper = _copied_public_installer(tmp_path)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text(
+        "#!/bin/sh\noutput=\n"
+        "while [ \"$#\" -gt 0 ]; do case \"$1\" in "
+        "--output) output=\"$2\"; shift 2 ;; *) shift ;; esac; done\n"
+        "printf '#!/bin/sh\\ntouch \"$SHOULD_NOT_RUN\"\\n' > \"$output\"\n"
+        "kill -TERM \"$PPID\"\n",
+        encoding="utf-8",
+    )
+    fake_curl.chmod(0o755)
+    marker = tmp_path / "installer-ran"
+    result = subprocess.run(
+        ["sh", str(wrapper)],
+        check=False,
+        env=os.environ
+        | {
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "OPENPROGRAM_VERSION": "1.2.3",
+            "SHOULD_NOT_RUN": str(marker),
+        },
+    )
+    assert result.returncode == 143
+    assert not marker.exists()
 
 
 def test_release_installer_replaces_an_existing_current_symlink(tmp_path: Path) -> None:
@@ -972,7 +1087,7 @@ def test_cli_exposes_distribution_version(capsys) -> None:
 
 
 def test_desktop_runtime_removes_absolute_python_aliases() -> None:
-    staging = (ROOT / "scripts" / "build-product-runtime.sh").read_text(
+    staging = (ROOT / "scripts" / "release" / "build-product-runtime.sh").read_text(
         encoding="utf-8"
     )
     assert 'readlink "$python_alias"' in staging
@@ -1010,7 +1125,7 @@ def test_local_app_refresh_rejects_a_different_product_version_before_build(
     major, minor, patch = (int(part) for part in source_version.split("."))
     installed_version = f"{major}.{minor}.{patch + 1}"
     installed = _fake_desktop_app(tmp_path, installed_version)
-    verifier = ROOT / "scripts" / "verify-release-version.py"
+    verifier = ROOT / "scripts" / "release" / "verify-release-version.py"
     result = subprocess.run(
         [
             sys.executable,
@@ -1034,7 +1149,7 @@ def test_local_app_refresh_rejects_a_different_product_version_before_build(
     )
     gate = refresh.index("--require-source-match")
     assert gate < refresh.index('wheel_dir="$(mktemp')
-    assert gate < refresh.index('"$repo_root/scripts/stage-release-assets.sh"')
+    assert gate < refresh.index('"$repo_root/scripts/release/stage-release-assets.sh"')
     assert gate < refresh.index("openprogram worker stop")
     post_build_gate = refresh.index('--wheel "$wheel"')
     lock = refresh.index('acquire_pid_lock "$install_lock_file"')
@@ -1061,7 +1176,7 @@ def test_release_version_verifier_rejects_a_mismatched_built_wheel(
     result = subprocess.run(
         [
             sys.executable,
-            str(ROOT / "scripts" / "verify-release-version.py"),
+            str(ROOT / "scripts" / "release" / "verify-release-version.py"),
             "--installed-app",
             str(installed),
             "--require-source-match",
@@ -1081,23 +1196,24 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
 ) -> None:
     repo = tmp_path / "repo"
     scripts = repo / "scripts"
+    release_scripts = scripts / "release"
     desktop = repo / "apps" / "desktop"
-    scripts.mkdir(parents=True)
+    release_scripts.mkdir(parents=True)
     desktop.mkdir(parents=True)
     (scripts / "refresh-local-app.sh").write_text(
         (ROOT / "scripts" / "refresh-local-app.sh").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
-    (scripts / "verify-release-version.py").write_text(
-        (ROOT / "scripts" / "verify-release-version.py").read_text(
+    (release_scripts / "verify-release-version.py").write_text(
+        (ROOT / "scripts" / "release" / "verify-release-version.py").read_text(
             encoding="utf-8"
         ),
         encoding="utf-8",
     )
-    stage_assets = scripts / "stage-release-assets.sh"
+    stage_assets = release_scripts / "stage-release-assets.sh"
     stage_assets.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     stage_assets.chmod(0o755)
-    (scripts / "install-release.sh").write_text(
+    (release_scripts / "install-release.sh").write_text(
         'OPENPROGRAM_VERSION="${OPENPROGRAM_VERSION:-0.6.6}"\n',
         encoding="utf-8",
     )
@@ -1328,7 +1444,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
 
 
 def test_release_frontend_staging_removes_stale_export_before_build() -> None:
-    staging = (ROOT / "scripts" / "stage-release-assets.sh").read_text(
+    staging = (ROOT / "scripts" / "release" / "stage-release-assets.sh").read_text(
         encoding="utf-8"
     )
     cleanup = staging.index('rm -rf "$source_dir"')
@@ -1337,7 +1453,7 @@ def test_release_frontend_staging_removes_stale_export_before_build() -> None:
 
 
 def test_release_frontend_staging_removes_legacy_package_assets() -> None:
-    staging = (ROOT / "scripts" / "stage-release-assets.sh").read_text(
+    staging = (ROOT / "scripts" / "release" / "stage-release-assets.sh").read_text(
         encoding="utf-8"
     )
     assert 'legacy_target_dir="$repo_root/openprogram/webui/_frontend"' in staging
@@ -1357,7 +1473,7 @@ def test_release_frontend_staging_directory_is_ignored() -> None:
 
 
 def test_release_frontend_staging_includes_prebuilt_docs() -> None:
-    staging = (ROOT / "scripts" / "stage-release-assets.sh").read_text(
+    staging = (ROOT / "scripts" / "release" / "stage-release-assets.sh").read_text(
         encoding="utf-8"
     )
     assert "scripts.docs_site.build" in staging
@@ -1368,13 +1484,14 @@ def test_release_frontend_staging_includes_prebuilt_docs() -> None:
 def test_release_asset_staging_invokes_locked_docs_builder(tmp_path) -> None:
     repo = tmp_path / "repo"
     scripts = repo / "scripts"
+    release_scripts = scripts / "release"
     fake_bin = tmp_path / "bin"
-    scripts.mkdir(parents=True)
+    release_scripts.mkdir(parents=True)
     fake_bin.mkdir()
     (repo / "apps" / "web").mkdir(parents=True)
-    script = scripts / "stage-release-assets.sh"
+    script = release_scripts / "stage-release-assets.sh"
     script.write_text(
-        (ROOT / "scripts" / "stage-release-assets.sh").read_text(encoding="utf-8"),
+        (ROOT / "scripts" / "release" / "stage-release-assets.sh").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
     script.chmod(0o755)
@@ -1428,13 +1545,13 @@ printf '<html>docs</html>\\n' > "$PWD/docs/_site/index.html"
 
 
 def test_product_runtime_installs_complete_default_capabilities() -> None:
-    staging = (ROOT / "scripts" / "build-product-runtime.sh").read_text(
+    staging = (ROOT / "scripts" / "release" / "build-product-runtime.sh").read_text(
         encoding="utf-8"
     )
-    verifier = (ROOT / "scripts" / "verify-product-runtime.py").read_text(
+    verifier = (ROOT / "scripts" / "release" / "verify-product-runtime.py").read_text(
         encoding="utf-8"
     )
-    product_config = (ROOT / "scripts" / "product-runtime.json").read_text(
+    product_config = (ROOT / "scripts" / "release" / "product-runtime.json").read_text(
         encoding="utf-8"
     )
     assert "--frozen --no-dev" in staging
@@ -1461,12 +1578,12 @@ def test_product_runtime_installs_complete_default_capabilities() -> None:
 
 
 def test_product_runtime_pdf_tool_probe() -> None:
-    verifier = runpy.run_path(str(ROOT / "scripts" / "verify-product-runtime.py"))
+    verifier = runpy.run_path(str(ROOT / "scripts" / "release" / "verify-product-runtime.py"))
     verifier["_probe_pdf_tools"]()
 
 
 def test_product_runtime_rich_terminal_probe() -> None:
-    verifier = runpy.run_path(str(ROOT / "scripts" / "verify-product-runtime.py"))
+    verifier = runpy.run_path(str(ROOT / "scripts" / "release" / "verify-product-runtime.py"))
     verifier["_probe_rich_terminal"]()
 
 
@@ -1537,7 +1654,7 @@ def test_missing_bundled_pdf_dependency_requires_complete_reinstall(
 def test_product_runtime_rejects_installed_openprogram_version_mismatch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    verifier = runpy.run_path(str(ROOT / "scripts" / "verify-product-runtime.py"))
+    verifier = runpy.run_path(str(ROOT / "scripts" / "release" / "verify-product-runtime.py"))
     verify_version = verifier["_verify_openprogram_version"]
 
     monkeypatch.setattr("importlib.metadata.version", lambda _name: "0.6.1")
@@ -1561,7 +1678,7 @@ def test_search_runtime_dependency_supports_macos_x64() -> None:
 
 def test_product_manifest_requires_one_complete_capability_set() -> None:
     manifest = json.loads(
-        (ROOT / "scripts" / "product-runtime.json").read_text(encoding="utf-8")
+        (ROOT / "scripts" / "release" / "product-runtime.json").read_text(encoding="utf-8")
     )
     assert manifest["schema"] == 1
     assert set(manifest["capabilities"]) == {
@@ -1610,12 +1727,12 @@ def test_native_release_workflow_has_platform_jobs() -> None:
     assert "product-runtime:" in workflow
     assert "cli-installer:" in workflow
     assert "product-runtime-${{ matrix.platform }}-${{ matrix.arch }}" in workflow
-    assert "scripts/build-product-runtime.sh" in workflow
-    assert "scripts/archive-product-runtime.sh" in workflow
-    assert "scripts/prepare-desktop-runtime.sh" in workflow
-    assert "scripts/verify-release-version.py" in workflow
-    assert "scripts/create-release-manifest.py" in workflow
-    assert "scripts/smoke-packaged-runtime.sh" in workflow
+    assert "scripts/release/build-product-runtime.sh" in workflow
+    assert "scripts/release/archive-product-runtime.sh" in workflow
+    assert "scripts/release/prepare-desktop-runtime.sh" in workflow
+    assert "scripts/release/verify-release-version.py" in workflow
+    assert "scripts/release/create-release-manifest.py" in workflow
+    assert "scripts/release/smoke-packaged-runtime.sh" in workflow
     assert "sha256" in workflow.lower()
     assert workflow.count("--publish never") == 1
     assert "AppImage" not in workflow
@@ -1712,7 +1829,7 @@ def test_distribution_workflows_use_node24_action_releases() -> None:
 
 
 def test_packaged_smoke_rejects_unreleased_linux_desktop() -> None:
-    smoke = (ROOT / "scripts" / "smoke-packaged-runtime.sh").read_text(encoding="utf-8")
+    smoke = (ROOT / "scripts" / "release" / "smoke-packaged-runtime.sh").read_text(encoding="utf-8")
     assert "AppImage" not in smoke
     assert "linux)" not in smoke
     assert "python3 -c" not in smoke
@@ -1736,7 +1853,7 @@ def test_packaged_smoke_reads_formatted_runtime_manifest(tmp_path: Path) -> None
 
     result = subprocess.run(
         [
-            str(ROOT / "scripts" / "smoke-packaged-runtime.sh"),
+            str(ROOT / "scripts" / "release" / "smoke-packaged-runtime.sh"),
             "mac",
             str(tmp_path / "dist"),
         ],
@@ -1969,7 +2086,7 @@ def test_release_manifest_records_hashes(tmp_path: Path) -> None:
     subprocess.run(
         [
             "python",
-            str(ROOT / "scripts" / "create-release-manifest.py"),
+            str(ROOT / "scripts" / "release" / "create-release-manifest.py"),
             str(artifacts),
             "--version",
             "v0.6.4",

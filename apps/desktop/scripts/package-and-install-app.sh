@@ -81,5 +81,5 @@ app_count="$(wc -l <"$app_list" | tr -d ' ')"
   exit 1
 }
 built_app="$(sed -n '1p' "$app_list")"
-bash "$repo_root/scripts/smoke-packaged-runtime.sh" mac "$package_dir"
+bash "$repo_root/scripts/release/smoke-packaged-runtime.sh" mac "$package_dir"
 env -u DESTDIR bash "$script_dir/install-app.sh" "$built_app"

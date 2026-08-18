@@ -39,7 +39,7 @@ test -f "$installed_asar" || {
   exit 1
 }
 
-"$local_python" "$repo_root/scripts/verify-release-version.py" \
+"$local_python" "$repo_root/scripts/release/verify-release-version.py" \
   --installed-app "$app_path" --require-source-match
 
 app_python_relative="$("$local_python" - "$manifest" <<'PY'
@@ -103,7 +103,7 @@ while true; do
   mkdir -p "$attempt_dir"
 
   rm -rf "$repo_root/apps/desktop/dist"
-  "$repo_root/scripts/stage-release-assets.sh"
+  "$repo_root/scripts/release/stage-release-assets.sh"
   rm -rf "$repo_root/build"
   "$uv_bin" build --wheel --out-dir "$attempt_dir" "$repo_root"
   wheel="$(find "$attempt_dir" -maxdepth 1 -type f \
@@ -144,7 +144,7 @@ install_lock_owned=1
 
 # Re-read all mutable version sources under the same lock as the canonical App
 # installer. The wheel is the immutable payload used by both pip operations.
-"$local_python" "$repo_root/scripts/verify-release-version.py" \
+"$local_python" "$repo_root/scripts/release/verify-release-version.py" \
   --installed-app "$app_path" --require-source-match --wheel "$wheel"
 
 if pgrep -x OpenProgram >/dev/null 2>&1; then
