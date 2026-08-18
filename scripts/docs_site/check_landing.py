@@ -16,7 +16,7 @@ from .template import render_page
 
 
 ROOT = Path(__file__).resolve().parents[2]
-LANDING = ROOT / "site" / "index.html"
+LANDING = ROOT / "website" / "index.html"
 README = ROOT / "README.md"
 DOCS_README = ROOT / "docs" / "README.md"
 DOCS_README_ZH = ROOT / "docs" / "README.zh.md"

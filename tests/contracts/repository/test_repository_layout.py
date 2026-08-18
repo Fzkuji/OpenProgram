@@ -16,7 +16,7 @@ TOP_LEVEL_DIRECTORIES = {
     "promo",
     "references",
     "scripts",
-    "site",
+    "website",
     "tests",
 }
 

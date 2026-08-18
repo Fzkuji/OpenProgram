@@ -955,7 +955,7 @@ def test_normal_user_docs_use_the_short_release_installer() -> None:
         "docs/install/upgrade.zh.md",
         "docs/start/GETTING_STARTED.md",
         "docs/start/GETTING_STARTED.zh.md",
-        "site/index.html",
+        "website/index.html",
     ):
         contents = (ROOT / relative).read_text(encoding="utf-8")
         assert short_command in contents, relative
