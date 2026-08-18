@@ -1434,7 +1434,7 @@ def test_product_runtime_installs_complete_default_capabilities() -> None:
     verifier = (ROOT / "scripts" / "verify-product-runtime.py").read_text(
         encoding="utf-8"
     )
-    product_config = (ROOT / "config" / "product-runtime.json").read_text(
+    product_config = (ROOT / "scripts" / "product-runtime.json").read_text(
         encoding="utf-8"
     )
     assert "--frozen --no-dev" in staging
@@ -1561,7 +1561,7 @@ def test_search_runtime_dependency_supports_macos_x64() -> None:
 
 def test_product_manifest_requires_one_complete_capability_set() -> None:
     manifest = json.loads(
-        (ROOT / "config" / "product-runtime.json").read_text(encoding="utf-8")
+        (ROOT / "scripts" / "product-runtime.json").read_text(encoding="utf-8")
     )
     assert manifest["schema"] == 1
     assert set(manifest["capabilities"]) == {

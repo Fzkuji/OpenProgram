@@ -11,7 +11,6 @@ TOP_LEVEL_DIRECTORIES = {
     ".github",
     ".superpowers",
     "apps",
-    "config",
     "docs",
     "openprogram",
     "promo",

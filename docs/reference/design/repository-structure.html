@@ -123,11 +123,10 @@
   tests/         Python 测试：层级 / 产品域
   docs/          用户文档与设计记录
   scripts/       可执行或可导入的开发、验证和发布工具
-  config/        产品运行时构建清单
   references/    参考实现快照与本地比较语料
   promo/         发布与宣传源文件
   site/          静态站点入口</pre>
-  <p><code>.github/</code>、<code>.codegraph/</code> 和 <code>.superpowers/</code> 是仓库基础设施，不是产品运行时目录。根目录只保留核心 package、应用 workspace、共享 package、项目元数据、入口文档、依赖锁和构建配置。<code>openprogram_cli.py</code> 只为未安装 checkout 提供导入和 <code>python -m</code> 入口，不包含应用实现，也不进入 wheel。应用专用脚本放在对应 <code>apps/&lt;name&gt;/scripts/</code>，跨应用的可执行命令和可导入维护模块统一放在 <code>scripts/</code>；仓库不再保留含义重叠的根目录 <code>tools/</code>。</p>
+  <p><code>.github/</code>、<code>.codegraph/</code> 和 <code>.superpowers/</code> 是仓库基础设施，不是产品运行时目录。根目录只保留核心 package、应用 workspace、共享 package、项目元数据、入口文档、依赖锁和构建配置。<code>openprogram_cli.py</code> 只为未安装 checkout 提供导入和 <code>python -m</code> 入口，不包含应用实现，也不进入 wheel。应用专用脚本放在对应 <code>apps/&lt;name&gt;/scripts/</code>，跨应用的可执行命令、可导入维护模块及其构建清单统一放在 <code>scripts/</code>；仓库不再保留含义重叠的根目录 <code>tools/</code> 或单文件 <code>config/</code>。</p>
   <p>正式内置技能统一位于 <code>openprogram/skills_bundled/</code> 并作为 package data 分发。用户技能位于 <code>~/.openprogram/skills/</code>，项目技能位于用户当前项目的 <code>&lt;cwd&gt;/skills/</code>；OpenProgram 仓库不再保留第二份根目录技能副本。</p>
   <p><code>tests/</code> 中的 Python 用例使用 <code>tests/&lt;layer&gt;/&lt;product-domain&gt;/test_*.py</code>，按最强实际依赖选择层级。具体边界由 <a href="testing/test-system.html">Testing system</a> 和仓库 contracts 维护。</p>
 
