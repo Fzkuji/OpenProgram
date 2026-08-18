@@ -82,7 +82,7 @@ def _write_private_text(
     path: Path, content: str, *, expected_revision: str | None = None
 ):
     if path.name == "token":
-        from openprogram.credential_files import _private_atomic_write
+        from openprogram.auth.credentials import _private_atomic_write
 
         return _private_atomic_write(
             path,
@@ -218,7 +218,7 @@ class OwnerAuthState:
             )
             return state
         except Exception as exc:
-            from openprogram.credential_files import PrivateAtomicWriteError
+            from openprogram.auth.credentials import PrivateAtomicWriteError
 
             if isinstance(exc, PrivateAtomicWriteError) and exc.committed:
                 if "state" in locals() and state._lock_handle is handle:

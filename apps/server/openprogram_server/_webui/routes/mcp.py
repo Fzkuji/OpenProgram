@@ -30,7 +30,7 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from openprogram.credential_files import is_redacted_value as _is_redacted
+from openprogram.auth.credentials import is_redacted_value as _is_redacted
 from openprogram.mcp import (
     add_server,
     get_server,
@@ -45,7 +45,7 @@ from openprogram.mcp.config import (
     parse_entry,
     save_configs_revision,
 )
-from openprogram.credential_files import PrivateAtomicWriteError
+from openprogram.auth.credentials import PrivateAtomicWriteError
 
 
 def _save_expected(configs: list[MCPServerConfig], revision: str) -> str:

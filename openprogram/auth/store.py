@@ -419,7 +419,7 @@ class AuthStore:
         key = (provider_id, account_id)
         path = self._pool_path(provider_id, account_id)
         with self._sync_lock:
-            from openprogram.credential_files import _private_unlink
+            from openprogram.auth.credentials import _private_unlink
 
             _private_unlink(
                 path, root=self._root, lock_timeout=FILE_LOCK_TIMEOUT_SECONDS
@@ -460,7 +460,7 @@ class AuthStore:
     ) -> None:
         path = self._pool_path(pool.provider_id, pool.account_id)
         data = json.dumps(pool.to_dict(), indent=2, ensure_ascii=False)
-        from openprogram.credential_files import _private_atomic_write
+        from openprogram.auth.credentials import _private_atomic_write
 
         key = (pool.provider_id, pool.account_id)
         expected = (
@@ -483,7 +483,7 @@ class AuthStore:
 
     def _load_from_disk(self, key: tuple[str, str]) -> Optional[CredentialPool]:
         path = self._pool_path(*key)
-        from openprogram.credential_files import (
+        from openprogram.auth.credentials import (
             _private_file_lock,
             _read_private_bytes,
             _revision,
@@ -516,7 +516,7 @@ class AuthStore:
     def _reload_if_disk_changed(self, key: tuple[str, str]) -> None:
         """Reload when the exact on-disk byte revision changed."""
         path = self._pool_path(*key)
-        from openprogram.credential_files import private_file_revision
+        from openprogram.auth.credentials import private_file_revision
 
         current = private_file_revision(
             path, root=self._root, lock_timeout=FILE_LOCK_TIMEOUT_SECONDS

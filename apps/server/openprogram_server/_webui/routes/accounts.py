@@ -34,7 +34,7 @@ from typing import Any
 from fastapi import Body
 from fastapi.responses import JSONResponse
 
-from openprogram.credential_files import is_redacted_value
+from openprogram.auth.credentials import is_redacted_value
 
 from ._credential_secrets import (
     check_request_body,

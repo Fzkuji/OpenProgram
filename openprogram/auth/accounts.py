@@ -212,7 +212,7 @@ class AccountManager:
             return _serialize_dotenv(current)
 
         with self._lock:
-            from openprogram.credential_files import _private_atomic_update
+            from openprogram.auth.credentials import _private_atomic_update
 
             _private_atomic_update(account.env_file, update, root=self.root)
 
@@ -227,7 +227,7 @@ class AccountManager:
         with self._lock:
             if not account.env_file.exists():
                 return
-            from openprogram.credential_files import _private_atomic_update
+            from openprogram.auth.credentials import _private_atomic_update
 
             _private_atomic_update(account.env_file, update, root=self.root)
 
@@ -325,7 +325,7 @@ def _write_dotenv(
     root: Path | None = None,
     expected_revision: str | None = None,
 ):
-    from openprogram.credential_files import _private_atomic_write
+    from openprogram.auth.credentials import _private_atomic_write
 
     return _private_atomic_write(
         path,

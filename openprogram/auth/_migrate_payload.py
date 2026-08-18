@@ -116,7 +116,7 @@ def _migrate_kind_and_account(doc: dict) -> bool:
 
 def _migrate_file(path: Path, *, root: Path | None = None) -> bool:
     storage_root = root or path.parents[2]
-    from openprogram.credential_files import (
+    from openprogram.auth.credentials import (
         _private_atomic_write,
         _private_file_lock,
         _read_private_bytes,

@@ -316,7 +316,7 @@ def save_roots(
         payload["roots"] = cleaned
         return json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
 
-    from openprogram.credential_files import _private_atomic_update
+    from openprogram.auth.credentials import _private_atomic_update
 
     root = _paths.get_state_dir()
     root.mkdir(parents=True, exist_ok=True)
@@ -371,7 +371,7 @@ def load_configs_with_revision(
     path = get_config_path()
     root = _paths.get_state_dir()
     root.mkdir(parents=True, exist_ok=True)
-    from openprogram.credential_files import (
+    from openprogram.auth.credentials import (
         _private_file_lock,
         _read_private_bytes,
         _revision,
@@ -434,7 +434,7 @@ def save_configs_revision(
         payload["servers"] = servers
         return json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
 
-    from openprogram.credential_files import _private_atomic_update
+    from openprogram.auth.credentials import _private_atomic_update
 
     root = _paths.get_state_dir()
     root.mkdir(parents=True, exist_ok=True)
@@ -465,7 +465,7 @@ def _decode_raw_bytes(raw: bytes | None) -> dict:
 def _write_private_json(path: Path, payload: dict) -> None:
     """Owner-only full replacement used by compatibility callers."""
 
-    from openprogram.credential_files import _private_atomic_write
+    from openprogram.auth.credentials import _private_atomic_write
 
     root = _paths.get_state_dir()
     root.mkdir(parents=True, exist_ok=True)

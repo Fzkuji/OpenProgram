@@ -1314,7 +1314,7 @@ def _publish_snapshot(
     if root.is_symlink():
         raise InvalidWorkflow("workflow project root must not be a symlink")
     root.mkdir(parents=True, exist_ok=True)
-    from openprogram.credential_files import _private_file_lock
+    from openprogram.auth.credentials import _private_file_lock
 
     with _private_file_lock(root / ".git-publish", root=root, timeout=30):
         if action == "create":

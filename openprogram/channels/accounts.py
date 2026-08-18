@@ -188,7 +188,7 @@ def create(
         # Empty credentials.json with 0600 so later secrets don't
         # briefly live world-readable.
         cred_path = account_credentials_path(channel, account_id)
-        from openprogram.credential_files import (
+        from openprogram.auth.credentials import (
             _private_atomic_write,
             _private_file_lock,
             _read_private_bytes,
@@ -250,7 +250,7 @@ def save_credentials(
     """Atomically replace credentials.json with ``creds``."""
     with _lock:
         path = account_credentials_path(channel, account_id)
-        from openprogram.credential_files import _private_atomic_write
+        from openprogram.auth.credentials import _private_atomic_write
         from openprogram.paths import get_state_dir
 
         return _private_atomic_write(
@@ -281,7 +281,7 @@ def update_credentials(
             updated = value
             return json.dumps(value, indent=2).encode("utf-8")
 
-        from openprogram.credential_files import _private_atomic_update
+        from openprogram.auth.credentials import _private_atomic_update
         from openprogram.paths import get_state_dir
 
         _private_atomic_update(path, update, root=get_state_dir())

@@ -108,8 +108,8 @@ def test_clear_unlinks_symlink_without_deleting_target(tmp_path, monkeypatch):
 
 
 def test_clear_returns_no_success_when_unlink_fails(tmp_path, monkeypatch):
-    from openprogram.credential_files import PrivateAtomicWriteError
-    from openprogram.credential_files import io
+    from openprogram.auth.credentials import PrivateAtomicWriteError
+    from openprogram.auth.credentials import io
 
     tokens = tmp_path / "mcp_tokens"
     tokens.mkdir()

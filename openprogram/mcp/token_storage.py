@@ -135,7 +135,7 @@ class FileTokenStorage(TokenStorage):
 
     def clear(self) -> bool:
         """Delete the file. Returns True iff something was removed."""
-        from openprogram.credential_files import _private_unlink
+        from openprogram.auth.credentials import _private_unlink
 
         return _private_unlink(self._path, root=self._path.parent.parent)
 
@@ -149,7 +149,7 @@ class FileTokenStorage(TokenStorage):
             return None
 
     def _update(self, mutator) -> None:
-        from openprogram.credential_files import _private_atomic_update
+        from openprogram.auth.credentials import _private_atomic_update
         from openprogram.paths import get_state_dir
 
         root = get_state_dir()
@@ -168,7 +168,7 @@ class FileTokenStorage(TokenStorage):
         _private_atomic_update(self._path, update, root=root)
 
     def _write(self, data: dict, *, expected_revision: str | None = None):
-        from openprogram.credential_files import _private_atomic_write
+        from openprogram.auth.credentials import _private_atomic_write
         from openprogram.paths import get_state_dir
 
         root = get_state_dir()

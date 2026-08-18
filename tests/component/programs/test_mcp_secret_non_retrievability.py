@@ -499,7 +499,7 @@ def patch_server(cfg: MCPServerConfig, body: dict, monkeypatch, *,
 def test_patch_revision_conflict_resyncs_runtime_to_external_config(
     monkeypatch, state_dir
 ):
-    from openprogram.credential_files import PrivateAtomicWriteError
+    from openprogram.auth.credentials import PrivateAtomicWriteError
     from openprogram.webui.routes import mcp
 
     cfg = local_config()
@@ -582,7 +582,7 @@ def test_patch_conflict_resync_failure_reports_sanitized_runtime_state(
     code,
     runtime_state,
 ):
-    from openprogram.credential_files import PrivateAtomicWriteError
+    from openprogram.auth.credentials import PrivateAtomicWriteError
     from openprogram.webui.routes import mcp
 
     original = local_config()
@@ -701,7 +701,7 @@ def test_restart_then_publish_failure_has_no_secret_in_recursive_exception_chain
 ):
     from fastapi import HTTPException
 
-    from openprogram.credential_files import PrivateAtomicWriteError
+    from openprogram.auth.credentials import PrivateAtomicWriteError
     from openprogram.webui.routes import mcp
 
     secret = "peer-secret-value"
@@ -850,7 +850,7 @@ def test_patch_conflict_deleted_config_cleanup_failure_reports_unknown(
     state_dir,
     remove_error,
 ):
-    from openprogram.credential_files import PrivateAtomicWriteError
+    from openprogram.auth.credentials import PrivateAtomicWriteError
     from openprogram.webui.routes import mcp
 
     original = local_config()

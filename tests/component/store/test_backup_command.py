@@ -583,7 +583,7 @@ def test_restore_inventory_files_are_atomically_published_owner_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram import credential_files
+    from openprogram.auth import credentials as credential_files
     from openprogram.cli.commands.backup import restore_archive
 
     config = profile / "config.json"
@@ -647,7 +647,7 @@ def test_restore_inventory_failure_preserves_old_file_and_cleans_temp(
     monkeypatch: pytest.MonkeyPatch,
     failure: str,
 ) -> None:
-    from openprogram import credential_files
+    from openprogram.auth import credentials as credential_files
     from openprogram.cli.commands.backup import restore_archive
 
     target = profile / "auth" / "openai" / "default.json"

@@ -98,7 +98,7 @@ def _profile_name() -> str:
 def backups_dir() -> Path:
     state = _state_dir()
     state.mkdir(parents=True, exist_ok=True)
-    from openprogram.credential_files import _ensure_private_directory
+    from openprogram.auth.credentials import _ensure_private_directory
 
     return _ensure_private_directory(state / "backups", root=state)
 
@@ -156,7 +156,7 @@ def create_backup(
     suffix = f"-{label}" if label else ""
     target = out_dir / f"{_profile_name()}{suffix}-{stamp}.tar.gz"
 
-    from openprogram.credential_files import (
+    from openprogram.auth.credentials import (
         SECRET_INVENTORY,
         _private_atomic_write,
         backup_bytes,
@@ -615,7 +615,7 @@ def _restore_state_lock(state: Path):
 def _restore_target_locks(state: Path, relative_paths: Iterable[str]):
     """Hold target writer locks in one stable order for a restore transaction."""
 
-    from openprogram.credential_files import _private_file_lock
+    from openprogram.auth.credentials import _private_file_lock
 
     with ExitStack() as stack:
         for relative in sorted(set(relative_paths)):
@@ -727,7 +727,7 @@ class _RestoreJournal:
         return self.backup_dir / name
 
     def finish(self) -> None:
-        from openprogram.credential_files import _read_private_bytes, inventory_for_path
+        from openprogram.auth.credentials import _read_private_bytes, inventory_for_path
 
         for entry in self.entries:
             relative = entry["relative_path"]
@@ -855,7 +855,7 @@ def recover_interrupted_restore(state: Path, *, _lock_held: bool = False) -> boo
         journal_file.unlink(missing_ok=True)
         return False
 
-    from openprogram.credential_files import PrivateAtomicWriteError
+    from openprogram.auth.credentials import PrivateAtomicWriteError
 
     try:
         with _restore_target_locks(
@@ -1081,7 +1081,7 @@ def _restore_opened_source(source: int, parent: int, target_name: str) -> None:
 def _publish_restored(target: Path, payload: bytes, *, root: Path) -> None:
     """Publish one validated member through the shared private writer."""
 
-    from openprogram.credential_files import _private_atomic_write
+    from openprogram.auth.credentials import _private_atomic_write
 
     _private_atomic_write(target, lambda handle: handle.write(payload), root=root)
 
@@ -1099,7 +1099,7 @@ def restore_archive(
     failure reverses the targets already written.
     """
 
-    from openprogram.credential_files import (
+    from openprogram.auth.credentials import (
         _read_private_bytes,
         backup_bytes,
         inventory_for_path,
@@ -1244,7 +1244,7 @@ def restore_archive(
                 for relative, staged_file, inventory in staged_files:
                     payload = staged_file.read_bytes()
                     target = state / relative
-                    from openprogram.credential_files import _ensure_private_directory
+                    from openprogram.auth.credentials import _ensure_private_directory
 
                     _ensure_private_directory(target.parent, root=state)
                     if inventory and all(not entry.whole_file for entry in inventory):

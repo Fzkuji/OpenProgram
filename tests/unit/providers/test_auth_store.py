@@ -107,8 +107,8 @@ def test_delete_pool_unlinks_symlink_without_deleting_target(tmp_path: Path):
 def test_delete_pool_does_not_report_success_when_unlink_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    from openprogram.credential_files import PrivateAtomicWriteError
-    from openprogram.credential_files import io
+    from openprogram.auth.credentials import PrivateAtomicWriteError
+    from openprogram.auth.credentials import io
 
     store = AuthStore(root=tmp_path)
     store.add_credential(_oauth_cred())

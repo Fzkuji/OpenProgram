@@ -1,4 +1,4 @@
-# `openprogram/credential_files/`
+# `openprogram/auth/credentials/`
 
 > Credential persistence without filesystem hardening policy.
 

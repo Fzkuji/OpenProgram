@@ -120,7 +120,7 @@ def access_path(channel: str, account_id: str) -> Path:
 @contextmanager
 def _state_file_lock(channel: str, account_id: str):
     path = access_path(channel, account_id)
-    from openprogram.credential_files import _private_file_lock
+    from openprogram.auth.credentials import _private_file_lock
     from openprogram.paths import get_state_dir
 
     with _private_file_lock(path, root=get_state_dir(), timeout=10):
@@ -143,7 +143,7 @@ def _rows(value: Any) -> dict[str, dict[str, Any]]:
 
 def _load(channel: str, account_id: str) -> dict[str, Any]:
     path = access_path(channel, account_id)
-    from openprogram.credential_files import _private_file_lock, _read_private_bytes
+    from openprogram.auth.credentials import _private_file_lock, _read_private_bytes
     from openprogram.paths import get_state_dir
 
     try:
@@ -170,7 +170,7 @@ def _save(
 ):
     path = access_path(channel, account_id)
     payload = (json.dumps(data, indent=2, sort_keys=True) + "\n").encode("utf-8")
-    from openprogram.credential_files import _private_atomic_write
+    from openprogram.auth.credentials import _private_atomic_write
     from openprogram.paths import get_state_dir
 
     return _private_atomic_write(
