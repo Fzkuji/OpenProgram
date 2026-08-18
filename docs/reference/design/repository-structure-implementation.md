@@ -107,7 +107,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Root metadata cleanup | `ab386e10` | implemented; reviewed | Co-locates the changelog with GitHub release notes, removes the redundant MANIFEST file, and enforces the intentional root-file set without changing the source-checkout CLI entry. Wheel packaging, source-checkout CLI, documentation links, specification review and quality review pass. |
 | Raw-checkout CLI alias cleanup | `daf97a8d` | implemented; reviewed | Removes only the root <code>openprogram_cli.py</code> forwarder and its dedicated raw-checkout compatibility logic. Source checkouts retain <code>python -m openprogram</code> and <code>python -m openprogram.cli</code>; fresh editable installs and wheels retain the console script and canonical <code>python -m openprogram_cli</code>. The retained entries, canonical/compatibility identity, foreign-package rejection, TUI detection, root-file structure, documentation links, Ruff, specification review and quality review pass. |
 | Core package cleanup G1: Context Git DAG | `41151c50` | implemented; reviewed | Moves the two-file ContextGit implementation into `openprogram/context/git/`, updates every repository-owned import and current path reference, removes the old first-level package without a duplicate compatibility layer, and preserves DAG behavior and wheel discovery. The focused DAG, Server, dispatcher, Ruff, link, wheel, specification and quality gates pass. |
-| Standard polyglot workspace G2 | design `23525cc7`; prerequisite `0017c241`; G2a `2256d647`; G2b implementation pending commit | G2a reviewed; G2b implemented, review pending | Defines the target as applications under `apps/`, the shared Agent Core source under `packages/core/src/openprogram`, one aggregate Python distribution, one npm workspace lock, and formal distribution commands under `scripts/release/`. G2a groups the release implementation while preserving the published installer URL; G2b establishes the root npm workspace and single lock; G2c remains pending. |
+| Standard polyglot workspace G2 | design `23525cc7`; prerequisite `0017c241`; G2a `2256d647`; G2b `d70b6956`, `99fec982`, `9ac9d95d` | G2a and G2b implemented; reviewed | Defines the target as applications under `apps/`, the shared Agent Core source under `packages/core/src/openprogram`, one aggregate Python distribution, one npm workspace lock, and formal distribution commands under `scripts/release/`. G2a groups the release implementation while preserving the published installer URL; G2b establishes the root npm workspace and single lock; G2c remains pending. |
 
 ## Active task brief: Standard polyglot workspace G2
 
@@ -220,6 +220,32 @@ adapted. Large-file decomposition is not part of the directory migration.
 - Specification review: PASS. Quality review: PASS.
 - Remaining G2a concerns: none. G2b npm workspace and G2c Core relocation
   remain separate pending batches.
+
+### G2b implementation evidence
+
+- Implementation: `d70b6956`, with repairs `99fec982` and `9ac9d95d`, based
+  on reviewed G2a commit `8b604732`.
+- RED: the root workspace and lock ownership contract failed before the root
+  npm files existed. Real release sequencing then exposed filtered `npm ci`
+  removing dependencies required by another workspace, and runtime inspection
+  exposed the CLI hook dependency resolving through the Web React dispatcher.
+- GREEN: the affected Python repository, CI, install, upgrade, frontend and
+  distribution gate completed with `175 passed, 8 warnings`.
+- Node gates: clean root `npm ci` PASS; a second install left
+  `package-lock.json` unchanged; `npm ls --workspaces --depth=0` PASS; Web unit
+  tests (`14 passed`), typecheck, full checks and production build PASS; CLI
+  typecheck, tests (`140 passed, 2 skipped`) and build PASS; Desktop full checks
+  PASS.
+- Packaging gates: Desktop runtime preparation PASS; non-visible
+  `electron-builder --dir --mac --publish never` PASS; the packaged
+  `node-pty` native module exists and is an arm64 Mach-O bundle.
+- Static/documentation gates: Ruff PASS; shell syntax PASS; documentation links
+  `0 broken link(s)`; stale child-lock and fixed child-`node_modules` scans
+  empty; `git diff --check` PASS.
+- Specification review: PASS. Quality/Ponytail full review: PASS.
+- Remaining G2b concern: `npm audit` reports one moderate and seven high
+  dependency advisories. No automatic major-version upgrade was applied in
+  this structural batch. G2c Core relocation remains pending.
 
 ## Implemented task brief: Legacy cleanup F2
 
