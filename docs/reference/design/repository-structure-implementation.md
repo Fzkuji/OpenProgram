@@ -107,7 +107,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Root metadata cleanup | `ab386e10` | implemented; reviewed | Co-locates the changelog with GitHub release notes, removes the redundant MANIFEST file, and enforces the intentional root-file set without changing the source-checkout CLI entry. Wheel packaging, source-checkout CLI, documentation links, specification review and quality review pass. |
 | Raw-checkout CLI alias cleanup | `daf97a8d` | implemented; reviewed | Removes only the root <code>openprogram_cli.py</code> forwarder and its dedicated raw-checkout compatibility logic. Source checkouts retain <code>python -m openprogram</code> and <code>python -m openprogram.cli</code>; fresh editable installs and wheels retain the console script and canonical <code>python -m openprogram_cli</code>. The retained entries, canonical/compatibility identity, foreign-package rejection, TUI detection, root-file structure, documentation links, Ruff, specification review and quality review pass. |
 | Core package cleanup G1: Context Git DAG | `41151c50` | implemented; reviewed | Moves the two-file ContextGit implementation into `openprogram/context/git/`, updates every repository-owned import and current path reference, removes the old first-level package without a duplicate compatibility layer, and preserves DAG behavior and wheel discovery. The focused DAG, Server, dispatcher, Ruff, link, wheel, specification and quality gates pass. |
-| Standard polyglot workspace G2 | design `23525cc7`; prerequisite `0017c241`; G2a `2256d647`; G2b `d70b6956`, `99fec982`, `9ac9d95d`; G2c-0 `14f538b3`; G2c-1 `572a89b2` | implemented; review pending | Defines the target as applications under `apps/`, the shared Agent Core source under `packages/core/src/openprogram`, one aggregate Python distribution, one npm workspace lock, and formal distribution commands under `scripts/release/`. G2a groups release implementations, G2b establishes the root npm workspace and single lock, G2c-0 centralizes checkout/resource resolution, and G2c-1 moves the Core source without splitting the published wheel. |
+| Standard polyglot workspace G2 | design `23525cc7`; prerequisite `0017c241`; G2a `2256d647`; G2b `d70b6956`, `99fec982`, `9ac9d95d`; G2c-0 `14f538b3`; G2c-1 `572a89b2`, `6c9b083a` | implemented; review pending | Defines the target as applications under `apps/`, the shared Agent Core source under `packages/core/src/openprogram`, one aggregate Python distribution, one npm workspace lock, and formal distribution commands under `scripts/release/`. G2a groups release implementations, G2b establishes the root npm workspace and single lock, G2c-0 centralizes checkout/resource resolution, and G2c-1 moves the Core source without splitting the published wheel. |
 
 ## Active task brief: Standard polyglot workspace G2
 
@@ -284,6 +284,13 @@ adapted. Large-file decomposition is not part of the directory migration.
   directory, the wheel imports `openprogram`, `openprogram_server` and
   `openprogram_cli`, reports distribution version `0.7.0`, contains bundled
   skills, and the sdist contains the src-layout Core.
+- Review repair `6c9b083a` restores four executable compatibility identity
+  tests under src layout, updates all public GitHub source links and direct
+  file-edit instructions, and adds a contract rejecting the removed public URL
+  prefix. The exact repair gate passed `5 passed`.
+- Packaged Desktop runtime preparation completed from the moved source and its
+  aggregate wheel, including bundled Web/docs assets, Python 3.12 runtime,
+  Playwright assets and the GUI Agent Harness; runtime verification PASS.
 - Specification review: pending. Quality/Ponytail full review: pending.
 - Remaining G2c-1 concern: packaged Desktop runtime verification remains in
   the final G2 review gate.
