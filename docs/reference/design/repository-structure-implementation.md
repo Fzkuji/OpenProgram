@@ -99,6 +99,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Browser v0.7.0 policy closure | `bf7dd2ad` through `537b20aa` | implemented; reviewed; released | Removes the post-release experimental browser-extension installer and management surface, preserves the released Browser, profile import and Agent WebTab capabilities, rejects obsolete persisted Extensions tabs, and records the unsupported-extension boundary in the product and design documentation. The published v0.7.0 assets predate the experimental installer and already match this boundary. |
 | Post-migration CI repair | `15fd5e1f`, `c7a494ef`, `eaf34a1b`, `63c65ad8`, `35d7edc2`, `2f40f948` | implemented; reviewed | Aligns landing-page checks, migrated Server test paths, documentation navigation, runtime HTTP inventory and doctor checks with `apps/`; keeps App package locks portable; moves subprocess coverage to component; and verifies macOS installer behavior on a native runner rather than Ubuntu. |
 | Desktop menu geometry extraction | `ec8a988f`, `ab2fef3b` | implemented; reviewed | Moves three pure placement functions to a directly executable CommonJS module without changing menu behavior; includes the module in packaged and local-refresh file closures and makes the refresh test verify the staged file. |
+| Desktop bridge WebTab type extraction | `9bdc4a93` | implemented; reviewed | Moves the five public WebTab contracts to a type-only module, preserves re-exports from the established bridge entry and leaves all renderer state and transfer runtime code unchanged. |
 
 ## Implemented task brief: Legacy cleanup F2
 
@@ -151,7 +152,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 - Exclude visual changes, new menu behavior, Browser toolbar changes,
   `openMainMenu` orchestration and the unrelated active App icon work.
 
-## Active task brief: Desktop bridge type-contract extraction
+## Implemented task brief: Desktop bridge type-contract extraction
 
 - Approved source: `repository-structure.html`; base: current `main` after the
   Desktop menu geometry extraction.
@@ -302,6 +303,10 @@ pass — independent specification review for `ec8a988f`
 changes required — first independent quality review found that the refresh fixture did not assert the staged module
 1 passed — refresh staging regression after `ab2fef3b`
 pass — independent quality re-review through `ab2fef3b`
+1 failed — public RED: the production transfer journal could not resolve the not-yet-created `desktop-bridge-types` module
+pass — complete Web `npm run check`, executable Web split checks and TypeScript no-emit check for `9bdc4a93`
+pass — independent specification review for `9bdc4a93`
+pass — independent quality review for `9bdc4a93`
 ```
 
 ## Deferred boundaries
@@ -310,7 +315,8 @@ pass — independent quality re-review through `ab2fef3b`
   `apps/desktop/menu-geometry.js`; keep window lifecycle, native WebView, tab
   transfer and menu-host orchestration in place until each boundary has direct
   executable coverage.
-- `apps/web/lib/desktop-bridge.ts`: establish executable state/transfer tests before
-  moving types, view state, and transfer coordination.
+- `apps/web/lib/desktop-bridge.ts`: WebTab contracts now live in
+  `apps/web/lib/desktop-bridge-types.ts`; extract the remaining contract groups,
+  view state and transfer coordination only in separately reviewed batches.
 - Long cohesive Python state machines remain intact until a separately tested
   responsibility is identified; line count alone is not an implementation task.
