@@ -235,6 +235,25 @@ def test_generated_package_readmes_are_current() -> None:
     assert stale == []
 
 
+def test_public_source_links_do_not_use_the_removed_flat_core_path() -> None:
+    result = subprocess.run(
+        [
+            "git",
+            "grep",
+            "-n",
+            "github.com/Fzkuji/OpenProgram/blob/main/openprogram/",
+            "--",
+            "README.md",
+            "docs",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1, result.stdout
+
+
 def test_formal_distribution_implementation_is_grouped_under_release() -> None:
     release_files = {
         "archive-product-runtime.sh",

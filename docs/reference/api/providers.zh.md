@@ -1,6 +1,6 @@
 # Providers
 
-> Source: [`openprogram/providers/`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/providers/)
+> Source: [`openprogram/providers/`](https://github.com/Fzkuji/OpenProgram/blob/main/packages/core/src/openprogram/providers/)
 
 `create_runtime` 是所有 provider 的唯一构建入口。所有 provider 都经 OpenProgram 的 provider 层直接说原生 HTTP API——**不需要安装任何厂商 SDK**。CLI / 订阅类 provider 复用对应 CLI 工具的 OAuth 凭据,所以那些 CLI 需要装好并登录一次:
 

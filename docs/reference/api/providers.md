@@ -1,6 +1,6 @@
 # Providers
 
-> Source: [`openprogram/providers/`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/providers/)
+> Source: [`openprogram/providers/`](https://github.com/Fzkuji/OpenProgram/blob/main/packages/core/src/openprogram/providers/)
 
 `create_runtime` is the one construction path for every provider. All providers speak the raw HTTP APIs through OpenProgram's provider layer — **no vendor SDK needs to be installed**. The CLI/subscription providers reuse the OAuth credentials of the corresponding CLI tool, so those CLIs must be installed and logged in once.
 

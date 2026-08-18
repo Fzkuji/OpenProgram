@@ -33,7 +33,7 @@ last_update_at:  float (epoch)
 - LLM streaming reply: dispatcher 调 LLM 之前
 - tool call: tool dispatcher 调函数之前
 - agentic function: `_execute/run.py` 跑 function 之前
-- task spawn: 已经有 ([`runner.py`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/job/runner.py))
+- task spawn: 已经有 ([`runner.py`](https://github.com/Fzkuji/OpenProgram/blob/main/packages/core/src/openprogram/agent/job/runner.py))
 - merge: `_execute/_run_merge` 之前
 
 ### 2. 增量节流持久化
@@ -146,5 +146,5 @@ worker 启动时：
 | 7 | 测试 + edge cases（重启 / 断连 / msg_id 冲突） |
 
 其中 task spawn 的 placeholder 已经有了
-（[`runner.py`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/job/runner.py)），
+（[`runner.py`](https://github.com/Fzkuji/OpenProgram/blob/main/packages/core/src/openprogram/agent/job/runner.py)），
 `RuntimeBlock` 和 attach card 的 `status=running` 渲染也已具备。

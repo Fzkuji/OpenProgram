@@ -87,7 +87,7 @@ def test_python_cli_rejects_an_already_loaded_foreign_canonical_package(
         f"""
         import sys
         import openprogram_cli as stale
-        sys.path.insert(0, {str(ROOT)!r})
+        sys.path.insert(0, {str(ROOT / "packages" / "core" / "src")!r})
         try:
             import openprogram.cli
         except ImportError as exc:
@@ -267,7 +267,9 @@ def test_source_checkout_server_wins_over_an_older_installed_package(
     (stale_package / "__init__.py").write_text("", encoding="utf-8")
     (stale_package / "server.py").write_text("STALE = True\n", encoding="utf-8")
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(tmp_path)
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(tmp_path), str(ROOT / "packages" / "core" / "src")]
+    )
     code = """
 import pathlib
 import openprogram.webui.server as legacy
@@ -297,7 +299,9 @@ def test_legacy_server_rejects_an_already_loaded_foreign_package(tmp_path) -> No
     (stale_package / "__init__.py").write_text("", encoding="utf-8")
     (stale_package / "server.py").write_text("STALE = True\n", encoding="utf-8")
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(tmp_path)
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(tmp_path), str(ROOT / "packages" / "core" / "src")]
+    )
     code = """
 import sys
 import openprogram_server.server as stale
@@ -328,7 +332,9 @@ def test_legacy_server_rejects_an_already_loaded_namespace_package(tmp_path) -> 
     stale_package.mkdir()
     (stale_package / "server.py").write_text("STALE = True\n", encoding="utf-8")
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(tmp_path)
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(tmp_path), str(ROOT / "packages" / "core" / "src")]
+    )
     code = """
 import sys
 import openprogram_server

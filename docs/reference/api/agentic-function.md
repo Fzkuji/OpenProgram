@@ -1,6 +1,6 @@
 # agentic_function
 
-> Source: [`openprogram/agentic_programming/function.py`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agentic_programming/function.py)
+> Source: [`openprogram/agentic_programming/function.py`](https://github.com/Fzkuji/OpenProgram/blob/main/packages/core/src/openprogram/agentic_programming/function.py)
 
 `@agentic_function` turns an ordinary Python function into an Agentic Function: each call is recorded as a `code` node in the session DAG, and the `llm()` calls inside the function body are recorded as `llm` nodes.
 
