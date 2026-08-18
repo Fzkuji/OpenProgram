@@ -162,8 +162,8 @@
         <tr>
           <td><code>apps/web/lib/desktop-bridge.ts</code></td>
           <td>类型、视图状态和标签转移共处，接近 2,000 行</td>
-          <td><span class="state later">后续批次</span></td>
-          <td>先补执行级测试，再拆为公共类型、view state、tab transfer，并由原文件 re-export。</td>
+          <td><span class="state later">分批实施</span></td>
+          <td>现有执行级 Web split 测试先保护运行时行为；第一批只提取 WebTab 公共类型并由原文件 re-export，其余类型、view state 与 tab transfer 后续分别处理。</td>
         </tr>
         <tr>
           <td><code>runtime.py</code>、<code>runner.py</code>、<code>resource_governance.py</code></td>

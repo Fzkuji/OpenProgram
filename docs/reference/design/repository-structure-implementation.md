@@ -151,6 +151,25 @@ adapted. Large-file decomposition is not part of the directory migration.
 - Exclude visual changes, new menu behavior, Browser toolbar changes,
   `openMainMenu` orchestration and the unrelated active App icon work.
 
+## Active task brief: Desktop bridge type-contract extraction
+
+- Approved source: `repository-structure.html`; base: current `main` after the
+  Desktop menu geometry extraction.
+- Move only the WebTab state, find-result, bounds, visible-view and WebTab API
+  contracts from `apps/web/lib/desktop-bridge.ts` to
+  `apps/web/lib/desktop-bridge-types.ts`. Leave transfer, history, download,
+  update, import, terminal and menu contracts in place for separate batches.
+- Keep `desktopBridge()`, renderer bookkeeping, surface inventory, menu event
+  handling and tab-transfer coordination in `desktop-bridge.ts`.
+- Re-export the moved WebTab types from `desktop-bridge.ts` so current imports
+  remain source compatible; the runtime module must import only the types it
+  uses.
+- RED boundary: a production type consumer imports the not-yet-created module
+  and TypeScript fails resolution. GREEN boundary: TypeScript, executable Web
+  split checks and the complete Web check.
+- Exclude runtime behavior, store changes, transfer protocol changes, UI/CSS
+  changes and unrelated active Agent configuration work.
+
 ## Active task brief: Apps migration C2
 
 - Approved source: `repository-structure.html`; base: `a459c443`.

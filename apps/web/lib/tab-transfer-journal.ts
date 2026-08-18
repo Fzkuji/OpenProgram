@@ -1,4 +1,4 @@
-import type { DesktopWebTabBounds as Bounds } from "@/lib/desktop-bridge";
+import type { DesktopWebTabBounds as Bounds } from "@/lib/desktop-bridge-types";
 import {
   registerPendingTransfer,
   unregisterPendingTransfer,
