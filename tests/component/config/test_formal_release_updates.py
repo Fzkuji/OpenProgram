@@ -30,6 +30,23 @@ def test_source_checkout_is_not_a_managed_release(monkeypatch):
     assert detect.detect_install_method() is detect.InstallMethod.SOURCE_CHECKOUT
 
 
+def test_wheel_inside_another_git_repo_is_not_a_source_checkout(
+    monkeypatch, tmp_path
+):
+    from openprogram.updater import detect
+
+    foreign_repo = tmp_path / "foreign"
+    package = foreign_repo / ".venv" / "site-packages" / "openprogram"
+    package.mkdir(parents=True)
+    (foreign_repo / ".git").mkdir()
+    monkeypatch.delenv("OPENPROGRAM_IMMUTABLE_RUNTIME", raising=False)
+    monkeypatch.setattr(detect, "package_root", lambda: package)
+    monkeypatch.setattr(detect, "is_pyinstaller_binary", lambda: False)
+
+    assert detect.repo_root() is None
+    assert detect.detect_install_method() is detect.InstallMethod.UNKNOWN
+
+
 def test_worker_start_does_not_apply_product_updates():
     from pathlib import Path
     import openprogram.worker.runner as runner

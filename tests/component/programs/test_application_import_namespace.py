@@ -4,6 +4,8 @@ import importlib
 import sys
 from pathlib import Path
 
+import pytest
+
 
 APPLICATIONS = (
     Path(__file__).parents[3] / "openprogram" / "programs" / "applications"
@@ -12,6 +14,8 @@ REMOVED_NAMESPACE = "openprogram.programs.agentic_functions"
 
 
 def test_gui_application_uses_current_agentic_namespace(monkeypatch):
+    if not (APPLICATIONS / "gui_harness").is_dir():
+        pytest.skip("optional local GUI Harness is not installed")
     monkeypatch.syspath_prepend(str(APPLICATIONS / "gui_harness"))
     sys.modules.pop("gui_harness.utils", None)
 

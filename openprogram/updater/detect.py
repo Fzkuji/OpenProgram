@@ -31,7 +31,10 @@ def repo_root() -> Optional[Path]:
     """
     cur = package_root().parent  # parent of openprogram/ → repo root candidate
     for ancestor in [cur, *cur.parents]:
-        if (ancestor / ".git").exists():
+        if (
+            (ancestor / ".git").exists()
+            and package_root() == (ancestor / "openprogram").resolve()
+        ):
             return ancestor
     return None
 
