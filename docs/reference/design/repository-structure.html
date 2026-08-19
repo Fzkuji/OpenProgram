@@ -84,7 +84,7 @@
 <main>
   <div class="eyebrow">OpenProgram · Engineering design</div>
   <h1>Repository structure</h1>
-  <p class="lead">本页定义 core-first monorepo：<code>packages/core/src/openprogram/</code> 是可独立导入的 Agent 核心；Server、Web、Desktop 与 CLI 是使用核心的可运行应用，统一归入 <code>apps/</code>。目标是让目录直接表达运行边界和依赖方向，同时保持产品行为与用户数据兼容。</p>
+  <p class="lead">本页定义 core-first monorepo：根目录 <code>openprogram/</code> 是 Agent 核心；Server、Web、Desktop 与 CLI 是使用核心的可运行应用，统一归入 <code>apps/</code>。目标是让目录直接表达运行边界和依赖方向，同时保持产品行为与用户数据兼容。</p>
   <dl class="meta-strip">
     <div><dt>Status</dt><dd>Approved target · migration in progress</dd></div>
     <div><dt>Audience</dt><dd>Maintainers and reviewers</dd></div>
@@ -96,7 +96,7 @@
   <div class="grid">
     <section class="card">
       <h3>核心与应用分离</h3>
-      <p><code>packages/core/src/openprogram/</code> 只承载 Agent、Context、Session、Provider、Program、Tool、Memory 与 Runtime 等核心能力。所有可运行入口放在 <code>apps/</code>。核心业务域不能依赖应用；Core import package 内为保留旧公开入口而存在的 compatibility adapter 可以单向委托应用 package，但不能承载应用实现。</p>
+      <p><code>openprogram/</code> 只承载 Agent、Context、Session、Provider、Program、Tool、Memory 与 Runtime 等核心能力。所有可运行入口放在 <code>apps/</code>。核心业务域不能依赖应用；Core import package 内为保留旧公开入口而存在的 compatibility adapter 可以单向委托应用 package，但不能承载应用实现。</p>
     </section>
     <section class="card">
       <h3>按可验证边界拆分</h3>
@@ -132,14 +132,14 @@
   package-lock.json npm workspace 唯一锁文件</pre>
   <p><code>.github/</code>、<code>.codegraph/</code> 和 <code>.superpowers/</code> 是仓库基础设施，不是产品运行时目录。根目录只保留两套生态入口与锁文件、项目元数据和入口文档。根 <code>pyproject.toml</code> 继续定义用户安装的单一 <code>openprogram</code> aggregate distribution，并与唯一 <code>uv.lock</code> 管理 Python 开发环境；G2 不创建没有成员的 <code>[tool.uv.workspace]</code>，也不把 Core、Server、CLI 拆成三个公开 distributions。Web、Desktop 和 Ink CLI 由根 <code>package.json</code> 声明 npm workspaces，共用唯一 <code>package-lock.json</code>。这些文件是源码与构建配置，不进入普通用户的安装目录。</p>
   <p>Web 固定 React 18，Ink CLI 固定 React 19。npm 默认 hoisting 会让公共位置的 React peer 与类型依赖影响另一应用，因此根私有 package 以精确版本声明 React 18、<code>react-reconciler</code> 0.29 及其类型作为依赖布局约束；CLI 的 React 19 与 <code>react-reconciler</code> 0.33 保持在自己的 workspace。CLI 不依赖从根解析 React 的第三方 hook package。该约束不新增产品运行时功能，也不统一两个应用的 React 主版本。</p>
-  <p>核心 Python import package 位于 <code>packages/core/src/openprogram/</code>，它是 Server、CLI 与 Harness 共用的 Agent Core / SDK，不是可独立运行的应用。源码归属与发布 distribution 是两个边界：G2 保持一个用户可安装的 <code>openprogram</code> wheel，其中继续包含 <code>openprogram</code>、<code>openprogram_server</code> 和 <code>openprogram_cli</code>。只有真实共享代码才进入 <code>packages/</code>；仓库不创建名为 <code>packaging/</code> 的发布目录。应用专用脚本放在 <code>apps/&lt;name&gt;/scripts/</code>，跨应用的开发与验证命令放在 <code>scripts/</code>，正式 runtime、installer 与 release 命令放在 <code>scripts/release/</code>。</p>
+  <p>核心 Python import package 位于根目录 <code>openprogram/</code>，它是 Server、CLI 与 Harness 共用的 Agent Core / SDK，不是普通应用。仓库当前没有第二个共享 Python package，因此不建立 <code>packages/</code>。源码归属与发布 distribution 是两个边界：项目保持一个用户可安装的 <code>openprogram</code> wheel，其中继续包含 <code>openprogram</code>、<code>openprogram_server</code> 和 <code>openprogram_cli</code>。应用专用脚本放在 <code>apps/&lt;name&gt;/scripts/</code>，跨应用的开发与验证命令放在 <code>scripts/</code>，正式 runtime、installer 与 release 命令放在 <code>scripts/release/</code>。</p>
   <p>现有公开地址继续提供 <code>scripts/install-release.sh</code>。该文件只承担兼容分发：完整 checkout 中执行 <code>scripts/release/install-release.sh</code>；被单独下载时，从同一已验证 repository 和不可变 tag 下载正式实现到临时文件后执行。<code>scripts/install.sh</code>、<code>scripts/install.ps1</code>、<code>scripts/refresh-local-app.sh</code> 和 <code>scripts/promote_stable.sh</code> 保持路径不变；本地刷新继续复用归入 <code>scripts/release/</code> 的 staging 与版本验证 helper。</p>
-  <p>当前 checkout 已完成 G2a、G2b 与 G2c：正式发布脚本归入 <code>scripts/release/</code>；Web、Desktop 和 Ink CLI 由根 npm workspace 管理并共享唯一 <code>package-lock.json</code>；源码 checkout 与资源路径统一由经过测试的 resolver 定位；Python Core 位于 <code>packages/core/src/openprogram/</code>。根 <code>pyproject.toml</code> 继续发布包含 Core、Server 和 Python CLI 的单一 <code>openprogram</code> wheel；源码开发使用 editable install 或 <code>uv run</code>。</p>
-  <p>正式内置技能统一位于 <code>packages/core/src/openprogram/skills_bundled/</code> 并作为 package data 分发。用户技能位于 <code>~/.openprogram/skills/</code>，项目技能位于用户当前项目的 <code>&lt;cwd&gt;/skills/</code>；OpenProgram 仓库不再保留第二份根目录技能副本。</p>
+  <p>当前 checkout 已完成发布脚本和 Node workspace 整理：正式发布脚本归入 <code>scripts/release/</code>；Web、Desktop 和 Ink CLI 由根 npm workspace 管理并共享唯一 <code>package-lock.json</code>；Python Core 保持在根目录 <code>openprogram/</code>。根 <code>pyproject.toml</code> 继续发布包含 Core、Server 和 Python CLI 的单一 <code>openprogram</code> wheel。</p>
+  <p>正式内置技能统一位于 <code>openprogram/skills_bundled/</code> 并作为 package data 分发。用户技能位于 <code>~/.openprogram/skills/</code>，项目技能位于用户当前项目的 <code>&lt;cwd&gt;/skills/</code>；OpenProgram 仓库不再保留第二份根目录技能副本。</p>
   <p><code>tests/</code> 中的 Python 用例使用 <code>tests/&lt;layer&gt;/&lt;product-domain&gt;/test_*.py</code>，按最强实际依赖选择层级。具体边界由 <a href="testing/test-system.html">Testing system</a> 和仓库 contracts 维护。</p>
 
   <h3>核心 package 与应用 package</h3>
-  <p><code>packages/core/src/openprogram/</code> 的一级目录只保留可独立说明的核心产品域或稳定协议边界，例如 <code>agent/</code>、<code>programs/</code>、<code>context/</code>、<code>memory/</code> 和 <code>providers/</code>。子能力必须归入所属产品域；Context 的 Git DAG 位于 <code>context/git/</code>，不再占用独立的 <code>contextgit/</code> 一级目录。FastAPI route、WebSocket handler、静态前端托管、Electron 与界面代码不属于核心 package。物理迁移前先移除源码对 <code>openprogram.__file__</code> 相对层级的仓库根假设；迁移后源码开发使用 editable install 或 <code>uv run</code>，不维持未安装的 bare-Python import。安装后的 imports、console/module entries、package data、单一 wheel 内容和 packaged runtime 必须保持。</p>
+  <p><code>openprogram/</code> 的一级目录只保留可独立说明的核心产品域或稳定协议边界，例如 <code>agent/</code>、<code>programs/</code>、<code>context/</code>、<code>memory/</code> 和 <code>providers/</code>。子能力必须归入所属产品域；Context 的 Git DAG 位于 <code>context/git/</code>，不再占用独立的 <code>contextgit/</code> 一级目录。FastAPI route、WebSocket handler、静态前端托管、Electron 与界面代码不属于核心 package。</p>
   <p><code>apps/server/openprogram_server/</code> 是 Python 服务应用；FastAPI routes、WebSocket actions、owner auth、静态资源托管与 Server-only helpers 位于其 <code>_webui/</code> 内。兼容期内这些文件仍以既有 <code>openprogram.webui.*</code> 名称加载，根 package 只负责定位同一份应用源码，不复制模块状态。<code>apps/cli/</code> 是 CLI 应用 workspace，Ink TUI 使用其中的 <code>src/</code>、<code>tests/</code> 和 <code>package.json</code>，Python parser、dispatch、Rich fallback 与 setup flow 位于 <code>apps/cli/python/openprogram_cli/</code>。<code>openprogram.cli</code> 只保留兼容 loader 和 module entry；两处兼容边界均不承载新的应用实现。</p>
   <p>工具配置、收藏夹和其他 profile 状态属于用户数据，写入 <code>~/.openprogram[-profile]/</code>，不作为源码或 wheel seed 保存在 <code>openprogram/</code>。兼容读取只检查旧版 <code>openprogram/webui/</code> package 位置并一次性复制到 profile state；它不能依赖已迁移到 <code>apps/server</code> 的 Server module 路径。</p>
   <p><code>packages/</code> 不作为通用杂项目录。它首先承载已被 Server、CLI 和 Harness 共用的 <code>core</code> package；其他成员只有在已被两个及以上应用消费、具有稳定公共入口时才创建。不为未来可能复用的协议、UI 或配置预建空 package。</p>
@@ -151,7 +151,7 @@
       <thead><tr><th>文件</th><th>现状</th><th>决定</th><th>边界</th></tr></thead>
       <tbody>
         <tr>
-          <td><code>packages/core/src/openprogram/cli/</code></td>
+          <td><code>openprogram/cli/</code></td>
           <td>只保留兼容 loader、<code>python -m openprogram.cli</code> 入口和边界说明</td>
           <td><span class="state yes">已迁移</span></td>
           <td>应用实现位于 <code>apps/cli/python/openprogram_cli/</code>；源码开发通过 editable install 或 <code>uv run</code> 保留 <code>python -m openprogram</code> 与 <code>python -m openprogram.cli</code>，wheel 额外保留 canonical <code>python -m openprogram_cli</code> 和 console script。</td>
@@ -203,14 +203,14 @@
       <p><code>docs/superpowers/</code> 保留在 Git 中供维护者追溯，不进入公开站点。仍被当前设计引用的 <code>reference/design/plans/</code> 继续发布，并保持独立 Plans 分组。</p>
     </section>
   </div>
-  <p class="note">根目录 <code>README.md</code> 解释完整产品；<code>packages/core/README.md</code> 解释核心 SDK；<code>apps/server/README.md</code>、<code>apps/web/README.md</code>、<code>apps/desktop/README.md</code> 和 <code>apps/cli/README.md</code> 分别解释各运行入口。入口 README 只描述当前职责、依赖方向和验证命令。</p>
+  <p class="note">根目录 <code>README.md</code> 解释完整产品；<code>openprogram/README.md</code> 解释核心 SDK；<code>apps/server/README.md</code>、<code>apps/web/README.md</code>、<code>apps/desktop/README.md</code> 和 <code>apps/cli/README.md</code> 分别解释各运行入口。入口 README 只描述当前职责、依赖方向和验证命令。</p>
 
   <h2>5. 采用与拒绝</h2>
   <div class="table-wrap">
     <table>
       <thead><tr><th>选择</th><th>结论</th><th>原因</th></tr></thead>
       <tbody>
-        <tr><td><code>packages/core/</code> 核心 + <code>apps/</code> 运行入口</td><td><span class="state now">采用</span></td><td>核心可以被 Server、CLI 与 Harness 直接复用，应用边界在顶层可见。</td></tr>
+        <tr><td>根目录 <code>openprogram/</code> 核心 + <code>apps/</code> 运行入口</td><td><span class="state now">采用</span></td><td>核心保持项目一级入口，Server、Web、Desktop 与 CLI 的应用边界在 <code>apps/</code> 中可见。</td></tr>
         <tr><td>move-only 应用迁移</td><td><span class="state now">采用</span></td><td>先移动路径并修复构建、import 和脚本，再单独处理内部大文件拆分，避免同时改变行为。</td></tr>
         <tr><td>通过导航分组整理文档</td><td><span class="state now">采用</span></td><td>避免批量移动文件造成旧链接失效。</td></tr>
         <tr><td>把 <code>openprogram/</code> 命名为 backend</td><td><span class="state no">拒绝</span></td><td>OpenProgram 是 Agent 核心与 SDK，Server 只是它的一个应用入口。</td></tr>
@@ -224,7 +224,7 @@
 
   <h2>6. 验收合同</h2>
   <ul>
-    <li><code>packages/core/src/openprogram/</code> 不包含 FastAPI route、WebSocket handler、前端源码、Electron 源码或持久化前端构建产物。</li>
+    <li><code>openprogram/</code> 不包含 FastAPI route、WebSocket handler、前端源码、Electron 源码或持久化前端构建产物。</li>
     <li><code>apps/server</code>、<code>apps/web</code>、<code>apps/desktop</code> 和 <code>apps/cli</code> 均有独立入口、README、测试命令和构建命令。</li>
     <li><code>openprogram.cli.build_parser</code> 在兼容期保持可导入，完整命令树、console script 与 TUI 行为一致。</li>
     <li>默认端口仍为 <code>18100</code>；同一 Worker 提供 API、WebSocket 和 Web 静态文件，不恢复旧双端口 Next.js Server。</li>

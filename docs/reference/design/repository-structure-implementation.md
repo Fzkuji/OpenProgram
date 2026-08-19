@@ -107,7 +107,7 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Root metadata cleanup | `ab386e10` | implemented; reviewed | Co-locates the changelog with GitHub release notes, removes the redundant MANIFEST file, and enforces the intentional root-file set without changing the source-checkout CLI entry. Wheel packaging, source-checkout CLI, documentation links, specification review and quality review pass. |
 | Raw-checkout CLI alias cleanup | `daf97a8d` | implemented; reviewed | Removes only the root <code>openprogram_cli.py</code> forwarder and its dedicated raw-checkout compatibility logic. Source checkouts retain <code>python -m openprogram</code> and <code>python -m openprogram.cli</code>; fresh editable installs and wheels retain the console script and canonical <code>python -m openprogram_cli</code>. The retained entries, canonical/compatibility identity, foreign-package rejection, TUI detection, root-file structure, documentation links, Ruff, specification review and quality review pass. |
 | Core package cleanup G1: Context Git DAG | `41151c50` | implemented; reviewed | Moves the two-file ContextGit implementation into `openprogram/context/git/`, updates every repository-owned import and current path reference, removes the old first-level package without a duplicate compatibility layer, and preserves DAG behavior and wheel discovery. The focused DAG, Server, dispatcher, Ruff, link, wheel, specification and quality gates pass. |
-| Standard polyglot workspace G2 | design `7f9e63b9`; prerequisite `1f5aee22`; G2a `fd078fac`; G2b `d2f98d46`, `ad755cad`, `3c2fe70c`; G2c-0 `a729081f`; G2c-1 `c47754f4`, `193120d1`, `155fe76a`; integration `e310ecf0` | implemented; integrated review pending | Defines the target as applications under `apps/`, the shared Agent Core source under `packages/core/src/openprogram`, one aggregate Python distribution, one npm workspace lock, and formal distribution commands under `scripts/release/`. G2a groups release implementations, G2b establishes the root npm workspace and single lock, G2c-0 centralizes checkout/resource resolution, and G2c-1 moves the Core source without splitting the published wheel. |
+| Standard polyglot workspace G2 | G2a release-tool grouping; G2b root npm workspace; Core-layout rollback `24f72a39`, `5c04bb1b`, `aa0e82ea` | implemented; rollback verification pending | Keeps applications under `apps/`, the Agent Core at the repository root `openprogram/`, one aggregate Python distribution, one npm workspace lock, and formal distribution commands under `scripts/release/`. The proposed `packages/core/src/openprogram` migration was rejected and fully reversed because the repository has only one Core Python package and the added directory depth did not establish a useful package boundary. |
 
 ## Active task brief: Standard polyglot workspace G2
 
@@ -153,19 +153,11 @@ adapted. Large-file decomposition is not part of the directory migration.
   root package pins the React 18 peer/type layout and a compatible reconciler;
   CLI retains its nested React 19/reconciler pair and carries no external hook
   package that resolves the root React dispatcher.
-- Batch G2c is split again before any source move. G2c-0 replaces every
-  repository-root calculation derived from `openprogram.__file__` with one
-  tested checkout/resource resolver, without moving source. G2c-1 then moves
-  only the Core source tree to `packages/core/src/openprogram/` while the root
-  `pyproject.toml` remains the actual aggregate `openprogram` distribution and
-  continues to package Core, Server and Python CLI into one wheel. Server and
-  CLI do not receive independent `pyproject.toml` files in G2. A later
-  multi-distribution split requires a separate product/release decision.
-- G2c explicitly changes raw source-checkout development to the standard
-  editable/`uv run` model required by `src` layout. Installed imports,
-  `python -m` entries, console entry, one-wheel contents, package data and
-  packaged runtime behavior remain unchanged. No root source forwarder or
-  second Core tree is added merely to preserve bare-Python imports.
+- The G2c Core move is not part of the accepted structure. The Core remains at
+  `openprogram/`, so raw source-checkout imports, installed imports, module and
+  console entries, package data and the aggregate wheel retain their original
+  layout. `packages/` is not created until the repository contains a second
+  genuine shared package with an independent ownership boundary.
 - G2a RED/GREEN: repository contract; standalone public installer wrapper in a
   temporary directory with fake same-tag download; direct checkout wrapper;
   distribution and formal-update component tests; shell syntax; Python
@@ -248,73 +240,32 @@ adapted. Large-file decomposition is not part of the directory migration.
   dependency advisories. No automatic major-version upgrade was applied in
   this structural batch.
 
-### G2c-0 implementation evidence
+### Core-layout rollback evidence
 
-- Integrated implementation: `a729081f`, based on reviewed G2b ledger commit
-  `072b0a65`.
-- RED: src-layout probes showed CLI, Server, worker, docs and attachment paths
-  deriving the repository root from fixed `openprogram.__file__` parent counts.
-  Review then reproduced installed-wheel failures for bundled frontend/docs and
-  a foreign Git checkout misclassification.
-- GREEN: the centralized resolver accepts only the current flat Core location
-  or the planned `packages/core/src/openprogram` location. Installed wheels,
-  including wheels inside another repository's virtual environment, remain
-  outside the source-checkout path.
-- Affected gate: `116 passed`; Ruff PASS; `git diff --check` PASS. An isolated
-  wheel build and external-directory probe imported the aggregate packages,
-  selected bundled frontend/docs and completed without a source checkout.
-- Specification review: PASS. Quality/Ponytail full review: PASS.
-- Remaining G2c-0 concerns: none. G2c-1 does not retain uninstalled
-  bare-checkout imports.
-
-### G2c-1 implementation evidence
-
-- Integrated implementation: `c47754f4`, based on reviewed G2c-0 ledger commit
-  `f1deb4c7`.
-- RED: the repository layout contract produced five failures before the move:
-  Core ownership, compatibility entry location, mutable-state exclusion,
-  bundled-skill location and generated Core README location.
-- GREEN: the Core source is present only at
-  `packages/core/src/openprogram/`; package discovery and pytest use the src
-  root, while the root `pyproject.toml` remains the single aggregate project.
-- Affected gates: repository/config/Web focused suite `248 passed`; the broad
-  contracts/component run reported `3156 passed`, `5 skipped`, `1 xfailed`
-  and exposed seven remaining physical-path fixtures, whose exact repair gate
-  then passed `7 passed`. Repository contract `13 passed`; Ruff PASS;
-  documentation links `0 broken link(s)`; `git diff --check` PASS.
-- Distribution gate: wheel and sdist builds PASS. From an external temporary
-  directory, the wheel imports `openprogram`, `openprogram_server` and
-  `openprogram_cli`, reports distribution version `0.7.0`, contains bundled
-  skills, and the sdist contains the src-layout Core.
-- Integrated review repair `193120d1` restores four executable compatibility identity
-  tests under src layout, updates all public GitHub source links and direct
-  file-edit instructions, and adds a contract rejecting the removed public URL
-  prefix. The exact repair gate passed `5 passed`.
-- Packaged Desktop runtime preparation completed from the moved source and its
-  aggregate wheel, including bundled Web/docs assets, Python 3.12 runtime,
-  Playwright assets and the GUI Agent Harness; runtime verification PASS.
-- Specification review: PASS. Quality/Ponytail full review: PASS. Final focused
-  review gate: `145 passed`; public removed-path scan empty; worktree and
-  `git diff --check` clean.
-- Remaining G2c-1 concerns: none.
+- Reverts `24f72a39`, `5c04bb1b` and `aa0e82ea` restore the complete tracked
+  Core to `openprogram/`, restore the original package discovery and checkout
+  paths, and remove `packages/`.
+- The local GUI, research and wiki Harness checkouts, Agentic Programming logs
+  and mutable Programs metadata were returned to their original locations
+  under `openprogram/`. Only generated bytecode and Finder metadata were
+  removed from the obsolete directory tree.
+- Verification and independent review are recorded after the rollback gates
+  complete; no src-layout compatibility layer is retained.
 
 ### G2 main integration evidence
 
 - Main integration preserves the already verified provider, Programs explorer
-  and Agent-management changes in `566f0a3d`, `47b1b407` and `f736cb14` while
-  moving their Core files to the src layout. Obsolete unreferenced promotion
-  drafts were removed in `5c041a1b`.
+  and Agent-management changes in `566f0a3d`, `47b1b407` and `f736cb14` in the
+  root Core. Obsolete unreferenced promotion drafts were removed in `5c041a1b`.
 - Integration repair `e310ecf0` removes the retired `promo/` directory from
-  the authoritative layout, makes `node_modules/` ignored at every workspace
-  depth, and updates the real CLI owner-auth test to the src-layout Core path.
-- Local Harness checkouts, Agentic Programming logs and mutable Programs
-  metadata were moved from the retired flat Core directory to the new Core
-  path. Only generated Python bytecode was deleted.
+  the authoritative layout and makes `node_modules/` ignored at every
+  workspace depth. The later Core rollback restores the CLI owner-auth test to
+  the root `openprogram/` path.
 - Main affected gate: `158 passed`; Web Programs/shared-explorer/Agent checks
   PASS; Web TypeScript PASS; CLI typecheck PASS; CLI `140 passed, 2 skipped`.
-- Integrated specification review: pending. Integrated quality/Ponytail full
-  review: pending. Remaining integration concerns: final full gate and package
-  verification pending.
+- Rollback specification review: pending. Rollback quality/Ponytail full
+  review: pending. Remaining integration concerns: rollback verification and
+  package verification pending.
 
 ## Implemented task brief: Legacy cleanup F2
 

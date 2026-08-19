@@ -1,6 +1,6 @@
 # API Reference
 
-> Source: [`openprogram/`](https://github.com/Fzkuji/OpenProgram/tree/main/packages/core/src/openprogram/)
+> Source: [`openprogram/`](https://github.com/Fzkuji/OpenProgram/tree/main/openprogram/)
 
 ## Core Components
 
