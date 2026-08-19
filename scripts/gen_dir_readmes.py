@@ -35,7 +35,7 @@ import sys
 from pathlib import Path
 
 
-ROOT = Path("packages/core/src/openprogram")
+ROOT = Path("openprogram")
 
 
 def _module_docstring(init_path: Path) -> str | None:

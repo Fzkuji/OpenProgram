@@ -104,7 +104,7 @@ openprogram
 写一个自己的可安装 harness 只差一份布局契约——完整指南(安装、管理、编写、测试、发布)见
 **[installing-harnesses.md](capabilities/installing-harnesses.md)**。
 
-> 需要一条自己的工作流?直接在聊天里让 agent 做——内置的 [`agentic-programming` skill](https://github.com/Fzkuji/OpenProgram/blob/main/packages/core/src/openprogram/skills_bundled/agentic-programming/SKILL.md) 会处理其余一切。
+> 需要一条自己的工作流?直接在聊天里让 agent 做——内置的 [`agentic-programming` skill](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/skills_bundled/agentic-programming/SKILL.md) 会处理其余一切。
 
 ## 排障
 

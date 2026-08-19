@@ -49,7 +49,7 @@ def test_every_emitted_type_is_registered():
     the admission boundary holds with zero migration warnings."""
     import re
     import subprocess
-    root = Path(__file__).resolve().parents[3] / "packages/core/src/openprogram"
+    root = Path(__file__).resolve().parents[3] / "openprogram"
     out = subprocess.run(
         ["grep", "-rhoE", r'emit_safe\(\s*"[a-z_.]+"', str(root),
          "--include=*.py"],

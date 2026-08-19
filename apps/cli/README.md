@@ -11,8 +11,7 @@ OpenProgram worker; neither owns a second backend or product-state store.
 - `src/index.tsx` is the executable entry point.
 - `dist/index.js` is the generated Node.js bundle and is not edited by hand.
 - `python/openprogram_cli/_impl/` contains the Python application
-  implementation. `packages/core/src/openprogram/cli/` is the bounded
-  compatibility import.
+  implementation. `openprogram/cli/` is the bounded compatibility import.
 - `python/openprogram_cli/_impl/ink.py` resolves and launches the bundle from
   a source checkout. If Ink is unavailable in an immutable release,
   `openprogram` uses the Rich terminal interface.

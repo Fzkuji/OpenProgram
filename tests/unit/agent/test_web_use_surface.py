@@ -878,7 +878,7 @@ def test_web_use_is_registered_as_surface_aware_public_tool():
 
 
 def test_surface_tool_is_injected_after_tools_are_resolved():
-    source = (REPO_ROOT / "packages/core/src/openprogram/agent/dispatcher/loop_runner.py").read_text()
+    source = (REPO_ROOT / "openprogram/agent/dispatcher/loop_runner.py").read_text()
 
     resolve_at = source.index(
         "tools = _resolve_tools(agent_profile, req.tools_override, source=req.source)"

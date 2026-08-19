@@ -21,14 +21,11 @@ def test_credential_file_helpers_live_inside_auth() -> None:
     tracked = set(_tracked_paths())
 
     assert {
-        "packages/core/src/openprogram/auth/credentials/__init__.py",
-        "packages/core/src/openprogram/auth/credentials/inventory.py",
-        "packages/core/src/openprogram/auth/credentials/io.py",
+        "openprogram/auth/credentials/__init__.py",
+        "openprogram/auth/credentials/inventory.py",
+        "openprogram/auth/credentials/io.py",
     } <= tracked
-    assert not any(
-        path.startswith("packages/core/src/openprogram/credential_files/")
-        for path in tracked
-    )
+    assert not any(path.startswith("openprogram/credential_files/") for path in tracked)
 
 
 def test_repository_does_not_import_the_removed_credential_files_package() -> None:

@@ -6,9 +6,6 @@ from openprogram.webui._functions import _extract_all_functions
 def test_agentic_workflow_is_available_to_the_chat_program_catalog() -> None:
     source = (
         Path(__file__).parents[3]
-        / "packages"
-        / "core"
-        / "src"
         / "openprogram"
         / "programs"
         / "functions"

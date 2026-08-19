@@ -57,9 +57,9 @@ def test_python_cli_application_is_owned_by_apps_workspace() -> None:
     assert (app / "_impl/setup_sections").is_dir()
 
     compatibility_files = {
-        path.removeprefix("packages/core/src/openprogram/cli/")
+        path.removeprefix("openprogram/cli/")
         for path in subprocess.run(
-            ["git", "ls-files", "--", "packages/core/src/openprogram/cli"],
+            ["git", "ls-files", "--", "openprogram/cli"],
             cwd=ROOT,
             check=True,
             capture_output=True,
@@ -203,7 +203,7 @@ def test_server_application_assembly_is_owned_by_apps_workspace() -> None:
     assert Path(canonical_server.__file__).resolve() == (
         ROOT / "apps/server/openprogram_server/server.py"
     )
-    assert (ROOT / "packages/core/src/openprogram/webui/server.py").read_text(
+    assert (ROOT / "openprogram/webui/server.py").read_text(
         encoding="utf-8"
     ).count("sys.modules[__name__] = _server") == 1
 
@@ -230,8 +230,7 @@ def test_legacy_server_transport_imports_load_the_apps_sources() -> None:
 
 def test_removed_legacy_static_ui_does_not_return() -> None:
     assert not any(
-        path.is_file()
-        for path in (ROOT / "packages/core/src/openprogram/webui/static").rglob("*")
+        path.is_file() for path in (ROOT / "openprogram/webui/static").rglob("*")
     )
     assert (ROOT / "apps/web/app").is_dir()
 
@@ -239,7 +238,7 @@ def test_removed_legacy_static_ui_does_not_return() -> None:
 def test_mutable_profile_state_is_not_tracked_in_the_core_package() -> None:
     tracked = set(
         subprocess.run(
-            ["git", "ls-files", "--", "packages/core/src/openprogram/webui"],
+            ["git", "ls-files", "--", "openprogram/webui"],
             cwd=ROOT,
             check=True,
             capture_output=True,
@@ -247,8 +246,8 @@ def test_mutable_profile_state_is_not_tracked_in_the_core_package() -> None:
         ).stdout.splitlines()
     )
     for relative in (
-        "packages/core/src/openprogram/webui/functions_meta.json",
-        "packages/core/src/openprogram/webui/programs_meta.json",
+        "openprogram/webui/functions_meta.json",
+        "openprogram/webui/programs_meta.json",
     ):
         assert relative not in tracked
         subprocess.run(

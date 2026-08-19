@@ -28,8 +28,7 @@ extensions. New FastAPI application assembly belongs in
 the remaining route migration.
 
 The public command starts at `openprogram/__main__.py` and the
-`packages/core/src/openprogram/cli/` package. Parser construction lives in
-`cli/parser.py`;
+`openprogram/cli/` package. Parser construction lives in `cli/parser.py`;
 command handlers, the Rich REPL, the Ink launcher, and setup sections remain
 under that same package.
 

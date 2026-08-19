@@ -682,7 +682,7 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
     assert "programs/functions/agentic/browser_agent/*.cjs" in package_data
 
     project = tmp_path / "project"
-    (project / "packages/core/src/openprogram/sandbox/shims").mkdir(parents=True)
+    (project / "openprogram" / "sandbox" / "shims").mkdir(parents=True)
     for relative in (
         "pyproject.toml", "README.md", "LICENSE", "openprogram/__init__.py",
         "openprogram/sandbox/__init__.py", "openprogram/sandbox/shims/sitecustomize.py",
@@ -694,22 +694,13 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
         "openprogram/sandbox/recoverable_delete.py",
         "openprogram/webui/__init__.py",
     ):
-        destination = (
-            project / "packages/core/src" / relative
-            if relative.startswith("openprogram/")
-            else project / relative
-        )
+        destination = project / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
-        source = (
-            repo / "packages/core/src" / relative
-            if relative.startswith("openprogram/")
-            else repo / relative
-        )
-        shutil.copy2(source, destination)
-    (project / "packages/core/src/openprogram/webui/functions_meta.json").write_text(
+        shutil.copy2(repo / relative, destination)
+    (project / "openprogram/webui/functions_meta.json").write_text(
         '{"profiles": {"must-not-ship": []}}\n', encoding="utf-8"
     )
-    (project / "packages/core/src/openprogram/webui/programs_meta.json").write_text(
+    (project / "openprogram/webui/programs_meta.json").write_text(
         '{"favorites": ["must-not-ship"]}\n', encoding="utf-8",
     )
     wheel_dir = tmp_path / "wheel"

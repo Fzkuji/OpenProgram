@@ -17,7 +17,7 @@ def test_cli_parser_has_a_dedicated_module_and_compatible_public_import() -> Non
     assert cli.build_parser is parser.build_parser
 
     cli_tree = ast.parse(
-        (ROOT / "packages/core/src/openprogram" / "cli" / "__init__.py").read_text()
+        (ROOT / "openprogram" / "cli" / "__init__.py").read_text()
     )
     assert "build_parser" not in {
         node.name for node in cli_tree.body if isinstance(node, ast.FunctionDef)

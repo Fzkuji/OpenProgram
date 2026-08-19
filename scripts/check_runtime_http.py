@@ -13,7 +13,7 @@ from openprogram.security.runtime_http_audit import scan_runtime_http
 
 
 def main() -> int:
-    root = ROOT / "packages/core/src/openprogram"
+    root = ROOT / "openprogram"
     result = scan_runtime_http(
         root,
         additional_roots={

@@ -6,7 +6,7 @@ web_dir="$repo_root/apps/web"
 source_dir="$web_dir/out"
 next_build_dir="$web_dir/.next"
 target_dir="$repo_root/apps/server/openprogram_server/_webui/_frontend"
-legacy_target_dir="$repo_root/packages/core/src/openprogram/webui/_frontend"
+legacy_target_dir="$repo_root/openprogram/webui/_frontend"
 docs_source_dir="$repo_root/docs/_site"
 docs_target_dir="$target_dir/docs"
 
