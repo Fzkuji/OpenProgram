@@ -14,40 +14,10 @@
 .explorer {
   min-width: 0;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
   border-right: 1px solid var(--border);
   background: var(--bg-secondary);
-}
-
-.tree {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.fileTreeRow {
-  color: var(--text-secondary);
-  outline: none;
-}
-
-.fileTreeNode {
-  height: 100%;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border-radius: 5px;
-  cursor: default;
-}
-
-.fileTreeRow:hover .fileTreeNode {
-  background: var(--bg-hover);
-}
-
-.fileTreeNodeSelected,
-.fileTreeRow:hover .fileTreeNodeSelected {
-  background: var(--bg-hover-contrast);
-  color: var(--text-primary);
 }
 
 .viewSwitch button {
@@ -57,62 +27,6 @@
   font: inherit;
 }
 
-.fileTreeToggle {
-  width: 16px;
-  height: 20px;
-  padding: 0;
-  flex: 0 0 16px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  color: var(--text-muted);
-  background: transparent;
-  cursor: pointer;
-}
-
-.fileTreeToggle:hover {
-  color: var(--text-primary);
-}
-
-.fileTreeToggle svg {
-  transition: transform 120ms ease;
-}
-
-.fileTreeNodeOpen .fileTreeToggle svg {
-  transform: rotate(90deg);
-}
-
-.fileTreeToggleSpacer {
-  width: 16px;
-  flex: 0 0 16px;
-}
-
-.fileTreeIcon {
-  width: 16px;
-  flex: 0 0 16px;
-  display: grid;
-  place-items: center;
-  color: var(--text-muted);
-}
-
-.fileTreeNodeSelected .fileTreeIcon {
-  color: var(--theme-accent);
-}
-
-.fileTreeName {
-  min-width: 0;
-  overflow: hidden;
-  padding-right: 8px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--fs-sm);
-}
-
-.treeMessage {
-  padding: 16px;
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-}
 
 .logicPane {
   min-width: 0;
@@ -175,7 +89,6 @@
   margin-bottom: 13px;
   overflow: hidden;
   color: var(--text-muted);
-  font-family: var(--font-mono);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -216,7 +129,6 @@
 
 .entityHeader h2 {
   overflow: hidden;
-  font-family: var(--font-mono);
   font-size: var(--fs-lg);
   line-height: 1.3;
   text-overflow: ellipsis;
@@ -235,7 +147,6 @@
   border-radius: 999px;
   color: var(--text-muted);
   background: var(--bg-secondary);
-  font-family: var(--font-mono);
   font-size: var(--fs-sm);
 }
 
@@ -393,7 +304,6 @@
 
 .callRow strong {
   overflow: hidden;
-  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -409,7 +319,6 @@
 
 .callRow em {
   color: var(--text-muted);
-  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   font-style: normal;
 }
@@ -439,7 +348,6 @@
 
 .graphNode strong {
   overflow: hidden;
-  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -154,14 +154,11 @@ def remove_program_source(path) -> None:
 
 
 def owner_controlled_program_sources(base: str | None = None) -> list[dict]:
-    """Return valid owner-recorded roots under the live applications directory."""
-    live_base = base or applications_dir()
-    if not live_base:
-        return []
+    """Return valid owner-recorded roots, optionally limited to one directory."""
     out = []
     for row in _read_program_sources():
         root = os.path.abspath(str(row.get("path", "")))
-        if _is_direct_child(root, live_base) and os.path.isdir(root):
+        if os.path.isdir(root) and (base is None or _is_direct_child(root, base)):
             out.append({**row, "path": root})
     return out
 
@@ -249,11 +246,21 @@ class Program:
         Returns ``<applications>/<package>/<package>`` when that directory
         exists with an ``__init__.py`` — i.e. the program is cloned in.
         """
-        cd = self.clone_dir(base)
-        if not cd:
-            return None
-        pkg = os.path.join(cd, self.package)
-        return pkg if os.path.isfile(os.path.join(pkg, "__init__.py")) else None
+        candidates: list[str | None] = []
+        if base is None:
+            aliases = {self.install_dir, self.package, self.repo_dir_name}
+            candidates.extend(
+                row["path"] for row in owner_controlled_program_sources()
+                if os.path.basename(row["path"]) in aliases
+            )
+        candidates.append(self.clone_dir(base))
+        for clone in candidates:
+            if not clone:
+                continue
+            pkg = os.path.join(clone, self.package)
+            if os.path.isfile(os.path.join(pkg, "__init__.py")):
+                return pkg
+        return None
 
     def git_url(self) -> str:
         """``git clone`` URL pinned to the branch is handled by the caller."""
@@ -378,14 +385,13 @@ def import_installed_programs() -> list[str]:
 
     Returns the list of function names successfully registered.
     """
-    base = applications_dir()
     registered: list[str] = []
     for prog in KNOWN_PROGRAMS:
         if not prog.is_installed():
             continue
         # Make an in-tree clone importable by putting its repo dir (the
         # parent of the package) on sys.path.
-        pkg_dir = prog.in_tree_pkg_dir(base)
+        pkg_dir = prog.in_tree_pkg_dir()
         if pkg_dir and is_owner_controlled_program_path(pkg_dir):
             repo_dir = os.path.dirname(pkg_dir)
             if repo_dir not in sys.path:

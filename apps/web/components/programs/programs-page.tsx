@@ -1,14 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Tree, type NodeRendererProps, type TreeApi } from "react-arborist";
-import useMeasure from "react-use-measure";
 import {
   Boxes,
   ChevronRight,
-  File,
-  FileCode2,
   Folder,
   FolderOpen,
   GitBranch,
@@ -21,37 +17,46 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { ManagePageHeader, managePageStyles } from "@/components/ui/manage-page";
-import { SearchInput } from "@/components/ui/search-input";
+import {
+  ExplorerHeader,
+  ExplorerMatchText,
+  type ExplorerSearchMode,
+} from "@/components/files/explorer-header";
+import {
+  EXPLORER_BASE_PAD,
+  EXPLORER_INDENT,
+  matchingIndexes,
+  visibleSearchPaths,
+} from "@/components/files/explorer-search";
 import { useTranslation } from "@/lib/i18n";
 import { jsonFetch } from "@/lib/net/fetch-client";
 import { runtimeState } from "@/lib/runtime-bridge/state";
 import { useFunctions } from "@/lib/state/functions-store";
 import type { FunctionsMeta } from "@/lib/types";
+import { TOOL_GROUPS } from "@/components/functions/tool-groups";
 
 import {
   buildCallTreeRows,
   type LogicResponse,
   type ProgramKind,
 } from "./programs-logic";
+import {
+  buildRuntimeProgramDirectories,
+  programInvocationName,
+  type ProgramExplorerEntry,
+  type RuntimeProgramEntry,
+  type RuntimeToolEntry,
+} from "./programs-catalog";
 
 import styles from "./programs-page.module.css";
+import fileStyles from "@/components/files/files-panel.module.css";
 
-type ExplorerEntry = {
-  name: string;
-  path: string;
-  kind: "folder" | "file";
-  program_kind: ProgramKind | null;
-  has_children: boolean;
-};
+type ExplorerEntry = ProgramExplorerEntry;
 
 type ExplorerResponse = {
   path: string;
   entries: ExplorerEntry[];
   default_selection?: string | null;
-};
-
-type ProgramTreeEntry = ExplorerEntry & {
-  children?: ProgramTreeEntry[];
 };
 
 const ROOT_LABEL = "openprogram/programs";
@@ -69,41 +74,15 @@ function kindLabel(kind: ProgramKind, text: (en: string, zh: string) => string) 
 }
 
 function EntryIcon({ entry, expanded }: { entry: ExplorerEntry; expanded: boolean }) {
-  if (entry.program_kind === "workflow") return <Workflow size={15} />;
-  if (entry.program_kind === "application") return <Boxes size={15} />;
-  if (entry.program_kind?.endsWith("function")) return <Wrench size={15} />;
-  if (entry.kind === "file") return entry.name.endsWith(".py") ? <FileCode2 size={15} /> : <File size={15} />;
-  return expanded ? <FolderOpen size={15} /> : <Folder size={15} />;
-}
-
-function ProgramTreeNode({ node, style, dragHandle }: NodeRendererProps<ProgramTreeEntry>) {
-  const entry = node.data;
-  return (
-    <div
-      ref={dragHandle}
-      className={`${styles.fileTreeNode} ${node.isSelected ? styles.fileTreeNodeSelected : ""} ${node.isOpen ? styles.fileTreeNodeOpen : ""}`}
-      style={style}
-      title={entry.path}
-    >
-      {node.isInternal ? (
-        <button
-          className={styles.fileTreeToggle}
-          type="button"
-          aria-label={node.isOpen ? "Collapse folder" : "Expand folder"}
-          onClick={(event) => {
-            event.stopPropagation();
-            node.toggle();
-          }}
-        >
-          <ChevronRight size={13} aria-hidden="true" />
-        </button>
-      ) : <span className={styles.fileTreeToggleSpacer} />}
-      <span className={styles.fileTreeIcon}>
-        <EntryIcon entry={entry} expanded={node.isOpen} />
-      </span>
-      <span className={styles.fileTreeName}>{entry.name}</span>
-    </div>
-  );
+  if (entry.program_kind === "workflow") return <Workflow size={15} className={fileStyles.treeIcon} />;
+  if (entry.program_kind === "application") return <Boxes size={15} className={fileStyles.treeIcon} />;
+  if (entry.program_kind?.endsWith("function")) return <Wrench size={15} className={fileStyles.treeIcon} />;
+  if (entry.kind === "folder") {
+    return expanded
+      ? <FolderOpen size={15} className={fileStyles.treeIconFolder} />
+      : <Folder size={15} className={fileStyles.treeIconFolder} />;
+  }
+  return <Wrench size={15} className={fileStyles.treeIcon} />;
 }
 
 export function ProgramsPage() {
@@ -116,11 +95,15 @@ export function ProgramsPage() {
   const [loadingLogic, setLoadingLogic] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchMode, setSearchMode] = useState<ExplorerSearchMode>("filter");
+  const [fuzzySearch, setFuzzySearch] = useState(true);
+  const [searchMatchIndex, setSearchMatchIndex] = useState(0);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [view, setView] = useState<"tree" | "graph">("tree");
   const [reloadToken, setReloadToken] = useState(0);
   const [meta, setMeta] = useState<FunctionsMeta>({ favorites: [], folders: {}, icons: {} });
-  const treeRef = useRef<TreeApi<ProgramTreeEntry>>();
-  const [treeMeasureRef, treeBounds] = useMeasure();
+  const explorerRef = useRef<HTMLElement>(null);
 
   const loadDirectory = useCallback(async (path: string, signal?: AbortSignal) => {
     const query = path ? `?${new URLSearchParams({ path })}` : "";
@@ -136,15 +119,27 @@ export function ProgramsPage() {
       setLoadingTree(true);
       setError("");
       setDirectories({});
+      setExpanded(new Set());
       try {
-        const root = await loadDirectory("", controller.signal);
+        const [root, tools, programs] = await Promise.all([
+          loadDirectory("", controller.signal),
+          jsonFetch<RuntimeToolEntry[]>("/api/tools", { signal: controller.signal }),
+          jsonFetch<RuntimeProgramEntry[]>("/api/programs", { signal: controller.signal }),
+        ]);
         if (cancelled) return;
-        const initial = root.default_selection ?? null;
+        const runtimeCatalog = buildRuntimeProgramDirectories(tools, programs, TOOL_GROUPS);
+        setDirectories((current) => ({ ...current, ...runtimeCatalog.directories }));
+        const sourceDefault = root.default_selection ?? null;
+        const initial = sourceDefault?.startsWith("workflows/") || sourceDefault?.startsWith("applications/")
+          ? sourceDefault
+          : runtimeCatalog.firstFunction ?? sourceDefault;
         const parents = initial ? parentPaths(initial) : [];
         for (const parent of parents) {
+          if (runtimeCatalog.directories[parent]) continue;
           await loadDirectory(parent, controller.signal);
         }
         if (cancelled) return;
+        setExpanded(new Set(parents));
         setSelected(initial);
       } catch (cause) {
         if ((cause as Error).name !== "AbortError") setError(text("Programs could not be loaded.", "无法加载 Programs。"));
@@ -179,6 +174,15 @@ export function ProgramsPage() {
     return () => controller.abort();
   }, [text]);
 
+  const treeEntriesByPath = useMemo(() => {
+    const entries = new Map<string, ExplorerEntry>();
+    for (const directoryEntries of Object.values(directories)) {
+      for (const entry of directoryEntries) entries.set(entry.path, entry);
+    }
+    return entries;
+  }, [directories]);
+  const selectedEntry = selected ? treeEntriesByPath.get(selected) : undefined;
+
   useEffect(() => {
     const controller = new AbortController();
     let cancelled = false;
@@ -189,10 +193,33 @@ export function ProgramsPage() {
     setLogic(null);
     setLoadingLogic(true);
     setError("");
-    const query = new URLSearchParams({ path: selected });
+    if (selectedEntry?.runtime_only) {
+      setLogic({
+        root: selected,
+        nodes: [{
+          id: selected,
+          name: selectedEntry.name,
+          path: selectedEntry.path,
+          program_kind: selectedEntry.program_kind || "vanilla_function",
+          depth: 0,
+        }],
+        edges: [],
+        analysis_complete: true,
+      });
+      setLoadingLogic(false);
+      return () => controller.abort();
+    }
+    const query = new URLSearchParams({ path: selectedEntry?.logic_path || selected });
     void jsonFetch<LogicResponse>(`/api/programs/logic?${query}`, { signal: controller.signal })
       .then((result) => {
-        if (!cancelled) setLogic(result);
+        if (!cancelled) {
+          setLogic(selectedEntry ? {
+            ...result,
+            nodes: result.nodes.map((node) => node.id === result.root
+              ? { ...node, name: selectedEntry.name, path: selectedEntry.path }
+              : node),
+          } : result);
+        }
       })
       .catch((cause) => {
         if (!cancelled && (cause as Error).name !== "AbortError") {
@@ -207,29 +234,41 @@ export function ProgramsPage() {
       cancelled = true;
       controller.abort();
     };
-  }, [selected, text]);
+  }, [selected, selectedEntry, text]);
 
   const selectedNode = logic?.nodes.find((node) => node.id === logic.root) ?? null;
-  const isFavorite = selectedNode ? meta.favorites.includes(selectedNode.name) : false;
+  const invocationName = programInvocationName(selectedEntry || selectedNode);
+  const isFavorite = Boolean(invocationName) && meta.favorites.includes(invocationName);
   const callTree = useMemo(() => logic ? buildCallTreeRows(logic) : { rows: [], truncated: false }, [logic]);
-  const treeEntriesByPath = useMemo(() => {
-    const entries = new Map<string, ExplorerEntry>();
-    for (const directoryEntries of Object.values(directories)) {
-      for (const entry of directoryEntries) entries.set(entry.path, entry);
-    }
-    return entries;
-  }, [directories]);
-  const treeData = useMemo(() => {
-    const build = (path: string): ProgramTreeEntry[] => (directories[path] ?? []).map((entry) => ({
-      ...entry,
-      children: entry.kind === "folder" ? build(entry.path) : undefined,
-    }));
-    return build("");
-  }, [directories]);
+  const searchMatches = useMemo(() => {
+    if (!search.trim()) return [];
+    return [...treeEntriesByPath.values()]
+      .filter((entry) => matchingIndexes(entry.name, search, fuzzySearch))
+      .sort((left, right) => left.path.localeCompare(right.path));
+  }, [fuzzySearch, search, treeEntriesByPath]);
+  const visiblePaths = useMemo(
+    () => visibleSearchPaths([...treeEntriesByPath.keys()], search, fuzzySearch),
+    [fuzzySearch, search, treeEntriesByPath],
+  );
+  const currentSearchPath = searchMatches.length
+    ? searchMatches[searchMatchIndex % searchMatches.length].path
+    : null;
 
   useEffect(() => {
-    if (selected) treeRef.current?.openParents(selected);
-  }, [selected, treeData]);
+    setSearchMatchIndex(0);
+  }, [search, fuzzySearch, searchMode]);
+
+  useEffect(() => {
+    if (!currentSearchPath) return;
+    const parents = parentPaths(currentSearchPath);
+    setExpanded((previous) => new Set([...previous, ...parents]));
+    const timer = setTimeout(() => {
+      explorerRef.current?.querySelector<HTMLElement>(
+        `[data-program-path="${CSS.escape(currentSearchPath)}"]`,
+      )?.scrollIntoView({ block: "nearest" });
+    });
+    return () => clearTimeout(timer);
+  }, [currentSearchPath]);
 
   async function loadOpenedDirectory(path: string) {
     const entry = treeEntriesByPath.get(path);
@@ -241,16 +280,73 @@ export function ProgramsPage() {
     }
   }
 
+  function toggleDirectory(entry: ExplorerEntry) {
+    if (entry.program_kind) return;
+    const opening = !expanded.has(entry.path);
+    setExpanded((previous) => {
+      const next = new Set(previous);
+      if (opening) next.add(entry.path);
+      else next.delete(entry.path);
+      return next;
+    });
+    if (opening) void loadOpenedDirectory(entry.path);
+  }
+
+  function moveSearchResult(delta: number) {
+    if (!searchMatches.length) return;
+    setSearchMatchIndex((index) => (index + delta + searchMatches.length) % searchMatches.length);
+  }
+
+  function renderProgramDirectory(path: string, depth: number): ReactNode {
+    const entries = directories[path];
+    if (!entries) {
+      return <div className={fileStyles.treeHint} style={{ paddingLeft: EXPLORER_BASE_PAD + 28 + depth * EXPLORER_INDENT }}>{text("Loading…", "加载中…")}</div>;
+    }
+    return entries.map((entry) => {
+      if (search.trim() && searchMode === "filter" && !visiblePaths.has(entry.path)) return null;
+      const isOpen = expanded.has(entry.path);
+      const hasVisibleChild = [...visiblePaths].some((candidate) => candidate.startsWith(`${entry.path}/`));
+      const displayOpen = isOpen || (searchMode === "filter" && Boolean(search.trim()) && hasVisibleChild);
+      const current = currentSearchPath === entry.path;
+      const isBranch = entry.kind === "folder" && !entry.program_kind;
+      return (
+        <div className={fileStyles.treeNode} key={entry.path}>
+          <div
+            className={`${fileStyles.treeRow} ${selected === entry.path ? fileStyles.treeRowSelected : ""}`}
+            style={{ paddingLeft: EXPLORER_BASE_PAD + depth * EXPLORER_INDENT }}
+            data-program-path={entry.path}
+            title={entry.path}
+            onClick={() => {
+              if (entry.program_kind) setSelected(entry.path);
+              if (isBranch) toggleDirectory(entry);
+            }}
+          >
+            <EntryIcon entry={entry} expanded={displayOpen} />
+            <ExplorerMatchText className={fileStyles.treeName} value={entry.name} query={search} fuzzy={fuzzySearch} current={current} />
+          </div>
+          {isBranch && displayOpen ? (
+            <div
+              className={fileStyles.treeKids}
+              style={{ "--guide-x": `${EXPLORER_BASE_PAD + 8 + depth * EXPLORER_INDENT}px` } as CSSProperties}
+            >
+              {renderProgramDirectory(entry.path, depth + 1)}
+            </div>
+          ) : null}
+        </div>
+      );
+    });
+  }
+
   async function refreshPrograms() {
     await fetch("/api/programs/refresh", { method: "POST" }).catch(() => undefined);
     setReloadToken((value) => value + 1);
   }
 
   async function toggleFavorite() {
-    if (!selectedNode) return;
+    if (!invocationName) return;
     const favorites = isFavorite
-      ? meta.favorites.filter((name) => name !== selectedNode.name)
-      : [...meta.favorites, selectedNode.name];
+      ? meta.favorites.filter((name) => name !== invocationName)
+      : [...meta.favorites, invocationName];
     const next = { ...meta, favorites };
     setMeta(next);
     runtimeState.programsMeta = {
@@ -269,44 +365,36 @@ export function ProgramsPage() {
   return (
     <div className="main">
       <div className={managePageStyles.view}>
-        <ManagePageHeader
-          title={t("nav.programs")}
-          toolbar={<SearchInput className="w-[min(320px,32vw)]" placeholder={text("Search loaded files…", "搜索已加载文件…")} value={search} onChange={setSearch} />}
-          actions={[{ label: text("Refresh", "刷新"), onClick: () => { void refreshPrograms(); } }]}
-        />
+        <ManagePageHeader title={t("nav.programs")} />
         <div className={styles.workspace}>
-          <aside className={styles.explorer} data-testid="programs-explorer">
-            <div ref={treeMeasureRef} className={styles.tree}>
-              {loadingTree ? <div className={styles.treeMessage}>{text("Loading…", "加载中…")}</div> : (
-                <Tree<ProgramTreeEntry>
-                  ref={treeRef}
-                  data={treeData}
-                  idAccessor="path"
-                  childrenAccessor="children"
-                  width={treeBounds.width}
-                  height={treeBounds.height}
-                  rowHeight={28}
-                  indent={16}
-                  padding={6}
-                  openByDefault={false}
-                  selection={selected ?? undefined}
-                  searchTerm={search}
-                  searchMatch={(node, term) => node.data.name.toLowerCase().includes(term.trim().toLowerCase())}
-                  aria-label={text("Programs files", "Programs 文件")}
-                  rowClassName={styles.fileTreeRow}
-                  disableMultiSelection
-                  disableDrag
-                  disableDrop
-                  disableEdit
-                  onToggle={(path) => { void loadOpenedDirectory(path); }}
-                  onActivate={(node) => {
-                    if (node.data.program_kind) setSelected(node.data.path);
-                    else if (node.isInternal) node.toggle();
-                  }}
-                >
-                  {ProgramTreeNode}
-                </Tree>
-              )}
+          <aside ref={explorerRef} className={styles.explorer} data-testid="programs-explorer">
+            <ExplorerHeader
+              rootName="Programs"
+              rootPath={ROOT_LABEL}
+              showRootPath={false}
+              searchOpen={searchOpen}
+              onSearchOpenChange={setSearchOpen}
+              query={search}
+              onQueryChange={setSearch}
+              mode={searchMode}
+              onModeChange={setSearchMode}
+              fuzzy={fuzzySearch}
+              onFuzzyChange={setFuzzySearch}
+              resultCount={searchMatches.length}
+              resultIndex={searchMatches.length ? searchMatchIndex % searchMatches.length : 0}
+              onMoveResult={moveSearchResult}
+              actions={
+                <button className={fileStyles.iconBtn} type="button" title={text("Refresh", "刷新")} onClick={() => { void refreshPrograms(); }}>
+                  <RefreshCw />
+                </button>
+              }
+            />
+            <div className={fileStyles.treeBody} aria-label={text("Programs catalog", "Programs 目录")}>
+              {loadingTree
+                ? <div className={fileStyles.treeHint}>{text("Loading…", "加载中…")}</div>
+                : search.trim() && searchMode === "filter" && searchMatches.length === 0
+                  ? <div className={fileStyles.treeHint}>{text("No matches", "无匹配")}</div>
+                  : renderProgramDirectory("", 0)}
             </div>
           </aside>
           <section className={styles.logicPane}>
@@ -333,7 +421,7 @@ export function ProgramsPage() {
                     >
                       <Star className={isFavorite ? styles.favoriteIconActive : styles.favoriteIcon} fill={isFavorite ? "currentColor" : "none"} />
                     </Button>
-                    <Button onClick={() => router.push(`/chat?${new URLSearchParams({ run: selectedNode.name, cat: selectedNode.program_kind })}`)}>
+                    <Button onClick={() => router.push(`/chat?${new URLSearchParams({ run: invocationName, cat: selectedNode.program_kind })}`)}>
                       {text("Use", "使用")}
                     </Button>
                     <span className={styles.headBadge}>HEAD</span>

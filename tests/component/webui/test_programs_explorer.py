@@ -13,6 +13,7 @@ def _write(path: Path, content: str = "") -> None:
 
 def _client(tmp_path: Path, monkeypatch) -> TestClient:
     root = tmp_path / "openprogram" / "programs"
+    _write(root / "functions" / "vanilla" / "read_file.py", "def read_file(): pass\n")
     _write(root / "functions" / "agentic" / "alpha" / "__init__.py", "")
     _write(root / "workflows" / "__init__.py", "")
     _write(
@@ -25,6 +26,7 @@ def _client(tmp_path: Path, monkeypatch) -> TestClient:
     )
     _write(root / "workflows" / "paper_search" / "workflow.py", "def run(): pass\n")
     _write(root / "applications" / "research_app" / "pyproject.toml", "")
+    _write(root / "applications" / "gui_harness" / "pyproject.toml", "")
     _write(root / ".hidden", "ignored")
     _write(root / "__pycache__" / "ignored.py", "")
 
@@ -36,7 +38,7 @@ def _client(tmp_path: Path, monkeypatch) -> TestClient:
     return TestClient(app)
 
 
-def test_programs_explorer_lists_real_tree_lazily(tmp_path: Path, monkeypatch) -> None:
+def test_programs_explorer_lists_program_catalog_lazily(tmp_path: Path, monkeypatch) -> None:
     client = _client(tmp_path, monkeypatch)
 
     root = client.get("/api/programs/explorer").json()
@@ -47,6 +49,20 @@ def test_programs_explorer_lists_real_tree_lazily(tmp_path: Path, monkeypatch) -
     ]
     assert root["default_selection"] == "workflows/literature_review"
 
+    functions = client.get(
+        "/api/programs/explorer", params={"path": "functions"}
+    ).json()
+    assert [entry["path"] for entry in functions["entries"]] == [
+        "functions/vanilla",
+        "functions/agentic",
+    ]
+    vanilla = client.get(
+        "/api/programs/explorer", params={"path": "functions/vanilla"}
+    ).json()
+    assert [(entry["name"], entry["program_kind"]) for entry in vanilla["entries"]] == [
+        ("read_file", "vanilla_function"),
+    ]
+
     workflows = client.get(
         "/api/programs/explorer", params={"path": "workflows"}
     ).json()
@@ -54,14 +70,37 @@ def test_programs_explorer_lists_real_tree_lazily(tmp_path: Path, monkeypatch) -
         "literature_review",
         "paper_search",
         "research_pipeline",
-        "__init__.py",
     ]
     assert [entry["program_kind"] for entry in workflows["entries"]] == [
         "workflow",
         "workflow",
         "workflow",
-        None,
     ]
+    assert all(entry["has_children"] is False for entry in workflows["entries"])
+
+    workflow = client.get(
+        "/api/programs/explorer", params={"path": "workflows/research_pipeline"}
+    )
+    assert workflow.status_code == 404
+
+    applications = client.get(
+        "/api/programs/explorer", params={"path": "applications"}
+    ).json()
+    assert [
+        (entry["name"], entry["program_kind"], entry["callable_name"])
+        for entry in applications["entries"]
+    ] == [
+        ("gui_harness", "application", "gui_agent"),
+        ("research_app", "application", "research_app"),
+    ]
+
+
+def test_known_application_directories_resolve_to_registered_callables() -> None:
+    from openprogram.webui.routes.programs import _callable_name
+
+    assert _callable_name("applications/gui_harness") == "gui_agent"
+    assert _callable_name("applications/research_harness") == "research_agent"
+    assert _callable_name("applications/wiki_agent_harness") == "wiki_agent"
 
 
 def test_programs_logic_builds_transitive_workflow_calls(

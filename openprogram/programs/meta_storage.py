@@ -75,6 +75,20 @@ _EMOJI_TO_SLUG = {
 
 def load_programs_meta(default: dict[str, Any]) -> dict[str, Any]:
     data = load_meta(PROGRAMS_META, default)
+    favorites = data.get("favorites")
+    if isinstance(favorites, list):
+        from openprogram.programs._programs import KNOWN_PROGRAMS
+
+        aliases = {
+            alias: program.function
+            for program in KNOWN_PROGRAMS
+            for alias in (program.install_dir, program.package, program.repo_dir_name)
+        }
+        rewritten_favorites = list(dict.fromkeys(
+            aliases.get(name, name) for name in favorites if isinstance(name, str)
+        ))
+        if rewritten_favorites != favorites:
+            data["favorites"] = rewritten_favorites
     icons = data.get("icons")
     if isinstance(icons, dict):
         rewritten = {
@@ -83,7 +97,8 @@ def load_programs_meta(default: dict[str, Any]) -> dict[str, Any]:
         }
         if rewritten != icons:
             data["icons"] = rewritten
-            save_programs_meta(data)
+    if data.get("favorites") != favorites or data.get("icons") != icons:
+        save_programs_meta(data)
     return data
 
 

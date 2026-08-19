@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenProgram · Programs Explorer</title>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg-primary: #1e1e20;
+      --bg-secondary: #242426;
+      --bg-tertiary: #303034;
+      --bg-hover: rgba(255, 255, 255, 0.06);
+      --bg-input: #2b2b2e;
+      --border: rgba(255, 255, 255, 0.10);
+      --text-primary: #d7d6d2;
+      --text-bright: #f2f1ed;
+      --text-secondary: #aaa8a1;
+      --text-dim: #85837c;
+      --text-muted: #66655f;
+      --accent-orange: #e8794f;
+      --accent-yellow: #d8ab62;
+      --accent-cyan: #43c7d4;
+      --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font-ui);
+      font-size: 14px;
+    }
+    button, input { font: inherit; }
+
+    .tree-col {
+      width: 310px;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border);
+    }
+
+    .tree-header {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      min-height: 48px;
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .tree-toolbar {
+      width: 100%;
+      min-width: 0;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: height 160ms ease;
+    }
+    .tree-toolbar-actions {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .icon-btn {
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+    }
+    .icon-btn:hover,
+    .icon-btn.active {
+      color: var(--text-bright);
+      background: var(--bg-hover);
+    }
+    .icon-btn svg { width: 15px; height: 15px; }
+
+    .tree-search-panel {
+      width: 100%;
+      min-width: 0;
+      height: 0;
+      margin-top: 0;
+      overflow: hidden;
+      opacity: 0;
+      transform: translateY(-5px);
+      transition: height 180ms ease, margin-top 180ms ease, opacity 120ms ease, transform 180ms ease;
+      pointer-events: none;
+    }
+    .tree-search-panel.is-open {
+      height: 64px;
+      margin-top: 4px;
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+    .tree-search-row {
+      position: relative;
+      width: 100%;
+      min-width: 0;
+      height: 32px;
+      display: flex;
+      align-items: center;
+    }
+    .tree-search-leading {
+      position: absolute;
+      left: 9px;
+      width: 14px;
+      height: 14px;
+      display: grid;
+      place-items: center;
+      color: var(--text-dim);
+      pointer-events: none;
+    }
+    .tree-search-leading svg { width: 14px; height: 14px; }
+    .tree-search {
+      width: 100%;
+      height: 32px;
+      padding: 0 128px 0 30px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      outline: none;
+      background: var(--bg-input);
+      color: var(--text-primary);
+      font-size: 13px;
+    }
+    .tree-search:focus { border-color: color-mix(in srgb, var(--accent-orange) 65%, var(--border)); }
+    .tree-search::placeholder { color: var(--text-dim); }
+    .tree-search-actions {
+      position: absolute;
+      right: 4px;
+      display: flex;
+      align-items: center;
+      gap: 1px;
+    }
+    .tree-search-count {
+      min-width: 38px;
+      padding: 0 3px;
+      color: var(--text-dim);
+      font-size: 11px;
+      line-height: 24px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+    .tree-search-action {
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+    }
+    .tree-search-action[hidden] { display: none; }
+    .tree-search-action:hover:not(:disabled) { color: var(--text-bright); background: var(--bg-hover); }
+    .tree-search-action:disabled { opacity: 0.32; cursor: default; }
+    .tree-search-action svg { width: 13px; height: 13px; }
+    .tree-search-options {
+      height: 28px;
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .tree-search-mode {
+      height: 26px;
+      display: inline-flex;
+      align-items: center;
+      padding: 2px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--bg-input) 76%, transparent);
+    }
+    .tree-search-option {
+      height: 20px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 0 8px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--text-dim);
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .tree-search-option:hover { color: var(--text-primary); }
+    .tree-search-option[aria-pressed="true"] {
+      color: var(--text-bright);
+      background: var(--bg-tertiary);
+    }
+    .tree-search-option svg { width: 12px; height: 12px; }
+
+    .tree-body {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 8px 0;
+      scrollbar-width: thin;
+    }
+    .tree-node { position: relative; }
+    .tree-row {
+      position: relative;
+      height: 30px;
+      display: grid;
+      grid-template-columns: 16px minmax(0, 1fr) auto;
+      align-items: center;
+      padding-right: 8px;
+      color: var(--text-secondary);
+      font-size: 14px;
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }
+    .tree-row:hover {
+      color: var(--text-bright);
+      background: var(--bg-hover);
+    }
+    .tree-row.active {
+      color: var(--text-bright);
+      background: color-mix(in srgb, var(--accent-orange) 8%, var(--bg-tertiary));
+      box-shadow: inset 2px 0 0 var(--accent-orange);
+    }
+    .tree-icon {
+      width: 15px;
+      height: 15px;
+      justify-self: center;
+      color: var(--text-dim);
+      position: relative;
+      z-index: 2;
+    }
+    .tree-icon.folder {
+      color: var(--accent-yellow);
+    }
+    .tree-icon.code { color: var(--accent-cyan); }
+    .tree-icon.markdown { color: var(--text-secondary); }
+    .tree-name {
+      grid-column: 2;
+      min-width: 0;
+      margin-left: 10px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tree-kids { position: relative; }
+    .tree-kids > .tree-node::before {
+      content: "";
+      position: absolute;
+      z-index: 1;
+      left: var(--guide-x);
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      transform: translateX(-50%);
+      background: color-mix(in srgb, var(--text-muted) 48%, transparent);
+      pointer-events: none;
+    }
+    .tree-kids > .tree-node:last-child::before {
+      bottom: auto;
+      height: 15px;
+    }
+    .tree-kids > .tree-node > .tree-row::before {
+      content: "";
+      position: absolute;
+      left: var(--guide-x);
+      top: 50%;
+      width: 20px;
+      height: 1px;
+      background: color-mix(in srgb, var(--text-muted) 48%, transparent);
+      pointer-events: none;
+    }
+    .tree-node.collapsed > .tree-kids { display: none; }
+    .tree-body.searching .tree-node.collapsed > .tree-kids { display: block; }
+    .tree-name-match {
+      color: var(--text-bright);
+      background: color-mix(in srgb, var(--accent-yellow) 22%, transparent);
+      border-radius: 2px;
+    }
+    .tree-row.search-current .tree-name-match {
+      background: color-mix(in srgb, var(--accent-orange) 28%, transparent);
+      box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--accent-orange) 78%, transparent);
+    }
+
+    .tree-hint {
+      display: none;
+      padding: 18px 16px;
+      color: var(--text-dim);
+      font-size: 12px;
+    }
+    .tree-body.empty .tree-hint { display: block; }
+    .tree-body.empty > .tree-node { display: none; }
+    @media (prefers-reduced-motion: reduce) {
+      .tree-search-panel,
+      .tree-toolbar { transition-duration: 0.01ms; }
+    }
+  </style>
+</head>
+<body>
+  <aside class="tree-col" aria-label="Programs explorer">
+    <header class="tree-header">
+      <div class="tree-toolbar">
+        <div class="tree-toolbar-actions">
+          <button class="icon-btn" id="searchToggle" type="button" title="Search" aria-label="Search programs" aria-controls="searchPanel" aria-expanded="false"><i data-lucide="search"></i></button>
+          <button class="icon-btn" type="button" title="Refresh"><i data-lucide="rotate-cw"></i></button>
+        </div>
+      </div>
+      <div class="tree-search-panel" id="searchPanel" aria-hidden="true" inert>
+        <div class="tree-search-row">
+          <span class="tree-search-leading" aria-hidden="true"><i data-lucide="search"></i></span>
+          <input class="tree-search" id="searchInput" type="search" placeholder="Search programs" aria-label="Search programs">
+          <div class="tree-search-actions">
+            <span class="tree-search-count" id="searchCount" aria-live="polite">0 / 0</span>
+            <button class="tree-search-action" id="searchPrev" type="button" title="Previous match" aria-label="Previous match" disabled><i data-lucide="chevron-up"></i></button>
+            <button class="tree-search-action" id="searchNext" type="button" title="Next match" aria-label="Next match" disabled><i data-lucide="chevron-down"></i></button>
+            <button class="tree-search-action" id="searchClear" type="button" title="Clear search" aria-label="Clear search" hidden><i data-lucide="x"></i></button>
+          </div>
+        </div>
+        <div class="tree-search-options">
+          <div class="tree-search-mode" role="group" aria-label="Search display mode">
+            <button class="tree-search-option" type="button" data-search-mode="filter" aria-pressed="true"><i data-lucide="list-filter"></i>Filter</button>
+            <button class="tree-search-option" type="button" data-search-mode="highlight" aria-pressed="false"><i data-lucide="highlighter"></i>Highlight</button>
+          </div>
+          <button class="tree-search-option" id="fuzzyToggle" type="button" aria-pressed="true" title="Match characters in order"><i data-lucide="scan-search"></i>Fuzzy</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="tree-body" id="treeBody">
+      <div class="tree-node" data-name="functions">
+        <div class="tree-row" style="padding-left:16px" tabindex="0"><i data-lucide="folder-open" class="tree-icon folder" aria-hidden="true"></i><span class="tree-name">functions</span></div>
+        <div class="tree-kids" style="--guide-x:24px">
+          <div class="tree-node" data-name="vanilla">
+            <div class="tree-row" style="padding-left:43px" tabindex="0"><i data-lucide="folder-open" class="tree-icon folder" aria-hidden="true"></i><span class="tree-name">vanilla</span></div>
+            <div class="tree-kids" style="--guide-x:51px">
+              <div class="tree-node" data-name="Files &amp; Shell"><div class="tree-row" style="padding-left:70px"><i data-lucide="folder" class="tree-icon folder"></i><span class="tree-name">Files &amp; Shell</span></div></div>
+              <div class="tree-node" data-name="Web &amp; Media"><div class="tree-row" style="padding-left:70px"><i data-lucide="folder" class="tree-icon folder"></i><span class="tree-name">Web &amp; Media</span></div></div>
+              <div class="tree-node" data-name="Memory"><div class="tree-row" style="padding-left:70px"><i data-lucide="folder" class="tree-icon folder"></i><span class="tree-name">Memory</span></div></div>
+            </div>
+          </div>
+          <div class="tree-node" data-name="agentic">
+            <div class="tree-row" style="padding-left:43px" tabindex="0"><i data-lucide="folder-open" class="tree-icon folder" aria-hidden="true"></i><span class="tree-name">agentic</span></div>
+            <div class="tree-kids" style="--guide-x:51px">
+              <div class="tree-node" data-name="research_agent"><div class="tree-row" style="padding-left:70px"><i data-lucide="bot" class="tree-icon code"></i><span class="tree-name">research_agent</span></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tree-node" data-name="workflows">
+        <div class="tree-row" style="padding-left:16px" tabindex="0"><i data-lucide="folder-open" class="tree-icon folder" aria-hidden="true"></i><span class="tree-name">workflows</span></div>
+        <div class="tree-kids" style="--guide-x:24px">
+          <div class="tree-node" data-name="paper_search"><div class="tree-row" style="padding-left:43px"><i data-lucide="workflow" class="tree-icon code" aria-hidden="true"></i><span class="tree-name">paper_search</span></div></div>
+          <div class="tree-node" data-name="literature_review"><div class="tree-row" style="padding-left:43px"><i data-lucide="workflow" class="tree-icon code" aria-hidden="true"></i><span class="tree-name">literature_review</span></div></div>
+          <div class="tree-node" data-name="research_pipeline">
+            <div class="tree-row active" style="padding-left:43px" tabindex="0"><i data-lucide="workflow" class="tree-icon code" aria-hidden="true"></i><span class="tree-name">research_pipeline</span></div>
+          </div>
+          <div class="tree-node" data-name="research_synthesis"><div class="tree-row" style="padding-left:43px"><i data-lucide="workflow" class="tree-icon code" aria-hidden="true"></i><span class="tree-name">research_synthesis</span></div></div>
+        </div>
+      </div>
+
+      <div class="tree-node collapsed" data-name="applications">
+        <div class="tree-row" style="padding-left:16px" tabindex="0"><i data-lucide="folder" class="tree-icon folder" aria-hidden="true"></i><span class="tree-name">applications</span></div>
+        <div class="tree-kids" style="--guide-x:24px">
+          <div class="tree-node" data-name="research_workspace"><div class="tree-row" style="padding-left:43px"><i data-lucide="boxes" class="tree-icon code" aria-hidden="true"></i><span class="tree-name">research_workspace</span></div></div>
+        </div>
+      </div>
+      <div class="tree-hint">No matching programs</div>
+    </div>
+  </aside>
+
+  <script>
+    lucide.createIcons({ attrs: { "stroke-width": 1.7 } });
+    const searchToggle = document.querySelector("#searchToggle");
+    const searchPanel = document.querySelector("#searchPanel");
+    const searchInput = document.querySelector("#searchInput");
+    const searchClear = document.querySelector("#searchClear");
+    const searchCount = document.querySelector("#searchCount");
+    const searchPrev = document.querySelector("#searchPrev");
+    const searchNext = document.querySelector("#searchNext");
+    const fuzzyToggle = document.querySelector("#fuzzyToggle");
+    const searchModeButtons = [...document.querySelectorAll("[data-search-mode]")];
+    const treeBody = document.querySelector("#treeBody");
+    let searchMode = "filter";
+    let fuzzySearch = true;
+    let searchMatches = [];
+    let searchMatchIndex = -1;
+    function matchingIndexes(name, query) {
+      if (!fuzzySearch) {
+        const start = name.indexOf(query);
+        return start < 0 ? null : [...query].map((_, index) => start + index);
+      }
+      const indexes = [];
+      let queryIndex = 0;
+      for (let nameIndex = 0; nameIndex < name.length && queryIndex < query.length; nameIndex += 1) {
+        if (name[nameIndex] !== query[queryIndex]) continue;
+        indexes.push(nameIndex);
+        queryIndex += 1;
+      }
+      return queryIndex === query.length ? indexes : null;
+    }
+
+    function renderNameHighlight(node, indexes) {
+      const label = node.querySelector(":scope > .tree-row > .tree-name");
+      const name = node.dataset.name;
+      if (!indexes?.length) {
+        label.textContent = name;
+        return;
+      }
+      const fragment = document.createDocumentFragment();
+      let cursor = 0;
+      let groupStart = indexes[0];
+      for (let index = 1; index <= indexes.length; index += 1) {
+        const continues = index < indexes.length && indexes[index] === indexes[index - 1] + 1;
+        if (continues) continue;
+        const groupEnd = indexes[index - 1] + 1;
+        if (groupStart > cursor) fragment.append(name.slice(cursor, groupStart));
+        const match = document.createElement("span");
+        match.className = "tree-name-match";
+        match.textContent = name.slice(groupStart, groupEnd);
+        fragment.append(match);
+        cursor = groupEnd;
+        groupStart = indexes[index];
+      }
+      if (cursor < name.length) fragment.append(name.slice(cursor));
+      label.replaceChildren(fragment);
+    }
+
+    function updateSearchPosition(nextIndex = searchMatchIndex) {
+      treeBody.querySelectorAll(".tree-row.search-current").forEach((row) => row.classList.remove("search-current"));
+      if (!searchMatches.length) {
+        searchMatchIndex = -1;
+        searchCount.textContent = "0 / 0";
+        searchPrev.disabled = true;
+        searchNext.disabled = true;
+        return;
+      }
+      searchMatchIndex = (nextIndex + searchMatches.length) % searchMatches.length;
+      const row = searchMatches[searchMatchIndex].querySelector(":scope > .tree-row");
+      row.classList.add("search-current");
+      row.scrollIntoView({ block: "nearest" });
+      searchCount.textContent = `${searchMatchIndex + 1} / ${searchMatches.length}`;
+      searchPrev.disabled = false;
+      searchNext.disabled = false;
+    }
+
+    function filterTree(value) {
+      const query = value.trim().toLowerCase();
+      const nodes = [...treeBody.querySelectorAll(".tree-node[data-name]")];
+      const ownMatches = new Map(nodes.map((node) => [node, query ? matchingIndexes(node.dataset.name.toLowerCase(), query) : null]));
+      searchMatches = query ? nodes.filter((node) => ownMatches.get(node)) : [];
+      nodes.forEach((node) => {
+        const childMatch = [...node.querySelectorAll(":scope > .tree-kids .tree-node[data-name]")].some((child) => ownMatches.get(child));
+        node.hidden = searchMode === "filter" && Boolean(query) && !ownMatches.get(node) && !childMatch;
+        renderNameHighlight(node, ownMatches.get(node));
+      });
+      treeBody.classList.toggle("searching", Boolean(query));
+      treeBody.classList.toggle("empty", searchMode === "filter" && Boolean(query) && searchMatches.length === 0);
+      updateSearchPosition(searchMatches.length ? 0 : -1);
+    }
+
+    function setSearchOpen(open) {
+      searchPanel.classList.toggle("is-open", open);
+      searchPanel.setAttribute("aria-hidden", String(!open));
+      searchPanel.inert = !open;
+      searchToggle.classList.toggle("active", open);
+      searchToggle.setAttribute("aria-expanded", String(open));
+      if (open) {
+        searchInput.focus();
+        return;
+      }
+      searchInput.value = "";
+      searchClear.hidden = true;
+      filterTree("");
+    }
+
+    searchToggle.addEventListener("click", () => setSearchOpen(!searchPanel.classList.contains("is-open")));
+    searchInput.addEventListener("input", () => {
+      filterTree(searchInput.value);
+      searchClear.hidden = !searchInput.value;
+    });
+    searchInput.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" && searchMatches.length) {
+        event.preventDefault();
+        updateSearchPosition(searchMatchIndex + 1);
+        return;
+      }
+      if (event.key === "ArrowUp" && searchMatches.length) {
+        event.preventDefault();
+        updateSearchPosition(searchMatchIndex - 1);
+        return;
+      }
+      if (event.key !== "Escape") return;
+      setSearchOpen(false);
+      searchToggle.focus();
+    });
+    searchClear.addEventListener("click", () => {
+      searchInput.value = "";
+      searchClear.hidden = true;
+      filterTree("");
+      searchInput.focus();
+    });
+    searchPrev.addEventListener("click", () => updateSearchPosition(searchMatchIndex - 1));
+    searchNext.addEventListener("click", () => updateSearchPosition(searchMatchIndex + 1));
+    fuzzyToggle.addEventListener("click", () => {
+      fuzzySearch = !fuzzySearch;
+      fuzzyToggle.setAttribute("aria-pressed", String(fuzzySearch));
+      filterTree(searchInput.value);
+    });
+    searchModeButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        searchMode = button.dataset.searchMode;
+        searchModeButtons.forEach((candidate) => candidate.setAttribute("aria-pressed", String(candidate === button)));
+        filterTree(searchInput.value);
+      });
+    });
+
+    treeBody.addEventListener("click", (event) => {
+      const row = event.target.closest(".tree-row");
+      const node = row?.parentElement;
+      if (!node?.querySelector(":scope > .tree-kids")) return;
+      node.classList.toggle("collapsed");
+      const icon = row.querySelector("svg");
+      icon.outerHTML = `<i data-lucide="${node.classList.contains("collapsed") ? "folder" : "folder-open"}" class="tree-icon folder" aria-hidden="true"></i>`;
+      lucide.createIcons({ attrs: { "stroke-width": 1.7 } });
+    });
+  </script>
+</body>
+</html>

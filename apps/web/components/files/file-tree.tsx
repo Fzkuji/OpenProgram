@@ -6,9 +6,8 @@
  * focuses) its center file tab.
  *
  * Lazily loads one directory listing per expand via the worker's
- * ``project_file_tree`` action (root "" on mount). The filter input
- * does a client-side substring match over already-loaded nodes only —
- * it never triggers fetches; matches render as a flat path list.
+ * ``project_file_tree`` action (root "" on mount). Search is local to
+ * already-loaded nodes and preserves the tree hierarchy.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -22,7 +21,6 @@ import {
   FolderOpen,
   FolderPlus,
   RotateCw,
-  Search,
 } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
@@ -42,8 +40,19 @@ import {
 } from "@/components/ui/popover";
 import { ConfirmDialog } from "@/components/sidebar/sessions-list/confirm-dialog";
 import { TreeContextMenu, treeClipboard } from "./tree-context-menu";
+import {
+  ExplorerHeader,
+  ExplorerMatchText,
+  copyText,
+  type ExplorerSearchMode,
+} from "./explorer-header";
+import {
+  EXPLORER_BASE_PAD,
+  EXPLORER_INDENT,
+  matchingIndexes,
+  visibleSearchPaths,
+} from "./explorer-search";
 import styles from "./files-panel.module.css";
-import { SearchInput } from "@/components/ui/search-input";
 
 export interface TreeEntry {
   name: string;
@@ -95,33 +104,10 @@ async function projectAbsPath(projectId: string): Promise<string | null> {
   return p.path;
 }
 
-/** navigator.clipboard with the textarea+execCommand fallback used
- *  elsewhere in the repo (see settings/providers/setup-hint.tsx).
- *  The write is awaited so a rejected promise (permissions, focus
- *  loss) also falls back instead of silently copying nothing. */
-async function copyText(value: string): Promise<void> {
-  try {
-    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(value);
-      return;
-    }
-  } catch {
-    /* fall through to the textarea path */
-  }
-  const ta = document.createElement("textarea");
-  ta.value = value;
-  ta.style.position = "fixed";
-  ta.style.opacity = "0";
-  document.body.appendChild(ta);
-  ta.select();
-  document.execCommand("copy");
-  document.body.removeChild(ta);
-}
-
 /* The 14px glyph is centered in a 16px slot. Advancing 27px makes the
    child's visible glyph edge meet its parent label's start exactly. */
-const INDENT = 27;
-const TREE_BASE_PAD = 16;
+const INDENT = EXPLORER_INDENT;
+const TREE_BASE_PAD = EXPLORER_BASE_PAD;
 const TREE_LABEL_OFFSET = 44;
 
 /** Extension bucket → icon + colour (existing accent tokens only). */
@@ -143,11 +129,11 @@ function FileGlyph({ name }: { name: string }) {
   for (const [exts, Icon, color] of ICON_BUCKETS) {
     if (exts.has(ext)) {
       return (
-        <Icon size={14} className={styles.treeIcon} style={color ? { color } : undefined} />
+        <Icon size={15} className={styles.treeIcon} style={color ? { color } : undefined} />
       );
     }
   }
-  return <File size={14} className={styles.treeIcon} />;
+  return <File size={15} className={styles.treeIcon} />;
 }
 
 /** Editable row label for inline create / rename (VS Code style):
@@ -236,6 +222,9 @@ export function FileTree({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchMode, setSearchMode] = useState<ExplorerSearchMode>("filter");
+  const [fuzzySearch, setFuzzySearch] = useState(true);
+  const [searchMatchIndex, setSearchMatchIndex] = useState(0);
   const [projectRoot, setProjectRoot] = useState<string | null>(null);
   // File-management state: selected row (targets the header's New
   // File/Folder), inline create/rename editors, context menu, delete
@@ -500,22 +489,58 @@ export function FileTree({
     setMenu({ x: e.clientX, y: e.clientY, path, type });
   }
 
-  // Filter mode: flat list of every already-loaded node whose full
-  // relative path contains the query (case-insensitive).
-  const filtered = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    if (!q) return null;
-    const out: { path: string; entry: TreeEntry }[] = [];
+  const searchableEntries = useMemo(() => {
+    const entries = new Map<string, TreeEntry>();
     for (const [dir, state] of Object.entries(dirs)) {
       if (!Array.isArray(state)) continue;
       for (const e of state) {
         const full = joinPath(dir, e.name);
-        if (full.toLowerCase().includes(q)) out.push({ path: full, entry: e });
+        entries.set(full, e);
       }
     }
-    out.sort((a, b) => a.path.localeCompare(b.path));
-    return out;
-  }, [dirs, filter]);
+    return [...entries].map(([path, entry]) => ({ path, entry }));
+  }, [dirs]);
+  const searchMatches = useMemo(() => {
+    if (!filter.trim()) return [];
+    return searchableEntries
+      .filter(({ entry }) => matchingIndexes(entry.name, filter, fuzzySearch))
+      .sort((left, right) => left.path.localeCompare(right.path));
+  }, [filter, fuzzySearch, searchableEntries]);
+  const visiblePaths = useMemo(
+    () => visibleSearchPaths(searchableEntries.map(({ path }) => path), filter, fuzzySearch),
+    [filter, fuzzySearch, searchableEntries],
+  );
+  const currentSearchPath = searchMatches.length
+    ? searchMatches[searchMatchIndex % searchMatches.length].path
+    : null;
+
+  useEffect(() => {
+    setSearchMatchIndex(0);
+  }, [filter, fuzzySearch, searchMode]);
+
+  useEffect(() => {
+    if (!currentSearchPath) return;
+    const parents: string[] = [];
+    let parent = parentOf(currentSearchPath);
+    while (parent) {
+      parents.push(parent);
+      parent = parentOf(parent);
+    }
+    if (parents.length) {
+      setExpanded((previous) => new Set([...previous, ...parents]));
+    }
+    const timer = setTimeout(() => {
+      rootRef.current?.querySelector<HTMLElement>(
+        `[data-tree-path="${CSS.escape(currentSearchPath)}"]`,
+      )?.scrollIntoView({ block: "nearest" });
+    });
+    return () => clearTimeout(timer);
+  }, [currentSearchPath]);
+
+  function moveSearchResult(delta: number) {
+    if (!searchMatches.length) return;
+    setSearchMatchIndex((index) => (index + delta + searchMatches.length) % searchMatches.length);
+  }
 
   function renderDir(dir: string, depth: number): React.ReactNode {
     const state = dirs[dir];
@@ -556,20 +581,21 @@ export function FileTree({
       );
     }
     if (state.length === 0 && !createRow) {
-      return (
-        <div className={styles.treeHint} style={{ paddingLeft: hintPad }}>
-          {text("Empty", "空目录")}
-        </div>
-      );
+      return null;
     }
     const rows = state.map((e) => {
       const full = joinPath(dir, e.name);
+      if (filter.trim() && searchMode === "filter" && !visiblePaths.has(full)) return null;
       const selectedCls = selected?.path === full ? styles.treeRowSelected : "";
+      const current = currentSearchPath === full;
       if (e.type === "dir") {
         const isOpen = expanded.has(full);
+        const hasVisibleChild = [...visiblePaths].some((path) => path.startsWith(`${full}/`));
+        const displayOpen = isOpen || (searchMode === "filter" && Boolean(filter.trim()) && hasVisibleChild);
         return (
           <div key={full} className={styles.treeNode}>
             <div
+              data-tree-path={full}
               className={`${styles.treeRow} ${DIM_DIRS.has(e.name) ? styles.treeRowDim : ""} ${selectedCls}`}
               style={{ paddingLeft: TREE_BASE_PAD + depth * INDENT }}
               onClick={() => {
@@ -579,10 +605,10 @@ export function FileTree({
               onContextMenu={(ev) => onRowContextMenu(ev, full, "dir")}
               title={full}
             >
-              {isOpen ? (
-                <FolderOpen size={14} className={styles.treeIconFolder} />
+              {displayOpen ? (
+                <FolderOpen size={15} className={styles.treeIconFolder} />
               ) : (
-                <Folder size={14} className={styles.treeIconFolder} />
+                <Folder size={15} className={styles.treeIconFolder} />
               )}
               {renaming === full ? (
                 <InlineNameInput
@@ -591,10 +617,10 @@ export function FileTree({
                   onCancel={() => setRenaming(null)}
                 />
               ) : (
-                <span className={styles.treeName}>{e.name}</span>
+                <ExplorerMatchText className={styles.treeName} value={e.name} query={filter} fuzzy={fuzzySearch} current={current} />
               )}
             </div>
-            {isOpen ? (
+            {displayOpen ? (
               // The child container inherits the parent folder's icon
               // center as its tree rail. Each direct child draws its
               // own vertical segment and a short connector to its icon.
@@ -629,7 +655,7 @@ export function FileTree({
                 onCancel={() => setRenaming(null)}
               />
             ) : (
-              <span className={styles.treeName}>{e.name}</span>
+              <ExplorerMatchText className={styles.treeName} value={e.name} query={filter} fuzzy={fuzzySearch} current={current} />
             )}
           </div>
         </div>
@@ -645,106 +671,53 @@ export function FileTree({
 
   return (
     <div className={styles.treeCol} ref={rootRef}>
-      <div className={styles.treeHeader}>
-        <div className={styles.treeToolbar}>
-          {headerExtra}
-          <div
-            className={styles.treeRootPath}
-            title={projectRoot ?? text("Resolving project path…", "正在读取项目路径…")}
-          >
-            <Folder size={14} className={styles.treeRootIcon} aria-hidden="true" />
-            <span>
-              {projectRoot
-                ? baseOf(projectRoot)
-                : text("Resolving project…", "正在读取项目…")}
-            </span>
-          </div>
-          <button
-            type="button"
-            className={`${styles.iconBtn} ${searchOpen ? styles.iconBtnActive : ""}`}
-            onClick={() => {
-              if (searchOpen) setFilter("");
-              setSearchOpen((value) => !value);
-            }}
-            aria-expanded={searchOpen}
-            title={searchOpen ? text("Close search", "关闭搜索") : text("Search files", "搜索文件")}
-          >
-            <Search size={13} />
-          </button>
-          <button
-            type="button"
-            className={styles.iconBtn}
-            onClick={() => startCreate("file")}
-            title={text("New File", "新建文件")}
-          >
-            <FilePlus size={13} />
-          </button>
-          <button
-            type="button"
-            className={styles.iconBtn}
-            onClick={() => startCreate("dir")}
-            title={text("New Folder", "新建文件夹")}
-          >
-            <FolderPlus size={13} />
-          </button>
-          <button
-            type="button"
-            className={styles.iconBtn}
-            onClick={refetchRoot}
-            title={text("Refresh", "刷新")}
-          >
-            <RotateCw size={13} />
-          </button>
-        </div>
-        {searchOpen ? (
-          <div className={styles.treeSearchRow}>
-            <SearchInput
-              className="w-full min-w-0"
-              value={filter}
-              onChange={setFilter}
-              placeholder={text("Filter files…", "筛选文件…")}
-              aria-label={text("Filter files", "筛选文件")}
-              autoFocus
-              onKeyDown={(event) => {
-                if (event.key !== "Escape") return;
-                setFilter("");
-                setSearchOpen(false);
-              }}
-            />
-          </div>
-        ) : null}
-      </div>
+      <ExplorerHeader
+        leading={headerExtra}
+        rootName={projectRoot ? baseOf(projectRoot) : text("Resolving project…", "正在读取项目…")}
+        rootPath={projectRoot}
+        searchOpen={searchOpen}
+        onSearchOpenChange={setSearchOpen}
+        query={filter}
+        onQueryChange={setFilter}
+        mode={searchMode}
+        onModeChange={setSearchMode}
+        fuzzy={fuzzySearch}
+        onFuzzyChange={setFuzzySearch}
+        resultCount={searchMatches.length}
+        resultIndex={searchMatches.length ? searchMatchIndex % searchMatches.length : 0}
+        onMoveResult={moveSearchResult}
+        actions={
+          <>
+            <button
+              type="button"
+              className={styles.iconBtn}
+              onClick={() => startCreate("file")}
+              title={text("New File", "新建文件")}
+            >
+              <FilePlus />
+            </button>
+            <button
+              type="button"
+              className={styles.iconBtn}
+              onClick={() => startCreate("dir")}
+              title={text("New Folder", "新建文件夹")}
+            >
+              <FolderPlus />
+            </button>
+            <button
+              type="button"
+              className={styles.iconBtn}
+              onClick={refetchRoot}
+              title={text("Refresh", "刷新")}
+            >
+              <RotateCw />
+            </button>
+          </>
+        }
+      />
       <div className={styles.treeBody}>
-        {filtered
-          ? filtered.length === 0
-            ? <div className={styles.treeHint}>{text("No matches", "无匹配")}</div>
-            : filtered.map(({ path, entry }) =>
-                entry.type === "dir" ? (
-                  <div
-                    key={path}
-                    className={`${styles.treeRow} ${styles.treeRowDim}`}
-                    style={{ paddingLeft: TREE_BASE_PAD }}
-                    onClick={() => toggleDir(path)}
-                    onContextMenu={(ev) => onRowContextMenu(ev, path, "dir")}
-                    title={path}
-                  >
-                    <Folder size={14} className={styles.treeIconFolder} />
-                    <span className={styles.treePath}>{path}</span>
-                  </div>
-                ) : (
-                  <div
-                    key={path}
-                    className={`${styles.treeRow} ${path === activePath ? styles.treeRowActive : ""}`}
-                    style={{ paddingLeft: TREE_BASE_PAD }}
-                    onClick={() => openFile(path)}
-                    onContextMenu={(ev) => onRowContextMenu(ev, path, "file")}
-                    title={path}
-                  >
-                    <FileGlyph name={path} />
-                    <span className={styles.treePath}>{path}</span>
-                  </div>
-                ),
-              )
+        {filter.trim() && searchMode === "filter" && searchMatches.length === 0
+          ? <div className={styles.treeHint}>{text("No matches", "无匹配")}</div>
           : renderDir("", 0)}
       </div>
 

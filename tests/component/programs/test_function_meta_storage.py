@@ -81,6 +81,30 @@ def test_default_profile_copies_legacy_tool_profiles_into_state(meta_app):
     assert legacy.exists()
 
 
+def test_program_meta_migrates_application_directory_favorites(meta_app):
+    client, home, _ = meta_app
+    legacy_names = [
+        "gui_harness",
+        "research_harness",
+        "wiki_agent_harness",
+        "gui_agent",
+    ]
+    assert client.post(
+        "/api/programs/meta",
+        json={"favorites": legacy_names, "icons": {}},
+    ).status_code == 200
+
+    assert client.get("/api/programs/meta").json()["favorites"] == [
+        "gui_agent",
+        "research_agent",
+        "wiki_agent",
+    ]
+    stored = json.loads(
+        (home / ".openprogram" / "programs_meta.json").read_text(encoding="utf-8")
+    )
+    assert stored["favorites"] == ["gui_agent", "research_agent", "wiki_agent"]
+
+
 def test_toolset_resolution_reads_the_active_profile_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

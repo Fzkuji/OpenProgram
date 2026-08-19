@@ -178,7 +178,7 @@ def _iter_external_harness_dirs(applications_dir: str) -> Iterator[tuple[str, st
     from openprogram.programs._programs import owner_controlled_program_sources
     skip = set(_NOT_A_HARNESS) | _official_program_dir_names()
     for row in sorted(
-        owner_controlled_program_sources(applications_dir),
+        owner_controlled_program_sources(),
         key=lambda item: os.path.basename(item["path"]),
     ):
         name = os.path.basename(row["path"])

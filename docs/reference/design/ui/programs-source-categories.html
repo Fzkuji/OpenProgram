@@ -73,27 +73,25 @@
 <body>
 <main>
   <h1>Programs source categories</h1>
-  <p class="lead">The Programs sidebar separates immutable code-source categories from editable tool profiles. Source categories describe where a callable is registered; profiles describe which callables a user wants available together.</p>
+  <p class="lead">The Programs explorer is a logical catalog, not a mirror of Python files. It combines registered built-in Functions and Agentic Functions with source-backed Workflows and Applications. MCP servers and their tools remain exclusively in the existing MCP Servers page.</p>
 
   <section class="contract" aria-label="Target Programs sidebar structure">
     <div class="nav">
-      <div class="row"><span class="icon">▧</span><span>All Programs</span><span class="count">54</span></div>
-      <div class="row active"><span class="icon">⌁</span><span>Functions</span><span class="count">43</span></div>
-      <div class="row"><span class="icon">◎</span><span>Agentic Functions</span><span class="count">8</span></div>
-      <div class="row"><span class="icon">◇</span><span>Applications</span><span class="count">3</span></div>
-      <div class="row"><span class="icon">♡</span><span>Favorites</span><span class="count">4</span></div>
-      <div class="row"><span class="icon">□</span><span>Uncategorized</span><span class="count">1</span></div>
+      <div class="row active"><span class="icon">⌄</span><span>functions</span><span class="count">71</span></div>
+      <div class="row"><span class="icon">⌄</span><span>vanilla</span><span class="count">60</span></div>
+      <div class="row"><span class="icon">□</span><span>Files &amp; Shell</span><span class="count">9</span></div>
+      <div class="row"><span class="icon">□</span><span>Web &amp; Media</span><span class="count">7</span></div>
+      <div class="row"><span class="icon">□</span><span>Memory</span><span class="count">7</span></div>
+      <div class="row"><span class="icon">⌄</span><span>agentic</span><span class="count">11</span></div>
       <div class="sep"></div>
-      <div class="row"><span class="icon">□</span><span>BUILT-IN</span><span class="count">43</span></div>
-      <div class="row"><span class="icon">□</span><span>FULL</span><span class="count">54</span></div>
-      <div class="row"><span class="icon">□</span><span>research</span><span class="count">6</span></div>
-      <div class="row"><span class="icon">⊞</span><span>New Profile</span><span></span></div>
+      <div class="row"><span class="icon">□</span><span>workflows</span><span class="count">4</span></div>
+      <div class="row"><span class="icon">□</span><span>applications</span><span class="count">3</span></div>
     </div>
     <div class="content">
       <strong>Functions</strong>
-      <p>Selecting a fixed category filters the existing catalog. It does not edit profile membership and is not a drag-and-drop target.</p>
+      <p><code>vanilla</code> uses the existing built-in runtime groups. <code>agentic</code> uses registered Agentic Functions. The rows are logical catalog folders; they do not imply matching directories on disk.</p>
       <div class="tags">
-        <span class="tag">source-derived</span>
+        <span class="tag">registry-derived</span>
         <span class="tag">read-only</span>
         <span class="tag">existing row style</span>
         <span class="tag">existing card style</span>
@@ -105,9 +103,9 @@
   <table>
     <thead><tr><th>Current boundary</th><th>Verified behavior</th><th>Gap</th></tr></thead>
     <tbody>
-      <tr><td><code>GET /api/tools</code></td><td>Returns regular non-agentic tools registered from the functions layer.</td><td>The sidebar has no fixed Functions filter and the All Programs count omits these tools.</td></tr>
-      <tr><td><code>GET /api/programs</code></td><td>Returns agentic entries with <code>category="agentic"</code> and application entries with <code>category="app"</code>.</td><td>Both are shown under the same All Programs/profile filter.</td></tr>
-      <tr><td><code>GET /api/tool-profiles</code></td><td>Returns immutable and user-defined named tool sets.</td><td>Profile rows are visually separated, but the rows above them do not describe source types.</td></tr>
+      <tr><td><code>GET /api/tools</code></td><td>Returns built-in functions and MCP tools with <code>group</code> and <code>source</code> metadata.</td><td>The Programs explorer consumes only non-MCP rows; MCP rows belong to MCP Servers.</td></tr>
+      <tr><td><code>GET /api/programs</code></td><td>Returns registered Agentic Functions and Applications with their runtime names and source paths.</td><td>The current explorer scans source packages instead, which can merge multiple exports or expose unregistered packages.</td></tr>
+      <tr><td><code>GET /api/programs/explorer</code></td><td>Returns source-backed Workflows and Applications plus the fixed top-level branches.</td><td>Its current Functions leaves are replaced in the client by the two live registries.</td></tr>
     </tbody>
   </table>
 
@@ -115,13 +113,10 @@
   <table>
     <thead><tr><th>Sidebar row</th><th>Canonical evidence</th><th>Items shown</th><th>Mutation</th></tr></thead>
     <tbody>
-      <tr><td>All Programs</td><td><code>/api/tools</code> + <code>/api/programs</code></td><td>All regular tools, agentic functions, and applications.</td><td>None</td></tr>
-      <tr><td>Functions</td><td><code>/api/tools</code></td><td>Regular non-agentic tools from <code>programs/functions/</code>.</td><td>Global enable switch remains available on each card.</td></tr>
-      <tr><td>Agentic Functions</td><td><code>/api/programs category=agentic</code></td><td>Agentic functions from <code>programs/functions/agentic/</code>.</td><td>Existing favorite, icon, edit, and profile actions remain available.</td></tr>
-      <tr><td>Applications</td><td><code>/api/programs category=app</code></td><td>Installed programs from <code>programs/applications/</code>.</td><td>Existing program actions remain available.</td></tr>
-      <tr><td>Favorites</td><td><code>programs/meta favorites</code></td><td>Favorited agentic functions and applications.</td><td>Existing favorite action.</td></tr>
-      <tr><td>Uncategorized</td><td>Profile membership</td><td>Catalog entries absent from every stored profile.</td><td>Existing profile assignment actions.</td></tr>
-      <tr><td>Rows below divider</td><td><code>/api/tool-profiles</code></td><td>Named tool profiles such as FULL, BUILT-IN, and research.</td><td>Create, rename, delete, and membership actions remain unchanged.</td></tr>
+      <tr><td><code>functions/vanilla</code></td><td>Built-in rows from <code>/api/tools</code></td><td>Files &amp; Shell, Web &amp; Media, Memory, Planning, Agent Collaboration, Jobs &amp; Schedules, Code Intelligence, MCP Discovery, Worktrees, User Interaction, Runtime, and Other.</td><td>Read-only catalog</td></tr>
+      <tr><td><code>functions/agentic</code></td><td><code>/api/programs category=agentic</code></td><td>Each registered Agentic Function by its callable name, including multiple exports from one package.</td><td>Favorite and Use remain available</td></tr>
+      <tr><td><code>workflows</code></td><td><code>/api/programs/explorer</code></td><td>Reusable source-backed workflows.</td><td>Existing call tree and graph</td></tr>
+      <tr><td><code>applications</code></td><td><code>/api/programs/explorer</code></td><td>Installed application packages.</td><td>Existing call tree and graph</td></tr>
     </tbody>
   </table>
 
@@ -134,25 +129,29 @@
       <tr><td>Claude Code and OpenClaw references</td><td>Registration and policy decide callable availability; neither reference exposes OpenProgram's three-directory source tree as a Programs sidebar.</td><td>Do not infer source categories from policy, permissions, enabled state, or profile membership.</td></tr>
     </tbody>
   </table>
-  <p>Adopted: three fixed rows derived from the two existing endpoints and the existing program category. Modified: All Programs includes both endpoint result sets. Rejected: a new persisted category field, a user-editable category configuration system, source labels inside every card, nested directory rows, and a new tab layout.</p>
+  <p>Adopted: reuse the existing built-in runtime groups. Modified: the file-tree visual language represents logical catalog folders rather than physical directories. Rejected: duplicating MCP tools in Programs, a second category registry, persisted user categories, moving Python files, a new dependency, and displaying raw source files.</p>
 
   <h2>Behavior, compatibility, and failures</h2>
   <ul>
-    <li>Fixed source rows are click filters only. Dragging a program onto them must not create or modify a profile.</li>
-    <li>Profile rows remain valid drop targets and retain context-menu behavior.</li>
-    <li>Search applies to the selected category and covers both regular tools and agentic entries.</li>
-    <li>An empty selection renders one empty state only; selecting Functions must not render an agentic-empty message above regular tool cards.</li>
-    <li>Unknown program categories remain in Agentic Functions because <code>/api/programs</code> is the agentic catalog and only <code>category="app"</code> is an application.</li>
-    <li>Fetch cancellation, global enable switches, favorites, icon overrides, profile persistence, and chat launch behavior are unchanged.</li>
+    <li>Search indexes every loaded logical folder and callable name.</li>
+    <li>Refreshing Programs re-fetches all three catalog endpoints.</li>
+    <li>Runtime-only built-in functions render a valid single-node detail instead of requesting nonexistent source paths.</li>
+    <li>Rows whose source is <code>mcp</code> never appear in Programs; MCP Servers remains their only management page.</li>
+    <li>Agentic Functions use their public callable names; their source path is used only for static call analysis when available.</li>
+    <li>Workflows, Applications, favorites, chat launch, call tree, and graph behavior remain unchanged.</li>
   </ul>
 
   <h2>Task brief and gate manifest</h2>
-  <p><strong>Production files:</strong> <code>apps/web/components/functions/functions-page.tsx</code> and its existing shared types/presentational files only when required. <strong>Test file:</strong> one runnable Programs category check under <code>apps/web/scripts/</code>. <strong>Excluded:</strong> registry changes, new API fields, profile storage migration, card restyling, tabs, per-directory nested filters, dependencies, and release operations.</p>
-  <p><strong>Acceptance:</strong> the Programs page renders All Programs, Functions, Agentic Functions, Applications, Favorites, and Uncategorized above the existing divider; counts use live data; each fixed category shows only its defined source class; All Programs includes regular tools; profiles remain below the divider and retain mutation behavior; source rows cannot receive drops.</p>
-  <p><strong>Verification:</strong> focused category check in RED and GREEN; TypeScript compile; full <code>npm run check</code>; production build; documentation link check; <code>git diff --check</code>; independent specification review; independent quality review.</p>
+  <p><strong>Production files:</strong> one pure Programs catalog builder and the existing Programs page. <strong>Test files:</strong> the existing Programs UI contract plus one direct catalog-builder test. <strong>Excluded:</strong> registry changes, new API endpoints, moving Python files, agent-profile behavior, card restyling, dependencies, and release operations.</p>
+  <p><strong>Acceptance:</strong> the Programs tree contains every non-MCP built-in row returned by <code>/api/tools</code>, every Agentic Function returned by <code>/api/programs</code>, existing Workflows, and existing Applications; built-ins retain their functional groups; no MCP server or MCP tool is duplicated in Programs; selecting every displayed leaf produces a valid detail.</p>
+  <p><strong>Verification:</strong> focused catalog-builder RED/GREEN, Programs UI contract, TypeScript compile, production build, default 18100 packaged-App DOM and screenshot, and <code>git diff --check</code>.</p>
+
+  <h2>Application import compatibility</h2>
+  <p>Applications loaded from <code>openprogram/programs/applications</code> must import built-in Agentic Functions through the canonical <code>openprogram.programs.functions.agentic</code> namespace. The removed <code>openprogram.programs.agentic_functions</code> namespace is not restored as a second compatibility package.</p>
+  <p><strong>Acceptance:</strong> the packaged <code>gui_agent</code> public entry can begin a desktop run without a module-import error; the GUI, research, and wiki application packages contain no production import of the removed namespace.</p>
 
   <h2>Implementation status</h2>
-  <div class="status">Implemented in the Programs page with one shared pure filtering module and one runnable acceptance check. The focused RED failed because the fixed Functions source row was absent. The reviewed implementation passes the focused category check, TypeScript compilation, the full frontend check, production build, documentation link check, and diff check. Independent specification and quality reviews both passed after their confirmed test-integrity and reserved-name compatibility findings were repaired.</div>
+  <div class="status">Implemented and packaged: Programs owns built-in Functions, Agentic Functions, Workflows, and Applications only. The default 18100 App exposes 60 vanilla Functions, 11 Agentic Functions, Workflows, and Applications, with no MCP or connected branch; the backend still reports MCP tools for the dedicated MCP Servers page.</div>
 </main>
 </body>
 </html>

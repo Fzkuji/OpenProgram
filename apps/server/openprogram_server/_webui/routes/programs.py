@@ -115,18 +115,55 @@ def _default_selection() -> str | None:
     return None
 
 
+def _callable_name(relative: str) -> str:
+    """Return the registered function name for a Programs entity."""
+    name = Path(relative).stem
+    if not relative.startswith("applications/"):
+        return name
+    from openprogram.programs._programs import KNOWN_PROGRAMS
+
+    for program in KNOWN_PROGRAMS:
+        if name in {program.install_dir, program.package, program.repo_dir_name}:
+            return program.function
+    return name
+
+
 def _list_entries(relative: str) -> dict:
-    directory = _safe_directory(relative)
-    entries = []
-    for child in _visible_children(directory):
-        child_relative = child.relative_to(PROGRAMS_ROOT).as_posix()
-        entries.append({
-            "name": child.name,
-            "path": child_relative,
-            "kind": "folder" if child.is_dir() else "file",
-            "program_kind": _program_kind(child_relative),
-            "has_children": child.is_dir() and bool(_visible_children(child)),
-        })
+    _safe_directory(relative)
+    branches = {
+        "": ("functions", "workflows", "applications"),
+        "functions": ("functions/vanilla", "functions/agentic"),
+    }
+    leaf_categories = {
+        "functions/vanilla", "functions/agentic", "workflows", "applications",
+    }
+    if relative in branches:
+        entries = [
+            {
+                "name": Path(path).name,
+                "path": path,
+                "kind": "folder",
+                "program_kind": None,
+                "has_children": True,
+            }
+            for path in branches[relative]
+            if (PROGRAMS_ROOT / path).is_dir()
+        ]
+    elif relative in leaf_categories:
+        entries = [
+            {
+                "name": Path(path).stem,
+                "path": path,
+                "kind": "folder" if source.is_dir() else "file",
+                "program_kind": _program_kind(path),
+                "has_children": False,
+                "callable_name": _callable_name(path),
+            }
+            for path, source in sorted(_entity_paths().items())
+            if Path(path).parent.as_posix() == relative
+        ]
+    else:
+        raise FileNotFoundError(relative)
     payload = {"path": relative, "entries": entries}
     if not relative:
         payload["default_selection"] = _default_selection()

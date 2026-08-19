@@ -225,9 +225,9 @@
 .treeHeader {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 4px 16px;
-  min-height: 40px;
+  gap: 0;
+  padding: 6px 8px;
+  min-height: 48px;
   box-sizing: border-box;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -236,22 +236,79 @@
 .treeRootPath {
   flex: 1;
   min-width: 0;
-  height: 32px;
+  height: 36px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  padding-left: 8px;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 650;
-  line-height: 32px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  line-height: 36px;
+  letter-spacing: 0;
 }
-.treeRootPath span {
+.treeRootLabel {
   min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
   overflow: hidden;
+  color: inherit;
+  background: transparent;
+  font: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: default;
+}
+.treeRootLabel:focus-visible {
+  color: var(--text-bright);
+  outline: 1px solid color-mix(in srgb, var(--accent-blue) 60%, transparent);
+  outline-offset: 2px;
+}
+.treeRootFullPath {
+  display: none;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 450;
+  line-height: 1.35;
+  user-select: text;
+}
+.treeRootCopy {
+  display: none;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+.treeRootCopy:hover:not(:disabled) {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+.treeRootCopy:disabled { opacity: .45; cursor: default; }
+.treeRootCopy svg { width: 15px; height: 15px; }
+.treeToolbarExpanded {
+  height: 52px;
+}
+.treeToolbarExpanded .treeRootPath {
+  height: 52px;
+  gap: 8px;
+}
+.treeToolbarExpanded .treeRootLabel,
+.treeToolbarExpanded .treeToolbarActions {
+  display: none;
+}
+.treeToolbarExpanded .treeRootFullPath,
+.treeToolbarExpanded .treeRootCopy {
+  display: grid;
 }
 .treeRootIcon {
   width: 16px;
@@ -263,21 +320,147 @@
 .treeToolbar {
   width: 100%;
   min-width: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: height 160ms ease;
+}
+
+.treeToolbarActions {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.treeSearchRow {
+.treeToolbarActionsOnly {
+  margin-left: auto;
+}
+
+.treeSearchPanel {
   width: 100%;
   min-width: 0;
-  animation: treeSearchReveal 120ms ease-out;
+  height: 0;
+  margin-top: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-5px);
+  transition: height 180ms ease, margin-top 180ms ease, opacity 120ms ease, transform 180ms ease;
+  pointer-events: none;
 }
-@keyframes treeSearchReveal {
-  from { opacity: 0; transform: translateY(-3px); }
+.treeSearchPanelOpen {
+  height: 64px;
+  margin-top: 4px;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
 }
+.treeSearchRow {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+}
+.treeSearchLeading {
+  position: absolute;
+  left: 9px;
+  z-index: 1;
+  width: 14px;
+  height: 14px;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+.treeSearchInput {
+  width: 100%;
+  height: 32px;
+  padding: 0 128px 0 30px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  outline: none;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  font-size: 13px;
+}
+.treeSearchInput:focus {
+  border-color: color-mix(in srgb, var(--accent-blue) 65%, var(--border));
+}
+.treeSearchInput::placeholder { color: var(--text-dim); }
+.treeSearchActions {
+  position: absolute;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+.treeSearchCount {
+  min-width: 38px;
+  padding: 0 3px;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 24px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.treeSearchAction {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text-dim);
+  background: transparent;
+  cursor: pointer;
+}
+.treeSearchAction:hover:not(:disabled) {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+.treeSearchAction:disabled { opacity: .32; cursor: default; }
+.treeSearchAction svg { width: 13px; height: 13px; }
+.treeSearchOptions {
+  height: 28px;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.treeSearchMode {
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-input) 76%, transparent);
+}
+.treeSearchOption {
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text-dim);
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+.treeSearchOption:hover { color: var(--text-primary); }
+.treeSearchOption[aria-pressed="true"] {
+  color: var(--text-bright);
+  background: var(--bg-tertiary);
+}
+.treeSearchOption svg { width: 12px; height: 12px; }
+
 @media (prefers-reduced-motion: reduce) {
-  .treeSearchRow { animation: none; }
+  .treeSearchPanel,
+  .treeToolbar { transition-duration: .01ms; }
 }
 
 
@@ -285,8 +468,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px; /* 刻度：24 = 图标钮 */
-  height: 24px;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
   color: var(--text-dim);
   background: transparent;
@@ -294,6 +477,7 @@
   border-radius: 6px;
   cursor: pointer;
 }
+.iconBtn svg { width: 15px; height: 15px; }
 .iconBtn:hover {
   color: var(--text-bright);
   background: var(--bg-hover);
@@ -312,7 +496,7 @@
   min-height: 0;
   overflow: auto;
   /* No horizontal inset: rows span edge to edge (VS Code explorer). */
-  padding: 6px 0;
+  padding: 8px 0;
   scrollbar-width: thin;
 }
 
@@ -325,9 +509,9 @@
 .treeRow {
   position: relative;
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
+  grid-template-columns: 17px minmax(0, 1fr);
   align-items: center;
-  height: 26px; /* 22 太挤，放宽一档 */
+  height: 30px;
   padding: 0 8px 0 0; /* nested depth is added inline */
   font-size: 13px;
   color: var(--text-secondary);
@@ -410,7 +594,7 @@
 }
 .treeKids > .treeNode:last-child::before {
   bottom: auto;
-  height: 13px;
+  height: 15px;
 }
 .treeKids > .treeNode > .treeRow::before {
   content: "";
@@ -426,11 +610,22 @@
 .treeName,
 .treePath {
   min-width: 0;
-  margin-left: 12px;
+  margin-left: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .treePath { font-size: 12px; }
+
+.treeNameMatch {
+  border-radius: 2px;
+  color: var(--text-bright);
+  background: color-mix(in srgb, var(--accent-yellow) 22%, transparent);
+}
+
+.treeNameMatchCurrent {
+  background: color-mix(in srgb, var(--accent-orange) 28%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--accent-orange) 78%, transparent);
+}
 
 .treeHint {
   padding: 3px 10px;
