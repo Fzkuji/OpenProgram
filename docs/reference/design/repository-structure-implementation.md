@@ -107,12 +107,12 @@ adapted. Large-file decomposition is not part of the directory migration.
 | Root metadata cleanup | `ab386e10` | implemented; reviewed | Co-locates the changelog with GitHub release notes, removes the redundant MANIFEST file, and enforces the intentional root-file set without changing the source-checkout CLI entry. Wheel packaging, source-checkout CLI, documentation links, specification review and quality review pass. |
 | Raw-checkout CLI alias cleanup | `daf97a8d` | implemented; reviewed | Removes only the root <code>openprogram_cli.py</code> forwarder and its dedicated raw-checkout compatibility logic. Source checkouts retain <code>python -m openprogram</code> and <code>python -m openprogram.cli</code>; fresh editable installs and wheels retain the console script and canonical <code>python -m openprogram_cli</code>. The retained entries, canonical/compatibility identity, foreign-package rejection, TUI detection, root-file structure, documentation links, Ruff, specification review and quality review pass. |
 | Core package cleanup G1: Context Git DAG | `41151c50` | implemented; reviewed | Moves the two-file ContextGit implementation into `openprogram/context/git/`, updates every repository-owned import and current path reference, removes the old first-level package without a duplicate compatibility layer, and preserves DAG behavior and wheel discovery. The focused DAG, Server, dispatcher, Ruff, link, wheel, specification and quality gates pass. |
-| Standard polyglot workspace G2 | design `23525cc7`; prerequisite `0017c241`; G2a `2256d647`; G2b `d70b6956`, `99fec982`, `9ac9d95d`; G2c-0 `14f538b3`; G2c-1 `572a89b2`, `6c9b083a`, `89ef7376` | implemented; reviewed | Defines the target as applications under `apps/`, the shared Agent Core source under `packages/core/src/openprogram`, one aggregate Python distribution, one npm workspace lock, and formal distribution commands under `scripts/release/`. G2a groups release implementations, G2b establishes the root npm workspace and single lock, G2c-0 centralizes checkout/resource resolution, and G2c-1 moves the Core source without splitting the published wheel. |
+| Standard polyglot workspace G2 | design `7f9e63b9`; prerequisite `1f5aee22`; G2a `fd078fac`; G2b `d2f98d46`, `ad755cad`, `3c2fe70c`; G2c-0 `a729081f`; G2c-1 `c47754f4`, `193120d1`, `155fe76a`; integration `e310ecf0` | implemented; integrated review pending | Defines the target as applications under `apps/`, the shared Agent Core source under `packages/core/src/openprogram`, one aggregate Python distribution, one npm workspace lock, and formal distribution commands under `scripts/release/`. G2a groups release implementations, G2b establishes the root npm workspace and single lock, G2c-0 centralizes checkout/resource resolution, and G2c-1 moves the Core source without splitting the published wheel. |
 
 ## Active task brief: Standard polyglot workspace G2
 
-- Approved source: `repository-structure.html`; design commit: `23525cc7`;
-  G2a base after reviewed repository-contract repair: `0017c241`.
+- Approved source: `repository-structure.html`; integrated design commit:
+  `7f9e63b9`; G2a base after reviewed repository-contract repair: `1f5aee22`.
 - Batch G2a moves exactly these formal distribution implementations under
   `scripts/release/`: `build-product-runtime.sh`,
   `archive-product-runtime.sh`, `prepare-desktop-runtime.sh`,
@@ -206,7 +206,8 @@ adapted. Large-file decomposition is not part of the directory migration.
 
 ### G2a implementation evidence
 
-- Implementation: `2256d647`, based on reviewed prerequisite `0017c241`.
+- Integrated implementation: `fd078fac`, based on reviewed prerequisite
+  `1f5aee22`.
 - RED: the new release-ownership contract failed because
   `scripts/release/` did not exist; standalone and checkout-wrapper assertions
   also failed before the compatibility entry was implemented.
@@ -223,8 +224,8 @@ adapted. Large-file decomposition is not part of the directory migration.
 
 ### G2b implementation evidence
 
-- Implementation: `d70b6956`, with repairs `99fec982` and `9ac9d95d`, based
-  on reviewed G2a commit `8b604732`.
+- Integrated implementation: `d2f98d46`, with repairs `ad755cad` and
+  `3c2fe70c`, based on reviewed G2a ledger commit `b6e19c29`.
 - RED: the root workspace and lock ownership contract failed before the root
   npm files existed. Real release sequencing then exposed filtered `npm ci`
   removing dependencies required by another workspace, and runtime inspection
@@ -249,7 +250,8 @@ adapted. Large-file decomposition is not part of the directory migration.
 
 ### G2c-0 implementation evidence
 
-- Implementation: `14f538b3`, based on reviewed G2b ledger commit `4906e5ab`.
+- Integrated implementation: `a729081f`, based on reviewed G2b ledger commit
+  `072b0a65`.
 - RED: src-layout probes showed CLI, Server, worker, docs and attachment paths
   deriving the repository root from fixed `openprogram.__file__` parent counts.
   Review then reproduced installed-wheel failures for bundled frontend/docs and
@@ -267,8 +269,8 @@ adapted. Large-file decomposition is not part of the directory migration.
 
 ### G2c-1 implementation evidence
 
-- Implementation: `572a89b2`, based on reviewed G2c-0 ledger commit
-  `242171d7`.
+- Integrated implementation: `c47754f4`, based on reviewed G2c-0 ledger commit
+  `f1deb4c7`.
 - RED: the repository layout contract produced five failures before the move:
   Core ownership, compatibility entry location, mutable-state exclusion,
   bundled-skill location and generated Core README location.
@@ -284,7 +286,7 @@ adapted. Large-file decomposition is not part of the directory migration.
   directory, the wheel imports `openprogram`, `openprogram_server` and
   `openprogram_cli`, reports distribution version `0.7.0`, contains bundled
   skills, and the sdist contains the src-layout Core.
-- Review repair `6c9b083a` restores four executable compatibility identity
+- Integrated review repair `193120d1` restores four executable compatibility identity
   tests under src layout, updates all public GitHub source links and direct
   file-edit instructions, and adds a contract rejecting the removed public URL
   prefix. The exact repair gate passed `5 passed`.
@@ -295,6 +297,24 @@ adapted. Large-file decomposition is not part of the directory migration.
   review gate: `145 passed`; public removed-path scan empty; worktree and
   `git diff --check` clean.
 - Remaining G2c-1 concerns: none.
+
+### G2 main integration evidence
+
+- Main integration preserves the already verified provider, Programs explorer
+  and Agent-management changes in `566f0a3d`, `47b1b407` and `f736cb14` while
+  moving their Core files to the src layout. Obsolete unreferenced promotion
+  drafts were removed in `5c041a1b`.
+- Integration repair `e310ecf0` removes the retired `promo/` directory from
+  the authoritative layout, makes `node_modules/` ignored at every workspace
+  depth, and updates the real CLI owner-auth test to the src-layout Core path.
+- Local Harness checkouts, Agentic Programming logs and mutable Programs
+  metadata were moved from the retired flat Core directory to the new Core
+  path. Only generated Python bytecode was deleted.
+- Main affected gate: `158 passed`; Web Programs/shared-explorer/Agent checks
+  PASS; Web TypeScript PASS; CLI typecheck PASS; CLI `140 passed, 2 skipped`.
+- Integrated specification review: pending. Integrated quality/Ponytail full
+  review: pending. Remaining integration concerns: final full gate and package
+  verification pending.
 
 ## Implemented task brief: Legacy cleanup F2
 
