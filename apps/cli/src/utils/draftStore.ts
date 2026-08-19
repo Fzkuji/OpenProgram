@@ -2,7 +2,7 @@
  * Per-session composer-draft persistence for the TUI.
  *
  * Mirrors what the web composer does (``composerDrafts`` in
- * ``web/lib/session-store.ts``) but on disk: when the user quits the
+ * ``apps/web/lib/session-store.ts``) but on disk: when the user quits the
  * TUI mid-typing or switches sessions, the unsent text is preserved.
  *
  * Layout: one JSON file at ``<state>/tui_drafts.json`` keyed by

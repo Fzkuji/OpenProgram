@@ -175,9 +175,16 @@ def register(app: FastAPI) -> None:
 
         raw = body or {}
         try:
-            agent_id = _short_text(raw.get("id"), "id", required=True, limit=40)
-            name = _short_text(raw.get("name", ""), "name", limit=80)
-            agent = _agents.create(agent_id, name=name)
+            explicit_id = raw.get("id")
+            if explicit_id is not None:
+                name = _short_text(raw.get("name", ""), "name", limit=80)
+                agent = _agents.create(
+                    _short_text(explicit_id, "id", required=True, limit=40),
+                    name=name,
+                )
+            else:
+                name = _short_text(raw.get("name"), "name", required=True, limit=80)
+                agent = _agents.create_from_name(name)
         except (TypeError, ValueError) as exc:
             return JSONResponse(content={"error": str(exc)}, status_code=400)
         return JSONResponse(content={"agent": agent.to_dict()}, status_code=201)
@@ -228,18 +235,20 @@ def register(app: FastAPI) -> None:
     def duplicate_agent(agent_id: str, body: dict | None = None):
         from openprogram.agent.management import manager as _agents
 
-        source = _agents.get(agent_id)
-        if source is None:
+        if _agents.get(agent_id) is None:
             return JSONResponse(content={"error": "agent not found"}, status_code=404)
         raw = body or {}
         try:
-            target_id = _short_text(raw.get("id"), "id", required=True, limit=40)
-            target_name = _short_text(raw.get("name", ""), "name", limit=80)
-            created = _agents.create(target_id, name=target_name)
-            source_data = source.to_dict()
-            patch = {key: source_data[key] for key in _PATCH_FIELDS}
-            patch["name"] = target_name or created.name
-            agent = _agents.update(target_id, patch)
+            explicit_id = raw.get("id")
+            if explicit_id is not None:
+                target_name = _short_text(raw.get("name", ""), "name", limit=80)
+                target_id = _short_text(explicit_id, "id", required=True, limit=40)
+            else:
+                target_name = _short_text(raw.get("name"), "name", required=True, limit=80)
+                target_id = ""
+            agent = _agents.duplicate(
+                agent_id, target_id=target_id, name=target_name,
+            )
         except (TypeError, ValueError) as exc:
             return JSONResponse(content={"error": str(exc)}, status_code=400)
         return JSONResponse(content={"agent": agent.to_dict()}, status_code=201)

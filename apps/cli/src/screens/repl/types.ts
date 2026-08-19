@@ -99,7 +99,7 @@ export type PickerKind =
  * A "system needs a decision" request surfaced in the input slot — the
  * `data` payload of a question.asked frame (runtime.ask / confirm / tool
  * approval). Identical to the web composer's PendingDecision
- * (web/lib/session-store.ts) so both surfaces share one backend
+ * (apps/web/lib/session-store.ts) so both surfaces share one backend
  * contract. A FIFO queue holds these; the head occupies the input slot
  * as the `question` picker. See
  * docs/design/ui/composer-interaction-modes.md.

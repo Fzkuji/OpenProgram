@@ -1,6 +1,6 @@
 /**
  * Provider-account pickers — the in-TUI account manager for ANY provider,
- * mirroring web/components/settings/providers/provider-accounts.tsx. One picker
+ * mirroring apps/web/components/settings/providers/provider-accounts.tsx. One picker
  * set, parameterized by ctx.accountsProviderId; claude-code is just one
  * instance. Picker states:
  *

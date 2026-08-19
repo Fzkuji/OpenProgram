@@ -11,7 +11,7 @@
  *   - Enter         submit all fields → question_reply { answer: {…} }
  *   - Esc           question_reject
  *
- * Mirrors web/components/chat/composer/modes/question/form-mode.tsx so
+ * Mirrors apps/web/components/chat/composer/modes/question/form-mode.tsx so
  * both surfaces resolve runtime.form identically.
  */
 import React, { useState } from 'react';

@@ -21,7 +21,9 @@ import json
 import os
 import re
 import shutil
+import tempfile
 import threading
+import unicodedata
 
 from openprogram import _compat as fcntl
 import time
@@ -222,10 +224,17 @@ def _read_index() -> dict[str, Any]:
 
 def _write_index(data: dict[str, Any]) -> None:
     path = _index_file()
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, indent=2, sort_keys=True),
-                   encoding="utf-8")
-    os.replace(tmp, path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", dir=path.parent,
+        prefix=f".{path.name}.", suffix=".tmp", delete=False,
+    ) as stream:
+        json.dump(data, stream, indent=2, sort_keys=True)
+        tmp = Path(stream.name)
+    try:
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def _read_agent(agent_id: str) -> Optional[AgentSpec]:
@@ -247,12 +256,16 @@ def _write_agent(spec: AgentSpec) -> None:
     spec.updated_at = time.time()
     if not spec.created_at:
         spec.created_at = spec.updated_at
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(
-        json.dumps(spec.to_dict(), indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    os.replace(tmp, path)
+    with tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", dir=path.parent,
+        prefix=f".{path.name}.", suffix=".tmp", delete=False,
+    ) as stream:
+        json.dump(spec.to_dict(), stream, indent=2, sort_keys=True)
+        tmp = Path(stream.name)
+    try:
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -332,7 +345,7 @@ def create(
             f"Invalid agent id {agent_id!r} — must start with a letter "
             f"and contain only [a-z0-9_-], ≤40 chars."
         )
-    with _lock:
+    with _lock, _file_lock(_index_file()):
         if _read_agent(agent_id) is not None:
             raise ValueError(f"Agent {agent_id!r} already exists.")
         now = time.time()
@@ -382,6 +395,89 @@ def create(
                     other.default = False
                     _write_agent(other)
         _write_index(idx)
+        return spec
+
+
+def create_from_name(name: str) -> AgentSpec:
+    """Create an agent whose internal id is derived from its display name."""
+    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    base = re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-")
+    if not base or not base[0].isalpha():
+        base = f"agent-{base}".rstrip("-")
+    base = base[:40].rstrip("-") or "agent"
+    agent_id = base
+    suffix = 2
+    while True:
+        try:
+            return create(agent_id, name=name)
+        except ValueError:
+            if _read_agent(agent_id) is None:
+                raise
+            tail = f"-{suffix}"
+            agent_id = f"{base[:40 - len(tail)].rstrip('-')}{tail}"
+            suffix += 1
+
+
+def duplicate(agent_id: str, *, target_id: str = "", name: str = "") -> AgentSpec:
+    """Copy one Agent's configuration without copying sessions."""
+    if target_id and not _VALID_ID.match(target_id):
+        raise ValueError(
+            f"Invalid agent id {target_id!r} — must start with a letter "
+            f"and contain only [a-z0-9_-], ≤40 chars."
+        )
+    with _lock, _file_lock(_index_file()):
+        source = _read_agent(agent_id)
+        if source is None:
+            raise AgentNotFound(agent_id)
+        if target_id:
+            candidate = target_id
+            if _read_agent(candidate) is not None or agent_dir(candidate).exists():
+                raise ValueError(f"Agent {candidate!r} already exists.")
+        else:
+            ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+            base = re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-")
+            if not base or not base[0].isalpha():
+                base = f"agent-{base}".rstrip("-")
+            base = base[:40].rstrip("-") or "agent"
+            candidate = base
+            suffix = 2
+            while _read_agent(candidate) is not None or agent_dir(candidate).exists():
+                tail = f"-{suffix}"
+                candidate = f"{base[:40 - len(tail)].rstrip('-')}{tail}"
+                suffix += 1
+
+        now = time.time()
+        raw = source.to_dict()
+        raw.update({
+            "id": candidate,
+            "name": name or candidate.replace("_", " ").replace("-", " ").title(),
+            "default": False,
+            "created_at": now,
+            "updated_at": now,
+        })
+        spec = AgentSpec.from_dict(raw)
+        folder = agent_dir(candidate)
+        folder_created = False
+        try:
+            folder.mkdir(parents=True, exist_ok=False)
+            folder_created = True
+            sessions_dir(candidate)
+            workspace_dir(candidate)
+            _write_agent(spec)
+            try:
+                from openprogram.agent.management.workspace import bootstrap as _ws_bootstrap
+                _ws_bootstrap(candidate)
+            except Exception:
+                pass
+            idx = _read_index()
+            order = list(idx.get("order") or [])
+            order.append(candidate)
+            idx["order"] = order
+            _write_index(idx)
+        except Exception:
+            if folder_created:
+                shutil.rmtree(folder, ignore_errors=True)
+            raise
         return spec
 
 

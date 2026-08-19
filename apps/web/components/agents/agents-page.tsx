@@ -142,11 +142,11 @@ export function AgentsPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: "ok" | "error"; message: string } | null>(null);
+  const [duplicateError, setDuplicateError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newId, setNewId] = useState("");
   const [deleteId, setDeleteId] = useState("");
   const [picker, setPicker] = useState<PickerKind | null>(null);
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
@@ -242,9 +242,10 @@ export function AgentsPage() {
   }
 
   async function createOrDuplicate(duplicate: boolean) {
-    if (!newId.trim()) return;
+    if (!newName.trim()) return;
     setBusy(true);
     setNotice(null);
+    if (duplicate) setDuplicateError("");
     try {
       const url = duplicate && draft
         ? `/api/agents/${encodeURIComponent(draft.id)}/duplicate`
@@ -252,7 +253,7 @@ export function AgentsPage() {
       const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: newId.trim(), name: newName.trim() }),
+        body: JSON.stringify({ name: newName.trim() }),
       });
       if (!response.ok) throw new Error(await responseError(response));
       const payload = await response.json();
@@ -262,9 +263,9 @@ export function AgentsPage() {
       setCreateOpen(false);
       setDuplicateOpen(false);
       setNewName("");
-      setNewId("");
     } catch (error) {
-      setNotice({ tone: "error", message: String(error) });
+      if (duplicate) setDuplicateError(String(error));
+      else setNotice({ tone: "error", message: String(error) });
     } finally {
       setBusy(false);
     }
@@ -273,7 +274,7 @@ export function AgentsPage() {
   function openDuplicate() {
     if (!draft) return;
     setNewName(`${draft.name} Copy`);
-    setNewId(`${draft.id}_copy`.slice(0, 40));
+    setDuplicateError("");
     setDuplicateOpen(true);
   }
 
@@ -488,7 +489,7 @@ export function AgentsPage() {
           actions={[
             {
               label: text("New Agent", "新建 Agent"),
-              onClick: () => { setNewName(""); setNewId(""); setCreateOpen(true); },
+              onClick: () => { setNewName(""); setCreateOpen(true); },
             },
             {
               label: busy ? text("Working…", "处理中…") : dirty ? text("Save changes", "保存修改") : text("Saved", "已保存"),
@@ -507,8 +508,25 @@ export function AgentsPage() {
           </div>
         ) : null}
 
-        <div className={managePageStyles.splitBody}>
+        <div className={`${managePageStyles.splitBody} ${styles.agentSplit}`}>
           <aside className={styles.agentNav} aria-label={text("Agent list", "Agent 列表")}>
+            {createOpen ? (
+              <form className={styles.inlineCreate} onSubmit={(event) => { event.preventDefault(); void createOrDuplicate(false); }}>
+                <input
+                  autoFocus
+                  aria-label={text("Agent name", "Agent 名称")}
+                  placeholder={text("Agent name", "Agent 名称")}
+                  value={newName}
+                  onChange={(event) => setNewName(event.target.value)}
+                />
+                <Button type="button" variant="ghost" onClick={() => { setCreateOpen(false); setNewName(""); }}>
+                  {text("Cancel", "取消")}
+                </Button>
+                <Button type="submit" disabled={busy || !newName.trim()}>
+                  {busy ? text("Creating…", "正在创建…") : text("Create", "创建")}
+                </Button>
+              </form>
+            ) : null}
             <div className={styles.agentList}>
               {agents.map((agent) => (
                 <ManageRow
@@ -530,7 +548,7 @@ export function AgentsPage() {
                 <BotIcon size={24} />
                 <h2>{text("Create your first Agent", "创建第一个 Agent")}</h2>
                 <p>{text("An Agent keeps one configuration across all six sections.", "一个 Agent 在六个配置区共用同一份配置。")}</p>
-                <Button onClick={() => setCreateOpen(true)}><Plus size={15} />{text("New Agent", "新建 Agent")}</Button>
+                <Button onClick={() => { setNewName(""); setCreateOpen(true); }}><Plus size={15} />{text("New Agent", "新建 Agent")}</Button>
               </div>
             ) : (
               <div className={settingsStyles.page}>
@@ -586,16 +604,14 @@ export function AgentsPage() {
         </div>
       </div>
 
-      <AgentDialog
-        open={createOpen || duplicateOpen}
-        duplicate={duplicateOpen}
+      <NameDialog
+        open={duplicateOpen}
         name={newName}
-        id={newId}
         busy={busy}
+        error={duplicateError}
         setName={setNewName}
-        setId={setNewId}
-        close={() => { setCreateOpen(false); setDuplicateOpen(false); }}
-        submit={() => void createOrDuplicate(duplicateOpen)}
+        close={() => { setDuplicateOpen(false); setDuplicateError(""); setNewName(""); }}
+        submit={() => void createOrDuplicate(true)}
         text={text}
       />
 
@@ -724,8 +740,8 @@ function ScopeCard({ title, description, action, onAction }: { title: string; de
   return <section className={styles.scopeCard}><div><h4>{title}</h4><p>{description}</p></div><Button variant="outline" onClick={onAction}>{action}</Button></section>;
 }
 
-function AgentDialog({ open, duplicate, name, id, busy, setName, setId, close, submit, text }: { open: boolean; duplicate: boolean; name: string; id: string; busy: boolean; setName: (value: string) => void; setId: (value: string) => void; close: () => void; submit: () => void; text: (english: string, chinese: string) => string }) {
-  return <Dialog open={open} onOpenChange={(value) => { if (!value) close(); }}><DialogContent><DialogHeader><DialogTitle>{duplicate ? text("Duplicate Agent", "复制 Agent") : text("Create Agent", "创建 Agent")}</DialogTitle><DialogDescription>{text("The ID is permanent. Model, instructions, and capabilities can be configured after creation.", "ID 创建后不可修改；模型、指令与能力可在创建后配置。")}</DialogDescription></DialogHeader><label className={styles.dialogField}>{text("Display name", "显示名称")}<input value={name} onChange={(event) => setName(event.target.value)}/></label><label className={styles.dialogField}>{text("Agent ID", "Agent ID")}<input autoFocus value={id} pattern="[a-z][a-z0-9_-]{0,39}" onChange={(event) => setId(event.target.value)}/><small>{text("Lowercase letters, numbers, underscores, and hyphens; start with a letter.", "小写字母开头，只允许小写字母、数字、下划线和连字符。")}</small></label><DialogFooter><Button variant="ghost" onClick={close}>{text("Cancel", "取消")}</Button><Button disabled={busy || !/^[a-z][a-z0-9_-]{0,39}$/.test(id)} onClick={submit}>{duplicate ? text("Duplicate", "复制") : text("Create Agent", "创建 Agent")}</Button></DialogFooter></DialogContent></Dialog>;
+function NameDialog({ open, name, busy, error, setName, close, submit, text }: { open: boolean; name: string; busy: boolean; error: string; setName: (value: string) => void; close: () => void; submit: () => void; text: (english: string, chinese: string) => string }) {
+  return <Dialog open={open} onOpenChange={(value) => { if (!value) close(); }}><DialogContent><form className={styles.dialogForm} onSubmit={(event) => { event.preventDefault(); submit(); }}><DialogHeader><DialogTitle>{text("Duplicate Agent", "复制 Agent")}</DialogTitle><DialogDescription>{text("Choose a name for the copy. Its internal ID is generated automatically.", "为副本起一个名称；内部 ID 会自动生成。")}</DialogDescription></DialogHeader><label className={styles.dialogField}>{text("Name", "名称")}<input autoFocus value={name} onChange={(event) => setName(event.target.value)}/></label>{error ? <p className={styles.dialogError} role="alert">{error}</p> : null}<DialogFooter><Button type="button" variant="ghost" onClick={close}>{text("Cancel", "取消")}</Button><Button type="submit" disabled={busy || !name.trim()}>{text("Duplicate", "复制")}</Button></DialogFooter></form></DialogContent></Dialog>;
 }
 
 function CatalogDialog({ kind, open, close, loading, error, search, setSearch, groups, selected, required, toggle, toggleRequired, text }: { kind: PickerKind | null; open: boolean; close: () => void; loading: boolean; error: string; search: string; setSearch: (value: string) => void; groups: Array<[string, CatalogItem[]]>; selected: Set<string>; required: Set<string>; toggle: (name: string) => void; toggleRequired: (name: string) => void; text: (english: string, chinese: string) => string }) {

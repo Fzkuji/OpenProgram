@@ -176,3 +176,32 @@ def test_untrusted_clone_does_not_hide_installed_distribution(tmp_path, monkeypa
     )
 
     assert program.is_installed()
+
+
+def test_recorded_program_remains_available_after_runtime_relocation(
+    tmp_path, monkeypatch
+):
+    from openprogram.programs import _programs
+    import openprogram.paths as paths
+
+    state = tmp_path / "state"
+    source_base = tmp_path / "checkout" / "openprogram" / "programs" / "applications"
+    source_base.mkdir(parents=True)
+    repo = _harness(source_base, "Official-Harness")
+    installed_base = tmp_path / "installed" / "openprogram" / "programs" / "applications"
+    installed_base.mkdir(parents=True)
+    monkeypatch.setattr(paths, "get_state_dir", lambda: state)
+    monkeypatch.setattr(_programs, "applications_dir", lambda: str(source_base))
+    _programs.record_program_source(repo, source="file:///owner/official")
+    monkeypatch.setattr(_programs, "applications_dir", lambda: str(installed_base))
+    _harness(installed_base, "Official-Harness")
+    program = _programs.Program(
+        function="official_agent",
+        package="demo_pkg",
+        extra="official",
+        repo="https://github.com/example/Official-Harness",
+        summary="test",
+    )
+
+    assert program.in_tree_pkg_dir() == str(repo / "demo_pkg")
+    assert program.is_installed()

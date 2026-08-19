@@ -1,7 +1,7 @@
 /**
  * question.asked frame → PendingDecision, and the answer/reject WS
  * payloads. Pure functions so the contract (kept in lock-step with the
- * web composer, web/lib/use-ws.ts + question-mode.tsx) is unit-testable
+ * web composer, apps/web/lib/use-ws.ts + question-mode.tsx) is unit-testable
  * without an Ink render. useWsEvents and QuestionPicker both route
  * through these so there's one definition of the wire shape.
  */

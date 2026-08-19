@@ -363,7 +363,7 @@ export interface SearchResultsEnvelope {
  * and needs the user to decide. `question.asked` carries the request;
  * `question.replied` / `question.rejected` retract it (answered here,
  * elsewhere, or stopped). Same `data` shape as the web composer's
- * PendingDecision (web/lib/session-store.ts) so the TUI reuses the
+ * PendingDecision (apps/web/lib/session-store.ts) so the TUI reuses the
  * contract verbatim. Rendered in the input slot as a `question` picker.
  */
 export interface QuestionAskedEnvelope {
