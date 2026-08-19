@@ -39,7 +39,7 @@ Empty directories such as `claude_code`, `chatgpt_subscription`, and `claude_max
 
 ## Custom providers
 
-Any OpenAI-compatible endpoint the table does not cover can be added from the Web UI under Settings → Providers: a display name and a base URL are the only required fields (an id is derived from the name if you don't give one). The endpoint's `/models` list is then browsable with the same Fetch button as built-in providers, and enabled models work at runtime with no code changes. Custom providers are stored in config as `providers.<id>` with `source: "custom"`.
+Any OpenAI-compatible endpoint the table does not cover can be added from the Web UI under Settings → Providers: a display name and a base URL are the only required fields (an id is derived from the name if you don't give one). A host-only URL such as `https://api.example.com` resolves to the conventional `/v1` API root; an explicit path such as `/compatible-mode/v1` is preserved. The endpoint's `/models` list is then browsable with the same Fetch button as built-in providers, and enabled models use the same resolved base URL at runtime. Custom providers are stored in config as `providers.<id>` with `source: "custom"`.
 
 ## Using providers as a library
 

@@ -114,6 +114,30 @@ def test_create_writes_marker_config(mem_cfg, monkeypatch):
     assert pcfg["models"] == []
 
 
+def test_custom_host_only_base_resolves_to_openai_api_root(mem_cfg):
+    mem_cfg["yuanheng"] = {
+        "enabled": True,
+        "source": "custom",
+        "label": "Yuanheng",
+        "base_url": "https://nan.meta-api.vip",
+        "models": [],
+    }
+
+    assert st._resolve_base_url("yuanheng") == "https://nan.meta-api.vip/v1"
+    assert mem_cfg["yuanheng"]["base_url"] == "https://nan.meta-api.vip"
+
+
+@pytest.mark.parametrize("configured", [
+    "https://api.example.test/v1",
+    "https://api.example.test/compatible-mode/v1",
+])
+def test_custom_explicit_api_path_is_preserved(mem_cfg, configured):
+    mem_cfg["custom"] = {
+        "source": "custom", "base_url": configured, "models": [],
+    }
+    assert st._resolve_base_url("custom") == configured
+
+
 def test_create_label_falls_back_to_title_case(mem_cfg, monkeypatch):
     monkeypatch.setattr("openprogram.providers.get_providers", lambda: [])
     from openprogram.providers import sources as S
@@ -293,6 +317,29 @@ def test_manual_model_add_yields_enabled_registry_entry(mem_cfg, monkeypatch):
     m = mg.ENABLED_MODELS[key]
     assert m.base_url == "https://api.frontier.tech/v1"
     assert m.api == "openai-completions"
+
+
+def test_existing_custom_model_uses_resolved_runtime_base(mem_cfg, monkeypatch):
+    mem_cfg["yuanheng"] = {
+        "enabled": True,
+        "source": "custom",
+        "base_url": "https://nan.meta-api.vip",
+        "models": [{
+            "id": "claude-sonnet",
+            "name": "Claude Sonnet",
+            "api": "openai-completions",
+            "base_url": "https://nan.meta-api.vip",
+        }],
+    }
+    import openprogram.providers._config_read as cr
+    import openprogram.providers.enabled_models as mg
+    monkeypatch.setattr(cr, "read_providers_config", lambda: st._read_providers_cfg())
+
+    mg.reload()
+
+    model = mg.ENABLED_MODELS["yuanheng/claude-sonnet"]
+    assert model.api == "openai-completions"
+    assert model.base_url == "https://nan.meta-api.vip/v1"
 
 
 def test_manual_add_empty_id_rejected(mem_cfg):

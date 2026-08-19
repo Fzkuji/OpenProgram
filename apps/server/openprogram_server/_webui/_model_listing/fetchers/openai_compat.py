@@ -40,6 +40,8 @@ def _fetch_openai_compat(provider_id: str, timeout: float) -> Any:
             if not 200 <= r.status_code < 300:
                 return {"error": f"HTTP {r.status_code} for {normalize_origin(base)}"}
             data = r.json()
+    except ValueError:
+        return {"error": f"Non-JSON response from {normalize_origin(base)}/models"}
     except Exception as e:
         return {"error": f"{type(e).__name__} for {normalize_origin(base)}"}
     items = data.get("data") or data.get("models") or []

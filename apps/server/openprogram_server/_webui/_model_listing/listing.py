@@ -435,7 +435,7 @@ def list_models_for_provider(
     from openprogram.providers.thinking_spec import derive_thinking_fields
 
     from openprogram.providers.metadata import default_api_for
-    from openprogram.providers.storage import _read_providers_cfg
+    from openprogram.providers.storage import _read_providers_cfg, _resolve_base_url
 
     cfg = _read_providers_cfg()
     pcfg = cfg.get(provider_id, {})
@@ -448,7 +448,11 @@ def list_models_for_provider(
     # provider config base_url onto every row (row value still wins) so a
     # spec row copied from a browse row via ``spec_row_for`` — the toggle path
     # — carries the endpoint the runtime needs to dispatch.
-    cfg_base_url = pcfg.get("base_url") or ""
+    cfg_base_url = (
+        (_resolve_base_url(provider_id) or "")
+        if pcfg.get("source") == "custom"
+        else (pcfg.get("base_url") or "")
+    )
 
     out: list[dict[str, Any]] = []
     all_rows = _browse_models(provider_id, force_refresh=force_refresh)

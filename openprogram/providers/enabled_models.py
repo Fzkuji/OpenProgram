@@ -35,7 +35,13 @@ def default_fast(model_id: str) -> bool:
     ))
 
 
-def _build_model_from_row(row: dict, provider_id: str, endpoints: dict) -> Model:
+def _build_model_from_row(
+    row: dict,
+    provider_id: str,
+    endpoints: dict,
+    *,
+    base_url_override: str | None = None,
+) -> Model:
     """A config spec row → Model. The row already carries most fields
     (incl. nested cost/headers/compat and usually ``api``); the provider's
     endpoint only fills api/base_url the row omits. Row values always win."""
@@ -65,6 +71,8 @@ def _build_model_from_row(row: dict, provider_id: str, endpoints: dict) -> Model
         data["api"] = ep.get("api", "openai-completions")
     if not data.get("base_url"):
         data["base_url"] = ep.get("base_url", "")
+    if base_url_override:
+        data["base_url"] = base_url_override
     # 高速档：配置行显式写了 fast 就听它的，没写的按声明表回填。
     if "fast" not in data:
         data["fast"] = default_fast(str(data.get("id") or ""))
@@ -96,6 +104,10 @@ def _load() -> dict[str, Model]:
         if canon != provider_id and canon in cfg:
             continue
         endpoints = provider_endpoints(provider_id)
+        custom_base_url = None
+        if pcfg.get("source") == "custom":
+            from .storage import _resolve_base_url
+            custom_base_url = _resolve_base_url(provider_id)
         for row in (pcfg.get("models") or []):
             if not isinstance(row, dict):
                 continue
@@ -104,7 +116,12 @@ def _load() -> dict[str, Model]:
             if row.get("enabled") is False:
                 continue
             try:
-                m = _build_model_from_row(row, provider_id, endpoints)
+                m = _build_model_from_row(
+                    row,
+                    provider_id,
+                    endpoints,
+                    base_url_override=custom_base_url,
+                )
             except Exception:
                 continue
             prefix = row.get("key_prefix") or provider_id
@@ -167,7 +184,16 @@ def register_model_from_config(provider: str, model_id: str) -> bool:
     )
     if spec is not None:
         try:
-            m = _build_model_from_row(spec, provider, provider_endpoints(provider))
+            m = _build_model_from_row(
+                spec,
+                provider,
+                provider_endpoints(provider),
+                base_url_override=(
+                    _resolve_base_url(provider)
+                    if cfg_pcfg.get("source") == "custom"
+                    else None
+                ),
+            )
         except Exception:
             return False
         prefix = spec.get("key_prefix") or provider

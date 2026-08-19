@@ -102,7 +102,7 @@ rt = create_runtime(provider="openai", api_key="sk-...", model="gpt-4.1")
 | `model` | `str` | `"gpt-4.1"` | `openai` provider 命名空间下的模型 id |
 | `max_retries` | `int` | 环境变量 `OPENPROGRAM_MAX_RETRIES`,否则 6 | 转发给基类 `Runtime` 的重试预算 |
 
-Azure 或本地 OpenAI 兼容服务:在设置页添加自定义 provider(Settings → Providers → Add custom provider,名称 + Base URL),再用 `Runtime(model="<provider>:<model>")` 或 `create_runtime(provider="<provider>")`。
+Azure 或本地 OpenAI 兼容服务：在设置页添加自定义 provider（Settings → Providers → Add custom provider，名称 + Base URL），再用 `Runtime(model="<provider>:<model>")` 或 `create_runtime(provider="<provider>")`。只填写域名时会解析到 `/v1`；已经填写的 API 路径会保持不变。
 
 ---
 

@@ -206,7 +206,7 @@ def _openrouter_exhausted(body: str) -> bool:
 
 def _interpret(
     provider_id: str, kind: str, res: tuple[int, str, int] | None, *,
-    via: str, balance_body: bool = False,
+    via: str, balance_body: bool = False, require_json: bool = False,
 ) -> CredentialResult:
     if res is None:
         return _result(
@@ -216,6 +216,16 @@ def _interpret(
         )
     status, body, latency = res
     if status == 200:
+        if require_json:
+            try:
+                import json
+                json.loads(body)
+            except (TypeError, ValueError):
+                return _result(
+                    provider_id, UNKNOWN, kind=kind, via=via,
+                    http_status=200, latency_ms=latency,
+                    detail="Endpoint returned non-JSON content.",
+                )
         if balance_body and _openrouter_exhausted(body):
             return _result(provider_id, VALID_NO_BALANCE, kind=kind, via=via,
                            http_status=200, latency_ms=latency,
@@ -265,7 +275,9 @@ def _layer1_probe(provider_id: str, kind: str, api_key: str, base: str | None,
     res = _http_get(base.rstrip("/") + "/models",
                     headers={"Authorization": f"Bearer {api_key}"}, timeout=timeout,
                     configured_url=base)
-    return _interpret(provider_id, kind, res, via="GET /models")
+    return _interpret(
+        provider_id, kind, res, via="GET /models", require_json=True
+    )
 
 
 def _layer2_ping(provider_id: str, kind: str, api_key: str, base: str | None,

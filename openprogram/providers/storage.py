@@ -34,6 +34,7 @@ import copy
 import logging
 import threading
 from typing import Any, Callable
+from urllib.parse import urlsplit, urlunsplit
 
 
 _cache_lock = threading.Lock()
@@ -704,11 +705,16 @@ def add_manual_model(provider_id: str, model_id: str, name: str | None = None) -
                     "error": f"unknown provider {provider_id!r}",
                 }
             pcfg = cfg.setdefault(provider_id, {})
+            resolved_base_url = (
+                fallback_base_url
+                if pcfg.get("source") == "custom"
+                else (pcfg.get("base_url") or fallback_base_url)
+            )
             spec = {
                 "id": mid,
                 "name": (name or "").strip() or mid,
                 "api": pcfg.get("api") or fallback_api,
-                "base_url": pcfg.get("base_url") or fallback_base_url,
+                "base_url": resolved_base_url,
                 "source": "manual",
             }
             _upsert_spec_row(pcfg, spec)
@@ -812,6 +818,14 @@ def _resolve_base_url(provider_id: str) -> str | None:
     if not base:
         return None
     base = base.rstrip("/")
+    # Custom providers use the OpenAI-compatible API. A host-only value means
+    # the conventional /v1 API root; an explicit path is already authoritative.
+    if pcfg.get("source") == "custom":
+        parts = urlsplit(base)
+        if parts.path in ("", "/"):
+            base = urlunsplit(
+                (parts.scheme, parts.netloc, "/v1", parts.query, parts.fragment)
+            )
     # Anthropic-wire normalisation: the anthropic-messages layer appends
     # /v1/messages and /v1/models itself, so the base must NOT carry its
     # own /v1. models.dev ships some Anthropic endpoints as

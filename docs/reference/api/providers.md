@@ -102,7 +102,7 @@ rt = create_runtime(provider="openai", api_key="sk-...", model="gpt-4.1")
 | `model` | `str` | `"gpt-4.1"` | Model id under the `openai` provider namespace |
 | `max_retries` | `int` | `OPENPROGRAM_MAX_RETRIES` env, else 6 | Retry budget forwarded to the base `Runtime` |
 
-For Azure or a local OpenAI-compatible server, add a custom provider (Settings → Providers → Add custom provider, name + base URL) and use `Runtime(model="<provider>:<model>")` or `create_runtime(provider="<provider>")`.
+For Azure or a local OpenAI-compatible server, add a custom provider (Settings → Providers → Add custom provider, name + base URL) and use `Runtime(model="<provider>:<model>")` or `create_runtime(provider="<provider>")`. A host-only base URL resolves to `/v1`; an explicit API path is preserved.
 
 ---
 

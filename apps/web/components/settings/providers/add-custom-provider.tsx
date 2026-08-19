@@ -111,7 +111,7 @@ export function AddCustomProvider({ onCreated }: { onCreated: (id: string) => vo
         </div>
       )}
       <Input
-        placeholder={text("Base URL (e.g. https://api.example.com/v1)", "Base URL（如 https://api.example.com/v1）")}
+        placeholder={text("Base URL (e.g. https://api.example.com)", "Base URL（如 https://api.example.com）")}
         value={baseUrl}
         onChange={(e) => setBaseUrl(e.target.value)}
       />

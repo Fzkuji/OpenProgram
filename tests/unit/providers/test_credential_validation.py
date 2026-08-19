@@ -114,12 +114,21 @@ def _patch_http_get(monkeypatch, result):
     return calls
 
 
+def test_openai_probe_rejects_html_success_page(monkeypatch, stub_base):
+    _patch_http_get(monkeypatch, (200, "<html>website</html>", 12))
+    result = cr._layer1_probe(
+        "custom", "openai_bearer", "sk-test", "https://api.example/v1", 1
+    )
+    assert result.status == cr.UNKNOWN
+    assert result.http_status == 200
+
+
 @pytest.mark.parametrize("result,expected_status", [
     ((200, "[]", 12), cr.VALID),
     ((401, '{"error":"bad key"}', 12), cr.INVALID_CREDENTIAL),
     ((403, "forbidden", 12), cr.INVALID_CREDENTIAL),
     ((402, "payment required", 12), cr.VALID_NO_BALANCE),
-    ((200, "insufficient_quota", 12), cr.VALID),  # body-quota only triggers on non-200
+    ((200, "insufficient_quota", 12), cr.UNKNOWN),  # /models success must be JSON
     ((429, "slow down", 12), cr.UNKNOWN),          # auth endpoint rate-limited = inconclusive
     ((404, "weird", 12), cr.UNKNOWN),
     (None, cr.UNKNOWN),                              # transport error
