@@ -62,9 +62,9 @@ def _resolve_cli_entry() -> Path:
     install without the source tree) or if the build failed in a way
     that didn't produce the expected output.
     """
-    from openprogram.updater.detect import require_repo_root
+    import openprogram
 
-    project_root = require_repo_root()
+    project_root = Path(openprogram.__file__).resolve().parents[1]
     cli_dir = project_root / "apps" / "cli"
     candidate = cli_dir / "dist" / "index.js"
     if candidate.exists():

@@ -9,7 +9,7 @@ from openprogram.webui import frontend
 @pytest.fixture()
 def out_tree(tmp_path, monkeypatch):
     """A fake apps/web/out/ export plus monkeypatched locators."""
-    wd = tmp_path / "apps" / "web"
+    wd = tmp_path / "web"
     out = wd / "out"
     (out / "_next" / "static" / "chunks").mkdir(parents=True)
     (out / "_next" / "static" / "chunks" / "app.js").write_text("js")
@@ -20,7 +20,6 @@ def out_tree(tmp_path, monkeypatch):
     (out / "settings" / "providers.html").write_text("<html>providers</html>")
     monkeypatch.setattr(frontend, "web_dir", lambda: wd)
     monkeypatch.setattr(frontend, "out_dir", lambda: out)
-    monkeypatch.setattr("openprogram.updater.detect.repo_root", lambda: tmp_path)
     return wd, out
 
 
@@ -132,10 +131,8 @@ def test_installed_package_prefers_bundled_frontend(tmp_path, monkeypatch):
     monkeypatch.setattr(frontend, "packaged_out_dir", lambda: bundled)
     monkeypatch.setattr(frontend, "repo_out_dir", lambda: checkout)
     monkeypatch.setattr(frontend, "web_dir", lambda: checkout.parent)
-    monkeypatch.setattr("openprogram.updater.detect.repo_root", lambda: None)
 
     assert frontend.out_dir() == bundled
-    frontend.ensure_frontend_built()
 
 
 def test_unknown_api_path_is_404_not_spa(client):

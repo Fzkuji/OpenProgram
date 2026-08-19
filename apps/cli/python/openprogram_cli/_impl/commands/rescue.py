@@ -91,8 +91,8 @@ def _probe_git() -> Finding:
 def _probe_tui_bundle() -> Finding:
     """``apps/cli/dist/index.js`` — the Ink TUI's pre-built Node bundle."""
     try:
-        from openprogram.updater.detect import require_repo_root
-        root = require_repo_root()
+        import openprogram
+        root = Path(openprogram.__file__).resolve().parent.parent
     except Exception as e:  # noqa: BLE001
         return Finding("FAIL", "TUI bundle",
                        f"can't locate repo root: {e}",
@@ -111,8 +111,8 @@ def _probe_tui_bundle() -> Finding:
 def _probe_web_bundle() -> Finding:
     """``apps/web/.next/BUILD_ID`` — the Next.js webui production build."""
     try:
-        from openprogram.updater.detect import require_repo_root
-        root = require_repo_root()
+        import openprogram
+        root = Path(openprogram.__file__).resolve().parent.parent
     except Exception:  # noqa: BLE001
         return Finding("FAIL", "Web bundle", "can't locate repo root", fix=None)
     build_id = root / "apps" / "web" / ".next" / "BUILD_ID"

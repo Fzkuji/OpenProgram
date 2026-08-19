@@ -20,8 +20,8 @@ from pathlib import Path
 
 def web_dir() -> Path:
     """Repo-root ``apps/web`` directory for a source checkout."""
-    from openprogram.updater.detect import checkout_path
-    return checkout_path("apps", "web")
+    # apps/server/openprogram_server/_webui/frontend.py → repo_root/apps/web
+    return Path(__file__).resolve().parents[3] / "web"
 
 
 def packaged_out_dir() -> Path:
@@ -36,8 +36,7 @@ def repo_out_dir() -> Path:
 def out_dir() -> Path:
     """Use package data outside a source checkout; keep source builds live."""
     bundled = packaged_out_dir()
-    from openprogram.updater.detect import repo_root
-    if (bundled / "index.html").is_file() and repo_root() is None:
+    if (bundled / "index.html").is_file() and not (web_dir() / "package.json").is_file():
         return bundled
     return repo_out_dir()
 
@@ -82,19 +81,8 @@ def ensure_frontend_built() -> None:
     package.json. No BUILD_ID dance — the export has no server process
     caching manifests, files on disk are the whole truth.
     """
-    from openprogram.updater.detect import repo_root
-
-    checkout = repo_root()
-    if checkout is None:
-        marker = packaged_out_dir() / "index.html"
-        if not marker.exists():
-            raise RuntimeError(
-                f"frontend export not found at {marker.parent}; reinstall the package"
-            )
-        return
-
-    wd = checkout / "apps" / "web"
-    marker = wd / "out" / "index.html"
+    wd = web_dir()
+    marker = out_dir() / "index.html"
     if wd.exists():
         stale = (
             not marker.exists()
@@ -105,7 +93,7 @@ def ensure_frontend_built() -> None:
     if not stale:
         if not marker.exists():
             raise RuntimeError(
-                f"frontend export not found at {marker.parent} and web/ sources "
+                f"frontend export not found at {out_dir()} and web/ sources "
                 "are unavailable — reinstall with a prebuilt apps/web/out/."
             )
         return
@@ -115,7 +103,7 @@ def ensure_frontend_built() -> None:
             print("[worker] web: npm not found — serving existing (stale) apps/web/out/")
             return
         raise RuntimeError(
-            f"frontend export missing at {marker.parent} and npm is not in PATH. "
+            f"frontend export missing at {out_dir()} and npm is not in PATH. "
             "Install Node.js (build-time only) or ship a prebuilt apps/web/out/."
         )
 

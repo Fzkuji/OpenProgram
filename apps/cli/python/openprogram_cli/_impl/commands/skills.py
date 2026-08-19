@@ -320,9 +320,9 @@ def _cmd_install_skills(target=None):
         print("  npm i -g @google/gemini-cli")
         sys.exit(1)
 
-    from openprogram.updater.detect import repo_root
-    checkout = repo_root()
-    local_skills = str(checkout / "skills") if checkout is not None else ""
+    import openprogram
+    pkg_dir = os.path.dirname(os.path.dirname(openprogram.__file__))
+    local_skills = os.path.join(pkg_dir, "skills")
 
     if os.path.isdir(local_skills):
         skills_dir = local_skills

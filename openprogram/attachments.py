@@ -153,9 +153,9 @@ def project_root() -> Path:
         if p.is_dir():
             return p
     try:
-        from openprogram.updater.detect import repo_root
-        parent = repo_root()
-        if parent is not None:
+        import openprogram
+        parent = Path(openprogram.__file__).resolve().parent.parent
+        if parent.is_dir():
             return parent
     except Exception:  # noqa: BLE001
         return Path(os.getcwd()).resolve()

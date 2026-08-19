@@ -16,9 +16,9 @@ from pathlib import Path
 
 
 def _repo_root() -> Path:
-    from openprogram.updater.detect import require_repo_root
+    from openprogram.updater.detect import package_root, repo_root
 
-    return require_repo_root()
+    return repo_root() or package_root().parent
 
 
 def _docs_dir() -> Path:
@@ -30,15 +30,12 @@ def _packaged_site_dir() -> Path:
 
 
 def _is_source_checkout() -> bool:
-    from openprogram.updater.detect import repo_root
-
-    root = repo_root()
-    return root is not None and (root / "apps" / "web" / "package.json").is_file()
+    return (_repo_root() / "apps" / "web" / "package.json").is_file()
 
 
 def _site_dir() -> Path:
     bundled = _packaged_site_dir()
-    if not _is_source_checkout() and (bundled / "index.html").is_file():
+    if (bundled / "index.html").is_file() and not _is_source_checkout():
         return bundled
     return _docs_dir() / "_site"
 
@@ -120,17 +117,15 @@ def register(app) -> None:
     from fastapi.responses import JSONResponse
     from fastapi.staticfiles import StaticFiles
 
+    repo_root = _repo_root()
     site = _site_dir()
     site.mkdir(parents=True, exist_ok=True)  # ensure mountable even pre-build
 
-    from openprogram.updater.detect import repo_root
-    checkout = repo_root()
-    if checkout is not None:
-        # Make repository maintenance modules importable for source rebuilds.
-        import sys
-        if str(checkout) not in sys.path:
-            sys.path.insert(0, str(checkout))
-        _maybe_rebuild()
+    # Make `tools` importable (it's a top-level package at the repo root).
+    import sys
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    _maybe_rebuild()
 
     # Bare /docs never reaches the mount: Mount's path regex needs the
     # trailing slash, and the SPA catch-all (registered last) fully matches

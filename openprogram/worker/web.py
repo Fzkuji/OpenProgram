@@ -32,8 +32,9 @@ from openprogram._ports import (
 
 def web_dir() -> Path:
     """Return the path to the ``web/`` directory bundled with the repo."""
-    from openprogram.updater.detect import checkout_path
-    return checkout_path("apps", "web")
+    # openprogram/worker/web.py → repo_root/openprogram/worker/web.py
+    # repo_root/apps/web/
+    return Path(__file__).resolve().parent.parent.parent / "apps" / "web"
 
 
 def _node_available() -> bool:

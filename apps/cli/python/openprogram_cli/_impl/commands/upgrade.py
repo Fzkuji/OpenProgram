@@ -329,12 +329,12 @@ def repo_root() -> Path:
     and ``.git`` are siblings. A non-checkout install cannot self-update
     through git.
     """
-    from openprogram.updater.detect import repo_root as detected_repo_root
-    root = detected_repo_root()
-    if root is None:
+    import openprogram
+    root = Path(openprogram.__file__).resolve().parents[1]
+    if not (root / ".git").exists():
         raise UpgradeError(
             "not-a-checkout",
-            "this installation is not a git checkout — `upgrade` needs a source install",
+            f"{root} is not a git checkout — `upgrade` needs a source install",
         )
     return root
 
