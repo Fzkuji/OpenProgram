@@ -6,12 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Changed — installer & first-run UX
-- The installer sets up the **GUI agent by default** (no `--gui` flag); pass `--no-gui` / `-NoGui` to skip it (host-only, e.g. research/wiki without the ~2 GB torch stack).
-- PyTorch is **auto-selected**: the installer detects an NVIDIA GPU (`nvidia-smi`) and the driver's CUDA version, then installs the newest published torch CUDA wheel the driver supports (e.g. RTX 3080 + driver 13.1 → `cu130`); falls back to CPU when there's no GPU. Force with `--cpu` / `-Cpu` or a specific `--cuda cuXXX` / `-Cuda cuXXX`.
-- A bare **`openprogram` first run auto-launches the setup wizard** when no provider is configured (no separate `openprogram setup` step), then **asks which surface to open** — terminal UI or web. `openprogram tui` / `openprogram web` skip the prompt and launch directly; non-interactive shells default to the terminal UI. Setup is skipped for `--print` / `--resume` and when already configured.
-- **Browser tool + chat channels now install by default** (the `[all]` extra + `playwright install chromium`) — no opt-in menu. `--minimal` / `-Minimal` skips them; the heavier stealth browsers / agent-browser stay opt-in (`--stealth`, `--agent-browser`).
-- Onboarding docs (README / GETTING_STARTED / README_CN / install.md, EN + 中文) lead with the one-command installer; dropped `pip install openprogram` from the onboarding paths. README Quick Start trimmed to **Install → Run → Add a harness** (the GUI/Research/Wiki harnesses presented uniformly via `openprogram programs install <name>`); removed the inline GPU/surfaces flavor text and the "write your own functions" step.
+No unreleased changes.
+
+## [0.7.1] - 2026-08-19
+
+### Changed
+
+- Standardized the polyglot repository layout while keeping the Agent Core at the root `openprogram/` package.
+- Unified Web, Desktop, and Ink CLI dependency installation under the root npm workspace and lock file.
+- Consolidated release tooling and strengthened packaged-runtime, installation, and repository contracts.
+- Unified Program source browsing and local Agent management actions.
+- Removed bundled default skills. Product workflows now belong to Programs; Skills remain available from remote cache, plugins, the user profile, and the current project.
+
+### Added
+
+- Added multi-backend, multi-page Computer Use with exact page bindings, page inventory, cross-window/group awareness, and persistent agent cursor state.
+- Added browser downloads, page tools, print-to-PDF, popup-tab handling, cancellable profile import, and pointer-hover bookmark folder switching.
+- Added runtime Memory settings, revised Memory management surfaces, scheduler-to-memory linkage, and chat context statistics backed by recorded prompt/tool snapshots.
+- Added the complete local Agent configuration workspace and Agent management actions.
+- Added workflow project, dependency, package, and execution support.
+
+### Fixed
+
+- Preserved source-checkout detection when OpenProgram is installed inside an unrelated Git repository.
+- Fixed session follow-up publication, provider endpoint normalization, chat timestamps, context caching/statistics, migrated path checks, and release staging consistency.
 
 ## [0.7.0] - 2026-08-17
 
