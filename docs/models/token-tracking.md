@@ -4,7 +4,7 @@ Every vendor reports token usage with different field names and different conven
 
 ## Unified format
 
-Each assistant message carries a `Usage` record (defined in [`openprogram/providers/types.py`](https://github.com/Fzkuji/OpenProgram/blob/main/packages/core/src/openprogram/providers/types.py)):
+Each assistant message carries a `Usage` record (defined in [`openprogram/providers/types.py`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/providers/types.py)):
 
 | Field | Meaning |
 |---|---|

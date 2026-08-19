@@ -4,7 +4,7 @@
 
 ## 统一格式
 
-每条 assistant 消息带一个 `Usage` 记录（定义见 [`openprogram/providers/types.py`](https://github.com/Fzkuji/OpenProgram/blob/main/packages/core/src/openprogram/providers/types.py)）：
+每条 assistant 消息带一个 `Usage` 记录（定义见 [`openprogram/providers/types.py`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/providers/types.py)）：
 
 | 字段 | 含义 |
 |---|---|

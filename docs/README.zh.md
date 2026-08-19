@@ -226,7 +226,7 @@ scripts/                             # 可执行或可导入的仓库维护工�
 ```
 
 各 workspace 的入口说明见
-[`openprogram/`](https://github.com/Fzkuji/OpenProgram/blob/main/packages/core/README.md)、
+[`openprogram/`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/README.md)、
 [`web/`](https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/README.md) 和
 [`apps/cli/`](https://github.com/Fzkuji/OpenProgram/blob/main/apps/cli/README.md)。完整归属规则见
 [Repository Structure](reference/design/repository-structure.html)。

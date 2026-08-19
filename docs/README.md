@@ -229,7 +229,7 @@ scripts/                             # executable and importable repository main
 ```
 
 See the workspace READMEs for
-[`openprogram/`](https://github.com/Fzkuji/OpenProgram/blob/main/packages/core/README.md),
+[`openprogram/`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/README.md),
 [`web/`](https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/README.md), and
 [`apps/cli/`](https://github.com/Fzkuji/OpenProgram/blob/main/apps/cli/README.md). Complete
 ownership rules are in

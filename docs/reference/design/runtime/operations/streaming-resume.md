@@ -35,7 +35,7 @@ last_update_at:  float (epoch)
 - LLM streaming reply: before the dispatcher calls the LLM
 - tool call: before the tool dispatcher calls the function
 - agentic function: before `_execute/run.py` runs the function
-- task spawn: already in place ([`runner.py`](https://github.com/Fzkuji/OpenProgram/blob/main/packages/core/src/openprogram/agent/job/runner.py))
+- task spawn: already in place ([`runner.py`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/job/runner.py))
 - merge: before `_execute/_run_merge`
 
 ### 2. Throttled incremental persistence
@@ -149,5 +149,5 @@ The design lands in independently usable, independently revertible pieces:
 | 7 | tests + edge cases (restart / disconnect / msg_id collision) |
 
 Of these, the task spawn placeholder is already in place
-([`runner.py`](https://github.com/Fzkuji/OpenProgram/blob/main/packages/core/src/openprogram/agent/job/runner.py)),
+([`runner.py`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/job/runner.py)),
 as is the `status=running` rendering in `RuntimeBlock` and the attach card.
