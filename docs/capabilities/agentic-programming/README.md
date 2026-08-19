@@ -35,6 +35,6 @@ right one per task is the core skill:
 
 - [`../../reference/api/agentic-function.md`](../../reference/api/agentic-function.md) — decorator API quick reference
 - [`../../reference/api/runtime.md`](../../reference/api/runtime.md) — `Runtime.exec()` parameters and behaviour
-- [`openprogram/skills_bundled/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/skills_bundled/agentic-programming/SKILL.md) — the bundled skill an agent follows to write/validate functions (file layout, rule checklist, smoke tests)
+- [Agentic function API](../../reference/api/agentic-function.md) — authoring and validation conventions for functions
 - [`../../reference/design/function/calling-unification.md`](../../reference/design/function/calling-unification.md) — internal design notes on the function-calling framework (evolution / refactor plans, not needed for authoring)
 - *LLM-as-Code: Agentic Programming for Agent Harness* ([arXiv:2606.15874](https://arxiv.org/abs/2606.15874)) — the paper describing the paradigm, accepted at the KDD 2026 AgenticSE workshop

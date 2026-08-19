@@ -4,7 +4,7 @@
 
 `@agentic_function` turns an ordinary Python function into an Agentic Function: each call is recorded as a `code` node in the session DAG, and the `llm()` calls inside the function body are recorded as `llm` nodes.
 
-For the full authoring conventions—file layout, the division of labor between the docstring and `content`, parameter metadata, the validation checklist, and smoke tests—see [`openprogram/skills_bundled/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/skills_bundled/agentic-programming/SKILL.md). This document only covers the decorator itself.
+This document defines the decorator and authoring conventions for agentic functions.
 
 ## Usage
 

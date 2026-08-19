@@ -246,7 +246,7 @@ def _build_output_style(agent: Any) -> str:
 
 
 def _build_skills(agent: Any) -> str:
-    """The ``<available_skills>`` listing — all five sources, one renderer.
+    """The ``<available_skills>`` listing — all external sources, one renderer.
 
     Loader and renderer are ``openprogram.skills``, the same pair
     ``Runtime._skills_block`` calls, so a skill reads identically whether

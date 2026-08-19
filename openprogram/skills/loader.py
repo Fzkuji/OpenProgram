@@ -1,13 +1,12 @@
 """The skill registry: one loader, one prompt renderer.
 
-Skills are merged from five sources, listed here from lowest to highest
+Skills are merged from four sources, listed here from lowest to highest
 precedence:
 
-    1. Bundled     — ``openprogram/skills_bundled/<name>/``
-    2. RemoteCache — ``~/.openprogram/cache/skills/<name>/``
-    3. Plugin      — registered via :func:`register_plugin_skills`
-    4. User        — ``~/.openprogram/skills/<name>/``
-    5. Project     — ``<cwd>/skills/<name>/``
+    1. RemoteCache — ``~/.openprogram/cache/skills/<name>/``
+    2. Plugin      — registered via :func:`register_plugin_skills`
+    3. User        — ``~/.openprogram/skills/<name>/``
+    4. Project     — ``<cwd>/skills/<name>/``
 
 Conflict policy: on a name collision the later source wins, so what the
 user wrote beats what a plugin or a registry pull installed, and both
@@ -34,7 +33,7 @@ from typing import Iterable
 from openprogram.skills import frontmatter as _h
 
 
-SOURCES = ("bundled", "remote-cache", "plugin", "user", "project")
+SOURCES = ("remote-cache", "plugin", "user", "project")
 
 # Discovery listings quote at most this much of a description. Long
 # SKILL.md descriptions run to several hundred words; the listing only
@@ -87,10 +86,6 @@ def unregister_plugin_skills(name: str) -> None:
 
 # --- source directories ---------------------------------------------------
 
-def bundled_dir() -> Path:
-    return Path(__file__).resolve().parent.parent / "skills_bundled"
-
-
 def user_dir() -> Path:
     return Path.home() / ".openprogram" / "skills"
 
@@ -105,10 +100,7 @@ def remote_cache_dir() -> Path:
 
 def _source_dirs(cwd: str | os.PathLike | None = None) -> list[tuple[str, Path]]:
     """Source roots in precedence order, lowest first. See module docstring."""
-    out: list[tuple[str, Path]] = [
-        ("bundled", bundled_dir()),
-        ("remote-cache", remote_cache_dir()),
-    ]
+    out: list[tuple[str, Path]] = [("remote-cache", remote_cache_dir())]
     for plugin_name, d in _PLUGIN_SKILL_DIRS.items():
         out.append((f"plugin:{plugin_name}", d))
     out.append(("user", user_dir()))
@@ -208,7 +200,7 @@ def load_skills(dirs: Iterable[str | os.PathLike]) -> list[Skill]:
 
     Same parser and same conflict rule as :func:`list_skills` (later root
     wins), for the callers that name their own directories instead of the
-    five standard sources: ``Runtime(skills=[...])`` and
+    standard external sources: ``Runtime(skills=[...])`` and
     ``openprogram skills list --dir``. Missing directories are skipped so a
     caller can pass candidate locations without checking each one.
     """

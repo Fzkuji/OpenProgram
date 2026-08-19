@@ -1,6 +1,6 @@
 # `openprogram/skills/`
 
-> Skills module — five-source skill loader, remote discovery, watcher, tool.
+> Skills module — external skill loader, remote discovery, watcher, tool.
 
 ## Overview
 

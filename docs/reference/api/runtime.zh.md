@@ -277,4 +277,4 @@ Attempt 3: ConnectionError: timeout
 
 ### 重试的边界
 
-`max_retries` 只处理 API 层面的瞬态故障(网络超时、速率限制等)。如果是函数本身的逻辑或输出格式有问题,重试解决不了——直接修改函数代码,参见 [`openprogram/skills_bundled/agentic-programming/SKILL.md`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/skills_bundled/agentic-programming/SKILL.md)。
+`max_retries` 只处理 API 层面的瞬态故障（网络超时、速率限制等）。如果是函数本身的逻辑或输出格式有问题，重试无法修复，需要直接修改函数代码。

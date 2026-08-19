@@ -32,12 +32,14 @@ author: ...
 ---
 ```
 
-Sources, lowest precedence first (merged for display; on conflict the latter overrides the former, so what the user wrote beats what was installed for them, and both beat what ships with the package):
-1. **Bundled** — `openprogram/skills_bundled/<name>/` (shipped with the package, matching claude-code `src/skills/bundled`)
-2. **Remote-pulled** — `~/.openprogram/cache/skills/<name>/` (matching opencode discovery, pulled from a remote index)
-3. **Plugin-provided** — contributed by enabled plugins
-4. **User** — `~/.openprogram/skills/<name>/`
-5. **Project** — `<project>/skills/<name>/`
+Sources, lowest precedence first (merged for display; on conflict the latter overrides the former):
+1. **Remote-pulled** — `~/.openprogram/cache/skills/<name>/` (matching opencode discovery, pulled from a remote index)
+2. **Plugin-provided** — contributed by enabled plugins
+3. **User** — `~/.openprogram/skills/<name>/`
+4. **Project** — `<project>/skills/<name>/`
+
+OpenProgram does not ship default skills. Product workflows belong to Programs;
+skills remain an extension mechanism controlled by the user or a plugin.
 
 A skill's name is its directory path relative to the source root, so nesting gives hierarchical names (`anthropic-skills/docx`) and a name collision means the same skill from two sources, not two different skills.
 
@@ -88,11 +90,9 @@ Sources:
 ```
 openprogram/
   skills/
-    loader.py           # five-source merged loading
+    loader.py           # four-source merged loading
     discovery.py        # pull on demand from a remote index (matching opencode discovery.ts)
     watcher.py          # watchdog file watching, hot reload + WS broadcast
-  skills_bundled/       # built-in skills
-    ...
   plugins/
     loader.py           # multi-manifest parsing, install, uninstall
     sandbox.py          # layered sandbox: subprocess / in-process
@@ -107,7 +107,7 @@ openprogram/
 ### Skills API (`routes/skills.py`)
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/skills` | Five-source merged list, including source / enabled / category / optional |
+| GET | `/api/skills` | Four-source merged list, including source / enabled / category / optional |
 | GET | `/api/skills/{name}` | Full SKILL.md text + frontmatter + resource file tree |
 | POST | `/api/skills` | Create in project / user |
 | DELETE | `/api/skills/{name}` | Delete from project / user / remote-cache only |
@@ -204,7 +204,7 @@ apps/web/components/plugins/
 
 1. **First-class plugin sidebar items**: manifest `sidebar: [...]` → automatically injected into the sidebar, on par with built-in navigation
 2. **Skill invocation trace**: each SkillTool call records `{ skill, injected_md_hash, accessed_refs, ts }`, visualized in the right panel / `/skills/[name]/trace`
-3. **Skill hot reload**: watchdog watches any of the five sources for changes → re-parse → WS broadcast, no `/reload` needed
+3. **Skill hot reload**: watchdog watches the four sources for changes → re-parse → WS broadcast, no `/reload` needed
 4. **Unified across the three manifests**: any of `plugin.json` / `pyproject.toml` / `package.json` is recognized, zero migration cost
 5. **Cross-ecosystem marketplace interop**: a claude-code marketplace schema adapter layer, able to directly add its official / third-party marketplaces
 6. **Dual-track package management**: pip + npm dual track; both opencode's Node plugins and hermes's Python plugins can be installed
@@ -229,7 +229,7 @@ apps/web/components/plugins/
 
 The design is complete; delivery is ordered in four blocks, each usable on its own:
 
-- **Skills** — five-source loader, watchdog and WS broadcast, SKILL.md parsing (triggers / category / optional), the `/skills` page and bundled default set, the SkillTool built-in tool with invoke trace, and remote discovery.
+- **Skills** — four-source loader, watchdog and WS broadcast, SKILL.md parsing (triggers / category / optional), the `/skills` page, the SkillTool built-in tool with invoke trace, and remote discovery. The package ships no default skills.
 - **Plugins, local** — unified parsing of the three manifests; installation from pip / npm / git / path; layered sandbox and trust; injection of the commands / skills / mcpServers / providers / hooks / agents entrypoints; the Installed and Errors pages with Validate / Options / Reload.
 - **Plugins, frontend and sidebar** — `web` entrypoint asset mounting, `/plugin/[name]/[...slug]` dynamic rendering, sidebar registration items.
 - **Marketplace** — multiple marketplaces with the claude-code schema adapter, plus the BrowseMarketplace / AddMarketplace / DiscoverPlugins surfaces.

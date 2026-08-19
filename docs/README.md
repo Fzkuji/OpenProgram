@@ -107,7 +107,7 @@ Writing your own installable harness is one layout contract away — the
 full guide (install, manage, author, test, publish) is
 **[installing-harnesses.md](capabilities/installing-harnesses.md)**.
 
-> Need a workflow of your own? Just ask the agent in chat — the bundled [`agentic-programming` skill](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/skills_bundled/agentic-programming/SKILL.md) handles the rest.
+> Need a workflow of your own? Ask the agent in chat to create or update a Program.
 
 ## Troubleshooting
 
@@ -188,7 +188,7 @@ Same backend and sessions as the UIs (`~/.openprogram/`) — a `--print` run or 
 |---|---|
 | **Automatic context** | Every `@agentic_function` call is a tree node; the runtime threads it through nested LLM calls — no manual prompt assembly. |
 | **Deep work** | `deep_work(task, level)` runs an autonomous plan → execute → evaluate → revise loop until the output meets the chosen quality bar. State persists to disk. |
-| **Functions that author functions** | New / fixed `@agentic_function`s are written by the agent itself via ordinary file-editing tools, guided by the `agentic-programming` skill. No dedicated `create()` / `fix()` calls. |
+| **Functions that author functions** | New / fixed `@agentic_function`s are written by the agent itself via ordinary file-editing tools and the documented API. No dedicated `create()` / `fix()` calls. |
 | **Conversation as a git DAG** | Sessions are commits + branches + merges, with the right sidebar exposing the operations. File-touching branches run in isolated git worktrees. |
 | **Memory that writes itself** | Markdown under `~/.openprogram/memory/`: `core.md` (always loaded), `topics/` (one file per subject, every paragraph citing its source), `sources/` (the conversations those citations point at). Conversations are folded into topics in the background, and every write lands whole or not at all. |
 | **Mini-DAG execution view** | The right rail draws every node + edge of the active session and scrolls with the chat. |

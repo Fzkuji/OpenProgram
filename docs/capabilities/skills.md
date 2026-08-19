@@ -25,17 +25,12 @@ The front matter is a `key: value` YAML subset; `name` and `description` are bot
 
 ## Lookup paths
 
-The system-prompt block probes two locations in order; on a name clash the first one found wins, so **user skills override repo skills**:
-
-1. `~/.openprogram/skills/` (user level)
-2. `<OpenProgram repo>/skills/` (project level)
-
-The management CLI and the slash-command projection merge five sources: bundled (shipped with OpenProgram), user (`~/.openprogram/skills/`), project (`<cwd>/skills/`), plugin-contributed (see [Plugins](plugins.md)), and remote-cache (`~/.openprogram/cache/skills/` — where `skills install` puts downloads).
+The system prompt, management CLI, and slash-command projection use the same four sources: remote-cache (`~/.openprogram/cache/skills/`), plugin-contributed (see [Plugins](plugins.md)), user (`~/.openprogram/skills/`), and project (`<cwd>/skills/`). On a name collision, the later and more local source wins. OpenProgram ships no default skills; product workflows are Programs.
 
 ## Management commands
 
 ```bash
-openprogram skills list       # list discovered skills by source (bundled / user / project / plugin / remote-cache)
+openprogram skills list       # list discovered skills by source (user / project / plugin / remote-cache)
 openprogram skills doctor     # scan skill directories for problems
 openprogram skills search <q>       # search discovery sources (ClawHub by default)
 openprogram skills install <spec>   # install: slug (ClawHub by default), clawhub:<slug>, github:owner/repo

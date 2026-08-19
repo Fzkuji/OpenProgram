@@ -152,7 +152,7 @@ def _cmd_skills_update(all_flag: bool, name: str | None) -> int:
 
 def _cmd_skills_remove(name: str) -> int:
     """Delete an installed skill — only allowed for project/user/remote-cache
-    sources (bundled and plugin-provided skills are read-only)."""
+    sources (plugin-provided skills are read-only)."""
     import shutil
     from openprogram.skills.loader import get_skill
 
@@ -172,8 +172,8 @@ def _cmd_skills_remove(name: str) -> int:
 def _cmd_skills_list(override_dirs, as_json: bool) -> int:
     """Print the skills the runtime discovers.
 
-    Without ``--dir`` that is the five standard sources (bundled /
-    remote-cache / plugin / user / project). With ``--dir`` it is exactly
+    Without ``--dir`` that is the four external sources (remote-cache /
+    plugin / user / project). With ``--dir`` it is exactly
     the directories named, read by the same loader so the rows mean the
     same thing either way."""
     from openprogram.skills import list_skills, load_skills
@@ -214,7 +214,7 @@ def _cmd_skills_list(override_dirs, as_json: bool) -> int:
 def _cmd_skills_doctor(override_dirs) -> int:
     """Scan skill dirs for broken SKILL.md files and shadowed names.
 
-    Reads the same roots the loader reads — the five standard sources, or
+    Reads the same roots the loader reads — the four external sources, or
     exactly the ``--dir`` list when given — and walks them the same way,
     recursively, so a namespace directory holding nested skills
     (``anthropic-skills/docx/SKILL.md``) is not mistaken for a broken one.

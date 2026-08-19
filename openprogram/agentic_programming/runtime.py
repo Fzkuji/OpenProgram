@@ -525,7 +525,7 @@ class Runtime:
                          provider's standard env var (OPENAI_API_KEY, etc).
             skills:      Skill discovery for the system prompt. Three shapes:
                          - None (default) or False → skills disabled
-                         - True → the five standard sources
+                         - True → the four external sources
                            (openprogram.skills.list_skills)
                          - list[str] → explicit directory list
                          When enabled, the <available_skills> block is
@@ -623,7 +623,7 @@ class Runtime:
     def _skills_key(self) -> object:
         """Normalize the constructor's ``skills`` argument into a cache key.
 
-        None / False → ``()``. True → ``True`` (the five standard sources).
+        None / False → ``()``. True → ``True`` (the four external sources).
         list → the tuple of directories, read instead of those sources.
         """
         cfg = self._skills_config

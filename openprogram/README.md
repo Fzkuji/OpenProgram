@@ -17,10 +17,9 @@ Web, Ink TUI, and Electron sources live under `apps/` and depend on this core.
 | Integrations | `skills/`, `plugins/`, `mcp/` (client and `mcp/server/`), `acp/`, `lsp/` |
 | Platform boundaries | `sandbox/`, `security/`, `worktree/`, `updater/` |
 
-`skills_bundled/` contains the canonical default skills shipped as package data.
-User and project skills remain external inputs discovered from
-`~/.openprogram/skills/` and `<cwd>/skills/`; the repository does not keep a
-second project-level copy of bundled skills.
+`skills/` implements the AgentSkills-compatible loader for remote-cache,
+plugin, user, and project sources. Product workflows ship as Programs rather
+than default skills, so the package contains no bundled skill directory.
 
 `webui/` temporarily preserves established imports for Server routes and
 extensions. New FastAPI application assembly belongs in

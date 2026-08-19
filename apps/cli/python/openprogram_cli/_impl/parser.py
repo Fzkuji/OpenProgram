@@ -174,8 +174,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Resume a prior CLI chat session.")
 
     # ---- programs ---------------------------------------------------------
-    # Authoring (new / edit / app) lives in the `agentic-programming` skill now —
-    # the agent writes .py files directly. Only run / list remain as CLI.
+    # The agent authors Programs directly with file tools and the documented API.
+    # Only run / list remain as CLI operations.
     p_programs = sub.add_parser(
         "programs",
         help="Manage agentic programs (run, list)",

@@ -113,7 +113,7 @@ uv run --project ~/.openclaw/workspace/OpenProgram python \
 This runs the script with the source checkout's locked environment. Do not run
 it with the system Python, which does not contain OpenProgram's dependencies.
 
-OpenClaw and OpenProgram use the same AgentSkills-compatible `SKILL.md` format, so a skill written for one loads in the other. OpenProgram's bundled skills live in [`openprogram/skills_bundled/`](https://github.com/Fzkuji/OpenProgram/tree/main/openprogram/skills_bundled) and can be copied into any OpenClaw skill root as-is.
+OpenClaw and OpenProgram use the same AgentSkills-compatible `SKILL.md` format, so user, project, or plugin skills can be shared between them. OpenProgram does not ship default skills; product workflows are Programs.
 
 ## Usage Pattern 2: As a Python Library in Agent Scripts
 

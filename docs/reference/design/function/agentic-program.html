@@ -217,8 +217,7 @@
 存量按生产代码统计（不含测试）：<code>@function</code>共46个（32个<code>@function(...)</code>装饰器写法，
 14个<code>function(...)(fn)</code>模块级调用写法，两种写法进的是同一个注册表）；
 <code>@agentic_function</code>共4个（<code>extract_pdf_figures</code>、<code>extract_pdf_tables</code>、<code>interaction_demo</code>、<code>goal</code>）；
-技能<code>openprogram/skills_bundled/</code>下4份，加上用户项目、用户目录和远端缓存装的，
-全部经<code>skills/loader.py</code>进系统提示（见第4问）。
+Skill 只来自用户项目、用户目录、插件和远端缓存，全部经<code>skills/loader.py</code>进系统提示（见第4问）。
 <b>三个刻度不是仅有的三个位置。</b>骨架里放一个<code>decision.make</code>是硬里嵌软；技能第三步写「调<code>survey_references</code>」是软里嵌硬。所以谱是连续的。
 </div>
 </div>
@@ -423,12 +422,12 @@
 
   <rect x="20" y="40" width="530" height="140" rx="10" fill="#1d1c14" stroke="#2e2c20"/>
   <rect x="20" y="40" width="530" height="3" rx="1.5" fill="#5aad4e"/>
-  <text x="36" y="63" fill="#f0eee6" font-size="11">五个来源，按优先级从低到高排：</text>
-  <text x="36" y="84" fill="#a5a190" font-size="11" font-family="Menlo,monospace">bundled  →  remote-cache  →  plugin  →  user  →  project</text>
-  <text x="36" y="105" fill="#a5a190" font-size="11">同名后见先赢。用户自己写的盖过给他装的，装的盖过随程序发的。</text>
+  <text x="36" y="63" fill="#f0eee6" font-size="11">四个来源，按优先级从低到高排：</text>
+  <text x="36" y="84" fill="#a5a190" font-size="11" font-family="Menlo,monospace">remote-cache  →  plugin  →  user  →  project</text>
+  <text x="36" y="105" fill="#a5a190" font-size="11">同名后见先赢。用户和项目内容覆盖插件或远端缓存。</text>
   <text x="36" y="124" fill="#a5a190" font-size="11">名字取自目录相对来源根的路径，所以有层级：anthropic-skills/docx。</text>
   <text x="36" y="145" fill="#a5a190" font-size="11">读正文，也读 category / allowed_tools / triggers / aliases。</text>
-  <text x="36" y="166" fill="#5aad4e" font-size="11">skills_bundled/ 是第一来源，distill 和 self-update 现在在清单里。</text>
+  <text x="36" y="166" fill="#5aad4e" font-size="11">安装包不提供默认 skill；产品工作流由 Programs 提供。</text>
 
   <text x="580" y="26" fill="#5aad4e" font-size="12.5" font-weight="600">一个加载动词：skill 工具</text>
   <rect x="580" y="40" width="518" height="140" rx="10" fill="#12110b" stroke="#5aad4e"/>
@@ -443,7 +442,7 @@
 
   <rect x="20" y="228" width="330" height="46" rx="9" fill="#1d1c14" stroke="#2e2c20"/>
   <text x="36" y="250" fill="#f0eee6" font-size="11" font-family="Menlo,monospace">runtime.py（exec 那条路）</text>
-  <text x="36" y="266" fill="#a5a190" font-size="11">Runtime(skills=True) 读五个来源</text>
+  <text x="36" y="266" fill="#a5a190" font-size="11">Runtime(skills=True) 读四个外部来源</text>
 
   <rect x="366" y="228" width="330" height="46" rx="9" fill="#1d1c14" stroke="#2e2c20"/>
   <text x="382" y="250" fill="#f0eee6" font-size="11" font-family="Menlo,monospace">context/components.py（chat 那条路）</text>
@@ -459,16 +458,15 @@
 描述取首行，截到250字符（<code>MAX_LISTING_DESC_CHARS</code>，抄claude-code的数：清单只管发现，正文由<code>skill</code>工具加载）。
 <b>条数不截。</b>之前chat那条路截到20条，装了20份以上技能的用户后面那些模型根本看不见，而这正是要修的毛病。
 要让清单短，走<code>skills.disabled</code>（设置页、agent档案、Skills页开关都写这一个字段），不靠渲染器悄悄砍。
-代价看得见：只有3份自带技能时512 token；装满26份（自带加项目加19份远端拉的）是3055 token。这段在L0，是整段系统提示里最容易命中prefix cache的一段。
-仓库根的旧技能副本已经删除；内置技能只有<code>openprogram/skills_bundled/</code>这一份权威来源，
-用户当前项目的<code>&lt;cwd&gt;/skills/</code>仍可按既有优先级覆盖内置技能。
+代价随用户实际安装的 skill 数量变化。这段在L0，可参与系统提示的 prefix cache。
+OpenProgram 不随包分发默认 skill；产品工作流由 Programs 提供。用户当前项目的<code>&lt;cwd&gt;/skills/</code>仍可覆盖用户目录、插件和远端缓存里的同名 skill。
 </div>
 </div>
 
 <h3>为什么重复出现的工作模式一个都没被固化</h3>
 <div class="note warn">
-判断标准写了，实现路径只写了一半。<code>skills_bundled/distill/SKILL.md</code>的§3明确给了两条出路：需要判断的写SKILL.md，机械的写<code>@agentic_function</code>。
-但整份文档只有§5「Write the SKILL.md」写完整了，函数那条只留了一句「去加载agentic-programming技能」就转走。
+旧版 distill skill 曾给出两条出路：需要判断的写 SKILL.md，机械的写<code>@agentic_function</code>；但实现路径只覆盖了前者。
+当前安装包已删除该默认 skill，产品级复用工作流统一归 Programs。
 结果是可预期的：现有4个agentic function没有一个是distill产出的，而每次会话结束时最省力的选择永远是写散文。
 <b>把一次性劳动固化成代码，缺的不是能力，是把「写函数」这条路写得和「写散文」一样省力。</b>
 </div>
@@ -1139,10 +1137,10 @@
 </div>
 
 <div class="qa">
-  <p class="q">4. <code>skills_bundled/</code>那个目录怎么办？技能要不要也有个「注册」动作？</p>
+  <p class="q">4. Skill 怎么注册，默认 Skill 怎么处理？</p>
   <p class="a">技能曾经注册了两套，而且两套互不认识：<code>agentic_programming/skills.py</code>只读front matter的两个字段、扫两个目录、同名先见先赢；<code>skills/loader.py</code>读正文、还读<code>category</code>／<code>allowed_tools</code>／<code>triggers</code>／<code>aliases</code>、扫五个来源、同名后见先赢。三条后果都是实打实的：<code>skills_bundled/</code>不在喂系统提示那条路上，所以<code>distill</code>和<code>self-update</code>模型根本看不见；两个渲染器输出不一样，chat那条路截到20条且不给路径；<code>SkillTool</code>写好了从来没注册。</p>
   <p class="a">现在三条都合了。<b>一个加载器</b>：<code>agentic_programming/skills.py</code>已删除，<code>Runtime(skills=...)</code>和<code>skills_index</code>组件都走<code>skills/loader.py</code>。<b>一份清单</b>：<code>format_skills_for_prompt</code>是唯一渲染器，两条路输出同一段<code>&lt;available_skills&gt;</code>，带name、截到250字符的描述首行、绝对路径。<b>一个加载动词</b>：<code>skill</code>工具（<code>programs/functions/skill/</code>）进了注册表，收层级名或不歧义短名，返回正文加基准目录加同目录文件清单，调用记入<code>skills/tool.py</code>的<code>invoke_log.jsonl</code>，Skills页读的就是这份记录。</p>
-  <p class="a">冲突顺序也定死了：<code>bundled</code> → <code>remote-cache</code> → <code>plugin</code> → <code>user</code> → <code>project</code>，后见先赢。<b>用户自己写的盖过给他装的，装的盖过随程序发的；同是用户写的，项目里那份盖过家目录那份。</b>之前<code>remote-cache</code>排在最后，从ClawHub拉一个同名技能会盖掉用户自己写的，方向反了。</p>
+  <p class="a">当前冲突顺序是：<code>remote-cache</code> → <code>plugin</code> → <code>user</code> → <code>project</code>，后见先赢。用户自己写的覆盖插件或远端缓存提供的同名 skill；项目目录覆盖用户目录。OpenProgram 不再提供 bundled 来源。</p>
   <p class="a"><code>skill</code>工具在<code>DEFERRED_DEFAULT_TOOLS</code>里：清单每轮已经列了每份技能的名字和描述，schema只在模型真要加载时才由<code>tool_search</code>拉进当轮，平时只占catalog一行。<code>read</code>打开清单里的<code>location</code>同样有效，两条路都留着。<code>skills.py:19</code>当初写的取舍（「We intentionally reuse <code>read</code>」）没有作废，只是不再是唯一入口。</p>
   <p class="a">技能现在和工具在同一张表里、同一套门禁、同一份清单。<b>让概念成立的不是共用装饰器，是共用注册表和共用清单。</b></p>
 </div>
@@ -1192,8 +1190,7 @@
 <b>层4（不建议做）：目录名与线上格式。</b><code>openprogram/programs/functions/agentic/</code>被132处斜杠路径引用（61个文件），牵到
 <code>.gitignore:51,57,58</code>和<code>pyproject.toml:201,215,216</code>；<code>kind="agentic_function"</code>（<code>streaming/__init__.py:24</code>）是跨进程流协议里的枚举值。
 共170处以上，改了只换来一次全仓大改，目录名和线上枚举本来就不是概念名。
-<br>仓库根旧的<code>skills/agentic-programming/SKILL.md</code>副本已经删除；内置规范只维护
-<code>openprogram/skills_bundled/agentic-programming/SKILL.md</code>。
+<br>安装包不维护 agentic-programming 默认 skill；规范由 API 文档和 Programs 实现维护。
 </div>
 </div>
 
@@ -1224,7 +1221,7 @@
 实现文件：<code>openprogram/agentic_programming/function.py</code>、<code>runtime.py</code>、<code>decision.py</code>、<code>session.py</code>；
 <code>openprogram/programs/_runtime.py</code>、<code>openprogram/programs/functions/agentic/</code>、<code>openprogram/programs/functions/vanilla/</code>（技能加载动词在<code>tools/skill/</code>）；
 <code>openprogram/skills/loader.py</code>、<code>openprogram/skills/tool.py</code>；<code>openprogram/context/components.py</code>；
-<code>openprogram/skills_bundled/distill/SKILL.md</code>。
+安装包不提供默认 distill skill。
 相关设计页：<a href="calling-unification.html">函数与工具调用的统一</a>、<a href="../runtime/agent-collaboration.html">Agent协作</a>。
 </div>
 

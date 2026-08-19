@@ -1,8 +1,8 @@
 # Distill——把会话变成可复用流程
 
-一个会话记录了一次做成了的工作。蒸馏把这份记录转成下次能直接起步的产物：一份 `SKILL.md` 或一个 `@agentic_function`。
+一个会话记录了一次已完成的工作。`read_conversation` 将这份记录提供给 Programs 和用户自定义 skill。OpenProgram 不再随包提供默认 distill skill。
 
-设计刻意做薄。新增的只有一个把会话渲染成文本的模块；其余全是既有基础设施，而"什么算好流程"的判断放在 skill 正文里，不写进代码。
+保留的产品能力是转写器。产品级复用工作流应实现为 Program；如果用户需要的是模型指令，也可以自行编写 skill。
 
 ## 组成
 
@@ -10,7 +10,6 @@
 |---|---|---|
 | 转写器 | `openprogram/store/session/transcript.py` | `render_read_conversation()`——把会话的一条分支渲染成 LLM 可读的纯文本 |
 | 模型可调工具 | `openprogram/programs/functions/vanilla/read_conversation/` | `read_conversation`——转写器的 `@function` 封装，缺省读当前会话 |
-| distill skill | `openprogram/skills_bundled/distill/` | 指导 agent 怎么提取流程、怎么写出来 |
 | 产品文档 | `docs/capabilities/distill.md` | 面向用户的说明 |
 
 ## 转写器
@@ -56,11 +55,11 @@ store 走 `default_db()` 而不是写死 `~/.openprogram` 路径，这样绑定�
 
 这沿用 agentic programming 里删掉 `create()` / `edit()` / `improve()` 封装时定下的先例：函数体全部内容就是一次 LLM 调用加一次文件写入的，这层 agent 不需要。
 
-skill 也负责选产出形态。运行时需要判断的流程写成 `SKILL.md`；机械的流程按 [agentic-programming](../../function/calling-unification.zh.md) 的约定写成 `@agentic_function`。
+旧版默认 distill skill 曾负责选择产出形态；该默认 skill 现已退役。产品级复用流程应实现为 Program，用户仍可自行编写外部 skill。
 
 ## 产物落进既有 skill 管道
 
-蒸馏出的 skill 写到 `~/.openprogram/skills/<name>/` 或 `<cwd>/skills/<name>/`——这是加载器已经在合并的五个来源中的两个。因此它不用重启就生效（watcher 热重载），并自动可以用 `/<name>` 调用（`commands/_skill_adapter.py` 把每个被发现的 skill 投射进 slash command 注册表）。
+用户自定义 skill 写到 `~/.openprogram/skills/<name>/` 或 `<cwd>/skills/<name>/`——这是加载器合并的四个来源中的两个。因此它不用重启就生效（watcher 热重载），并自动可以用 `/<name>` 调用（`commands/_skill_adapter.py` 把每个被发现的 skill 投射进 slash command 注册表）。
 
 这就是这个功能不需要自己的子系统的原因：存储、发现、重载、调用路径全都已经在了。蒸馏要做的只是把文件写到对的位置。
 

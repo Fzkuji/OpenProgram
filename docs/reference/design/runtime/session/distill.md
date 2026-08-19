@@ -1,8 +1,8 @@
 # Distill — sessions into reusable procedures
 
-A session records work that succeeded. Distilling converts that record into an artifact the next run can start from: a `SKILL.md` or an `@agentic_function`.
+A session records work that succeeded. `read_conversation` exposes that record to Programs and user-authored skills. OpenProgram no longer ships a default distillation skill.
 
-The design is deliberately thin. One new module renders a session as text; everything else is existing infrastructure, and the reasoning that makes a good procedure lives in a skill body rather than in code.
+The retained product capability is the transcript renderer. A product-specific reusable workflow should be implemented as a Program; users may independently author a skill if they want model instructions rather than product behavior.
 
 ## Components
 
@@ -10,7 +10,6 @@ The design is deliberately thin. One new module renders a session as text; every
 |---|---|---|
 | Transcript renderer | `openprogram/store/session/transcript.py` | `render_read_conversation()` — one branch of a session as LLM-readable plain text |
 | Model-facing tool | `openprogram/programs/functions/vanilla/read_conversation/` | `read_conversation` — the renderer as a `@function`, defaulting to the current session |
-| The distill skill | `openprogram/skills_bundled/distill/` | Instructions for extracting a procedure and writing it out |
 | Product page | `docs/capabilities/distill.md` | User-facing documentation |
 
 ## The transcript renderer
@@ -60,7 +59,7 @@ The skill also decides the output form. A procedure requiring runtime judgment b
 
 ## Output lands in the existing skill pipeline
 
-A distilled skill is written to `~/.openprogram/skills/<name>/` or `<cwd>/skills/<name>/` — two of the five sources the loader already merges. It is therefore live without a restart (the watcher hot-reloads) and automatically available as `/<name>` (`commands/_skill_adapter.py` projects every discovered skill into the slash-command registry).
+A user-authored skill is written to `~/.openprogram/skills/<name>/` or `<cwd>/skills/<name>/` — two of the four sources the loader merges. It is live without a restart (the watcher hot-reloads) and automatically available as `/<name>` (`commands/_skill_adapter.py` projects every discovered skill into the slash-command registry).
 
 That is the reason the feature needs no subsystem of its own: the storage, the discovery, the reload, and the invocation path all exist. Distillation only had to produce a file in the right place.
 

@@ -32,12 +32,13 @@ author: ...
 ---
 ```
 
-来源，按优先级从低到高（合并显示，冲突时后者覆盖前者：用户自己写的盖过给他装的，装的盖过随包发的）：
-1. **Bundled** — `openprogram/skills_bundled/<name>/`（随包发布，对标 claude-code `src/skills/bundled`）
-2. **Remote-pulled** — `~/.openprogram/cache/skills/<name>/`（对标 opencode discovery，按 index 远端拉取）
-3. **Plugin-provided** — 已启用 plugin 贡献
-4. **User** — `~/.openprogram/skills/<name>/`
-5. **Project** — `<project>/skills/<name>/`
+来源按优先级从低到高合并显示，冲突时后者覆盖前者：
+1. **Remote-pulled** — `~/.openprogram/cache/skills/<name>/`（对标 opencode discovery，按 index 远端拉取）
+2. **Plugin-provided** — 已启用 plugin 贡献
+3. **User** — `~/.openprogram/skills/<name>/`
+4. **Project** — `<project>/skills/<name>/`
+
+OpenProgram 不随安装包提供默认 skill。产品工作流归 Programs；skill 保留为用户或插件控制的扩展机制。
 
 技能的名字取自目录相对来源根的路径，所以嵌套目录给出层级名（`anthropic-skills/docx`），重名意味着同一份技能来自两个来源，而不是两份不同技能。
 
@@ -88,11 +89,9 @@ manifest 字段：
 ```
 openprogram/
   skills/
-    loader.py           # 五来源合并加载
+    loader.py           # 四来源合并加载
     discovery.py        # 远端 index 按需 pull（对标 opencode discovery.ts）
     watcher.py          # watchdog 文件监听，热重载 + WS 广播
-  skills_bundled/       # 内置 skills
-    ...
   plugins/
     loader.py           # 多 manifest 解析、安装、卸载
     sandbox.py          # 分层沙箱：subprocess / in-process
@@ -107,7 +106,7 @@ openprogram/
 ### Skills API（`routes/skills.py`）
 | Method | Path | 说明 |
 |---|---|---|
-| GET | `/api/skills` | 五来源合并列表，含 source / enabled / category / optional |
+| GET | `/api/skills` | 四来源合并列表，含 source / enabled / category / optional |
 | GET | `/api/skills/{name}` | SKILL.md 全文 + frontmatter + 资源文件树 |
 | POST | `/api/skills` | 新建到 project / user |
 | DELETE | `/api/skills/{name}` | 仅删 project / user / remote-cache |
@@ -204,7 +203,7 @@ apps/web/components/plugins/
 
 1. **Plugin 侧栏项**：manifest `sidebar: [...]` → 自动注入侧栏，等同内置导航
 2. **Skill 调用 trace**：每次 SkillTool 调用记录 `{ skill, injected_md_hash, accessed_refs, ts }`，右栏 / `/skills/[name]/trace` 可视化
-3. **Skill 热重载**：watchdog 监听五来源任一变动 → 重新解析 → WS 广播，无需 `/reload`
+3. **Skill 热重载**：watchdog 监听四来源任一变动 → 重新解析 → WS 广播，无需 `/reload`
 4. **三 manifest 统一**：`plugin.json` / `pyproject.toml` / `package.json` 任一形式都能识别，迁移零成本
 5. **跨生态 marketplace 互通**：claude-code marketplace schema 适配层，能直接添加其官方 / 第三方 marketplace
 6. **双轨包管理**：pip + npm 双轨，opencode 的 Node plugin 和 hermes 的 Python plugin 都能装
@@ -229,7 +228,7 @@ apps/web/components/plugins/
 
 设计已完备，落地分四块，每块自身可用：
 
-- **Skills** —— 五来源 loader、watchdog 与 WS 广播、SKILL.md 解析（triggers / category / optional）、`/skills` 页面与 bundled 默认集、SkillTool 内置工具与 invoke trace、远端 discovery。
+- **Skills** —— 四来源 loader、watchdog 与 WS 广播、SKILL.md 解析（triggers / category / optional）、`/skills` 页面、SkillTool 内置工具与 invoke trace、远端 discovery。安装包不提供默认 skill。
 - **Plugins 本地** —— 三 manifest 统一解析；pip / npm / git / path 四种来源安装；沙箱分层与 trust；commands / skills / mcpServers / providers / hooks / agents 入口注入；Installed 与 Errors 页面，含 Validate / Options / Reload。
 - **Plugins 前端与侧栏** —— `web` entrypoint 资源挂载、`/plugin/[name]/[...slug]` 动态渲染、sidebar 注册项。
 - **Marketplace** —— 多 marketplace 与 claude-code schema 适配，以及 BrowseMarketplace / AddMarketplace / DiscoverPlugins 界面。

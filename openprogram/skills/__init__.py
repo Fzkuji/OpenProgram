@@ -1,4 +1,4 @@
-"""Skills module — five-source skill loader, remote discovery, watcher, tool.
+"""Skills module — external skill loader, remote discovery, watcher, tool.
 
 See ``docs/design/integrations/skills-and-plugins.md`` section 2 for the design.
 """
@@ -11,7 +11,6 @@ from .loader import (
     get_skill,
     format_skills_for_prompt,
     register_plugin_skills,
-    bundled_dir,
     user_dir,
     project_dir,
     remote_cache_dir,
@@ -27,7 +26,6 @@ __all__ = [
     "get_skill",
     "format_skills_for_prompt",
     "register_plugin_skills",
-    "bundled_dir",
     "user_dir",
     "project_dir",
     "remote_cache_dir",

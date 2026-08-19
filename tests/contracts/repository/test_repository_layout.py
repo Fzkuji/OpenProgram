@@ -43,7 +43,6 @@ CURRENT_STRUCTURE_GUIDES = (
     "README.md",
     "docs/README.md",
     "docs/README.zh.md",
-    "openprogram/skills_bundled/agentic-programming/SKILL.md",
     "docs/capabilities/installing-harnesses.md",
     "docs/capabilities/installing-harnesses.zh.md",
     "docs/server/troubleshooting.md",
@@ -169,7 +168,7 @@ def test_workspace_entry_readmes_describe_current_ownership() -> None:
     cli_readme = (ROOT / "apps/cli/README.md").read_text(encoding="utf-8")
 
     assert "programs/" in python_readme
-    assert "skills_bundled/" in python_readme
+    assert "skills_bundled/" not in python_readme
     assert "FastAPI" in server_readme
     assert "openprogram_server" in server_readme
     assert "OpenProgram Web workspace" in web_readme
@@ -229,6 +228,38 @@ def test_generated_package_readmes_are_current() -> None:
         if marker in current and current != render(readme.parent):
             stale.append(readme.relative_to(ROOT).as_posix())
 
+    assert stale == []
+
+
+def test_user_docs_do_not_advertise_removed_bundled_skills() -> None:
+    user_docs = [
+        ROOT / "README.md",
+        ROOT / "docs/README.md",
+        ROOT / "docs/README.zh.md",
+        *sorted((ROOT / "docs/capabilities").glob("*.md")),
+        *sorted((ROOT / "docs/start").glob("*.md")),
+        ROOT / "docs/reference/design/runtime/session/distill.md",
+        ROOT / "docs/reference/design/runtime/session/distill.zh.md",
+        ROOT / "openprogram/__init__.py",
+        ROOT / "openprogram/skills/loader.py",
+        ROOT / "openprogram/agentic_programming/runtime.py",
+        ROOT / "apps/cli/python/openprogram_cli/_impl/parser.py",
+        ROOT / "apps/cli/python/openprogram_cli/_impl/commands/skills.py",
+        ROOT / "apps/server/openprogram_server/_webui/routes/functions.py",
+        ROOT / "apps/server/openprogram_server/_webui/routes/skills.py",
+    ]
+    stale_markers = (
+        "skills_bundled/",
+        "five sources",
+        "five standard sources",
+        "五个来源",
+        "load the agentic-programming skill",
+    )
+    stale = []
+    for path in user_docs:
+        text = path.read_text(encoding="utf-8")
+        if any(marker in text for marker in stale_markers):
+            stale.append(path.relative_to(ROOT).as_posix())
     assert stale == []
 
 

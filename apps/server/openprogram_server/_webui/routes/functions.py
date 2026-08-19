@@ -180,9 +180,9 @@ def register(app):
             _s._broadcast_chat_response(session_id, msg_id, {
                 "type": "error",
                 "content": (
-                    "The /edit endpoint has been removed. Open the chat "
-                    "and load the agentic-programming skill — the agent will "
-                    "edit .py files directly using its file-editing tools."
+                    "The /edit endpoint has been removed. Ask the agent in chat "
+                    "to edit the Program directly using its file-editing tools "
+                    "and the agentic function API."
                 ),
             })
 
@@ -233,9 +233,9 @@ def register(app):
             _s._broadcast_chat_response(session_id, msg_id, {
                 "type": "error",
                 "content": (
-                    "The /create endpoint has been removed. Open the chat "
-                    "and load the agentic-programming skill — the agent will "
-                    "create the .py file directly using its file-editing tools."
+                    "The /create endpoint has been removed. Ask the agent in chat "
+                    "to create the Program directly using its file-editing tools "
+                    "and the agentic function API."
                 ),
             })
 

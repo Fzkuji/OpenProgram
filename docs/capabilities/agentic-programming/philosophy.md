@@ -82,7 +82,7 @@ So context management stops being prompt plumbing and becomes a property you dec
 
 ### The LLM Writes Code Too
 
-The LLM isn't just the runtime's reasoning engine; it can also **write code** — generating, modifying, and fixing `@agentic_function`s that conform to the spec. This needs no dedicated `create()` / `fix()` framework functions; the agent authors new functions with ordinary file edits, following the [`agentic-programming` skill](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/skills_bundled/agentic-programming/SKILL.md) as the spec — where files go, decorator metadata, the division of labor between the docstring and `content`, and the validation checklist. A background watcher rescans `programs/functions/agentic/` and hot-loads new modules: their `@agentic_function` decorators fire on import and self-register, so a freshly written function is callable without a restart.
+The LLM isn't just the runtime's reasoning engine; it can also **write code** — generating, modifying, and fixing `@agentic_function`s that conform to the documented API. This needs no dedicated `create()` / `fix()` framework functions; the agent authors new functions with ordinary file edits. A background watcher rescans `programs/functions/agentic/` and hot-loads new modules: their `@agentic_function` decorators fire on import and self-register, so a freshly written function is callable without a restart.
 
 Code is data, the LLM is the compiler, and functions are the product — the loop closes.
 

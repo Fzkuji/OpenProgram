@@ -1,7 +1,7 @@
 """One skill registry, one prompt renderer.
 
 Skills used to be loaded twice — a flat two-directory scanner feeding the
-system prompt and a five-source loader feeding everything else — with two
+system prompt and a multi-source loader feeding everything else — with two
 different renderers and opposite conflict rules. These tests pin the
 merged behaviour: which sources are read, who wins a name clash, and that
 every path into the model produces the same block.
@@ -28,14 +28,13 @@ def _write_skill(root: Path, rel: str, description: str, body: str = "body\n") -
 
 @pytest.fixture()
 def sources(tmp_path, monkeypatch):
-    """Point all five source roots at throwaway directories."""
+    """Point all filesystem source roots at throwaway directories."""
     roots = {
         name: tmp_path / name
-        for name in ("bundled", "remote_cache", "user", "project")
+        for name in ("remote_cache", "user", "project")
     }
     for p in roots.values():
         p.mkdir()
-    monkeypatch.setattr(L, "bundled_dir", lambda: roots["bundled"])
     monkeypatch.setattr(L, "remote_cache_dir", lambda: roots["remote_cache"])
     monkeypatch.setattr(L, "user_dir", lambda: roots["user"])
     monkeypatch.setattr(L, "project_dir", lambda cwd=None: roots["project"])
@@ -43,37 +42,29 @@ def sources(tmp_path, monkeypatch):
     return roots
 
 
-def test_bundled_skills_are_discovered(sources):
-    """The bug this merge fixes: skills_bundled/ was not on the path that
-    feeds the system prompt, so `distill` was invisible to the model."""
-    _write_skill(sources["bundled"], "distill", "turn a session into a skill")
-    names = [s.name for s in L.list_skills()]
-    assert names == ["distill"]
-    assert L.format_skills_for_prompt(L.list_skills()).count("<name>distill</name>") == 1
-
-
-def test_real_bundled_skills_reach_the_prompt():
-    """Unmocked: the shipped skills_bundled/ entries are in the listing."""
-    block = L.format_skills_for_prompt(L.list_skills())
-    assert "<name>distill</name>" in block
-    assert "<name>self-update</name>" in block
-
-
 def test_one_entry_per_name_across_sources(sources):
-    for root in ("bundled", "remote_cache", "user", "project"):
+    for root in ("remote_cache", "user", "project"):
         _write_skill(sources[root], "deploy", f"from {root}")
     skills = L.list_skills()
     assert [s.name for s in skills] == ["deploy"]
     assert L.format_skills_for_prompt(skills).count("<skill>") == 1
 
 
+def test_only_external_skill_sources_are_registered(sources):
+    assert [source for source, _ in L._source_dirs()] == [
+        "remote-cache",
+        "user",
+        "project",
+    ]
+    assert "bundled" not in L.SOURCES
+
+
 @pytest.mark.parametrize(
     "present, winner",
     [
-        (("bundled", "remote_cache"), "remote_cache"),
         (("remote_cache", "user"), "user"),
         (("user", "project"), "project"),
-        (("bundled", "remote_cache", "user", "project"), "project"),
+        (("remote_cache", "user", "project"), "project"),
     ],
 )
 def test_the_more_local_source_wins(sources, present, winner):
@@ -94,6 +85,17 @@ def test_plugin_loses_to_user_and_project(tmp_path, sources, monkeypatch):
     assert L.list_skills()[0].description == "from plugin"
     _write_skill(sources["user"], "deploy", "from user")
     assert L.list_skills()[0].description == "from user"
+
+
+def test_plugin_source_is_discovered(tmp_path, sources, monkeypatch):
+    plugin_root = tmp_path / "plugin"
+    plugin_root.mkdir()
+    _write_skill(plugin_root, "review", "from plugin")
+    monkeypatch.setattr(L, "_PLUGIN_SKILL_DIRS", {"example": plugin_root})
+
+    (skill,) = L.list_skills()
+    assert skill.source == "plugin:example"
+    assert skill.description == "from plugin"
 
 
 def test_hierarchical_names_come_from_the_directory(sources):
@@ -144,7 +146,7 @@ def test_explicit_dirs_use_the_same_parser_and_rule(tmp_path):
 def test_chat_and_exec_render_the_same_block(sources, monkeypatch):
     """context.components (chat turns) and Runtime._skills_block (inside an
     agentic function) go through the one loader and the one renderer."""
-    _write_skill(sources["bundled"], "distill", "turn a session into a skill")
+    _write_skill(sources["remote_cache"], "distill", "turn a session into a skill")
     from openprogram.agentic_programming.runtime import Runtime
     from openprogram.context import components
 
@@ -158,7 +160,7 @@ def test_chat_and_exec_render_the_same_block(sources, monkeypatch):
 
 
 def test_disabled_skills_drop_out_of_the_chat_listing(sources):
-    _write_skill(sources["bundled"], "distill", "turn a session into a skill")
+    _write_skill(sources["remote_cache"], "distill", "turn a session into a skill")
     _write_skill(sources["project"], "deploy", "ship it")
     from openprogram.context import components
 

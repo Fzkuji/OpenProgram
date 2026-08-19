@@ -21,8 +21,8 @@ OpenProgram — Agentic Programming 理念的产品化实现。
 四个名字都经模块级 ``__getattr__`` 懒加载：``import openprogram`` 本身不拉起
 runtime / store / providers，嵌入方按需付导入成本。
 
-新建 / 编辑 / 改进 @agentic_function 走 skill ``agentic-programming``，
-agent 直接用 Read / Write / Edit 工具操作 .py 文件，不再有专门的 meta 函数。
+新建 / 编辑 / 改进 @agentic_function 由 agent 按 API 文档直接使用文件工具操作
+.py 文件，不再有专门的 meta 函数或随包提供的默认 skill。
 """
 
 __all__ = ["agentic_function", "Runtime", "decision", "Session"]

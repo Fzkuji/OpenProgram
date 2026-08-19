@@ -341,8 +341,7 @@ def register(app):
     @app.put("/api/skills/{name:path}")
     async def update_skill_endpoint(name: str, request: Request):
         """Overwrite SKILL.md body in-place. Only project / user /
-        remote-cache sources are mutable — bundled and plugin-provided
-        skills are read-only."""
+        remote-cache sources are mutable; plugin-provided skills are read-only."""
         from openprogram.skills.loader import get_skill
         s = get_skill(name)
         if s is None:

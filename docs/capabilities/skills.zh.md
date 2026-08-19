@@ -25,17 +25,12 @@ front matter 是 `key: value` 形式的 YAML 子集；`name` 和 `description` �
 
 ## 查找路径
 
-system prompt 里的 skills 块按顺序探测两个位置，同名时先见者胜，因此**用户 skill 覆盖仓库 skill**：
-
-1. `~/.openprogram/skills/`（用户级）
-2. `<OpenProgram 仓库>/skills/`（项目级）
-
-管理 CLI 与 slash command 投射则合并五个来源：bundled（随 OpenProgram 分发）、user（`~/.openprogram/skills/`）、project（`<cwd>/skills/`）、插件贡献（见 [Plugins](plugins.md)）、remote-cache（`~/.openprogram/cache/skills/`——`skills install` 下载落在这里）。
+system prompt、管理 CLI 和 slash command 投射使用同一套四个来源：remote-cache（`~/.openprogram/cache/skills/`）、插件贡献（见 [Plugins](plugins.md)）、user（`~/.openprogram/skills/`）和 project（`<cwd>/skills/`）。重名时后面的、更本地的来源覆盖前面的来源。OpenProgram 不随安装包提供默认 skill；产品工作流由 Programs 提供。
 
 ## 管理命令
 
 ```bash
-openprogram skills list       # 按来源（bundled / user / project / plugin / remote-cache）列出已发现的 skill
+openprogram skills list       # 按来源（user / project / plugin / remote-cache）列出已发现的 skill
 openprogram skills doctor     # 扫描 skill 目录找问题
 openprogram skills search <q>       # 在发现源里搜索（默认 ClawHub）
 openprogram skills install <spec>   # 安装：slug（默认 ClawHub）、clawhub:<slug>、github:owner/repo
