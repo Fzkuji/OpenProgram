@@ -61,7 +61,7 @@ packages/core/src/openprogram/programs/applications/*
 .backend.log.err
 
 # Frontend dependency/build artifacts
-/node_modules/
+node_modules/
 apps/web/.next/
 apps/web/next-env.d.ts
 apps/web/tsconfig.tsbuildinfo

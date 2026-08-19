@@ -14,7 +14,6 @@ TOP_LEVEL_DIRECTORIES = {
     "apps",
     "docs",
     "packages",
-    "promo",
     "references",
     "scripts",
     "website",

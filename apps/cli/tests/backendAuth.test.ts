@@ -157,7 +157,7 @@ describe('against the real backend listener', () => {
   // fileURLToPath, not .pathname: a repo path containing spaces comes
   // back percent-encoded from .pathname and no longer exists on disk.
   const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
-  expect(existsSync(join(repoRoot, 'openprogram'))).toBe(true);
+  expect(existsSync(join(repoRoot, 'packages/core/src/openprogram'))).toBe(true);
   expect(
     existsSync(join(repoRoot, 'tests/support/helpers/owner_auth_listener.py')),
   ).toBe(true);
