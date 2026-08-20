@@ -31,8 +31,17 @@ MISSING = "missing"
 NOT_APPLICABLE = "not_applicable"
 UNKNOWN = "unknown"
 
-# "the key is good" — everything the green dot covers.
-_OK_STATUSES = frozenset({VALID, VALID_NO_BALANCE, VALID_MODEL_UNAVAILABLE})
+# ``ok`` / green Valid means usable *now* — only the exact persist-grade
+# ``valid``. Probe-only statuses (no balance, model down) must never be ok.
+_OK_STATUSES = frozenset({VALID})
+
+# Layer-1 GET /models (and siblings) is auth-only: a 200 proves the key was
+# accepted, not that the account can complete. These kinds have no cheap
+# billing endpoint; only OpenRouter ``GET /key`` (or a layer-2 ping / live
+# 200 chat) may treat a 200 as usable-proven.
+_AUTH_ONLY_KINDS = frozenset({
+    "openai_bearer", "anthropic_native", "anthropic_compat", "google_query",
+})
 
 
 @dataclass
@@ -59,10 +68,10 @@ class CredentialResult:
             d["via"] = self.via
         if self.model:
             d["model"] = self.model
-        if self.ok:
-            if self.status == VALID_MODEL_UNAVAILABLE and self.detail:
-                d["note"] = self.detail
-        else:
+        d["status"] = self.status
+        if self.status == VALID_MODEL_UNAVAILABLE and self.detail:
+            d["note"] = self.detail
+        if not self.ok:
             d["error"] = self.detail or (f"HTTP {self.http_status}" if self.http_status else "failed")
         return d
 
@@ -230,6 +239,10 @@ def _interpret(
             return _result(provider_id, VALID_NO_BALANCE, kind=kind, via=via,
                            http_status=200, latency_ms=latency,
                            detail="Key works — credit limit is used up. Add funds in the OpenRouter dashboard.")
+        # 200 on a non-billing endpoint is still a probe ``valid`` (auth
+        # accepted). Callers must not persist that as usable ``valid`` unless
+        # this is OpenRouter ``GET /key`` (``balance_body=True``, remaining > 0)
+        # or a later layer-2 ping / live chat proves the key can complete.
         return _result(provider_id, VALID, kind=kind, via=via, http_status=200, latency_ms=latency)
     if status in (401, 403):
         return _result(provider_id, INVALID_CREDENTIAL, kind=kind, via=via,
@@ -280,56 +293,169 @@ def _layer1_probe(provider_id: str, kind: str, api_key: str, base: str | None,
     )
 
 
-def _layer2_ping(provider_id: str, kind: str, api_key: str, base: str | None,
-                 model: str, timeout: float) -> CredentialResult:
-    """Inference ping — "can I reach THIS model right now?". Only OpenAI-shaped
-    chat completions are pingable here; other KINDs fall back to the auth probe
-    with the model echoed."""
-    if kind not in ("openai_bearer", "openrouter_key"):
-        r = _layer1_probe(provider_id, kind, api_key, base, timeout)
-        return dataclasses.replace(r, model=model)
-
-    from openprogram.security import safe_http
-    from openprogram.security.url_policy import OwnerURLException, normalize_origin
-    url = base.rstrip("/") + "/chat/completions"
-    body = {"model": model, "messages": [{"role": "user", "content": "PING"}], "max_tokens": 4}
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
-    t0 = time.time()
-    try:
-        with safe_http.configured_safe_client(
-            "webui.model_listing.configured",
-            base,
-            owner_exception=OwnerURLException(
-                consumer="webui.model_listing.configured",
-                origin=normalize_origin(base),
-            ),
-        ) as client:
-            r = client.post(url, headers=headers, json=body, timeout=timeout)
-    except Exception as e:
-        return _result(
-            provider_id, UNKNOWN, kind=kind, model=model,
-            detail=f"Request failed: {type(e).__name__} for {normalize_origin(url)}",
-        )
-    latency = int((time.time() - t0) * 1000)
-    status, text = r.status_code, r.text
+def _layer2_response(
+    provider_id: str, kind: str, via: str, model: str,
+    status: int, text: str, latency: int,
+) -> CredentialResult:
+    """Map a completion-ping HTTP result onto the probe taxonomy."""
     if status == 200:
-        return _result(provider_id, VALID, kind=kind, via="POST /chat/completions",
+        return _result(provider_id, VALID, kind=kind, via=via,
                        http_status=200, latency_ms=latency, model=model)
     if _is_model_unavailable(status, text):
         return _result(provider_id, VALID_MODEL_UNAVAILABLE, kind=kind,
-                       via="POST /chat/completions", http_status=status, latency_ms=latency,
+                       via=via, http_status=status, latency_ms=latency,
                        model=model,
                        detail=(f"Key authenticated. Model {model} is unavailable right now "
                                f"(HTTP {status})."))
     if status in (401, 403):
-        return _result(provider_id, INVALID_CREDENTIAL, kind=kind, http_status=status,
-                       latency_ms=latency, model=model, detail=f"HTTP {status}.")
+        return _result(provider_id, INVALID_CREDENTIAL, kind=kind, via=via,
+                       http_status=status, latency_ms=latency, model=model,
+                       detail=f"HTTP {status}.")
     if _is_no_balance(status, text):
-        return _result(provider_id, VALID_NO_BALANCE, kind=kind, http_status=status,
-                       latency_ms=latency, model=model,
+        return _result(provider_id, VALID_NO_BALANCE, kind=kind, via=via,
+                       http_status=status, latency_ms=latency, model=model,
                        detail="Key works — account has no balance/credits.")
-    return _result(provider_id, INVALID_CREDENTIAL, kind=kind, http_status=status,
+    return _result(provider_id, UNKNOWN, kind=kind, via=via, http_status=status,
                    latency_ms=latency, model=model, detail=f"HTTP {status}.")
+
+
+def _layer2_post(
+    url: str, *, headers: dict, json_body: dict, timeout: float,
+    configured_url: str | None, params: dict | None = None,
+) -> tuple[int, str, int] | None:
+    from openprogram.security import safe_http
+    from openprogram.security.url_policy import OwnerURLException, normalize_origin
+
+    t0 = time.time()
+    try:
+        client = (
+            safe_http.configured_safe_client(
+                "webui.model_listing.configured",
+                configured_url,
+                owner_exception=OwnerURLException(
+                    consumer="webui.model_listing.configured",
+                    origin=normalize_origin(configured_url),
+                ),
+            )
+            if configured_url is not None
+            else safe_http.safe_client("webui.model_listing.fixed")
+        )
+        with client:
+            r = client.post(
+                url, headers=headers, json=json_body,
+                params=params or {}, timeout=timeout,
+            )
+    except Exception:
+        return None
+    return (r.status_code, r.text, int((time.time() - t0) * 1000))
+
+
+def _layer2_ping(provider_id: str, kind: str, api_key: str, base: str | None,
+                 model: str, timeout: float) -> CredentialResult:
+    """Inference ping — "can I reach THIS model right now?".
+
+    OpenAI-shaped kinds POST ``/chat/completions``; Anthropic-shaped kinds
+    POST ``/v1/messages``; Google POSTs ``:generateContent``. A kind that
+    cannot be pinged safely is left ``unknown`` rather than painted Valid.
+    """
+    from openprogram.security.url_policy import normalize_origin
+
+    if kind in ("openai_bearer", "openrouter_key"):
+        if not base:
+            return _result(provider_id, UNKNOWN, kind=kind, model=model,
+                           detail="No base URL resolvable.")
+        url = base.rstrip("/") + "/chat/completions"
+        res = _layer2_post(
+            url,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+            json_body={
+                "model": model,
+                "messages": [{"role": "user", "content": "PING"}],
+                "max_tokens": 4,
+            },
+            timeout=timeout,
+            configured_url=base,
+        )
+        if res is None:
+            return _result(
+                provider_id, UNKNOWN, kind=kind, model=model,
+                detail=f"Request failed for {normalize_origin(url)}",
+            )
+        status, text, latency = res
+        return _layer2_response(
+            provider_id, kind, "POST /chat/completions", model, status, text, latency,
+        )
+
+    if kind in ("anthropic_native", "anthropic_compat"):
+        if kind == "anthropic_native":
+            url = "https://api.anthropic.com/v1/messages"
+            configured_url = None
+        else:
+            if not base:
+                return _result(provider_id, UNKNOWN, kind=kind, model=model,
+                               detail="No base URL resolvable.")
+            url = base.rstrip("/") + "/v1/messages"
+            configured_url = base
+        res = _layer2_post(
+            url,
+            headers={
+                "Content-Type": "application/json",
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+            },
+            json_body={
+                "model": model,
+                "max_tokens": 4,
+                "messages": [{"role": "user", "content": "PING"}],
+            },
+            timeout=timeout,
+            configured_url=configured_url,
+        )
+        if res is None:
+            return _result(
+                provider_id, UNKNOWN, kind=kind, model=model,
+                detail=f"Request failed for {normalize_origin(url)}",
+            )
+        status, text, latency = res
+        return _layer2_response(
+            provider_id, kind, "POST /v1/messages", model, status, text, latency,
+        )
+
+    if kind == "google_query":
+        mid = model[7:] if model.startswith("models/") else model
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{mid}:generateContent"
+        )
+        res = _layer2_post(
+            url,
+            headers={"Content-Type": "application/json"},
+            json_body={
+                "contents": [{"parts": [{"text": "PING"}]}],
+                "generationConfig": {"maxOutputTokens": 4},
+            },
+            timeout=timeout,
+            configured_url=None,
+            params={"key": api_key},
+        )
+        if res is None:
+            return _result(
+                provider_id, UNKNOWN, kind=kind, model=model,
+                detail="Request failed for generativelanguage.googleapis.com",
+            )
+        status, text, latency = res
+        return _layer2_response(
+            provider_id, kind, "POST /v1beta/models:generateContent",
+            model, status, text, latency,
+        )
+
+    return _result(
+        provider_id, UNKNOWN, kind=kind, model=model,
+        detail=f"No safe completion ping for {kind}; usability not confirmed.",
+    )
 
 
 def _oauth_check(provider_id: str, kind: str) -> CredentialResult:
@@ -373,13 +499,172 @@ def _cache_put(key: tuple, res: CredentialResult) -> None:
     _cache[key] = (time.time(), res)
 
 
+def probe_proves_usable(result: CredentialResult) -> bool:
+    """True only when the probe itself proved the key can complete now.
+
+    OpenRouter ``GET /key`` with remaining > 0, a layer-2 completion 200, a
+    live OAuth token, or (implicitly) a later chat 200. Layer-1 ``GET /models``
+    200 is auth-only and does **not** prove usable.
+    """
+    if getattr(result, "status", None) != VALID:
+        return False
+    kind = getattr(result, "kind", "") or ""
+    via = getattr(result, "via", "") or ""
+    if kind == "openrouter_key" and via.startswith("GET /key"):
+        return True
+    if via.startswith("POST "):
+        return True
+    if kind == "oauth" or via == "CredentialProvider":
+        return True
+    return False
+
+
+# Persisted account statuses (shown in Settings). Probe-only values such as
+# ``valid_no_balance`` are mapped here and must never be written as ``valid``.
+_PERSIST_BILLING = "billing_blocked"
+_PERSIST_REAUTH = "needs_reauth"
+
+
+def persist_status_from_probe(
+    probe_status: str,
+    *,
+    previous: str = "",
+    usable_proven: bool = False,
+) -> str | None:
+    """Map a probe status onto the persisted enum, or ``None`` to leave previous.
+
+    ``valid`` is returned only when ``usable_proven`` is true. Auth-only layer-1
+    200 must not upgrade a credential (and must not clear ``billing_blocked``).
+    """
+    if probe_status == VALID:
+        return VALID if usable_proven else None
+    if probe_status == VALID_NO_BALANCE:
+        return _PERSIST_BILLING
+    if probe_status == INVALID_CREDENTIAL:
+        return _PERSIST_REAUTH
+    if probe_status == VALID_MODEL_UNAVAILABLE:
+        return None
+    if probe_status == MISSING:
+        return MISSING
+    if probe_status == UNKNOWN:
+        return None
+    if probe_status == "rate_limited":
+        return "rate_limited"
+    return None
+
+
+def display_status_from_probe(
+    probe_status: str,
+    *,
+    previous: str = "",
+    usable_proven: bool = False,
+) -> str:
+    """Status the Settings chip / connectivity check should render."""
+    persist = persist_status_from_probe(
+        probe_status, previous=previous, usable_proven=usable_proven,
+    )
+    if persist:
+        return persist
+    if probe_status == VALID_MODEL_UNAVAILABLE:
+        return VALID_MODEL_UNAVAILABLE
+    if probe_status == VALID and not usable_proven:
+        if previous == _PERSIST_BILLING:
+            return _PERSIST_BILLING
+        return UNKNOWN
+    if probe_status == UNKNOWN:
+        return previous or UNKNOWN
+    return probe_status or UNKNOWN
+
+
+def _first_id_from_models_json(body: str) -> str | None:
+    """First model id from an OpenAI / Anthropic / Google list payload."""
+    try:
+        import json
+        data = json.loads(body)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    rows = data.get("data") or data.get("models") or []
+    if not isinstance(rows, list):
+        return None
+    for row in rows:
+        if isinstance(row, str) and row.strip():
+            mid = row.strip()
+        elif isinstance(row, dict):
+            mid = row.get("id") or row.get("name") or ""
+            if not isinstance(mid, str):
+                continue
+            mid = mid.strip()
+        else:
+            continue
+        if mid:
+            if mid.startswith("models/"):
+                mid = mid[len("models/"):]
+            return mid
+    return None
+
+
+def resolve_ping_model(provider_id: str, *, layer1_body: str | None = None) -> str | None:
+    """Name a real model for an explicit layer-2 ping. Never invents an id.
+
+    Preference: an enabled model for this provider, then the first id from a
+    layer-1 ``/models`` body, then the provider catalog / browse list.
+    """
+    try:
+        from openprogram.providers import get_models
+        enabled = [m for m in get_models(provider_id) if getattr(m, "id", None)]
+        if enabled:
+            return enabled[0].id
+    except Exception:
+        pass
+    if layer1_body:
+        mid = _first_id_from_models_json(layer1_body)
+        if mid:
+            return mid
+    try:
+        from openprogram.webui._model_listing.listing import list_models_for_provider
+        for row in list_models_for_provider(provider_id):
+            mid = (row or {}).get("id")
+            if mid:
+                return mid
+    except Exception:
+        pass
+    return None
+
+
+def _maybe_layer2_usable(
+    provider_id: str, kind: str, api_key: str, base: str | None,
+    layer1: CredentialResult, timeout: float,
+) -> CredentialResult:
+    """If layer-1 is auth-only 200, run a cheap completion ping against a real model."""
+    if layer1.status != VALID or probe_proves_usable(layer1):
+        return layer1
+    if kind not in _AUTH_ONLY_KINDS:
+        return layer1
+    model = resolve_ping_model(provider_id)
+    if not model:
+        return _result(
+            provider_id, UNKNOWN, kind=kind, via=layer1.via,
+            http_status=layer1.http_status, latency_ms=layer1.latency_ms,
+            detail=("Key accepted, but no model is configured or listed to "
+                    "confirm it is usable."),
+        )
+    return _layer2_ping(provider_id, kind, api_key, base, model, timeout)
+
+
 # public API
 def validate_credential(
     provider_id: str, *, api_key: str | None = None, model: str | None = None,
-    timeout: float = 15.0, use_cache: bool = True,
+    timeout: float = 15.0, use_cache: bool = True, prove_usable: bool = False,
 ) -> CredentialResult:
     """Validate a provider credential without invoking a model (unless ``model``
-    is given, which additionally checks that one model's reachability)."""
+    is given, which additionally checks that one model's reachability).
+
+    ``prove_usable=True`` is for an explicit user Validate / Check: after an
+    auth-only layer-1 200 it runs a cheap layer-2 ping so ``valid`` means
+    usable now. On-mount and ``provider_auth_status`` must leave this False.
+    """
     kind = _kind_for(provider_id)
 
     if kind == "oauth" or provider_id in _ANTHROPIC_OAUTH_PROVIDERS:
@@ -399,9 +684,10 @@ def validate_credential(
         return _result(provider_id, MISSING, kind=kind,
                        detail=f"No API key set ({env})." if env else "No credential configured.")
 
-    # Cache only the model-independent (layer-1) result.
+    # Cache only the model-independent (layer-1) result. A prove-usable ping
+    # is never served from that cache — it would hide a dead quota.
     cache_key = (provider_id, model or "")
-    if use_cache and model is None:
+    if use_cache and model is None and not prove_usable:
         hit = _cache_get(cache_key)
         if hit is not None:
             return hit
@@ -417,8 +703,10 @@ def validate_credential(
         return _layer2_ping(provider_id, kind, api_key, base, model, timeout)
 
     result = _layer1_probe(provider_id, kind, api_key, base, timeout)
-    if use_cache:
+    if use_cache and not prove_usable:
         _cache_put(cache_key, result)
+    if prove_usable:
+        return _maybe_layer2_usable(provider_id, kind, api_key, base, result, timeout)
     return result
 
 

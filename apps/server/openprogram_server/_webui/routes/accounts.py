@@ -31,7 +31,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from fastapi import Body
+from fastapi import Body, Query
 from fastapi.responses import JSONResponse
 
 from openprogram.auth.credentials import is_redacted_value
@@ -79,51 +79,88 @@ def _api_key_of(cred) -> str:
     return getattr(getattr(cred, "payload", None), "auth_value", "") or ""
 
 
-def _validate_account(provider: str, name: str) -> dict:
-    """LIVE, kind-aware validation of ONE account (account) — what "does it
-    actually work" means per credential type, with NO model call:
-      * api_key      → auth-probe the key against the provider's endpoint.
-      * oauth/device → refresh + check THIS account's token (the OAuth login
-                       is what works; a model being unavailable is NOT an auth
-                       failure, so we never do a model ping here).
-    Returns {status, detail?, via?} (status: valid / invalid_credential /
-    needs_reauth / unknown / missing)."""
+def _apply_persist(provider: str, name: str, persist: str | None, *, detail: str | None = None) -> None:
+    """Write a mapped persist status onto the live credential. ``None`` leaves
+    the stored status unchanged (and never upgrades ``billing_blocked``)."""
+    if not persist:
+        return
+    from openprogram.auth.pool import clear_cooldown
     from openprogram.auth.store import get_store
-    cred = _primary_cred(get_store().find_pool(provider, name))
+    pool = get_store().find_pool(_pool_id(provider), name)
+    live = _primary_cred(pool)
+    if live is None:
+        return
+    if persist == "valid":
+        clear_cooldown(live)
+        live.status = "valid"
+        live.last_error = None
+    else:
+        live.status = persist
+        if persist == "billing_blocked":
+            live.cooldown_until_ms = 0
+        if detail:
+            live.last_error = detail
+    live.updated_at_ms = _now_ms()
+    get_store().put_pool(pool)
+
+
+def _validate_account(provider: str, name: str, *, ping: bool = False) -> dict:
+    """LIVE, kind-aware validation of ONE account.
+
+    * api_key — layer-1 auth probe; ``ping=True`` (explicit Validate) also
+      runs a cheap layer-2 completion when the kind has no billing endpoint.
+    * oauth/device — refresh + check THIS account's token.
+
+    ``valid`` is persisted and returned only when the probe proves the key
+    is usable now (OpenRouter ``GET /key`` remaining, or a layer-2 / OAuth
+    success). Auth-only ``GET /models`` 200 must not revive ``billing_blocked``.
+    """
+    from openprogram.auth.store import get_store
+    from openprogram.webui._model_listing.credentials import (
+        display_status_from_probe,
+        persist_status_from_probe,
+        probe_proves_usable,
+        validate_credential,
+    )
+    cred = _primary_cred(get_store().find_pool(_pool_id(provider), name))
     if cred is None:
-        return {"status": "missing", "detail": "no credential on this account"}
+        return {"status": "missing", "ok": False, "detail": "no credential on this account"}
     kind = getattr(cred, "kind", "")
+    previous = getattr(cred, "status", "") or ""
     if kind == "api_key":
-        from openprogram.webui._model_listing.credentials import validate_credential
         try:
-            result = validate_credential(provider, api_key=_api_key_of(cred), use_cache=False).to_dict()
+            result = validate_credential(
+                provider, api_key=_api_key_of(cred),
+                use_cache=False, prove_usable=ping,
+            )
         except Exception as e:
-            return {"status": "unknown", "detail": str(e)}
-        if result.get("status") == "valid" and getattr(cred, "status", "") != "valid":
-            # The probe proves the key works again (e.g. the user topped
-            # up after a billing stop) — restore it so rotation picks it
-            # back up. This closes the top-up → Validate → usable loop.
-            from openprogram.auth.pool import clear_cooldown
-            from openprogram.auth.store import get_store as _gs
-            pool = _gs().find_pool(provider, name)
-            live = _primary_cred(pool)
-            if live is not None:
-                clear_cooldown(live)
-                live.status = "valid"
-                live.last_error = None
-                _gs().put_pool(pool)
-        return result
+            return {"status": "unknown", "ok": False, "detail": str(e)}
+        usable = probe_proves_usable(result)
+        persist = persist_status_from_probe(
+            result.status, previous=previous, usable_proven=usable,
+        )
+        display = display_status_from_probe(
+            result.status, previous=previous, usable_proven=usable,
+        )
+        _apply_persist(provider, name, persist, detail=result.detail)
+        out = result.to_dict()
+        out["status"] = display
+        out["ok"] = display == "valid"
+        return out
     if kind in ("oauth", "device_code"):
         from openprogram.auth.credential_provider import get_credential_provider
         from openprogram.auth.resolver import _extract_token
         try:
             tok = _extract_token(get_credential_provider().acquire_sync(provider, name))
             if tok:
-                return {"status": "valid", "via": "CredentialProvider", "detail": "Signed in (token valid)."}
-            return {"status": "needs_reauth", "detail": "no usable token — sign in again."}
+                _apply_persist(provider, name, "valid")
+                return {"status": "valid", "ok": True, "via": "CredentialProvider", "detail": "Signed in (token valid)."}
+            _apply_persist(provider, name, "needs_reauth", detail="no usable token — sign in again.")
+            return {"status": "needs_reauth", "ok": False, "detail": "no usable token — sign in again."}
         except Exception as e:
-            return {"status": "needs_reauth", "detail": str(e)}
-    return {"status": getattr(cred, "status", "unknown")}
+            _apply_persist(provider, name, "needs_reauth", detail=str(e))
+            return {"status": "needs_reauth", "ok": False, "detail": str(e)}
+    return {"status": previous or "unknown", "ok": previous == "valid"}
 
 
 def _account_record(pool, pinned: str, disabled: set = frozenset()) -> dict:
@@ -444,18 +481,36 @@ def register(app):
                 content={"error": "invalid account key body"}, status_code=400
             )
         validation = None
+        persist = None
+        from openprogram.webui._model_listing.credentials import (
+            INVALID_CREDENTIAL,
+            display_status_from_probe,
+            persist_status_from_probe,
+            probe_proves_usable,
+            validate_credential,
+        )
         if validate:
             try:
-                from openprogram.webui._model_listing.credentials import validate_credential, INVALID_CREDENTIAL
-                res = validate_credential(provider, api_key=key, use_cache=False)
+                res = validate_credential(
+                    provider, api_key=key, use_cache=False, prove_usable=True,
+                )
+                usable = probe_proves_usable(res)
+                persist = persist_status_from_probe(
+                    res.status, previous="", usable_proven=usable,
+                )
+                display = display_status_from_probe(
+                    res.status, previous="", usable_proven=usable,
+                )
                 validation = res.to_dict()
+                validation["status"] = display
+                validation["ok"] = display == "valid"
                 if res.status == INVALID_CREDENTIAL:
                     return JSONResponse(
                         content={"error": f"{provider} rejected that key"},
                         status_code=400,
                     )
             except Exception:
-                pass
+                persist = None
         from openprogram.auth.store import get_store
         from openprogram.auth.account_selection import get_active_pin, set_active_account
         from openprogram.auth.types import Credential, CredentialData
@@ -471,13 +526,26 @@ def register(app):
                 content={"error": f"account '{name}' already exists"},
                 status_code=409,
             )
+        # Never stamp ``valid`` just because a key was saved. Persist the
+        # mapped probe result; an unproven key stays ``unknown``.
+        initial_status = persist or "unknown"
         store.add_credential(Credential(
             provider_id=pid, account_id=name, kind="api_key",
-            payload=CredentialData(kind="api_key", auth_value=key), source="webui_add",
+            payload=CredentialData(kind="api_key", auth_value=key),
+            source="webui_add",
+            status=initial_status,
         ))
+        if persist == "billing_blocked":
+            pool = store.find_pool(pid, name)
+            live = _primary_cred(pool)
+            if live is not None:
+                live.cooldown_until_ms = 0
+                if validation and validation.get("detail"):
+                    live.last_error = validation["detail"]
+                store.put_pool(pool)
         if not existing and not get_active_pin(pid):
             set_active_account(pid, name)   # first account becomes active
-        return JSONResponse(content={"ok": True, "name": name, "validation": validation})
+        return JSONResponse(content={"ok": True, "name": name, "validation": validation, "status": initial_status})
 
     @app.post("/api/providers/{provider}/accounts/{name}/update")
     def api_account_update(
@@ -523,41 +591,69 @@ def register(app):
                 status_code=404,
             )
 
+        persist = None
+        previous = getattr(cred, "status", "") or ""
         if validate:
             try:
-                from openprogram.webui._model_listing.credentials import validate_credential, INVALID_CREDENTIAL
-                res = validate_credential(provider, api_key=key, use_cache=False)
+                from openprogram.webui._model_listing.credentials import (
+                    INVALID_CREDENTIAL,
+                    persist_status_from_probe,
+                    probe_proves_usable,
+                    validate_credential,
+                )
+                res = validate_credential(
+                    provider, api_key=key, use_cache=False, prove_usable=True,
+                )
                 if res.status == INVALID_CREDENTIAL:
                     return JSONResponse(
                         content={"error": f"{provider} rejected that key"},
                         status_code=400,
                     )
+                persist = persist_status_from_probe(
+                    res.status, previous=previous,
+                    usable_proven=probe_proves_usable(res),
+                )
             except Exception:
                 # A failed probe is an unknown result and cannot block save.
-                pass
+                # Leave status unchanged — do not stamp valid.
+                persist = None
         cred.payload.auth_value = key
-        cred.status = "valid"
-        cred.cooldown_until_ms = 0
-        cred.last_error = None
+        if persist == "valid":
+            from openprogram.auth.pool import clear_cooldown
+            clear_cooldown(cred)
+            cred.status = "valid"
+            cred.last_error = None
+        elif persist:
+            cred.status = persist
+            if persist == "billing_blocked":
+                cred.cooldown_until_ms = 0
+        # persist is None: leave previous status (never force valid).
         cred.updated_at_ms = _now_ms()
         store.put_pool(pool)
         return JSONResponse(content={"ok": True})
 
     @app.post("/api/providers/{provider}/accounts/{name}/validate")
-    def api_account_validate(provider: str, name: str):
-        """LIVE-validate ONE account (kind-aware, no model call)."""
+    def api_account_validate(
+        provider: str, name: str, ping: bool = Query(default=False),
+    ):
+        """LIVE-validate ONE account. ``ping=true`` is the explicit user
+        Validate (cheap layer-2 when the kind has no billing endpoint).
+        On-mount / remount omit it so a ``GET /models`` 200 cannot revive
+        ``billing_blocked`` or paint green Valid."""
         if provider == "claude-code":
             return JSONResponse(content={"ok": True, "status": "valid", "detail": "managed by the local backend"})
-        return JSONResponse(content={"ok": True, **_validate_account(provider, name)})
+        result = _validate_account(provider, name, ping=ping)
+        return JSONResponse(content=result)
 
     @app.post("/api/providers/{provider}/accounts/validate-all")
     def api_accounts_validate_all(provider: str):
-        """Live-validate every account; returns [{id, status, ...}]."""
+        """Live-validate every account (layer-1 only — do not spend tokens
+        on every row). Returns [{id, status, ...}]."""
         if provider == "claude-code":
             return JSONResponse(content={"ok": True, "results": []})
         from openprogram.auth.store import get_store
         pid = _pool_id(provider)
-        out = [{"id": p.account_id, **_validate_account(provider, p.account_id)}
+        out = [{"id": p.account_id, **_validate_account(provider, p.account_id, ping=False)}
                for p in get_store().list_pools() if p.provider_id == pid]
         return JSONResponse(content={"ok": True, "results": out})
 

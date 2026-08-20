@@ -45,10 +45,10 @@ interface State {
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
 function statusTone(status: string): string {
-  if (status === "valid" || status.startsWith("valid")) return styles.valid;
-  if (status === "rate_limited") return styles.warn;
-  if (status === "billing_blocked" || status === "invalid_credential"
-      || status === "needs_reauth" || status === "revoked") {
+  if (status === "valid") return styles.valid;
+  if (status === "rate_limited" || status === "valid_model_unavailable") return styles.warn;
+  if (status === "billing_blocked" || status === "valid_no_balance"
+      || status === "invalid_credential" || status === "needs_reauth" || status === "revoked") {
     return styles.error;
   }
   return "";
@@ -59,10 +59,15 @@ function statusLabel(status: string, text: (en: string, zh: string) => string): 
   switch (status) {
     case "valid": return text("valid", "有效");
     case "rate_limited": return text("rate limited", "限流中");
-    case "billing_blocked": return text("out of credits", "欠费停用");
+    case "billing_blocked":
+    case "valid_no_balance": return text("out of credits", "欠费停用");
+    case "valid_model_unavailable": return text("model unavailable", "模型不可用");
     case "needs_reauth": return text("needs re-auth", "需重新验证");
     case "invalid_credential": return text("invalid key", "密钥无效");
     case "revoked": return text("revoked", "已失效");
+    case "unknown": return text("unknown", "未知");
+    case "checking": return text("Checking", "验证中");
+    case "missing": return text("not configured", "未配置");
     default: return status;
   }
 }
@@ -111,15 +116,17 @@ function AccountRow({
   const [vres, setVres] = useState<{ status: string; detail?: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const validate = useCallback(async () => {
+  const validate = useCallback(async (opts?: { ping?: boolean }) => {
     setVres({ status: "checking" });
     try {
-      const d = await fetch(`${base}/${encodeURIComponent(account.id)}/validate`, { method: "POST" }).then((r) => r.json());
-      setVres(d.ok ? { status: d.status, detail: d.detail } : { status: "unknown", detail: d.error });
+      const qs = opts?.ping ? "?ping=true" : "";
+      const d = await fetch(`${base}/${encodeURIComponent(account.id)}/validate${qs}`, { method: "POST" }).then((r) => r.json());
+      const status = typeof d.status === "string" && d.status ? d.status : "unknown";
+      setVres({ status, detail: d.detail || d.error });
     } catch { setVres({ status: "unknown" }); }
   }, [base, account.id]);
 
-  // badge is a LIVE check on mount (kind-aware), never the stored status
+  // On-mount: layer-1 only (do not spend tokens). Explicit click pings.
   useEffect(() => { void validate(); }, [validate]);
 
   async function doRename() {
@@ -146,7 +153,7 @@ function AccountRow({
         setReplacement("");
         await refresh();
         onChanged?.();
-        void validate();
+        void validate({ ping: true });
       } else {
         setVres({ status: "invalid_credential", detail: d.error });
       }
@@ -212,7 +219,7 @@ function AccountRow({
         <button
           type="button"
           className={`${styles.acctStatusButton} ${statusTone(status)}`}
-          onClick={validate}
+          onClick={() => { void validate({ ping: true }); }}
           aria-label={validateLabel}
           aria-busy={status === "checking"}
           title={vres?.detail || text("Validate account", "验证账号")}
