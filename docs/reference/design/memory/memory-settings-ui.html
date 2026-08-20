@@ -288,10 +288,6 @@
   .switch input:checked + .switch-track::after { transform: translateX(16px); background: #eef7f1; }
   .switch input:focus-visible + .switch-track { outline: 2px solid var(--blue); outline-offset: 2px; }
   .path-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font: 11px var(--mono); }
-  .save-strip { margin-top: 16px; display: flex; justify-content: flex-end; align-items: center; gap: 10px; }
-  .saved-text { color: var(--green); font-size: 12px; opacity: 0; transition: opacity .15s; }
-  .saved-text.show { opacity: 1; }
-
   .design-notes {
     max-width: 1440px; margin: 18px auto 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
   }
@@ -480,7 +476,6 @@
               <div class="setting-row"><div class="setting-label"><strong>Recent view size</strong><span>Number of latest records kept in the Recent derived view.</span></div><div class="setting-control"><select class="select" aria-label="Recent view size"><option>50 records</option><option>25 records</option><option>100 records</option></select></div></div>
               <div class="setting-row"><div class="setting-label"><strong>Workspace</strong><span>Current Memory data location. Runtime-managed files remain read-only.</span></div><div class="setting-control"><span class="path-value">~/.openprogram/memory</span></div></div>
             </div></section>
-            <div class="save-strip"><span class="saved-text" id="savedText">Settings saved</span><button class="button primary" id="saveSettings">Save changes</button></div>
           </div>
         </section>
       </div>
@@ -493,6 +488,7 @@
       <li>Topics, Timeline, Recent, and Core form a vertical section list above the Topic tree.</li>
       <li>At a 720px viewport the section list, tree, and content stack without removing Memory navigation.</li>
       <li>Settings reads and writes the same schema used by the CLI and TUI.</li>
+      <li>Every editable Memory control persists through <code>POST /api/settings</code> immediately after the user changes it. The page has no separate Save button; a rejected write restores the previous value and exposes an inline error.</li>
       <li>Opening <code>/settings/memory</code> renders the editable settings as soon as their configuration requests finish; workspace and embedding status load independently and never gate the whole page.</li>
       <li><code>GET /api/memory/status?settings=true</code> returns only the workspace path and fixed embedding snapshot availability. It does not parse Topics, walk Sources, compute revisions, or scan sessions and writer state.</li>
       <li>The status path checks whether the fixed embedding snapshot exists locally without constructing the encoder or loading model weights. Encoder initialization belongs to semantic retrieval, not Settings.</li>
@@ -502,7 +498,7 @@
       <li>An unavailable embedding snapshot exposes an explicit <strong>Install</strong> action. The product runtime includes <code>sentence-transformers</code>; <code>POST /api/memory/embedding/install</code> downloads only the fixed encoder configuration, tokenizer, and safetensors weights in a worker thread. It does not construct the encoder and returns a retryable error without changing the active recall method.</li>
     </ul></article>
     <article class="note-card"><h2>Implementation and acceptance</h2><ul>
-      <li>Public entries: <code>/memory</code>, <code>/settings/memory</code>, <code>GET/POST /api/settings</code>, automatic recall, <code>memory_search</code>, and Topic/API writes.</li>
+      <li>Public entries: <code>/memory</code>, <code>/settings/memory</code>, immediate <code>GET/POST /api/settings</code> updates, automatic recall, <code>memory_search</code>, and Topic/API writes.</li>
       <li>Runtime settings cover automatic writing, write frequency, recall method including <code>agent</code>, recall depth, Source scope, Core injection, and Recent size.</li>
       <li>Semantic and Hybrid remain disabled until the local embedding snapshot is present; saving either method still performs the existing full availability validation.</li>
       <li>In Agent mode, automatic turn recall is empty and depth/Source controls are disabled because they do not participate in that mode. Core Memory injection remains an independent setting.</li>
@@ -539,11 +535,6 @@
       toggleEmpty.setAttribute('aria-pressed', String(next));
       toggleEmpty.textContent = next ? 'Show populated state' : 'Show empty state';
       setView('memory');
-    });
-    document.getElementById('saveSettings').addEventListener('click', function () {
-      var saved = document.getElementById('savedText');
-      saved.classList.add('show');
-      window.setTimeout(function () { saved.classList.remove('show'); }, 1600);
     });
     document.querySelectorAll('a[href="#"]').forEach(function (link) {
       link.addEventListener('click', function (event) { event.preventDefault(); });

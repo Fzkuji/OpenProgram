@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Check, Database, PencilLine, Search, Sparkles } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Database, PencilLine, Search, Sparkles } from "lucide-react";
 
 import { Switch } from "@/components/ui/switch";
 import { useTranslation } from "@/lib/i18n";
@@ -36,16 +36,14 @@ const KEYS = [
 
 export function MemorySettings() {
   const { text } = useTranslation();
-  const [rows, setRows] = useState<SettingRow[]>([]);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [models, setModels] = useState<Model[]>([]);
   const [memoryStatus, setMemoryStatus] = useState<MemoryStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [settingsReady, setSettingsReady] = useState(false);
   const [saving, setSaving] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [message, setMessage] = useState("");
-  const [messageKind, setMessageKind] = useState<"success" | "error" | "notice" | "">("");
-  const saveVersion = useRef(0);
 
   useEffect(() => {
     void fetch("/api/memory/status?settings=true").then((response) => {
@@ -63,64 +61,36 @@ export function MemorySettings() {
       const memoryRows = (settingsPayload.settings || []).filter(
         (row: SettingRow) => KEYS.includes(row.key as typeof KEYS[number]),
       );
-      setRows(memoryRows);
       setDraft(Object.fromEntries(memoryRows.map((row: SettingRow) => [row.key, row.value])));
       setModels(enabledModels);
+      setSettingsReady(true);
     }).catch((error) => {
       setMessage(text(`Could not load Memory settings: ${error}`, `无法加载 Memory 设置：${error}`));
-      setMessageKind("error");
     }).finally(() => setLoaded(true));
   }, [text]);
 
-  const changed = useMemo(() => rows.filter(
-    (row) => draft[row.key] !== row.value,
-  ), [draft, rows]);
-
-  function update(key: string, value: unknown) {
-    saveVersion.current += 1;
+  async function update(key: string, value: unknown) {
+    if (!settingsReady || saving || installing) return;
+    const previous = draft[key];
     setDraft((current) => ({ ...current, [key]: value }));
-    setMessage("");
-    setMessageKind("");
-  }
-
-  async function save() {
-    if (!changed.length) return;
-    const startedVersion = saveVersion.current;
-    const pending = changed.map((row) => ({
-      row,
-      value: draft[row.key],
-    }));
     setSaving(true);
     setMessage("");
-    setMessageKind("");
     try {
-      for (const { row, value } of pending) {
-        const response = await fetch("/api/settings", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: row.key, value }),
-        });
-        const result = await response.json();
-        if (!response.ok || result.error) {
-          throw new Error(result.error || `${row.key}: ${response.status}`);
-        }
-        setRows((current) => current.map((item) =>
-          item.key === row.key ? { ...item, value: result.value } : item,
-        ));
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, value }),
+      });
+      const result = await response.json();
+      if (!response.ok || result.error) {
+        throw new Error(result.error || `${key}: ${response.status}`);
       }
-      if (saveVersion.current !== startedVersion) {
-        setMessage(text(
-          "Earlier changes saved; newer changes are not saved",
-          "先前更改已保存；新的更改尚未保存",
-        ));
-        setMessageKind("notice");
-      } else {
-        setMessage(text("Settings saved", "设置已保存"));
-        setMessageKind("success");
+      if (result.value !== undefined) {
+        setDraft((current) => ({ ...current, [key]: result.value }));
       }
     } catch (error) {
+      setDraft((current) => ({ ...current, [key]: previous }));
       setMessage(text(`Save failed: ${error}`, `保存失败：${error}`));
-      setMessageKind("error");
     } finally {
       setSaving(false);
     }
@@ -129,7 +99,6 @@ export function MemorySettings() {
   async function installEmbedding() {
     setInstalling(true);
     setMessage("");
-    setMessageKind("");
     try {
       const response = await fetch("/api/memory/embedding/install", { method: "POST" });
       const result = await response.json();
@@ -137,11 +106,8 @@ export function MemorySettings() {
         throw new Error(result.error || `embedding install: ${response.status}`);
       }
       setMemoryStatus((current) => ({ ...current, embedding_available: true, failed: false }));
-      setMessage(text("Embedding model installed", "Embedding 模型已安装"));
-      setMessageKind("success");
     } catch (error) {
       setMessage(text(`Embedding install failed: ${error}`, `Embedding 安装失败：${error}`));
-      setMessageKind("error");
     } finally {
       setInstalling(false);
     }
@@ -157,10 +123,12 @@ export function MemorySettings() {
   const embeddingAvailable = memoryStatus?.embedding_available === true;
   const writerLabel = writerModel || text("Default chat model", "默认聊天模型");
   const recallLabel = retrieval === "agent" ? "Agent" : retrieval === "bm25" ? "BM25" : retrieval === "embedding" ? text("Semantic", "语义") : text("Hybrid", "混合");
+  const controlsDisabled = !settingsReady || saving || installing;
 
   return (
     <div className={`${shared.page} ${styles.memoryPage}`}>
       <div className={`${shared.pageBody} ${styles.pageBody}`}>
+        {message && <p className={styles.error} role="alert">{message}</p>}
         <div className={styles.lifecycle} aria-label={text("Memory lifecycle", "Memory 生命周期")}>
           <LifecycleStep icon={<Database size={15} />} label={text("Capture", "采集")} value={text("Conversation archive", "对话归档")} />
           <LifecycleStep icon={<PencilLine size={15} />} label={text("Write", "写入")} value={writerLabel} />
@@ -171,7 +139,7 @@ export function MemorySettings() {
         <SettingsSection title={text("Memory service", "Memory 服务")}>
           <SettingsRow label={text("Enable Memory", "启用 Memory")} description={text("Turns on recall, background writing, organization, and Memory tools.", "启用检索、后台写入、整理和 Memory 工具。") }>
             <Status>{text("Next start", "下次启动")}</Status>
-            <Switch aria-label={text("Enable Memory", "启用 Memory")} disabled={saving} checked={backend === "local"} onCheckedChange={(checked) => update("memory.backend", checked ? "local" : "none")} />
+            <Switch aria-label={text("Enable Memory", "启用 Memory")} disabled={controlsDisabled} checked={backend === "local"} onCheckedChange={(checked) => update("memory.backend", checked ? "local" : "none")} />
           </SettingsRow>
           <SettingsRow label={text("Storage", "存储")} description={text("Topic Markdown with derived views and Git history.", "使用 Topic Markdown、派生视图和 Git 历史。") }>
             <span className={styles.chromeValue}>{backend === "local" ? text("Local workspace · Git enabled", "本地工作区 · Git 已启用") : text("Disabled", "已关闭")}</span>
@@ -181,16 +149,16 @@ export function MemorySettings() {
         <SettingsSection title={text("Background writing", "后台写入")}>
           <SettingsRow label={text("Writer model", "写入模型")} description={text("Uses the default chat model unless you select an enabled model.", "默认使用聊天模型，也可以选择一个已启用模型。") }>
             <Status live>{text("Live", "实时")}</Status>
-            <select aria-label={text("Writer model", "写入模型")} disabled={saving} className={styles.select} value={writerModel} onChange={(event) => update("memory.writer.model", event.target.value)}>
+            <select aria-label={text("Writer model", "写入模型")} disabled={controlsDisabled} className={styles.select} value={writerModel} onChange={(event) => update("memory.writer.model", event.target.value)}>
               <option value="">{text("Default chat model", "默认聊天模型")}</option>
               {models.map((model) => <option key={`${model.provider}/${model.id}`} value={`${model.provider}/${model.id}`}>{model.name} · {model.provider}</option>)}
             </select>
           </SettingsRow>
           <SettingsRow label={text("Automatic writing", "自动写入")} description={text("Turn completed conversations into Topic records in the background.", "在后台把已完成对话整理为 Topic 记录。") }>
-            <Switch aria-label={text("Automatic writing", "自动写入")} disabled={saving} checked={Boolean(draft["memory.writer.enabled"])} onCheckedChange={(value) => update("memory.writer.enabled", value)} />
+            <Switch aria-label={text("Automatic writing", "自动写入")} disabled={controlsDisabled} checked={Boolean(draft["memory.writer.enabled"])} onCheckedChange={(value) => update("memory.writer.enabled", value)} />
           </SettingsRow>
           <SettingsRow label={text("Write frequency", "写入频率")} description={text("Controls how much conversation accumulates before a background write.", "控制后台写入前累计的对话量。") }>
-            <select aria-label={text("Write frequency", "写入频率")} disabled={saving} className={styles.select} value={Number(draft["memory.writer.trigger_tokens"] ?? 16000)} onChange={(event) => update("memory.writer.trigger_tokens", Number(event.target.value))}>
+            <select aria-label={text("Write frequency", "写入频率")} disabled={controlsDisabled} className={styles.select} value={Number(draft["memory.writer.trigger_tokens"] ?? 16000)} onChange={(event) => update("memory.writer.trigger_tokens", Number(event.target.value))}>
               <option value={8000}>{text("More frequent · about 8K tokens", "更频繁 · 约 8K Token")}</option>
               <option value={16000}>{text("Balanced · about 16K tokens", "均衡 · 约 16K Token")}</option>
               <option value={32000}>{text("Less frequent · about 32K tokens", "较少 · 约 32K Token")}</option>
@@ -201,7 +169,7 @@ export function MemorySettings() {
         <SettingsSection title={text("Retrieval", "检索")}>
           <SettingsRow label={text("Recall method", "检索方法")} description={text("Use ranked automatic recall, or let the Agent inspect Memory only when needed.", "使用自动排序检索，或仅由 Agent 在需要时查看 Memory。") }>
             <Status live>{text("Live", "实时")}</Status>
-            <select aria-label={text("Recall method", "检索方法")} disabled={saving} className={styles.select} value={retrieval} onChange={(event) => update("memory.retrieval.method", event.target.value)}>
+            <select aria-label={text("Recall method", "检索方法")} disabled={controlsDisabled} className={styles.select} value={retrieval} onChange={(event) => update("memory.retrieval.method", event.target.value)}>
               <option value="agent">{text("Agent · On demand", "Agent · 按需查看")}</option>
               <option value="bm25">{text("Keyword · BM25", "关键词 · BM25")}</option>
               <option value="embedding" disabled={!embeddingAvailable}>{text("Semantic · Embeddings", "语义 · Embedding")}{!embeddingAvailable ? text(" (unavailable)", "（不可用）") : ""}</option>
@@ -213,21 +181,21 @@ export function MemorySettings() {
             {memoryStatus !== null && !memoryStatus.failed && !embeddingAvailable && <button className={styles.installButton} type="button" onClick={installEmbedding} disabled={saving || installing}>{installing ? text("Installing…", "安装中…") : text("Install · about 90 MB", "安装 · 约 90 MB")}</button>}
           </SettingsRow>
           <SettingsRow label={text("Recall depth", "检索数量")} description={text("Maximum matching records added automatically to a turn.", "每个回合自动加入的最大匹配记录数。") }>
-            <select aria-label={text("Recall depth", "检索数量")} disabled={saving || retrieval === "agent"} className={styles.select} value={Number(draft["memory.retrieval.top_k"] ?? 5)} onChange={(event) => update("memory.retrieval.top_k", Number(event.target.value))}>
+            <select aria-label={text("Recall depth", "检索数量")} disabled={controlsDisabled || retrieval === "agent"} className={styles.select} value={Number(draft["memory.retrieval.top_k"] ?? 5)} onChange={(event) => update("memory.retrieval.top_k", Number(event.target.value))}>
               {[3, 5, 8, 10].map((value) => <option key={value} value={value}>{value} {text("records", "条记录")}</option>)}
             </select>
           </SettingsRow>
           <SettingsRow label={text("Search Source evidence", "检索 Source 证据")} description={text("Include archived evidence alongside curated Topic records.", "在整理后的 Topic 记录之外同时检索归档证据。") }>
-            <Switch aria-label={text("Search Source evidence", "检索 Source 证据")} disabled={saving || retrieval === "agent"} checked={Boolean(draft["memory.retrieval.include_sources"])} onCheckedChange={(value) => update("memory.retrieval.include_sources", value)} />
+            <Switch aria-label={text("Search Source evidence", "检索 Source 证据")} disabled={controlsDisabled || retrieval === "agent"} checked={Boolean(draft["memory.retrieval.include_sources"])} onCheckedChange={(value) => update("memory.retrieval.include_sources", value)} />
           </SettingsRow>
         </SettingsSection>
 
         <SettingsSection title={text("Context and history", "上下文与历史")}>
           <SettingsRow label={text("Core Memory in every chat", "每次聊天注入 Core Memory")} description={text("Inject the compact Core view into each system prompt.", "把精简的 Core 视图加入每次系统提示词。") }>
-            <Switch aria-label={text("Core Memory in every chat", "每次聊天注入 Core Memory")} disabled={saving} checked={Boolean(draft["memory.core.inject"])} onCheckedChange={(value) => update("memory.core.inject", value)} />
+            <Switch aria-label={text("Core Memory in every chat", "每次聊天注入 Core Memory")} disabled={controlsDisabled} checked={Boolean(draft["memory.core.inject"])} onCheckedChange={(value) => update("memory.core.inject", value)} />
           </SettingsRow>
           <SettingsRow label={text("Recent view size", "Recent 视图大小")} description={text("Number of latest records retained after the next Memory write.", "下次 Memory 写入后保留的最新记录数量。") }>
-            <select aria-label={text("Recent view size", "Recent 视图大小")} disabled={saving} className={styles.select} value={Number(draft["memory.recent.limit"] ?? 50)} onChange={(event) => update("memory.recent.limit", Number(event.target.value))}>
+            <select aria-label={text("Recent view size", "Recent 视图大小")} disabled={controlsDisabled} className={styles.select} value={Number(draft["memory.recent.limit"] ?? 50)} onChange={(event) => update("memory.recent.limit", Number(event.target.value))}>
               {[25, 50, 100].map((value) => <option key={value} value={value}>{value} {text("records", "条记录")}</option>)}
             </select>
           </SettingsRow>
@@ -235,10 +203,6 @@ export function MemorySettings() {
             <span className={styles.monoValue}>{memoryStatus?.workspace_path || "~/.openprogram/memory"}</span>
           </SettingsRow>
         </SettingsSection>
-      </div>
-      <div className={styles.saveBar}>
-        {message && <span className={messageKind === "error" ? styles.error : messageKind === "notice" ? styles.notice : styles.saved} role={messageKind === "error" ? "alert" : "status"} aria-live={messageKind === "error" ? "assertive" : "polite"}>{messageKind === "success" && <Check size={13} />}{message}</span>}
-        <button className={styles.saveButton} type="button" onClick={save} disabled={saving || installing || changed.length === 0}>{saving ? text("Saving…", "保存中…") : text("Save changes", "保存更改")}</button>
       </div>
     </div>
   );

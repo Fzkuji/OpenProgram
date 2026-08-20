@@ -8,6 +8,7 @@ const settings = read("../components/settings/memory-settings.tsx");
 const settingsCss = read("../components/settings/memory-settings.module.css");
 const settingsNav = read("../components/settings/settings-tabs-layout.tsx");
 const settingsCache = read("../lib/prefs/settings-cache.ts");
+const design = read("../../../docs/reference/design/memory/memory-settings-ui.html");
 
 assert.match(settingsNav, /href: "\/settings\/memory"/);
 assert.match(page, /href="\/settings\/memory"/);
@@ -23,11 +24,17 @@ assert.match(settings, /\/api\/memory\/embedding\/install/);
 assert.match(settings, /embedding_available/);
 assert.match(settings, /value="agent"/);
 assert.match(settings, /Installing…/);
-assert.match(
+assert.doesNotMatch(
   settings,
-  /styles\.saveButton[\s\S]{0,160}disabled=\{saving \|\| installing \|\| changed\.length === 0\}/,
-  "install and save must not run concurrently",
+  /Save changes|styles\.saveBar|saveVersion/,
+  "Memory settings persist immediately and must not expose a Save bar",
 );
+assert.doesNotMatch(design, /save-strip|saveSettings|Save changes/);
+assert.match(settings, /async function update[\s\S]*?method: "POST"/);
+assert.match(settings, /if \(!settingsReady \|\| saving \|\| installing\) return/);
+assert.match(settings, /\[key\]: previous/);
+assert.match(settings, /setSettingsReady\(true\)/);
+assert.match(settings, /const controlsDisabled = !settingsReady \|\| saving \|\| installing/);
 assert.match(settings, /retrieval === "agent"/);
 const blockingRequests = settings.match(/Promise\.all\(\[([\s\S]*?)\]\)/)?.[1] ?? "";
 assert.doesNotMatch(
@@ -44,9 +51,9 @@ assert.equal(
   4,
   "each Memory switch needs an accessible name",
 );
-assert.match(settings, /disabled=\{saving\}/);
-assert.match(settings, /role=\{messageKind === "error" \? "alert" : "status"\}/);
-assert.match(settings, /saveVersion\.current !== startedVersion/);
+assert.ok((settings.match(/disabled=\{controlsDisabled(?: \|\| retrieval === "agent")?\}/g) || []).length >= 9);
+assert.match(settings, /disabled=\{saving \|\| installing\}/);
+assert.match(settings, /role="alert"/);
 assert.match(pageCss, /@media \(max-width: 720px\)/);
 assert.match(pageCss, /grid-template-rows: auto minmax\(0, 1fr\)/);
 assert.doesNotMatch(pageCss, /\.tabBar\s*\{[^}]*display:\s*none/s);
