@@ -8,6 +8,7 @@ import re
 import subprocess
 import textwrap
 import threading
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,71 @@ def test_workflow_projects_live_under_openprogram_programs() -> None:
     programs_dir = Path(programs.__file__).resolve().parent
 
     assert TL._workflow_projects_root() == programs_dir / "workflows"
+
+
+def test_workflow_projects_use_owner_source_catalog(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from openprogram.programs import _programs
+
+    application = (
+        tmp_path / "checkout" / "openprogram" / "programs"
+        / "applications" / "gui_harness"
+    )
+    application.mkdir(parents=True)
+    monkeypatch.setattr(
+        _programs,
+        "owner_controlled_program_sources",
+        lambda base=None: [{"path": str(application)}],
+    )
+
+    assert TL._workflow_projects_root() == application.parent.parent / "workflows"
+
+
+def test_workflow_import_catalog_ignores_non_project_directories(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "workflows"
+    project = root / "literature_review"
+    (project / ".git").mkdir(parents=True)
+    (root / "__pycache__").mkdir()
+    visited: list[Path] = []
+
+    def checkout(path: Path) -> tuple[dict, str]:
+        visited.append(path)
+        return ({
+            "project_metadata": {
+                "entrypoint": "literature_review",
+                "summary": "Review literature",
+            },
+        }, "abc123")
+
+    monkeypatch.setattr(TL, "_workflow_projects_root", lambda: root)
+    monkeypatch.setattr(TL, "_checkout_head", checkout)
+
+    assert TL._workflow_import_catalog() == (
+        "- from workflows.literature_review import literature_review"
+        "  # Review literature @ abc123"
+    )
+    assert visited == [project]
+
+
+def test_checkout_head_reports_an_invalid_git_archive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "broken"
+    (project / ".git").mkdir(parents=True)
+    monkeypatch.setattr(TL, "_git", lambda *_args: "abc123")
+    monkeypatch.setattr(
+        TL.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0, stdout=b"", stderr=b"",
+        ),
+    )
+
+    with pytest.raises(TL.InvalidWorkflow, match="Git archive is invalid"):
+        TL._checkout_head(project)
 
 
 def _code(body: str, helpers: str = "") -> str:
@@ -290,6 +356,106 @@ def _git_output(project: Path, *args: str) -> str:
     ).stdout.strip()
 
 
+def _dir_bytes(root: Path) -> dict[str, bytes]:
+    if not root.exists():
+        return {}
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+def _install_legacy_project(repo: Path, name: str) -> None:
+    project = repo / "catalog" / name
+    project.mkdir(parents=True)
+    TL._git(project, "init", "-b", "main")
+    (project / "pyproject.toml").write_text(
+        "[project]\n"
+        f'name = "{name}"\n'
+        'version = "0.1.0"\n'
+        'description = "Legacy research workflow"\n'
+        'keywords = ["research"]\n\n'
+        "[tool.openprogram]\n"
+        f'display-name = "{name}"\n',
+        encoding="utf-8",
+    )
+    TL._git(project, "add", "--all")
+    TL._git(
+        project,
+        "-c", "user.name=OpenProgram",
+        "-c", "user.email=openprogram@localhost",
+        "commit", "-m", "legacy fixture",
+    )
+
+
+def test_search_workflows_returns_ranked_readonly_candidates(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _candidate, revision = _install_workflow_project(session_repo, _project())
+    _install_workflow_project(
+        session_repo,
+        _project(
+            name="deploy_tool",
+            summary="Deploy binaries",
+            tags=["deploy"],
+        ),
+    )
+    monkeypatch.setattr(
+        TL, "_run_planner_turn",
+        lambda *_args, **_kwargs: pytest.fail("search must not call a model"),
+    )
+    monkeypatch.setattr(
+        TL, "_llm_function",
+        lambda: pytest.fail("search must not call a model"),
+    )
+    catalog_before = _dir_bytes(session_repo / "catalog")
+
+    result = TL.search_workflows("research recent papers")
+
+    assert _dir_bytes(session_repo / "catalog") == catalog_before
+    assert not (session_repo / "workflows").exists()
+    rows = result["workflows"]
+    assert [row["workflow_id"] for row in rows] == [
+        "research_workflow", "deploy_tool",
+    ]
+    top = rows[0]
+    assert top["revision"] == revision
+    assert top["retrieval_score"] >= 1
+    assert "research" in top["matched_terms"]
+    assert top["input_schema"] == {
+        "type": "object",
+        "properties": {"task": {"type": "string"}},
+        "required": ["task"],
+    }
+    assert top["output_schema"] == {"type": "object"}
+    assert top["permissions"] == []
+
+
+def test_search_workflows_excludes_auto_workflow_and_legacy_projects(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _install_workflow_project(session_repo, _project())
+    _install_workflow_project(
+        session_repo,
+        _project(name="auto_workflow", summary="Research orchestration entry"),
+    )
+    _install_legacy_project(session_repo, "legacy_research")
+
+    result = TL.search_workflows("research papers")
+
+    assert [row["workflow_id"] for row in result["workflows"]] == [
+        "research_workflow",
+    ]
+
+
+def test_search_workflows_is_registered_as_a_public_tool() -> None:
+    from openprogram.programs._runtime import exposed_names, get
+
+    assert get("search_workflows") is not None
+    assert "search_workflows" in exposed_names()
+
+
 def test_small_task_is_persisted_as_a_reusable_multifile_project(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
@@ -430,7 +596,7 @@ def test_explicit_direct_return_includes_raw_result(
 def test_agent_preview_cannot_authorize_raw_result(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path, task: str,
 ) -> None:
-    raw_result = "PRIVATE REPORT BODY"
+    raw_result = "PRIVATE REPORT BODY\n" + ("confidential detail " * 40)
     _planner(monkeypatch, _code(f"return {raw_result!r}"))
     _summarizer(monkeypatch, "完成报告生成。", return_result=True)
 
@@ -496,7 +662,15 @@ def test_summary_function_uses_trace_without_raw_deliverable(
     assert raw_deliverable not in calls[0]["prompt"]
     assert "正文发现" not in calls[0]["prompt"]
     assert "Saved artifact: /tmp/report.md; warning: none" in calls[0]["prompt"]
-    assert calls[0]["response_format"] == {"type": "json_object"}
+    response_format = calls[0]["response_format"]
+    assert response_format.name == "workflow_summary"
+    assert response_format.fallback == "prompt"
+    assert response_format.schema == {
+        "type": "object",
+        "properties": {"summary": {"type": "string", "minLength": 1}},
+        "required": ["summary"],
+        "additionalProperties": False,
+    }
 
 
 def test_summary_failure_never_exposes_raw_result(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -519,7 +693,7 @@ def test_summary_failure_never_exposes_raw_result(monkeypatch: pytest.MonkeyPatc
 def test_summary_failure_is_persisted_but_not_public(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
-    raw_result = "PRIVATE REPORT BODY"
+    raw_result = "PRIVATE REPORT BODY\n" + ("confidential detail " * 40)
     _planner(monkeypatch, _code(f"return {raw_result!r}"))
 
     def fail(*_args, **_kwargs):
@@ -558,6 +732,26 @@ def test_non_string_summary_uses_safe_fallback(monkeypatch: pytest.MonkeyPatch) 
         "summary_error": "ValueError: workflow summary text was not a string",
     }
     assert "SUBSTANTIVE FINDING" not in handoff["summary"]
+
+
+def test_summary_failure_uses_short_zero_call_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail(*_args, **_kwargs):
+        raise RuntimeError("structured summary unavailable")
+
+    monkeypatch.setattr(TL, "_llm_function", lambda: fail)
+    handoff = TL._summarize_workflow({
+        "task": "research recent papers",
+        "status": "completed",
+        "result": "Research report saved to llm_knowledge_2026_research.md.",
+        "items": [],
+    })
+
+    assert handoff["summary"] == (
+        "Research report saved to llm_knowledge_2026_research.md."
+    )
+    assert handoff["return_result"] is False
 
 
 def test_plain_helper_uses_agent_and_its_result_in_workflow(
@@ -705,6 +899,141 @@ def test_invalid_plans_keep_requesting_rewrites_with_concrete_errors(
     assert _state(session_repo, result["run_id"])["status"] == "completed"
 
 
+def test_project_author_prompt_matches_top_level_validator_rules() -> None:
+    prompt = TL._author_prompt("research papers", {})
+
+    assert "Plain import statements such as `import json` are forbidden" in prompt
+    assert "module top level may contain only" in prompt
+    assert "module-level constants or other assignments are forbidden" in prompt
+    assert "Standard-library imports such as `pathlib`" in prompt
+    assert "delegate filesystem, browser, and other external work" in prompt
+
+
+def test_project_author_stops_after_bounded_invalid_replies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    replies: list[str] = []
+
+    def invalid_reply(*_args, **_kwargs) -> str:
+        replies.append("invalid")
+        return "{}"
+
+    monkeypatch.setattr(TL, "_run_planner_turn", invalid_reply)
+    monkeypatch.setattr(TL, "_workflow_import_catalog", lambda: "")
+
+    with pytest.raises(
+        TL.InvalidWorkflow,
+        match=rf"after {TL.PROJECT_AUTHOR_ATTEMPTS} attempts",
+    ):
+        TL._request_project_candidate(
+            "research papers",
+            {},
+            session_id="session",
+            agent_id="main",
+            spawn_caller=None,
+        )
+
+    assert len(replies) == TL.PROJECT_AUTHOR_ATTEMPTS
+
+
+def test_cancelled_project_author_marks_new_run_interrupted(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    from openprogram.agentic_programming.function import CancelledError
+
+    replies = iter([json.dumps({"action": "create"})])
+
+    def planner(*_args, **_kwargs) -> str:
+        try:
+            return next(replies)
+        except StopIteration:
+            raise CancelledError("stop author")
+
+    monkeypatch.setattr(TL, "_run_planner_turn", planner)
+
+    with pytest.raises(CancelledError, match="stop author"):
+        TL.agentic_workflow("research papers")
+
+    runs = list((session_repo / "workflows").iterdir())
+    assert len(runs) == 1
+    state = json.loads((runs[0] / "state.json").read_text())
+    assert state["status"] == "interrupted"
+    assert "CancelledError: stop author" in state["last_error"]
+
+
+def test_exhausted_project_author_marks_new_run_failed(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    replies = iter([
+        json.dumps({"action": "create"}),
+        *("{}" for _ in range(TL.PROJECT_AUTHOR_ATTEMPTS)),
+    ])
+    monkeypatch.setattr(
+        TL, "_run_planner_turn", lambda *_args, **_kwargs: next(replies),
+    )
+
+    with pytest.raises(TL.InvalidWorkflow, match="failed validation after"):
+        TL.agentic_workflow("research papers")
+
+    runs = list((session_repo / "workflows").iterdir())
+    assert len(runs) == 1
+    state = json.loads((runs[0] / "state.json").read_text())
+    assert state["status"] == "failed"
+    assert "failed validation after" in state["last_error"]
+
+
+def test_project_execution_repairs_are_bounded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    instance = tmp_path / "run"
+    (instance / "snapshot").mkdir(parents=True)
+    state = {
+        "run_id": "run",
+        "task": "research papers",
+        "status": "running",
+        "executions": 0,
+        "items": [],
+        "revisions": [],
+        "result": "",
+        "last_error": "",
+        "project_id": "",
+        "project_action": "create",
+        "project_metadata": {"entrypoint": "research_workflow"},
+        "workflow_dependencies": {},
+    }
+    TL._save_state(instance / "state.json", state)
+    repairs: list[bool] = []
+    monkeypatch.setattr(
+        TL,
+        "_execute_snapshot",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("broken")),
+    )
+    monkeypatch.setattr(TL, "_read_candidate_directory", lambda *_args: {})
+    monkeypatch.setattr(
+        TL,
+        "_request_project_candidate",
+        lambda *_args, **_kwargs: repairs.append(True) or {
+            "project_metadata": {"entrypoint": "research_workflow"},
+        },
+    )
+    monkeypatch.setattr(TL, "_replace_snapshot", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(TL, "_save_project_ref", lambda *_args: None)
+
+    result = TL._run_project_instance_locked(
+        instance,
+        state,
+        run_id="run",
+        session_id="session",
+        agent_id="main",
+        spawn_caller=None,
+        functions={},
+    )
+
+    assert result["status"] == "failed"
+    assert len(repairs) == TL.PROJECT_REPAIR_ATTEMPTS
+    assert len(result["revisions"]) == TL.PROJECT_REPAIR_ATTEMPTS
+
+
 def test_missing_workflow_is_rejected_with_exact_validation_reason(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
@@ -740,6 +1069,20 @@ def test_package_rejects_relative_import_outside_own_package() -> None:
 
     with pytest.raises(TL.InvalidWorkflow, match="import is not allowed"):
         TL._validate_project_candidate(candidate)
+
+
+def test_package_accepts_registered_vanilla_function_import() -> None:
+    candidate = json.loads(_package_project())
+    candidate["files"]["steps/discover.py"] = (
+        "from openprogram.programs.functions.vanilla.web.web_search "
+        "import execute as web_search\n\n"
+        "def discover(task):\n"
+        "    return web_search(query=task, provider='arxiv')\n"
+    )
+
+    validated = TL._validate_project_candidate(candidate)
+
+    assert "steps/discover.py" in validated["files"]
 
 
 def test_execution_cap_counts_only_real_calls(

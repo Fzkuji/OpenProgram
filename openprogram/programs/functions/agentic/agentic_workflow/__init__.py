@@ -36,6 +36,7 @@ from openprogram.agentic_programming.function import (
     current_call_id,
     current_session_id,
 )
+from openprogram.providers.structured_output import JsonSchemaOutput
 from openprogram.store.session.git_session import atomic_write_text
 
 HANDOFF_SUMMARY_MAX_CHARS = 1200
@@ -44,9 +45,22 @@ MAX_ITEMS_EXECUTED = 40
 PLANNER_TOOLS = ("read", "grep", "glob", "list")
 PROJECT_SCHEMA_VERSION = 1
 PROJECT_CANDIDATE_LIMIT = 8
+PROJECT_AUTHOR_ATTEMPTS = 4
+PROJECT_REPAIR_ATTEMPTS = 3
 PROJECT_RUNTIME_NAMES = {
     "llm", "agent", "goal", "validate_and_retry", "route", "conditional",
 }
+WORKFLOW_SUMMARY_FORMAT = JsonSchemaOutput(
+    schema={
+        "type": "object",
+        "properties": {"summary": {"type": "string", "minLength": 1}},
+        "required": ["summary"],
+        "additionalProperties": False,
+    },
+    name="workflow_summary",
+    fallback="prompt",
+    max_validation_retries=1,
+)
 
 DELIVERY_INSTRUCTIONS = """Workflow delivery contract:
 - Unless the task explicitly asks for the content in chat, save substantive deliverables
@@ -165,6 +179,16 @@ function from __init__.py. Define it in workflow.py with the existing
 @agentic_function decorator and exactly one task parameter. Put reusable
 responsibilities in separate steps/, goals/, or helpers/ modules and include
 tests/test_workflow.py. Use ordinary relative imports inside the package.
+Plain import statements such as `import json` are forbidden. Every Python
+module top level may contain only a module docstring, allowed `from ... import
+...` statements, an optional `__all__` assignment, and function definitions;
+module-level constants or other assignments are forbidden. Put constants and
+computed values inside functions. Absolute imports are allowed only from
+`openprogram.agentic_programming`,
+`openprogram.programs.functions.agentic`, or one listed `workflows.<package>`.
+Standard-library imports such as `pathlib`, `datetime`, `re`, and `json` are
+forbidden; delegate filesystem, browser, and other external work to an existing
+registered agentic function or to `agent()`.
 Import llm, agent, goal, and control-flow helpers from
 openprogram.agentic_programming. Import existing OpenProgram agentic functions
 from their normal openprogram.programs.functions.agentic module. Do not embed
@@ -343,7 +367,12 @@ def _workflow_import_catalog() -> str:
         return "(none)"
     rows = []
     for project_dir in sorted(root.iterdir()):
-        if not project_dir.is_dir() or project_dir.is_symlink():
+        if (
+            not project_dir.is_dir()
+            or project_dir.is_symlink()
+            or project_dir.name.startswith(".")
+            or not (project_dir / ".git").exists()
+        ):
             continue
         try:
             candidate, revision = _checkout_head(project_dir)
@@ -412,7 +441,13 @@ def _validated_reply(reply: str) -> str:
 def _workflow_projects_root() -> Path:
     import openprogram.programs as programs_package
 
-    return Path(programs_package.__file__).resolve().parent / "workflows"
+    from openprogram.programs._programs import owner_programs_roots
+
+    package_root = Path(programs_package.__file__).resolve().parent
+    source_roots = owner_programs_roots()
+    if package_root in source_roots or not source_roots:
+        return package_root / "workflows"
+    return source_roots[0] / "workflows"
 
 
 def _safe_project_id(value: object) -> str:
@@ -532,6 +567,68 @@ def _search_projects(task: str) -> list[dict]:
         matches.append((score, row))
     matches.sort(key=lambda item: (-item[0], item[1]["project_id"]))
     return [row for _, row in matches[:PROJECT_CANDIDATE_LIMIT]]
+
+
+# Every published workflow package exposes one entrypoint with exactly one
+# positional ``task: str`` argument (enforced by ``_validate_project_candidate``),
+# so the public search contract can state the schemas deterministically.
+WORKFLOW_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {"task": {"type": "string"}},
+    "required": ["task"],
+}
+WORKFLOW_OUTPUT_SCHEMA = {"type": "object"}
+
+
+@agentic_function(
+    input={
+        "task": {
+            "description": "The task to match against the workflow catalog",
+            "multiline": True,
+        },
+    },
+)
+def search_workflows(task: str) -> dict:
+    """Deterministically search the local workflow catalog (read-only).
+
+    Returns ranked candidates with their pinned Git revision, contract
+    schemas, matched terms, and declared permissions. Never calls a
+    model, writes files, executes a candidate, or publishes.
+    """
+    query = _project_tokens(task)
+    matches: list[tuple[int, dict]] = []
+    root = _workflow_projects_root()
+    if root.exists() and not root.is_symlink():
+        for project_dir in sorted(root.iterdir()):
+            if not project_dir.is_dir() or project_dir.name.startswith("."):
+                continue
+            try:
+                row = _read_project_index(project_dir)
+            except (OSError, ValueError, json.JSONDecodeError):
+                continue
+            metadata = row["project_metadata"]
+            entrypoint = str(metadata.get("entrypoint") or "")
+            # Legacy (entry.py) projects are resume-only; auto_workflow is
+            # the user-only orchestration entry, never a candidate.
+            if not entrypoint or entrypoint == "auto_workflow":
+                continue
+            haystack = " ".join([
+                metadata["name"], metadata["summary"], *metadata["tags"],
+            ])
+            matched = sorted(query & _project_tokens(haystack))
+            matches.append((len(matched), {
+                "workflow_id": row["project_id"],
+                "revision": row["active_revision"],
+                "retrieval_score": len(matched),
+                "matched_terms": matched,
+                "input_schema": WORKFLOW_INPUT_SCHEMA,
+                "output_schema": WORKFLOW_OUTPUT_SCHEMA,
+                "permissions": [],
+            }))
+    matches.sort(key=lambda item: (-item[0], item[1]["workflow_id"]))
+    return {
+        "workflows": [row for _, row in matches[:PROJECT_CANDIDATE_LIMIT]],
+    }
 
 
 def _validate_project_metadata(
@@ -708,6 +805,7 @@ def _allowed_package_import(
         module == "openprogram.agentic_programming"
         or module.startswith("openprogram.agentic_programming.")
         or module.startswith("openprogram.programs.functions.agentic.")
+        or module.startswith("openprogram.programs.functions.vanilla.")
         or workflow_import
         or (
             path.startswith("tests/")
@@ -1168,7 +1266,8 @@ def _request_project_candidate(
     pinned_dependencies: Optional[dict] = None,
 ) -> dict:
     prompt = _author_prompt(task, functions, base=base, error=error, state=state)
-    while True:
+    last_error = ""
+    for attempt in range(1, PROJECT_AUTHOR_ATTEMPTS + 1):
         reply = _run_planner_turn(
             session_id, prompt, agent_id=agent_id,
             spawn_caller=spawn_caller, label="workflow project author",
@@ -1199,10 +1298,19 @@ def _request_project_candidate(
             )
             return candidate
         except Exception as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
+            if attempt == PROJECT_AUTHOR_ATTEMPTS:
+                raise InvalidWorkflow(
+                    "workflow project author failed validation after "
+                    f"{PROJECT_AUTHOR_ATTEMPTS} attempts: {last_error}"
+                ) from exc
             prompt = _author_prompt(
                 task, functions, base=base,
-                error=f"{type(exc).__name__}: {exc}", state=state,
+                error=last_error, state=state,
             )
+    raise InvalidWorkflow(
+        "workflow project author failed validation: " + last_error
+    )
 
 
 def _write_repository_candidate(
@@ -1264,6 +1372,8 @@ def _read_repository_candidate(
 
 
 def _checkout_head(project_dir: Path) -> tuple[dict, str]:
+    if project_dir.is_symlink() or not (project_dir / ".git").exists():
+        raise InvalidWorkflow("workflow project must be a Git repository")
     revision = _git(project_dir, "rev-parse", "HEAD")
     archive = subprocess.run(
         ["git", "-C", str(project_dir), "archive", "--format=tar", revision],
@@ -1277,12 +1387,17 @@ def _checkout_head(project_dir: Path) -> tuple[dict, str]:
     with tempfile.TemporaryDirectory(prefix="openprogram-workflow-checkout-") as raw:
         checkout = Path(raw) / project_dir.name
         checkout.mkdir()
-        with tarfile.open(fileobj=io.BytesIO(archive.stdout), mode="r:") as bundle:
-            for member in bundle.getmembers():
-                member_path = Path(member.name)
-                if member_path.is_absolute() or ".." in member_path.parts:
-                    raise InvalidWorkflow("invalid path in workflow Git archive")
-            bundle.extractall(checkout, filter="data")
+        try:
+            with tarfile.open(
+                fileobj=io.BytesIO(archive.stdout), mode="r:"
+            ) as bundle:
+                for member in bundle.getmembers():
+                    member_path = Path(member.name)
+                    if member_path.is_absolute() or ".." in member_path.parts:
+                        raise InvalidWorkflow("invalid path in workflow Git archive")
+                bundle.extractall(checkout, filter="data")
+        except tarfile.TarError as exc:
+            raise InvalidWorkflow("workflow Git archive is invalid") from exc
         return _read_repository_candidate(
             checkout, allow_legacy_entry=True,
         ), revision
@@ -1403,6 +1518,18 @@ def _save_state(path: Path, state: dict) -> None:
         json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True, default=str)
         + "\n",
     )
+
+
+def _mark_run_exception(instance: Path, state: dict, exc: BaseException) -> None:
+    state["status"] = (
+        "interrupted"
+        if isinstance(exc, (KeyboardInterrupt, CancelledError))
+        else "failed"
+    )
+    state["last_error"] = "".join(
+        traceback.format_exception(type(exc), exc, exc.__traceback__)
+    )
+    _save_state(instance / "state.json", state)
 
 
 def _load_state(path: Path) -> dict:
@@ -1577,13 +1704,22 @@ def _summarize_workflow(state: dict) -> dict:
             ),
         })
     failed = sum(row.get("status") == "failed" for row in trace)
-    fallback = f"Workflow finished {len(trace)} recorded call(s)"
-    if names:
-        fallback += ": " + ", ".join(names[:8])
-    fallback += "."
-    if failed:
-        fallback += f" {failed} call(s) failed."
-    fallback += " Summary generation was unavailable; verify generated artifacts."
+    result_text = str(state.get("result") or "").strip()
+    short_direct_handoff = (
+        not trace
+        and 0 < len(result_text) <= 500
+        and result_text.count("\n") <= 2
+    )
+    if short_direct_handoff:
+        fallback = result_text
+    else:
+        fallback = f"Workflow finished {len(trace)} recorded call(s)"
+        if names:
+            fallback += ": " + ", ".join(names[:8])
+        fallback += "."
+        if failed:
+            fallback += f" {failed} call(s) failed."
+        fallback += " Summary generation was unavailable; verify generated artifacts."
     prompt = """<workflow_summary>
 Summarize the completed workflow as a concise, natural chat response.
 Usually begin with a brief overview; 2-3 sentences are often enough.
@@ -1608,7 +1744,7 @@ computed separately from the original task. Reply with one JSON object:
         "execution": trace,
     }, ensure_ascii=False, default=str)
     try:
-        response = _llm_function()(prompt, response_format={"type": "json_object"})
+        response = _llm_function()(prompt, response_format=WORKFLOW_SUMMARY_FORMAT)
         if isinstance(response, str):
             response = json.loads(response)
         if not isinstance(response, dict):
@@ -1930,7 +2066,7 @@ def _execute_package_snapshot(
         name: module for name, module in sys.modules.items()
         if is_snapshot_module(name)
     }
-    had_workflows = "workflows" in sys.modules
+    prior_workflows = sys.modules.pop("workflows", missing)
     for name in prior_modules:
         sys.modules.pop(name, None)
     sys.path.insert(0, str(snapshot))
@@ -1963,8 +2099,9 @@ def _execute_package_snapshot(
             if is_snapshot_module(name):
                 sys.modules.pop(name, None)
         sys.modules.update(prior_modules)
-        if not had_workflows:
-            sys.modules.pop("workflows", None)
+        sys.modules.pop("workflows", None)
+        if prior_workflows is not missing:
+            sys.modules["workflows"] = prior_workflows
         for name, value in prior_agentic.items():
             if value is missing:
                 function_runtime._registry.pop(name, None)  # noqa: SLF001
@@ -2159,22 +2296,32 @@ def _run_project_instance_locked(
             state["status"] = "capped"
             _save_state(state_path, state)
             return _result(state, run_id)
-        except (KeyboardInterrupt, CancelledError):
+        except (KeyboardInterrupt, CancelledError) as exc:
+            _mark_run_exception(instance, state, exc)
             raise
         except BaseException:
             error = traceback.format_exc()
             state["last_error"] = error
             _save_state(state_path, state)
+            if len(state["revisions"]) >= PROJECT_REPAIR_ATTEMPTS:
+                state["status"] = "failed"
+                state["handoff"] = _summarize_workflow(state)
+                _save_state(state_path, state)
+                return _result(state, run_id)
             base = _read_candidate_directory(
                 instance / "snapshot", state["project_metadata"],
             )
-            candidate = _request_project_candidate(
-                state["task"], functions, session_id=session_id,
-                agent_id=agent_id, spawn_caller=spawn_caller,
-                base=base, error=error, state=state,
-                pinned_snapshot=instance / "snapshot",
-                pinned_dependencies=state.get("workflow_dependencies"),
-            )
+            try:
+                candidate = _request_project_candidate(
+                    state["task"], functions, session_id=session_id,
+                    agent_id=agent_id, spawn_caller=spawn_caller,
+                    base=base, error=error, state=state,
+                    pinned_snapshot=instance / "snapshot",
+                    pinned_dependencies=state.get("workflow_dependencies"),
+                )
+            except BaseException as exc:
+                _mark_run_exception(instance, state, exc)
+                raise
             dependencies = _replace_snapshot(
                 instance,
                 candidate,
@@ -2320,10 +2467,14 @@ def _execute_workflow(
                     agent_id=agent_id, spawn_caller=spawn_caller,
                     functions=functions,
                 )
-            _prepare_project_run(
-                instance, state, session_id=sid, agent_id=agent_id,
-                spawn_caller=spawn_caller, functions=functions,
-            )
+            try:
+                _prepare_project_run(
+                    instance, state, session_id=sid, agent_id=agent_id,
+                    spawn_caller=spawn_caller, functions=functions,
+                )
+            except BaseException as exc:
+                _mark_run_exception(instance, state, exc)
+                raise
             state = _load_state(instance / "state.json")
             state["status"] = "running"
             _save_state(instance / "state.json", state)
@@ -2342,10 +2493,14 @@ def _execute_workflow(
         "last_error": "",
     }
     _save_state(instance / "state.json", state)
-    _prepare_project_run(
-        instance, state, session_id=sid, agent_id=agent_id,
-        spawn_caller=spawn_caller, functions=functions,
-    )
+    try:
+        _prepare_project_run(
+            instance, state, session_id=sid, agent_id=agent_id,
+            spawn_caller=spawn_caller, functions=functions,
+        )
+    except BaseException as exc:
+        _mark_run_exception(instance, state, exc)
+        raise
     with _WORKFLOW_LOCK:
         state = _load_state(instance / "state.json")
         return _run_project_instance_locked(
@@ -2355,9 +2510,11 @@ def _execute_workflow(
         )
 
 
-@agentic_function(input={
-    "task": {"description": "The task to plan and execute", "multiline": True},
-})
+@agentic_function(
+    input={
+        "task": {"description": "The task to plan and execute", "multiline": True},
+    },
+)
 def agentic_workflow(task: str) -> dict:
     """Search, select, and execute a reusable workflow project.
 
@@ -2392,7 +2549,7 @@ def resume_workflow(run_id: str, **_deprecated) -> dict:
 
 
 __all__ = [
-    "agentic_workflow", "resume_workflow", "InvalidWorkflow",
+    "agentic_workflow", "search_workflows", "resume_workflow", "InvalidWorkflow",
     "WorkflowExecutionCapped", "PLANNER_TOOLS",
     "HANDOFF_SUMMARY_MAX_CHARS", "MAX_ITEMS_EXECUTED",
 ]
