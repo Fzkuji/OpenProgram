@@ -194,7 +194,8 @@ lane 与它分叉出来的 lane 之间**多留一个空列**——分支是平�
 分支以一条线开始，不以节点开始。只有胶囊和被取代的旧摘要——lane 里没有自己
 的用户轮次——桥才直接连到字形本身。
 线程条目（第十二节）不占 lane 宽度：它的列在 lane
-落定之后再选，取锚点右侧第一个空列。
+落定之后再选，取锚点右侧第一个空列，选中后立刻占用，第二条展开线程继续往右
+走——两条打开的线程不共享格子。
 
 ### tier —— 分支内往右缩进几格
 
@@ -220,7 +221,8 @@ lane 与它分叉出来的 lane 之间**多留一个空列**——分支是平�
 
 线程的行号**递归**分配（第十二节）：锚点的条目从它的下一行起（让开挂在它名下
 的分支行）逐行往下；展开的 spawn 自己的线程接着它的行继续，它占的行把父线程
-后面的条目往下推——展开是插入，不是覆盖。跨会话 spawn 落到目标会话时是该会话
+后面的条目往下推。链上锚点的线程落座后，它后面的对话层节点（以及已经落在插入
+位置下方的线程行）按占用行数下移——展开是插入，不是覆盖。跨会话 spawn 落到目标会话时是该会话
 自己的对话链（lane 0），不是侧枝（场景 12）。
 
 ---
@@ -359,7 +361,8 @@ apps/web/lib/runtime-bridge/dag/
                                 按展开集算可见性
   layout/geometry.ts 第一节的实现：链节点按 lane/tier/depth 打包成格点
                      （分支 lane 隔一空列、fork 根落兄弟行），再把每条展开
-                     的线程递归安放在锚点旁边。
+                     的线程递归安放在锚点旁边，按插入行数下移后续链行，并占用
+                     每条线程列。
                      **tier 不在这里算**——由后端
                      `openprogram/webui/graph_layout/tier.py` 算好随节点下发，
                      前端只消费。
@@ -587,7 +590,9 @@ tooltip 和检查器里。
 **展开就是纯展开**。点节点把线程插进布局：一根注文灰实线沿锚点自己的列竖直
 向下，每个事件用一根右伸横杆挂在线上——先下后右，主干模式下探一层。每个事件
 都是线上的真节点——每次调用一个方块（锚轮 lane 色），spawn
-的 agent 也是方块——一行一个事件，从上到下按调用顺序。收起按规则②
+的 agent 也是方块——一行一个事件，从上到下按调用顺序。后面的 user / assistant
+节点按插入的行数下移，锚点列上的线程竖线在下一颗三角形之前结束。每条打开的
+线程占用自己的列。收起按规则②
 回收行。
 
 **头就是 agent，spawn 就是调用**。spawn 根画成方块——派发 agent 就是一次
@@ -600,7 +605,7 @@ tooltip 和检查器里。
 checkout 成活动分支——接管这个 agent 的对话。徽章永不压住节点：所有可见字形
 都预置进徽章碰撞盒，会压住节点的徽章自动下移一行。模型是递归的，画面也是：每一层都按同样的两
 条规则读，折叠数在肩上、展开成一列。嵌套展开的线程把父线程后面的条目往下推；
-展开是插入，不是覆盖。
+链上锚点的线程同样插入后面的对话轮。展开是插入，不是覆盖。
 
 **没有注文**。agent 的名字住在 tooltip 和 inspector 里（inspector 把节点标题
 写作 `子 agent · <名字>`，而不是 role 字段所说的 `user`）；画布只有字形和折叠
@@ -623,7 +628,7 @@ checkout 成活动分支——接管这个 agent 的对话。徽章永不压住�
 | 规范条目 | 实现 |
 |---|---|
 | 无限画布（平移 / 缩放 / fit / 点阵） | `dag/canvas.ts` 与 `styles/dag/canvas.css` 的 `.history-body`；视角状态在 `dag/store/globals.ts`；HUD 在 `components/chat/dag-view.tsx` |
-| 第一节 lane / tier / depth 布局 | `dag/layout/geometry.ts::computeGeometry`（链 lane 按 tier 打包并 lane 内归零、前序分行、场景3分叉行+间隔列、线程递归安放）；格点性、无重叠、线程列行、分叉几何均由 `apps/web/scripts/check-dag-subagent.mjs` 真实执行并断言 |
+| 第一节 lane / tier / depth 布局 | `dag/layout/geometry.ts::computeGeometry`（链 lane 按 tier 打包并 lane 内归零、前序分行、场景3分叉行+间隔列、线程递归安放并下移后续链行、占用线程列）；格点性、无重叠、线程列行、分叉几何均由 `apps/web/scripts/check-dag-subagent.mjs` 真实执行并断言 |
 | 第二节 规则③ 字形占格 | 没有任何形状按文字定尺寸，画布上除肩上折叠数与胶囊注记外没有文字 |
 | 第四节 HEAD 呼吸光晕 | `render/nodes.ts` 戳 `data-head` 并把分支色写进 `color`；`dag-head-glow` 关键帧在 `styles/dag/nodes.css`（reduced-motion → 恒定光）；所有字形保持空心（`shapes.ts`）；HEAD 指向已归并回复时落到锚上（`pipeline.ts` 经 `threadModel.anchorOf`） |
 | 第〇节/第十二节 调用线程聚合 | `passes/thread.ts`（`buildThreadModel`：锚归并、事件归属、递归可见性）；`render/nodes.ts` 画肩上折叠数（`history-thread-count`）；`store/globals.ts` 的 `_threadOpen` |

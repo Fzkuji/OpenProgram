@@ -196,6 +196,9 @@ assert.equal(
   "merge stays on the chain — it is a chain operation");
 assert.equal(
   isChainNode({ id: "x", role: "tool" }), false);
+assert.equal(
+  isChainNode({ id: "x", role: "tool", caller: "ROOT" }), true,
+  "a composer-launched function hung on ROOT is a chain square");
 
 /* ---- 2. geometry: lattice, thread placement, scene-3 forks ---- */
 
@@ -282,6 +285,125 @@ const layoutOf = (graph) => {
   );
 }
 
+{
+  // Open thread + a later chain turn: expansion is row insertion.
+  // Without the shift, e1/e2 sit on u1/a1's rows and the thread
+  // vertical in a0's column runs through the next triangle.
+  const g = [
+    { id: "ROOT", display: "root", _lane: 0, _tier: 0, _depth: 0,
+      created_at: 0 },
+    { id: "u0", role: "user", predecessor: "ROOT",
+      _lane: 0, _tier: 1, _depth: 1, created_at: 1 },
+    { id: "a0", role: "assistant", predecessor: "u0",
+      _lane: 0, _tier: 2, _depth: 2, created_at: 2 },
+    { id: "e1", role: "tool", display: "runtime", caller: "a0",
+      _lane: 0, _tier: 3, _depth: 3, created_at: 3 },
+    { id: "e2", role: "tool", display: "runtime", caller: "a0",
+      _lane: 0, _tier: 3, _depth: 4, created_at: 4 },
+    { id: "u1", role: "user", predecessor: "a0",
+      _lane: 0, _tier: 1, _depth: 5, created_at: 5 },
+    { id: "a1", role: "assistant", predecessor: "u1",
+      _lane: 0, _tier: 2, _depth: 6, created_at: 6 },
+  ];
+  setThreadOpen({ a0: true });
+  const { geom } = layoutOf(g);
+  const { pos } = geom;
+  assert.equal(pos.e1.y, pos.a0.y + ROW_H, "first call on the next row");
+  assert.equal(pos.e2.y, pos.e1.y + ROW_H, "second call continues the thread");
+  assert.equal(
+    pos.u1.y, pos.e2.y + ROW_H,
+    "later chain turns move down: the next user sits below the thread, "
+    + "never level with a tool square",
+  );
+  assert.equal(pos.a1.y, pos.u1.y + ROW_H);
+  assert.ok(
+    pos.a1.y > pos.e2.y,
+    "the thread vertical in a0's column ends before the next triangle",
+  );
+  const taken = new Map();
+  for (const id of Object.keys(pos)) {
+    const key = `${pos[id].x},${pos[id].y}`;
+    assert.ok(!taken.has(key), `${id} lands on ${taken.get(key)}`);
+    taken.set(key, id);
+  }
+  setThreadOpen(Object.create(null));
+}
+
+{
+  // Two open threads must not share cells. The first thread reserves
+  // its column; the second walks to the next free column, and each
+  // insertion pushes later chain rows (and the later thread's start)
+  // down.
+  const g = [
+    { id: "ROOT", display: "root", _lane: 0, _tier: 0, _depth: 0,
+      created_at: 0 },
+    { id: "u0", role: "user", predecessor: "ROOT",
+      _lane: 0, _tier: 1, _depth: 1, created_at: 1 },
+    { id: "a0", role: "assistant", predecessor: "u0",
+      _lane: 0, _tier: 2, _depth: 2, created_at: 2 },
+    { id: "e1", role: "tool", display: "runtime", caller: "a0",
+      _lane: 0, _tier: 3, _depth: 3, created_at: 3 },
+    { id: "e2", role: "tool", display: "runtime", caller: "a0",
+      _lane: 0, _tier: 3, _depth: 4, created_at: 4 },
+    { id: "u1", role: "user", predecessor: "a0",
+      _lane: 0, _tier: 1, _depth: 5, created_at: 5 },
+    { id: "a1", role: "assistant", predecessor: "u1",
+      _lane: 0, _tier: 2, _depth: 6, created_at: 6 },
+    { id: "e3", role: "tool", display: "runtime", caller: "a1",
+      _lane: 0, _tier: 3, _depth: 7, created_at: 7 },
+    { id: "e4", role: "tool", display: "runtime", caller: "a1",
+      _lane: 0, _tier: 3, _depth: 8, created_at: 8 },
+  ];
+  setThreadOpen({ a0: true, a1: true });
+  const { geom } = layoutOf(g);
+  const { pos, threadColOf } = geom;
+  assert.ok(pos.u1.y > pos.e2.y, "first thread inserts above the next turn");
+  assert.ok(pos.e3.y > pos.a1.y, "second thread hangs below its own anchor");
+  assert.notEqual(
+    threadColOf.a0, threadColOf.a1,
+    "two open threads reserve distinct columns — they do not walk to "
+    + "the same first-free column",
+  );
+  const taken = new Map();
+  for (const id of Object.keys(pos)) {
+    const key = `${pos[id].x},${pos[id].y}`;
+    assert.ok(
+      !taken.has(key),
+      `${id} lands on ${taken.get(key)} — two open threads stacked`,
+    );
+    taken.set(key, id);
+  }
+  setThreadOpen(Object.create(null));
+}
+
+{
+  // Composer-launched function: caller=ROOT is a conversation-layer
+  // square under the diamond, not a vanished execution node.
+  const g = [
+    { id: "ROOT", display: "root", _lane: 0, _tier: 0, _depth: 0,
+      created_at: 0 },
+    { id: "fn", role: "tool", name: "bash", caller: "ROOT",
+      _lane: 0, _tier: 1, _depth: 1, created_at: 1 },
+    { id: "u0", role: "user", predecessor: "ROOT",
+      _lane: 0, _tier: 1, _depth: 2, created_at: 2 },
+  ];
+  setThreadOpen(Object.create(null));
+  const { m, geom } = layoutOf(g);
+  assert.ok(
+    m.visible.some((n) => n.id === "fn"),
+    "a ROOT-hung function stays on the chain when every thread is folded",
+  );
+  assert.equal(
+    geom.pos.fn.x, geom.pos.u0.x,
+    "the composer square sits on the main lane, one tier in",
+  );
+  assert.ok(
+    geom.pos.fn.y < geom.pos.u0.y,
+    "the composer square is its own row under the diamond, before later "
+    + "user turns",
+  );
+}
+
 /* ---- 3. glyphs: the spawn square, the count, no captions ---- */
 
 assert.match(
@@ -335,6 +457,12 @@ assert.match(
   pipelineSrc,
   /threadModel\.anchorOf\(headId\)/,
   "HEAD re-seats on its anchor when it points at a merged reply",
+);
+assert.match(
+  pipelineSrc,
+  /m\.status \|\| ""/,
+  "the render signature includes status so a running stroke does not "
+  + "stick after the node succeeds",
 );
 
 /* ---- 5. edges: centre-to-centre, the dotted thread, scene-3 bridge ---- */

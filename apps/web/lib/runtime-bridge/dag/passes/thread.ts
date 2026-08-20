@@ -63,7 +63,9 @@ export function isSpawnRoot(n: GNode): boolean {
 /** A conversation-layer node: something the chain itself is made of.
  *  ``merge`` stays on the chain (it is a chain operation); everything
  *  with a caller-tree pedigree (runtime rows, tools, run nodes,
- *  function placeholders) is execution. */
+ *  function placeholders) is execution — except a composer-launched
+ *  function hung on ROOT, which is the user's explicit action and
+ *  sits as a main-lane square under the diamond. */
 export function isChainNode(n: GNode): boolean {
   if (n.display === "root") return true;
   if (isSpawnRoot(n)) return false;
@@ -72,6 +74,11 @@ export function isChainNode(n: GNode): boolean {
   // colour but lays out on the agent's thread, not as a lane.
   if ((n as Record<string, unknown>)._agentTurn) return false;
   if (n.function === "merge") return true;
+  // Composer-launched function: conversation-layer, not a folded
+  // thread of ROOT. ``ownerOf`` returning null for a ROOT parent is
+  // what used to drop these from the visible graph.
+  const caller = (n as { caller?: string }).caller;
+  if ((n.role === "tool" || n._runNode) && caller === "ROOT") return true;
   return (
     (n.role === "user" || n.role === "assistant")
     && n.display !== "runtime"
@@ -154,6 +161,10 @@ export function buildThreadModel(graph: GNode[]): ThreadModel {
         (cur.caller as string) || (cur.predecessor as string) || "";
       const p: GNode | undefined = pid ? byId[pid] : undefined;
       if (!p) return null;
+      // ROOT itself is not a thread owner. Composer-launched functions
+      // hung on it are chain nodes (see ``isChainNode``), so a live
+      // climb stops on them before reaching this. Anything else whose
+      // only parent is ROOT is not a turn's internal call.
       if (p.display === "root") return null;
       if (isChainNode(p) || isSpawnRoot(p)) return anchorOf(p.id);
       cur = p;

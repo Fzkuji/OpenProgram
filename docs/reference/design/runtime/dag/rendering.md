@@ -240,7 +240,9 @@ stub off ROOT's line. The branch starts as a line, not as a node. Only
 capsules and superseded relics — lanes with no user turns of their own —
 take the bridge straight to the glyph. Thread items
 (§12) reserve no lane width: their column is chosen after the lanes are down,
-in the first free column right of their anchor.
+in the first free column right of their anchor, and that column is then
+reserved so a second open thread walks further right — two open threads
+never share a cell.
 
 ### tier — how many columns to indent within a branch
 
@@ -272,7 +274,9 @@ the trunk, so the dashed bridge is a straight horizontal two grid units long.
 Thread rows are allocated **recursively** (§12): an anchor's items run from its
 next row (past any fork rows hanging off it) down one row per event; an open
 spawn's own thread continues from its row, and its rows push the parent's later
-items down — expansion is insertion, never overlay. Cross-session spawns land
+items down. After a chain-anchor thread is seated, later conversation-layer
+nodes (and already-placed thread rows below the insertion) shift down by the
+occupied span — expansion is insertion, never overlay. Cross-session spawns land
 as the target session's own conversation chain (lane 0), not a side branch
 (scene 12).
 
@@ -446,7 +450,8 @@ apps/web/lib/runtime-bridge/dag/
                      lane / tier / depth into lattice `(col, row)` positions for
                      CHAIN nodes (fork lanes one gap column out, fork roots on
                      their sibling's row), then places every open thread
-                     recursively beside its anchor.
+                     recursively beside its anchor, shifts later chain rows by
+                     the insertion, and reserves each thread column.
                      **tier and lane are NOT computed here** — the backend
                      computes them in `openprogram/webui/graph_layout/` and ships
                      them on the node; the front end only consumes the values.
@@ -730,7 +735,10 @@ solid annotation-grey line drops the anchor's own column and every event
 hangs off it on a horizontal stub — down first, then right, the trunk
 pattern one level down. Every event is a real node on that line — a square per call
 in the anchor's lane colour — spawned agents included — one row
-per event, top to bottom in call order. Fold reclaims the rows (rule ②).
+per event, top to bottom in call order. Later user / assistant nodes on the
+figure move down by those inserted rows, so the thread vertical in the
+anchor's column ends before the next triangle. Each open thread reserves its
+column. Fold reclaims the rows (rule ②).
 
 **The head IS the agent, and the spawn IS a call.** A spawn root draws as a
 SQUARE — dispatching an agent is a function call, and the square is the call
@@ -747,7 +755,8 @@ checks the agent chain's tip out as the active branch — taking over the
 agent's conversation. Badges never cover a node: every visible glyph seeds the
 badge collision boxes, so a badge that would land on one steps down a row. The model is recursive and so is the picture: every level reads
 by the same two rules, count-on-shoulder folded, column-of-nodes open. A
-nested open thread pushes the parent's later items down; expansion is
+nested open thread pushes the parent's later items down; a chain-anchor
+thread likewise inserts later conversation-layer turns. Expansion is
 insertion, never overlay.
 
 **No captions.** The agent's name lives in the tooltip and the inspector
@@ -775,7 +784,7 @@ The whole spec is implemented. Where each part lives:
 | Spec item | Implementation |
 |---|---|
 | Infinite canvas (pan / zoom / fit / dot lattice) | `dag/canvas.ts` + `.history-body` in `styles/dag/canvas.css`; view state in `dag/store/globals.ts`; HUD in `components/chat/dag-view.tsx` |
-| §1 lane / tier / depth layout | `dag/layout/geometry.ts::computeGeometry` (tier-packed chain lanes with per-lane tier zeroing, preorder rows, scene-3 fork rows + gap column, recursive thread placement); lattice, no-overlap, thread columns/rows and fork geometry all executed and asserted by `apps/web/scripts/check-dag-subagent.mjs` |
+| §1 lane / tier / depth layout | `dag/layout/geometry.ts::computeGeometry` (tier-packed chain lanes with per-lane tier zeroing, preorder rows, scene-3 fork rows + gap column, recursive thread placement that inserts later chain rows and reserves thread columns); lattice, no-overlap, thread columns/rows and fork geometry all executed and asserted by `apps/web/scripts/check-dag-subagent.mjs` |
 | §2 rule ③ glyphs are cells | no shape is sized from text, and no text draws on the canvas beyond the shoulder count and the capsule note |
 | §4 HEAD breathing glow | `render/nodes.ts` stamps `data-head` + the branch colour as `color`; `dag-head-glow` keyframes in `styles/dag/nodes.css` (reduced-motion → steady glow); every glyph stays hollow (`shapes.ts`); HEAD pointing at a merged reply re-seats on its anchor (`pipeline.ts` via `threadModel.anchorOf`) |
 | §0/§12 call-thread aggregation | `passes/thread.ts` (`buildThreadModel`: anchor merge, event attribution, recursive visibility); `render/nodes.ts` draws the shoulder count (`history-thread-count`); `_threadOpen` in `store/globals.ts` |
