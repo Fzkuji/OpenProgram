@@ -6,7 +6,6 @@ const {
   Menu,
   dialog,
   ipcMain,
-  net,
   powerMonitor,
   session,
   shell,
@@ -20,7 +19,7 @@ const path = require("path");
 const { Buffer } = require("buffer");
 const { resolveAuthenticatedStartUrl } = require("./worker-start-url");
 const { resolvePackagedWorker } = require("./packaged-runtime");
-const { DesktopUpdateService } = require("./update-service");
+const { DesktopUpdateService, desktopUpdateFetch } = require("./update-service");
 const {
   loadTransferDecisions,
   saveTransferDecisionsAtomic,
@@ -116,7 +115,7 @@ function initializeDesktopUpdates() {
     currentVersion: app.getVersion(),
     arch: process.arch,
     statePath: path.join(app.getPath("userData"), "update-state.json"),
-    fetchImpl: (requestUrl, options) => net.fetch(requestUrl, options),
+    fetchImpl: desktopUpdateFetch,
     chooseSavePath: async (name) => {
       const result = await dialog.showSaveDialog({
         title: "Download OpenProgram Update",

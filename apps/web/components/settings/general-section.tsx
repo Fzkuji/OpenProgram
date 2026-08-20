@@ -404,8 +404,12 @@ function ApplicationSection() {
     }
   };
 
+  const failedStatusText = text("Update check failed", "更新检查失败");
+  const statusDetail = updateActionError
+    || (updateState?.status === "error" ? updateState.error : null)
+    || undefined;
   const statusText = (() => {
-    if (updateActionError) return updateActionError;
+    if (updateActionError) return failedStatusText;
     switch (updateState?.status) {
       case "checking": return text("Checking…", "正在检查…");
       case "up-to-date": return text("Up to date", "已是最新版本");
@@ -421,7 +425,7 @@ function ApplicationSection() {
         );
       }
       case "downloaded": return text("DMG opened", "DMG 已打开");
-      case "error": return updateState.error || text("Update check failed", "更新检查失败");
+      case "error": return failedStatusText;
       default: return text("Not checked", "尚未检查");
     }
   })();
@@ -461,6 +465,7 @@ function ApplicationSection() {
                 aria-valuemax={progress?.total}
                 aria-valuenow={progress?.downloaded}
                 aria-valuetext={progress ? statusText : undefined}
+                title={statusDetail}
               >
                 {statusText}
               </div>

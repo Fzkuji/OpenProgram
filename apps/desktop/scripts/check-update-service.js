@@ -1,11 +1,13 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 
 const {
   DesktopUpdateService,
   compareVersions,
+  desktopUpdateFetch,
   downloadVerified,
   nextAutomaticCheckAt,
   normalizePersistedState,
@@ -192,6 +194,10 @@ console.log("desktop update service checks passed");
 const mainSource = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
 const preloadSource = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
 assert.match(mainSource, /new DesktopUpdateService/);
+assert.match(mainSource, /fetchImpl:\s*desktopUpdateFetch/);
+assert.doesNotMatch(mainSource, /fetchImpl:[\s\S]{0,200}net\.fetch/);
+assert.match(String(desktopUpdateFetch), /\bfetch\(/);
+assert.doesNotMatch(String(desktopUpdateFetch), /net\.fetch/);
 assert.match(mainSource, /ipcMain\.handle\("updates:get-state"/);
 assert.match(mainSource, /ipcMain\.handle\("updates:check"/);
 assert.match(mainSource, /updates:check"[\s\S]*scheduleAutomaticUpdateCheck\(\)/);
@@ -280,6 +286,44 @@ async function checkNetworkBoundaries() {
   );
   assert.equal(await response.text(), "ok");
   assert.equal(allowedCalls.length, 2);
+
+  const redirectServer = http.createServer((req, res) => {
+    if (req.url === "/start") {
+      res.writeHead(302, {
+        Location: "https://release-assets.githubusercontent.com/github-production-release-asset/1/file",
+      });
+      res.end();
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise((resolve) => redirectServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = redirectServer.address();
+    const hop = await requestWithRedirects(
+      async (requestUrl, options) => {
+        assert.equal(options.redirect, "manual");
+        if (new URL(requestUrl).hostname === "github.com") {
+          return desktopUpdateFetch(`http://127.0.0.1:${address.port}/start`, options);
+        }
+        return new Response("ok", { status: 200 });
+      },
+      "https://github.com/Fzkuji/OpenProgram/releases/download/v0.7.1/release-manifest.json",
+    );
+    assert.equal(await hop.text(), "ok");
+    const manual = await desktopUpdateFetch(`http://127.0.0.1:${address.port}/start`, {
+      method: "GET",
+      redirect: "manual",
+    });
+    assert.equal(manual.status, 302);
+    assert.equal(
+      manual.headers.get("location"),
+      "https://release-assets.githubusercontent.com/github-production-release-asset/1/file",
+    );
+  } finally {
+    await new Promise((resolve) => redirectServer.close(resolve));
+  }
 
   await assert.rejects(
     requestWithRedirects(
