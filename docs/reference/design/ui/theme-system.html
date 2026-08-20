@@ -149,14 +149,14 @@
         <tbody>
           <tr><td>Neutral</td><td><code>dark</code> / <code>light</code></td><td>蓝色</td><td>Default Button、主操作填充、选中态、链接与强调边界</td></tr>
           <tr><td>Warm</td><td><code>beige-dark</code> / <code>beige-light</code></td><td>橙色 / 珊瑚色</td><td>同一套组件角色，只替换主题值</td></tr>
-          <tr><td>Aurora</td><td><code>aurora</code></td><td>青绿色</td><td>同一套组件角色，并使用深色 foreground 保证填充对比</td></tr>
-          <tr><td>Custom</td><td><code>custom</code></td><td>用户定义</td><td>未定义时使用基础蓝色回退</td></tr>
+          <tr><td>Aurora</td><td><code>aurora</code> / <code>aurora-light</code></td><td>青绿色</td><td>同一套组件角色，并使用深色 foreground 保证填充对比</td></tr>
+          <tr><td>Custom</td><td><code>custom</code> / <code>custom-light</code></td><td>用户定义</td><td>未覆写 token 分别回落到 beige-dark / beige-light</td></tr>
         </tbody>
       </table>
     </section>
 
     <section id="preview">
-      <h2>五套内置主题共享同一组件结构</h2>
+      <h2>内置主题共享同一组件结构</h2>
       <div class="demo-toolbar" role="group" aria-label="预览主题">
         <button type="button" data-theme-button="beige-dark" aria-pressed="true">暖色深</button>
         <button type="button" data-theme-button="beige-light" aria-pressed="false">暖色浅</button>
@@ -189,9 +189,9 @@
       <h2>验收标准</h2>
       <ul class="status-list">
         <li><strong>主题列表</strong><span>设置页、CSS imports、主题文件、桌面浮层允许值由检查脚本证明一致。</span></li>
-        <li><strong>Token 完整</strong><span>五个内置主题提供相同 token 集；缺一个即失败。</span></li>
+        <li><strong>Token 完整</strong><span>六套内置主题提供相同 token 集；<code>custom-light</code> 作为 Custom + Light 的命名槽，回落 token 与 beige-light 一致；缺一个即失败。</span></li>
         <li><strong>组件隔离</strong><span>theme 文件之外不存在按具体内置主题名分支的组件 CSS。</span></li>
-        <li><strong>跨窗口一致</strong><span>beige-dark、beige-light、dark、light、aurora、custom 都原样传给 desktop overlay。</span></li>
+        <li><strong>跨窗口一致</strong><span>beige-dark、beige-light、dark、light、aurora、aurora-light、custom、custom-light 都原样传给 desktop overlay；桌面窗口底色使用该主题的 <code>--bg-primary</code>。</span></li>
         <li><strong>字体一致</strong><span>普通文本和原生表单控件继承同一 <code>--font-sans</code>；mono 区域显式例外。</span></li>
         <li><strong>主色矩阵</strong><span>Neutral 深浅主题为蓝色，Warm 深浅主题为橙色，Aurora 为青绿色；常态、填充与 hover 必须属于同一主题色族。</span></li>
         <li><strong>可见验收</strong><span>默认安装版在深色、浅色和 aurora 下检查主窗口、tab、composer、popover 与桌面浮层。</span></li>
@@ -202,7 +202,7 @@
       <h2>实现状态</h2>
       <div class="card">
         <p><strong>设计与代码实施已完成。</strong></p>
-        <p><code>THEME_PREFS</code> 现在是主题入口的唯一清单；五套内置主题各自完整定义 58 个契约 token；composer、provider icon 与 DAG 只消费角色 token，不再判断具体主题 ID；desktop menu overlay 接受并传播全部主题 ID。共享按钮只消费 <code>--primary</code>，由主题层统一映射主色，不在组件内维护主题分支。主题契约检查已纳入 Web 总检查，安装版验收结果记录在本节下方。</p>
+        <p>主题入口是 schema 3 的颜色风格 × 明暗模式矩阵（<code>THEME_STYLE_PAIRS</code>）。六套内置主题各自完整定义 58 个契约 token；Custom 深浅分别是 <code>custom</code> 与 <code>custom-light</code>，未写用户 CSS 时回落到暖色对。composer、provider icon 与 DAG 只消费角色 token，不再判断具体主题 ID；desktop menu overlay 接受并传播全部主题 ID。桌面 BrowserWindow / 错误页 / 目录列表的第一像素使用同一套 <code>--bg-primary</code> 映射。共享按钮只消费 <code>--primary</code>，由主题层统一映射主色，不在组件内维护主题分支。主题契约检查已纳入 Web 总检查。</p>
         <ul>
           <li><code>npm --prefix apps/web run check</code>：通过，包括 <code>check:theme-contract</code>。</li>
           <li><code>npm exec --workspace apps/web -- tsc --noEmit</code>：通过。</li>

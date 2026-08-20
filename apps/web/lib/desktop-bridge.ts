@@ -76,6 +76,7 @@ import type {
   DesktopHistoryApi,
   DesktopMainMenuApi,
   DesktopTerminalApi,
+  DesktopThemeApi,
   DesktopUpdateApi,
   DesktopWebTabApi,
   DesktopWebTabBounds,
@@ -98,6 +99,7 @@ export type {
   DesktopHistoryEntry,
   DesktopMainMenuApi,
   DesktopTerminalApi,
+  DesktopThemeApi,
   DesktopUpdateApi,
   DesktopUpdateRelease,
   DesktopUpdateState,
@@ -138,6 +140,8 @@ export interface DesktopBridge {
   browserData?: DesktopBrowserDataApi;
   /** Desktop-only local PTY. Never exposed by the Web server. */
   terminal?: DesktopTerminalApi;
+  /** Keep the native window background aligned with the resolved web theme. */
+  theme?: DesktopThemeApi;
 }
 
 /** The preload-exposed bridge, or null outside the desktop shell. */

@@ -58,6 +58,7 @@ const {
   browserWindowOptionsForPlan,
   applyRestoredChrome,
 } = require("./window-state");
+const themeChrome = require("./theme-chrome");
 
 // 单实例：worker 单端口 18100（详见 docs/reference/design/cli/single-port.md）
 const WEB_PORT = process.env.OPENPROGRAM_WEB_PORT || "18100";
@@ -155,19 +156,61 @@ function registerUpdateIpc() {
 // 9222 留给后端 sidecar Chrome，互不冲突。必须在 app ready 之前设置。
 app.commandLine.appendSwitch("remote-debugging-port", "9223");
 
-const ERROR_PAGE =
-  "data:text/html;charset=utf-8," +
-  encodeURIComponent(
-    `<body style="background:#141416;color:#ddd;font-family:-apple-system,sans-serif;
-        display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
-      <div style="max-width:32rem;text-align:center">
-        <h2>Waiting for backend to start...</h2>
-        <p>OpenProgram will reconnect automatically when the backend is ready.</p>
-        <p>If it does not start, run:</p>
-        <pre style="background:#222;padding:0.8em;border-radius:6px">${WORKER_COMMAND}</pre>
-      </div>
-    </body>`
-  );
+let currentChrome = themeChrome.chromeForTheme("beige-dark");
+
+function errorPageUrl() {
+  return themeChrome.buildErrorPageUrl(currentChrome, WORKER_COMMAND);
+}
+
+function isErrorPageUrl(url) {
+  return themeChrome.isErrorPageUrl(url);
+}
+
+function themePrefsPath() {
+  return path.join(app.getPath("userData"), themeChrome.PREFS_FILE_NAME);
+}
+
+function resolveStartupChrome() {
+  let systemDark = true;
+  try {
+    systemDark = require("electron").nativeTheme.shouldUseDarkColors !== false;
+  } catch {
+    /* older Electron or tests without nativeTheme */
+  }
+  const resolved = themeChrome.loadResolvedChrome({
+    userDataPath: app.getPath("userData"),
+    systemDark,
+  });
+  currentChrome = resolved.chrome;
+  return resolved;
+}
+
+function applyWindowChrome(payload = {}) {
+  const theme = themeChrome.isThemeId(payload.theme) ? payload.theme : null;
+  const fromTheme = theme ? themeChrome.chromeForTheme(theme) : currentChrome;
+  const background = themeChrome.colorToHex(payload.backgroundColor) || fromTheme.bg;
+  currentChrome = { ...fromTheme, bg: background };
+  for (const win of BrowserWindow.getAllWindows()) {
+    try {
+      if (win.isDestroyed()) continue;
+      win.setBackgroundColor(currentChrome.bg);
+      if (isErrorPageUrl(win.webContents.getURL?.())) {
+        void win.loadURL(errorPageUrl()).catch(() => {});
+      }
+    } catch (_error) {
+      /* Window teardown must not abort a theme update. */
+    }
+  }
+  const style = themeChrome.THEME_STYLES.includes(payload.style) ? payload.style : null;
+  const mode = themeChrome.THEME_MODES.includes(payload.mode) ? payload.mode : null;
+  if (theme && style && mode) {
+    try {
+      themeChrome.writePrefsFile(themePrefsPath(), { style, mode, theme });
+    } catch (_error) {
+      /* Cache write is best-effort; Chromium localStorage remains the store. */
+    }
+  }
+}
 
 const recoveryCoordinator = createRecoveryCoordinator();
 
@@ -234,7 +277,7 @@ async function resolveStartUrl() {
     recoveryCoordinator.workerSpawned = true;
     spawnWorker();
   }
-  return ERROR_PAGE;
+  return errorPageUrl();
 }
 
 function stopWindowRecovery(ctx) {
@@ -276,8 +319,8 @@ function startWindowRecovery(ctx, showErrorPage = true) {
       RECOVERY_INTERVAL_MS,
     );
   }
-  if (showErrorPage && ctx.win.webContents.getURL?.() !== ERROR_PAGE) {
-    void ctx.win.loadURL(ERROR_PAGE).catch(() => {});
+  if (showErrorPage && !isErrorPageUrl(ctx.win.webContents.getURL?.())) {
+    void ctx.win.loadURL(errorPageUrl()).catch(() => {});
   }
   void runWindowRecoveryProbe(ctx);
 }
@@ -286,7 +329,7 @@ function recoverErroredWindows() {
   for (const ctx of windows.values()) {
     if (
       ctx.recovery.active ||
-      ctx.win.webContents.getURL?.() === ERROR_PAGE
+      isErrorPageUrl(ctx.win.webContents.getURL?.())
     ) {
       startWindowRecovery(ctx);
     }
@@ -2240,15 +2283,7 @@ const MAIN_MENU_GUTTER = 24;
 const CONTEXT_MENU_WIDTH = 200;
 const CONTEXT_MENU_ROW_HEIGHT = 24;
 const CONTEXT_MENU_CHROME = 16;
-const MENU_THEME_IDS = [
-  "beige-dark",
-  "beige-light",
-  "dark",
-  "light",
-  "aurora",
-  "aurora-light",
-  "custom",
-];
+const MENU_THEME_IDS = themeChrome.THEME_IDS;
 const MENU_THEME_ID_SET = new Set(MENU_THEME_IDS);
 
 /** The overlay document measured its own panel — resize the host view to the
@@ -3295,7 +3330,7 @@ async function createWindow(options = {}) {
   const win = new BrowserWindow({
     ...restored,
     show: options.show !== false,
-    backgroundColor: "#141416",
+    backgroundColor: currentChrome.bg,
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : undefined,
     // macOS only: center the traffic lights vertically in the 40px tab row.
     trafficLightPosition: { x: 18, y: 13 },
@@ -3368,7 +3403,7 @@ async function createWindow(options = {}) {
   win.webContents.on("did-navigate", () => clearOwnedViews(ctx));
   const startUrl = await resolveStartUrl();
   void win.loadURL(startUrl).catch(() => {});
-  if (startUrl === ERROR_PAGE) {
+  if (isErrorPageUrl(startUrl)) {
     startWindowRecovery(ctx, false);
   }
   return ctx;
@@ -3428,19 +3463,7 @@ function registerFileDirectoryListing() {
 <meta charset="utf-8">
 <title>${escapeHtml(dirPath)}</title>
 <style>
-  body { font-family: -apple-system, system-ui, sans-serif; margin: 24px; color: #333; background: #fff; }
-  h1 { font-size: 15px; font-weight: 600; word-break: break-all; }
-  ul { list-style: none; padding: 0; max-width: 720px; }
-  li { display: flex; justify-content: space-between; gap: 16px; line-height: 1.9; border-bottom: 1px solid #f0f0f0; }
-  a { color: #1a5fb4; text-decoration: none; word-break: break-all; }
-  a:hover { text-decoration: underline; }
-  .size { color: #999; font-size: 12px; white-space: nowrap; }
-  @media (prefers-color-scheme: dark) {
-    body { color: #ddd; background: #1e1e1e; }
-    li { border-color: #333; }
-    a { color: #6ea8e8; }
-    .size { color: #777; }
-  }
+${themeChrome.directoryListingCss(currentChrome)}
 </style>
 <h1>${escapeHtml(dirPath)}</h1>
 <ul>${parentRow}${dirs.map(row).join("")}${files.map(row).join("")}</ul>`;
@@ -3475,11 +3498,27 @@ if (!primaryInstance) {
   });
 
   app.whenReady().then(async () => {
+    resolveStartupChrome();
     registerFileDirectoryListing();
     registerDownloads();
     registerWebTabIpc();
     registerTabTransferIpc();
     registerUpdateIpc();
+    ipcMain.on("theme:set-chrome", (_event, payload) => {
+      applyWindowChrome(payload || {});
+    });
+    try {
+      require("electron").nativeTheme.on("updated", () => {
+        const resolved = resolveStartupChrome();
+        applyWindowChrome({
+          theme: resolved.theme,
+          style: resolved.style,
+          mode: resolved.mode,
+        });
+      });
+    } catch {
+      /* nativeTheme.updated is best-effort */
+    }
     initializeDesktopUpdates();
     buildMenu();
     void createWindow();

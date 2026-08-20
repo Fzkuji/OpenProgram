@@ -120,6 +120,9 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
   browserData: {
     clear: (options) => ipcRenderer.invoke("browser-data:clear", options),
   },
+  theme: {
+    setChrome: (payload) => ipcRenderer.send("theme:set-chrome", payload),
+  },
   terminal: {
     start: (request) => ipcRenderer.invoke("terminal:start", request),
     write: (id, data) => ipcRenderer.send("terminal:write", id, data),

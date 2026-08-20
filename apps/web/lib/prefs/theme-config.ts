@@ -6,6 +6,7 @@ export const THEME_IDS = [
   "aurora",
   "aurora-light",
   "custom",
+  "custom-light",
 ] as const;
 export type ThemeId = (typeof THEME_IDS)[number];
 
@@ -26,7 +27,7 @@ export const THEME_STYLE_PAIRS: Record<
   beige: { dark: "beige-dark", light: "beige-light" },
   neutral: { dark: "dark", light: "light" },
   aurora: { dark: "aurora", light: "aurora-light" },
-  custom: { dark: "custom", light: "custom" },
+  custom: { dark: "custom", light: "custom-light" },
 };
 
 export const LEGACY_THEME_PREFERENCES = {
@@ -36,7 +37,9 @@ export const LEGACY_THEME_PREFERENCES = {
   dark: { style: "neutral", mode: "dark" },
   light: { style: "neutral", mode: "light" },
   aurora: { style: "aurora", mode: "dark" },
+  "aurora-light": { style: "aurora", mode: "light" },
   custom: { style: "custom", mode: "dark" },
+  "custom-light": { style: "custom", mode: "light" },
 } as const satisfies Record<string, { style: ThemeStyle; mode: ThemeMode }>;
 
 export function isThemeId(value: string | null | undefined): value is ThemeId {

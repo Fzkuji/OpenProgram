@@ -17,6 +17,7 @@
 @import "./styles/themes/light.css";
 @import "./styles/themes/aurora.css";
 @import "./styles/themes/aurora-light.css";
+@import "./styles/themes/custom-light.css";
 
 @import "tailwindcss";
 @import "tw-animate-css";

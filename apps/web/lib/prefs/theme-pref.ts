@@ -103,6 +103,25 @@ export function applyTheme(style: ThemeStyle, mode: ThemeMode): void {
   document.documentElement.setAttribute("data-theme-style", style);
   document.documentElement.setAttribute("data-theme-mode", resolved.resolvedMode);
   storageSet(LEGACY_THEME_STORAGE_KEY, resolved.theme);
+  notifyDesktopChrome(resolved.theme, style, mode);
+}
+
+function notifyDesktopChrome(
+  theme: ThemeId,
+  style: ThemeStyle,
+  mode: ThemeMode,
+): void {
+  const desktop = window.openprogramDesktop;
+  if (!desktop?.theme?.setChrome) return;
+  let backgroundColor: string | undefined;
+  try {
+    backgroundColor = getComputedStyle(document.documentElement)
+      .getPropertyValue("--bg-primary")
+      .trim() || undefined;
+  } catch {
+    backgroundColor = undefined;
+  }
+  desktop.theme.setChrome({ theme, style, mode, backgroundColor });
 }
 
 type ThemePreferences = { style: ThemeStyle; mode: ThemeMode };

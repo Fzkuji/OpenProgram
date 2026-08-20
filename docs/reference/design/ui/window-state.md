@@ -147,5 +147,6 @@ filled-work-area → maximized rule, display fallback, main-window
 debounced persistence, detached ephemeral sizing, titlebar resize
 insets, and the `apps/desktop/scripts/check-window-state.js` harness.
 
-Still open, and out of scope here: desktop chrome color flash before
-the theme loads. That remains on [unification-work.md](unification-work.md).
+Desktop chrome color follows the resolved web theme (`theme-chrome.js`);
+that is specified on [unification-work.md](unification-work.md). Window
+bounds persistence does not store or restore a background color.

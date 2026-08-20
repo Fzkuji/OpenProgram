@@ -1,4 +1,16 @@
-import type { ThemeId } from "@/lib/prefs/theme-pref";
+import type { ThemeId, ThemeMode, ThemeStyle } from "@/lib/prefs/theme-pref";
+
+export interface DesktopThemeChrome {
+  theme: ThemeId;
+  style?: ThemeStyle;
+  mode?: ThemeMode;
+  backgroundColor?: string;
+}
+
+export interface DesktopThemeApi {
+  /** Update BrowserWindow background so the next show/reload matches the web theme. */
+  setChrome(payload: DesktopThemeChrome): void;
+}
 
 /** Public WebTab contracts exposed by the Electron preload bridge. */
 export interface DesktopWebTabState {
