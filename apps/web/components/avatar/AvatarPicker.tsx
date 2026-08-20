@@ -407,7 +407,8 @@ const _variantTile = (selected: boolean): string =>
     : "border-[var(--border)] hover:bg-[var(--bg-hover)] hover:border-[color-mix(in_srgb,var(--accent-orange)_30%,transparent)]");
 
 const _pickerLabel: CSSProperties = {
-  fontSize: 11,
+  fontSize: "var(--fs-sm)",
+  fontFamily: "var(--font-sans)",
   color: "var(--text-secondary)",
   fontWeight: 500,
 };
@@ -416,4 +417,4 @@ const _pickerLabel: CSSProperties = {
 // height (h-7) so it no longer towers over its caption, rounded, and
 // — crucially — an actual hover transition into the amber accent.
 const _smallBtnCls =
-  "inline-flex items-center justify-center h-7 rounded-md px-3 text-[12px] font-medium border border-[var(--border)] bg-[var(--bg-hover)] text-[var(--text-secondary)] cursor-pointer transition-colors hover:bg-[color-mix(in_srgb,var(--accent-orange)_18%,transparent)] hover:text-[var(--accent-orange)] hover:border-[color-mix(in_srgb,var(--accent-orange)_30%,transparent)]";
+  "inline-flex items-center justify-center h-7 rounded-md px-3 text-fs-sm font-medium border border-[var(--border)] bg-[var(--bg-hover)] text-[var(--text-secondary)] cursor-pointer transition-colors hover:bg-[color-mix(in_srgb,var(--accent-orange)_18%,transparent)] hover:text-[var(--accent-orange)] hover:border-[color-mix(in_srgb,var(--accent-orange)_30%,transparent)]";

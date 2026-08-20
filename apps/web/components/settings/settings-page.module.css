@@ -313,6 +313,19 @@
   color: var(--text-muted);
   font-family: var(--font-mono);
 }
+/* Chrome column — theme grid, dropdowns, profile editors, helpers.
+   `.value` stays reserved for codes (version, paths, model ids). */
+.control {
+  font-size: 14px;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+}
+/* Local override for shadcn Button `text-sm` (~12.25px under html 14px).
+   Unlayered module CSS beats @layer utilities, so this wins reliably. */
+.settingsAction {
+  font-size: var(--fs-base);
+  font-family: var(--font-sans);
+}
 
 .themeSwitcher {
   display: inline-flex;
@@ -1264,7 +1277,7 @@
 }
 
 /* 主题网格 / 自定义 CSS 这两块的值列要吃满剩余宽度——`.row` 是
-   space-between，`.value` 默认按内容收缩，网格会塌成一列。 */
+   space-between，值列默认按内容收缩，网格会塌成一列。 */
 .valueWide {
   flex: 1;
   min-width: 0;
@@ -1318,8 +1331,9 @@
   border-radius: 50%;
 }
 .themeCardLabel {
-  font-size: var(--fs-sm);
+  font-size: 14px;
   color: var(--text-secondary);
+  font-family: var(--font-sans);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1374,6 +1388,7 @@
   margin-right: auto;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
+  font-family: var(--font-sans);
 }
 
 /* 自定义 CSS overlay（Obsidian snippets）。 */
@@ -1399,4 +1414,5 @@
   margin-top: 6px;
   font-size: var(--fs-sm);
   color: var(--text-muted);
+  font-family: var(--font-sans);
 }

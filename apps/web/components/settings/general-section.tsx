@@ -190,7 +190,7 @@ function ProfileEditor({
     <div className={styles.card}>
         <div className={styles.row}>
           <div className={styles.label}>{t("general.agent.preview")}</div>
-          <div className={styles.value}>
+          <div className={styles.control}>
             <span
               style={{
                 display: "inline-flex",
@@ -206,7 +206,7 @@ function ProfileEditor({
 
         <div className={styles.row}>
           <div className={styles.label}>{t("general.agent.name")}</div>
-          <div className={styles.value}>
+          <div className={styles.control}>
             <input
               type="text"
               value={profile.name}
@@ -234,8 +234,8 @@ function ProfileEditor({
             top of the tall picker block instead of centring it. */}
         <div className={`${styles.row} ${styles.rowTop}`}>
           <div className={styles.label}>Avatar style</div>
-          <div className={styles.value}>
-            <AvatarPicker
+          <div className={styles.control}>
+            <AvatarPicker>
               value={profile.avatar}
               onChange={updateAvatar}
               name={profile.name}
@@ -253,7 +253,7 @@ function ProfileEditor({
           <>
             <div className={styles.row}>
               <div className={styles.label}>{t("general.agent.initial")}</div>
-              <div className={styles.value}>
+              <div className={styles.control}>
                 <input
                   type="text"
                   value={profile.initial}
@@ -272,7 +272,8 @@ function ProfileEditor({
                 />
                 <div
                   style={{
-                    fontSize: 12,
+                    fontSize: "var(--fs-sm)",
+                    fontFamily: "var(--font-sans)",
                     color: "var(--text-muted)",
                     marginTop: 4,
                   }}
@@ -284,7 +285,7 @@ function ProfileEditor({
 
             <div className={styles.row}>
               <div className={styles.label}>{t("general.agent.color")}</div>
-              <div className={styles.value}>
+              <div className={styles.control}>
                 <div
                   style={{
                     display: "flex",
@@ -457,7 +458,7 @@ function ApplicationSection() {
             <div className={styles.row}>
               <div className={styles.label}>{text("Update status", "更新状态")}</div>
               <div
-                className={styles.value}
+                className={styles.control}
                 role={updateState?.status === "downloading" ? "progressbar" : "status"}
                 aria-live={updateState?.status === "downloading" ? undefined : "polite"}
                 aria-atomic="true"
@@ -473,13 +474,13 @@ function ApplicationSection() {
             {updateState?.release?.publishedAt && updateState.release.status === "available" && (
               <div className={styles.row}>
                 <div className={styles.label}>{text("Published", "发布时间")}</div>
-                <div className={styles.value}>{new Date(updateState.release.publishedAt).toLocaleDateString()}</div>
+                <div className={styles.control}>{new Date(updateState.release.publishedAt).toLocaleDateString()}</div>
               </div>
             )}
             {updateState?.release?.releaseNotes && updateState.release.status === "available" && (
               <div className={`${styles.row} ${styles.rowTop}`}>
                 <div className={styles.label}>{text("Release notes", "版本说明")}</div>
-                <div className={`${styles.value} ${styles.valueWide}`} style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>
+                <div className={`${styles.control} ${styles.valueWide}`} style={{ whiteSpace: "pre-wrap" }}>
                   {updateState.release.releaseNotes.slice(0, 600)}
                 </div>
               </div>
@@ -487,16 +488,16 @@ function ApplicationSection() {
             <div className={styles.row}>
               <div className={styles.label}>{text("Actions", "操作")}</div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                <Button variant="outline" size="sm" disabled={busy} onClick={() => { void runUpdateAction(() => bridge.updates.check()); }}>
+                <Button variant="outline" size="sm" className={"text-fs-base " + styles.settingsAction} disabled={busy} onClick={() => { void runUpdateAction(() => bridge.updates.check()); }}>
                   {text("Check now", "立即检查")}
                 </Button>
                 {updateState?.release?.status === "available" && (
-                  <Button size="sm" disabled={busy} onClick={() => { void runUpdateAction(() => bridge.updates.download()); }}>
+                  <Button size="sm" className={"text-fs-base " + styles.settingsAction} disabled={busy} onClick={() => { void runUpdateAction(() => bridge.updates.download()); }}>
                     {text("Download and open DMG", "下载并打开 DMG")}
                   </Button>
                 )}
                 {updateState?.release && (
-                  <Button variant="outline" size="sm" onClick={() => { void runUpdateAction(() => bridge.updates.openRelease()); }}>
+                  <Button variant="outline" size="sm" className={"text-fs-base " + styles.settingsAction} onClick={() => { void runUpdateAction(() => bridge.updates.openRelease()); }}>
                     {text("View release", "查看 Release")}
                   </Button>
                 )}
@@ -573,7 +574,7 @@ export function GeneralSection() {
           <div className={styles.card}>
             <div className={styles.row + " " + styles.rowTop}>
               <div className={styles.label}>{text("Mode", "明暗模式")}</div>
-              <div className={styles.value + " " + styles.valueWide}>
+              <div className={styles.control + " " + styles.valueWide}>
                 <div className={styles.themeGrid}>
                   {THEME_MODES.map((m) => (
                     <button
@@ -620,7 +621,7 @@ export function GeneralSection() {
 
             <div className={styles.row + " " + styles.rowTop}>
               <div className={styles.label}>{text("Color style", "颜色风格")}</div>
-              <div className={styles.value + " " + styles.valueWide}>
+              <div className={styles.control + " " + styles.valueWide}>
                 <div className={styles.themeGrid}>
                   {THEME_STYLES.map((s) => (
                     <button
@@ -669,7 +670,7 @@ export function GeneralSection() {
               <div className={styles.label}>
                 {text("Accent color", "强调色")}
               </div>
-              <div className={styles.value + " " + styles.valueWide}>
+              <div className={styles.control + " " + styles.valueWide}>
                 <div className={styles.accentControls}>
                   <input
                     type="color"
@@ -695,6 +696,7 @@ export function GeneralSection() {
                   <Button
                     variant="outline"
                     size="sm"
+                    className={"text-fs-base " + styles.settingsAction}
                     onClick={() => resetAccent()}
                     disabled={!accent}
                   >
@@ -714,7 +716,7 @@ export function GeneralSection() {
               <div className={styles.label}>
                 {text("Custom CSS", "自定义 CSS")}
               </div>
-              <div className={styles.value + " " + styles.valueWide}>
+              <div className={styles.control + " " + styles.valueWide}>
                 <div className={styles.customCssToolbar}>
                   <label className={styles.customCssEnable}>
                     <input
@@ -724,10 +726,10 @@ export function GeneralSection() {
                     />
                     {text("Enable custom CSS", "启用自定义 CSS")}
                   </label>
-                  <Button variant="outline" size="sm" onClick={() => insertCustomCssTemplate()}>
+                  <Button variant="outline" size="sm" className={"text-fs-base " + styles.settingsAction} onClick={() => insertCustomCssTemplate()}>
                     {text("Insert template", "插入模板")}
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => clearCustomCss()}>
+                  <Button variant="outline" size="sm" className={"text-fs-base " + styles.settingsAction} onClick={() => clearCustomCss()}>
                     {text("Clear", "清空")}
                   </Button>
                 </div>
@@ -753,8 +755,8 @@ export function GeneralSection() {
 
             <div className={styles.row}>
               <div className={styles.label}>{t("general.font")}</div>
-              <div className={styles.value}>
-                <SettingsDropdown
+              <div className={styles.control}>
+                <SettingsDropdown>
                   value={font}
                   options={FONT_SELECT_OPTIONS}
                   onChange={setFont}
@@ -765,8 +767,8 @@ export function GeneralSection() {
 
             <div className={styles.row}>
               <div className={styles.label}>{t("general.language")}</div>
-              <div className={styles.value}>
-                <SettingsDropdown
+              <div className={styles.control}>
+                <SettingsDropdown>
                   value={locale}
                   options={LANG_OPTIONS}
                   onChange={setLocale}
