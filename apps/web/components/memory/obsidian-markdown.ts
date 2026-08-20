@@ -14,6 +14,11 @@ type Fence = {
   trailing: string;
 };
 
+type ListContainer = {
+  depth: number;
+  indent: number;
+};
+
 function indentWidth(value: string): number {
   let width = 0;
   for (const character of value) {
@@ -62,6 +67,18 @@ function matchFence(line: string): Fence | null {
   };
 }
 
+function containerLine(line: string): { depth: number; rest: string } {
+  let rest = line;
+  let depth = 0;
+  while (true) {
+    const blockquote = rest.match(/^ {0,3}>[ \t]?/);
+    if (!blockquote) break;
+    rest = rest.slice(blockquote[0].length);
+    depth += 1;
+  }
+  return { depth, rest };
+}
+
 function stashCode(source: string): { source: string; restore: (value: string) => string } {
   const code: string[] = [];
   let nonce = 0;
@@ -77,25 +94,38 @@ function stashCode(source: string): { source: string; restore: (value: string) =
   };
   const lines = source.split("\n");
   const withoutFences: string[] = [];
+  let footnoteContinuation = false;
+  let activeList: ListContainer | null = null;
   for (let index = 0; index < lines.length; index += 1) {
-    if (/^(?: {4}|\t)/.test(lines[index])) {
-      let end = index + 1;
-      let lastCode = index;
-      while (end < lines.length) {
-        if (/^(?: {4}|\t)/.test(lines[end])) {
-          lastCode = end;
-          end += 1;
-          continue;
-        }
-        if (/^[ \t]*$/.test(lines[end])) {
-          end += 1;
-          continue;
-        }
-        break;
-      }
-      withoutFences.push(stash(lines.slice(index, lastCode + 1).join("\n")));
-      index = lastCode;
+    if (footnoteContinuation && /^(?: {2,}|\t)/.test(lines[index])) {
+      withoutFences.push(lines[index]);
       continue;
+    }
+    footnoteContinuation = /^\[\^[A-Za-z0-9][\w-]*\]:/.test(lines[index]);
+    if (footnoteContinuation) {
+      withoutFences.push(lines[index]);
+      continue;
+    }
+    const container = containerLine(lines[index]);
+    const listMarker = container.rest.match(
+      /^ {0,3}(?:[*+-]|\d{1,9}[.)])[ \t]+/,
+    );
+    const leading = container.rest.match(/^[ \t]*/)?.[0] ?? "";
+    const indentation = indentWidth(leading);
+    if (listMarker) {
+      activeList = {
+        depth: container.depth,
+        indent: indentWidth(listMarker[0]),
+      };
+    } else if (container.rest.trim() !== "") {
+      const inList = activeList?.depth === container.depth
+        && indentation >= activeList.indent;
+      const codeIndent = inList ? activeList.indent + 4 : 4;
+      if (indentation >= codeIndent) {
+        withoutFences.push(stash(lines[index]));
+        continue;
+      }
+      if (!inList) activeList = null;
     }
     const opening = matchFence(lines[index]);
     if (!opening || (!opening.listItem && opening.indent > 3)) {

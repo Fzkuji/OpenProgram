@@ -57,7 +57,7 @@ _RUNTIME_ID_LABEL = re.compile(
     r"(?:(?:e|source|evidence|event|memory|mem|message|msg|block|thread|turn|reply)"
     r"[-_])?[0-9a-f]{8,}(?:_?reply)?)$"
 )
-_ENGLISH_WORD = re.compile(r"[^\W_]+(?:['’.-][^\W_]+)*", re.UNICODE)
+_ENGLISH_WORD = re.compile(r"[^\W_]+(?:['’][^\W_]+)*", re.UNICODE)
 
 
 def definition_match(line: str) -> re.Match[str] | None:
@@ -78,9 +78,14 @@ def render_definition(
 
 def normalize_source_label(value: str, source_ref: str | None = None) -> str:
     """Return a short plain display label; Source identity stays separate."""
-    label = "".join(
+    raw_label = "".join(
         character if character.isprintable() else " " for character in value
     )
+    raw_label = " ".join(raw_label.split())
+    id_candidate = re.sub(r"^[^\w]+|[^\w]+$", "", raw_label)
+    if _RUNTIME_ID_LABEL.fullmatch(id_candidate):
+        return "相关内容"
+    label = raw_label
     label = " ".join(_MARKDOWN_LABEL.sub("", label).split())
     label = re.sub(r"^[^\w]+|[^\w]+$", "", label)
     if (

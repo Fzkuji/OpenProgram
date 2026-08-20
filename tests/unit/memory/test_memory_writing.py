@@ -249,9 +249,14 @@ def test_writer_prompt_requests_short_semantic_source_labels():
     assert normalize_source_label("9227cbb2") == "相关内容"
     assert normalize_source_label("source-c409e6ed3f938d97") == "相关内容"
     assert normalize_source_label("9227cbb2_reply") == "相关内容"
+    assert normalize_source_label("mem_abcd1234") == "相关内容"
+    assert normalize_source_label("message_abcdef12") == "相关内容"
     assert normalize_source_label("D1:1") == "相关内容"
     assert normalize_source_label("one,two,three,four,five,six,seven") == (
         "one,two,three,four,five,six"
+    )
+    assert normalize_source_label("one.two.three.four.five.six.seven") == (
+        "one.two.three.four.five.six"
     )
 
 
