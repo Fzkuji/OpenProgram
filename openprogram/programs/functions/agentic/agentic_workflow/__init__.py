@@ -46,6 +46,7 @@ PLANNER_TOOLS = ("read", "grep", "glob", "list")
 PROJECT_SCHEMA_VERSION = 1
 PROJECT_CANDIDATE_LIMIT = 8
 PROJECT_AUTHOR_ATTEMPTS = 4
+AUTO_DECISION_ATTEMPTS = 3
 PROJECT_RUNTIME_NAMES = {
     "llm", "agent", "goal", "validate_and_retry", "route", "conditional",
 }
@@ -229,21 +230,10 @@ def _session_repo(session_id: str) -> Path:
 
 def _run_planner_turn(session_id: str, prompt: str, *, agent_id: str,
                       spawn_caller: Optional[str], label: str) -> str:
-    from openprogram.agent.sub_agent_run import run_agent_turn
+    _ = session_id, agent_id, spawn_caller, label
+    from openprogram.agentic_programming import agent
 
-    result = run_agent_turn(
-        session_id=session_id,
-        prompt=prompt,
-        agent_id=agent_id,
-        branch_from=None,
-        label=label,
-        spawn_caller=spawn_caller,
-        advance_head=False,
-        tools_override=list(PLANNER_TOOLS),
-    )
-    if result.failed:
-        raise RuntimeError(result.error or "agentic workflow planning turn failed")
-    return result.final_text or ""
+    return agent(prompt, tools=list(PLANNER_TOOLS))
 
 
 def _agent_function(session_id: str, spawn_caller: Optional[str]) -> Callable:
@@ -478,7 +468,12 @@ def _git(project_dir: Path, *args: str) -> str:
     return completed.stdout.strip()
 
 
-def _project_pyproject(project_id: str, metadata: dict) -> str:
+def _project_pyproject(
+    project_id: str,
+    metadata: dict,
+    *,
+    workflow_dependencies: Optional[dict[str, str]] = None,
+) -> str:
     text = (
         "[project]\n"
         f"name = {json.dumps(project_id)}\n"
@@ -495,7 +490,36 @@ def _project_pyproject(project_id: str, metadata: dict) -> str:
             f"{entrypoint} = "
             f"{json.dumps(f'workflows.{entrypoint}:{entrypoint}')}\n"
         )
+    if workflow_dependencies:
+        text += "\n[tool.openprogram.workflow-dependencies]\n"
+        for name in sorted(workflow_dependencies):
+            text += (
+                f"{name} = "
+                f"{json.dumps(str(workflow_dependencies[name]))}\n"
+            )
     return text
+
+
+def _read_workflow_dependencies(
+    project_dir: Path, revision: str,
+) -> dict[str, str]:
+    try:
+        content = _git(project_dir, "show", f"{revision}:pyproject.toml")
+    except InvalidWorkflow:
+        return {}
+    data = tomllib.loads(content)
+    tool = data.get("tool", {}).get("openprogram", {})
+    raw = tool.get("workflow-dependencies")
+    if not isinstance(raw, dict):
+        return {}
+    dependencies: dict[str, str] = {}
+    for name, value in raw.items():
+        project_id = _safe_project_id(str(name))
+        revision_value = str(value)
+        if not re.fullmatch(r"[0-9a-f]{40}", revision_value):
+            raise InvalidWorkflow("invalid pinned workflow dependency revision")
+        dependencies[project_id] = revision_value
+    return dependencies
 
 
 def _read_repository_metadata(
@@ -1047,8 +1071,6 @@ def _resolve_workflow_dependencies(
     if not root:
         return {}
     pins = dict(pinned_dependencies or {})
-    if pins and pinned_snapshot is None:
-        raise InvalidWorkflow("pinned workflow dependencies require a snapshot")
     for name, revision in pins.items():
         _safe_project_id(name)
         if not re.fullmatch(r"[0-9a-f]{40}", str(revision)):
@@ -1056,6 +1078,28 @@ def _resolve_workflow_dependencies(
     resolved: dict[str, tuple[dict, str]] = {}
     visited: set[str] = set()
     visiting: list[str] = []
+
+    def _pinned_dependency_candidate(dependency: str) -> tuple[dict, str]:
+        revision = str(pins[dependency])
+        package = (
+            pinned_snapshot / "workflows" / dependency
+            if pinned_snapshot is not None else None
+        )
+        if package is not None and package.exists():
+            return (
+                _read_repository_candidate(
+                    package,
+                    expected_project_id=dependency,
+                ),
+                revision,
+            )
+        dependency_dir = _workflow_projects_root() / dependency
+        candidate, checked = _checkout_revision(dependency_dir, revision)
+        if checked != revision:
+            raise InvalidWorkflow(
+                f"workflow dependency {dependency} revision {revision} is unavailable"
+            )
+        return candidate, revision
 
     def visit(name: str, current: dict) -> None:
         if name in visiting:
@@ -1074,11 +1118,9 @@ def _resolve_workflow_dependencies(
                 if dependency in visited:
                     continue
                 if dependency in pins:
-                    dependency_candidate = _read_repository_candidate(
-                        pinned_snapshot / "workflows" / dependency,
-                        expected_project_id=dependency,
+                    dependency_candidate, revision = _pinned_dependency_candidate(
+                        dependency,
                     )
-                    revision = str(pins[dependency])
                 else:
                     try:
                         index, dependency_candidate, _ = _active_project(dependency)
@@ -1115,7 +1157,7 @@ def _replace_snapshot(
     backup = instance / f".snapshot-{uuid.uuid4().hex}.old"
     dependencies = _resolve_workflow_dependencies(
         candidate,
-        pinned_snapshot=instance / "snapshot" if pinned_dependencies else None,
+        pinned_snapshot=instance / "snapshot",
         pinned_dependencies=pinned_dependencies,
     )
     try:
@@ -1187,7 +1229,8 @@ def _request_auto_decision(
 ) -> dict:
     prompt = _auto_decision_prompt(task, candidates)
     candidate_ids = {row["workflow_id"] for row in candidates}
-    while True:
+    last_error = ""
+    for attempt in range(1, AUTO_DECISION_ATTEMPTS + 1):
         reply = _run_planner_turn(
             session_id, prompt, agent_id=agent_id,
             spawn_caller=spawn_caller, label="workflow selection",
@@ -1212,11 +1255,20 @@ def _request_auto_decision(
                 )
             return {"action": action, "workflow_id": workflow_id}
         except Exception as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
+            if attempt == AUTO_DECISION_ATTEMPTS:
+                raise InvalidWorkflow(
+                    "workflow selection failed after "
+                    f"{AUTO_DECISION_ATTEMPTS} attempts: {last_error}"
+                ) from exc
             prompt = (
                 _auto_decision_prompt(task, candidates)
-                + f"\n\n<concrete_error>\n{type(exc).__name__}: {exc}\n"
+                + f"\n\n<concrete_error>\n{last_error}\n"
                   "</concrete_error>\nReturn a corrected decision JSON object."
             )
+    raise InvalidWorkflow(
+        "workflow selection failed: " + last_error
+    )
 
 
 def _author_prompt(
@@ -1312,7 +1364,11 @@ def _request_project_candidate(
 
 
 def _write_repository_candidate(
-    directory: Path, project_id: str, candidate: dict,
+    directory: Path,
+    project_id: str,
+    candidate: dict,
+    *,
+    workflow_dependencies: Optional[dict[str, str]] = None,
 ) -> None:
     for child in directory.iterdir():
         if child.name == ".git":
@@ -1323,7 +1379,11 @@ def _write_repository_candidate(
             child.unlink()
     atomic_write_text(
         directory / "pyproject.toml",
-        _project_pyproject(project_id, candidate["project_metadata"]),
+        _project_pyproject(
+            project_id,
+            candidate["project_metadata"],
+            workflow_dependencies=workflow_dependencies,
+        ),
     )
     atomic_write_text(directory / "README.md", candidate["readme"])
     for relative, source in candidate["files"].items():
@@ -1369,10 +1429,10 @@ def _read_repository_candidate(
     )
 
 
-def _checkout_head(project_dir: Path) -> tuple[dict, str]:
+def _checkout_revision(project_dir: Path, revision: str) -> tuple[dict, str]:
     if project_dir.is_symlink() or not (project_dir / ".git").exists():
         raise InvalidWorkflow("workflow project must be a Git repository")
-    revision = _git(project_dir, "rev-parse", "HEAD")
+    revision = str(revision)
     archive = subprocess.run(
         ["git", "-C", str(project_dir), "archive", "--format=tar", revision],
         check=False,
@@ -1401,6 +1461,11 @@ def _checkout_head(project_dir: Path) -> tuple[dict, str]:
         ), revision
 
 
+def _checkout_head(project_dir: Path) -> tuple[dict, str]:
+    revision = _git(project_dir, "rev-parse", "HEAD")
+    return _checkout_revision(project_dir, revision)
+
+
 def _active_project(project_id: str) -> tuple[dict, dict, Path]:
     project_id = _safe_project_id(project_id)
     project_dir = _workflow_projects_root() / project_id
@@ -1411,10 +1476,38 @@ def _active_project(project_id: str) -> tuple[dict, dict, Path]:
     return index, candidate, project_dir
 
 
-def _copy_active_snapshot(instance: Path, project_id: str) -> tuple[dict, dict]:
-    index, candidate, _ = _active_project(project_id)
-    index["workflow_dependencies"] = _replace_snapshot(instance, candidate)
+def _copy_pinned_snapshot(
+    instance: Path, project_id: str, revision: str,
+) -> tuple[dict, dict]:
+    project_id = _safe_project_id(project_id)
+    project_dir = _workflow_projects_root() / project_id
+    index = _read_project_index(project_dir)
+    candidate, checked_revision = _checkout_revision(project_dir, revision)
+    if checked_revision != revision:
+        raise InvalidWorkflow(
+            f"workflow {project_id} revision {revision} is unavailable"
+        )
+    stored_dependencies = _read_workflow_dependencies(project_dir, revision)
+    index = dict(index)
+    index["workflow_dependencies"] = _replace_snapshot(
+        instance,
+        candidate,
+        pinned_dependencies=stored_dependencies or None,
+    )
     return index, candidate
+
+
+def _copy_active_snapshot(instance: Path, project_id: str) -> tuple[dict, dict]:
+    index = _read_project_index(_workflow_projects_root() / project_id)
+    return _copy_pinned_snapshot(instance, project_id, index["active_revision"])
+
+
+def _candidates_equal(left: dict, right: dict) -> bool:
+    return (
+        left.get("readme") == right.get("readme")
+        and left.get("files") == right.get("files")
+        and left.get("project_metadata") == right.get("project_metadata")
+    )
 
 
 def _publish_snapshot(
@@ -1423,6 +1516,7 @@ def _publish_snapshot(
     project_id: str,
     action: str,
     metadata: dict,
+    workflow_dependencies: Optional[dict[str, str]] = None,
 ) -> tuple[str, str]:
     root = _workflow_projects_root()
     if root.is_symlink():
@@ -1452,7 +1546,10 @@ def _publish_snapshot(
             staging = Path(tempfile.mkdtemp(prefix=f".{project_id}-", dir=root))
             try:
                 _git(staging, "init", "-b", "main")
-                _write_repository_candidate(staging, project_id, candidate)
+                _write_repository_candidate(
+                    staging, project_id, candidate,
+                    workflow_dependencies=workflow_dependencies,
+                )
                 _read_repository_candidate(
                     staging, expected_project_id=project_id,
                     allow_legacy_entry=True,
@@ -1476,7 +1573,10 @@ def _publish_snapshot(
             shutil.rmtree(worktree)
             try:
                 _git(project_dir, "worktree", "add", "--detach", str(worktree), "HEAD")
-                _write_repository_candidate(worktree, project_id, candidate)
+                _write_repository_candidate(
+                    worktree, project_id, candidate,
+                    workflow_dependencies=workflow_dependencies,
+                )
                 _read_repository_candidate(
                     worktree, expected_project_id=project_id,
                     allow_legacy_entry=True,
@@ -2220,6 +2320,38 @@ def _run_instance(instance: Path, state: dict, source: str, *,
         )
 
 
+def _run_legacy_instance_locked(instance: Path, state: dict, source: str, *,
+                                run_id: str, session_id: str, agent_id: str,
+                                spawn_caller: Optional[str],
+                                functions: dict[str, Callable]) -> dict:
+    state_path = instance / "state.json"
+    try:
+        result = _execute_source(
+            source, state, state_path, functions=functions,
+            session_id=session_id, spawn_caller=spawn_caller,
+        )
+    except WorkflowExecutionCapped:
+        state["status"] = "capped"
+        _save_state(state_path, state)
+        return _result(state, run_id)
+    except (KeyboardInterrupt, CancelledError):
+        raise
+    except BaseException:
+        state["last_error"] = traceback.format_exc()
+        state["status"] = "failed"
+        state["handoff"] = _summarize_workflow(state)
+        _save_state(state_path, state)
+        return _result(state, run_id)
+    if state.get("capped"):
+        state["status"] = "capped"
+        _save_state(state_path, state)
+        return _result(state, run_id)
+    state.update(status="completed", result=_json_value(result), last_error="")
+    state["handoff"] = _summarize_workflow(state)
+    _save_state(state_path, state)
+    return _result(state, run_id)
+
+
 def _run_instance_locked(instance: Path, state: dict, source: str, *,
                          run_id: str, session_id: str, agent_id: str,
                          spawn_caller: Optional[str],
@@ -2364,7 +2496,7 @@ def _execute_workflow(
             _validate_source(source)
             state["status"] = "running"
             _save_state(instance / "state.json", state)
-            return _run_instance_locked(
+            return _run_legacy_instance_locked(
                 instance, state, source, run_id=run_id, session_id=session_id,
                 agent_id=agent_id, spawn_caller=spawn_caller,
                 functions=functions,
@@ -2381,12 +2513,19 @@ def _publish_candidate(candidate: dict, *, project_id: str, action: str) -> dict
     ) as raw:
         instance = Path(raw) / "candidate"
         instance.mkdir()
-        _replace_snapshot(instance, candidate)
+        workflow_dependencies = _replace_snapshot(instance, candidate)
+        if action == "revise":
+            project_dir = _workflow_projects_root() / _safe_project_id(project_id)
+            active_revision = _read_project_index(project_dir)["active_revision"]
+            base_candidate, _ = _checkout_revision(project_dir, active_revision)
+            if _candidates_equal(candidate, base_candidate):
+                raise InvalidWorkflow("revision unchanged")
         published_id, revision = _publish_snapshot(
             instance,
             project_id=project_id,
             action=action,
             metadata=candidate["project_metadata"],
+            workflow_dependencies=workflow_dependencies,
         )
     return {"workflow_id": published_id, "revision": revision}
 
@@ -2466,11 +2605,7 @@ def _run_published_workflow(
     }
     _save_state(instance / "state.json", state)
     try:
-        index, candidate = _copy_active_snapshot(instance, workflow_id)
-        if index["active_revision"] != revision:
-            raise InvalidWorkflow(
-                f"workflow {workflow_id} revision changed after selection"
-            )
+        index, candidate = _copy_pinned_snapshot(instance, workflow_id, revision)
         state.update(
             project_id=workflow_id,
             project_revision=revision,
