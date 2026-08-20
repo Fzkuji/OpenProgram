@@ -188,6 +188,7 @@ def test_validate_openrouter_uses_key_endpoint_and_balance(monkeypatch, stub_bas
     _patch_http_get(monkeypatch, (200, '{"data":{"limit_remaining":0}}', 9))
     r = cr.validate_credential("openrouter", api_key="k", use_cache=False)
     assert r.status == cr.VALID_NO_BALANCE and r.via == "GET /key"
+    assert r.ok is False
 
     _patch_http_get(monkeypatch, (200, '{"data":{"limit_remaining":12.5}}', 9))
     r = cr.validate_credential("openrouter", api_key="k", use_cache=False)
@@ -254,8 +255,8 @@ def test_validate_layer2_model_unavailable(monkeypatch):
         _FakeResp(503, '{"error":{"message":"no healthy upstream"}}'),
     )
     r = cr.validate_credential("openrouter", model="x/y:free", api_key="k", use_cache=False)
-    # key authenticated, that one model is just down right now
-    assert r.status == cr.VALID_MODEL_UNAVAILABLE and r.ok and r.model == "x/y:free"
+    # key authenticated, that one model is just down right now — not usable
+    assert r.status == cr.VALID_MODEL_UNAVAILABLE and not r.ok and r.model == "x/y:free"
 
 
 def test_validate_layer2_ok(monkeypatch):
@@ -269,3 +270,94 @@ def test_validate_legacy_shape(monkeypatch, stub_base):
     _patch_http_get(monkeypatch, (200, "[]", 7))
     d = cr.validate_credential("deepseek", api_key="k", use_cache=False).to_legacy()
     assert d["ok"] is True and d["via"] == "GET /models" and "error" not in d
+    assert d["status"] == cr.VALID
+
+
+def test_ok_only_for_exact_valid():
+    ok = cr._result("p", cr.VALID, kind="openai_bearer")
+    no_bal = cr._result("p", cr.VALID_NO_BALANCE, kind="openrouter_key")
+    down = cr._result("p", cr.VALID_MODEL_UNAVAILABLE, kind="openai_bearer")
+    assert ok.ok is True
+    assert no_bal.ok is False and down.ok is False
+    legacy = no_bal.to_legacy()
+    assert legacy["ok"] is False and "error" in legacy
+
+
+def test_probe_proves_usable_not_auth_only_models():
+    auth_only = cr._result("openai", cr.VALID, kind="openai_bearer", via="GET /models")
+    or_key = cr._result("openrouter", cr.VALID, kind="openrouter_key", via="GET /key")
+    ping = cr._result("openai", cr.VALID, kind="openai_bearer", via="POST /chat/completions")
+    oauth = cr._result("openai-codex", cr.VALID, kind="oauth", via="CredentialProvider")
+    assert cr.probe_proves_usable(auth_only) is False
+    assert cr.probe_proves_usable(or_key) is True
+    assert cr.probe_proves_usable(ping) is True
+    assert cr.probe_proves_usable(oauth) is True
+
+
+@pytest.mark.parametrize("probe,previous,usable,expected_persist,expected_display", [
+    (cr.VALID, "", False, None, cr.UNKNOWN),
+    (cr.VALID, "billing_blocked", False, None, "billing_blocked"),
+    (cr.VALID, "valid", False, None, "valid"),
+    (cr.VALID, "billing_blocked", True, cr.VALID, cr.VALID),
+    (cr.VALID_NO_BALANCE, "valid", False, "billing_blocked", "billing_blocked"),
+    (cr.INVALID_CREDENTIAL, "valid", False, "needs_reauth", "needs_reauth"),
+    (cr.VALID_MODEL_UNAVAILABLE, "valid", False, None, cr.VALID_MODEL_UNAVAILABLE),
+    (cr.VALID_MODEL_UNAVAILABLE, "", False, None, cr.VALID_MODEL_UNAVAILABLE),
+    (cr.UNKNOWN, "billing_blocked", False, None, "billing_blocked"),
+    (cr.MISSING, "", False, cr.MISSING, cr.MISSING),
+])
+def test_persist_and_display_mapping(probe, previous, usable, expected_persist, expected_display):
+    assert cr.persist_status_from_probe(
+        probe, previous=previous, usable_proven=usable,
+    ) == expected_persist
+    assert cr.display_status_from_probe(
+        probe, previous=previous, usable_proven=usable,
+    ) == expected_display
+
+
+def test_first_id_from_models_json():
+    assert cr._first_id_from_models_json('{"data":[{"id":"gpt-4o"}]}') == "gpt-4o"
+    assert cr._first_id_from_models_json('{"models":[{"name":"models/gemini-2.0-flash"}]}') == "gemini-2.0-flash"
+    assert cr._first_id_from_models_json("not json") is None
+
+
+def test_layer2_anthropic_ping_402(monkeypatch):
+    monkeypatch.setattr(st, "_resolve_base_url", lambda pid: "https://api.anthropic.com")
+    calls = {}
+
+    def fake_post(url, *, headers, json_body, timeout, configured_url, params=None):
+        calls["url"] = url
+        calls["headers"] = headers
+        return (402, '{"error":{"type":"insufficient_quota"}}', 11)
+
+    monkeypatch.setattr(cr, "_layer2_post", fake_post)
+    r = cr._layer2_ping(
+        "anthropic", "anthropic_native", "k", None, "claude-3-haiku", 1,
+    )
+    assert r.status == cr.VALID_NO_BALANCE and not r.ok
+    assert r.via == "POST /v1/messages"
+    assert calls["url"] == "https://api.anthropic.com/v1/messages"
+    assert calls["headers"].get("x-api-key") == "k"
+
+
+def test_prove_usable_pings_auth_only_layer1(monkeypatch, stub_base):
+    _patch_http_get(monkeypatch, (200, '{"data":[{"id":"deepseek-chat"}]}', 8))
+
+    def fake_l2(provider_id, kind, api_key, base, model, timeout):
+        return cr._result(
+            provider_id, cr.VALID_NO_BALANCE, kind=kind,
+            via="POST /chat/completions", model=model,
+        )
+
+    monkeypatch.setattr(cr, "_layer2_ping", fake_l2)
+    monkeypatch.setattr(cr, "resolve_ping_model", lambda pid, **kw: "deepseek-chat")
+    r = cr.validate_credential("deepseek", api_key="k", use_cache=False, prove_usable=True)
+    assert r.status == cr.VALID_NO_BALANCE and r.model == "deepseek-chat"
+
+
+def test_prove_usable_without_model_stays_unknown(monkeypatch, stub_base):
+    _patch_http_get(monkeypatch, (200, "[]", 8))
+    monkeypatch.setattr(cr, "resolve_ping_model", lambda pid, **kw: None)
+    r = cr.validate_credential("deepseek", api_key="k", use_cache=False, prove_usable=True)
+    assert r.status == cr.UNKNOWN and not r.ok
+    assert "no model" in (r.detail or "").lower()

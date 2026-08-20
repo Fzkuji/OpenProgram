@@ -408,9 +408,24 @@ def register(app):
                 content={"error": "model must be a string"}, status_code=400
             )
         from openprogram.webui import _model_listing as _mc
-        return JSONResponse(
-            content=_mc.validate_credential(name, model=model, use_cache=False).to_dict()
+        from openprogram.webui._model_listing.credentials import (
+            display_status_from_probe,
+            probe_proves_usable,
         )
+        # Connectivity Check is an explicit user Validate: prove usable
+        # (layer-2 ping when the kind has no billing endpoint). A named
+        # model already is layer 2.
+        res = _mc.validate_credential(
+            name, model=model, use_cache=False, prove_usable=model is None,
+        )
+        usable = probe_proves_usable(res)
+        display = display_status_from_probe(
+            res.status, previous="", usable_proven=usable,
+        )
+        payload = res.to_dict()
+        payload["status"] = display
+        payload["ok"] = display == "valid"
+        return JSONResponse(content=payload)
 
     @app.get("/api/providers/auth-status")
     async def api_provider_auth_status(refresh: bool = False, names: str | None = None):

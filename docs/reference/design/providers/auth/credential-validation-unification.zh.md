@@ -65,7 +65,7 @@ class CredentialResult:
     provider_id: str
     status: Literal["valid", "invalid_credential", "valid_no_balance",
                     "valid_model_unavailable", "missing", "not_applicable", "unknown"]
-    ok: bool          # status 属于 {valid, valid_no_balance, valid_model_unavailable}
+    ok: bool          # 仅精确 status `valid`（现在可用）为 True。除 OpenRouter GET /key 外，第 1 层 GET /models 200 不能证明可用。
     kind: str         # 实际运行的探测：openai_bearer | openrouter_key | anthropic_native | anthropic_compat | google_query | oauth | cloud | none
     via: str | None   # "GET /models"、"GET /key"、"CredentialProvider"、"POST /chat/completions(model)"
     http_status: int | None
@@ -125,8 +125,10 @@ provider has no key concept                  -> not_applicable
 ```
 
 `valid_no_balance` 只对 OpenRouter（通过 `/key`）以及通过第 2 层的 `402` 才可廉价
-检测。在其他地方，`200` 证明了鉴权但不证明余额，所以结果就是朴素的 `valid`，
-直到首次真实调用暴露出 `insufficient_quota`。
+检测。在其他地方，第 1 层 `200` 只证明鉴权、不证明余额 —— 该探测状态**不得**
+持久化为绿标 Valid / `ok: true`。只有 OpenRouter `GET /key` 仍有剩余额度、
+一次显式的第 2 层补全探测，或一次真实聊天 200，才可以写入 `valid`。
+`ok` / 绿色 Valid 芯片仅对应精确状态 `valid`。
 
 ## 7. 缓存
 

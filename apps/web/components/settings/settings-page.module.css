@@ -1238,6 +1238,12 @@
 .testResult.err {
   color: var(--accent-red);
 }
+.testResult.warn {
+  color: var(--accent-yellow);
+}
+.testResult.info {
+  color: var(--text-secondary);
+}
 
 .searchDescription {
   padding: 12px;
