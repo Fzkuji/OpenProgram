@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "@xterm/xterm/css/xterm.css";
 import { Providers } from "./providers";
+import { THEME_BOOTSTRAP_SCRIPT } from "@/lib/prefs/theme-bootstrap";
 
 // Google Fonts (next/font/google) was hitting fonts.googleapis.com at
 // build/request time. When that domain is unreachable (locally proxied,
@@ -43,31 +44,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `(function () {
               try {
-                // 主题：和 lib/prefs/theme-pref.ts 保持一致。
-                // 存量值 'dark'/'light' 曾经指暖奶油那套，现在这两个名字
-                // 归中性主题——含义冲突，所以是**一次性迁移**（按 schema
-                // 标记判断），不是每次读取都翻译；否则用户选中性 Light
-                // 一刷新就被翻回 beige-light，永远选不上。
-                var LEGACY = { dark: 'beige-dark', light: 'beige-light' };
-                if (localStorage.getItem('agentic_theme_schema') !== '2') {
-                  var old = localStorage.getItem('agentic_theme');
-                  if (old && LEGACY[old]) localStorage.setItem('agentic_theme', LEGACY[old]);
-                  localStorage.setItem('agentic_theme_schema', '2');
-                }
-                function readTheme() {
-                  return localStorage.getItem('agentic_theme') || 'auto';
-                }
-                function apply(t) {
-                  if (t === 'auto') {
-                    var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                    t = dark ? 'beige-dark' : 'beige-light';
-                  }
-                  document.documentElement.setAttribute('data-theme', t);
-                }
-                apply(readTheme());
-                window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () {
-                  if (readTheme() === 'auto') apply('auto');
-                });
+                ${THEME_BOOTSTRAP_SCRIPT}
 
                 // 用户自定义 CSS（Obsidian 式）：首帧前注入，避免闪一下
                 // 内置主题再被自定义值覆盖。

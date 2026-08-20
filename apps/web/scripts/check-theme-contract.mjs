@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const read = (path) => readFileSync(join(root, path), "utf8");
 
-const themePref = read("lib/prefs/theme-pref.ts");
+const themeConfig = read("lib/prefs/theme-config.ts");
 const globals = read("app/globals.css");
 const base = read("app/styles/base.css");
 const settings = read("components/settings/general-section.tsx");
@@ -31,15 +31,7 @@ function quotedValues(source, declaration) {
   return [...match[1].matchAll(/["']([^"']+)["']/g)].map((item) => item[1]);
 }
 
-const themeIds = quotedValues(themePref, "THEME_IDS");
-assert.match(themePref, /export const THEME_PREFS\s*=\s*\["auto",\s*\.\.\.THEME_IDS\]\s+as const;/);
-const themePrefs = ["auto", ...themeIds];
-assert.deepEqual(themePrefs, ["auto", ...themeIds]);
-assert.match(themePref, /export function isThemeId\(/);
-assert.match(themePref, /export function activeThemeId\(/);
-assert.doesNotMatch(settings, /const THEME_CHOICES/);
-assert.match(settings, /THEME_PREFS\.map\(/);
-
+const themeIds = quotedValues(themeConfig, "THEME_IDS");
 const builtins = themeIds.filter((id) => id !== "custom");
 const importedThemes = [...globals.matchAll(/@import "\.\/styles\/themes\/([^".]+)\.css";/g)]
   .map((match) => match[1]);
@@ -78,6 +70,7 @@ const expectedAccent = {
   dark: ["#6ea8fe", "#3b82f6", "#2563eb"],
   light: ["#2563eb", "#2563eb", "#1d4ed8"],
   aurora: ["#4fd6c0", "#35b8a4", "#2ea38f"],
+  "aurora-light": ["#0f766e", "#0f766e", "#115e59"],
 };
 function tokenValue(source, token) {
   return source.match(new RegExp(`${token.replaceAll("-", "\\-")}\\s*:\\s*([^;]+);`))?.[1].trim();
@@ -116,7 +109,7 @@ for (const file of cssFiles(join(root, "app", "styles")).concat(cssFiles(join(ro
   if (file.includes(`${join("styles", "themes")}/`)) continue;
   assert.doesNotMatch(
     readFileSync(file, "utf8"),
-    /\[data-theme=["'](?:beige-dark|beige-light|dark|light|aurora)["']\]/,
+    /\[data-theme=["'](?:beige-dark|beige-light|dark|light|aurora|aurora-light)["']\]/,
     `${relative(root, file)} must consume tokens instead of branching on a theme id`,
   );
 }

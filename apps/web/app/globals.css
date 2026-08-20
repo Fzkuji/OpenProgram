@@ -9,13 +9,14 @@
 @import "@fontsource-variable/jetbrains-mono";
 
 /* 主题即数据 —— 每个文件是一整套 token 契约。新增主题＝加一个文件 +
-   在这里 import + 在 lib/prefs/theme-pref.ts 的 THEME_IDS 里登记。
+   在这里 import + 在 lib/prefs/theme-config.ts 的 THEME_IDS 里登记。
    必须排在 styles.css（内含 base.css 的 :root 兜底）之后。 */
 @import "./styles/themes/beige-dark.css";
 @import "./styles/themes/beige-light.css";
 @import "./styles/themes/dark.css";
 @import "./styles/themes/light.css";
 @import "./styles/themes/aurora.css";
+@import "./styles/themes/aurora-light.css";
 
 @import "tailwindcss";
 @import "tw-animate-css";

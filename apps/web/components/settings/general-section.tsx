@@ -24,9 +24,11 @@ import {
 } from "@/components/avatar";
 import {
   useThemePref,
-  AUTO_DARK,
-  THEME_PREFS,
-  type ThemePref,
+  THEME_MODES,
+  THEME_STYLES,
+  THEME_STYLE_PAIRS,
+  type ThemeMode,
+  type ThemeStyle,
 } from "@/lib/prefs/theme-pref";
 import styles from "./settings-page.module.css";
 
@@ -550,18 +552,17 @@ function ApplicationSection() {
 export function GeneralSection() {
   const { t, text, locale, setLocale } = useTranslation();
   const { font, setFont } = useFontPref();
-  const { theme, setTheme, customCss, setCustomCss } = useThemePref();
+  const { style, mode, setStyle, setMode, customCss, setCustomCss } = useThemePref();
 
-  // 卡片上的预览块直接挂对应的 data-theme，让 var() 解析成那套主题的
-  // 真实取值——不用在 TS 里再抄一份色号。'auto' 预览用它解析到的深色。
-  const previewTheme = (id: ThemePref) => (id === "auto" ? AUTO_DARK : id);
-
-  const THEME_LABELS: Record<ThemePref, string> = {
+  const MODE_LABELS: Record<ThemeMode, string> = {
     auto: text("Auto", "跟随系统"),
-    "beige-dark": text("Beige Dark", "暖色深"),
-    "beige-light": text("Beige Light", "暖色浅"),
     dark: text("Dark", "深色"),
     light: text("Light", "浅色"),
+  };
+
+  const STYLE_LABELS: Record<ThemeStyle, string> = {
+    beige: text("Beige", "暖色"),
+    neutral: text("Neutral", "中性"),
     aurora: text("Aurora", "极光"),
     custom: text("Custom", "自定义"),
   };
@@ -577,27 +578,28 @@ export function GeneralSection() {
           <h3 className={styles.sectionTitle}>{t("general.section.preferences")}</h3>
           <div className={styles.card}>
             <div className={styles.row + " " + styles.rowTop}>
-              <div className={styles.label}>{t("general.appearance")}</div>
+              <div className={styles.label}>{text("Mode", "明暗模式")}</div>
               <div className={styles.value + " " + styles.valueWide}>
                 <div className={styles.themeGrid}>
-                  {THEME_PREFS.map((id) => (
+                  {THEME_MODES.map((m) => (
                     <button
-                      key={id}
+                      key={m}
                       type="button"
                       className={
                         styles.themeCard +
-                        (theme === id ? " " + styles.active : "")
+                        (mode === m ? " " + styles.active : "")
                       }
-                      onClick={() => setTheme(id)}
-                      title={THEME_LABELS[id]}
-                      /* The active card is marked only by a CSS class;
-                         aria-pressed tells a screen reader which theme
-                         is currently in effect. */
-                      aria-pressed={theme === id}
+                      onClick={() => setMode(m)}
+                      title={MODE_LABELS[m]}
+                      aria-pressed={mode === m}
                     >
                       <span
                         className={styles.themeSwatch}
-                        data-theme={previewTheme(id)}
+                        data-theme={
+                          m === "auto"
+                            ? THEME_STYLE_PAIRS[style].dark
+                            : THEME_STYLE_PAIRS[style][m]
+                        }
                         aria-hidden="true"
                       >
                         <span
@@ -614,7 +616,54 @@ export function GeneralSection() {
                         />
                       </span>
                       <span className={styles.themeCardLabel}>
-                        {THEME_LABELS[id]}
+                        {MODE_LABELS[m]}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.row + " " + styles.rowTop}>
+              <div className={styles.label}>{text("Color style", "颜色风格")}</div>
+              <div className={styles.value + " " + styles.valueWide}>
+                <div className={styles.themeGrid}>
+                  {THEME_STYLES.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      className={
+                        styles.themeCard +
+                        (style === s ? " " + styles.active : "")
+                      }
+                      onClick={() => setStyle(s)}
+                      title={STYLE_LABELS[s]}
+                      aria-pressed={style === s}
+                    >
+                      <span
+                        className={styles.themeSwatch}
+                        data-theme={
+                          mode === "auto"
+                            ? THEME_STYLE_PAIRS[s].dark
+                            : THEME_STYLE_PAIRS[s][mode]
+                        }
+                        aria-hidden="true"
+                      >
+                        <span
+                          className={styles.themeDot}
+                          style={{ background: "var(--accent-orange)" }}
+                        />
+                        <span
+                          className={styles.themeDot}
+                          style={{ background: "var(--accent-green)" }}
+                        />
+                        <span
+                          className={styles.themeDot}
+                          style={{ background: "var(--text-primary)" }}
+                        />
+                      </span>
+                      <span className={styles.themeCardLabel}>
+                        {STYLE_LABELS[s]}
                       </span>
                     </button>
                   ))}
@@ -632,9 +681,6 @@ export function GeneralSection() {
                   aria-label={text("Custom CSS", "自定义 CSS")}
                   value={customCss}
                   spellCheck={false}
-                  // Chrome 会在刷新时"恢复"表单里上一次的文本，这会盖掉
-                  // 受控值——用户看到的和实际生效的 CSS 就对不上了。
-                  // 真值在 localStorage，这里必须关掉浏览器自动恢复。
                   autoComplete="off"
                   autoCorrect="off"
                   autoCapitalize="off"
@@ -643,8 +689,8 @@ export function GeneralSection() {
                 />
                 <div className={styles.customCssHint}>
                   {text(
-                    'Define [data-theme="custom"] and pick the "Custom" theme above. Unset tokens fall back to the default palette. Applies live, saved in this browser.',
-                    '定义 [data-theme="custom"] 后在上方选择"自定义"主题。未覆写的 token 回落到默认取值。即时生效，仅保存在本浏览器。',
+                    'Define [data-theme="custom"] and pick the "Custom" color style above. Unset tokens fall back to the default palette. Applies live, saved in this browser.',
+                    '定义 [data-theme="custom"] 后在上方选择"自定义"颜色风格。未覆写的 token 回落到默认取值。即时生效，仅保存在本浏览器。',
                   )}
                 </div>
               </div>
