@@ -297,7 +297,7 @@ def test_probe_proves_usable_not_auth_only_models():
 @pytest.mark.parametrize("probe,previous,usable,expected_persist,expected_display", [
     (cr.VALID, "", False, None, cr.UNKNOWN),
     (cr.VALID, "billing_blocked", False, None, "billing_blocked"),
-    (cr.VALID, "valid", False, None, "valid"),
+    (cr.VALID, "valid", False, None, cr.UNKNOWN),
     (cr.VALID, "billing_blocked", True, cr.VALID, cr.VALID),
     (cr.VALID_NO_BALANCE, "valid", False, "billing_blocked", "billing_blocked"),
     (cr.INVALID_CREDENTIAL, "valid", False, "needs_reauth", "needs_reauth"),

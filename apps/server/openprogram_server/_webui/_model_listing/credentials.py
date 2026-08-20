@@ -570,8 +570,6 @@ def display_status_from_probe(
     if probe_status == VALID and not usable_proven:
         if previous == _PERSIST_BILLING:
             return _PERSIST_BILLING
-        if previous == VALID:
-            return VALID
         return UNKNOWN
     if probe_status == UNKNOWN:
         return previous or UNKNOWN

@@ -153,7 +153,7 @@ function AccountRow({
         setReplacement("");
         await refresh();
         onChanged?.();
-        void validate();
+        void validate({ ping: true });
       } else {
         setVres({ status: "invalid_credential", detail: d.error });
       }
