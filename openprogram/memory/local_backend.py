@@ -110,6 +110,8 @@ class LocalMemoryBackend(MemoryBackend):
             from . import store
 
             config = load_memory_config()
+            if config.retrieval_method == "agent":
+                return ""
             found = inspect.search(
                 store.ensure(), query,
                 method=config.retrieval_method,

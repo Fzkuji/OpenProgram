@@ -19,7 +19,16 @@ assert.doesNotMatch(
   "Memory Settings must not initialize the provider runtime on first load",
 );
 assert.match(settings, /\/api\/memory\/status\?settings=true/);
+assert.match(settings, /\/api\/memory\/embedding\/install/);
 assert.match(settings, /embedding_available/);
+assert.match(settings, /value="agent"/);
+assert.match(settings, /Installing…/);
+assert.match(
+  settings,
+  /styles\.saveButton[\s\S]{0,160}disabled=\{saving \|\| installing \|\| changed\.length === 0\}/,
+  "install and save must not run concurrently",
+);
+assert.match(settings, /retrieval === "agent"/);
 const blockingRequests = settings.match(/Promise\.all\(\[([\s\S]*?)\]\)/)?.[1] ?? "";
 assert.doesNotMatch(
   blockingRequests,

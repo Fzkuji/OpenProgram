@@ -17,6 +17,7 @@ silently breaking the views that reach through them.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -112,6 +113,33 @@ def register(app):
         return JSONResponse(
             content=inspect.status(root, include_path=True)
         )
+
+    @router.post("/api/memory/embedding/install")
+    async def install_embedding_model():
+        from openprogram.memory.retrieval.embedding import (
+            default_model_is_cached,
+            install_default_model,
+        )
+
+        def install_and_verify() -> bool:
+            install_default_model()
+            return default_model_is_cached()
+
+        try:
+            installed = await asyncio.to_thread(install_and_verify)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse(content={
+                "embedding_available": False,
+                "error": str(exc),
+            }, status_code=502)
+        if not installed:
+            return JSONResponse(content={
+                "embedding_available": False,
+                "error": "Embedding model download could not be verified",
+            }, status_code=502)
+        return JSONResponse(content={
+            "embedding_available": True,
+        })
 
     @router.get("/api/memory/refs")
     def list_memory_refs(q: str = "", limit: int = 100):

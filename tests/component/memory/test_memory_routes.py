@@ -185,6 +185,85 @@ def test_settings_status_skips_complete_workspace_inspection(
     }
 
 
+def test_embedding_install_downloads_snapshot_without_loading_encoder(
+    client, monkeypatch,
+):
+    import asyncio
+
+    from openprogram.memory.retrieval import embedding
+
+    calls = []
+    inside_worker = False
+
+    async def fake_to_thread(func, *args, **kwargs):
+        nonlocal inside_worker
+        inside_worker = True
+        try:
+            return func(*args, **kwargs)
+        finally:
+            inside_worker = False
+
+    monkeypatch.setattr(asyncio, "to_thread", fake_to_thread)
+    monkeypatch.setattr(
+        embedding,
+        "install_default_model",
+        lambda: calls.append(("install", inside_worker)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        embedding,
+        "default_model_is_cached",
+        lambda: calls.append(("verify", inside_worker)) or True,
+    )
+    monkeypatch.setattr(
+        embedding,
+        "load_default_encoder",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("install must not load the encoder")
+        ),
+    )
+
+    response = client.post("/api/memory/embedding/install")
+
+    assert response.status_code == 200
+    assert response.json() == {"embedding_available": True}
+    assert calls == [("install", True), ("verify", True)]
+
+
+def test_embedding_install_returns_a_retryable_error(client, monkeypatch):
+    from openprogram.memory.retrieval import embedding
+
+    monkeypatch.setattr(
+        embedding,
+        "install_default_model",
+        lambda: (_ for _ in ()).throw(OSError("offline")),
+        raising=False,
+    )
+
+    response = client.post("/api/memory/embedding/install")
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "embedding_available": False,
+        "error": "offline",
+    }
+
+
+def test_embedding_install_rejects_an_unverified_download(client, monkeypatch):
+    from openprogram.memory.retrieval import embedding
+
+    monkeypatch.setattr(embedding, "install_default_model", lambda: None)
+    monkeypatch.setattr(embedding, "default_model_is_cached", lambda: False)
+
+    response = client.post("/api/memory/embedding/install")
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "embedding_available": False,
+        "error": "Embedding model download could not be verified",
+    }
+
+
 def test_memory_refs_expose_stable_block_identity(client):
     response = client.get("/api/memory/refs?q=worth")
     assert response.status_code == 200

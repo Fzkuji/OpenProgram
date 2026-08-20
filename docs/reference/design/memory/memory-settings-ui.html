@@ -469,8 +469,8 @@
             </div></section>
 
             <section class="settings-section"><h2>Retrieval</h2><div class="settings-card">
-              <div class="setting-row"><div class="setting-label"><strong>Recall method</strong><span>Select the retrieval path used before each model turn.</span></div><div class="setting-control"><select class="select" aria-label="Recall method"><option>Keyword · BM25</option><option disabled>Semantic · Embeddings (unavailable)</option><option disabled>Hybrid · BM25 + Embeddings (unavailable)</option></select><span class="status live">Live</span></div></div>
-              <div class="setting-row"><div class="setting-label"><strong>Embedding model</strong><span>Required for semantic and hybrid retrieval.</span></div><div class="setting-control"><span class="status missing">Not installed</span></div></div>
+              <div class="setting-row"><div class="setting-label"><strong>Recall method</strong><span>Select automatic ranked recall or let the Agent inspect Memory only when needed.</span></div><div class="setting-control"><select class="select" aria-label="Recall method"><option>Agent · On demand</option><option>Keyword · BM25</option><option disabled>Semantic · Embeddings (unavailable)</option><option disabled>Hybrid · BM25 + Embeddings (unavailable)</option></select><span class="status live">Live</span></div></div>
+              <div class="setting-row"><div class="setting-label"><strong>Embedding model</strong><span>Required only for semantic and hybrid retrieval.</span></div><div class="setting-control"><span class="status missing">Not installed</span><button class="button">Install</button></div></div>
               <div class="setting-row"><div class="setting-label"><strong>Recall depth</strong><span>Maximum number of matching records added to a turn.</span></div><div class="setting-control"><select class="select" aria-label="Recall depth"><option>5 records</option><option>8 records</option><option>10 records</option></select></div></div>
               <div class="setting-row"><div class="setting-label"><strong>Search Source evidence</strong><span>Include archived evidence alongside curated Topic records.</span></div><div class="setting-control"><label class="switch"><input type="checkbox" checked aria-label="Search Source evidence"><span class="switch-track"></span></label></div></div>
             </div></section>
@@ -498,11 +498,14 @@
       <li>The status path checks whether the fixed embedding snapshot exists locally without constructing the encoder or loading model weights. Encoder initialization belongs to semantic retrieval, not Settings.</li>
       <li>Memory Settings does not request agent runtime settings on entry. The default writer option uses the generic “Default chat model” label, avoiding cold provider initialization and model discovery.</li>
       <li>Entering Settings does not speculatively fetch Providers, Search, or Channels data; each page requests its own data when opened.</li>
+      <li><strong>Agent · On demand</strong> performs no automatic BM25, embedding, or hybrid query. The Agent may inspect Memory explicitly with <code>memory_browse</code>, <code>memory_get</code>, and <code>memory_grep</code>; ranked <code>memory_search</code> reports that it is disabled in this mode.</li>
+      <li>An unavailable embedding snapshot exposes an explicit <strong>Install</strong> action. The product runtime includes <code>sentence-transformers</code>; <code>POST /api/memory/embedding/install</code> downloads only the fixed encoder configuration, tokenizer, and safetensors weights in a worker thread. It does not construct the encoder and returns a retryable error without changing the active recall method.</li>
     </ul></article>
     <article class="note-card"><h2>Implementation and acceptance</h2><ul>
       <li>Public entries: <code>/memory</code>, <code>/settings/memory</code>, <code>GET/POST /api/settings</code>, automatic recall, <code>memory_search</code>, and Topic/API writes.</li>
-      <li>Runtime settings cover automatic writing, write frequency, recall method, recall depth, Source scope, Core injection, and Recent size.</li>
+      <li>Runtime settings cover automatic writing, write frequency, recall method including <code>agent</code>, recall depth, Source scope, Core injection, and Recent size.</li>
       <li>Semantic and Hybrid remain disabled until the local embedding snapshot is present; saving either method still performs the existing full availability validation.</li>
+      <li>In Agent mode, automatic turn recall is empty and depth/Source controls are disabled because they do not participate in that mode. Core Memory injection remains an independent setting.</li>
       <li>Acceptance checks fail if the settings status path calls the complete workspace inspector, initializes the encoder, remains inside the page's blocking request group, or if Settings entry triggers sibling-page prefetch.</li>
       <li>Cold-process verification resolves the local embedding snapshot without importing <code>sentence_transformers</code>; editable settings and the bounded settings status have separate completion boundaries.</li>
       <li>No external API permission controls are added to this page.</li>

@@ -10,7 +10,7 @@ def test_memory_settings_are_declared_and_validated(monkeypatch):
     assert rows["memory.writer.enabled"]["value"] is True
     assert rows["memory.writer.trigger_tokens"]["value"] == 16_000
     assert rows["memory.retrieval.method"]["choices"] == [
-        "bm25", "embedding", "hybrid",
+        "agent", "bm25", "embedding", "hybrid",
     ]
     assert rows["memory.retrieval.top_k"]["value"] == 5
     assert rows["memory.retrieval.include_sources"]["value"] is True
@@ -50,6 +50,34 @@ def test_runtime_memory_config_reads_nested_settings():
     assert config.retrieval_include_sources is False
     assert config.core_inject is False
     assert config.recent_limit == 25
+
+
+def test_agent_recall_mode_skips_ranked_automatic_and_tool_search(
+    tmp_path, monkeypatch,
+):
+    from openprogram.memory.local_backend import LocalMemoryBackend
+    from openprogram.memory.management.config import MemoryConfig
+    from openprogram.programs.functions.vanilla.knowledge.memory import (
+        memory as memory_tool,
+    )
+
+    config = MemoryConfig(retrieval_method="agent")
+    monkeypatch.setattr(
+        "openprogram.memory.local_backend.load_memory_config", lambda: config,
+    )
+    monkeypatch.setattr(memory_tool, "load_memory_config", lambda: config)
+    monkeypatch.setattr(
+        "openprogram.memory.retrieval.inspect.search",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("agent mode must not run ranked retrieval")
+        ),
+    )
+
+    assert LocalMemoryBackend().search("remembered") == ""
+    assert memory_tool.memory_search("remembered") == (
+        "Ranked memory_search is disabled in Agent recall mode. "
+        "Use memory_browse, memory_get, or memory_grep when needed."
+    )
 
 
 def test_runtime_memory_config_rejects_fractional_and_boolean_integers():
@@ -115,8 +143,8 @@ def test_default_model_cache_probe_stays_local(monkeypatch):
 
     seen = []
 
-    def snapshot_download(model_id, *, local_files_only):
-        seen.append((model_id, local_files_only))
+    def snapshot_download(model_id, *, allow_patterns, local_files_only):
+        seen.append((model_id, allow_patterns, local_files_only))
         return "/cached/model"
 
     monkeypatch.setitem(
@@ -126,7 +154,7 @@ def test_default_model_cache_probe_stays_local(monkeypatch):
     )
 
     assert embedding.default_model_is_cached() is True
-    assert seen == [(embedding.MODEL_ID, True)]
+    assert seen == [(embedding.MODEL_ID, embedding.MODEL_FILES, True)]
 
     monkeypatch.setitem(
         sys.modules,
@@ -138,6 +166,31 @@ def test_default_model_cache_probe_stays_local(monkeypatch):
         ),
     )
     assert embedding.default_model_is_cached() is False
+
+
+def test_install_default_model_downloads_only_encoder_files(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    from openprogram.memory.retrieval import embedding
+
+    seen = []
+    monkeypatch.setitem(
+        sys.modules,
+        "huggingface_hub",
+        SimpleNamespace(
+            snapshot_download=lambda model_id, **kwargs: seen.append(
+                (model_id, kwargs)
+            )
+        ),
+    )
+
+    embedding.install_default_model()
+
+    assert seen == [(
+        embedding.MODEL_ID,
+        {"allow_patterns": embedding.MODEL_FILES},
+    )]
 
 
 def test_embedding_search_never_requests_network_model_loading(

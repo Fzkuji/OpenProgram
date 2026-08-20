@@ -1,6 +1,7 @@
 """/api/config* — generic key-value config + bulk API-key save + verify."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import importlib.metadata
@@ -151,7 +152,7 @@ def register(app):
                 content={"error": "credentials are not settings"}, status_code=400
             )
         from openprogram.config_schema import set_setting
-        res = set_setting(key, body.get("value"))
+        res = await asyncio.to_thread(set_setting, key, body.get("value"))
         return JSONResponse(content=res, status_code=400 if res.get("error") else 200)
 
     @app.post("/api/config")

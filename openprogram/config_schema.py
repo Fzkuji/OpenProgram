@@ -596,7 +596,7 @@ SETTINGS: list[SettingSpec] = [
         path=("memory", "retrieval", "method"),
         group="Memory", label="Recall method", widget="enum",
         apply=APPLY_LIVE, default="bm25",
-        choices=lambda: ["bm25", "embedding", "hybrid"],
+        choices=lambda: ["agent", "bm25", "embedding", "hybrid"],
         help="Retrieval used for automatic recall and Memory search.",
     ),
     SettingSpec(
