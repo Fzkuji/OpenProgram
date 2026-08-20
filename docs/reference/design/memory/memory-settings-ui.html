@@ -269,12 +269,13 @@
   .settings-card { border: 1px solid var(--border); border-radius: 9px; background: var(--panel); overflow: hidden; }
   .setting-row { min-height: 66px; padding: 13px 15px; display: grid; grid-template-columns: minmax(0,1fr) minmax(190px,280px); gap: 24px; align-items: center; }
   .setting-row + .setting-row { border-top: 1px solid var(--border); }
+  .setting-label { min-width: 0; overflow-wrap: anywhere; }
   .setting-label strong { display: block; margin-bottom: 3px; font-size: 13px; font-weight: 570; }
   .setting-label span { display: block; color: var(--muted); font-size: 12px; }
   .setting-control { display: flex; align-items: center; justify-content: flex-end; gap: 9px; min-width: 0; }
   .select {
     width: 100%; height: 34px; padding: 0 30px 0 10px; border: 1px solid var(--border-strong); border-radius: 7px;
-    background: var(--panel-2); color: var(--text); outline: none;
+    min-width: 0; background: var(--panel-2); color: var(--text); outline: none;
   }
   .status { flex-shrink: 0; padding: 3px 7px; border-radius: 999px; font: 10px var(--mono); }
   .status.live { color: var(--green); background: rgba(117,199,154,.1); }
@@ -463,7 +464,7 @@
             </div></section>
 
             <section class="settings-section"><h2>Background writing</h2><div class="settings-card">
-              <div class="setting-row"><div class="setting-label"><strong>Writer model</strong><span>Uses the default chat model unless you select an enabled model here.</span></div><div class="setting-control"><select class="select" aria-label="Writer model"><option>Default chat model · MiniMax-M3</option><option>MiniMax-M3</option></select><span class="status live">Live</span></div></div>
+              <div class="setting-row"><div class="setting-label"><strong>Writer model</strong><span>Uses the default chat model unless you select an enabled model here.</span></div><div class="setting-control"><select class="select" aria-label="Writer model"><option>Default chat model · openai-codex/gpt-5.6-sol</option><option>MiniMax-M3</option></select><span class="status live">Live</span></div></div>
               <div class="setting-row"><div class="setting-label"><strong>Automatic writing</strong><span>Turn completed conversations into Topic records in the background.</span></div><div class="setting-control"><label class="switch"><input type="checkbox" checked aria-label="Automatic writing"><span class="switch-track"></span></label></div></div>
               <div class="setting-row"><div class="setting-label"><strong>Write frequency</strong><span>Controls how much conversation accumulates before a background write.</span></div><div class="setting-control"><select class="select" aria-label="Write frequency"><option>Balanced · about 16K tokens</option><option>More frequent · about 8K tokens</option><option>Less frequent · about 32K tokens</option></select></div></div>
             </div></section>
@@ -508,6 +509,7 @@
       <li>In Agent mode, automatic turn recall is empty and depth/Source controls are disabled because they do not participate in that mode. Core Memory injection remains an independent setting.</li>
       <li>Acceptance checks fail if the settings status path calls the complete workspace inspector, initializes the encoder, remains inside the page's blocking request group, or if Settings entry triggers sibling-page prefetch.</li>
       <li>Cold-process verification resolves the local embedding snapshot without importing <code>sentence_transformers</code>; editable settings and the bounded settings status have separate completion boundaries.</li>
+      <li>A long writer-model label shrinks inside the right control cluster; it must not reduce the left title or description to one-character lines at narrow Settings content widths.</li>
       <li>No external API permission controls are added to this page.</li>
       <li>Accepted with focused and affected tests, TypeScript validation, independent specification and quality reviews, and visible default-App checks at normal and 720px widths.</li>
     </ul></article>

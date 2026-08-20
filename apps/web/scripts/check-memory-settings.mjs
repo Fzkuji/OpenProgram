@@ -58,7 +58,8 @@ assert.match(settingsCss, /\.memoryPage\s*\{[^}]*font-family:\s*var\(--font-sans
 assert.match(settingsCss, /\.lifecycle\s*\{[^}]*font-family:\s*var\(--font-sans\)/s);
 assert.match(settingsCss, /\.row\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*flex-start/s);
 assert.match(settingsCss, /\.rowCopy\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-width:\s*0/s);
-assert.match(settingsCss, /\.controls\s*\{[^}]*flex:\s*0 0 auto;[^}]*min-width:\s*7\.5rem/s);
+assert.match(settingsCss, /\.controls\s*\{[^}]*flex:\s*0 1 auto;[^}]*min-width:\s*7\.5rem/s);
+assert.match(settingsCss, /\.select\s*\{[^}]*min-width:\s*0/s);
 assert.match(settingsCss, /\.chromeValue\s*\{[^}]*font-family:\s*var\(--font-sans\)/s);
 assert.match(settingsCss, /\.monoValue\s*\{[^}]*font-family:\s*var\(--font-mono\)/s);
 assert.doesNotMatch(settingsCss, /JetBrains Mono/);

@@ -197,11 +197,12 @@ assert.match(css, /\.systemRow\s*\{[^}]*align-items:\s*flex-start/s);
 assert.match(css, /\.systemRow\s+\.label\s*\{[^}]*flex:\s*1 1 auto[^}]*min-width:\s*0/s);
 assert.match(css, /\.systemRow\s+\.control\s*\{[^}]*flex:\s*0 0 auto[^}]*margin-left:\s*auto[^}]*min-width:\s*7\.5rem/s);
 
-// Memory rows match the System contract: copy grows on the left,
-// controls shrink-wrap on the right, chips stay left of the control.
+// Memory rows preserve the System split, but long select labels may shrink
+// on the right instead of collapsing the copy into one-character lines.
 assert.match(memoryCss, /\.row\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*flex-start/s);
 assert.match(memoryCss, /\.rowCopy\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-width:\s*0/s);
-assert.match(memoryCss, /\.controls\s*\{[^}]*flex:\s*0 0 auto;[^}]*justify-content:\s*flex-end;[^}]*min-width:\s*7\.5rem/s);
+assert.match(memoryCss, /\.controls\s*\{[^}]*flex:\s*0 1 auto;[^}]*justify-content:\s*flex-end;[^}]*min-width:\s*7\.5rem/s);
+assert.match(memoryCss, /\.select\s*\{[^}]*min-width:\s*0/s);
 assert.doesNotMatch(memoryCss, /grid-template-columns:\s*minmax\(220px/);
 assert.match(memory, /styles\.chromeValue[\s\S]{0,80}Local workspace · Git enabled/);
 assert.match(memory, /styles\.monoValue[\s\S]{0,40}workspace_path/);
