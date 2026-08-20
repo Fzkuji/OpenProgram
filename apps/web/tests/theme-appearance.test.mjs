@@ -61,16 +61,30 @@ test("appearance chrome uses the sans control column, not mono .value", () => {
   assert.match(css, /\.customCssArea\s*\{[^}]*font-family:\s*var\(--font-mono\)/s);
   assert.match(css, /\.settingsAction\s*\{[^}]*font-size:\s*var\(--fs-base\)[^}]*font-family:\s*var\(--font-sans\)/s);
 
-  assert.match(settings, /styles\.control \+ " " \+ styles\.valueWide/);
-  assert.doesNotMatch(settings, /styles\.value \+ " " \+ styles\.valueWide/);
-  assert.match(settings, /styles\.avatarBlock/);
+  assert.doesNotMatch(settings, /styles\.valueWide/);
+  assert.doesNotMatch(settings, /valueWide/);
+  assert.doesNotMatch(css, /\.valueWide\s*\{/);
   assert.match(settings, /t\("general.avatar"\)/);
+  assert.doesNotMatch(settings, /styles\.avatarBlock/);
   assert.doesNotMatch(settings, /Avatar style/);
   assert.match(settings, /styles\.control\}>\{updateState\?\.currentVersion/);
   assert.match(settings, /styles\.control\}>Agentic Programming/);
   assert.match(settings, /<code>openprogram upgrade --check<\/code>/);
   assert.match(settings, /className=\{"text-fs-base " \+ styles\.settingsAction\}/);
   assert.match(settings, /style: \{ fontFamily: fontStack\(font\) \}/);
+});
+
+test("settings rows keep a left label and a shrink-wrapped right cluster", () => {
+  assert.match(css, /\.label\s*\{[^}]*flex:\s*0 1 auto/s);
+  assert.match(css, /\.control\s*\{[^}]*margin-left:\s*auto/s);
+  assert.match(css, /\.control\s*\{[^}]*align-items:\s*flex-end/s);
+  assert.match(css, /\.value\s*\{[^}]*margin-left:\s*auto/s);
+  assert.match(css, /\.themeGrid\s*\{[^}]*justify-content:\s*flex-end/s);
+  assert.match(css, /\.themeCard\s*\{[^}]*flex:\s*0 0 96px/s);
+  assert.doesNotMatch(css, /\.themeGrid\s*\{[^}]*width:\s*100%/s);
+  assert.doesNotMatch(css, /\.themeGrid\s*\{[^}]*1fr/s);
+  assert.match(css, /\.customCssArea\s*\{[^}]*width:\s*min\(100%,\s*520px\)/s);
+  assert.match(settings, /styles\.row \+ " " \+ styles\.rowTop[\s\S]*t\("general.avatar"\)[\s\S]*styles\.control/);
 });
 
 test("avatar picker on General uses the 13px sans floor", () => {
@@ -81,9 +95,11 @@ test("avatar picker on General uses the 13px sans floor", () => {
   assert.doesNotMatch(picker, /fontSize: 11/);
 });
 
-test("avatar picker variants use a left-aligned fixed track, not 1fr fill", () => {
+test("avatar picker variants use a fixed track, not 1fr fill", () => {
   assert.match(picker, /repeat\(auto-fill, 48px\)/);
   assert.match(picker, /justifyContent: "start"/);
+  assert.match(picker, /width: 440/);
+  assert.match(picker, /maxWidth: "100%"/);
   assert.doesNotMatch(picker, /1fr/);
   assert.doesNotMatch(picker, /repeat\(auto-fit/);
   assert.doesNotMatch(picker, /minmax\(min\(80px/);
@@ -92,6 +108,4 @@ test("avatar picker variants use a left-aligned fixed track, not 1fr fill", () =
   assert.match(picker, /overflowWrap:\s*"normal"/);
   assert.match(picker, /wordBreak:\s*"normal"/);
   assert.doesNotMatch(picker, /overflowWrap:\s*"anywhere"/);
-  assert.match(css, /\.avatarBlock\s*\{[^}]*align-items:\s*flex-start/s);
-  assert.match(css, /\.avatarBlock\s*\{[^}]*overflow:\s*visible/s);
 });

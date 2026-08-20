@@ -65,11 +65,13 @@ export function BrowserSettings() {
           <div className={styles.card}>
             <div className={styles.row}>
               <span className={styles.label}>{text("Show bookmarks bar", "显示书签栏")}</span>
-              <Switch
-                checked={bookmarksVisible}
-                onCheckedChange={(checked) => setShowBookmarksBar(checked)}
-                aria-label={text("Show bookmarks bar", "显示书签栏")}
-              />
+              <div className={styles.control}>
+                <Switch
+                  checked={bookmarksVisible}
+                  onCheckedChange={(checked) => setShowBookmarksBar(checked)}
+                  aria-label={text("Show bookmarks bar", "显示书签栏")}
+                />
+              </div>
             </div>
           </div>
         </section>
@@ -85,9 +87,11 @@ export function BrowserSettings() {
                   <span className={styles.label}>
                     {text("Import history, bookmarks, and cookies from a local browser", "从本地浏览器导入历史、书签和 Cookie")}
                   </span>
-                  <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
-                    {text("Import data", "导入资料")}
-                  </Button>
+                  <div className={styles.control}>
+                    <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
+                      {text("Import data", "导入资料")}
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
@@ -99,24 +103,30 @@ export function BrowserSettings() {
           <div className={styles.card}>
             <label className={styles.row}>
               <span className={styles.label}>{text("Browsing history", "浏览历史")}</span>
-              <input type="checkbox" checked={clearHistory} onChange={(event) => setClearHistory(event.target.checked)} />
+              <span className={styles.control}>
+                <input type="checkbox" checked={clearHistory} onChange={(event) => setClearHistory(event.target.checked)} />
+              </span>
             </label>
             <label className={styles.row}>
               <span className={styles.label}>Cookies</span>
-              <input type="checkbox" checked={clearCookies} onChange={(event) => setClearCookies(event.target.checked)} />
+              <span className={styles.control}>
+                <input type="checkbox" checked={clearCookies} onChange={(event) => setClearCookies(event.target.checked)} />
+              </span>
             </label>
             <div className={styles.row}>
               <span className={styles.pageMeta}>
                 {text("Bookmarks are not removed.", "不会删除书签。")}
               </span>
-              <Button
-                variant="destructive"
-                size="sm"
-                disabled={clearing || !bridge?.browserData || (!clearHistory && !clearCookies)}
-                onClick={() => void clearData()}
-              >
-                {clearing ? text("Clearing…", "正在清除…") : text("Clear data", "清除资料")}
-              </Button>
+              <div className={styles.control}>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={clearing || !bridge?.browserData || (!clearHistory && !clearCookies)}
+                  onClick={() => void clearData()}
+                >
+                  {clearing ? text("Clearing…", "正在清除…") : text("Clear data", "清除资料")}
+                </Button>
+              </div>
             </div>
             {clearResult ? <p className={styles.pageMeta} role="status">{clearResult}</p> : null}
           </div>

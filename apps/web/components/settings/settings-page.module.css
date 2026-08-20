@@ -287,13 +287,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
   padding: 10px 0;
+  min-width: 0;
 }
 .row + .row {
   border-top: 1px solid var(--border);
 }
 /* Top-align variant for rows whose value column is tall (e.g. the
-   avatar style picker with its tile grid + variant grid). Centering
+   avatar picker with its tile grid + variant grid). Centering
    the short left-hand label against that tall block leaves the label
    floating in the middle; this pins it to the top so it reads as the
    heading of the block beside it. A little top padding on the label
@@ -305,39 +307,42 @@
   padding-top: 6px;
 }
 
-/* Avatar editor sits under the Preview / Display name rows as its
-   own full-width block. Content stays left-aligned at natural size
-   so variant tiles never stretch across the card. */
-.avatarBlock {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px 0 4px;
-  border-top: 1px solid var(--border);
-  min-width: 0;
-  overflow: visible;
-}
-.avatarBlockLabel {
-  font-size: 14px;
-  color: var(--text-primary);
-  font-family: var(--font-sans);
-}
 .label {
+  flex: 0 1 auto;
   font-size: 14px;
   color: var(--text-primary);
 }
 .value {
+  flex: 0 1 auto;
+  margin-left: auto;
+  min-width: 0;
+  max-width: min(520px, calc(100% - 6rem));
+  text-align: right;
   font-size: 14px;
   color: var(--text-muted);
   font-family: var(--font-mono);
 }
-/* Chrome column — theme grid, dropdowns, profile editors, helpers.
-   `.value` stays reserved for codes (paths, model ids). */
+/* Chrome column — theme cards, dropdowns, profile editors, helpers.
+   Shrink-wraps and hugs the right edge. `.value` stays reserved for
+   codes (paths, model ids). */
 .control {
+  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-left: auto;
+  min-width: 0;
+  max-width: min(520px, calc(100% - 6rem));
+  text-align: right;
   font-size: 14px;
   color: var(--text-primary);
   font-family: var(--font-sans);
+}
+/* Bare checkboxes/radios that sit directly on a `.row`. */
+.row > input[type="checkbox"],
+.row > input[type="radio"] {
+  margin-left: auto;
+  flex: 0 0 auto;
 }
 /* Local override for shadcn Button `text-sm` (~12.25px under html 14px).
    Unlayered module CSS beats @layer utilities, so this wins reliably. */
@@ -1295,27 +1300,20 @@
   padding-left: 2px;
 }
 
-/* 主题网格 / 自定义 CSS 这两块的值列要吃满剩余宽度——`.row` 是
-   space-between，值列默认按内容收缩，网格会塌成一列。 */
-.valueWide {
-  flex: 1;
-  min-width: 0;
-  margin-left: 24px;
-}
-
 /* ===== 主题选择器 ==========================================
-   沿用 `.rowTop` 的"标签在上、值列是一块网格"的排版语言（和头像
-   样式选择器同构）。每张卡是一小块主题预览：底色 + 三颗强调点，
-   取值直接来自该主题的 token，所以新增主题不用改这里的样式。 */
+   Compact right-hand cluster. Cards keep a natural 96px width and
+   never stretch with 1fr / width:100% across the leftover row. */
 .themeGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
-  width: 100%;
 }
 .themeCard {
   display: flex;
   flex-direction: column;
+  flex: 0 0 96px;
+  width: 96px;
   gap: 6px;
   padding: 7px;
   background: var(--bg-secondary);
@@ -1365,6 +1363,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
 }
 .accentColorInput {
@@ -1397,6 +1396,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
   margin-bottom: 8px;
 }
@@ -1404,15 +1404,16 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-right: auto;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
   font-family: var(--font-sans);
 }
 
-/* 自定义 CSS overlay（Obsidian snippets）。 */
+/* 自定义 CSS overlay（Obsidian snippets）。 Stays in the right
+   column at a readable cap — not a full-card stretch. */
 .customCssArea {
-  width: 100%;
+  box-sizing: border-box;
+  width: min(100%, 520px);
   min-height: 160px;
   padding: 10px 12px;
   background: var(--bg-input);
@@ -1430,7 +1431,10 @@
   border-color: transparent;
 }
 .customCssHint {
+  box-sizing: border-box;
+  width: min(100%, 520px);
   margin-top: 6px;
+  text-align: left;
   font-size: var(--fs-sm);
   color: var(--text-muted);
   font-family: var(--font-sans);

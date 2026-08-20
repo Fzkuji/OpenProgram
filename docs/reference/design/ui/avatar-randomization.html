@@ -27,13 +27,13 @@
     <div class="flow" aria-label="Avatar settings flow">
       <div class="step"><span>1 · TYPE</span><b>Generated / Letter / Upload</b><p>左对齐分段控件，不是 16 风格瓷砖行</p></div>
       <div class="step"><span>2 · STYLE</span><b>当前 DiceBear 风格</b><p>换风格尽量保留当前 seed，否则用显示名</p></div>
-      <div class="step"><span>3 · VARIANTS</span><b>只含当前风格</b><p>固定 48px 轨道，左对齐，不拉伸</p></div>
+      <div class="step"><span>3 · VARIANTS</span><b>只含当前风格</b><p>固定 48px 轨道，在右侧 cluster 内换行，不拉伸</p></div>
       <div class="step"><span>4 · SAVE</span><b><code>AvatarConfig</code></b><p>Generated 写入 <code>kind: dicebear</code>、当前 style 与 seed</p></div>
     </div>
   </section>
   <section>
     <h2>布局</h2>
-    <p>设置卡片里 Preview 与 Display name 仍是左标签右控件。Avatar 是这两行下面的整宽块，内容左对齐。字母模式的字符和颜色不再作为卡片上的独立行。</p>
+    <p>设置卡片里每一行都是两段式：名称在左，不伸展；控件在右，按内容收缩。Avatar 与 Preview、Display name 相同——标签在左，选择器以自然瓷砖尺寸靠右成组，不拉满卡片。字母模式的字符和颜色仍在选择器内，不作为卡片上的独立行。</p>
   </section>
   <section>
     <h2>决策</h2>
@@ -43,7 +43,7 @@
         <tr><td>源选择 = 每种风格 + Letter + Upload</td><td class="out">拒绝</td><td>把类型和风格混在一层，Letter 还要再到卡片外改字符。</td></tr>
         <tr><td>变体网格覆盖全部已发布风格</td><td class="out">拒绝</td><td>点选变体会改掉当前 style，和「先选风格」冲突。</td></tr>
         <tr><td>类型 →（风格 + 同风格变体 | 字母字段 | 上传）</td><td class="status">采用</td><td>三条路径互不交叉；Regenerate 只换当前风格的 seed。</td></tr>
-        <tr><td>变体网格 <code>1fr</code> 拉满卡片</td><td class="out">拒绝</td><td>用户只要左对齐固定尺寸，不要拉伸。</td></tr>
+        <tr><td>变体网格 <code>1fr</code> 拉满卡片</td><td class="out">拒绝</td><td>瓷砖保持固定 48px，作为右侧 cluster 换行，不拉伸。</td></tr>
         <tr><td>为 Agent 和用户分别实现</td><td class="out">拒绝</td><td>两个设置入口已共用 <code>ProfileEditor</code> 与 <code>AvatarPicker</code>。</td></tr>
       </tbody>
     </table>
@@ -55,13 +55,13 @@
       <li>变体全部属于当前风格；Regenerate 不改 style。</li>
       <li>点击变体后写入 <code>kind: "dicebear"</code>、当前 style 与该 seed。</li>
       <li>Letter 的字符和颜色在选择器内编辑，仍落在 profile 的 <code>initial</code> / <code>color</code>。</li>
-      <li>变体网格是左对齐的固定轨道，不是 <code>1fr</code> 拉满。</li>
+      <li>变体网格是固定 48px 轨道，落在行右侧的 cluster 里，不是 <code>1fr</code> 拉满。</li>
       <li>已保存的 <code>AvatarConfig</code> 继续按原 kind / style / seed 显示。</li>
     </ol>
   </section>
   <section>
     <h2>实现状态</h2>
-    <p><span class="status">已实现。</span> <code>AvatarPicker</code> 以三种类型为入口；Generated 用 <code>AVATAR_STYLES</code> 选风格，<code>variants.ts</code> 只为当前风格生成 seed。Letter 控件从 <code>ProfileEditor</code> 迁入选择器。设置卡片用 <code>avatarBlock</code> 承载整宽左对齐内容。<code>apps/web/tests/avatar-randomization.test.mjs</code> 与 <code>theme-appearance.test.mjs</code> 校验同风格变体、Regenerate 不改风格、Letter 控件位置和固定轨道网格。</p>
+    <p><span class="status">已实现。</span> <code>AvatarPicker</code> 以三种类型为入口；Generated 用 <code>AVATAR_STYLES</code> 选风格，<code>variants.ts</code> 只为当前风格生成 seed。Letter 控件从 <code>ProfileEditor</code> 迁入选择器。设置卡片把 Avatar 做成与其它行相同的两段式：左侧标签，右侧自然尺寸选择器。<code>apps/web/tests/avatar-randomization.test.mjs</code> 与 <code>theme-appearance.test.mjs</code> 校验同风格变体、Regenerate 不改风格、Letter 控件位置和固定轨道网格。</p>
   </section>
 </main></body>
 </html>

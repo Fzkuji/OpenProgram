@@ -58,6 +58,7 @@ const VARIANT_GRID: CSSProperties = {
   gridTemplateColumns: "repeat(auto-fill, 48px)",
   gap: 8,
   justifyContent: "start",
+  width: "100%",
 };
 
 export interface AvatarPickerProps {
@@ -168,7 +169,8 @@ export function AvatarPicker({
         flexDirection: "column",
         alignItems: "flex-start",
         gap: 16,
-        width: "100%",
+        width: 440,
+        maxWidth: "100%",
         minWidth: 0,
       }}
     >
@@ -205,6 +207,7 @@ export function AvatarPicker({
             alignItems: "flex-start",
             gap: 14,
             minWidth: 0,
+            width: "100%",
           }}
         >
           <div
@@ -213,6 +216,7 @@ export function AvatarPicker({
               flexDirection: "column",
               alignItems: "flex-start",
               gap: 8,
+              width: "100%",
             }}
           >
             <span style={_sectionHint}>{text("Style", "风格")}</span>
@@ -224,6 +228,7 @@ export function AvatarPicker({
                 flexWrap: "wrap",
                 gap: 6,
                 justifyContent: "flex-start",
+                width: "100%",
               }}
             >
               {AVATAR_STYLES.map((s) => (
@@ -318,6 +323,7 @@ export function AvatarPicker({
             flexDirection: "column",
             alignItems: "flex-start",
             gap: 12,
+            width: "100%",
           }}
         >
           <div>
@@ -342,6 +348,7 @@ export function AvatarPicker({
                 flexWrap: "wrap",
                 gap: 6,
                 justifyContent: "flex-start",
+                width: "100%",
               }}
             >
               {colors.map((c) => (
@@ -377,6 +384,7 @@ export function AvatarPicker({
             flexDirection: "column",
             alignItems: "flex-start",
             gap: 6,
+            width: "100%",
           }}
         >
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>

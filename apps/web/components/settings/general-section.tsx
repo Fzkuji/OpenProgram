@@ -234,18 +234,20 @@ function ProfileEditor({
           </div>
         </div>
 
-        <div className={styles.avatarBlock}>
-          <div className={styles.avatarBlockLabel}>{t("general.avatar")}</div>
-          <AvatarPicker
-            value={profile.avatar}
-            onChange={updateAvatar}
-            name={profile.name}
-            letterBg={profile.color}
-            letterText={profile.initial}
-            onLetterBgChange={updateColor}
-            onLetterTextChange={updateInitial}
-            colors={colors}
-          />
+        <div className={styles.row + " " + styles.rowTop}>
+          <div className={styles.label}>{t("general.avatar")}</div>
+          <div className={styles.control}>
+            <AvatarPicker
+              value={profile.avatar}
+              onChange={updateAvatar}
+              name={profile.name}
+              letterBg={profile.color}
+              letterText={profile.initial}
+              onLetterBgChange={updateColor}
+              onLetterTextChange={updateInitial}
+              colors={colors}
+            />
+          </div>
         </div>
       </div>
   );
@@ -375,12 +377,14 @@ function ApplicationSection() {
               <label className={styles.label} htmlFor="automatic-update-checks">
                 {text("Automatically check for updates", "自动检查更新")}
               </label>
-              <input
-                id="automatic-update-checks"
-                type="checkbox"
-                checked={updateState?.automaticChecks ?? true}
-                onChange={(event) => { void runUpdateAction(() => bridge.updates.setAutomaticChecks(event.target.checked)); }}
-              />
+              <div className={styles.control}>
+                <input
+                  id="automatic-update-checks"
+                  type="checkbox"
+                  checked={updateState?.automaticChecks ?? true}
+                  onChange={(event) => { void runUpdateAction(() => bridge.updates.setAutomaticChecks(event.target.checked)); }}
+                />
+              </div>
             </div>
             <div className={styles.row}>
               <div className={styles.label}>{text("Update status", "更新状态")}</div>
@@ -407,14 +411,14 @@ function ApplicationSection() {
             {updateState?.release?.releaseNotes && updateState.release.status === "available" && (
               <div className={`${styles.row} ${styles.rowTop}`}>
                 <div className={styles.label}>{text("Release notes", "版本说明")}</div>
-                <div className={`${styles.control} ${styles.valueWide}`} style={{ whiteSpace: "pre-wrap" }}>
+                <div className={styles.control} style={{ whiteSpace: "pre-wrap", textAlign: "left" }}>
                   {updateState.release.releaseNotes.slice(0, 600)}
                 </div>
               </div>
             )}
             <div className={styles.row}>
               <div className={styles.label}>{text("Actions", "操作")}</div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <div className={styles.control} style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <Button variant="outline" size="sm" className={"text-fs-base " + styles.settingsAction} disabled={busy} onClick={() => { void runUpdateAction(() => bridge.updates.check()); }}>
                   {text("Check now", "立即检查")}
                 </Button>
@@ -439,7 +443,7 @@ function ApplicationSection() {
             </div>
             <div className={styles.row}>
               <div className={styles.label}>{text("Check for updates", "检查更新")}</div>
-              <div style={{ display: "grid", gap: 4, justifyItems: "end" }}>
+              <div className={styles.value} style={{ display: "grid", gap: 4 }}>
                 <code>openprogram upgrade --check</code>
                 <code>openprogram upgrade</code>
               </div>
@@ -501,7 +505,7 @@ export function GeneralSection() {
           <div className={styles.card}>
             <div className={styles.row + " " + styles.rowTop}>
               <div className={styles.label}>{text("Mode", "明暗模式")}</div>
-              <div className={styles.control + " " + styles.valueWide}>
+              <div className={styles.control}>
                 <div className={styles.themeGrid}>
                   {THEME_MODES.map((m) => (
                     <button
@@ -548,7 +552,7 @@ export function GeneralSection() {
 
             <div className={styles.row + " " + styles.rowTop}>
               <div className={styles.label}>{text("Color style", "颜色风格")}</div>
-              <div className={styles.control + " " + styles.valueWide}>
+              <div className={styles.control}>
                 <div className={styles.themeGrid}>
                   {THEME_STYLES.map((s) => (
                     <button
@@ -597,7 +601,7 @@ export function GeneralSection() {
               <div className={styles.label}>
                 {text("Accent color", "强调色")}
               </div>
-              <div className={styles.control + " " + styles.valueWide}>
+              <div className={styles.control}>
                 <div className={styles.accentControls}>
                   <input
                     type="color"
@@ -643,7 +647,7 @@ export function GeneralSection() {
               <div className={styles.label}>
                 {text("Custom CSS", "自定义 CSS")}
               </div>
-              <div className={styles.control + " " + styles.valueWide}>
+              <div className={styles.control}>
                 <div className={styles.customCssToolbar}>
                   <label className={styles.customCssEnable}>
                     <input
