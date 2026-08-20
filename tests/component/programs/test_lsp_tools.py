@@ -16,19 +16,21 @@ import shutil
 import subprocess
 import sys
 import textwrap
+import threading
+import time
 
 import pytest
 
-from openprogram.programs.functions.vanilla.lsp import shared
+from openprogram.programs.functions.vanilla.code.lsp import shared
 # The impl functions are the tool bodies as plain Python; the
 # @function-wrapped names are AgentTool objects for LLM dispatch.
-from openprogram.programs.functions.vanilla.lsp.lsp_definition.lsp_definition import (
+from openprogram.programs.functions.vanilla.code.lsp.lsp_definition.lsp_definition import (
     _definition_impl as lsp_definition,
 )
-from openprogram.programs.functions.vanilla.lsp.lsp_diagnostics.lsp_diagnostics import (
+from openprogram.programs.functions.vanilla.code.lsp.lsp_diagnostics.lsp_diagnostics import (
     _diagnostics_impl as lsp_diagnostics,
 )
-from openprogram.programs.functions.vanilla.lsp.lsp_references.lsp_references import (
+from openprogram.programs.functions.vanilla.code.lsp.lsp_references.lsp_references import (
     _references_impl as lsp_references,
 )
 from openprogram.lsp import client as lsp_client
@@ -150,6 +152,11 @@ def test_did_open_publishes_diagnostics(fake_server, tmp_path):
     assert diagnostics[0]["severity"] == 1
 
 
+def test_wait_for_diagnostics_timeout_raises(fake_server):
+    with pytest.raises(TimeoutError, match="diagnostics timed out"):
+        fake_server.wait_for_diagnostics("file:///never-opened.py", timeout=0.01)
+
+
 def test_reopening_a_file_sends_did_change(fake_server, tmp_path):
     source = tmp_path / "sample.py"
     source.write_text("a = 1\n")
@@ -158,6 +165,55 @@ def test_reopening_a_file_sends_did_change(fake_server, tmp_path):
     # Second open must not re-announce the document; it refreshes it.
     fake_server.open_file(str(source))
     assert len(fake_server._opened) == 1
+
+
+def test_document_versions_increase_on_every_change(fake_server, tmp_path, monkeypatch):
+    source = tmp_path / "sample.py"
+    source.write_text("value = 1\n")
+    sent = []
+    monkeypatch.setattr(fake_server, "notify", lambda method, params: sent.append((method, params)))
+
+    fake_server.open_file(str(source))
+    source.write_text("value = 2\n")
+    fake_server.open_file(str(source))
+    source.write_text("value = 3\n")
+    fake_server.open_file(str(source))
+
+    assert [method for method, _ in sent] == [
+        "textDocument/didOpen",
+        "textDocument/didChange",
+        "textDocument/didChange",
+    ]
+    assert [params["textDocument"]["version"] for _, params in sent] == [1, 2, 3]
+
+
+def test_concurrent_open_serializes_document_versions(fake_server, tmp_path, monkeypatch):
+    source = tmp_path / "sample.py"
+    source.write_text("value = 1\n")
+    sent = []
+    start = threading.Barrier(3)
+
+    def notify(method, params):
+        sent.append((method, params["textDocument"]["version"]))
+        time.sleep(0.05)
+
+    monkeypatch.setattr(fake_server, "notify", notify)
+
+    def open_file():
+        start.wait()
+        fake_server.open_file(str(source))
+
+    threads = [threading.Thread(target=open_file) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    start.wait()
+    for thread in threads:
+        thread.join()
+
+    assert sent == [
+        ("textDocument/didOpen", 1),
+        ("textDocument/didChange", 2),
+    ]
 
 
 def test_dead_server_reports_unavailable(fake_server):
@@ -261,6 +317,15 @@ def test_positions_convert_to_zero_based(stub):
     assert params["position"] == {"line": 3, "character": 4}
 
 
+def test_positions_convert_unicode_columns_to_utf16(stub):
+    server, path = stub["install"]([])
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("😀widget()\n")
+    lsp_references(path, line=1, column=2)
+    _method, params = server.sent[0]
+    assert params["position"] == {"line": 0, "character": 2}
+
+
 def test_position_floor_is_one(stub):
     server, path = stub["install"]([])
     lsp_definition(path, line=0, column=0)
@@ -314,6 +379,17 @@ def test_definition_accepts_a_bare_location(stub, tmp_path):
     assert "def widget():" in result
 
 
+def test_locations_convert_utf16_columns_for_display(stub, tmp_path):
+    target = tmp_path / "target.py"
+    target.write_text("😀widget()\n")
+    _server, path = stub["install"]({
+        "uri": lsp_client.path_to_uri(str(target)),
+        "range": {"start": {"line": 0, "character": 2},
+                  "end": {"line": 0, "character": 8}},
+    })
+    assert "target.py:1:2" in lsp_definition(path, line=1, column=1)
+
+
 def test_definition_accepts_a_location_link(stub, tmp_path):
     target = tmp_path / "target.py"
     target.write_text("def widget():\n    pass\n")
@@ -346,9 +422,30 @@ def test_diagnostics_render_one_based_with_severity(stub):
     assert lines[2] == "5:8 error: undefined name [pyright]"
 
 
+def test_diagnostics_convert_utf16_columns_for_display(stub):
+    server, path = stub["install"](None)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("😀widget()\n")
+    server.diagnostics = [{
+        "range": {"start": {"line": 0, "character": 2}},
+        "severity": 1,
+        "message": "problem",
+    }]
+    assert "1:2 error: problem" in lsp_diagnostics(path)
+
+
 def test_diagnostics_clean_file_says_so(stub):
     _server, path = stub["install"](None)
     assert lsp_diagnostics(path) == "No diagnostics for mod.py"
+
+
+def test_diagnostics_timeout_is_not_reported_as_clean(stub):
+    server, path = stub["install"](None)
+    server.wait_for_diagnostics = lambda _uri: (_ for _ in ()).throw(
+        TimeoutError("diagnostics timed out after 20s")
+    )
+    result = lsp_diagnostics(path)
+    assert result == "Error: TimeoutError: diagnostics timed out after 20s"
 
 
 def test_diagnostics_truncate_beyond_the_cap(stub):

@@ -100,6 +100,7 @@ class LanguageServer:
         self._response_arrived = threading.Condition()
         self._diagnostics: dict[str, list[dict]] = {}
         self._opened: set[str] = set()
+        self._versions: dict[str, int] = {}
         self._closed = False
         self._reader = threading.Thread(
             target=self._read_forever, name=f"lsp-{spec.language_id}",
@@ -235,22 +236,24 @@ class LanguageServer:
         uri = path_to_uri(file_path)
         with open(file_path, "r", encoding="utf-8", errors="replace") as handle:
             text = handle.read()
-        method = ("textDocument/didChange" if uri in self._opened
-                  else "textDocument/didOpen")
-        if method == "textDocument/didOpen":
-            params = {"textDocument": {
-                "uri": uri, "languageId": self.spec.language_id,
-                "version": 1, "text": text,
-            }}
-        else:
-            params = {
-                "textDocument": {"uri": uri, "version": 2},
-                "contentChanges": [{"text": text}],
-            }
         with self._response_arrived:
+            version = self._versions.get(uri, 0) + 1
+            method = ("textDocument/didChange" if uri in self._opened
+                      else "textDocument/didOpen")
+            if method == "textDocument/didOpen":
+                params = {"textDocument": {
+                    "uri": uri, "languageId": self.spec.language_id,
+                    "version": version, "text": text,
+                }}
+            else:
+                params = {
+                    "textDocument": {"uri": uri, "version": version},
+                    "contentChanges": [{"text": text}],
+                }
             self._diagnostics.pop(uri, None)
-        self.notify(method, params)
-        self._opened.add(uri)
+            self.notify(method, params)
+            self._opened.add(uri)
+            self._versions[uri] = version
         return uri
 
     def wait_for_diagnostics(self, uri: str,
@@ -259,10 +262,14 @@ class LanguageServer:
         with self._response_arrived:
             while uri not in self._diagnostics:
                 remaining = deadline - time.monotonic()
-                if remaining <= 0 or self._closed:
-                    break
+                if self._closed:
+                    raise ServerUnavailable(
+                        f"{self.spec.binary} exited while waiting for diagnostics")
+                if remaining <= 0:
+                    raise TimeoutError(
+                        f"diagnostics timed out after {timeout:g}s")
                 self._response_arrived.wait(remaining)
-            return list(self._diagnostics.get(uri, []))
+            return list(self._diagnostics[uri])
 
     def stop(self) -> None:
         try:
