@@ -16,7 +16,10 @@
  *     anchor's call thread: one column right of the anchor, one row
  *     per event in call order. An open spawn's own thread nests one
  *     column further right, and its rows push the parent's later
- *     items down — expansion is insertion, not overlay. Placement is
+ *     items down. After a chain-anchor thread is seated, later chain
+ *     rows (and already-placed thread rows below the insertion) shift
+ *     down by the occupied span, and each assigned thread column is
+ *     reserved — expansion is insertion, not overlay. Placement is
  *     recursive because the model is.
  *
  * Returns per-id ``{x, y}`` plus the thread columns/rows the edge
@@ -207,13 +210,20 @@ export function computeGeometry(
   // ── Threads: recursive placement ──
   // Items run from the anchor's next row (past any fork rows hanging
   // off it) down one row per event; an open spawn recurses one column
-  // further right and its rows push everything after it down.
+  // further right and its rows push everything after it down. After
+  // each chain-anchor place(), later chain rows (and already-placed
+  // thread rows at/below the insertion) shift down by the occupied
+  // span — otherwise later triangles stay on the thread's rows and
+  // the vertical in the anchor's column runs through them. Each
+  // assigned thread column is reserved immediately so a second open
+  // thread walks to the next free column instead of stacking.
   const threadColOf: Record<string, number> = Object.create(null);
   const threadRowsOf: Record<string, number[]> = Object.create(null);
   const place = (anchor: string, baseCol: number, startRow: number): number => {
     let c = baseCol;
     while (usedCols.has(c)) c++;
     threadColOf[anchor] = c;
+    usedCols.add(c);
     let cursor = startRow;
     const rows: number[] = [];
     (thread.events[anchor] || []).forEach((ev) => {
@@ -229,8 +239,47 @@ export function computeGeometry(
     threadRowsOf[anchor] = rows;
     return cursor;
   };
-  chainIds.forEach((id) => {
-    if (!thread.isOpen(id) || !(thread.events[id] || []).length) return;
+  const shiftRowsFrom = (
+    startRow: number,
+    delta: number,
+    skip: Set<string>,
+  ): void => {
+    if (!delta) return;
+    chainIds.forEach((cid) => {
+      if (skip.has(cid)) return;
+      if ((rowOf[cid] || 0) >= startRow) {
+        rowOf[cid] = (rowOf[cid] || 0) + delta;
+      }
+    });
+    Object.keys(threadRowsOf).forEach((anchor) => {
+      if (skip.has(anchor)) return;
+      const rows = threadRowsOf[anchor];
+      let moved = false;
+      const next = rows.map((r) => {
+        if (r >= startRow) {
+          moved = true;
+          return r + delta;
+        }
+        return r;
+      });
+      if (!moved) return;
+      threadRowsOf[anchor] = next;
+      (thread.events[anchor] || []).forEach((ev, i) => {
+        if (i < next.length && byId[ev.id]) rowOf[ev.id] = next[i];
+      });
+    });
+    Object.keys(laneTopRow).forEach((laneKey) => {
+      if ((laneTopRow[Number(laneKey)] || 0) >= startRow) {
+        laneTopRow[Number(laneKey)] += delta;
+      }
+    });
+  };
+  // Earlier anchors insert first so a later open thread places against
+  // already-shifted chain rows.
+  const openAnchors = chainIds
+    .filter((id) => thread.isOpen(id) && (thread.events[id] || []).length)
+    .sort((a, b) => (rowOf[a] || 0) - (rowOf[b] || 0) || colOf(a) - colOf(b));
+  openAnchors.forEach((id) => {
     // Right of the anchor — and right of any branch bridging off it,
     // so the dotted line never cuts the same-row bridge.
     let base = colOf(id) + 1;
@@ -243,7 +292,14 @@ export function computeGeometry(
     });
     // One row of clearance when anything forks off this anchor — they all
     // share a single row now, however many there are.
-    place(id, base, (rowOf[id] || 0) + 1 + (hasFork ? 1 : 0));
+    const startRow = (rowOf[id] || 0) + 1 + (hasFork ? 1 : 0);
+    const placedBefore = new Set(Object.keys(threadRowsOf));
+    const cursor = place(id, base, startRow);
+    const justPlaced = new Set(
+      Object.keys(threadRowsOf).filter((a) => !placedBefore.has(a)),
+    );
+    justPlaced.add(id);
+    shiftRowsFrom(startRow, cursor - startRow, justPlaced);
   });
 
   // ── Pixels ──
