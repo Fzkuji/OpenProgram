@@ -130,6 +130,8 @@ Desktop icon SVG uses blue/purple (`#4A9FE1` / `#915FD5`).
 
 **Action:** Read theme preference from storage and apply background color before window shows.
 
+Window-state persistence (normal bounds vs maximize/fullscreen, display fallback, titlebar resize hit-testing) is implemented; see [window-state.md](window-state.md). The cold chrome flash above is still open.
+
 ---
 
 ### 6. Ghost Tokens / Spec Drift (Low Priority)
@@ -192,7 +194,7 @@ Desktop icon SVG uses blue/purple (`#4A9FE1` / `#915FD5`).
 
 1. **Web token cleanup** — fix `:root` fallback, ensure beige-dark is consistent default
 2. **Docs palette** — align with Web beige or document independence
-3. **Desktop chrome** — respect theme preference, eliminate cold flash
+3. **Desktop chrome color flash** — respect theme preference, eliminate cold flash. Window-state restore is already in place.
 4. **CLI/TUI colors** — either integrate with Web theme or document separate brand
 5. **Ghost tokens** — add to contract or remove from code/specs
 6. **Marketing/icon** — decide alignment or independence
@@ -206,7 +208,8 @@ Desktop icon SVG uses blue/purple (`#4A9FE1` / `#915FD5`).
 - **Settings mode × style**: ✅ Complete (this PR)
 - **Web token cleanup**: ❌ Not started
 - **Docs palette**: ❌ Not started
-- **Desktop chrome**: ❌ Not started
+- **Desktop window-state**: ✅ Complete
+- **Desktop chrome color flash**: ❌ Not started
 - **CLI/TUI colors**: ❌ Not started
 - **Ghost tokens**: ❌ Not started
 - **Marketing/icon**: ❌ Not started

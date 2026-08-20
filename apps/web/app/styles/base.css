@@ -566,6 +566,7 @@ html.is-desktop {
 .desktop-tab-row {
   display: flex;
   flex-shrink: 0;
+  position: relative;
   /* 红绿灯 x:18 起、灯径 12/间距 20 → 绿灯右缘 x≈70。左留白 88 使
      「绿灯→首 tab」= 「窗口左缘→红灯」= 18px，两侧呼吸感一致。 */
   padding-left: 88px;
@@ -575,7 +576,19 @@ html.is-desktop {
   background: var(--tabrow-bg); /* same as .strip — covers the 76px gap */
   -webkit-app-region: drag;
 }
-.desktop-tab-row > * { flex: 1; min-width: 0; }
+.desktop-tab-row > *:not(.desktop-resize-edge) { flex: 1; min-width: 0; }
+/* 5px no-drag inset on the window's top/left/right edges (and corners)
+   so macOS can still hit-test native resize. Traffic lights start at
+   x:18,y:13; tabs sit 6px below the top — the inset does not cover
+   those targets. */
+html.is-desktop .desktop-resize-edge {
+  position: absolute;
+  z-index: 5;
+  -webkit-app-region: no-drag;
+}
+html.is-desktop .desktop-resize-n { top: 0; left: 0; right: 0; height: 5px; }
+html.is-desktop .desktop-resize-w { top: 0; left: 0; bottom: 0; width: 5px; }
+html.is-desktop .desktop-resize-e { top: 0; right: 0; bottom: 0; width: 5px; }
 /* Inside the desktop-frame column, .app fills the height left over
    under the tab row instead of forcing its own 100vh. */
 html.is-desktop .app { height: auto; flex: 1 1 auto; min-height: 0; }

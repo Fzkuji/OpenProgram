@@ -16,7 +16,11 @@ from pathlib import Path
 import pytest
 
 DESKTOP = Path(__file__).resolve().parents[3] / "apps" / "desktop"
-SCRIPTS = ("check-webtab-navigation.js", "check-tab-transfer-store.js")
+SCRIPTS = (
+    "check-webtab-navigation.js",
+    "check-tab-transfer-store.js",
+    "check-window-state.js",
+)
 
 
 @pytest.mark.parametrize("script", SCRIPTS)

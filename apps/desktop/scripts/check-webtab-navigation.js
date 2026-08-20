@@ -182,7 +182,17 @@ const fakeElectron = {
   screen: {
     getCursorScreenPoint() { return { ...fakeElectron.cursorPoint }; },
     getDisplayNearestPoint() {
-      return { workArea: { x: 0, y: 0, width: 1440, height: 900 } };
+      return fakeElectron.screen.getPrimaryDisplay();
+    },
+    getAllDisplays() {
+      return [{
+        id: 1,
+        bounds: { x: 0, y: 0, width: 1440, height: 900 },
+        workArea: { x: 0, y: 0, width: 1440, height: 900 },
+      }];
+    },
+    getPrimaryDisplay() {
+      return fakeElectron.screen.getAllDisplays()[0];
     },
   },
   cursorPoint: { x: 700, y: 40 },
@@ -386,6 +396,12 @@ function fakeWindow(id) {
     boundsCalls: [],
     opacities: [],
     getBounds() { return { ...this.bounds }; },
+    getNormalBounds() { return { ...this.bounds }; },
+    isMaximized() { return false; },
+    isFullScreen() { return false; },
+    maximize() {},
+    unmaximize() {},
+    setFullScreen() {},
     setBounds(value) {
       this.bounds = { ...this.bounds, ...value };
       this.boundsCalls.push({ ...this.bounds });

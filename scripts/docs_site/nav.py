@@ -302,6 +302,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "reference/design/ui/state-layer.md",
             "reference/design/ui/theme-system.html",
             "reference/design/ui/unification-work.md",
+            "reference/design/ui/window-state.md",
             "reference/design/ui/web-styles.md",
             "reference/design/ui/interaction-feedback.md",
             "reference/design/ui/indicator-dots.md",
@@ -332,6 +333,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
         ]),
         ("UI · Settings and catalog", "界面 · 设置与目录", [
             "reference/design/ui/avatar-randomization.html",
+            "reference/design/ui/programs-explorer-template.html",
             "reference/design/ui/programs-source-categories.html",
             "reference/design/ui/settings-collapsible-columns.html",
         ]),

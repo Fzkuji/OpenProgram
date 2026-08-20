@@ -338,6 +338,25 @@ assert.match(css, /\.transferHoverPill \{[\s\S]*?background: var\(--accent-orang
 // parent .desktop-tab-row, so it must tint too for one continuous band.
 assert.match(css, /:global\(\.desktop-tab-row\):has\(\.strip\[data-transfer-hover\]\)/,
   "the desktop tab-row (left inset) must tint too so the top-left corner is covered");
+const desktopChromeCss = readFileSync(
+  new URL("../app/styles/base.css", import.meta.url),
+  "utf8",
+);
+assert.match(
+  appShell,
+  /desktop-resize-edge desktop-resize-n[\s\S]*desktop-resize-w[\s\S]*desktop-resize-e[\s\S]*<CenterTabStrip/,
+  "the desktop tab row must leave 5px no-drag edges for native resize",
+);
+assert.match(
+  desktopChromeCss,
+  /html\.is-desktop \.desktop-resize-n \{ top: 0; left: 0; right: 0; height: 5px; \}/,
+  "the top resize inset must be a 5px no-drag strip",
+);
+assert.match(
+  desktopChromeCss,
+  /html\.is-desktop \.desktop-resize-edge \{[\s\S]*?-webkit-app-region: no-drag;/,
+  "resize insets must be no-drag so they do not swallow the window edge",
+);
 assert.match(css, /\.transferHoverPill \{[\s\S]*?pointer-events: none/,
   "the destination pill must be pointer-events:none so it never blocks the drop");
 assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.transferHoverPill \{\s*animation: none/,
@@ -425,10 +444,18 @@ assert.match(desktopMain, /const detached = liveContext\(transaction\.detachedWi
   "the torn-off window must be revealed at commit (drop-to-place)");
 // Detached windows keep the modest movable size cap (min so the drop point
 // stays on-screen), and cancel/rollback closes them so nothing is orphaned.
-assert.match(desktopMain, /detached \? Math\.min\(1100, state\.width\)/,
+const desktopWindowState = readFileSync(
+  new URL("../../desktop/window-state.js", import.meta.url),
+  "utf8",
+);
+assert.match(desktopWindowState, /DETACHED_MAX_WIDTH = 1100/,
   "detached windows must keep the 1100-wide size cap");
-assert.match(desktopMain, /detached \? Math\.min\(720, state\.height\)/,
+assert.match(desktopWindowState, /DETACHED_MAX_HEIGHT = 720/,
   "detached windows must keep the 720-tall size cap");
+assert.match(desktopMain, /browserWindowOptionsForPlan\(state, \{ detached \}\)/,
+  "detached windows must use the shared window-state size plan");
+assert.match(desktopMain, /if \(!detached\) \{[\s\S]*?attachWindowStatePersistence/,
+  "detached windows must stay ephemeral and not persist window-state");
 assert.match(desktopMain, /function clearActive\([^)]*\) \{[\s\S]*?if \(closeHidden\) closeDetached\(transaction\.detachedWindowId\)/,
   "a rejected/rolled-back transfer must close its staged window — no orphans");
 

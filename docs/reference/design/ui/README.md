@@ -24,3 +24,4 @@ Web UI surfaces — the surface system, indicator dots, attachment handling, cha
 - [`settings-collapsible-columns.html`](settings-collapsible-columns.html) — independent 49px collapse behavior for the app, Settings, and Provider navigation columns
 - [`avatar-randomization.html`](avatar-randomization.html) — shared Agent/User avatar variants with full DiceBear style coverage
 - [`web-styles.md`](web-styles.md) — web style organization (one component, one file; directories mirror the component tree)
+- [`window-state.md`](window-state.md) — desktop window bounds, maximize/fullscreen, and titlebar resize hit-testing
