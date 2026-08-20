@@ -19,10 +19,13 @@ const usagePage = source("components/settings/token-usage/index.tsx");
 const channelsCss = source("components/settings/channels/channels.module.css");
 const channelsPage = source("components/settings/channels/index.tsx");
 const system = source("components/settings/system-settings.tsx");
+const general = source("components/settings/general-section.tsx");
+const browser = source("components/settings/browser-settings.tsx");
 const loading = source("app/(shell)/settings/loading.tsx");
 const detail = source("components/settings/providers/detail.tsx");
 const searchDetail = source("components/settings/search-providers/detail.tsx");
 const searchIndex = source("components/settings/search-providers/index.tsx");
+const addCustom = source("components/settings/providers/add-custom-provider.tsx");
 const accountManager = source("components/settings/providers/account-manager.tsx");
 const modelList = source("components/settings/providers/model-list.tsx");
 const sidebar = source("components/sidebar/sidebar.tsx");
@@ -72,6 +75,16 @@ assert.doesNotMatch(providers, /Collapse provider list|Expand provider list/);
 assert.doesNotMatch(providers, /PanelLeftCloseIcon|PanelLeftOpenIcon/);
 assert.match(providers, /styles\.providersToolbar[\s\S]*styles\.providerSearch[\s\S]*SearchInput/);
 assert.match(providers, /AddCustomProvider/);
+assert.match(addCustom, /styles\.addCustomTrigger/);
+assert.match(addCustom, /styles\.addCustomForm/);
+assert.doesNotMatch(addCustom, /calc\(100%\s*-\s*16px\)/);
+assert.doesNotMatch(addCustom, /margin:\s*["']8px 8px 0["']/);
+assert.doesNotMatch(addCustom, /margin:\s*["']8px["']/);
+assert.doesNotMatch(addCustom, /width:\s*["']calc/);
+assert.match(css, /\.addCustomTrigger\s*,\s*\.addCustomForm\s*\{[^}]*width:\s*100%/s);
+assert.match(css, /\.addCustomForm input\s*\{[^}]*width:\s*100%/s);
+assert.doesNotMatch(css, /\.addCustom(?:Trigger|Form)\s*(?:,\s*\.addCustom(?:Trigger|Form)\s*)?\{[^}]*margin(?:-left|-right)?:\s*8px/s);
+assert.doesNotMatch(css, /\.addCustom(?:Trigger|Form)\s*(?:,\s*\.addCustom(?:Trigger|Form)\s*)?\{[^}]*padding(?:-left|-right)?:\s*(?:8|10)px/s);
 assert.match(providers, /styles\.providersGroupLabel[\s\S]*Enabled/);
 assert.match(providers, /styles\.providersGroupLabel[\s\S]*Not enabled/);
 assert.doesNotMatch(providers, /styles\.railHeader/);
@@ -100,8 +113,24 @@ assert.match(detail, /className=\{styles\.detailSurface\}/);
 assert.match(searchDetail, /className=\{styles\.detailSurface\}/);
 assert.match(searchDetail, /styles\.detailHeader/);
 assert.match(searchDetail, /styles\.detailTitle\b/);
+assert.equal(
+  (searchDetail.match(/styles\.detailSurface/g) || []).length,
+  1,
+  "SearchProviderDetail owns exactly one detailSurface",
+);
 assert.match(searchIndex, /styles\.detailSurface[\s\S]*styles\.detailEmpty/);
 assert.match(searchIndex, /styles\.providerListItems/);
+assert.match(searchIndex, /styles\.providersToolbar[\s\S]*styles\.providerSearch[\s\S]*SearchInput/);
+assert.doesNotMatch(
+  searchIndex,
+  /selected \?[\s\S]*styles\.detailSurface[\s\S]*SearchProviderDetail/,
+);
+assert.doesNotMatch(searchDetail, /rounded-md p-3 text-\[14px\]/);
+assert.doesNotMatch(searchDetail, /fontSize:\s*12/);
+assert.doesNotMatch(searchDetail, /className="flex items-center gap-3"/);
+assert.match(searchDetail, /styles\.searchDescription/);
+assert.match(searchDetail, /styles\.detailStatus/);
+assert.match(searchDetail, /styles\.codeName/);
 assert.match(css, /@container\s*\(max-width:\s*680px\)/);
 assert.match(css, /@container[\s\S]*\.detailTitle\s*\{[^}]*overflow-wrap:\s*anywhere/s);
 assert.match(css, /@container[\s\S]*\.detailSectionTitle\s*\{[^}]*flex-wrap:\s*wrap/s);
@@ -185,5 +214,26 @@ assert.match(channelsPage, /shellStyles\.page[\s\S]*styles\.channelsPage/);
 assert.match(channelsCss, /\.channelsPage\s*\{[^}]*font-family:\s*var\(--font-sans\)/s);
 assert.match(channelsCss, /\.rowTable code\s*\{[^}]*font-family:\s*var\(--font-mono\)/s);
 assert.match(channelsCss, /\.codeBlock\s*\{[^}]*font-family:\s*var\(--font-mono\)/s);
+
+// Shared Settings shell: one --font-sans on `.page` so General / Providers
+// / Search / Browser / System inherit the General font picker.
+assert.match(css, /\.page\s*\{[^}]*font-family:\s*var\(--font-sans\)/s);
+assert.match(css, /\.systemControl\s*\{[^}]*font:\s*inherit[^}]*font-family:\s*var\(--font-sans\)/s);
+assert.match(system, /t\("settings\.tab\.system"\)/);
+assert.match(system, /className=\{styles\.systemControl\}/);
+assert.doesNotMatch(system, /const inputStyle/);
+
+// Browser matches General / System: h2 title, Switch, systemRow isolation.
+assert.match(browser, /<h2 className=\{styles\.pageTitle\}/);
+assert.doesNotMatch(browser, /<h1\b/);
+assert.match(browser, /styles\.systemRow/);
+assert.match(browser, /<Switch[\s\S]*Browsing history/);
+assert.match(browser, /<Switch[\s\S]*Cookies/);
+assert.doesNotMatch(browser, /<input type="checkbox"/);
+assert.match(browser, /styles\.label[\s\S]{0,80}Bookmarks are not removed/);
+assert.doesNotMatch(browser, /styles\.pageMeta[\s\S]{0,80}Bookmarks are not removed/);
+
+// Installation type is chrome, not a code value.
+assert.match(general, /styles\.control\}>\{installType\}/);
 
 console.log("settings collapsible-column checks passed");

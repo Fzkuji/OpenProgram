@@ -146,6 +146,7 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  font-family: var(--font-sans);
 }
 .pageHeader {
   padding: 20px 28px 16px;
@@ -357,6 +358,22 @@
   min-width: 7.5rem;
   max-width: none;
 }
+/* System number / enum fields inherit the General font picker. */
+.systemControl {
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--ui-button-radius);
+  color: var(--text-primary);
+  font: inherit;
+  font-family: var(--font-sans);
+  width: 120px;
+  text-align: right;
+}
+.systemControlSelect {
+  width: auto;
+  text-align: left;
+}
 /* Bare checkboxes/radios that sit directly on a `.row`. */
 .row > input[type="checkbox"],
 .row > input[type="radio"] {
@@ -548,6 +565,26 @@
 .providerSearch {
   width: 100%;
   min-width: 0;
+}
+/* Add-custom lives in the same sidebar content box as search. The
+   sidebar's 8px padding is the only gutter — no second horizontal
+   inset, so the trigger, expanded form, and Name / Base URL fields
+   share the search input's width. */
+.addCustomTrigger,
+.addCustomForm {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin-top: 8px;
+}
+.addCustomForm {
+  display: grid;
+  gap: 6px;
+}
+.addCustomForm input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 .providerListItems {
   display: flex;
@@ -1200,6 +1237,31 @@
 }
 .testResult.err {
   color: var(--accent-red);
+}
+
+.searchDescription {
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.55;
+  font-family: var(--font-sans);
+}
+.searchDescriptionMeta {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-family: var(--font-sans);
+}
+.detailStatus {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-sans);
+}
+.codeName {
+  font-family: var(--font-mono);
 }
 
 /* Search-provider tier chip — sits next to the detail-panel title so
