@@ -3,6 +3,23 @@ from __future__ import annotations
 
 from typing import Any
 
+from openprogram.providers.structured_output import JsonSchemaOutput
+
+
+_GOAL_JUDGMENT_FORMAT = JsonSchemaOutput(
+    schema={
+        "type": "object",
+        "properties": {
+            "met": {"type": "boolean"},
+            "reason": {"type": "string"},
+        },
+        "required": ["met", "reason"],
+        "additionalProperties": False,
+    },
+    name="goal_judgment",
+    max_validation_retries=1,
+)
+
 
 def goal(
     prompt: str,
@@ -55,7 +72,7 @@ Reply with a JSON object:
             prompt=judge_prompt,
             model=model,
             effort=effort,
-            response_format={"type": "json_object"},
+            response_format=_GOAL_JUDGMENT_FORMAT,
         )
 
         # Parse judgment
