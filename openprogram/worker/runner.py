@@ -176,6 +176,16 @@ def run_foreground() -> int:
         lock.release()
         raise
 
+    # Functions execute in isolated child processes. Those children may
+    # durably enqueue agent jobs, but only this singleton worker owns the
+    # profile lock required to claim and execute them. Keep the dispatcher
+    # alive even when no WebSocket job action has initialized it yet.
+    from openprogram.agent.job import get_runner as get_job_runner
+    from openprogram.agent.job.runner import shutdown_runner as shutdown_job_runner
+
+    get_job_runner()
+    print("[worker] job dispatcher: running")
+
     # Bring up the webui first — that's the worker's primary job. Single
     # port: this process serves the API, /ws AND the frontend export.
     import os
@@ -239,7 +249,7 @@ def run_foreground() -> int:
     scheduler_stop = None
     scheduler_thread = None
     try:
-        from openprogram.programs.functions.vanilla.cron.worker import start_in_worker
+        from openprogram.programs.functions.vanilla.jobs.cron.worker import start_in_worker
 
         scheduler_stop, scheduler_thread = start_in_worker()
         print("[worker] scheduler: running")
@@ -327,6 +337,7 @@ def run_foreground() -> int:
         if scheduler_thread is not None:
             scheduler_thread.join(timeout=max(0.1, _join_deadline - time.time()))
     finally:
+        shutdown_job_runner()
         lock.release()
         clear_pid_file()
         clear_port_file()
