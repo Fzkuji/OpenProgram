@@ -24,7 +24,7 @@
     <div class="eyebrow">Self-Programming Workflow · architecture and implementation plan</div>
     <h1>拆分 Workflow 的发现、创建、修订与执行</h1>
     <p class="lead">本页定义 OpenProgram 如何让 Chat Agent 选择已有 Workflow、如何按需创建可复用 Workflow，以及用户如何通过 <code>auto_workflow(task)</code> 手动触发完整流程。核心约束是：选择、创建、修订和执行必须是独立公共行为；完整入口只做编排，不再保存另一套实现。</p>
-    <div class="meta"><span class="pill proposed">状态：Proposed · 尚未实施</span><span class="pill scope">范围：Workflow catalog / authoring / runtime / Programs UI</span><span class="pill">读者：Runtime、Programs、Web 实现者</span><span class="pill">兼容：旧 run 只读恢复</span></div>
+    <div class="meta"><span class="pill proposed">状态：Implemented · App 验收待完成</span><span class="pill scope">范围：Workflow catalog / authoring / runtime / Programs UI</span><span class="pill">读者：Runtime、Programs、Web 实现者</span><span class="pill">兼容：旧 run 只读恢复</span></div>
     <nav class="toc" aria-label="页内导航"><a href="#decision">设计结论</a><a href="#current">当前实现</a><a href="#architecture">目标架构</a><a href="#contracts">公共合同</a><a href="#authoring">创建与复用</a><a href="#lifecycle">生命周期</a><a href="#comparison">框架对照</a><a href="#migration">实施计划</a><a href="#acceptance">验收</a><a href="#status">实现状态</a></nav>
   </header>
 
@@ -45,13 +45,13 @@
         <table>
           <thead><tr><th>当前事实</th><th>问题</th><th>目标处理</th></tr></thead>
           <tbody>
-            <tr><td><code>agentic_workflow(task)</code> 是公开 <code>@agentic_function</code>。</td><td>名称没有说明它会搜索、生成、发布并执行。</td><td>新调用迁移到四个明确入口；旧名字停止注册。</td></tr>
-            <tr><td><code>_search_projects()</code>、选择模型调用、candidate authoring、repair、执行与publish位于同一模块。</td><td>只读发现、持久写入和业务执行共享一个生命周期。</td><td>先按公共合同拆行为，再删除不再有调用者的分支。</td></tr>
-            <tr><td>已有项目以Git revision、snapshot和 <code>project_ref.json</code> 固定运行输入。</td><td>有价值的版本和恢复能力与复合入口绑定。</td><td>保留项目格式、快照、checkpoint和显式resume。</td></tr>
-            <tr><td>运行失败可进入候选修订并在成功后发布。</td><td>一次普通执行可能静默修改已发布Workflow。</td><td>发布前结构/测试修复留在create；已发布修改只能显式revise。</td></tr>
-            <tr><td>用户表单和Agent工具看到同一个入口。</td><td>用户需要完整入口，Agent已有自己的任务路由，二者语义不同。</td><td><code>auto_workflow</code> 用户可见、Agent不可见。</td></tr>
-            <tr><td><code>@agentic_function</code> 的 <code>expose=</code> 只是DAG语义，未传给Layer-2 <code>register(..., expose)</code>；Layer-2的 <code>_unexposed</code>/<code>exposed_names()</code> 机制已存在但装饰器未接线。</td><td>“用户可见、Agent工具不可见”今天无法用装饰器表达。</td><td>先给 <code>@agentic_function</code> 增加工具级曝光参数并打通到Layer-2（Phase 0），<code>auto_workflow</code> 用它注册。</td></tr>
-            <tr><td>执行失败进入执行期repair（<code>PROJECT_REPAIR_ATTEMPTS</code>），成功后自动发布新revision。</td><td>普通运行失败会静默改写已发布Workflow。</td><td>执行期repair整体删除；只保留 <code>create_workflow</code> 内发布前的bounded author重试（<code>PROJECT_AUTHOR_ATTEMPTS</code>）。已发布修改只走显式 <code>revise_workflow</code>。</td></tr>
+            <tr><td>公开入口是 <code>search_workflows</code>、<code>create_workflow</code>、<code>revise_workflow</code> 和用户级 <code>auto_workflow</code>；旧 <code>agentic_workflow</code> 不再注册。<code>resume_workflow</code> 保留为内部函数。</td><td>旧名称没有说明它会搜索、生成、发布并执行。</td><td>新调用走四个明确入口；历史 run 只读恢复。</td></tr>
+            <tr><td>只读搜索、create/revise 发布和具体 Workflow 执行是独立公共行为；<code>auto_workflow</code> 只编排这些入口，不再保存另一套实现。</td><td>只读发现、持久写入和业务执行不得共享一个生命周期。</td><td>按公共合同拆行为；不再存在复合执行路径。</td></tr>
+            <tr><td>已有项目以 Git revision、snapshot 和 <code>project_ref.json</code> 固定运行输入。</td><td>版本和恢复能力必须独立于编排入口。</td><td>保留项目格式、快照、checkpoint 和显式 resume。</td></tr>
+            <tr><td>普通执行失败保留原错误和 checkpoint，不改写已发布 Workflow。</td><td>一次普通执行不得静默修改已发布源码。</td><td>发布前结构/测试修复留在 create；已发布修改只能显式 revise。</td></tr>
+            <tr><td><code>auto_workflow</code> 出现在用户表单和 Programs 页（自动入口 · 仅用户手动），不出现在 Agent 工具清单。</td><td>用户需要完整入口，Agent 已有自己的任务路由，二者语义不同。</td><td><code>auto_workflow</code> 用户可见、Agent 不可见。</td></tr>
+            <tr><td><code>@agentic_function(tool_visible=)</code> 传入 Layer-2 <code>register(..., expose)</code>；默认 <code>True</code>，现有函数仍全部曝光。</td><td>需要用装饰器表达“用户可见、Agent 工具不可见”。</td><td><code>auto_workflow</code> 以 <code>tool_visible=False</code> 注册。</td></tr>
+            <tr><td>执行期 repair 已删除。<code>create_workflow</code> 内保留发布前 bounded author 重试（<code>PROJECT_AUTHOR_ATTEMPTS</code>）。</td><td>普通运行失败不得自动发布新 revision。</td><td>已发布修改只走显式 <code>revise_workflow</code>。</td></tr>
           </tbody>
         </table>
         <p>本设计复用已有的 Workflow package、Git、snapshot、checkpoint、DAG caller 和取消状态设施；不引入第二个执行Runtime、图DSL、Workflow数据库或字符串dispatcher。</p>
@@ -299,15 +299,15 @@
           <thead><tr><th>能力</th><th>当前证据</th><th>状态</th></tr></thead>
           <tbody>
             <tr><td>Git Workflow package、snapshot、checkpoint与显式resume</td><td>当前运行时已有对应实现；本设计要求保留。</td><td><span class="tag current">Existing</span></td></tr>
-            <tr><td><code>@agentic_function</code> 工具级曝光接线到Layer-2</td><td>Layer-2机制已存在，装饰器未传递。</td><td><span class="tag target">Proposed</span></td></tr>
-            <tr><td>独立 <code>search_workflows</code></td><td>当前仅有复合入口内部 <code>_search_projects()</code>。</td><td><span class="tag target">Proposed</span></td></tr>
-            <tr><td>独立 <code>create_workflow</code> / <code>revise_workflow</code></td><td>当前生成、修复和发布仍绑定复合执行路径。</td><td><span class="tag target">Proposed</span></td></tr>
-            <tr><td>用户级 <code>auto_workflow</code></td><td>尚无独立名称和用户专用exposure合同。</td><td><span class="tag target">Proposed</span></td></tr>
-            <tr><td>停止新的 <code>agentic_workflow</code> 调用</td><td>当前仍公开注册。</td><td><span class="tag remove">Pending removal</span></td></tr>
-            <tr><td>默认App真实验收</td><td>新架构尚未实现，不能执行目标验收。</td><td><span class="tag target">Pending</span></td></tr>
+            <tr><td><code>@agentic_function</code> 工具级曝光接线到Layer-2</td><td><code>@agentic_function(tool_visible=)</code> 传入 Layer-2 <code>register(..., expose)</code>；默认 <code>True</code>，现有函数仍全部曝光。</td><td><span class="tag current">Implemented</span></td></tr>
+            <tr><td>独立 <code>search_workflows</code></td><td>公共只读入口返回固定 revision、Schema、权限和命中依据；排除 <code>auto_workflow</code> 与无入口 legacy 项目；不调用模型、不写文件、不执行、不发布。</td><td><span class="tag current">Implemented</span></td></tr>
+            <tr><td>独立 <code>create_workflow</code> / <code>revise_workflow</code></td><td>create 只新增一个项目且不执行用户任务；revise 只新增一个 revision 且不覆盖旧 revision；失败与取消不发布；执行期 repair 已删除。</td><td><span class="tag current">Implemented</span></td></tr>
+            <tr><td>用户级 <code>auto_workflow</code></td><td>用户表单与 Programs 自动入口可见；以 <code>tool_visible=False</code> 注册，Agent 工具清单与搜索候选均不可见；编排 search → 可见 selection Agent → reuse/create → 执行，不自动 revise。</td><td><span class="tag current">Implemented</span></td></tr>
+            <tr><td>停止新的 <code>agentic_workflow</code> 调用</td><td>旧入口不再注册；新 catalog、新 DAG 和新 run 不出现 <code>agentic_workflow</code>；<code>resume_workflow</code> 保留为内部函数，历史 run 只读恢复。</td><td><span class="tag current">Completed</span></td></tr>
+            <tr><td>默认App真实验收</td><td>代码与文档门禁已齐，等待默认 <code>/Applications/OpenProgram.app</code> 完成 direct / reuse / create / cancel / legacy resume 可视验收。</td><td><span class="tag target">Pending</span></td></tr>
           </tbody>
         </table>
-        <p>实现证据只在代码完成、规格与质量审查通过、完整门禁和App验收完成后更新；本页当前不声明新架构已经实现。</p>
+        <p>Phase 0–4、Programs 分类和产品文档四入口描述已落地。默认 App 真实验收仍待用户完成；验收通过后再把该行改为 Implemented。</p>
       </section>
 
       <section id="exclusions">
