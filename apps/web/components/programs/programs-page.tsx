@@ -47,6 +47,11 @@ import {
   type RuntimeProgramEntry,
   type RuntimeToolEntry,
 } from "./programs-catalog";
+import {
+  isUserManualWorkflowEntry,
+  isWorkflowCapability,
+  type ProgramSourceEntry,
+} from "./programs-source";
 
 import styles from "./programs-page.module.css";
 import fileStyles from "@/components/files/files-panel.module.css";
@@ -66,15 +71,25 @@ function parentPaths(path: string) {
   return parts.slice(0, -1).map((_, index) => parts.slice(0, index + 1).join("/"));
 }
 
-function kindLabel(kind: ProgramKind, text: (en: string, zh: string) => string) {
+function kindLabel(
+  kind: ProgramKind,
+  text: (en: string, zh: string) => string,
+  entry?: ProgramSourceEntry | null,
+) {
+  if (isUserManualWorkflowEntry(entry)) return text("Auto entry · user only", "自动入口 · 仅用户手动");
+  if (isWorkflowCapability(entry)) return text("Workflow capability", "Workflow 管理能力");
   if (kind === "workflow") return text("Workflow", "工作流");
   if (kind === "application") return text("Application", "应用");
   if (kind === "agentic_function") return text("Agentic Function", "Agentic 函数");
   return text("Function", "函数");
 }
 
+function usesWorkflowIcon(entry: ProgramSourceEntry) {
+  return entry.program_kind === "workflow" || isWorkflowCapability(entry);
+}
+
 function EntryIcon({ entry, expanded }: { entry: ExplorerEntry; expanded: boolean }) {
-  if (entry.program_kind === "workflow") return <Workflow size={15} className={fileStyles.treeIcon} />;
+  if (usesWorkflowIcon(entry)) return <Workflow size={15} className={fileStyles.treeIcon} />;
   if (entry.program_kind === "application") return <Boxes size={15} className={fileStyles.treeIcon} />;
   if (entry.program_kind?.endsWith("function")) return <Wrench size={15} className={fileStyles.treeIcon} />;
   if (entry.kind === "folder") {
@@ -408,8 +423,8 @@ export function ProgramsPage() {
               <div className={styles.logicContent}>
                 <div className={styles.breadcrumb}>{ROOT_LABEL}/{selectedNode.path}</div>
                 <div className={styles.entityHeader}>
-                  <span className={styles.entityIcon}>{selectedNode.program_kind === "workflow" ? <Workflow size={20} /> : selectedNode.program_kind === "application" ? <Boxes size={20} /> : <Wrench size={20} />}</span>
-                  <div><h2>{selectedNode.name}</h2><p>{kindLabel(selectedNode.program_kind, text)}</p></div>
+                  <span className={styles.entityIcon}>{usesWorkflowIcon(selectedEntry || selectedNode) ? <Workflow size={20} /> : selectedNode.program_kind === "application" ? <Boxes size={20} /> : <Wrench size={20} />}</span>
+                  <div><h2>{selectedNode.name}</h2><p>{kindLabel(selectedNode.program_kind, text, selectedEntry || selectedNode)}</p></div>
                   <div className={styles.entityActions}>
                     <Button
                       variant="ghost"
@@ -432,7 +447,7 @@ export function ProgramsPage() {
                 <div className={styles.logicToolbar}><div><strong>{text("Call logic", "调用逻辑")}</strong><small>{text("Static imports at the current source state", "当前源码状态下的静态 import")}</small></div><div className={styles.viewSwitch} aria-label={text("Call logic view", "调用逻辑视图")}><button className={view === "tree" ? styles.viewActive : ""} type="button" aria-pressed={view === "tree"} onClick={() => setView("tree")}><GitBranch size={13} />Call tree</button><button className={view === "graph" ? styles.viewActive : ""} type="button" aria-pressed={view === "graph"} onClick={() => setView("graph")}><Network size={13} />Graph</button></div></div>
                 {view === "tree" ? (
                   <div className={styles.callTree} data-testid="programs-call-tree">
-                    {callTree.rows.map(({ key, node, depth, cycle, reference }) => <div key={key} className={`${styles.callRow} ${depth === 0 ? styles.callRoot : ""} ${reference ? styles.callReference : ""}`} style={{ "--call-depth": depth } as CSSProperties} data-edge-target={depth ? node.id : undefined}><span className={styles.callIcon}>{node.program_kind === "workflow" ? <Workflow size={15} /> : node.program_kind === "application" ? <Boxes size={15} /> : <Wrench size={15} />}</span><span><strong>{node.name}</strong><small>{node.path}</small></span><em>{cycle ? "cycle" : reference ? "reference" : depth === 0 ? "root" : depth === 1 ? "direct" : "transitive"}</em></div>)}
+                    {callTree.rows.map(({ key, node, depth, cycle, reference }) => <div key={key} className={`${styles.callRow} ${depth === 0 ? styles.callRoot : ""} ${reference ? styles.callReference : ""}`} style={{ "--call-depth": depth } as CSSProperties} data-edge-target={depth ? node.id : undefined}><span className={styles.callIcon}>{usesWorkflowIcon(node) ? <Workflow size={15} /> : node.program_kind === "application" ? <Boxes size={15} /> : <Wrench size={15} />}</span><span><strong>{node.name}</strong><small>{node.path}</small></span><em>{cycle ? "cycle" : reference ? "reference" : depth === 0 ? "root" : depth === 1 ? "direct" : "transitive"}</em></div>)}
                     {callTree.truncated ? <div className={styles.noCalls}>{text("Additional references are hidden.", "其余引用已隐藏。")}</div> : null}
                     {logic.nodes.length === 1 && logic.analysis_complete !== false ? <div className={styles.noCalls}>{text("This Program has no imports of another Program.", "这个 Program 没有导入其他 Program。")}</div> : null}
                   </div>
@@ -441,7 +456,7 @@ export function ProgramsPage() {
                     <div className={styles.graphEdges} aria-label={text("Graph connections", "图连接关系")}>{logic.edges.length ? logic.edges.map((edge) => {
                       const source = logic.nodes.find((node) => node.id === edge.source);
                       const target = logic.nodes.find((node) => node.id === edge.target);
-                      return <div key={`${edge.source}->${edge.target}`} className={styles.graphEdge} data-edge={`${edge.source}->${edge.target}`}><span className={styles.graphNode}><strong>{source?.name ?? edge.source}</strong><small>{source ? kindLabel(source.program_kind, text) : edge.source}</small></span><ChevronRight size={16} /><span className={styles.graphNode}><strong>{target?.name ?? edge.target}</strong><small>{target ? kindLabel(target.program_kind, text) : edge.target}</small></span></div>;
+                      return <div key={`${edge.source}->${edge.target}`} className={styles.graphEdge} data-edge={`${edge.source}->${edge.target}`}><span className={styles.graphNode}><strong>{source?.name ?? edge.source}</strong><small>{source ? kindLabel(source.program_kind, text, source) : edge.source}</small></span><ChevronRight size={16} /><span className={styles.graphNode}><strong>{target?.name ?? edge.target}</strong><small>{target ? kindLabel(target.program_kind, text, target) : edge.target}</small></span></div>;
                     }) : <div className={styles.graphNode}><strong>{selectedNode.name}</strong><small>{logic.analysis_complete === false ? text("Partial analysis", "分析不完整") : text("No outgoing calls", "没有向外调用")}</small></div>}</div>
                   </div>
                 )}

@@ -6,6 +6,7 @@ const route = readFileSync(new URL("app/(shell)/programs/page.tsx", root), "utf8
 const page = readFileSync(new URL("components/programs/programs-page.tsx", root), "utf8");
 const logic = readFileSync(new URL("components/programs/programs-logic.ts", root), "utf8");
 const catalog = readFileSync(new URL("components/programs/programs-catalog.ts", root), "utf8");
+const source = readFileSync(new URL("components/programs/programs-source.ts", root), "utf8");
 const css = readFileSync(new URL("components/programs/programs-page.module.css", root), "utf8");
 
 assert.match(route, /@\/components\/programs\/programs-page/);
@@ -47,7 +48,7 @@ assert.match(page, /new URLSearchParams\(\{ run: invocationName/);
 assert.match(page, /text\("Use",\s*"使用"\)/);
 assert.match(css, /grid-template-columns:\s*var\(--programs-explorer-width\)\s+minmax\(0,\s*1fr\)/);
 assert.match(css, /--programs-explorer-width:\s*310px/);
-assert.match(page, /if \(entry\.program_kind === "workflow"\)/);
+assert.match(page, /entry\.program_kind === "workflow"/);
 assert.match(page, /if \(entry\.program_kind === "application"\)/);
 assert.match(page, /entry\.program_kind\?\.endsWith\("function"\)/);
 assert.match(page, /entry\.kind === "folder" && !entry\.program_kind/);
@@ -59,5 +60,17 @@ assert.match(catalog, /functions\/agentic/);
 assert.doesNotMatch(catalog, /functions\/connected/);
 assert.match(catalog, /tool\.source !== "mcp"/);
 assert.match(catalog, /program\.category === "agentic"/);
+assert.match(source, /search_workflows/);
+assert.match(source, /create_workflow/);
+assert.match(source, /revise_workflow/);
+assert.match(source, /auto_workflow/);
+assert.match(source, /workflow_capability|isWorkflowCapability/);
+assert.match(page, /from "\.\/programs-source"/);
+assert.match(page, /isWorkflowCapability/);
+assert.match(page, /isUserManualWorkflowEntry/);
+assert.match(page, /Auto entry · user only/);
+assert.match(page, /自动入口 · 仅用户手动/);
+assert.match(page, /Workflow capability/);
+assert.match(page, /Workflow 管理能力/);
 
 console.log("program workspace checks passed");
