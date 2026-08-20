@@ -329,7 +329,7 @@ def register(app):
         )
 
     @app.get("/api/models/enabled")
-    async def api_enabled_models():
+    def api_enabled_models():
         from openprogram.webui import _model_listing as _mc
         return JSONResponse(content={"models": _mc.list_enabled_models()})
 

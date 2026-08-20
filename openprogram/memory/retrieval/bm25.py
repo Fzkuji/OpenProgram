@@ -833,8 +833,10 @@ class MemoryBM25Index:
         date_to: str | None = None,
         speaker: str | None = None,
         rerank: bool = True,
+        refresh_index: bool = True,
     ) -> list[dict[str, Any]]:
-        self.refresh()
+        if refresh_index:
+            self.refresh()
         query_tokens = tokenize(query)
         if not query_tokens or not self.events:
             return []

@@ -2,6 +2,22 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 
+def test_enabled_model_listing_runs_outside_the_event_loop():
+    import inspect
+
+    from openprogram.webui.routes.providers import register
+
+    app = FastAPI()
+    register(app)
+    endpoint = next(
+        route.endpoint
+        for route in app.routes
+        if getattr(route, "path", "") == "/api/models/enabled"
+    )
+
+    assert not inspect.iscoroutinefunction(endpoint)
+
+
 def test_memory_settings_scope_skips_dynamic_provider_and_tool_rows(monkeypatch):
     from openprogram.webui.routes.config import register
 

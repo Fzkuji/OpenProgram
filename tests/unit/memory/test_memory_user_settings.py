@@ -370,31 +370,30 @@ def test_hybrid_search_fuses_results_and_can_exclude_sources(
 def test_bm25_search_reuses_persistent_index_until_workspace_changes(
     tmp_path, monkeypatch,
 ):
-    from openprogram.memory.retrieval import inspect
+    from openprogram.memory.retrieval import bm25, inspect
 
     topic = tmp_path / "topics/one.md"
     topic.parent.mkdir()
     topic.write_text("# One\n", encoding="utf-8")
-    constructed = []
+    hashed = []
+    original_hash = bm25._file_hash
 
-    class FakeBM25:
-        def __init__(self, _root, *, persist):
-            constructed.append(persist)
+    def counted_hash(path):
+        hashed.append(path)
+        return original_hash(path)
 
-        def search(self, _query, **_kwargs):
-            return []
-
-    monkeypatch.setattr(
-        "openprogram.memory.retrieval.bm25.MemoryBM25Index", FakeBM25,
-    )
+    monkeypatch.setattr(bm25, "_file_hash", counted_hash)
     inspect._clear_search_index_cache_for_tests()
 
     inspect.search(tmp_path, "first")
+    assert len(hashed) == 1
     inspect.search(tmp_path, "second")
+    assert len(hashed) == 1
     topic.write_text("# One\n\nChanged.\n", encoding="utf-8")
     inspect.search(tmp_path, "third")
 
-    assert constructed == [True, True]
+    assert len(hashed) == 2
+    assert any(tmp_path.glob(".*-bm25.json"))
 
 
 def test_embedding_search_reuses_document_vectors_until_workspace_changes(

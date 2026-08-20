@@ -418,6 +418,7 @@ def search(
         date_from=date_from,
         date_to=date_to,
         speaker=speaker,
+        refresh_index=False,
     )
     lexical = [_present(hit) for hit in hits]
     if method == "bm25":
