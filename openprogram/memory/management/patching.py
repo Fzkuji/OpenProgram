@@ -78,7 +78,7 @@ class MemoryChange:
     content: str | None = None
     when: str | None = None
     source_refs: tuple[str, ...] = ()
-    source_labels: tuple[str, ...] = ()
+    source_labels: tuple[str, ...] | None = None
 
 
 def apply_memory_changes(
@@ -424,7 +424,7 @@ def _parse_memory_changes(
                     f"{prefix}.source_refs must be a non-empty string list",
                 )
             refs = tuple(ref.strip() for ref in source_refs)
-            labels = refs
+            labels = None
         if len(set(refs)) != len(refs):
             raise TransactionError(
                 "INVALID_ARGUMENT", f"{prefix}.sources contains a duplicate source"
@@ -577,13 +577,17 @@ def _render_record(change: MemoryChange, label: str, suffix: str = "") -> list[s
     return [
         *lines,
         "",
-        render_definition(label, change.when, (
-            f"[{source_label}]({ref})"
-            for ref, source_label in zip(
-                change.source_refs, change.source_labels
-            )
-        )),
+        render_definition(label, change.when, _render_sources(change)),
     ]
+
+
+def _render_sources(change: MemoryChange) -> tuple[str, ...]:
+    if change.source_labels is None:
+        return change.source_refs
+    return tuple(
+        f"[{label}]({ref})"
+        for ref, label in zip(change.source_refs, change.source_labels)
+    )
 
 
 def _insert_record(
@@ -995,12 +999,7 @@ def _replace_legacy_record(
                 rendered_lines.append(render_definition(
                     change.memory_id,
                     change.when,
-                    (
-                        f"[{source_label}]({ref})"
-                        for ref, source_label in zip(
-                            change.source_refs, change.source_labels
-                        )
-                    ),
+                    _render_sources(change),
                 ))
         lines = rendered_lines
         path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")

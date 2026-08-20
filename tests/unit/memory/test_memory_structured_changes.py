@@ -545,17 +545,27 @@ def test_direct_writer_source_label_is_resolved_by_runtime(tmp_path):
         (workspace.stage_dir / "topics/direct.md").write_text(
             "# Direct\n\n"
             "A direct writer record.[^e1]\n\n"
+            "A direct record with an invalid label.[^e2]\n\n"
             "[^e1]: Time: `2026-08-20`; Sources: "
-            f"[调研范围]({record.source_id})\n",
+            f"[调研范围]({record.source_id})\n"
+            "[^e2]: Time: `2026-08-20`; Sources: "
+            f"[{record.source_id}]({record.source_id})\n",
             encoding="utf-8",
         )
         workspace.commit_edits(*baseline)
 
     topic = (root / "topics/direct.md").read_text(encoding="utf-8")
     assert "[调研范围](../sources/openprogram/_v2/thread-1.md#source-" in topic
-    unit = parse_topic_tree(root / "topics")[0]
-    assert unit.source_refs == (record.source_id,)
-    assert unit.source_labels == ("调研范围",)
+    assert "[相关内容](../sources/openprogram/_v2/thread-1.md#source-" in topic
+    units = parse_topic_tree(root / "topics")
+    assert [unit.source_refs for unit in units] == [
+        (record.source_id,),
+        (record.source_id,),
+    ]
+    assert [unit.source_labels for unit in units] == [
+        ("调研范围",),
+        ("相关内容",),
+    ]
 
 
 def test_invalid_record_change_rolls_back_every_record(tmp_path):
