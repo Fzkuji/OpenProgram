@@ -67,7 +67,14 @@ def test_workflow_can_use_validate_and_retry(
         TL, "_run_planner_turn", _project_planner("validate_and_retry executed"),
     )
 
-    result = TL.agentic_workflow("test validate_and_retry")
+    created = TL.create_workflow("test validate_and_retry")
+    result = TL._run_published_workflow(
+        "test validate_and_retry",
+        created["workflow_id"],
+        created["revision"],
+        session_id=TL.current_session_id(),
+        spawn_caller=None,
+    )
 
     assert result["status"] == "completed"
     assert "validate_and_retry executed" in result["summary"]
@@ -80,7 +87,14 @@ def test_workflow_can_use_route(
 
     monkeypatch.setattr(TL, "_run_planner_turn", _project_planner("route executed"))
 
-    result = TL.agentic_workflow("test route")
+    created = TL.create_workflow("test route")
+    result = TL._run_published_workflow(
+        "test route",
+        created["workflow_id"],
+        created["revision"],
+        session_id=TL.current_session_id(),
+        spawn_caller=None,
+    )
 
     assert result["status"] == "completed"
     assert "route executed" in result["summary"]
@@ -95,7 +109,14 @@ def test_workflow_can_use_conditional(
         TL, "_run_planner_turn", _project_planner("conditional executed"),
     )
 
-    result = TL.agentic_workflow("test conditional")
+    created = TL.create_workflow("test conditional")
+    result = TL._run_published_workflow(
+        "test conditional",
+        created["workflow_id"],
+        created["revision"],
+        session_id=TL.current_session_id(),
+        spawn_caller=None,
+    )
 
     assert result["status"] == "completed"
     assert "conditional executed" in result["summary"]
@@ -110,7 +131,14 @@ def test_workflow_control_flow_compose(
         TL, "_run_planner_turn", _project_planner("all primitives available"),
     )
 
-    result = TL.agentic_workflow("test compose")
+    created = TL.create_workflow("test compose")
+    result = TL._run_published_workflow(
+        "test compose",
+        created["workflow_id"],
+        created["revision"],
+        session_id=TL.current_session_id(),
+        spawn_caller=None,
+    )
 
     assert result["status"] == "completed"
     assert "all primitives available" in result["summary"]

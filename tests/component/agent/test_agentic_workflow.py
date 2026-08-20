@@ -256,8 +256,9 @@ def _planner(monkeypatch: pytest.MonkeyPatch, *replies: str) -> list[str]:
         ):
             pending_legacy.append(reply)
             return json.dumps({"action": "create"})
-        if "<workflow project candidates>" not in prompt and re.search(
-            r"```python", reply,
+        if reply.strip() == "SINGLE" or (
+            "<workflow project candidates>" not in prompt
+            and re.search(r"```python", reply)
         ):
             return project_reply(reply, prompt)
         return reply
@@ -364,6 +365,18 @@ def _dir_bytes(root: Path) -> dict[str, bytes]:
         for path in sorted(root.rglob("*"))
         if path.is_file()
     }
+
+
+def _run_task(task: str) -> dict:
+    """Author one published workflow, then execute it. Returns the run payload."""
+    created = TL.create_workflow(task)
+    return TL._run_published_workflow(
+        task,
+        created["workflow_id"],
+        created["revision"],
+        session_id=TL.current_session_id(),
+        spawn_caller=None,
+    )
 
 
 def _install_legacy_project(repo: Path, name: str) -> None:
@@ -656,18 +669,101 @@ def test_auto_workflow_stops_when_create_fails_and_publishes_nothing(
             assert json.loads(state_path.read_text())["status"] != "completed"
 
 
+def test_agentic_workflow_is_not_registered() -> None:
+    from openprogram.agentic_programming import function as agentic_runtime
+    from openprogram.programs._runtime import exposed_names, get
+
+    assert get("agentic_workflow") is None
+    assert "agentic_workflow" not in exposed_names()
+    assert "agentic_workflow" not in agentic_runtime._registry
+    assert not hasattr(TL, "agentic_workflow")
+
+
+def test_resume_historical_run_keeps_artifact_unchanged(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _candidate, revision = _install_workflow_project(session_repo, _project())
+    _executor(monkeypatch)
+    _summarizer(monkeypatch, "Completed historical research.")
+    first = TL._run_published_workflow(
+        "research papers",
+        "research_workflow",
+        revision,
+        session_id=TL.current_session_id(),
+        spawn_caller=None,
+    )
+    instance = _instance(session_repo, first["run_id"])
+    artifact_before = _dir_bytes(instance / "snapshot")
+    catalog_before = _dir_bytes(session_repo / "catalog")
+    project_ref = (instance / "project_ref.json").read_bytes()
+
+    result = TL.resume_workflow(first["run_id"])
+
+    assert result["status"] == "completed"
+    assert result["run_id"] == first["run_id"]
+    assert result["project_revision"] == revision
+    assert _dir_bytes(instance / "snapshot") == artifact_before
+    assert _dir_bytes(session_repo / "catalog") == catalog_before
+    assert (instance / "project_ref.json").read_bytes() == project_ref
+    assert not (instance / "code.py").exists()
+
+
+def test_resume_legacy_code_run_keeps_artifact_unchanged(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    instance = session_repo / "workflows" / "legacy"
+    instance.mkdir(parents=True)
+    source = "def workflow():\n    return 'legacy ok'\n"
+    (instance / "code.py").write_text(source)
+    TL._save_state(instance / "state.json", {
+        "run_id": "legacy", "task": "legacy", "status": "interrupted",
+        "executions": 0, "items": [], "revisions": [], "result": "",
+        "last_error": "",
+    })
+    _summarizer(monkeypatch, "Completed legacy resume.")
+    artifact_before = (instance / "code.py").read_bytes()
+
+    result = TL.resume_workflow("legacy")
+
+    assert result["status"] == "completed"
+    assert result["result"] is None
+    assert (instance / "code.py").read_bytes() == artifact_before
+    assert _state(session_repo, "legacy")["result"] == "legacy ok"
+
+
+def test_resume_without_snapshot_does_not_reselect_project(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    instance = session_repo / "workflows" / "bare"
+    instance.mkdir(parents=True)
+    TL._save_state(instance / "state.json", {
+        "run_id": "bare", "task": "research papers", "status": "interrupted",
+        "executions": 0, "items": [], "revisions": [], "result": "",
+        "last_error": "",
+    })
+    monkeypatch.setattr(
+        TL, "_search_projects",
+        lambda *_args, **_kwargs: pytest.fail("resume must not re-search"),
+    )
+
+    with pytest.raises(TL.InvalidWorkflow, match="no snapshot or legacy code"):
+        TL.resume_workflow("bare")
+
+    assert not (session_repo / "catalog").exists()
+
+
 def test_small_task_is_persisted_as_a_reusable_multifile_project(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
     prompts = _planner(monkeypatch, "SINGLE")
     calls = _executor(monkeypatch)
 
-    result = TL.agentic_workflow("rename one variable")
+    result = _run_task("rename one variable")
 
     assert result["status"] == "completed"
     assert calls[0]["prompt"].startswith("rename one variable")
     assert "save substantive deliverables" in calls[0]["prompt"]
-    assert "reuse" in prompts[0] and "revise" in prompts[0] and "create" in prompts[0]
+    assert "@agentic_function" in prompts[0]
     snapshot = _snapshot_package(session_repo, result["run_id"])
     assert (snapshot / "workflow.py").exists()
     assert (snapshot / "steps" / "task.py").exists()
@@ -686,7 +782,7 @@ def test_single_agent_returns_handoff_and_keeps_full_result_internal(
     _executor(monkeypatch, lambda _prompt, _kwargs: conclusion)
     summary_calls = _summarizer(monkeypatch, "完成资料整理，结果已写入 research.md。")
 
-    result = TL.agentic_workflow("write conclusion")
+    result = _run_task("write conclusion")
 
     assert result["summary_kind"] == "workflow_handoff_v1"
     assert result["summary"] == "完成资料整理，结果已写入 research.md。"
@@ -715,7 +811,7 @@ def test_programmed_workflow_returns_handoff_and_keeps_full_result_internal(
     _planner(monkeypatch, _code(f"return {conclusion!r}"))
     _summarizer(monkeypatch, "完成报告生成，文件保存在 report.md。")
 
-    result = TL.agentic_workflow("write conclusion")
+    result = _run_task("write conclusion")
 
     assert result["summary"] == "完成报告生成，文件保存在 report.md。"
     assert result["return_result"] is False
@@ -739,7 +835,7 @@ def test_intermediate_result_reused_as_argument_stays_private(
     _executor(monkeypatch, lambda _prompt, _kwargs: "saved")
     summary_calls = _summarizer(monkeypatch, "任务已完成。")
 
-    result = TL.agentic_workflow("research and save a report")
+    result = _run_task("research and save a report")
     state = _state(session_repo, result["run_id"])
 
     assert private_finding in json.dumps(state, ensure_ascii=False)
@@ -763,7 +859,7 @@ def test_execution_errors_stay_private_in_public_payload(
     )
     _summarizer(monkeypatch, "任务失败。")
 
-    result = TL.agentic_workflow("run a failing workflow")
+    result = _run_task("run a failing workflow")
     state = _state(session_repo, result["run_id"])
 
     assert result["status"] == "failed"
@@ -780,7 +876,7 @@ def test_explicit_direct_return_includes_raw_result(
     _planner(monkeypatch, _code(f"return {direct_result!r}"))
     _summarizer(monkeypatch, "已完成直接回答。", return_result=True)
 
-    result = TL.agentic_workflow(
+    result = _run_task(
         "请直接在聊天中返回完整内容，不要写文件",
     )
 
@@ -800,7 +896,7 @@ def test_agent_preview_cannot_authorize_raw_result(
     _planner(monkeypatch, _code(f"return {raw_result!r}"))
     _summarizer(monkeypatch, "完成报告生成。", return_result=True)
 
-    result = TL.agentic_workflow(task)
+    result = _run_task(task)
 
     assert result["return_result"] is False
     assert result["result"] is None
@@ -900,7 +996,7 @@ def test_summary_failure_is_persisted_but_not_public(
         raise RuntimeError("summary provider unavailable")
 
     monkeypatch.setattr(TL, "_llm_function", lambda: fail)
-    result = TL.agentic_workflow("生成报告并保存到文件")
+    result = _run_task("生成报告并保存到文件")
     state = _state(session_repo, result["run_id"])
 
     assert state["handoff"]["summary_error"] == (
@@ -973,7 +1069,7 @@ def test_plain_helper_uses_agent_and_its_result_in_workflow(
         lambda prompt, _kwargs: "VALUE" if prompt == "produce" else "USED",
     )
 
-    result = TL.agentic_workflow("compose")
+    result = _run_task("compose")
 
     assert result["status"] == "completed"
     assert [call["prompt"] for call in calls] == ["produce", "consume VALUE"]
@@ -993,7 +1089,7 @@ def test_llm_is_injected_and_checkpointed(
         lambda prompt, _kwargs: "VALUE" if prompt == "summarize" else "USED",
     )
 
-    result = TL.agentic_workflow("compose")
+    result = _run_task("compose")
 
     assert result["status"] == "completed"
     assert [call["prompt"] for call in calls] == ["summarize", "use VALUE"]
@@ -1013,7 +1109,7 @@ def test_same_function_name_uses_call_order_keys_and_replays_each_call(
     calls = _executor(monkeypatch)
 
     with pytest.raises(KeyboardInterrupt, match="killed"):
-        TL.agentic_workflow("resume")
+        _run_task("resume")
 
     run_id = next((session_repo / "workflows").iterdir()).name
     records = _state(session_repo, run_id)["items"]
@@ -1048,18 +1144,17 @@ def test_execution_failure_keeps_error_and_checkpoints_without_repair(
     prompts = _planner(monkeypatch, initial)
     calls = _executor(monkeypatch, lambda _prompt, _kwargs: "prepared")
 
-    result = TL.agentic_workflow("failing run")
+    result = _run_task("failing run")
 
     assert result["status"] == "failed"
     assert [call["prompt"] for call in calls] == ["prepare"]
-    # Only the decision and author prompts — no repair author turn.
-    assert len(prompts) == 2
+    assert len(prompts) == 1
     state = _state(session_repo, result["run_id"])
     assert "RuntimeError: verification failed" in state["last_error"]
     assert [item["status"] for item in state["items"]] == ["completed"]
     assert result["revisions"] == []
-    # A failed create-path run publishes nothing.
-    assert not (session_repo / "catalog").exists()
+    project = session_repo / "catalog" / result["project_id"]
+    assert _git_output(project, "rev-list", "--count", "HEAD") == "1"
 
 
 def test_invalid_plans_keep_requesting_rewrites_with_concrete_errors(
@@ -1083,7 +1178,7 @@ def test_invalid_plans_keep_requesting_rewrites_with_concrete_errors(
     )
     calls = _executor(monkeypatch)
 
-    result = TL.agentic_workflow("invalid")
+    result = _run_task("invalid")
 
     assert result["status"] == "completed"
     assert calls[0]["prompt"] == "fixed"
@@ -1127,52 +1222,6 @@ def test_project_author_stops_after_bounded_invalid_replies(
         )
 
     assert len(replies) == TL.PROJECT_AUTHOR_ATTEMPTS
-
-
-def test_cancelled_project_author_marks_new_run_interrupted(
-    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
-) -> None:
-    from openprogram.agentic_programming.function import CancelledError
-
-    replies = iter([json.dumps({"action": "create"})])
-
-    def planner(*_args, **_kwargs) -> str:
-        try:
-            return next(replies)
-        except StopIteration:
-            raise CancelledError("stop author")
-
-    monkeypatch.setattr(TL, "_run_planner_turn", planner)
-
-    with pytest.raises(CancelledError, match="stop author"):
-        TL.agentic_workflow("research papers")
-
-    runs = list((session_repo / "workflows").iterdir())
-    assert len(runs) == 1
-    state = json.loads((runs[0] / "state.json").read_text())
-    assert state["status"] == "interrupted"
-    assert "CancelledError: stop author" in state["last_error"]
-
-
-def test_exhausted_project_author_marks_new_run_failed(
-    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
-) -> None:
-    replies = iter([
-        json.dumps({"action": "create"}),
-        *("{}" for _ in range(TL.PROJECT_AUTHOR_ATTEMPTS)),
-    ])
-    monkeypatch.setattr(
-        TL, "_run_planner_turn", lambda *_args, **_kwargs: next(replies),
-    )
-
-    with pytest.raises(TL.InvalidWorkflow, match="failed validation after"):
-        TL.agentic_workflow("research papers")
-
-    runs = list((session_repo / "workflows").iterdir())
-    assert len(runs) == 1
-    state = json.loads((runs[0] / "state.json").read_text())
-    assert state["status"] == "failed"
-    assert "failed validation after" in state["last_error"]
 
 
 def test_project_execution_failure_never_repairs_or_publishes(
@@ -1249,7 +1298,7 @@ def test_missing_workflow_is_rejected_with_exact_validation_reason(
     )
     _executor(monkeypatch)
 
-    result = TL.agentic_workflow("missing")
+    result = _run_task("missing")
 
     assert result["status"] == "completed"
     assert "must define one @agentic_function literature_review()" in prompts[2]
@@ -1290,7 +1339,7 @@ def test_execution_cap_counts_only_real_calls(
     '''))
     calls = _executor(monkeypatch)
 
-    result = TL.agentic_workflow("many")
+    result = _run_task("many")
 
     assert result["status"] == "capped"
     assert len(calls) == TL.MAX_ITEMS_EXECUTED == 40
@@ -1308,7 +1357,7 @@ def test_agent_uses_existing_spawn_signature(
     '''))
     calls = _executor(monkeypatch)
 
-    result = TL.agentic_workflow("delegate")
+    result = _run_task("delegate")
 
     assert result["status"] == "completed"
     assert calls[0]["description"] == "delegate"
@@ -1329,43 +1378,40 @@ def test_real_agent_implementation_is_callable_with_public_signature() -> None:
     assert agent("probe").startswith("[agent error]")
 
 
-def test_agentic_workflow_forwards_call_id_as_spawn_caller(
+def test_auto_workflow_forwards_call_id_as_spawn_caller(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, object] = {}
 
-    def fake_execute(task, *, session_id, agent_id="main",
-                     spawn_caller=None, run_id=""):
+    def fake_run(task, workflow_id, revision, *, session_id, spawn_caller):
         captured.update(
             task=task, session_id=session_id, spawn_caller=spawn_caller,
         )
-        return {"status": "completed"}
+        return {"status": "completed", "run_id": "r1"}
 
-    monkeypatch.setattr(TL, "_execute_workflow", fake_execute)
+    monkeypatch.setattr(TL, "_run_published_workflow", fake_run)
+    monkeypatch.setattr(
+        TL, "search_workflows",
+        lambda _task: {"workflows": [{
+            "workflow_id": "research_workflow", "revision": "abc",
+        }]},
+    )
+    monkeypatch.setattr(
+        TL, "_request_auto_decision",
+        lambda *_args, **_kwargs: {
+            "action": "reuse", "workflow_id": "research_workflow",
+        },
+    )
     monkeypatch.setattr(TL, "current_session_id", lambda: "sess1")
     from openprogram.agentic_programming.function import _call_id
     token = _call_id.set("wf_node_abc")
     try:
-        TL.agentic_workflow._fn("research llm memory")
+        TL.auto_workflow._fn("research llm memory")
     finally:
         _call_id.reset(token)
 
     assert captured["spawn_caller"] == "wf_node_abc"
     assert captured["session_id"] == "sess1"
-
-
-def test_agentic_workflow_registers_only_the_task_parameter() -> None:
-    assert str(inspect.signature(TL.agentic_workflow)) == "(task: 'str') -> 'dict'"
-    assert TL.agentic_workflow._agent_tool.parameters == {
-        "type": "object",
-        "properties": {
-            "task": {
-                "type": "string",
-                "description": "The task to plan and execute",
-            },
-        },
-        "required": ["task"],
-    }
 
 
 def test_registered_agentic_function_is_injected_and_checkpointed(
@@ -1382,7 +1428,7 @@ def test_registered_agentic_function_is_injected_and_checkpointed(
     _executor(monkeypatch)
     _summarizer(monkeypatch, "Completed registered processing.")
 
-    result = TL.agentic_workflow("registry")
+    result = _run_task("registry")
 
     assert result["status"] == "completed"
     assert result["summary"] == "Completed registered processing."
@@ -1395,17 +1441,22 @@ def test_new_runs_for_same_task_are_independent(
 ) -> None:
     _planner(
         monkeypatch,
-        json.dumps({"action": "create"}),
         _project(files={
             "steps/run.py": "def run(task):\n    return agent(task)\n",
             "entry.py": "def workflow(task):\n    return run(task)\n",
         }),
-        json.dumps({"action": "reuse", "project_id": "research_workflow"}),
     )
     calls = _executor(monkeypatch)
+    created = TL.create_workflow("same")
 
-    first = TL.agentic_workflow("same")
-    second = TL.agentic_workflow("same")
+    first = TL._run_published_workflow(
+        "same", created["workflow_id"], created["revision"],
+        session_id=TL.current_session_id(), spawn_caller=None,
+    )
+    second = TL._run_published_workflow(
+        "same", created["workflow_id"], created["revision"],
+        session_id=TL.current_session_id(), spawn_caller=None,
+    )
 
     assert first["run_id"] != second["run_id"]
     assert [call["prompt"] for call in calls] == ["same", "same"]
@@ -1427,12 +1478,9 @@ def test_planner_prompt_documents_real_agentic_programming_convention(
     _executor(monkeypatch)
     _summarizer(monkeypatch)
 
-    TL.agentic_workflow("prompt")
+    _run_task("prompt")
 
-    decision_prompt, prompt = prompts
-    assert "reuse" in decision_prompt
-    assert "revise" in decision_prompt
-    assert "create" in decision_prompt
+    prompt = prompts[-1]
     assert "@agentic_function" in prompt
     assert "runtime.exec" not in prompt
     assert "short_stable_python_name(task: str)" in prompt
@@ -1460,7 +1508,7 @@ def test_capped_status_cannot_be_caught_by_generated_code(
     '''))
     calls = _executor(monkeypatch)
 
-    result = TL.agentic_workflow("cap")
+    result = _run_task("cap")
 
     assert result["status"] == "capped"
     assert len(calls) == 40
@@ -1481,7 +1529,7 @@ def test_single_run_resumes_after_interruption(
 
     _executor(monkeypatch, execution)
     with pytest.raises(KeyboardInterrupt, match="killed"):
-        TL.agentic_workflow("single")
+        _run_task("single")
     run_id = next((session_repo / "workflows").iterdir()).name
 
     result = TL.resume_workflow(run_id)
@@ -1505,7 +1553,7 @@ def test_caught_callable_error_writes_failed_after_checkpoint(
     '''))
     _executor(monkeypatch)
 
-    result = TL.agentic_workflow("caught")
+    result = _run_task("caught")
 
     assert result["status"] == "completed"
     record = _state(session_repo, result["run_id"])["items"][0]
@@ -1528,9 +1576,9 @@ def test_cancel_signal_propagates_without_planner_rewrite(
     _executor(monkeypatch)
 
     with pytest.raises(CancelledError, match="stop"):
-        TL.agentic_workflow("cancel")
+        _run_task("cancel")
 
-    assert len(prompts) == 2
+    assert len(prompts) == 1
 
 
 def test_generated_environment_excludes_runtime_and_agentic_function(
@@ -1554,7 +1602,7 @@ def test_generated_environment_excludes_runtime_and_agentic_function(
     _executor(monkeypatch)
     _summarizer(monkeypatch, "Completed environment validation.")
 
-    result = TL.agentic_workflow("environment")
+    result = _run_task("environment")
 
     assert result["status"] == "completed"
     assert result["summary"] == "Completed environment validation."
@@ -1567,7 +1615,7 @@ def test_same_run_id_concurrent_resume_executes_once(
     _planner(monkeypatch, _code('raise KeyboardInterrupt("pause")'))
     _executor(monkeypatch)
     with pytest.raises(KeyboardInterrupt):
-        TL.agentic_workflow("concurrent")
+        _run_task("concurrent")
     run_id = next((session_repo / "workflows").iterdir()).name
     (_snapshot_package(session_repo, run_id) / "workflow.py").write_text(
         _project_entry('return agent("once")')
@@ -1605,7 +1653,7 @@ def test_checkpoint_preserves_path_result_and_mixed_key_arguments(
     '''))
     _executor(monkeypatch)
     with pytest.raises(KeyboardInterrupt):
-        TL.agentic_workflow("types")
+        _run_task("types")
     run_id = next((session_repo / "workflows").iterdir()).name
     (_snapshot_package(session_repo, run_id) / "workflow.py").write_text(
         _project_entry('return registered({1: "integer", "1": "string"})')
@@ -1638,37 +1686,6 @@ def test_load_state_recovers_revision_metadata_from_code_history(
     }]
 
 
-def test_resume_continues_planning_when_interrupted_before_code_is_written(
-    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
-) -> None:
-    attempts = 0
-
-    def planner(_sid, _prompt, **_kwargs):
-        nonlocal attempts
-        attempts += 1
-        if attempts == 1:
-            raise KeyboardInterrupt("planner killed")
-        if attempts == 2:
-            return json.dumps({"action": "create"})
-        return _project(files={
-            "steps/plan.py": "def run_plan():\n    return 'planned'\n",
-            "entry.py": "def workflow():\n    return run_plan()\n",
-        })
-
-    monkeypatch.setattr(TL, "_run_planner_turn", planner)
-    _executor(monkeypatch)
-    with pytest.raises(KeyboardInterrupt, match="planner killed"):
-        TL.agentic_workflow("planning")
-    run_id = next((session_repo / "workflows").iterdir()).name
-    assert not (_instance(session_repo, run_id) / "code.py").exists()
-
-    result = TL.resume_workflow(run_id)
-
-    assert result["status"] == "completed"
-    assert attempts == 3
-    assert (_snapshot_package(session_repo, run_id) / "steps" / "plan.py").exists()
-
-
 def test_public_entry_creates_and_executes_reusable_multifile_project(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
@@ -1680,7 +1697,7 @@ def test_public_entry_creates_and_executes_reusable_multifile_project(
     calls = _executor(monkeypatch)
     _summarizer(monkeypatch, "Completed paper discovery.")
 
-    result = TL.agentic_workflow("research recent papers")
+    result = _run_task("research recent papers")
 
     assert result["status"] == "completed"
     assert result["project_id"]
@@ -1697,7 +1714,7 @@ def test_public_entry_creates_and_executes_reusable_multifile_project(
     assert (project / "steps" / "discover.py").exists()
     assert (project / "pyproject.toml").exists()
     assert _git_output(project, "rev-parse", "HEAD") == result["project_revision"]
-    assert "workflow project candidates" in prompts[0]
+    assert "<reusable_workflows>" in prompts[0]
 
 
 def test_public_entry_executes_standard_agentic_function_package(
@@ -1711,7 +1728,7 @@ def test_public_entry_executes_standard_agentic_function_package(
     calls = _executor(monkeypatch)
     _summarizer(monkeypatch)
 
-    result = TL.agentic_workflow("recent papers")
+    result = _run_task("recent papers")
 
     assert result["status"] == "completed"
     assert result["project_id"] == "literature_review"
@@ -1775,7 +1792,7 @@ def test_package_execution_uses_agent_loop_primitive_not_sub_agent_adapter(
     )
     _summarizer(monkeypatch)
 
-    result = TL.agentic_workflow("recent papers")
+    result = _run_task("recent papers")
 
     assert result["status"] == "completed"
     assert calls == ["discover recent papers"]
@@ -1815,7 +1832,7 @@ def test_public_entry_executes_static_workflow_dependency(
     calls = _executor(monkeypatch)
     _summarizer(monkeypatch)
 
-    result = TL.agentic_workflow("recent papers")
+    result = _run_task("recent papers")
 
     assert result["status"] == "completed"
     assert [call["prompt"] for call in calls] == ["search recent papers"]
@@ -1890,7 +1907,7 @@ def test_public_entry_snapshots_transitive_workflow_dependencies(
     calls = _executor(monkeypatch)
     _summarizer(monkeypatch)
 
-    result = TL.agentic_workflow("recent papers")
+    result = _run_task("recent papers")
 
     assert [call["prompt"] for call in calls] == ["fetch recent papers"]
     assert result["workflow_dependencies"] == {
@@ -2028,7 +2045,7 @@ def test_package_import_does_not_replace_process_tool_registrations(
     _executor(monkeypatch)
     _summarizer(monkeypatch)
 
-    TL.agentic_workflow("recent papers")
+    _run_task("recent papers")
 
     assert function_runtime._registry.get(name) is before_agentic  # noqa: SLF001
     assert tool_runtime._registry.get(name) is before_tool  # noqa: SLF001
@@ -2046,7 +2063,7 @@ def test_public_entry_publishes_project_as_git_repository(
     _executor(monkeypatch)
     _summarizer(monkeypatch)
 
-    result = TL.agentic_workflow("research recent papers")
+    result = _run_task("research recent papers")
 
     project = TL._workflow_projects_root() / result["project_id"]
     head = _git_output(project, "rev-parse", "HEAD")
@@ -2075,7 +2092,7 @@ def test_public_entry_passes_task_to_parameterized_project(
     calls = _executor(monkeypatch)
     _summarizer(monkeypatch)
 
-    result = TL.agentic_workflow("recent papers")
+    result = _run_task("recent papers")
 
     assert result["status"] == "completed"
     assert len(prompts) == 2
@@ -2088,7 +2105,7 @@ def test_resume_accepts_legacy_zero_argument_project_snapshot(
     _planner(monkeypatch, _code('raise KeyboardInterrupt("pause")'))
     _executor(monkeypatch)
     with pytest.raises(KeyboardInterrupt, match="pause"):
-        TL.agentic_workflow("legacy task")
+        _run_task("legacy task")
     run_id = next((session_repo / "workflows").iterdir()).name
     instance = _instance(session_repo, run_id)
     TL.shutil.rmtree(instance / "snapshot")
@@ -2135,7 +2152,7 @@ def test_new_project_rejects_legacy_zero_argument_entry(
     _executor(monkeypatch)
     _summarizer(monkeypatch)
 
-    result = TL.agentic_workflow("new task")
+    result = _run_task("new task")
 
     assert result["status"] == "completed"
     assert "must accept exactly one positional task argument" in prompts[2]
@@ -2169,7 +2186,7 @@ def test_parameterized_project_can_compose_llm_agent_and_goal(
         lambda _state: {"summary": "Completed.", "return_result": False},
     )
 
-    result = TL.agentic_workflow("recent papers")
+    result = _run_task("recent papers")
 
     assert result["status"] == "completed"
     assert [call["prompt"] for call in llm_calls] == ["plan recent papers"]
@@ -2204,7 +2221,7 @@ def test_new_run_rejects_obsolete_planner_protocol(
     _executor(monkeypatch)
     _summarizer(monkeypatch)
 
-    result = TL.agentic_workflow("create a reusable workflow")
+    result = _run_task("create a reusable workflow")
 
     assert result["status"] == "completed"
     assert "planner reply was not valid JSON" in prompts[1]
@@ -2225,45 +2242,13 @@ def test_entry_only_project_is_rejected_before_execution_and_publish(
     calls = _executor(monkeypatch)
     _summarizer(monkeypatch)
 
-    result = TL.agentic_workflow("create a maintainable workflow")
+    result = _run_task("create a maintainable workflow")
 
     assert result["status"] == "completed"
     assert "at least one helper module" in prompts[2]
     assert [call["prompt"] for call in calls] == ["discover papers"]
     project = session_repo / "catalog" / result["project_id"]
     assert (project / "steps" / "discover.py").exists()
-
-
-def test_similar_task_in_another_session_reuses_project_without_authoring(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(TL, "_session_repo", lambda sid: tmp_path / "sessions" / sid)
-    monkeypatch.setattr(TL, "_workflow_projects_root", lambda: tmp_path / "catalog")
-    monkeypatch.setattr(TL, "_registered_agentic_functions", lambda: {})
-    active_session = "s1"
-    monkeypatch.setattr(TL, "current_session_id", lambda: active_session)
-    for sid in ("s1", "s2"):
-        (tmp_path / "sessions" / sid).mkdir(parents=True)
-    prompts = _planner(
-        monkeypatch,
-        json.dumps({"action": "create"}),
-        _project(),
-        json.dumps({"action": "reuse", "project_id": "research_workflow"}),
-    )
-    calls = _executor(monkeypatch)
-    _summarizer(monkeypatch, "Completed reusable research.")
-
-    first = TL.agentic_workflow("research papers")
-    active_session = "s2"
-    second = TL.agentic_workflow("research another paper")
-
-    assert second["project_id"] == first["project_id"] == "research_workflow"
-    assert second["project_revision"] == first["project_revision"]
-    project = tmp_path / "catalog" / "research_workflow"
-    assert _git_output(project, "rev-list", "--count", "HEAD") == "1"
-    assert [call["prompt"] for call in calls] == ["discover papers", "discover papers"]
-    assert "research_workflow" in prompts[2]
-    assert "steps/discover.py" not in prompts[2]
 
 
 def test_revise_reads_full_active_project_and_preserves_unchanged_file(
@@ -2282,29 +2267,23 @@ def test_revise_reads_full_active_project_and_preserves_unchanged_file(
             "entry.py": "def workflow():\n    return discover() + shared()\n",
         },
     )
-    prompts = _planner(
-        monkeypatch,
-        json.dumps({"action": "create"}), first,
-        json.dumps({"action": "revise", "project_id": "research_workflow"}), revised,
-    )
-    _executor(monkeypatch)
-    _summarizer(monkeypatch, "Completed revised research.")
+    prompts = _planner(monkeypatch, first, revised)
 
-    initial = TL.agentic_workflow("research papers")
-    updated = TL.agentic_workflow("research papers and verify them")
+    initial = TL.create_workflow("research papers")
+    updated = TL.revise_workflow("research_workflow", "also verify the papers")
 
-    assert initial["project_revision"] != updated["project_revision"]
+    assert initial["revision"] != updated["revision"]
     project = session_repo / "catalog" / "research_workflow"
     assert _git_output(project, "rev-list", "--count", "HEAD") == "2"
     assert _git_output(
-        project, "show", f"{initial['project_revision']}:steps/shared.py",
+        project, "show", f"{initial['revision']}:steps/shared.py",
     ) == (project / "steps" / "shared.py").read_text().strip()
-    assert "discover papers" in prompts[3]
-    assert "steps/shared.py" in prompts[3]
-    assert "Reusable research steps" in prompts[3]
+    assert "discover papers" in prompts[1]
+    assert "steps/shared.py" in prompts[1]
+    assert "Reusable research steps" in prompts[1]
 
 
-def test_failed_candidate_run_does_not_publish_and_keeps_head_unchanged(
+def test_failed_run_does_not_change_existing_catalog_head(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
     _candidate, head = _install_workflow_project(
@@ -2321,77 +2300,39 @@ def test_failed_candidate_run_does_not_publish_and_keeps_head_unchanged(
     _executor(monkeypatch)
     _summarizer(monkeypatch, "运行失败。")
 
-    result = TL.agentic_workflow("repair project")
+    result = _run_task("repair project")
 
     assert result["status"] == "failed"
-    assert result["project_revision"] == ""
-    # No new project appeared and the existing project HEAD is unchanged.
-    assert [
-        path.name for path in (session_repo / "catalog").iterdir()
-        if not path.name.startswith(".")
-    ] == ["paper_search"]
     existing = session_repo / "catalog" / "paper_search"
     assert _git_output(existing, "rev-parse", "HEAD") == head
+    created = session_repo / "catalog" / result["project_id"]
+    assert _git_output(created, "rev-list", "--count", "HEAD") == "1"
 
 
-def test_publish_failure_keeps_git_head_and_resume_commits_once(
-    monkeypatch: pytest.MonkeyPatch,
-    session_repo: Path,
+def test_resume_does_not_publish_even_if_publish_required(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
-    initial = _project(
-        readme="# Initial workflow\n",
-        files={
-            "steps/run.py": "def run():\n    return 'initial'\n",
-            "entry.py": "def workflow():\n    return run()\n",
-        },
-    )
-    revised = _project(
-        summary="Revised workflow",
-        readme="# Revised workflow\n",
-        files={
-            "steps/run.py": "def run():\n    return 'revised'\n",
-            "entry.py": "def workflow():\n    return run()\n",
-        },
-    )
-    _planner(
-        monkeypatch,
-        json.dumps({"action": "create"}), initial,
-        json.dumps({"action": "revise", "project_id": "research_workflow"}),
-        revised,
-    )
+    _candidate, revision = _install_workflow_project(session_repo, _project())
     _executor(monkeypatch)
-    _summarizer(monkeypatch)
+    _summarizer(monkeypatch, "Completed resume without publish.")
+    first = TL._run_published_workflow(
+        "research papers",
+        "research_workflow",
+        revision,
+        session_id=TL.current_session_id(),
+        spawn_caller=None,
+    )
+    instance = _instance(session_repo, first["run_id"])
+    state = _state(session_repo, first["run_id"])
+    state["publish_required"] = True
+    TL._save_state(instance / "state.json", state)
+    catalog_before = _dir_bytes(session_repo / "catalog")
 
-    first = TL.agentic_workflow("create initial project")
-    project = session_repo / "catalog" / first["project_id"]
-    previous_head = _git_output(project, "rev-parse", "HEAD")
-    previous_readme = (project / "README.md").read_bytes()
-    existing_runs = set((session_repo / "workflows").iterdir())
-    real_git = TL._git
-    failed = False
+    result = TL.resume_workflow(first["run_id"])
 
-    def fail_once(path: Path, *args: str) -> str:
-        nonlocal failed
-        if not failed and "commit" in args and Path(path) != project:
-            failed = True
-            raise TL.InvalidWorkflow("injected Git commit failure")
-        return real_git(path, *args)
-
-    monkeypatch.setattr(TL, "_git", fail_once)
-    with pytest.raises(TL.InvalidWorkflow, match="injected Git commit failure"):
-        TL.agentic_workflow("revise existing project")
-
-    failed_run = (set((session_repo / "workflows").iterdir()) - existing_runs).pop()
-    assert _git_output(project, "rev-parse", "HEAD") == previous_head
-    assert (project / "README.md").read_bytes() == previous_readme
-    assert _state(session_repo, failed_run.name)["publish_required"] is True
-
-    monkeypatch.setattr(TL, "_git", real_git)
-    resumed = TL.resume_workflow(failed_run.name)
-
-    assert resumed["project_revision"] != previous_head
-    assert _git_output(project, "rev-list", "--count", "HEAD") == "2"
-    assert (project / "README.md").read_text() == "# Revised workflow\n"
+    assert result["status"] == "completed"
+    assert result["project_revision"] == revision
+    assert _dir_bytes(session_repo / "catalog") == catalog_before
 
 
 def test_concurrent_process_publish_creates_two_git_commits(
@@ -2403,7 +2344,7 @@ def test_concurrent_process_publish_creates_two_git_commits(
     _planner(monkeypatch, json.dumps({"action": "create"}), _project())
     _executor(monkeypatch)
     _summarizer(monkeypatch)
-    initial = TL.agentic_workflow("create concurrent project")
+    initial = _run_task("create concurrent project")
     project_id = initial["project_id"]
 
     candidates = {
@@ -2491,10 +2432,11 @@ def test_cancelled_project_run_does_not_publish_candidate(
     _executor(monkeypatch)
 
     with pytest.raises(CancelledError, match="stop"):
-        TL.agentic_workflow("cancel project")
+        _run_task("cancel project")
 
     assert len(prompts) == 2
-    assert not (session_repo / "catalog").exists()
+    project = session_repo / "catalog" / "research_workflow"
+    assert _git_output(project, "rev-list", "--count", "HEAD") == "1"
 
 
 def test_invalid_project_path_replans_without_mutating_catalog(
@@ -2515,7 +2457,7 @@ def test_invalid_project_path_replans_without_mutating_catalog(
     _executor(monkeypatch)
     _summarizer(monkeypatch, "Completed safe project.")
 
-    result = TL.agentic_workflow("safe project")
+    result = _run_task("safe project")
 
     assert result["status"] == "completed"
     assert "invalid workflow project path" in prompts[2]
@@ -2523,27 +2465,7 @@ def test_invalid_project_path_replans_without_mutating_catalog(
     assert list((session_repo / "catalog").iterdir())
 
 
-def test_continue_word_still_creates_a_new_run_and_uses_catalog_decision(
-    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
-) -> None:
-    prompts = _planner(
-        monkeypatch,
-        json.dumps({"action": "create"}), _project(),
-        json.dumps({"action": "reuse", "project_id": "research_workflow"}),
-    )
-    calls = _executor(monkeypatch)
-    _summarizer(monkeypatch, "Completed catalog-selected workflow.")
-
-    first = TL.agentic_workflow("research papers")
-    second = TL.agentic_workflow("继续研究这些 papers")
-
-    assert first["run_id"] != second["run_id"]
-    assert first["project_id"] == second["project_id"]
-    assert len(calls) == 2
-    assert "workflow project candidates" in prompts[2]
-
-
-def test_capped_project_run_does_not_publish_candidate(
+def test_capped_project_run_does_not_add_a_revision(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
     _planner(
@@ -2563,29 +2485,12 @@ def test_capped_project_run_does_not_publish_candidate(
     )
     calls = _executor(monkeypatch)
 
-    result = TL.agentic_workflow("capped project")
+    result = _run_task("capped project")
 
     assert result["status"] == "capped"
     assert len(calls) == TL.MAX_ITEMS_EXECUTED
-    assert not (session_repo / "catalog").exists()
-
-
-def test_non_candidate_reuse_is_rejected_before_authoring(
-    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
-) -> None:
-    prompts = _planner(
-        monkeypatch,
-        json.dumps({"action": "reuse", "project_id": "not-a-candidate"}),
-        json.dumps({"action": "create"}),
-        _project(),
-    )
-    _executor(monkeypatch)
-    _summarizer(monkeypatch, "Completed authorized project.")
-
-    result = TL.agentic_workflow("authorized project")
-
-    assert result["status"] == "completed"
-    assert "must come from the current candidates" in prompts[1]
+    project = session_repo / "catalog" / result["project_id"]
+    assert _git_output(project, "rev-list", "--count", "HEAD") == "1"
 
 
 def test_create_name_collision_allocates_new_project_without_overwrite(
@@ -2600,8 +2505,8 @@ def test_create_name_collision_allocates_new_project_without_overwrite(
     _executor(monkeypatch)
     _summarizer(monkeypatch, "Completed separate project.")
 
-    first = TL.agentic_workflow("first unrelated task")
-    second = TL.agentic_workflow("second unrelated task")
+    first = _run_task("first unrelated task")
+    second = _run_task("second unrelated task")
 
     assert first["project_id"] == "research_workflow"
     assert second["project_id"] == "research_workflow_two"

@@ -84,7 +84,14 @@ def test_workflow_can_call_all_three_tiers(
     monkeypatch.setattr(TL, "_agent_loop_function", lambda: fake_agent)
     monkeypatch.setattr(TL, "_goal_function", lambda: fake_goal)
 
-    result = TL.agentic_workflow("测试三层调用")
+    created = TL.create_workflow("测试三层调用")
+    result = TL._run_published_workflow(
+        "测试三层调用",
+        created["workflow_id"],
+        created["revision"],
+        session_id=TL.current_session_id(),
+        spawn_caller=None,
+    )
 
     assert result["status"] == "completed"
     assert llm_calls == ["总结一下任务"]

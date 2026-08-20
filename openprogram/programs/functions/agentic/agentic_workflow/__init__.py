@@ -1,10 +1,10 @@
-"""Execute reusable planner-generated Agentic Programming projects.
+"""Search, author, and execute reusable Agentic Programming workflow projects.
 
-Every new invocation selects, revises, or creates a versioned multi-file
-workflow project. Each invocation also owns an immutable project snapshot under
-``<session-repo>/workflows/<run_id>/`` with automatic call-boundary checkpoints.
-The legacy ``code.py`` format remains readable only when explicitly resuming an
-existing run.
+Public entries are ``search_workflows``, ``create_workflow``,
+``revise_workflow``, and user-only ``auto_workflow``. Each execution owns an
+immutable project snapshot under ``<session-repo>/workflows/<run_id>/`` with
+call-boundary checkpoints. ``resume_workflow`` restores one existing run from
+its original snapshot or legacy ``code.py``; it does not search or re-select.
 """
 from __future__ import annotations
 
@@ -138,20 +138,6 @@ Example with control flow primitives:
 Available registered agentic functions (name, signature, first docstring
 line):
 {catalog}
-"""
-
-PROJECT_DECISION_INSTRUCTIONS = """Decide how to satisfy one task with the
-local workflow project catalog. Reply with one JSON object and no prose.
-
-- reuse: {"action":"reuse","project_id":"one candidate id"}
-- revise: {"action":"revise","project_id":"one candidate id"}
-- create: {"action":"create"}
-
-Use reuse only when an existing project can perform this task without source
-changes. Use revise when one candidate is the right base but its program must
-change. Use create when no candidate is an appropriate base. reuse/revise may
-name only an id in the supplied candidate list. Never provide a revision or
-source files in this decision.
 """
 
 AUTO_DECISION_INSTRUCTIONS = """Decide whether to reuse one catalog candidate
@@ -1179,58 +1165,6 @@ def _parse_json_reply(reply: str) -> dict:
     if not isinstance(value, dict):
         raise InvalidWorkflow("planner reply must be one JSON object")
     return value
-
-
-def _decision_prompt(task: str, candidates: list[dict]) -> str:
-    return (
-        PROJECT_DECISION_INSTRUCTIONS
-        + "\n<workflow project candidates>\n"
-        + json.dumps(candidates, ensure_ascii=False, indent=2)
-        + "\n</workflow project candidates>"
-        + f"\n\n<task>\n{task}\n</task>"
-    )
-
-
-def _request_project_decision(
-    task: str,
-    candidates: list[dict],
-    *,
-    session_id: str,
-    agent_id: str,
-    spawn_caller: Optional[str],
-) -> dict:
-    prompt = _decision_prompt(task, candidates)
-    candidate_ids = {row["project_id"] for row in candidates}
-    while True:
-        reply = _run_planner_turn(
-            session_id, prompt, agent_id=agent_id,
-            spawn_caller=spawn_caller, label="workflow project selection",
-        )
-        try:
-            decision = _parse_json_reply(reply)
-            action = str(decision.get("action") or "")
-            if action not in {"reuse", "revise", "create"}:
-                raise InvalidWorkflow("workflow project action must be reuse, revise, or create")
-            if action == "create":
-                if set(decision) != {"action"}:
-                    raise InvalidWorkflow("create decision must contain only action")
-                return {"action": action}
-            if set(decision) != {"action", "project_id"}:
-                raise InvalidWorkflow(
-                    "reuse/revise decision must contain only action and project_id"
-                )
-            project_id = _safe_project_id(decision.get("project_id"))
-            if project_id not in candidate_ids:
-                raise InvalidWorkflow(
-                    "reuse/revise project_id must come from the current candidates"
-                )
-            return {"action": action, "project_id": project_id}
-        except Exception as exc:
-            prompt = (
-                _decision_prompt(task, candidates)
-                + f"\n\n<concrete_error>\n{type(exc).__name__}: {exc}\n"
-                  "</concrete_error>\nReturn a corrected decision JSON object."
-            )
 
 
 def _auto_decision_prompt(task: str, candidates: list[dict]) -> str:
@@ -2375,18 +2309,6 @@ def _run_project_instance_locked(
         state["status"] = "capped"
         _save_state(state_path, state)
         return _result(state, run_id)
-    if state.get("publish_required"):
-        project_id, revision = _publish_snapshot(
-            instance,
-            project_id=str(state.get("project_id") or ""),
-            action=str(state.get("project_action") or "create"),
-            metadata=state["project_metadata"],
-        )
-        state["project_id"] = project_id
-        state["project_revision"] = revision
-        state["publish_required"] = False
-        _save_project_ref(instance, state)
-        _save_state(state_path, state)
     state.update(status="completed", result=_json_value(result), last_error="")
     state["handoff"] = _summarize_workflow(state)
     _save_state(state_path, state)
@@ -2410,153 +2332,46 @@ def _run_single(instance: Path, *, run_id: str, session_id: str,
         return _result(state, run_id)
 
 
-def _prepare_project_run(
-    instance: Path,
-    state: dict,
-    *,
-    session_id: str,
-    agent_id: str,
-    spawn_caller: Optional[str],
-    functions: dict[str, Callable],
-) -> None:
-    candidates = _search_projects(state["task"])
-    decision = _request_project_decision(
-        state["task"], candidates, session_id=session_id,
-        agent_id=agent_id, spawn_caller=spawn_caller,
-    )
-    action = decision["action"]
-    project_id = str(decision.get("project_id") or "")
-    if action == "reuse":
-        index, candidate = _copy_active_snapshot(instance, project_id)
-        state.update(
-            project_id=project_id,
-            project_revision=index["active_revision"],
-            workflow_dependencies=index["workflow_dependencies"],
-            project_action="reuse",
-            project_metadata=candidate["project_metadata"],
-            publish_required=False,
-        )
-    else:
-        base = None
-        if action == "revise":
-            index, base, _ = _active_project(project_id)
-            state["project_revision"] = index["active_revision"]
-        candidate = _request_project_candidate(
-            state["task"], functions, session_id=session_id,
-            agent_id=agent_id, spawn_caller=spawn_caller, base=base,
-            require_new_name=action == "create",
-        )
-        dependencies = _replace_snapshot(instance, candidate)
-        state.update(
-            project_id=project_id,
-            workflow_dependencies=dependencies,
-            project_action=action,
-            project_metadata=candidate["project_metadata"],
-            publish_required=True,
-        )
-    _save_project_ref(instance, state)
-    _save_state(instance / "state.json", state)
-
-
 def _execute_workflow(
     task: str,
     *,
     session_id: str,
     agent_id: str = "main",
     spawn_caller: Optional[str] = None,
-    run_id: str = "",
+    run_id: str,
 ) -> dict:
-    """Execute a new project run or explicitly resume one existing run."""
-    sid = session_id
+    """Resume one existing run from its original snapshot or legacy code."""
     functions = _registered_agentic_functions()
-    if run_id:
-        instance = _instance_dir(sid, run_id)
-        with _WORKFLOW_LOCK:
-            state = _load_state(instance / "state.json")
-            if (instance / "snapshot").exists():
-                state["status"] = "running"
-                _save_state(instance / "state.json", state)
-                return _run_project_instance_locked(
-                    instance, state, run_id=run_id, session_id=sid,
-                    agent_id=agent_id, spawn_caller=spawn_caller,
-                    functions=functions,
-                )
-            code_path = instance / "code.py"
-            if code_path.exists():
-                source = code_path.read_text(encoding="utf-8")
-                if source.strip() == "SINGLE":
-                    return _run_single(
-                        instance, run_id=run_id, session_id=sid, agent_id=agent_id,
-                        spawn_caller=spawn_caller,
-                    )
-                _validate_source(source)
-                state["status"] = "running"
-                _save_state(instance / "state.json", state)
-                return _run_instance_locked(
-                    instance, state, source, run_id=run_id, session_id=sid,
-                    agent_id=agent_id, spawn_caller=spawn_caller,
-                    functions=functions,
-                )
-            try:
-                _prepare_project_run(
-                    instance, state, session_id=sid, agent_id=agent_id,
-                    spawn_caller=spawn_caller, functions=functions,
-                )
-            except BaseException as exc:
-                _mark_run_exception(instance, state, exc)
-                raise
-            state = _load_state(instance / "state.json")
+    instance = _instance_dir(session_id, run_id)
+    with _WORKFLOW_LOCK:
+        state = _load_state(instance / "state.json")
+        if (instance / "snapshot").exists():
             state["status"] = "running"
             _save_state(instance / "state.json", state)
             return _run_project_instance_locked(
-                instance, state, run_id=run_id, session_id=sid,
+                instance, state, run_id=run_id, session_id=session_id,
                 agent_id=agent_id, spawn_caller=spawn_caller,
                 functions=functions,
             )
-
-    run_id = _new_run_id()
-    instance = _instance_dir(sid, run_id)
-    instance.mkdir(parents=True, exist_ok=False)
-    state = {
-        "run_id": run_id, "task": task, "status": "running",
-        "executions": 0, "items": [], "revisions": [], "result": "",
-        "last_error": "",
-    }
-    _save_state(instance / "state.json", state)
-    try:
-        _prepare_project_run(
-            instance, state, session_id=sid, agent_id=agent_id,
-            spawn_caller=spawn_caller, functions=functions,
+        code_path = instance / "code.py"
+        if code_path.exists():
+            source = code_path.read_text(encoding="utf-8")
+            if source.strip() == "SINGLE":
+                return _run_single(
+                    instance, run_id=run_id, session_id=session_id,
+                    agent_id=agent_id, spawn_caller=spawn_caller,
+                )
+            _validate_source(source)
+            state["status"] = "running"
+            _save_state(instance / "state.json", state)
+            return _run_instance_locked(
+                instance, state, source, run_id=run_id, session_id=session_id,
+                agent_id=agent_id, spawn_caller=spawn_caller,
+                functions=functions,
+            )
+        raise InvalidWorkflow(
+            f"workflow run {run_id} has no snapshot or legacy code to resume"
         )
-    except BaseException as exc:
-        _mark_run_exception(instance, state, exc)
-        raise
-    with _WORKFLOW_LOCK:
-        state = _load_state(instance / "state.json")
-        return _run_project_instance_locked(
-            instance, state, run_id=run_id, session_id=sid,
-            agent_id=agent_id, spawn_caller=spawn_caller,
-            functions=functions,
-        )
-
-
-@agentic_function(
-    input={
-        "task": {"description": "The task to plan and execute", "multiline": True},
-    },
-)
-def agentic_workflow(task: str) -> dict:
-    """Search, select, and execute a reusable workflow project.
-
-    Examples:
-        agentic_workflow("Review auth module for bugs")
-        agentic_workflow("Research recent papers and update the local report")
-    """
-    return _execute_workflow(
-        task,
-        session_id=current_session_id(),
-        spawn_caller=current_call_id() or None,
-    )
 
 
 def _publish_candidate(candidate: dict, *, project_id: str, action: str) -> dict:
@@ -2747,8 +2562,8 @@ def resume_workflow(run_id: str, **_deprecated) -> dict:
 
 
 __all__ = [
-    "agentic_workflow", "search_workflows", "create_workflow",
-    "revise_workflow", "auto_workflow", "resume_workflow", "InvalidWorkflow",
+    "search_workflows", "create_workflow", "revise_workflow",
+    "auto_workflow", "resume_workflow", "InvalidWorkflow",
     "WorkflowExecutionCapped", "PLANNER_TOOLS",
     "HANDOFF_SUMMARY_MAX_CHARS", "MAX_ITEMS_EXECUTED",
 ]
