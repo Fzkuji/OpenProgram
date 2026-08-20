@@ -74,7 +74,8 @@ export function SettingsTabsLayout({
     if (pathname.startsWith("/settings/memory")) return "memory";
     if (pathname.startsWith("/settings/general")) return "general";
     if (pathname.startsWith("/settings/system")) return "system";
-    return "providers";
+    if (pathname.startsWith("/settings/providers")) return "providers";
+    return "general";
   })();
 
   const isWide =

@@ -5,6 +5,11 @@ const root = new URL("../", import.meta.url);
 const source = (path) => readFileSync(new URL(path, root), "utf8");
 
 const layout = source("components/settings/settings-tabs-layout.tsx");
+const settingsHome = source("app/(shell)/settings/page.tsx");
+const userMenu = source("components/user-menu-footer.tsx");
+const mainMenu = source("components/center-tabs/main-menu.tsx");
+const agentSelector = source("components/chat/top-bar/agent-selector.tsx");
+const appShell = source("components/app-shell.tsx");
 const providers = source("components/settings/providers/index.tsx");
 const providerItem = source("components/settings/providers/provider-item.tsx");
 const memory = source("components/settings/memory-settings.tsx");
@@ -27,6 +32,26 @@ assert.doesNotMatch(layout, /styles\.topbar/);
 const tabsBlock = layout.match(/const tabs = \[([\s\S]*?)\n  \];/)?.[1] ?? "";
 const tabOrder = [...tabsBlock.matchAll(/id: "([^"]+)"/g)].map((match) => match[1]);
 assert.deepEqual(tabOrder, ["general", "providers", "memory", "search", "browser", "channels", "usage", "system"]);
+
+// Settings home is General. Client entries must not land on /settings
+// (desktop often skips the server redirect, and the unmatched-path
+// fallback used to treat that as Providers).
+assert.match(settingsHome, /redirect\("\/settings\/general"\)/);
+assert.match(layout, /pathname\.startsWith\("\/settings\/providers"\)\) return "providers"/);
+assert.match(layout, /return "providers";\s*return "general";/);
+assert.match(userMenu, /router\.push\("\/settings\/general"\)/);
+assert.doesNotMatch(userMenu, /router\.push\("\/settings"\)/);
+assert.match(mainMenu, /router\.push\("\/settings\/general"\)/);
+assert.doesNotMatch(mainMenu, /router\.push\("\/settings"\)/);
+assert.match(agentSelector, /href="\/settings\/general"/);
+assert.doesNotMatch(agentSelector, /href="\/settings"/);
+assert.match(loading, /pathname\.split\("\/"\)\[2\] \|\| "general"/);
+const warmRoutes = appShell.match(/const WARM_ROUTES = \[([\s\S]*?)\];/)?.[1] ?? "";
+assert.match(warmRoutes, /"\/settings\/general"/);
+assert.ok(
+  warmRoutes.indexOf('"/settings/general"') < warmRoutes.indexOf('"/settings/providers"'),
+  "prefetch Settings home (General) before Providers",
+);
 
 assert.match(providers, /localStorage\.getItem\("providerListOpen"\)/);
 assert.match(providers, /localStorage\.setItem\("providerListOpen",/);

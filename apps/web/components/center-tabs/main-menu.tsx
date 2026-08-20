@@ -56,7 +56,7 @@ export function MainMenu() {
           openNewTabPage();
           break;
         case "settings":
-          router.push("/settings");
+          router.push("/settings/general");
           break;
       }
     });
@@ -117,7 +117,7 @@ export function MainMenu() {
         <DropdownMenuSeparator className={MENU_SEPARATOR} />
         <DropdownMenuItem
           className={itemCls(false)}
-          onSelect={() => router.push("/settings")}
+          onSelect={() => router.push("/settings/general")}
         >
           <Settings size={14} aria-hidden="true" />
           <span className="flex-1">{text("Settings", "设置")}</span>

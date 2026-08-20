@@ -31,7 +31,7 @@ const TAB_KEYS: Record<string, "settings.tab.providers"|"settings.tab.search"|"s
 export default function SettingsLoading() {
   const { t } = useTranslation();
   const pathname = usePathname() || "";
-  const tab = pathname.split("/")[2] || "providers";
+  const tab = pathname.split("/")[2] || "general";
   const headerless = tab === "memory";
   const key = TAB_KEYS[tab];
   const title = key ? t(key) : t("settings.title");
