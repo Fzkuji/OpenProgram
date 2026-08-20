@@ -2774,6 +2774,46 @@ def test_auto_workflow_success_create_leaves_no_running_orphan(
     assert result["action"] == "create"
 
 
+def test_auto_workflow_create_failure_persists_failed_run(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _planner(monkeypatch, json.dumps({"action": "create"}))
+
+    def boom(_task: str) -> dict:
+        raise RuntimeError("create exploded")
+
+    monkeypatch.setattr(TL, "create_workflow", boom)
+
+    with pytest.raises(RuntimeError, match="create exploded"):
+        TL.auto_workflow("research papers")
+
+    states = _workflow_run_states(session_repo)
+    assert len(states) == 1
+    assert states[0]["status"] == "failed"
+    assert not any(state["status"] == "running" for state in states)
+
+
+def test_auto_workflow_create_cancel_persists_interrupted_run(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    from openprogram.agentic_programming.function import CancelledError
+
+    _planner(monkeypatch, json.dumps({"action": "create"}))
+
+    def boom(_task: str) -> dict:
+        raise CancelledError("stop create")
+
+    monkeypatch.setattr(TL, "create_workflow", boom)
+
+    with pytest.raises(CancelledError, match="stop create"):
+        TL.auto_workflow("research papers")
+
+    states = _workflow_run_states(session_repo)
+    assert len(states) == 1
+    assert states[0]["status"] == "interrupted"
+    assert not any(state["status"] == "running" for state in states)
+
+
 def test_revise_workflow_rejects_unchanged_candidate(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:

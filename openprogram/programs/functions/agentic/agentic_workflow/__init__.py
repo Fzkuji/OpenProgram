@@ -1619,6 +1619,11 @@ def _save_state(path: Path, state: dict) -> None:
 
 
 def _mark_run_exception(instance: Path, state: dict, exc: BaseException) -> None:
+    state_path = instance / "state.json"
+    if state_path.exists():
+        state = _load_state(state_path)
+    if state.get("status") in {"completed", "failed", "interrupted", "capped"}:
+        return
     state["status"] = (
         "interrupted"
         if isinstance(exc, (KeyboardInterrupt, CancelledError))
@@ -1627,7 +1632,7 @@ def _mark_run_exception(instance: Path, state: dict, exc: BaseException) -> None
     state["last_error"] = "".join(
         traceback.format_exception(type(exc), exc, exc.__traceback__)
     )
-    _save_state(instance / "state.json", state)
+    _save_state(state_path, state)
 
 
 def _load_state(path: Path) -> dict:
@@ -2671,25 +2676,29 @@ def auto_workflow(task: str) -> dict:
     except BaseException as exc:
         _mark_run_exception(instance, state, exc)
         raise
-    if decision["action"] == "reuse":
-        workflow_id = decision["workflow_id"]
-        revision = next(
-            row["revision"] for row in candidates
-            if row["workflow_id"] == workflow_id
+    try:
+        if decision["action"] == "reuse":
+            workflow_id = decision["workflow_id"]
+            revision = next(
+                row["revision"] for row in candidates
+                if row["workflow_id"] == workflow_id
+            )
+        else:
+            created = create_workflow(task)
+            workflow_id = created["workflow_id"]
+            revision = created["revision"]
+        executed = _run_published_workflow(
+            task, workflow_id, revision,
+            session_id=session_id, spawn_caller=spawn_caller,
+            run_id=run_id, project_action=decision["action"],
         )
-    else:
-        created = create_workflow(task)
-        workflow_id = created["workflow_id"]
-        revision = created["revision"]
-    executed = _run_published_workflow(
-        task, workflow_id, revision,
-        session_id=session_id, spawn_caller=spawn_caller,
-        run_id=run_id, project_action=decision["action"],
-    )
-    if executed.get("status") == "failed":
-        raise InvalidWorkflow(
-            f"workflow run failed: {executed.get('run_id')}"
-        )
+        if executed.get("status") == "failed":
+            raise InvalidWorkflow(
+                f"workflow run failed: {executed.get('run_id')}"
+            )
+    except BaseException as exc:
+        _mark_run_exception(instance, state, exc)
+        raise
     return {
         "action": decision["action"],
         "workflow_id": workflow_id,
