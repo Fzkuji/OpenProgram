@@ -181,6 +181,34 @@ def claim_fanout_slot(session_id: str, turn_id: str) -> int | None:
     return None
 
 
+def _spawn_parent_id() -> str | None:
+    """The DAG node a clean spawn should hang off.
+
+    Prefer the executing @agentic_function's code node (``_call_id``): a
+    composer-launched function has no assistant turn, and an LLM-issued
+    function should own its inner ``agent()`` calls. Fall back to the
+    dispatcher turn id, including the ``|node:<id>`` suffix process_runner
+    threads for a pre-created function node.
+    """
+    try:
+        from openprogram.agentic_programming.function import current_call_id
+        cid = current_call_id()
+        if cid:
+            return cid
+    except Exception:
+        pass
+    try:
+        from openprogram.store import _current_turn_id
+        raw = _current_turn_id.get() or ""
+    except Exception:
+        raw = ""
+    if "|node:" in raw:
+        raw = raw.rsplit("|node:", 1)[-1]
+    if not raw or raw == "ROOT":
+        return None
+    return raw
+
+
 def _resolve_parent() -> tuple[str | None, str | None, str | None]:
     """Pull (session_id, assistant_msg_id, default_agent_id) from the
     ambient ContextVars + the parent's session row. Returns
@@ -191,11 +219,7 @@ def _resolve_parent() -> tuple[str | None, str | None, str | None]:
         sid = _current_session_id.get(None)
     except Exception:
         sid = None
-    try:
-        from openprogram.store import _current_turn_id
-        aid = _current_turn_id.get()
-    except Exception:
-        aid = None
+    aid = _spawn_parent_id()
     agent_id = None
     if sid:
         try:

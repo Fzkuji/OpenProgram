@@ -101,6 +101,30 @@ def test_agent_sync_clean_passes_spawn_caller(store, captured_run):
     assert captured_run["spawn_caller"] == "a1"
 
 
+def test_agent_sync_clean_uses_call_id_when_turn_id_missing(store, captured_run):
+    """Composer-launched @agentic_function has no assistant turn id.
+    spawn_caller must be the function's DAG node (_call_id), not ROOT."""
+    from openprogram.agent.run_control import _current_session_id
+    from openprogram.agentic_programming.function import _call_id
+    from openprogram.programs.functions.vanilla.agent.agent.agent import _agent_impl
+    from openprogram.store import _current_turn_id
+
+    def _go():
+        t1 = _current_session_id.set("p1")
+        t2 = _current_turn_id.set("")
+        t3 = _call_id.set("wf_node")
+        try:
+            return _agent_impl(prompt="go", start_from="clean")
+        finally:
+            _call_id.reset(t3)
+            _current_turn_id.reset(t2)
+            _current_session_id.reset(t1)
+
+    copy_context().run(_go)
+    assert captured_run["branch_from"] is None
+    assert captured_run["spawn_caller"] == "wf_node"
+
+
 def test_agent_sync_inherit_passes_no_spawn_caller(store, captured_run):
     from openprogram.programs.functions.vanilla.agent.agent.agent import _agent_impl
     _run_with_ctx(

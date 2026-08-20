@@ -52,18 +52,30 @@ export interface ThreadModel {
   anchorOf: (id: string) => string;
 }
 
+function _isRootRef(id: string | null | undefined): boolean {
+  return !id || id === "ROOT";
+}
+
 /** A spawn branch root: ``source=agent_spawn`` with no conversation
- *  predecessor (dag/overview.md §4). */
+ *  predecessor (dag/overview.md §4). The ROOT sentinel is the same as
+ *  empty — a composer-run fallback used to write predecessor=ROOT. */
 export function isSpawnRoot(n: GNode): boolean {
   return (
-    (n as Record<string, unknown>).source === "agent_spawn" && !n.predecessor
+    (n as Record<string, unknown>).source === "agent_spawn"
+    && _isRootRef(n.predecessor)
   );
+}
+
+function _hangsOnRoot(n: GNode): boolean {
+  return _isRootRef(n.caller) && _isRootRef(n.predecessor);
 }
 
 /** A conversation-layer node: something the chain itself is made of.
  *  ``merge`` stays on the chain (it is a chain operation); everything
  *  with a caller-tree pedigree (runtime rows, tools, run nodes,
- *  function placeholders) is execution. */
+ *  function placeholders) is execution — except a composer-launched
+ *  function hung on ROOT, which is the user's explicit action and
+ *  sits as a main-lane square under the diamond. */
 export function isChainNode(n: GNode): boolean {
   if (n.display === "root") return true;
   if (isSpawnRoot(n)) return false;
@@ -72,6 +84,9 @@ export function isChainNode(n: GNode): boolean {
   // colour but lays out on the agent's thread, not as a lane.
   if ((n as Record<string, unknown>)._agentTurn) return false;
   if (n.function === "merge") return true;
+  if ((n.role === "tool" || n._runNode) && _hangsOnRoot(n) && n.function) {
+    return true;
+  }
   return (
     (n.role === "user" || n.role === "assistant")
     && n.display !== "runtime"
@@ -146,6 +161,21 @@ export function buildThreadModel(graph: GNode[]): ThreadModel {
   // Execution nodes climb predecessor/caller to the first chain node or
   // spawn root; that node's anchor owns the event. Spawn roots climb
   // their caller the same way.
+  function composerFunctionBefore(spawn: GNode): GNode | undefined {
+    const t = spawn.created_at || 0;
+    let best: GNode | undefined;
+    Object.keys(byId).forEach((id) => {
+      const cand = byId[id];
+      if (!isChainNode(cand) || cand.display === "root") return;
+      if (cand.role !== "tool" && !cand._runNode) return;
+      if ((cand.created_at || 0) > t) return;
+      if (!best || (cand.created_at || 0) > (best.created_at || 0)) {
+        best = cand;
+      }
+    });
+    return best;
+  }
+
   function ownerOf(n: GNode): string | null {
     let cur: GNode | undefined = n;
     let hops = 0;
@@ -154,7 +184,16 @@ export function buildThreadModel(graph: GNode[]): ThreadModel {
         (cur.caller as string) || (cur.predecessor as string) || "";
       const p: GNode | undefined = pid ? byId[pid] : undefined;
       if (!p) return null;
-      if (p.display === "root") return null;
+      if (p.display === "root") {
+        // Scarred clean-spawn: caller/predecessor stamped ROOT instead
+        // of the composer-launched function. Attach to that function
+        // so the diamond is not four fork lanes.
+        if (isSpawnRoot(n) || (n as Record<string, unknown>).source === "agent_spawn") {
+          const fn = composerFunctionBefore(n);
+          if (fn) return anchorOf(fn.id);
+        }
+        return null;
+      }
       if (isChainNode(p) || isSpawnRoot(p)) return anchorOf(p.id);
       cur = p;
       hops++;

@@ -11,6 +11,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { type GNode, LANE_COLORS, NODE_R } from "./types";
+import { isSpawnRoot } from "./passes/thread";
 
 export const CURSOR_R = NODE_R * 0.55;
 
@@ -71,8 +72,7 @@ export function _shapeFor(node: GNode): string {
   // The dispatch call node folds into this one (passes/thread.ts), so
   // one spawn is one square; expanding it shows the agent's own
   // activity — replies as triangles, calls as squares, recursively.
-  if ((node as Record<string, unknown>).source === "agent_spawn"
-      && !node.predecessor) {
+  if (isSpawnRoot(node)) {
     return "square";
   }
   const role = node.role;

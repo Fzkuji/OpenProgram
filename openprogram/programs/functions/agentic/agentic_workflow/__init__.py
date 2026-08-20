@@ -33,6 +33,7 @@ from typing import Callable, Optional
 from openprogram.agentic_programming.function import (
     CancelledError,
     agentic_function,
+    current_call_id,
     current_session_id,
 )
 from openprogram.store.session.git_session import atomic_write_text
@@ -2367,6 +2368,7 @@ def agentic_workflow(task: str) -> dict:
     return _execute_workflow(
         task,
         session_id=current_session_id(),
+        spawn_caller=current_call_id() or None,
     )
 
 
@@ -2384,7 +2386,7 @@ def resume_workflow(run_id: str, **_deprecated) -> dict:
         state["task"],
         session_id=sid,
         agent_id=_deprecated.get("agent_id") or "main",
-        spawn_caller=_deprecated.get("spawn_caller"),
+        spawn_caller=_deprecated.get("spawn_caller") or current_call_id() or None,
         run_id=run_id,
     )
 

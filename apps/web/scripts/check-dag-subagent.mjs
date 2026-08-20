@@ -196,6 +196,64 @@ assert.equal(
   "merge stays on the chain — it is a chain operation");
 assert.equal(
   isChainNode({ id: "x", role: "tool" }), false);
+assert.equal(
+  isChainNode({
+    id: "wf", role: "tool", function: "agentic_workflow",
+    predecessor: "ROOT", caller: "",
+  }), true,
+  "a composer-launched function hung on ROOT is a chain square");
+assert.equal(
+  isSpawnRoot({
+    id: "s", role: "user", source: "agent_spawn", predecessor: "ROOT",
+    caller: "ROOT",
+  }), true,
+  "agent_spawn with the ROOT predecessor sentinel is still a spawn root "
+  + "(composer-run fallback wrote caller=ROOT / predecessor=ROOT)");
+
+/* ---- 1b. composer-launched function with scarred ROOT-hung spawns ---- */
+{
+  const WF = () => [
+    { id: "ROOT", display: "root", _lane: 0, _tier: 0, _depth: 0,
+      created_at: 0 },
+    { id: "wf", role: "tool", function: "agentic_workflow",
+      predecessor: "ROOT", caller: "",
+      _lane: 0, _tier: 1, _depth: 1, created_at: 1 },
+    { id: "s1", role: "user", source: "agent_spawn", predecessor: "ROOT",
+      caller: "ROOT", _lane: 1, _tier: 1, _depth: 1, created_at: 2 },
+    { id: "s1r", role: "assistant", source: "agent_spawn", predecessor: "s1",
+      _lane: 1, _tier: 2, _depth: 2, created_at: 3 },
+    { id: "s2", role: "user", source: "agent_spawn", predecessor: "ROOT",
+      caller: "ROOT", _lane: 2, _tier: 1, _depth: 1, created_at: 4 },
+    { id: "s2r", role: "assistant", source: "agent_spawn", predecessor: "s2",
+      _lane: 2, _tier: 2, _depth: 2, created_at: 5 },
+  ];
+  setThreadOpen(Object.create(null));
+  {
+    const m = buildThreadModel(WF());
+    assert.deepEqual(
+      m.visible.map((n) => n.id).sort(),
+      ["ROOT", "wf"],
+      "folded: ROOT + the composer function; scarred spawns are its thread, "
+      + "not four fork lanes off the diamond",
+    );
+    assert.deepEqual(
+      (m.events.wf || []).map((e) => e.id),
+      ["s1", "s2"],
+      "both ROOT-hung agent_spawn roots belong to the function's thread",
+    );
+    assert.ok(!m.visible.some((n) => n.id === "s1" || n.id === "s1r"));
+  }
+  toggleThreadOpen("wf");
+  {
+    const m = buildThreadModel(WF());
+    const ids = m.visible.map((n) => n.id);
+    assert.ok(ids.includes("s1") && ids.includes("s2"),
+      "open function: spawn heads are real nodes on its thread");
+    assert.ok(!ids.includes("s1r") && !ids.includes("s2r"),
+      "each agent's own reply stays folded until the spawn head is opened");
+  }
+  setThreadOpen(Object.create(null));
+}
 
 /* ---- 2. geometry: lattice, thread placement, scene-3 forks ---- */
 
@@ -286,7 +344,7 @@ const layoutOf = (graph) => {
 
 assert.match(
   shapesSrc,
-  /agent_spawn[\s\S]{0,400}return "square"/,
+  /isSpawnRoot\(node\)[\s\S]{0,80}return "square"/,
   "the sub-agent glyph is chosen by the same field the thread pass "
   + "reads — and it is a SQUARE: dispatching an agent is a function "
   + "call, the call vocabulary",

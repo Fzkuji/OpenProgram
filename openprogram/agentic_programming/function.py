@@ -176,6 +176,14 @@ def current_session_id() -> str:
         return ""
 
 
+def current_call_id() -> str:
+    """DAG node id of the @agentic_function currently executing, or ""."""
+    try:
+        return _call_id.get() or ""
+    except LookupError:
+        return ""
+
+
 _VALID_EXPOSE = ("io", "llm", "full", "hidden")
 
 

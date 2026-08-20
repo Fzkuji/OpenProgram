@@ -797,6 +797,31 @@ def test_real_agent_implementation_is_callable_with_public_signature() -> None:
     assert agent("probe").startswith("[agent error]")
 
 
+def test_agentic_workflow_forwards_call_id_as_spawn_caller(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_execute(task, *, session_id, agent_id="main",
+                     spawn_caller=None, run_id=""):
+        captured.update(
+            task=task, session_id=session_id, spawn_caller=spawn_caller,
+        )
+        return {"status": "completed"}
+
+    monkeypatch.setattr(TL, "_execute_workflow", fake_execute)
+    monkeypatch.setattr(TL, "current_session_id", lambda: "sess1")
+    from openprogram.agentic_programming.function import _call_id
+    token = _call_id.set("wf_node_abc")
+    try:
+        TL.agentic_workflow._fn("research llm memory")
+    finally:
+        _call_id.reset(token)
+
+    assert captured["spawn_caller"] == "wf_node_abc"
+    assert captured["session_id"] == "sess1"
+
+
 def test_agentic_workflow_registers_only_the_task_parameter() -> None:
     assert str(inspect.signature(TL.agentic_workflow)) == "(task: 'str') -> 'dict'"
     assert TL.agentic_workflow._agent_tool.parameters == {
