@@ -109,7 +109,7 @@ export function ChannelsSection() {
   }, [accounts, refreshStatuses]);
 
   return (
-    <div className={shellStyles.page}>
+    <div className={`${shellStyles.page} ${styles.channelsPage}`}>
       <div className={shellStyles.pageHeader}>
         <h2 className={shellStyles.pageTitle}>{t("settings.tab.channels")}</h2>
         <p className={shellStyles.pageMeta}>

@@ -31,6 +31,18 @@ assert.match(
   settingsCss,
   /\.controls\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*flex-end;[^}]*gap:\s*8px/,
 );
+assert.match(settingsCss, /\.memoryPage\s*\{[^}]*font-family:\s*var\(--font-sans\)/s);
+assert.match(settingsCss, /\.lifecycle\s*\{[^}]*font-family:\s*var\(--font-sans\)/s);
+assert.match(settingsCss, /\.row\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*flex-start/s);
+assert.match(settingsCss, /\.rowCopy\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-width:\s*0/s);
+assert.match(settingsCss, /\.controls\s*\{[^}]*flex:\s*0 0 auto;[^}]*min-width:\s*7\.5rem/s);
+assert.match(settingsCss, /\.chromeValue\s*\{[^}]*font-family:\s*var\(--font-sans\)/s);
+assert.match(settingsCss, /\.monoValue\s*\{[^}]*font-family:\s*var\(--font-mono\)/s);
+assert.doesNotMatch(settingsCss, /JetBrains Mono/);
+assert.doesNotMatch(settingsCss, /grid-template-columns:\s*minmax\(220px/);
+assert.match(settings, /styles\.chromeValue[\s\S]{0,80}Local workspace · Git enabled/);
+assert.match(settings, /styles\.monoValue[\s\S]{0,40}workspace_path/);
+assert.equal((settings.match(/styles\.monoValue/g) || []).length, 1);
 
 const settingRows = [...settings.matchAll(/<SettingsRow[\s\S]*?<\/SettingsRow>/g)].map((match) => match[0]);
 assert.ok(settingRows.length >= 4, "expected Memory setting rows");
