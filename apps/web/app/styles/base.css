@@ -360,6 +360,12 @@ button:focus-visible:not([role="tab"]),
 .search-input-field:focus-visible {
   outline: none;
 }
+/* Shared text Input already paints a 1px accent border on focus
+   (see ui/input.tsx). The unlayered :focus-visible halo above would
+   otherwise stack outside that border. Same exception as SearchInput. */
+.ui-text-input:focus-visible {
+  outline: none;
+}
 /* Display serif for hero text (welcome title). System serif only —
    no font files shipped. */
 .display-serif {
