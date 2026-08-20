@@ -4,7 +4,7 @@ import styles from "../settings-page.module.css";
 
 /* Small monogram circle for search providers — same shape as the LLM
    provider icons but using letters instead of brand SVGs. */
-export function SearchProviderGlyph({ id }: { id: string }) {
+export function SearchProviderGlyph({ id, size = 20 }: { id: string; size?: number }) {
   const letter = id.charAt(0).toUpperCase();
   const colors: Record<string, string> = {
     t: "#3b82f6",
@@ -21,15 +21,15 @@ export function SearchProviderGlyph({ id }: { id: string }) {
         background: c + "22",
         color: c,
         border: `1px solid ${c}55`,
-        width: 20,
-        height: 20,
+        width: size,
+        height: size,
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
         borderRadius: 6,
         flexShrink: 0,
         fontWeight: 600,
-        fontSize: 12,
+        fontSize: size >= 32 ? 16 : 12,
       }}
     >
       {letter}
