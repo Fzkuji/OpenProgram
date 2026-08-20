@@ -3,47 +3,333 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Self-Programming Workflow — 创建、隔离与发布</title>
+<title>Workflow 发现、创建与自动执行设计</title>
 <style>
-  :root{color-scheme:dark;--bg:#121316;--surface:#181a1f;--surface2:#1e2127;--line:#30343d;--text:#e8e9ed;--muted:#9ca1ac;--cyan:#58cadb;--green:#72d09a;--orange:#ef9b6b;--red:#ed7777;--purple:#b99cff;--mono:ui-monospace,"SFMono-Regular",Menlo,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.68 var(--sans)}a{color:#79aaff}code,pre{font-family:var(--mono)}code{padding:1px 5px;border-radius:4px;background:#24272e;color:#d9dce4;font-size:.9em}.page{width:min(1040px,calc(100% - 32px));margin:auto;padding:30px 0 70px}.set-nav{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:22px}.set-nav a{padding:5px 9px;border:1px solid var(--line);border-radius:7px;color:#aeb3bd;text-decoration:none;font-size:12px}.set-nav a[aria-current="page"]{border-color:#39717b;background:#172126;color:#8ddbe6}header{padding-bottom:22px;border-bottom:1px solid var(--line)}.eyebrow{color:var(--cyan);font:11px var(--mono);letter-spacing:.08em;text-transform:uppercase}h1{margin:8px 0 9px;font-size:clamp(27px,4vw,40px);line-height:1.18}h2{margin:0 0 13px;font-size:23px}h3{margin:22px 0 8px;font-size:16px}.lead{max-width:830px;margin:0;color:#c5c8d0;font-size:16px}section{padding:30px 0;border-bottom:1px solid var(--line)}p{margin:9px 0}ul{padding-left:22px}li+li{margin-top:5px}table{width:100%;margin:14px 0;border-collapse:collapse;font-size:13px}th,td{padding:10px 11px;border:1px solid var(--line);text-align:left;vertical-align:top}th{background:var(--surface2)}td{color:#bcc0c9}pre{overflow:auto;padding:15px 17px;border:1px solid var(--line);border-radius:10px;background:#0d0e11;color:#d8dbe3;font-size:12.5px;line-height:1.58}pre code{padding:0;background:transparent;color:inherit}.callout{margin:14px 0;padding:12px 14px;border-left:3px solid var(--cyan);background:#162126;color:#c7d8dc}.warning{border-left-color:var(--orange);background:#241d18;color:#daccc1}.choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:17px 0}.choice{padding:14px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}.choice strong{display:block;margin-bottom:3px}.choice p{margin:0;color:var(--muted);font-size:12px}.flow{counter-reset:flow;border-top:1px solid var(--line);margin-top:15px}.step{display:grid;grid-template-columns:31px 1fr;gap:11px;padding:14px 0;border-bottom:1px solid var(--line)}.step:before{counter-increment:flow;content:counter(flow);display:grid;place-items:center;width:26px;height:26px;border:1px solid #48505c;border-radius:50%;color:var(--cyan);font:11px var(--mono)}.step p{margin:1px 0;color:var(--muted);font-size:13px}.state{display:inline-block;padding:2px 7px;border-radius:999px;font-size:10px}.state.done{background:#183023;color:#8bd9aa}.state.target{background:#222b3d;color:#99b9ef}.state.compat{background:#362020;color:#f09a9a}@media(max-width:700px){.choices{grid-template-columns:1fr}table{display:block;overflow:auto}}
+  :root{color-scheme:dark;--bg:#111316;--panel:#181b20;--panel2:#1e2229;--line:#303640;--text:#e8eaee;--muted:#9da4af;--cyan:#58cadb;--blue:#79aaff;--green:#72d09a;--orange:#ef9b6b;--red:#ed7777;--purple:#b99cff;--mono:ui-monospace,"SFMono-Regular",Menlo,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.68 var(--sans)}a{color:var(--blue)}code,pre{font-family:var(--mono)}code{padding:1px 5px;border-radius:4px;background:#252931;color:#dde1e8;font-size:.9em}.page{width:min(1160px,calc(100% - 32px));margin:auto;padding:28px 0 72px}.set-nav,.toc{display:flex;flex-wrap:wrap;gap:7px}.set-nav{margin-bottom:22px}.set-nav a,.toc a{padding:5px 9px;border:1px solid var(--line);border-radius:7px;color:#b2b8c2;text-decoration:none;font-size:12px}.set-nav a[aria-current="page"],.toc a:hover,.toc a:focus-visible{border-color:#39717b;background:#17252a;color:#8ddbe6}header{padding:8px 0 26px;border-bottom:1px solid var(--line)}.eyebrow{color:var(--cyan);font:11px var(--mono);letter-spacing:.09em;text-transform:uppercase}h1{max-width:900px;margin:9px 0 11px;font-size:clamp(29px,4.5vw,46px);line-height:1.15;letter-spacing:-.025em}h2{margin:0 0 13px;font-size:24px;line-height:1.25}h3{margin:21px 0 8px;font-size:16px}.lead{max-width:900px;margin:0;color:#c7cbd3;font-size:16px}.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}.pill{padding:4px 9px;border:1px solid var(--line);border-radius:999px;color:#b6bcc6;font:11px var(--mono)}.pill.proposed{border-color:#4d456b;background:#241f34;color:#cab8ff}.pill.scope{border-color:#315c63;background:#172329;color:#91dce7}.toc{margin-top:18px}main{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:34px}article{min-width:0}aside{position:sticky;top:18px;align-self:start;padding-top:30px}section{padding:31px 0;border-bottom:1px solid var(--line)}p{margin:9px 0}ul,ol{padding-left:22px}li+li{margin-top:5px}.panel,.callout,.decision{border:1px solid var(--line);border-radius:11px;background:var(--panel);padding:15px 17px}.decision{border-color:#39717b;background:#142126}.decision strong{color:#91dce7}.callout{margin:14px 0}.callout.warn{border-left:3px solid var(--orange);background:#241d18}.callout.good{border-left:3px solid var(--green);background:#16231c}.side-title{margin:0 0 11px;color:var(--muted);font:11px var(--mono);letter-spacing:.08em;text-transform:uppercase}.side-list{list-style:none;padding:0;margin:0}.side-list li{padding:7px 0;border-bottom:1px solid #292e36;font-size:12px}.side-list li:last-child{border-bottom:0}.side-list a{text-decoration:none}.status-list{display:grid;gap:8px}.status-row{display:grid;grid-template-columns:82px 1fr;gap:8px;font-size:12px}.status-row span:last-child{color:var(--muted)}.tag{display:inline-block;padding:2px 7px;border-radius:999px;font:10px var(--mono)}.tag.current{background:#183023;color:#8bd9aa}.tag.target{background:#222b3d;color:#9bbbf0}.tag.remove{background:#382020;color:#f09a9a}table{width:100%;margin:15px 0;border-collapse:collapse;font-size:13px}th,td{padding:10px 11px;border:1px solid var(--line);text-align:left;vertical-align:top}th{background:var(--panel2);color:#dfe2e8}td{color:#bec3cc}.diagram{margin:17px 0;padding:20px;border:1px solid var(--line);border-radius:12px;background:#0d0f12;overflow:auto}.diagram svg{display:block;min-width:820px;width:100%;height:auto}.diagram text{font-family:var(--mono)}.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}.card{padding:15px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}.card h3{margin:0 0 5px}.card p{margin:0;color:var(--muted);font-size:13px}.card .sig{display:block;margin:9px 0;color:#c6b7fa;font:12px var(--mono)}pre{overflow:auto;margin:14px 0;padding:15px 17px;border:1px solid var(--line);border-radius:10px;background:#0d0f12;color:#d8dce3;font-size:12px;line-height:1.6}pre code{padding:0;background:transparent;color:inherit}.steps{counter-reset:step;margin-top:15px}.step{display:grid;grid-template-columns:34px 1fr;gap:11px;padding:13px 0;border-top:1px solid var(--line)}.step:before{counter-increment:step;content:counter(step);display:grid;place-items:center;width:27px;height:27px;border:1px solid #4b535f;border-radius:50%;color:var(--cyan);font:11px var(--mono)}.step strong{display:block}.step p{margin:2px 0;color:var(--muted);font-size:13px}.legend{display:flex;flex-wrap:wrap;gap:12px;color:var(--muted);font-size:11px}.dot{display:inline-block;width:8px;height:8px;margin-right:5px;border-radius:50%}.dot.user{background:var(--purple)}.dot.agent{background:var(--cyan)}.dot.public{background:var(--blue)}.dot.runtime{background:var(--green)}.phase{display:grid;grid-template-columns:110px 1fr;gap:16px;padding:16px 0;border-top:1px solid var(--line)}.phase-id{color:var(--cyan);font:12px var(--mono)}.phase h3{margin:0 0 5px}.phase p{margin:0;color:var(--muted);font-size:13px}.gate{margin-top:7px;color:#d8c49a;font:11px var(--mono)}footer{padding-top:25px;color:var(--muted);font-size:12px}:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}@media(max-width:900px){main{grid-template-columns:1fr}aside{position:static;display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-top:22px}.cards{grid-template-columns:1fr}}@media(max-width:620px){.page{width:min(100% - 22px,1160px)}aside{grid-template-columns:1fr}.phase{grid-template-columns:1fr}table{display:block;overflow:auto}.lead{font-size:15px}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 </style>
 </head>
-<body><div class="page">
-  <nav class="set-nav" aria-label="Self-Programming Workflow 文档集"><a href="./self-programmed-agentic-workflow.html">总览</a><a href="./programs-architecture.html">Programs 代码结构</a><a href="./self-programming-workflow-model.html">编程模型与组合</a><a href="./self-programming-workflow-authoring.html" aria-current="page">创建、隔离与发布</a><a href="./self-programming-workflow-ui.html">DAG 与 Programs</a><a href="./agent-tool-configuration-ui.html">Agent 工具配置</a></nav>
-  <header><div class="eyebrow">Self-Programming Workflow · 2 / 3</div><h1>创建、隔离与发布</h1><p class="lead">本页只定义 <code>agentic_workflow(task)</code> 如何复用、修改或创建项目，以及candidate隔离、可执行测试门、发布判定与实现交付顺序。</p></header>
+<body>
+<div class="page">
+  <nav class="set-nav" aria-label="Self-Programming Workflow 文档集">
+    <a href="./self-programmed-agentic-workflow.html">总览</a>
+    <a href="./programs-architecture.html">Programs 代码结构</a>
+    <a href="./self-programming-workflow-model.html">编程模型与组合</a>
+    <a href="./self-programming-workflow-authoring.html" aria-current="page">发现、创建与自动执行</a>
+    <a href="./self-programming-workflow-ui.html">DAG 与 Programs</a>
+    <a href="./agent-tool-configuration-ui.html">Agent 工具配置</a>
+  </nav>
 
-  <section id="author"><h2>1. 一次调用只使用一个 authoring Agent</h2>
-    <p><code>agentic_workflow(task)</code> 仍是现有 <code>@agentic_function</code>。它不是所有Workflow的调用网关，也不先要求模型返回 <code>reuse / revise / create</code> JSON。Agent直接查看任务、可用公开入口和只读源码；只有需要改代码时才写candidate。</p>
-<pre><code>&lt;author-root&gt;/
-├── available/workflows/&lt;package&gt;/   # 固定HEAD的只读git archive快照
-└── candidate/                       # 唯一可写根项目；初始为空</code></pre>
-    <div class="choices"><div class="choice"><strong>直接复用</strong><p>调用一个现有公开入口；无源码变化，不创建仓库。</p></div><div class="choice"><strong>修改现有项目</strong><p>把一个只读快照复制到candidate后修改；依赖项目保持只读。</p></div><div class="choice"><strong>创建组合项目</strong><p>写一个多文件package，通过静态Python import复用已有Workflow。</p></div></div>
-    <div class="callout">外部进程在authoring期间提交新代码不会改变本次快照。Agent不能直接写 <code>openprogram/programs/workflows</code>，也不能产生多个candidate根项目。</div>
-  </section>
+  <header>
+    <div class="eyebrow">Self-Programming Workflow · architecture and implementation plan</div>
+    <h1>拆分 Workflow 的发现、创建、修订与执行</h1>
+    <p class="lead">本页定义 OpenProgram 如何让 Chat Agent 选择已有 Workflow、如何按需创建可复用 Workflow，以及用户如何通过 <code>auto_workflow(task)</code> 手动触发完整流程。核心约束是：选择、创建、修订和执行必须是独立公共行为；完整入口只做编排，不再保存另一套实现。</p>
+    <div class="meta"><span class="pill proposed">状态：Proposed · 尚未实施</span><span class="pill scope">范围：Workflow catalog / authoring / runtime / Programs UI</span><span class="pill">读者：Runtime、Programs、Web 实现者</span><span class="pill">兼容：旧 run 只读恢复</span></div>
+    <nav class="toc" aria-label="页内导航"><a href="#decision">设计结论</a><a href="#current">当前实现</a><a href="#architecture">目标架构</a><a href="#contracts">公共合同</a><a href="#authoring">创建与复用</a><a href="#lifecycle">生命周期</a><a href="#comparison">框架对照</a><a href="#migration">实施计划</a><a href="#acceptance">验收</a><a href="#status">实现状态</a></nav>
+  </header>
 
-  <section id="decision"><h2>2. Runtime 根据事实判定结果</h2>
-    <ul><li>candidate没有变化时，本次调用树必须恰好有一个成功的顶层公开Workflow调用，Runtime直接采用它的返回值。</li><li>candidate包含一个有效package时，名称命中已有仓库就是修改，否则就是创建；随后进入发布门。</li><li>多个根package、写只读依赖或无法归属的文件均拒绝，并把具体错误交回同一个Agent继续修正。</li><li>Agent最终自然语言只用于Conclusion，不参与控制判定。</li></ul>
-    <div class="callout warning">删除“selection turn → decision JSON → author turn → project JSON”。只保留一个 <code>agent()</code> loop和一个确定性收尾函数；不增加新装饰器、resolver、dispatcher或模型工具协议。</div>
-  </section>
+  <main>
+    <article>
+      <section id="decision">
+        <h2>1. 设计结论</h2>
+        <div class="decision"><strong>删除新的 <code>agentic_workflow</code> 调用入口。</strong>将其能力拆为 <code>search_workflows</code>、<code>create_workflow</code>、<code>revise_workflow</code> 和具体 Workflow 执行；另提供只供用户手动使用的 <code>auto_workflow</code> 完整入口。</div>
+        <div class="cards">
+          <div class="card"><h3>Chat Agent 路径</h3><span class="sig">Agent → search / create / revise / workflow</span><p>Agent自己判断是否直接调用已有Program；目录较大或候选未加载时才搜索。Agent不调用 <code>auto_workflow</code>。</p></div>
+          <div class="card"><h3>用户手动路径</h3><span class="sig">User → auto_workflow(task)</span><p>一次请求完成搜索、一次可见选择、必要时创建、随后执行；每一步仍在DAG中独立可见。</p></div>
+        </div>
+        <div class="callout warn"><code>auto_workflow</code> 是便捷编排入口，不是候选 Workflow，也不是组件。搜索结果必须排除它，生成代码不得 import 它，Agent 工具集合不得暴露它。</div>
+      </section>
 
-  <section id="publication"><h2>3. 发布门必须执行真实测试</h2>
-    <div class="flow"><div class="step"><div><strong>冻结候选</strong><p>固定根项目与全部可达依赖；后续检查和执行使用同一份源码。</p></div></div><div class="step"><div><strong>结构与依赖检查</strong><p>验证标准package、唯一参数化入口、允许的import、缺失依赖和循环依赖。</p></div></div><div class="step"><div><strong>运行项目测试</strong><p>执行 <code>python -m unittest discover -s tests -p "test_*.py"</code>；测试只存在或可解析不算通过。</p></div></div><div class="step"><div><strong>执行本次任务</strong><p>在同一候选快照调用公开入口并记录DAG；失败回到同一个Agent修正。</p></div></div><div class="step"><div><strong>提交和发布</strong><p>测试与入口执行都成功后才创建commit并fast-forward目标仓库。</p></div></div></div>
-    <table><thead><tr><th>测试进程边界</th><th>合同</th></tr></thead><tbody><tr><td>写入</td><td>只允许写本次临时目录，不能写源仓库、其他Workflow或用户目录。</td></tr><tr><td>网络与凭据</td><td>入口测试替换模型和外部Workflow调用；不获得provider凭据，不自动访问网络或安装依赖。</td></tr><tr><td>时间与输出</td><td>使用有界超时和输出上限；超时终止整个测试进程树。</td></tr><tr><td>取消</td><td>立即终止测试，删除临时候选，不创建commit，也不更新管理页面测试状态。</td></tr></tbody></table>
-  </section>
+      <section id="current">
+        <h2>2. 当前实现与已确认缺口</h2>
+        <table>
+          <thead><tr><th>当前事实</th><th>问题</th><th>目标处理</th></tr></thead>
+          <tbody>
+            <tr><td><code>agentic_workflow(task)</code> 是公开 <code>@agentic_function</code>。</td><td>名称没有说明它会搜索、生成、发布并执行。</td><td>新调用迁移到四个明确入口；旧名字停止注册。</td></tr>
+            <tr><td><code>_search_projects()</code>、选择模型调用、candidate authoring、repair、执行与publish位于同一模块。</td><td>只读发现、持久写入和业务执行共享一个生命周期。</td><td>先按公共合同拆行为，再删除不再有调用者的分支。</td></tr>
+            <tr><td>已有项目以Git revision、snapshot和 <code>project_ref.json</code> 固定运行输入。</td><td>有价值的版本和恢复能力与复合入口绑定。</td><td>保留项目格式、快照、checkpoint和显式resume。</td></tr>
+            <tr><td>运行失败可进入候选修订并在成功后发布。</td><td>一次普通执行可能静默修改已发布Workflow。</td><td>发布前结构/测试修复留在create；已发布修改只能显式revise。</td></tr>
+            <tr><td>用户表单和Agent工具看到同一个入口。</td><td>用户需要完整入口，Agent已有自己的任务路由，二者语义不同。</td><td><code>auto_workflow</code> 用户可见、Agent不可见。</td></tr>
+            <tr><td><code>@agentic_function</code> 的 <code>expose=</code> 只是DAG语义，未传给Layer-2 <code>register(..., expose)</code>；Layer-2的 <code>_unexposed</code>/<code>exposed_names()</code> 机制已存在但装饰器未接线。</td><td>“用户可见、Agent工具不可见”今天无法用装饰器表达。</td><td>先给 <code>@agentic_function</code> 增加工具级曝光参数并打通到Layer-2（Phase 0），<code>auto_workflow</code> 用它注册。</td></tr>
+            <tr><td>执行失败进入执行期repair（<code>PROJECT_REPAIR_ATTEMPTS</code>），成功后自动发布新revision。</td><td>普通运行失败会静默改写已发布Workflow。</td><td>执行期repair整体删除；只保留 <code>create_workflow</code> 内发布前的bounded author重试（<code>PROJECT_AUTHOR_ATTEMPTS</code>）。已发布修改只走显式 <code>revise_workflow</code>。</td></tr>
+          </tbody>
+        </table>
+        <p>本设计复用已有的 Workflow package、Git、snapshot、checkpoint、DAG caller 和取消状态设施；不引入第二个执行Runtime、图DSL、Workflow数据库或字符串dispatcher。</p>
+      </section>
 
-  <section id="acceptance"><h2>4. 公共入口验收</h2>
-    <table><thead><tr><th>公共路径</th><th>必须观察到的结果</th></tr></thead><tbody>
-      <tr><td>发现现有入口可完成</td><td>同一个Agent直接调用并返回；没有selection JSON、第二个author turn或新仓库。</td></tr>
-      <tr><td>创建缺失能力</td><td>生成独立Git仓库和多文件package，公开入口是现有 <code>@agentic_function(task)</code>。</td></tr>
-      <tr><td>现有B/C可完成新任务</td><td>只生成import B/C的编排项目，不复制B/C源码。</td></tr>
-      <tr><td>测试失败、超时或取消</td><td>不提交、不fast-forward，原仓库HEAD保持不变。</td></tr>
-      <tr><td>仓库有未提交修改</td><td>本次执行仍使用固定commit；修改只在authoring worktree验证后发布。</td></tr>
-      <tr><td>循环或缺失依赖</td><td>隔离worker启动前返回结构化错误。</td></tr>
-    </tbody></table>
-  </section>
+      <section id="architecture">
+        <h2>3. 目标架构与两条主路径</h2>
+        <figure class="diagram">
+          <svg viewBox="0 0 1120 650" role="img" aria-labelledby="flow-title flow-desc">
+            <title id="flow-title">Workflow 搜索、创建和执行架构</title>
+            <desc id="flow-desc">上方是用户手动调用auto_workflow的完整流程：确定性搜索后由一个可见Selection Agent选择复用或创建，再调用具体Workflow。中间是Chat Agent按任务直接选择搜索、创建、修订或具体Workflow，不经过auto_workflow。两条路径共享catalog和Workflow Runtime。</desc>
+            <defs>
+              <marker id="arrow-neutral" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#7e8793"/></marker>
+              <marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#b99cff"/></marker>
+              <marker id="arrow-cyan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#58cadb"/></marker>
+              <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#72d09a"/></marker>
+            </defs>
 
-  <section id="handoff"><h2>5. 实现交付顺序</h2>
-    <table><thead><tr><th>任务</th><th>代码边界</th><th>完成证据</th></tr></thead><tbody><tr><td>A · 单一Agent authoring</td><td><code>openprogram/programs/functions/agentic/agentic_workflow/__init__.py</code></td><td>直接复用、修改现有项目、创建组合项目三条公共RED。</td></tr><tr><td>B · 可执行测试门</td><td>同一Workflow runtime与component测试</td><td>失败、超时、取消保持HEAD不变；通过时只发布一个commit。</td></tr><tr><td>C · 只读管理视图</td><td>仓库扫描结果由Programs route与前端共用</td><td>详见<a href="./self-programming-workflow-ui.html">DAG与管理网页</a>。</td></tr></tbody></table>
-    <h3>明确不做</h3><ul><li>不增加 <code>@workflow</code>、<code>call_workflow()</code>、<code>invoke_workflow()</code> 或字符串dispatcher。</li><li>不建立项目数据库、测试结果数据库、后台Git轮询、远程push或Marketplace。</li><li>不改变旧run的显式resume兼容；历史 <code>workflow.json</code> / <code>entry.py</code> 不参与新任务。</li></ul>
-  </section>
-</div></body></html>
+            <rect x="20" y="20" width="1080" height="228" rx="18" fill="#15131d" stroke="#4d456b"/>
+            <rect x="20" y="272" width="1080" height="210" rx="18" fill="#10191d" stroke="#315c63"/>
+            <rect x="20" y="510" width="1080" height="120" rx="18" fill="#111915" stroke="#315441"/>
+            <g font-size="12" letter-spacing="1.2">
+              <text x="43" y="51" fill="#cab8ff">用户手动完整流程 · ONLY USER</text>
+              <text x="43" y="303" fill="#91dce7">CHAT AGENT 自主路径 · NO AUTO_WORKFLOW</text>
+              <text x="43" y="541" fill="#9bc9aa">共享状态与执行层 · DETERMINISTIC</text>
+            </g>
+
+            <g text-anchor="middle">
+              <rect x="43" y="88" width="128" height="66" rx="11" fill="#251f35" stroke="#8b73cb"/>
+              <text x="107" y="115" fill="#eee9ff" font-size="14">用户表单</text><text x="107" y="136" fill="#b8a8e4" font-size="11">task</text>
+              <rect x="205" y="88" width="158" height="66" rx="11" fill="#251f35" stroke="#8b73cb"/>
+              <text x="284" y="115" fill="#eee9ff" font-size="14">auto_workflow</text><text x="284" y="136" fill="#b8a8e4" font-size="11">只负责编排</text>
+              <rect x="397" y="88" width="168" height="66" rx="11" fill="#1a2130" stroke="#79aaff"/>
+              <text x="481" y="115" fill="#eaf1ff" font-size="14">search_workflows</text><text x="481" y="136" fill="#a8c4f2" font-size="11">确定性只读搜索</text>
+              <rect x="599" y="88" width="158" height="66" rx="11" fill="#251f35" stroke="#8b73cb"/>
+              <text x="678" y="115" fill="#eee9ff" font-size="14">Selection Agent</text><text x="678" y="136" fill="#b8a8e4" font-size="11">唯一一次模型判断</text>
+              <path d="M822 77L872 121L822 165L772 121Z" fill="#211d2d" stroke="#8b73cb"/>
+              <text x="822" y="117" fill="#eee9ff" font-size="13">reuse</text><text x="822" y="134" fill="#b8a8e4" font-size="11">or create</text>
+              <rect x="924" y="51" width="150" height="66" rx="11" fill="#1a2130" stroke="#79aaff"/>
+              <text x="999" y="78" fill="#eaf1ff" font-size="14">具体 Workflow</text><text x="999" y="99" fill="#a8c4f2" font-size="11">固定 revision</text>
+              <rect x="924" y="160" width="150" height="66" rx="11" fill="#1a2130" stroke="#79aaff"/>
+              <text x="999" y="187" fill="#eaf1ff" font-size="14">create_workflow</text><text x="999" y="208" fill="#a8c4f2" font-size="11">创建并发布</text>
+            </g>
+            <g fill="none" stroke="#b99cff" stroke-width="2" marker-end="url(#arrow-purple)">
+              <path d="M171 121H205"/><path d="M363 121H397"/><path d="M565 121H599"/><path d="M757 121H772"/>
+              <path d="M872 105H892V84H924"/><path d="M822 165V193H924"/><path d="M999 160V117"/>
+            </g>
+            <g font-size="10" fill="#cab8ff"><text x="884" y="97">reuse</text><text x="838" y="187">create</text></g>
+
+            <g text-anchor="middle">
+              <rect x="43" y="342" width="146" height="70" rx="11" fill="#17262b" stroke="#58cadb"/>
+              <text x="116" y="371" fill="#ddf7fb" font-size="15">Chat Agent</text><text x="116" y="393" fill="#8bcbd5" font-size="11">根据任务直接选择</text>
+              <rect x="225" y="320" width="849" height="135" rx="14" fill="#14191f" stroke="#39717b"/>
+              <text x="247" y="344" fill="#8bcbd5" text-anchor="start" font-size="11">PUBLIC WORKFLOW ABILITIES · 按需调用一个或多个入口</text>
+              <rect x="247" y="361" width="178" height="62" rx="10" fill="#1a2130" stroke="#79aaff"/>
+              <text x="336" y="387" fill="#eaf1ff" font-size="13">search_workflows</text><text x="336" y="407" fill="#a8c4f2" font-size="10">目录未知时</text>
+              <rect x="449" y="361" width="178" height="62" rx="10" fill="#1a2130" stroke="#79aaff"/>
+              <text x="538" y="387" fill="#eaf1ff" font-size="13">create_workflow</text><text x="538" y="407" fill="#a8c4f2" font-size="10">需要稳定资产时</text>
+              <rect x="651" y="361" width="178" height="62" rx="10" fill="#1a2130" stroke="#79aaff"/>
+              <text x="740" y="387" fill="#eaf1ff" font-size="13">revise_workflow</text><text x="740" y="407" fill="#a8c4f2" font-size="10">用户明确修改时</text>
+              <rect x="853" y="361" width="199" height="62" rx="10" fill="#1a2130" stroke="#79aaff"/>
+              <text x="952" y="387" fill="#eaf1ff" font-size="13">具体 Workflow</text><text x="952" y="407" fill="#a8c4f2" font-size="10">已有匹配时直接调用</text>
+              <text x="649" y="443" fill="#7f8997" font-size="10">搜索、创建、修订不是固定串行步骤；Agent 不经过 auto_workflow。</text>
+            </g>
+            <path d="M189 377H225" fill="none" stroke="#58cadb" stroke-width="2" marker-end="url(#arrow-cyan)"/>
+
+            <g text-anchor="middle">
+              <rect x="225" y="553" width="224" height="58" rx="11" fill="#1d2721" stroke="#72d09a"/>
+              <text x="337" y="578" fill="#e5f6ea" font-size="14">Workflow catalog</text><text x="337" y="598" fill="#9bc9aa" font-size="10">metadata + immutable Git refs</text>
+              <rect x="652" y="553" width="216" height="58" rx="11" fill="#1d2721" stroke="#72d09a"/>
+              <text x="760" y="578" fill="#e5f6ea" font-size="14">Workflow Runtime</text><text x="760" y="598" fill="#9bc9aa" font-size="10">snapshot + checkpoint</text>
+              <rect x="927" y="553" width="147" height="58" rx="11" fill="#1b2027" stroke="#59616d"/>
+              <text x="1000" y="578" fill="#e8eaee" font-size="14">任务结果</text><text x="1000" y="598" fill="#9da4af" font-size="10">result + ref</text>
+            </g>
+            <g fill="none" stroke="#7e8793" stroke-width="1.5" marker-end="url(#arrow-neutral)">
+              <path d="M336 423V553" stroke-dasharray="5 5"/><path d="M538 423V515H393V553"/><path d="M740 423V515H421V553"/>
+            </g>
+            <g fill="none" stroke="#72d09a" stroke-width="2" marker-end="url(#arrow-green)">
+              <path d="M952 423V505H760V553"/><path d="M1074 84H1090V570H868"/><path d="M868 582H927"/>
+            </g>
+            <g font-size="10" fill="#7f8997"><text x="347" y="515">read</text><text x="480" y="507">publish new revision</text><text x="881" y="497">execute selected Workflow</text></g>
+          </svg>
+        </figure>
+        <div class="legend"><span><i class="dot user"></i>用户手动编排</span><span><i class="dot agent"></i>Chat Agent 决策</span><span><i class="dot public"></i>公共 Workflow 能力</span><span><i class="dot runtime"></i>持久状态与执行</span></div>
+        <h3>Chat Agent 决策顺序</h3>
+        <ol>
+          <li>已加载的Program或Workflow明显匹配：直接调用，不先搜索。</li>
+          <li>可能存在未加载的动态Workflow：调用 <code>search_workflows</code>。</li>
+          <li>完整匹配：直接调用候选的固定revision。</li>
+          <li>只有部分能力：一次性任务可直接组合调用；需要复用、恢复、定时或稳定结构时调用 <code>create_workflow</code>。</li>
+          <li>没有匹配：普通一次性任务仍可由Agent直接使用工具完成；用户明确要求复用资产或任务具有稳定重复结构时才创建。</li>
+        </ol>
+      </section>
+
+      <section id="contracts">
+        <h2>4. 公共能力合同</h2>
+        <table>
+          <thead><tr><th>入口</th><th>调用者</th><th>职责</th><th>禁止行为</th></tr></thead>
+          <tbody>
+            <tr><td><code>search_workflows(task)</code></td><td>Agent、用户</td><td>确定性返回排序候选、固定revision、合同、权限和命中依据。</td><td>不得调用模型、写文件、执行候选或发布。</td></tr>
+            <tr><td><code>create_workflow(task)</code></td><td>Agent、用户</td><td>读取候选组件，生成一个新package，验证后发布并返回ref。</td><td>不得执行用户任务；不得修改已有项目。</td></tr>
+            <tr><td><code>revise_workflow(workflow_id, request)</code></td><td>Agent、用户</td><td>基于指定revision创建新候选，验证后发布新revision。</td><td>不得由普通运行失败静默触发；不得覆盖旧revision。</td></tr>
+            <tr><td><code>auto_workflow(task)</code></td><td>仅用户手动</td><td>调用搜索，由一个可见的selection Agent判断reuse/create，最后调用确定的Workflow。通过Layer-2 unexposed注册实现Agent工具不可见。</td><td>不得出现在Agent工具集合或搜索候选；不得自动revise已发布项目。</td></tr>
+            <tr><td>具体Workflow入口</td><td>Agent、用户、其他Workflow</td><td>执行确定业务合同。</td><td>不得重新进入全局搜索或authoring。</td></tr>
+          </tbody>
+        </table>
+        <pre><code>{
+  "action": "reuse | create",
+  "workflow_id": "research_report",
+  "workflow_revision": "&lt;immutable git revision&gt;",
+  "result": {},
+  "run_id": "&lt;workflow run id&gt;"
+}</code></pre>
+        <p><code>auto_workflow</code> 的返回值必须说明选择了复用还是创建。搜索、创建和执行分别生成DAG子节点，不能只留下一个无法解释的总节点。</p>
+      </section>
+
+      <section id="authoring"><span id="author"></span>
+        <h2>5. 搜索、组件复用与创建</h2>
+        <h3>搜索合同</h3>
+        <p>搜索以catalog metadata和固定Git HEAD为输入，只做确定性文本召回，再把候选合同交给调用它的Agent判断。Chat路径由Chat Agent判断；手动auto路径由其内部唯一的可见selection Agent判断。搜索结果不是执行许可；权限、输入Schema和side effects必须随候选返回。</p>
+        <pre><code>{
+  "workflow_id": "web_research",
+  "revision": "&lt;git revision&gt;",
+  "retrieval_score": 4,
+  "matched_terms": ["web", "research"],
+  "input_schema": {},
+  "output_schema": {},
+  "permissions": ["network"]
+}</code></pre>
+        <h3>创建时复用组件</h3>
+        <p><code>create_workflow</code> 获得可用Workflow的只读快照和公开Program目录。生成项目通过普通Python import引用Workflow package，不复制依赖源码；manifest固定每个依赖revision，并在发布前拒绝循环依赖、缺失入口和未声明权限扩张。</p>
+        <pre><code>research_report/
+├── pyproject.toml
+├── README.md
+├── workflows/
+│   └── research_report/
+│       ├── __init__.py
+│       ├── collect.py      # imports web_research
+│       └── synthesize.py
+└── tests/
+    └── test_research_report.py</code></pre>
+        <div class="steps">
+          <div class="step"><div><strong>固定输入</strong><p>冻结catalog revision和可达依赖；外部新提交不改变本次authoring。</p></div></div>
+          <div class="step"><div><strong>生成唯一candidate</strong><p>只有candidate目录可写；源仓库、依赖Workflow和用户目录保持只读。</p></div></div>
+          <div class="step"><div><strong>确定性验证</strong><p>检查package、唯一入口、Schema、import、依赖闭包、循环、权限和测试命令。</p></div></div>
+          <div class="step"><div><strong>发布前有限修复</strong><p>只修正生成候选的结构或测试失败；次数有上限，取消和provider错误不修复。</p></div></div>
+          <div class="step"><div><strong>原子发布</strong><p>验证全部成功后创建一个commit并更新catalog；返回Workflow ref，不执行用户任务。</p></div></div>
+        </div>
+        <div class="callout good">一次性任务不自动创建Workflow。创建的判据是用户明确要求，或任务需要稳定复用、恢复、定时执行、版本化审查中的至少一项。</div>
+      </section>
+
+      <section id="lifecycle">
+        <h2>6. 生命周期、失败与信任边界</h2>
+        <table>
+          <thead><tr><th>阶段</th><th>允许状态变化</th><th>失败规则</th></tr></thead>
+          <tbody>
+            <tr><td>search</td><td>无持久run；只读结果</td><td>catalog损坏项被报告或跳过；不得改变项目。</td></tr>
+            <tr><td>create / revise</td><td><code>running → completed | failed | cancelled</code></td><td>失败和取消不发布；candidate可回收，诊断写入run state。</td></tr>
+            <tr><td>workflow run</td><td><code>running → completed | failed | capped | cancelled</code></td><td>保留原错误和checkpoint；不自动改写已发布Workflow。</td></tr>
+            <tr><td>auto</td><td>聚合子调用状态</td><td>任一子调用失败即停止；不得把部分结果标记为completed。</td></tr>
+            <tr><td>resume</td><td>只恢复指定run</td><td>固定原snapshot/revision，不重新搜索或重新选择项目。</td></tr>
+          </tbody>
+        </table>
+        <h3>边界要求</h3>
+        <ul>
+          <li>authoring写入仅限本次candidate和run state；网络、凭据和外部工具遵循当前会话权限。</li>
+          <li>同一目标Workflow发布必须串行；不同项目可以并行。运行snapshot不受并发发布影响。</li>
+          <li>取消、权限拒绝、timeout、provider terminal error和外部Stop不进入repair。</li>
+          <li>调用表单继承会话顶部Project；不提供第二个工作目录覆盖项。</li>
+          <li>本地App刷新检测到活动run时拒绝刷新，不能通过重启把运行状态改写为失败或取消。</li>
+          <li>旧 <code>code.py</code>、legacy snapshot和历史run只读恢复；新调用不再产生旧格式。</li>
+        </ul>
+      </section>
+
+      <section id="comparison">
+        <h2>7. 官方框架对照</h2>
+        <p>对照只用于确定边界，不把其他框架的Runtime或DSL引入OpenProgram。下表的“未覆盖”表示所列官方页面没有定义自动生成并发布持久Python Workflow的完整产品合同。</p>
+        <table>
+          <thead><tr><th>官方资料</th><th>相关能力</th><th>采用或修改</th><th>未直接覆盖</th></tr></thead>
+          <tbody>
+            <tr><td><a href="https://openai.github.io/openai-agents-python/multi_agent/">OpenAI Agents SDK · orchestration</a></td><td>区分LLM决策与代码编排；manager可把专用Agent当tool调用。</td><td>采用“Chat Agent拥有用户对话，专用能力是独立工具”；<code>auto_workflow</code>使用代码编排。</td><td>不定义本地Workflow catalog的生成、Git发布和旧run兼容。</td></tr>
+            <tr><td><a href="https://openai.github.io/openai-agents-python/tools/">OpenAI Agents SDK · tool search</a></td><td>大型工具面可以延迟搜索和加载，搜索活动保持可观察。</td><td>采用按需搜索，不要求每条消息先搜索；搜索返回合同而不是直接执行。</td><td>不负责创建新的持久工具实现。</td></tr>
+            <tr><td><a href="https://docs.langchain.com/oss/python/langgraph/workflows-agents">LangGraph · workflows and agents</a></td><td>明确区分预定路径Workflow与动态决定工具的Agent。</td><td>采用职责区分；保留Python控制流，不新增图DSL。</td><td>不定义Agent自动编写、测试并发布新的Python Workflow。</td></tr>
+            <tr><td><a href="https://docs.langchain.com/oss/python/langgraph/use-subgraphs">LangGraph · subgraphs</a></td><td>通过输入输出Schema复用subgraph，父子持久化边界明确。</td><td>采用合同化组合和固定依赖revision；OpenProgram以Python import表达关系。</td><td>不提供OpenProgram式Git项目catalog和authoring发布流程。</td></tr>
+            <tr><td><a href="https://docs.crewai.com/en/concepts/flows">CrewAI · Flows</a></td><td>Flow使用显式事件、状态和Crew组合完成结构化流程。</td><td>只采用“确定流程与Agent协作分层”的原则。</td><td>所列页面不描述运行时搜索并生成持久Flow资产。</td></tr>
+          </tbody>
+        </table>
+        <h3>采用、修改与拒绝</h3>
+        <table>
+          <thead><tr><th>选择</th><th>结论</th><th>边界</th></tr></thead>
+          <tbody>
+            <tr><td>Agent按需搜索工具/Workflow</td><td>采用</td><td>已知Program直接调用；大目录才搜索。</td></tr>
+            <tr><td>可复用子流程的合同化组合</td><td>修改采用</td><td>用Python import、Schema和固定Git revision，不引入subgraph DSL。</td></tr>
+            <tr><td>manager式完整入口</td><td>修改采用</td><td>仅用户手动 <code>auto_workflow</code>；Agent不递归调用它。</td></tr>
+            <tr><td>运行失败自动重写已发布流程</td><td>拒绝</td><td>修改必须显式进入 <code>revise_workflow</code>。</td></tr>
+            <tr><td>所有一次性任务自动持久化</td><td>拒绝</td><td>没有复用或恢复价值时由Agent直接完成。</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="migration"><span id="handoff"></span>
+        <h2>8. 实施计划</h2>
+        <p>每个阶段独立提交，并依次经过公共RED、最小GREEN、规格审查和质量审查。前一阶段未通过两类审查时不进入下一阶段。现有 <code>tests/component/agent/test_agentic_workflow.py</code> 锚定单体入口，各阶段必须同步迁移对应测试归属，避免最后删入口时测试整体失效。</p>
+        <div class="phase"><div class="phase-id">Phase 0</div><div><h3>曝光机制接线</h3><p>给 <code>@agentic_function</code> 增加工具级曝光参数并传入Layer-2 <code>register(..., expose)</code>；复用已有 <code>_unexposed</code>/<code>exposed_names()</code>。</p><div class="gate">Gate：最小注册合同测试证明参数生效；默认行为不变（现有函数仍全部曝光）。</div></div></div>
+        <div class="phase"><div class="phase-id">Phase 1</div><div><h3>提取只读搜索</h3><p>从现有模块抽出 <code>search_workflows</code> 公共合同；返回固定revision、Schema、权限和匹配信息；排除 <code>auto_workflow</code> 与legacy项目。搜索相关测试迁到新入口。</p><div class="gate">Gate：调用前后catalog与run目录字节不变；Agent可读取候选但没有执行节点。</div></div></div>
+        <div class="phase"><div class="phase-id">Phase 2</div><div><h3>拆出创建与修订</h3><p>将candidate、验证、依赖固定和publish迁入 <code>create_workflow</code>；再以显式目标和新revision实现 <code>revise_workflow</code>。创建不执行用户任务。删除执行期repair路径；author/validate/publish测试迁到新入口。</p><div class="gate">Gate：create只新增一个项目；revise只新增一个revision；失败、取消、terminal error均不发布；不存在执行期自动发布路径。</div></div></div>
+        <div class="phase"><div class="phase-id">Phase 3</div><div><h3>建立用户级 auto_workflow</h3><p>使用前两阶段公共能力实现search → visible select → reuse/create → run。完整DAG显示每个步骤；调用表单仅含 <code>task</code> 并继承会话Project；用Phase 0机制注册为Agent不可见。</p><div class="gate">Gate：用户表单可见，Agent工具清单不可见；reuse和create两条真实App路径可区分。</div></div></div>
+        <div class="phase"><div class="phase-id">Phase 4</div><div><h3>移除新 agentic_workflow 调用</h3><p>停止注册旧入口，删除只服务旧复合路径的selection/repair分支。保留显式 <code>resume_workflow(run_id)</code> 和legacy只读执行器。剩余锚定单体入口的测试删除或迁移，resume/legacy测试保留。</p><div class="gate">Gate：新catalog、新DAG和新run不出现 <code>agentic_workflow</code>；历史run仍可查看和恢复且artifact不变。</div></div></div>
+        <div class="phase"><div class="phase-id">Phase 5</div><div><h3>UI、文档和最终门禁</h3><p>Programs按“自动入口 / Workflow / 创建管理能力”表达来源与副作用；同步产品文档；在默认App完成direct、reuse、create、cancel和legacy恢复验收。</p><div class="gate">Gate：受影响测试、完整门禁、文档构建、0死链、App可视验收和实现状态一致。</div></div></div>
+        <h3>最小文件边界</h3>
+        <table>
+          <thead><tr><th>范围</th><th>首选改动位置</th><th>明确不做</th></tr></thead>
+          <tbody>
+            <tr><td>Runtime与公共函数</td><td><code>openprogram/programs/functions/agentic/agentic_workflow/__init__.py</code> 起步；合同稳定后才移动到对应包。</td><td>不在拆职责同时重写执行Runtime。</td></tr>
+            <tr><td>注册和曝光</td><td><code>openprogram/programs/_registry.py</code>、<code>_runtime.py</code> 的现有exposure机制。</td><td>不新增第二套权限或工具注册系统。</td></tr>
+            <tr><td>组件与运行测试</td><td><code>tests/component/agent/test_agentic_workflow.py</code> 及最小注册合同测试。</td><td>不以mock-only测试替代公共入口。</td></tr>
+            <tr><td>Programs UI</td><td>现有Programs route、catalog和page组件。</td><td>不新建Workflow数据库或独立管理应用。</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="acceptance">
+        <h2>9. 公共验收矩阵</h2>
+        <table>
+          <thead><tr><th>场景</th><th>公共入口</th><th>必须观察到</th></tr></thead>
+          <tbody>
+            <tr><td>Agent已有精确工具</td><td>Chat消息</td><td>直接Workflow Call；没有search/create/auto节点。</td></tr>
+            <tr><td>目录中有完整匹配</td><td><code>search_workflows</code> → Workflow</td><td>返回固定ref并复用；没有仓库或revision变化。</td></tr>
+            <tr><td>只有部分组件</td><td><code>create_workflow</code></td><td>新package以import引用组件；没有复制依赖源码；不执行用户任务。</td></tr>
+            <tr><td>显式修改</td><td><code>revise_workflow</code></td><td>旧revision可继续执行；新revision通过全部发布门后成为active。</td></tr>
+            <tr><td>用户完整自动运行</td><td><code>auto_workflow</code></td><td>DAG显示search、唯一selection Agent、可选create和最终Workflow；结果含action和ref。</td></tr>
+            <tr><td>Agent工具发现</td><td>Chat Agent tool inventory</td><td>包含search/create/revise和具体Workflow，不包含auto或旧agentic入口。</td></tr>
+            <tr><td>运行失败</td><td>具体Workflow</td><td>状态failed、原错误保留、已发布源码和HEAD不变。</td></tr>
+            <tr><td>取消或Stop</td><td>create/revise/auto/run</td><td>相关run最终为cancelled；没有repair、publish或遗留running。</td></tr>
+            <tr><td>并发发布同一项目</td><td>两个revise调用</td><td>串行验证active revision；不丢失commit，不覆盖新HEAD。</td></tr>
+            <tr><td>旧run恢复</td><td><code>resume_workflow(run_id)</code></td><td>固定旧artifact只读执行；不创建新项目、不发布、不改旧snapshot。</td></tr>
+          </tbody>
+        </table>
+        <div class="callout warn">最终完成不能只依据单元测试。必须通过默认 <code>/Applications/OpenProgram.app</code> 的真实表单和Chat路径，并在重新加载会话后核对DAG caller、运行状态、Workflow ref和catalog变化。</div>
+      </section>
+
+      <section id="status">
+        <h2>10. 实现状态</h2>
+        <table>
+          <thead><tr><th>能力</th><th>当前证据</th><th>状态</th></tr></thead>
+          <tbody>
+            <tr><td>Git Workflow package、snapshot、checkpoint与显式resume</td><td>当前运行时已有对应实现；本设计要求保留。</td><td><span class="tag current">Existing</span></td></tr>
+            <tr><td><code>@agentic_function</code> 工具级曝光接线到Layer-2</td><td>Layer-2机制已存在，装饰器未传递。</td><td><span class="tag target">Proposed</span></td></tr>
+            <tr><td>独立 <code>search_workflows</code></td><td>当前仅有复合入口内部 <code>_search_projects()</code>。</td><td><span class="tag target">Proposed</span></td></tr>
+            <tr><td>独立 <code>create_workflow</code> / <code>revise_workflow</code></td><td>当前生成、修复和发布仍绑定复合执行路径。</td><td><span class="tag target">Proposed</span></td></tr>
+            <tr><td>用户级 <code>auto_workflow</code></td><td>尚无独立名称和用户专用exposure合同。</td><td><span class="tag target">Proposed</span></td></tr>
+            <tr><td>停止新的 <code>agentic_workflow</code> 调用</td><td>当前仍公开注册。</td><td><span class="tag remove">Pending removal</span></td></tr>
+            <tr><td>默认App真实验收</td><td>新架构尚未实现，不能执行目标验收。</td><td><span class="tag target">Pending</span></td></tr>
+          </tbody>
+        </table>
+        <p>实现证据只在代码完成、规格与质量审查通过、完整门禁和App验收完成后更新；本页当前不声明新架构已经实现。</p>
+      </section>
+
+      <section id="exclusions">
+        <h2>11. 明确排除</h2>
+        <ul>
+          <li>不新增 <code>@workflow</code>、图DSL、第二个Runtime、字符串 <code>call_workflow()</code> dispatcher。</li>
+          <li>不自动把所有用户消息转成Workflow，也不为一次性任务默认创建项目。</li>
+          <li>不自动修改已发布Workflow，不在普通执行错误后隐式发布revision。</li>
+          <li>不建立Workflow数据库、后台Git轮询、远程push、Marketplace或远程依赖解析。</li>
+          <li>不改变Agent、Program和Workflow现有Python调用语义；本设计只拆入口与生命周期。</li>
+        </ul>
+      </section>
+    </article>
+
+    <aside aria-label="设计摘要">
+      <div class="panel"><div class="side-title">最终公共面</div><ul class="side-list"><li><a href="#contracts"><code>search_workflows</code></a></li><li><a href="#contracts"><code>create_workflow</code></a></li><li><a href="#contracts"><code>revise_workflow</code></a></li><li><a href="#contracts"><code>auto_workflow</code></a></li><li>具体Workflow入口</li></ul></div>
+      <div class="panel"><div class="side-title">曝光规则</div><div class="status-list"><div class="status-row"><span>用户</span><span>全部可见</span></div><div class="status-row"><span>Chat Agent</span><span>不含auto</span></div><div class="status-row"><span>Workflow搜索</span><span>排除auto和legacy</span></div><div class="status-row"><span>旧入口</span><span>只读resume</span></div></div></div>
+      <div class="panel"><div class="side-title">相关设计</div><ul class="side-list"><li><a href="./self-programming-workflow-model.html">编程模型与组合</a></li><li><a href="./self-programming-workflow-ui.html">DAG与Programs</a></li><li><a href="./llm-and-agent.html">Agent执行语义</a></li><li><a href="./programs-architecture.html">Programs代码结构</a></li></ul></div>
+    </aside>
+  </main>
+
+  <footer>本页是该主题的当前设计正文。设计变化直接修改本页；实施历史由Git记录，完成证据集中维护在“实现状态”。</footer>
+</div>
+</body>
+</html>
