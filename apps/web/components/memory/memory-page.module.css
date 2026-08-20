@@ -1030,6 +1030,7 @@
 .markdown [data-footnotes] ol {
   margin: 8px 0 0;
   padding-left: 24px;
+  list-style: decimal;
 }
 
 .markdown [data-footnotes] li { margin: 7px 0; padding-left: 3px; }
