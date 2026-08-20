@@ -350,6 +350,12 @@ def test_record_changes_create_update_delete_and_rebuild_views(tmp_path):
     assert len(created) == 1
     assert created[0].content == "A record created through the API."
     assert created[0].memory_id in result.block_ids.values()
+    assert "[D1:1](../sources/D1.md#d1-1)" in (
+        root / "topics/note.md"
+    ).read_text(encoding="utf-8")
+    assert "[D1:1](../sources/D1.md#d1-1)" in (
+        root / "topics/api.md"
+    ).read_text(encoding="utf-8")
     recent = [
         json.loads(line)
         for line in (root / "recent_events.jsonl").read_text().splitlines()

@@ -288,10 +288,15 @@ class TopicNormalizationMixin:
                         for label, target in linked_sources:
                             target = target.strip()
                             if is_plain_source_handle(target):
+                                display = (
+                                    target
+                                    if label.strip() == target
+                                    else normalize_source_label(label, target)
+                                )
                                 sources.append(self._source_link(
                                     topic_path,
                                     target,
-                                    normalize_source_label(label, target),
+                                    display,
                                 ))
                             else:
                                 sources.append(f"[{label}]({target})")
