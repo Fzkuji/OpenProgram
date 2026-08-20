@@ -219,8 +219,8 @@ assert.match(browser, /styles\.systemRow/);
 assert.match(browser, /<Switch[\s\S]*Browsing history/);
 assert.match(browser, /<Switch[\s\S]*Cookies/);
 assert.doesNotMatch(browser, /<input type="checkbox"/);
-assert.match(browser, /styles\.label[\s\S]*Bookmarks are not removed/);
-assert.doesNotMatch(browser, /styles\.pageMeta[\s\S]*Bookmarks are not removed/);
+assert.match(browser, /styles\.label[\s\S]{0,80}Bookmarks are not removed/);
+assert.doesNotMatch(browser, /styles\.pageMeta[\s\S]{0,80}Bookmarks are not removed/);
 
 // Installation type is chrome, not a code value.
 assert.match(general, /styles\.control\}>\{installType\}/);
