@@ -324,6 +324,40 @@ def test_reconcile_leaves_idle_sessions_alone(store):
     assert store.get_session("s1")["status"] == "idle"
 
 
+def test_reconcile_finishes_a_durable_cancellation_intent(store):
+    """A restart after cancel intent must finish cancelled, not interrupted."""
+    from openprogram.context.nodes import Call, ROLE_CODE
+    from openprogram.store import SessionNodeWriter
+    from openprogram.webui import _exec_dag
+
+    ids = _two_turns(store)
+    SessionNodeWriter(store, "s1").append(Call(
+        id="execution-cancelling",
+        role=ROLE_CODE,
+        name="cancellation_probe",
+        output="partial output",
+        caller=ids[-1],
+        metadata={
+            "status": "cancelling",
+            "reason_code": "cancel.user",
+            "execution_kind": "agentic_function",
+        },
+    ))
+    store.update_session("s1", status="cancelling")
+
+    fixed = _exec_dag.reconcile_interrupted_runs()
+
+    node = next(
+        node for node in store.get_nodes("s1")
+        if node.id == "execution-cancelling"
+    )
+    assert fixed == 2
+    assert node.metadata["status"] == "cancelled"
+    assert node.metadata["reason_code"] == "cancel.user"
+    assert node.output == "partial output"
+    assert store.get_session("s1")["status"] == "cancelled"
+
+
 def test_interrupted_exec_tree_keeps_the_restart_reason():
     from openprogram.context.nodes import Call, ROLE_CODE
     from openprogram.webui import _exec_dag
