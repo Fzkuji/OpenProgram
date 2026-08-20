@@ -9,6 +9,8 @@ const source = (path) => readFileSync(new URL(path, root), "utf8");
 const projectMenu = source("components/chat/top-bar/project-menu.tsx");
 const workingDirs = source("components/chat/top-bar/working-dir-chips.tsx");
 const fileTree = source("components/files/file-tree.tsx");
+const explorerHeader = source("components/files/explorer-header.tsx");
+const explorerSearch = source("components/files/explorer-search.ts");
 const fileTreeCss = source("components/files/files-panel.module.css");
 const projectsPage = source("components/projects/projects-page.tsx");
 const projectsCss = source("components/projects/projects-page.module.css");
@@ -46,30 +48,32 @@ assert.match(
   /@agentic_function\([\s\S]*?input=\{[\s\S]*?"task"[\s\S]*?def auto_workflow\(task: str\)/,
   "auto_workflow must expose only its task parameter",
 );
-assert.match(fileTree, /className=\{styles\.treeRootPath\}/);
-assert.match(fileTree, /className=\{styles\.treeToolbar\}/);
+assert.match(explorerHeader, /className=\{styles\.treeRootPath\}/);
+assert.match(explorerHeader, /styles\.treeToolbar\b/);
 assert.match(fileTree, /baseOf\(projectRoot\)/);
-assert.match(fileTree, /aria-expanded=\{searchOpen\}/);
-assert.match(fileTree, /searchOpen \? \(/);
-assert.match(fileTree, /autoFocus/);
-assert.match(fileTree, /event\.key !== "Escape"/);
+assert.match(explorerHeader, /aria-expanded=\{searchOpen\}/);
+assert.match(explorerHeader, /aria-hidden=\{!searchOpen\}/);
+assert.match(explorerHeader, /searchRef\.current\?\.focus\(\)/);
+assert.match(explorerHeader, /event\.key === "Escape"\) closeSearch\(\)/);
 assert.match(fileTreeCss, /\.treeHeader\s*\{[^}]*flex-direction:\s*column/s);
 assert.match(fileTreeCss, /\.treeRootPath\s*\{/);
 assert.match(fileTreeCss, /\.treeToolbar\s*\{/);
 assert.match(fileTreeCss, /\.treeSearchRow\s*\{/);
-assert.match(fileTree, /const TREE_BASE_PAD = 16/);
+assert.match(explorerSearch, /export const EXPLORER_BASE_PAD = 16/);
+assert.match(fileTree, /const TREE_BASE_PAD = EXPLORER_BASE_PAD/);
 assert.match(fileTree, /const TREE_LABEL_OFFSET = 44/);
-assert.match(fileTree, /const INDENT = 27/);
+assert.match(explorerSearch, /export const EXPLORER_INDENT = 27/);
+assert.match(fileTree, /const INDENT = EXPLORER_INDENT/);
 assert.match(fileTree, /paddingLeft: TREE_BASE_PAD \+ depth \* INDENT/);
 assert.match(fileTree, /TREE_BASE_PAD \+ 8 \+ depth \* INDENT/);
 assert.doesNotMatch(fileTree, /\bROW_PAD\b|\bFILE_PAD\b/);
 assert.doesNotMatch(fileTree, /ChevronRight|chevronSlot|styles\.chevron/);
-assert.match(fileTree, /<FolderOpen size=\{14\} className=\{styles\.treeIconFolder\}/);
-assert.match(fileTreeCss, /\.treeHeader\s*\{[^}]*padding:\s*4px 16px/s);
-assert.match(fileTreeCss, /\.treeRootPath\s*\{[^}]*height:\s*32px[^}]*gap:\s*12px/s);
+assert.match(fileTree, /<FolderOpen size=\{15\} className=\{styles\.treeIconFolder\}/);
+assert.match(fileTreeCss, /\.treeHeader\s*\{[^}]*padding:\s*6px 8px/s);
+assert.match(fileTreeCss, /\.treeRootPath\s*\{[^}]*height:\s*36px[^}]*gap:\s*10px/s);
 assert.match(
   fileTreeCss,
-  /\.treeRow\s*\{[^}]*grid-template-columns:\s*16px minmax\(0, 1fr\)/s,
+  /\.treeRow\s*\{[^}]*grid-template-columns:\s*17px minmax\(0, 1fr\)/s,
 );
 assert.match(fileTreeCss, /\.treeKids > \.treeNode::before/);
 assert.match(
@@ -83,7 +87,7 @@ assert.match(
   fileTreeCss,
   /\.treeKids > \.treeNode > \.treeRow::before\s*\{[^}]*width:\s*20px/s,
 );
-assert.match(fileTreeCss, /\.treeName,[\s\S]*\.treePath\s*\{[^}]*margin-left:\s*12px/);
+assert.match(fileTreeCss, /\.treeName,[\s\S]*\.treePath\s*\{[^}]*margin-left:\s*6px/);
 assert.match(
   projectMenu,
   /\{list\.filter\(\(p\) => !p\.path_missing\)\.map\(/,
