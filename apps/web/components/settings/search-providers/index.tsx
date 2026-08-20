@@ -124,33 +124,35 @@ export function SearchProvidersSection() {
                 onChange={setSearch}
               />
             </div>
-          {active.length > 0 && (
-            <>
-              <div className={styles.providersGroupLabel}>{text("Available", "可用")}</div>
-              {active.map((p) => (
-                <SearchProviderItem
-                  key={p.id}
-                  p={p}
-                  active={selectedId === p.id}
-                  onSelect={() => setSelectedId(p.id)}
-                />
-              ))}
-            </>
-          )}
-          {inactive.length > 0 && (
-            <>
-              <div className={styles.providersGroupLabel}>{text("Not configured", "未配置")}</div>
-              {inactive.map((p) => (
-                <SearchProviderItem
-                  key={p.id}
-                  p={p}
-                  active={selectedId === p.id}
-                  onSelect={() => setSelectedId(p.id)}
-                />
-              ))}
-            </>
-          )}
-        </div>
+            <div className={styles.providerListItems}>
+              {active.length > 0 && (
+                <>
+                  <div className={styles.providersGroupLabel}>{text("Available", "可用")}</div>
+                  {active.map((p) => (
+                    <SearchProviderItem
+                      key={p.id}
+                      p={p}
+                      active={selectedId === p.id}
+                      onSelect={() => setSelectedId(p.id)}
+                    />
+                  ))}
+                </>
+              )}
+              {inactive.length > 0 && (
+                <>
+                  <div className={styles.providersGroupLabel}>{text("Not configured", "未配置")}</div>
+                  {inactive.map((p) => (
+                    <SearchProviderItem
+                      key={p.id}
+                      p={p}
+                      active={selectedId === p.id}
+                      onSelect={() => setSelectedId(p.id)}
+                    />
+                  ))}
+                </>
+              )}
+            </div>
+          </div>
 
           <div className={styles.detail}>
             {selected ? (
@@ -162,8 +164,10 @@ export function SearchProvidersSection() {
                 onChanged={load}
               />
             ) : (
-              <div className={styles.detailEmpty}>
-                {text("Select a search backend on the left", "选择左侧搜索后端")}
+              <div className={styles.detailSurface}>
+                <div className={styles.detailEmpty}>
+                  {text("Select a search backend on the left", "选择左侧搜索后端")}
+                </div>
               </div>
             )}
           </div>

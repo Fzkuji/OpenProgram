@@ -3,6 +3,7 @@
 import { ApiKey } from "../providers";
 import styles from "../settings-page.module.css";
 import { SearchConnectivity } from "./connectivity";
+import { SearchProviderGlyph } from "./glyph";
 import { SearchProviderSetup } from "./setup";
 import type { SearchProvider } from "./types";
 import { useTranslation } from "@/lib/i18n";
@@ -27,25 +28,23 @@ export function SearchProviderDetail({
   const isDefault = provider.id === defaultId;
 
   return (
-    <>
-      <header className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2
-            className="text-[18px] font-semibold"
-            style={{ color: "var(--text-bright)" }}
-          >
+    <div className={styles.detailSurface}>
+      <div className={styles.detailHeader}>
+        <div className={styles.detailIcon}>
+          <SearchProviderGlyph id={provider.id} size={40} />
+        </div>
+        <div className={styles.detailTitleWrap}>
+          <div className={styles.detailTitle}>
             {provider.name}
             {provider.tier && (
               <span className={styles.searchTierChip} title={text("Pricing / availability", "价格 / 可用性")}>
                 {provider.tier}
               </span>
             )}
-          </h2>
-          <p className="mt-1 text-[13px]" style={{ color: "var(--text-muted)" }}>
-            {subtitle}
-          </p>
+          </div>
+          <div className={styles.detailSubtitle}>{subtitle}</div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className={styles.detailHeaderActions}>
           <span
             className={
               styles.providerDot +
@@ -65,7 +64,7 @@ export function SearchProviderDetail({
                 : text("Not configured", "未配置")}
           </span>
         </div>
-      </header>
+      </div>
 
       <div
         className="rounded-md p-3 text-[14px]"
@@ -144,6 +143,6 @@ export function SearchProviderDetail({
           )}
         </div>
       )}
-    </>
+    </div>
   );
 }
