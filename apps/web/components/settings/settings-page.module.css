@@ -506,17 +506,14 @@
 .providersLayout {
   display: grid;
   /* Keep the familiar 287px list on wide pages. When the Settings content
-     itself narrows, let the open list use at most 42% so the detail pane
-     remains visible without changing the user's open/collapsed choice. */
+     itself narrows, let the list use at most 42% so the detail pane
+     remains visible. */
   grid-template-columns: min(calc(var(--sidebar-width) - 1px), 42%) minmax(0, 1fr);
   /* Fill the page-body's available height so each column gets a
      definite height and can own its own overflow:auto. */
   height: 100%;
   min-height: 0;
   transition: grid-template-columns 0.15s cubic-bezier(0.165, 0.84, 0.44, 1);
-}
-.providersLayout.providerListCollapsed {
-  grid-template-columns: 49px minmax(0, 1fr);
 }
 .providersSidebar {
   display: flex;
@@ -538,41 +535,24 @@
   border-right: 1px solid var(--border);
   min-height: 0;
 }
-/* Search input and the original provider-list toggle share one toolbar. */
+/* Search is the only control in the sidebar header row. */
 .providersStickyHeader {
   padding: 0 0 8px;
 }
 .providersToolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  width: 100%;
   min-width: 0;
 }
 .providerSearch {
-  flex: 1;
+  width: 100%;
   min-width: 0;
 }
 .providerListItems {
   display: flex;
   flex-direction: column;
   gap: 1px;
-}
-.providerListCollapsed .providersStickyHeader {
-  padding-bottom: 8px;
-}
-.providerListCollapsed .providersToolbar {
-  justify-content: center;
-}
-.providerListCollapsed .providerItem {
-  width: 32px;
-  padding-left: 6px;
-  padding-right: 6px;
-  justify-content: center;
-}
-.providerListCollapsed .providerLabel,
-.providerListCollapsed .providerCustomBadge,
-.providerListCollapsed .providerDot {
-  display: none;
 }
 .providerListItems > .providersGroupLabel { margin-top: 20px; }
 /* First group label sits directly under the sticky header — keep

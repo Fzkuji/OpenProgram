@@ -56,11 +56,19 @@ assert.ok(
   "prefetch Settings home (General) before Providers",
 );
 
-assert.match(providers, /localStorage\.getItem\("providerListOpen"\)/);
-assert.match(providers, /localStorage\.setItem\("providerListOpen",/);
-assert.match(providers, /aria-expanded=\{listOpen\}/);
-assert.match(providers, /styles\.providerListCollapsed/);
-assert.match(providers, /styles\.providersToolbar[\s\S]*SearchInput[\s\S]*sidebarToggleClass/);
+// Providers list is always expanded. Search fills the sidebar header;
+// Settings nav collapse (settingsNavOpen) is the only Settings rail toggle.
+assert.doesNotMatch(providers, /providerListOpen/);
+assert.doesNotMatch(providers, /listOpen/);
+assert.doesNotMatch(providers, /toggleList/);
+assert.doesNotMatch(providers, /styles\.providerListCollapsed/);
+assert.doesNotMatch(providers, /sidebarToggleClass/);
+assert.doesNotMatch(providers, /Collapse provider list|Expand provider list/);
+assert.doesNotMatch(providers, /PanelLeftCloseIcon|PanelLeftOpenIcon/);
+assert.match(providers, /styles\.providersToolbar[\s\S]*styles\.providerSearch[\s\S]*SearchInput/);
+assert.match(providers, /AddCustomProvider/);
+assert.match(providers, /styles\.providersGroupLabel[\s\S]*Enabled/);
+assert.match(providers, /styles\.providersGroupLabel[\s\S]*Not enabled/);
 assert.doesNotMatch(providers, /styles\.railHeader/);
 assert.doesNotMatch(providers, /styles\.railTitle/);
 assert.match(providers, /styles\.pageHeader[\s\S]*styles\.pageTitle[\s\S]*settings\.tab\.providers[\s\S]*styles\.pageMeta[\s\S]*styles\.pageBody/);
@@ -76,14 +84,12 @@ assert.match(css, /\.railTitle\s*\{[^}]*font-size:\s*18px[^}]*line-height:\s*1\.
 assert.match(css, /\.pageTitle\s*\{[^}]*font-size:\s*18px[^}]*overflow-wrap:\s*anywhere/s);
 assert.match(sidebar, /className="text-\[20px\] font-bold tracking-\[-0\.01em\] whitespace-nowrap"/);
 assert.match(css, /\.railItems\s*\{[^}]*margin-top:\s*15px/s);
-assert.match(css, /\.providersLayout\.providerListCollapsed\s*\{[^}]*grid-template-columns:\s*49px minmax\(0, 1fr\)/s);
+assert.doesNotMatch(css, /\.providerListCollapsed/);
 assert.match(css, /\.providersLayout\s*\{[^}]*grid-template-columns:\s*min\(calc\(var\(--sidebar-width\) - 1px\),\s*42%\) minmax\(0,\s*1fr\)/s);
 assert.match(css, /\.settingsNavCollapsed\s+\.railItemLabel\s*\{[^}]*display:\s*none/s);
 assert.match(css, /\.settingsNavCollapsed\s+\.nav\s*>\s*\.railHeader\s+\.railTitle\s*\{[^}]*display:\s*none/s);
-assert.match(css, /\.providerListCollapsed\s+\.providerLabel[\s\S]*display:\s*none/s);
-assert.match(css, /\.providersToolbar\s*\{[^}]*display:\s*flex/s);
-assert.doesNotMatch(css, /\.providerListCollapsed\s+\.railTitle/);
-assert.match(css, /\.providerListCollapsed\s+\.providersStickyHeader[\s\S]*\.providerItem/s);
+assert.match(css, /\.providersToolbar\s*\{[^}]*display:\s*flex[^}]*width:\s*100%/s);
+assert.match(css, /\.providerSearch\s*\{[^}]*width:\s*100%/s);
 assert.match(css, /\.detail\s*\{[^}]*min-width:\s*0[^}]*container-type:\s*inline-size/s);
 assert.match(detail, /className=\{styles\.detailSurface\}/);
 assert.match(searchDetail, /className=\{styles\.detailSurface\}/);

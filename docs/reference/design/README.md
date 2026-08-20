@@ -150,7 +150,7 @@ Proactivity applications (built on the base):
 | [`ui/surface-system.md`](ui/surface-system.md) | Surface system |
 | [`ui/theme-system.html`](ui/theme-system.html) | Theme entry, complete token contract, component consumption, and desktop-overlay propagation |
 | [`ui/app-icon.html`](ui/app-icon.html) | macOS app icon source layers, Apple-managed enclosure, packaging, and legacy fallback boundary |
-| [`ui/settings-collapsible-columns.html`](ui/settings-collapsible-columns.html) | Collapsible app, Settings, and Provider navigation columns |
+| [`ui/settings-collapsible-columns.html`](ui/settings-collapsible-columns.html) | Collapsible app and Settings nav; Providers list stays expanded |
 | [`ui/indicator-dots.md`](ui/indicator-dots.md) | Indicator dots |
 | [`ui/attachment-handling.md`](ui/attachment-handling.md) | Attachment handling ([rendered](ui/attachment-handling.html)) |
 | [`ui/composer-interaction-modes.md`](ui/composer-interaction-modes.md) | Composer interaction modes |

@@ -14,7 +14,7 @@
   <header>
     <div class="k">OpenProgram · Web UI · current design</div>
     <h1>Settings 二级导航栏头</h1>
-    <p class="muted">目标：保留 Settings 二级栏头；栏头按钮顶边以及下方分类按钮的纵向网格都与应用主侧栏一致。Provider 页面继续使用位于列表和详情上方的完整大标题栏，第三级沿用原有搜索工具栏。</p>
+    <p class="muted">目标：保留 Settings 二级栏头；栏头按钮顶边以及下方分类按钮的纵向网格都与应用主侧栏一致。Provider 页面继续使用位于列表和详情上方的完整大标题栏；列表始终展开，第三级工具栏只有通栏搜索框。</p>
   </header>
 
   <div class="status">
@@ -33,16 +33,16 @@
         <div class="chrome">
           <div class="col"><div class="rail-head"><span class="label brand-title">OpenProgram</span><span class="toggle">‹</span></div><div class="row"><i class="ico"></i><span class="label">Programs</span></div></div>
           <div class="col"><div class="rail-head"><span class="label settings-rail-title">Settings</span><span class="toggle">‹</span></div><div class="row"><i class="ico"></i><span class="label">General</span></div><div class="row"><i class="ico"></i><span class="label">LLM Providers</span></div></div>
-          <div class="col detail"><strong class="content-page-title">LLM Providers</strong><div class="rail-head"><span class="label">Search providers…</span><span class="toggle">‹</span></div><div class="block"></div><div class="block short"></div></div>
+          <div class="col detail"><strong class="content-page-title">LLM Providers</strong><div class="rail-head"><span class="label">Search providers…</span></div><div class="block"></div><div class="block short"></div></div>
         </div>
       </div>
       <div class="mock">
         <h3>二级收起状态</h3>
-        <p class="muted">Settings 仍可收至 49px；Provider 保持原有搜索框旁按钮。</p>
+        <p class="muted">Settings 仍可收至 49px；Provider 列表保持展开，搜索框通栏、无列表收起按钮。</p>
         <div class="chrome compact">
           <div class="col"><div class="rail-head"><span class="label brand-title">OpenProgram</span><span class="toggle">›</span></div><div class="row"><i class="ico"></i></div></div>
           <div class="col"><div class="rail-head"><span class="label settings-rail-title">Settings</span><span class="toggle">›</span></div><div class="row"><i class="ico"></i></div><div class="row"><i class="ico"></i></div></div>
-          <div class="col detail"><strong class="content-page-title">LLM Providers</strong><div class="rail-head"><span class="label">Search providers…</span><span class="toggle">‹</span></div><div class="block"></div><div class="block short"></div></div>
+          <div class="col detail"><strong class="content-page-title">LLM Providers</strong><div class="rail-head"><span class="label">Search providers…</span></div><div class="block"></div><div class="block short"></div></div>
         </div>
       </div>
     </div>
@@ -82,7 +82,7 @@
       <thead><tr><th>区域</th><th>展开状态</th><th>收起状态</th><th>持久化</th><th>栏头</th></tr></thead>
       <tbody>
         <tr><td>Settings 分类栏</td><td><code>--sidebar-width - 1px</code></td><td>49px</td><td><code>settingsNavOpen</code></td><td><code>Settings</code> + 收起按钮</td></tr>
-        <tr><td>Provider 列表栏</td><td>最大 <code>--sidebar-width - 1px</code>；窄内容区不超过 42%</td><td>49px</td><td><code>providerListOpen</code></td><td>连续缩窄，不改变展开状态；沿用搜索框 + 收起按钮工具栏</td></tr>
+        <tr><td>Provider 列表栏</td><td>最大 <code>--sidebar-width - 1px</code>；窄内容区不超过 42%</td><td>始终展开，无 49px 图标轨</td><td>无</td><td>通栏搜索框；始终显示 Enabled / Not enabled 分组与 Add Custom Provider</td></tr>
         <tr><td>内容区域</td><td colspan="3">使用剩余宽度；Memory 控件在窄宽度下换行，不改变导航状态。</td><td>Providers 显示页面大标题；Memory 不增加重复页头</td></tr>
       </tbody>
     </table></div>
@@ -91,12 +91,12 @@
   <section>
     <h2>交互与状态边界</h2>
     <div class="flow">
-      <b>独立控制</b><span>收起 Settings 或 Provider 不修改另一列状态。</span>
-      <b>用户状态优先</b><span>改变窗口宽度不自动展开或收起导航列。</span>
-      <b>持久化</b><span>刷新和重新进入 Settings 后恢复用户最后一次选择。</span>
-      <b>键盘与读屏</b><span>按钮保留原生 <code>button</code>、<code>aria-expanded</code>、<code>aria-controls</code> 与明确名称。</span>
+      <b>独立控制</b><span>收起 Settings 分类栏不影响 Provider 列表；Provider 列表没有独立收起控件。</span>
+      <b>用户状态优先</b><span>改变窗口宽度不自动展开或收起 Settings 分类栏。</span>
+      <b>持久化</b><span>刷新和重新进入 Settings 后恢复分类栏最后一次选择（<code>settingsNavOpen</code>）。</span>
+      <b>键盘与读屏</b><span>Settings 分类栏收起按钮保留原生 <code>button</code>、<code>aria-expanded</code>、<code>aria-controls</code> 与明确名称。</span>
       <b>内容适配</b><span>窄窗口只触发表单控件换行；详情数据、选择和滚动状态不变。</span>
-      <b>Provider 详情</b><span>展开的 Provider 列表在窄内容区连续缩至最多 42%，为详情保留剩余宽度，但不改变用户的展开状态。Provider 开关属于标题行，不单独占一行。每条凭据显示为账户卡片：名称与验证状态在卡片头，密钥在卡片主体，使用状态在卡片底部；重命名、替换、重新验证和删除在窄宽度下使用图标按钮。新增凭据先显示单一入口，展开后才显示表单。</span>
+      <b>Provider 详情</b><span>Provider 列表始终展开，在窄内容区连续缩至最多 42%，为详情保留剩余宽度。Provider 开关属于标题行，不单独占一行。每条凭据显示为账户卡片：名称与验证状态在卡片头，密钥在卡片主体，使用状态在卡片底部；重命名、替换、重新验证和删除在窄宽度下使用图标按钮。新增凭据先显示单一入口，展开后才显示表单。</span>
       <b>层级表达</b><span>OpenProgram 品牌标题为 20px；Settings 二级导航标题与右侧内容页标题均使用 18px，保持低一级层级；Provider 第三级不增加独立名称栏头。</span>
       <b>纵向网格</b><span>Settings 分类列表整体下移 15px，使 General、LLM Providers 等行与主侧栏 New chat、Programs 等行逐行对齐；行高和 1px 行距不变。</span>
       <b>导航顺序</b><span><code>General → LLM Providers → Memory → Web Search → Browser → Channels → Token Usage → System</code>；基础设置优先，模型与记忆相邻，统计和系统置后。</span>
@@ -106,7 +106,7 @@
   <section>
     <h2>采用与排除</h2>
     <div class="grid">
-      <div class="card"><h3>采用</h3><ul><li>复用现有两态收起状态和图标。</li><li>删除全局 Settings 顶栏。</li><li>Memory 不增加重复页头，Providers 恢复完整页面标题栏。</li><li>只在 Settings 二级栏头显示名称和按钮。</li></ul></div>
+      <div class="card"><h3>采用</h3><ul><li>Settings 分类栏复用现有两态收起状态和图标。</li><li>删除全局 Settings 顶栏。</li><li>Memory 不增加重复页头，Providers 恢复完整页面标题栏。</li><li>只在 Settings 二级栏头显示名称和按钮；Provider 列表不提供收起控件。</li></ul></div>
       <div class="card"><h3>排除</h3><ul><li>不增加拖拽调整列宽。</li><li>不按 breakpoint 强制改变用户状态。</li><li>不修改 Memory、Provider 或模型数据。</li><li>不改变应用主侧栏行为。</li></ul></div>
     </div>
   </section>
@@ -116,7 +116,7 @@
     <div class="table-wrap"><table>
       <thead><tr><th>依据</th><th>提供的能力</th><th>本设计采用</th><th>未提供或不采用</th></tr></thead>
       <tbody>
-        <tr><td><a href="https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/">WAI-ARIA APG Disclosure</a></td><td>原生按钮、<code>aria-expanded</code>、可选 <code>aria-controls</code>、Enter/Space 键盘触发</td><td>两处收起按钮保留这些语义</td><td>APG 不规定多列宽度和标题位置</td></tr>
+        <tr><td><a href="https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/">WAI-ARIA APG Disclosure</a></td><td>原生按钮、<code>aria-expanded</code>、可选 <code>aria-controls</code>、Enter/Space 键盘触发</td><td>Settings 分类栏收起按钮保留这些语义</td><td>APG 不规定多列宽度和标题位置；Provider 列表不再提供收起按钮</td></tr>
         <tr><td><a href="https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-expanded">MDN aria-expanded</a></td><td>控制元素与被控制区域的状态关系</td><td>状态值与可见列内容同步</td><td>不使用 <code>aria-pressed</code> 表达展开状态</td></tr>
         <tr><td>OpenProgram 现有 Sidebar + CSS Grid</td><td>49px 收起轨、现有动画图标、本地持久化、剩余内容宽度</td><td>直接复用，不新增组件库或状态层</td><td>不增加拖拽 resize handle 和自动 breakpoint 状态</td></tr>
       </tbody>
@@ -130,15 +130,15 @@
       <li>OpenProgram 品牌标题为 20px；Settings 分类栏的 <code>Settings</code> 与右侧 <code>LLM Providers</code> 内容页标题均为 18px；按钮与名称同一行，按钮顶边与主侧栏按钮一致。</li>
       <li>Settings 分类列表的前四行与主侧栏前四行具有相同的 <code>y</code> 坐标、32px 行高和 1px 行距。</li>
       <li>Settings 分类链接按 <code>General / LLM Providers / Memory / Web Search / Browser / Channels / Token Usage / System</code> 顺序呈现；URL、图标、激活态和键盘顺序随同一数组保持一致。</li>
-      <li>LLM Providers 列表栏不显示新增名称栏头，折叠按钮恢复到搜索框旁；原有状态和 49px 收起行为不变。</li>
+      <li>LLM Providers 列表栏不显示新增名称栏头，也不提供列表收起按钮；搜索框通栏，分组标签与 Add Custom Provider 始终可见。</li>
       <li>LLM Providers 在列表和详情上方显示页面大标题与介绍，路由 loading 状态保持同一结构。</li>
       <li>Memory 内容区继续不显示重复标题和介绍。</li>
       <li>Provider 详情变窄时不出现控件重叠或横向溢出；账号名称、密钥、状态和三个操作按钮仍完整可用。</li>
       <li>API Key 名称、验证状态、掩码值和启用状态位于同一个账户卡片内；验证状态本身可触发重新验证，不再单独显示 Validate 按钮。</li>
       <li>已有 Key 时，新增 Key 表单默认不显示；用户通过 <code>Add API key</code> 展开表单，并可取消。</li>
       <li>窄详情缩减左右内边距，Provider 开关保持在标题区域；图标操作具有 <code>title</code> 和 <code>aria-label</code>。</li>
-      <li>窄详情只重排内部内容，不自动收起 Settings 或 Provider 列表，不缩小字体，也不修改数据与交互行为。</li>
-      <li>现有两处 localStorage key、键盘语义、图标选择和 49px 收起宽度保持兼容。</li>
+      <li>窄详情只重排内部内容，不自动收起 Settings 分类栏，不缩小字体，也不修改数据与交互行为。</li>
+      <li>Settings 分类栏保留 <code>settingsNavOpen</code>、键盘语义、图标选择和 49px 收起宽度；Provider 列表不再使用 <code>providerListOpen</code>。</li>
     </ul></div>
   </section>
 
@@ -149,7 +149,7 @@
       <ul>
         <li>Settings 分类列表整体下移 15px；生产页面前四行与主侧栏均位于 <code>y=56/89/122/155px</code>，行高均为 32px。</li>
         <li>Settings 收起后首个分类图标仍位于 <code>y=56px</code>；49px 栏宽、栏头按钮顶边、localStorage 与 ARIA 行为不变。</li>
-        <li>既有 Providers 页头和三级工具栏、Memory 无重复页头及 loading 结构未修改。</li>
+        <li>Providers 列表始终展开：搜索框通栏，无列表收起按钮，分组标签与 Add Custom Provider 始终可见；Memory 无重复页头及 loading 结构未修改。</li>
         <li>Settings 定点检查、Memory 设置检查、TypeScript、production build 和 diff check 均通过；规格与质量复核均为 PASS。</li>
       </ul>
       <p><strong>导航顺序：已实现并复核。</strong></p>
@@ -160,7 +160,7 @@
       </ul>
       <p><strong>Provider 窄宽度适配：已实现并复核。</strong></p>
       <ul>
-        <li>展开的 Provider 列表在窄内容区连续占 42%，宽内容区封顶 287px；收起态仍为 49px，未增加自动折叠状态。</li>
+        <li>Provider 列表始终展开，在窄内容区连续占 42%，宽内容区封顶 287px；不再提供 49px 图标轨或列表收起状态。</li>
         <li>详情容器按 680/420/300px 三个边界重排页头、账号操作、密钥编辑、通用表单和模型信息；宽布局保持原固定列。</li>
         <li>默认 OpenProgram App 在 750px 窗口、两级栏保持展开时实测列表约 121px、详情约 167px；Replace 编辑态的 103px 密钥区域无横向溢出，Base URL 与 Connectivity 正常断行。</li>
         <li>Settings 与 Memory 定点检查、TypeScript、production build 和 diff check 均通过；规格与质量复核均为 PASS。</li>
