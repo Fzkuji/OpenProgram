@@ -2253,6 +2253,7 @@ const MENU_THEME_IDS = [
   "dark",
   "light",
   "aurora",
+  "aurora-light",
   "custom",
 ];
 const MENU_THEME_ID_SET = new Set(MENU_THEME_IDS);
