@@ -145,3 +145,18 @@ def test_uncompacted_sessions_carry_no_covers_field(store):
     ids = _seed(store, "s1", 2)
     graph = build_session_graph("s1", ids[-1])
     assert all("covers_ids" not in r for r in graph)
+
+
+def test_structured_message_content_has_a_graph_preview(store):
+    store.create_session("s1", "main", title="t")
+    store.append_message("s1", {
+        "id": "call1",
+        "role": "code",
+        "content": {"status": "completed", "result": ["saved", "report.md"]},
+    })
+
+    graph = build_session_graph("s1", "call1")
+
+    assert _row(graph, "call1")["preview"] == (
+        '{"status": "completed", "result": ["saved", "report.md"]}'
+    )

@@ -104,7 +104,8 @@ function _signature(graph: GNode[], headId: string | null): string {
   if (!graph || !graph.length) return "empty|" + (headId || "");
   const parts = graph.map(
     (m) =>
-      m.id + ":" + (m.predecessor || "") + ":" + (m.role || "") + ":" + (m.display || ""),
+      m.id + ":" + (m.predecessor || "") + ":" + (m.role || "") + ":"
+      + (m.display || "") + ":" + (m.status || ""),
   );
   parts.sort();
   return parts.join(",") + "|" + (headId || "");

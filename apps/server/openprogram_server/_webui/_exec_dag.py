@@ -54,6 +54,8 @@ def _exec_tnode(n, kids: dict[str, list]) -> dict:
             pass
     if status == "error":
         tn["error"] = str(n.output or meta.get("error") or "")
+    elif status == "interrupted":
+        tn["error"] = str(meta.get("error") or n.output or "")
     if n.is_llm():
         # exec rows render params._content (prompt) + raw_reply.
         tn["node_type"] = "exec"

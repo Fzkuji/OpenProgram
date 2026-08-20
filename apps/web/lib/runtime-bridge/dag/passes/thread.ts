@@ -84,7 +84,8 @@ export function isChainNode(n: GNode): boolean {
   // colour but lays out on the agent's thread, not as a lane.
   if ((n as Record<string, unknown>)._agentTurn) return false;
   if (n.function === "merge") return true;
-  if ((n.role === "tool" || n._runNode) && _hangsOnRoot(n) && n.function) {
+  if ((n.role === "tool" || n._runNode) && _hangsOnRoot(n)
+      && (n.function || n.name)) {
     return true;
   }
   return (
