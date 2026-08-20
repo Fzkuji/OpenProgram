@@ -1,20 +1,19 @@
 # 自编程agentic workflow
 
-`agentic_workflow`是OpenProgram的自编程agentic workflow（self-programmed agentic workflow）：agent自己把任务写成一个真正的Python程序，再由框架执行。planner用框架的积木组合程序：三层LLM原语加上注册的agentic function，控制流就是Python本身的`if`、`for`、异常。运行模型和开发者写代码一样：整个程序从头到尾跑完；崩了就看报错、改代码、整个重跑，已完成的调用直接回放上次结果，效果上从出错处继续。
+OpenProgram的自编程 workflow 路径会为任务写成真正的Python程序，再由框架执行。planner用框架的积木组合程序：三层LLM原语加上注册的agentic function，控制流就是Python本身的`if`、`for`、异常。运行模型和开发者写代码一样：整个程序从头到尾跑完；崩了就看报错、改代码、整个重跑，已完成的调用直接回放上次结果，效果上从出错处继续。
 
-在Programs面板里以`agentic_workflow`运行，或从Python调用：
+原先单一的`agentic_workflow(task)`入口正在拆成四个公共入口。搜索、创建、修订和执行保持独立；`auto_workflow`只负责编排这些步骤。该拆分正在实施——新的调用请使用下面四个名字。
 
-```python
-from openprogram.programs.functions.agentic.agentic_workflow import agentic_workflow
+| 入口 | 谁可以调用 | 职责 | 禁止 |
+|---|---|---|---|
+| `search_workflows(task)` | Agent 和用户 | 确定性返回排序候选，并带上固定 revision、合同、权限和命中依据。 | 调用模型、写文件、执行候选或发布。 |
+| `create_workflow(task)` | Agent 和用户 | 读取候选组件，生成一个新 package，验证后发布并返回 ref。 | 执行用户任务，或修改已有项目。 |
+| `revise_workflow(workflow_id, request)` | Agent 和用户 | 基于指定 revision 创建新候选，验证后发布新 revision。 | 由普通运行失败静默触发，或覆盖旧 revision。 |
+| `auto_workflow(task)` | 仅用户表单 | 调用搜索，由一个可见的 selection Agent 判断 reuse/create，再运行选定的 Workflow。 | 出现在 Agent 工具清单或搜索候选里，或自动修订已发布项目。 |
 
-# 新建workflow
-result = agentic_workflow("把 auth 模块迁到新客户端并更新它的测试")
+Chat Agent 若已有明显匹配的 Program 或 Workflow，就直接调用；目录较大或候选未加载时才搜索。Agent 不调用`auto_workflow`。需要一次请求完成搜索、选择、必要时创建并执行时，从 Programs 页或函数表单使用`auto_workflow`。在 Programs 页上，这四个名字属于 Workflow 管理能力；`auto_workflow`标为仅用户手动的自动入口。
 
-# 自动续跑：任务以"继续"/"接着"开头时，自动找最近的workflow续跑
-result = agentic_workflow("继续上次的优化")
-```
-
-每次新调用新建一个独立实例，在会话仓库下有自己的目录：`workflows/<run_id>/`，存`code.py`和`state.json`。实例之间什么都不共享，想同时跑几个流程就跑几个。
+每次 Workflow 运行仍会新建独立实例，在会话仓库下有自己的目录：`workflows/<run_id>/`，存`code.py`和`state.json`。实例之间什么都不共享，想同时跑几个流程就跑几个。
 
 ## 小任务不写程序
 
@@ -94,7 +93,7 @@ def workflow() -> str:
 
 没有调度器，没有"取下一项"。续跑就是把`workflow()`从第一行重新执行一遍，唯一的机制是调用边界的短路：`state.json`里已完成的调用（同名、同次序、同参数摘要）不真正执行，直接返回上次的结果。重跑时程序飞速掠过做完的部分，到第一个没做完的调用才真正干活。控制流每次都完整重走（`if`重新判断、`for`重新循环），恢复的只是昂贵调用的结果。
 
-进程被杀同理：状态变化先写盘再动手，拿`run_id`再跑一遍即续。续跑是显式的：每次`agentic_workflow(task)`都新建实例（返回值带`run_id`），续跑要传入既有实例的`run_id`。不存在按任务文本匹配旧运行这种事。
+进程被杀同理：状态变化先写盘再动手，拿`run_id`再跑一遍即续。续跑是显式的：每次新运行都新建实例（返回值带`run_id`），续跑要传入既有实例的`run_id`。不存在按任务文本匹配旧运行这种事。
 
 ## 出错后的修订
 

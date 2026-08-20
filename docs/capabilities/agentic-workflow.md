@@ -1,20 +1,19 @@
 # Self-programmed agentic workflows
 
-`agentic_workflow` is OpenProgram's self-programmed agentic workflow: the agent writes an actual Python program for the task, and the framework executes it. The planner composes the program out of the framework's building blocks — three-tier LLM primitives plus registered agentic functions — and control flow is plain Python: `if`, `for`, exceptions. The run model is the same as a developer's: the whole program runs top to bottom; if it crashes, the planner reads the traceback, fixes the code, and reruns it, with completed calls replayed from recorded results so the rerun effectively continues from the point of failure.
+OpenProgram's self-programmed workflow path writes a real Python program for a task and then executes it. The planner composes the program from the framework's building blocks — three-tier LLM primitives plus registered agentic functions — and control flow is plain Python: `if`, `for`, exceptions. The run model is the same as a developer's: the whole program runs top to bottom; if it crashes, the planner reads the traceback, fixes the code, and reruns it, with completed calls replayed from recorded results so the rerun effectively continues from the point of failure.
 
-Run it from the Programs panel as `agentic_workflow`, or call it from Python:
+The former single `agentic_workflow(task)` call is being split into four public entries. Search, create, revise, and run stay independent; `auto_workflow` only orchestrates those steps. This split is being implemented — use the four names below for new work.
 
-```python
-from openprogram.programs.functions.agentic.agentic_workflow import agentic_workflow
+| Entry | Who can call it | Responsibility | Must not |
+|---|---|---|---|
+| `search_workflows(task)` | Agent and user | Deterministically return ranked candidates with fixed revisions, contracts, permissions, and hit evidence. | Call a model, write files, execute a candidate, or publish. |
+| `create_workflow(task)` | Agent and user | Read candidate components, generate one new package, validate it, publish it, and return a ref. | Execute the user task or modify an existing project. |
+| `revise_workflow(workflow_id, request)` | Agent and user | Create a new candidate from a specified revision, validate it, and publish a new revision. | Run as a silent follow-up to an ordinary failure, or overwrite an old revision. |
+| `auto_workflow(task)` | User form only | Call search, let one visible selection agent choose reuse or create, then run the chosen workflow. | Appear in the Agent tool list or search candidates, or auto-revise a published project. |
 
-# Start a new workflow
-result = agentic_workflow("port the auth module to the new client and update its tests")
+A Chat Agent that already has a matching Program or Workflow calls it directly. It searches only when the catalog is large or a candidate is not loaded. It never calls `auto_workflow`. Use `auto_workflow` from the Programs panel or a function form when you want one request to search, choose, create if needed, and run. On the Programs page these four names are Workflow capabilities; `auto_workflow` is labeled as a user-only auto entry.
 
-# Auto-resume: tasks starting with "continue"/"resume" automatically resume the latest workflow
-result = agentic_workflow("continue the optimization")
-```
-
-Every call creates an independent workflow instance with its own directory under the session repository — `workflows/<run_id>/` holding `code.py` and `state.json`. Instances share nothing: run as many concurrent workflows as you want.
+Every workflow run still creates an independent instance with its own directory under the session repository — `workflows/<run_id>/` holding `code.py` and `state.json`. Instances share nothing: run as many concurrent workflows as you want.
 
 ## Small tasks are not split
 
@@ -95,7 +94,7 @@ There is no checkpoint syntax in the program. Recording is the framework's job: 
 
 There is no scheduler and no "next item" logic. Resuming means executing `workflow()` again from its first line. The only mechanism is short-circuiting at call boundaries: a call already completed in `state.json` — same name, same order, same arguments — is not executed again; it returns its recorded result instantly. The rerun flashes past finished work and starts doing real work at the first incomplete call. Control flow is re-evaluated every time (`if` re-branches, `for` re-loops); only the expensive call results are restored.
 
-A killed process resumes the same way: state changes hit disk before the work happens, so rerunning the instance by its `run_id` continues it. Resuming is explicit — each `agentic_workflow(task)` call creates a fresh instance and returns its `run_id`; to continue an existing one, pass that `run_id` back. Nothing is matched by task text.
+A killed process resumes the same way: state changes hit disk before the work happens, so rerunning the instance by its `run_id` continues it. Resuming is explicit — each new run creates a fresh instance and returns its `run_id`; to continue an existing one, pass that `run_id` back. Nothing is matched by task text.
 
 ## Revision after an error
 
