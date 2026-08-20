@@ -2512,3 +2512,229 @@ def test_create_name_collision_allocates_new_project_without_overwrite(
     assert second["project_id"] == "research_workflow_two"
     assert (session_repo / "catalog" / first["project_id"]).exists()
     assert (session_repo / "catalog" / second["project_id"]).exists()
+
+
+def test_run_published_workflow_executes_old_revision_after_new_publish(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    initial = _project(files={
+        "steps/discover.py": (
+            "def discover(task):\n"
+            "    return agent('discover initial')\n"
+        ),
+        "entry.py": "def workflow(task):\n    return discover(task)\n",
+    })
+    _candidate, old_revision = _install_workflow_project(session_repo, initial)
+    calls = _executor(monkeypatch)
+    _summarizer(monkeypatch, "Completed initial revision.")
+
+    first = TL._run_published_workflow(
+        "research papers",
+        "research_workflow",
+        old_revision,
+        session_id=TL.current_session_id(),
+        spawn_caller=None,
+    )
+    assert first["status"] == "completed"
+    assert [call["prompt"] for call in calls] == ["discover initial"]
+
+    revised = _project(files={
+        "steps/discover.py": (
+            "def discover(task):\n"
+            "    return agent('discover revised')\n"
+        ),
+        "entry.py": "def workflow(task):\n    return discover(task)\n",
+    })
+    revision_instance = session_repo / "research-workflow-revised"
+    revision_instance.mkdir()
+    TL._replace_snapshot(revision_instance, TL._validate_project_candidate(json.loads(revised)))
+    TL._publish_snapshot(
+        revision_instance,
+        project_id="research_workflow",
+        action="revise",
+        metadata=TL._validate_project_candidate(json.loads(revised))["project_metadata"],
+        workflow_dependencies=TL._replace_snapshot(
+            revision_instance,
+            TL._validate_project_candidate(json.loads(revised)),
+        ),
+    )
+    calls.clear()
+    _summarizer(monkeypatch, "Completed old revision again.")
+
+    second = TL._run_published_workflow(
+        "research papers again",
+        "research_workflow",
+        old_revision,
+        session_id=TL.current_session_id(),
+        spawn_caller=None,
+    )
+
+    assert second["status"] == "completed"
+    assert second["project_revision"] == old_revision
+    assert [call["prompt"] for call in calls] == ["discover initial"]
+
+
+def test_run_published_workflow_uses_pinned_dependency_not_active_head(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _leaf, leaf_revision = _install_workflow_project(
+        session_repo,
+        _project(
+            name="paper_search",
+            summary="Search papers",
+            files={
+                "steps/search.py": "def search(task):\n    return 'initial'\n",
+                "entry.py": "def workflow(task):\n    return search(task)\n",
+            },
+        ),
+    )
+    parent_payload = json.loads(_package_project())
+    parent_payload["files"]["steps/discover.py"] = (
+        "from workflows.paper_search import paper_search\n\n"
+        "def discover(task):\n"
+        "    return paper_search(task)\n"
+    )
+    parent_candidate = TL._validate_project_candidate(parent_payload)
+    author_instance = session_repo / "parent-author"
+    author_instance.mkdir()
+    parent_dependencies = TL._replace_snapshot(author_instance, parent_candidate)
+    _project_id, parent_revision = TL._publish_snapshot(
+        author_instance,
+        project_id="literature_review",
+        action="create",
+        metadata=parent_candidate["project_metadata"],
+        workflow_dependencies=parent_dependencies,
+    )
+    assert parent_dependencies == {"paper_search": leaf_revision}
+
+    revised_leaf = TL._validate_project_candidate(json.loads(_project(
+        name="paper_search",
+        summary="Search papers",
+        files={
+            "steps/search.py": "def search(task):\n    return 'revised'\n",
+            "entry.py": "def workflow(task):\n    return search(task)\n",
+        },
+    )))
+    leaf_instance = session_repo / "leaf-revised"
+    leaf_instance.mkdir()
+    TL._replace_snapshot(leaf_instance, revised_leaf)
+    _leaf_id, revised_leaf_revision = TL._publish_snapshot(
+        leaf_instance,
+        project_id="paper_search",
+        action="revise",
+        metadata=revised_leaf["project_metadata"],
+        workflow_dependencies=TL._replace_snapshot(leaf_instance, revised_leaf),
+    )
+    assert revised_leaf_revision != leaf_revision
+
+    _executor(monkeypatch, lambda prompt, _kwargs: prompt.split()[-1])
+    _summarizer(monkeypatch, "Completed pinned dependency run.")
+
+    result = TL._run_published_workflow(
+        "find papers",
+        _project_id,
+        parent_revision,
+        session_id=TL.current_session_id(),
+        spawn_caller=None,
+    )
+
+    assert result["status"] == "completed"
+    assert _state(session_repo, result["run_id"])["result"] == "initial"
+    assert result["workflow_dependencies"] == {"paper_search": leaf_revision}
+
+
+def test_resume_failed_legacy_code_run_keeps_artifact_unchanged(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    instance = session_repo / "workflows" / "legacy-fail"
+    instance.mkdir(parents=True)
+    source = "def workflow():\n    raise RuntimeError('boom')\n"
+    (instance / "code.py").write_text(source, encoding="utf-8")
+    TL._save_state(instance / "state.json", {
+        "run_id": "legacy-fail", "task": "legacy", "status": "failed",
+        "executions": 0, "items": [], "revisions": [], "result": "",
+        "last_error": "RuntimeError: boom",
+    })
+    planner_calls: list[str] = []
+
+    def forbidden(_sid, prompt, **_kwargs):
+        planner_calls.append(prompt)
+        return ""
+
+    monkeypatch.setattr(TL, "_run_planner_turn", forbidden)
+    _summarizer(monkeypatch, "Completed legacy resume.")
+    artifact_before = (instance / "code.py").read_bytes()
+
+    result = TL.resume_workflow("legacy-fail")
+
+    assert result["status"] == "failed"
+    assert planner_calls == []
+    assert (instance / "code.py").read_bytes() == artifact_before
+    assert not list(instance.glob("code.*.py"))
+
+
+def test_auto_decision_stops_after_attempt_limit(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    calls: list[str] = []
+
+    def bad(_sid, _prompt, **_kwargs):
+        calls.append("attempt")
+        return "not json"
+
+    monkeypatch.setattr(TL, "_run_planner_turn", bad)
+
+    with pytest.raises(TL.InvalidWorkflow, match="selection failed after"):
+        TL._request_auto_decision(
+            "research papers",
+            [{"workflow_id": "research_workflow", "revision": "abc"}],
+            session_id=TL.current_session_id(),
+            agent_id="main",
+            spawn_caller=None,
+        )
+
+    assert len(calls) == TL.AUTO_DECISION_ATTEMPTS
+
+
+def test_revise_workflow_rejects_unchanged_candidate(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _install_workflow_project(session_repo, _project())
+    _planner(monkeypatch, _project())
+    project = session_repo / "catalog" / "research_workflow"
+
+    with pytest.raises(TL.InvalidWorkflow, match="revision unchanged"):
+        TL.revise_workflow("research_workflow", "keep everything the same")
+
+    assert _git_output(project, "rev-list", "--count", "HEAD") == "1"
+
+
+def test_selection_and_authoring_use_public_agent(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    import openprogram.agentic_programming as agentic_programming
+
+    agent_calls: list[dict] = []
+
+    def fake_agent(prompt, **kwargs):
+        agent_calls.append({"prompt": prompt, **kwargs})
+        if "<workflow project candidates>" in prompt:
+            return json.dumps({"action": "create"})
+        return _project()
+
+    monkeypatch.setattr(agentic_programming, "agent", fake_agent)
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("run_agent_turn must not be called from workflow authoring")
+
+    monkeypatch.setattr(
+        "openprogram.agent.sub_agent_run.run_agent_turn",
+        forbidden,
+    )
+    _executor(monkeypatch)
+    _summarizer(monkeypatch)
+
+    TL.create_workflow("author via public agent")
+
+    assert agent_calls
+    assert all(call.get("tools") == list(TL.PLANNER_TOOLS) for call in agent_calls)
