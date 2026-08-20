@@ -439,7 +439,7 @@ function ApplicationSection() {
           <>
             <div className={styles.row}>
               <div className={styles.label}>{text("Installation", "安装类型")}</div>
-              <div className={styles.value}>{installType}</div>
+              <div className={styles.control}>{installType}</div>
             </div>
             <div className={styles.row}>
               <div className={styles.label}>{text("Check for updates", "检查更新")}</div>

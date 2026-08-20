@@ -118,11 +118,15 @@ export function SearchProvidersSection() {
         <div className={styles.providersLayout}>
           <div className={styles.providersSidebar}>
             <div className={styles.providersStickyHeader}>
-              <SearchInput
-                placeholder={text("Search backends...", "搜索后端...")}
-                value={search}
-                onChange={setSearch}
-              />
+              <div className={styles.providersToolbar}>
+                <div className={styles.providerSearch}>
+                  <SearchInput
+                    placeholder={text("Search backends...", "搜索后端...")}
+                    value={search}
+                    onChange={setSearch}
+                  />
+                </div>
+              </div>
             </div>
             <div className={styles.providerListItems}>
               {active.length > 0 && (
