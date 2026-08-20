@@ -10,7 +10,7 @@
     "check:owner-auth-bootstrap": "node --no-warnings --experimental-strip-types scripts/check-owner-auth-bootstrap.mjs",
     "check:secret-non-retrieval": "node --no-warnings --experimental-strip-types scripts/check-secret-non-retrieval.mjs",
     "check:a11y-wiring": "node --no-warnings scripts/check-a11y-wiring.mjs",
-    "check:theme-contract": "node --no-warnings scripts/check-theme-contract.mjs && node --no-warnings --experimental-strip-types --test tests/theme-config.test.mjs",
+    "check:theme-contract": "node --no-warnings scripts/check-theme-contract.mjs && node --no-warnings --experimental-strip-types --test tests/theme-config.test.mjs tests/theme-appearance.test.mjs",
     "check:bookmarks": "node --no-warnings scripts/check-bookmarks.mjs",
     "check:built-in-browser": "node --no-warnings scripts/check-built-in-browser.mjs",
     "check:center-tabs": "node scripts/check-center-tabs.mjs",

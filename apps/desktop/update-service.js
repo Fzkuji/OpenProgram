@@ -20,6 +20,10 @@ const REQUEST_TIMEOUT_MS = 30_000;
 const DOWNLOAD_IDLE_TIMEOUT_MS = 60_000;
 const RESPONSE_ABORT = Symbol("openprogramUpdateAbort");
 
+function desktopUpdateFetch(requestUrl, options) {
+  return fetch(requestUrl, options);
+}
+
 function versionParts(value) {
   const match = VERSION_RE.exec(String(value || ""));
   if (!match) throw new Error(`invalid version: ${value}`);
@@ -489,6 +493,7 @@ module.exports = {
   LATEST_URL,
   SUCCESS_INTERVAL_MS,
   compareVersions,
+  desktopUpdateFetch,
   downloadVerified,
   nextAutomaticCheckAt,
   normalizePersistedState,

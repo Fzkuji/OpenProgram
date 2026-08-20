@@ -15,13 +15,13 @@ const THEME_IDS = [
   "custom",
   "custom-light",
 ];
-const THEME_STYLES = ["beige", "neutral", "aurora", "custom"];
+const THEME_STYLES = ["beige", "neutral", "aurora"];
+const LEGACY_THEME_STYLES = ["beige", "neutral", "aurora", "custom"];
 const THEME_MODES = ["auto", "dark", "light"];
 const THEME_STYLE_PAIRS = {
   beige: { dark: "beige-dark", light: "beige-light" },
   neutral: { dark: "dark", light: "light" },
   aurora: { dark: "aurora", light: "aurora-light" },
-  custom: { dark: "custom", light: "custom-light" },
 };
 const LEGACY_THEME_PREFERENCES = {
   auto: { style: "beige", mode: "auto" },
@@ -31,8 +31,8 @@ const LEGACY_THEME_PREFERENCES = {
   light: { style: "neutral", mode: "light" },
   aurora: { style: "aurora", mode: "dark" },
   "aurora-light": { style: "aurora", mode: "light" },
-  custom: { style: "custom", mode: "dark" },
-  "custom-light": { style: "custom", mode: "light" },
+  custom: { style: "beige", mode: "dark" },
+  "custom-light": { style: "beige", mode: "light" },
 };
 const DEFAULT_THEME_STYLE = "beige";
 const DEFAULT_THEME_MODE = "auto";
@@ -42,6 +42,7 @@ const STORAGE_KEYS = {
   style: "agentic_theme_style",
   mode: "agentic_theme_mode",
   legacy: "agentic_theme",
+  accent: "agentic_theme_accent",
 };
 
 // Built-in chrome tokens copied from --bg-primary / --text-primary /
@@ -113,6 +114,7 @@ function isThemeId(value) {
 }
 
 function coerceThemeStyle(value) {
+  if (value === "custom") return DEFAULT_THEME_STYLE;
   return typeof value === "string" && THEME_STYLES.includes(value)
     ? value
     : DEFAULT_THEME_STYLE;
@@ -126,7 +128,8 @@ function coerceThemeMode(value) {
 
 function resolveThemePreference(style, mode, systemDark) {
   const resolvedMode = mode === "auto" ? (systemDark ? "dark" : "light") : mode;
-  const pair = THEME_STYLE_PAIRS[style] || THEME_STYLE_PAIRS[DEFAULT_THEME_STYLE];
+  const resolvedStyle = coerceThemeStyle(style);
+  const pair = THEME_STYLE_PAIRS[resolvedStyle] || THEME_STYLE_PAIRS[DEFAULT_THEME_STYLE];
   return { theme: pair[resolvedMode], resolvedMode };
 }
 
@@ -140,10 +143,13 @@ function legacyThemePreference(value, schemaVersion = "2") {
   return { style: preference.style, mode: preference.mode };
 }
 
-function chromeForTheme(themeId) {
+function chromeForTheme(themeId, accentColor) {
   const resolved = CUSTOM_FALLBACK_THEME[themeId]
     || (THEME_CHROME[themeId] ? themeId : "beige-dark");
-  return { ...THEME_CHROME[resolved] };
+  const chrome = { ...THEME_CHROME[resolved] };
+  const accent = normalizeHex(accentColor);
+  if (accent) chrome.link = accent;
+  return chrome;
 }
 
 function backgroundForTheme(themeId) {
@@ -180,22 +186,26 @@ function readPrefsFile(filePath) {
       style: typeof raw[STORAGE_KEYS.style] === "string" ? raw[STORAGE_KEYS.style] : null,
       mode: typeof raw[STORAGE_KEYS.mode] === "string" ? raw[STORAGE_KEYS.mode] : null,
       legacy: typeof raw[STORAGE_KEYS.legacy] === "string" ? raw[STORAGE_KEYS.legacy] : null,
+      accent: typeof raw[STORAGE_KEYS.accent] === "string" ? raw[STORAGE_KEYS.accent] : null,
     };
   } catch {
     return {};
   }
 }
 
-function writePrefsFile(filePath, { style, mode, theme, schema = "3" }) {
+function writePrefsFile(filePath, { style, mode, theme, schema = "3", accent = null }) {
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
   const tmp = `${filePath}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify({
+  const payload = {
     [STORAGE_KEYS.schema]: schema,
     [STORAGE_KEYS.style]: style,
     [STORAGE_KEYS.mode]: mode,
     [STORAGE_KEYS.legacy]: theme,
-  }));
+  };
+  const accentHex = normalizeHex(accent);
+  if (accentHex) payload[STORAGE_KEYS.accent] = accentHex;
+  fs.writeFileSync(tmp, JSON.stringify(payload));
   fs.renameSync(tmp, filePath);
 }
 
@@ -252,7 +262,7 @@ function readChromiumLocalStorage(userDataPath) {
   });
   const prefs = {};
   const searches = [
-    [STORAGE_KEYS.style, THEME_STYLES, "style"],
+    [STORAGE_KEYS.style, LEGACY_THEME_STYLES, "style"],
     [STORAGE_KEYS.mode, THEME_MODES, "mode"],
     [STORAGE_KEYS.legacy, [...THEME_IDS, "auto"], "legacy"],
     [STORAGE_KEYS.schema, ["1", "2", "3"], "schema"],
@@ -268,8 +278,29 @@ function readChromiumLocalStorage(userDataPath) {
       const value = extractPrefFromBuffer(buffer, key, allowed);
       if (value != null) prefs[field] = value;
     }
+    const accent = extractHexFromBuffer(buffer, STORAGE_KEYS.accent);
+    if (accent) prefs.accent = accent;
   }
   return prefs;
+}
+
+function extractHexFromBuffer(buffer, key) {
+  const encodings = [
+    { keyBuf: Buffer.from(key, "utf8"), decode: (slice) => slice.toString("utf8") },
+    { keyBuf: Buffer.from(key, "utf16le"), decode: (slice) => slice.toString("utf16le") },
+  ];
+  let last = null;
+  for (const { keyBuf, decode } of encodings) {
+    let idx = 0;
+    while ((idx = buffer.indexOf(keyBuf, idx)) !== -1) {
+      const after = decode(buffer.subarray(idx + keyBuf.length, idx + keyBuf.length + 48));
+      const match = after.match(/#([0-9a-f]{3}|[0-9a-f]{6})(?![0-9a-f])/i);
+      const found = match ? normalizeHex(match[0]) : null;
+      if (found) last = found;
+      idx += keyBuf.length;
+    }
+  }
+  return last;
 }
 
 function mergePrefSources(chromiumPrefs, filePrefs) {
@@ -278,6 +309,7 @@ function mergePrefSources(chromiumPrefs, filePrefs) {
     style: chromiumPrefs.style || filePrefs.style || null,
     mode: chromiumPrefs.mode || filePrefs.mode || null,
     legacy: chromiumPrefs.legacy || filePrefs.legacy || null,
+    accent: chromiumPrefs.accent || filePrefs.accent || null,
   };
 }
 
@@ -293,12 +325,14 @@ function resolveFromPrefBag(prefs, systemDark) {
   style = coerceThemeStyle(style);
   mode = coerceThemeMode(mode);
   const resolved = resolveThemePreference(style, mode, Boolean(systemDark));
-  const chrome = chromeForTheme(resolved.theme);
+  const accentColor = normalizeHex(prefs.accent);
+  const chrome = chromeForTheme(resolved.theme, accentColor);
   return {
     theme: resolved.theme,
     resolvedMode: resolved.resolvedMode,
     style,
     mode,
+    accentColor,
     backgroundColor: chrome.bg,
     chrome,
   };
@@ -360,6 +394,7 @@ function directoryListingCss(chrome) {
 module.exports = {
   THEME_IDS,
   THEME_STYLES,
+  LEGACY_THEME_STYLES,
   THEME_MODES,
   THEME_STYLE_PAIRS,
   LEGACY_THEME_PREFERENCES,
@@ -381,6 +416,7 @@ module.exports = {
   readPrefsFile,
   writePrefsFile,
   extractPrefFromBuffer,
+  extractHexFromBuffer,
   readChromiumLocalStorage,
   resolveFromPrefBag,
   loadResolvedChrome,
