@@ -46,7 +46,6 @@ PLANNER_TOOLS = ("read", "grep", "glob", "list")
 PROJECT_SCHEMA_VERSION = 1
 PROJECT_CANDIDATE_LIMIT = 8
 PROJECT_AUTHOR_ATTEMPTS = 4
-PROJECT_REPAIR_ATTEMPTS = 3
 PROJECT_RUNTIME_NAMES = {
     "llm", "agent", "goal", "validate_and_retry", "route", "conditional",
 }
@@ -2285,82 +2284,48 @@ def _run_project_instance_locked(
     functions: dict[str, Callable],
 ) -> dict:
     state_path = instance / "state.json"
-    while True:
-        try:
-            result = _execute_snapshot(
-                instance / "snapshot", state, state_path,
-                functions=functions, session_id=session_id,
-                spawn_caller=spawn_caller,
-            )
-        except WorkflowExecutionCapped:
-            state["status"] = "capped"
-            _save_state(state_path, state)
-            return _result(state, run_id)
-        except (KeyboardInterrupt, CancelledError) as exc:
-            _mark_run_exception(instance, state, exc)
-            raise
-        except BaseException:
-            error = traceback.format_exc()
-            state["last_error"] = error
-            _save_state(state_path, state)
-            if len(state["revisions"]) >= PROJECT_REPAIR_ATTEMPTS:
-                state["status"] = "failed"
-                state["handoff"] = _summarize_workflow(state)
-                _save_state(state_path, state)
-                return _result(state, run_id)
-            base = _read_candidate_directory(
-                instance / "snapshot", state["project_metadata"],
-            )
-            try:
-                candidate = _request_project_candidate(
-                    state["task"], functions, session_id=session_id,
-                    agent_id=agent_id, spawn_caller=spawn_caller,
-                    base=base, error=error, state=state,
-                    pinned_snapshot=instance / "snapshot",
-                    pinned_dependencies=state.get("workflow_dependencies"),
-                )
-            except BaseException as exc:
-                _mark_run_exception(instance, state, exc)
-                raise
-            dependencies = _replace_snapshot(
-                instance,
-                candidate,
-                pinned_dependencies=state.get("workflow_dependencies"),
-            )
-            state["project_metadata"] = candidate["project_metadata"]
-            state["workflow_dependencies"] = dependencies
-            state["project_action"] = (
-                "revise" if state.get("project_id") else "create"
-            )
-            state["publish_required"] = True
-            state["revisions"].append({
-                "version": len(state["revisions"]) + 1,
-                "at": time.time(),
-                "error": error,
-            })
-            _save_project_ref(instance, state)
-            _save_state(state_path, state)
-            continue
-        if state.get("capped"):
-            state["status"] = "capped"
-            _save_state(state_path, state)
-            return _result(state, run_id)
-        if state.get("publish_required"):
-            project_id, revision = _publish_snapshot(
-                instance,
-                project_id=str(state.get("project_id") or ""),
-                action=str(state.get("project_action") or "create"),
-                metadata=state["project_metadata"],
-            )
-            state["project_id"] = project_id
-            state["project_revision"] = revision
-            state["publish_required"] = False
-            _save_project_ref(instance, state)
-            _save_state(state_path, state)
-        state.update(status="completed", result=_json_value(result), last_error="")
+    try:
+        result = _execute_snapshot(
+            instance / "snapshot", state, state_path,
+            functions=functions, session_id=session_id,
+            spawn_caller=spawn_caller,
+        )
+    except WorkflowExecutionCapped:
+        state["status"] = "capped"
+        _save_state(state_path, state)
+        return _result(state, run_id)
+    except (KeyboardInterrupt, CancelledError) as exc:
+        _mark_run_exception(instance, state, exc)
+        raise
+    except BaseException:
+        # A failed run keeps its original error and checkpoints; it never
+        # re-authors the candidate or rewrites a published workflow.
+        # Published changes go through the explicit revise entry.
+        state["last_error"] = traceback.format_exc()
+        state["status"] = "failed"
         state["handoff"] = _summarize_workflow(state)
         _save_state(state_path, state)
         return _result(state, run_id)
+    if state.get("capped"):
+        state["status"] = "capped"
+        _save_state(state_path, state)
+        return _result(state, run_id)
+    if state.get("publish_required"):
+        project_id, revision = _publish_snapshot(
+            instance,
+            project_id=str(state.get("project_id") or ""),
+            action=str(state.get("project_action") or "create"),
+            metadata=state["project_metadata"],
+        )
+        state["project_id"] = project_id
+        state["project_revision"] = revision
+        state["publish_required"] = False
+        _save_project_ref(instance, state)
+        _save_state(state_path, state)
+    state.update(status="completed", result=_json_value(result), last_error="")
+    state["handoff"] = _summarize_workflow(state)
+    _save_state(state_path, state)
+    return _result(state, run_id)
 
 
 def _run_single(instance: Path, *, run_id: str, session_id: str,
@@ -2529,6 +2494,78 @@ def agentic_workflow(task: str) -> dict:
     )
 
 
+def _publish_candidate(candidate: dict, *, project_id: str, action: str) -> dict:
+    """Snapshot a validated candidate in a scratch dir and atomically publish."""
+    with tempfile.TemporaryDirectory(
+        prefix="openprogram-workflow-author-",
+    ) as raw:
+        instance = Path(raw) / "candidate"
+        instance.mkdir()
+        _replace_snapshot(instance, candidate)
+        published_id, revision = _publish_snapshot(
+            instance,
+            project_id=project_id,
+            action=action,
+            metadata=candidate["project_metadata"],
+        )
+    return {"workflow_id": published_id, "revision": revision}
+
+
+@agentic_function(
+    input={
+        "task": {
+            "description": "The class of tasks the new workflow must perform",
+            "multiline": True,
+        },
+    },
+)
+def create_workflow(task: str) -> dict:
+    """Author, validate, and atomically publish one new reusable workflow.
+
+    Does not execute the user task and never modifies existing projects.
+    Failures, cancellation, and terminal errors publish nothing.
+    """
+    candidate = _request_project_candidate(
+        task,
+        _registered_agentic_functions(),
+        session_id=current_session_id(),
+        agent_id="main",
+        spawn_caller=current_call_id() or None,
+        require_new_name=True,
+    )
+    return _publish_candidate(candidate, project_id="", action="create")
+
+
+@agentic_function(
+    input={
+        "workflow_id": {"description": "The workflow project to revise"},
+        "request": {
+            "description": "The requested change to the workflow",
+            "multiline": True,
+        },
+    },
+)
+def revise_workflow(workflow_id: str, request: str) -> dict:
+    """Author and publish a new revision of one existing workflow project.
+
+    Builds the candidate from the project's active revision; old
+    revisions stay reachable and publishes to the same project are
+    serialized. Failures and cancellation publish nothing.
+    """
+    index, base, _ = _active_project(workflow_id)
+    candidate = _request_project_candidate(
+        request,
+        _registered_agentic_functions(),
+        session_id=current_session_id(),
+        agent_id="main",
+        spawn_caller=current_call_id() or None,
+        base=base,
+    )
+    return _publish_candidate(
+        candidate, project_id=index["project_id"], action="revise",
+    )
+
+
 def resume_workflow(run_id: str, **_deprecated) -> dict:
     """Resume one explicit workflow instance by id (internal use).
 
@@ -2549,7 +2586,8 @@ def resume_workflow(run_id: str, **_deprecated) -> dict:
 
 
 __all__ = [
-    "agentic_workflow", "search_workflows", "resume_workflow", "InvalidWorkflow",
+    "agentic_workflow", "search_workflows", "create_workflow",
+    "revise_workflow", "resume_workflow", "InvalidWorkflow",
     "WorkflowExecutionCapped", "PLANNER_TOOLS",
     "HANDOFF_SUMMARY_MAX_CHARS", "MAX_ITEMS_EXECUTED",
 ]

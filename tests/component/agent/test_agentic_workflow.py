@@ -456,6 +456,109 @@ def test_search_workflows_is_registered_as_a_public_tool() -> None:
     assert "search_workflows" in exposed_names()
 
 
+def test_create_workflow_publishes_one_project_without_executing(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    prompts = _planner(monkeypatch, _project())
+    monkeypatch.setattr(
+        TL, "_execute_snapshot",
+        lambda *_args, **_kwargs: pytest.fail("create must not execute"),
+    )
+    monkeypatch.setattr(
+        TL, "_agent_function",
+        lambda *_args: pytest.fail("create must not execute"),
+    )
+
+    result = TL.create_workflow("research recent papers")
+
+    assert set(result) == {"workflow_id", "revision"}
+    assert result["workflow_id"] == "research_workflow"
+    assert len(result["revision"]) == 40
+    project = session_repo / "catalog" / "research_workflow"
+    assert _git_output(project, "rev-parse", "HEAD") == result["revision"]
+    assert [
+        path.name for path in (session_repo / "catalog").iterdir()
+        if not path.name.startswith(".")
+    ] == ["research_workflow"]
+    assert not (session_repo / "workflows").exists()
+    assert "<reusable_workflows>" in prompts[0]
+
+
+def test_create_workflow_author_failure_publishes_nothing(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    monkeypatch.setattr(TL, "_run_planner_turn", lambda *_a, **_k: "{}")
+
+    with pytest.raises(TL.InvalidWorkflow, match="failed validation after"):
+        TL.create_workflow("research papers")
+
+    assert not (session_repo / "catalog").exists()
+
+
+def test_create_workflow_cancel_publishes_nothing(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    from openprogram.agentic_programming.function import CancelledError
+
+    def cancel(*_args, **_kwargs) -> str:
+        raise CancelledError("stop author")
+
+    monkeypatch.setattr(TL, "_run_planner_turn", cancel)
+
+    with pytest.raises(CancelledError, match="stop author"):
+        TL.create_workflow("research papers")
+
+    assert not (session_repo / "catalog").exists()
+
+
+def test_revise_workflow_publishes_new_revision_and_keeps_old_one(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _candidate, old_revision = _install_workflow_project(
+        session_repo, _project(),
+    )
+    revised = _project(
+        summary="Research and verify a topic",
+        files={
+            "steps/discover.py": (
+                "def discover(task):\n"
+                "    return agent('discover and verify papers')\n"
+            ),
+            "entry.py": "def workflow(task):\n    return discover(task)\n",
+        },
+    )
+    prompts = _planner(monkeypatch, revised)
+    monkeypatch.setattr(
+        TL, "_execute_snapshot",
+        lambda *_args, **_kwargs: pytest.fail("revise must not execute"),
+    )
+
+    result = TL.revise_workflow("research_workflow", "also verify the papers")
+
+    assert result["workflow_id"] == "research_workflow"
+    assert result["revision"] != old_revision
+    project = session_repo / "catalog" / "research_workflow"
+    assert _git_output(project, "rev-parse", "HEAD") == result["revision"]
+    assert _git_output(project, "rev-list", "--count", "HEAD") == "2"
+    assert "discover papers" in _git_output(
+        project, "show", f"{old_revision}:steps/discover.py",
+    )
+    assert "<base_project>" in prompts[0]
+
+
+def test_revise_workflow_rejects_unknown_project(session_repo: Path) -> None:
+    with pytest.raises(TL.InvalidWorkflow):
+        TL.revise_workflow("missing_workflow", "change it")
+
+
+def test_create_and_revise_workflow_are_registered_public_tools() -> None:
+    from openprogram.programs._runtime import exposed_names, get
+
+    assert get("create_workflow") is not None
+    assert get("revise_workflow") is not None
+    assert {"create_workflow", "revise_workflow"} <= exposed_names()
+
+
 def test_small_task_is_persisted_as_a_reusable_multifile_project(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
@@ -548,7 +651,7 @@ def test_intermediate_result_reused_as_argument_stays_private(
     assert all("argument_summary" not in item for item in result["items"])
 
 
-def test_repair_errors_stay_private_in_public_payload(
+def test_execution_errors_stay_private_in_public_payload(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
     private_error = "SUBSTANTIVE_PRIVATE_FINDING_91c2"
@@ -560,17 +663,17 @@ def test_repair_errors_stay_private_in_public_payload(
     _planner(
         monkeypatch,
         _code('lookup()\nreturn "unreachable"'),
-        _code('return "repaired"'),
     )
-    _summarizer(monkeypatch, "任务已完成。")
+    _summarizer(monkeypatch, "任务失败。")
 
-    result = TL.agentic_workflow("repair a failing workflow")
+    result = TL.agentic_workflow("run a failing workflow")
     state = _state(session_repo, result["run_id"])
 
+    assert result["status"] == "failed"
+    assert result["revisions"] == []
     assert private_error in json.dumps(state, ensure_ascii=False)
     assert private_error not in json.dumps(result, ensure_ascii=False)
     assert all("error" not in item for item in result["items"])
-    assert all("error" not in revision for revision in result["revisions"])
 
 
 def test_explicit_direct_return_includes_raw_result(
@@ -834,7 +937,7 @@ def test_same_function_name_uses_call_order_keys_and_replays_each_call(
     assert len({record["key"] for record in result["items"]}) == 2
 
 
-def test_exception_rewrites_with_traceback_and_state_then_replays_completed_call(
+def test_execution_failure_keeps_error_and_checkpoints_without_repair(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
     helper = '''
@@ -845,28 +948,21 @@ def test_exception_rewrites_with_traceback_and_state_then_replays_completed_call
         value = prepare()
         raise RuntimeError("verification failed")
     ''', helpers=helper)
-    fixed = _code('''
-        value = prepare()
-        return agent("finish " + value)
-    ''', helpers=helper)
-    prompts = _planner(monkeypatch, initial, fixed)
-    calls = _executor(
-        monkeypatch,
-        lambda prompt, _kwargs: "prepared" if prompt == "prepare" else "finished",
-    )
+    prompts = _planner(monkeypatch, initial)
+    calls = _executor(monkeypatch, lambda _prompt, _kwargs: "prepared")
 
-    result = TL.agentic_workflow("repair")
+    result = TL.agentic_workflow("failing run")
 
-    assert result["status"] == "completed"
-    assert [call["prompt"] for call in calls] == ["prepare", "finish prepared"]
-    revision_prompt = prompts[2]
-    assert "Traceback (most recent call last)" in revision_prompt
-    assert "RuntimeError: verification failed" in revision_prompt
-    assert '"function": "agent"' in revision_prompt
-    assert "<base_project>" in revision_prompt
-    instance = _instance(session_repo, result["run_id"])
-    assert (_snapshot_package(session_repo, result["run_id"]) / "steps" / "legacy.py").exists()
-    assert len(result["revisions"]) == 1
+    assert result["status"] == "failed"
+    assert [call["prompt"] for call in calls] == ["prepare"]
+    # Only the decision and author prompts — no repair author turn.
+    assert len(prompts) == 2
+    state = _state(session_repo, result["run_id"])
+    assert "RuntimeError: verification failed" in state["last_error"]
+    assert [item["status"] for item in state["items"]] == ["completed"]
+    assert result["revisions"] == []
+    # A failed create-path run publishes nothing.
+    assert not (session_repo / "catalog").exists()
 
 
 def test_invalid_plans_keep_requesting_rewrites_with_concrete_errors(
@@ -982,7 +1078,7 @@ def test_exhausted_project_author_marks_new_run_failed(
     assert "failed validation after" in state["last_error"]
 
 
-def test_project_execution_repairs_are_bounded(
+def test_project_execution_failure_never_repairs_or_publishes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     instance = tmp_path / "run"
@@ -1002,22 +1098,24 @@ def test_project_execution_repairs_are_bounded(
         "workflow_dependencies": {},
     }
     TL._save_state(instance / "state.json", state)
-    repairs: list[bool] = []
     monkeypatch.setattr(
         TL,
         "_execute_snapshot",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("broken")),
     )
-    monkeypatch.setattr(TL, "_read_candidate_directory", lambda *_args: {})
+    monkeypatch.setattr(
+        TL, "_request_project_candidate",
+        lambda *_args, **_kwargs: pytest.fail("run failure must not re-author"),
+    )
+    monkeypatch.setattr(
+        TL, "_publish_snapshot",
+        lambda *_args, **_kwargs: pytest.fail("run failure must not publish"),
+    )
     monkeypatch.setattr(
         TL,
-        "_request_project_candidate",
-        lambda *_args, **_kwargs: repairs.append(True) or {
-            "project_metadata": {"entrypoint": "research_workflow"},
-        },
+        "_summarize_workflow",
+        lambda _state: {"summary": "failed", "return_result": False},
     )
-    monkeypatch.setattr(TL, "_replace_snapshot", lambda *_args, **_kwargs: {})
-    monkeypatch.setattr(TL, "_save_project_ref", lambda *_args: None)
 
     result = TL._run_project_instance_locked(
         instance,
@@ -1030,8 +1128,9 @@ def test_project_execution_repairs_are_bounded(
     )
 
     assert result["status"] == "failed"
-    assert len(repairs) == TL.PROJECT_REPAIR_ATTEMPTS
-    assert len(result["revisions"]) == TL.PROJECT_REPAIR_ATTEMPTS
+    assert result["revisions"] == []
+    persisted = json.loads((instance / "state.json").read_text())
+    assert "RuntimeError: broken" in persisted["last_error"]
 
 
 def test_missing_workflow_is_rejected_with_exact_validation_reason(
@@ -1088,17 +1187,10 @@ def test_package_accepts_registered_vanilla_function_import() -> None:
 def test_execution_cap_counts_only_real_calls(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
-    initial = _code('''
-        for i in range(40):
+    _planner(monkeypatch, _code('''
+        for i in range(41):
             agent(f"work-{i}")
-        raise RuntimeError("revise after completed calls")
-    ''')
-    revised = _code('''
-        for i in range(40):
-            agent(f"work-{i}")
-        agent("forty-first")
-    ''')
-    _planner(monkeypatch, initial, revised)
+    '''))
     calls = _executor(monkeypatch)
 
     result = TL.agentic_workflow("many")
@@ -1299,22 +1391,6 @@ def test_single_run_resumes_after_interruption(
 
     assert result["status"] == "completed"
     assert attempts == 2
-
-
-def test_invalid_revision_reports_the_invalid_candidate_as_current_code(
-    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
-) -> None:
-    initial = _code('raise RuntimeError("first")')
-    invalid = "```python\ndef workflow(:\n```"
-    fixed = _code('return "fixed"')
-    prompts = _planner(monkeypatch, initial, invalid, fixed)
-    _executor(monkeypatch)
-
-    result = TL.agentic_workflow("rewrite")
-
-    assert result["status"] == "completed"
-    assert "SyntaxError" in prompts[3]
-    assert "<base_project>" in prompts[3]
 
 
 def test_caught_callable_error_writes_failed_after_checkpoint(
@@ -2131,34 +2207,34 @@ def test_revise_reads_full_active_project_and_preserves_unchanged_file(
     assert "Reusable research steps" in prompts[3]
 
 
-def test_failed_candidate_repairs_snapshot_before_publishing_active_revision(
+def test_failed_candidate_run_does_not_publish_and_keeps_head_unchanged(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
+    _candidate, head = _install_workflow_project(
+        session_repo,
+        _project(name="paper_search", summary="Search papers"),
+    )
     bad = _project(files={
         "steps/run.py": (
             "def run():\n    raise RuntimeError('broken candidate')\n"
         ),
         "entry.py": "def workflow():\n    return run()\n",
     })
-    fixed = _project(files={
-        "steps/run.py": "def run():\n    return 'fixed candidate'\n",
-        "entry.py": "def workflow():\n    return run()\n",
-    })
-    prompts = _planner(
-        monkeypatch,
-        json.dumps({"action": "create"}), bad, fixed,
-    )
+    _planner(monkeypatch, json.dumps({"action": "create"}), bad)
     _executor(monkeypatch)
-    _summarizer(monkeypatch, "Completed repaired workflow.")
+    _summarizer(monkeypatch, "运行失败。")
 
     result = TL.agentic_workflow("repair project")
 
-    assert len(result["project_revision"]) == 40
-    project = session_repo / "catalog" / result["project_id"]
-    assert "fixed candidate" in (project / "steps" / "run.py").read_text()
-    assert "broken candidate" in prompts[2]
-    assert "RuntimeError: broken candidate" in prompts[2]
-    assert _git_output(project, "rev-list", "--count", "HEAD") == "1"
+    assert result["status"] == "failed"
+    assert result["project_revision"] == ""
+    # No new project appeared and the existing project HEAD is unchanged.
+    assert [
+        path.name for path in (session_repo / "catalog").iterdir()
+        if not path.name.startswith(".")
+    ] == ["paper_search"]
+    existing = session_repo / "catalog" / "paper_search"
+    assert _git_output(existing, "rev-parse", "HEAD") == head
 
 
 def test_publish_failure_keeps_git_head_and_resume_commits_once(
