@@ -235,7 +235,7 @@ function ProfileEditor({
         <div className={`${styles.row} ${styles.rowTop}`}>
           <div className={styles.label}>Avatar style</div>
           <div className={styles.control + " " + styles.valueWide}>
-            <AvatarPicker>
+            <AvatarPicker
               value={profile.avatar}
               onChange={updateAvatar}
               name={profile.name}
