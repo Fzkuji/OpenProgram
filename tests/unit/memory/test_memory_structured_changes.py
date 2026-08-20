@@ -384,6 +384,9 @@ def test_record_sources_render_short_labels_and_preserve_v2_identity(
         SourceRecord(
             "openprogram", "thread-1", "m2", 2, "assistant", "method evidence"
         ),
+        SourceRecord(
+            "openprogram", "thread-1", "m3", 3, "assistant", "result evidence"
+        ),
     ]
     with closing(MemoryWorkspace(root)) as workspace:
         workspace.archive_source_records(records)
@@ -400,7 +403,11 @@ def test_record_sources_render_short_labels_and_preserve_v2_identity(
                     },
                     {
                         "source": records[1].source_id,
-                        "label": "one two three four five six seven",
+                        "label": "one,two,three,four,five,six,seven",
+                    },
+                    {
+                        "source": records[2].source_id,
+                        "label": "D99:123",
                     },
                 ],
                 "destination": {
@@ -414,7 +421,8 @@ def test_record_sources_render_short_labels_and_preserve_v2_identity(
 
     topic = (root / "topics/labelled.md").read_text(encoding="utf-8")
     assert "[这是一个超过八个](" in topic
-    assert "[one two three four five six](" in topic
+    assert "[one,two,three,four,five,six](" in topic
+    assert "[相关内容](" in topic
     assert f"[{records[0].source_id}]" not in topic
     scans = 0
     original_scan = syntax.scan_source_archive
@@ -430,7 +438,8 @@ def test_record_sources_render_short_labels_and_preserve_v2_identity(
     assert unit.source_refs == tuple(record.source_id for record in records)
     assert unit.source_labels == (
         "这是一个超过八个",
-        "one two three four five six",
+        "one,two,three,four,five,six",
+        "相关内容",
     )
     from openprogram.memory.retrieval.bm25 import MemoryBM25Index
 
@@ -443,7 +452,8 @@ def test_record_sources_render_short_labels_and_preserve_v2_identity(
     assert indexed.trust_state == "trusted"
     timeline = (root / "timeline/2026/08/20.md").read_text(encoding="utf-8")
     assert "[这是一个超过八个](" in timeline
-    assert "[one two three four five six](" in timeline
+    assert "[one,two,three,four,five,six](" in timeline
+    assert "[相关内容](" in timeline
 
     with closing(MemoryWorkspace(root)) as workspace:
         workspace.update(
@@ -546,10 +556,13 @@ def test_direct_writer_source_label_is_resolved_by_runtime(tmp_path):
             "# Direct\n\n"
             "A direct writer record.[^e1]\n\n"
             "A direct record with an invalid label.[^e2]\n\n"
+            "A direct record with another Source ID as its label.[^e3]\n\n"
             "[^e1]: Time: `2026-08-20`; Sources: "
             f"[调研范围]({record.source_id})\n"
             "[^e2]: Time: `2026-08-20`; Sources: "
-            f"[{record.source_id}]({record.source_id})\n",
+            f"[{record.source_id}]({record.source_id})\n"
+            "[^e3]: Time: `2026-08-20`; Sources: "
+            f"[D1:1]({record.source_id})\n",
             encoding="utf-8",
         )
         workspace.commit_edits(*baseline)
@@ -561,9 +574,11 @@ def test_direct_writer_source_label_is_resolved_by_runtime(tmp_path):
     assert [unit.source_refs for unit in units] == [
         (record.source_id,),
         (record.source_id,),
+        (record.source_id,),
     ]
     assert [unit.source_labels for unit in units] == [
         ("调研范围",),
+        ("相关内容",),
         ("相关内容",),
     ]
 

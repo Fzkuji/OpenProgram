@@ -115,3 +115,23 @@ test("Memory preview accepts independent fence indentation", () => {
   assert.match(host.textContent, /Literal \[\^known\] \^code-block/);
   assert.doesNotMatch(host.textContent, /\^known-block/);
 });
+
+test("Memory preview preserves indented code, escaped references, and source tokens", () => {
+  const host = render([
+    "Known.[^known] ^known-block",
+    "",
+    "    Code [^known] ^code-block",
+    "",
+    String.raw`Escaped \[^known] and escaped inline \^[literal note].`,
+    "",
+    "Literal private token: \uE0000\uE001",
+    "",
+    "[^known]: Definition",
+  ].join("\n"));
+
+  assert.equal(host.querySelectorAll("[data-footnote-ref]").length, 1);
+  assert.equal(host.querySelectorAll("[data-footnote-backref]").length, 1);
+  assert.match(host.textContent, /Code \[\^known\] \^code-block/);
+  assert.match(host.textContent, /Escaped \[\^known\] and escaped inline \^\[literal note\]/);
+  assert.match(host.textContent, /Literal private token: \uE0000\uE001/);
+});

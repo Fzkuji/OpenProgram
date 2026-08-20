@@ -52,6 +52,12 @@ _DATE_LABEL = re.compile(r"^\d{4}(?:[-/]\d{1,2}){0,2}$")
 _UUID_LABEL = re.compile(
     r"(?i)^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
 )
+_RUNTIME_ID_LABEL = re.compile(
+    r"(?i)^(?:D\d+:\d+|"
+    r"(?:(?:e|source|evidence|event|memory|mem|message|msg|block|thread|turn|reply)"
+    r"[-_])?[0-9a-f]{8,}(?:_?reply)?)$"
+)
+_ENGLISH_WORD = re.compile(r"[^\W_]+(?:['’.-][^\W_]+)*", re.UNICODE)
 
 
 def definition_match(line: str) -> re.Match[str] | None:
@@ -85,6 +91,7 @@ def normalize_source_label(value: str, source_ref: str | None = None) -> str:
         or _GENERIC_LABEL.fullmatch(label)
         or _DATE_LABEL.fullmatch(label)
         or _UUID_LABEL.fullmatch(label)
+        or _RUNTIME_ID_LABEL.fullmatch(label)
     ):
         return "相关内容"
     if _CJK.search(label):
@@ -98,7 +105,9 @@ def normalize_source_label(value: str, source_ref: str | None = None) -> str:
             kept.append(character)
         label = "".join(kept).strip()
     else:
-        label = " ".join(label.split()[:6])
+        words = list(_ENGLISH_WORD.finditer(label))
+        if len(words) > 6:
+            label = label[:words[5].end()].strip()
     return label or "相关内容"
 
 

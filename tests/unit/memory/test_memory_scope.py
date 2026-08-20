@@ -912,6 +912,52 @@ def test_pending_backed_topics_never_reach_the_turn_context(tmp_path, monkeypatc
     )
 
 
+@pytest.mark.parametrize("method", ["embedding", "hybrid"])
+def test_semantic_recall_respects_source_trust_and_promotion(
+    tmp_path, monkeypatch, method,
+):
+    import numpy as np
+
+    from openprogram.memory import local_backend, store
+    from openprogram.memory.management.config import MemoryConfig
+    from openprogram.memory.retrieval import embedding, inspect
+
+    class FakeEncoder:
+        def encode(self, values):
+            return np.ones((len(values), 2), dtype=float)
+
+    root = tmp_path / "memory"
+    pending = _record("m1", "unvouched evidence", trust="pending", tier=None)
+    _archive(root, pending)
+    _topic_citing(root, [pending.source_id])
+    monkeypatch.setattr(store, "ensure", lambda: root)
+    monkeypatch.setattr(
+        local_backend,
+        "load_memory_config",
+        lambda: MemoryConfig(retrieval_method=method),
+    )
+    monkeypatch.setattr(
+        embedding, "load_default_encoder", lambda **_kwargs: FakeEncoder(),
+    )
+    inspect._clear_search_index_cache_for_tests()
+
+    assert local_backend.LocalMemoryBackend().search("distilled claim") == ""
+
+    from openprogram.programs.functions.vanilla.knowledge.memory import memory as memory_tools
+    import openprogram.paths as paths
+    from openprogram.agent import authority
+
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
+    authority._reset_owner_cache_for_tests()
+    memory_tools._promote_source(
+        root, pending.source_id, authority.local_owner_authority(),
+    )
+
+    assert "distilled claim" in local_backend.LocalMemoryBackend().search(
+        "distilled claim"
+    )
+
+
 def test_core_renders_only_blocks_whose_sources_are_trusted(tmp_path):
     """core.md is injected unasked, so pending evidence must not reach it."""
     from openprogram.memory.runtime.derived_views import render_core_block

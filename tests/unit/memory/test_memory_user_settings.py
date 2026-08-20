@@ -118,11 +118,11 @@ def test_organize_topics_uses_live_recent_limit(tmp_path, monkeypatch):
 
 
 def test_embedding_status_checks_local_snapshot_without_loading_encoder(monkeypatch):
-    from openprogram.memory.retrieval import embedding, inspect
+    from openprogram.memory.retrieval import embedding, embedding_model, inspect
 
     loaded = []
     monkeypatch.setattr(
-        embedding, "default_model_is_cached", lambda: True,
+        embedding_model, "default_model_is_cached", lambda: True,
     )
 
     def fail_if_loaded(**kwargs):
@@ -135,17 +135,22 @@ def test_embedding_status_checks_local_snapshot_without_loading_encoder(monkeypa
     assert loaded == []
 
 
-def test_default_model_cache_probe_stays_local(monkeypatch):
+def test_default_model_cache_probe_stays_local(tmp_path, monkeypatch):
     import sys
     from types import SimpleNamespace
 
-    from openprogram.memory.retrieval import embedding
+    from openprogram.memory.retrieval import embedding_model
 
     seen = []
+    snapshot = tmp_path / "snapshot"
+    for relative in embedding_model.MODEL_FILES:
+        path = snapshot / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"present")
 
     def snapshot_download(model_id, *, allow_patterns, local_files_only):
         seen.append((model_id, allow_patterns, local_files_only))
-        return "/cached/model"
+        return str(snapshot)
 
     monkeypatch.setitem(
         sys.modules,
@@ -153,8 +158,10 @@ def test_default_model_cache_probe_stays_local(monkeypatch):
         SimpleNamespace(snapshot_download=snapshot_download),
     )
 
-    assert embedding.default_model_is_cached() is True
-    assert seen == [(embedding.MODEL_ID, embedding.MODEL_FILES, True)]
+    assert embedding_model.default_model_is_cached() is True
+    assert seen == [(
+        embedding_model.MODEL_ID, embedding_model.MODEL_FILES, True,
+    )]
 
     monkeypatch.setitem(
         sys.modules,
@@ -165,31 +172,56 @@ def test_default_model_cache_probe_stays_local(monkeypatch):
             ),
         ),
     )
-    assert embedding.default_model_is_cached() is False
+    assert embedding_model.default_model_is_cached() is False
 
 
-def test_install_default_model_downloads_only_encoder_files(monkeypatch):
+def test_default_model_cache_probe_rejects_partial_snapshot(
+    tmp_path, monkeypatch,
+):
     import sys
     from types import SimpleNamespace
 
-    from openprogram.memory.retrieval import embedding
+    from openprogram.memory.retrieval import embedding_model
+
+    snapshot = tmp_path / "partial"
+    snapshot.mkdir()
+    (snapshot / "config.json").write_text("", encoding="utf-8")
+    monkeypatch.setitem(
+        sys.modules,
+        "huggingface_hub",
+        SimpleNamespace(snapshot_download=lambda *_args, **_kwargs: snapshot),
+    )
+
+    assert embedding_model.default_model_is_cached() is False
+
+
+def test_install_default_model_downloads_only_encoder_files(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    from openprogram.memory.retrieval import embedding_model
 
     seen = []
+    snapshot = tmp_path / "snapshot"
+    for relative in embedding_model.MODEL_FILES:
+        path = snapshot / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"present")
     monkeypatch.setitem(
         sys.modules,
         "huggingface_hub",
         SimpleNamespace(
-            snapshot_download=lambda model_id, **kwargs: seen.append(
-                (model_id, kwargs)
+            snapshot_download=lambda model_id, **kwargs: (
+                seen.append((model_id, kwargs)) or snapshot
             )
         ),
     )
 
-    embedding.install_default_model()
+    embedding_model.install_default_model()
 
     assert seen == [(
-        embedding.MODEL_ID,
-        {"allow_patterns": embedding.MODEL_FILES},
+        embedding_model.MODEL_ID,
+        {"allow_patterns": embedding_model.MODEL_FILES},
     )]
 
 
@@ -333,6 +365,77 @@ def test_hybrid_search_fuses_results_and_can_exclude_sources(
     ]
     assert seen["bm25_prefix"] == "topics"
     assert seen["embedding_prefix"] == "topics"
+
+
+def test_bm25_search_reuses_persistent_index_until_workspace_changes(
+    tmp_path, monkeypatch,
+):
+    from openprogram.memory.retrieval import inspect
+
+    topic = tmp_path / "topics/one.md"
+    topic.parent.mkdir()
+    topic.write_text("# One\n", encoding="utf-8")
+    constructed = []
+
+    class FakeBM25:
+        def __init__(self, _root, *, persist):
+            constructed.append(persist)
+
+        def search(self, _query, **_kwargs):
+            return []
+
+    monkeypatch.setattr(
+        "openprogram.memory.retrieval.bm25.MemoryBM25Index", FakeBM25,
+    )
+    inspect._clear_search_index_cache_for_tests()
+
+    inspect.search(tmp_path, "first")
+    inspect.search(tmp_path, "second")
+    topic.write_text("# One\n\nChanged.\n", encoding="utf-8")
+    inspect.search(tmp_path, "third")
+
+    assert constructed == [True, True]
+
+
+def test_embedding_search_reuses_document_vectors_until_workspace_changes(
+    tmp_path, monkeypatch,
+):
+    import numpy as np
+
+    from openprogram.memory.retrieval import embedding, inspect
+    from openprogram.memory.retrieval.bm25 import MemoryEvent
+
+    topic = tmp_path / "topics/one.md"
+    topic.parent.mkdir()
+    topic.write_text("# One\n", encoding="utf-8")
+    encoded = []
+
+    class FakeEncoder:
+        def encode(self, values):
+            encoded.append(list(values))
+            return np.ones((len(values), 2), dtype=float)
+
+    event = MemoryEvent(
+        event_id="ev_one", path="topics/one.md", line=1,
+        headings=["One"], date="2026-08-16", dates=["2026-08-16"],
+        content="remember the cached document", refs=[],
+    )
+    monkeypatch.setattr(
+        embedding.MemoryEmbeddingIndex, "_events", lambda _self: [event],
+    )
+    monkeypatch.setattr(
+        embedding, "load_default_encoder", lambda **_kwargs: FakeEncoder(),
+    )
+    inspect._clear_search_index_cache_for_tests()
+
+    inspect.search(tmp_path, "first", method="embedding")
+    inspect.search(tmp_path, "second", method="embedding")
+    topic.write_text("# One\n\nChanged.\n", encoding="utf-8")
+    inspect.search(tmp_path, "third", method="embedding")
+
+    assert [len(batch) for batch in encoded] == [1, 1, 1, 1, 1]
+    assert "remember the cached document" in encoded[0][0]
+    assert "remember the cached document" in encoded[3][0]
 
 
 def test_source_scope_keeps_topic_trust_while_hiding_source_hits(tmp_path):

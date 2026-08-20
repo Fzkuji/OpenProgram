@@ -11,7 +11,7 @@ const settingsCache = read("../lib/prefs/settings-cache.ts");
 
 assert.match(settingsNav, /href: "\/settings\/memory"/);
 assert.match(page, /href="\/settings\/memory"/);
-assert.match(settings, /\/api\/settings/);
+assert.match(settings, /\/api\/settings\?scope=memory/);
 assert.match(settings, /listEnabledModels/);
 assert.doesNotMatch(
   settings,
@@ -34,6 +34,11 @@ assert.doesNotMatch(
   blockingRequests,
   /\/api\/memory\/status/,
   "Memory status must not block the editable settings",
+);
+assert.doesNotMatch(
+  settings,
+  /Promise\.all\([\s\S]*?listEnabledModels/,
+  "Writer model choices must not block the editable Memory settings",
 );
 assert.doesNotMatch(settingsNav, /prefetchSettings/);
 assert.doesNotMatch(settingsCache, /export function prefetchSettings/);

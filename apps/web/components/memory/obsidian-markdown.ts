@@ -6,8 +6,6 @@ type Footnote = {
   referenceIds: string[];
 };
 
-const CODE_TOKEN = /\uE000(\d+)\uE001/g;
-
 type Fence = {
   containerDepth: number;
   indent: number;
@@ -66,13 +64,39 @@ function matchFence(line: string): Fence | null {
 
 function stashCode(source: string): { source: string; restore: (value: string) => string } {
   const code: string[] = [];
+  let nonce = 0;
+  let prefix = "";
+  do {
+    prefix = `\uE000OPENPROGRAM-MEMORY-${nonce}:`;
+    nonce += 1;
+  } while (source.includes(prefix));
+  const token = (index: number) => `${prefix}${index}\uE001`;
   const stash = (value: string) => {
     code.push(value);
-    return `\uE000${code.length - 1}\uE001`;
+    return token(code.length - 1);
   };
   const lines = source.split("\n");
   const withoutFences: string[] = [];
   for (let index = 0; index < lines.length; index += 1) {
+    if (/^(?: {4}|\t)/.test(lines[index])) {
+      let end = index + 1;
+      let lastCode = index;
+      while (end < lines.length) {
+        if (/^(?: {4}|\t)/.test(lines[end])) {
+          lastCode = end;
+          end += 1;
+          continue;
+        }
+        if (/^[ \t]*$/.test(lines[end])) {
+          end += 1;
+          continue;
+        }
+        break;
+      }
+      withoutFences.push(stash(lines.slice(index, lastCode + 1).join("\n")));
+      index = lastCode;
+      continue;
+    }
     const opening = matchFence(lines[index]);
     if (!opening || (!opening.listItem && opening.indent > 3)) {
       withoutFences.push(lines[index]);
@@ -123,8 +147,19 @@ function stashCode(source: string): { source: string; restore: (value: string) =
   }
   return {
     source: stashed,
-    restore: (value) => value.replace(CODE_TOKEN, (_match, index) => code[Number(index)] ?? ""),
+    restore: (value) => code.reduce(
+      (restored, item, index) => restored.split(token(index)).join(item),
+      value,
+    ),
   };
+}
+
+function isEscaped(source: string, offset: number): boolean {
+  let slashes = 0;
+  for (let index = offset - 1; index >= 0 && source[index] === "\\"; index -= 1) {
+    slashes += 1;
+  }
+  return slashes % 2 === 1;
 }
 
 function extractFootnotes(source: string): { body: string; definitions: Map<string, string> } {
@@ -185,7 +220,13 @@ export function renderObsidianMarkdown(source: string, parse: MarkdownParser): s
 
   const withReferences = body.replace(
     /\[\^([A-Za-z0-9][\w-]*)\]|\^\[([^\]\r\n]+)\]/g,
-    (raw, label: string | undefined, inline: string | undefined) => {
+    (
+      raw,
+      label: string | undefined,
+      inline: string | undefined,
+      offset: number,
+    ) => {
+      if (isEscaped(body, offset)) return raw;
       if (inline !== undefined) {
         const footnote = { content: inline, number: ordered.length + 1, referenceIds: [] };
         ordered.push(footnote);
