@@ -70,7 +70,7 @@ export function AddCustomProvider({ onCreated }: { onCreated: (id: string) => vo
       <Button
         variant="outline"
         size="sm"
-        style={{ margin: "8px 8px 0", width: "calc(100% - 16px)" }}
+        className={styles.addCustomTrigger}
         onClick={() => setOpen(true)}
       >
         <Plus />
@@ -83,7 +83,7 @@ export function AddCustomProvider({ onCreated }: { onCreated: (id: string) => vo
   const canSubmit = label.trim().length > 0 && baseUrl.trim().length > 0;
 
   return (
-    <div className={styles.detailSection} style={{ margin: "8px", padding: "10px", display: "grid", gap: 6, minWidth: 0 }}>
+    <div className={styles.addCustomForm}>
       <div style={{ fontSize: 12, fontWeight: 600 }}>
         {text("Add custom provider", "添加自定义 Provider")}
       </div>

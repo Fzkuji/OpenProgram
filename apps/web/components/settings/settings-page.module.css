@@ -566,6 +566,26 @@
   width: 100%;
   min-width: 0;
 }
+/* Add-custom lives in the same sidebar content box as search. The
+   sidebar's 8px padding is the only gutter — no second horizontal
+   inset, so the trigger, expanded form, and Name / Base URL fields
+   share the search input's width. */
+.addCustomTrigger,
+.addCustomForm {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin-top: 8px;
+}
+.addCustomForm {
+  display: grid;
+  gap: 6px;
+}
+.addCustomForm input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
 .providerListItems {
   display: flex;
   flex-direction: column;
