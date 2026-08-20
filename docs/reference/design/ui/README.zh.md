@@ -21,7 +21,7 @@ Web UI 界面 — 界面系统、指示点、附件处理、聊天轮次视觉�
 - [`indicator-dots.md`](indicator-dots.md) — 指示点
 - [`surface-system.md`](surface-system.md) — Surface 系统
 - [`theme-system.html`](theme-system.html) — 主题入口、完整 token 契约、组件消费与桌面浮层传播的权威设计
-- [`settings-collapsible-columns.html`](settings-collapsible-columns.html) — 应用、设置分类与 Provider 三层导航列的独立 49px 折叠设计
+- [`settings-collapsible-columns.html`](settings-collapsible-columns.html) — 应用主侧栏与 Settings 分类栏的独立 49px 折叠；Provider 列表始终展开，搜索框通栏
 - [`avatar-randomization.html`](avatar-randomization.html) — Agent/用户共用的头像选择器：先选类型，再进入同风格变体或字母字段
 - [`web-styles.md`](web-styles.md) — Web 样式组织（一个组件一个文件，目录对齐组件树）
 - [`window-state.md`](window-state.md) — 桌面窗口普通尺寸、最大化/全屏与标题栏缩放命中

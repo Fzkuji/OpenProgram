@@ -143,7 +143,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`ui/surface-system.md`](ui/surface-system.md) | Surface 系统 |
 | [`ui/theme-system.html`](ui/theme-system.html) | 主题入口、完整 token 契约、组件消费与桌面浮层传播 |
 | [`ui/app-icon.html`](ui/app-icon.html) | macOS App 图标分层素材、Apple 系统外形、打包与旧系统回退边界 |
-| [`ui/settings-collapsible-columns.html`](ui/settings-collapsible-columns.html) | 应用、设置分类与 Provider 三层导航列折叠设计 |
+| [`ui/settings-collapsible-columns.html`](ui/settings-collapsible-columns.html) | 应用主侧栏与 Settings 分类栏折叠；Provider 列表始终展开 |
 | [`ui/indicator-dots.md`](ui/indicator-dots.md) | 指示点 |
 | [`ui/attachment-handling.md`](ui/attachment-handling.md) | 附件处理（[已渲染](ui/attachment-handling.html)） |
 | [`ui/composer-interaction-modes.md`](ui/composer-interaction-modes.md) | Composer 交互模式 |
