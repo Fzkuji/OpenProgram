@@ -447,7 +447,7 @@ export function TokenUsageSection() {
   }, [summary, dim]);
 
   return (
-    <div className={styles.page}>
+    <div className={`${styles.page} ${local.usagePage}`}>
       <div className={styles.pageHeader}>
         <h2 className={styles.pageTitle}>{t("settings.tab.usage")}</h2>
         <p className={styles.pageMeta}>{t("usage.desc")}</p>

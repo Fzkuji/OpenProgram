@@ -15,6 +15,10 @@
    pattern so the four settings tabs look like siblings instead of
    four bespoke pages. */
 
+.channelsPage {
+  font-family: var(--font-sans);
+}
+
 .detail {
   display: flex;
   flex-direction: column;
@@ -22,6 +26,7 @@
   padding: 24px 28px 32px;
   max-width: 1000px;
   width: 100%;
+  font-family: var(--font-sans);
 }
 
 .detailHeader {
@@ -36,6 +41,7 @@
   font-size: 18px;
   font-weight: 600;
   color: var(--text-bright);
+  font-family: var(--font-sans);
 }
 
 .detailMeta {
@@ -43,6 +49,7 @@
   color: var(--text-secondary);
   line-height: 1.55;
   max-width: 760px;
+  font-family: var(--font-sans);
 }
 
 .detailSection {
@@ -64,6 +71,7 @@
   font-size: 15px;
   font-weight: 600;
   color: var(--text-bright);
+  font-family: var(--font-sans);
 }
 
 .sectionSub {
@@ -72,6 +80,7 @@
   line-height: 1.55;
   margin-top: 4px;
   max-width: 620px;
+  font-family: var(--font-sans);
 }
 
 /* Hint surfaces — the "no bots yet" empty state and the "info" callout
@@ -82,6 +91,7 @@
   border: 1px dashed var(--border);
   border-radius: 8px;
   font-size: 13px;
+  font-family: var(--font-sans);
   color: var(--text-secondary);
   line-height: 1.6;
   background: var(--bg-tertiary);
@@ -97,6 +107,7 @@
 
 .formHelp {
   font-size: 13px;
+  font-family: var(--font-sans);
   line-height: 1.6;
   padding: 10px 14px;
   background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
@@ -116,6 +127,7 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  font-family: var(--font-sans);
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -165,6 +177,7 @@
   font-size: 11px;
   font-weight: 500;
   line-height: 1.5;
+  font-family: var(--font-sans);
 }
 .badgeOk {
   background: color-mix(in srgb, var(--accent-green) 18%, transparent);
@@ -212,6 +225,7 @@
   border-radius: 999px;
   font-size: 13px;
   font-weight: 500;
+  font-family: var(--font-sans);
   padding: 6px 14px;
   height: 32px;
   display: inline-flex;
@@ -302,6 +316,7 @@
   font-size: 15px;
   font-weight: 600;
   color: var(--text-bright);
+  font-family: var(--font-sans);
 }
 .modalBody {
   padding: 18px;
@@ -328,6 +343,7 @@
   font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
+  font-family: var(--font-sans);
 }
 .formInput {
   background: var(--bg-input);
@@ -336,7 +352,7 @@
   padding: 8px 12px;
   font-size: 13px;
   color: var(--text-primary);
-  font-family: inherit;
+  font-family: var(--font-sans);
   width: 100%;
   box-sizing: border-box;
   transition: border-color 0.15s;
@@ -348,6 +364,7 @@
 .formHint {
   font-size: 12px;
   color: var(--text-muted);
+  font-family: var(--font-sans);
 }
 .formError {
   font-size: 12px;
@@ -356,6 +373,7 @@
   background: color-mix(in srgb, var(--accent-red) 12%, transparent);
   border-radius: 6px;
   line-height: 1.5;
+  font-family: var(--font-sans);
 }
 .codeBlock {
   font-family: var(--font-mono);

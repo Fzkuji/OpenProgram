@@ -13,6 +13,11 @@ const appShell = source("components/app-shell.tsx");
 const providers = source("components/settings/providers/index.tsx");
 const providerItem = source("components/settings/providers/provider-item.tsx");
 const memory = source("components/settings/memory-settings.tsx");
+const memoryCss = source("components/settings/memory-settings.module.css");
+const usageCss = source("components/settings/token-usage/usage.module.css");
+const usagePage = source("components/settings/token-usage/index.tsx");
+const channelsCss = source("components/settings/channels/channels.module.css");
+const channelsPage = source("components/settings/channels/index.tsx");
 const system = source("components/settings/system-settings.tsx");
 const loading = source("app/(shell)/settings/loading.tsx");
 const detail = source("components/settings/providers/detail.tsx");
@@ -159,5 +164,26 @@ assert.match(system, /\{r\.help \?/);
 assert.match(css, /\.systemRow\s*\{[^}]*align-items:\s*flex-start/s);
 assert.match(css, /\.systemRow\s+\.label\s*\{[^}]*flex:\s*1 1 auto[^}]*min-width:\s*0/s);
 assert.match(css, /\.systemRow\s+\.control\s*\{[^}]*flex:\s*0 0 auto[^}]*margin-left:\s*auto[^}]*min-width:\s*7\.5rem/s);
+
+// Memory rows match the System contract: copy grows on the left,
+// controls shrink-wrap on the right, chips stay left of the control.
+assert.match(memoryCss, /\.row\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*flex-start/s);
+assert.match(memoryCss, /\.rowCopy\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-width:\s*0/s);
+assert.match(memoryCss, /\.controls\s*\{[^}]*flex:\s*0 0 auto;[^}]*justify-content:\s*flex-end;[^}]*min-width:\s*7\.5rem/s);
+assert.doesNotMatch(memoryCss, /grid-template-columns:\s*minmax\(220px/);
+assert.match(memory, /styles\.chromeValue[\s\S]{0,80}Local workspace · Git enabled/);
+assert.match(memory, /styles\.monoValue[\s\S]{0,40}workspace_path/);
+
+// Memory / Usage / Channels chrome follow the General font picker.
+assert.match(memoryCss, /\.memoryPage\s*\{[^}]*font-family:\s*var\(--font-sans\)/s);
+assert.match(memoryCss, /\.monoValue\s*\{[^}]*font-family:\s*var\(--font-mono\)/s);
+assert.match(usagePage, /styles\.page[\s\S]*local\.usagePage/);
+assert.match(usageCss, /\.usagePage\s*\{[^}]*font-family:\s*var\(--font-sans\)/s);
+assert.match(usageCss, /\.cardValue\s*\{[^}]*font-family:\s*var\(--font-sans\)[^}]*font-variant-numeric:\s*tabular-nums/s);
+assert.match(usageCss, /\.modelCell\s*\{[^}]*font-family:\s*var\(--font-mono/s);
+assert.match(channelsPage, /shellStyles\.page[\s\S]*styles\.channelsPage/);
+assert.match(channelsCss, /\.channelsPage\s*\{[^}]*font-family:\s*var\(--font-sans\)/s);
+assert.match(channelsCss, /\.rowTable code\s*\{[^}]*font-family:\s*var\(--font-mono\)/s);
+assert.match(channelsCss, /\.codeBlock\s*\{[^}]*font-family:\s*var\(--font-mono\)/s);
 
 console.log("settings collapsible-column checks passed");

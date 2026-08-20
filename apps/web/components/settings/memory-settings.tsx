@@ -154,7 +154,7 @@ export function MemorySettings() {
             <Switch aria-label={text("Enable Memory", "启用 Memory")} disabled={saving} checked={backend === "local"} onCheckedChange={(checked) => update("memory.backend", checked ? "local" : "none")} />
           </SettingsRow>
           <SettingsRow label={text("Storage", "存储")} description={text("Topic Markdown with derived views and Git history.", "使用 Topic Markdown、派生视图和 Git 历史。") }>
-            <span className={styles.monoValue}>{backend === "local" ? text("Local workspace · Git enabled", "本地工作区 · Git 已启用") : text("Disabled", "已关闭")}</span>
+            <span className={styles.chromeValue}>{backend === "local" ? text("Local workspace · Git enabled", "本地工作区 · Git 已启用") : text("Disabled", "已关闭")}</span>
           </SettingsRow>
         </SettingsSection>
 
