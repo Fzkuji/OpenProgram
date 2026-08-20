@@ -63,8 +63,9 @@ test("appearance chrome uses the sans control column, not mono .value", () => {
 
   assert.match(settings, /styles\.control \+ " " \+ styles\.valueWide/);
   assert.doesNotMatch(settings, /styles\.value \+ " " \+ styles\.valueWide/);
-  assert.match(settings, /styles\.value\}>\{updateState\?\.currentVersion/);
-  assert.match(settings, /styles\.value\}>Agentic Programming/);
+  assert.match(settings, /Avatar style[\s\S]*styles\.control \+ " " \+ styles\.valueWide/);
+  assert.match(settings, /styles\.control\}>\{updateState\?\.currentVersion/);
+  assert.match(settings, /styles\.control\}>Agentic Programming/);
   assert.match(settings, /<code>openprogram upgrade --check<\/code>/);
   assert.match(settings, /className=\{"text-fs-base " \+ styles\.settingsAction\}/);
   assert.match(settings, /style: \{ fontFamily: fontStack\(font\) \}/);
@@ -76,4 +77,10 @@ test("avatar picker on General uses the 13px sans floor", () => {
   assert.match(picker, /text-fs-sm/);
   assert.doesNotMatch(picker, /text-\[12px\]/);
   assert.doesNotMatch(picker, /fontSize: 11/);
+});
+
+test("avatar picker grids wrap instead of overflowing a fixed 8-column track", () => {
+  assert.match(picker, /repeat\(auto-fill, minmax\(56px, 1fr\)\)/);
+  assert.doesNotMatch(picker, /repeat\(8, 1fr\)/);
+  assert.match(picker, /minWidth: 0/);
 });

@@ -79,6 +79,18 @@ const INITIAL_VARIANTS: AvatarVariant[] = INITIAL_VARIANT_SEEDS.map(
   }),
 );
 
+/** Style tiles and variant circles share one wrapping track so both
+ *  blocks keep the same left/right edges and drop to fewer columns
+ *  instead of overflowing the settings card. */
+const PICKER_GRID: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(56px, 1fr))",
+  gap: 8,
+  width: "100%",
+  maxWidth: 544,
+  minWidth: 0,
+};
+
 export interface AvatarPickerProps {
   /** Current avatar config. ``undefined`` is treated as the default
    *  DiceBear ``shapes`` seeded by ``name``. */
@@ -168,24 +180,14 @@ export function AvatarPicker({
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24, width: "100%", minWidth: 0 }}>
       {/* Source picker — each tile shows the same fixed sample seed
           so every style renders something visible (avoids the
           empty-tile bug where the user's current seed happened to
           produce a near-blank notionists / lorelei glyph). The
           tile is "what does THIS STYLE look like", not "what does
           MY identity look like in this style". */}
-      <div
-        style={{
-          display: "grid",
-          // 8 even columns. The variant grid below uses the same
-          // 8-column / max-width setup so both blocks share left
-          // and right edges instead of one being wider than the other.
-          gridTemplateColumns: "repeat(8, 1fr)",
-          gap: 8,
-          maxWidth: 544,
-        }}
-      >
+      <div style={PICKER_GRID}>
         {AVATAR_STYLES.map((s) => (
           <button
             key={s.id}
@@ -256,17 +258,20 @@ export function AvatarPicker({
       {/* Variant grid — every batch covers all shipped styles and gives
           each candidate its own seed. Clicking one stores both fields. */}
       {isDicebear && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
           <div
             style={{
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
+              flexWrap: "wrap",
               gap: 8,
+              width: "100%",
               maxWidth: 544,
+              minWidth: 0,
             }}
           >
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 0 }}>
               Pick a variant — each batch includes every avatar style.
             </span>
             <button
@@ -286,17 +291,7 @@ export function AvatarPicker({
               Regenerate
             </button>
           </div>
-          <div
-            style={{
-              display: "grid",
-              // Same 8-column / 544px setup as the style picker above
-              // so the two blocks line up edge to edge. 16 variants →
-              // two full rows of 8.
-              gridTemplateColumns: "repeat(8, 1fr)",
-              gap: 8,
-              maxWidth: 544,
-            }}
-          >
+          <div style={PICKER_GRID}>
             {variants.map((variant) => {
               const selected =
                 (value?.style ?? "shapes") === variant.style &&
@@ -392,7 +387,7 @@ export function AvatarPicker({
 // Style + Letter + Custom tiles: column layout (avatar over label),
 // idle transparent, amber border when selected, subtle hover when not.
 const _pickerTile = (selected: boolean): string =>
-  "flex flex-col items-center gap-1 p-1.5 rounded-lg border cursor-pointer transition-colors " +
+  "flex flex-col items-center gap-1 p-1 min-w-0 w-full rounded-lg border cursor-pointer transition-colors " +
   (selected
     ? "bg-[var(--bg-hover)] border-[color-mix(in_srgb,var(--accent-orange)_50%,transparent)]"
     : "border-[var(--border)] hover:bg-[var(--bg-hover)] hover:border-[color-mix(in_srgb,var(--accent-orange)_30%,transparent)]");
@@ -401,7 +396,7 @@ const _pickerTile = (selected: boolean): string =>
 // circular-friendly), no label. Same idle/selected/hover treatment
 // as the style tiles, so both grids read as one consistent system.
 const _variantTile = (selected: boolean): string =>
-  "inline-flex items-center justify-center w-full aspect-square p-1 rounded-lg border cursor-pointer transition-colors " +
+  "inline-flex items-center justify-center min-w-0 w-full aspect-square p-1 rounded-lg border cursor-pointer transition-colors " +
   (selected
     ? "bg-[var(--bg-hover)] border-[color-mix(in_srgb,var(--accent-orange)_50%,transparent)]"
     : "border-[var(--border)] hover:bg-[var(--bg-hover)] hover:border-[color-mix(in_srgb,var(--accent-orange)_30%,transparent)]");
@@ -411,6 +406,9 @@ const _pickerLabel: CSSProperties = {
   fontFamily: "var(--font-sans)",
   color: "var(--text-secondary)",
   fontWeight: 500,
+  textAlign: "center",
+  lineHeight: 1.2,
+  overflowWrap: "anywhere",
 };
 
 // Small action button (Regenerate / Choose file / Clear). Fixed 28px

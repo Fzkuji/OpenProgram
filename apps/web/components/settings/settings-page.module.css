@@ -314,7 +314,7 @@
   font-family: var(--font-mono);
 }
 /* Chrome column — theme grid, dropdowns, profile editors, helpers.
-   `.value` stays reserved for codes (version, paths, model ids). */
+   `.value` stays reserved for codes (paths, model ids). */
 .control {
   font-size: 14px;
   color: var(--text-primary);
