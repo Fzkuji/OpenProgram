@@ -235,7 +235,7 @@ function ProfileEditor({
         <div className={`${styles.row} ${styles.rowTop}`}>
           <div className={styles.label}>Avatar style</div>
           <div className={styles.control}>
-            <AvatarPicker>
+            <AvatarPicker
               value={profile.avatar}
               onChange={updateAvatar}
               name={profile.name}
@@ -756,7 +756,7 @@ export function GeneralSection() {
             <div className={styles.row}>
               <div className={styles.label}>{t("general.font")}</div>
               <div className={styles.control}>
-                <SettingsDropdown>
+                <SettingsDropdown
                   value={font}
                   options={FONT_SELECT_OPTIONS}
                   onChange={setFont}
@@ -768,7 +768,7 @@ export function GeneralSection() {
             <div className={styles.row}>
               <div className={styles.label}>{t("general.language")}</div>
               <div className={styles.control}>
-                <SettingsDropdown>
+                <SettingsDropdown
                   value={locale}
                   options={LANG_OPTIONS}
                   onChange={setLocale}
