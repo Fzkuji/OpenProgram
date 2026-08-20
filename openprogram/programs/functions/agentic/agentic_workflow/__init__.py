@@ -2592,25 +2592,33 @@ def _run_published_workflow(
     *,
     session_id: str,
     spawn_caller: Optional[str],
+    run_id: Optional[str] = None,
+    project_action: str = "reuse",
 ) -> dict:
     """Execute one published workflow at a pinned revision. Never publishes."""
     functions = _registered_agentic_functions()
-    run_id = _new_run_id()
-    instance = _instance_dir(session_id, run_id)
-    instance.mkdir(parents=True, exist_ok=False)
-    state = {
-        "run_id": run_id, "task": task, "status": "running",
-        "executions": 0, "items": [], "revisions": [], "result": "",
-        "last_error": "",
-    }
-    _save_state(instance / "state.json", state)
+    if run_id is None:
+        run_id = _new_run_id()
+        instance = _instance_dir(session_id, run_id)
+        instance.mkdir(parents=True, exist_ok=False)
+        state = {
+            "run_id": run_id, "task": task, "status": "running",
+            "executions": 0, "items": [], "revisions": [], "result": "",
+            "last_error": "",
+        }
+        _save_state(instance / "state.json", state)
+    else:
+        instance = _instance_dir(session_id, run_id)
+        state = _load_state(instance / "state.json")
+        state["status"] = "running"
+        _save_state(instance / "state.json", state)
     try:
         index, candidate = _copy_pinned_snapshot(instance, workflow_id, revision)
         state.update(
             project_id=workflow_id,
             project_revision=revision,
             workflow_dependencies=index["workflow_dependencies"],
-            project_action="reuse",
+            project_action=project_action,
             project_metadata=candidate["project_metadata"],
             publish_required=False,
         )
@@ -2676,6 +2684,7 @@ def auto_workflow(task: str) -> dict:
     executed = _run_published_workflow(
         task, workflow_id, revision,
         session_id=session_id, spawn_caller=spawn_caller,
+        run_id=run_id, project_action=decision["action"],
     )
     if executed.get("status") == "failed":
         raise InvalidWorkflow(
@@ -2686,7 +2695,7 @@ def auto_workflow(task: str) -> dict:
         "workflow_id": workflow_id,
         "workflow_revision": revision,
         "result": executed,
-        "run_id": executed["run_id"],
+        "run_id": run_id,
     }
 
 

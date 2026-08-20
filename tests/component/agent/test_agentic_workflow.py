@@ -1383,11 +1383,12 @@ def test_auto_workflow_forwards_call_id_as_spawn_caller(
 ) -> None:
     captured: dict[str, object] = {}
 
-    def fake_run(task, workflow_id, revision, *, session_id, spawn_caller):
+    def fake_run(task, workflow_id, revision, *, session_id, spawn_caller, **kwargs):
         captured.update(
             task=task, session_id=session_id, spawn_caller=spawn_caller,
+            run_id=kwargs.get("run_id"), project_action=kwargs.get("project_action"),
         )
-        return {"status": "completed", "run_id": "r1"}
+        return {"status": "completed", "run_id": kwargs.get("run_id") or "r1"}
 
     monkeypatch.setattr(TL, "_run_published_workflow", fake_run)
     monkeypatch.setattr(
@@ -2719,6 +2720,58 @@ def test_auto_workflow_selection_failure_persists_failed_run(
     assert states[0]["status"] == "failed"
     assert states[0]["task"] == "research papers"
     assert "selection failed after" in states[0]["last_error"]
+
+
+def _workflow_run_states(session_repo: Path) -> list[dict]:
+    runs_dir = session_repo / "workflows"
+    if not runs_dir.exists():
+        return []
+    return [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in runs_dir.glob("*/state.json")
+    ]
+
+
+def test_auto_workflow_success_reuse_leaves_no_running_orphan(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _install_workflow_project(session_repo, _project())
+    _planner(
+        monkeypatch,
+        json.dumps({"action": "reuse", "workflow_id": "research_workflow"}),
+    )
+    _executor(monkeypatch)
+    _summarizer(monkeypatch, "Completed reused research.")
+
+    result = TL.auto_workflow("research recent papers")
+
+    states = _workflow_run_states(session_repo)
+    assert len(states) == 1
+    assert not any(state["status"] == "running" for state in states)
+    assert states[0]["status"] == "completed"
+    assert result["run_id"] == states[0]["run_id"]
+    assert result["action"] == "reuse"
+
+
+def test_auto_workflow_success_create_leaves_no_running_orphan(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _planner(
+        monkeypatch,
+        json.dumps({"action": "create"}),
+        _project(),
+    )
+    _executor(monkeypatch)
+    _summarizer(monkeypatch, "Completed new research.")
+
+    result = TL.auto_workflow("research recent papers")
+
+    states = _workflow_run_states(session_repo)
+    assert len(states) == 1
+    assert not any(state["status"] == "running" for state in states)
+    assert states[0]["status"] == "completed"
+    assert result["run_id"] == states[0]["run_id"]
+    assert result["action"] == "create"
 
 
 def test_revise_workflow_rejects_unchanged_candidate(
