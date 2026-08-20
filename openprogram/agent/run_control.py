@@ -64,19 +64,23 @@ def wait_if_paused() -> None:
 # ---------------------------------------------------------------------------
 
 
-class CancelToken:
-    """Cancellation signal scoped to exactly one turn.
+class CancellationToken:
+    """Cancellation signal scoped to exactly one execution.
 
     Wraps a ``threading.Event`` so blocked worker threads can wait on it,
     and carries a ``retired`` flag: once the turn ends, ``cancel()`` is a
     no-op, which is what keeps a late stop from leaking into the next turn.
     """
 
-    __slots__ = ("_event", "_retired", "_lock", "session_id", "turn_id")
+    __slots__ = (
+        "_event", "_retired", "_lock", "session_id", "execution_id",
+    )
 
-    def __init__(self, session_id: str, turn_id: str | None = None) -> None:
+    def __init__(
+        self, session_id: str, execution_id: str | None = None,
+    ) -> None:
         self.session_id = session_id
-        self.turn_id = turn_id
+        self.execution_id = execution_id
         self._event = threading.Event()
         self._retired = False
         self._lock = threading.Lock()
@@ -108,6 +112,18 @@ class CancelToken:
             return self._retired
 
 
+# Compatibility during the execution-cancellation migration.
+CancelToken = CancellationToken
+
+
+class ExecutionNotFound(Exception):
+    """The requested execution is absent or not visible to the caller."""
+
+
+class ExecutionNotCancellable(Exception):
+    """The requested execution has already reached a non-cancel terminal."""
+
+
 _cancel_flags_lock = threading.Lock()
 
 # (session_id, execution_id) → the token owned by that execution. A None
@@ -116,7 +132,9 @@ _cancel_flags_lock = threading.Lock()
 # so a stop aimed at one never reaches a sibling.
 # Absent when no turn is in flight, which is why a stop between turns is a
 # no-op rather than a flag that poisons whatever runs next.
-_current_tokens: dict[tuple[str, str | None], CancelToken] = {}
+_current_tokens: dict[tuple[str, str | None], CancellationToken] = {}
+
+_execution_cancel_lock = threading.RLock()
 
 # session_id -> exact Event whose owner is performing session-keyed cleanup.
 # Registration fails closed while a lease exists; cleanup callbacks run outside
@@ -141,7 +159,9 @@ _current_execution_id: ContextVar = ContextVar(
 _current_token: ContextVar = ContextVar("_current_token", default=None)
 
 
-def begin_turn(session_id: str, turn_id: str | None = None) -> CancelToken:
+def begin_turn(
+    session_id: str, turn_id: str | None = None,
+) -> CancellationToken:
     """Open a fresh cancellation token for a turn and register it as current.
 
     Any token left registered for this session belongs to a turn that has
@@ -179,7 +199,7 @@ def end_turn(session_id: str, token: CancelToken | None = None) -> None:
 
 def current_token(
     session_id: str, *, execution_id: str | None = None,
-) -> CancelToken | None:
+) -> CancellationToken | None:
     """The token of the turn running on this session, or None between turns."""
     with _cancel_flags_lock:
         return _current_tokens.get((session_id, execution_id))
@@ -194,7 +214,7 @@ def register_cancel_event(
     Event and hand it to the dispatcher. The Event becomes the token's
     Event, so tripping either one is visible through both.
     """
-    token = CancelToken(session_id)
+    token = CancellationToken(session_id, execution_id)
     token._event = ev
     with _cancel_flags_lock:
         if execution_id is None and session_id in _cancel_cleanup_leases:
@@ -214,7 +234,7 @@ def claim_cancel_event(
     The foreground slot (``execution_id`` None) additionally fails closed
     while a session-keyed cleanup lease is held.
     """
-    token = CancelToken(session_id)
+    token = CancellationToken(session_id, execution_id)
     token._event = ev
     with _cancel_flags_lock:
         if execution_id is None and session_id in _cancel_cleanup_leases:
@@ -307,6 +327,107 @@ def mark_cancelled(session_id: str, *, execution_id: str | None = None) -> None:
         token.cancel()
 
 
+def _execution_dto(session_id: str, node: Any) -> dict[str, Any]:
+    metadata = node.metadata if isinstance(node.metadata, dict) else {}
+    return {
+        "execution_id": node.id,
+        "session_id": session_id,
+        "parent_execution_id": node.caller or None,
+        "execution_kind": metadata.get("execution_kind"),
+        "status": metadata.get("status"),
+        "reason_code": metadata.get("reason_code"),
+        "cancellation_requested_at": metadata.get(
+            "cancellation_requested_at",
+        ),
+        "finished_at": metadata.get("finished_at"),
+        "partial_output_available": bool(node.output),
+    }
+
+
+def cancel_execution(execution_id: str):
+    """Cancel exactly one execution and its active ``caller`` descendants."""
+    from openprogram.agent.session_db import default_db
+
+    store = default_db()
+    with _execution_cancel_lock:
+        found: tuple[str, Any] | None = None
+        descendants: list[tuple[str, Any]] = []
+        for session in store.list_sessions(
+            limit=10**9, include_archived=True,
+        ):
+            session_id = session["id"]
+            nodes = store.get_nodes(session_id)
+            root = next((node for node in nodes if node.id == execution_id), None)
+            if root is None:
+                continue
+            found = (session_id, root)
+            child_ids = {execution_id}
+            pending = list(nodes)
+            while pending:
+                added = False
+                for node in pending[:]:
+                    if node.caller in child_ids:
+                        child_ids.add(node.id)
+                        descendants.append((session_id, node))
+                        pending.remove(node)
+                        added = True
+                if not added:
+                    break
+            break
+
+        if found is None:
+            raise ExecutionNotFound(execution_id)
+
+        session_id, root = found
+        root_status = (root.metadata or {}).get("status")
+        if root_status in {"completed", "failed", "interrupted"}:
+            raise ExecutionNotCancellable(execution_id)
+        if root_status in {"cancelling", "cancelled"}:
+            return _execution_dto(session_id, root)
+
+        requested_at = time.time()
+        targets = [(session_id, root), *descendants]
+        for target_session_id, node in targets:
+            metadata = node.metadata if isinstance(node.metadata, dict) else {}
+            status = metadata.get("status")
+            if status not in {"queued", "running"}:
+                continue
+            token = current_token(
+                target_session_id, execution_id=node.id,
+            )
+            final_status = "cancelling" if token is not None else "cancelled"
+            reason_code = (
+                "cancel.user" if node.id == execution_id else "cancel.parent"
+            )
+            store.update_node(
+                target_session_id,
+                node.id,
+                metadata={
+                    "status": final_status,
+                    "reason_code": reason_code,
+                    "cancellation_requested_at": requested_at,
+                    **(
+                        {"finished_at": time.time()}
+                        if final_status == "cancelled" else {}
+                    ),
+                },
+            )
+
+        # Persist every cancellation intent before signalling any owner.
+        for target_session_id, node in targets:
+            token = current_token(
+                target_session_id, execution_id=node.id,
+            )
+            if token is not None:
+                token.cancel()
+
+        refreshed = next(
+            node for node in store.get_nodes(session_id)
+            if node.id == execution_id
+        )
+        return _execution_dto(session_id, refreshed)
+
+
 def is_cancelled(
     session_id: str, *, execution_id: str | None = None,
 ) -> bool:
@@ -363,7 +484,7 @@ def reset_current_session_id(token) -> None:
         pass
 
 
-def _active_token() -> "CancelToken | None":
+def _active_token() -> "CancellationToken | None":
     """The token this frame must check.
 
     The context-bound token wins: it is the one the enclosing turn opened,

@@ -348,7 +348,7 @@ def live_progress(session_id: str, msg_id: str, func_name: str, on_event=None):
 # Interrupted-run repair
 
 def reconcile_interrupted_runs() -> int:
-    """Flip every DAG node still at ``status="running"`` to ``"interrupted"``.
+    """Finish durable cancellations and mark abandoned runs interrupted.
 
     Two writers stamp ``status="running"``:
       * ``@agentic_function`` on entry (FunctionCall sub-call nodes),
@@ -385,16 +385,21 @@ def reconcile_interrupted_runs() -> int:
         shim = SessionNodeWriter(store, sid)
         for node in store.get_nodes(sid):
             meta = node.metadata or {}
-            if meta.get("status") != "running":
+            status = meta.get("status")
+            if status not in {"running", "cancelling"}:
                 continue
             new_meta = dict(meta)
-            new_meta["status"] = "interrupted"
-            new_meta.setdefault(
-                "error", "Worker restarted before this turn finished",
-            )
-            new_meta["interrupted_at"] = time.time()
+            if status == "cancelling":
+                new_meta["status"] = "cancelled"
+                new_meta.setdefault("finished_at", time.time())
+            else:
+                new_meta["status"] = "interrupted"
+                new_meta.setdefault(
+                    "error", "Worker restarted before this turn finished",
+                )
+                new_meta["interrupted_at"] = time.time()
             output = node.output
-            if not output:
+            if not output and status == "running":
                 output = "[interrupted] worker restarted mid-turn"
             try:
                 shim.update(node.id, output=output, metadata=new_meta)
@@ -410,9 +415,17 @@ def reconcile_interrupted_runs() -> int:
         # Reset it independently of the node loop: a worker killed
         # between the status write and the placeholder insert leaves a
         # running ROW with no running NODE.
-        if (sess.get("status") or "") == "running":
+        session_status = sess.get("status") or ""
+        if session_status in {"running", "cancelling"}:
             try:
-                store.update_session(sid, status="interrupted")
+                store.update_session(
+                    sid,
+                    status=(
+                        "cancelled"
+                        if session_status == "cancelling"
+                        else "interrupted"
+                    ),
+                )
                 fixed += 1
             except Exception:
                 pass

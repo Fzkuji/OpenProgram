@@ -336,6 +336,38 @@ async def handle_stop(ws, cmd: dict):
     }))
 
 
+async def handle_execution_cancel(ws, cmd: dict):
+    """Cancel one execution and broadcast its canonical record."""
+    from openprogram.agent import run_control
+    from openprogram.webui import server as _s
+
+    execution_id = (cmd.get("execution_id") or "").strip()
+    if not execution_id:
+        await ws.send_text(json.dumps({
+            "type": "error",
+            "data": {"message": "Missing execution_id"},
+        }))
+        return
+    try:
+        execution = run_control.cancel_execution(execution_id)
+    except (
+        run_control.ExecutionNotFound,
+        run_control.ExecutionNotCancellable,
+    ) as exc:
+        await ws.send_text(json.dumps({
+            "type": "error",
+            "data": {
+                "code": type(exc).__name__,
+                "message": str(exc),
+            },
+        }))
+        return
+    _s._broadcast(json.dumps({
+        "type": "execution.updated",
+        "execution": execution,
+    }, default=str))
+
+
 async def handle_stats(ws, cmd: dict):
     """Welcome-banner data: agent, programs, skills, tools, providers, channels."""
     from openprogram.webui import server as _s
@@ -537,6 +569,7 @@ ACTIONS = {
     "switch_model": handle_switch_model,
     "browser": handle_browser,
     "stop": handle_stop,
+    "execution.cancel": handle_execution_cancel,
     "stats": handle_stats,
     "steer": handle_steer,
     "set_attended": handle_set_attended,

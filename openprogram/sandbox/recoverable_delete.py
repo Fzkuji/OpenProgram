@@ -64,7 +64,7 @@ def current_trash_root() -> Path | None:
         get_state_dir()
         / "trash"
         / _safe_segment(session_id, "session")
-        / _safe_segment(token.turn_id, "run")
+        / _safe_segment(token.execution_id, "run")
     )
 
 
