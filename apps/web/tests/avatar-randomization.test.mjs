@@ -31,9 +31,12 @@ test("the picker saves the current style and the chosen seed", () => {
 
   assert.match(picker, /function pickVariant\(variant: AvatarVariant\)/);
   assert.match(picker, /kind: "dicebear"/);
-  assert.match(picker, /style,\s*\n\s*seed: variant\.seed/);
+  assert.match(picker, /function pickVariant\(variant: AvatarVariant\) \{[\s\S]*style,\s*\n\s*seed: variant\.seed/);
   assert.match(picker, /randomAvatarVariants\(\s*style\s*,\s*16\s*\)/);
-  assert.doesNotMatch(picker, /style: variant\.style/);
+  assert.doesNotMatch(
+    picker,
+    /function pickVariant\(variant: AvatarVariant\) \{[\s\S]*style: variant\.style/,
+  );
   assert.doesNotMatch(picker, /each batch includes every avatar style/);
   assert.doesNotMatch(picker, /AVATAR_STYLES\.map\(\(style\) => style\.id\)/);
 });

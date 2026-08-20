@@ -288,7 +288,7 @@ export function AvatarPicker({
                   ?.label ?? variant.style;
               return (
                 <button
-                  key={`${variant.style}:${variant.seed}`}
+                  key={`${style}:${variant.seed}`}
                   type="button"
                   onClick={() => pickVariant(variant)}
                   title={`${styleLabel}: ${variant.seed}`}
@@ -300,7 +300,7 @@ export function AvatarPicker({
                     name={variant.seed}
                     config={{
                       kind: "dicebear",
-                      style: variant.style,
+                      style,
                       seed: variant.seed,
                     }}
                   />
