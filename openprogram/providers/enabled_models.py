@@ -41,6 +41,7 @@ def _build_model_from_row(
     endpoints: dict,
     *,
     base_url_override: str | None = None,
+    hydrate_custom_limits: bool = False,
 ) -> Model:
     """A config spec row → Model. The row already carries most fields
     (incl. nested cost/headers/compat and usually ``api``); the provider's
@@ -48,6 +49,16 @@ def _build_model_from_row(
     ep = endpoints.get(row.get("endpoint", "default")) or endpoints.get("default") or {}
     data = dict(row)
     data["provider"] = provider_id
+    if hydrate_custom_limits and int(data.get("context_window", 0) or 0) <= 0:
+        try:
+            from .sources import models_dev
+            limits = models_dev.conservative_limits(str(data.get("id") or ""))
+        except Exception:
+            limits = None
+        if limits:
+            data["context_window"] = limits["context_window"]
+            if int(data.get("max_tokens", 0) or 0) <= 0 and limits.get("max_tokens"):
+                data["max_tokens"] = limits["max_tokens"]
     # Reader tolerance for configs that never pass through the webui spec
     # migration (pure-CLI users): map the legacy models.dev flat keys onto the
     # Model schema. ``input_modalities`` → ``input`` (filtered to the schema's
@@ -121,6 +132,7 @@ def _load() -> dict[str, Model]:
                     provider_id,
                     endpoints,
                     base_url_override=custom_base_url,
+                    hydrate_custom_limits=pcfg.get("source") == "custom",
                 )
             except Exception:
                 continue
@@ -193,6 +205,7 @@ def register_model_from_config(provider: str, model_id: str) -> bool:
                     if cfg_pcfg.get("source") == "custom"
                     else None
                 ),
+                hydrate_custom_limits=cfg_pcfg.get("source") == "custom",
             )
         except Exception:
             return False

@@ -293,3 +293,55 @@ def test_real_config_untouched(monkeypatch, tmp_path):
                         lambda: (calls.__setitem__("n", calls["n"] + 1), {})[1])
     mg._load()
     assert calls["n"] >= 1
+
+
+def test_custom_gateway_hydrates_known_exact_model_limits(monkeypatch):
+    from openprogram.providers.sources import models_dev
+
+    monkeypatch.setattr(
+        models_dev,
+        "conservative_limits",
+        lambda model_id: (
+            {"context_window": 1_000_000, "max_tokens": 128_000}
+            if model_id == "gpt-known" else None
+        ),
+    )
+    cfg = {
+        "custom-gateway": {
+            "source": "custom",
+            "base_url": "https://gateway.example/v1",
+            "models": [{
+                "id": "gpt-known",
+                "name": "GPT Known",
+                "api": "openai-completions",
+                "context_window": 0,
+                "max_tokens": 0,
+            }],
+        },
+    }
+
+    model = _reload(monkeypatch, cfg)["custom-gateway/gpt-known"]
+    assert model.context_window == 1_000_000
+    assert model.max_tokens == 128_000
+
+
+def test_custom_gateway_unknown_model_keeps_fail_closed_limits(monkeypatch):
+    from openprogram.providers.sources import models_dev
+
+    monkeypatch.setattr(models_dev, "conservative_limits", lambda _model_id: None)
+    cfg = {
+        "custom-gateway": {
+            "source": "custom",
+            "models": [{
+                "id": "unknown-model",
+                "name": "Unknown",
+                "api": "openai-completions",
+                "context_window": 0,
+                "max_tokens": 0,
+            }],
+        },
+    }
+
+    model = _reload(monkeypatch, cfg)["custom-gateway/unknown-model"]
+    assert model.context_window == 0
+    assert model.max_tokens == 0

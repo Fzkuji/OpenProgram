@@ -253,6 +253,39 @@ def lookup(provider_id: str, model_id: str) -> dict[str, Any] | None:
     return _normalise(raw) or None
 
 
+def conservative_limits(model_id: str) -> dict[str, int] | None:
+    """Return conservative token limits for an exact model id.
+
+    Custom OpenAI-compatible gateways often expose only ``id`` from their
+    ``/models`` endpoint.  When that id also exists in models.dev, use the
+    smallest positive limits advertised by any provider carrying the exact
+    id.  Unknown ids remain unknown so governed execution still fails closed.
+    """
+    catalogue = _load()
+    contexts: list[int] = []
+    outputs: list[int] = []
+    for provider in catalogue.values():
+        if not isinstance(provider, dict):
+            continue
+        models = provider.get("models")
+        raw = models.get(model_id) if isinstance(models, dict) else None
+        if not isinstance(raw, dict):
+            continue
+        row = _normalise(raw)
+        context = row.get("context_window")
+        output = row.get("max_tokens")
+        if isinstance(context, int) and context > 0:
+            contexts.append(context)
+        if isinstance(output, int) and output > 0:
+            outputs.append(output)
+    if not contexts:
+        return None
+    result = {"context_window": min(contexts)}
+    if outputs:
+        result["max_tokens"] = min(outputs)
+    return result
+
+
 def list_models(provider_id: str) -> dict[str, dict[str, Any]]:
     """Every model the catalogue knows for ``provider_id`` (alias-aware),
     as ``{model_id: normalised_dict}``.
