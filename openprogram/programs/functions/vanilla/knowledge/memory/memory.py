@@ -107,6 +107,11 @@ def memory_search(
         return "memory_search needs a query."
     try:
         config = load_memory_config()
+        if config.retrieval_method == "agent":
+            return (
+                "Ranked memory_search is disabled in Agent recall mode. "
+                "Use memory_browse, memory_get, or memory_grep when needed."
+            )
         found = inspect.search(
             _root(), query, top_k=int(top_k or MAX_SNIPPETS),
             path_prefix=path_prefix or None,

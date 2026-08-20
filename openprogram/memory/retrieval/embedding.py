@@ -21,6 +21,18 @@ from .bm25 import (
 )
 
 MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
+MODEL_FILES = (
+    "1_Pooling/config.json",
+    "config.json",
+    "config_sentence_transformers.json",
+    "modules.json",
+    "model.safetensors",
+    "sentence_bert_config.json",
+    "special_tokens_map.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "vocab.txt",
+)
 _default_encoder: Any | None = None
 _default_encoder_lock = threading.RLock()
 
@@ -52,10 +64,21 @@ def default_model_is_cached() -> bool:
     try:
         from huggingface_hub import snapshot_download
 
-        snapshot_download(MODEL_ID, local_files_only=True)
+        snapshot_download(
+            MODEL_ID,
+            allow_patterns=MODEL_FILES,
+            local_files_only=True,
+        )
     except Exception:
         return False
     return True
+
+
+def install_default_model() -> None:
+    """Download the fixed encoder snapshot without loading model weights."""
+    from huggingface_hub import snapshot_download
+
+    snapshot_download(MODEL_ID, allow_patterns=MODEL_FILES)
 
 
 class MemoryEmbeddingIndex:

@@ -111,10 +111,10 @@ dependencies = [
     # searching memory need this; only writing needs the agent SDK, which
     # is imported where a writer is actually constructed.
     "tiktoken>=0.7",
-    # BM25 ranking for memory search. The embedding backend stays
-    # optional — search reports that it is unavailable rather than
-    # silently returning something else.
+    # Memory retrieval ships both lexical and semantic backends. The encoder
+    # weights remain an explicit download from Memory Settings.
     "rank-bm25>=0.2.2",
+    "sentence-transformers>=3.4,<4",
     # Managed memory-tool schema plus the legacy Claude Code adapter used by
     # benchmark paths. The product writer itself follows OpenProgram's default
     # chat provider through AgentSession.

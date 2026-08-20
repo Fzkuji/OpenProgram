@@ -29,7 +29,9 @@ class MemoryConfig:
             raise ValueError("max_budget_usd must be positive")
         if self.writer_trigger_tokens not in {8_000, 16_000, 32_000}:
             raise ValueError("writer_trigger_tokens must be 8000, 16000 or 32000")
-        if self.retrieval_method not in {"bm25", "embedding", "hybrid"}:
+        if self.retrieval_method not in {
+            "agent", "bm25", "embedding", "hybrid",
+        }:
             raise ValueError("unsupported retrieval_method")
         if not 1 <= self.retrieval_top_k <= 10:
             raise ValueError("retrieval_top_k must be in 1..10")
@@ -81,7 +83,7 @@ def load_memory_config(config: dict[str, Any] | None = None) -> MemoryConfig:
     recent = _section(memory, "recent")
     method = retrieval.get("method", "bm25")
     if not isinstance(method, str) or method not in {
-        "bm25", "embedding", "hybrid",
+        "agent", "bm25", "embedding", "hybrid",
     }:
         method = "bm25"
     return MemoryConfig(

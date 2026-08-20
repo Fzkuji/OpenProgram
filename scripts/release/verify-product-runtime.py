@@ -122,6 +122,7 @@ def _probe(
         "openprogram.providers",
         "openprogram.mcp",
         "openprogram.memory",
+        "sentence_transformers",
         "qrcode",
         "discord",
         "slack_sdk",

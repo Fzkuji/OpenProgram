@@ -39,9 +39,10 @@ export function MemorySettings() {
   const [rows, setRows] = useState<SettingRow[]>([]);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [models, setModels] = useState<Model[]>([]);
-  const [memoryStatus, setMemoryStatus] = useState<MemoryStatus>({});
+  const [memoryStatus, setMemoryStatus] = useState<MemoryStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [installing, setInstalling] = useState(false);
   const [message, setMessage] = useState("");
   const [messageKind, setMessageKind] = useState<"success" | "error" | "notice" | "">("");
   const saveVersion = useRef(0);
@@ -125,6 +126,27 @@ export function MemorySettings() {
     }
   }
 
+  async function installEmbedding() {
+    setInstalling(true);
+    setMessage("");
+    setMessageKind("");
+    try {
+      const response = await fetch("/api/memory/embedding/install", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok || !result.embedding_available) {
+        throw new Error(result.error || `embedding install: ${response.status}`);
+      }
+      setMemoryStatus((current) => ({ ...current, embedding_available: true, failed: false }));
+      setMessage(text("Embedding model installed", "Embedding 模型已安装"));
+      setMessageKind("success");
+    } catch (error) {
+      setMessage(text(`Embedding install failed: ${error}`, `Embedding 安装失败：${error}`));
+      setMessageKind("error");
+    } finally {
+      setInstalling(false);
+    }
+  }
+
   if (!loaded) {
     return <div className={`${shared.page} ${styles.memoryPage}`}><div className={styles.loading}>{text("Loading…", "加载中…")}</div></div>;
   }
@@ -132,9 +154,9 @@ export function MemorySettings() {
   const backend = String(draft["memory.backend"] ?? "local");
   const writerModel = String(draft["memory.writer.model"] ?? "");
   const retrieval = String(draft["memory.retrieval.method"] ?? "bm25");
-  const embeddingAvailable = !!memoryStatus.embedding_available;
+  const embeddingAvailable = memoryStatus?.embedding_available === true;
   const writerLabel = writerModel || text("Default chat model", "默认聊天模型");
-  const recallLabel = retrieval === "bm25" ? "BM25" : retrieval === "embedding" ? text("Semantic", "语义") : text("Hybrid", "混合");
+  const recallLabel = retrieval === "agent" ? "Agent" : retrieval === "bm25" ? "BM25" : retrieval === "embedding" ? text("Semantic", "语义") : text("Hybrid", "混合");
 
   return (
     <div className={`${shared.page} ${styles.memoryPage}`}>
@@ -143,7 +165,7 @@ export function MemorySettings() {
           <LifecycleStep icon={<Database size={15} />} label={text("Capture", "采集")} value={text("Conversation archive", "对话归档")} />
           <LifecycleStep icon={<PencilLine size={15} />} label={text("Write", "写入")} value={writerLabel} />
           <LifecycleStep icon={<Sparkles size={15} />} label={text("Store", "存储")} value={backend === "local" ? text("Local + Git", "本地 + Git") : text("Disabled", "已关闭")} />
-          <LifecycleStep icon={<Search size={15} />} label={text("Recall", "检索")} value={recallLabel} warn={retrieval !== "bm25" && !embeddingAvailable} />
+          <LifecycleStep icon={<Search size={15} />} label={text("Recall", "检索")} value={recallLabel} warn={(retrieval === "embedding" || retrieval === "hybrid") && !embeddingAvailable} />
         </div>
 
         <SettingsSection title={text("Memory service", "Memory 服务")}>
@@ -177,24 +199,26 @@ export function MemorySettings() {
         </SettingsSection>
 
         <SettingsSection title={text("Retrieval", "检索")}>
-          <SettingsRow label={text("Recall method", "检索方法")} description={text("Used before model turns and by Memory search.", "用于模型回合前的自动检索和 Memory 搜索。") }>
+          <SettingsRow label={text("Recall method", "检索方法")} description={text("Use ranked automatic recall, or let the Agent inspect Memory only when needed.", "使用自动排序检索，或仅由 Agent 在需要时查看 Memory。") }>
             <Status live>{text("Live", "实时")}</Status>
             <select aria-label={text("Recall method", "检索方法")} disabled={saving} className={styles.select} value={retrieval} onChange={(event) => update("memory.retrieval.method", event.target.value)}>
+              <option value="agent">{text("Agent · On demand", "Agent · 按需查看")}</option>
               <option value="bm25">{text("Keyword · BM25", "关键词 · BM25")}</option>
               <option value="embedding" disabled={!embeddingAvailable}>{text("Semantic · Embeddings", "语义 · Embedding")}{!embeddingAvailable ? text(" (unavailable)", "（不可用）") : ""}</option>
               <option value="hybrid" disabled={!embeddingAvailable}>{text("Hybrid · BM25 + Embeddings", "混合 · BM25 + Embedding")}{!embeddingAvailable ? text(" (unavailable)", "（不可用）") : ""}</option>
             </select>
           </SettingsRow>
-          <SettingsRow label={text("Embedding model", "Embedding 模型")} description={text("Required for semantic and hybrid retrieval.", "语义检索和混合检索需要该能力。") }>
-            <Status missing={!embeddingAvailable}>{embeddingAvailable ? text("Available", "可用") : text("Not installed", "未安装")}</Status>
+          <SettingsRow label={text("Embedding model", "Embedding 模型")} description={text("Required only for semantic and hybrid retrieval.", "仅语义检索和混合检索需要该模型。") }>
+            <Status missing={memoryStatus !== null && !memoryStatus.failed && !embeddingAvailable}>{memoryStatus === null ? text("Checking…", "检查中…") : memoryStatus.failed ? text("Unavailable", "无法检查") : embeddingAvailable ? text("Available", "可用") : text("Not installed", "未安装")}</Status>
+            {memoryStatus !== null && !memoryStatus.failed && !embeddingAvailable && <button className={styles.installButton} type="button" onClick={installEmbedding} disabled={saving || installing}>{installing ? text("Installing…", "安装中…") : text("Install · about 90 MB", "安装 · 约 90 MB")}</button>}
           </SettingsRow>
           <SettingsRow label={text("Recall depth", "检索数量")} description={text("Maximum matching records added automatically to a turn.", "每个回合自动加入的最大匹配记录数。") }>
-            <select aria-label={text("Recall depth", "检索数量")} disabled={saving} className={styles.select} value={Number(draft["memory.retrieval.top_k"] ?? 5)} onChange={(event) => update("memory.retrieval.top_k", Number(event.target.value))}>
+            <select aria-label={text("Recall depth", "检索数量")} disabled={saving || retrieval === "agent"} className={styles.select} value={Number(draft["memory.retrieval.top_k"] ?? 5)} onChange={(event) => update("memory.retrieval.top_k", Number(event.target.value))}>
               {[3, 5, 8, 10].map((value) => <option key={value} value={value}>{value} {text("records", "条记录")}</option>)}
             </select>
           </SettingsRow>
           <SettingsRow label={text("Search Source evidence", "检索 Source 证据")} description={text("Include archived evidence alongside curated Topic records.", "在整理后的 Topic 记录之外同时检索归档证据。") }>
-            <Switch aria-label={text("Search Source evidence", "检索 Source 证据")} disabled={saving} checked={Boolean(draft["memory.retrieval.include_sources"])} onCheckedChange={(value) => update("memory.retrieval.include_sources", value)} />
+            <Switch aria-label={text("Search Source evidence", "检索 Source 证据")} disabled={saving || retrieval === "agent"} checked={Boolean(draft["memory.retrieval.include_sources"])} onCheckedChange={(value) => update("memory.retrieval.include_sources", value)} />
           </SettingsRow>
         </SettingsSection>
 
@@ -208,13 +232,13 @@ export function MemorySettings() {
             </select>
           </SettingsRow>
           <SettingsRow label={text("Workspace", "工作区")} description={text("Current Memory data location. Runtime-managed files remain read-only.", "当前 Memory 数据位置；Runtime 管理的文件保持只读。") }>
-            <span className={styles.monoValue}>{memoryStatus.workspace_path || "~/.openprogram/memory"}</span>
+            <span className={styles.monoValue}>{memoryStatus?.workspace_path || "~/.openprogram/memory"}</span>
           </SettingsRow>
         </SettingsSection>
       </div>
       <div className={styles.saveBar}>
         {message && <span className={messageKind === "error" ? styles.error : messageKind === "notice" ? styles.notice : styles.saved} role={messageKind === "error" ? "alert" : "status"} aria-live={messageKind === "error" ? "assertive" : "polite"}>{messageKind === "success" && <Check size={13} />}{message}</span>}
-        <button className={styles.saveButton} type="button" onClick={save} disabled={saving || changed.length === 0}>{saving ? text("Saving…", "保存中…") : text("Save changes", "保存更改")}</button>
+        <button className={styles.saveButton} type="button" onClick={save} disabled={saving || installing || changed.length === 0}>{saving ? text("Saving…", "保存中…") : text("Save changes", "保存更改")}</button>
       </div>
     </div>
   );

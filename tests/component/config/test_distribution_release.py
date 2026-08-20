@@ -1566,6 +1566,10 @@ def test_product_runtime_installs_complete_default_capabilities() -> None:
     assert 'importlib.metadata.version(distribution).split("+", 1)[0]' in verifier
     assert '"pypdf>=5.0"' in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert '"rich>=13.0"' in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert '"sentence-transformers>=3.4,<4"' in (
+        ROOT / "pyproject.toml"
+    ).read_text(encoding="utf-8")
+    assert '"sentence_transformers"' in verifier
     assert '"pypdf",' in verifier
     assert "_probe_pdf_tools()" in verifier
     assert "_probe_rich_terminal()" in verifier
