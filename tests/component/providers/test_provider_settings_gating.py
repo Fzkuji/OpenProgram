@@ -57,6 +57,31 @@ def test_agent_settings_kept_when_default_enabled(settings_client, monkeypatch):
     assert body["chat"]["model"] == "gpt-5.5"
 
 
+def test_agent_settings_initializes_providers_off_event_loop(
+    settings_client, monkeypatch,
+):
+    import threading
+
+    c, _rm = settings_client
+    seen = {}
+
+    def initialize():
+        seen["initialize"] = threading.get_ident()
+
+    def thinking(_provider, _model):
+        seen["route"] = threading.get_ident()
+        return None
+
+    from openprogram.webui import server as _s
+
+    monkeypatch.setattr(_s, "_init_providers", initialize)
+    monkeypatch.setattr(_s, "_get_thinking_config_for_model", thinking)
+    monkeypatch.setattr(_rm, "_default_is_enabled", lambda _p, _m: True)
+
+    assert c.get("/api/agent_settings").status_code == 200
+    assert seen["initialize"] != seen["route"]
+
+
 # ---- 4. _clear_stale_defaults (providers.py) ----------------------------
 # The helper is a closure inside providers.register, so we drive it through
 # the toggle route that calls it rather than reaching into route globals.

@@ -12,9 +12,8 @@ import {
   Search,
   SlidersHorizontal,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useState, type ReactNode } from "react";
+import { useLayoutEffect, useState, type ReactNode } from "react";
 import styles from "./settings-page.module.css";
-import { prefetchSettings } from "@/lib/prefs/settings-cache";
 import { useTranslation } from "@/lib/i18n";
 import { PanelLeftCloseIcon, PanelLeftOpenIcon } from "../animated-icons";
 import { sidebarToggleClass } from "../sidebar/nav-classes";
@@ -47,11 +46,6 @@ export function SettingsTabsLayout({
 }) {
   const { t, text } = useTranslation();
   const [navOpen, setNavOpen] = useState(true);
-  // Mounted once when the user enters /settings/* (now an app-router
-  // layout). useEffect fires once for the whole settings visit — no
-  // remount per tab click — so the topbar + nav don't tear down + set
-  // up between pages.
-  useEffect(() => { prefetchSettings(); }, []);
   useLayoutEffect(() => { setNavOpen(readSettingsNavOpen()); }, []);
 
   function toggleNav() {
