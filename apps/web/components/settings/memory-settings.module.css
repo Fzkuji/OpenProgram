@@ -1,7 +1,7 @@
 .memoryPage { position: relative; font-family: var(--font-sans); }
 .pageBody { gap: 24px; padding-bottom: 84px; }
 .loading { padding: 28px; color: var(--text-muted); }
-.lifecycle { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: var(--ui-card-radius); background: var(--bg-secondary); overflow: hidden; font-family: var(--font-sans); }
+.lifecycle { display: grid; flex-shrink: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: var(--ui-card-radius); background: var(--bg-secondary); overflow: hidden; font-family: var(--font-sans); }
 .lifecycleStep { min-width: 0; padding: 14px 16px; border-right: 1px solid var(--border); }
 .lifecycleStep:last-child { border-right: 0; }
 .lifecycleLabel { display: block; margin-bottom: 7px; color: var(--text-muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; font-family: var(--font-sans); }

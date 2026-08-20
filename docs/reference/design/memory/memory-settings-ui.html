@@ -506,6 +506,7 @@
       <li>Runtime settings cover automatic writing, write frequency, recall method including <code>agent</code>, recall depth, Source scope, Core injection, and Recent size.</li>
       <li>Semantic and Hybrid remain disabled until the local embedding snapshot is present; saving either method still performs the existing full availability validation.</li>
       <li>In Agent mode, automatic turn recall is empty and depth/Source controls are disabled because they do not participate in that mode. Core Memory injection remains an independent setting.</li>
+      <li>The four lifecycle cards remain visible at their intrinsic height inside the scrollable settings column; they must not flex-shrink behind <code>overflow: hidden</code> when the page contains more sections than the viewport.</li>
       <li>Acceptance checks fail if the settings status path calls the complete workspace inspector, initializes the encoder, remains inside the page's blocking request group, or if Settings entry triggers sibling-page prefetch.</li>
       <li>Cold-process verification resolves the local embedding snapshot without importing <code>sentence_transformers</code>; editable settings and the bounded settings status have separate completion boundaries.</li>
       <li>No external API permission controls are added to this page.</li>
