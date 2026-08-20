@@ -1379,7 +1379,7 @@ def test_real_agent_implementation_is_callable_with_public_signature() -> None:
 
 
 def test_auto_workflow_forwards_call_id_as_spawn_caller(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
     captured: dict[str, object] = {}
 
@@ -2694,6 +2694,31 @@ def test_auto_decision_stops_after_attempt_limit(
         )
 
     assert len(calls) == TL.AUTO_DECISION_ATTEMPTS
+
+
+def test_auto_workflow_selection_failure_persists_failed_run(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _install_workflow_project(session_repo, _project())
+
+    def bad(_sid, _prompt, **_kwargs):
+        return "not json"
+
+    monkeypatch.setattr(TL, "_run_planner_turn", bad)
+
+    with pytest.raises(TL.InvalidWorkflow, match="selection failed after"):
+        TL.auto_workflow("research papers")
+
+    runs_dir = session_repo / "workflows"
+    assert runs_dir.exists()
+    states = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in runs_dir.glob("*/state.json")
+    ]
+    assert len(states) == 1
+    assert states[0]["status"] == "failed"
+    assert states[0]["task"] == "research papers"
+    assert "selection failed after" in states[0]["last_error"]
 
 
 def test_revise_workflow_rejects_unchanged_candidate(

@@ -2645,11 +2645,24 @@ def auto_workflow(task: str) -> dict:
     """
     session_id = current_session_id()
     spawn_caller = current_call_id() or None
+    run_id = _new_run_id()
+    instance = _instance_dir(session_id, run_id)
+    instance.mkdir(parents=True, exist_ok=False)
+    state = {
+        "run_id": run_id, "task": task, "status": "running",
+        "executions": 0, "items": [], "revisions": [], "result": "",
+        "last_error": "", "project_action": "auto",
+    }
+    _save_state(instance / "state.json", state)
     candidates = search_workflows(task).get("workflows") or []
-    decision = _request_auto_decision(
-        task, candidates, session_id=session_id,
-        agent_id="main", spawn_caller=spawn_caller,
-    )
+    try:
+        decision = _request_auto_decision(
+            task, candidates, session_id=session_id,
+            agent_id="main", spawn_caller=spawn_caller,
+        )
+    except BaseException as exc:
+        _mark_run_exception(instance, state, exc)
+        raise
     if decision["action"] == "reuse":
         workflow_id = decision["workflow_id"]
         revision = next(
