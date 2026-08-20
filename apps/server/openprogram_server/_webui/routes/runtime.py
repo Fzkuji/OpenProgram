@@ -244,7 +244,7 @@ def register(app):
         from openprogram.webui._model_listing.listing import (
             supports_fast as _supports_fast,
         )
-        _s._init_providers()
+        await asyncio.to_thread(_s._init_providers)
 
         chat_session_id = None
         chat_locked = False

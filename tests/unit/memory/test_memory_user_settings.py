@@ -89,15 +89,55 @@ def test_organize_topics_uses_live_recent_limit(tmp_path, monkeypatch):
     assert seen["config"].recent_limit == 25
 
 
-def test_embedding_status_requires_the_model_to_load_locally(monkeypatch):
+def test_embedding_status_checks_local_snapshot_without_loading_encoder(monkeypatch):
     from openprogram.memory.retrieval import embedding, inspect
 
+    loaded = []
     monkeypatch.setattr(
-        embedding, "load_default_encoder",
-        lambda **_kwargs: (_ for _ in ()).throw(OSError("model not cached")),
+        embedding, "default_model_is_cached", lambda: True,
     )
 
-    assert inspect.embedding_is_available() is False
+    def fail_if_loaded(**kwargs):
+        loaded.append(kwargs)
+        raise AssertionError("status must not load the embedding encoder")
+
+    monkeypatch.setattr(embedding, "load_default_encoder", fail_if_loaded)
+
+    assert inspect.embedding_is_available() is True
+    assert loaded == []
+
+
+def test_default_model_cache_probe_stays_local(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    from openprogram.memory.retrieval import embedding
+
+    seen = []
+
+    def snapshot_download(model_id, *, local_files_only):
+        seen.append((model_id, local_files_only))
+        return "/cached/model"
+
+    monkeypatch.setitem(
+        sys.modules,
+        "huggingface_hub",
+        SimpleNamespace(snapshot_download=snapshot_download),
+    )
+
+    assert embedding.default_model_is_cached() is True
+    assert seen == [(embedding.MODEL_ID, True)]
+
+    monkeypatch.setitem(
+        sys.modules,
+        "huggingface_hub",
+        SimpleNamespace(
+            snapshot_download=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                OSError("model not cached")
+            ),
+        ),
+    )
+    assert embedding.default_model_is_cached() is False
 
 
 def test_embedding_search_never_requests_network_model_loading(

@@ -19,6 +19,7 @@ type SettingRow = {
 type MemoryStatus = {
   workspace_path?: string;
   embedding_available?: boolean;
+  failed?: boolean;
 };
 
 const KEYS = [
@@ -38,7 +39,6 @@ export function MemorySettings() {
   const [rows, setRows] = useState<SettingRow[]>([]);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [models, setModels] = useState<Model[]>([]);
-  const [defaultChat, setDefaultChat] = useState("");
   const [memoryStatus, setMemoryStatus] = useState<MemoryStatus>({});
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -47,26 +47,24 @@ export function MemorySettings() {
   const saveVersion = useRef(0);
 
   useEffect(() => {
+    void fetch("/api/memory/status?settings=true").then((response) => {
+      if (!response.ok) throw new Error(`memory status: ${response.status}`);
+      return response.json();
+    }).then(setMemoryStatus).catch(() => setMemoryStatus({ failed: true }));
+
     Promise.all([
       fetch("/api/settings").then((response) => {
         if (!response.ok) throw new Error(`settings: ${response.status}`);
         return response.json();
       }),
       api.listEnabledModels().catch(() => []),
-      api.getAgentSettings().catch(() => ({})),
-      fetch("/api/memory/status").then((response) =>
-        response.ok ? response.json() : {},
-      ).catch(() => ({})),
-    ]).then(([settingsPayload, enabledModels, agentSettings, status]) => {
+    ]).then(([settingsPayload, enabledModels]) => {
       const memoryRows = (settingsPayload.settings || []).filter(
         (row: SettingRow) => KEYS.includes(row.key as typeof KEYS[number]),
       );
       setRows(memoryRows);
       setDraft(Object.fromEntries(memoryRows.map((row: SettingRow) => [row.key, row.value])));
       setModels(enabledModels);
-      const chat = (agentSettings as Record<string, unknown>).chat as { provider?: string; model?: string } | undefined;
-      setDefaultChat([chat?.provider, chat?.model].filter(Boolean).join("/"));
-      setMemoryStatus(status);
     }).catch((error) => {
       setMessage(text(`Could not load Memory settings: ${error}`, `无法加载 Memory 设置：${error}`));
       setMessageKind("error");
@@ -135,7 +133,7 @@ export function MemorySettings() {
   const writerModel = String(draft["memory.writer.model"] ?? "");
   const retrieval = String(draft["memory.retrieval.method"] ?? "bm25");
   const embeddingAvailable = !!memoryStatus.embedding_available;
-  const writerLabel = writerModel || defaultChat || text("Default chat model", "默认聊天模型");
+  const writerLabel = writerModel || text("Default chat model", "默认聊天模型");
   const recallLabel = retrieval === "bm25" ? "BM25" : retrieval === "embedding" ? text("Semantic", "语义") : text("Hybrid", "混合");
 
   return (
@@ -162,7 +160,7 @@ export function MemorySettings() {
           <SettingsRow label={text("Writer model", "写入模型")} description={text("Uses the default chat model unless you select an enabled model.", "默认使用聊天模型，也可以选择一个已启用模型。") }>
             <Status live>{text("Live", "实时")}</Status>
             <select aria-label={text("Writer model", "写入模型")} disabled={saving} className={styles.select} value={writerModel} onChange={(event) => update("memory.writer.model", event.target.value)}>
-              <option value="">{text("Default chat model", "默认聊天模型")}{defaultChat ? ` · ${defaultChat}` : ""}</option>
+              <option value="">{text("Default chat model", "默认聊天模型")}</option>
               {models.map((model) => <option key={`${model.provider}/${model.id}`} value={`${model.provider}/${model.id}`}>{model.name} · {model.provider}</option>)}
             </select>
           </SettingsRow>

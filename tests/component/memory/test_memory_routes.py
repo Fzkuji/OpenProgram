@@ -162,6 +162,29 @@ def test_status_route_returns_the_inspect_status_contract(
     assert seen["include_path"] is True
 
 
+def test_settings_status_skips_complete_workspace_inspection(
+    client, monkeypatch, memory,
+):
+    from openprogram.memory.retrieval import embedding, inspect
+
+    monkeypatch.setattr(
+        inspect,
+        "status",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("settings status must not inspect the workspace")
+        ),
+    )
+    monkeypatch.setattr(embedding, "default_model_is_cached", lambda: True)
+
+    response = client.get("/api/memory/status?settings=true")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "workspace_path": str(memory.resolve()),
+        "embedding_available": True,
+    }
+
+
 def test_memory_refs_expose_stable_block_identity(client):
     response = client.get("/api/memory/refs?q=worth")
     assert response.status_code == 200

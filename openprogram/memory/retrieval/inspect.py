@@ -154,10 +154,10 @@ def status(
 
 def embedding_is_available() -> bool:
     try:
-        from .embedding import default_model_is_available
+        from .embedding import default_model_is_cached
     except Exception:
         return False
-    return default_model_is_available()
+    return default_model_is_cached()
 
 
 def list_files(

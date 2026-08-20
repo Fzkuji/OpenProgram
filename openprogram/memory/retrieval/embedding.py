@@ -47,6 +47,17 @@ def default_model_is_available() -> bool:
     return True
 
 
+def default_model_is_cached() -> bool:
+    """Whether the fixed encoder snapshot is present without loading it."""
+    try:
+        from huggingface_hub import snapshot_download
+
+        snapshot_download(MODEL_ID, local_files_only=True)
+    except Exception:
+        return False
+    return True
+
+
 class MemoryEmbeddingIndex:
     """Rebuild an in-memory embedding index from Topic and Source files."""
 

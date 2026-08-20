@@ -91,14 +91,26 @@ def register(app):
     router = APIRouter(dependencies=[Depends(_require_memory_enabled)])
 
     @router.get("/api/memory/status")
-    def get_status():
+    def get_status(settings: bool = False):
         from openprogram.memory import store
+
+        root = store.ensure()
+        if settings:
+            from openprogram.memory.retrieval.embedding import (
+                default_model_is_cached,
+            )
+
+            return JSONResponse(content={
+                "workspace_path": str(root.resolve()),
+                "embedding_available": default_model_is_cached(),
+            })
+
         from openprogram.memory.retrieval import inspect
 
         # Owner-only surface (the whole memory router is), so the on-disk
         # location is shown; the model-facing tool omits it.
         return JSONResponse(
-            content=inspect.status(store.ensure(), include_path=True)
+            content=inspect.status(root, include_path=True)
         )
 
     @router.get("/api/memory/refs")

@@ -1,5 +1,5 @@
 /**
- * Tiny TTL cache + parallel prefetch for the /settings/* subpages.
+ * Tiny TTL cache for the /settings/* subpages.
  *
  * Why: each tab's index.tsx fires its own ``fetch()`` on mount, so
  * navigating between /settings/{providers,search,channels,general}
@@ -13,11 +13,6 @@
  *    the resolved value. Two callers in the same tick share one
  *    network round-trip. A successful response sticks for ``TTL_MS``
  *    so revisiting a tab inside that window returns instantly.
- * 2. ``prefetchSettings()`` fires the union of all 4 tabs' fetches
- *    in parallel. SettingsTabsLayout calls this on mount, so by the
- *    time the user clicks a sibling tab the data is usually already
- *    sitting in the cache.
- *
  * Invalidation is opt-in: callers that mutate (toggle a provider,
  * add a channel, save an API key) call ``invalidate(url)`` for the
  * affected endpoints so the next read goes to the network.
@@ -70,22 +65,4 @@ export function invalidate(url: string | RegExp): void {
 
 export function invalidateAllSettings(): void {
   cache.clear();
-}
-
-/**
- * Fire the union of all 4 settings tabs' fetches in parallel. Safe to
- * call repeatedly — ``cachedFetch`` dedupes in-flight requests, so the
- * second call within TTL is a no-op.
- *
- * Channels per-account status probes (~N requests) are skipped here —
- * the channels tab refreshes them on its own 30s interval and we
- * don't know the account list at prefetch time.
- */
-export function prefetchSettings(): void {
-  // Fire-and-forget. Failures are swallowed; the actual page will
-  // surface its own error state when the user navigates.
-  void cachedFetch("/api/providers/list").catch(() => {});
-  void cachedFetch("/api/search-providers/list").catch(() => {});
-  void cachedFetch("/api/channels/accounts").catch(() => {});
-  void cachedFetch("/api/channels/bindings").catch(() => {});
 }
