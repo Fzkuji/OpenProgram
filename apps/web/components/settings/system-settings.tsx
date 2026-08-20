@@ -2,7 +2,7 @@
 
 /**
  * System settings — schema-driven editor, styled to match the other
- * settings tabs (same .section/.row/.label/.value from settings-page.module
+ * settings tabs (same .section/.row/.label/.control from settings-page.module
  * .css). Renders the SAME settings the TUI panel and `openprogram config`
  * edit, fetched from /api/settings (backed by openprogram.config_schema).
  * One SettingSpec server-side → one row here. See docs/design/cli/redesign.md.
@@ -133,7 +133,7 @@ export function SystemSettings() {
                           </div>
                         ) : null}
                       </div>
-                      <div className={styles.value}>
+                      <div className={styles.control}>
                         <Control row={r} onSave={save} />
                       </div>
                     </div>
