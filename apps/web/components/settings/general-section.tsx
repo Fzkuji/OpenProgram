@@ -234,7 +234,7 @@ function ProfileEditor({
             top of the tall picker block instead of centring it. */}
         <div className={`${styles.row} ${styles.rowTop}`}>
           <div className={styles.label}>Avatar style</div>
-          <div className={styles.control}>
+          <div className={styles.control + " " + styles.valueWide}>
             <AvatarPicker
               value={profile.avatar}
               onChange={updateAvatar}
@@ -440,7 +440,7 @@ function ApplicationSection() {
       <div className={styles.card}>
         <div className={styles.row}>
           <div className={styles.label}>{t("general.version")}</div>
-          <div className={styles.value}>{updateState?.currentVersion || hostVersion}</div>
+          <div className={styles.control}>{updateState?.currentVersion || hostVersion}</div>
         </div>
         {bridge?.updates ? (
           <>
@@ -521,7 +521,7 @@ function ApplicationSection() {
         )}
         <div className={styles.row}>
           <div className={styles.label}>{t("general.framework")}</div>
-          <div className={styles.value}>Agentic Programming</div>
+          <div className={styles.control}>Agentic Programming</div>
         </div>
       </div>
     </section>
