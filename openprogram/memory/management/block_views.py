@@ -121,11 +121,12 @@ class BlockViewsMixin:
                 match = definition_match(line)
                 if match and match.group("id") in annotations:
                     annotation = annotations[match.group("id")]
-                    labels = re.findall(
-                        r"\[([^]]+)\]\([^)]+\)", match.group("sources")
+                    labels = (
+                        annotation.source_labels
+                        if len(annotation.source_labels)
+                        == len(annotation.source_refs)
+                        else annotation.source_refs
                     )
-                    if len(labels) != len(annotation.source_refs):
-                        labels = list(annotation.source_refs)
                     line = render_definition(
                         match.group("id"),
                         annotation.when,

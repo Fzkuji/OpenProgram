@@ -368,9 +368,20 @@ UPDATE_SPEC: dict[str, Any] = {
                             "type": "string",
                             "description": "YYYY, YYYY-MM, YYYY-MM-DD, or undated",
                         },
-                        "source_refs": {
+                        "sources": {
                             "type": "array",
-                            "items": {"type": "string"},
+                            "description": (
+                                "evidence identity plus a short display keyword"
+                            ),
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "source": {"type": "string"},
+                                    "label": {"type": "string"},
+                                },
+                                "required": ["source", "label"],
+                                "additionalProperties": False,
+                            },
                         },
                     },
                     "required": ["op"],

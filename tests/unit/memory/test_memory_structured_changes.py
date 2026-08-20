@@ -362,6 +362,124 @@ def test_record_changes_create_update_delete_and_rebuild_views(tmp_path):
     assert (root / "timeline/2026/02/02.md").is_file()
 
 
+def test_record_sources_render_short_labels_and_preserve_v2_identity(
+    tmp_path, monkeypatch,
+):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.markdown import parse_topic_tree
+    from openprogram.memory.markdown import syntax
+    from openprogram.memory.runtime.state import SourceRecord
+
+    root = tmp_path / "memory"
+    records = [
+        SourceRecord(
+            "openprogram", "thread-1", "m1", 1, "user", "scope evidence"
+        ),
+        SourceRecord(
+            "openprogram", "thread-1", "m2", 2, "assistant", "method evidence"
+        ),
+    ]
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.archive_source_records(records)
+        workspace.update(
+            base_revision=workspace.revision(),
+            memory_changes=[{
+                "op": "create_record",
+                "content": "A labelled memory record.",
+                "time": "2026-08-20",
+                "sources": [
+                    {
+                        "source": records[0].source_id,
+                        "label": "这是一个超过八个字的标签",
+                    },
+                    {
+                        "source": records[1].source_id,
+                        "label": "one two three four five six seven",
+                    },
+                ],
+                "destination": {
+                    "topic_path": "topics/labelled.md",
+                    "headings": [],
+                    "position": "end",
+                },
+            }],
+            git_commit="off",
+        )
+
+    topic = (root / "topics/labelled.md").read_text(encoding="utf-8")
+    assert "[这是一个超过八个](" in topic
+    assert "[one two three four five six](" in topic
+    assert f"[{records[0].source_id}]" not in topic
+    scans = 0
+    original_scan = syntax.scan_source_archive
+
+    def counted_scan(*args, **kwargs):
+        nonlocal scans
+        scans += 1
+        return original_scan(*args, **kwargs)
+
+    monkeypatch.setattr(syntax, "scan_source_archive", counted_scan)
+    unit = parse_topic_tree(root / "topics")[0]
+    assert scans == 1
+    assert unit.source_refs == tuple(record.source_id for record in records)
+    assert unit.source_labels == (
+        "这是一个超过八个",
+        "one two three four five six",
+    )
+    timeline = (root / "timeline/2026/08/20.md").read_text(encoding="utf-8")
+    assert "[这是一个超过八个](" in timeline
+    assert "[one two three four five six](" in timeline
+
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.update(
+            base_revision=workspace.revision(),
+            memory_changes=[{
+                "op": "move_records",
+                "memory_ids": [unit.memory_id],
+                "destination": {
+                    "topic_path": "topics/archive/labelled.md",
+                    "headings": ["Archive"],
+                    "position": "end",
+                },
+            }],
+            git_commit="off",
+        )
+
+    moved = parse_topic_tree(root / "topics")[0]
+    assert moved.source_refs == unit.source_refs
+    assert moved.source_labels == unit.source_labels
+    assert moved.topic_path == "archive/labelled.md"
+
+
+def test_direct_writer_source_label_is_resolved_by_runtime(tmp_path):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.markdown import parse_topic_tree
+    from openprogram.memory.runtime.state import SourceRecord
+
+    root = tmp_path / "memory"
+    record = SourceRecord(
+        "openprogram", "thread-1", "m1", 1, "user", "research scope"
+    )
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.archive_source_records([record])
+        baseline = workspace.baseline()
+        (workspace.stage_dir / "topics").mkdir(exist_ok=True)
+        (workspace.stage_dir / "topics/direct.md").write_text(
+            "# Direct\n\n"
+            "A direct writer record.[^e1]\n\n"
+            "[^e1]: Time: `2026-08-20`; Sources: "
+            f"[调研范围]({record.source_id})\n",
+            encoding="utf-8",
+        )
+        workspace.commit_edits(*baseline)
+
+    topic = (root / "topics/direct.md").read_text(encoding="utf-8")
+    assert "[调研范围](../sources/openprogram/_v2/thread-1.md#source-" in topic
+    unit = parse_topic_tree(root / "topics")[0]
+    assert unit.source_refs == (record.source_id,)
+    assert unit.source_labels == ("调研范围",)
+
+
 def test_invalid_record_change_rolls_back_every_record(tmp_path):
     from openprogram.memory.management import MemoryWorkspace
     from openprogram.memory.management.transaction import TransactionError

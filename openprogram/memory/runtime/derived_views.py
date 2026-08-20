@@ -298,7 +298,12 @@ def rebuild_derived_views(
             source_links = []
             refs = annotation.source_refs if annotation else unit.source_refs
             links = annotation.source_links if annotation else unit.source_links
-            for label, link in zip(refs, links):
+            labels = (
+                annotation.source_labels if annotation else unit.source_labels
+            )
+            if len(labels) != len(refs):
+                labels = refs
+            for label, link in zip(labels, links):
                 target = _source_target(unit, link)
                 target_path, separator, fragment = str(target).partition("#")
                 relative = _relative(PurePosixPath(target_path), timeline_relative.parent)

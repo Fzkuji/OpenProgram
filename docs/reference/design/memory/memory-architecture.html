@@ -1434,7 +1434,7 @@
   </div>
 
   <div class="note"><b>实施简报：</b>范围限于 Writer Prompt、Topic footnote normalization/parser、结构化 <code>memory_changes</code>、Topic 移动与 Timeline 派生显示；Source archive、检索身份、Preview renderer、数据库和模型调用次数不变。公共入口 RED 覆盖直接文件编辑与 <code>MemoryWorkspace.update(memory_changes=...)</code>，受影响验证覆盖 Topic parser、结构化修改、Writer prompt、派生视图、owner REST、HTML 与文档链接。</div>
-  <div class="legend"><b>Source label 实现状态：设计已确认，尚未实现。</b>实现证据只在代码通过规格审查和质量审查后补入；此前不得把短关键词显示标为已实现。</div>
+  <div class="legend"><b>Source label 实现状态：已实现。</b>Writer 同一次写入生成短关键词；Runtime 保留并验证完整 Source ID，把关键词渲染为链接文本，移动记录和重建 Timeline 时继续保留它。结构化接口公开 <code>sources[{source,label}]</code>，旧 <code>source_refs</code>仍可读取和提交；同一 Source 归档在一次 Topic tree 解析中只扫描一次。</div>
 
   <div class="legend"><b>实现状态（2026-08-15）：</b>模型工具与 owner REST 已统一提供上述四个正式操作；整个文件 <code>changes</code> 和旧 unified diff 保持兼容。直接编辑 Topic 与结构化操作共用暂存、格式校验、空结构清理、Timeline/Recent/Core 派生、原子安装和 Git 历史。批量 move、位置与共享物理段落校验、首次结构调整时的 Recent 创建顺序保留、跨 Topic evidence 冲突拒绝均有公共入口回归测试。Scheduler 的内部 Agent 生命周期写入按 Scheduler 设计文档执行；记录删除后旧 <code>memory_id</code> 的当前查询返回 <code>NOT_FOUND</code>，不保留已删除记录或旧 ID 映射。外部 token capability 仍按本节边界延期。</div>
 

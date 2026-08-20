@@ -2,7 +2,14 @@
 
 import re
 from collections.abc import Iterable, Iterator
+from pathlib import Path
+from urllib.parse import unquote
 
+from ..source_format import (
+    is_v2_source_path,
+    provider_source_location,
+    scan_source_archive,
+)
 from .models import (
     BLOCK_ID,
     FOOTNOTE_ID,
@@ -35,6 +42,9 @@ BLOCK_LINK = re.compile(rf"\[[^]]+\]\([^)#]*#\^(?P<id>{BLOCK_TARGET_ID})\)")
 SOURCE_HANDLE = re.compile(
     r"^(D\d+:\d+|[^/\s,]+/[^/\s,]+/[^/\s,]+)(?:\s*(?:,|·)\s*|\s+|$)"
 )
+PLAIN_SOURCE_HANDLE = re.compile(r"D\d+:\d+|[^/\s,]+/[^/\s,]+/[^/\s,]+")
+_CJK = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+_MARKDOWN_LABEL = re.compile(r"[\[\]()`*_~<>\\]")
 
 
 def definition_match(line: str) -> re.Match[str] | None:
@@ -53,7 +63,94 @@ def render_definition(
     )
 
 
-def source_reference(label: str, target: str) -> str:
+def normalize_source_label(value: str, source_ref: str | None = None) -> str:
+    """Return a short plain display label; Source identity stays separate."""
+    label = "".join(
+        character if character.isprintable() else " " for character in value
+    )
+    label = " ".join(_MARKDOWN_LABEL.sub("", label).split())
+    if not label or label == source_ref or "://" in label:
+        return "相关内容"
+    if _CJK.search(label):
+        visible = 0
+        kept = []
+        for character in label:
+            if not character.isspace():
+                visible += 1
+                if visible > 8:
+                    break
+            kept.append(character)
+        label = "".join(kept).strip()
+    else:
+        label = " ".join(label.split()[:6])
+    return label or "相关内容"
+
+
+def is_plain_source_handle(value: str) -> bool:
+    value = value.strip()
+    return (
+        bool(PLAIN_SOURCE_HANDLE.fullmatch(value))
+        and not value.startswith((".", "/"))
+        and "#" not in value
+    )
+
+
+def _source_from_target(
+    target: str,
+    *,
+    topic_path: Path | None,
+    topics: Path | None,
+    source_lookup: dict[Path, dict[str, str]] | None,
+) -> str | None:
+    if is_plain_source_handle(target):
+        return target.strip()
+    raw_path, separator, fragment = target.partition("#")
+    if not separator or not raw_path or topic_path is None or topics is None:
+        return None
+    memory_dir = Path(topics).resolve().parent
+    sources = (memory_dir / "sources").resolve()
+    unresolved = Path(topic_path).resolve().parent / unquote(raw_path)
+    if unresolved.is_symlink():
+        return None
+    candidate = unresolved.resolve()
+    if (
+        not candidate.is_relative_to(sources)
+        or not candidate.is_file()
+    ):
+        return None
+    relative = candidate.relative_to(memory_dir)
+    if not is_v2_source_path(relative):
+        return None
+    lookup = source_lookup if source_lookup is not None else {}
+    if candidate not in lookup:
+        scan = scan_source_archive(
+            candidate.read_text(encoding="utf-8"), relative
+        )
+        anchors = {}
+        for frame in scan.frames:
+            location = provider_source_location(frame.source_id, v2=True)
+            if location is not None:
+                anchors[location[1]] = frame.source_id
+        lookup[candidate] = anchors
+    return lookup[candidate].get(fragment)
+
+
+def source_reference(
+    label: str,
+    target: str,
+    *,
+    topic_path: Path | None = None,
+    topics: Path | None = None,
+    source_lookup: dict[Path, dict[str, str]] | None = None,
+) -> str:
+    resolved = _source_from_target(
+        target,
+        topic_path=topic_path,
+        topics=topics,
+        source_lookup=source_lookup,
+    )
+    if resolved is not None:
+        return resolved
     handle = SOURCE_HANDLE.match(label.strip())
     if handle:
         return handle.group(1)
@@ -63,7 +160,14 @@ def source_reference(label: str, target: str) -> str:
 
 def definitions(
     lines: list[str],
-) -> dict[str, tuple[str | None, tuple[str, ...], tuple[str, ...]]]:
+    *,
+    topic_path: Path | None = None,
+    topics: Path | None = None,
+    source_lookup: dict[Path, dict[str, str]] | None = None,
+) -> dict[
+    str,
+    tuple[str | None, tuple[str, ...], tuple[str, ...], tuple[str, ...]],
+]:
     values = {}
     for line in lines:
         match = definition_match(line)
@@ -84,8 +188,18 @@ def definitions(
             )
         values[citation_id] = (
             None if when == "undated" else when,
-            tuple(source_reference(label, target) for label, target in links),
+            tuple(
+                source_reference(
+                    label,
+                    target,
+                    topic_path=topic_path,
+                    topics=topics,
+                    source_lookup=source_lookup,
+                )
+                for label, target in links
+            ),
             tuple(target for _label, target in links),
+            tuple(label for label, _target in links),
         )
     return values
 

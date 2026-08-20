@@ -430,6 +430,20 @@ class MemoryWorkspace(
                                     else ref
                                     for ref in refs
                                 ]
+                            citations = resolved_item.get("sources")
+                            if isinstance(citations, list):
+                                resolved_item["sources"] = [
+                                    {
+                                        **citation,
+                                        "source": resolve_source_labels(
+                                            citation.get("source"), mapping
+                                        ),
+                                    }
+                                    if isinstance(citation, dict)
+                                    and isinstance(citation.get("source"), str)
+                                    else citation
+                                    for citation in citations
+                                ]
                             resolved_memory_changes.append(resolved_item)
                         declared_refs = {
                             ref
@@ -437,6 +451,13 @@ class MemoryWorkspace(
                             if isinstance(item, dict)
                             for ref in item.get("source_refs", [])
                             if isinstance(ref, str)
+                        } | {
+                            citation.get("source")
+                            for item in resolved_memory_changes
+                            if isinstance(item, dict)
+                            for citation in item.get("sources", [])
+                            if isinstance(citation, dict)
+                            and isinstance(citation.get("source"), str)
                         }
                         # Unlike a raw file patch, the record API declares its
                         # evidence explicitly. Existing valid Source refs are

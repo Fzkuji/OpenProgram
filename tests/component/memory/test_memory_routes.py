@@ -393,6 +393,10 @@ def test_memory_update_schema_constructs_a_google_function_declaration():
     assert item["properties"]["destination"]["properties"]["position"][
         "enum"
     ] == ["start", "end", "before", "after"]
+    sources = item["properties"]["sources"]
+    assert sources["items"]["required"] == ["source", "label"]
+    assert sources["items"]["additionalProperties"] is False
+    assert "source_refs" not in item["properties"]
 
 
 def test_structured_changes_api_reports_stale_revision(client, memory):

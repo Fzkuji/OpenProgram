@@ -15,7 +15,14 @@ from ..markdown import (
     parse_topic_tree,
     render_definition,
 )
-from ..markdown.syntax import BLOCK_SUFFIX, BLOCK_TARGET_ID, SINGLE_CITATION
+from ..markdown.syntax import (
+    BLOCK_SUFFIX,
+    BLOCK_TARGET_ID,
+    LINK,
+    SINGLE_CITATION,
+    is_plain_source_handle,
+    normalize_source_label,
+)
 
 # Footnote labels the writer supplies, e.g. [^e1]. Stable IDs the Runtime
 # assigns look like e-1f4c7a2b90, so the digit-only suffix separates them.
@@ -26,6 +33,17 @@ CITATION = re.compile(r"\[\^([A-Za-z0-9_-]+)\]")
 
 def _is_local_label(value: str) -> bool:
     return bool(LOCAL_EVIDENCE_LABEL.fullmatch(value))
+
+
+def _source_identity_seed(value: str) -> str:
+    links = LINK.findall(value)
+    if links:
+        return "|".join(target.strip() for _label, target in links)
+    return "|".join(
+        item.strip()
+        for item in re.split(r"\s*(?:,|·)\s*", value)
+        if item.strip()
+    )
 
 
 def prune_empty_topic_file(path: Path) -> None:
@@ -134,7 +152,8 @@ class TopicNormalizationMixin:
                     continue
                 evidence_ids[label] = self._stable_local_id(
                     "evidence|{}|{}".format(
-                        match.group("when"), match.group("sources").strip()
+                        match.group("when"),
+                        _source_identity_seed(match.group("sources")),
                     ),
                     used_evidence,
                     prefix="e-",
@@ -263,18 +282,26 @@ class TopicNormalizationMixin:
                 match = definition_match(line)
                 if match:
                     raw_sources = match.group("sources")
-                    linked_sources = re.findall(
-                        r"\[[^]]+\]\([^)]+\)", raw_sources
-                    )
-                    values = linked_sources or re.split(
-                        r"\s*(?:,|·)\s*", raw_sources
-                    )
                     sources = []
-                    for value in values:
-                        value = value.strip()
-                        if re.fullmatch(r"\[[^]]+\]\([^)]+\)", value):
-                            sources.append(value)
-                        elif value:
+                    linked_sources = LINK.findall(raw_sources)
+                    if linked_sources:
+                        for label, target in linked_sources:
+                            target = target.strip()
+                            if is_plain_source_handle(target):
+                                sources.append(self._source_link(
+                                    topic_path,
+                                    target,
+                                    normalize_source_label(label, target),
+                                ))
+                            else:
+                                sources.append(f"[{label}]({target})")
+                    else:
+                        for value in re.split(
+                            r"\s*(?:,|·)\s*", raw_sources
+                        ):
+                            value = value.strip()
+                            if not value:
+                                continue
                             sources.append(
                                 self._source_link(topic_path, value)
                             )
