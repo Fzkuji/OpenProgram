@@ -473,6 +473,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
          center-col below. */}
       {isDesktop ? (
         <div className="desktop-tab-row">
+          <span className="desktop-resize-edge desktop-resize-n" aria-hidden="true" />
+          <span className="desktop-resize-edge desktop-resize-w" aria-hidden="true" />
+          <span className="desktop-resize-edge desktop-resize-e" aria-hidden="true" />
           <CenterTabStrip />
         </div>
       ) : null}

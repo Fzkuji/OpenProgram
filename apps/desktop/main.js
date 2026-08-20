@@ -51,6 +51,13 @@ const {
   finishRecoveryProbe,
 } = require("./worker-recovery-state");
 const { validateTransferPayload } = require("./tab-transfer-validation");
+const {
+  STATE_FILE_NAME,
+  loadPersistedState,
+  attachWindowStatePersistence,
+  browserWindowOptionsForPlan,
+  applyRestoredChrome,
+} = require("./window-state");
 
 // 单实例：worker 单端口 18100（详见 docs/reference/design/cli/single-port.md）
 const WEB_PORT = process.env.OPENPROGRAM_WEB_PORT || "18100";
@@ -288,42 +295,28 @@ function recoverErroredWindows() {
 
 // ------------------------------------------------------------- window state
 
-const stateFile = () => path.join(app.getPath("userData"), "window-state.json");
+const stateFile = () => path.join(app.getPath("userData"), STATE_FILE_NAME);
 
-function loadWindowState() {
+function currentDisplays() {
   try {
-    const s = JSON.parse(fs.readFileSync(stateFile(), "utf8"));
-    if (Number.isFinite(s.width) && Number.isFinite(s.height)) {
-      // x/y must land on a live display — after a monitor-layout change
-      // a stale position would reopen the window fully off-screen.
-      if (Number.isFinite(s.x) && Number.isFinite(s.y)) {
-        const { screen } = require("electron");
-        const onScreen = screen.getAllDisplays().some((d) => {
-          const a = d.workArea;
-          return (
-            s.x < a.x + a.width - 40 && s.x + s.width > a.x + 40 &&
-            s.y >= a.y - 20 && s.y < a.y + a.height - 40
-          );
-        });
-        if (!onScreen) {
-          delete s.x;
-          delete s.y;
-        }
-      }
-      return s;
-    }
+    return require("electron").screen.getAllDisplays();
   } catch (_e) {
-    /* first run */
+    return [];
   }
-  return { width: 1440, height: 900 };
 }
 
-function saveWindowState(win) {
+function currentPrimaryDisplay() {
   try {
-    fs.writeFileSync(stateFile(), JSON.stringify(win.getBounds()));
+    return require("electron").screen.getPrimaryDisplay();
   } catch (_e) {
-    /* non-fatal */
+    return null;
   }
+}
+
+function loadWindowState() {
+  return loadPersistedState(stateFile(), currentDisplays(), {
+    primary: currentPrimaryDisplay(),
+  });
 }
 
 // ----------------------------------------------------------------- web tabs
@@ -3295,15 +3288,12 @@ async function createWindow(options = {}) {
   // in detachUnlatched), so it must NOT inherit the parent's saved (often
   // full-screen) bounds — a 1440×851 window anchored at the cursor spills
   // off-screen and reads as "nothing appeared". Give detached windows a
-  // modest, movable size.
+  // modest, movable size. They stay ephemeral: closing one must not overwrite
+  // the main window's persisted chrome / normal bounds.
   const detached = options.detached === true;
-  const width = detached ? Math.min(1100, state.width) : state.width;
-  const height = detached ? Math.min(720, state.height) : state.height;
+  const restored = browserWindowOptionsForPlan(state, { detached });
   const win = new BrowserWindow({
-    x: state.x,
-    y: state.y,
-    width,
-    height,
+    ...restored,
     show: options.show !== false,
     backgroundColor: "#141416",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : undefined,
@@ -3316,6 +3306,13 @@ async function createWindow(options = {}) {
       additionalArguments: [`--openprogram-window-id=${windowId}`],
     },
   });
+  if (!detached) {
+    attachWindowStatePersistence(win, {
+      filePath: stateFile(),
+      getDisplays: currentDisplays,
+    });
+    applyRestoredChrome(win, state);
+  }
   const ctx = makeWindowContext(windowId, win);
   windows.set(windowId, ctx);
   contextsByBrowserWindowId.set(win.id, ctx);
@@ -3326,8 +3323,7 @@ async function createWindow(options = {}) {
   win.on("blur", () => closeMainMenu(ctx));
   win.on("resize", () => closeMainMenu(ctx));
   win.on("close", (event) => {
-    if (tabTransfers.windowClosing(ctx, event)) return;
-    saveWindowState(win);
+    tabTransfers.windowClosing(ctx, event);
   });
   win.on("closed", () => cleanupWindowContext(ctx));
   // A tear-off window may be revealed mid-drag, long before the

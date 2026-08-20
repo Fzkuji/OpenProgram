@@ -24,3 +24,4 @@ Web UI 界面 — 界面系统、指示点、附件处理、聊天轮次视觉�
 - [`settings-collapsible-columns.html`](settings-collapsible-columns.html) — 应用、设置分类与 Provider 三层导航列的独立 49px 折叠设计
 - [`avatar-randomization.html`](avatar-randomization.html) — Agent/用户共用的头像随机候选与完整 DiceBear 样式覆盖
 - [`web-styles.md`](web-styles.md) — Web 样式组织（一个组件一个文件，目录对齐组件树）
+- [`window-state.md`](window-state.md) — 桌面窗口普通尺寸、最大化/全屏与标题栏缩放命中
