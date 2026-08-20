@@ -77,6 +77,9 @@ assert.match(providers, /styles\.providersToolbar[\s\S]*styles\.providerSearch[\
 assert.match(providers, /AddCustomProvider/);
 assert.match(addCustom, /styles\.addCustomTrigger/);
 assert.match(addCustom, /styles\.addCustomForm/);
+assert.match(addCustom, /from "@\/components\/ui\/input"/);
+assert.match(addCustom, /<Input\b/);
+assert.doesNotMatch(css, /\.addCustomForm[\s\S]{0,80}input:focus/);
 assert.doesNotMatch(addCustom, /calc\(100%\s*-\s*16px\)/);
 assert.doesNotMatch(addCustom, /margin:\s*["']8px 8px 0["']/);
 assert.doesNotMatch(addCustom, /margin:\s*["']8px["']/);

@@ -21,7 +21,11 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
           // (search boxes, fn-form fields, settings, etc.). No ring:
           // shadcn's default `ring-2 + ring-offset-2` rendered as a thick
           // orange halo (our `--ring` is this same accent), far too heavy.
-          "flex h-[var(--ui-button-h)] w-full rounded-[var(--ui-button-radius)] border border-input bg-background px-3 py-2 text-base transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[color:var(--accent-blue)] disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+          // `ui-text-input` is the stable hook that suppresses the global
+          // :focus-visible outline in base.css (same idea as SearchInput's
+          // `search-input-field`). Tailwind `focus:outline-none` lives in
+          // @layer utilities and cannot beat that unlayered rule.
+          "ui-text-input flex h-[var(--ui-button-h)] w-full rounded-[var(--ui-button-radius)] border border-input bg-background px-3 py-2 text-base transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[color:var(--accent-blue)] disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
           className
         )}
         ref={ref}
