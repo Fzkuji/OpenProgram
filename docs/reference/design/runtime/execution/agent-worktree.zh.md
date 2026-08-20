@@ -101,15 +101,12 @@ OpenProgram 自己有 `~/.openprogram/sessions/<sid>/`（每个 session 一个 g
 
 ### D5. Source repo 来源
 
-三个入口，优先级从高到低：
+两个入口，优先级从高到低：
 
 1. **agent 显式传**：worktree_create 工具的 `source_repo` 参数（绝对路径）。
    适合 plan agent 列任务时已经知道目标仓库。
-2. **fn-form 的 "Working in a folder"**：用户在 web UI 给程序输入的
-   `_work_dir`。dispatcher 在进 turn 前若发现这个 path 是个 git repo 根，
-   就当作 default source_repo（worktree_create 不传 source_repo 时用）。
-3. **session 当前 cwd 的祖先 git root**：用 `git rev-parse --show-toplevel`
-   走一遍。一般是用户启动 OpenProgram 的目录。
+2. **选中的 Project**：dispatcher 把会话 Project 目录绑定为 cwd，再通过
+   `git rev-parse --show-toplevel` 解析其祖先 git root。
 
 入口都失败 → worktree_create 报错 `source_repo_not_a_git_repo`。
 不会自动 `git init` 给用户建仓库（破坏性太大）。
@@ -259,8 +256,8 @@ into source_repo (ff-only, 3 files changed)"。
 - **Composer 工具栏**：当前 session 有 active worktree 时，PromptInput 上方
   显示一个 chip `worktree: wt_abc1234 (3 files changed)`，hover 弹 panel
   显示 worktree_path / branch / 改动文件列表 / Merge / Discard / Keep 按钮。
-- **fn-form 的 "Working in a folder"**：保持不变，只显示 source_repo 路径。
-  worktree 作为内部 detail 不在 fn-form 里 surface。
+- **函数表单**：只包含函数参数。选中的 Project 仍是 source_repo，worktree
+  不在表单中显示。
 - **DAG 时间线**：worktree create / merge / discard marker 节点用区分色
   渲染（跟 attach marker 一致风格）。
 - **不在范围内**：worktree 文件 diff 的内联预览（用户可以点开"open in editor"
@@ -304,7 +301,7 @@ agent 接到任务"改 foo.py 加个 logging"，开 worktree → 改 → 跑测�
 | **D2 cwd** | dispatcher 进 turn 时读 session.meta.active_worktree_id → 设 `_current_worktree_path` ContextVar；bash/edit/write/read 全部默认 cwd 这里 |
 | **D3 状态** | active → committing（merge 期间）→ merged |
 | **D4 隔离** | worktree_path 不在 sessions 树里：默认 `~/.openprogram/worktrees/<id>-<slug>/`（独立目录，跟 source_repo 平级） |
-| **D5 source** | fn-form 传的 `_work_dir` 当 source_repo；agent 也可显式传 |
+| **D5 source** | 选中的 Project 作为 source_repo；agent 也可显式传 |
 | **D6 安全** | bash 的 cwd 起点是 worktree_path；edit/write 收到 worktree 之外的绝对路径写 warning 不阻止 |
 | **D7 commit** | agent 自己用 bash 跑 `git add . && git commit -m "..."`；worktree_merge 前要求 worktree clean |
 | **D8 merge** | ff-only 默认；source_repo HEAD 未动则 ff 成功 |
@@ -500,9 +497,9 @@ dependencies 里，它只通过`semble`（一个 MCP 开发工具）传递引入
 | 3 | 新建 `openprogram/worktree/_paths.py` | worktree path 策略：`~/.openprogram/worktrees/<id>-<slug>/`；隔离校验（D4）|
 | 4 | 改 `openprogram/agent/internals/_workdir.py` | `apply_default_workdir` 优先返回 active worktree path |
 | 5 | 改 `openprogram/agent/dispatcher.py` | turn 开始时读 session.meta.active_worktree_id → 设 `_current_worktree_path` ContextVar |
-| 6 | 改 `openprogram/programs/functions/vanilla/bash/bash.py` | 调 `backend.run(cmd, cwd=_current_worktree_path.get())` |
-| 7 | 改 `openprogram/programs/functions/vanilla/edit/edit.py` + write/read | 路径落在 worktree 之外时写 warning（D6）|
-| 8 | 新建 `openprogram/programs/functions/vanilla/worktree/` | 4 个 @function 工具：worktree_create / worktree_merge / worktree_discard / worktree_list；走 WorktreeManager |
+| 6 | 改 `openprogram/programs/functions/vanilla/files/bash/bash.py` | 调 `backend.run(cmd, cwd=_current_worktree_path.get())` |
+| 7 | 改 `openprogram/programs/functions/vanilla/files/edit/edit.py` + write/read | 路径落在 worktree 之外时写 warning（D6）|
+| 8 | 新建 `openprogram/programs/functions/vanilla/files/worktree/` | 4 个 @function 工具：worktree_create / worktree_merge / worktree_discard / worktree_list；走 WorktreeManager |
 | 9 | 改 `openprogram/store/session/session_store.py` | session.meta 加 `active_worktree_id` 字段；helper `set_active_worktree` / `get_active_worktree` |
 | 10 | 新建 `openprogram/webui/ws_actions/worktree.py` | `list_worktrees` / `keep_worktree` / `discard_worktree`（用户手动 UI 操作）|
 | 11 | 新建 `apps/web/components/chat/composer/worktree-chip.tsx` | chip 组件 + hover panel + Merge/Discard/Keep 按钮 |

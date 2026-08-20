@@ -7,7 +7,12 @@ Two mechanisms, in order:
      explicitly so that import order and dependency conditions are
      obvious.
 
-  2. **Auto-discovered external harnesses** — owner-recorded symlinks and
+  2. **Validated workflow projects** — Git-backed packages under
+     ``openprogram/programs/workflows/``. Importing their public package fires
+     the existing ``@agentic_function`` decorator; execution still uses the
+     shared registry and runtime.
+
+  3. **Auto-discovered external harnesses** — owner-recorded symlinks and
      directories under ``openprogram/programs/applications/`` are treated as
      external harnesses. For each, we find its Python package
      (``<harness>/<pkg>/__init__.py``) and import ``<pkg>.agentics``.
@@ -99,7 +104,11 @@ def load_agentic_modules(
             _debug_registry_error(mod_name, e)
             continue
 
-    # 2. First-party *programs* — the agentic harnesses shipped as
+    # 2. Validated Workflow projects — importing the package registers its
+    #    public @agentic_function with the same shared tool registry.
+    _load_workflow_projects()
+
+    # 3. First-party *programs* — the agentic harnesses shipped as
     #    separate pip-installable packages (gui_harness / research_harness
     #    / wiki_agent_harness). Importing an installed package fires its
     #    @agentic_function decorator and self-registers the entry point.
@@ -112,11 +121,11 @@ def load_agentic_modules(
     except Exception as e:
         _debug_registry_error("programs", e)
 
-    # 3. Auto-discovered external harnesses (owner-recorded directories or
+    # 4. Auto-discovered external harnesses (owner-recorded directories or
     #    local-dev symlinks in applications_dir). Still supported for the
     #    ``<pkg>/agentics/__init__.py`` convention, but no longer the
     #    primary path — a developer working on a harness locally can just
-    #    ``pip install -e`` their checkout and it registers via (2) above.
+    #    ``pip install -e`` their checkout and it registers via (3) above.
     if applications_dir is None:
         try:
             from openprogram.programs._programs import applications_dir as _root
@@ -144,6 +153,49 @@ def load_agentic_modules(
         except Exception as e:
             _debug_registry_error(f"external:{harness_name}", e)
             continue
+
+
+def _load_workflow_projects() -> None:
+    """Import each valid owner workflow package so its decorator registers it."""
+    try:
+        from openprogram.programs.functions.agentic.agentic_workflow import (
+            _read_project_index,
+            _workflow_projects_root,
+        )
+        root = _workflow_projects_root()
+    except Exception as exc:
+        _debug_registry_error("workflows", exc)
+        return
+    if not root.is_dir() or root.is_symlink():
+        return
+
+    import_root = str(root.parent)
+    inserted = import_root not in sys.path
+    if inserted:
+        sys.path.insert(0, import_root)
+    previous_dont_write_bytecode = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        importlib.invalidate_caches()
+        for project_dir in sorted(root.iterdir()):
+            if (
+                not project_dir.is_dir()
+                or project_dir.is_symlink()
+                or project_dir.name.startswith((".", "_"))
+            ):
+                continue
+            try:
+                index = _read_project_index(project_dir)
+                entrypoint = index["project_metadata"].get("entrypoint")
+                if entrypoint != project_dir.name:
+                    continue
+                importlib.import_module(f"workflows.{entrypoint}")
+            except Exception as exc:
+                _debug_registry_error(f"workflow:{project_dir.name}", exc)
+    finally:
+        sys.dont_write_bytecode = previous_dont_write_bytecode
+        if inserted:
+            sys.path.remove(import_root)
 
 
 # ---------------------------------------------------------------------------

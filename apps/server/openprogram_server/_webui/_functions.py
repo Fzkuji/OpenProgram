@@ -68,7 +68,40 @@ def _discover_functions() -> list[dict]:
     # editor / welcome screen treat it exactly like a bundled app).
     result.extend(_discover_program_functions({r["name"] for r in result}))
 
+    # Git-backed Workflow packages register through the same
+    # @agentic_function registry, but their source intentionally lives under
+    # programs/workflows rather than functions/agentic. Include those
+    # registered callables in the live function list so favorites and the
+    # chat launcher can resolve them by name.
+    result.extend(_discover_workflow_functions({r["name"] for r in result}))
+
     return result
+
+
+def _discover_workflow_functions(seen: set[str]) -> list[dict]:
+    """Build function-info rows for registered Workflow entry points."""
+    try:
+        from openprogram.agentic_programming.function import _registry
+    except Exception:
+        return []
+
+    out: list[dict] = []
+    for name, registered in _registry.items():
+        if name in seen:
+            continue
+        fn = getattr(registered, "_fn", None) or registered
+        if not getattr(fn, "__module__", "").startswith("workflows."):
+            continue
+        try:
+            src = inspect.getsourcefile(fn)
+        except (TypeError, OSError):
+            src = None
+        if not (src and os.path.isfile(src)):
+            continue
+        info = _extract_function_info(src, name, "workflow")
+        if info:
+            out.append(info)
+    return out
 
 
 def _discover_program_functions(seen: set[str]) -> list[dict]:
@@ -130,42 +163,6 @@ def _extract_input_meta(source: str, func_name: str) -> dict | None:
                         except (ValueError, TypeError):
                             return None
     return None
-
-
-def _extract_workdir_mode(source: str, func_name: str) -> str:
-    """Extract workdir_mode from @agentic_function(workdir_mode=...) via AST.
-
-    Returns 'optional' (default), 'hidden', or 'required'.
-    """
-    import ast
-    try:
-        tree = ast.parse(source)
-    except SyntaxError:
-        return "optional"
-
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.FunctionDef) or node.name != func_name:
-            continue
-        for dec in node.decorator_list:
-            if not isinstance(dec, ast.Call):
-                continue
-            callee = dec.func
-            callee_name = ""
-            if isinstance(callee, ast.Name):
-                callee_name = callee.id
-            elif isinstance(callee, ast.Attribute):
-                callee_name = callee.attr
-            if callee_name != "agentic_function":
-                continue
-            for kw in dec.keywords:
-                if kw.arg == "workdir_mode":
-                    try:
-                        val = ast.literal_eval(kw.value)
-                        if val in ("hidden", "optional", "required"):
-                            return val
-                    except (ValueError, TypeError):
-                        pass
-    return "optional"
 
 
 def _extract_function_info(filepath: str, name: Optional[str], category: str) -> Optional[dict]:
@@ -300,8 +297,6 @@ def _extract_function_info(filepath: str, name: Optional[str], category: str) ->
                     if "label" in meta:
                         pd["label"] = meta["label"]
 
-        workdir_mode = _extract_workdir_mode(content, name)
-
         return {
             "name": name,
             "category": effective_category,
@@ -310,7 +305,6 @@ def _extract_function_info(filepath: str, name: Optional[str], category: str) ->
             "params_detail": params_detail,
             "filepath": filepath,
             "mtime": os.path.getmtime(filepath),
-            "workdir_mode": workdir_mode,
         }
     except Exception:
         return None

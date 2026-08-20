@@ -117,19 +117,10 @@ export const api = {
     ),
 
   runFunction: (name: string, params: Record<string, unknown>) => {
-    const {
-      _session_id,
-      session_id,
-      work_dir,
-      _workdir,
-      workdir,
-      ...kwargs
-    } = params;
+    const { _session_id, session_id, ...kwargs } = params;
     const body: Record<string, unknown> = { kwargs };
     const sid = session_id ?? _session_id;
-    const wd = work_dir ?? _workdir ?? workdir;
     if (typeof sid === "string" && sid.trim()) body.session_id = sid;
-    if (typeof wd === "string" && wd.trim()) body.work_dir = wd;
     return jsonFetch<{ result?: unknown; error?: string; session_id?: string; msg_id?: string }>(
       `/api/function/${encodeURIComponent(name)}`,
       { method: "POST", body: JSON.stringify(body) }

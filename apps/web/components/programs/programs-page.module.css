@@ -265,16 +265,47 @@
   background: var(--bg-hover);
 }
 
-.callRow:not(.callRoot)::before {
-  content: "";
-  width: 18px;
-  height: 31px;
+.callGuides {
+  width: calc(var(--call-depth) * 28px);
+  height: 100%;
   position: absolute;
-  right: calc(100% + 5px);
+  right: 100%;
+  top: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--call-depth), 28px);
+  pointer-events: none;
+}
+
+.callGuides i {
+  position: relative;
+}
+
+.callGuideActive::before,
+.callGuideBranch::before,
+.callGuideLast::before {
+  content: "";
+  width: 1px;
+  position: absolute;
+  left: 14px;
+  top: 0;
+  bottom: 0;
+  background: var(--border-light);
+}
+
+.callGuideBranch::after,
+.callGuideLast::after {
+  content: "";
+  height: 1px;
+  position: absolute;
+  left: 14px;
+  right: 0;
+  top: 50%;
+  background: var(--border-light);
+}
+
+.callGuideLast::before {
   bottom: 50%;
-  border-left: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  border-radius: 0 0 0 5px;
+  border-radius: 0 0 0 4px;
 }
 
 .callRoot {
@@ -296,7 +327,7 @@
   background: var(--bg-secondary);
 }
 
-.callRow > span:nth-child(2) {
+.callLabel {
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -331,19 +362,68 @@
 }
 
 .callGraph {
-  padding: 26px;
+  padding: 18px;
   overflow: auto;
 }
 
+.graphCanvas {
+  min-width: 100%;
+  position: relative;
+}
+
+.graphLines {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+.graphLines path {
+  fill: none;
+  stroke: color-mix(in srgb, var(--theme-accent) 62%, var(--border-light));
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.graphLines marker path {
+  fill: color-mix(in srgb, var(--theme-accent) 62%, var(--border-light));
+  stroke: none;
+}
+
 .graphNode {
-  min-width: 0;
-  padding: 11px 12px;
+  width: 164px;
+  height: 64px;
+  padding: 8px 10px;
+  position: absolute;
   border: 1px solid var(--border);
   border-radius: 8px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.graphRoot {
+  border-color: color-mix(in srgb, var(--theme-accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--theme-accent) 7%, var(--bg-secondary));
+}
+
+.graphNodeIcon {
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--theme-accent);
+  background: var(--bg-primary);
+}
+
+.graphNode > span:last-child {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  background: var(--bg-secondary);
+  gap: 2px;
 }
 
 .graphNode strong {
@@ -354,26 +434,11 @@
 }
 
 .graphNode small {
+  overflow: hidden;
   color: var(--text-muted);
   font-size: var(--fs-sm);
-}
-
-.graphEdges {
-  display: grid;
-  gap: 10px;
-}
-
-.graphEdge {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(150px, 1fr) auto minmax(150px, 1fr);
-  align-items: center;
-  gap: 12px;
-  color: var(--text-muted);
-}
-
-.graphEdge > svg {
-  color: var(--theme-accent);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 760px) {

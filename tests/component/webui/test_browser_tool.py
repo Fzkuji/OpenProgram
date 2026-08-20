@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from openprogram.programs.functions.vanilla.browser import browser as tool
+from openprogram.programs.functions.vanilla.web.browser import browser as tool
 
 
 @pytest.fixture(autouse=True)
@@ -93,7 +93,7 @@ def fake_playwright(monkeypatch):
     monkeypatch.setattr(tool, "check_playwright", lambda: True)
 
     # Disable bootstrap auto-detection: pretend no sidecar is running.
-    from openprogram.programs.functions.vanilla.browser import _chrome_bootstrap as boot
+    from openprogram.programs.functions.vanilla.web.browser import _chrome_bootstrap as boot
     monkeypatch.setattr(boot, "cdp_url_if_available", lambda: None)
     monkeypatch.setattr(boot, "launch_sidecar_chrome",
                         lambda port=9222, timeout_s=30.0: False)
@@ -202,7 +202,7 @@ def test_default_open_is_app_only_and_never_bootstraps_profile(
     fake_playwright,
     monkeypatch,
 ):
-    from openprogram.programs.functions.vanilla.browser import _chrome_bootstrap as boot
+    from openprogram.programs.functions.vanilla.web.browser import _chrome_bootstrap as boot
 
     monkeypatch.setattr(boot, "desktop_app_cdp_url", lambda: None)
 
@@ -313,13 +313,13 @@ def test_unknown_action_clear_error():
 
 def test_bootstrap_chrome_binary_returns_path_or_none():
     import os as _os
-    from openprogram.programs.functions.vanilla.browser._chrome_bootstrap import chrome_binary
+    from openprogram.programs.functions.vanilla.web.browser._chrome_bootstrap import chrome_binary
     result = chrome_binary()
     assert result is None or _os.path.isfile(result)
 
 
 def test_bootstrap_real_user_data_dir_is_platform_specific():
-    from openprogram.programs.functions.vanilla.browser._chrome_bootstrap import real_user_data_dir
+    from openprogram.programs.functions.vanilla.web.browser._chrome_bootstrap import real_user_data_dir
     p = real_user_data_dir()
     # macOS: ``…/Library/Application Support/Google/Chrome`` (capital C).
     # Linux: ``~/.config/google-chrome`` (lowercase, hyphenated).
@@ -330,28 +330,28 @@ def test_bootstrap_real_user_data_dir_is_platform_specific():
 
 
 def test_bootstrap_sidecar_dir_under_dot_openprogram():
-    from openprogram.programs.functions.vanilla.browser._chrome_bootstrap import sidecar_dir
+    from openprogram.programs.functions.vanilla.web.browser._chrome_bootstrap import sidecar_dir
     p = sidecar_dir()
     assert ".openprogram" in str(p)
     assert "chrome-profile" in p.name
 
 
 def test_bootstrap_port_file_under_dot_openprogram():
-    from openprogram.programs.functions.vanilla.browser._chrome_bootstrap import port_file
+    from openprogram.programs.functions.vanilla.web.browser._chrome_bootstrap import port_file
     p = port_file()
     assert ".openprogram" in str(p)
     assert "browser-cdp-port" in p.name
 
 
 def test_bootstrap_is_port_listening_negative():
-    from openprogram.programs.functions.vanilla.browser._chrome_bootstrap import is_port_listening
+    from openprogram.programs.functions.vanilla.web.browser._chrome_bootstrap import is_port_listening
     assert not is_port_listening(1)
 
 
 def test_bootstrap_is_port_listening_positive():
     """Bind a throwaway TCP socket and confirm detection."""
     import socket
-    from openprogram.programs.functions.vanilla.browser._chrome_bootstrap import is_port_listening
+    from openprogram.programs.functions.vanilla.web.browser._chrome_bootstrap import is_port_listening
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.bind(("127.0.0.1", 0))
@@ -363,13 +363,13 @@ def test_bootstrap_is_port_listening_positive():
 
 
 def test_bootstrap_read_last_used_profile_default(tmp_path):
-    from openprogram.programs.functions.vanilla.browser._chrome_bootstrap import read_last_used_profile
+    from openprogram.programs.functions.vanilla.web.browser._chrome_bootstrap import read_last_used_profile
     assert read_last_used_profile(str(tmp_path)) == "Default"
 
 
 def test_bootstrap_read_last_used_profile_from_local_state(tmp_path):
     import json
-    from openprogram.programs.functions.vanilla.browser._chrome_bootstrap import read_last_used_profile
+    from openprogram.programs.functions.vanilla.web.browser._chrome_bootstrap import read_last_used_profile
     (tmp_path / "Local State").write_text(
         json.dumps({"profile": {"last_used": "Profile 5"}})
     )
@@ -377,20 +377,20 @@ def test_bootstrap_read_last_used_profile_from_local_state(tmp_path):
 
 
 def test_bootstrap_read_last_used_profile_falls_back_on_bad_json(tmp_path):
-    from openprogram.programs.functions.vanilla.browser._chrome_bootstrap import read_last_used_profile
+    from openprogram.programs.functions.vanilla.web.browser._chrome_bootstrap import read_last_used_profile
     (tmp_path / "Local State").write_text("{ this is not valid json")
     assert read_last_used_profile(str(tmp_path)) == "Default"
 
 
 def test_bootstrap_cdp_url_if_available_returns_none(monkeypatch, tmp_path):
-    from openprogram.programs.functions.vanilla.browser import _chrome_bootstrap as boot
+    from openprogram.programs.functions.vanilla.web.browser import _chrome_bootstrap as boot
     monkeypatch.setattr(boot, "port_file", lambda: tmp_path / "browser-cdp-port")
     monkeypatch.setattr(boot, "is_port_listening", lambda port, **kw: False)
     assert boot.cdp_url_if_available() is None
 
 
 def test_bootstrap_cdp_url_if_available_finds_running_port(monkeypatch, tmp_path):
-    from openprogram.programs.functions.vanilla.browser import _chrome_bootstrap as boot
+    from openprogram.programs.functions.vanilla.web.browser import _chrome_bootstrap as boot
     pf = tmp_path / "browser-cdp-port"
     pf.write_text("9234")
     monkeypatch.setattr(boot, "port_file", lambda: pf)
@@ -399,7 +399,7 @@ def test_bootstrap_cdp_url_if_available_finds_running_port(monkeypatch, tmp_path
 
 
 def test_bootstrap_lock_path_under_dot_openprogram():
-    from openprogram.programs.functions.vanilla.browser._chrome_bootstrap import _bootstrap_lock_path
+    from openprogram.programs.functions.vanilla.web.browser._chrome_bootstrap import _bootstrap_lock_path
     p = _bootstrap_lock_path()
     assert ".openprogram" in str(p)
     assert "browser-cdp.lock" in p.name

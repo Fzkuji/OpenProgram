@@ -1047,7 +1047,7 @@ def function(
 
         return result
 
-    return _build_and_register_tool(
+    agent_tool = _build_and_register_tool(
         name=actual_name,
         description=actual_description,
         parameters=actual_parameters,
@@ -1064,6 +1064,8 @@ def function(
         expose=expose,
         register_globally=register_globally,
     )
+    setattr(agent_tool, "_source_module", fn.__module__)
+    return agent_tool
 
 
 def _build_and_register_tool(

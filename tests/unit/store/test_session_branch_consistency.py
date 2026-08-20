@@ -324,6 +324,25 @@ def test_reconcile_leaves_idle_sessions_alone(store):
     assert store.get_session("s1")["status"] == "idle"
 
 
+def test_interrupted_exec_tree_keeps_the_restart_reason():
+    from openprogram.context.nodes import Call, ROLE_CODE
+    from openprogram.webui import _exec_dag
+
+    node = Call(
+        role=ROLE_CODE,
+        name="agentic_workflow",
+        output="[interrupted] worker restarted mid-turn",
+        metadata={
+            "status": "interrupted",
+            "error": "Worker restarted before this turn finished",
+        },
+    )
+
+    tree = _exec_dag._exec_tnode(node, {})
+    assert tree["status"] == "interrupted"
+    assert tree["error"] == "Worker restarted before this turn finished"
+
+
 # ---- 6. failures are diagnosable, never silent -------------------------
 
 def test_attach_failure_reports_error_and_logs(store, srv, monkeypatch):

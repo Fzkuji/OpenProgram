@@ -9,7 +9,7 @@ The retained product capability is the transcript renderer. A product-specific r
 | Piece | Where | What it does |
 |---|---|---|
 | Transcript renderer | `openprogram/store/session/transcript.py` | `render_read_conversation()` — one branch of a session as LLM-readable plain text |
-| Model-facing tool | `openprogram/programs/functions/vanilla/read_conversation/` | `read_conversation` — the renderer as a `@function`, defaulting to the current session |
+| Model-facing tool | `openprogram/programs/functions/vanilla/knowledge/read_conversation/` | `read_conversation` — the renderer as a `@function`, defaulting to the current session |
 | Product page | `docs/capabilities/distill.md` | User-facing documentation |
 
 ## The transcript renderer

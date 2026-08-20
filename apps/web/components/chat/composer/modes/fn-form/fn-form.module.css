@@ -183,10 +183,8 @@
   color: var(--text-secondary);
 }
 
-/* Single-line inputs (.input, .select, .workdirInput) all share the
-   same 32px height / 8px radius / 0 12 padding so they line up as a
-   matched set. The multi-line textarea variant breaks out of these
-   constraints below. */
+/* Single-line inputs share the same 32px height / 8px radius / 0 12
+   padding. The multi-line textarea variant breaks out below. */
 .input {
   background: var(--bg-primary);
   border: 1px solid var(--border);
@@ -337,63 +335,4 @@
   font-family: var(--font-sans);
   font-size: var(--fs-base);
   padding: 4px 0;
-}
-
-/* workdir row — folder picker + path input. */
-.workdirRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-}
-.workdirBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-family: var(--font-sans);
-  font-size: var(--fs-base);
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, color 0.15s;
-  white-space: nowrap;
-  flex: 0 0 auto;
-}
-.workdirBtn svg {
-  flex-shrink: 0;
-  color: var(--text-secondary);
-}
-.workdirBtn:hover {
-  border-color: var(--border-light);
-  background: var(--bg-secondary);
-  color: var(--text-bright);
-}
-.workdirInput {
-  flex: 1 1 auto;
-  height: 32px;
-  padding: 0 12px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text-bright);
-  font-family: var(--font-mono);
-  font-size: var(--fs-base);
-  outline: none;
-  transition: border-color 0.15s;
-  min-width: 0;
-}
-.workdirInput:focus {
-  border-color: var(--accent-blue);
-}
-.workdirInput::placeholder {
-  color: var(--text-muted);
-  font-family: var(--font-sans);
-  font-size: var(--fs-base);
-}
-.workdirError {
-  border-color: var(--accent-red) !important;
 }

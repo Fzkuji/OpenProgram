@@ -56,7 +56,7 @@ from ._runtime import (
 # mirrors the semantic split (deterministic leaf vs LLM-aware
 # composable); both end up in the same registry.
 from . import functions as _functions_self_register  # noqa: F401
-from .functions.vanilla.memory import MEMORY_TOOL_NAMES
+from .functions.vanilla.knowledge.memory import MEMORY_TOOL_NAMES
 
 # Layer 2 — exposure is registration-driven: ``exposed_names()`` (see
 # ``_runtime.py``) is every registered tool minus the ones registered

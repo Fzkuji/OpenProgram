@@ -54,7 +54,7 @@ rows stay open in the matrix by choice.
 
 LSP tools have landed. The client lives in `openprogram/lsp/` (JSON-RPC over
 stdio, one server per language per workspace, started on first use and shut
-down at exit); the three tools live in `openprogram/programs/functions/vanilla/lsp/` and
+down at exit); the three tools live in `openprogram/programs/functions/vanilla/code/lsp/` and
 are documented for users in [Language server tools](../../../capabilities/lsp.md).
 Server processes go through the same sandbox-wrapping entry as every other
 child, so `sandbox.mode` applies to them unchanged.

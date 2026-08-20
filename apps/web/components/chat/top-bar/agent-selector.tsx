@@ -84,7 +84,7 @@ export function AgentSelector({
         <div className="px-[10px] py-[8px] text-[12px] text-text-muted">
           {t("agent.no_enabled_models")}{" "}
           <a
-            href="/settings"
+            href="/settings/general"
             onClick={onClose}
             className="text-[var(--accent-blue)] no-underline"
           >

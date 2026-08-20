@@ -79,7 +79,7 @@ openprogram config set ui.web_port 8101
 | `OPENPROGRAM_NO_SLEEP` | `1` = 禁用记忆的 sleep 整理调度器 | `openprogram/memory/scheduler.py` |
 | `OPENPROGRAM_NO_PROGRAMS_WATCH` | `1` = 禁用 programs 目录的文件监听 | `openprogram/programs/watcher.py` |
 | `OPENPROGRAM_PROJECT_AUTOCOMMIT` | `0` = 关闭项目自动 commit | `openprogram/store/project/project_commit.py` |
-| `OPENPROGRAM_WEBSEARCH_DISABLE` | 按名禁用某个 web 搜索 provider（如 `ollama`） | `openprogram/programs/functions/vanilla/web_search/providers/ollama.py` |
+| `OPENPROGRAM_WEBSEARCH_DISABLE` | 按名禁用某个 web 搜索 provider（如 `ollama`） | `openprogram/programs/functions/vanilla/web/web_search/providers/ollama.py` |
 
 ### LLM 调用
 

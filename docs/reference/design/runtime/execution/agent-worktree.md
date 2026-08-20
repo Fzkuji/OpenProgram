@@ -100,15 +100,12 @@ in the user's real code repository for the agent to run changes. The purposes ar
 
 ### D5. Where source_repo Comes From
 
-Three entry points, in descending priority:
+Two entry points, in descending priority:
 
 1. **Explicitly passed by the agent**: the `source_repo` parameter of the worktree_create tool (absolute path).
    Suitable when a plan agent already knows the target repository while listing tasks.
-2. **The fn-form "Working in a folder"**: the `_work_dir` the user supplies to the program in the web UI.
-   Before entering a turn, if the dispatcher finds that this path is a git repo root,
-   it treats it as the default source_repo (used when worktree_create is called without source_repo).
-3. **The ancestor git root of the session's current cwd**: resolved via `git rev-parse --show-toplevel`.
-   Usually the directory from which the user launched OpenProgram.
+2. **The selected Project**: the dispatcher binds the session Project directory as cwd;
+   `git rev-parse --show-toplevel` resolves its ancestor git root.
 
 If all entry points fail → worktree_create reports the error `source_repo_not_a_git_repo`.
 It will not automatically `git init` a repository for the user (too destructive).
@@ -260,8 +257,8 @@ worktrees are achieved through async tasks, one worktree per task.
 - **Composer toolbar**: when the current session has an active worktree, a chip
   `worktree: wt_abc1234 (3 files changed)` is shown above the PromptInput; hovering pops a panel
   showing worktree_path / branch / the list of changed files / Merge / Discard / Keep buttons.
-- **The fn-form "Working in a folder"**: unchanged, showing only the source_repo path.
-  The worktree is an internal detail and is not surfaced in the fn-form.
+- **Function form**: contains only function parameters. The selected Project remains
+  the source repository and the worktree is not surfaced in the form.
 - **DAG timeline**: worktree create / merge / discard marker nodes are rendered in a distinguishing color
   (same style as the attach marker).
 - **Out of scope**: inline preview of worktree file diffs (the user can click "open in editor"
@@ -305,7 +302,7 @@ The agent receives the task "modify foo.py to add logging", opens a worktree →
 | **D2 cwd** | when the dispatcher enters a turn it reads session.meta.active_worktree_id → sets the `_current_worktree_path` ContextVar; bash/edit/write/read all default cwd here |
 | **D3 status** | active → committing (during merge) → merged |
 | **D4 isolation** | worktree_path is not in the sessions tree: defaults to `~/.openprogram/worktrees/<id>-<slug>/` (an independent directory, sibling to source_repo) |
-| **D5 source** | the `_work_dir` passed by the fn-form is the source_repo; the agent can also pass it explicitly |
+| **D5 source** | the selected Project is the source_repo; the agent can also pass it explicitly |
 | **D6 security** | bash's cwd starts at worktree_path; edit/write receiving an absolute path outside the worktree writes a warning but does not block |
 | **D7 commit** | the agent runs `git add . && git commit -m "..."` via bash itself; worktree_merge requires the worktree to be clean beforehand |
 | **D8 merge** | ff-only default; ff succeeds since source_repo HEAD has not moved |
@@ -505,9 +502,9 @@ The work, in dependency order:
 | 3 | new `openprogram/worktree/_paths.py` | worktree path policy: `~/.openprogram/worktrees/<id>-<slug>/`; isolation check (D4) |
 | 4 | edit `openprogram/agent/internals/_workdir.py` | `apply_default_workdir` prefers returning the active worktree path |
 | 5 | edit `openprogram/agent/dispatcher.py` | at the start of a turn, read session.meta.active_worktree_id → set the `_current_worktree_path` ContextVar |
-| 6 | edit `openprogram/programs/functions/vanilla/bash/bash.py` | call `backend.run(cmd, cwd=_current_worktree_path.get())` |
-| 7 | edit `openprogram/programs/functions/vanilla/edit/edit.py` + write/read | warning when path outside worktree (D6) |
-| 8 | new `openprogram/programs/functions/vanilla/worktree/` | 4 @function tools: worktree_create / worktree_merge / worktree_discard / worktree_list; go through WorktreeManager |
+| 6 | edit `openprogram/programs/functions/vanilla/files/bash/bash.py` | call `backend.run(cmd, cwd=_current_worktree_path.get())` |
+| 7 | edit `openprogram/programs/functions/vanilla/files/edit/edit.py` + write/read | warning when path outside worktree (D6) |
+| 8 | new `openprogram/programs/functions/vanilla/files/worktree/` | 4 @function tools: worktree_create / worktree_merge / worktree_discard / worktree_list; go through WorktreeManager |
 | 9 | edit `openprogram/store/session/session_store.py` | add an `active_worktree_id` field to session.meta; helpers `set_active_worktree` / `get_active_worktree` |
 | 10 | new `openprogram/webui/ws_actions/worktree.py` | `list_worktrees` / `keep_worktree` / `discard_worktree` (user manual UI operations) |
 | 11 | new `apps/web/components/chat/composer/worktree-chip.tsx` | chip component + hover panel + Merge/Discard/Keep buttons |

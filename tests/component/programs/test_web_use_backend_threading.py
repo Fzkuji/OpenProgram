@@ -62,7 +62,7 @@ def test_chrome_backend_marker_stays_on_playwright_owner_thread(monkeypatch):
     from openprogram.programs.functions.agentic.browser_agent.mcp_backends import (
         OfficialMCPPageBackend,
     )
-    from openprogram.programs.functions.vanilla.browser import _chrome_bootstrap
+    from openprogram.programs.functions.vanilla.web.browser import _chrome_bootstrap
 
     controller = BrowserPageController(_BrowserAPI())
     controller.evaluate_bound_page("() => null")

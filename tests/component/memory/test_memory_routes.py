@@ -372,7 +372,7 @@ def test_recent_route_reports_configured_record_limit(client, monkeypatch):
 def test_memory_update_schema_constructs_a_google_function_declaration():
     from google.genai import types as gtypes
 
-    from openprogram.programs.functions.vanilla.memory.memory import UPDATE_SPEC
+    from openprogram.programs.functions.vanilla.knowledge.memory.memory import UPDATE_SPEC
     from openprogram.providers._schema import normalize
 
     parameters = normalize(UPDATE_SPEC["parameters"], "gemini_openapi")

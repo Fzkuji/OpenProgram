@@ -99,7 +99,7 @@ def test_function_http_preflights_schema_and_keeps_async_ack(monkeypatch):
     routes_chat.register(app)
     seen = {}
 
-    def run(name, kwargs, session_id, work_dir, anchor_msg_id=None, response_format=None):
+    def run(name, kwargs, session_id, anchor_msg_id=None, response_format=None):
         seen.update(name=name, kwargs=kwargs, response_format=response_format)
         return {"session_id": "s1", "msg_id": "m1"}
 
@@ -135,6 +135,34 @@ def test_function_http_rejects_invalid_schema_before_dispatch(monkeypatch):
     assert response.json()["code"] == "invalid_schema"
     assert calls == []
     assert "not-a-json-schema-type" not in response.text
+
+
+def test_function_http_forwards_pending_project_before_dispatch(monkeypatch):
+    from openprogram.webui.routes import chat as routes_chat
+
+    app = FastAPI()
+    routes_chat.register(app)
+    seen = {}
+
+    def run(
+        name,
+        kwargs,
+        session_id,
+        anchor_msg_id=None,
+        response_format=None,
+        project_id=None,
+    ):
+        seen.update(project_id=project_id)
+        return {"session_id": "s1", "msg_id": "m1"}
+
+    monkeypatch.setattr(routes_chat, "run_agentic_function_call", run)
+    response = TestClient(app).post(
+        "/api/function/agentic_workflow",
+        json={"kwargs": {"task": "research"}, "project_id": "project-1"},
+    )
+
+    assert response.status_code == 200
+    assert seen["project_id"] == "project-1"
 
 
 def test_function_dispatch_propagates_schema_to_nested_runtime(monkeypatch):

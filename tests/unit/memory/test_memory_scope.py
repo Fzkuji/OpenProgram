@@ -195,7 +195,7 @@ def test_pending_text_is_kept_out_of_the_automatic_memory_injection(
     there would be an unprompted injection. ``memory_search`` is a
     tool call, so the same text is allowed through carrying its label.
     """
-    from openprogram.programs.functions.vanilla.memory import memory as memory_tool
+    from openprogram.programs.functions.vanilla.knowledge.memory import memory as memory_tool
     from openprogram.memory.management import MemoryWorkspace
     from openprogram.memory.local_backend import LocalMemoryBackend
 
@@ -226,7 +226,7 @@ def test_only_local_owner_can_promote_an_unpaired_source(
     tmp_path, authorities, monkeypatch,
 ):
     from openprogram.agent.authority import AuthorityError
-    from openprogram.programs.functions.vanilla.memory.memory import _promote_source
+    from openprogram.programs.functions.vanilla.knowledge.memory.memory import _promote_source
     from openprogram.memory.management import MemoryWorkspace
     from openprogram.memory.retrieval.bm25 import parse_source_file
     from openprogram.memory.workspace_layout import runtime_dir
@@ -255,7 +255,7 @@ def test_only_local_owner_can_promote_an_unpaired_source(
     assert row["principal_id"] == local["principal_id"]
     assert row["authority_tier"] == "owner"
 
-    from openprogram.programs.functions.vanilla.memory import memory as memory_tools
+    from openprogram.programs.functions.vanilla.knowledge.memory import memory as memory_tools
     from openprogram.memory import writing
 
     monkeypatch.setattr(memory_tools, "_root", lambda: tmp_path)
@@ -363,7 +363,7 @@ def test_paired_append_boundary_cannot_rewrite_existing_topics(
         assert caught.value.code == "APPEND_ONLY_REQUIRED"
         assert (root / "topics/note.md").read_text(encoding="utf-8") == original
 
-        from openprogram.programs.functions.vanilla.memory import memory as memory_tools
+        from openprogram.programs.functions.vanilla.knowledge.memory import memory as memory_tools
 
         monkeypatch.setattr(memory_tools, "_root", lambda: root)
         monkeypatch.setattr(
@@ -432,7 +432,7 @@ def test_memory_update_cannot_cite_an_existing_pending_source(tmp_path):
 def test_promotion_makes_the_same_reference_valid(tmp_path, authorities):
     """The same reference the validator refuses while pending passes once the
     owner has promoted it. The writer batch is the path that cites it."""
-    from openprogram.programs.functions.vanilla.memory import memory as memory_tools
+    from openprogram.programs.functions.vanilla.knowledge.memory import memory as memory_tools
     from openprogram.memory.management import MemoryWorkspace
 
     root = tmp_path / "memory"
@@ -722,7 +722,7 @@ def test_a_failed_trust_audit_leaves_no_trusted_source(
 ):
     import os as _os
 
-    from openprogram.programs.functions.vanilla.memory import memory as memory_tools
+    from openprogram.programs.functions.vanilla.knowledge.memory import memory as memory_tools
     from openprogram.memory.management import MemoryWorkspace
     from openprogram.memory.management.transaction import (
         workspace_revision,
@@ -898,7 +898,7 @@ def test_pending_backed_topics_never_reach_the_turn_context(tmp_path, monkeypatc
     assert local_backend.LocalMemoryBackend().search("distilled claim") == ""
 
     # Promoting the evidence is all it takes to bring the block back.
-    from openprogram.programs.functions.vanilla.memory import memory as memory_tools
+    from openprogram.programs.functions.vanilla.knowledge.memory import memory as memory_tools
     import openprogram.paths as paths
     from openprogram.agent import authority
 
@@ -943,7 +943,7 @@ def test_a_short_audit_write_completes_rather_than_aborting(tmp_path, authoritie
     """os.write may accept part of the buffer; that is not a failure."""
     import os as _os
 
-    from openprogram.programs.functions.vanilla.memory import memory as memory_tools
+    from openprogram.programs.functions.vanilla.knowledge.memory import memory as memory_tools
     from openprogram.memory.workspace_layout import runtime_dir
 
     owner, _paired = authorities
@@ -985,7 +985,7 @@ def test_a_failed_audit_append_leaves_no_partial_line(tmp_path, authorities, mon
     """A half-written entry must not survive; earlier entries must."""
     import os as _os
 
-    from openprogram.programs.functions.vanilla.memory import memory as memory_tools
+    from openprogram.programs.functions.vanilla.knowledge.memory import memory as memory_tools
     from openprogram.memory.workspace_layout import runtime_dir
 
     owner, _paired = authorities
@@ -1193,7 +1193,7 @@ def test_a_failed_archive_does_not_consume_a_quota_slot(tmp_path, monkeypatch):
 
 
 def test_status_does_not_disclose_the_workspace_path(tmp_path, monkeypatch):
-    from openprogram.programs.functions.vanilla.memory import memory as memory_tools
+    from openprogram.programs.functions.vanilla.knowledge.memory import memory as memory_tools
     from openprogram.memory import store
     from openprogram.memory.retrieval import inspect
 

@@ -833,7 +833,7 @@ def test_official_playwright_adapter_binds_marker_and_routes_one_action(monkeypa
     from openprogram.programs.functions.agentic.browser_agent.mcp_backends import (
         OfficialMCPPageBackend,
     )
-    from openprogram.programs.functions.vanilla.browser import _chrome_bootstrap
+    from openprogram.programs.functions.vanilla.web.browser import _chrome_bootstrap
 
     controller = _Controller()
     client = _PlaywrightClient(controller.page)

@@ -87,7 +87,7 @@ def test_retry_redispatches_with_original_kwargs(monkeypatch):
 
     calls = []
 
-    def _fake_run(name, kwargs, session_id, work_dir=None, anchor_msg_id="ROOT"):
+    def _fake_run(name, kwargs, session_id, anchor_msg_id="ROOT"):
         calls.append((name, kwargs, session_id, anchor_msg_id))
         return {"session_id": session_id, "msg_id": "abc"}
 
@@ -121,7 +121,7 @@ def test_retry_anchors_at_original_calls_predecessor(monkeypatch):
 
     anchors = []
 
-    def _fake_run(name, kwargs, session_id, work_dir=None, anchor_msg_id="ROOT"):
+    def _fake_run(name, kwargs, session_id, anchor_msg_id="ROOT"):
         anchors.append(anchor_msg_id)
         return {"session_id": session_id, "msg_id": "abc"}
 
@@ -148,7 +148,7 @@ def test_retry_targets_latest_top_level_call_not_nested(monkeypatch):
 
     calls = []
 
-    def _fake_run(name, kwargs, session_id, work_dir=None, anchor_msg_id="ROOT"):
+    def _fake_run(name, kwargs, session_id, anchor_msg_id="ROOT"):
         calls.append((kwargs, anchor_msg_id))
         return {"session_id": session_id, "msg_id": "abc"}
 
@@ -229,7 +229,7 @@ def test_new_run_rejected_while_run_active(monkeypatch):
 
     monkeypatch.setattr(
         "openprogram.webui.server._get_or_create_session",
-        lambda sid=None, **k: {"id": sid or "s1", "last_workdirs": {}},
+        lambda sid=None, **k: {"id": sid or "s1"},
     )
     class _Tool:
         name = "word_count"
@@ -337,7 +337,7 @@ def test_new_run_passes_empty_caller_so_decorator_stamps_head(monkeypatch):
 
     monkeypatch.setattr(
         "openprogram.webui.server._get_or_create_session",
-        lambda sid=None, **k: {"id": sid or "s1", "last_workdirs": {}},
+        lambda sid=None, **k: {"id": sid or "s1"},
     )
     monkeypatch.setattr(
         "openprogram.webui.server._is_run_active", lambda _sid: False

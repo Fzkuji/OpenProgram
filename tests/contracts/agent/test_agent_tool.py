@@ -79,7 +79,7 @@ def _call_agent(*, prompt: str, description: str = "", agent_id: str = "",
     so _resolve_parent finds them."""
     from openprogram.agent.run_control import _current_session_id
     from openprogram.store import _current_turn_id
-    from openprogram.programs.functions.vanilla.agent.agent.agent import _agent_impl
+    from openprogram.programs.functions.vanilla.agents.agent.agent.agent import _agent_impl
 
     def _go():
         tok1 = _current_session_id.set(session_id)
@@ -338,7 +338,7 @@ def test_agentic_function_ctx_and_context_parameters_are_llm_controllable():
 # --------------------------------------------------------------------------
 
 def test_fanout_refuses_the_spawn_past_the_limit(store, fake_dispatcher):
-    from openprogram.programs.functions.vanilla.agent.agent.agent import MAX_SPAWN_FANOUT
+    from openprogram.programs.functions.vanilla.agents.agent.agent.agent import MAX_SPAWN_FANOUT
 
     for i in range(MAX_SPAWN_FANOUT):
         out = _call_agent(prompt=f"task {i}", session_id="p1", turn_id="a1")
@@ -352,7 +352,7 @@ def test_fanout_refuses_the_spawn_past_the_limit(store, fake_dispatcher):
 def test_fanout_is_counted_per_turn(store, fake_dispatcher):
     """A new turn spawns with a fresh budget — the cap stops one runaway
     turn, it is not a session-lifetime quota."""
-    from openprogram.programs.functions.vanilla.agent.agent.agent import MAX_SPAWN_FANOUT
+    from openprogram.programs.functions.vanilla.agents.agent.agent.agent import MAX_SPAWN_FANOUT
 
     for i in range(MAX_SPAWN_FANOUT + 1):
         _call_agent(prompt=f"task {i}", session_id="p1", turn_id="a1")
@@ -361,7 +361,7 @@ def test_fanout_is_counted_per_turn(store, fake_dispatcher):
 
 
 def test_fanout_zero_disables_the_cap(store, fake_dispatcher, monkeypatch):
-    from openprogram.programs.functions.vanilla.agent.agent.agent import MAX_SPAWN_FANOUT
+    from openprogram.programs.functions.vanilla.agents.agent.agent.agent import MAX_SPAWN_FANOUT
     monkeypatch.setattr(
         "openprogram.setup._read_config",
         lambda: {"agent": {"max_spawn_fanout": 0}},
@@ -374,10 +374,10 @@ def test_fanout_zero_disables_the_cap(store, fake_dispatcher, monkeypatch):
 def test_fanout_slot_is_not_spent_by_a_refused_spawn(store, fake_dispatcher):
     """The generation guard runs first, so a chain that is out of
     generations never burns its turn's fan-out slots."""
-    from openprogram.programs.functions.vanilla.agent.agent.agent import (
+    from openprogram.programs.functions.vanilla.agents.agent.agent.agent import (
         MAX_SPAWN_DEPTH, _fanout_used,
     )
-    from openprogram.programs.functions.vanilla.send_message.send_message.depth import (
+    from openprogram.programs.functions.vanilla.agents.send_message.send_message.depth import (
         set_chain_generations,
     )
     tok = set_chain_generations(MAX_SPAWN_DEPTH)

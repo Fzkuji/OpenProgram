@@ -13,6 +13,12 @@ const fileTreeCss = source("components/files/files-panel.module.css");
 const projectsPage = source("components/projects/projects-page.tsx");
 const projectsCss = source("components/projects/projects-page.module.css");
 const sessionsList = source("components/sidebar/sessions-list.tsx");
+const fnFormSubmit = source(
+  "components/chat/composer/modes/fn-form/use-fn-form-submit.ts",
+);
+const workflowSource = source(
+  "../../openprogram/programs/functions/agentic/agentic_workflow/__init__.py",
+);
 const chatCss = readChatCss(root);
 
 assert.doesNotMatch(projectMenu, /project-caret/);
@@ -30,6 +36,16 @@ assert.match(projectMenu, /created\?\.ok && created\.project\?\.id/);
 assert.match(projectMenu, /setPendingProject\(activeChatKey, created\.project\.id\)/);
 assert.match(workingDirs, /pendingProjectsByChat\[activeChatKey\]/);
 assert.match(workingDirs, /pendingProjectId \?\? currentProjectId/);
+assert.match(
+  fnFormSubmit,
+  /if \(pendingProjectId\) body\.project_id = pendingProjectId/,
+  "a direct workflow call must bind the selected Project before execution",
+);
+assert.match(
+  workflowSource,
+  /@agentic_function\([\s\S]*?input=\{[\s\S]*?"task"[\s\S]*?def auto_workflow\(task: str\)/,
+  "auto_workflow must expose only its task parameter",
+);
 assert.match(fileTree, /className=\{styles\.treeRootPath\}/);
 assert.match(fileTree, /className=\{styles\.treeToolbar\}/);
 assert.match(fileTree, /baseOf\(projectRoot\)/);

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from openprogram.cli.commands.jobs import job_resource_payload
-from openprogram.programs.functions.vanilla.agent.list_jobs.list_jobs import _list_jobs_impl
+from openprogram.programs.functions.vanilla.agents.agent.list_jobs.list_jobs import _list_jobs_impl
 from openprogram.agent.run_control import _current_session_id
 from openprogram.agent.job.types import JobStatus
 from openprogram.webui.ws_actions import job as ws_job

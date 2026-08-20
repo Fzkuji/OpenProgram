@@ -133,7 +133,7 @@ class OfficialMCPPageBackend:
         if self.name == "playwright_mcp":
             if not target_id:
                 raise RuntimeError("exact_page_not_found")
-            from openprogram.programs.functions.vanilla.browser._chrome_bootstrap import (
+            from openprogram.programs.functions.vanilla.web.browser._chrome_bootstrap import (
                 desktop_app_ws_url,
             )
             endpoint = desktop_app_ws_url()
@@ -151,7 +151,7 @@ class OfficialMCPPageBackend:
             "{value, configurable: true})",
             [marker_name, marker_value],
         )
-        from openprogram.programs.functions.vanilla.browser._chrome_bootstrap import (
+        from openprogram.programs.functions.vanilla.web.browser._chrome_bootstrap import (
             desktop_app_ws_url,
         )
         endpoint = desktop_app_ws_url()

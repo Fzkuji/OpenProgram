@@ -34,7 +34,6 @@ export interface AgenticFunction {
   name: string;
   description?: string;
   category?: string;
-  workdir_mode?: "optional" | "required" | "hidden";
   params_detail?: FnParam[];
 }
 

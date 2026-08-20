@@ -43,7 +43,7 @@ def test_parent_precreates_node_and_moves_head(monkeypatch, tmp_path):
         "openprogram.agent.session_db.default_db", lambda: store)
     monkeypatch.setattr(
         "openprogram.webui.server._get_or_create_session",
-        lambda sid=None, **k: {"id": sid or "s1", "last_workdirs": {}})
+        lambda sid=None, **k: {"id": sid or "s1"})
     monkeypatch.setattr(
         "openprogram.webui.server._default_agent_id", lambda: "main")
     monkeypatch.setattr(

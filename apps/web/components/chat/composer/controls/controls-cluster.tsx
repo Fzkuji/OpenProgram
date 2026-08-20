@@ -83,9 +83,6 @@ export interface ControlsClusterProps {
   thinkingMenuOpen: boolean;
   setThinkingMenuOpen(next: boolean | ((v: boolean) => boolean)): void;
   thinkingTriggerRef: React.RefObject<HTMLDivElement>;
-  effortEpoch: number;
-  effortCardOpen: boolean;
-  setEffortCardOpen(open: boolean): void;
 }
 
 export function ControlsCluster({
@@ -117,9 +114,6 @@ export function ControlsCluster({
   thinkingMenuOpen,
   setThinkingMenuOpen,
   thinkingTriggerRef,
-  effortEpoch,
-  effortCardOpen,
-  setEffortCardOpen,
 }: ControlsClusterProps) {
   const { text } = useTranslation();
   const plusIconRef = useRef<AnimatedNavIconHandle>(null);
@@ -415,7 +409,7 @@ export function ControlsCluster({
                 <div
                   ref={thinkingTriggerRef}
                   className={styles.effortControl}
-                  aria-expanded={effortCardOpen}
+                  aria-expanded={thinkingMenuOpen}
                 >
                   {thinkingOptions.length > 1 && (
                     <button
@@ -451,11 +445,6 @@ export function ControlsCluster({
                     </button>
                   )}
                   <ThinkingEffortPill
-                    // Remount on epoch bump = force-collapse (see the
-                    // outside-click handler): the pill never self-closes,
-                    // so this remount is the sole way to shut the card —
-                    // fired when composer detects a click outside it.
-                    key={effortEpoch}
                     expanded={thinkingMenuOpen}
                     onToggle={() => {
                       setThinkingMenuOpen((v) => !v);
@@ -464,7 +453,6 @@ export function ControlsCluster({
                     options={thinkingOptions}
                     value={thinking}
                     onChange={setThinking}
-                    onExpandedChange={setEffortCardOpen}
                   />
                 </div>
               </HoverTip>

@@ -34,8 +34,8 @@ def test_web_search_registry_names_are_declared(env_var):
 
 def test_web_search_names_come_from_the_live_registry(monkeypatch):
     """A backend registered at runtime is accepted with no code change here."""
-    import openprogram.programs.functions.vanilla.web_search.providers  # noqa: F401
-    from openprogram.programs.functions.vanilla.web_search.registry import registry
+    import openprogram.programs.functions.vanilla.web.web_search.providers  # noqa: F401
+    from openprogram.programs.functions.vanilla.web.web_search.registry import registry
     from types import SimpleNamespace
 
     invented = "INVENTED_RUNTIME_SEARCH_KEY"

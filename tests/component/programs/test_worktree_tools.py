@@ -100,8 +100,8 @@ def test_bash_uses_worktree_cwd(worktree_root, monkeypatch):
     # the same attribute name (bash.bash), so a plain import returns
     # the wrapper, not the file module.
     import sys
-    import openprogram.programs.functions.vanilla.bash.bash  # noqa: F401
-    bash_inner = sys.modules["openprogram.programs.functions.vanilla.bash.bash"]
+    import openprogram.programs.functions.vanilla.files.bash.bash  # noqa: F401
+    bash_inner = sys.modules["openprogram.programs.functions.vanilla.files.bash.bash"]
 
     seen_kwargs: dict = {}
 
@@ -116,14 +116,14 @@ def test_bash_uses_worktree_cwd(worktree_root, monkeypatch):
     monkeypatch.setattr(
         bash_inner, "get_active_backend", lambda: FakeBackend()
     )
-    from openprogram.programs.functions.vanilla.bash import bash as bash_tool
+    from openprogram.programs.functions.vanilla.files.bash import bash as bash_tool
     out = _exec_tool(bash_tool, command="pwd")
     assert seen_kwargs["cwd"] == str(worktree_root)
     assert "exit_code=0" in out
 
 
 def test_write_resolves_relative_inside_worktree(worktree_root):
-    from openprogram.programs.functions.vanilla.write import write as write_tool
+    from openprogram.programs.functions.vanilla.files.write import write as write_tool
     out = _exec_tool(write_tool, file_path="new.txt", content="abc")
     assert "Wrote 3 bytes" in out
     target = worktree_root / "new.txt"
@@ -132,14 +132,14 @@ def test_write_resolves_relative_inside_worktree(worktree_root):
 
 
 def test_read_resolves_relative_inside_worktree(worktree_root):
-    from openprogram.programs.functions.vanilla.read import read as read_tool
+    from openprogram.programs.functions.vanilla.files.read import read as read_tool
     out = _exec_tool(read_tool, file_path="inside.txt")
     assert "hello" in out
     assert str(worktree_root) in out  # header echoes resolved abs path
 
 
 def test_edit_resolves_relative_inside_worktree(worktree_root):
-    from openprogram.programs.functions.vanilla.edit import edit as edit_tool
+    from openprogram.programs.functions.vanilla.files.edit import edit as edit_tool
     out = _exec_tool(
         edit_tool, file_path="inside.txt",
         old_string="hello", new_string="world",
@@ -149,7 +149,7 @@ def test_edit_resolves_relative_inside_worktree(worktree_root):
 
 
 def test_write_outside_worktree_is_blocked_by_default_sandbox(worktree_root, tmp_path):
-    from openprogram.programs.functions.vanilla.write import write as write_tool
+    from openprogram.programs.functions.vanilla.files.write import write as write_tool
     target = tmp_path / "elsewhere.txt"
     out = _exec_tool(write_tool, file_path=str(target), content="x")
     assert "Error: sandbox policy: path is outside writable roots" in out

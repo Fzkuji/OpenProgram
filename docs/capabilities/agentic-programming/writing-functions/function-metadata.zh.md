@@ -46,7 +46,6 @@
 | WebUI 占位符 | `@agentic_function(input={"x": {"placeholder": "..."}})` | `fn.input_meta["x"]["placeholder"]` |
 | WebUI 多行输入 | `@agentic_function(input={"x": {"multiline": True}})` | `fn.input_meta["x"]["multiline"]` |
 | 动态选项来源 | `@agentic_function(input={"x": {"options_from": "functions"}})` | `fn.input_meta["x"]["options_from"]` |
-| 工作目录选择器模式 | `@agentic_function(workdir_mode="optional"\|"hidden"\|"required")`——由装饰器校验并存储在实例上 | `fn.workdir_mode`。其消费方是 WebUI，它不会反射对象——而是对源码文本做 AST 解析（`openprogram/webui/_functions.py:_extract_workdir_mode`），因此该值必须在装饰器调用中写成字面量 |
 | 框架自动注入的参数 | 分布在两个文件中的两个常量，值均为 `{"runtime", "exec_runtime", "review_runtime"}`：`agentic_programming/function.py` 中的 `_RUNTIME_PARAMS`（注入 + 从 tool-spec 中过滤）和 `agentic_programming/decision.py` 中的 `_AUTO_PARAMS`（菜单隐藏 + 派发） | 模块级 |
 | 覆盖环境 LLM 的 system prompt | `@agentic_function(system="...")` | `fn.system` |
 | DAG expose 模式 | `@agentic_function(expose="io"\|"llm"\|"full"\|"hidden")`——控制**调用方**在其 DAG 渲染中能看到本函数的哪些内容 | `fn.expose` |
@@ -226,14 +225,6 @@ WebUI 表单按下列规则渲染每个参数（实现见 `apps/web/components/c
 | `options_from: "functions"` | 由当前已注册的非内建 / 非 meta 函数填充的 `<select>` 下拉框 |
 | `hidden: True` | 完全从表单中省略 |
 | 有 Python 默认值且无显式 `placeholder` | 原始默认值成为占位符的灰字提示（无 `"default: "` 前缀）；在空字段中按 Tab 会把它提升为实际值；`None` 或以 `_` 开头的默认值会被抑制 |
-
-工作目录选择器单独渲染在参数行上方，由顶层的 `workdir_mode` 控制：
-
-| `workdir_mode` 取值 | 表单行为 |
-|---|---|
-| `"optional"`（默认） | 显示选择器；可以留空 |
-| `"hidden"` | 不显示选择器（函数不依赖文件系统位置） |
-| `"required"` | 显示选择器且为必填；未填值时表单阻止提交 |
 
 参数的 `description` 渲染为参数名旁的小标签；类型注解显示在同一行，非必填参数会带一个 “optional” 标记（没有 “required” 标记）。
 

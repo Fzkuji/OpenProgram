@@ -79,7 +79,7 @@ Set these in the shell that launches `openprogram` (or the worker). Every one ha
 | `OPENPROGRAM_NO_SLEEP` | `1` = disable the memory sleep-consolidation scheduler | `openprogram/memory/scheduler.py` |
 | `OPENPROGRAM_NO_PROGRAMS_WATCH` | `1` = disable the file watcher on the programs directory | `openprogram/programs/watcher.py` |
 | `OPENPROGRAM_PROJECT_AUTOCOMMIT` | `0` = turn off project auto-commit | `openprogram/store/project/project_commit.py` |
-| `OPENPROGRAM_WEBSEARCH_DISABLE` | Disable a web search provider by name (e.g. `ollama`) | `openprogram/programs/functions/vanilla/web_search/providers/ollama.py` |
+| `OPENPROGRAM_WEBSEARCH_DISABLE` | Disable a web search provider by name (e.g. `ollama`) | `openprogram/programs/functions/vanilla/web/web_search/providers/ollama.py` |
 
 ### LLM calls
 

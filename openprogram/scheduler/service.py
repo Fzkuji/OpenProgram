@@ -11,7 +11,7 @@ from openprogram.memory.references import (
     normalize as normalize_memory_refs,
     resolve as resolve_memory_refs,
 )
-from openprogram.programs.functions.vanilla.cron import cron as cron_tool
+from openprogram.programs.functions.vanilla.jobs.cron import cron as cron_tool
 
 
 TASK_TYPES = frozenset({"once", "recurring", "monitor"})

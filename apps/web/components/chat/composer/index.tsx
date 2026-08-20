@@ -268,7 +268,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     useToolProfiles(currentSessionId);
 
   // Slash-menu state lives in its own hook (./use-slash-menu).
-  // fn-form field state (values, workdir, error highlight, closing
+  // fn-form field state (values, error highlight, closing
   // flag) is owned by `./use-fn-form-state`; it also runs the
   // default-value seeding effect on fn change.
   const fnForm = useFnFormState(fnFormFunction);
@@ -283,15 +283,6 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // which owns its own placement + outside-click close — no trigger/menu
   // refs or measured position needed.
   const thinkingTriggerRef = useRef<HTMLDivElement>(null);
-  // Bumping this remounts <ThinkingEffortPill/>, resetting its INTERNAL
-  // expanded state to false — the only way to force-collapse it from
-  // outside (it ignores the expanded prop and never self-closes; the
-  // card dwells open until this remount fires on an outside click).
-  const [effortEpoch, setEffortEpoch] = useState(0);
-  // effort 卡真实开合（pill 内部 state 回传）——驱动 effortText 的
-  // aria-expanded，卡开着时 HoverTip 不再冒 "Thinking effort" 黑提示。
-  const [effortCardOpen, setEffortCardOpen] = useState(false);
-
   // Wrapper height transition (open / close / A→B switch crossfade)
   // is all in one hook — see `./use-fn-form-wrapper`. `outgoingFn`
   // drives the absolute-positioned crossfade overlay below.
@@ -342,14 +333,6 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
         !thinkingTriggerRef.current.contains(t)
       ) {
         setThinkingMenuOpen(false);
-        // The pill never self-closes (no mouseleave collapse anymore) —
-        // this outside-click IS the only way to shut the card. Remount
-        // the pill to reset its internal expanded state to false.
-        if (thinkingTriggerRef.current.querySelector("[data-effort-expanded]")) {
-          setEffortEpoch((e) => e + 1);
-          // remount 会把 pill 内部 expanded 归零，回传不会触发——手动同步。
-          setEffortCardOpen(false);
-        }
       }
     }
     // pointerdown 而非 click：点击滑轨档位会让 React 立刻重排刻度点，
@@ -599,17 +582,12 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   //   in the "lost" state would silently strip the token — see the
   //   submit() guard mirror.
   // In fn-form mode: disabled when any required param has no value,
-  //   OR when workdir is required and empty. Also surface WHICH field
-  //   is blocking via the title attribute so hovering over a greyed
+  //   Also surface WHICH field is blocking via the title attribute so hovering over a greyed
   //   send button explains why nothing happens on click.
   const missingFnParams: string[] = (() => {
     if (!fnFormActive) return [];
     const fn = fnFormFunction!;
     const out: string[] = [];
-    const workdirMode = fn.workdir_mode ?? "optional";
-    if (workdirMode === "required" && !fnForm.workdir.trim()) {
-      out.push("work_dir");
-    }
     for (const p of visibleParams(fn)) {
       if (!p.required) continue;
       const v = String(fnForm.values[p.name] ?? "").trim();
@@ -674,9 +652,6 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       thinkingMenuOpen={thinkingMenuOpen}
       setThinkingMenuOpen={setThinkingMenuOpen}
       thinkingTriggerRef={thinkingTriggerRef}
-      effortEpoch={effortEpoch}
-      effortCardOpen={effortCardOpen}
-      setEffortCardOpen={setEffortCardOpen}
     />
   );
 

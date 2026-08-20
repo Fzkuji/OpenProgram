@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { useRouter } from "next/navigation";
 import {
   Boxes,
-  ChevronRight,
   Folder,
   FolderOpen,
   GitBranch,
@@ -33,19 +32,18 @@ import { jsonFetch } from "@/lib/net/fetch-client";
 import { runtimeState } from "@/lib/runtime-bridge/state";
 import { useFunctions } from "@/lib/state/functions-store";
 import type { FunctionsMeta } from "@/lib/types";
-import { TOOL_GROUPS } from "@/components/functions/tool-groups";
 
 import {
+  buildGraphLayout,
   buildCallTreeRows,
+  GRAPH_NODE_HEIGHT,
+  GRAPH_NODE_WIDTH,
   type LogicResponse,
   type ProgramKind,
 } from "./programs-logic";
 import {
-  buildRuntimeProgramDirectories,
   programInvocationName,
   type ProgramExplorerEntry,
-  type RuntimeProgramEntry,
-  type RuntimeToolEntry,
 } from "./programs-catalog";
 import {
   isUserManualWorkflowEntry,
@@ -81,6 +79,7 @@ function kindLabel(
   if (kind === "workflow") return text("Workflow", "工作流");
   if (kind === "application") return text("Application", "应用");
   if (kind === "agentic_function") return text("Agentic Function", "Agentic 函数");
+  if (kind === "runtime_primitive") return text("Agentic Programming primitive", "Agentic Programming 原语");
   return text("Function", "函数");
 }
 
@@ -136,21 +135,12 @@ export function ProgramsPage() {
       setDirectories({});
       setExpanded(new Set());
       try {
-        const [root, tools, programs] = await Promise.all([
-          loadDirectory("", controller.signal),
-          jsonFetch<RuntimeToolEntry[]>("/api/tools", { signal: controller.signal }),
-          jsonFetch<RuntimeProgramEntry[]>("/api/programs", { signal: controller.signal }),
-        ]);
+        const root = await loadDirectory("", controller.signal);
         if (cancelled) return;
-        const runtimeCatalog = buildRuntimeProgramDirectories(tools, programs, TOOL_GROUPS);
-        setDirectories((current) => ({ ...current, ...runtimeCatalog.directories }));
         const sourceDefault = root.default_selection ?? null;
-        const initial = sourceDefault?.startsWith("workflows/") || sourceDefault?.startsWith("applications/")
-          ? sourceDefault
-          : runtimeCatalog.firstFunction ?? sourceDefault;
+        const initial = sourceDefault;
         const parents = initial ? parentPaths(initial) : [];
         for (const parent of parents) {
-          if (runtimeCatalog.directories[parent]) continue;
           await loadDirectory(parent, controller.signal);
         }
         if (cancelled) return;
@@ -208,22 +198,6 @@ export function ProgramsPage() {
     setLogic(null);
     setLoadingLogic(true);
     setError("");
-    if (selectedEntry?.runtime_only) {
-      setLogic({
-        root: selected,
-        nodes: [{
-          id: selected,
-          name: selectedEntry.name,
-          path: selectedEntry.path,
-          program_kind: selectedEntry.program_kind || "vanilla_function",
-          depth: 0,
-        }],
-        edges: [],
-        analysis_complete: true,
-      });
-      setLoadingLogic(false);
-      return () => controller.abort();
-    }
     const query = new URLSearchParams({ path: selectedEntry?.logic_path || selected });
     void jsonFetch<LogicResponse>(`/api/programs/logic?${query}`, { signal: controller.signal })
       .then((result) => {
@@ -255,6 +229,7 @@ export function ProgramsPage() {
   const invocationName = programInvocationName(selectedEntry || selectedNode);
   const isFavorite = Boolean(invocationName) && meta.favorites.includes(invocationName);
   const callTree = useMemo(() => logic ? buildCallTreeRows(logic) : { rows: [], truncated: false }, [logic]);
+  const graphLayout = useMemo(() => logic ? buildGraphLayout(logic) : null, [logic]);
   const searchMatches = useMemo(() => {
     if (!search.trim()) return [];
     return [...treeEntriesByPath.values()]
@@ -442,22 +417,40 @@ export function ProgramsPage() {
                     <span className={styles.headBadge}>HEAD</span>
                   </div>
                 </div>
-                <div className={styles.summary}><span>{logic.edges.filter((edge) => edge.source === logic.root).length} {text("direct calls", "个直接调用")}</span><span>{Math.max(0, logic.nodes.length - 1)} {text("reachable Programs", "个可达 Program")}</span><span>{logic.edges.length} {text("edges", "条边")}</span></div>
+                <div className={styles.summary}><span>{logic.edges.filter((edge) => edge.source === logic.root).length} {text("direct calls", "个直接调用")}</span><span>{Math.max(0, logic.nodes.length - 1)} {text("reachable nodes", "个可达节点")}</span><span>{logic.edges.length} {text("edges", "条边")}</span></div>
                 {logic.analysis_complete === false ? <div className={styles.analysisWarning} role="status">{text("Partial result: some source files were not analyzed because they exceed the analysis limits.", "部分结果：部分源码超过分析限制，未纳入调用关系。")}</div> : null}
-                <div className={styles.logicToolbar}><div><strong>{text("Call logic", "调用逻辑")}</strong><small>{text("Static imports at the current source state", "当前源码状态下的静态 import")}</small></div><div className={styles.viewSwitch} aria-label={text("Call logic view", "调用逻辑视图")}><button className={view === "tree" ? styles.viewActive : ""} type="button" aria-pressed={view === "tree"} onClick={() => setView("tree")}><GitBranch size={13} />Call tree</button><button className={view === "graph" ? styles.viewActive : ""} type="button" aria-pressed={view === "graph"} onClick={() => setView("graph")}><Network size={13} />Graph</button></div></div>
+                <div className={styles.logicToolbar}><div><strong>{text("Call logic", "调用逻辑")}</strong><small>{text("Static Program imports and Agentic Programming calls", "静态 Program import 与 Agentic Programming 调用")}</small></div><div className={styles.viewSwitch} aria-label={text("Call logic view", "调用逻辑视图")}><button className={view === "tree" ? styles.viewActive : ""} type="button" aria-pressed={view === "tree"} onClick={() => setView("tree")}><GitBranch size={13} />Call tree</button><button className={view === "graph" ? styles.viewActive : ""} type="button" aria-pressed={view === "graph"} onClick={() => setView("graph")}><Network size={13} />Graph</button></div></div>
                 {view === "tree" ? (
                   <div className={styles.callTree} data-testid="programs-call-tree">
-                    {callTree.rows.map(({ key, node, depth, cycle, reference }) => <div key={key} className={`${styles.callRow} ${depth === 0 ? styles.callRoot : ""} ${reference ? styles.callReference : ""}`} style={{ "--call-depth": depth } as CSSProperties} data-edge-target={depth ? node.id : undefined}><span className={styles.callIcon}>{usesWorkflowIcon(node) ? <Workflow size={15} /> : node.program_kind === "application" ? <Boxes size={15} /> : <Wrench size={15} />}</span><span><strong>{node.name}</strong><small>{node.path}</small></span><em>{cycle ? "cycle" : reference ? "reference" : depth === 0 ? "root" : depth === 1 ? "direct" : "transitive"}</em></div>)}
+                    {callTree.rows.map(({ key, node, depth, cycle, reference, ancestorContinuations, isLast }) => <div key={key} className={`${styles.callRow} ${depth === 0 ? styles.callRoot : ""} ${reference ? styles.callReference : ""}`} style={{ "--call-depth": depth } as CSSProperties} data-edge-target={depth ? node.id : undefined}>
+                      {depth > 0 ? <span className={styles.callGuides} aria-hidden="true">
+                        {ancestorContinuations.map((continues, index) => <i key={index} className={continues ? styles.callGuideActive : ""} />)}
+                        <i className={isLast ? styles.callGuideLast : styles.callGuideBranch} />
+                      </span> : null}
+                      <span className={styles.callIcon}>{usesWorkflowIcon(node) ? <Workflow size={15} /> : node.program_kind === "application" ? <Boxes size={15} /> : <Wrench size={15} />}</span><span className={styles.callLabel}><strong>{node.name}</strong><small>{node.path}</small></span><em>{cycle ? "cycle" : reference ? "reference" : depth === 0 ? "root" : depth === 1 ? "direct" : "transitive"}</em>
+                    </div>)}
                     {callTree.truncated ? <div className={styles.noCalls}>{text("Additional references are hidden.", "其余引用已隐藏。")}</div> : null}
-                    {logic.nodes.length === 1 && logic.analysis_complete !== false ? <div className={styles.noCalls}>{text("This Program has no imports of another Program.", "这个 Program 没有导入其他 Program。")}</div> : null}
+                    {logic.nodes.length === 1 && logic.analysis_complete !== false ? <div className={styles.noCalls}>{text("This Program has no detected Program or Agentic Programming calls.", "未检测到这个 Program 对其他 Program 或 Agentic Programming 原语的调用。")}</div> : null}
                   </div>
                 ) : (
                   <div className={styles.callGraph} data-testid="programs-call-graph">
-                    <div className={styles.graphEdges} aria-label={text("Graph connections", "图连接关系")}>{logic.edges.length ? logic.edges.map((edge) => {
-                      const source = logic.nodes.find((node) => node.id === edge.source);
-                      const target = logic.nodes.find((node) => node.id === edge.target);
-                      return <div key={`${edge.source}->${edge.target}`} className={styles.graphEdge} data-edge={`${edge.source}->${edge.target}`}><span className={styles.graphNode}><strong>{source?.name ?? edge.source}</strong><small>{source ? kindLabel(source.program_kind, text, source) : edge.source}</small></span><ChevronRight size={16} /><span className={styles.graphNode}><strong>{target?.name ?? edge.target}</strong><small>{target ? kindLabel(target.program_kind, text, target) : edge.target}</small></span></div>;
-                    }) : <div className={styles.graphNode}><strong>{selectedNode.name}</strong><small>{logic.analysis_complete === false ? text("Partial analysis", "分析不完整") : text("No outgoing calls", "没有向外调用")}</small></div>}</div>
+                    {graphLayout ? <div className={styles.graphCanvas} style={{ width: graphLayout.width, height: graphLayout.height }} aria-label={text("Program dependency graph", "Program 依赖图") }>
+                      <svg className={styles.graphLines} width={graphLayout.width} height={graphLayout.height} aria-hidden="true">
+                        <defs><marker id="program-graph-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L8 4 L0 8 Z" /></marker></defs>
+                        {graphLayout.edges.map(({ source, target }) => {
+                          const x1 = source.x + GRAPH_NODE_WIDTH;
+                          const y1 = source.y + GRAPH_NODE_HEIGHT / 2;
+                          const x2 = target.x;
+                          const y2 = target.y + GRAPH_NODE_HEIGHT / 2;
+                          const bend = Math.max(12, (x2 - x1) / 2);
+                          return <path key={`${source.id}->${target.id}`} data-edge={`${source.id}->${target.id}`} d={`M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`} markerEnd="url(#program-graph-arrow)" />;
+                        })}
+                      </svg>
+                      {graphLayout.nodes.map((node) => <div key={node.id} className={`${styles.graphNode} ${node.id === logic.root ? styles.graphRoot : ""}`} style={{ left: node.x, top: node.y }} data-graph-node={node.id}>
+                        <span className={styles.graphNodeIcon}>{usesWorkflowIcon(node) ? <Workflow size={15} /> : node.program_kind === "application" ? <Boxes size={15} /> : <Wrench size={15} />}</span>
+                        <span><strong>{node.name}</strong><small>{node.path}</small></span>
+                      </div>)}
+                    </div> : null}
                   </div>
                 )}
               </div>

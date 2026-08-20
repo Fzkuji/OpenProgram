@@ -164,7 +164,7 @@ def test_write_path_uses_process_policy_roots(tmp_path, cfg, monkeypatch):
 
 
 def test_write_tool_enforces_process_policy(tmp_path, cfg, monkeypatch):
-    from openprogram.programs.functions.vanilla.write.write import write
+    from openprogram.programs.functions.vanilla.files.write import write
 
     work = tmp_path / "work"
     outside = tmp_path / "outside"
@@ -231,7 +231,7 @@ def test_read_path_denies_configured_glob(cfg, monkeypatch, secrets):
 
 
 def test_read_tool_refuses_denied_path(cfg, monkeypatch, secrets):
-    from openprogram.programs.functions.vanilla.read.read import read
+    from openprogram.programs.functions.vanilla.files.read import read
 
     work, vault = secrets
     _install_deny_read(monkeypatch, str(vault) + "/**")
@@ -245,7 +245,7 @@ def test_read_tool_refuses_denied_path(cfg, monkeypatch, secrets):
 
 
 def test_list_tool_hides_denied_entries(cfg, monkeypatch, secrets):
-    from openprogram.programs.functions.vanilla.list.list import list_dir
+    from openprogram.programs.functions.vanilla.files.list import list_dir
 
     _work, vault = secrets
     _install_deny_read(monkeypatch, str(vault / "id_rsa"))
@@ -255,7 +255,7 @@ def test_list_tool_hides_denied_entries(cfg, monkeypatch, secrets):
 
 
 def test_list_tool_refuses_denied_directory(cfg, monkeypatch, secrets):
-    from openprogram.programs.functions.vanilla.list.list import list_dir
+    from openprogram.programs.functions.vanilla.files.list import list_dir
 
     _work, vault = secrets
     _install_deny_read(monkeypatch, str(vault) + "/**")
@@ -265,7 +265,7 @@ def test_list_tool_refuses_denied_directory(cfg, monkeypatch, secrets):
 
 
 def test_glob_tool_drops_denied_matches(cfg, monkeypatch, tmp_path):
-    from openprogram.programs.functions.vanilla.glob.glob import glob_tool
+    from openprogram.programs.functions.vanilla.files.glob import glob_tool
 
     root = tmp_path / "root"
     (root / "keys").mkdir(parents=True)
@@ -279,7 +279,7 @@ def test_glob_tool_drops_denied_matches(cfg, monkeypatch, tmp_path):
 
 
 def test_grep_tool_drops_denied_files(cfg, monkeypatch, tmp_path):
-    from openprogram.programs.functions.vanilla.grep.grep import grep
+    from openprogram.programs.functions.vanilla.files.grep import grep
 
     root = tmp_path / "root"
     (root / "keys").mkdir(parents=True)

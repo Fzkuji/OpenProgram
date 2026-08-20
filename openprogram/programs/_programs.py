@@ -163,6 +163,19 @@ def owner_controlled_program_sources(base: str | None = None) -> list[dict]:
     return out
 
 
+def owner_programs_roots() -> list[Path]:
+    """Return source ``openprogram/programs`` roots recorded by the owner."""
+    roots: dict[str, Path] = {}
+    for row in owner_controlled_program_sources():
+        application = Path(row["path"]).resolve()
+        applications = application.parent
+        if applications.name != "applications":
+            continue
+        root = applications.parent
+        roots.setdefault(os.path.normcase(os.fspath(root)), root)
+    return [roots[key] for key in sorted(roots)]
+
+
 def is_owner_controlled_program_path(path) -> bool:
     candidate = os.path.realpath(os.fspath(path))
     return any(

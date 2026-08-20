@@ -358,7 +358,7 @@ def _process_turn_once(
     _project_baseline = _bindings.project_baseline
     # Fresh outbound-attachment list for this turn — ``send_file`` calls
     # append to it, step 4b below folds it into the reply text.
-    from openprogram.programs.functions.vanilla import send_file as _send_file
+    from openprogram.programs.functions.vanilla.interaction import send_file as _send_file
     _send_file.begin_turn()
 
     # 3b. Persist an assistant *placeholder* row so the row exists in

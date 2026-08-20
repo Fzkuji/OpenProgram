@@ -46,7 +46,6 @@ Every piece of information has exactly one source-of-truth. This table is the sp
 | WebUI placeholder | `@agentic_function(input={"x": {"placeholder": "..."}})` | `fn.input_meta["x"]["placeholder"]` |
 | WebUI multiline input | `@agentic_function(input={"x": {"multiline": True}})` | `fn.input_meta["x"]["multiline"]` |
 | Dynamic option source | `@agentic_function(input={"x": {"options_from": "functions"}})` | `fn.input_meta["x"]["options_from"]` |
-| Working-directory picker mode | `@agentic_function(workdir_mode="optional"\|"hidden"\|"required")` — validated by the decorator and stored on the instance | `fn.workdir_mode`. Its consumer is the WebUI, which does not introspect the object — it AST-parses the source text (`openprogram/webui/_functions.py:_extract_workdir_mode`), so the value must be written as a literal in the decorator call |
 | Framework-auto-injected parameters | two constants in two files, both `{"runtime", "exec_runtime", "review_runtime"}`: `_RUNTIME_PARAMS` in `agentic_programming/function.py` (injection + tool-spec filtering) and `_AUTO_PARAMS` in `agentic_programming/decision.py` (menu hiding + dispatch) | module level |
 | Override of the ambient LLM system prompt | `@agentic_function(system="...")` | `fn.system` |
 | DAG expose mode | `@agentic_function(expose="io"\|"llm"\|"full"\|"hidden")` — controls what **callers** see of this function in their DAG render | `fn.expose` |
@@ -226,14 +225,6 @@ The WebUI form renders each parameter by the following rules (implemented in `ap
 | `options_from: "functions"` | `<select>` dropdown populated from currently-registered non-builtin / non-meta functions |
 | `hidden: True` | Omitted from the form entirely |
 | Has a Python default and no explicit `placeholder` | the raw default value becomes the placeholder ghost text (no `"default: "` prefix); pressing Tab in the empty field promotes it into the actual value; defaults of `None` or starting with `_` are suppressed |
-
-The working-directory picker is rendered separately above the parameter rows, governed by the top-level `workdir_mode`:
-
-| `workdir_mode` value | Form behavior |
-|---|---|
-| `"optional"` (default) | Picker shown; may be left empty |
-| `"hidden"` | Picker not shown (function doesn't depend on filesystem location) |
-| `"required"` | Picker shown and required; the form blocks submission without a value |
 
 Parameter `description` renders as a small label next to the parameter name; the type annotation is shown on the same row, and non-required parameters get an "optional" marker (there is no "required" marker).
 

@@ -204,7 +204,7 @@ def _reset_spawn_fanout():
     this, the ninth such test in a session would be refused by a counter
     the previous eight filled.
     """
-    from openprogram.programs.functions.vanilla.agent.agent.agent import _fanout_used
+    from openprogram.programs.functions.vanilla.agents.agent.agent.agent import _fanout_used
     _fanout_used.clear()
     yield
     _fanout_used.clear()

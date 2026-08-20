@@ -4,7 +4,7 @@ from pathlib import Path
 
 import openprogram
 
-from openprogram.webui.routes import chat, docs, functions, programs, workdir
+from openprogram.webui.routes import chat, docs, functions, programs
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -25,27 +25,28 @@ def test_function_run_falls_back_to_configured_default_workdir(
     selected.mkdir()
     monkeypatch.setattr(chat, "get_default_workdir", lambda: str(selected))
 
-    conv: dict = {}
-    resolved = chat._resolve_work_dir(conv, "gui_agent", None)
+    resolved = chat._resolve_work_dir()
 
     assert resolved == str(selected)
-    assert conv["last_workdirs"]["gui_agent"] == str(selected)
 
-
-def test_workdir_defaults_reports_configured_project(
+def test_function_run_inherits_the_bound_project_workdir(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    selected = tmp_path / "selected-project"
+    selected = tmp_path / "bound-project"
     selected.mkdir()
-    monkeypatch.setattr(workdir, "get_default_workdir", lambda: str(selected))
-    app = FastAPI()
-    workdir.register(app)
+    monkeypatch.setattr(
+        chat,
+        "project_workdir_for",
+        lambda session_id: selected if session_id == "s1" else None,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        chat,
+        "get_default_workdir",
+        lambda: str(tmp_path / "wrong-default"),
+    )
 
-    response = TestClient(app).get("/api/workdir/defaults")
+    resolved = chat._resolve_work_dir("s1")
 
-    assert response.status_code == 200
-    assert response.json()["repo"] == str(selected)
+    assert resolved == str(selected)

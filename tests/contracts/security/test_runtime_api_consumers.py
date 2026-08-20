@@ -322,7 +322,7 @@ def _render_exception(error: BaseException) -> str:
 
 @pytest.mark.parametrize("failure", ["missing", "FAILED", "CANCELLED"])
 def test_fal_200_error_envelope_omits_peer_mapping(monkeypatch, failure):
-    from openprogram.programs.functions.vanilla.image_generate.providers import fal
+    from openprogram.programs.functions.vanilla.web.image_generate.providers import fal
 
     secret_mapping = {
         "error": "HEADER-SECRET",
@@ -359,7 +359,7 @@ def test_fal_200_error_envelope_omits_peer_mapping(monkeypatch, failure):
 
 
 def test_minimax_200_error_envelope_omits_peer_status_message(monkeypatch):
-    from openprogram.programs.functions.vanilla.web_search.providers import minimax
+    from openprogram.programs.functions.vanilla.web.web_search.providers import minimax
 
     monkeypatch.setenv("MINIMAX_CODE_PLAN_KEY", "secret")
     monkeypatch.setattr(
@@ -386,7 +386,7 @@ def test_minimax_200_error_envelope_omits_peer_status_message(monkeypatch):
 def test_web_search_malformed_status_hides_signed_url_and_peer_echo(
     monkeypatch, malformed_server, real_managed_http
 ):
-    from openprogram.programs.functions.vanilla.web_search.providers import brave
+    from openprogram.programs.functions.vanilla.web.web_search.providers import brave
 
     origin = _fixed_test_origin(
         monkeypatch, "tool.web_search.fixed_api", malformed_server.port
@@ -409,8 +409,8 @@ def test_web_search_malformed_status_hides_signed_url_and_peer_echo(
 def test_brave_rejects_non_2xx_without_leaking_signed_url_or_body(
     monkeypatch, server, real_managed_http, status
 ):
-    from openprogram.programs.functions.vanilla.web_search._http import ProviderHTTPError
-    from openprogram.programs.functions.vanilla.web_search.providers import brave
+    from openprogram.programs.functions.vanilla.web.web_search._http import ProviderHTTPError
+    from openprogram.programs.functions.vanilla.web.web_search.providers import brave
 
     origin = _fixed_test_origin(monkeypatch, "tool.web_search.fixed_api", server.port)
     monkeypatch.setattr(
@@ -435,7 +435,7 @@ def test_brave_rejects_non_2xx_without_leaking_signed_url_or_body(
 def test_image_api_4xx_body_hides_credentials_and_signed_url(
     monkeypatch, server, real_managed_http
 ):
-    from openprogram.programs.functions.vanilla.image_generate.providers import openai
+    from openprogram.programs.functions.vanilla.web.image_generate.providers import openai
 
     origin = _fixed_test_origin(monkeypatch, "tool.image_api.fixed", server.port)
     monkeypatch.setattr(
@@ -595,7 +595,7 @@ def test_web_search_adapters_use_registry_managed_http(
     for name, value in env.items():
         monkeypatch.setenv(name, value)
     module = importlib.import_module(
-        f"openprogram.programs.functions.vanilla.web_search.providers.{module_name}"
+        f"openprogram.programs.functions.vanilla.web.web_search.providers.{module_name}"
     )
 
     getattr(module, class_name)().search("query", num_results=1)
@@ -624,7 +624,7 @@ def test_shared_http_search_adapters_use_registry_managed_http(
     for name, value in env.items():
         monkeypatch.setenv(name, value)
     module = importlib.import_module(
-        f"openprogram.programs.functions.vanilla.web_search.providers.{module_name}"
+        f"openprogram.programs.functions.vanilla.web.web_search.providers.{module_name}"
     )
 
     getattr(module, class_name)().search("query", num_results=1)
@@ -636,32 +636,32 @@ def test_shared_http_search_adapters_use_registry_managed_http(
     ("module_name", "class_name", "method"),
     [
         (
-            "openprogram.programs.functions.vanilla.image_generate.providers.fal",
+            "openprogram.programs.functions.vanilla.web.image_generate.providers.fal",
             "FalProvider",
             "generate",
         ),
         (
-            "openprogram.programs.functions.vanilla.image_generate.providers.gemini",
+            "openprogram.programs.functions.vanilla.web.image_generate.providers.gemini",
             "GeminiImagenProvider",
             "generate",
         ),
         (
-            "openprogram.programs.functions.vanilla.image_generate.providers.openai",
+            "openprogram.programs.functions.vanilla.web.image_generate.providers.openai",
             "OpenAIImageProvider",
             "generate",
         ),
         (
-            "openprogram.programs.functions.vanilla.image_analyze.providers.anthropic",
+            "openprogram.programs.functions.vanilla.web.image_analyze.providers.anthropic",
             "AnthropicVisionProvider",
             "analyze",
         ),
         (
-            "openprogram.programs.functions.vanilla.image_analyze.providers.gemini",
+            "openprogram.programs.functions.vanilla.web.image_analyze.providers.gemini",
             "GeminiVisionProvider",
             "analyze",
         ),
         (
-            "openprogram.programs.functions.vanilla.image_analyze.providers.openai",
+            "openprogram.programs.functions.vanilla.web.image_analyze.providers.openai",
             "OpenAIVisionProvider",
             "analyze",
         ),
@@ -706,7 +706,7 @@ def test_each_fixed_search_adapter_reaches_real_managed_transport(
     monkeypatch, server, real_managed_http, module_name, class_name, constant
 ):
     module = importlib.import_module(
-        f"openprogram.programs.functions.vanilla.web_search.providers.{module_name}"
+        f"openprogram.programs.functions.vanilla.web.web_search.providers.{module_name}"
     )
     origin = f"http://public.test:{server.port}"
     monkeypatch.setattr(module, constant, origin + "/api")
@@ -751,7 +751,7 @@ def test_each_shared_http_search_adapter_reaches_real_managed_transport(
     monkeypatch, server, real_managed_http, module_name, class_name
 ):
     module = importlib.import_module(
-        f"openprogram.programs.functions.vanilla.web_search.providers.{module_name}"
+        f"openprogram.programs.functions.vanilla.web.web_search.providers.{module_name}"
     )
     origin = f"http://public.test:{server.port}"
     monkeypatch.setattr(module, "API_URL", origin + "/api")
@@ -782,27 +782,27 @@ def test_each_shared_http_search_adapter_reaches_real_managed_transport(
     ("module_name", "class_name", "constant"),
     [
         (
-            "openprogram.programs.functions.vanilla.image_generate.providers.gemini",
+            "openprogram.programs.functions.vanilla.web.image_generate.providers.gemini",
             "GeminiImagenProvider",
             "API_BASE",
         ),
         (
-            "openprogram.programs.functions.vanilla.image_generate.providers.openai",
+            "openprogram.programs.functions.vanilla.web.image_generate.providers.openai",
             "OpenAIImageProvider",
             "API_URL",
         ),
         (
-            "openprogram.programs.functions.vanilla.image_analyze.providers.anthropic",
+            "openprogram.programs.functions.vanilla.web.image_analyze.providers.anthropic",
             "AnthropicVisionProvider",
             "API_URL",
         ),
         (
-            "openprogram.programs.functions.vanilla.image_analyze.providers.gemini",
+            "openprogram.programs.functions.vanilla.web.image_analyze.providers.gemini",
             "GeminiVisionProvider",
             "API_BASE",
         ),
         (
-            "openprogram.programs.functions.vanilla.image_analyze.providers.openai",
+            "openprogram.programs.functions.vanilla.web.image_analyze.providers.openai",
             "OpenAIVisionProvider",
             "API_URL",
         ),
@@ -841,7 +841,7 @@ def test_each_image_adapter_reaches_real_managed_transport(
 def test_fal_multihop_adapter_reaches_real_managed_transport(
     monkeypatch, server, real_managed_http
 ):
-    from openprogram.programs.functions.vanilla.image_generate.providers import fal
+    from openprogram.programs.functions.vanilla.web.image_generate.providers import fal
 
     origin = f"http://public.test:{server.port}"
     monkeypatch.setattr(fal, "QUEUE_BASE", origin)
@@ -865,7 +865,7 @@ def test_fal_multihop_adapter_reaches_real_managed_transport(
 def test_configured_search_keeps_credential_on_exact_origin_and_rejects_redirect(
     monkeypatch, server
 ):
-    from openprogram.programs.functions.vanilla.web_search.providers import ollama
+    from openprogram.programs.functions.vanilla.web.web_search.providers import ollama
 
     monkeypatch.setenv("OLLAMA_BASE_URL", f"http://127.0.0.1:{server.port}")
     monkeypatch.setenv("OLLAMA_API_KEY", "TOKEN")
@@ -879,7 +879,7 @@ def test_configured_search_keeps_credential_on_exact_origin_and_rejects_redirect
 
 
 def test_configured_search_passes_explicit_owner_exception(monkeypatch):
-    from openprogram.programs.functions.vanilla.web_search.providers import ollama
+    from openprogram.programs.functions.vanilla.web.web_search.providers import ollama
     from openprogram.security.url_policy import OwnerURLException
 
     calls = []
@@ -905,7 +905,7 @@ def test_configured_search_passes_explicit_owner_exception(monkeypatch):
 def test_fixed_search_rejects_private_redirect_before_second_request(
     monkeypatch, server, real_managed_http
 ):
-    from openprogram.programs.functions.vanilla.web_search.providers import brave
+    from openprogram.programs.functions.vanilla.web.web_search.providers import brave
 
     origin = f"http://public.test:{server.port}"
     monkeypatch.setattr(brave, "API_URL", origin + "/api")
@@ -932,7 +932,7 @@ def test_fixed_search_rejects_private_redirect_before_second_request(
 def test_fixed_search_rejects_nonshipped_origin_before_dns(
     monkeypatch, real_managed_http
 ):
-    from openprogram.programs.functions.vanilla.web_search.providers import brave
+    from openprogram.programs.functions.vanilla.web.web_search.providers import brave
 
     monkeypatch.setattr(brave, "API_URL", "https://other.test/api")
     monkeypatch.setenv("BRAVE_API_KEY", "TOKEN")

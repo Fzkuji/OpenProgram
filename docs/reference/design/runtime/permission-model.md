@@ -352,7 +352,7 @@ def _risk_level(tool_name: str, args: dict) -> str:
 
 `_approval_detail` (`internals/_approval.py:232-242`, producing "tool name + full arguments, head and tail truncated when too long") gives the approval card a readable summary (the first version does not highlight dangerous tokens). The `question.asked` frame from `_on_asked` (inside `await_user_approval`) carries `tool`/`args`/`risk_level`, which the frontend uses for coloring (§4.2).
 
-**Path safety** (`openprogram/programs/functions/vanilla/file_safety.py`):
+**Path safety** (`openprogram/programs/functions/vanilla/files/file_safety.py`):
 
 ```python
 # file_safety.py:20-40, 63
@@ -611,7 +611,7 @@ Attended mode lives in `openprogram/agent/attended.py`. The core (`attended.py:1
 |---|---|
 | Decision chain `_gated_execute` / `_match_rule` / `await_user_approval` / `_persist_always_allow_rule` / `_risk_level` | `openprogram/agent/internals/_approval.py` |
 | Rule string parsing, matching, multi-layer merging | `openprogram/programs/permission_rule.py` (`parse_rule` / `parse_command` / `pattern_matches` / `load_merged_rules`) |
-| Path safety / dangerous files and directories / Windows bypass | `openprogram/programs/functions/vanilla/file_safety.py` |
+| Path safety / dangerous files and directories / Windows bypass | `openprogram/programs/functions/vanilla/files/file_safety.py` |
 | gate hard block | `openprogram/events/tool_gate.py` |
 | Permission mode legal values + normalization + SessionRunConfig fields | `openprogram/agent/session_config.py` |
 | `PermissionMode` type + TurnRequest fields and defaults | `openprogram/agent/dispatcher/types.py` |

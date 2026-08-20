@@ -72,13 +72,6 @@ export function useFnFormSubmit({
       return;
     }
     const fn = fnFormFunction;
-    const workdirMode = fn.workdir_mode ?? "optional";
-    const wd = fnForm.workdir.trim();
-    if (workdirMode === "required" && !wd) {
-      fnForm.setError("__workdir");
-      return;
-    }
-
     // Build typed kwargs for the new POST /api/function/{name} endpoint.
     // Track A removed the /run text-command path entirely — fn-form
     // submits now talk to the dispatcher's forced tool-call entry instead
@@ -109,8 +102,13 @@ export function useFnFormSubmit({
     }
 
     const dispatchSessionId = resolveFnFormSessionId(currentSessionId, activeChatKey);
+    const dispatchStore = useSessionStore.getState();
+    const pendingProjectKey = dispatchSessionId ?? activeChatKey;
+    const pendingProjectId = pendingProjectKey
+      ? dispatchStore.pendingProjectsByChat[pendingProjectKey]
+      : undefined;
     const body: Record<string, unknown> = { kwargs };
-    if (workdirMode !== "hidden" && wd) body.work_dir = wd;
+    if (pendingProjectId) body.project_id = pendingProjectId;
     if (dispatchSessionId) body.session_id = dispatchSessionId;
     // "修改后重新运行"：以原调用为锚点 fork 兄弟分支（旧运行保留在
     // ◀ N/M ▶ 切换里），不是在对话尾部追加一次新调用。
@@ -190,21 +188,21 @@ export function useFnFormSubmit({
           // selected on the provisional tab here, after the endpoint has
           // created/confirmed the session, and consume only that tab's entry.
           const store = useSessionStore.getState();
-          const pendingProjectKey =
-            dispatchSessionId && store.pendingProjectsByChat[dispatchSessionId]
-              ? dispatchSessionId
+          const confirmedProjectKey =
+            pendingProjectKey && store.pendingProjectsByChat[pendingProjectKey]
+              ? pendingProjectKey
               : sid;
-          const pendingProjectId =
-            store.pendingProjectsByChat[pendingProjectKey];
+          const confirmedProjectId =
+            store.pendingProjectsByChat[confirmedProjectKey];
           if (
-            pendingProjectId
+            confirmedProjectId
             && send({
               action: "set_session_project",
               session_id: sid,
-              project_id: pendingProjectId,
+              project_id: confirmedProjectId,
             })
           ) {
-            store.takePendingProject(pendingProjectKey);
+            store.takePendingProject(confirmedProjectKey);
             window.dispatchEvent(new Event("project-changed"));
           }
           const shouldActivate = sessionAckIsActive(sid);

@@ -55,6 +55,8 @@ openprogram/programs/functions/agentic/*
 !openprogram/programs/functions/agentic/*.py
 openprogram/programs/applications/*
 !openprogram/programs/applications/__init__.py
+openprogram/programs/workflows/*
+!openprogram/programs/workflows/__init__.py
 
 # Local OpenProgram runtime state
 .openprogram/

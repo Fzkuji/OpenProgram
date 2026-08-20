@@ -173,7 +173,7 @@ def test_web_use_captures_and_controls_a_hidden_internal_page():
         pytest.skip("set OPENPROGRAM_TEST_LIVE=1 to inspect the installed App")
 
     playwright = pytest.importorskip("playwright.sync_api")
-    from openprogram.programs.functions.vanilla.browser._chrome_bootstrap import (
+    from openprogram.programs.functions.vanilla.web.browser._chrome_bootstrap import (
         desktop_app_ws_url,
     )
 

@@ -25,21 +25,17 @@ runtime-block 包装。
 ```json
 {
   "session_id": "...",
-  "kwargs": { "task": "..." },
-  "work_dir": "/abs/path"
+  "project_id": "...",
+  "kwargs": { "task": "..." }
 }
 ```
 
 `session_id` 是可选的。若省略，服务端会创建一个会话。
-
-`work_dir` 是可选的。服务端按以下顺序解析它：
-
-1. 显式的 `work_dir`、`_workdir` 或 `workdir`
-2. 该会话上次为此函数使用的 workdir
-3. 仓库根目录
+已有会话可以省略 `project_id`；新会话若存在待绑定的 Project，则首次函数调用
+必须携带它。执行目录使用选中的 Project，未选择时回落到配置的默认 Project。
 
 为兼容起见，较旧的调用方可能在顶层直接提交扁平的函数参数。服务端会把这些字段
-转换成 `kwargs`，并忽略 `session_id`、`work_dir` 等控制键。
+转换成 `kwargs`，并忽略 `session_id`、`project_id` 等控制键。
 
 响应为：
 

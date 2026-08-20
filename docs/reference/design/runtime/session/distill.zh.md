@@ -9,7 +9,7 @@
 | 部件 | 位置 | 做什么 |
 |---|---|---|
 | 转写器 | `openprogram/store/session/transcript.py` | `render_read_conversation()`——把会话的一条分支渲染成 LLM 可读的纯文本 |
-| 模型可调工具 | `openprogram/programs/functions/vanilla/read_conversation/` | `read_conversation`——转写器的 `@function` 封装，缺省读当前会话 |
+| 模型可调工具 | `openprogram/programs/functions/vanilla/knowledge/read_conversation/` | `read_conversation`——转写器的 `@function` 封装，缺省读当前会话 |
 | 产品文档 | `docs/capabilities/distill.md` | 面向用户的说明 |
 
 ## 转写器

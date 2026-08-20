@@ -1,201 +1,321 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>llm 与 agent：编排层的两个原语</title>
+<title>OpenProgram Agent 执行统一与 Self Programming Workflow 重构计划</title>
 <style>
-  :root { color-scheme: dark; }
-  body { background:#12110b; color:#bdb9a6; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
-         max-width:1000px; margin:0 auto; padding:40px 24px 80px; line-height:1.75; }
-  h1 { color:#e8e4d4; font-size:26px; letter-spacing:1px; }
-  h2 { color:#e8e4d4; font-size:19px; margin-top:44px; border-bottom:1px solid #2e2c20; padding-bottom:8px; }
-  p.lead { color:#8a8675; }
-  .card { background:#181712; border:1px solid #2e2c20; border-radius:10px; padding:18px 20px; margin:16px 0; }
-  figure { margin:20px 0; }
-  figcaption { color:#8a8675; font-size:13px; margin-top:8px; }
-  svg { max-width:100%; height:auto; display:block; }
-  code { background:#221f18; padding:1px 6px; border-radius:4px; color:#d9d4bf; font-size:0.92em; }
-  pre { background:#181712; border:1px solid #2e2c20; border-radius:10px; padding:16px 18px; overflow-x:auto;
-        font-size:13px; line-height:1.6; }
-  pre code { background:none; padding:0; }
-  table { border-collapse:collapse; width:100%; font-size:14px; }
-  th,td { border:1px solid #2e2c20; padding:8px 12px; text-align:left; }
-  th { color:#e8e4d4; background:#181712; }
+  :root { color-scheme: dark; --bg:#111214; --panel:#17191c; --panel-2:#1d2024; --line:#30343a; --line-strong:#454b54; --text:#e8e9eb; --muted:#a3a7ae; --faint:#747981; --orange:#ee7d55; --orange-soft:rgba(238,125,85,.12); --cyan:#4bc6d8; --cyan-soft:rgba(75,198,216,.11); --green:#67c78a; --yellow:#d8b35d; --red:#ef6b62; --sidebar:238px; }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; font-size:15px; line-height:1.65; }
+  a { color:inherit; }
+  code,pre,.mono { font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace; }
+  code { color:#f0b29d; }
+  .layout { min-height:100vh; }
+  .sidebar { position:fixed; inset:0 auto 0 0; width:var(--sidebar); padding:26px 18px; border-right:1px solid var(--line); background:#131518; overflow-y:auto; }
+  .brand { font-size:13px; color:var(--faint); letter-spacing:.08em; text-transform:uppercase; }
+  .doc-name { margin:8px 0 24px; font-size:18px; font-weight:650; line-height:1.35; }
+  .nav-label { margin:22px 10px 8px; color:var(--faint); font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
+  nav a { display:block; padding:7px 10px; border-radius:7px; color:var(--muted); text-decoration:none; font-size:13px; }
+  nav a:hover { color:var(--text); background:var(--panel-2); }
+  .main { margin-left:var(--sidebar); }
+  .hero { padding:68px clamp(28px,6vw,88px) 52px; border-bottom:1px solid var(--line); background:radial-gradient(circle at 78% 22%,rgba(75,198,216,.09),transparent 30%),radial-gradient(circle at 58% 0%,rgba(238,125,85,.08),transparent 32%); }
+  .eyebrow { color:var(--orange); font-size:12px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
+  h1 { max-width:980px; margin:12px 0 18px; font-size:clamp(32px,5vw,58px); line-height:1.08; letter-spacing:-.035em; }
+  .lead { max-width:900px; margin:0; color:var(--muted); font-size:18px; }
+  .meta { display:flex; flex-wrap:wrap; gap:9px; margin-top:28px; }
+  .pill { padding:5px 10px; border:1px solid var(--line); border-radius:999px; color:var(--muted); font-size:12px; background:rgba(17,18,20,.55); }
+  .pill.target { color:var(--cyan); border-color:rgba(75,198,216,.35); background:var(--cyan-soft); }
+  .content { max-width:1240px; padding:30px clamp(28px,6vw,88px) 100px; }
+  section { scroll-margin-top:22px; padding-top:35px; }
+  h2 { margin:0 0 10px; font-size:25px; letter-spacing:-.02em; }
+  h3 { margin:28px 0 9px; font-size:17px; }
+  p { margin:9px 0 14px; color:var(--muted); }
+  .decision { display:grid; grid-template-columns:1.1fr .9fr; gap:14px; margin-top:24px; }
+  .card { border:1px solid var(--line); border-radius:12px; background:var(--panel); padding:18px 20px; }
+  .card h3 { margin-top:0; }
+  .decision-main { border-color:rgba(238,125,85,.45); background:linear-gradient(135deg,var(--orange-soft),var(--panel) 48%); }
+  .decision-main .big { margin:0; color:var(--text); font-size:20px; font-weight:650; }
+  .status-grid,.phase-grid,.brief-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:16px; }
+  .status { min-height:124px; }
+  .status .tag { display:inline-block; margin-bottom:9px; font-size:11px; font-weight:750; letter-spacing:.08em; text-transform:uppercase; }
+  .tag.now { color:var(--yellow); } .tag.target { color:var(--cyan); } .tag.keep { color:var(--green); } .tag.remove { color:var(--red); }
+  .status strong { display:block; margin-bottom:5px; font-size:16px; }
+  .status p { margin:0; font-size:13px; }
+  .diagram { margin-top:18px; padding:20px; border:1px solid var(--line); border-radius:14px; background:#141619; overflow-x:auto; }
+  svg { display:block; width:100%; min-width:760px; height:auto; }
+  .caption { margin:10px 2px 0; color:var(--faint); font-size:12px; }
+  table { width:100%; border-collapse:separate; border-spacing:0; margin-top:16px; border:1px solid var(--line); border-radius:12px; overflow:hidden; font-size:13px; }
+  th,td { padding:12px 14px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+  th { color:var(--text); background:var(--panel-2); font-weight:650; }
+  td { color:var(--muted); background:var(--panel); }
+  tr:last-child td { border-bottom:0; }
+  td:first-child,th:first-child { width:20%; }
+  pre { margin:15px 0; padding:18px 20px; overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:#0e1012; color:#d6d9de; line-height:1.6; font-size:13px; }
+  pre code { color:inherit; }
+  .callout { margin:16px 0; padding:14px 16px; border-left:3px solid var(--cyan); background:var(--cyan-soft); color:var(--muted); }
+  .callout.warn { border-left-color:var(--yellow); background:rgba(216,179,93,.08); }
+  .phase { position:relative; padding-left:48px; min-height:158px; }
+  .phase-no { position:absolute; left:16px; top:16px; color:var(--orange); font:700 14px ui-monospace,monospace; }
+  .phase h3 { margin-top:0; }
+  .phase ul,.brief ul,.checks { margin:8px 0 0; padding-left:18px; color:var(--muted); }
+  li { margin:5px 0; }
+  .phase .gate { margin-top:12px; color:var(--green); font-size:12px; }
+  .source-list a { color:var(--cyan); text-decoration-thickness:1px; text-underline-offset:3px; }
+  .scope-list { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px; }
+  .scope-list .card { padding:15px 17px; }
+  .scope-list strong { display:block; margin-bottom:5px; }
+  .check { color:var(--green); } .cross { color:var(--red); }
+  .footer { margin-top:52px; padding-top:22px; border-top:1px solid var(--line); color:var(--faint); font-size:12px; }
+  @media (max-width:900px) { :root{--sidebar:0px}.sidebar{display:none}.main{margin-left:0}.decision,.status-grid,.phase-grid,.brief-grid,.scope-list{grid-template-columns:1fr}.hero{padding-top:44px} }
 </style>
 </head>
 <body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">OpenProgram Design</div>
+    <div class="doc-name">Agent 执行统一与 Workflow 重构</div>
+    <nav aria-label="文档目录">
+      <div class="nav-label">Decision</div>
+      <a href="#decision">结论与边界</a><a href="#current">当前实现</a><a href="#architecture">目标架构</a>
+      <div class="nav-label">Contracts</div>
+      <a href="#primitives">四个运行原语</a><a href="#workflow">Self Programming Workflow</a><a href="#observability">DAG 与聊天显示</a><a href="#errors">失败与恢复</a>
+      <div class="nav-label">Execution</div>
+      <a href="#migration">迁移阶段</a><a href="#compatibility">兼容与删除项</a><a href="#tests">验收矩阵</a><a href="#comparison">框架对照</a><a href="#status">实现状态</a>
+    </nav>
+  </aside>
 
-<h1>llm 与 agent：编排层的两个原语</h1>
-<p class="lead">编排层写两种意图：要一段模型输出，和要一个自主干活的工作者。两种意图两个名字：
-<code>llm()</code> 是一次模型调用，<code>agent()</code> 是带工具循环的完整 turn。
-agent 就是循环里的 llm：它的每一轮说话走的是同一个单次调用层。
-<code>runtime.exec</code> 退回基础设施层（provider 传输、嵌入、测试），编排与业务代码不再直接使用它。</p>
+  <main class="main">
+    <header class="hero">
+      <div class="eyebrow">Refactor Plan · Design Only</div>
+      <h1>统一 Agent 执行语义，重构 Self Programming Workflow</h1>
+      <p class="lead">Programs 内只使用 <code>openprogram.agentic_programming.agent()</code>。独立会话、后台 Job 与 sub-agent 分支继续由内部适配层负责，但两者最终必须进入同一个 Agent loop，不再形成两套规划、工具调用、模型覆盖和错误处理语义。</p>
+      <div class="meta"><span class="pill target">目标：一个公共 Agent API</span><span class="pill">范围：Runtime / Workflow / DAG / Chat UI</span><span class="pill">迁移：分阶段，可回滚</span><span class="pill">状态：尚未实施</span></div>
+    </header>
 
-<h2>1. 两个原语，一个底座</h2>
-<figure>
-<svg viewBox="0 0 980 470" role="img" aria-label="编排代码调用两个原语。llm() 是一次模型请求：不建 session 分支、不进工具循环，直接经单次调用层返回文本，DAG 记为所在函数轨迹里的一次调用。agent() 是完整 turn：建 session 分支，进入循环，循环体内每轮说话仍是一次单次调用，工具结果回填后继续，直到模型不再要工具，DAG 记为独立分支。两者共用底下的单次调用层（Runtime）：provider 适配、认证、重试、usage 统计。">
-  <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-    <path d="M0,0 L10,5 L0,10 z" fill="#8a8675"/></marker></defs>
-  <rect x="0" y="0" width="980" height="470" fill="#12110b"/>
+    <div class="content">
+      <section id="decision">
+        <h2>1. 结论与边界</h2>
+        <p>这次重构不新增第三个 Agent 抽象，也不把 session Job API 包装成另一个公共函数。公共语义保持在 <code>agent()</code>；持久化和分支属于运行环境，不属于 Workflow 编写接口。</p>
+        <div class="decision">
+          <div class="card decision-main"><h3>唯一公共入口</h3><p class="big"><code>agent()</code> 是 Programs、Workflows 和 Applications 内唯一的自主工具循环入口。</p><p>它在当前 <code>@agentic_function</code> 的 Runtime 中运行，直接形成父子 Call 关系。模型选择、工具范围、结构化输出、超时和取消都由这一份合同定义。</p></div>
+          <div class="card"><h3>内部 session 适配</h3><p><code>run_agent_turn()</code> 只服务于 Chat、CLI、后台 Job 和真正独立的 sub-agent。它负责创建会话分支、抢占 worker、恢复 Job 和移动 session head，不得被 Programs 直接导入。</p></div>
+        </div>
+        <div class="scope-list"><div class="card"><strong class="check">纳入本次重构</strong><span>Agent loop 统一、Workflow 选择/创建/修复、DAG 归属、结构化输出、错误传播、迁移测试和 UI 展示合同。</span></div><div class="card"><strong class="cross">不在本次重构中新增</strong><span>新的 Workflow DSL、新的图执行引擎、第二套 Agent profile、额外的持久化数据库、隐藏 chain-of-thought 展示。</span></div></div>
+      </section>
 
-  <rect x="330" y="20" width="320" height="44" rx="10" fill="#181712" stroke="#e8e4d4" stroke-width="1.2"/>
-  <text x="490" y="47" fill="#e8e4d4" font-size="14" text-anchor="middle">编排代码（agentics / workflow / harness）</text>
+      <section id="current">
+        <h2>2. 当前实现：已核对的事实</h2>
+        <div class="status-grid">
+          <div class="card status"><span class="tag now">Current</span><strong><code>agent()</code> 已使用当前 Runtime</strong><p><code>openprogram/agentic_programming/agent.py</code> 调用 <code>runtime.exec(..., execution_kind="agent")</code>，因此本来就适合在 Workflow DAG 内运行。</p></div>
+          <div class="card status"><span class="tag now">Current</span><strong><code>run_agent_turn()</code> 是持久 Job 入口</strong><p>它创建或恢复 session Job，处理 worker claim、branch、head、archive、chain depth 等会话生命周期。</p></div>
+          <div class="card status"><span class="tag remove">Mismatch</span><strong><code>agentic_workflow</code> 规划过程走错层</strong><p>选择和编写分别经 <code>_run_planner_turn() → run_agent_turn()</code> 执行，内部规划因此被记录成独立 session 任务，而不是当前 Workflow 的 Agent Call。</p></div>
+          <div class="card status"><span class="tag remove">Missing</span><strong>公共 <code>agent()</code> 缺少结构化结果能力</strong><p>当前 Runtime 已支持 <code>response_format</code>，但公共 <code>agent()</code> 尚未透传。规划器因而绕到内部 API 获取 JSON 结果。</p></div>
+        </div>
+        <table><thead><tr><th>位置</th><th>当前职责</th><th>问题</th><th>目标</th></tr></thead><tbody>
+          <tr><td><code>agentic_programming.agent</code></td><td>当前 Runtime 内工具循环</td><td>参数能力不完整，DAG 标签不够明确</td><td>扩展为唯一公共 Agent 合同</td></tr>
+          <tr><td><code>agent.sub_agent_run</code></td><td>会话分支和 durable Job</td><td>被 Workflow 内部规划直接调用</td><td>只保留为内部生命周期适配层</td></tr>
+          <tr><td><code>agentic_workflow</code></td><td>搜索、选择、创建、修复、执行 Workflow</td><td>选择与编写分成隐藏 session turn；可观测性断开</td><td>一个可见的编排 Agent，必要时追加可见修复 Agent</td></tr>
+          <tr><td><code>Runtime.exec</code></td><td>统一 LLM/工具循环底层</td><td>公共参数未完全上浮</td><td>继续作为唯一 Agent loop 内核，不公开 session 语义</td></tr>
+        </tbody></table>
+      </section>
 
-  <line x1="410" y1="64" x2="240" y2="112" stroke="#8a8675" marker-end="url(#ar)"/>
-  <text x="290" y="88" fill="#8a8675" font-size="11">要一段输出</text>
-  <line x1="570" y1="64" x2="740" y2="112" stroke="#8a8675" marker-end="url(#ar)"/>
-  <text x="640" y="88" fill="#8a8675" font-size="11">要一个工作者</text>
+      <section id="architecture">
+        <h2>3. 目标架构：两个适配入口，一个执行内核</h2>
+        <div class="diagram">
+          <svg viewBox="0 0 1120 560" role="img" aria-label="目标 Agent 架构。Programs 和 Workflows 经公共 agent 进入当前 Runtime。Chat、CLI 和 sub-agent 经内部 run_agent_turn 创建 Job 与 session，再进入同一个 Agent loop。两条路径共用 profile、tool resolution、provider、错误和 DAG 事件。">
+            <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#747981"/></marker><filter id="shadow"><feDropShadow dx="0" dy="7" stdDeviation="10" flood-opacity=".22"/></filter></defs>
+            <rect x="24" y="22" width="500" height="118" rx="14" fill="#17191c" stroke="#ee7d55"/><text x="52" y="55" fill="#ee7d55" font-size="12" font-weight="700">PROGRAM EXECUTION</text><text x="52" y="86" fill="#e8e9eb" font-size="19" font-weight="650">Workflow / @agentic_function / Application</text><text x="52" y="113" fill="#a3a7ae" font-size="13">调用 public agent()；沿用当前 Runtime 和父 Call</text>
+            <rect x="596" y="22" width="500" height="118" rx="14" fill="#17191c" stroke="#4bc6d8"/><text x="624" y="55" fill="#4bc6d8" font-size="12" font-weight="700">SESSION EXECUTION</text><text x="624" y="86" fill="#e8e9eb" font-size="19" font-weight="650">Chat / CLI / sub-agent / background Job</text><text x="624" y="113" fill="#a3a7ae" font-size="13">调用 internal run_agent_turn()；管理 session 与 durable Job</text>
+            <path d="M274 140V196" stroke="#747981" stroke-width="2" marker-end="url(#arrow)"/><path d="M846 140V196" stroke="#747981" stroke-width="2" marker-end="url(#arrow)"/>
+            <rect x="94" y="204" width="360" height="92" rx="12" fill="#1d2024" stroke="#ee7d55"/><text x="274" y="238" text-anchor="middle" fill="#e8e9eb" font-size="17" font-weight="650">public agent()</text><text x="274" y="266" text-anchor="middle" fill="#a3a7ae" font-size="12">prompt · tools · profile · response format · limits · label</text>
+            <rect x="666" y="204" width="360" height="92" rx="12" fill="#1d2024" stroke="#4bc6d8"/><text x="846" y="238" text-anchor="middle" fill="#e8e9eb" font-size="17" font-weight="650">internal run_agent_turn()</text><text x="846" y="266" text-anchor="middle" fill="#a3a7ae" font-size="12">session · branch · Job · recovery · head · archive</text>
+            <path d="M274 296V348H560V374" fill="none" stroke="#747981" stroke-width="2" marker-end="url(#arrow)"/><path d="M846 296V348H560V374" fill="none" stroke="#747981" stroke-width="2" marker-end="url(#arrow)"/>
+            <rect x="180" y="382" width="760" height="142" rx="16" fill="#202328" stroke="#454b54" filter="url(#shadow)"/><text x="560" y="418" text-anchor="middle" fill="#67c78a" font-size="12" font-weight="700">ONE AGENT LOOP KERNEL</text><text x="560" y="452" text-anchor="middle" fill="#e8e9eb" font-size="20" font-weight="650">Runtime.exec → AgentSession → agent_loop → provider stream</text><text x="560" y="483" text-anchor="middle" fill="#a3a7ae" font-size="13">同一 profile resolver · tool resolver · retry/cancel/timeout · usage · error normalization · Call events</text><text x="560" y="506" text-anchor="middle" fill="#747981" font-size="12">不新增第二个 executor 类；复用现有 Runtime 和 dispatcher 执行材料</text>
+          </svg>
+        </div>
+        <p class="caption">差异只存在于执行前后的生命周期：Program 路径复用当前 Runtime；session 路径先创建 durable Job。模型循环、工具选择和错误语义保持相同。</p>
+      </section>
 
-  <rect x="70" y="116" width="340" height="128" rx="10" fill="#181712" stroke="#5aad4e" stroke-width="1.5"/>
-  <text x="240" y="142" fill="#e8e4d4" font-size="14" text-anchor="middle">llm(prompt, model=, effort=)</text>
-  <text x="240" y="166" fill="#8a8675" font-size="11" text-anchor="middle">一次模型请求，返回文本（或结构化结果）</text>
-  <text x="240" y="184" fill="#8a8675" font-size="11" text-anchor="middle">prompt：str 或 content blocks（可带图）</text>
-  <text x="240" y="202" fill="#8a8675" font-size="11" text-anchor="middle">不建 session 分支，不进工具循环</text>
-  <text x="240" y="226" fill="#8a8675" font-size="11" text-anchor="middle">DAG：所在函数轨迹里的一次 ModelCall</text>
+      <section id="primitives">
+        <h2>4. 四个运行原语的固定层级</h2>
+        <p>Workflow 位于最高层，可以直接选择 <code>llm()</code>、<code>agent()</code>、<code>goal()</code> 或普通 Python Functions。<code>goal()</code> 基于 <code>agent()</code>；<code>agent()</code> 基于 <code>llm()</code>。这是依赖关系，不要求每个 Workflow 都经过全部层级。</p>
+        <div class="diagram"><svg viewBox="0 0 1120 380" role="img" aria-label="Workflow 作为最高层，可直接调用普通函数、llm、agent 或 goal。goal 依赖 agent，agent 依赖 llm，llm 依赖 provider。">
+          <defs><marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#747981"/></marker></defs>
+          <rect x="340" y="18" width="440" height="72" rx="12" fill="#241d1b" stroke="#ee7d55"/><text x="560" y="49" text-anchor="middle" fill="#e8e9eb" font-size="19" font-weight="650">Workflow / Application</text><text x="560" y="72" text-anchor="middle" fill="#a3a7ae" font-size="12">按任务需要选择下列任意能力</text>
+          <rect x="48" y="150" width="210" height="70" rx="11" fill="#17191c" stroke="#454b54"/><text x="153" y="180" text-anchor="middle" fill="#e8e9eb" font-size="16">Python Functions</text><text x="153" y="202" text-anchor="middle" fill="#747981" font-size="11">确定性执行</text>
+          <rect x="306" y="150" width="210" height="70" rx="11" fill="#17191c" stroke="#67c78a"/><text x="411" y="180" text-anchor="middle" fill="#e8e9eb" font-size="16">llm()</text><text x="411" y="202" text-anchor="middle" fill="#747981" font-size="11">一次模型调用</text>
+          <rect x="564" y="150" width="210" height="70" rx="11" fill="#17191c" stroke="#4bc6d8"/><text x="669" y="180" text-anchor="middle" fill="#e8e9eb" font-size="16">agent()</text><text x="669" y="202" text-anchor="middle" fill="#747981" font-size="11">自主工具循环</text>
+          <rect x="822" y="150" width="210" height="70" rx="11" fill="#17191c" stroke="#d8b35d"/><text x="927" y="180" text-anchor="middle" fill="#e8e9eb" font-size="16">goal()</text><text x="927" y="202" text-anchor="middle" fill="#747981" font-size="11">Agent 执行 + LLM 判断</text>
+          <path d="M560 90V118H153V150M560 118H411V150M560 118H669V150M560 118H927V150" fill="none" stroke="#747981" stroke-width="1.6" marker-end="url(#arrow2)"/><path d="M927 220V270H669V220" fill="none" stroke="#d8b35d" stroke-width="1.6" marker-end="url(#arrow2)"/><path d="M669 220V316H411V220" fill="none" stroke="#4bc6d8" stroke-width="1.6" marker-end="url(#arrow2)"/>
+          <text x="798" y="263" fill="#a3a7ae" font-size="11">goal 内部调用 agent</text><text x="514" y="309" fill="#a3a7ae" font-size="11">agent 的每轮调用 llm/provider</text>
+        </svg></div>
+        <table><thead><tr><th>原语</th><th>公开语义</th><th>是否持久 session</th><th>DAG 记录</th></tr></thead><tbody>
+          <tr><td><code>llm()</code></td><td>恰好一次逻辑模型请求；允许结构化输出</td><td>否，继承当前 Runtime</td><td>一个 LLM Call</td></tr>
+          <tr><td><code>agent()</code></td><td>同一任务内的模型—工具循环；返回最终文本或结构化结果</td><td>否，继承当前 Runtime</td><td>一个 Agent Call，内部含 LLM 与 Function Calls</td></tr>
+          <tr><td><code>goal()</code></td><td>用 Agent 尝试，再用 LLM 判断是否满足目标；可重复</td><td>否，继承当前 Runtime</td><td>Goal → Agent → LLM judge</td></tr>
+          <tr><td><code>run_agent_turn()</code></td><td>内部会话生命周期适配，不是 Program 原语</td><td>是</td><td>session/branch 关联的独立 Agent Call</td></tr>
+        </tbody></table>
+        <h3>目标公开签名</h3>
+        <pre><code>def agent(
+    prompt: str | list[dict],
+    *,
+    description: str = "",
+    agent_id: str = "",
+    model: str = "",
+    effort: str = "",
+    tools: Sequence[str] | None = None,
+    response_format: type | dict | None = None,
+    max_iterations: int = 20,
+    timeout_s: float | None = None,
+) -> str | dict:
+    ...</code></pre>
+        <p><code>description</code> 只影响可见标签和 Call metadata；<code>agent_id</code> 复用 Agents 页面已有 profile resolver；显式 <code>model</code>/<code>tools</code> 覆盖 profile 对应字段。公开签名不加入 <code>session_id</code>、<code>branch_from</code>、<code>advance_head</code>、<code>archive_when_done</code> 或 <code>run_in_background</code>。</p>
+      </section>
 
-  <rect x="570" y="116" width="340" height="200" rx="10" fill="#181712" stroke="#d4843a" stroke-width="1.5"/>
-  <text x="740" y="142" fill="#e8e4d4" font-size="14" text-anchor="middle">agent(prompt, description=, agent_id=)</text>
-  <text x="740" y="164" fill="#8a8675" font-size="11" text-anchor="middle">session 分支 + 资源限额，DAG：独立分支</text>
-  <rect x="600" y="178" width="280" height="118" rx="8" fill="#12110b" stroke="#3a382d"/>
-  <text x="740" y="200" fill="#bdb9a6" font-size="12" text-anchor="middle">循环体（agent = loop 里的 llm）</text>
-  <rect x="622" y="212" width="146" height="30" rx="6" fill="#181712" stroke="#5aad4e"/>
-  <text x="695" y="232" fill="#bdb9a6" font-size="11" text-anchor="middle">一次单次调用（说话）</text>
-  <rect x="622" y="254" width="146" height="30" rx="6" fill="#181712" stroke="#3a382d"/>
-  <text x="695" y="274" fill="#8a8675" font-size="11" text-anchor="middle">执行工具，回填结果</text>
-  <path d="M768,227 L826,227 L826,269 L768,269" stroke="#8a8675" fill="none" marker-end="url(#ar)"/>
-  <path d="M826,254 L826,227" stroke="#8a8675" fill="none"/>
-  <text x="838" y="252" fill="#8a8675" font-size="10">要工具</text>
-  <text x="838" y="266" fill="#8a8675" font-size="10">就继续</text>
+      <section id="workflow">
+        <h2>5. Self Programming Workflow 的目标流程</h2>
+        <p><code>agentic_workflow(task)</code> 同时负责查找、复用、创建、修订和执行 Workflow。它不是“只写 Workflow”的函数，也不是“只运行 Workflow”的函数。选择、创建和修复必须在同一个顶层 Call 下可见。</p>
+        <div class="diagram"><svg viewBox="0 0 1120 660" role="img" aria-label="agentic_workflow 的目标流程：输入任务后，一个编排 Agent 检索现有 Workflow 并决定复用、修订或创建；确定性验证器校验 Python package 和 agentic_function 导出；发布后执行 Workflow；验证失败时进入有界修复 Agent；最后由 summary function 生成过程总结。">
+          <defs><marker id="arrow3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#747981"/></marker></defs>
+          <rect x="430" y="18" width="260" height="58" rx="11" fill="#17191c" stroke="#454b54"/><text x="560" y="52" text-anchor="middle" fill="#e8e9eb" font-size="16">agentic_workflow(task)</text><path d="M560 76V112" stroke="#747981" stroke-width="2" marker-end="url(#arrow3)"/>
+          <rect x="260" y="120" width="600" height="118" rx="14" fill="#241d1b" stroke="#ee7d55"/><text x="288" y="151" fill="#ee7d55" font-size="12" font-weight="700">AGENT · SELECT OR AUTHOR WORKFLOW</text><text x="288" y="181" fill="#e8e9eb" font-size="16">搜索 Programs → 阅读候选 → 选择 reuse / revise / create</text><text x="288" y="209" fill="#a3a7ae" font-size="12">需要写代码时直接使用受限文件工具；不再先返回 selection JSON 再启动第二个 session Agent</text>
+          <path d="M560 238V274" stroke="#747981" stroke-width="2" marker-end="url(#arrow3)"/><rect x="360" y="282" width="400" height="76" rx="12" fill="#17191c" stroke="#67c78a"/><text x="560" y="313" text-anchor="middle" fill="#e8e9eb" font-size="16">Deterministic validator + publisher</text><text x="560" y="338" text-anchor="middle" fill="#a3a7ae" font-size="12">package · @agentic_function export · imports · policy · source revision</text>
+          <path d="M360 320H210V402" fill="none" stroke="#ef6b62" stroke-width="1.8" marker-end="url(#arrow3)"/><text x="225" y="311" fill="#ef6b62" font-size="11">validation failed</text>
+          <rect x="54" y="410" width="312" height="94" rx="12" fill="#21191a" stroke="#ef6b62"/><text x="78" y="440" fill="#ef6b62" font-size="12" font-weight="700">AGENT · BOUNDED REPAIR</text><text x="78" y="468" fill="#e8e9eb" font-size="14">输入明确诊断，修复同一 candidate</text><text x="78" y="490" fill="#a3a7ae" font-size="11">每轮都是当前 DAG 内可见的 public agent()</text><path d="M210 410V386H560V358" fill="none" stroke="#ef6b62" stroke-width="1.5" marker-end="url(#arrow3)"/>
+          <path d="M760 320H930V402" fill="none" stroke="#67c78a" stroke-width="1.8" marker-end="url(#arrow3)"/><text x="805" y="311" fill="#67c78a" font-size="11">validated</text>
+          <rect x="754" y="410" width="312" height="94" rx="12" fill="#18201c" stroke="#67c78a"/><text x="778" y="440" fill="#67c78a" font-size="12" font-weight="700">EXECUTE SELECTED WORKFLOW</text><text x="778" y="468" fill="#e8e9eb" font-size="14">直接调用已发布 @agentic_function</text><text x="778" y="490" fill="#a3a7ae" font-size="11">内部 llm / agent / goal / Functions 全部进入同一 DAG</text>
+          <path d="M910 504V548H560" fill="none" stroke="#747981" stroke-width="1.8" marker-end="url(#arrow3)"/><rect x="360" y="556" width="400" height="76" rx="12" fill="#17191c" stroke="#4bc6d8"/><text x="560" y="587" text-anchor="middle" fill="#e8e9eb" font-size="16">summary() · Workflow handoff</text><text x="560" y="612" text-anchor="middle" fill="#a3a7ae" font-size="12">2–3 句概述 + 关键步骤 + 完成状态；结果文件留在项目目录</text>
+        </svg></div>
+        <div class="callout">编排 Agent 可以复用已有 Workflow，也可以创建多文件 Python package。确定性 validator 决定发布结果，不能仅依据模型文字中的“已完成”判断成功。</div>
+        <table><thead><tr><th>阶段</th><th>允许能力</th><th>明确输出</th><th>可观测性</th></tr></thead><tbody>
+          <tr><td>选择或编写</td><td>Programs 搜索、读取 Workflow、受限代码编辑、必要的验证命令</td><td>选中的 project_id，或完整 candidate 目录</td><td>一个 Agent 节点及其真实工具调用</td></tr>
+          <tr><td>验证与发布</td><td>纯 Python 校验和文件操作</td><td>revision、依赖清单、验证诊断</td><td>Function Call 节点</td></tr>
+          <tr><td>修复</td><td>同一 candidate、明确诊断、有限轮数</td><td>修复后的 candidate</td><td>独立但同父级的 Agent 节点</td></tr>
+          <tr><td>执行</td><td>Workflow 声明的 Programs</td><td>文件交付物或明确 return_result</td><td>完整嵌套 DAG</td></tr>
+          <tr><td>总结</td><td>运行事件和交付物元数据</td><td>过程性 summary，不复制完整正文</td><td>Conclusion 区域</td></tr>
+        </tbody></table>
+      </section>
 
-  <line x1="240" y1="244" x2="240" y2="360" stroke="#5aad4e" marker-end="url(#ar)"/>
-  <line x1="740" y1="316" x2="740" y2="360" stroke="#d4843a" marker-end="url(#ar)"/>
-  <text x="252" y="310" fill="#8a8675" font-size="11">一次请求</text>
-  <text x="752" y="342" fill="#8a8675" font-size="11">每轮一次请求</text>
+      <section id="observability">
+        <h2>6. DAG 与聊天显示合同</h2>
+        <p>重构后的首要验收不是“函数返回了 JSON”，而是用户能看到 Workflow 如何选择、如何创建、实际调用了哪些 Programs，以及错误发生在哪一层。</p>
+        <div class="diagram"><svg viewBox="0 0 1120 510" role="img" aria-label="目标 DAG 示例。agentic_workflow 下含 Select or author Agent、validator、实际 llm_knowledge_research Workflow 与 summary。Agent 下展示 LLM 与 Programs，Workflow 下展示 goal、agent、llm 和 web search 等调用。">
+          <defs><marker id="arrow4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#5b6068"/></marker></defs>
+          <path d="M180 78H310M440 78H548M678 78H786" stroke="#5b6068" stroke-width="2" marker-end="url(#arrow4)"/>
+          <rect x="32" y="34" width="148" height="88" rx="12" fill="#241d1b" stroke="#ee7d55"/><text x="106" y="68" text-anchor="middle" fill="#e8e9eb" font-size="15">agentic_workflow</text><text x="106" y="94" text-anchor="middle" fill="#a3a7ae" font-size="11">root function</text>
+          <rect x="310" y="34" width="130" height="88" rx="12" fill="#172023" stroke="#4bc6d8"/><text x="375" y="68" text-anchor="middle" fill="#e8e9eb" font-size="14">Agent</text><text x="375" y="94" text-anchor="middle" fill="#a3a7ae" font-size="11">select / author</text>
+          <rect x="548" y="34" width="130" height="88" rx="12" fill="#18201c" stroke="#67c78a"/><text x="613" y="68" text-anchor="middle" fill="#e8e9eb" font-size="14">Validator</text><text x="613" y="94" text-anchor="middle" fill="#a3a7ae" font-size="11">publish</text>
+          <rect x="786" y="34" width="292" height="88" rx="12" fill="#241d1b" stroke="#ee7d55"/><text x="932" y="68" text-anchor="middle" fill="#e8e9eb" font-size="14">llm_knowledge_research</text><text x="932" y="94" text-anchor="middle" fill="#a3a7ae" font-size="11">selected Workflow</text>
+          <path d="M375 122V164M932 122V164" stroke="#5b6068" stroke-width="1.7"/><path d="M375 164H214V192M375 164H375V192M375 164H536V192" fill="none" stroke="#5b6068"/>
+          <rect x="148" y="192" width="132" height="64" rx="10" fill="#17191c" stroke="#4bc6d8"/><text x="214" y="218" text-anchor="middle" fill="#e8e9eb" font-size="13">LLM</text><text x="214" y="240" text-anchor="middle" fill="#747981" font-size="10">reasoning summary</text>
+          <rect x="309" y="192" width="132" height="64" rx="10" fill="#17191c" stroke="#ee7d55"/><text x="375" y="218" text-anchor="middle" fill="#e8e9eb" font-size="13">search Programs</text><text x="375" y="240" text-anchor="middle" fill="#747981" font-size="10">catalog / graph</text>
+          <rect x="470" y="192" width="132" height="64" rx="10" fill="#17191c" stroke="#ee7d55"/><text x="536" y="218" text-anchor="middle" fill="#e8e9eb" font-size="13">write files</text><text x="536" y="240" text-anchor="middle" fill="#747981" font-size="10">only if needed</text>
+          <path d="M932 164H748V192M932 164H932V192M932 164H1040V192" fill="none" stroke="#5b6068"/>
+          <rect x="682" y="192" width="132" height="64" rx="10" fill="#17191c" stroke="#d8b35d"/><text x="748" y="218" text-anchor="middle" fill="#e8e9eb" font-size="13">goal</text><text x="748" y="240" text-anchor="middle" fill="#747981" font-size="10">task objective</text>
+          <rect x="866" y="192" width="132" height="64" rx="10" fill="#17191c" stroke="#4bc6d8"/><text x="932" y="218" text-anchor="middle" fill="#e8e9eb" font-size="13">agent</text><text x="932" y="240" text-anchor="middle" fill="#747981" font-size="10">research loop</text>
+          <rect x="1010" y="192" width="92" height="64" rx="10" fill="#17191c" stroke="#67c78a"/><text x="1056" y="218" text-anchor="middle" fill="#e8e9eb" font-size="13">llm</text><text x="1056" y="240" text-anchor="middle" fill="#747981" font-size="10">judge</text>
+          <path d="M932 256V302H755V328M932 302H932V328M932 302H1060V328" fill="none" stroke="#5b6068"/>
+          <rect x="680" y="328" width="150" height="64" rx="10" fill="#17191c" stroke="#ee7d55"/><text x="755" y="354" text-anchor="middle" fill="#e8e9eb" font-size="13">web_search</text><text x="755" y="376" text-anchor="middle" fill="#747981" font-size="10">Program call</text>
+          <rect x="857" y="328" width="150" height="64" rx="10" fill="#17191c" stroke="#ee7d55"/><text x="932" y="354" text-anchor="middle" fill="#e8e9eb" font-size="13">read / extract</text><text x="932" y="376" text-anchor="middle" fill="#747981" font-size="10">Program calls</text>
+          <rect x="1020" y="328" width="82" height="64" rx="10" fill="#17191c" stroke="#4bc6d8"/><text x="1061" y="354" text-anchor="middle" fill="#e8e9eb" font-size="13">LLM</text><text x="1061" y="376" text-anchor="middle" fill="#747981" font-size="10">synthesis</text>
+          <path d="M932 392V438H560" fill="none" stroke="#5b6068" stroke-width="1.7" marker-end="url(#arrow4)"/><rect x="440" y="430" width="240" height="58" rx="10" fill="#172023" stroke="#4bc6d8"/><text x="560" y="464" text-anchor="middle" fill="#e8e9eb" font-size="14">summary + delivery metadata</text>
+        </svg></div>
+        <table><thead><tr><th>界面层级</th><th>默认显示</th><th>展开后显示</th></tr></thead><tbody>
+          <tr><td>顶层 Workflow</td><td>名称、状态、耗时、步骤数、完整 Conclusion</td><td>选择/编写 Agent、校验、实际 Workflow、summary</td></tr>
+          <tr><td>Agent</td><td>描述标签、状态、迭代数</td><td>模型输出摘要和真实 Programs 调用；不展示隐藏 chain-of-thought</td></tr>
+          <tr><td>Program Call</td><td>名称、参数摘要、状态</td><td>输入、输出、错误和 side panel 详情</td></tr>
+          <tr><td>sub-agent session</td><td>单独的可跳转行</td><td>切换到子 session；返回后仍保持同一行，不变成另一套卡片</td></tr>
+        </tbody></table>
+      </section>
 
-  <rect x="70" y="364" width="840" height="70" rx="10" fill="#181712" stroke="#3a382d" stroke-dasharray="5 4"/>
-  <text x="490" y="390" fill="#e8e4d4" font-size="13" text-anchor="middle">单次调用层（Runtime，基础设施，保留）</text>
-  <text x="490" y="412" fill="#8a8675" font-size="11" text-anchor="middle">provider 适配（Anthropic / Gemini / Codex …）· 认证 · 重试/超时/取消 · usage 统计 · 嵌入 Runtime(call=…) · 测试注入缝</text>
-</svg>
-<figcaption>两个原语共用一个单次调用层。llm 是一次请求；agent 是 session 分支里循环的 llm 加工具执行。
-分流发生在建 session 分支之前：llm 的路径上根本不存在分支、transcript、工具循环这些设施。</figcaption>
-</figure>
+      <section id="errors">
+        <h2>7. 失败、恢复与状态一致性</h2>
+        <table><thead><tr><th>失败点</th><th>处理规则</th><th>用户可见状态</th></tr></thead><tbody>
+          <tr><td>provider/model 不支持结构化输出</td><td>能力探测后使用文本 JSON + 本地 schema 校验；不得把内部 LLM 错误覆盖成 Workflow completed</td><td>对应 Agent/LLM Call error，顶层 Workflow failed</td></tr>
+          <tr><td>候选 Workflow 校验失败</td><td>把确定性诊断交给有限次数的 public <code>agent()</code> 修复；达到上限则失败</td><td>每次 repair 是可展开 Agent 节点</td></tr>
+          <tr><td>worker 重启</td><td>只有 session/Job 路径使用 durable recovery；Program 内 Agent 随父 Call 终止并由父 Workflow 重试策略处理</td><td>不把旧 running 状态永久保留</td></tr>
+          <tr><td>用户取消</td><td>同一个 cancellation token 传到 Runtime、provider 与工具执行；子调用先终止，再关闭父 Workflow</td><td>cancelled/interrupted 一致，不显示 completed</td></tr>
+          <tr><td>工具或子 Workflow 失败</td><td>保留原始 error payload、caller 和 partial artifacts；summary 不宣称完成</td><td>失败节点与 Conclusion 状态一致</td></tr>
+          <tr><td>历史 run 恢复</td><td>旧的 SINGLE/code.py 状态仅用于旧 run 恢复；任何新 task 必须进入项目选择/创建流程</td><td>旧记录可读，新记录不再产生 legacy project</td></tr>
+        </tbody></table>
+      </section>
 
-<h2>2. llm()：一次模型调用</h2>
-<pre><code>reply = llm("把下面的段落压缩成三句话：\n" + text)
+      <section id="migration">
+        <h2>8. 分阶段迁移计划</h2>
+        <p>每个阶段先添加能复现当前缺口的测试，再修改对应层。禁止在同一阶段同时改公共 API、session lifecycle、Workflow 文件布局和聊天视觉样式。</p>
+        <div class="phase-grid">
+          <div class="card phase"><span class="phase-no">01</span><h3>冻结执行合同</h3><ul><li>记录当前 <code>agent()</code>、<code>run_agent_turn()</code> 和 Runtime 调用图。</li><li>增加架构测试：Programs 不得导入 <code>agent.sub_agent_run</code>。</li><li>增加真实注册 schema 测试，确保 <code>agentic_workflow(task)</code> 只有一个参数。</li></ul><div class="gate">Gate：只新增失败测试和文档，不改行为。</div></div>
+          <div class="card phase"><span class="phase-no">02</span><h3>补全 public agent()</h3><ul><li>透传 <code>response_format</code>、content blocks、description 和 agent profile。</li><li>复用现有 profile/tool resolver，不新建配置格式。</li><li>增加 Agent wrapper Call，使 LLM 和工具节点稳定归属。</li></ul><div class="gate">Gate：public agent 单元测试、DAG caller 测试、provider fallback 测试。</div></div>
+          <div class="card phase"><span class="phase-no">03</span><h3>重写 Workflow 编排阶段</h3><ul><li>删除新 run 对 <code>_run_planner_turn()</code> 和 <code>_agent_function()</code> 的依赖。</li><li>用一个 public Agent 完成搜索、复用、修订或创建。</li><li>修复轮次也调用 public Agent，保持父 DAG 不变。</li></ul><div class="gate">Gate：reuse/revise/create/repair 四条公共入口集成测试。</div></div>
+          <div class="card phase"><span class="phase-no">04</span><h3>收紧 session 适配层</h3><ul><li><code>run_agent_turn()</code> 保持内部，继续支持 branch、Job、recovery、archive。</li><li>确认 dispatcher 最终调用与 public agent 相同的 Agent loop 内核。</li><li>去除重复的模型默认值、工具解析和错误规范化。</li></ul><div class="gate">Gate：后台恢复、取消、branch/head 与 spawn caller 测试。</div></div>
+          <div class="card phase"><span class="phase-no">05</span><h3>迁移所有 Programs</h3><ul><li>扫描 <code>openprogram/programs/</code> 对内部 Agent API 和直接 loop 的调用。</li><li>Workflow、Application 与 agentic Functions 统一使用 public <code>agent()</code>。</li><li>保留 vanilla sub-agent 工具作为 session adapter 的产品入口。</li></ul><div class="gate">Gate：静态依赖检查 + Programs catalog/graph 回归。</div></div>
+          <div class="card phase"><span class="phase-no">06</span><h3>DAG 与聊天展示</h3><ul><li>后端事件补充 execution_kind、label、caller、iteration 和 artifact metadata。</li><li>前端按同一 Runtime hierarchy 渲染，不推断独立结构。</li><li>Conclusion、footer 和折叠逻辑沿用现有统一组件。</li></ul><div class="gate">Gate：mapper、RuntimeBlock、reload 和真实 App DOM 验收。</div></div>
+          <div class="card phase"><span class="phase-no">07</span><h3>兼容清理与发布</h3><ul><li>旧 run 只读恢复；新 run 禁止 legacy SINGLE。</li><li>删除失去调用方的 planner helper 和重复测试 fixture。</li><li>更新设计导航、API 文档和 Programs 依赖图。</li></ul><div class="gate">Gate：wheel 打包当前 web/out，默认 18100 App/Web/TUI 同源。</div></div>
+          <div class="card phase"><span class="phase-no">08</span><h3>受控上线</h3><ul><li>先运行 focused component tests，再运行必要的完整套件。</li><li>用一个 reuse、一个 create、一个 repair、一个 cancel 的真实会话验收。</li><li>保留旧恢复读取器一个兼容周期，不再写旧格式。</li></ul><div class="gate">Gate：所有验收证据记录到实施区，而不是回填设计假设。</div></div>
+        </div>
+      </section>
 
-verdict = llm(
-    [{"type": "text", "text": "这张截图里登录按钮在哪？给出坐标。"},
-     {"type": "image", "source": …}],
-    model="gemini:gemini-3-pro", effort="low")
-</code></pre>
-<table>
-<tr><th>方面</th><th>定义</th></tr>
-<tr><td>签名</td><td><code>llm(prompt, *, model="", effort="", response_format=None, choices=None,
-web_search=False, timeout_s=None) -&gt; str | dict</code>。<code>prompt</code> 收 str 或 content blocks
-（text/image 混排），str 在入口转成一个 text block。</td></tr>
-<tr><td>语义</td><td>恰好一次模型请求（传输层重试不算第二次）。没有 session 分支、没有 transcript、
-没有工具循环。返回模型输出本身，不带 <code>[spawned agent …]</code> 尾巴。</td></tr>
-<tr><td>覆盖优先级</td><td>调用处参数 &gt; 会话/runtime 默认。不给 <code>model</code> 就用当前会话的模型。</td></tr>
-<tr><td>runtime 来源</td><td>环境获取：agentic function 执行时框架已把当前 <code>Runtime</code> 放进
-contextvar（<code>_current_runtime</code>），<code>llm</code> 从那里拿。函数签名不再串
-<code>runtime: Runtime</code> 参数。</td></tr>
-<tr><td>归属</td><td><code>openprogram/agentic_programming/</code> 导出，和
-<code>agentic_function</code> 同层。DAG 里就是现在的 ModelCall 节点。</td></tr>
-<tr><td>实现</td><td>薄封装：对环境 runtime 调 <code>exec(content=…, tools=[], max_iterations=1)</code> 一类的
-单次形态。<code>runtime.exec</code> 的工具循环参数（<code>tools</code>/<code>toolset</code>/
-<code>max_iterations</code>/<code>tool_choice</code>）不出现在 <code>llm</code> 上——要循环就用 agent。</td></tr>
-</table>
+      <section id="compatibility">
+        <h2>9. 兼容、保留与删除项</h2>
+        <table><thead><tr><th>对象</th><th>处理</th><th>原因</th></tr></thead><tbody>
+          <tr><td><code>agent()</code></td><td>保留并扩展；旧参数继续工作</td><td>已经是 ambient Runtime 内的正确公开原语</td></tr>
+          <tr><td><code>run_agent_turn()</code></td><td>保留但标记 internal；禁止 Programs 导入</td><td>Chat/CLI/background 的 durable session 需求真实存在</td></tr>
+          <tr><td><code>_run_planner_turn()</code></td><td>迁移完成后删除</td><td>它把 Workflow 规划错误地转成独立 session Job</td></tr>
+          <tr><td><code>_request_project_decision()</code></td><td>用单一编排 Agent 的实际工具行为替代</td><td>先输出 selection JSON 再编写造成两次 Agent 语义和断裂 DAG</td></tr>
+          <tr><td>legacy SINGLE / <code>code.py</code></td><td>只读恢复，禁止新建</td><td>保留历史记录但不继续产生不可维护单文件 Workflow</td></tr>
+          <tr><td>Workflow project package</td><td>继续使用标准 Python package 和 <code>@agentic_function</code> 导出</td><td>支持多文件维护、Git revision、静态依赖图和直接 Python 调用</td></tr>
+          <tr><td>Agents profile</td><td>复用现有 Agents 配置与 resolver</td><td>避免 Program 内出现第二套模型/工具配置</td></tr>
+        </tbody></table>
+      </section>
 
-<h2>3. agent()：循环的 llm</h2>
-<p>公开形态不变：<code>agent(prompt, description="", agent_id="", start_from="clean",
-run_in_background=False, …)</code>，模型与工具集来自 <code>agent_id</code> 选的 profile，
-运行建 session 分支、受资源限额管、DAG 记独立分支（倒三角）。本次完善两件事：</p>
-<table>
-<tr><th>完善</th><th>内容</th></tr>
-<tr><td>说话走单次调用层</td><td>循环体内每轮的模型请求与 <code>llm</code> 走同一层，
-共享认证、重试、usage 统计和测试注入缝。llm 与 agent 的差异只剩循环和 session，没有第二条请求通道。</td></tr>
-<tr><td>可观测性分开计数</td><td>每次调用记录 <code>execution_kind = llm | agent</code>、
-provider 请求数、agent 迭代数。llm 的传输重试不计入迭代数，"一次调用"可验收。</td></tr>
-</table>
-<div class="card">
-不改的：agent 的多轮驱动力仍由工具循环决定，不加"最多 N 轮"参数；profile（AgentSpec）仍是模型与
-工具集的载体。调研确认的风险记录在案：Codex/Claude Code 都存在无工具也继续的机制
-（stop hook、pending input、compaction 后继续），OpenProgram 若将来引入这类 continuation，
-它属于 agent 的循环层，不影响 llm"恰好一次请求"的定义。
+      <section id="tests">
+        <h2>10. 验收矩阵</h2>
+        <div class="brief-grid">
+          <div class="card brief"><h3>API 与注册</h3><ul><li><code>agentic_workflow._agent_tool.parameters</code> 只含必填 <code>task</code>。</li><li><code>agent()</code> 的 model/tools/profile 覆盖顺序稳定。</li><li>结构化输出在支持和不支持原生 schema 的 provider 上都可验证。</li></ul></div>
+          <div class="card brief"><h3>调用结构</h3><ul><li>planner、author、repair 全部是 <code>agentic_workflow</code> 的后代 Call。</li><li>Workflow 调用的 Programs 均出现在 DAG。</li><li>direct/manual Workflow 不因 predecessor 被误归到上一条 assistant。</li></ul></div>
+          <div class="card brief"><h3>生命周期</h3><ul><li>父取消会终止 Agent、LLM 与工具。</li><li>session Job 重启后只恢复 session 路径。</li><li>新 run 不生成 SINGLE；旧 run 仍能恢复或给出明确不兼容错误。</li></ul></div>
+          <div class="card brief"><h3>界面</h3><ul><li>折叠态显示 Workflow 标题、Conclusion、footer。</li><li>逐级展开，不一次展开全部子节点。</li><li>App/Web/TUI 读取同一默认 profile 和 18100 worker。</li></ul></div>
+        </div>
+        <h3>建议的定向检查</h3>
+        <pre><code>pytest -q tests/component/agent/test_agentic_workflow.py
+pytest -q tests/unit/programs/test_runtime_exec_dag.py
+pytest -q tests/unit/agent/test_agentic_programming_goal.py
+pytest -q tests/component/agent/test_async_job_recovery.py
+pytest -q tests/unit/agent/test_spawn_caller_invariant.py
+pytest -q tests/component/webui/test_programs_explorer.py
+npm --prefix web run check:chat-ui
+npx --prefix web tsc --noEmit
+python -m scripts.docs_site.checklinks
+git diff --check</code></pre>
+        <div class="callout warn">实施阶段不能把“单元测试通过”作为最终完成条件。至少要在封装 App 中运行 reuse、create、repair、cancel 四类会话，并核对重载后的 DOM、DAG caller、状态和 Conclusion。</div>
+      </section>
+
+      <section id="comparison">
+        <h2>11. 框架对照与取舍</h2>
+        <p>这里只比较与本次架构决策直接相关的能力。OpenProgram 不引入新的第三方编排运行时。</p>
+        <table><thead><tr><th>参考</th><th>采用</th><th>不采用</th></tr></thead><tbody class="source-list">
+          <tr><td><a href="https://openai.github.io/openai-agents-python/running_agents/">OpenAI Agents SDK · Running agents</a></td><td>Runner 维护一个逻辑 turn 的模型—工具循环；max turns、session、hooks 分开表达。</td><td>不把 Runner 作为 OpenProgram 的第二个运行时；继续使用现有 Runtime/dispatcher。</td></tr>
+          <tr><td><a href="https://openai.github.io/openai-agents-python/tools/">OpenAI Agents SDK · Tools</a></td><td>Python function tool 和 agent-as-tool 都是明确调用，父级可观察子执行。</td><td>不把 Workflow 隐式转换为 handoff；Workflow 仍是 Python package。</td></tr>
+          <tr><td><a href="https://openai.github.io/openai-agents-python/multi_agent/">OpenAI Agents SDK · Orchestration</a></td><td>区分 manager 调用子 agent 与把控制权 handoff 给另一 agent。</td><td>Program 内 <code>agent()</code> 不自动创建 session 分支；只有产品级 sub-agent 操作才切 session。</td></tr>
+          <tr><td><a href="https://docs.langchain.com/oss/python/langgraph/workflows-agents">LangGraph · Workflows and agents</a></td><td>Workflow 是预定代码路径，Agent 在局部动态决定工具调用。</td><td>不新增图 DSL；静态调用图从 Python imports 与 <code>@agentic_function</code> 生成。</td></tr>
+          <tr><td><a href="https://docs.langchain.com/oss/python/langgraph/persistence">LangGraph · Persistence</a></td><td>持久化、thread、checkpoint 和中断恢复应是显式生命周期能力。</td><td>不把所有 Program 内 Agent 强制变成持久 thread；仅 session adapter 使用 durable Job。</td></tr>
+        </tbody></table>
+      </section>
+
+      <section id="status">
+        <h2>12. 实现状态</h2>
+        <div class="status-grid">
+          <div class="card status"><span class="tag keep">Verified current</span><strong>已有公共 <code>llm()</code>、<code>agent()</code>、<code>goal()</code></strong><p>三者已经以 ambient Runtime 为基础，层级方向可保留。</p></div>
+          <div class="card status"><span class="tag keep">Verified current</span><strong>Runtime 已支持大部分目标参数</strong><p><code>response_format</code>、tools、model、effort、timeout、execution_kind 等底层能力已经存在。</p></div>
+          <div class="card status"><span class="tag now">Partial</span><strong>Workflow 项目与 deterministic validator 已存在</strong><p>仍需把新 run 的规划、编写和 repair 从内部 session turn 迁到 public Agent。</p></div>
+          <div class="card status"><span class="tag remove">Not implemented</span><strong>统一 DAG 与 session adapter 边界尚未完成</strong><p>本文是重构计划，不代表源码已经完成迁移；实施证据必须在后续阶段单独记录。</p></div>
+        </div>
+        <div class="footer">文档定位：Agent 执行与 Self Programming Workflow 的主重构计划。概念模型、UI 原型和具体迁移记录可以引用本页，但不得复制并修改本页的核心合同。</div>
+      </section>
+    </div>
+  </main>
 </div>
-
-<h2>4. 迁移：runtime.exec 全部改名</h2>
-<p>编排与业务代码里每个 <code>runtime.exec(…)</code> 按一条规则改写：</p>
-<div class="card">
-不带工具参数（绝大多数）→ <code>llm(…)</code>；带 <code>tools</code>/<code>toolset</code>/
-<code>max_iterations&gt;1</code>（少数：wiki ingest、deep_work 的工作步、research 的 survey 步）
-→ 保持工具循环语义，改写为 <code>agent(…)</code> 或暂以 <code>llm</code> 之外的既有路径运行，逐处判断。
-函数签名里的 <code>runtime: Runtime</code> 参数随迁移删除，调用链同步收紧。
-</div>
-<table>
-<tr><th>批</th><th>范围</th><th>说明</th></tr>
-<tr><td>1</td><td>新增 <code>llm()</code>（<code>agentic_programming</code> 导出）+
-agent 说话改走单次调用层 + 计数</td><td>含单测：一次请求、content blocks 原样进 provider、
-model/effort 覆盖不改全局、无 session 分支产生。workflow 注入环境加入 <code>llm</code>。</td></tr>
-<tr><td>2</td><td>本体编排代码：<code>programs/functions/agentic/</code>（deep_work、ask_user、
-extract_pdf_*、research/、示例）、<code>memory/wiki/</code></td><td>约 20 个文件；对应单测同批适配。</td></tr>
-<tr><td>3</td><td>嵌套 harness 仓库（<code>programs/functions/agentic/</code> 下）：Research-Agent-Harness
-（约 80 处，stages 各目录）→ GUI-Agent-Harness（planning / benchmarks，截图调用靠 content blocks）→
-Wiki-Agent-Harness</td><td>逐仓一个子任务，嵌套仓库随改随同步。</td></tr>
-<tr><td>4</td><td>收尾</td><td>编排层无 <code>runtime.exec</code> 残留；
-provider/agent 内核明确保留 <code>Runtime</code>（嵌入与实现材料）；产品文档与本页同步。</td></tr>
-</table>
-<p>每批全绿才进下一批：批 2、3 是大面积机械替换，语义错误会成倍放大，串行是最便宜的隔离。</p>
-
-<h2>5. 调研依据</h2>
-<p>对 references/ 下八个框架的分层做了逐源码调研，支撑本设计的三条结论：</p>
-<table>
-<tr><th>结论</th><th>证据</th></tr>
-<tr><td>成熟框架都保留独立的单请求层</td><td>pi-mono/pi-ai <code>completeSimple</code>、OpenCode
-<code>LLM.stream</code>、Claude Code <code>queryModelWithoutStreaming</code>/<code>queryWithModel</code>、
-Codex <code>ModelClientSession.stream</code>；agent loop 只是这一层的循环使用者。</td></tr>
-<tr><td>"无工具⇒单轮"不能当永久语义</td><td>Codex 的继续条件是 <code>model_needs_follow_up ||
-has_pending_input</code>，stop hook / compaction 都能让无工具 turn 继续；Claude Code 同。
-所以单次调用要有自己的名字（llm），而不是 agent 的一个退化档位。</td></tr>
-<tr><td>分流点必须在 session 设施之前</td><td>反例 OpenClaw：轻量 <code>promptMode=none</code>
-在完整 runner 里较晚生效，session/资源/事件设施照建，省不下固定开销。llm 的路径上不建这些。</td></tr>
-</table>
-
-<h2>6. 边界与取舍</h2>
-<table>
-<tr><th>决定</th><th>理由</th></tr>
-<tr><td>两个名字，不是一个 agent() 内部分流</td><td>调用方的意图本来就是两种；用"profile 带不带工具"
-推断执行路径是间接信号，调研证明它在多个框架里不成立。名字直接把意图写进代码。</td></tr>
-<tr><td><code>llm</code> 不带工具参数</td><td>带上工具它就是另一个 agent 入口，两个原语的边界就没了。
-需要工具循环的调用属于 agent。</td></tr>
-<tr><td>测试缝放 provider 调用边界</td><td>公开的 <code>llm()</code>/<code>agent()</code> 不暴露测试参数；
-注入发生在 Runtime 构造层（<code>Runtime(call=…)</code> / <code>stream_fn</code>），
-两条路共享同一个缝。</td></tr>
-<tr><td><code>runtime.exec</code> 退层不删除</td><td>它是 llm 的实现材料，也是嵌入
-（<code>Runtime(call=mock_llm)</code> 独立运行）与 provider 内核的接口；examples 演示的就是这层，不迁。</td></tr>
-<tr><td>runtime 环境获取，不串参数</td><td>~100 处调用的签名都在串 <code>runtime: Runtime</code>，
-这是管道噪音；contextvar 已存在（<code>_current_runtime</code>），llm 直接用。</td></tr>
-</table>
-
-<h2>实现状态</h2>
-<div class="card">
-批 1–4 已完成。<code>openprogram.agentic_programming.llm</code> 已导出：环境 <code>Runtime</code>
-的单次调用形态，不创建 session 分支或 transcript；str prompt 入口转单个 text block，content blocks
-原样进 provider 层；<code>model</code>/<code>effort</code> 仅覆盖本次调用。llm 的
-<code>ModelCall</code> 节点与 agent 的 assistant 节点记录 <code>execution_kind</code>、
-<code>provider_request_count</code>、<code>agent_iteration_count</code>，传输重试不计迭代。
-agent 与 llm 共用 <code>AgentSession → agent_loop → provider stream</code> 单次调用层。
-workflow 注入环境含带 checkpoint 的 <code>llm</code>。
-<br><br>
-迁移结果：本体 agentics 与三个嵌套 harness 仓的单次调用全部改为 <code>llm()</code>
-（Research 92 处、GUI 23 处、Wiki 1 处、本体约 30 处）。编排层仍在 <code>runtime.exec</code>
-上的只剩 9 处带工具循环的调用（deep_work 工作步、llm_call_example 示例、Wiki ingest 生成/enrich、
-Research utils/wiki survey/run_experiment 等），均带
-<code>tool loop, migrates with agent() in a later batch</code> 注释，等 agent 批次逐处判断。
-<code>openprogram/memory/wiki/</code> 死代码目录（f4147247 换 Markdown workspace 后的磁盘残留，
-无调用方）已删除。
-</div>
-
 </body>
 </html>

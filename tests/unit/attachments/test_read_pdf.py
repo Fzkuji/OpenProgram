@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("pypdf")
 reportlab = pytest.importorskip("reportlab")
 
-from openprogram.programs.functions.vanilla.read.read import (  # noqa: E402
+from openprogram.programs.functions.vanilla.files.read import (  # noqa: E402
     PDF_PAGES_DEFAULT,
     _is_pdf,
     read,

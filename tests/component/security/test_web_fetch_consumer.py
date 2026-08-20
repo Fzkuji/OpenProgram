@@ -10,7 +10,7 @@ from dataclasses import replace
 import httpcore
 import pytest
 
-from openprogram.programs.functions.vanilla.web_fetch import web_fetch
+from openprogram.programs.functions.vanilla.web import web_fetch
 from openprogram.security import safe_http
 from openprogram.security.safe_http import OutboundSecurityConfig
 

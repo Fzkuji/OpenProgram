@@ -125,7 +125,9 @@ export function DetailPanel() {
   const duration =
     node.duration_ms && node.duration_ms > 0
       ? `${Math.round(node.duration_ms)}ms`
-      : "running...";
+      : node.status === "running"
+        ? "running..."
+        : null;
   const filteredParams = node.params
     ? Object.fromEntries(
         Object.entries(node.params).filter(
@@ -139,7 +141,8 @@ export function DetailPanel() {
       <div className="detail-section">
         <div className="detail-section-title">Status</div>
         <div className={`detail-badge ${node.status}`}>
-          {statusIcon} {node.status} &middot; {duration}
+          {statusIcon} {node.status}
+          {duration ? <> &middot; {duration}</> : null}
         </div>
       </div>
 

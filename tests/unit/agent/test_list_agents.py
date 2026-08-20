@@ -6,10 +6,10 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.programs.functions.vanilla.send_message.list_agents.list_agents import (
+from openprogram.programs.functions.vanilla.agents.send_message.list_agents.list_agents import (
     _list_agents_impl as list_agents,
 )
-from openprogram.programs.functions.vanilla.send_message.shared import _clip
+from openprogram.programs.functions.vanilla.agents.send_message.shared import _clip
 
 
 @pytest.fixture

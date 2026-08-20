@@ -93,8 +93,6 @@ export function ComposerBody({
             fn={fnFormFunction}
             values={fnForm.values}
             setValue={fnForm.setValue}
-            workdir={fnForm.workdir}
-            setWorkdir={fnForm.setWorkdir}
             errorParam={fnForm.error}
             closing={fnForm.closing}
             onClose={handleFnFormClose}
@@ -141,8 +139,6 @@ export function ComposerBody({
               fn={outgoingFn}
               values={{}}
               setValue={noop}
-              workdir=""
-              setWorkdir={noop}
               errorParam={null}
               onClose={noop}
               onSubmit={noop}

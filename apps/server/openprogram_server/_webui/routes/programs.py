@@ -34,15 +34,37 @@ _IGNORED = {
 _ROOT_ORDER = {"functions": 0, "workflows": 1, "applications": 2}
 _MAX_SOURCE_FILES = 200
 _MAX_SOURCE_BYTES = 1_000_000
+_AGENTIC_PRIMITIVES = ("goal", "agent", "llm")
+_PRIMITIVE_DEPENDENCIES = {
+    "goal": ("agent",),
+    "agent": ("llm",),
+    "llm": (),
+}
+_VANILLA_RELATIVE = Path("functions/vanilla")
+_VANILLA_MODULE_PREFIX = "openprogram.programs.functions.vanilla."
 
 
 def _inside_programs(path: Path) -> bool:
-    root = PROGRAMS_ROOT.resolve()
     try:
         resolved = path.resolve()
     except OSError:
         return False
-    return resolved == root or root in resolved.parents
+    return any(
+        resolved == root or root in resolved.parents
+        for root in _catalog_roots()
+    )
+
+
+def _catalog_roots() -> list[Path]:
+    """Installed catalog plus owner-recorded source catalogs."""
+    from openprogram.programs._programs import owner_programs_roots
+
+    roots = [PROGRAMS_ROOT.resolve(), *owner_programs_roots()]
+    unique: dict[str, Path] = {}
+    for root in roots:
+        resolved = root.resolve()
+        unique.setdefault(os.path.normcase(os.fspath(resolved)), resolved)
+    return list(unique.values())
 
 
 def _safe_directory(relative: str) -> Path:
@@ -59,7 +81,7 @@ def _program_kind(relative: str) -> str | None:
     parts = Path(relative).parts
     if parts[-1] == "__init__.py":
         return None
-    if len(parts) == 3 and parts[:2] == ("functions", "vanilla"):
+    if len(parts) == 4 and parts[:2] == ("functions", "vanilla"):
         return "vanilla_function"
     if len(parts) == 3 and parts[:2] == ("functions", "agentic"):
         return "agentic_function"
@@ -89,35 +111,74 @@ def _visible_children(directory: Path) -> list[Path]:
 
 def _entity_paths() -> dict[str, Path]:
     entities: dict[str, Path] = {}
-    for parent in (
-        Path("functions/vanilla"), Path("functions/agentic"),
-        Path("workflows"), Path("applications"),
-    ):
-        directory = PROGRAMS_ROOT / parent
+    vanilla_root = PROGRAMS_ROOT / _VANILLA_RELATIVE
+    if vanilla_root.is_dir():
+        callables = _registered_vanilla_callables()
+        for category in _visible_children(vanilla_root):
+            if not category.is_dir() or category.name.startswith("_"):
+                continue
+            for source in _visible_children(category):
+                if source.name.startswith("_") or not (
+                    source.is_dir() or source.suffix == ".py"
+                ):
+                    continue
+                relative = (
+                    _VANILLA_RELATIVE / category.name / source.stem
+                ).as_posix()
+                if callables.get(relative):
+                    entities.setdefault(relative, source)
+
+    scan_roots = [(PROGRAMS_ROOT, Path("functions/agentic"))]
+    scan_roots.extend(
+        (root, parent)
+        for root in _catalog_roots()
+        for parent in (Path("workflows"), Path("applications"))
+    )
+    for root, parent in scan_roots:
+        directory = root / parent
         if not directory.is_dir():
             continue
         for child in _visible_children(directory):
             if child.name.startswith("_"):
                 continue
             if child.is_dir() or child.suffix == ".py":
-                relative = child.relative_to(PROGRAMS_ROOT).as_posix()
+                relative = (parent / child.name).as_posix()
                 if _program_kind(relative):
-                    entities[relative] = child
+                    entities.setdefault(relative, child)
     return entities
 
 
 def _default_selection() -> str | None:
     entities = _entity_paths()
-    for prefix in ("workflows/", "functions/agentic/", "applications/", "functions/vanilla/"):
+    for prefix in ("workflows/", "functions/agentic/", "applications/"):
         matches = sorted(path for path in entities if path.startswith(prefix))
         if matches:
             return matches[0]
+    callables = _registered_vanilla_callables()
+    for source in sorted(callables):
+        rows = callables[source]
+        if len(rows) == 1:
+            return source
+        if rows:
+            return f"{source}/{rows[0]['name']}"
     return None
 
 
 def _callable_name(relative: str) -> str:
     """Return the registered function name for a Programs entity."""
     name = Path(relative).stem
+    if relative.startswith(("functions/agentic/", "workflows/")):
+        from openprogram.programs import agent_tools
+
+        module_path = relative.replace("/", ".")
+        exact = f".{module_path}"
+        nested = f".{module_path}."
+        for tool in agent_tools(toolset="full", include_disabled=True):
+            module = str(getattr(tool, "_source_module", ""))
+            dotted = f".{module}."
+            if module.endswith(exact) or nested in dotted:
+                return tool.name
+        return name
     if not relative.startswith("applications/"):
         return name
     from openprogram.programs._programs import KNOWN_PROGRAMS
@@ -128,15 +189,37 @@ def _callable_name(relative: str) -> str:
     return name
 
 
+def _registered_vanilla_callables() -> dict[str, list[dict[str, str]]]:
+    """Index regular built-ins by their physical category/package path."""
+    from openprogram.programs import agent_tools
+
+    indexed: dict[str, list[dict[str, str]]] = {}
+    for tool in agent_tools(toolset="full", include_disabled=True):
+        if getattr(tool, "_is_agentic", False) or getattr(tool, "_mcp_server", None):
+            continue
+        module = str(getattr(tool, "_source_module", ""))
+        if not module.startswith(_VANILLA_MODULE_PREFIX):
+            continue
+        parts = module.removeprefix(_VANILLA_MODULE_PREFIX).split(".")
+        if len(parts) < 2:
+            continue
+        package = (_VANILLA_RELATIVE / parts[0] / parts[1]).as_posix()
+        indexed.setdefault(package, []).append({
+            "name": tool.name,
+            "description": (tool.description or "").strip().split("\n", 1)[0],
+        })
+    for rows in indexed.values():
+        rows.sort(key=lambda row: row["name"])
+    return indexed
+
+
 def _list_entries(relative: str) -> dict:
     _safe_directory(relative)
     branches = {
         "": ("functions", "workflows", "applications"),
         "functions": ("functions/vanilla", "functions/agentic"),
     }
-    leaf_categories = {
-        "functions/vanilla", "functions/agentic", "workflows", "applications",
-    }
+    leaf_categories = {"functions/agentic", "workflows", "applications"}
     if relative in branches:
         entries = [
             {
@@ -148,6 +231,64 @@ def _list_entries(relative: str) -> dict:
             }
             for path in branches[relative]
             if (PROGRAMS_ROOT / path).is_dir()
+        ]
+    elif relative == "functions/vanilla":
+        entries = [
+            {
+                "name": child.name,
+                "path": (_VANILLA_RELATIVE / child.name).as_posix(),
+                "kind": "folder",
+                "program_kind": None,
+                "has_children": True,
+            }
+            for child in _visible_children(PROGRAMS_ROOT / _VANILLA_RELATIVE)
+            if child.is_dir() and not child.name.startswith("_")
+        ]
+    elif Path(relative).parent == _VANILLA_RELATIVE:
+        directory = PROGRAMS_ROOT / relative
+        callables = _registered_vanilla_callables()
+        entries = []
+        for source in _visible_children(directory):
+            if source.name.startswith("_") or not (
+                source.is_dir() or source.suffix == ".py"
+            ):
+                continue
+            source_path = (Path(relative) / source.stem).as_posix()
+            rows = callables.get(source_path, [])
+            if len(rows) == 1:
+                row = rows[0]
+                entries.append({
+                    "name": row["name"],
+                    "path": source_path,
+                    "kind": "file",
+                    "program_kind": "vanilla_function",
+                    "has_children": False,
+                    "callable_name": row["name"],
+                    "description": row["description"],
+                    "logic_path": source_path,
+                })
+            elif rows:
+                entries.append({
+                    "name": source.stem,
+                    "path": source_path,
+                    "kind": "folder",
+                    "program_kind": None,
+                    "has_children": True,
+                })
+        entries.sort(key=lambda entry: entry["name"].lower())
+    elif relative in _entity_paths() and relative.startswith("functions/vanilla/"):
+        entries = [
+            {
+                "name": row["name"],
+                "path": f"{relative}/{row['name']}",
+                "kind": "file",
+                "program_kind": "vanilla_function",
+                "has_children": False,
+                "callable_name": row["name"],
+                "description": row["description"],
+                "logic_path": relative,
+            }
+            for row in _registered_vanilla_callables().get(relative, [])
         ]
     elif relative in leaf_categories:
         entries = [
@@ -221,7 +362,11 @@ def _imported_modules(path: Path) -> tuple[set[str], set[str]]:
             elif isinstance(node, ast.ImportFrom):
                 module = node.module or ""
                 if node.level:
-                    source_relative = source.relative_to(PROGRAMS_ROOT)
+                    source_relative = next(
+                        source.relative_to(root)
+                        for root in _catalog_roots()
+                        if source == root or root in source.parents
+                    )
                     source_module = _module_prefix(source_relative.as_posix())
                     package = (
                         source_module
@@ -261,6 +406,65 @@ def _direct_calls(
     return sorted(targets), warnings
 
 
+def _called_agentic_primitives(path: Path) -> tuple[set[str], set[str]]:
+    """Return goal/agent/llm primitives actually called by this Program."""
+    called: set[str] = set()
+    warnings: set[str] = set()
+    sources, truncated = _python_sources(path)
+    if truncated:
+        warnings.add("source_file_limit")
+    for source in sources:
+        try:
+            if source.stat().st_size > _MAX_SOURCE_BYTES:
+                warnings.add("oversized_source")
+                continue
+            tree = ast.parse(source.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, SyntaxError):
+            warnings.add("source_parse_failed")
+            continue
+
+        direct: dict[str, str] = {}
+        modules: dict[str, str] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                if module == "openprogram.agentic_programming":
+                    for alias in node.names:
+                        if alias.name in _AGENTIC_PRIMITIVES:
+                            direct[alias.asname or alias.name] = alias.name
+                elif module.startswith("openprogram.agentic_programming."):
+                    primitive = module.rsplit(".", 1)[-1]
+                    for alias in node.names:
+                        if alias.name in _AGENTIC_PRIMITIVES:
+                            direct[alias.asname or alias.name] = alias.name
+                        elif primitive in _AGENTIC_PRIMITIVES and alias.name == primitive:
+                            direct[alias.asname or alias.name] = primitive
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "openprogram.agentic_programming":
+                        modules[alias.asname or "openprogram"] = alias.name
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Name):
+                primitive = direct.get(node.func.id)
+                if primitive:
+                    called.add(primitive)
+            elif (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr in _AGENTIC_PRIMITIVES
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id in modules
+            ):
+                called.add(node.func.attr)
+    return called, warnings
+
+
+def _primitive_id(name: str) -> str:
+    return f"agentic_programming/{name}"
+
+
 def _program_logic(relative: str) -> dict:
     entities = _entity_paths()
     if relative not in entities:
@@ -282,12 +486,30 @@ def _program_logic(relative: str) -> dict:
             if target not in depths:
                 depths[target] = depths[source] + 1
                 queue.append(target)
+        primitives, warnings = _called_agentic_primitives(entities[source])
+        analysis_warnings.update(warnings)
+        pending = deque((source, primitive) for primitive in sorted(primitives))
+        while pending:
+            primitive_source, primitive = pending.popleft()
+            target = _primitive_id(primitive)
+            edge = (primitive_source, target)
+            if edge not in seen_edges:
+                seen_edges.add(edge)
+                edges.append({"source": primitive_source, "target": target})
+            if target not in depths:
+                depths[target] = depths[primitive_source] + 1
+            for dependency in _PRIMITIVE_DEPENDENCIES[primitive]:
+                pending.append((target, dependency))
     nodes = [
         {
             "id": path,
             "name": Path(path).stem,
             "path": path,
-            "program_kind": _program_kind(path),
+            "program_kind": (
+                "runtime_primitive"
+                if path.startswith("agentic_programming/")
+                else _program_kind(path)
+            ),
             "depth": depth,
         }
         for path, depth in sorted(depths.items(), key=lambda item: (item[1], Path(item[0]).stem))

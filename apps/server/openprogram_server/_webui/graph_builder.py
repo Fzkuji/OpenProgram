@@ -6,6 +6,7 @@ returns the annotated graph node list. Both ``session.py`` and
 """
 from __future__ import annotations
 
+import json
 from typing import Any, Optional
 
 
@@ -141,6 +142,8 @@ def build_session_graph(
 
     for m in full_msgs:
         content = m.get("content") or ""
+        if not isinstance(content, str):
+            content = json.dumps(content, ensure_ascii=False, default=str)
         preview = content.strip().replace("\n", " ")
         if len(preview) > 80:
             preview = preview[:77] + "…"

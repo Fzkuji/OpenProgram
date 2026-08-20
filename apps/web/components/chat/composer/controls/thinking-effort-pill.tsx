@@ -24,7 +24,7 @@
  */
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useRef } from "react";
 
 import { Slider } from "@/components/ui/slider";
 import { UltraRain } from "./ultra-rain";
@@ -50,17 +50,13 @@ interface ThinkingEffortPillProps
   options: { value: string; desc?: string }[];
   value: string;
   onChange: (v: string) => void;
-  /** 卡片真实开合的回传（内部 state 才是权威）——composer 用它给
-   *  effortText 触发钮标 aria-expanded，HoverTip 靠这个在卡开着时
-   *  不冒黑提示。 */
-  onExpandedChange?: (v: boolean) => void;
 }
 
 export const ThinkingEffortPill = React.forwardRef<
   HTMLDivElement,
   ThinkingEffortPillProps
 >(function ThinkingEffortPill(
-  { expanded, onToggle, options, value, onChange, onExpandedChange, ...rest },
+  { expanded, onToggle, options, value, onChange, ...rest },
   ref,
 ) {
   // No options → provider/model exposes no thinking knob (e.g. gpt-4o,
@@ -100,7 +96,6 @@ export const ThinkingEffortPill = React.forwardRef<
       options={options}
       value={value}
       onChange={onChange}
-      onExpandedChange={onExpandedChange}
       {...rest}
     />
   );
@@ -116,30 +111,12 @@ const ThinkingEffortSliderPill = React.forwardRef<
     onChange,
     onMouseEnter,
     onMouseLeave,
-    // `expanded` / `onToggle` from the parent are intentionally ignored
-    // (hover-driven, see below) — destructured so they don't leak into
-    // `rest` and onto the DOM node.
-    expanded: _expanded,
-    onToggle: _onToggle,
-    onExpandedChange,
+    expanded,
+    onToggle,
     ...rest
   },
   ref,
 ) {
-  // Click-to-open. The `expanded` / `onToggle` props from the parent are
-  // intentionally ignored: the pill manages its own state — click on the
-  // collapsed pill opens the card. It never self-closes; the card stays
-  // open until an outside click, which composer/index detects and
-  // force-collapses by remounting the pill (effortEpoch bump). Hover
-  // alone only slides out the caret (chips-style affordance) and animates
-  // the icon.
-  const [expanded, setExpandedState] = useState(false);
-  // 内部开合是权威状态；同步回传给 composer（effortText 的
-  // aria-expanded 由它驱动，卡开着时 HoverTip 不冒提示）。
-  const setExpanded = (v: boolean) => {
-    setExpandedState(v);
-    onExpandedChange?.(v);
-  };
   const { text } = useTranslation();
   const valueIndex = Math.max(
     0,
@@ -233,7 +210,7 @@ const ThinkingEffortSliderPill = React.forwardRef<
             "effort-pill-collapsed h-full flex items-center px-[7px] cursor-pointer",
             expanded ? "hidden" : "",
           ].join(" ")}
-          onClick={() => setExpanded(true)}
+          onClick={onToggle}
         >
           <BicepsFlexedIcon
             ref={effortIconChipRef}

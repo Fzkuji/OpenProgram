@@ -60,7 +60,6 @@ export interface AgenticFunction {
   description: string;
   params: string[];
   params_detail: FunctionParamDetail[];
-  workdir_mode?: "optional" | "required" | "hidden";
   filepath?: string;
   mtime?: number;
 }

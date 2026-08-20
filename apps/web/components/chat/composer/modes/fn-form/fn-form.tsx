@@ -7,14 +7,7 @@
  */
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
-
 import type { AgenticFunction, FnParam } from "@/lib/session-store";
-import { runtimeState } from "@/lib/runtime-bridge/state";
-import {
-  type AnimatedNavIconHandle,
-  FolderOpenIcon,
-} from "@/components/animated-icons";
 
 import { FieldRow } from "./fn-form-fields";
 import styles from "./fn-form.module.css";
@@ -25,12 +18,6 @@ const RUNTIME_PARAM_NAMES = new Set([
   "exec_runtime",
   "review_runtime",
 ]);
-
-/** Home directory reported by `/api/workdir/defaults`, cached across form
- *  mounts so the OS folder picker has a sensible start dir even before the
- *  current fetch lands. Module-local, not `window` — a global nobody
- *  assigns is a silent dead read. */
-let workdirHome = "";
 
 export function visibleParams(fn: AgenticFunction): FnParam[] {
   return (fn.params_detail || []).filter(
@@ -52,8 +39,6 @@ interface FunctionFormProps {
   fn: AgenticFunction;
   values: Record<string, string>;
   setValue: (name: string, v: string) => void;
-  workdir: string;
-  setWorkdir: (v: string) => void;
   errorParam: string | null;
   closing?: boolean;
   onClose: () => void;
@@ -68,8 +53,6 @@ export function FunctionForm({
   fn,
   values,
   setValue,
-  workdir,
-  setWorkdir,
   errorParam,
   closing,
   onClose,
@@ -77,61 +60,11 @@ export function FunctionForm({
   ghost,
 }: FunctionFormProps) {
   const params = visibleParams(fn);
-  const workdirMode = fn.workdir_mode ?? "optional";
-  const showWorkdir = workdirMode !== "hidden";
 
   // The panel's height is its natural content height — no max-height
   // transition. The composer's wrapper height transition (driven from
   // Composer's `useLayoutEffect`) is what slides the form in/out from
   // behind the bottom row.
-
-  // Workdir defaults — re-fetched whenever the function changes.
-  // Server returns last-used path for this fn (+ home as a fallback for
-  // the OS picker's start dir).
-  useEffect(() => {
-    let cancelled = false;
-    const query = new URLSearchParams();
-    query.set("function_name", fn.name);
-    // The session id lives in `runtimeState` (same singleton `getSocket()`
-    // reads). Without it the backend's `last_workdirs` lookup is skipped
-    // and "last used folder" silently falls back to the repo root.
-    const sessionId = runtimeState.currentSessionId;
-    if (sessionId) query.set("session_id", sessionId);
-    fetch(`/api/workdir/defaults?${query.toString()}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled) return;
-        if (data && typeof data.home === "string") {
-          workdirHome = data.home;
-        }
-        if (workdirMode !== "hidden" && data) {
-          const last = typeof data.last === "string" ? data.last.trim() : "";
-          const repo = typeof data.repo === "string" ? data.repo.trim() : "";
-          const next = last || repo;
-          if (next) setWorkdir(next);
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fn.name, workdirMode]);
-
-  const pickWorkdir = useCallback(async () => {
-    const start = workdir.trim() || workdirHome;
-    try {
-      const r = await fetch("/api/pick-folder", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ start }),
-      });
-      const data = await r.json();
-      if (r.ok && data.path) setWorkdir(data.path);
-    } catch {
-      /* ignore — user can still type a path */
-    }
-  }, [workdir, setWorkdir]);
 
   function onKey(e: React.KeyboardEvent) {
     if (e.key === "Escape") {
@@ -197,15 +130,6 @@ export function FunctionForm({
         className={`${styles.body} ${closing ? styles.closing : ""}`}
         onKeyDown={onKey}
       >
-        {showWorkdir && (
-          <WorkdirRow
-            value={workdir}
-            onChange={setWorkdir}
-            onPick={pickWorkdir}
-            error={errorParam === "__workdir"}
-            noId={ghost}
-          />
-        )}
         {params.length === 0 ? (
           <div className={styles.noParams}>
             No parameters needed — click run to execute
@@ -226,46 +150,3 @@ export function FunctionForm({
     </>
   );
 }
-
-function WorkdirRow({
-  value,
-  onChange,
-  onPick,
-  error,
-  noId,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  onPick: () => void;
-  error: boolean;
-  noId?: boolean;
-}) {
-  const folderIconRef = useRef<AnimatedNavIconHandle>(null);
-  return (
-    <div className={styles.workdirRow}>
-      <button
-        type="button"
-        className={styles.workdirBtn}
-        onClick={onPick}
-        onMouseEnter={() => folderIconRef.current?.startAnimation?.()}
-        onMouseLeave={() => folderIconRef.current?.stopAnimation?.()}
-        title="Open folder chooser"
-      >
-        <FolderOpenIcon ref={folderIconRef} size={15} />
-        <span>Working in a folder</span>
-      </button>
-      <input
-        type="text"
-        {...(noId ? {} : { id: "fn-form-workdir" })}
-        name="work_dir"
-        className={`${styles.workdirInput} ${error ? styles.workdirError : ""}`}
-        placeholder="/path/to/your/project"
-        spellCheck={false}
-        autoComplete="off"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </div>
-  );
-}
-

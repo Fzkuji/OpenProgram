@@ -73,25 +73,27 @@
 <body>
 <main>
   <h1>Programs source categories</h1>
-  <p class="lead">The Programs explorer is a logical catalog, not a mirror of Python files. It combines registered built-in Functions and Agentic Functions with source-backed Workflows and Applications. MCP servers and their tools remain exclusively in the existing MCP Servers page.</p>
+  <p class="lead">The Programs explorer follows the installed Python source hierarchy. Regular Functions are physically grouped by purpose under <code>openprogram/programs/functions/vanilla/</code>; the UI reads that hierarchy instead of rebuilding unrelated folders from runtime tool metadata.</p>
 
   <section class="contract" aria-label="Target Programs sidebar structure">
     <div class="nav">
       <div class="row active"><span class="icon">⌄</span><span>functions</span><span class="count">71</span></div>
-      <div class="row"><span class="icon">⌄</span><span>vanilla</span><span class="count">60</span></div>
-      <div class="row"><span class="icon">□</span><span>Files &amp; Shell</span><span class="count">9</span></div>
-      <div class="row"><span class="icon">□</span><span>Web &amp; Media</span><span class="count">7</span></div>
-      <div class="row"><span class="icon">□</span><span>Memory</span><span class="count">7</span></div>
+      <div class="row"><span class="icon">⌄</span><span>vanilla</span><span class="count">9 dirs</span></div>
+      <div class="row"><span class="icon">□</span><span>files</span><span class="count">10</span></div>
+      <div class="row"><span class="icon">⌄</span><span>web</span><span class="count">7</span></div>
+      <div class="row active"><span class="icon">ƒ</span><span>playwright_browser</span><span class="count"></span></div>
+      <div class="row"><span class="icon">□</span><span>knowledge</span><span class="count">2</span></div>
       <div class="row"><span class="icon">⌄</span><span>agentic</span><span class="count">11</span></div>
       <div class="sep"></div>
       <div class="row"><span class="icon">□</span><span>workflows</span><span class="count">4</span></div>
       <div class="row"><span class="icon">□</span><span>applications</span><span class="count">3</span></div>
     </div>
     <div class="content">
-      <strong>Functions</strong>
-      <p><code>vanilla</code> uses the existing built-in runtime groups. <code>agentic</code> uses registered Agentic Functions. The rows are logical catalog folders; they do not imply matching directories on disk.</p>
+      <strong>Source-backed, callable-first</strong>
+      <p><code>web/browser/</code> remains a multi-file source package, but it registers one callable named <code>playwright_browser</code>. The explorer therefore shows one callable row instead of a redundant <code>browser → playwright_browser</code> pair. A source package becomes an expandable row only when it exports several callables.</p>
       <div class="tags">
-        <span class="tag">registry-derived</span>
+        <span class="tag">source-backed directories</span>
+        <span class="tag">registry-backed callables</span>
         <span class="tag">read-only</span>
         <span class="tag">existing row style</span>
         <span class="tag">existing card style</span>
@@ -103,9 +105,9 @@
   <table>
     <thead><tr><th>Current boundary</th><th>Verified behavior</th><th>Gap</th></tr></thead>
     <tbody>
-      <tr><td><code>GET /api/tools</code></td><td>Returns built-in functions and MCP tools with <code>group</code> and <code>source</code> metadata.</td><td>The Programs explorer consumes only non-MCP rows; MCP rows belong to MCP Servers.</td></tr>
-      <tr><td><code>GET /api/programs</code></td><td>Returns registered Agentic Functions and Applications with their runtime names and source paths.</td><td>The current explorer scans source packages instead, which can merge multiple exports or expose unregistered packages.</td></tr>
-      <tr><td><code>GET /api/programs/explorer</code></td><td>Returns source-backed Workflows and Applications plus the fixed top-level branches.</td><td>Its current Functions leaves are replaced in the client by the two live registries.</td></tr>
+      <tr><td><code>functions/vanilla</code></td><td>Currently stores 34 tool packages in one flat directory.</td><td>Move each package once into one of nine purpose directories; keep public callable names unchanged.</td></tr>
+      <tr><td><code>GET /api/tools</code></td><td>Returns runtime callables, including MCP-backed tools and display groups.</td><td>It remains a runtime/configuration endpoint and no longer defines Programs folders.</td></tr>
+      <tr><td><code>GET /api/programs/explorer</code></td><td>Already owns Workflows and Applications, but only understands flat Function packages.</td><td>Extend it to traverse categories, discover both single-file modules and multi-file packages, and return callable-first rows.</td></tr>
     </tbody>
   </table>
 
@@ -113,7 +115,8 @@
   <table>
     <thead><tr><th>Sidebar row</th><th>Canonical evidence</th><th>Items shown</th><th>Mutation</th></tr></thead>
     <tbody>
-      <tr><td><code>functions/vanilla</code></td><td>Built-in rows from <code>/api/tools</code></td><td>Files &amp; Shell, Web &amp; Media, Memory, Planning, Agent Collaboration, Jobs &amp; Schedules, Code Intelligence, MCP Discovery, Worktrees, User Interaction, Runtime, and Other.</td><td>Read-only catalog</td></tr>
+      <tr><td><code>functions/vanilla</code></td><td>Physical directories beneath the installed package</td><td><code>files</code>, <code>web</code>, <code>knowledge</code>, <code>planning</code>, <code>agents</code>, <code>jobs</code>, <code>code</code>, <code>interaction</code>, and <code>runtime</code>.</td><td>Read-only catalog</td></tr>
+      <tr><td><code>functions/vanilla/&lt;purpose&gt;/&lt;module-or-package&gt;</code></td><td>Physical Python source plus registration metadata</td><td>A singleton source is one callable row. A source that registers several callables is one expandable group containing those callable rows.</td><td>Favorite and Use operate on the callable</td></tr>
       <tr><td><code>functions/agentic</code></td><td><code>/api/programs category=agentic</code></td><td>Each registered Agentic Function by its callable name, including multiple exports from one package.</td><td>Favorite and Use remain available</td></tr>
       <tr><td><code>workflows</code></td><td><code>/api/programs/explorer</code></td><td>Reusable source-backed workflows.</td><td>Existing call tree and graph</td></tr>
       <tr><td><code>applications</code></td><td><code>/api/programs/explorer</code></td><td>Installed application packages.</td><td>Existing call tree and graph</td></tr>
@@ -126,32 +129,51 @@
     <tbody>
       <tr><td>OpenProgram registry</td><td>Regular functions and agentic functions register into one callable surface while retaining source-layer metadata.</td><td>Adopt the unified runtime catalog; add read-only source filters only in the management UI.</td></tr>
       <tr><td>Hermes toolsets</td><td>Named toolsets represent selection, not source ownership.</td><td>Keep tool profiles separate from source categories.</td></tr>
-      <tr><td>Claude Code and OpenClaw references</td><td>Registration and policy decide callable availability; neither reference exposes OpenProgram's three-directory source tree as a Programs sidebar.</td><td>Do not infer source categories from policy, permissions, enabled state, or profile membership.</td></tr>
+      <tr><td><a href="https://github.com/anthropics/claude-code">Claude Code</a></td><td>The official repository does not publish the product's internal tool implementation tree, so its visible UI cannot establish a source-layout contract.</td><td>Do not copy an unverifiable one-folder-per-tool assumption.</td></tr>
+      <tr><td><a href="https://github.com/openai/codex/tree/main/codex-rs/core/src/tools">OpenAI Codex</a></td><td>The public tool implementation uses both handler files and submodules.</td><td>Adopt the same complexity-based distinction, without copying Rust-specific names.</td></tr>
     </tbody>
   </table>
-  <p>Adopted: reuse the existing built-in runtime groups. Modified: the file-tree visual language represents logical catalog folders rather than physical directories. Rejected: duplicating MCP tools in Programs, a second category registry, persisted user categories, moving Python files, a new dependency, and displaying raw source files.</p>
+  <p>Adopted: purpose directories are ordinary Python packages. A Function with one implementation file is a module; a Function or subsystem with providers, prompts, actions, workers, shared state, or several cooperating entry points is a package. A source package can register several callables, so packages such as <code>agent</code> and <code>memory</code> remain cohesive. Rejected: forcing every callable into a directory, forcing every source into one file, frontend-only categories, a second category registry, compatibility copies at old import paths, raw source-file browsing, and duplicating external MCP tools in Programs.</p>
+
+  <h2>Physical source plan</h2>
+  <table>
+    <thead><tr><th>Directory</th><th>Packages moved into it</th></tr></thead>
+    <tbody>
+      <tr><td><code>files</code></td><td>apply_patch, bash, edit, glob, grep, list, process, read, write, worktree</td></tr>
+      <tr><td><code>web</code></td><td>agent_browser, browser, image_analyze, image_generate, pdf, web_fetch, web_search</td></tr>
+      <tr><td><code>knowledge</code></td><td>memory, read_conversation</td></tr>
+      <tr><td><code>planning</code></td><td>plan_mode, todo</td></tr>
+      <tr><td><code>agents</code></td><td>agent, mixture_of_agents, send_message</td></tr>
+      <tr><td><code>jobs</code></td><td>cron</td></tr>
+      <tr><td><code>code</code></td><td>execute_code, lsp, semble</td></tr>
+      <tr><td><code>interaction</code></td><td>canvas, clarify, send_file</td></tr>
+      <tr><td><code>runtime</code></td><td>mcp_meta, program, skill</td></tr>
+    </tbody>
+  </table>
+  <p>Single-file modules: <code>apply_patch</code>, <code>edit</code>, <code>glob</code>, <code>grep</code>, <code>list</code>, <code>process</code>, <code>read</code>, <code>write</code>, <code>agent_browser</code>, <code>pdf</code>, <code>web_fetch</code>, <code>read_conversation</code>, <code>mixture_of_agents</code>, <code>execute_code</code>, <code>canvas</code>, <code>clarify</code>, <code>send_file</code>, <code>program</code>, and <code>skill</code>. The remaining entries stay packages because they already contain cooperating implementation files or multiple registered callables.</p>
 
   <h2>Behavior, compatibility, and failures</h2>
   <ul>
-    <li>Search indexes every loaded logical folder and callable name.</li>
-    <li>Refreshing Programs re-fetches all three catalog endpoints.</li>
-    <li>Runtime-only built-in functions render a valid single-node detail instead of requesting nonexistent source paths.</li>
+    <li>The explorer expands the installed directory hierarchy lazily; it never invents category paths in the browser.</li>
+    <li>A singleton module or package is rendered directly as its registered callable; it does not add an extra source-wrapper row.</li>
+    <li>A package that registers several callables expands to those callable names while retaining one shared source boundary.</li>
+    <li>Refreshing Programs rescans Programs and reloads the same explorer endpoint.</li>
     <li>Rows whose source is <code>mcp</code> never appear in Programs; MCP Servers remains their only management page.</li>
     <li>Agentic Functions use their public callable names; their source path is used only for static call analysis when available.</li>
     <li>Workflows, Applications, favorites, chat launch, call tree, and graph behavior remain unchanged.</li>
   </ul>
 
   <h2>Task brief and gate manifest</h2>
-  <p><strong>Production files:</strong> one pure Programs catalog builder and the existing Programs page. <strong>Test files:</strong> the existing Programs UI contract plus one direct catalog-builder test. <strong>Excluded:</strong> registry changes, new API endpoints, moving Python files, agent-profile behavior, card restyling, dependencies, and release operations.</p>
-  <p><strong>Acceptance:</strong> the Programs tree contains every non-MCP built-in row returned by <code>/api/tools</code>, every Agentic Function returned by <code>/api/programs</code>, existing Workflows, and existing Applications; built-ins retain their functional groups; no MCP server or MCP tool is duplicated in Programs; selecting every displayed leaf produces a valid detail.</p>
-  <p><strong>Verification:</strong> focused catalog-builder RED/GREEN, Programs UI contract, TypeScript compile, production build, default 18100 packaged-App DOM and screenshot, and <code>git diff --check</code>.</p>
+  <p><strong>Production files:</strong> physical vanilla packages, their imports, the Programs explorer endpoint, and the existing Programs page. <strong>Test files:</strong> explorer public-entry tests, registry/import tests, and the Programs UI contract. <strong>Excluded:</strong> public callable renames, tool-profile policy changes, card restyling, dependencies, and external MCP catalog changes.</p>
+  <p><strong>Acceptance:</strong> every shipped vanilla source lives under exactly one purpose directory; simple sources are modules and complex sources are packages; no old top-level source remains; <code>playwright_browser</code> is directly visible and retains <code>functions/vanilla/web/browser</code> as its logic path; all registered vanilla callable names remain available; Workflows and Applications are unchanged.</p>
+  <p><strong>Verification:</strong> focused explorer and registry RED/GREEN tests, import smoke test, Programs UI check, TypeScript compile, build, default 18100 packaged-App DOM and screenshot, and <code>git diff --check</code>.</p>
 
   <h2>Application import compatibility</h2>
   <p>Applications loaded from <code>openprogram/programs/applications</code> must import built-in Agentic Functions through the canonical <code>openprogram.programs.functions.agentic</code> namespace. The removed <code>openprogram.programs.agentic_functions</code> namespace is not restored as a second compatibility package.</p>
   <p><strong>Acceptance:</strong> the packaged <code>gui_agent</code> public entry can begin a desktop run without a module-import error; the GUI, research, and wiki application packages contain no production import of the removed namespace.</p>
 
   <h2>Implementation status</h2>
-  <div class="status">Implemented and packaged: Programs owns built-in Functions, Agentic Functions, Workflows, and Applications only. The default 18100 App exposes 60 vanilla Functions, 11 Agentic Functions, Workflows, and Applications, with no MCP or connected branch; the backend still reports MCP tools for the dedicated MCP Servers page.</div>
+  <div class="status">In implementation: the physical purpose directories and callable registry are present. The remaining work is mixed module/package discovery, singleton-row projection, and final packaged-App verification.</div>
 </main>
 </body>
 </html>

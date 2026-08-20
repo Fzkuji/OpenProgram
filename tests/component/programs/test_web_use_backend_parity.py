@@ -231,7 +231,7 @@ def _registry(monkeypatch):
     from openprogram.programs.functions.agentic.browser_agent.mcp_backends import (
         OfficialMCPPageBackend,
     )
-    from openprogram.programs.functions.vanilla.browser import _chrome_bootstrap
+    from openprogram.programs.functions.vanilla.web.browser import _chrome_bootstrap
 
     monkeypatch.setattr(_chrome_bootstrap, "desktop_app_ws_url", lambda: "ws://cdp")
     controllers = {name: _Controller(name) for name in BACKENDS}

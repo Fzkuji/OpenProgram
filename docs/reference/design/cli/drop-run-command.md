@@ -26,22 +26,19 @@ dispatcher tool execution and runtime-block wrapping.
 ```json
 {
   "session_id": "...",
-  "kwargs": { "task": "..." },
-  "work_dir": "/abs/path"
+  "project_id": "...",
+  "kwargs": { "task": "..." }
 }
 ```
 
 `session_id` is optional. If omitted, the server creates a session.
-
-`work_dir` is optional. The server resolves it in this order:
-
-1. explicit `work_dir`, `_workdir`, or `workdir`
-2. the session's last workdir for this function
-3. the repository root
+`project_id` is optional for an existing session and required when a pending
+Project selection must be bound before the first function call. Execution uses
+the selected Project directory, falling back to the configured default Project.
 
 For compatibility, older callers may post flat function parameters at the top
 level. The server converts those fields into `kwargs` and ignores control keys
-such as `session_id` and `work_dir`.
+such as `session_id` and `project_id`.
 
 The response is:
 

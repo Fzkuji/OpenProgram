@@ -480,7 +480,7 @@ def test_session_context_without_active_turn_does_not_inject():
 
 def test_execute_code_honors_sandbox_unavailable_refuse(agent_run, monkeypatch):
     from openprogram import sandbox
-    from openprogram.programs.functions.vanilla.execute_code.execute_code import execute
+    from openprogram.programs.functions.vanilla.code.execute_code import execute
 
     marker = agent_run / "must-not-exist"
     monkeypatch.setattr(
@@ -500,7 +500,7 @@ def test_execute_code_routes_interpreter_script_and_cwd_through_local_backend(
 ):
     from openprogram.backend.local import LocalBackend
     from openprogram.backend.base import RunResult
-    from openprogram.programs.functions.vanilla.execute_code.execute_code import execute
+    from openprogram.programs.functions.vanilla.code.execute_code import execute
 
     seen = {}
 
@@ -593,7 +593,7 @@ def test_agent_shell_rm_rmdir_and_unlink_are_recoverable(agent_run):
 
 def test_agent_python_and_execute_code_deletions_are_recoverable(agent_run):
     from openprogram.backend.local import LocalBackend
-    from openprogram.programs.functions.vanilla.execute_code.execute_code import execute
+    from openprogram.programs.functions.vanilla.code.execute_code import execute
 
     work = agent_run / "python-work"
     work.mkdir()

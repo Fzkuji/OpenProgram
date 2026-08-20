@@ -10,7 +10,6 @@ import os
 import sys
 
 from fastapi.responses import JSONResponse
-from openprogram.paths import get_default_workdir
 
 
 def _pick_folder_native(start: str):
@@ -247,23 +246,6 @@ def register(app):
             "home": home,
         })
 
-    @app.get("/api/workdir/defaults")
-    async def workdir_defaults(session_id: str = None, function_name: str = None):
-        import pathlib
-        from openprogram.webui import server as _s
-        repo_root = get_default_workdir()
-        last = None
-        if session_id and function_name:
-            with _s._sessions_lock:
-                conv = _s._sessions.get(session_id)
-                if conv:
-                    last = conv.get("last_workdirs", {}).get(function_name)
-        return JSONResponse(content={
-            "last": last,
-            "repo": repo_root,
-            "home": str(pathlib.Path.home()),
-        })
-
     @app.get("/api/history")
     async def get_history():
         from openprogram.webui import server as _s
@@ -290,7 +272,7 @@ def register(app):
     async def get_canvas(path: str = None):
         """Return the current canvas.md content + path + mtime."""
         import os as _os
-        from openprogram.programs.functions.vanilla.canvas.canvas import _resolve_path, _BLOCK_RE
+        from openprogram.programs.functions.vanilla.interaction.canvas import _resolve_path, _BLOCK_RE
         resolved = _resolve_path(path)
         try:
             st = _os.stat(resolved)

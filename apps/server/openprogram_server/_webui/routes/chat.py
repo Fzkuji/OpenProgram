@@ -18,6 +18,7 @@ import uuid
 import os
 
 from fastapi.responses import JSONResponse
+from openprogram.agent.internals._workdir import project_workdir_for
 from openprogram.paths import get_default_workdir
 
 
@@ -25,21 +26,15 @@ _FUNCTION_BODY_CONTROL_KEYS = {
     "kwargs",
     "session_id",
     "_session_id",
-    "work_dir",
-    "_workdir",
-    "workdir",
+    "project_id",
     "response_format",
 }
 
 
-def _resolve_work_dir(conv: dict, name: str, work_dir: str | None) -> str:
-    if not work_dir or not str(work_dir).strip():
-        work_dir = (conv.get("last_workdirs") or {}).get(name)
-    if not work_dir or not str(work_dir).strip():
-        work_dir = get_default_workdir()
-    resolved = os.path.abspath(os.path.expanduser(str(work_dir)))
-    conv.setdefault("last_workdirs", {})[name] = resolved
-    return resolved
+def _resolve_work_dir(session_id: str | None = None) -> str:
+    project_dir = project_workdir_for(session_id or "")
+    work_dir = project_dir if project_dir is not None else get_default_workdir()
+    return os.path.abspath(os.path.expanduser(str(work_dir)))
 
 
 def register(app):
@@ -133,9 +128,8 @@ def register(app):
         Body:
           ``session_id`` (optional) — target conversation; created if absent.
           ``kwargs`` (dict)         — function arguments.
-          ``work_dir`` (str, optional) — workdir bound to the call.
-            Falls back to the session's last workdir for this function,
-            then the configured default project directory.
+          ``project_id`` (str, optional) — pending Project selection for a
+            new fn-form session; bound before the function starts.
         """
         body = body or {}
         response_format = None
@@ -166,11 +160,7 @@ def register(app):
                 for k, v in body.items()
                 if k not in _FUNCTION_BODY_CONTROL_KEYS
             }
-        work_dir = (
-            body.get("work_dir")
-            or body.get("_workdir")
-            or body.get("workdir")
-        )
+        project_id = body.get("project_id")
         # ``fork_of_node``: edit-and-rerun. Anchor the run at the named
         # prior call's predecessor so it lands as a SIBLING branch of that
         # run (same fork model as retry_function), not a stacked new call.
@@ -186,13 +176,17 @@ def register(app):
             node = next((n for n in nodes if n.id == fork_of), None)
             if node is not None:
                 anchor = _call_predecessor(node)
+        dispatch_options = {
+            "anchor_msg_id": anchor,
+            "response_format": response_format,
+        }
+        if isinstance(project_id, str) and project_id:
+            dispatch_options["project_id"] = project_id
         result = run_agentic_function_call(
             name,
             kwargs,
             session_id,
-            work_dir,
-            anchor_msg_id=anchor,
-            response_format=response_format,
+            **dispatch_options,
         )
         if "error" in result:
             return JSONResponse(status_code=result.pop("status_code", 400),
@@ -204,9 +198,9 @@ def run_agentic_function_call(
     name: str,
     kwargs: dict,
     session_id: str | None = None,
-    work_dir: str | None = None,
     anchor_msg_id: str | None = None,
     response_format=None,
+    project_id: str | None = None,
 ) -> dict:
     """Dispatch an @agentic_function via the forced tool-call path and
     return ``{"session_id", "msg_id"}`` (or ``{"error", "status_code",
@@ -288,6 +282,18 @@ def run_agentic_function_call(
     kwargs = dict(kwargs or {})
     conv = _s._get_or_create_session(session_id)
     session_id = conv["id"]
+    if project_id:
+        from openprogram.agent.session_db import default_db
+        from openprogram.store.project import project_store as _projects
+
+        if _projects.get_project(project_id) is None:
+            return {
+                "error": f"unknown project: {project_id!r}",
+                "code": "unknown_project",
+                "status_code": 400,
+            }
+        default_db().update_session(session_id, project_id=project_id)
+        _projects.bind_session(session_id, project_id)
     # Reject a second run while one is already in flight in this session.
     # The chat/retry path already guards via _is_run_active; the fn-form /
     # Retry entry point did not, so two concurrent runs could advance HEAD
@@ -321,7 +327,7 @@ def run_agentic_function_call(
     # the run's caller so it forks as a sibling of the original.
     if anchor_msg_id is None:
         anchor_msg_id = ""
-    work_dir = _resolve_work_dir(conv, name, work_dir)
+    work_dir = _resolve_work_dir(session_id)
     # msg_id is only a WS-routing handle for the response stream;
     # it is never written to the DAG. The code node written by the
     # @agentic_function is the canonical record: a NEW run (empty anchor)

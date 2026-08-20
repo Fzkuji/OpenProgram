@@ -292,7 +292,7 @@ class BrowserPageController:
 
     def __init__(self, browser_api=None, *, url: str = "", max_steps: int = 20):
         if browser_api is None:
-            from openprogram.programs.functions.vanilla.browser import browser as browser_api
+            from openprogram.programs.functions.vanilla.web.browser import browser as browser_api
         self.browser_api = browser_api
         self.initial_url = url
         self.binding_id = ""

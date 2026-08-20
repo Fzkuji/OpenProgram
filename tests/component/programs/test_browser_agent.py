@@ -1098,8 +1098,8 @@ def test_bound_controller_open_forwards_exact_page_revisions():
 
 
 def test_browser_open_forwards_exact_page_revisions_to_app_session(monkeypatch):
-    from openprogram.programs.functions.vanilla.browser import browser as browser_api
-    from openprogram.programs.functions.vanilla.browser._actions import open_action
+    from openprogram.programs.functions.vanilla.web.browser import browser as browser_api
+    from openprogram.programs.functions.vanilla.web.browser._actions import open_action
 
     captured = {}
 

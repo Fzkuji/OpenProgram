@@ -317,7 +317,7 @@ def _deliver(session_id: str, entry: dict[str, Any]) -> None:
     pre-created job id so the dispatcher's handle stays valid."""
     from openprogram.agent.session_db import default_db
     from openprogram.agent.sub_agent_run import run_agent_turn_async
-    from openprogram.programs.functions.vanilla.send_message.send_message.delivery import (
+    from openprogram.programs.functions.vanilla.agents.send_message.send_message.delivery import (
         sender_header,
         job_header,
     )

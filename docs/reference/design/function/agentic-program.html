@@ -271,7 +271,7 @@ Skill 只来自用户项目、用户目录、插件和远端缓存，全部经<c
   <text x="716" y="90" fill="#a5a190" font-size="11">最少成功数闸门，再一次聚合调用。它写成了工具。</text>
 </svg>
 <div class="legend">
-<code>mixture_of_agents</code>（<code>openprogram/programs/functions/vanilla/mixture_of_agents/mixture_of_agents.py:290</code>）用<code>asyncio.gather</code>并行发N个模型，
+<code>mixture_of_agents</code>（<code>openprogram/programs/functions/vanilla/agents/mixture_of_agents/mixture_of_agents.py:290</code>）用<code>asyncio.gather</code>并行发N个模型，
 用<code>MIN_SUCCESSFUL_REFERENCES</code>做闸门，再调一次聚合模型。步骤、扇出、闸门全在代码里，站在谱的最右端，
 但它经<code>complete_simple</code>直连provider，不经<code>runtime.exec</code>，所以一个ModelCall节点都不落。
 <b>结论：装饰器选的是「内部要不要记账」，和「多少写进代码」是两个维度。</b>
