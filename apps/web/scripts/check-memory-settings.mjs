@@ -21,12 +21,9 @@ assert.equal(
   4,
   "each Memory switch needs an accessible name",
 );
-assert.match(settings, /method: "POST"/);
-assert.doesNotMatch(settings, /Save changes/);
-assert.match(settings, /shared\.pageHeader/);
-assert.match(settings, /shared\.pageTitle/);
-assert.match(settings, /settings\.tab\.memory/);
-assert.match(settings, /role="alert"/);
+assert.match(settings, /disabled=\{saving\}/);
+assert.match(settings, /role=\{messageKind === "error" \? "alert" : "status"\}/);
+assert.match(settings, /saveVersion\.current !== startedVersion/);
 assert.match(pageCss, /@media \(max-width: 720px\)/);
 assert.match(pageCss, /grid-template-rows: auto minmax\(0, 1fr\)/);
 assert.doesNotMatch(pageCss, /\.tabBar\s*\{[^}]*display:\s*none/s);
