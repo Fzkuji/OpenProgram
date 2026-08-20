@@ -8,6 +8,8 @@ import { CUSTOM_CSS_TEMPLATE, THEME_STYLES } from "../lib/prefs/theme-config.ts"
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const settings = readFileSync(join(root, "components/settings/general-section.tsx"), "utf8");
+const css = readFileSync(join(root, "components/settings/settings-page.module.css"), "utf8");
+const picker = readFileSync(join(root, "components/avatar/AvatarPicker.tsx"), "utf8");
 
 test("settings color style grid has three packages and no Custom card", () => {
   assert.deepEqual([...THEME_STYLES], ["beige", "neutral", "aurora"]);
@@ -48,4 +50,30 @@ test("snippet template targets html / current packages, not a Custom skin", () =
   assert.match(CUSTOM_CSS_TEMPLATE, /--accent-orange-hover:/);
   assert.doesNotMatch(CUSTOM_CSS_TEMPLATE, /\[data-theme="custom"\]/);
   assert.match(settings, /CUSTOM_CSS_TEMPLATE/);
+});
+
+test("appearance chrome uses the sans control column, not mono .value", () => {
+  assert.match(css, /\.value\s*\{[^}]*font-family:\s*var\(--font-mono\)/s);
+  assert.match(css, /\.control\s*\{[^}]*font-size:\s*14px[^}]*font-family:\s*var\(--font-sans\)/s);
+  assert.match(css, /\.themeCardLabel\s*\{[^}]*font-size:\s*14px[^}]*font-family:\s*var\(--font-sans\)/s);
+  assert.match(css, /\.customCssEnable\s*\{[^}]*font-size:\s*var\(--fs-sm\)[^}]*font-family:\s*var\(--font-sans\)/s);
+  assert.match(css, /\.customCssHint\s*\{[^}]*font-size:\s*var\(--fs-sm\)[^}]*color:\s*var\(--text-muted\)[^}]*font-family:\s*var\(--font-sans\)/s);
+  assert.match(css, /\.customCssArea\s*\{[^}]*font-family:\s*var\(--font-mono\)/s);
+  assert.match(css, /\.settingsAction\s*\{[^}]*font-size:\s*var\(--fs-base\)[^}]*font-family:\s*var\(--font-sans\)/s);
+
+  assert.match(settings, /styles\.control \+ " " \+ styles\.valueWide/);
+  assert.doesNotMatch(settings, /styles\.value \+ " " \+ styles\.valueWide/);
+  assert.match(settings, /styles\.value\}>\{updateState\?\.currentVersion/);
+  assert.match(settings, /styles\.value\}>Agentic Programming/);
+  assert.match(settings, /<code>openprogram upgrade --check<\/code>/);
+  assert.match(settings, /className=\{"text-fs-base " \+ styles\.settingsAction\}/);
+  assert.match(settings, /style: \{ fontFamily: fontStack\(font\) \}/);
+});
+
+test("avatar picker on General uses the 13px sans floor", () => {
+  assert.match(picker, /fontSize: "var\(--fs-sm\)"/);
+  assert.match(picker, /fontFamily: "var\(--font-sans\)"/);
+  assert.match(picker, /text-fs-sm/);
+  assert.doesNotMatch(picker, /text-\[12px\]/);
+  assert.doesNotMatch(picker, /fontSize: 11/);
 });
