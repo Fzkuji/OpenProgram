@@ -13,6 +13,7 @@ const appShell = source("components/app-shell.tsx");
 const providers = source("components/settings/providers/index.tsx");
 const providerItem = source("components/settings/providers/provider-item.tsx");
 const memory = source("components/settings/memory-settings.tsx");
+const system = source("components/settings/system-settings.tsx");
 const loading = source("app/(shell)/settings/loading.tsx");
 const detail = source("components/settings/providers/detail.tsx");
 const searchDetail = source("components/settings/search-providers/detail.tsx");
@@ -143,5 +144,14 @@ assert.match(css, /@container\s*\(max-width:\s*420px\)[\s\S]*\.modelFact\s*\{[^}
 assert.match(css, /@container\s*\(max-width:\s*680px\)[\s\S]*\.detailHeader\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*40px minmax\(0,\s*1fr\) auto/s);
 assert.match(css, /@container\s*\(max-width:\s*680px\)[\s\S]*\.detailHeaderActions\s*\{[^}]*grid-column:\s*3[^}]*flex-wrap:\s*wrap/s);
 assert.match(css, /@media \(max-width:\s*900px\)\s*\{\s*\.view\s*\{\s*padding-left:\s*49px;/s);
+
+// System Ports rows: copy stays in the left column; the input/switch
+// shrink-wraps on the right. Shared `.label` is content-sized, so long
+// bind-address / allowed-origins help must not wrap at full row width.
+assert.match(system, /styles\.row[\s\S]*styles\.rowTop[\s\S]*styles\.systemRow/);
+assert.match(system, /\{r\.help \?/);
+assert.match(css, /\.systemRow\s*\{[^}]*align-items:\s*flex-start/s);
+assert.match(css, /\.systemRow\s+\.label\s*\{[^}]*flex:\s*1 1 auto[^}]*min-width:\s*0/s);
+assert.match(css, /\.systemRow\s+\.control\s*\{[^}]*flex:\s*0 0 auto[^}]*margin-left:\s*auto[^}]*min-width:\s*7\.5rem/s);
 
 console.log("settings collapsible-column checks passed");
