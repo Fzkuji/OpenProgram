@@ -559,6 +559,103 @@ def test_create_and_revise_workflow_are_registered_public_tools() -> None:
     assert {"create_workflow", "revise_workflow"} <= exposed_names()
 
 
+def test_auto_workflow_is_callable_but_not_an_agent_tool() -> None:
+    from openprogram.programs._runtime import exposed_names, get
+
+    assert get("auto_workflow") is not None
+    assert "auto_workflow" not in exposed_names()
+    assert callable(TL.auto_workflow)
+    assert list(inspect.signature(TL.auto_workflow._fn).parameters) == ["task"]
+    assert set(TL.auto_workflow.spec["parameters"]["properties"]) == {"task"}
+
+
+def test_search_workflows_candidates_exclude_auto_workflow(
+    session_repo: Path,
+) -> None:
+    _install_workflow_project(session_repo, _project())
+    _install_workflow_project(
+        session_repo,
+        _project(name="auto_workflow", summary="Research orchestration entry"),
+    )
+
+    result = TL.search_workflows("research papers auto_workflow")
+
+    ids = [row["workflow_id"] for row in result["workflows"]]
+    assert "auto_workflow" not in ids
+    assert "research_workflow" in ids
+
+
+def test_auto_workflow_reuses_matching_project_without_catalog_change(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _candidate, revision = _install_workflow_project(session_repo, _project())
+    prompts = _planner(
+        monkeypatch,
+        json.dumps({"action": "reuse", "workflow_id": "research_workflow"}),
+    )
+    _executor(monkeypatch)
+    _summarizer(monkeypatch, "Completed reused research.")
+    catalog_before = _dir_bytes(session_repo / "catalog")
+    project = session_repo / "catalog" / "research_workflow"
+
+    result = TL.auto_workflow("research recent papers")
+
+    assert result["action"] == "reuse"
+    assert result["workflow_id"] == "research_workflow"
+    assert result["workflow_revision"] == revision
+    assert result["run_id"]
+    assert result["result"]["status"] == "completed"
+    assert result["result"]["project_revision"] == revision
+    assert _dir_bytes(session_repo / "catalog") == catalog_before
+    assert _git_output(project, "rev-parse", "HEAD") == revision
+    assert _git_output(project, "rev-list", "--count", "HEAD") == "1"
+    assert '- revise:' not in prompts[0]
+
+
+def test_auto_workflow_creates_and_executes_when_catalog_is_empty(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    prompts = _planner(
+        monkeypatch,
+        json.dumps({"action": "create"}),
+        _project(),
+    )
+    _executor(monkeypatch)
+    _summarizer(monkeypatch, "Completed new research.")
+
+    result = TL.auto_workflow("research recent papers")
+
+    assert result["action"] == "create"
+    assert result["workflow_id"] == "research_workflow"
+    assert len(result["workflow_revision"]) == 40
+    assert result["run_id"]
+    assert result["result"]["status"] == "completed"
+    project = session_repo / "catalog" / "research_workflow"
+    assert _git_output(project, "rev-parse", "HEAD") == result["workflow_revision"]
+    assert _git_output(project, "rev-list", "--count", "HEAD") == "1"
+    assert '- revise:' not in prompts[0]
+
+
+def test_auto_workflow_stops_when_create_fails_and_publishes_nothing(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    def fake(_sid, prompt, **_kwargs):
+        if "<workflow project candidates>" in prompt:
+            return json.dumps({"action": "create"})
+        return "{}"
+
+    monkeypatch.setattr(TL, "_run_planner_turn", fake)
+
+    with pytest.raises(TL.InvalidWorkflow, match="failed validation after"):
+        TL.auto_workflow("research papers")
+
+    assert not (session_repo / "catalog").exists()
+    runs = session_repo / "workflows"
+    if runs.exists():
+        for state_path in runs.glob("*/state.json"):
+            assert json.loads(state_path.read_text())["status"] != "completed"
+
+
 def test_small_task_is_persisted_as_a_reusable_multifile_project(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:

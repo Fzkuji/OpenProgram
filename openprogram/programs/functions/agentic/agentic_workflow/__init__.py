@@ -154,6 +154,19 @@ name only an id in the supplied candidate list. Never provide a revision or
 source files in this decision.
 """
 
+AUTO_DECISION_INSTRUCTIONS = """Decide whether to reuse one catalog candidate
+or create a new workflow. Reply with one JSON object and no prose.
+
+- reuse: {"action":"reuse","workflow_id":"one candidate id"}
+- create: {"action":"create"}
+
+Use reuse only when an existing candidate can perform this task without
+source changes. Use create when no candidate is an appropriate base.
+reuse may name only an id in the supplied candidate list. Never revise a
+published project from this entry. Never provide a revision or source
+files in this decision.
+"""
+
 PROJECT_AUTHOR_INSTRUCTIONS = """Write one complete reusable workflow project.
 Reply with one JSON object and no prose:
 {
@@ -1215,6 +1228,58 @@ def _request_project_decision(
         except Exception as exc:
             prompt = (
                 _decision_prompt(task, candidates)
+                + f"\n\n<concrete_error>\n{type(exc).__name__}: {exc}\n"
+                  "</concrete_error>\nReturn a corrected decision JSON object."
+            )
+
+
+def _auto_decision_prompt(task: str, candidates: list[dict]) -> str:
+    return (
+        AUTO_DECISION_INSTRUCTIONS
+        + "\n<workflow project candidates>\n"
+        + json.dumps(candidates, ensure_ascii=False, indent=2)
+        + "\n</workflow project candidates>"
+        + f"\n\n<task>\n{task}\n</task>"
+    )
+
+
+def _request_auto_decision(
+    task: str,
+    candidates: list[dict],
+    *,
+    session_id: str,
+    agent_id: str,
+    spawn_caller: Optional[str],
+) -> dict:
+    prompt = _auto_decision_prompt(task, candidates)
+    candidate_ids = {row["workflow_id"] for row in candidates}
+    while True:
+        reply = _run_planner_turn(
+            session_id, prompt, agent_id=agent_id,
+            spawn_caller=spawn_caller, label="workflow selection",
+        )
+        try:
+            decision = _parse_json_reply(reply)
+            action = str(decision.get("action") or "")
+            if action not in {"reuse", "create"}:
+                raise InvalidWorkflow("auto workflow action must be reuse or create")
+            if action == "create":
+                if set(decision) != {"action"}:
+                    raise InvalidWorkflow("create decision must contain only action")
+                return {"action": action}
+            if set(decision) != {"action", "workflow_id"}:
+                raise InvalidWorkflow(
+                    "reuse decision must contain only action and workflow_id"
+                )
+            workflow_id = _safe_project_id(decision.get("workflow_id"))
+            if workflow_id not in candidate_ids:
+                raise InvalidWorkflow(
+                    "reuse workflow_id must come from the current candidates"
+                )
+            return {"action": action, "workflow_id": workflow_id}
+        except Exception as exc:
+            prompt = (
+                _auto_decision_prompt(task, candidates)
                 + f"\n\n<concrete_error>\n{type(exc).__name__}: {exc}\n"
                   "</concrete_error>\nReturn a corrected decision JSON object."
             )
@@ -2566,6 +2631,102 @@ def revise_workflow(workflow_id: str, request: str) -> dict:
     )
 
 
+def _run_published_workflow(
+    task: str,
+    workflow_id: str,
+    revision: str,
+    *,
+    session_id: str,
+    spawn_caller: Optional[str],
+) -> dict:
+    """Execute one published workflow at a pinned revision. Never publishes."""
+    functions = _registered_agentic_functions()
+    run_id = _new_run_id()
+    instance = _instance_dir(session_id, run_id)
+    instance.mkdir(parents=True, exist_ok=False)
+    state = {
+        "run_id": run_id, "task": task, "status": "running",
+        "executions": 0, "items": [], "revisions": [], "result": "",
+        "last_error": "",
+    }
+    _save_state(instance / "state.json", state)
+    try:
+        index, candidate = _copy_active_snapshot(instance, workflow_id)
+        if index["active_revision"] != revision:
+            raise InvalidWorkflow(
+                f"workflow {workflow_id} revision changed after selection"
+            )
+        state.update(
+            project_id=workflow_id,
+            project_revision=revision,
+            workflow_dependencies=index["workflow_dependencies"],
+            project_action="reuse",
+            project_metadata=candidate["project_metadata"],
+            publish_required=False,
+        )
+        _save_project_ref(instance, state)
+        _save_state(instance / "state.json", state)
+    except BaseException as exc:
+        _mark_run_exception(instance, state, exc)
+        raise
+    with _WORKFLOW_LOCK:
+        state = _load_state(instance / "state.json")
+        return _run_project_instance_locked(
+            instance, state, run_id=run_id, session_id=session_id,
+            agent_id="main", spawn_caller=spawn_caller,
+            functions=functions,
+        )
+
+
+@agentic_function(
+    tool_visible=False,
+    input={
+        "task": {
+            "description": "The task to search, select, and execute",
+            "multiline": True,
+        },
+    },
+)
+def auto_workflow(task: str) -> dict:
+    """User-only orchestration: search, select reuse or create, then run.
+
+    Calls the public search/create entries and one visible selection
+    Agent. Never revises a published workflow and is not an Agent tool.
+    """
+    session_id = current_session_id()
+    spawn_caller = current_call_id() or None
+    candidates = search_workflows(task).get("workflows") or []
+    decision = _request_auto_decision(
+        task, candidates, session_id=session_id,
+        agent_id="main", spawn_caller=spawn_caller,
+    )
+    if decision["action"] == "reuse":
+        workflow_id = decision["workflow_id"]
+        revision = next(
+            row["revision"] for row in candidates
+            if row["workflow_id"] == workflow_id
+        )
+    else:
+        created = create_workflow(task)
+        workflow_id = created["workflow_id"]
+        revision = created["revision"]
+    executed = _run_published_workflow(
+        task, workflow_id, revision,
+        session_id=session_id, spawn_caller=spawn_caller,
+    )
+    if executed.get("status") == "failed":
+        raise InvalidWorkflow(
+            f"workflow run failed: {executed.get('run_id')}"
+        )
+    return {
+        "action": decision["action"],
+        "workflow_id": workflow_id,
+        "workflow_revision": revision,
+        "result": executed,
+        "run_id": executed["run_id"],
+    }
+
+
 def resume_workflow(run_id: str, **_deprecated) -> dict:
     """Resume one explicit workflow instance by id (internal use).
 
@@ -2587,7 +2748,7 @@ def resume_workflow(run_id: str, **_deprecated) -> dict:
 
 __all__ = [
     "agentic_workflow", "search_workflows", "create_workflow",
-    "revise_workflow", "resume_workflow", "InvalidWorkflow",
+    "revise_workflow", "auto_workflow", "resume_workflow", "InvalidWorkflow",
     "WorkflowExecutionCapped", "PLANNER_TOOLS",
     "HANDOFF_SUMMARY_MAX_CHARS", "MAX_ITEMS_EXECUTED",
 ]
