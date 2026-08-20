@@ -59,6 +59,24 @@ const CUSTOM_CSS_TEMPLATE = `[data-theme="custom"] {
   --accent-orange: #6ea8fe;
   --accent-fill: #3b82f6;
   --accent-orange-hover: #2563eb;
+}
+
+[data-theme="custom-light"] {
+  color-scheme: light;
+
+  --bg-primary: #faf9f5;
+  --bg-secondary: #f0eee5;
+  --bg-tertiary: #e8e6dc;
+  --bg-input: #ffffff;
+  --text-bright: #141413;
+  --text-primary: #3d3d3a;
+  --text-secondary: #5e5d59;
+  --text-muted: #91908c;
+  --border: rgba(20, 20, 19, 0.08);
+  --border-light: #dedcd1;
+  --accent-orange: #c15f3c;
+  --accent-fill: #c15f3c;
+  --accent-orange-hover: #a94e30;
 }`;
 
 const FONT_OPTIONS: FontKey[] = ["system", "inter", "serif", "mono"];
@@ -689,8 +707,8 @@ export function GeneralSection() {
                 />
                 <div className={styles.customCssHint}>
                   {text(
-                    'Define [data-theme="custom"] and pick the "Custom" color style above. Unset tokens fall back to the default palette. Applies live, saved in this browser.',
-                    '定义 [data-theme="custom"] 后在上方选择"自定义"颜色风格。未覆写的 token 回落到默认取值。即时生效，仅保存在本浏览器。',
+                    'Define [data-theme="custom"] for Dark and [data-theme="custom-light"] for Light, then pick the "Custom" color style above. Unset tokens fall back to Beige dark and Beige light. Applies live, saved in this browser.',
+                    '分别为深色定义 [data-theme="custom"]、为浅色定义 [data-theme="custom-light"]，再在上方选择「自定义」颜色风格。未覆写的 token 分别回落到暖色深色 / 暖色浅色。即时生效，仅保存在本浏览器。',
                   )}
                 </div>
               </div>

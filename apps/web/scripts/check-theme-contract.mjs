@@ -23,6 +23,8 @@ const tabMenu = read("components/center-tabs/use-tab-menu.ts");
 const mainOverlay = read("app/menu-overlay/main-menu/page.tsx");
 const contextOverlay = read("app/menu-overlay/context-menu/page.tsx");
 const desktopMain = read("../desktop/main.js");
+const desktopChrome = read("../desktop/theme-chrome.js");
+const desktopPreload = read("../desktop/preload.js");
 const layout = read("app/layout.tsx");
 
 function quotedValues(source, declaration) {
@@ -32,10 +34,18 @@ function quotedValues(source, declaration) {
 }
 
 const themeIds = quotedValues(themeConfig, "THEME_IDS");
-const builtins = themeIds.filter((id) => id !== "custom");
+const customSlots = themeIds.filter((id) => id === "custom" || id === "custom-light");
+const builtins = themeIds.filter((id) => !customSlots.includes(id));
 const importedThemes = [...globals.matchAll(/@import "\.\/styles\/themes\/([^".]+)\.css";/g)]
   .map((match) => match[1]);
-assert.deepEqual(importedThemes, builtins, "CSS theme imports must follow THEME_IDS exactly");
+assert.deepEqual(
+  importedThemes,
+  [...builtins, "custom-light"],
+  "CSS theme imports must be the built-ins plus the custom-light fallback sheet",
+);
+assert.deepEqual(customSlots, ["custom", "custom-light"]);
+assert.match(themeConfig, /custom:\s*\{\s*dark:\s*"custom",\s*light:\s*"custom-light"/);
+assert.match(desktopChrome, /custom:\s*\{\s*dark:\s*"custom",\s*light:\s*"custom-light"/);
 
 const requiredTokens = [
   "--accent-cyan", "--accent-fill", "--accent-green", "--accent-orange",
@@ -97,6 +107,24 @@ for (const alias of [
 for (const token of ["--accent-orange", "--accent-fill", "--accent-orange-hover"]) {
   assert.match(settings, new RegExp(`${token.replaceAll("-", "\\-")}\\s*:`), `Custom CSS template is missing ${token}`);
 }
+assert.match(settings, /\[data-theme="custom"\]/);
+assert.match(settings, /\[data-theme="custom-light"\]/);
+assert.match(settings, /Beige dark and Beige light/);
+assert.match(settings, /暖色深色 \/ 暖色浅色/);
+assert.match(settings, /THEME_STYLE_PAIRS\[style\]\[m\]/);
+assert.match(settings, /THEME_STYLE_PAIRS\[s\]\[mode\]/);
+
+const beigeLight = read("app/styles/themes/beige-light.css");
+const customLight = read("app/styles/themes/custom-light.css");
+assert.match(customLight, /\[data-theme=["']custom-light["']\]/);
+assert.deepEqual(tokens(customLight), requiredTokens, "custom-light must define the complete theme contract");
+for (const token of requiredTokens) {
+  assert.equal(
+    tokenValue(customLight, token),
+    tokenValue(beigeLight, token),
+    `custom-light ${token} must copy beige-light`,
+  );
+}
 
 function cssFiles(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -130,9 +158,39 @@ for (const caller of [browserControls, mainMenu, tabMenu]) {
 for (const overlay of [mainOverlay, contextOverlay]) {
   assert.match(overlay, /isThemeId\(theme\)/);
 }
-const desktopThemeIds = quotedValues(desktopMain, "MENU_THEME_IDS");
+const desktopThemeIds = quotedValues(desktopChrome, "THEME_IDS");
 assert.deepEqual(desktopThemeIds, themeIds);
 assert.match(desktopMain, /MENU_THEME_ID_SET\.has\(theme\)/);
+assert.match(desktopMain, /require\("\.\/theme-chrome"\)/);
+assert.match(desktopMain, /backgroundColor:\s*currentChrome\.bg/);
+assert.doesNotMatch(desktopMain, /#141416/);
+assert.match(desktopPreload, /theme:\s*\{/);
+assert.match(desktopPreload, /theme:set-chrome/);
+assert.match(bridgeTypes, /export interface DesktopThemeApi/);
+assert.match(bridge, /theme\?:\s*DesktopThemeApi/);
+
+function chromeBackgrounds(source) {
+  const match = source.match(/const THEME_CHROME = \{([\s\S]*?)\n\};/);
+  assert.ok(match, "THEME_CHROME must be a literal object");
+  return Object.fromEntries(
+    [...match[1].matchAll(/(?:["']([a-z0-9-]+)["']|([a-z0-9-]+))\s*:\s*\{[\s\S]*?\bbg:\s*["']([^"']+)["']/g)]
+      .map((item) => [item[1] || item[2], item[3]]),
+  );
+}
+const chromeBgs = chromeBackgrounds(desktopChrome);
+assert.deepEqual(Object.keys(chromeBgs).sort(), builtins.slice().sort());
+for (const id of builtins) {
+  const source = read(`app/styles/themes/${id}.css`);
+  assert.equal(
+    chromeBgs[id].toLowerCase(),
+    tokenValue(source, "--bg-primary").toLowerCase(),
+    `desktop THEME_CHROME.${id}.bg must be ${id} --bg-primary`,
+  );
+}
+assert.match(desktopChrome, /custom:\s*"beige-dark"/);
+assert.match(desktopChrome, /"custom-light":\s*"beige-light"/);
+assert.equal(chromeBgs["beige-dark"], "#262624");
+assert.equal(chromeBgs["beige-light"], "#faf9f5");
 
 assert.match(base, /button, input, select, textarea, optgroup\s*\{[^}]*font-family:\s*inherit/s);
 assert.match(layout, /style\.setProperty\('--font-sans', FONTS\[f\]\)/);

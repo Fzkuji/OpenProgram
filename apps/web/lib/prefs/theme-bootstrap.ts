@@ -49,6 +49,11 @@ function applyThemePreference() {
   document.documentElement.setAttribute('data-theme-style', style);
   document.documentElement.setAttribute('data-theme-mode', resolvedMode);
   themeStorageSet('agentic_theme', theme);
+  try {
+    if (window.openprogramDesktop && window.openprogramDesktop.theme) {
+      window.openprogramDesktop.theme.setChrome({ theme: theme, style: style, mode: mode });
+    }
+  } catch (_) {}
 }
 applyThemePreference();
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () {

@@ -24,9 +24,9 @@ Each surface evolved independently, resulting in divergent color palettes, typog
 - Appearance split into two independent controls:
   - **Mode**: Auto / Light / Dark (system-following auto is a mode, not a theme)
   - **Color style**: Beige / Neutral / Aurora / Custom
-- Each color style now supports both light and dark modes (added `aurora-light.css`)
+- Each color style supports both light and dark modes (`aurora-light` and `custom-light` included)
 - Storage migrated from single `agentic_theme` (schema 2) to `agentic_theme_style` + `agentic_theme_mode` (schema 3)
-- Theme contract maintained: 6 built-in themes × 58 tokens each
+- Theme contract maintained: 6 built-in skins × 58 tokens each, plus Custom slots (`custom` falls back to `:root` / beige-dark; `custom-light` ships beige-light fallback tokens)
 
 **Files changed:**
 - `apps/web/app/(shell)/settings/page.tsx` — redirect to `/settings/general`
@@ -38,7 +38,7 @@ Each surface evolved independently, resulting in divergent color palettes, typog
 - `apps/web/app/styles/themes/aurora-light.css` — new light variant of aurora theme
 - `apps/web/app/globals.css` — imports aurora-light
 - `apps/web/scripts/check-theme-contract.mjs` — updated for schema 3
-- `apps/desktop/main.js` — MENU_THEME_IDS includes aurora-light
+- `apps/desktop/main.js` — MENU_THEME_IDS follows `theme-chrome.js` `THEME_IDS` (includes `custom-light`)
 
 **Migration:** Existing users on schema 2 (combined theme) are automatically migrated to schema 3 (style + mode) on first page load. Legacy `agentic_theme` values map as follows:
 - `auto` → beige + auto
@@ -46,6 +46,8 @@ Each surface evolved independently, resulting in divergent color palettes, typog
 - `dark` / `light` (schema 2) → neutral + dark/light
 - `aurora` → aurora + dark
 - `custom` → custom + dark
+- `custom-light` → custom + light
+- `aurora-light` → aurora + light
 
 ## Later Work (Prioritized TODO)
 
@@ -118,19 +120,15 @@ Desktop icon SVG uses blue/purple (`#4A9FE1` / `#915FD5`).
 
 ---
 
-### 5. Desktop Chrome Hardcoded Colors (Medium Priority)
+### 5. Desktop Chrome Follows the Resolved Theme
 
-**Issue:** Electron window chrome doesn't follow theme preference:
+The first pixel of the Electron window matches the already resolved web theme. `BrowserWindow` is created with `--bg-primary` from that theme — not `#141416`.
 
-**Files:**
-- `apps/desktop/main.js` — `backgroundColor: "#141416"` (hardcoded cold gray)
-- Worker error page and embedded file-list HTML have their own light/dark hexes
+Resolution uses the same schema-3 keys the web app writes (`agentic_theme_style` + `agentic_theme_mode`, plus legacy `agentic_theme`). Desktop reads Chromium localStorage under userData, then a `theme-prefs.json` cache written on theme change. `auto` follows `nativeTheme.shouldUseDarkColors`.
 
-**Symptom:** Cold gray flash before cream theme loads.
+`apps/desktop/theme-chrome.js` holds the `--bg-primary` map copied from `apps/web/app/styles/themes/*.css`. `custom` / `custom-light` without user CSS use the beige pair (`#262624` / `#faf9f5`). Worker error pages and directory-listing HTML use the same chrome tokens. After a theme change the renderer calls `theme.setChrome`, which updates every `BrowserWindow` background so the next show/reload does not flash the old color.
 
-**Action:** Read theme preference from storage and apply background color before window shows.
-
-Window-state persistence (normal bounds vs maximize/fullscreen, display fallback, titlebar resize hit-testing) is implemented; see [window-state.md](window-state.md). The cold chrome flash above is still open.
+Window-state persistence (normal bounds vs maximize/fullscreen, display fallback, titlebar resize hit-testing) is unchanged; see [window-state.md](window-state.md).
 
 ---
 
@@ -194,22 +192,21 @@ Window-state persistence (normal bounds vs maximize/fullscreen, display fallback
 
 1. **Web token cleanup** — fix `:root` fallback, ensure beige-dark is consistent default
 2. **Docs palette** — align with Web beige or document independence
-3. **Desktop chrome color flash** — respect theme preference, eliminate cold flash. Window-state restore is already in place.
-4. **CLI/TUI colors** — either integrate with Web theme or document separate brand
-5. **Ghost tokens** — add to contract or remove from code/specs
-6. **Marketing/icon** — decide alignment or independence
-7. **Button/naming debt** — reconcile heights, radii, and token names
-8. **Component kit** — converge on Radix + Tailwind v4
+3. **CLI/TUI colors** — either integrate with Web theme or document separate brand
+4. **Ghost tokens** — add to contract or remove from code/specs
+5. **Marketing/icon** — decide alignment or independence
+6. **Button/naming debt** — reconcile heights, radii, and token names
+7. **Component kit** — converge on Radix + Tailwind v4
 
 ---
 
 ## Implementation Status
 
-- **Settings mode × style**: ✅ Complete (this PR)
+- **Settings mode × style**: ✅ Complete (Custom participates like Beige / Neutral / Aurora; Custom + Light is `custom-light`)
 - **Web token cleanup**: ❌ Not started
 - **Docs palette**: ❌ Not started
 - **Desktop window-state**: ✅ Complete
-- **Desktop chrome color flash**: ❌ Not started
+- **Desktop chrome color flash**: ✅ Complete (first pixel and chrome HTML follow resolved `--bg-primary`)
 - **CLI/TUI colors**: ❌ Not started
 - **Ghost tokens**: ❌ Not started
 - **Marketing/icon**: ❌ Not started
