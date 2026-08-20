@@ -301,13 +301,15 @@
             <tr><td>Git Workflow package、snapshot、checkpoint与显式resume</td><td>当前运行时已有对应实现；本设计要求保留。</td><td><span class="tag current">Existing</span></td></tr>
             <tr><td><code>@agentic_function</code> 工具级曝光接线到Layer-2</td><td><code>@agentic_function(tool_visible=)</code> 传入 Layer-2 <code>register(..., expose)</code>；默认 <code>True</code>，现有函数仍全部曝光。</td><td><span class="tag current">Implemented</span></td></tr>
             <tr><td>独立 <code>search_workflows</code></td><td>公共只读入口返回固定 revision、Schema、权限和命中依据；排除 <code>auto_workflow</code> 与无入口 legacy 项目；不调用模型、不写文件、不执行、不发布。</td><td><span class="tag current">Implemented</span></td></tr>
-            <tr><td>独立 <code>create_workflow</code> / <code>revise_workflow</code></td><td>create 只新增一个项目且不执行用户任务；revise 只新增一个 revision 且不覆盖旧 revision；失败与取消不发布；执行期 repair 已删除。</td><td><span class="tag current">Implemented</span></td></tr>
-            <tr><td>用户级 <code>auto_workflow</code></td><td>用户表单与 Programs 自动入口可见；以 <code>tool_visible=False</code> 注册，Agent 工具清单与搜索候选均不可见；编排 search → 可见 selection Agent → reuse/create → 执行，不自动 revise。</td><td><span class="tag current">Implemented</span></td></tr>
-            <tr><td>停止新的 <code>agentic_workflow</code> 调用</td><td>旧入口不再注册；新 catalog、新 DAG 和新 run 不出现 <code>agentic_workflow</code>；<code>resume_workflow</code> 保留为内部函数，历史 run 只读恢复。</td><td><span class="tag current">Completed</span></td></tr>
+            <tr><td>独立 <code>create_workflow</code> / <code>revise_workflow</code></td><td>create 只新增项目且不执行用户任务；revise 在候选与 active revision 内容相同时拒绝发布（<code>revision unchanged</code>），否则只新增一个 revision；依赖 revision 写入 <code>pyproject.toml</code> 的 <code>workflow-dependencies</code>；失败与取消不发布。</td><td><span class="tag current">Implemented</span></td></tr>
+            <tr><td>用户级 <code>auto_workflow</code></td><td>用户表单与 Programs 自动入口可见；以 <code>tool_visible=False</code> 注册；编排 search → 可见 selection Agent（public <code>agent()</code>，<code>AUTO_DECISION_ATTEMPTS=3</code>）→ reuse/create → 按 pin 执行；不自动 revise。</td><td><span class="tag current">Implemented</span></td></tr>
+            <tr><td>按 revision 执行与依赖 pin</td><td><code>_run_published_workflow</code> 通过 <code>git archive</code> 检出选定 revision；<code>workflow_dependencies</code> 随发布持久化并在执行时 pin，旧 revision 在新 HEAD 发布后仍可运行。</td><td><span class="tag current">Implemented</span></td></tr>
+            <tr><td>legacy <code>code.py</code> resume</td><td><code>resume_workflow</code> 对 legacy run 只读重放 snapshot/<code>code.py</code>；失败返回 failed，不调用 planner、不改写 artifact。</td><td><span class="tag current">Implemented</span></td></tr>
+            <tr><td>停止新的 <code>agentic_workflow</code> 调用</td><td>旧入口不再注册；新 catalog、新 DAG 和新 run 不出现 <code>agentic_workflow</code>；<code>resume_workflow</code> 保留为内部函数。</td><td><span class="tag current">Completed</span></td></tr>
             <tr><td>默认App真实验收</td><td>代码与文档门禁已齐，等待默认 <code>/Applications/OpenProgram.app</code> 完成 direct / reuse / create / cancel / legacy resume 可视验收。</td><td><span class="tag target">Pending</span></td></tr>
           </tbody>
         </table>
-        <p>Phase 0–4、Programs 分类和产品文档四入口描述已落地。默认 App 真实验收仍待用户完成；验收通过后再把该行改为 Implemented。</p>
+        <p>Phase 0–4 与上述合同修复已在源码与组件测试中落地；默认 App 真实验收仍待用户完成。</p>
       </section>
 
       <section id="exclusions">

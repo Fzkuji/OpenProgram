@@ -91,7 +91,7 @@
       <div class="eyebrow">Refactor Plan · Design Only</div>
       <h1>统一 Agent 执行语义，重构 Self Programming Workflow</h1>
       <p class="lead">Programs 内只使用 <code>openprogram.agentic_programming.agent()</code>。独立会话、后台 Job 与 sub-agent 分支继续由内部适配层负责，但两者最终必须进入同一个 Agent loop，不再形成两套规划、工具调用、模型覆盖和错误处理语义。</p>
-      <div class="meta"><span class="pill target">目标：一个公共 Agent API</span><span class="pill">范围：Runtime / Workflow / DAG / Chat UI</span><span class="pill">迁移：分阶段，可回滚</span><span class="pill">状态：尚未实施</span></div>
+      <div class="meta"><span class="pill target">目标：一个公共 Agent API</span><span class="pill">范围：Runtime / Workflow / DAG / Chat UI</span><span class="pill">迁移：分阶段，可回滚</span><span class="pill">状态：Workflow 编排已迁移 · App/DAG 验收待完成</span></div>
     </header>
 
     <div class="content">
@@ -110,8 +110,8 @@
         <div class="status-grid">
           <div class="card status"><span class="tag now">Current</span><strong><code>agent()</code> 已使用当前 Runtime</strong><p><code>openprogram/agentic_programming/agent.py</code> 调用 <code>runtime.exec(..., execution_kind="agent")</code>，因此本来就适合在 Workflow DAG 内运行。</p></div>
           <div class="card status"><span class="tag now">Current</span><strong><code>run_agent_turn()</code> 是持久 Job 入口</strong><p>它创建或恢复 session Job，处理 worker claim、branch、head、archive、chain depth 等会话生命周期。</p></div>
-          <div class="card status"><span class="tag remove">Mismatch</span><strong><code>agentic_workflow</code> 规划过程走错层</strong><p>选择和编写分别经 <code>_run_planner_turn() → run_agent_turn()</code> 执行，内部规划因此被记录成独立 session 任务，而不是当前 Workflow 的 Agent Call。</p></div>
-          <div class="card status"><span class="tag remove">Missing</span><strong>公共 <code>agent()</code> 缺少结构化结果能力</strong><p>当前 Runtime 已支持 <code>response_format</code>，但公共 <code>agent()</code> 尚未透传。规划器因而绕到内部 API 获取 JSON 结果。</p></div>
+          <div class="card status"><span class="tag remove">Resolved in workflow</span><strong><code>agentic_workflow</code> 规划曾走错层</strong><p>选择与编写经 <code>_run_planner_turn() → agent()</code> 执行，归属当前 Workflow 的 public Agent Call；<code>run_agent_turn()</code> 仍仅供 Chat/CLI/Job。</p></div>
+          <div class="card status"><span class="tag now">Partial</span><strong>公共 <code>agent()</code> 结构化结果</strong><p>Runtime 已支持 <code>response_format</code>，公共 <code>agent()</code> 尚未透传；Workflow 规划器仍解析 JSON 文本。</p></div>
         </div>
         <table><thead><tr><th>位置</th><th>当前职责</th><th>问题</th><th>目标</th></tr></thead><tbody>
           <tr><td><code>agentic_programming.agent</code></td><td>当前 Runtime 内工具循环</td><td>参数能力不完整，DAG 标签不够明确</td><td>扩展为唯一公共 Agent 合同</td></tr>
@@ -262,7 +262,7 @@
         <table><thead><tr><th>对象</th><th>处理</th><th>原因</th></tr></thead><tbody>
           <tr><td><code>agent()</code></td><td>保留并扩展；旧参数继续工作</td><td>已经是 ambient Runtime 内的正确公开原语</td></tr>
           <tr><td><code>run_agent_turn()</code></td><td>保留但标记 internal；禁止 Programs 导入</td><td>Chat/CLI/background 的 durable session 需求真实存在</td></tr>
-          <tr><td><code>_run_planner_turn()</code></td><td>迁移完成后删除</td><td>它把 Workflow 规划错误地转成独立 session Job</td></tr>
+          <tr><td><code>_run_planner_turn()</code></td><td>Workflow selection/authoring 调用 public <code>agent()</code></td><td>Programs 内规划不再 import <code>run_agent_turn</code></td><td>保留为 <code>agent(tools=PLANNER_TOOLS)</code> 薄包装；后续可删除</td></tr>
           <tr><td><code>_request_project_decision()</code></td><td>用单一编排 Agent 的实际工具行为替代</td><td>先输出 selection JSON 再编写造成两次 Agent 语义和断裂 DAG</td></tr>
           <tr><td>legacy SINGLE / <code>code.py</code></td><td>只读恢复，禁止新建</td><td>保留历史记录但不继续产生不可维护单文件 Workflow</td></tr>
           <tr><td>Workflow project package</td><td>继续使用标准 Python package 和 <code>@agentic_function</code> 导出</td><td>支持多文件维护、Git revision、静态依赖图和直接 Python 调用</td></tr>
@@ -309,8 +309,10 @@ git diff --check</code></pre>
         <div class="status-grid">
           <div class="card status"><span class="tag keep">Verified current</span><strong>已有公共 <code>llm()</code>、<code>agent()</code>、<code>goal()</code></strong><p>三者已经以 ambient Runtime 为基础，层级方向可保留。</p></div>
           <div class="card status"><span class="tag keep">Verified current</span><strong>Runtime 已支持大部分目标参数</strong><p><code>response_format</code>、tools、model、effort、timeout、execution_kind 等底层能力已经存在。</p></div>
-          <div class="card status"><span class="tag now">Partial</span><strong>Workflow 项目与 deterministic validator 已存在</strong><p>仍需把新 run 的规划、编写和 repair 从内部 session turn 迁到 public Agent。</p></div>
-          <div class="card status"><span class="tag remove">Not implemented</span><strong>统一 DAG 与 session adapter 边界尚未完成</strong><p>本文是重构计划，不代表源码已经完成迁移；实施证据必须在后续阶段单独记录。</p></div>
+          <div class="card status"><span class="tag keep">Verified current</span><strong>Workflow selection/authoring 已走 public <code>agent()</code></strong><p><code>agentic_workflow._run_planner_turn()</code> 改为调用 <code>openprogram.agentic_programming.agent()</code>（受限 <code>PLANNER_TOOLS</code>），不再 import <code>run_agent_turn</code>；auto selection 有 <code>AUTO_DECISION_ATTEMPTS</code> 上限。</p></div>
+          <div class="card status"><span class="tag now">Partial</span><strong>Workflow 内嵌 <code>agent()</code> 仍用 session adapter</strong><p>legacy <code>code.py</code> 执行路径的 <code>_agent_function()</code> 仍绑定 session turn；项目 snapshot 执行已使用 public <code>agent()</code>。</p></div>
+          <div class="card status"><span class="tag target">Pending</span><strong>统一 DAG 与 App 可视验收尚未完成</strong><p>组件测试已覆盖 reuse/create/revise/pin/resume；默认 App 中 selection Agent 节点、Conclusion 与 reload 行为仍待验收。</p></div>
+          <div class="card status"><span class="tag remove">Not implemented</span><strong>public <code>agent()</code> 结构化输出透传</strong><p>规划仍依赖模型返回 JSON 文本；Runtime 已支持 <code>response_format</code>，公共 <code>agent()</code> 尚未暴露该参数。</p></div>
         </div>
         <div class="footer">文档定位：Agent 执行与 Self Programming Workflow 的主重构计划。概念模型、UI 原型和具体迁移记录可以引用本页，但不得复制并修改本页的核心合同。</div>
       </section>
