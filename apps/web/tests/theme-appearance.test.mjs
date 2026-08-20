@@ -79,8 +79,14 @@ test("avatar picker on General uses the 13px sans floor", () => {
   assert.doesNotMatch(picker, /fontSize: 11/);
 });
 
-test("avatar picker grids wrap instead of overflowing a fixed 8-column track", () => {
-  assert.match(picker, /repeat\(auto-fill, minmax\(56px, 1fr\)\)/);
+test("avatar picker grids fill the settings value column without mid-word labels", () => {
+  assert.match(picker, /repeat\(auto-fit, minmax\(min\(80px, 100%\), 1fr\)\)/);
   assert.doesNotMatch(picker, /repeat\(8, 1fr\)/);
+  assert.doesNotMatch(picker, /minmax\(56px/);
+  assert.doesNotMatch(picker, /maxWidth:\s*544/);
   assert.match(picker, /minWidth: 0/);
+  assert.match(picker, /width: "100%"/);
+  assert.match(picker, /overflowWrap:\s*"normal"/);
+  assert.match(picker, /wordBreak:\s*"normal"/);
+  assert.doesNotMatch(picker, /overflowWrap:\s*"anywhere"/);
 });

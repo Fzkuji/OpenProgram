@@ -80,14 +80,16 @@ const INITIAL_VARIANTS: AvatarVariant[] = INITIAL_VARIANT_SEEDS.map(
 );
 
 /** Style tiles and variant circles share one wrapping track so both
- *  blocks keep the same left/right edges and drop to fewer columns
- *  instead of overflowing the settings card. */
+ *  blocks fill the settings value column and keep the same edges.
+ *  auto-fit + 1fr stretches tiles across that column; min 80px keeps
+ *  one-word labels (Avataaars, Adventurer) on a single line.
+ *  `min(80px, 100%)` lets a very narrow column shrink instead of
+ *  overflowing the card radius. */
 const PICKER_GRID: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(56px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(80px, 100%), 1fr))",
   gap: 8,
   width: "100%",
-  maxWidth: 544,
   minWidth: 0,
 };
 
@@ -267,7 +269,6 @@ export function AvatarPicker({
               flexWrap: "wrap",
               gap: 8,
               width: "100%",
-              maxWidth: 544,
               minWidth: 0,
             }}
           >
@@ -408,7 +409,9 @@ const _pickerLabel: CSSProperties = {
   fontWeight: 500,
   textAlign: "center",
   lineHeight: 1.2,
-  overflowWrap: "anywhere",
+  overflowWrap: "normal",
+  wordBreak: "normal",
+  hyphens: "none",
 };
 
 // Small action button (Regenerate / Choose file / Clear). Fixed 28px
