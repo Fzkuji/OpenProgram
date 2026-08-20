@@ -109,7 +109,7 @@ export function SystemSettings() {
                 .map((r) => {
                   const st = status[r.key];
                   return (
-                    <div className={`${styles.row} ${styles.rowTop}`} key={r.key}>
+                    <div className={`${styles.row} ${styles.rowTop} ${styles.systemRow}`} key={r.key}>
                       <div className={styles.label}>
                         <div>{r.label}</div>
                         {r.help ? (

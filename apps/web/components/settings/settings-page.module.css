@@ -338,6 +338,25 @@
   color: var(--text-primary);
   font-family: var(--font-sans);
 }
+/* System rows isolate the copy from the control. Shared `.label` is
+   content-sized (`flex: 0 1 auto`) so a long Ports help line wraps at
+   full row width and runs under the field. These overrides keep wrap
+   inside the left column only. Main / theme / updater stay on `.label`
+   + `.control` as-is. */
+.systemRow {
+  align-items: flex-start;
+}
+.systemRow .label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.systemRow .control {
+  flex: 0 0 auto;
+  margin-left: auto;
+  min-width: 7.5rem;
+  max-width: none;
+}
 /* Bare checkboxes/radios that sit directly on a `.row`. */
 .row > input[type="checkbox"],
 .row > input[type="radio"] {
