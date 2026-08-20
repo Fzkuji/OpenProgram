@@ -37,8 +37,8 @@ assert.deepEqual(tabOrder, ["general", "providers", "memory", "search", "browser
 // (desktop often skips the server redirect, and the unmatched-path
 // fallback used to treat that as Providers).
 assert.match(settingsHome, /redirect\("\/settings\/general"\)/);
-assert.match(layout, /return "system";\s*return "general";/);
-assert.doesNotMatch(layout, /return "providers"/);
+assert.match(layout, /pathname\.startsWith\("\/settings\/providers"\)\) return "providers"/);
+assert.match(layout, /return "providers";\s*return "general";/);
 assert.match(userMenu, /router\.push\("\/settings\/general"\)/);
 assert.doesNotMatch(userMenu, /router\.push\("\/settings"\)/);
 assert.match(mainMenu, /router\.push\("\/settings\/general"\)/);
