@@ -2,14 +2,15 @@
 
 /**
  * System settings — schema-driven editor, styled to match the other
- * settings tabs (same .section/.row/.label/.value from settings-page.module
+ * settings tabs (same .section/.row/.label/.control from settings-page.module
  * .css). Renders the SAME settings the TUI panel and `openprogram config`
  * edit, fetched from /api/settings (backed by openprogram.config_schema).
  * One SettingSpec server-side → one row here. See docs/design/cli/redesign.md.
  */
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
 
 import { Switch } from "@/components/ui/switch";
+import { useTranslation } from "@/lib/i18n";
 import styles from "./settings-page.module.css";
 
 interface Row {
@@ -32,18 +33,8 @@ interface Row {
 // chooses to render. Ports is the one genuinely-homeless setting.
 const WEB_GROUPS = ["Ports"];
 
-const inputStyle: CSSProperties = {
-  padding: "6px 10px",
-  background: "var(--bg-secondary)",
-  border: "1px solid var(--border)",
-  borderRadius: "var(--ui-button-radius)",
-  color: "var(--text-primary)",
-  font: "inherit",
-  width: 120,
-  textAlign: "right",
-};
-
 export function SystemSettings() {
+  const { t, text } = useTranslation();
   const [rows, setRows] = useState<Row[]>([]);
   const [status, setStatus] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
@@ -84,7 +75,7 @@ export function SystemSettings() {
   if (!loaded) {
     return (
       <div className={styles.page}>
-        <div style={{ padding: 24, color: "var(--text-muted)" }}>Loading…</div>
+        <div style={{ padding: 24, color: "var(--text-muted)" }}>{text("Loading…", "加载中…")}</div>
       </div>
     );
   }
@@ -94,9 +85,12 @@ export function SystemSettings() {
   return (
     <div className={styles.page}>
       <div className={styles.pageHeader}>
-        <h2 className={styles.pageTitle}>System</h2>
+        <h2 className={styles.pageTitle}>{t("settings.tab.system")}</h2>
         <p className={styles.pageMeta}>
-          Settings with no dedicated page. Some take effect on the next start.
+          {text(
+            "Settings with no dedicated page. Some take effect on the next start.",
+            "没有独立页面的设置。部分项会在下次启动后生效。",
+          )}
         </p>
       </div>
       <div className={styles.pageBody}>
@@ -109,7 +103,7 @@ export function SystemSettings() {
                 .map((r) => {
                   const st = status[r.key];
                   return (
-                    <div className={`${styles.row} ${styles.rowTop}`} key={r.key}>
+                    <div className={`${styles.row} ${styles.rowTop} ${styles.systemRow}`} key={r.key}>
                       <div className={styles.label}>
                         <div>{r.label}</div>
                         {r.help ? (
@@ -133,7 +127,7 @@ export function SystemSettings() {
                           </div>
                         ) : null}
                       </div>
-                      <div className={styles.value}>
+                      <div className={styles.control}>
                         <Control row={r} onSave={save} />
                       </div>
                     </div>
@@ -169,7 +163,7 @@ function Control({ row, onSave }: { row: Row; onSave: (k: string, v: unknown) =>
       <select
         value={String(row.value)}
         onChange={(e) => onSave(row.key, e.target.value)}
-        style={{ ...inputStyle, width: "auto", textAlign: "left" }}
+        className={`${styles.systemControl} ${styles.systemControlSelect}`}
       >
         {(row.choices || []).map((c) => (
           <option key={c} value={c}>
@@ -187,7 +181,7 @@ function Control({ row, onSave }: { row: Row; onSave: (k: string, v: unknown) =>
       type="text"
       inputMode="numeric"
       defaultValue={String(row.value ?? "")}
-      style={inputStyle}
+      className={styles.systemControl}
       onBlur={(e) => {
         if (e.target.value !== String(row.value)) onSave(row.key, e.target.value);
       }}

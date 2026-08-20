@@ -50,44 +50,48 @@ export function BrowserSettings() {
 
   return (
     <div className={styles.page}>
-      <header className={styles.pageHeader}>
-        <h1 className={styles.pageTitle}>{text("Browser", "浏览器")}</h1>
+      <div className={styles.pageHeader}>
+        <h2 className={styles.pageTitle}>{text("Browser", "浏览器")}</h2>
         <p className={styles.pageMeta}>
           {text(
             "Manage the built-in browser appearance and local browsing data.",
             "管理内置浏览器的外观和本地浏览数据。",
           )}
         </p>
-      </header>
+      </div>
       <div className={styles.pageBody}>
         <section>
-          <h2 className={styles.sectionTitle}>{text("Appearance", "外观")}</h2>
+          <h3 className={styles.sectionTitle}>{text("Appearance", "外观")}</h3>
           <div className={styles.card}>
             <div className={styles.row}>
               <span className={styles.label}>{text("Show bookmarks bar", "显示书签栏")}</span>
-              <Switch
-                checked={bookmarksVisible}
-                onCheckedChange={(checked) => setShowBookmarksBar(checked)}
-                aria-label={text("Show bookmarks bar", "显示书签栏")}
-              />
+              <div className={styles.control}>
+                <Switch
+                  checked={bookmarksVisible}
+                  onCheckedChange={(checked) => setShowBookmarksBar(checked)}
+                  aria-label={text("Show bookmarks bar", "显示书签栏")}
+                />
+              </div>
             </div>
           </div>
         </section>
 
         {bridge?.browserImport ? (
           <section>
-            <h2 className={styles.sectionTitle}>{text("Import", "导入")}</h2>
+            <h3 className={styles.sectionTitle}>{text("Import", "导入")}</h3>
             {showImport ? (
               <BrowserImportDialog onDismiss={() => setShowImport(false)} />
             ) : (
               <div className={styles.card}>
-                <div className={styles.row}>
+                <div className={`${styles.row} ${styles.rowTop} ${styles.systemRow}`}>
                   <span className={styles.label}>
                     {text("Import history, bookmarks, and cookies from a local browser", "从本地浏览器导入历史、书签和 Cookie")}
                   </span>
-                  <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
-                    {text("Import data", "导入资料")}
-                  </Button>
+                  <div className={styles.control}>
+                    <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
+                      {text("Import data", "导入资料")}
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
@@ -95,28 +99,42 @@ export function BrowserSettings() {
         ) : null}
 
         <section id="clear-data">
-          <h2 className={styles.sectionTitle}>{text("Clear browsing data", "清除浏览数据")}</h2>
+          <h3 className={styles.sectionTitle}>{text("Clear browsing data", "清除浏览数据")}</h3>
           <div className={styles.card}>
-            <label className={styles.row}>
-              <span className={styles.label}>{text("Browsing history", "浏览历史")}</span>
-              <input type="checkbox" checked={clearHistory} onChange={(event) => setClearHistory(event.target.checked)} />
-            </label>
-            <label className={styles.row}>
-              <span className={styles.label}>Cookies</span>
-              <input type="checkbox" checked={clearCookies} onChange={(event) => setClearCookies(event.target.checked)} />
-            </label>
             <div className={styles.row}>
-              <span className={styles.pageMeta}>
+              <span className={styles.label}>{text("Browsing history", "浏览历史")}</span>
+              <div className={styles.control}>
+                <Switch
+                  checked={clearHistory}
+                  onCheckedChange={setClearHistory}
+                  aria-label={text("Browsing history", "浏览历史")}
+                />
+              </div>
+            </div>
+            <div className={styles.row}>
+              <span className={styles.label}>Cookies</span>
+              <div className={styles.control}>
+                <Switch
+                  checked={clearCookies}
+                  onCheckedChange={setClearCookies}
+                  aria-label="Cookies"
+                />
+              </div>
+            </div>
+            <div className={`${styles.row} ${styles.rowTop} ${styles.systemRow}`}>
+              <span className={styles.label}>
                 {text("Bookmarks are not removed.", "不会删除书签。")}
               </span>
-              <Button
-                variant="destructive"
-                size="sm"
-                disabled={clearing || !bridge?.browserData || (!clearHistory && !clearCookies)}
-                onClick={() => void clearData()}
-              >
-                {clearing ? text("Clearing…", "正在清除…") : text("Clear data", "清除资料")}
-              </Button>
+              <div className={styles.control}>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={clearing || !bridge?.browserData || (!clearHistory && !clearCookies)}
+                  onClick={() => void clearData()}
+                >
+                  {clearing ? text("Clearing…", "正在清除…") : text("Clear data", "清除资料")}
+                </Button>
+              </div>
             </div>
             {clearResult ? <p className={styles.pageMeta} role="status">{clearResult}</p> : null}
           </div>

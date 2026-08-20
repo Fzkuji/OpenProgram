@@ -154,17 +154,17 @@ export function MemorySettings() {
             <Switch aria-label={text("Enable Memory", "启用 Memory")} disabled={saving} checked={backend === "local"} onCheckedChange={(checked) => update("memory.backend", checked ? "local" : "none")} />
           </SettingsRow>
           <SettingsRow label={text("Storage", "存储")} description={text("Topic Markdown with derived views and Git history.", "使用 Topic Markdown、派生视图和 Git 历史。") }>
-            <span className={styles.monoValue}>{backend === "local" ? text("Local workspace · Git enabled", "本地工作区 · Git 已启用") : text("Disabled", "已关闭")}</span>
+            <span className={styles.chromeValue}>{backend === "local" ? text("Local workspace · Git enabled", "本地工作区 · Git 已启用") : text("Disabled", "已关闭")}</span>
           </SettingsRow>
         </SettingsSection>
 
         <SettingsSection title={text("Background writing", "后台写入")}>
           <SettingsRow label={text("Writer model", "写入模型")} description={text("Uses the default chat model unless you select an enabled model.", "默认使用聊天模型，也可以选择一个已启用模型。") }>
+            <Status live>{text("Live", "实时")}</Status>
             <select aria-label={text("Writer model", "写入模型")} disabled={saving} className={styles.select} value={writerModel} onChange={(event) => update("memory.writer.model", event.target.value)}>
               <option value="">{text("Default chat model", "默认聊天模型")}{defaultChat ? ` · ${defaultChat}` : ""}</option>
               {models.map((model) => <option key={`${model.provider}/${model.id}`} value={`${model.provider}/${model.id}`}>{model.name} · {model.provider}</option>)}
             </select>
-            <Status live>{text("Live", "实时")}</Status>
           </SettingsRow>
           <SettingsRow label={text("Automatic writing", "自动写入")} description={text("Turn completed conversations into Topic records in the background.", "在后台把已完成对话整理为 Topic 记录。") }>
             <Switch aria-label={text("Automatic writing", "自动写入")} disabled={saving} checked={Boolean(draft["memory.writer.enabled"])} onCheckedChange={(value) => update("memory.writer.enabled", value)} />
@@ -180,12 +180,12 @@ export function MemorySettings() {
 
         <SettingsSection title={text("Retrieval", "检索")}>
           <SettingsRow label={text("Recall method", "检索方法")} description={text("Used before model turns and by Memory search.", "用于模型回合前的自动检索和 Memory 搜索。") }>
+            <Status live>{text("Live", "实时")}</Status>
             <select aria-label={text("Recall method", "检索方法")} disabled={saving} className={styles.select} value={retrieval} onChange={(event) => update("memory.retrieval.method", event.target.value)}>
               <option value="bm25">{text("Keyword · BM25", "关键词 · BM25")}</option>
               <option value="embedding" disabled={!embeddingAvailable}>{text("Semantic · Embeddings", "语义 · Embedding")}{!embeddingAvailable ? text(" (unavailable)", "（不可用）") : ""}</option>
               <option value="hybrid" disabled={!embeddingAvailable}>{text("Hybrid · BM25 + Embeddings", "混合 · BM25 + Embedding")}{!embeddingAvailable ? text(" (unavailable)", "（不可用）") : ""}</option>
             </select>
-            <Status live>{text("Live", "实时")}</Status>
           </SettingsRow>
           <SettingsRow label={text("Embedding model", "Embedding 模型")} description={text("Required for semantic and hybrid retrieval.", "语义检索和混合检索需要该能力。") }>
             <Status missing={!embeddingAvailable}>{embeddingAvailable ? text("Available", "可用") : text("Not installed", "未安装")}</Status>

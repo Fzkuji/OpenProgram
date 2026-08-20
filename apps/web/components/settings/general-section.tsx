@@ -19,11 +19,12 @@ import { setUserProfile, useUserProfile } from "@/lib/prefs/user-profile";
 import {
   Avatar,
   AvatarPicker,
-  sourceOf,
   type AvatarConfig,
 } from "@/components/avatar";
 import {
   useThemePref,
+  ACCENT_PRESETS,
+  CUSTOM_CSS_TEMPLATE,
   THEME_MODES,
   THEME_STYLES,
   THEME_STYLE_PAIRS,
@@ -31,53 +32,6 @@ import {
   type ThemeStyle,
 } from "@/lib/prefs/theme-pref";
 import styles from "./settings-page.module.css";
-
-/** 自定义 CSS 的起手模板 —— 直接写在 placeholder 里，复制即用。
- *  只列必须覆写的一组；其余 token 不写就继承 :root 兜底值。 */
-const CUSTOM_CSS_TEMPLATE = `[data-theme="custom"] {
-  color-scheme: dark;
-
-  /* 表面 */
-  --bg-primary: #1e1e20;
-  --bg-secondary: #171719;
-  --bg-tertiary: #252529;
-  --bg-input: #2a2a2e;
-  --bg-hover: rgba(255, 255, 255, 0.06);
-  --bg-selected: rgba(255, 255, 255, 0.10);
-
-  /* 文字（四档） */
-  --text-bright: #ededf0;
-  --text-primary: #b6b6bb;
-  --text-secondary: #92929a;
-  --text-muted: #74747c;
-
-  /* 边框 */
-  --border: rgba(255, 255, 255, 0.07);
-  --border-light: rgba(255, 255, 255, 0.12);
-
-  /* 主题主色：文字/边界、填充、填充 hover */
-  --accent-orange: #6ea8fe;
-  --accent-fill: #3b82f6;
-  --accent-orange-hover: #2563eb;
-}
-
-[data-theme="custom-light"] {
-  color-scheme: light;
-
-  --bg-primary: #faf9f5;
-  --bg-secondary: #f0eee5;
-  --bg-tertiary: #e8e6dc;
-  --bg-input: #ffffff;
-  --text-bright: #141413;
-  --text-primary: #3d3d3a;
-  --text-secondary: #5e5d59;
-  --text-muted: #91908c;
-  --border: rgba(20, 20, 19, 0.08);
-  --border-light: #dedcd1;
-  --accent-orange: #c15f3c;
-  --accent-fill: #c15f3c;
-  --accent-orange-hover: #a94e30;
-}`;
 
 const FONT_OPTIONS: FontKey[] = ["system", "inter", "serif", "mono"];
 
@@ -210,9 +164,6 @@ function ProfileEditor({
 }) {
   const { t } = useTranslation();
 
-  const source = sourceOf(profile.avatar);
-  const isLetterMode = source === "letter";
-
   function updateName(name: string) {
     onChange({ ...profile, name: name.slice(0, 32) });
   }
@@ -235,7 +186,7 @@ function ProfileEditor({
     <div className={styles.card}>
         <div className={styles.row}>
           <div className={styles.label}>{t("general.agent.preview")}</div>
-          <div className={styles.value}>
+          <div className={styles.control}>
             <span
               style={{
                 display: "inline-flex",
@@ -243,7 +194,19 @@ function ProfileEditor({
                 gap: 10,
               }}
             >
-              <Avatar size={40} name={profile.name} config={profile.avatar} />
+              <Avatar
+                size={40}
+                name={profile.name}
+                config={
+                  profile.avatar?.kind === "letter"
+                    ? {
+                        kind: "letter",
+                        letter: profile.initial,
+                        bg: profile.color,
+                      }
+                    : profile.avatar
+                }
+              />
               <span style={{ fontWeight: 600 }}>{profile.name}</span>
             </span>
           </div>
@@ -251,7 +214,7 @@ function ProfileEditor({
 
         <div className={styles.row}>
           <div className={styles.label}>{t("general.agent.name")}</div>
-          <div className={styles.value}>
+          <div className={styles.control}>
             <input
               type="text"
               value={profile.name}
@@ -271,99 +234,21 @@ function ProfileEditor({
           </div>
         </div>
 
-        {/* Avatar style + seed + upload — all owned by the avatar
-            feature module. This page just hands it the current
-            config and a setter; the picker decides what controls to
-            render based on which source the user has chosen.
-            ``rowTop`` keeps the "Avatar style" label pinned to the
-            top of the tall picker block instead of centring it. */}
-        <div className={`${styles.row} ${styles.rowTop}`}>
-          <div className={styles.label}>Avatar style</div>
-          <div className={styles.value}>
+        <div className={styles.row + " " + styles.rowTop}>
+          <div className={styles.label}>{t("general.avatar")}</div>
+          <div className={styles.control}>
             <AvatarPicker
               value={profile.avatar}
               onChange={updateAvatar}
               name={profile.name}
               letterBg={profile.color}
               letterText={profile.initial}
+              onLetterBgChange={updateColor}
+              onLetterTextChange={updateInitial}
+              colors={colors}
             />
           </div>
         </div>
-
-        {/* Letter-mode initial + colour — owned by the page
-            (because they live on ``AgentProfilePrefs`` directly,
-            not on ``avatar``). Hidden when the picker is on a
-            DiceBear / upload source to keep the panel focused. */}
-        {isLetterMode && (
-          <>
-            <div className={styles.row}>
-              <div className={styles.label}>{t("general.agent.initial")}</div>
-              <div className={styles.value}>
-                <input
-                  type="text"
-                  value={profile.initial}
-                  maxLength={2}
-                  onChange={(e) => updateInitial(e.target.value)}
-                  style={{
-                    padding: "6px 10px",
-                    background: "var(--bg-secondary)",
-                    border: "1px solid var(--border)",
-                    borderRadius: "var(--ui-button-radius)",
-                    color: "var(--text-primary)",
-                    font: "inherit",
-                    width: 64,
-                    textAlign: "center",
-                  }}
-                />
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: "var(--text-muted)",
-                    marginTop: 4,
-                  }}
-                >
-                  {t("general.agent.initial.hint")}
-                </div>
-              </div>
-            </div>
-
-            <div className={styles.row}>
-              <div className={styles.label}>{t("general.agent.color")}</div>
-              <div className={styles.value}>
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: 6,
-                    maxWidth: 280,
-                  }}
-                >
-                  {colors.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => updateColor(c)}
-                      aria-label={c}
-                      title={c}
-                      style={{
-                        width: 24,
-                        height: 24,
-                        borderRadius: 6,
-                        background: c,
-                        border:
-                          profile.color === c
-                            ? "2px solid var(--text-primary)"
-                            : "1px solid var(--border)",
-                        cursor: "pointer",
-                        padding: 0,
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          </>
-        )}
       </div>
   );
 }
@@ -449,8 +334,12 @@ function ApplicationSection() {
     }
   };
 
+  const failedStatusText = text("Update check failed", "更新检查失败");
+  const statusDetail = updateActionError
+    || (updateState?.status === "error" ? updateState.error : null)
+    || undefined;
   const statusText = (() => {
-    if (updateActionError) return updateActionError;
+    if (updateActionError) return failedStatusText;
     switch (updateState?.status) {
       case "checking": return text("Checking…", "正在检查…");
       case "up-to-date": return text("Up to date", "已是最新版本");
@@ -466,7 +355,7 @@ function ApplicationSection() {
         );
       }
       case "downloaded": return text("DMG opened", "DMG 已打开");
-      case "error": return updateState.error || text("Update check failed", "更新检查失败");
+      case "error": return failedStatusText;
       default: return text("Not checked", "尚未检查");
     }
   })();
@@ -480,7 +369,7 @@ function ApplicationSection() {
       <div className={styles.card}>
         <div className={styles.row}>
           <div className={styles.label}>{t("general.version")}</div>
-          <div className={styles.value}>{updateState?.currentVersion || hostVersion}</div>
+          <div className={styles.control}>{updateState?.currentVersion || hostVersion}</div>
         </div>
         {bridge?.updates ? (
           <>
@@ -488,17 +377,19 @@ function ApplicationSection() {
               <label className={styles.label} htmlFor="automatic-update-checks">
                 {text("Automatically check for updates", "自动检查更新")}
               </label>
-              <input
-                id="automatic-update-checks"
-                type="checkbox"
-                checked={updateState?.automaticChecks ?? true}
-                onChange={(event) => { void runUpdateAction(() => bridge.updates.setAutomaticChecks(event.target.checked)); }}
-              />
+              <div className={styles.control}>
+                <input
+                  id="automatic-update-checks"
+                  type="checkbox"
+                  checked={updateState?.automaticChecks ?? true}
+                  onChange={(event) => { void runUpdateAction(() => bridge.updates.setAutomaticChecks(event.target.checked)); }}
+                />
+              </div>
             </div>
             <div className={styles.row}>
               <div className={styles.label}>{text("Update status", "更新状态")}</div>
               <div
-                className={styles.value}
+                className={styles.control}
                 role={updateState?.status === "downloading" ? "progressbar" : "status"}
                 aria-live={updateState?.status === "downloading" ? undefined : "polite"}
                 aria-atomic="true"
@@ -506,6 +397,7 @@ function ApplicationSection() {
                 aria-valuemax={progress?.total}
                 aria-valuenow={progress?.downloaded}
                 aria-valuetext={progress ? statusText : undefined}
+                title={statusDetail}
               >
                 {statusText}
               </div>
@@ -513,30 +405,30 @@ function ApplicationSection() {
             {updateState?.release?.publishedAt && updateState.release.status === "available" && (
               <div className={styles.row}>
                 <div className={styles.label}>{text("Published", "发布时间")}</div>
-                <div className={styles.value}>{new Date(updateState.release.publishedAt).toLocaleDateString()}</div>
+                <div className={styles.control}>{new Date(updateState.release.publishedAt).toLocaleDateString()}</div>
               </div>
             )}
             {updateState?.release?.releaseNotes && updateState.release.status === "available" && (
               <div className={`${styles.row} ${styles.rowTop}`}>
                 <div className={styles.label}>{text("Release notes", "版本说明")}</div>
-                <div className={`${styles.value} ${styles.valueWide}`} style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>
+                <div className={styles.control} style={{ whiteSpace: "pre-wrap", textAlign: "left" }}>
                   {updateState.release.releaseNotes.slice(0, 600)}
                 </div>
               </div>
             )}
             <div className={styles.row}>
               <div className={styles.label}>{text("Actions", "操作")}</div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                <Button variant="outline" size="sm" disabled={busy} onClick={() => { void runUpdateAction(() => bridge.updates.check()); }}>
+              <div className={styles.control} style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <Button variant="outline" size="sm" className={"text-fs-base " + styles.settingsAction} disabled={busy} onClick={() => { void runUpdateAction(() => bridge.updates.check()); }}>
                   {text("Check now", "立即检查")}
                 </Button>
                 {updateState?.release?.status === "available" && (
-                  <Button size="sm" disabled={busy} onClick={() => { void runUpdateAction(() => bridge.updates.download()); }}>
+                  <Button size="sm" className={"text-fs-base " + styles.settingsAction} disabled={busy} onClick={() => { void runUpdateAction(() => bridge.updates.download()); }}>
                     {text("Download and open DMG", "下载并打开 DMG")}
                   </Button>
                 )}
                 {updateState?.release && (
-                  <Button variant="outline" size="sm" onClick={() => { void runUpdateAction(() => bridge.updates.openRelease()); }}>
+                  <Button variant="outline" size="sm" className={"text-fs-base " + styles.settingsAction} onClick={() => { void runUpdateAction(() => bridge.updates.openRelease()); }}>
                     {text("View release", "查看 Release")}
                   </Button>
                 )}
@@ -547,11 +439,11 @@ function ApplicationSection() {
           <>
             <div className={styles.row}>
               <div className={styles.label}>{text("Installation", "安装类型")}</div>
-              <div className={styles.value}>{installType}</div>
+              <div className={styles.control}>{installType}</div>
             </div>
             <div className={styles.row}>
               <div className={styles.label}>{text("Check for updates", "检查更新")}</div>
-              <div style={{ display: "grid", gap: 4, justifyItems: "end" }}>
+              <div className={styles.value} style={{ display: "grid", gap: 4 }}>
                 <code>openprogram upgrade --check</code>
                 <code>openprogram upgrade</code>
               </div>
@@ -560,7 +452,7 @@ function ApplicationSection() {
         )}
         <div className={styles.row}>
           <div className={styles.label}>{t("general.framework")}</div>
-          <div className={styles.value}>Agentic Programming</div>
+          <div className={styles.control}>Agentic Programming</div>
         </div>
       </div>
     </section>
@@ -570,7 +462,22 @@ function ApplicationSection() {
 export function GeneralSection() {
   const { t, text, locale, setLocale } = useTranslation();
   const { font, setFont } = useFontPref();
-  const { style, mode, setStyle, setMode, customCss, setCustomCss } = useThemePref();
+  const {
+    style,
+    mode,
+    setStyle,
+    setMode,
+    accent,
+    setAccent,
+    resetAccent,
+    packageAccent,
+    customCss,
+    customCssEnabled,
+    setCustomCssEnabled,
+    setCustomCss,
+    insertCustomCssTemplate,
+    clearCustomCss,
+  } = useThemePref();
 
   const MODE_LABELS: Record<ThemeMode, string> = {
     auto: text("Auto", "跟随系统"),
@@ -582,8 +489,9 @@ export function GeneralSection() {
     beige: text("Beige", "暖色"),
     neutral: text("Neutral", "中性"),
     aurora: text("Aurora", "极光"),
-    custom: text("Custom", "自定义"),
   };
+
+  const accentValue = accent ?? packageAccent;
 
   return (
     <div className={styles.page}>
@@ -597,7 +505,7 @@ export function GeneralSection() {
           <div className={styles.card}>
             <div className={styles.row + " " + styles.rowTop}>
               <div className={styles.label}>{text("Mode", "明暗模式")}</div>
-              <div className={styles.value + " " + styles.valueWide}>
+              <div className={styles.control}>
                 <div className={styles.themeGrid}>
                   {THEME_MODES.map((m) => (
                     <button
@@ -644,7 +552,7 @@ export function GeneralSection() {
 
             <div className={styles.row + " " + styles.rowTop}>
               <div className={styles.label}>{text("Color style", "颜色风格")}</div>
-              <div className={styles.value + " " + styles.valueWide}>
+              <div className={styles.control}>
                 <div className={styles.themeGrid}>
                   {THEME_STYLES.map((s) => (
                     <button
@@ -691,9 +599,71 @@ export function GeneralSection() {
 
             <div className={styles.row + " " + styles.rowTop}>
               <div className={styles.label}>
+                {text("Accent color", "强调色")}
+              </div>
+              <div className={styles.control}>
+                <div className={styles.accentControls}>
+                  <input
+                    type="color"
+                    className={styles.accentColorInput}
+                    aria-label={text("Accent color", "强调色")}
+                    value={accentValue}
+                    onChange={(e) => setAccent(e.target.value)}
+                  />
+                  <div className={styles.accentPresets} role="group" aria-label={text("Accent presets", "强调色预设")}>
+                    {ACCENT_PRESETS.map((hex) => (
+                      <button
+                        key={hex}
+                        type="button"
+                        className={styles.accentPreset}
+                        style={{ background: hex }}
+                        aria-label={hex}
+                        title={hex}
+                        aria-pressed={accentValue.toLowerCase() === hex.toLowerCase()}
+                        onClick={() => setAccent(hex)}
+                      />
+                    ))}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={"text-fs-base " + styles.settingsAction}
+                    onClick={() => resetAccent()}
+                    disabled={!accent}
+                  >
+                    {text("Reset to theme default", "重置为主题默认")}
+                  </Button>
+                </div>
+                <div className={styles.customCssHint}>
+                  {text(
+                    "Overrides the current theme package accent. Empty / reset uses that package's default.",
+                    "覆盖当前主题包的强调色。留空或重置则使用该主题包的默认强调色。",
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.row + " " + styles.rowTop}>
+              <div className={styles.label}>
                 {text("Custom CSS", "自定义 CSS")}
               </div>
-              <div className={styles.value + " " + styles.valueWide}>
+              <div className={styles.control}>
+                <div className={styles.customCssToolbar}>
+                  <label className={styles.customCssEnable}>
+                    <input
+                      type="checkbox"
+                      checked={customCssEnabled}
+                      onChange={(e) => setCustomCssEnabled(e.target.checked)}
+                    />
+                    {text("Enable custom CSS", "启用自定义 CSS")}
+                  </label>
+                  <Button variant="outline" size="sm" className={"text-fs-base " + styles.settingsAction} onClick={() => insertCustomCssTemplate()}>
+                    {text("Insert template", "插入模板")}
+                  </Button>
+                  <Button variant="outline" size="sm" className={"text-fs-base " + styles.settingsAction} onClick={() => clearCustomCss()}>
+                    {text("Clear", "清空")}
+                  </Button>
+                </div>
                 <textarea
                   className={styles.customCssArea}
                   aria-label={text("Custom CSS", "自定义 CSS")}
@@ -707,8 +677,8 @@ export function GeneralSection() {
                 />
                 <div className={styles.customCssHint}>
                   {text(
-                    'Define [data-theme="custom"] for Dark and [data-theme="custom-light"] for Light, then pick the "Custom" color style above. Unset tokens fall back to Beige dark and Beige light. Applies live, saved in this browser.',
-                    '分别为深色定义 [data-theme="custom"]、为浅色定义 [data-theme="custom-light"]，再在上方选择「自定义」颜色风格。未覆写的 token 分别回落到暖色深色 / 暖色浅色。即时生效，仅保存在本浏览器。',
+                    "Overlay on the current theme package. Turn on Enable custom CSS to apply it. Use Insert template for a starter snippet, or Clear to remove it. Applies live, saved in this browser. You can still target any data-theme.",
+                    "叠加在当前主题包之上。打开「启用自定义 CSS」后生效。可用「插入模板」写入示例，或「清空」删除。即时生效，仅保存在本浏览器。仍可针对任意 data-theme。",
                   )}
                 </div>
               </div>
@@ -716,7 +686,7 @@ export function GeneralSection() {
 
             <div className={styles.row}>
               <div className={styles.label}>{t("general.font")}</div>
-              <div className={styles.value}>
+              <div className={styles.control}>
                 <SettingsDropdown
                   value={font}
                   options={FONT_SELECT_OPTIONS}
@@ -728,7 +698,7 @@ export function GeneralSection() {
 
             <div className={styles.row}>
               <div className={styles.label}>{t("general.language")}</div>
-              <div className={styles.value}>
+              <div className={styles.control}>
                 <SettingsDropdown
                   value={locale}
                   options={LANG_OPTIONS}

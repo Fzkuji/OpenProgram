@@ -121,7 +121,7 @@ export function UserMenuFooter() {
 
   function goSettings() {
     setOpen(false);
-    router.push("/settings");
+    router.push("/settings/general");
   }
 
   function toggleFullscreen() {

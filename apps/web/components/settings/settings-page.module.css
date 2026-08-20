@@ -146,6 +146,7 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  font-family: var(--font-sans);
 }
 .pageHeader {
   padding: 20px 28px 16px;
@@ -287,13 +288,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
   padding: 10px 0;
+  min-width: 0;
 }
 .row + .row {
   border-top: 1px solid var(--border);
 }
 /* Top-align variant for rows whose value column is tall (e.g. the
-   avatar style picker with its tile grid + variant grid). Centering
+   avatar picker with its tile grid + variant grid). Centering
    the short left-hand label against that tall block leaves the label
    floating in the middle; this pins it to the top so it reads as the
    heading of the block beside it. A little top padding on the label
@@ -304,14 +307,84 @@
 .rowTop .label {
   padding-top: 6px;
 }
+
 .label {
+  flex: 0 1 auto;
   font-size: 14px;
   color: var(--text-primary);
 }
 .value {
+  flex: 0 1 auto;
+  margin-left: auto;
+  min-width: 0;
+  max-width: min(520px, calc(100% - 6rem));
+  text-align: right;
   font-size: 14px;
   color: var(--text-muted);
   font-family: var(--font-mono);
+}
+/* Chrome column — theme cards, dropdowns, profile editors, helpers.
+   Shrink-wraps and hugs the right edge. `.value` stays reserved for
+   codes (paths, model ids). */
+.control {
+  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-left: auto;
+  min-width: 0;
+  max-width: min(520px, calc(100% - 6rem));
+  text-align: right;
+  font-size: 14px;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+}
+/* System rows isolate the copy from the control. Shared `.label` is
+   content-sized (`flex: 0 1 auto`) so a long Ports help line wraps at
+   full row width and runs under the field. These overrides keep wrap
+   inside the left column only. Main / theme / updater stay on `.label`
+   + `.control` as-is. */
+.systemRow {
+  align-items: flex-start;
+}
+.systemRow .label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.systemRow .control {
+  flex: 0 0 auto;
+  margin-left: auto;
+  min-width: 7.5rem;
+  max-width: none;
+}
+/* System number / enum fields inherit the General font picker. */
+.systemControl {
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--ui-button-radius);
+  color: var(--text-primary);
+  font: inherit;
+  font-family: var(--font-sans);
+  width: 120px;
+  text-align: right;
+}
+.systemControlSelect {
+  width: auto;
+  text-align: left;
+}
+/* Bare checkboxes/radios that sit directly on a `.row`. */
+.row > input[type="checkbox"],
+.row > input[type="radio"] {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+/* Local override for shadcn Button `text-sm` (~12.25px under html 14px).
+   Unlayered module CSS beats @layer utilities, so this wins reliably. */
+.settingsAction {
+  font-size: var(--fs-base);
+  font-family: var(--font-sans);
 }
 
 .themeSwitcher {
@@ -450,17 +523,14 @@
 .providersLayout {
   display: grid;
   /* Keep the familiar 287px list on wide pages. When the Settings content
-     itself narrows, let the open list use at most 42% so the detail pane
-     remains visible without changing the user's open/collapsed choice. */
+     itself narrows, let the list use at most 42% so the detail pane
+     remains visible. */
   grid-template-columns: min(calc(var(--sidebar-width) - 1px), 42%) minmax(0, 1fr);
   /* Fill the page-body's available height so each column gets a
      definite height and can own its own overflow:auto. */
   height: 100%;
   min-height: 0;
   transition: grid-template-columns 0.15s cubic-bezier(0.165, 0.84, 0.44, 1);
-}
-.providersLayout.providerListCollapsed {
-  grid-template-columns: 49px minmax(0, 1fr);
 }
 .providersSidebar {
   display: flex;
@@ -482,41 +552,44 @@
   border-right: 1px solid var(--border);
   min-height: 0;
 }
-/* Search input and the original provider-list toggle share one toolbar. */
+/* Search is the only control in the sidebar header row. */
 .providersStickyHeader {
   padding: 0 0 8px;
 }
 .providersToolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  width: 100%;
   min-width: 0;
 }
 .providerSearch {
-  flex: 1;
+  width: 100%;
   min-width: 0;
+}
+/* Add-custom lives in the same sidebar content box as search. The
+   sidebar's 8px padding is the only gutter — no second horizontal
+   inset, so the trigger, expanded form, and Name / Base URL fields
+   share the search input's width. */
+.addCustomTrigger,
+.addCustomForm {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin-top: 8px;
+}
+.addCustomForm {
+  display: grid;
+  gap: 6px;
+}
+.addCustomForm input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 .providerListItems {
   display: flex;
   flex-direction: column;
   gap: 1px;
-}
-.providerListCollapsed .providersStickyHeader {
-  padding-bottom: 8px;
-}
-.providerListCollapsed .providersToolbar {
-  justify-content: center;
-}
-.providerListCollapsed .providerItem {
-  width: 32px;
-  padding-left: 6px;
-  padding-right: 6px;
-  justify-content: center;
-}
-.providerListCollapsed .providerLabel,
-.providerListCollapsed .providerCustomBadge,
-.providerListCollapsed .providerDot {
-  display: none;
 }
 .providerListItems > .providersGroupLabel { margin-top: 20px; }
 /* First group label sits directly under the sticky header — keep
@@ -1165,6 +1238,37 @@
 .testResult.err {
   color: var(--accent-red);
 }
+.testResult.warn {
+  color: var(--accent-yellow);
+}
+.testResult.info {
+  color: var(--text-secondary);
+}
+
+.searchDescription {
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.55;
+  font-family: var(--font-sans);
+}
+.searchDescriptionMeta {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-family: var(--font-sans);
+}
+.detailStatus {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-sans);
+}
+.codeName {
+  font-family: var(--font-mono);
+}
 
 /* Search-provider tier chip — sits next to the detail-panel title so
    "Free 1000 q/mo" / "Pay-as-you-go" / "Self-hosted" is visible at a
@@ -1263,27 +1367,20 @@
   padding-left: 2px;
 }
 
-/* 主题网格 / 自定义 CSS 这两块的值列要吃满剩余宽度——`.row` 是
-   space-between，`.value` 默认按内容收缩，网格会塌成一列。 */
-.valueWide {
-  flex: 1;
-  min-width: 0;
-  margin-left: 24px;
-}
-
 /* ===== 主题选择器 ==========================================
-   沿用 `.rowTop` 的"标签在上、值列是一块网格"的排版语言（和头像
-   样式选择器同构）。每张卡是一小块主题预览：底色 + 三颗强调点，
-   取值直接来自该主题的 token，所以新增主题不用改这里的样式。 */
+   Compact right-hand cluster. Cards keep a natural 96px width and
+   never stretch with 1fr / width:100% across the leftover row. */
 .themeGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
-  width: 100%;
 }
 .themeCard {
   display: flex;
   flex-direction: column;
+  flex: 0 0 96px;
+  width: 96px;
   gap: 6px;
   padding: 7px;
   background: var(--bg-secondary);
@@ -1318,8 +1415,9 @@
   border-radius: 50%;
 }
 .themeCardLabel {
-  font-size: var(--fs-sm);
+  font-size: 14px;
   color: var(--text-secondary);
+  font-family: var(--font-sans);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1328,9 +1426,61 @@
   color: var(--text-bright);
 }
 
-/* 自定义 CSS 输入框（Obsidian 式）。 */
+.accentControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.accentColorInput {
+  width: 36px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.accentPresets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.accentPreset {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  padding: 0;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.accentPreset[aria-pressed="true"] {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 1px;
+}
+.customCssToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.customCssEnable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+}
+
+/* 自定义 CSS overlay（Obsidian snippets）。 Stays in the right
+   column at a readable cap — not a full-card stretch. */
 .customCssArea {
-  width: 100%;
+  box-sizing: border-box;
+  width: min(100%, 520px);
   min-height: 160px;
   padding: 10px 12px;
   background: var(--bg-input);
@@ -1348,7 +1498,11 @@
   border-color: transparent;
 }
 .customCssHint {
+  box-sizing: border-box;
+  width: min(100%, 520px);
   margin-top: 6px;
+  text-align: left;
   font-size: var(--fs-sm);
   color: var(--text-muted);
+  font-family: var(--font-sans);
 }

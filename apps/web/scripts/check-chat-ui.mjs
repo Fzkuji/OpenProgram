@@ -178,6 +178,12 @@ assert.match(
   baseCss,
   /button:focus-visible:not\(\[role="tab"\]\),\s*\[role="button"\]:focus-visible\s*\{[^}]*box-shadow:\s*none\s*!important;[^}]*filter:\s*brightness\(1\.08\);/s,
 );
+// Shared text Input and SearchInput keep only their inner accent border;
+// the global :focus-visible halo must not stack on either field.
+const inputTsx = source("components/ui/input.tsx");
+assert.match(inputTsx, /["']ui-text-input |ui-text-input /);
+assert.match(baseCss, /\.search-input-field:focus-visible\s*\{[^}]*outline:\s*none/s);
+assert.match(baseCss, /\.ui-text-input:focus-visible\s*\{[^}]*outline:\s*none/s);
 for (const themeCss of [darkTheme, beigeDarkTheme]) {
   assert.match(themeCss, /--focus-ring:\s*color-mix\(in srgb, var\(--text-bright\) 50%, transparent\);/);
 }

@@ -239,7 +239,7 @@ assert.match(browserControls, /openBuiltinTab\("bookmarks"\)/, "browser menu mus
 assert.match(browserControls, /openBuiltinTab\("history"\)/, "browser menu must open web history");
 assert.doesNotMatch(mainMenu, /openBuiltinTab\("bookmarks"\)|openBuiltinTab\("history"\)/,
   "the global menu must not duplicate browser-only library actions");
-assert.match(mainMenu, /router\.push\("\/settings"\)/, "main menu must reach settings");
+assert.match(mainMenu, /router\.push\("\/settings\/general"\)/, "main menu must reach Settings home (General)");
 assert.match(mainMenu, /openNewTabPage\(\)/, "main menu must open a new tab");
 // Flat menu — no submenus, by design.
 assert.doesNotMatch(mainMenu, /DropdownMenuSub/, "the main menu must stay one flat level");
