@@ -540,7 +540,7 @@ def test_governed_sync_tool_without_process_boundary_is_rejected(
 
 def test_bash_sandbox_denial_uses_typed_error(monkeypatch) -> None:
     bash_module = importlib.import_module(
-        "openprogram.programs.functions.vanilla.bash.bash"
+        "openprogram.programs.functions.vanilla.files.bash.bash"
     )
 
     class DeniedBackend:
@@ -585,7 +585,7 @@ def test_bash_execution_failures_use_typed_error(
     monkeypatch, run_result, detail_key
 ) -> None:
     bash_module = importlib.import_module(
-        "openprogram.programs.functions.vanilla.bash.bash"
+        "openprogram.programs.functions.vanilla.files.bash.bash"
     )
 
     class FailedBackend:
@@ -1087,6 +1087,28 @@ def test_agentic_function_register_globally_false() -> None:
     # (in case some local caller wants to drive it manually)
     assert off_grid._agent_tool is not None
     assert off_grid._agent_tool.name == "off_grid"
+
+
+def test_agentic_function_tool_visible_false_registers_unexposed() -> None:
+    """``tool_visible=False`` wires Layer-2 exposure through the
+    decorator: the tool registers (Python-callable, in _registry) but
+    stays out of ``exposed_names()`` — the "user-visible, agent-tool
+    invisible" contract auto_workflow needs."""
+    from openprogram.agentic_programming.function import agentic_function
+    from openprogram.programs._runtime import exposed_names
+
+    @agentic_function(tool_visible=False, name="user_only_probe")
+    def user_only_probe(x: str) -> str:
+        return x
+
+    assert get("user_only_probe") is not None
+    assert "user_only_probe" not in exposed_names()
+
+    @agentic_function(name="default_visible_probe")
+    def default_visible_probe(x: str) -> str:
+        return x
+
+    assert "default_visible_probe" in exposed_names()
 
 
 def test_agentic_function_available_if_false_returns_raw_fn() -> None:

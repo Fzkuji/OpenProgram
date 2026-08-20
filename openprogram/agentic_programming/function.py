@@ -716,12 +716,6 @@ class agentic_function:
         render_range: Optional[dict] = None,
         input: Optional[dict] = None,
         system: Optional[str] = None,
-        # WebUI working-directory picker mode. The decorator itself only
-        # stores it (the value is read out of the SOURCE TEXT by the
-        # webui's AST extractor, openprogram/webui/_functions.py) —
-        # accepting it here is what makes writing the kwarg legal: an
-        # unknown kwarg would TypeError at import and kill the module.
-        workdir_mode: Optional[str] = None,
         # —— shared with @function ——
         # The function-calling refactor unified these names with the
         # @function decorator so an @agentic_function and an @function
@@ -750,6 +744,12 @@ class agentic_function:
         available_if: Optional[Callable[[], bool]] = None,
         defer: bool = False,
         register_globally: bool = True,
+        # Layer-2 exposure (tool-level, distinct from the DAG `expose`
+        # semantics above): False registers the tool with
+        # register(..., expose=False) so it stays out of every LLM
+        # tools array while remaining Python-callable and runnable
+        # from the user-facing Functions panel.
+        tool_visible: bool = True,
     ):
         if expose is None:
             expose = default_expose()
@@ -758,15 +758,9 @@ class agentic_function:
                 f"expose must be 'io', 'llm', 'full', or 'hidden', "
                 f"got {expose!r}"
             )
-        if workdir_mode not in (None, "optional", "hidden", "required"):
-            raise ValueError(
-                f"workdir_mode must be 'optional', 'hidden', or 'required', "
-                f"got {workdir_mode!r}"
-            )
         self.expose = expose
         self.render_range = render_range
         self.input_meta = input or {}
-        self.workdir_mode = workdir_mode
         self.system = system
         self.as_tool = as_tool
         self.tool_name = name
@@ -788,6 +782,7 @@ class agentic_function:
         self.available_if = available_if
         self.defer = defer
         self.register_globally = register_globally
+        self.tool_visible = tool_visible
         # Filled in by ``_register_as_tool`` once a function is
         # attached. Held here so callers can introspect (``fn._agent_tool``)
         # without doing a registry lookup.
@@ -1018,6 +1013,7 @@ class agentic_function:
             defer=self.defer,
             toolsets=self.toolset,
             unsafe_in=self.unsafe_in,
+            expose=self.tool_visible,
             register_globally=self.register_globally,
         )
         # Mark the AgentTool so the dispatcher can route an LLM-issued
@@ -1026,6 +1022,7 @@ class agentic_function:
         # collapsed tool-call card.
         try:
             setattr(self._agent_tool, "_is_agentic", True)
+            setattr(self._agent_tool, "_source_module", self._fn.__module__)
         except Exception:
             pass
 
