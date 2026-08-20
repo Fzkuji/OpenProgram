@@ -105,11 +105,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // skipped (already loaded) and /chat / /s/<id> don't need
     // prefetching (their UI is mounted inside AppShell directly).
     const WARM_ROUTES = [
-      "/settings/providers",
+      "/settings/general",
       "/functions",
       "/agents",
       "/skills",
-      "/settings/general",
+      "/settings/providers",
       "/memory",
       "/scheduler",
       "/settings/channels",

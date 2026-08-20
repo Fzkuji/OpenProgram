@@ -59,4 +59,4 @@ Each message's action menu has "Rewind to here": it truly rolls the session back
 | `/projects` | Project management: per-project permission rules, default settings, associated sessions |
 | `/settings` | Settings: providers (models and credentials), search, general (including theme, runtime version, and Desktop update status when the Electron bridge is present), system, usage, auth, channels |
 
-Opening `/settings` directly lands on `/settings/providers`; see [configuring models](../models/README.md) for model setup.
+Opening `/settings` directly lands on `/settings/general`. Model credentials stay on `/settings/providers`; see [configuring models](../models/README.md).

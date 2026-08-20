@@ -59,4 +59,4 @@ openprogram web
 | `/projects` | 项目管理：每个项目的权限规则、默认设置、关联会话 |
 | `/settings` | 设置：providers（模型与凭据）、search、general（含主题、运行版本，以及存在 Electron bridge 时的 Desktop 更新状态）、system、usage、auth、channels |
 
-`/settings` 直接打开会跳到 `/settings/providers`，模型配置入口见[配置模型](../models/README.md)。
+`/settings` 直接打开会跳到 `/settings/general`。模型凭据仍在 `/settings/providers`，见[配置模型](../models/README.md)。
