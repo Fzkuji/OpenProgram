@@ -13,41 +13,24 @@ OpenProgram consists of multiple UI surfaces:
 
 Each surface evolved independently, resulting in divergent color palettes, typography, and design tokens.
 
-## Completed Work (This PR)
+## Current Appearance
 
-### Settings UX Fix
+Settings opens on General. Appearance follows an Obsidian-like stack and keeps schema 3 (mode × named package):
 
-**Problem:** Settings defaulted to LLM Providers tab instead of General. Appearance was a flat list mixing mode (auto/light/dark) with color styles (beige/neutral/aurora).
+- **Mode**: Auto / Light / Dark. Auto follows the system; it is a mode, not a theme.
+- **Theme package**: Beige / Neutral / Aurora only. Each package has a light and a dark `data-theme`. Custom is not a fourth skin.
+- **Accent color**: a color input, presets taken from each package's default `--accent-orange`, and Reset to theme default. Empty/default uses the current package accent. The override writes `--accent-orange`, `--accent-fill`, and a derived `--accent-orange-hover`.
+- **CSS overlay**: user CSS sits on top of the selected package, gated by Enable custom CSS. Insert template writes a starter that targets `html` / current `data-theme` values. Clear empties the snippet. Old `[data-theme="custom"]` / `[data-theme="custom-light"]` selectors are rewritten onto `data-custom-css` so they keep applying.
 
-**Solution (schema 3):**
-- Settings now opens to General first
-- Appearance split into two independent controls:
-  - **Mode**: Auto / Light / Dark (system-following auto is a mode, not a theme)
-  - **Color style**: Beige / Neutral / Aurora / Custom
-- Each color style supports both light and dark modes (`aurora-light` and `custom-light` included)
-- Storage migrated from single `agentic_theme` (schema 2) to `agentic_theme_style` + `agentic_theme_mode` (schema 3)
-- Theme contract maintained: 6 built-in skins × 58 tokens each, plus Custom slots (`custom` falls back to `:root` / beige-dark; `custom-light` ships beige-light fallback tokens)
+Storage stays schema 3 (`agentic_theme_style` + `agentic_theme_mode`). Accent uses `agentic_theme_accent`. Overlay enable uses `agentic_custom_css_enabled`. Combined `agentic_theme` values still migrate:
 
-**Files changed:**
-- `apps/web/app/(shell)/settings/page.tsx` — redirect to `/settings/general`
-- `apps/web/lib/prefs/theme-config.ts` — new file, defines mode × style matrix
-- `apps/web/lib/prefs/theme-pref.ts` — refactored to use `style` + `mode` instead of combined `theme`
-- `apps/web/lib/prefs/theme-bootstrap.ts` — first-paint script with schema 3 migration
-- `apps/web/app/layout.tsx` — uses `THEME_BOOTSTRAP_SCRIPT` for pre-hydration theme
-- `apps/web/components/settings/general-section.tsx` — two separate controls (Mode + Color style)
-- `apps/web/app/styles/themes/aurora-light.css` — new light variant of aurora theme
-- `apps/web/app/globals.css` — imports aurora-light
-- `apps/web/scripts/check-theme-contract.mjs` — updated for schema 3
-- `apps/desktop/main.js` — MENU_THEME_IDS follows `theme-chrome.js` `THEME_IDS` (includes `custom-light`)
-
-**Migration:** Existing users on schema 2 (combined theme) are automatically migrated to schema 3 (style + mode) on first page load. Legacy `agentic_theme` values map as follows:
 - `auto` → beige + auto
 - `beige-dark` / `beige-light` → beige + dark/light
 - `dark` / `light` (schema 2) → neutral + dark/light
-- `aurora` → aurora + dark
-- `custom` → custom + dark
-- `custom-light` → custom + light
-- `aurora-light` → aurora + light
+- `aurora` / `aurora-light` → aurora + dark/light
+- `custom` / `custom-light` → beige + the saved mode; overlay turns on when any custom CSS is saved
+
+`custom` / `custom-light` remain fallback theme ids and CSS files for old snippets. They do not appear as style cards. The theme contract still validates the six built-in package token files; default accents stay sourced from those CSS files.
 
 ## Later Work (Prioritized TODO)
 
@@ -126,7 +109,7 @@ The first pixel of the Electron window matches the already resolved web theme. `
 
 Resolution uses the same schema-3 keys the web app writes (`agentic_theme_style` + `agentic_theme_mode`, plus legacy `agentic_theme`). Desktop reads Chromium localStorage under userData, then a `theme-prefs.json` cache written on theme change. `auto` follows `nativeTheme.shouldUseDarkColors`.
 
-`apps/desktop/theme-chrome.js` holds the `--bg-primary` map copied from `apps/web/app/styles/themes/*.css`. `custom` / `custom-light` without user CSS use the beige pair (`#262624` / `#faf9f5`). Worker error pages and directory-listing HTML use the same chrome tokens. After a theme change the renderer calls `theme.setChrome`, which updates every `BrowserWindow` background so the next show/reload does not flash the old color.
+`apps/desktop/theme-chrome.js` holds the `--bg-primary` / `--accent-orange` map copied from `apps/web/app/styles/themes/*.css`. Stored `custom` / `custom-light` resolve to the beige pair (`#262624` / `#faf9f5`). Worker error pages and directory-listing HTML use the same chrome tokens; when an accent override is set, listing/error link color uses that accent, while window `backgroundColor` stays the package `--bg-primary`. After a theme change the renderer calls `theme.setChrome`, which updates every `BrowserWindow` background so the next show/reload does not flash the old color.
 
 Window-state persistence (normal bounds vs maximize/fullscreen, display fallback, titlebar resize hit-testing) is unchanged; see [window-state.md](window-state.md).
 
@@ -202,7 +185,7 @@ Window-state persistence (normal bounds vs maximize/fullscreen, display fallback
 
 ## Implementation Status
 
-- **Settings mode × style**: ✅ Complete (Custom participates like Beige / Neutral / Aurora; Custom + Light is `custom-light`)
+- **Settings Appearance**: ✅ Complete (Mode × Beige/Neutral/Aurora × accent picker × CSS overlay; stored Custom migrates to beige)
 - **Web token cleanup**: ❌ Not started
 - **Docs palette**: ❌ Not started
 - **Desktop window-state**: ✅ Complete

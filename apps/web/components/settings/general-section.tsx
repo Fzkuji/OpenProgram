@@ -24,6 +24,8 @@ import {
 } from "@/components/avatar";
 import {
   useThemePref,
+  ACCENT_PRESETS,
+  CUSTOM_CSS_TEMPLATE,
   THEME_MODES,
   THEME_STYLES,
   THEME_STYLE_PAIRS,
@@ -31,53 +33,6 @@ import {
   type ThemeStyle,
 } from "@/lib/prefs/theme-pref";
 import styles from "./settings-page.module.css";
-
-/** 自定义 CSS 的起手模板 —— 直接写在 placeholder 里，复制即用。
- *  只列必须覆写的一组；其余 token 不写就继承 :root 兜底值。 */
-const CUSTOM_CSS_TEMPLATE = `[data-theme="custom"] {
-  color-scheme: dark;
-
-  /* 表面 */
-  --bg-primary: #1e1e20;
-  --bg-secondary: #171719;
-  --bg-tertiary: #252529;
-  --bg-input: #2a2a2e;
-  --bg-hover: rgba(255, 255, 255, 0.06);
-  --bg-selected: rgba(255, 255, 255, 0.10);
-
-  /* 文字（四档） */
-  --text-bright: #ededf0;
-  --text-primary: #b6b6bb;
-  --text-secondary: #92929a;
-  --text-muted: #74747c;
-
-  /* 边框 */
-  --border: rgba(255, 255, 255, 0.07);
-  --border-light: rgba(255, 255, 255, 0.12);
-
-  /* 主题主色：文字/边界、填充、填充 hover */
-  --accent-orange: #6ea8fe;
-  --accent-fill: #3b82f6;
-  --accent-orange-hover: #2563eb;
-}
-
-[data-theme="custom-light"] {
-  color-scheme: light;
-
-  --bg-primary: #faf9f5;
-  --bg-secondary: #f0eee5;
-  --bg-tertiary: #e8e6dc;
-  --bg-input: #ffffff;
-  --text-bright: #141413;
-  --text-primary: #3d3d3a;
-  --text-secondary: #5e5d59;
-  --text-muted: #91908c;
-  --border: rgba(20, 20, 19, 0.08);
-  --border-light: #dedcd1;
-  --accent-orange: #c15f3c;
-  --accent-fill: #c15f3c;
-  --accent-orange-hover: #a94e30;
-}`;
 
 const FONT_OPTIONS: FontKey[] = ["system", "inter", "serif", "mono"];
 
@@ -570,7 +525,22 @@ function ApplicationSection() {
 export function GeneralSection() {
   const { t, text, locale, setLocale } = useTranslation();
   const { font, setFont } = useFontPref();
-  const { style, mode, setStyle, setMode, customCss, setCustomCss } = useThemePref();
+  const {
+    style,
+    mode,
+    setStyle,
+    setMode,
+    accent,
+    setAccent,
+    resetAccent,
+    packageAccent,
+    customCss,
+    customCssEnabled,
+    setCustomCssEnabled,
+    setCustomCss,
+    insertCustomCssTemplate,
+    clearCustomCss,
+  } = useThemePref();
 
   const MODE_LABELS: Record<ThemeMode, string> = {
     auto: text("Auto", "跟随系统"),
@@ -582,8 +552,9 @@ export function GeneralSection() {
     beige: text("Beige", "暖色"),
     neutral: text("Neutral", "中性"),
     aurora: text("Aurora", "极光"),
-    custom: text("Custom", "自定义"),
   };
+
+  const accentValue = accent ?? packageAccent;
 
   return (
     <div className={styles.page}>
@@ -691,9 +662,70 @@ export function GeneralSection() {
 
             <div className={styles.row + " " + styles.rowTop}>
               <div className={styles.label}>
+                {text("Accent color", "强调色")}
+              </div>
+              <div className={styles.value + " " + styles.valueWide}>
+                <div className={styles.accentControls}>
+                  <input
+                    type="color"
+                    className={styles.accentColorInput}
+                    aria-label={text("Accent color", "强调色")}
+                    value={accentValue}
+                    onChange={(e) => setAccent(e.target.value)}
+                  />
+                  <div className={styles.accentPresets} role="group" aria-label={text("Accent presets", "强调色预设")}>
+                    {ACCENT_PRESETS.map((hex) => (
+                      <button
+                        key={hex}
+                        type="button"
+                        className={styles.accentPreset}
+                        style={{ background: hex }}
+                        aria-label={hex}
+                        title={hex}
+                        aria-pressed={accentValue.toLowerCase() === hex.toLowerCase()}
+                        onClick={() => setAccent(hex)}
+                      />
+                    ))}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => resetAccent()}
+                    disabled={!accent}
+                  >
+                    {text("Reset to theme default", "重置为主题默认")}
+                  </Button>
+                </div>
+                <div className={styles.customCssHint}>
+                  {text(
+                    "Overrides the current theme package accent. Empty / reset uses that package's default.",
+                    "覆盖当前主题包的强调色。留空或重置则使用该主题包的默认强调色。",
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.row + " " + styles.rowTop}>
+              <div className={styles.label}>
                 {text("Custom CSS", "自定义 CSS")}
               </div>
               <div className={styles.value + " " + styles.valueWide}>
+                <div className={styles.customCssToolbar}>
+                  <label className={styles.customCssEnable}>
+                    <input
+                      type="checkbox"
+                      checked={customCssEnabled}
+                      onChange={(e) => setCustomCssEnabled(e.target.checked)}
+                    />
+                    {text("Enable custom CSS", "启用自定义 CSS")}
+                  </label>
+                  <Button variant="outline" size="sm" onClick={() => insertCustomCssTemplate()}>
+                    {text("Insert template", "插入模板")}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => clearCustomCss()}>
+                    {text("Clear", "清空")}
+                  </Button>
+                </div>
                 <textarea
                   className={styles.customCssArea}
                   aria-label={text("Custom CSS", "自定义 CSS")}
@@ -707,8 +739,8 @@ export function GeneralSection() {
                 />
                 <div className={styles.customCssHint}>
                   {text(
-                    'Define [data-theme="custom"] for Dark and [data-theme="custom-light"] for Light, then pick the "Custom" color style above. Unset tokens fall back to Beige dark and Beige light. Applies live, saved in this browser.',
-                    '分别为深色定义 [data-theme="custom"]、为浅色定义 [data-theme="custom-light"]，再在上方选择「自定义」颜色风格。未覆写的 token 分别回落到暖色深色 / 暖色浅色。即时生效，仅保存在本浏览器。',
+                    "Overlay on the current theme package. Turn on Enable custom CSS to apply it. Use Insert template for a starter snippet, or Clear to remove it. Applies live, saved in this browser. You can still target any data-theme.",
+                    "叠加在当前主题包之上。打开「启用自定义 CSS」后生效。可用「插入模板」写入示例，或「清空」删除。即时生效，仅保存在本浏览器。仍可针对任意 data-theme。",
                   )}
                 </div>
               </div>

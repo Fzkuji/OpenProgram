@@ -92,7 +92,7 @@
     <a href="#contract">设计边界</a>
     <a href="#flow">设置到组件</a>
     <a href="#tokens">Token 契约</a>
-    <a href="#preview">五套主题</a>
+    <a href="#preview">三套主题包</a>
     <a href="#frameworks">方案比较</a>
     <a href="#acceptance">验收</a>
     <a href="#status">实现状态</a>
@@ -110,17 +110,17 @@
       <div class="callout"><strong>唯一运行时仍是 CSS custom properties。</strong> 不引入 JS theme object、CSS-in-JS 或第二套组件皮肤。内置主题必须提供相同 token 集；组件不得按 <code>dark</code>、<code>light</code> 等具体主题名写分支。</div>
       <div class="grid" style="margin-top:14px">
         <article class="card"><h3>包含</h3><ul><li>Settings 中的 Appearance 与 Font</li><li>首帧、React 水合后及系统明暗变化</li><li>主窗口、桌面浮层和新建窗口</li><li>表面、文字、边框、状态、focus、composer 和 DAG</li></ul></article>
-        <article class="card"><h3>不包含</h3><ul><li>改变组件尺寸、布局或交互逻辑</li><li>自动改写用户的 Custom CSS</li><li>以主题名为条件的业务逻辑</li><li>把语法高亮或网站内容强制套用应用主题</li></ul></article>
+        <article class="card"><h3>不包含</h3><ul><li>改变组件尺寸、布局或交互逻辑</li><li>自动改写用户已保存的 CSS overlay</li><li>以主题名为条件的业务逻辑</li><li>把语法高亮或网站内容强制套用应用主题</li></ul></article>
       </div>
     </section>
 
     <section id="flow">
       <h2>设置如何影响组件</h2>
       <div class="flow">
-        <article><span class="kicker">1 · 选择</span><h3>Settings</h3><p><code>THEME_PREFS</code> 生成主题卡片；字体选项来自 <code>font-pref.ts</code>。</p></article>
-        <article><span class="kicker">2 · 持久化</span><h3>Browser preference</h3><p><code>agentic_theme</code> 写入 localStorage；字体同时维护 cookie 以保证首帧。</p></article>
-        <article><span class="kicker">3 · 应用</span><h3>HTML attributes</h3><p>首帧脚本和 hook 都只设置 <code>&lt;html data-theme&gt;</code> 与 <code>--font-sans</code>。</p></article>
-        <article><span class="kicker">4 · 解析</span><h3>完整 token 文件</h3><p>每个内置主题定义同一 token 契约；<code>:root</code> 只负责未知值和 Custom 的回退。</p></article>
+        <article><span class="kicker">1 · 选择</span><h3>Settings</h3><p>Appearance 是四层：Mode、命名主题包、强调色、CSS overlay。字体选项来自 <code>font-pref.ts</code>。</p></article>
+        <article><span class="kicker">2 · 持久化</span><h3>Browser preference</h3><p>schema 3 写入 <code>agentic_theme_style</code> + <code>agentic_theme_mode</code>；强调色与 overlay 是同一 prefs 族。字体同时维护 cookie 以保证首帧。</p></article>
+        <article><span class="kicker">3 · 应用</span><h3>HTML attributes</h3><p>首帧脚本和 hook 设置 <code>data-theme</code>、<code>data-custom-css</code>、强调色 token 与 <code>--font-sans</code>。</p></article>
+        <article><span class="kicker">4 · 解析</span><h3>完整 token 文件</h3><p>每个主题包定义同一 token 契约；强调色只覆盖三个 accent token；CSS overlay 叠在当前包之上。</p></article>
         <article><span class="kicker">5 · 消费</span><h3>全部组件</h3><p>Tailwind bridge、CSS modules、桌面浮层全部读取 token，不判断具体主题名。</p></article>
       </div>
     </section>
@@ -140,17 +140,17 @@
         <thead><tr><th>设置</th><th>直接状态</th><th>影响范围</th><th>禁止</th></tr></thead>
         <tbody>
           <tr><td>Appearance</td><td><code>data-theme</code></td><td>背景、文字、边框、shadow、状态色、tab focus、composer、popover、DAG、desktop overlay</td><td>组件内写 <code>[data-theme="light"]</code></td></tr>
+          <tr><td>Accent</td><td><code>--accent-orange</code> / fill / hover</td><td>主操作色、选中边界、桌面错误页与目录列表的链接色</td><td>新增第四个 accent token 名</td></tr>
           <tr><td>Font</td><td><code>--font-sans</code></td><td>body、button、input、select、textarea、optgroup；显式 mono 区域除外</td><td>普通组件重新声明系统字体栈</td></tr>
-          <tr><td>Custom CSS</td><td><code>#user-custom-css</code></td><td>同一 token 契约，未覆写项从默认主题回退</td><td>新增只有 Custom 才认识的组件分支</td></tr>
+          <tr><td>CSS overlay</td><td><code>#user-custom-css</code> + <code>data-custom-css</code></td><td>叠在当前主题包上的可选 snippet；未覆写项仍来自该包</td><td>把 overlay 再做成第四套皮肤卡片</td></tr>
         </tbody>
       </table>
       <table style="margin-top:18px">
         <thead><tr><th>主题族</th><th>主题</th><th>主色</th><th>作用范围</th></tr></thead>
         <tbody>
+          <tr><td>Beige</td><td><code>beige-dark</code> / <code>beige-light</code></td><td>橙色 / 珊瑚色</td><td>同一套组件角色，只替换主题值</td></tr>
           <tr><td>Neutral</td><td><code>dark</code> / <code>light</code></td><td>蓝色</td><td>Default Button、主操作填充、选中态、链接与强调边界</td></tr>
-          <tr><td>Warm</td><td><code>beige-dark</code> / <code>beige-light</code></td><td>橙色 / 珊瑚色</td><td>同一套组件角色，只替换主题值</td></tr>
           <tr><td>Aurora</td><td><code>aurora</code> / <code>aurora-light</code></td><td>青绿色</td><td>同一套组件角色，并使用深色 foreground 保证填充对比</td></tr>
-          <tr><td>Custom</td><td><code>custom</code> / <code>custom-light</code></td><td>用户定义</td><td>未覆写 token 分别回落到 beige-dark / beige-light</td></tr>
         </tbody>
       </table>
     </section>
@@ -179,7 +179,7 @@
           <tr><td>Tailwind <code>@theme</code></td><td class="yes">作为 bridge</td><td>只把 CSS token 暴露给 utility 名，不保存另一份色值。</td><td>不能动态生成 CSS import，主题文件与 TS id 由检查脚本对齐。</td></tr>
           <tr><td>JavaScript theme object / Context</td><td class="no">拒绝</td><td>会复制色值且无法自然覆盖原生 CSS、首帧和 Electron overlay。</td><td>不提供运行时逐组件主题 props。</td></tr>
           <tr><td>组件级 <code>[data-theme]</code> 分支</td><td class="no">拒绝</td><td>新增主题时必然漏改；改为主题文件提供组件角色 token。</td><td>组件不得知道内置主题 id。</td></tr>
-          <tr><td><code>light-dark()</code> 仅按 color-scheme</td><td class="no">拒绝</td><td>只能表达明暗两类，不能区分 beige、neutral、aurora 和 custom。</td><td>仍使用各主题显式值。</td></tr>
+          <tr><td><code>light-dark()</code> 仅按 color-scheme</td><td class="no">拒绝</td><td>只能表达明暗两类，不能区分 Beige、Neutral、Aurora 三套包。</td><td>仍使用各主题显式值。</td></tr>
         </tbody>
       </table>
       <p style="margin-top:12px;color:var(--muted);font-size:13px">规范依据：<a href="https://www.w3.org/TR/css-variables-1/">CSS Custom Properties Level 1</a>、<a href="https://www.w3.org/TR/css-color-adjust-1/#color-scheme-prop">CSS Color Adjustment 的 color-scheme</a>。现有实现入口见 <code>apps/web/lib/prefs/theme-pref.ts</code>、<code>apps/web/app/globals.css</code> 与 <code>apps/web/app/styles/themes/</code>。</p>
@@ -188,12 +188,14 @@
     <section id="acceptance">
       <h2>验收标准</h2>
       <ul class="status-list">
-        <li><strong>主题列表</strong><span>设置页、CSS imports、主题文件、桌面浮层允许值由检查脚本证明一致。</span></li>
-        <li><strong>Token 完整</strong><span>六套内置主题提供相同 token 集；<code>custom-light</code> 作为 Custom + Light 的命名槽，回落 token 与 beige-light 一致；缺一个即失败。</span></li>
+        <li><strong>主题列表</strong><span>设置页只展示 Beige / Neutral / Aurora；CSS imports、主题文件、桌面浮层允许值由检查脚本证明一致。</span></li>
+        <li><strong>Token 完整</strong><span>六套内置主题（三包 × 深浅）提供相同 token 集；<code>custom-light.css</code> 仅作为旧 snippet 回落，取值与 beige-light 一致。</span></li>
+        <li><strong>强调色</strong><span>独立 picker 覆盖 <code>--accent-orange</code> / <code>--accent-fill</code> / <code>--accent-orange-hover</code>；空值使用当前包默认。桌面错误页与目录列表的链接色跟随覆盖值，窗口底色仍是包的 <code>--bg-primary</code>。</span></li>
+        <li><strong>CSS overlay</strong><span>用户 CSS 叠在当前包上，由 Enable 开关门控；旧 <code>[data-theme=custom]</code> 选择器改写到 <code>data-custom-css</code>。</span></li>
         <li><strong>组件隔离</strong><span>theme 文件之外不存在按具体内置主题名分支的组件 CSS。</span></li>
-        <li><strong>跨窗口一致</strong><span>beige-dark、beige-light、dark、light、aurora、aurora-light、custom、custom-light 都原样传给 desktop overlay；桌面窗口底色使用该主题的 <code>--bg-primary</code>。</span></li>
+        <li><strong>跨窗口一致</strong><span>六个主题包 id 原样传给 desktop overlay；桌面窗口底色使用该主题的 <code>--bg-primary</code>。</span></li>
         <li><strong>字体一致</strong><span>普通文本和原生表单控件继承同一 <code>--font-sans</code>；mono 区域显式例外。</span></li>
-        <li><strong>主色矩阵</strong><span>Neutral 深浅主题为蓝色，Warm 深浅主题为橙色，Aurora 为青绿色；常态、填充与 hover 必须属于同一主题色族。</span></li>
+        <li><strong>主色矩阵</strong><span>Neutral 深浅主题为蓝色，Beige 深浅主题为橙色，Aurora 为青绿色；包默认 accent 仍从 CSS 文件读取。</span></li>
         <li><strong>可见验收</strong><span>默认安装版在深色、浅色和 aurora 下检查主窗口、tab、composer、popover 与桌面浮层。</span></li>
       </ul>
     </section>
@@ -201,15 +203,8 @@
     <section id="status">
       <h2>实现状态</h2>
       <div class="card">
-        <p><strong>设计与代码实施已完成。</strong></p>
-        <p>主题入口是 schema 3 的颜色风格 × 明暗模式矩阵（<code>THEME_STYLE_PAIRS</code>）。六套内置主题各自完整定义 58 个契约 token；Custom 深浅分别是 <code>custom</code> 与 <code>custom-light</code>，未写用户 CSS 时回落到暖色对。composer、provider icon 与 DAG 只消费角色 token，不再判断具体主题 ID；desktop menu overlay 接受并传播全部主题 ID。桌面 BrowserWindow / 错误页 / 目录列表的第一像素使用同一套 <code>--bg-primary</code> 映射。共享按钮只消费 <code>--primary</code>，由主题层统一映射主色，不在组件内维护主题分支。主题契约检查已纳入 Web 总检查。</p>
-        <ul>
-          <li><code>npm --prefix apps/web run check</code>：通过，包括 <code>check:theme-contract</code>。</li>
-          <li><code>npm exec --workspace apps/web -- tsc --noEmit</code>：通过。</li>
-          <li><code>npm --prefix apps/web run build</code>：通过。</li>
-          <li>默认安装版 <code>/Applications/OpenProgram.app</code>：五套内置主题均读取到完整 58 个 token，页面背景均按主题变化，原生按钮继承字体设置；Aurora 下 desktop main-menu overlay 收到 <code>theme=aurora</code> 并使用对应 token。</li>
-          <li>默认安装版共享按钮实测：dark / light 使用蓝色，beige-dark / beige-light 使用橙色，aurora 使用青绿色；常态、填充、hover 均保持各自主题色族。Custom 主题原有 <code>--accent-orange</code>、<code>--accent-fill</code>、<code>--accent-orange-hover</code> 覆盖方式继续有效。</li>
-        </ul>
+        <p><strong>当前实现采用 Obsidian 式 Appearance：Mode × 命名主题包 × 强调色 × CSS overlay。</strong></p>
+        <p>schema 3 的 <code>THEME_STYLE_PAIRS</code> 仍是 Beige / Neutral / Aurora 的深浅矩阵。Custom 不再是第四张风格卡；存量 <code>custom</code> / <code>custom-light</code> 迁到 beige，已保存的 CSS 打开 overlay，旧选择器改写到 <code>data-custom-css</code>。强调色独立持久化，只覆盖三个 accent token。composer、provider icon 与 DAG 只消费角色 token。桌面 BrowserWindow 底色仍用包的 <code>--bg-primary</code>；错误页与目录列表链接色在有覆盖时使用强调色。主题契约检查已纳入 Web 总检查。</p>
       </div>
     </section>
   </main>

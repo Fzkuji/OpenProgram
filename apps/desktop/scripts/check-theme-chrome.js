@@ -18,17 +18,17 @@ function checkBackgroundMapUsesRealHexes() {
   assert.notEqual(themeChrome.backgroundForTheme("beige-dark"), "#141416");
 }
 
-function checkCustomPairResolvesDistinctThemes() {
+function checkStoredCustomMigratesToBeige() {
   assert.deepEqual(
     themeChrome.resolveThemePreference("custom", "dark", true),
-    { theme: "custom", resolvedMode: "dark" },
+    { theme: "beige-dark", resolvedMode: "dark" },
   );
   assert.deepEqual(
     themeChrome.resolveThemePreference("custom", "light", false),
-    { theme: "custom-light", resolvedMode: "light" },
+    { theme: "beige-light", resolvedMode: "light" },
   );
-  assert.equal(themeChrome.resolveThemePreference("custom", "auto", false).theme, "custom-light");
-  assert.equal(themeChrome.resolveThemePreference("custom", "auto", true).theme, "custom");
+  assert.equal(themeChrome.resolveThemePreference("custom", "auto", false).theme, "beige-light");
+  assert.equal(themeChrome.resolveThemePreference("custom", "auto", true).theme, "beige-dark");
 }
 
 function checkSchema3PrefsBeatLegacy() {
@@ -47,7 +47,8 @@ function checkSchema3PrefsBeatLegacy() {
     mode: "light",
     legacy: "custom",
   }, true);
-  assert.equal(customLight.theme, "custom-light");
+  assert.equal(customLight.style, "beige");
+  assert.equal(customLight.theme, "beige-light");
   assert.equal(customLight.backgroundColor, "#faf9f5");
 
   const customDark = themeChrome.resolveFromPrefBag({
@@ -56,17 +57,18 @@ function checkSchema3PrefsBeatLegacy() {
     mode: "dark",
     legacy: "custom",
   }, false);
-  assert.equal(customDark.theme, "custom");
+  assert.equal(customDark.style, "beige");
+  assert.equal(customDark.theme, "beige-dark");
   assert.equal(customDark.backgroundColor, "#262624");
 }
 
 function checkLegacyMigration() {
   assert.deepEqual(themeChrome.legacyThemePreference("custom", "2"), {
-    style: "custom",
+    style: "beige",
     mode: "dark",
   });
   assert.deepEqual(themeChrome.legacyThemePreference("custom-light", "2"), {
-    style: "custom",
+    style: "beige",
     mode: "light",
   });
   assert.deepEqual(themeChrome.legacyThemePreference("light", "1"), {
@@ -156,6 +158,34 @@ function checkErrorPageAndListingUseThemeSurface() {
   assert.doesNotMatch(css, /#141416/);
 }
 
+function checkAccentOverrideChangesLinkNotBackground() {
+  const overridden = themeChrome.resolveFromPrefBag({
+    schema: "3",
+    style: "beige",
+    mode: "dark",
+    legacy: "beige-dark",
+    accent: "#2563eb",
+  }, true);
+  assert.equal(overridden.backgroundColor, "#262624");
+  assert.equal(overridden.chrome.bg, "#262624");
+  assert.equal(overridden.chrome.link, "#2563eb");
+  assert.equal(overridden.accentColor, "#2563eb");
+
+  const defaults = themeChrome.resolveFromPrefBag({
+    schema: "3",
+    style: "beige",
+    mode: "dark",
+    legacy: "beige-dark",
+  }, true);
+  assert.equal(defaults.chrome.link, "#d97757");
+  assert.equal(defaults.backgroundColor, "#262624");
+
+  const listing = themeChrome.directoryListingCss(overridden.chrome);
+  assert.match(listing, /color: #2563eb/);
+  const error = themeChrome.buildErrorPageHtml(overridden.chrome, "openprogram worker start");
+  assert.match(error, /background:#262624/);
+}
+
 function checkColorToHex() {
   assert.equal(themeChrome.colorToHex("#faf9f5"), "#faf9f5");
   assert.equal(themeChrome.colorToHex("#ABC"), "#aabbcc");
@@ -164,13 +194,14 @@ function checkColorToHex() {
 }
 
 checkBackgroundMapUsesRealHexes();
-checkCustomPairResolvesDistinctThemes();
+checkStoredCustomMigratesToBeige();
 checkSchema3PrefsBeatLegacy();
 checkLegacyMigration();
 checkPrefsFileRoundTrip();
 checkChromiumLocalStorageWinsOverCache();
 checkLegacyKeyDoesNotEatStyleSuffix();
 checkErrorPageAndListingUseThemeSurface();
+checkAccentOverrideChangesLinkNotBackground();
 checkColorToHex();
 
 console.log("theme chrome checks passed");
