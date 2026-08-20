@@ -147,5 +147,5 @@ concentrations.
 
 ## Related Files
 
-- [`runtime/execution/turn-cancellation.md`](runtime/execution/turn-cancellation.md) — `CancelledError` is a `BaseException` so tool bodies cannot swallow a stop
+- [Execution cancellation](runtime/execution/turn-cancellation.html) — the cancellation lifecycle and why `CancelledError` is a `BaseException`
 - [`runtime/dag/overview.md`](runtime/dag/overview.md) — error as a terminal node status
