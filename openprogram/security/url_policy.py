@@ -45,6 +45,7 @@ _SPECIAL_NON_GLOBAL_NETWORKS: tuple[IPNetwork, ...] = tuple(
         "2001:db8::/32",
     )
 )
+_PROXY_FAKE_IP_NETWORK = ipaddress.ip_network("198.18.0.0/15")
 
 
 class URLTrustClass(str, Enum):
@@ -335,7 +336,17 @@ def _validate_addresses(
         URLTrustClass.FIXED_PUBLIC_SERVICE,
     }:
         for address in addresses:
-            if _is_non_global(address):
+            # Transparent proxies such as Clash resolve public hosts into the
+            # benchmarking range and recover the hostname from the TLS
+            # connection. This is safe only for fixed, audited HTTPS origins:
+            # the caller cannot choose the host and TLS still verifies it.
+            proxy_fake_ip = (
+                trust_class == URLTrustClass.FIXED_PUBLIC_SERVICE
+                and address.version == _PROXY_FAKE_IP_NETWORK.version
+                and address in _PROXY_FAKE_IP_NETWORK
+                and normalized.scheme == "https"
+            )
+            if _is_non_global(address) and not proxy_fake_ip:
                 raise URLPolicyError("NON_GLOBAL_ADDRESS", normalized.safe_url)
         return
 

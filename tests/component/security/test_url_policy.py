@@ -417,6 +417,34 @@ def test_fixed_service_rejects_unlisted_origin_before_dns():
     assert calls == []
 
 
+def test_fixed_https_service_accepts_transparent_proxy_fake_ip():
+    decision = evaluate_url(
+        "tool.web_search.fixed_api",
+        "GET",
+        "https://export.arxiv.org/api/query",
+        trust_class=URLTrustClass.FIXED_PUBLIC_SERVICE,
+        allowed_methods=PUBLIC_METHODS,
+        allowed_ports=PUBLIC_PORTS,
+        fixed_origins=frozenset({"https://export.arxiv.org"}),
+        resolver=answers("198.18.0.8"),
+    )
+
+    assert str(decision.resolved_ips[0]) == "198.18.0.8"
+
+
+def test_untrusted_public_url_still_rejects_transparent_proxy_fake_ip():
+    with pytest.raises(URLPolicyError, match="NON_GLOBAL_ADDRESS"):
+        evaluate_url(
+            "tool.web_fetch",
+            "GET",
+            "https://attacker.example/resource",
+            trust_class=URLTrustClass.UNTRUSTED_PUBLIC,
+            allowed_methods=PUBLIC_METHODS,
+            allowed_ports=PUBLIC_PORTS,
+            resolver=answers("198.18.0.8"),
+        )
+
+
 def test_callback_rejects_https_before_dns_when_registry_allows_only_http():
     calls: list[tuple[str, int]] = []
 
