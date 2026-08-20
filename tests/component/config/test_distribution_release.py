@@ -1235,6 +1235,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         "worker-start-url.js",
         "tab-transfer-store.js",
         "window-state.js",
+        "theme-chrome.js",
         "browsing-history-store.js",
         "browser-profile-import.js",
     ]
@@ -1273,7 +1274,8 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         '  pack) test -f "$3/menu-geometry.js" || exit 92; '
         'test -f "$3/worker-recovery-state.js" || exit 93; '
         'test -f "$3/tab-transfer-validation.js" || exit 94; '
-        'test -f "$3/window-state.js" || exit 95; : > "$4" ;;\n'
+        'test -f "$3/window-state.js" || exit 95; '
+        'test -f "$3/theme-chrome.js" || exit 96; : > "$4" ;;\n'
         '  *) printf "unexpected node call: %s\\n" "$*" >&2; exit 91 ;;\n'
         "esac\n",
         encoding="utf-8",
