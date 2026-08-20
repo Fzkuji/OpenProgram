@@ -4,6 +4,7 @@
  */
 import { marked } from "marked";
 import { sanitizeHtml } from "@/lib/runtime-bridge/markdown-render";
+import { renderObsidianMarkdown } from "./obsidian-markdown";
 
 /** Parse YAML-ish frontmatter from raw markdown. Returns the
  *  ``{ frontmatter, body }`` pair — empty frontmatter when the
@@ -35,14 +36,14 @@ export function expandWikilinks(md: string): string {
   });
 }
 
-/** marked.parse() wrapper that runs ``expandWikilinks`` first and
- *  falls back to an escaped <pre> on parse error. */
+/** Memory/Obsidian wrapper for marked.parse(), with wikilinks, footnotes,
+ *  hidden block anchors, and an escaped <pre> fallback on parse error. */
 export function renderMarkdown(md: string): string {
   try {
-    return sanitizeHtml(marked.parse(
+    return sanitizeHtml(renderObsidianMarkdown(
       expandWikilinks(md),
-      { breaks: true, async: false },
-    ) as string);
+      (source) => marked.parse(source, { breaks: true, async: false }) as string,
+    ));
   } catch {
     return `<pre>${md.replace(/</g, "&lt;")}</pre>`;
   }

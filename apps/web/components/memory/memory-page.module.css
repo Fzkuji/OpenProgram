@@ -1014,6 +1014,28 @@
 
 .markdown p { margin: 8px 0; }
 
+.markdown [data-footnote-ref] {
+  color: var(--accent-purple);
+  font-size: 0.83em;
+  font-weight: 500;
+}
+
+.markdown [data-footnotes] {
+  margin-top: 28px;
+  color: var(--text-primary);
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.markdown [data-footnotes] ol {
+  margin: 8px 0 0;
+  padding-left: 24px;
+}
+
+.markdown [data-footnotes] li { margin: 7px 0; padding-left: 3px; }
+.markdown [data-footnotes] p { margin: 4px 0; }
+.markdown [data-footnote-backref] { margin-left: 4px; color: var(--text-muted); }
+
 .markdown a {
   color: var(--accent-blue);
   text-decoration: none;

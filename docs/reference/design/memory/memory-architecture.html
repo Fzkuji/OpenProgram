@@ -1324,23 +1324,26 @@
         <tr><td><b>二级栏</b></td><td>分区下面的 Folder、Topic、Timeline 年/月/日、Recent 与 Core 入口全部使用同一套 36px 行高、10px 横向内边距、8px 圆角、13px 字号和选中背景。Folder 与 Timeline 年/月必须复用同一个 14×14 线性 ChevronRight SVG、路径和展开旋转规则，并使用相同的数字徽标；Timeline 只用缩进表达层级；Topics 不重复显示由 Core 分区管理的 <code>topics/core.md</code></td><td>展开控件不再使用过小的实心三角，Timeline 不再显示与 Topics 不同的计数文本</td></tr>
         <tr><td><b>内容标题</b></td><td>名称、类型、路径、修改时间、视图与编辑操作集中在一个 76px 区域</td><td>删除独立 meta 横条和分散的 Core 状态</td></tr>
         <tr><td><b>正文</b></td><td>Preview/Timeline/Recent/Core 使用最大 780px 阅读面；Edit 保持全宽等宽字体编辑器</td><td>避免超宽文本和大片无结构空白</td></tr>
+        <tr><td><b>Markdown 预览</b></td><td>Topics、Timeline 与 Core 在现有 <code>marked</code> 和 HTML 清洗链路内解释 Memory 使用的 Obsidian Flavored Markdown：命名 <code>[^id]</code> 显示为连续 <code>[1]</code> 上标，定义集中到带分隔线的文末有序列表，支持两个空格缩进的续行与 <code>^[inline footnote]</code>；段末或独立行 <code>^block-id</code> 只保留不可见锚点，ID 仅接受 Latin 字母、数字和连字符</td><td>不在阅读正文中暴露内部 evidence ID 和 block ID；不改变可编辑的磁盘原文</td></tr>
         <tr><td><b>窄宽度</b></td><td>分区图标栏 + 列表/详情单页切换</td><td>不自动折叠桌面栏，不把三块上下堆叠，不允许内容区重叠</td></tr>
       </tbody>
     </table>
   </div>
 
+  <div class="note"><b>上游依据：</b><a href="https://obsidian.md/help/obsidian-flavored-markdown">Obsidian Flavored Markdown</a> 定义 CommonMark、GFM、LaTeX 和 Obsidian 扩展的组合；<a href="https://obsidian.md/help/syntax#Footnotes">Footnotes</a> 定义命名脚注数字化、两个空格续行与 inline footnote；<a href="https://obsidian.md/help/links#Link%20to%20a%20block%20in%20a%20note">Internal links</a> 定义 block ID 的位置和字符集。Obsidian 主应用闭源，公开 API 与帮助仓库不能提供核心 renderer 源码，因此本实现对齐官方语法和 Reading/Publish 的可观察输出，不复制未公开实现。</div>
+
   <div class="grid2">
     <div class="oc">
       <h4>实现范围</h4>
-      <div class="d">主要修改 <code>apps/web/components/memory/index.tsx</code>、<code>parts.tsx</code> 和 <code>memory-page.module.css</code>。复用现有 <code>SearchInput</code>、图标、API 请求、EditorState、Markdown 清洗和保存逻辑；Recent 的内联样式移入 CSS module。</div>
+      <div class="d">页面布局主要由 <code>apps/web/components/memory/index.tsx</code>、<code>parts.tsx</code> 和 <code>memory-page.module.css</code> 维护。Memory 固定格式的阅读转换集中在专用 Markdown helper，复用现有 <code>marked</code> 与 HTML 清洗，不改变编辑内容、API、writer 或磁盘格式。</div>
     </div>
     <div class="oc">
       <h4>明确排除</h4>
-      <div class="d">不增加首页 dashboard、统计图、Topic 创建向导、拖拽排序、批量编辑、writer 状态、自动折叠栏、新 API 或新依赖。没有选择内容时只显示简洁的选择提示与现有设置入口。</div>
+      <div class="d">不增加首页 dashboard、统计图、Topic 创建向导、拖拽排序、批量编辑、writer 状态、自动折叠栏、新 API 或新依赖。脚注来源链接继续使用原有 URL；本轮不增加来源浏览 API，也不把 Memory 专用语法扩展到 Chat Markdown。没有选择内容时只显示简洁的选择提示与现有设置入口。</div>
     </div>
   </div>
 
-  <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；Recent 与 Core 不在中间栏重复标题、数量、视图切换或注入状态，Core 的切换和状态只在右侧内容头部出现一次；Recent 右侧标题显示当前记录数与实时 <code>memory.recent.limit</code>，例如 <code>7 / 50 records</code>，不把记录条数误写成 token 预算；顶部不把受截断的 Recent 数量表述为 Memory 总量；右侧 Preview、Timeline、Recent 与 Core 使用居中的文档面，空 Topics 使用独立空状态卡；Timeline 按年、月、日折叠且不把派生文件重建时间显示成记录时间；Core 明确区分只读 Prompt preview 与可编辑 Source records；Topics 列表不显示 <code>core.md</code>；小于 720px 时不得产生横向重叠，编辑器操作进入独立下一行并可换行。页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
+  <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；Recent 与 Core 不在中间栏重复标题、数量、视图切换或注入状态，Core 的切换和状态只在右侧内容头部出现一次；Recent 右侧标题显示当前记录数与实时 <code>memory.recent.limit</code>，例如 <code>7 / 50 records</code>，不把记录条数误写成 token 预算；顶部不把受截断的 Recent 数量表述为 Memory 总量；右侧 Preview、Timeline、Recent 与 Core 使用居中的文档面，空 Topics 使用独立空状态卡；Topics、Timeline 与 Core 的 Markdown 预览把已定义命名脚注和 inline footnote 按出现顺序显示为 <code>[1]</code> 上标和文末脚注列表，两个空格缩进的续行属于上一条脚注，正文不显示 evidence ID 或合法的段末 block ID，脚注链接、重复引用、未定义引用、行内代码和代码块保持可预测；Timeline 按年、月、日折叠且不把派生文件重建时间显示成记录时间；Core 明确区分只读 Prompt preview 与可编辑 Source records；Topics 列表不显示 <code>core.md</code>；小于 720px 时不得产生横向重叠，编辑器操作进入独立下一行并可换行。页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
   <div class="legend"><b>本轮实现状态：</b>Recent 和 Core 已删除中间栏的重复上下文块；Recent 的标题与容量只在右侧内容头部显示，并从 Recent API 响应头读取当前 <code>memory.recent.limit</code>，呈现为“当前记录数 / 配置上限”；Core 的 Prompt preview / Source records 切换、注入状态和 token 用量也只在右侧显示一次。Timeline 年/月/日折叠继续保留。正式 Memory 已通过结构化事务删除 survey test 项目记录；后台 writer 后续仍可按正常行为生成新 Topic。居中文档面、卡片化空状态、76px 单一标题区、780px 阅读宽度和窄窗编辑操作换行已经进入生产代码。Topics 文件行、Timeline 年/月/日入口继续复用 36px 行高、10px 横向内边距、8px 圆角和 13px 字号的侧栏行；Folder、Timeline 年和 Timeline 月也已复用同一个 14×14 线性 ChevronRight 与数字徽标，Timeline 只以缩进表达层级。小于 720px 的完整列表/详情互斥仍不在本轮生产实现范围。</div>
 
   <div class="grid2">
@@ -1350,7 +1353,7 @@
     </div>
     <div class="oc">
       <h4>兼容要求</h4>
-      <div class="d">保留四个分区、全部现有请求、Core 保存 compare-and-set、Markdown 清洗、Timeline partial date、键盘焦点、Topics 排除 Core 与现有设置跳转。不新增组件库、API、数据库字段、自动栏状态或测试 Memory。</div>
+      <div class="d">保留四个分区、全部现有请求、Core 保存 compare-and-set、Markdown 清洗、Timeline partial date、键盘焦点、Topics 排除 Core 与现有设置跳转。脚注转换发生在清洗前；生成的链接和锚点仍经过统一 sanitizer。不新增组件库、API、数据库字段、自动栏状态或测试 Memory。</div>
     </div>
   </div>
 
