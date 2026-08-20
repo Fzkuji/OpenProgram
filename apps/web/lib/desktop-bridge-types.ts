@@ -5,6 +5,8 @@ export interface DesktopThemeChrome {
   style?: ThemeStyle;
   mode?: ThemeMode;
   backgroundColor?: string;
+  /** Optional accent override; empty/omitted uses the package --accent-orange. */
+  accentColor?: string;
 }
 
 export interface DesktopThemeApi {

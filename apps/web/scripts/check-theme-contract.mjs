@@ -44,8 +44,11 @@ assert.deepEqual(
   "CSS theme imports must be the built-ins plus the custom-light fallback sheet",
 );
 assert.deepEqual(customSlots, ["custom", "custom-light"]);
-assert.match(themeConfig, /custom:\s*\{\s*dark:\s*"custom",\s*light:\s*"custom-light"/);
-assert.match(desktopChrome, /custom:\s*\{\s*dark:\s*"custom",\s*light:\s*"custom-light"/);
+const themeStyles = quotedValues(themeConfig, "THEME_STYLES");
+assert.deepEqual(themeStyles, ["beige", "neutral", "aurora"]);
+assert.doesNotMatch(themeConfig, /custom:\s*\{\s*dark:\s*"custom"/);
+assert.match(desktopChrome, /THEME_STYLES = \["beige", "neutral", "aurora"\]/);
+assert.match(themeConfig, /THEME_DEFAULT_ACCENTS/);
 
 const requiredTokens = [
   "--accent-cyan", "--accent-fill", "--accent-green", "--accent-orange",
@@ -92,6 +95,11 @@ for (const [id, values] of Object.entries(expectedAccent)) {
     values,
     `${id} must use its assigned primary colour family`,
   );
+  assert.match(
+    themeConfig,
+    new RegExp(`["']?${id.replaceAll("-", "\\-")}["']?:\\s*"${values[0]}"`),
+    `THEME_DEFAULT_ACCENTS.${id} must stay sourced from ${id} --accent-orange`,
+  );
 }
 for (const token of requiredTokens) {
   assert.ok(tokens(base).includes(token), `:root fallback is missing ${token}`);
@@ -105,12 +113,17 @@ for (const alias of [
   assert.equal(tokenValue(base, alias[0]), `var(${alias[1]})`, `${alias[0]} must remain a theme-aware compatibility alias`);
 }
 for (const token of ["--accent-orange", "--accent-fill", "--accent-orange-hover"]) {
-  assert.match(settings, new RegExp(`${token.replaceAll("-", "\\-")}\\s*:`), `Custom CSS template is missing ${token}`);
+  assert.match(themeConfig, new RegExp(`${token.replaceAll("-", "\\-")}\\s*:`), `Custom CSS template is missing ${token}`);
 }
-assert.match(settings, /\[data-theme="custom"\]/);
-assert.match(settings, /\[data-theme="custom-light"\]/);
-assert.match(settings, /Beige dark and Beige light/);
-assert.match(settings, /暖色深色 \/ 暖色浅色/);
+assert.match(themeConfig, /html\[data-theme="beige-dark"\]/);
+assert.match(themeConfig, /html\[data-theme="beige-light"\]/);
+assert.match(settings, /CUSTOM_CSS_TEMPLATE/);
+assert.match(settings, /type="color"/);
+assert.match(settings, /Enable custom CSS/);
+assert.match(settings, /Insert template/);
+assert.match(settings, /Reset to theme default/);
+assert.doesNotMatch(settings, /pick the "Custom" color style/);
+assert.doesNotMatch(settings, /选择「自定义」颜色风格/);
 assert.match(settings, /THEME_STYLE_PAIRS\[style\]\[m\]/);
 assert.match(settings, /THEME_STYLE_PAIRS\[s\]\[mode\]/);
 
@@ -169,15 +182,18 @@ assert.match(desktopPreload, /theme:set-chrome/);
 assert.match(bridgeTypes, /export interface DesktopThemeApi/);
 assert.match(bridge, /theme\?:\s*DesktopThemeApi/);
 
-function chromeBackgrounds(source) {
+function chromeField(source, field) {
   const match = source.match(/const THEME_CHROME = \{([\s\S]*?)\n\};/);
   assert.ok(match, "THEME_CHROME must be a literal object");
   return Object.fromEntries(
-    [...match[1].matchAll(/(?:["']([a-z0-9-]+)["']|([a-z0-9-]+))\s*:\s*\{[\s\S]*?\bbg:\s*["']([^"']+)["']/g)]
-      .map((item) => [item[1] || item[2], item[3]]),
+    [...match[1].matchAll(new RegExp(
+      `(?:["']([a-z0-9-]+)["']|([a-z0-9-]+))\\s*:\\s*\\{[\\s\\S]*?\\b${field}:\\s*["']([^"']+)["']`,
+      "g",
+    ))].map((item) => [item[1] || item[2], item[3]]),
   );
 }
-const chromeBgs = chromeBackgrounds(desktopChrome);
+const chromeBgs = chromeField(desktopChrome, "bg");
+const chromeLinks = chromeField(desktopChrome, "link");
 assert.deepEqual(Object.keys(chromeBgs).sort(), builtins.slice().sort());
 for (const id of builtins) {
   const source = read(`app/styles/themes/${id}.css`);
@@ -186,7 +202,16 @@ for (const id of builtins) {
     tokenValue(source, "--bg-primary").toLowerCase(),
     `desktop THEME_CHROME.${id}.bg must be ${id} --bg-primary`,
   );
+  assert.equal(
+    chromeLinks[id].toLowerCase(),
+    tokenValue(source, "--accent-orange").toLowerCase(),
+    `desktop THEME_CHROME.${id}.link must be ${id} --accent-orange`,
+  );
 }
+assert.match(desktopChrome, /if \(accent\) chrome\.link = accent/);
+assert.match(desktopMain, /accentColor/);
+assert.match(bridgeTypes, /accentColor\?:\s*string/);
+assert.doesNotMatch(layout, /localStorage\.getItem\('agentic_custom_css'\)/);
 assert.match(desktopChrome, /custom:\s*"beige-dark"/);
 assert.match(desktopChrome, /"custom-light":\s*"beige-light"/);
 assert.equal(chromeBgs["beige-dark"], "#262624");

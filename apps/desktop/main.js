@@ -187,9 +187,11 @@ function resolveStartupChrome() {
 
 function applyWindowChrome(payload = {}) {
   const theme = themeChrome.isThemeId(payload.theme) ? payload.theme : null;
-  const fromTheme = theme ? themeChrome.chromeForTheme(theme) : currentChrome;
+  const accentColor = themeChrome.normalizeHex(payload.accentColor);
+  const fromTheme = theme ? themeChrome.chromeForTheme(theme, accentColor) : currentChrome;
   const background = themeChrome.colorToHex(payload.backgroundColor) || fromTheme.bg;
   currentChrome = { ...fromTheme, bg: background };
+  if (accentColor) currentChrome.link = accentColor;
   for (const win of BrowserWindow.getAllWindows()) {
     try {
       if (win.isDestroyed()) continue;
@@ -201,11 +203,14 @@ function applyWindowChrome(payload = {}) {
       /* Window teardown must not abort a theme update. */
     }
   }
-  const style = themeChrome.THEME_STYLES.includes(payload.style) ? payload.style : null;
+  const style = themeChrome.THEME_STYLES.includes(payload.style)
+    || payload.style === "custom"
+    ? themeChrome.coerceThemeStyle(payload.style)
+    : null;
   const mode = themeChrome.THEME_MODES.includes(payload.mode) ? payload.mode : null;
   if (theme && style && mode) {
     try {
-      themeChrome.writePrefsFile(themePrefsPath(), { style, mode, theme });
+      themeChrome.writePrefsFile(themePrefsPath(), { style, mode, theme, accent: accentColor });
     } catch (_error) {
       /* Cache write is best-effort; Chromium localStorage remains the store. */
     }
@@ -3514,6 +3519,7 @@ if (!primaryInstance) {
           theme: resolved.theme,
           style: resolved.style,
           mode: resolved.mode,
+          accentColor: resolved.accentColor,
         });
       });
     } catch {

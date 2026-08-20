@@ -1328,7 +1328,55 @@
   color: var(--text-bright);
 }
 
-/* 自定义 CSS 输入框（Obsidian 式）。 */
+.accentControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.accentColorInput {
+  width: 36px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.accentPresets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.accentPreset {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  padding: 0;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.accentPreset[aria-pressed="true"] {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 1px;
+}
+.customCssToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.customCssEnable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+/* 自定义 CSS overlay（Obsidian snippets）。 */
 .customCssArea {
   width: 100%;
   min-height: 160px;

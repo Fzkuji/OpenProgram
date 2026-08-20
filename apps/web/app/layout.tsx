@@ -46,16 +46,6 @@ export default function RootLayout({
               try {
                 ${THEME_BOOTSTRAP_SCRIPT}
 
-                // 用户自定义 CSS（Obsidian 式）：首帧前注入，避免闪一下
-                // 内置主题再被自定义值覆盖。
-                var css = localStorage.getItem('agentic_custom_css');
-                if (css) {
-                  var st = document.createElement('style');
-                  st.id = 'user-custom-css';
-                  st.textContent = css;
-                  document.head.appendChild(st);
-                }
-
                 // Font is already inlined by SSR from the cookie. Re-read
                 // the cookie (source of truth) and re-apply only if it
                 // differs — covers a font changed in another tab since
