@@ -22,6 +22,6 @@ Web UI surfaces — the surface system, indicator dots, attachment handling, cha
 - [`surface-system.md`](surface-system.md) — surface system
 - [`theme-system.html`](theme-system.html) — authoritative theme entry, complete token contract, component consumption, and desktop-overlay propagation
 - [`settings-collapsible-columns.html`](settings-collapsible-columns.html) — independent 49px collapse behavior for the app, Settings, and Provider navigation columns
-- [`avatar-randomization.html`](avatar-randomization.html) — shared Agent/User avatar variants with full DiceBear style coverage
+- [`avatar-randomization.html`](avatar-randomization.html) — shared Agent/User avatar picker: type first, then same-style variants or letter fields
 - [`web-styles.md`](web-styles.md) — web style organization (one component, one file; directories mirror the component tree)
 - [`window-state.md`](window-state.md) — desktop window bounds, maximize/fullscreen, and titlebar resize hit-testing

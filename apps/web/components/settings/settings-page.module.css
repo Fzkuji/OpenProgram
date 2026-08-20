@@ -304,6 +304,25 @@
 .rowTop .label {
   padding-top: 6px;
 }
+
+/* Avatar editor sits under the Preview / Display name rows as its
+   own full-width block. Content stays left-aligned at natural size
+   so variant tiles never stretch across the card. */
+.avatarBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--border);
+  min-width: 0;
+  overflow: visible;
+}
+.avatarBlockLabel {
+  font-size: 14px;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+}
 .label {
   font-size: 14px;
   color: var(--text-primary);

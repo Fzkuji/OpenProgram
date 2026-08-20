@@ -5,33 +5,15 @@ export interface AvatarVariant {
   seed: string;
 }
 
-function shuffle<T>(values: T[]): void {
-  for (let index = values.length - 1; index > 0; index -= 1) {
-    const target = Math.floor(Math.random() * (index + 1));
-    [values[index], values[target]] = [values[target]!, values[index]!];
-  }
-}
-
-/** Build a random batch that includes every shipped style whenever the
- * requested batch is large enough. Additional slots also use the same
- * registry; each seed includes its index so React keys remain unique. */
+/** Fresh seeds for a single DiceBear style. Regenerate never
+ *  changes the style — only the candidate seeds. */
 export function randomAvatarVariants(
-  styleIds: readonly AvatarStyle[],
+  style: AvatarStyle,
   count: number,
 ): AvatarVariant[] {
-  if (!Number.isInteger(count) || count <= 0 || styleIds.length === 0) return [];
+  if (!Number.isInteger(count) || count <= 0) return [];
 
-  const coverage = [...styleIds];
-  shuffle(coverage);
-  const selectedStyles = coverage.slice(0, count);
-  while (selectedStyles.length < count) {
-    selectedStyles.push(
-      styleIds[Math.floor(Math.random() * styleIds.length)]!,
-    );
-  }
-  shuffle(selectedStyles);
-
-  return selectedStyles.map((style, index) => ({
+  return Array.from({ length: count }, (_, index) => ({
     style,
     seed: `${Math.random().toString(36).slice(2, 9) || "avatar"}-${index.toString(36)}`,
   }));

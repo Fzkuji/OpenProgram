@@ -92,6 +92,7 @@ const DICT = {
   },
   "general.agent.color": { en: "Avatar color", zh: "头像颜色" },
   "general.agent.preview": { en: "Preview", zh: "预览" },
+  "general.avatar": { en: "Avatar", zh: "头像" },
 
   // Settings shell + tab labels
   "settings.title": { en: "Settings", zh: "设置" },
