@@ -19,7 +19,6 @@ import { setUserProfile, useUserProfile } from "@/lib/prefs/user-profile";
 import {
   Avatar,
   AvatarPicker,
-  sourceOf,
   type AvatarConfig,
 } from "@/components/avatar";
 import {
@@ -165,9 +164,6 @@ function ProfileEditor({
 }) {
   const { t } = useTranslation();
 
-  const source = sourceOf(profile.avatar);
-  const isLetterMode = source === "letter";
-
   function updateName(name: string) {
     onChange({ ...profile, name: name.slice(0, 32) });
   }
@@ -198,7 +194,19 @@ function ProfileEditor({
                 gap: 10,
               }}
             >
-              <Avatar size={40} name={profile.name} config={profile.avatar} />
+              <Avatar
+                size={40}
+                name={profile.name}
+                config={
+                  profile.avatar?.kind === "letter"
+                    ? {
+                        kind: "letter",
+                        letter: profile.initial,
+                        bg: profile.color,
+                      }
+                    : profile.avatar
+                }
+              />
               <span style={{ fontWeight: 600 }}>{profile.name}</span>
             </span>
           </div>
@@ -226,100 +234,19 @@ function ProfileEditor({
           </div>
         </div>
 
-        {/* Avatar style + seed + upload — all owned by the avatar
-            feature module. This page just hands it the current
-            config and a setter; the picker decides what controls to
-            render based on which source the user has chosen.
-            ``rowTop`` keeps the "Avatar style" label pinned to the
-            top of the tall picker block instead of centring it. */}
-        <div className={`${styles.row} ${styles.rowTop}`}>
-          <div className={styles.label}>Avatar style</div>
-          <div className={styles.control + " " + styles.valueWide}>
-            <AvatarPicker
-              value={profile.avatar}
-              onChange={updateAvatar}
-              name={profile.name}
-              letterBg={profile.color}
-              letterText={profile.initial}
-            />
-          </div>
+        <div className={styles.avatarBlock}>
+          <div className={styles.avatarBlockLabel}>{t("general.avatar")}</div>
+          <AvatarPicker
+            value={profile.avatar}
+            onChange={updateAvatar}
+            name={profile.name}
+            letterBg={profile.color}
+            letterText={profile.initial}
+            onLetterBgChange={updateColor}
+            onLetterTextChange={updateInitial}
+            colors={colors}
+          />
         </div>
-
-        {/* Letter-mode initial + colour — owned by the page
-            (because they live on ``AgentProfilePrefs`` directly,
-            not on ``avatar``). Hidden when the picker is on a
-            DiceBear / upload source to keep the panel focused. */}
-        {isLetterMode && (
-          <>
-            <div className={styles.row}>
-              <div className={styles.label}>{t("general.agent.initial")}</div>
-              <div className={styles.control}>
-                <input
-                  type="text"
-                  value={profile.initial}
-                  maxLength={2}
-                  onChange={(e) => updateInitial(e.target.value)}
-                  style={{
-                    padding: "6px 10px",
-                    background: "var(--bg-secondary)",
-                    border: "1px solid var(--border)",
-                    borderRadius: "var(--ui-button-radius)",
-                    color: "var(--text-primary)",
-                    font: "inherit",
-                    width: 64,
-                    textAlign: "center",
-                  }}
-                />
-                <div
-                  style={{
-                    fontSize: "var(--fs-sm)",
-                    fontFamily: "var(--font-sans)",
-                    color: "var(--text-muted)",
-                    marginTop: 4,
-                  }}
-                >
-                  {t("general.agent.initial.hint")}
-                </div>
-              </div>
-            </div>
-
-            <div className={styles.row}>
-              <div className={styles.label}>{t("general.agent.color")}</div>
-              <div className={styles.control}>
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: 6,
-                    maxWidth: 280,
-                  }}
-                >
-                  {colors.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => updateColor(c)}
-                      aria-label={c}
-                      title={c}
-                      style={{
-                        width: 24,
-                        height: 24,
-                        borderRadius: 6,
-                        background: c,
-                        border:
-                          profile.color === c
-                            ? "2px solid var(--text-primary)"
-                            : "1px solid var(--border)",
-                        cursor: "pointer",
-                        padding: 0,
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          </>
-        )}
       </div>
   );
 }
