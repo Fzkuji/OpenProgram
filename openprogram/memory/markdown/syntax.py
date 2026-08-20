@@ -3,12 +3,12 @@
 import re
 from collections.abc import Iterable, Iterator
 from pathlib import Path
-from urllib.parse import unquote
 
 from ..source_format import (
     is_v2_source_path,
     provider_source_location,
     scan_source_archive,
+    valid_v2_source_id,
 )
 from .models import (
     BLOCK_ID,
@@ -42,9 +42,16 @@ BLOCK_LINK = re.compile(rf"\[[^]]+\]\([^)#]*#\^(?P<id>{BLOCK_TARGET_ID})\)")
 SOURCE_HANDLE = re.compile(
     r"^(D\d+:\d+|[^/\s,]+/[^/\s,]+/[^/\s,]+)(?:\s*(?:,|·)\s*|\s+|$)"
 )
-PLAIN_SOURCE_HANDLE = re.compile(r"D\d+:\d+|[^/\s,]+/[^/\s,]+/[^/\s,]+")
 _CJK = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 _MARKDOWN_LABEL = re.compile(r"[\[\]()`*_~<>\\]")
+_GENERIC_LABEL = re.compile(
+    r"(?i)^(?:(?:owner|user|assistant|system|speaker|source|reference|ref|item|record)"
+    r"(?:\s*[-:#]?\s*\d+)?|[a-z]\d+|(?:用户|助手|系统|说话人|来源|引用|记录|条目)\s*\d*)$"
+)
+_DATE_LABEL = re.compile(r"^\d{4}(?:[-/]\d{1,2}){0,2}$")
+_UUID_LABEL = re.compile(
+    r"(?i)^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
+)
 
 
 def definition_match(line: str) -> re.Match[str] | None:
@@ -69,7 +76,16 @@ def normalize_source_label(value: str, source_ref: str | None = None) -> str:
         character if character.isprintable() else " " for character in value
     )
     label = " ".join(_MARKDOWN_LABEL.sub("", label).split())
-    if not label or label == source_ref or "://" in label:
+    label = re.sub(r"^[^\w]+|[^\w]+$", "", label)
+    if (
+        not label
+        or label == source_ref
+        or "://" in label
+        or "/" in label
+        or _GENERIC_LABEL.fullmatch(label)
+        or _DATE_LABEL.fullmatch(label)
+        or _UUID_LABEL.fullmatch(label)
+    ):
         return "相关内容"
     if _CJK.search(label):
         visible = 0
@@ -88,10 +104,8 @@ def normalize_source_label(value: str, source_ref: str | None = None) -> str:
 
 def is_plain_source_handle(value: str) -> bool:
     value = value.strip()
-    return (
-        bool(PLAIN_SOURCE_HANDLE.fullmatch(value))
-        and not value.startswith((".", "/"))
-        and "#" not in value
+    return bool(re.fullmatch(r"D\d+:\d+", value)) or (
+        "#" not in value and valid_v2_source_id(value)
     )
 
 
@@ -109,7 +123,7 @@ def _source_from_target(
         return None
     memory_dir = Path(topics).resolve().parent
     sources = (memory_dir / "sources").resolve()
-    unresolved = Path(topic_path).resolve().parent / unquote(raw_path)
+    unresolved = Path(topic_path).resolve().parent / raw_path
     if unresolved.is_symlink():
         return None
     candidate = unresolved.resolve()
@@ -119,18 +133,24 @@ def _source_from_target(
     ):
         return None
     relative = candidate.relative_to(memory_dir)
-    if not is_v2_source_path(relative):
-        return None
     lookup = source_lookup if source_lookup is not None else {}
     if candidate not in lookup:
-        scan = scan_source_archive(
-            candidate.read_text(encoding="utf-8"), relative
-        )
+        text = candidate.read_text(encoding="utf-8")
         anchors = {}
-        for frame in scan.frames:
-            location = provider_source_location(frame.source_id, v2=True)
-            if location is not None:
-                anchors[location[1]] = frame.source_id
+        if is_v2_source_path(relative):
+            for frame in scan_source_archive(text, relative).frames:
+                location = provider_source_location(frame.source_id, v2=True)
+                if location is not None:
+                    anchors[location[1]] = frame.source_id
+        else:
+            for anchor, source_id in re.findall(
+                r'<a id="([^"]+)"></a>\n'
+                r'<!-- source-id:([^>\r\n]+) -->',
+                text,
+            ):
+                location = provider_source_location(source_id)
+                if location == (relative, anchor):
+                    anchors[anchor] = source_id
         lookup[candidate] = anchors
     return lookup[candidate].get(fragment)
 

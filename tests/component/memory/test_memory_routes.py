@@ -396,6 +396,15 @@ def test_memory_update_schema_constructs_a_google_function_declaration():
     sources = item["properties"]["sources"]
     assert sources["items"]["required"] == ["source", "label"]
     assert sources["items"]["additionalProperties"] is False
+    label_description = sources["items"]["properties"]["label"][
+        "description"
+    ].lower()
+    assert "context-specific" in label_description
+    assert "8 visible characters" in label_description
+    assert "6 words" in label_description
+    assert "speaker" in label_description
+    assert "sequence" in label_description
+    assert "markdown" in label_description
     assert "source_refs" not in item["properties"]
 
 

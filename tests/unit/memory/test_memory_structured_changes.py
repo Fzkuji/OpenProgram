@@ -426,6 +426,15 @@ def test_record_sources_render_short_labels_and_preserve_v2_identity(
         "这是一个超过八个",
         "one two three four five six",
     )
+    from openprogram.memory.retrieval.bm25 import MemoryBM25Index
+
+    indexed = next(
+        event
+        for event in MemoryBM25Index(root, persist=False).events
+        if event.path == "topics/labelled.md"
+    )
+    assert indexed.refs == list(unit.source_refs)
+    assert indexed.trust_state == "trusted"
     timeline = (root / "timeline/2026/08/20.md").read_text(encoding="utf-8")
     assert "[这是一个超过八个](" in timeline
     assert "[one two three four five six](" in timeline
@@ -449,6 +458,69 @@ def test_record_sources_render_short_labels_and_preserve_v2_identity(
     assert moved.source_refs == unit.source_refs
     assert moved.source_labels == unit.source_labels
     assert moved.topic_path == "archive/labelled.md"
+
+
+def test_source_labels_support_encoded_and_legacy_provider_archives(tmp_path):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.markdown import parse_topic_tree
+    from openprogram.memory.runtime.state import SourceRecord
+    from openprogram.memory.source_format import provider_source_location
+
+    root = tmp_path / "memory"
+    encoded = SourceRecord(
+        "openprogram", "encoded id", "m1", 1, "user", "encoded source"
+    )
+    legacy_ref = "openprogram/legacy-thread/m1"
+    legacy_path, legacy_anchor = provider_source_location(legacy_ref)
+    path = root / legacy_path
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "# legacy-thread\n\n"
+        f'<a id="{legacy_anchor}"></a>\n'
+        f"<!-- source-id:{legacy_ref} -->\n"
+        "[2026-08-20] user: legacy source\n",
+        encoding="utf-8",
+    )
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.archive_source_records([encoded])
+        workspace.update(
+            base_revision=workspace.revision(),
+            memory_changes=[{
+                "op": "create_record",
+                "content": "Encoded and legacy sources remain addressable.",
+                "time": "2026-08-20",
+                "sources": [
+                    {"source": encoded.source_id, "label": "编码来源"},
+                    {"source": legacy_ref, "label": "旧版来源"},
+                ],
+                "destination": {
+                    "topic_path": "topics/compatibility.md",
+                    "headings": [],
+                    "position": "end",
+                },
+            }],
+            git_commit="off",
+        )
+        baseline = workspace.baseline()
+        (workspace.stage_dir / "topics/direct-encoded.md").write_text(
+            "# Direct encoded\n\n"
+            "A direct Writer record.[^e1]\n\n"
+            "[^e1]: Time: `2026-08-20`; Sources: "
+            f"[编码来源]({encoded.source_id})\n",
+            encoding="utf-8",
+        )
+        workspace.commit_edits(*baseline)
+
+    units = parse_topic_tree(root / "topics")
+    assert {ref for unit in units for ref in unit.source_refs} == {
+        encoded.source_id,
+        legacy_ref,
+    }
+    compatibility = (root / "topics/compatibility.md").read_text(
+        encoding="utf-8"
+    )
+    assert "encoded%20id.md#" in compatibility
+    assert "legacy-thread.md#" in compatibility
 
 
 def test_direct_writer_source_label_is_resolved_by_runtime(tmp_path):

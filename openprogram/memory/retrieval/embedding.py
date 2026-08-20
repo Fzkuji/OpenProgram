@@ -81,6 +81,7 @@ class MemoryEmbeddingIndex:
             if self._events_cache is not None:
                 return self._events_cache
             events = []
+            source_lookup: dict[Path, dict[str, str]] = {}
             for relative, path in sorted(
                 _indexable_files(
                     self.memory_dir, self._visible_files
@@ -89,7 +90,11 @@ class MemoryEmbeddingIndex:
                 if relative.startswith("sources/"):
                     events.extend(parse_source_file(path, self.sources_dir))
                 else:
-                    events.extend(parse_topic_file(path, self.topics_dir))
+                    events.extend(parse_topic_file(
+                        path,
+                        self.topics_dir,
+                        source_lookup=source_lookup,
+                    ))
             self._events_cache = prefer_v2_source_events(events)
         return self._events_cache
 
