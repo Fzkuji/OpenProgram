@@ -107,7 +107,7 @@ export function makeAccountsClient(providerId: string): AccountsClient {
     useAccount: (id) => postTo(`${base}/use`, { id }),
     removeAccount: (id) => postTo(`${base}/remove`, { id }),
     renameAccount: (id, label) => postTo(`${base}/rename`, { id, name: label }),
-    validateAccount: (id) => postTo(`${base}/${encodeURIComponent(id)}/validate`, {}),
+    validateAccount: (id) => postTo(`${base}/${encodeURIComponent(id)}/validate?ping=true`, {}),
     revealKey: (id) => getJson(`${base}/${encodeURIComponent(id)}/reveal`),
     setRotation: (enabled, strategy) => postTo(`${base}/rotation`, { enabled, strategy }),
   };

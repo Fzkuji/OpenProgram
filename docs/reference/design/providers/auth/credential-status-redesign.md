@@ -74,8 +74,11 @@ notification; the accounts panel is only for diagnosis.
 - `auth/usage.py _account_healthy` — `billing_blocked` counts as unhealthy for
   rotation alongside `revoked` and `needs_reauth`.
 - `webui/routes/accounts.py` — a successful Validate writes `status="valid"`
-  and clears the cooldown and `last_error`, which closes the top-up → Validate
-  → restored loop; the account record carries no `cooling` field, and a
-  `rate_limited` credential past its window reports `valid`.
+  and clears the cooldown and `last_error` only when the probe proves the key
+  is usable now (OpenRouter `GET /key` remaining, or an explicit layer-2
+  ping 200). Auth-only `GET /models` 200 does not write `valid` and does not
+  clear `billing_blocked`. That closes the top-up → Validate → restored loop
+  without a timed cooldown for 402. The account record carries no `cooling`
+  field, and a `rate_limited` credential past its window reports `valid`.
 - `web .. account-manager.tsx` — status renders as
   valid / rate limited / billing blocked / needs re-authentication / revoked.

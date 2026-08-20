@@ -73,7 +73,7 @@ class CredentialResult:
     provider_id: str
     status: Literal["valid", "invalid_credential", "valid_no_balance",
                     "valid_model_unavailable", "missing", "not_applicable", "unknown"]
-    ok: bool          # status in {valid, valid_no_balance, valid_model_unavailable}
+    ok: bool          # True only for exact status `valid` (usable now). Layer-1 GET /models 200 is not usable-proof except OpenRouter GET /key.
     kind: str         # probe that ran: openai_bearer | openrouter_key | anthropic_native | anthropic_compat | google_query | oauth | cloud | none
     via: str | None   # "GET /models", "GET /key", "CredentialProvider", "POST /chat/completions(model)"
     http_status: int | None
@@ -134,8 +134,11 @@ provider has no key concept                  -> not_applicable
 ```
 
 `valid_no_balance` is only cheaply detectable for OpenRouter (via `/key`) and
-through a layer-2 `402`. Elsewhere a `200` proves auth but not balance, so the
-result is plain `valid` until the first real call surfaces `insufficient_quota`.
+through a layer-2 `402`. Elsewhere a layer-1 `200` proves auth but not
+balance — that probe status must **not** be persisted or shown as green
+Valid / `ok: true`. Only OpenRouter `GET /key` with remaining credit, an
+explicit layer-2 completion ping, or a live 200 chat may write `valid`.
+`ok` / the green Valid chip is only the exact status `valid`.
 
 ## 7. Caching
 

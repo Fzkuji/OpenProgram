@@ -38,14 +38,14 @@ def register(app):
         Each row now also carries the catalog metadata (``name``,
         ``description``, ``tier``, ``signup_url``, ``docs_url``,
         ``setup_steps``) sourced from
-        ``openprogram.programs.functions.vanilla.web_search.catalog``. Unknown providers
+        ``openprogram.programs.functions.vanilla.web.web_search.catalog``. Unknown providers
         fall back to a synthesised display name + empty metadata so the
         UI can still render the row.
         """
         from openprogram.webui import server as _s
-        from openprogram.programs.functions.vanilla.web_search.registry import registry as _wsr
-        from openprogram.programs.functions.vanilla.web_search import catalog as _wsc
-        import openprogram.programs.functions.vanilla.web_search.providers  # noqa: F401
+        from openprogram.programs.functions.vanilla.web.web_search.registry import registry as _wsr
+        from openprogram.programs.functions.vanilla.web.web_search import catalog as _wsc
+        import openprogram.programs.functions.vanilla.web.web_search.providers  # noqa: F401
         from openprogram.setup import read_search_default_provider
         default = read_search_default_provider()
         out = []
@@ -93,8 +93,8 @@ def register(app):
             if error is not None:
                 return JSONResponse(content={"error": error}, status_code=400)
         import time as _t
-        from openprogram.programs.functions.vanilla.web_search.registry import registry as _wsr
-        import openprogram.programs.functions.vanilla.web_search.providers  # noqa: F401
+        from openprogram.programs.functions.vanilla.web.web_search.registry import registry as _wsr
+        import openprogram.programs.functions.vanilla.web.web_search.providers  # noqa: F401
         if not _wsr.has(provider_id):
             return JSONResponse(
                 status_code=404,
@@ -144,8 +144,8 @@ def register(app):
         if error is not None:
             return JSONResponse(content={"error": error}, status_code=400)
         from openprogram.setup import write_search_default_provider
-        from openprogram.programs.functions.vanilla.web_search.registry import registry as _wsr
-        import openprogram.programs.functions.vanilla.web_search.providers  # noqa: F401
+        from openprogram.programs.functions.vanilla.web.web_search.registry import registry as _wsr
+        import openprogram.programs.functions.vanilla.web.web_search.providers  # noqa: F401
         name = body["provider"]
         if not isinstance(name, (str, type(None))):
             return JSONResponse(
@@ -408,9 +408,24 @@ def register(app):
                 content={"error": "model must be a string"}, status_code=400
             )
         from openprogram.webui import _model_listing as _mc
-        return JSONResponse(
-            content=_mc.validate_credential(name, model=model, use_cache=False).to_dict()
+        from openprogram.webui._model_listing.credentials import (
+            display_status_from_probe,
+            probe_proves_usable,
         )
+        # Connectivity Check is an explicit user Validate: prove usable
+        # (layer-2 ping when the kind has no billing endpoint). A named
+        # model already is layer 2.
+        res = _mc.validate_credential(
+            name, model=model, use_cache=False, prove_usable=model is None,
+        )
+        usable = probe_proves_usable(res)
+        display = display_status_from_probe(
+            res.status, previous="", usable_proven=usable,
+        )
+        payload = res.to_dict()
+        payload["status"] = display
+        payload["ok"] = display == "valid"
+        return JSONResponse(content=payload)
 
     @app.get("/api/providers/auth-status")
     async def api_provider_auth_status(refresh: bool = False, names: str | None = None):
