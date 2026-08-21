@@ -420,3 +420,5 @@ def test_child_error_marks_precreated_running_node(monkeypatch, tmp_path):
     # The pre-created node no longer spins — flipped to error.
     node2 = next(n for n in store.get_nodes("s1") if n.id == "stuck1")
     assert (node2.metadata or {}).get("status") == "error"
+    assert node2.output == {"error": "kwargs pickle failed"}
+    assert (node2.metadata or {}).get("error") == "kwargs pickle failed"

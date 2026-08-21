@@ -242,7 +242,10 @@ def dispatch_forced_tool_call(
             _db.invalidate_cache(session_id)
             _shim = _GS(_db, session_id)
             for _m in (_db.get_messages(session_id) or []):
-                if (_m.get("status") or "done") == "running":
+                if (
+                    (_m.get("status") or "done") == "running"
+                    or _m.get("id") == resolved_execution_id
+                ):
                     _shim.update(
                         _m["id"],
                         output={"error": out["error"]},

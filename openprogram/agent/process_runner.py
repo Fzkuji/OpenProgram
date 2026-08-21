@@ -324,7 +324,7 @@ def _child_entry(
         )
         from openprogram.agent.session_db import default_db
         from openprogram.providers.registry import create_runtime
-        from openprogram.programs import agent_tools
+        from openprogram.programs._runtime import get as _get_tool
         from openprogram.agent.dispatcher import (
             _wrap_agentic_runtime_block,
             TurnRequest,
@@ -380,11 +380,7 @@ def _child_entry(
                 pass
         _current_runtime_var.set(rt)
 
-        tool = next(
-            (t for t in (agent_tools(names=[tool_name]) or [])
-             if t.name == tool_name),
-            None,
-        )
+        tool = _get_tool(tool_name)
         if tool is None:
             with open(result_path, "wb") as f:
                 pickle.dump({"error": f"tool not found: {tool_name}"}, f)
