@@ -17,8 +17,8 @@
     ├── workflow/               # 所有模型推理、Agent 编排和复合能力
     │   ├── auto_workflow.py    # 单文件完整 Workflow，不建同名空目录
     │   ├── goal/               # 唯一 Goal Workflow 与会话 Goal 机制
-    │   │   ├── __init__.py     # 唯一公开入口
-    │   │   ├── workflow.py     # 可复用 goal()
+    │   │   ├── __init__.py
+    │   │   ├── goal.py         # 公开入口 goal()
     │   │   ├── command.py      # /goal 命令适配
     │   │   ├── judge.py        # 完成条件判定
     │   │   ├── refinement.py   # 目标规格与验收清单

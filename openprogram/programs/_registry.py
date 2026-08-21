@@ -393,8 +393,14 @@ def iter_agentic_files(
         if os.path.isfile(simple):
             yield mod_name, simple, False
         elif os.path.isfile(pkg):
+            named = os.path.join(agentic_functions_dir, *parts, f"{parts[-1]}.py")
             workflow_py = os.path.join(agentic_functions_dir, *parts, "workflow.py")
-            yield mod_name, workflow_py if os.path.isfile(workflow_py) else pkg, False
+            if os.path.isfile(named):
+                yield mod_name, named, False
+            elif os.path.isfile(workflow_py):
+                yield mod_name, workflow_py, False
+            else:
+                yield mod_name, pkg, False
 
     # Auto-discovered external harnesses — yield the actual source file
     # of every function listed in AGENTIC_FUNCTIONS, so the WebUI scanner

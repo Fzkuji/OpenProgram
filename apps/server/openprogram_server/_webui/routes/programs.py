@@ -256,7 +256,10 @@ def _registered_agentic_callables() -> dict[str, list[dict]]:
             continue
         source_path = (
             relative_source.parent
-            if source.name in {"__init__.py", "workflow.py"}
+            if (
+                source.name in {"__init__.py", "workflow.py"}
+                or source.stem == relative_source.parent.name
+            )
             else relative_source.with_suffix("")
         ).as_posix()
         if not source_path.startswith(_AGENTIC_RELATIVE.as_posix() + "/"):

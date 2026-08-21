@@ -16,7 +16,7 @@ agent work and reuses this judge. Session ``/goal`` is the same
 Workflow adapted onto the chat turn lifecycle. Deterministic control
 flow — retry accounting, stop rules, budgets, state writes — is split as
 
-* ``workflow``: public :func:`goal` entry
+* ``goal``: public :func:`goal` entry
 * ``command``: ``/goal`` set / clear / status
 * ``judge``: :func:`judge_goal` and :func:`evaluate_goal`
 * ``refinement``: background spec refinement after /goal set
@@ -50,7 +50,7 @@ call site resolves against.
 """
 from __future__ import annotations
 
-from openprogram.programs.workflow.goal.workflow import goal  # noqa: F401
+from openprogram.programs.workflow.goal.goal import goal  # noqa: F401
 from openprogram.programs.workflow.goal.judge import (  # noqa: F401
     DECISION_TOOLS,
     _parse_decision,
