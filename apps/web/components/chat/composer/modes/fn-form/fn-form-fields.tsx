@@ -5,7 +5,9 @@
  */
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+
+import { useTranslation } from "@/lib/i18n";
 
 import type { FnParam } from "@/lib/session-store";
 import { useWindowGlobals } from "@/components/sidebar/use-window-globals";
@@ -255,6 +257,30 @@ function OptionChips({
   );
 }
 
+function ExpandGlyph({ expanded }: { expanded: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+      {expanded ? (
+        <path
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          d="M9 3v6H3M15 3v6h6M9 21v-6H3M21 15h-6v6"
+        />
+      ) : (
+        <path
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          d="M8 3H3v5M16 3h5v5M8 21H3v-5M21 16v5h-5"
+        />
+      )}
+    </svg>
+  );
+}
+
 function AutoTextarea({
   id,
   name,
@@ -272,25 +298,46 @@ function AutoTextarea({
   onChange: (v: string) => void;
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 }) {
+  const { text } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     const t = ref.current;
     if (!t) return;
+    if (!expanded) {
+      t.style.height = "";
+      return;
+    }
     t.style.height = "auto";
     t.style.height = `${t.scrollHeight}px`;
-  }, [value]);
+  }, [value, expanded]);
+  const label = expanded
+    ? text("Collapse input", "收起输入框")
+    : text("Expand input", "展开输入框");
   return (
-    <textarea
-      ref={ref}
-      id={id}
-      name={name}
-      autoComplete="off"
-      className={className}
-      rows={2}
-      placeholder={placeholder}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onKeyDown={onKeyDown}
-    />
+    <div className={styles.textareaWrap} data-expanded={expanded ? "" : undefined}>
+      <textarea
+        ref={ref}
+        id={id}
+        name={name}
+        autoComplete="off"
+        className={className}
+        rows={2}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
+      />
+      <button
+        type="button"
+        className={styles.expandBtn}
+        title={label}
+        aria-label={label}
+        aria-pressed={expanded}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <ExpandGlyph expanded={expanded} />
+      </button>
+    </div>
   );
 }

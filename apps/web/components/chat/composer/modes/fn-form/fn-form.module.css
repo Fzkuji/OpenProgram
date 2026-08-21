@@ -209,17 +209,45 @@
   font-family: var(--font-sans);
   font-size: var(--fs-base);
 }
+.textareaWrap {
+  position: relative;
+}
+.textareaWrap .textarea {
+  padding-right: 34px;
+}
+.expandBtn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 1;
+}
+.expandBtn:hover,
+.expandBtn[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--text-secondary) 20%, transparent);
+  color: var(--text-bright);
+}
 .input.textarea {
-  /* Multi-line textareas grow with content (auto-resized by
-     fn-form-fields.tsx) so the height + line-height that the single-
-     line variants share don't apply. Reset to natural so the
-     min-height 48 / max-height 160 govern. */
   height: auto;
   line-height: 1.5;
   padding: 8px 12px;
   min-height: 48px;
-  max-height: none;
+  max-height: 72px;
   resize: none;
+  overflow-y: auto;
+}
+.textareaWrap[data-expanded] .textarea {
+  max-height: none;
   overflow-y: hidden;
 }
 .inputError {
