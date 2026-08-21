@@ -113,7 +113,7 @@ export const useSkills = create<SkillsState>((set, get) => ({
       const skills = await jsonReq<Skill[]>("/api/skills");
       set({ skills, loading: false });
     } catch (e) {
-      set({ error: String(e), loading: false });
+      set({ error: e instanceof Error ? e.message : String(e), loading: false });
     }
   },
 
@@ -122,7 +122,7 @@ export const useSkills = create<SkillsState>((set, get) => ({
       const detail = await jsonReq<SkillDetail>(`/api/skills/${encodePath(name)}`);
       set({ detail });
     } catch (e) {
-      set({ error: String(e), detail: null });
+      set({ error: e instanceof Error ? e.message : String(e), detail: null });
     }
   },
 

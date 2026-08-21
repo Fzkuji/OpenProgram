@@ -29,6 +29,10 @@ export interface ManageTab {
 export interface ManageAction {
   label: string;
   onClick: () => void;
+  /** Optional 16px leading icon (lucide node). */
+  icon?: ReactNode;
+  /** Icon-only square button; label becomes the tooltip. */
+  iconOnly?: boolean;
   /** Primary = the page's main call to action (New / Add / Install). */
   primary?: boolean;
   disabled?: boolean;
@@ -94,12 +98,19 @@ export function ManagePageHeader({
           {actions.map((a) => (
             <Button
               key={a.label}
-              size="sm"
+              size={a.iconOnly ? "icon" : "sm"}
               variant={a.primary ? "default" : "outline"}
+              // The bare outline variant reads as plain text next to the
+              // search box; secondary actions get the same quiet border so
+              // every control in the row shares one visual weight.
+              className={a.primary ? undefined : "border border-[var(--border)] text-[var(--text-primary)]"}
               onClick={a.onClick}
               disabled={a.disabled}
+              title={a.iconOnly ? a.label : undefined}
+              aria-label={a.iconOnly ? a.label : undefined}
             >
-              {a.label}
+              {a.icon}
+              {!a.iconOnly && a.label}
             </Button>
           ))}
         </div>

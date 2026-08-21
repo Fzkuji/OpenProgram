@@ -342,7 +342,7 @@ export function SkillsList({ externalFilter }: { externalFilter?: string } = {})
         </div>
       )}
       {skills.length === 0 && (
-        <div className="text-sm text-[var(--text-tertiary)]">{text("No skills found.", "没有找到技能。")}</div>
+        <div className={shared.empty}>{text("No skills found.", "没有找到技能。")}</div>
       )}
     </div>
   );

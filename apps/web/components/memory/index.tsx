@@ -336,11 +336,16 @@ export function MemoryPage({
                 </button>
               </div>
               {topicsLoading ? <LoadingSkeleton /> : filteredTopics.length === 0 ? (
-                <EmptyState
-                  icon="doc"
-                  text={searchValue ? text("No matches", "没有匹配结果") : text("No topics yet", "还没有主题")}
-                  sub={searchValue ? text("Try a different query", "换一个查询试试") : text("Conversations are written here in the background", "对话会在后台写入这里")}
-                />
+                // Only the search miss lives in the rail; the plain empty
+                // state is the right pane's emptyPanel — showing both said
+                // "no topics" twice side by side.
+                searchValue ? (
+                  <EmptyState
+                    icon="doc"
+                    text={text("No matches", "没有匹配结果")}
+                    sub={text("Try a different query", "换一个查询试试")}
+                  />
+                ) : null
               ) : (
                 <div className={styles.treeContent}>
                   {Array.from(topicGroups.entries()).map(([folder, pages]) => (

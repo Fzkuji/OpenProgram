@@ -45,8 +45,9 @@
   overflow-y: auto;
   /* Body no longer has horizontal/top padding; .content owns its own
      breathing room. 16 top so cards sit clear of the title border;
-     24 horizontal for viewport-edge gap. */
-  padding: 16px 24px 0;
+     24 horizontal for viewport-edge gap; 24 bottom to match every
+     other hub content column (chats / mcp / shared body). */
+  padding: 16px 24px 24px;
 }
 
 /* Inline toolbar next to title */

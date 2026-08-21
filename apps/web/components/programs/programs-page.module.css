@@ -4,7 +4,8 @@
 }
 
 .workspace {
-  --programs-explorer-width: 310px;
+  /* Match every other hub rail (287px = --sidebar-width - 1px). */
+  --programs-explorer-width: calc(var(--sidebar-width) - 1px);
   flex: 1;
   min-height: 0;
   display: grid;

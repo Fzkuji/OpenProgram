@@ -166,41 +166,52 @@ export function ChatsPage({
     past7: text("Last 7 days", "最近 7 天"),
   };
 
+  const selects = (
+    <>
+      <CustomSelect
+        value={sort}
+        onChange={setSort}
+        options={[
+          { value: "recent", label: text("Sort: Recent", "排序：最近") },
+          { value: "oldest", label: text("Sort: Oldest", "排序：最早") },
+          { value: "title", label: text("Sort: Title", "排序：标题") },
+        ]}
+      />
+      <CustomSelect
+        value={statusFilter}
+        onChange={setStatusFilter}
+        options={[
+          // Wording matches the sidebar's Recents → Status filter;
+          // these drive the same `archived` flag.
+          { value: "all", label: t("sidebar.status_all") },
+          { value: "active", label: t("sidebar.status_active") },
+          { value: "archived", label: t("sidebar.status_archived") },
+        ]}
+      />
+    </>
+  );
+
   const view = (
       <div className={styles.view} style={embedded ? { flex: 1, minHeight: 0, height: "auto" } : undefined}>
-        <div className={styles.topbar}>
-          {!embedded && <span className={styles.title}>{t("nav.chats")}</span>}
-          <div className={styles.toolbar}>
-            {queryProp === undefined && (
-              <SearchInput
-                className="flex-1 max-w-[320px]"
-                placeholder={text("Search chats...", "搜索会话...")}
-                value={query}
-                onChange={setQuery}
-              />
-            )}
-            <CustomSelect
-              value={sort}
-              onChange={setSort}
-              options={[
-                { value: "recent", label: text("Sort: Recent", "排序：最近") },
-                { value: "oldest", label: text("Sort: Oldest", "排序：最早") },
-                { value: "title", label: text("Sort: Title", "排序：标题") },
-              ]}
-            />
-            <CustomSelect
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={[
-                // Wording matches the sidebar's Recents → Status filter;
-                // these drive the same `archived` flag.
-                { value: "all", label: t("sidebar.status_all") },
-                { value: "active", label: t("sidebar.status_active") },
-                { value: "archived", label: t("sidebar.status_archived") },
-              ]}
-            />
+        {/* Embedded: the hub header already owns title + search, so the
+            64px topbar would render as an empty band — the selects move
+            to the top of the content column instead. */}
+        {!embedded && (
+          <div className={styles.topbar}>
+            <span className={styles.title}>{t("nav.chats")}</span>
+            <div className={styles.toolbar}>
+              {queryProp === undefined && (
+                <SearchInput
+                  className="flex-1 max-w-[320px]"
+                  placeholder={text("Search chats...", "搜索会话...")}
+                  value={query}
+                  onChange={setQuery}
+                />
+              )}
+              {selects}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className={styles.body}>
           <div className={styles.nav}>
@@ -222,6 +233,11 @@ export function ChatsPage({
           </div>
 
           <div className={styles.content}>
+            {embedded && (
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginBottom: 12 }}>
+                {selects}
+              </div>
+            )}
             {items.length === 0 ? (
               <div className={styles.empty}>
                 <div className={styles.emptyIcon}>

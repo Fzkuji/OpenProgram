@@ -2,12 +2,6 @@
    Programs 页的 module.css（import fx），保证高度/间距完全一致。这里只放
    Projects 特有的类。 */
 
-.errorBar {
-  padding: 8px 24px;
-  color: var(--accent-red);
-  font-size: 13px;
-}
-
 .badge {
   font-size: 11px;
   font-weight: 500;

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { Download, LayoutGrid, Plus, RefreshCw } from "lucide-react";
 
 import { McpPage } from "@/components/mcp/mcp-page";
 import { PluginsPage } from "@/components/plugins/plugins-page";
@@ -65,27 +66,31 @@ export function CapabilitiesPage() {
   };
 
   const actions = useMemo(() => {
+    const refresh = (onClick: () => void) => ({
+      label: t("sidebar.refresh"),
+      onClick,
+      icon: <RefreshCw />,
+      iconOnly: true,
+    });
     if (kind === "programs") {
-      return [
-        { label: t("sidebar.refresh"), onClick: () => setProgramReloadNonce((n) => n + 1) },
-      ];
+      return [refresh(() => setProgramReloadNonce((n) => n + 1))];
     }
     if (kind === "plugins") {
       return [
-        { label: t("sidebar.refresh"), onClick: () => { void refreshPlugins(); } },
-        { label: text("Install", "安装"), onClick: () => setPluginInstallOpen(true), primary: true },
+        refresh(() => { void refreshPlugins(); }),
+        { label: text("Install", "安装"), onClick: () => setPluginInstallOpen(true), icon: <Download />, primary: true },
       ];
     }
     if (kind === "skills") {
       return [
-        { label: t("sidebar.refresh"), onClick: () => { void fetchSkills(); } },
-        { label: text("New skill", "新建技能"), onClick: () => setSkillNewOpen(true), primary: true },
+        refresh(() => { void fetchSkills(); }),
+        { label: text("New skill", "新建技能"), onClick: () => setSkillNewOpen(true), icon: <Plus />, primary: true },
       ];
     }
     return [
-      { label: t("sidebar.refresh"), onClick: () => setMcpReloadNonce((n) => n + 1) },
-      { label: text("Browse catalog", "浏览目录"), onClick: () => setMcpCatalogOpen(true) },
-      { label: text("Add server", "添加服务器"), onClick: () => setMcpAddNonce((n) => n + 1), primary: true },
+      refresh(() => setMcpReloadNonce((n) => n + 1)),
+      { label: text("Browse catalog", "浏览目录"), onClick: () => setMcpCatalogOpen(true), icon: <LayoutGrid /> },
+      { label: text("Add server", "添加服务器"), onClick: () => setMcpAddNonce((n) => n + 1), icon: <Plus />, primary: true },
     ];
   }, [kind, t, text, refreshPlugins, fetchSkills]);
 

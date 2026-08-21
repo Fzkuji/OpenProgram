@@ -378,11 +378,13 @@ export function ProgramsPage({
   const workspace = (
         <div className={styles.workspace}>
           <aside ref={explorerRef} className={styles.explorer} data-testid="programs-explorer">
-            <ExplorerHeader
+            {/* Embedded: the hub header owns search + refresh, so the
+                48px explorer header would only repeat the refresh button. */}
+            {!embedded && <ExplorerHeader
               rootName="Programs"
               rootPath={ROOT_LABEL}
               showRootPath={false}
-              hideSearch={Boolean(embedded)}
+              hideSearch={false}
               searchOpen={searchOpen}
               onSearchOpenChange={setSearchOpen}
               query={search}
@@ -399,7 +401,7 @@ export function ProgramsPage({
                   <RefreshCw />
                 </button>
               }
-            />
+            />}
             <div className={fileStyles.treeBody} aria-label={text("Programs catalog", "Programs 目录")}>
               {loadingTree
                 ? <div className={fileStyles.treeHint}>{text("Loading…", "加载中…")}</div>

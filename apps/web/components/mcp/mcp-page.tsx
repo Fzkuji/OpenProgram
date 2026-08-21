@@ -75,7 +75,7 @@ export function McpPage({
       setLoadErr(null);
     } catch (e) {
       if ((e as Error).name === "AbortError") return;
-      setLoadErr(String(e));
+      setLoadErr(e instanceof Error ? e.message : String(e));
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
@@ -342,12 +342,7 @@ export function McpPage({
           </div>
 
           <div className={styles.content}>
-            {loadErr && (
-              <div className="mb-4 rounded-md border p-3 font-mono text-xs"
-                   style={{ borderColor: "var(--accent-red)", color: "var(--accent-red)" }}>
-                {loadErr}
-              </div>
-            )}
+            {loadErr && <div className={shared.errorBar} role="alert">{loadErr}</div>}
             {selectedServer === null ? (
               <div className={styles.empty}>
                 <div className={styles.emptyIcon}>

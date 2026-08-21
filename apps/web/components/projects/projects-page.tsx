@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import fx from "@/components/functions/functions-page.module.css";
 import { SearchInput } from "@/components/ui/search-input";
 import styles from "./projects-page.module.css";
+import { managePageStyles as shared } from "@/components/ui/manage-page";
 import { useTranslation } from "@/lib/i18n";
 import { FoldersIcon, FolderPlusIcon } from "@/components/animated-icons";
 import { wsRequest } from "@/lib/net/ws-request";
@@ -140,7 +141,7 @@ export function ProjectsPage({
           </div>
         )}
 
-        {error && <div className={styles.errorBar}>{error}</div>}
+        {error && <div className={shared.errorBar} role="alert">{error}</div>}
 
         <div className={fx.body}>
           {/* 左栏：项目列表（复用 Functions 的 profilesNav） */}

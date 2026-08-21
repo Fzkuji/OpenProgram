@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { Settings } from "lucide-react";
 
 import { ChatsPage } from "@/components/chats/chats-page";
 import { MemoryPage } from "@/components/memory";
@@ -46,7 +47,7 @@ export function HistoryPage() {
   const actions = useMemo(() => {
     if (kind === "memory") {
       return [
-        { label: text("Memory settings", "Memory 设置"), onClick: () => router.push("/settings/memory") },
+        { label: text("Memory settings", "Memory 设置"), onClick: () => router.push("/settings/memory"), icon: <Settings /> },
       ];
     }
     return [];
