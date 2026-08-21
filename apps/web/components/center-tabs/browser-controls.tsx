@@ -14,6 +14,7 @@ import {
   Import,
   Library,
   MoreVertical,
+  PictureInPicture2,
   Plus,
   Printer,
   RotateCcw,
@@ -82,6 +83,7 @@ type BrowserMenuActions = {
   zoomOut?: () => void;
   resetZoom?: () => void;
   print?: () => void;
+  collapseToPip?: () => void;
 };
 
 function runBrowserAction(
@@ -93,6 +95,9 @@ function runBrowserAction(
   switch (id) {
     case "new-tab":
       tabs.openBuiltinTab("browser");
+      break;
+    case "collapse-to-pip":
+      actions.collapseToPip?.();
       break;
     case "home":
       actions.home();
@@ -216,6 +221,9 @@ export function BrowserMenu({
             theme: activeThemeId(),
             items: [
               item("new-tab", "New browser tab", "新建浏览器标签页"),
+              ...(actions.collapseToPip
+                ? [item("collapse-to-pip", "Collapse to floating window", "收起到悬浮窗")]
+                : []),
               ...(responsive.home ? [item("home", "Home", "主页", { disabled: !canGoHome })] : []),
               ...(responsive.forward ? [item("forward", "Forward", "前进", { disabled: !canGoForward })] : []),
               ...(responsive.openExternal ? [item("open-external", "Open in browser", "在浏览器中打开", { disabled: !canOpenExternal })] : []),
@@ -267,6 +275,9 @@ export function BrowserMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent className={MENU_PANEL}>
         {row("new-tab", <Plus size={14} />, "New browser tab", "新建浏览器标签页")}
+        {actions.collapseToPip
+          ? row("collapse-to-pip", <PictureInPicture2 size={14} />, "Collapse to floating window", "收起到悬浮窗")
+          : null}
         {responsive.home ? row("home", <House size={14} />, "Home", "主页", false, !canGoHome) : null}
         {responsive.forward ? row("forward", <ArrowRight size={14} />, "Forward", "前进", false, !canGoForward) : null}
         {responsive.openExternal ? row("open-external", <ExternalLink size={14} />, "Open in browser", "在浏览器中打开", false, !canOpenExternal) : null}

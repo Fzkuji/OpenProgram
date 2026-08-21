@@ -1,5 +1,6 @@
 import { create } from "zustand";
 
+import { findCenterTabGroup } from "@/lib/state/center-tab-groups";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 
 /** Ephemeral picture-in-picture host for an agent-opened WebTab.
@@ -41,6 +42,29 @@ export function peekWebTabPipId(): string | null {
 
 export function peekWebTabPipBackgroundId(): string | null {
   return useWebTabPip.getState().backgroundTabId;
+}
+
+/** Reverse of PiP expand: keep the same WebTab leaf, move focus off it
+ *  so the floating host can cover center again. Does not reload. */
+export function collapseWebTabToPip(tabId: string): boolean {
+  const store = useCenterTabs.getState();
+  if (!store.tabs.some((tab) => tab.id === tabId && tab.kind === "web")) {
+    return false;
+  }
+  const group = findCenterTabGroup(store.groups, tabId);
+  const partnerId =
+    group?.memberIds.find((id) => id !== tabId)
+    ?? store.tabs.find((tab) => tab.kind === "session")?.id
+    ?? store.tabs.find((tab) => tab.id !== tabId)?.id
+    ?? null;
+  if (store.splitWebTabId === tabId) {
+    store.setSplitWebTab(null);
+  } else if (group) {
+    store.ungroupTab(tabId);
+  }
+  if (partnerId) store.setActive(partnerId);
+  useWebTabPip.getState().show(tabId);
+  return true;
 }
 
 export function pipCoversCenter(

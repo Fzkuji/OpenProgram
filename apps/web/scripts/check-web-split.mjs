@@ -2060,6 +2060,13 @@ assert.equal(
   2,
   "desktop and iframe browser toolbars must both expose Home",
 );
+assert.equal(
+  (webTabPaneSource.match(/<CollapseToPipButton tabId=\{tabId\} \/>/g) ?? []).length,
+  2,
+  "desktop and iframe browser toolbars must both collapse back to PiP",
+);
+assert.match(webTabPaneSource, /text\("Collapse to floating window",\s*"收起到悬浮窗"\)/);
+assert.match(webTabPaneSource, /collapseToPip: \(\) => \{ collapseWebTabToPip\(tabId\); \}/);
 
 assert.match(desktopBridgeSource, /function visibleWebTab\(\)/);
 assert.match(
@@ -2361,6 +2368,7 @@ const {
   peekWebTabPipBackgroundId,
   useWebTabPip,
   clampPipRect,
+  collapseWebTabToPip,
   pipCoversCenter,
 } = await import("../lib/state/web-tab-pip-store.ts");
 useWebTabPip.getState().show(pipOnlyId);
@@ -2376,6 +2384,26 @@ assert.equal(
   pipCoversCenter(pipOnlyId, useCenterTabs.getState()),
   true,
 );
+useCenterTabs.getState().setActive(pipOnlyId);
+assert.equal(useCenterTabs.getState().activeId, pipOnlyId);
+assert.equal(pipCoversCenter(pipOnlyId, useCenterTabs.getState()), false);
+assert.equal(collapseWebTabToPip(pipOnlyId), true);
+assert.equal(peekWebTabPipId(), pipOnlyId);
+assert.equal(useCenterTabs.getState().activeId, "s:chat");
+assert.equal(
+  useCenterTabs.getState().tabs.find((tab) => tab.id === pipOnlyId)?.url,
+  "https://pip.example/",
+);
+assert.equal(useCenterTabs.getState().splitWebTabId, null);
+assert.equal(pipCoversCenter(pipOnlyId, useCenterTabs.getState()), true);
+useCenterTabs.getState().setSplitWebTab(pipOnlyId);
+assert.equal(useCenterTabs.getState().splitWebTabId, pipOnlyId);
+assert.equal(pipCoversCenter(pipOnlyId, useCenterTabs.getState()), false);
+assert.equal(collapseWebTabToPip(pipOnlyId), true);
+assert.equal(useCenterTabs.getState().splitWebTabId, null);
+assert.equal(useCenterTabs.getState().activeId, "s:chat");
+assert.equal(peekWebTabPipId(), pipOnlyId);
+assert.equal(pipCoversCenter(pipOnlyId, useCenterTabs.getState()), true);
 useWebTabPip.getState().hide();
 removeVisibleWebTabBounds({ webTab: { syncVisible() {} } }, pipOnlyId);
 setWebTabReady(pipOnlyId, false);
@@ -2407,6 +2435,20 @@ assert.match(pipSource, /if \(dragRef\.current\) return;/);
 assert.match(pipSource, /translate\(\$\{next\.x - drag\.origin\.x\}px/);
 assert.match(pipSource, /requestAnimationFrame/);
 assert.match(pipSource, /removeVisibleWebTabBounds\(bridge, tabId\)/);
+assert.match(
+  await readFile(
+    new URL("../lib/state/web-tab-pip-store.ts", import.meta.url),
+    "utf8",
+  ),
+  /export function collapseWebTabToPip\(tabId: string\): boolean/,
+);
+assert.match(
+  await readFile(
+    new URL("../components/center-tabs/browser-controls.tsx", import.meta.url),
+    "utf8",
+  ),
+  /case "collapse-to-pip":/,
+);
 const pipCss = await readFile(
   new URL("../components/center-tabs/center-tabs.module.css", import.meta.url),
   "utf8",

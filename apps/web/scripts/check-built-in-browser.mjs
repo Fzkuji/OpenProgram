@@ -157,6 +157,8 @@ assert.match(webTabPane, /<BookmarkBar ownerId=\{menuOwnerId\}/);
 assert.match(browserControls, /Show bookmarks bar/);
 assert.match(browserControls, /Clear browsing data/);
 assert.match(browserControls, /Browser settings/);
+assert.match(browserControls, /case "collapse-to-pip":/);
+assert.match(browserControls, /Collapse to floating window/);
 assert.match(browserControls, /openBuiltinTab\("bookmarks"\)/);
 assert.match(browserControls, /openBuiltinTab\("history"\)/);
 assert.match(browserControls, /openBuiltinTab\("downloads"\)/);

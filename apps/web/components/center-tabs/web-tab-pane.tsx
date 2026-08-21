@@ -23,7 +23,7 @@
  */
 import { useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, ExternalLink, House, RotateCw, Star, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, ExternalLink, House, PictureInPicture2, RotateCw, Star, X } from "lucide-react";
 
 import {
   desktopBridge,
@@ -43,6 +43,7 @@ import {
   toggleBookmark,
 } from "@/lib/bookmarks";
 import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
+import { collapseWebTabToPip } from "@/lib/state/web-tab-pip-store";
 import { isWebTabOccluded, measureWebTabBounds } from "@/lib/web-tab-bounds";
 import styles from "./center-tabs.module.css";
 import { BookmarkBar, BookmarksLibraryButton, BrowserMenu } from "./browser-controls";
@@ -78,6 +79,22 @@ function BookmarkButton({ url, title }: { url: string; title: string }) {
       aria-label={text(bookmarked ? "Remove bookmark" : "Bookmark", bookmarked ? "移除书签" : "添加书签")}
     >
       <Star size={14} fill={bookmarked ? "currentColor" : "none"} />
+    </button>
+  );
+}
+
+function CollapseToPipButton({ tabId }: { tabId: string }) {
+  const { text } = useTranslation();
+  const label = text("Collapse to floating window", "收起到悬浮窗");
+  return (
+    <button
+      type="button"
+      className={styles.webToolbarBtn}
+      onClick={() => collapseWebTabToPip(tabId)}
+      title={label}
+      aria-label={label}
+    >
+      <PictureInPicture2 size={14} />
     </button>
   );
 }
@@ -315,6 +332,7 @@ function DesktopWebTabPane({
   return (
     <div className={styles.webPane} onKeyDownCapture={handleRendererShortcut}>
       <div className={styles.webToolbar}>
+        <CollapseToPipButton tabId={tabId} />
         <button
           type="button"
           className={styles.webToolbarBtn}
@@ -378,6 +396,7 @@ function DesktopWebTabPane({
             zoomOut: canZoom ? () => { void bridge.webTab.zoom?.(tabId, "out"); } : undefined,
             resetZoom: canZoom ? () => { void bridge.webTab.zoom?.(tabId, "reset"); } : undefined,
             print: canPrint ? () => { void bridge.webTab.print?.(tabId); } : undefined,
+            collapseToPip: () => { collapseWebTabToPip(tabId); },
           }}
           canGoForward={canGoForward}
         />
@@ -461,6 +480,7 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
   return (
     <div className={styles.webPane}>
       <div className={styles.webToolbar}>
+        <CollapseToPipButton tabId={tabId} />
         <button
           type="button"
           className={styles.webToolbarBtn}
@@ -496,6 +516,7 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
           actions={{
             home: () => useCenterTabs.getState().replaceWebTabWithNewTabPage(tabId),
             openExternal,
+            collapseToPip: () => { collapseWebTabToPip(tabId); },
           }}
         />
       </div>
