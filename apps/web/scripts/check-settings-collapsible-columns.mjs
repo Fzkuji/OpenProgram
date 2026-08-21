@@ -93,10 +93,11 @@ assert.match(providers, /styles\.providersGroupLabel[\s\S]*Not enabled/);
 assert.doesNotMatch(providers, /styles\.railHeader/);
 assert.doesNotMatch(providers, /styles\.railTitle/);
 assert.match(providers, /styles\.pageHeader[\s\S]*styles\.pageTitle[\s\S]*settings\.tab\.providers[\s\S]*styles\.pageMeta[\s\S]*styles\.pageBody/);
-assert.doesNotMatch(memory, /shared\.pageHeader/);
-assert.match(loading, /const headerless = tab === "memory"/);
+assert.match(memory, /shared\.pageHeader/);
+assert.doesNotMatch(loading, /headerless|tab === "memory"/);
 assert.match(loading, /providers: "settings\.tab\.providers"/);
-assert.match(loading, /\{!headerless[\s\S]*styles\.pageHeader/);
+assert.match(loading, /memory: "settings\.tab\.memory"/);
+assert.match(loading, /styles\.pageHeader/);
 assert.match(providerItem, /title=\{p\.label\}/);
 
 assert.match(css, /\.body\.settingsNavCollapsed\s*\{[^}]*grid-template-columns:\s*49px minmax\(0, 1fr\)/s);
@@ -197,10 +198,10 @@ assert.match(css, /\.systemRow\s*\{[^}]*align-items:\s*flex-start/s);
 assert.match(css, /\.systemRow\s+\.label\s*\{[^}]*flex:\s*1 1 auto[^}]*min-width:\s*0/s);
 assert.match(css, /\.systemRow\s+\.control\s*\{[^}]*flex:\s*0 0 auto[^}]*margin-left:\s*auto[^}]*min-width:\s*7\.5rem/s);
 
-// Memory rows match the System contract: copy grows on the left,
-// controls shrink-wrap on the right, chips stay left of the control.
-assert.match(memoryCss, /\.row\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*flex-start/s);
-assert.match(memoryCss, /\.rowCopy\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-width:\s*0/s);
+// Memory rows reuse the System contract; only their horizontal controls
+// and descriptive copy remain Memory-specific.
+assert.match(memory, /shared\.row[\s\S]*shared\.rowTop[\s\S]*shared\.systemRow/);
+assert.doesNotMatch(memoryCss, /\.row\s*\{|\.rowCopy\s*\{/);
 assert.match(memoryCss, /\.controls\s*\{[^}]*flex:\s*0 1 auto;[^}]*justify-content:\s*flex-end;[^}]*min-width:\s*7\.5rem/s);
 assert.match(memoryCss, /\.select\s*\{[^}]*min-width:\s*0/s);
 assert.doesNotMatch(memoryCss, /grid-template-columns:\s*minmax\(220px/);
@@ -208,7 +209,7 @@ assert.match(memory, /styles\.chromeValue[\s\S]{0,80}Local workspace · Git enab
 assert.match(memory, /styles\.monoValue[\s\S]{0,40}workspace_path/);
 
 // Memory / Usage / Channels chrome follow the General font picker.
-assert.match(memoryCss, /\.memoryPage\s*\{[^}]*font-family:\s*var\(--font-sans\)/s);
+assert.match(memory, /className=\{shared\.page\}/);
 assert.match(memoryCss, /\.monoValue\s*\{[^}]*font-family:\s*var\(--font-mono\)/s);
 assert.match(usagePage, /styles\.page[\s\S]*local\.usagePage/);
 assert.match(usageCss, /\.usagePage\s*\{[^}]*font-family:\s*var\(--font-sans\)/s);

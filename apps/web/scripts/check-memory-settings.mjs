@@ -51,9 +51,13 @@ assert.doesNotMatch(settingsNav, /prefetchSettings/);
 assert.doesNotMatch(settingsCache, /export function prefetchSettings/);
 assert.match(settings, /memory\.writer\.model/);
 assert.match(settings, /memory\.retrieval\.method/);
-assert.doesNotMatch(settings, /shared\.pageHeader/);
-assert.match(settings, /className=\{styles\.card\}/);
-assert.match(settings, /className=\{styles\.row\}/);
+assert.match(settings, /shared\.pageHeader/);
+assert.match(settings, /shared\.pageTitle/);
+assert.match(settings, /shared\.pageMeta/);
+assert.match(settings, /shared\.pageTitle\}>\{t\("settings\.tab\.memory"\)\}/);
+assert.match(settings, /const pageHeader =[\s\S]*?if \(!loaded\)[\s\S]*?\{pageHeader\}/);
+assert.match(settings, /className=\{shared\.card\}/);
+assert.match(settings, /className=\{`\$\{shared\.row\}/);
 assert.equal(
   (settings.match(/<Switch[^>]+aria-label=/g) || []).length,
   4,
@@ -74,12 +78,14 @@ assert.match(
   /\.lifecycle\s*\{[^}]*flex-shrink:\s*0/s,
   "the lifecycle cards must keep their intrinsic height in the scrolling column",
 );
-assert.match(settingsCss, /\.memoryPage\s*\{[^}]*font-family:\s*var\(--font-sans\)/s);
 assert.match(settingsCss, /\.lifecycle\s*\{[^}]*font-family:\s*var\(--font-sans\)/s);
-assert.match(settingsCss, /\.row\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*flex-start/s);
-assert.match(settingsCss, /\.rowCopy\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-width:\s*0/s);
+assert.match(settingsCss, /\.lifecycle\s*\{[^}]*border-radius:\s*10px;[^}]*background:\s*var\(--bg-tertiary\)/s);
+assert.doesNotMatch(settingsCss, /\.card\s*\{/);
+assert.doesNotMatch(settingsCss, /\.row\s*\{/);
+assert.match(settingsCss, /\.rowDescription\s*\{[^}]*font-size:\s*13px/s);
 assert.match(settingsCss, /\.controls\s*\{[^}]*flex:\s*0 1 auto;[^}]*min-width:\s*7\.5rem/s);
 assert.match(settingsCss, /\.select\s*\{[^}]*min-width:\s*0/s);
+assert.match(settingsCss, /@media \(max-width: 820px\)[\s\S]*?\.settingsRow\s*\{[^}]*flex-direction:\s*column;[^}]*align-items:\s*stretch;[^}]*gap:\s*10px;[^}]*\}[\s\S]*?\.controls\s*\{[^}]*min-width:\s*0;[^}]*\}[\s\S]*?\.select\s*\{[^}]*max-width:\s*100%;[^}]*\}/s);
 assert.match(settingsCss, /\.select:focus-visible\s*\{[^}]*outline:\s*none;[^}]*border-color:\s*var\(--text-secondary\)/s);
 assert.doesNotMatch(settingsCss, /\.select:focus-visible\s*,\s*\.saveButton:focus-visible/);
 assert.match(settingsCss, /\.chromeValue\s*\{[^}]*font-family:\s*var\(--font-sans\)/s);
