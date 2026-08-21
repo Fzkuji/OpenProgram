@@ -66,9 +66,8 @@ AGENTIC_MODULES: list[str] = [
     "browser_agent",
     # 交互自测：串行走一遍 ask/confirm/form/ask_many 各形态（手动点 Run 体验）。
     "interaction_demo",
-    # Task list workflow: plans a task into bounded items and runs them
-    # serially, judging each with the goal decision agent above.
-    "agentic_workflow",
+    # Workflow discovery, authoring, revision, and user-only orchestration.
+    "workflow",
     # Security review of the current branch's diff — read-only audit of
     # what this change introduced, not of the repository.
     "security_review",
@@ -158,7 +157,7 @@ def load_agentic_modules(
 def _load_workflow_projects() -> None:
     """Import each valid owner workflow package so its decorator registers it."""
     try:
-        from openprogram.programs.functions.agentic.agentic_workflow import (
+        from openprogram.programs.functions.agentic.workflow import (
             _read_project_index,
             _workflow_projects_root,
         )

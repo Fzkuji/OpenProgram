@@ -9,10 +9,10 @@ import {
 } from "../components/programs/programs-source.ts";
 
 const capabilities = [
-  { name: "search_workflows", path: "functions/agentic/search_workflows" },
-  { name: "create_workflow", path: "functions/agentic/create_workflow" },
-  { name: "revise_workflow", path: "functions/agentic/revise_workflow" },
-  { name: "auto_workflow", path: "functions/agentic/auto_workflow" },
+  { name: "search_workflows", path: "functions/agentic/workflow/search_workflows" },
+  { name: "create_workflow", path: "functions/agentic/workflow/create_workflow" },
+  { name: "revise_workflow", path: "functions/agentic/workflow/revise_workflow" },
+  { name: "auto_workflow", path: "functions/agentic/workflow/auto_workflow" },
 ];
 
 test("four workflow entries are management capabilities by name or path", () => {
@@ -22,7 +22,7 @@ test("four workflow entries are management capabilities by name or path", () => 
   }
   assert.equal(isWorkflowCapability({
     name: "search_workflows.py",
-    path: "functions/agentic/search_workflows.py",
+    path: "functions/agentic/workflow/search_workflows.py",
   }), true);
   assert.equal(isWorkflowCapability({
     name: "wrapper",
@@ -50,8 +50,8 @@ test("ordinary programs stay on their source kind", () => {
     program_kind: "workflow",
   }), "workflow");
   assert.equal(isWorkflowCapability({
-    name: "agentic_workflow",
-    path: "functions/agentic/agentic_workflow",
+    name: "deep_work",
+    path: "functions/agentic/deep_work",
     program_kind: "agentic_function",
   }), false);
   assert.equal(programSourceCategory({

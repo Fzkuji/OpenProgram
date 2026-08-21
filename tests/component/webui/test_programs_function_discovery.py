@@ -6,14 +6,14 @@ from openprogram.webui._functions import (
 )
 
 
-def test_agentic_workflow_is_not_in_the_chat_program_catalog() -> None:
+def test_workflow_category_exports_only_named_public_entries() -> None:
     source = (
         Path(__file__).parents[3]
         / "openprogram"
         / "programs"
         / "functions"
         / "agentic"
-        / "agentic_workflow"
+        / "workflow"
         / "__init__.py"
     )
 
@@ -27,6 +27,59 @@ def test_agentic_workflow_is_not_in_the_chat_program_catalog() -> None:
         "revise_workflow",
         "auto_workflow",
     } <= names
+
+
+def test_programs_treats_workflow_as_category_not_program() -> None:
+    from openprogram.webui.routes.programs import _list_entries, _program_logic
+
+    agentic = _list_entries("functions/agentic")
+    workflow = next(
+        entry for entry in agentic["entries"]
+        if entry["path"] == "functions/agentic/workflow"
+    )
+    assert workflow["program_kind"] is None
+    assert workflow["has_children"] is True
+    assert not any(
+        entry["path"] == "functions/agentic/agentic_workflow"
+        for entry in agentic["entries"]
+    )
+
+    entries = _list_entries("functions/agentic/workflow")["entries"]
+    assert {
+        (entry["name"], entry["callable_name"], entry["program_kind"])
+        for entry in entries
+    } == {
+        ("search_workflows", "search_workflows", "agentic_function"),
+        ("create_workflow", "create_workflow", "agentic_function"),
+        ("revise_workflow", "revise_workflow", "agentic_function"),
+        ("auto_workflow", "auto_workflow", "agentic_function"),
+    }
+    for entry in entries:
+        assert entry["logic_path"] == entry["path"]
+        logic = _program_logic(entry["logic_path"])
+        assert logic["root"] == entry["path"]
+        root = next(node for node in logic["nodes"] if node["id"] == logic["root"])
+        assert root["name"] == entry["name"]
+
+    search_logic = _program_logic(
+        "functions/agentic/workflow/search_workflows"
+    )
+    assert search_logic["edges"] == []
+    auto_logic = _program_logic("functions/agentic/workflow/auto_workflow")
+    assert {
+        edge["target"] for edge in auto_logic["edges"]
+        if edge["source"] == auto_logic["root"]
+    } == {
+        "functions/agentic/workflow/search_workflows",
+        "functions/agentic/workflow/create_workflow",
+        "agentic_programming/agent",
+    }
+
+    old_source = (
+        Path(__file__).parents[3]
+        / "openprogram/programs/functions/agentic/agentic_workflow"
+    )
+    assert not old_source.exists()
 
 
 def test_registered_workflow_is_available_to_favorites(
@@ -58,3 +111,109 @@ def test_registered_workflow_is_available_to_favorites(
     )
     assert workflow["category"] == "workflow"
     assert workflow["params"] == ["task"]
+
+
+def test_nested_multi_entry_agentic_file_expands_as_virtual_group(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from openprogram.webui.routes import programs
+
+    source = tmp_path / "functions/agentic/deep/category/tools.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("# test source\n", encoding="utf-8")
+    indexed = {
+        "functions/agentic/deep/category/tools": [
+            {"name": "alpha", "description": "", "source": source},
+            {"name": "beta", "description": "", "source": source},
+        ],
+    }
+    monkeypatch.setattr(programs, "PROGRAMS_ROOT", tmp_path)
+    monkeypatch.setattr(
+        programs, "_registered_agentic_callables", lambda: indexed,
+    )
+
+    category = programs._list_entries("functions/agentic/deep/category")
+    group = next(entry for entry in category["entries"] if entry["name"] == "tools")
+    assert group["program_kind"] is None
+    assert group["has_children"] is True
+    entries = programs._list_entries(
+        "functions/agentic/deep/category/tools"
+    )["entries"]
+    assert [entry["name"] for entry in entries] == ["alpha", "beta"]
+
+
+def test_agentic_registry_discovery_uses_a_stable_snapshot(monkeypatch) -> None:
+    import importlib
+
+    from openprogram.webui.routes.programs import _registered_agentic_callables
+
+    function = importlib.import_module("openprogram.agentic_programming.function")
+    original = function._registry
+
+    class MutatingRegistry(dict):
+        def items(self):
+            iterator = super().items()
+
+            def mutate_during_iteration():
+                first = next(iterator)
+                yield first
+                self["late_registration"] = first[1]
+                yield from iterator
+
+            return mutate_during_iteration()
+
+    monkeypatch.setattr(function, "_registry", MutatingRegistry(original))
+
+    indexed = _registered_agentic_callables()
+
+    assert "functions/agentic/workflow" in indexed
+
+
+def test_multi_entry_call_graph_scopes_imports_to_selected_function(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from openprogram.webui.routes import programs
+
+    group = tmp_path / "group.py"
+    group.write_text(
+        "from openprogram.programs.functions.agentic.dep import zz_dep\n"
+        "def zz_alpha():\n"
+        "    return zz_dep()\n"
+        "def zz_beta():\n"
+        "    return None\n",
+        encoding="utf-8",
+    )
+    dependency = tmp_path / "dep.py"
+    dependency.write_text("def zz_dep():\n    return None\n", encoding="utf-8")
+    indexed = {
+        "functions/agentic/group": [
+            {"name": "zz_alpha", "description": "", "source": group},
+            {"name": "zz_beta", "description": "", "source": group},
+        ],
+        "functions/agentic/dep": [
+            {"name": "zz_dep", "description": "", "source": dependency},
+        ],
+    }
+    entities = {
+        "functions/agentic/group/zz_alpha": group,
+        "functions/agentic/group/zz_beta": group,
+        "functions/agentic/dep": dependency,
+    }
+    monkeypatch.setattr(programs, "_inside_programs", lambda _path: True)
+    monkeypatch.setattr(
+        programs, "_registered_agentic_callables", lambda: indexed,
+    )
+    monkeypatch.setattr(programs, "_entity_paths", lambda: entities)
+
+    alpha = programs._program_logic("functions/agentic/group/zz_alpha")
+    beta = programs._program_logic("functions/agentic/group/zz_beta")
+
+    assert {
+        (edge["source"], edge["target"]) for edge in alpha["edges"]
+    } == {
+        (
+            "functions/agentic/group/zz_alpha",
+            "functions/agentic/dep",
+        ),
+    }
+    assert beta["edges"] == []

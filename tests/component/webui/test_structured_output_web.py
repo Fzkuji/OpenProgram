@@ -157,7 +157,7 @@ def test_function_http_forwards_pending_project_before_dispatch(monkeypatch):
 
     monkeypatch.setattr(routes_chat, "run_agentic_function_call", run)
     response = TestClient(app).post(
-        "/api/function/agentic_workflow",
+        "/api/function/auto_workflow",
         json={"kwargs": {"task": "research"}, "project_id": "project-1"},
     )
 

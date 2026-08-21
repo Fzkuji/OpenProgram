@@ -20,7 +20,7 @@ absent.
 
 The single LLM round goes through a module-level ``_run_docs_turn``
 seam, so tests stub one function instead of the network. Same shape as
-``goal`` and ``agentic_workflow``.
+``goal`` and the Workflow management functions.
 
 Registration: AGENTIC_MODULES.
 """

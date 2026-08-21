@@ -208,13 +208,10 @@ openprogram/agentic_programming/control_flow/
 1. **`openprogram/agentic_programming/__init__.py`**
    - 导出控制流原语：`from .control_flow import validate_and_retry, route, conditional, repeat_until`
 
-2. **`openprogram/programs/functions/agentic/agentic_workflow/__init__.py`**
+2. **`openprogram/programs/functions/agentic/workflow/__init__.py`**
    - `_build_namespace()` 注入控制流原语（和 llm/agent/goal 一起）
    - 包上 checkpoint 包装器
-
-3. **`openprogram/programs/functions/agentic/agentic_workflow/planner.py`**
-   - 更新 system prompt，教 Planner 使用控制流原语
-   - 添加工具函数的文档和示例
+   - 在现有 Planner instructions 中说明控制流原语及其使用约束；不预设独立的 `planner.py`
 
 4. **`docs/capabilities/agentic-workflow.md` 和 `.zh.md`**
    - 添加控制流原语说明

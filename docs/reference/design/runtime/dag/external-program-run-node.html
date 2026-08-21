@@ -387,12 +387,12 @@
   <h2>端到端流程：执行、交接与聊天投影</h2>
   <div class="flow-wrap">
     <div class="flow-head">
-      <strong>外部 agentic_workflow 一次调用</strong>
+      <strong>外部 auto_workflow 一次调用</strong>
       <span>DEFAULT: FILE ARTIFACTS + SHORT HANDOFF</span>
     </div>
     <div class="flow-canvas">
       <svg class="flow-diagram" viewBox="0 0 1040 760" role="img" aria-labelledby="workflow-flow-title workflow-flow-desc">
-        <title id="workflow-flow-title">agentic_workflow 从外部调用到聊天 Conclusion 的完整流程</title>
+        <title id="workflow-flow-title">auto_workflow 从外部调用到聊天 Conclusion 的完整流程</title>
         <desc id="workflow-flow-desc">流程分为运行与产物、summary 信任边界、聊天投影三层。完整结果正文及其在后续调用参数中的副本默认只进入文件和 workflow state，不进入 summary 输入或公共 payload；只有原始任务明确要求直接返回正文时才单独显示。</desc>
         <defs>
           <marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
@@ -411,8 +411,8 @@
         <text x="333" y="125" fill="#9a988e" font-size="11" text-anchor="middle">caller 为空 · code square</text>
         <path d="M415 111 H465" fill="none" stroke="#6b6a63" stroke-width="1.5" marker-end="url(#flow-arrow)"/>
         <rect x="466" y="69" width="190" height="84" rx="7" fill="#232321" stroke="#4f8ef7"/>
-        <text x="561" y="96" fill="#f0eee6" font-size="13" text-anchor="middle">agentic_workflow 执行</text>
-        <text x="561" y="117" fill="#9a988e" font-size="11" text-anchor="middle">planner / SINGLE / programmed</text>
+        <text x="561" y="96" fill="#f0eee6" font-size="13" text-anchor="middle">auto_workflow 执行</text>
+        <text x="561" y="117" fill="#9a988e" font-size="11" text-anchor="middle">search → select → reuse/create → execute</text>
         <text x="561" y="136" fill="#9a988e" font-size="11" text-anchor="middle">使用当前 session provider / model</text>
         <path d="M656 95 H710" fill="none" stroke="#6b6a63" stroke-width="1.5" marker-end="url(#flow-arrow)"/>
         <path d="M656 127 H684 V181 H710" fill="none" stroke="#6b6a63" stroke-width="1.5" marker-end="url(#flow-arrow)"/>
@@ -515,12 +515,12 @@
         <span class="scene-kicker">ROOT → PROGRAM</span>
       </div>
       <div class="canvas">
-        <svg viewBox="0 0 500 280" role="img" aria-label="ROOT directly connects to an agentic_workflow square node">
+        <svg viewBox="0 0 500 280" role="img" aria-label="ROOT directly connects to an auto_workflow square node">
           <path d="M90 72 V184 H194" fill="none" stroke="#4f8ef7" stroke-width="2"/>
           <rect x="78" y="60" width="24" height="24" rx="3" transform="rotate(45 90 72)" fill="#141413" stroke="#4f8ef7" stroke-width="2.4"/>
           <text x="118" y="77" fill="#4f8ef7" font-size="13">ROOT</text>
           <rect x="198" y="172" width="24" height="24" rx="4" fill="#141413" stroke="#4f8ef7" stroke-width="2.4" stroke-dasharray="5 4"/>
-          <text x="238" y="181" fill="#d8d6cc" font-size="14">agentic_workflow</text>
+          <text x="238" y="181" fill="#d8d6cc" font-size="14">auto_workflow</text>
           <text x="238" y="201" fill="#9a988e" font-size="12">Running...</text>
         </svg>
       </div>
@@ -533,7 +533,7 @@
         <span class="scene-kicker">ONE ROOT · TWO ACTIONS</span>
       </div>
       <div class="canvas">
-        <svg viewBox="0 0 500 360" role="img" aria-label="ROOT connects to a normal user and LLM pair and separately to agentic_workflow">
+        <svg viewBox="0 0 500 360" role="img" aria-label="ROOT connects to a normal user and LLM pair and separately to auto_workflow">
           <path d="M72 54 V162 H156" fill="none" stroke="#4f8ef7" stroke-width="2"/>
           <path d="M168 174 V244 H252" fill="none" stroke="#4f8ef7" stroke-width="2"/>
           <path d="M72 54 V310 H156" fill="none" stroke="#4f8ef7" stroke-width="2"/>
@@ -544,7 +544,7 @@
           <polygon points="264,232 252,256 276,256" fill="#141413" stroke="#4f8ef7" stroke-width="2.4"/>
           <text x="292" y="250" fill="#d8d6cc" font-size="13">LLM response</text>
           <rect x="156" y="298" width="24" height="24" rx="4" fill="#141413" stroke="#4f8ef7" stroke-width="2.4" stroke-dasharray="5 4"/>
-          <text x="196" y="307" fill="#d8d6cc" font-size="14">agentic_workflow</text>
+          <text x="196" y="307" fill="#d8d6cc" font-size="14">auto_workflow</text>
           <text x="196" y="327" fill="#9a988e" font-size="12">Running...</text>
         </svg>
       </div>
@@ -559,8 +559,8 @@
       <div class="mock-chat">
         <div class="program-record">
           <div class="program-avatar" aria-hidden="true">ƒ</div>
-          <button class="program-summary" type="button" aria-expanded="false" title="agentic_workflow · Running... · 02:14 · 4 steps">
-            <span class="summary-text"><span class="name">agentic_workflow</span> · <span class="running" role="status" aria-live="polite">Running...</span> · 02:14 · 4 steps</span>
+          <button class="program-summary" type="button" aria-expanded="false" title="auto_workflow · Running... · 02:14 · 4 steps">
+            <span class="summary-text"><span class="name">auto_workflow</span> · <span class="running" role="status" aria-live="polite">Running...</span> · 02:14 · 4 steps</span>
             <span class="summary-chevron" aria-hidden="true">›</span>
           </button>
         </div>
@@ -582,8 +582,8 @@
       <small>RUNNING</small>
       <div class="program-record">
         <div class="program-avatar" aria-hidden="true">ƒ</div>
-        <button class="program-summary" type="button" aria-expanded="false" title="agentic_workflow · Running... · 02:14 · 4 steps">
-          <span class="summary-text"><span class="name">agentic_workflow</span> · <span class="running">Running...</span> · 02:14 · 4 steps</span>
+        <button class="program-summary" type="button" aria-expanded="false" title="auto_workflow · Running... · 02:14 · 4 steps">
+          <span class="summary-text"><span class="name">auto_workflow</span> · <span class="running">Running...</span> · 02:14 · 4 steps</span>
           <span class="summary-chevron" aria-hidden="true">›</span>
         </button>
       </div>
@@ -593,8 +593,8 @@
       <small>COMPLETED</small>
       <div class="program-record">
         <div class="program-avatar" aria-hidden="true">ƒ</div>
-        <button class="program-summary" type="button" aria-expanded="false" title="agentic_workflow · Completed · 02:46 · 2 files processed">
-          <span class="summary-text"><span class="name">agentic_workflow</span> · Completed · 02:46 · 2 files processed</span>
+        <button class="program-summary" type="button" aria-expanded="false" title="auto_workflow · Completed · 02:46 · 2 files processed">
+          <span class="summary-text"><span class="name">auto_workflow</span> · Completed · 02:46 · 2 files processed</span>
           <span class="summary-chevron" aria-hidden="true">›</span>
         </button>
         <div class="program-conclusion">
@@ -614,8 +614,8 @@
       <small>ERROR</small>
       <div class="program-record">
         <div class="program-avatar" aria-hidden="true">ƒ</div>
-        <button class="program-summary" type="button" aria-expanded="false" title="agentic_workflow · Error · 01:22 · Permission denied">
-          <span class="summary-text"><span class="name">agentic_workflow</span> · <span class="error">Error</span> · 01:22 · Permission denied</span>
+        <button class="program-summary" type="button" aria-expanded="false" title="auto_workflow · Error · 01:22 · Permission denied">
+          <span class="summary-text"><span class="name">auto_workflow</span> · <span class="error">Error</span> · 01:22 · Permission denied</span>
           <span class="summary-chevron" aria-hidden="true">›</span>
         </button>
         <div class="program-conclusion">
@@ -629,8 +629,8 @@
       <small>CANCELLED</small>
       <div class="program-record">
         <div class="program-avatar" aria-hidden="true">ƒ</div>
-        <button class="program-summary" type="button" aria-expanded="false" title="agentic_workflow · Cancelled · 00:42 · 3 steps">
-          <span class="summary-text"><span class="name">agentic_workflow</span> · Cancelled · 00:42 · 3 steps</span>
+        <button class="program-summary" type="button" aria-expanded="false" title="auto_workflow · Cancelled · 00:42 · 3 steps">
+          <span class="summary-text"><span class="name">auto_workflow</span> · Cancelled · 00:42 · 3 steps</span>
           <span class="summary-chevron" aria-hidden="true">›</span>
         </button>
         <div class="program-conclusion">
@@ -676,7 +676,7 @@
       <tr><td>终态结论</td><td>旧 <code>summary</code> 实际等于 <code>workflow()</code> 的完整返回值，会把报告正文误当成聊天总结。</td><td>workflow 成功完成后调用一个独立的无工具 summary 函数。它读取原始任务、函数名与状态，以及执行记录中每个 <code>function=agent</code> 步骤最多 240 字的 operational handoff 预览；不读取调用参数、完整产物正文或任何非 agent 函数的结果摘要，避免中间结果经后续调用参数进入 summary。输出采用自然聊天结构：通常先用 2–3 句话概括，多阶段任务再用简短编号列出主要流程，最后判断任务是否完成；单阶段任务可以省略列表。引用、路径和警告只在有助于交接时出现，不作为固定字段。预览不得用于复述主题结论。完整产物默认写入当前 session 的工作目录并只保留在文件与 workflow state 中。</td></tr>
       <tr><td>总结调用</td><td>前端不会额外调用模型。</td><td>新增的一次 LLM summary 调用只发生在后端 workflow 成功完成阶段，复用当前 session 已选择的 provider/model，禁用工具并要求 JSON 对象。调用失败或格式错误时使用不声称产物已完成的保守 fallback，不改变已完成状态，也不回退为显示完整产物。capped、取消、interrupted 和失败态不调用 LLM summary，但前端仍生成确定性的状态或错误 Conclusion。</td></tr>
       <tr><td>公共 handoff schema</td><td>完整 raw result、调用参数、错误正文与每步结果保存在 workflow state。</td><td><code>summary_kind</code> 固定为 <code>workflow_handoff_v1</code>；<code>summary</code> 是简短的聊天式 Markdown，不限制为固定条数或固定字段；<code>return_result</code> 只由原始 task 的确定性 guard 计算，明确否定优先于直接返回措辞；<code>result</code> 默认是 null，只有 guard 为 true 时才读取 state 中的 raw result。公共 <code>items</code> 采用安全字段白名单，只保留步骤身份、状态、哈希与时间；公共 <code>revisions</code> 只保留版本和时间。调用参数、结果与错误正文均不进入公共 payload。</td></tr>
-      <tr><td>产物交付</td><td>planner 示例允许 <code>return findings</code> 或直接 <code>return agent(...)</code>，没有区分任务产物与 handoff。</td><td>planner 和 SINGLE agent 的执行合同统一规定：报告、代码、表格等实质产物默认写入当前工作目录；最终返回描述已完成工作，以及有用的警告或后续操作，路径只在有助于交接时出现。只有任务明确要求“直接回答、返回正文、在聊天中给出”时才允许把正文作为直接结果。</td></tr>
+      <tr><td>legacy产物交付</td><td>历史 <code>code.py</code>/SINGLE run 的planner示例允许 <code>return findings</code> 或直接 <code>return agent(...)</code>。</td><td>这些规则只服务显式legacy resume，禁止新建。当前create/revise项目使用发布前author合同；实质产物默认写入当前工作目录，只有任务明确要求直接返回正文时才进入聊天结果。</td></tr>
       <tr><td>展开内容</td><td>函数内部调用通过 <code>caller</code> 形成 execution layer；聊天侧已有 <code>RuntimeBlock</code>、<code>TreeStep</code> 和 Details。</td><td>完整复用现有组件和交互，不增加 Planner、Agent 或 workflow 专用视觉层。</td></tr>
       <tr><td>运行时选择</td><td>直接运行仍属于当前 session；session picker 的 <code>provider_override</code>/<code>model_override</code> 是该 session 的模型选择，没有显式覆盖时由 session 的 agent 配置决定。</td><td>父进程在创建函数子进程前解析同一选择，并把 provider/model 快照显式传入子进程。子进程不得重新使用全局自动检测覆盖 session 选择。</td></tr>
       <tr><td>footer</td><td>顶层 footer 已有时间、Copy、Retry、Edit &amp; re-run 和版本导航。</td><td>footer 不属于执行过程，始终放在整条消息最底部：有 Conclusion 时位于其后，无 Conclusion 时位于折叠标题后。其上方间距复用 assistant 正文到 footer 的 12px 段落间距；出现条件、按钮顺序和行为保持不变。</td></tr>
@@ -700,7 +700,7 @@
   <strong>调整：</strong>顶层 Program 增加专用头像；压缩标题比 Thinking/Functions 更详细，包含函数名、状态、时长和结果摘要。<br>
   <strong>拒绝：</strong>虚构 User/LLM、单独新 lane、大卡片、百分比进度、workflow 专用内部时间线、用完整产物正文冒充工作总结。</p>
 
-  <div class="not-decided"><strong>本页边界：</strong>本页设计头像、顶层折叠标题和终态 <code>Conclusion</code>。展开后怎样画根函数、嵌套函数、参数、输出和错误，全部服从当前 <code>RuntimeBlock</code>；不为 agentic_workflow 增加专用内部流程设计。</div>
+  <div class="not-decided"><strong>本页边界：</strong>本页设计头像、顶层折叠标题和终态 <code>Conclusion</code>。展开后怎样画根函数、嵌套函数、参数、输出和错误，全部服从当前 <code>RuntimeBlock</code>；不为 <code>auto_workflow</code> 增加专用内部流程设计。</div>
 
   <h2>已实现验收标准：summary 与聊天窗口</h2>
   <table>
@@ -726,7 +726,7 @@
   <table>
     <thead><tr><th>入口</th><th>可观察结果</th></tr></thead>
     <tbody>
-      <tr><td>空 session 从 Programs 运行 <code>agentic_workflow</code></td><td>DAG 立即出现且只出现一个 ROOT 子级圆角正方形节点，标签为 <code>agentic_workflow</code> 与 <code>Running...</code>。</td></tr>
+      <tr><td>空 session 从 Programs 运行 <code>auto_workflow</code></td><td>DAG 立即出现且只出现一个 ROOT 子级圆角正方形节点，标签为 <code>auto_workflow</code> 与 <code>Running...</code>。</td></tr>
       <tr><td>已有聊天的 session 从 Programs 运行</td><td>现有 User → LLM 结构不变；同一 conversation layer 增加一个由 ROOT 直接分出的 Program 节点。</td></tr>
       <tr><td>概览投影处理已有 predecessor</td><td>存储中的 <code>predecessor</code> 保持当前 HEAD；概览 renderer 根据空 <code>caller</code> 派生 ROOT → Program 排版边，不把 Program 误接成 assistant 的内部调用。</td></tr>
       <tr><td>运行完成、失败或取消</td><td>更新同一 Program 节点的描边和状态，不移动节点，不生成第二个结果节点。</td></tr>
@@ -737,19 +737,19 @@
   <table>
     <thead><tr><th>范围</th><th>合同</th></tr></thead>
     <tbody>
-      <tr><td>生产文件</td><td><code>agentic_workflow/__init__.py</code> 增加独立 summary 函数、产物交付提示和结构化 handoff；<code>runtime-summary.ts</code> 只把带版本标记的 handoff 当作 Conclusion，并仅在 <code>return_result=true</code> 时暴露原始结果；<code>runtime-block.tsx</code> 在同一 Conclusion 中分开渲染工作总结与明确要求的直接结果。</td></tr>
-      <tr><td>公共入口</td><td>从 Programs 或 fn-form 在会话中直接运行 <code>agentic_workflow</code>，刷新历史会话后也必须得到相同结论。</td></tr>
+      <tr><td>生产文件</td><td><code>functions/agentic/workflow/__init__.py</code> 中的运行总结逻辑生成结构化 handoff；<code>runtime-summary.ts</code> 只把带版本标记的 handoff 当作 Conclusion，并仅在 <code>return_result=true</code> 时暴露原始结果；<code>runtime-block.tsx</code> 在同一 Conclusion 中分开渲染工作总结与明确要求的直接结果。</td></tr>
+      <tr><td>公共入口</td><td>从 Programs 或 fn-form 在会话中直接运行用户级 <code>auto_workflow</code>，刷新历史会话后也必须得到相同结论。</td></tr>
       <tr><td>兼容与失败</td><td>非 workflow 的 Function 行、运行中的 workflow、嵌套 LLM 工具调用保持现状；JSON 不完整、失败、取消时不得抛出渲染异常或伪造成功数字。</td></tr>
       <tr><td>明确排除</td><td>不新增依赖、不改变 DAG、不改变按钮内容、顺序或行为、不修改普通 assistant 消息和嵌套函数，不让 summary 函数使用工具或再次执行任务。</td></tr>
-      <tr><td>RED / GREEN</td><td>Python 公共入口测试先证明当前 SINGLE 与 programmed workflow 把完整结果放进 <code>summary</code>，再验证独立 summary 调用不接收完整结果、调用参数或非 agent 步骤结果，只接收 agent 的短 operational handoff；中间结果即使被后续调用参数引用，也只留在内部 state，不进入 summary prompt 或公共 payload。测试还覆盖默认不返回原始结果、明确直接返回时才携带结果、summary 失败时安全降级，以及 planner/SINGLE 的文件交付合同。<code>npm run check:chat-ui</code> 覆盖新 handoff、显式结果和旧 payload 不再显示完整正文；随后运行 Web typecheck、完整 Web check、文档链接与 diff 检查。</td></tr>
+      <tr><td>RED / GREEN</td><td>Python 公共入口测试验证当前package Workflow的独立summary不接收完整结果、调用参数或非agent步骤结果，只接收agent的短operational handoff；中间结果即使被后续调用参数引用，也只留在内部state。另以显式legacy resume测试保留SINGLE/code.py文件交付兼容，不能从该测试生成新legacy run。<code>npm run check:chat-ui</code> 覆盖新handoff、显式结果和旧payload不再显示完整正文；随后运行Web typecheck、完整Web check、文档链接与diff检查。</td></tr>
     </tbody>
   </table>
 
   <h2>实现证据</h2>
   <div class="not-decided">
     <strong>聊天窗口实现：</strong><code>runtime-block.tsx</code> 仅为顶层 Program 增加专用头像与 <code>ExecutionStrip</code>；执行树与 usage 作为同一折叠内容，footer 位于折叠区和 <code>Conclusion</code> 之后，并由 <code>execution-strip.css</code> 复用 assistant 消息的 12px 正文到 footer 段落间距；嵌套 LLM 工具调用保留原结构。成功态 Conclusion 只把带 <code>workflow_handoff_v1</code> 标记的内容当作工作总结，只有 <code>return_result=true</code> 时才在其后单独显示完整结果；capped、取消、interrupted 与失败态由 <code>runtime-summary.ts</code> 确定性生成状态或错误 Conclusion，不调用模型。旧 payload 的原始 <code>summary</code> 不再被当作工作总结。<br>
-    <strong>后端实现：</strong><code>agentic_workflow/__init__.py</code> 在 workflow 成功后调用一次独立的无工具 summary 函数。它接收任务、执行函数名、状态、原始结果长度，以及仅限 agent 步骤的 240 字 operational handoff；不接收调用参数、完整原始结果或其他函数的结果摘要。正文披露授权由只读原始 task 的确定性 guard 计算，不接受模型或 agent 输出。summary 格式错误或调用失败时生成不声称产物已完成的安全交接，并把错误只留在 state。planner 与 SINGLE agent 同时收到默认文件交付合同。调用参数、原始结果、步骤结果与错误正文继续持久化到 workflow state；公共 <code>items</code> 与 <code>revisions</code> 使用安全字段白名单，不公开这些正文。<br>
-    <strong>自动检查：</strong><code>pytest -q tests/component/agent/test_agentic_workflow.py</code> 的 35 项测试、完整 Web check、<code>npm run build</code>、Web <code>tsc --noEmit</code>、文档链接检查与 <code>git diff --check</code> 通过。测试覆盖默认隐藏原始结果、整个公共 payload 不含步骤正文或错误正文、中间结果经后续参数引用时仍不公开、agent preview 不能授权正文披露、中英文显式与否定返回措辞、明确要求时单独返回、summary 输入不含完整原始结果、调用参数与非 agent 步骤结果、summary 格式错误或调用失败时安全降级并只把错误持久化到 state、planner/SINGLE 文件交付合同、旧 payload 不再显示正文。<br>
+    <strong>后端实现：</strong><code>functions/agentic/workflow/__init__.py</code> 在当前package Workflow成功后调用一次独立的无工具summary函数。它接收任务、执行函数名、状态、原始结果长度，以及仅限agent步骤的240字operational handoff；不接收调用参数、完整原始结果或其他函数的结果摘要。正文披露授权由只读原始task的确定性guard计算。summary格式错误或调用失败时生成安全交接，并把错误只留在state。历史planner与SINGLE文件交付规则仅保留给显式legacy resume。<br>
+    <strong>自动检查：</strong><code>pytest -q tests/component/agent/test_agentic_workflow.py</code> 覆盖当前package Workflow与显式legacy resume，两者不得混合创建路径；完整Web check、Web typecheck、文档链接检查与 <code>git diff --check</code> 同时验证。<br>
     <strong>真实验收：</strong>历史会话中的旧 workflow payload 不具备 <code>workflow_handoff_v1</code> 标记，因此不再把旧的 12198 字任务结果显示为 Conclusion。新 handoff 的真实 18100 验收必须使用新建 workflow 运行，且只使用 <code>/Applications/OpenProgram.app</code>、默认 <code>~/.openprogram</code> 与 <code>18100</code>；不启动 <code>18200</code>。DAG 节点投影未在本次实现中改动。
   </div>
 </main>

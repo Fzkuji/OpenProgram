@@ -1,8 +1,7 @@
 """list_jobs — list this session's background agent tasks.
 
-Named verb-object to pair with ``list_agents``; ``agentic_workflow`` would
-collide with Claude Code's TaskList (a todo planning board — our todo
-board uses the ``todo_*`` prefix instead).
+Named verb-object to pair with ``list_agents``. Todo planning uses the
+separate ``todo_*`` prefix.
 """
 from __future__ import annotations
 

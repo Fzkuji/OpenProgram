@@ -1,4 +1,4 @@
-"""Search, author, and execute reusable Agentic Programming workflow projects.
+"""Workflow discovery, authoring, revision, execution, and recovery.
 
 Public entries are ``search_workflows``, ``create_workflow``,
 ``revise_workflow``, and user-only ``auto_workflow``. Each execution owns an
@@ -319,7 +319,7 @@ def _registered_agentic_functions() -> dict[str, Callable]:
 
     found: dict[str, Callable] = {}
     for module_name in AGENTIC_MODULES:
-        if module_name == "agentic_workflow":
+        if module_name == "workflow":
             continue
         try:
             module = importlib.import_module(

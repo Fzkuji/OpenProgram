@@ -544,7 +544,7 @@ Agent 回复发起的 function 及其执行树只属于该回复的执行时间�
     <div class="runtime-program-content">
       <div class="tl" id="subagent-demo">
         <button class="tl-toggle" type="button" id="subagent-demo-toggle" aria-expanded="false">
-          <span id="subagent-demo-label">agentic_workflow · 等待运行</span><span class="chev">›</span>
+          <span id="subagent-demo-label">auto_workflow · 等待运行</span><span class="chev">›</span>
         </button>
         <div class="tl-collapse"><div class="tl-collapse-inner">
           <div class="tl-body">
@@ -567,7 +567,7 @@ Agent 回复发起的 function 及其执行树只属于该回复的执行时间�
   <thead><tr><th>调用路径</th><th>实时数据</th><th>页面节点</th><th>共同的可见性控制</th></tr></thead>
   <tbody>
     <tr><td>聊天中的 <code>agent()</code></td><td><code>sub_agent</code> 事件按稳定 <code>card_id</code> 更新 <code>attachCards</code></td><td><code>SubAgentStep</code></td><td rowspan="2"><code>ExecutionStrip</code><br><code>open = userSet ?? !!streaming</code></td></tr>
-    <tr><td><code>agentic_workflow</code> 内部 agent</td><td><code>tree_update</code> 更新 <code>contextTree</code></td><td><code>TreeStep</code> 子节点</td></tr>
+    <tr><td><code>auto_workflow</code> 内部 selection agent</td><td><code>tree_update</code> 更新 <code>contextTree</code></td><td><code>TreeStep</code> 子节点</td></tr>
   </tbody>
 </table>
 <div class="rule"><b>已验证的原因：</b>完成事件只更新同一条子代理记录；产生短暂显示的是“新行进入动画”紧接“父级自动收起”。当前回归检查还明确要求 <code>const open = userSet ?? !!streaming</code>，所以它是现行交互合同，不是偶发渲染丢失。相关入口：<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/messages/execution-strip.tsx" style="color:var(--accent-cyan)">execution-strip.tsx</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/net/chat-stream.ts" style="color:var(--accent-cyan)">chat-stream.ts</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/messages/runtime-block.tsx" style="color:var(--accent-cyan)">runtime-block.tsx</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/scripts/check-spawn-cards.mjs" style="color:var(--accent-cyan)">check-spawn-cards.mjs</a>。</div>
@@ -662,7 +662,7 @@ Agent 回复发起的 function 及其执行树只属于该回复的执行时间�
     <div class="branch-explain-item caller"><b>首条消息前“切回调用处”</b>直接回到 <code>callerId</code>；父分支在该消息之后的继续内容不显示。</div>
   </div>
 </div>
-<div class="rule"><b>共同边界：</b>三个动作都是切换同一 session 的活动 HEAD 并重新加载 transcript，不是打开新标签页。运行中后端禁止移动 HEAD；跨 session 的旧 AttachCard 只负责打开目标 session，不属于这个同 session 交互样例。<code>agentic_workflow</code> 内只有 <code>TreeStep</code> 而没有 attach 指针的节点，仍只能打开右栏详情，不显示这组分支导航。</div>
+<div class="rule"><b>共同边界：</b>三个动作都是切换同一 session 的活动 HEAD 并重新加载 transcript，不是打开新标签页。运行中后端禁止移动 HEAD；跨 session 的旧 AttachCard 只负责打开目标 session，不属于这个同 session 交互样例。<code>auto_workflow</code> 内只有 <code>TreeStep</code> 而没有 attach 指针的节点，仍只能打开右栏详情，不显示这组分支导航。</div>
 
 <!-- ═══════ 6. 消息导航 ═══════ -->
 <h2><span class="num">6</span>左缘消息导航：横线即消息，悬停展开列表</h2>
@@ -766,7 +766,7 @@ function setSubagentOpen(open){
 function resetSubagentDemo(){
   subagentTimers.forEach(clearTimeout);subagentTimers=[];
   setSubagentOpen(false);
-  subagentLabel.textContent='agentic_workflow · 等待运行';
+  subagentLabel.textContent='auto_workflow · 等待运行';
   subagentRow.className='step demo-subagent';
   subagentNote.textContent='运行中…';
   subagentStatus.textContent='等待重放';
@@ -774,7 +774,7 @@ function resetSubagentDemo(){
 function replaySubagentDemo(){
   resetSubagentDemo();
   setSubagentOpen(true);
-  subagentLabel.textContent='agentic_workflow · 运行中';
+  subagentLabel.textContent='auto_workflow · 运行中';
   subagentStatus.textContent='T0：父级运行，执行区展开';
   subagentTimers.push(setTimeout(()=>{
     subagentRow.className='step demo-subagent is-mounted is-arriving is-running';
@@ -786,7 +786,7 @@ function replaySubagentDemo(){
     subagentStatus.textContent='T2：同一行更新为已完成';
   },2800));
   subagentTimers.push(setTimeout(()=>{
-    subagentLabel.textContent='agentic_workflow · 已完成';
+    subagentLabel.textContent='auto_workflow · 已完成';
     setSubagentOpen(false);
     subagentStatus.textContent='T3：父级结束，执行区自动收起';
   },4800));

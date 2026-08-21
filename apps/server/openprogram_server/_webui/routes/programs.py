@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import inspect
 import json as _json
 import os
 from collections import deque
@@ -42,6 +43,8 @@ _PRIMITIVE_DEPENDENCIES = {
 }
 _VANILLA_RELATIVE = Path("functions/vanilla")
 _VANILLA_MODULE_PREFIX = "openprogram.programs.functions.vanilla."
+_AGENTIC_RELATIVE = Path("functions/agentic")
+_AGENTIC_MODULE_PREFIX = "openprogram.programs.functions.agentic."
 
 
 def _inside_programs(path: Path) -> bool:
@@ -83,7 +86,7 @@ def _program_kind(relative: str) -> str | None:
         return None
     if len(parts) == 4 and parts[:2] == ("functions", "vanilla"):
         return "vanilla_function"
-    if len(parts) == 3 and parts[:2] == ("functions", "agentic"):
+    if len(parts) >= 3 and parts[:2] == ("functions", "agentic"):
         return "agentic_function"
     if len(parts) == 2 and parts[0] == "workflows":
         return "workflow"
@@ -128,7 +131,16 @@ def _entity_paths() -> dict[str, Path]:
                 if callables.get(relative):
                     entities.setdefault(relative, source)
 
-    scan_roots = [(PROGRAMS_ROOT, Path("functions/agentic"))]
+    for source_path, rows in _registered_agentic_callables().items():
+        if len(rows) == 1:
+            entities.setdefault(source_path, rows[0]["source"])
+            continue
+        for row in rows:
+            entities.setdefault(
+                f"{source_path}/{row['name']}", row["source"],
+            )
+
+    scan_roots = []
     scan_roots.extend(
         (root, parent)
         for root in _catalog_roots()
@@ -167,7 +179,16 @@ def _default_selection() -> str | None:
 def _callable_name(relative: str) -> str:
     """Return the registered function name for a Programs entity."""
     name = Path(relative).stem
-    if relative.startswith(("functions/agentic/", "workflows/")):
+    if relative.startswith("functions/agentic/"):
+        for source_path, rows in _registered_agentic_callables().items():
+            if relative == source_path and len(rows) == 1:
+                return rows[0]["name"]
+            if relative.startswith(source_path + "/"):
+                requested = relative.removeprefix(source_path + "/")
+                if any(row["name"] == requested for row in rows):
+                    return requested
+        return name
+    if relative.startswith("workflows/"):
         from openprogram.programs import agent_tools
 
         module_path = relative.replace("/", ".")
@@ -213,13 +234,115 @@ def _registered_vanilla_callables() -> dict[str, list[dict[str, str]]]:
     return indexed
 
 
+def _registered_agentic_callables() -> dict[str, list[dict]]:
+    """Index Agentic Programs by source path, independent of folder depth."""
+    from openprogram.agentic_programming.function import _registry
+
+    indexed: dict[str, list[dict]] = {}
+    for name, registered in _registry.copy().items():
+        fn = getattr(registered, "_fn", None) or registered
+        module = str(getattr(fn, "__module__", ""))
+        if not module.startswith(_AGENTIC_MODULE_PREFIX):
+            continue
+        try:
+            raw_source = inspect.getsourcefile(fn)
+            source = Path(raw_source).resolve() if raw_source else None
+        except (OSError, TypeError):
+            source = None
+        if source is None or not source.is_file() or not _inside_programs(source):
+            continue
+        try:
+            relative_source = source.relative_to(PROGRAMS_ROOT.resolve())
+        except ValueError:
+            continue
+        source_path = (
+            relative_source.parent
+            if source.name == "__init__.py"
+            else relative_source.with_suffix("")
+        ).as_posix()
+        if not source_path.startswith(_AGENTIC_RELATIVE.as_posix() + "/"):
+            continue
+        indexed.setdefault(source_path, []).append({
+            "name": name,
+            "description": (getattr(registered, "description", "") or "")
+            .strip().split("\n", 1)[0],
+            "source": source.parent if source.name == "__init__.py" else source,
+        })
+    for rows in indexed.values():
+        rows.sort(key=lambda row: row["name"])
+    return indexed
+
+
+def _agentic_entries(
+    relative: str, indexed: dict[str, list[dict]] | None = None,
+) -> list[dict]:
+    """List immediate categories or registered functions below a path."""
+    if indexed is None:
+        indexed = _registered_agentic_callables()
+    if relative in indexed:
+        rows = indexed[relative]
+        if len(rows) > 1:
+            return [
+                {
+                    "name": row["name"],
+                    "path": f"{relative}/{row['name']}",
+                    "kind": "file",
+                    "program_kind": "agentic_function",
+                    "has_children": False,
+                    "callable_name": row["name"],
+                    "description": row["description"],
+                    "logic_path": f"{relative}/{row['name']}",
+                }
+                for row in rows
+            ]
+
+    prefix = Path(relative)
+    entries: dict[str, dict] = {}
+    for source_path, rows in indexed.items():
+        source = Path(source_path)
+        try:
+            remainder = source.relative_to(prefix).parts
+        except ValueError:
+            continue
+        if not remainder:
+            continue
+        child_path = (prefix / remainder[0]).as_posix()
+        if len(remainder) > 1 or len(rows) > 1:
+            entries[child_path] = {
+                "name": remainder[0],
+                "path": child_path,
+                "kind": "folder",
+                "program_kind": None,
+                "has_children": True,
+            }
+            continue
+        row = rows[0]
+        entries[child_path] = {
+            "name": row["name"],
+            "path": child_path,
+            "kind": "file",
+            "program_kind": "agentic_function",
+            "has_children": False,
+            "callable_name": row["name"],
+            "description": row["description"],
+            "logic_path": source_path,
+        }
+    return sorted(entries.values(), key=lambda entry: entry["name"].lower())
+
+
 def _list_entries(relative: str) -> dict:
-    _safe_directory(relative)
+    registered_agentic = (
+        _registered_agentic_callables()
+        if relative.startswith("functions/agentic/")
+        else {}
+    )
+    if relative not in registered_agentic:
+        _safe_directory(relative)
     branches = {
         "": ("functions", "workflows", "applications"),
         "functions": ("functions/vanilla", "functions/agentic"),
     }
-    leaf_categories = {"functions/agentic", "workflows", "applications"}
+    leaf_categories = {"workflows", "applications"}
     if relative in branches:
         entries = [
             {
@@ -232,6 +355,10 @@ def _list_entries(relative: str) -> dict:
             for path in branches[relative]
             if (PROGRAMS_ROOT / path).is_dir()
         ]
+    elif relative == "functions/agentic" or relative.startswith("functions/agentic/"):
+        entries = _agentic_entries(relative, registered_agentic or None)
+        if not entries:
+            raise FileNotFoundError(relative)
     elif relative == "functions/vanilla":
         entries = [
             {
@@ -397,18 +524,44 @@ def _direct_calls(
         reverse=True,
     )
     targets: set[str] = set()
-    modules, warnings = _imported_modules(entities[relative])
+    if relative.startswith("functions/agentic/"):
+        modules, warnings = _called_import_modules(
+            entities[relative], _callable_name(relative),
+        )
+    else:
+        modules, warnings = _imported_modules(entities[relative])
     for module in modules:
         for prefix, target in prefixes:
             if target != relative and (module == prefix or module.startswith(prefix + ".")):
                 targets.add(target)
                 break
+    if relative.startswith("functions/agentic/"):
+        nodes, _, local_warnings = _analysis_nodes(
+            entities[relative], _callable_name(relative),
+        )
+        warnings.update(local_warnings)
+        called_names = {
+            node.func.id
+            for root in nodes
+            for node in ast.walk(root)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+        for target, target_source in entities.items():
+            if (
+                target != relative
+                and target.startswith("functions/agentic/")
+                and target_source == entities[relative]
+                and _callable_name(target) in called_names
+            ):
+                targets.add(target)
     return sorted(targets), warnings
 
 
-def _called_agentic_primitives(path: Path) -> tuple[set[str], set[str]]:
-    """Return goal/agent/llm primitives actually called by this Program."""
-    called: set[str] = set()
+def _analysis_nodes(
+    path: Path, entry_name: str | None = None,
+) -> tuple[list[ast.AST], list[ast.Module], set[str]]:
+    """Return one entry's reachable local functions and parsed modules."""
+    trees: list[ast.Module] = []
     warnings: set[str] = set()
     sources, truncated = _python_sources(path)
     if truncated:
@@ -418,13 +571,104 @@ def _called_agentic_primitives(path: Path) -> tuple[set[str], set[str]]:
             if source.stat().st_size > _MAX_SOURCE_BYTES:
                 warnings.add("oversized_source")
                 continue
-            tree = ast.parse(source.read_text(encoding="utf-8"))
+            trees.append(ast.parse(source.read_text(encoding="utf-8")))
         except (OSError, UnicodeDecodeError, SyntaxError):
             warnings.add("source_parse_failed")
             continue
 
-        direct: dict[str, str] = {}
-        modules: dict[str, str] = {}
+    if not entry_name:
+        return list(trees), trees, warnings
+    functions = {
+        node.name: node
+        for tree in trees
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    entry = functions.get(entry_name)
+    if entry is None:
+        warnings.add("callable_source_not_found")
+        return [], trees, warnings
+    reachable: list[ast.AST] = []
+    pending = deque([entry])
+    seen: set[str] = set()
+    while pending:
+        node = pending.popleft()
+        if node.name in seen:
+            continue
+        seen.add(node.name)
+        reachable.append(node)
+        for call in ast.walk(node):
+            if isinstance(call, ast.Call) and isinstance(call.func, ast.Name):
+                helper = functions.get(call.func.id)
+                if helper is not None and helper.name not in seen:
+                    pending.append(helper)
+    return reachable, trees, warnings
+
+
+def _called_import_modules(
+    path: Path, entry_name: str,
+) -> tuple[set[str], set[str]]:
+    """Return imported call targets reachable from one Agentic entry."""
+    nodes, trees, warnings = _analysis_nodes(path, entry_name)
+    aliases: dict[str, str] = {}
+    for tree in trees:
+        for node in tree.body:
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    local = alias.asname or alias.name.split(".", 1)[0]
+                    aliases[local] = alias.name
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                if node.level:
+                    try:
+                        relative = path.resolve().relative_to(
+                            PROGRAMS_ROOT.resolve(),
+                        )
+                        source_module = _module_prefix(relative.as_posix())
+                        package = (
+                            source_module
+                            if path.is_dir()
+                            else source_module.rpartition(".")[0]
+                        )
+                        module = importlib.util.resolve_name(
+                            "." * node.level + module, package,
+                        )
+                    except (ImportError, ValueError):
+                        continue
+                for alias in node.names:
+                    if alias.name != "*":
+                        aliases[alias.asname or alias.name] = (
+                            f"{module}.{alias.name}" if module else alias.name
+                        )
+
+    def imported_name(expr: ast.expr) -> str | None:
+        if isinstance(expr, ast.Name):
+            return aliases.get(expr.id)
+        if isinstance(expr, ast.Attribute):
+            base = imported_name(expr.value)
+            return f"{base}.{expr.attr}" if base else None
+        return None
+
+    modules = {
+        imported
+        for root in nodes
+        for node in ast.walk(root)
+        if isinstance(node, ast.Call)
+        if (imported := imported_name(node.func)) is not None
+    }
+    return modules, warnings
+
+
+def _called_agentic_primitives(
+    path: Path, *, entry_name: str | None = None,
+) -> tuple[set[str], set[str]]:
+    """Return goal/agent/llm primitives reachable from one Program entry."""
+    called: set[str] = set()
+    nodes, trees, warnings = _analysis_nodes(path, entry_name)
+
+    direct: dict[str, str] = {}
+    modules: dict[str, str] = {}
+    for tree in trees:
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 module = node.module or ""
@@ -444,7 +688,8 @@ def _called_agentic_primitives(path: Path) -> tuple[set[str], set[str]]:
                     if alias.name == "openprogram.agentic_programming":
                         modules[alias.asname or "openprogram"] = alias.name
 
-        for node in ast.walk(tree):
+    for root in nodes:
+        for node in ast.walk(root):
             if not isinstance(node, ast.Call):
                 continue
             if isinstance(node.func, ast.Name):
@@ -486,7 +731,14 @@ def _program_logic(relative: str) -> dict:
             if target not in depths:
                 depths[target] = depths[source] + 1
                 queue.append(target)
-        primitives, warnings = _called_agentic_primitives(entities[source])
+        entry_name = (
+            _callable_name(source)
+            if source.startswith("functions/agentic/")
+            else None
+        )
+        primitives, warnings = _called_agentic_primitives(
+            entities[source], entry_name=entry_name,
+        )
         analysis_warnings.update(warnings)
         pending = deque((source, primitive) for primitive in sorted(primitives))
         while pending:

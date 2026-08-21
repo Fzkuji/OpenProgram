@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 import openprogram.programs as programs
-import openprogram.programs.functions.agentic.agentic_workflow as TL
+import openprogram.programs.functions.agentic.workflow as TL
 
 
 def test_workflow_projects_live_under_openprogram_programs() -> None:

@@ -29,12 +29,13 @@
 <pre class="tree">openprogram/programs/
 ├── functions/
 │   ├── vanilla/       # 确定性的普通 @function
-│   └── agentic/       # 使用模型能力的 @agentic_function
+│   └── agentic/       # 使用模型能力的 @agentic_function，可继续按类型分目录
+│       └── workflow/  # Workflow 管理能力的源码分类，不是Program
 ├── workflows/         # Agent 生成并可复用的 Python 小项目
 ├── applications/      # 可调用上述全部能力的完整应用，可包含 UI/assets
 ├── _registry.py       # 统一注册与发现
 └── _programs.py       # Application 元数据与加载</pre>
-    <div class="callout">所有实体代码都位于仓库内的 <code>openprogram/programs/</code>。不使用 <code>~/.openprogram/workflows/</code> 作为源码目录，也不保留旧 <code>openprogram.programs.agentic_functions</code> 兼容包。</div>
+    <div class="callout">所有实体代码都位于仓库内的 <code>openprogram/programs/</code>。目录是源码分类，注册函数才是运行实体。分类目录、入口文件、helper文件和内部子目录本身都不是Program。不使用 <code>~/.openprogram/workflows/</code> 作为源码目录，也不保留旧 <code>openprogram.programs.agentic_functions</code> 兼容包。</div>
   </section>
 
   <section id="roles"><h2>2. 四类实体的职责</h2>
@@ -64,7 +65,8 @@
   <section id="discovery"><h2>5. 发现与加载只有一套语义</h2>
     <table><thead><tr><th>阶段</th><th>合同</th></tr></thead><tbody>
       <tr><td>导入</td><td><code>openprogram.programs.functions.vanilla</code> 导入 <code>vanilla</code> 与 <code>agentic</code>，触发现有装饰器注册副作用。</td></tr>
-      <tr><td>Agentic 扫描</td><td>注册器和 Web 函数列表只扫描 <code>openprogram.programs.functions.agentic</code>。</td></tr>
+      <tr><td>Agentic 扫描</td><td>注册器导入 <code>openprogram.programs.functions.agentic</code> 下声明的模块；Web目录按实际源码路径生成分类节点，但可运行函数只能来自 <code>@agentic_function</code> Registry。</td></tr>
+      <tr><td>分类与身份</td><td>分类目录可以包含多个入口、helper文件和更深子目录；移动源码不改变注册函数名、Schema、exposure、调用方式或运行状态合同。</td></tr>
       <tr><td>Workflow 路径</td><td>生成器以 <code>openprogram/programs/workflows/</code> 为唯一源码根，不依赖调用模块的父目录层数。</td></tr>
       <tr><td>跨 Workflow 调用</td><td>静态 <code>from ... import ...</code> 加普通 Python 调用；不增加 <code>@workflow</code>、<code>call_workflow()</code> 或 <code>invoke_workflow()</code>。</td></tr>
       <tr><td>Application</td><td>由现有 application catalog 发现；内部可按公开 Python 路径导入 Function 与 Workflow。</td></tr>
@@ -86,6 +88,7 @@
       <div>源码结构</div><div>新四层目录存在；旧 <code>agentic_functions/</code> 不存在。</div>
       <div>公开导入</div><div>仓库内代码与测试全部使用 <code>functions.vanilla</code> 或 <code>functions.agentic</code>。</div>
       <div>注册发现</div><div>Vanilla 与 Agentic 工具数量、名称和 schema 在迁移前后保持一致。</div>
+      <div>分类边界</div><div>Programs只把目录显示为导航，只把注册函数显示为可运行项；helper文件和内部目录不成为Program。</div>
       <div>Workflow</div><div>生成、发布、复用与项目根路径仍指向仓库内 <code>programs/workflows</code>。</div>
       <div>打包</div><div>Wheel 与封装 App 包含新目录且不包含旧路径；App/Web/TUI 共用默认 18100 实例。</div>
       <div>文档与技能</div><div>示例、CLI 帮助和 bundled skill 不再给出旧 import 路径。</div>

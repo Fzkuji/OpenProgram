@@ -101,7 +101,7 @@ def test_only_deferred_tool_loops_still_call_runtime_exec():
         "Research-Agent-Harness",
         "GUI-Agent-Harness",
         "Wiki-Agent-Harness",
-        "agentic_workflow",
+        "workflow",
     }
     remaining = []
     for path in tracked_python_files(root):
