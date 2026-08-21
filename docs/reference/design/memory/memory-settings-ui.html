@@ -249,14 +249,15 @@
   .settings-link { height: 35px; padding: 0 10px; border-radius: 7px; display: flex; align-items: center; gap: 10px; color: var(--muted); text-decoration: none; white-space: nowrap; }
   .settings-link:hover { background: var(--hover); color: var(--text); }
   .settings-link.active { background: var(--selected); color: var(--text); }
-  .settings-content { min-width: 0; overflow: auto; }
-  .settings-page { width: min(820px,calc(100% - 48px)); margin: 0 auto; padding: 28px 0 80px; }
-  .settings-intro { margin-bottom: 26px; }
-  .settings-intro h1 { margin: 0 0 5px; font-size: 22px; letter-spacing: -.02em; }
-  .settings-intro p { margin: 0; color: var(--muted); }
+  .settings-content { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .settings-page { min-height: 0; flex: 1; display: flex; flex-direction: column; }
+  .settings-intro { flex-shrink: 0; padding: 20px 28px 16px; border-bottom: 1px solid var(--border); }
+  .settings-intro h1 { margin: 0 0 6px; font-size: 18px; letter-spacing: -.01em; }
+  .settings-intro p { max-width: 760px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+  .settings-scroll { min-height: 0; flex: 1; display: flex; flex-direction: column; gap: 28px; padding: 24px 28px 32px; overflow: auto; }
   .memory-route {
-    display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 0; margin: 20px 0 28px;
-    border: 1px solid var(--border); border-radius: 9px; overflow: hidden; background: var(--panel);
+    display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 0;
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--panel-2);
   }
   .route-step { position: relative; padding: 12px 13px; border-right: 1px solid var(--border); }
   .route-step:last-child { border-right: 0; }
@@ -264,10 +265,10 @@
   .route-step strong { display: block; margin-top: 4px; font-size: 12px; font-weight: 560; }
   .route-dot { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px rgba(117,199,154,.12); }
   .route-dot.warn { background: var(--amber); box-shadow: 0 0 0 3px rgba(216,173,101,.12); }
-  .settings-section { margin-top: 26px; }
+  .settings-section { margin: 0; }
   .settings-section h2 { margin: 0 0 9px; color: var(--text-2); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; }
-  .settings-card { border: 1px solid var(--border); border-radius: 9px; background: var(--panel); overflow: hidden; }
-  .setting-row { min-height: 66px; padding: 13px 15px; display: grid; grid-template-columns: minmax(0,1fr) minmax(190px,280px); gap: 24px; align-items: center; }
+  .settings-card { padding: 14px 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); }
+  .setting-row { min-height: 52px; padding: 10px 0; display: grid; grid-template-columns: minmax(0,1fr) minmax(190px,280px); gap: 24px; align-items: start; }
   .setting-row + .setting-row { border-top: 1px solid var(--border); }
   .setting-label strong { display: block; margin-bottom: 3px; font-size: 13px; font-weight: 570; }
   .setting-label span { display: block; color: var(--muted); font-size: 12px; }
@@ -446,6 +447,7 @@
         <section class="settings-content">
           <div class="settings-page">
             <div class="settings-intro"><h1>Memory</h1><p>Choose how OpenProgram writes, stores, and recalls long-term memory.</p></div>
+            <div class="settings-scroll">
             <div class="memory-route" aria-label="Memory lifecycle">
               <div class="route-step"><small>Capture</small><strong><span class="route-dot"></span>Conversation archive</strong></div>
               <div class="route-step"><small>Write</small><strong><span class="route-dot"></span>MiniMax-M3</strong></div>
@@ -476,6 +478,7 @@
               <div class="setting-row"><div class="setting-label"><strong>Recent view size</strong><span>Number of latest records kept in the Recent derived view.</span></div><div class="setting-control"><select class="select" aria-label="Recent view size"><option>50 records</option><option>25 records</option><option>100 records</option></select></div></div>
               <div class="setting-row"><div class="setting-label"><strong>Workspace</strong><span>Current Memory data location. Runtime-managed files remain read-only.</span></div><div class="setting-control"><span class="path-value">~/.openprogram/memory</span></div></div>
             </div></section>
+            </div>
           </div>
         </section>
       </div>
@@ -488,6 +491,7 @@
       <li>Topics, Timeline, Recent, and Core form a vertical section list above the Topic tree.</li>
       <li>At a 720px viewport the section list, tree, and content stack without removing Memory navigation.</li>
       <li>Settings reads and writes the same schema used by the CLI and TUI.</li>
+      <li>Memory uses the same fixed page header, 28px content gutter, 10px section-card radius, tertiary card surface, and compact row spacing as General and System. The lifecycle summary is the only Memory-specific visual structure.</li>
       <li>Every editable Memory control persists through <code>POST /api/settings</code> immediately after the user changes it. The page has no separate Save button; a rejected write restores the previous value and exposes an inline error.</li>
       <li>Opening <code>/settings/memory</code> renders the editable settings as soon as their configuration requests finish; workspace and embedding status load independently and never gate the whole page.</li>
       <li><code>GET /api/memory/status?settings=true</code> returns only the workspace path and fixed embedding snapshot availability. It does not parse Topics, walk Sources, compute revisions, or scan sessions and writer state.</li>

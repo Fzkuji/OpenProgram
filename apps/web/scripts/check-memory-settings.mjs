@@ -46,6 +46,13 @@ assert.doesNotMatch(settingsNav, /prefetchSettings/);
 assert.doesNotMatch(settingsCache, /export function prefetchSettings/);
 assert.match(settings, /memory\.writer\.model/);
 assert.match(settings, /memory\.retrieval\.method/);
+assert.match(settings, /shared\.pageHeader/);
+assert.match(settings, /shared\.pageTitle/);
+assert.match(settings, /shared\.pageMeta/);
+assert.match(settings, /shared\.pageTitle\}>\{t\("settings\.tab\.memory"\)\}/);
+assert.match(settings, /const pageHeader =[\s\S]*?if \(!loaded\)[\s\S]*?\{pageHeader\}/);
+assert.match(settings, /className=\{shared\.card\}/);
+assert.match(settings, /className=\{`\$\{shared\.row\}/);
 assert.equal(
   (settings.match(/<Switch[^>]+aria-label=/g) || []).length,
   4,
@@ -61,15 +68,17 @@ assert.match(
   settingsCss,
   /\.controls\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*flex-end;[^}]*gap:\s*8px/,
 );
-assert.match(settingsCss, /\.memoryPage\s*\{[^}]*font-family:\s*var\(--font-sans\)/s);
 assert.match(settingsCss, /\.lifecycle\s*\{[^}]*font-family:\s*var\(--font-sans\)/s);
 assert.match(
   settingsCss,
   /\.lifecycle\s*\{[^}]*flex-shrink:\s*0/s,
   "the lifecycle cards must keep their intrinsic height in the scrolling column",
 );
-assert.match(settingsCss, /\.row\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*flex-start/s);
-assert.match(settingsCss, /\.rowCopy\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-width:\s*0/s);
+assert.match(settingsCss, /\.lifecycle\s*\{[^}]*border-radius:\s*10px;[^}]*background:\s*var\(--bg-tertiary\)/s);
+assert.doesNotMatch(settingsCss, /\.card\s*\{/);
+assert.doesNotMatch(settingsCss, /\.row\s*\{/);
+assert.match(settingsCss, /\.rowDescription\s*\{[^}]*font-size:\s*13px/s);
+assert.match(settingsCss, /@media \(max-width: 820px\)[\s\S]*?\.settingsRow\s*\{[^}]*flex-direction:\s*column/s);
 assert.match(settingsCss, /\.controls\s*\{[^}]*flex:\s*0 0 auto;[^}]*min-width:\s*7\.5rem/s);
 assert.match(settingsCss, /\.chromeValue\s*\{[^}]*font-family:\s*var\(--font-sans\)/s);
 assert.match(settingsCss, /\.monoValue\s*\{[^}]*font-family:\s*var\(--font-mono\)/s);
