@@ -27,6 +27,8 @@ import openprogram.providers.env_api_keys as ek
     ("google", "google_query"),
     ("openai-codex", "oauth"),
     ("gemini-subscription", "oauth"),
+    ("xai-subscription", "oauth"),
+    ("github-copilot", "oauth"),
     ("amazon-bedrock", "cloud"),
     ("azure-openai-responses", "cloud"),
     ("deepseek", "openai_bearer"),
@@ -281,6 +283,62 @@ def test_ok_only_for_exact_valid():
     assert no_bal.ok is False and down.ok is False
     legacy = no_bal.to_legacy()
     assert legacy["ok"] is False and "error" in legacy
+
+
+def test_oauth_check_reads_auth_value_and_valid_status(monkeypatch):
+    """Auth v2 credentials use status='valid' + payload.auth_value, not
+    the old access_token / 'fresh' pair the connectivity Check used to look for."""
+    class _Payload:
+        auth_value = "tok_abc"
+
+    class _Cred:
+        status = "valid"
+        payload = _Payload()
+
+    class _Provider:
+        def acquire_sync(self, provider_id, account_id=None):
+            return _Cred()
+
+    monkeypatch.setattr(
+        "openprogram.auth.credential_provider.get_credential_provider",
+        lambda: _Provider(),
+    )
+    r = cr._oauth_check("openai-codex", "oauth")
+    assert r.status == cr.VALID and r.ok
+    assert r.via == "CredentialProvider"
+
+
+def test_xai_subscription_check_hits_cli_proxy(monkeypatch):
+    class _Payload:
+        auth_value = "tok_abc"
+
+    class _Cred:
+        status = "valid"
+        payload = _Payload()
+
+    class _Provider:
+        def acquire_sync(self, provider_id, account_id=None):
+            return _Cred()
+
+    monkeypatch.setattr(
+        "openprogram.auth.credential_provider.get_credential_provider",
+        lambda: _Provider(),
+    )
+    calls = {}
+
+    def fake_get(url, *, headers=None, params=None, timeout=15.0, configured_url=None):
+        calls["url"] = url
+        calls["headers"] = headers or {}
+        calls["configured_url"] = configured_url
+        return (200, '{"data":[{"id":"grok-4.5"}]}', 12)
+
+    monkeypatch.setattr(cr, "_http_get", fake_get)
+    r = cr._oauth_check("xai-subscription", "oauth")
+    assert r.status == cr.VALID and r.ok
+    assert r.via == "GET /models"
+    assert calls["url"] == "https://cli-chat-proxy.grok.com/v1/models"
+    assert calls["headers"].get("X-XAI-Token-Auth") == "xai-grok-cli"
+    assert calls["headers"].get("Authorization") == "Bearer tok_abc"
 
 
 def test_probe_proves_usable_not_auth_only_models():

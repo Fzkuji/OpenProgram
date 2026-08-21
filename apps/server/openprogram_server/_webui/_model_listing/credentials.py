@@ -459,6 +459,40 @@ def _layer2_ping(provider_id: str, kind: str, api_key: str, base: str | None,
     )
 
 
+def _oauth_token(cred) -> str:
+    """Read the bearer from a Credential. Auth v2 stores it on ``payload.auth_value``;
+    leftover migrated payloads may still expose ``access_token``."""
+    payload = getattr(cred, "payload", None)
+    if payload is None:
+        return ""
+    return (
+        getattr(payload, "auth_value", None)
+        or getattr(payload, "access_token", None)
+        or ""
+    )
+
+
+def _xai_subscription_probe(provider_id: str, kind: str, token: str) -> CredentialResult:
+    """Live auth check against the Grok CLI chat proxy (not api.x.ai)."""
+    from openprogram.providers.xai_subscription.headers import (
+        CLI_CHAT_PROXY_BASE_URL,
+        grok_cli_headers,
+    )
+    url = CLI_CHAT_PROXY_BASE_URL.rstrip("/") + "/models"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        **grok_cli_headers("grok-4.5"),
+    }
+    res = _http_get(
+        url,
+        headers=headers,
+        configured_url=CLI_CHAT_PROXY_BASE_URL,
+    )
+    return _interpret(
+        provider_id, kind, res, via="GET /models", require_json=True,
+    )
+
+
 def _oauth_check(provider_id: str, kind: str) -> CredentialResult:
     """OAuth/subscription providers carry no api_key — read the CredentialProvider
     credential status instead of touching a model."""
@@ -470,14 +504,27 @@ def _oauth_check(provider_id: str, kind: str) -> CredentialResult:
                        detail=(f"Not logged in or couldn't read login state — run "
                                f"`openprogram providers login {provider_id}`."))
     st = getattr(cred, "status", None)
-    token = getattr(getattr(cred, "payload", None), "access_token", None)
-    if st == "needs_reauth":
+    token = _oauth_token(cred)
+    if st in ("needs_reauth", "revoked"):
         return _result(provider_id, INVALID_CREDENTIAL, kind=kind, via="CredentialProvider",
                        detail=f"Login expired — run `openprogram providers login {provider_id}`.")
-    if st in ("fresh", "expiring_soon", "stale", "refreshing") or token:
-        return _result(provider_id, VALID, kind=kind, via="CredentialProvider",
-                       detail=f"Logged in{f' ({st})' if st else ''}.")
-    return _result(provider_id, UNKNOWN, kind=kind, via="CredentialProvider", detail="Login state unknown.")
+    if st == "billing_blocked":
+        return _result(provider_id, VALID_NO_BALANCE, kind=kind, via="CredentialProvider",
+                       detail="Logged in, but billing is blocked.")
+    logged_in = st in (
+        "valid", "fresh", "expiring_soon", "stale", "refreshing", "rate_limited",
+    ) or bool(token)
+    if not logged_in:
+        return _result(provider_id, UNKNOWN, kind=kind, via="CredentialProvider",
+                       detail="Login state unknown.")
+    if provider_id == "xai-subscription" and token:
+        live = _xai_subscription_probe(provider_id, kind, token)
+        # Transport failure: still treat the stored login as valid so Check
+        # does not bounce back to "unknown" after a flaky proxy hop.
+        if live.http_status is not None or live.status != UNKNOWN:
+            return live
+    return _result(provider_id, VALID, kind=kind, via="CredentialProvider",
+                   detail=f"Logged in{f' ({st})' if st else ''}.")
 
 
 # 60s cache (doc §8)
