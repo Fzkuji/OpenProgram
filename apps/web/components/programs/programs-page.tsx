@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { useRouter } from "next/navigation";
 import {
   Boxes,
+  FileCode,
   Folder,
   FolderOpen,
   GitBranch,
@@ -80,7 +81,7 @@ function parentPaths(path: string) {
 }
 
 function kindLabel(
-  kind: ProgramKind,
+  kind: ProgramKind | null,
   text: (en: string, zh: string) => string,
   entry?: ProgramSourceEntry | null,
 ) {
@@ -91,6 +92,7 @@ function kindLabel(
   if (kind === "agentic_function") return text("Workflow", "工作流");
   if (kind === "runtime_primitive") return text("Agentic Programming primitive", "Agentic Programming 原语");
   if (kind === "vanilla_function") return text("Tool", "工具");
+  if (!kind && entry && !entry.callable_name) return text("Source module", "源码模块");
   return text("Tool", "工具");
 }
 
@@ -107,7 +109,7 @@ function EntryIcon({ entry, expanded }: { entry: ExplorerEntry; expanded: boolea
       ? <FolderOpen size={15} className={fileStyles.treeIconFolder} />
       : <Folder size={15} className={fileStyles.treeIconFolder} />;
   }
-  return <Wrench size={15} className={fileStyles.treeIcon} />;
+  return <FileCode size={15} className={fileStyles.treeIcon} />;
 }
 
 export function ProgramsPage({
@@ -344,7 +346,7 @@ export function ProgramsPage({
             data-program-path={entry.path}
             title={entry.path}
             onClick={() => {
-              if (entry.program_kind || entry.callable_name) {
+              if (entry.kind === "file" || entry.program_kind || entry.callable_name) {
                 setSelected(entry.logic_path || entry.path);
               }
               if (isBranch) toggleDirectory(entry);
@@ -437,23 +439,25 @@ export function ProgramsPage({
               <div className={styles.logicContent}>
                 <div className={styles.breadcrumb}>{ROOT_LABEL}/{selectedNode.path}</div>
                 <div className={styles.entityHeader}>
-                  <span className={styles.entityIcon}>{usesWorkflowIcon(selectedEntry || selectedNode) ? <Workflow size={20} /> : selectedNode.program_kind === "application" ? <Boxes size={20} /> : <Wrench size={20} />}</span>
+                  <span className={styles.entityIcon}>{usesWorkflowIcon(selectedEntry || selectedNode) ? <Workflow size={20} /> : selectedNode.program_kind === "application" ? <Boxes size={20} /> : invocationName ? <Wrench size={20} /> : <FileCode size={20} />}</span>
                   <div><h2>{selectedNode.name}</h2><p>{kindLabel(selectedNode.program_kind, text, selectedEntry || selectedNode)}</p></div>
-                  <div className={styles.entityActions}>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={isFavorite ? text("Unfavorite", "取消收藏") : text("Favorite", "收藏")}
-                      aria-pressed={isFavorite}
-                      title={isFavorite ? text("Unfavorite", "取消收藏") : text("Favorite", "收藏")}
-                      onClick={() => void toggleFavorite()}
-                    >
-                      <Star className={isFavorite ? styles.favoriteIconActive : styles.favoriteIcon} fill={isFavorite ? "currentColor" : "none"} />
-                    </Button>
-                    <Button onClick={() => router.push(`/chat?${new URLSearchParams({ run: invocationName, cat: selectedNode.program_kind })}`)}>
-                      {text("Use", "使用")}
-                    </Button>
-                  </div>
+                  {invocationName ? (
+                    <div className={styles.entityActions}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={isFavorite ? text("Unfavorite", "取消收藏") : text("Favorite", "收藏")}
+                        aria-pressed={isFavorite}
+                        title={isFavorite ? text("Unfavorite", "取消收藏") : text("Favorite", "收藏")}
+                        onClick={() => void toggleFavorite()}
+                      >
+                        <Star className={isFavorite ? styles.favoriteIconActive : styles.favoriteIcon} fill={isFavorite ? "currentColor" : "none"} />
+                      </Button>
+                      <Button onClick={() => router.push(`/chat?${new URLSearchParams({ run: invocationName, cat: selectedNode.program_kind })}`)}>
+                        {text("Use", "使用")}
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
                 <div className={styles.summary}><span>{logic.edges.filter((edge) => edge.source === logic.root).length} {text("direct calls", "个直接调用")}</span><span>{Math.max(0, logic.nodes.length - 1)} {text("reachable nodes", "个可达节点")}</span><span>{logic.edges.length} {text("edges", "条边")}</span></div>
                 {logic.analysis_complete === false ? <div className={styles.analysisWarning} role="status">{text("Partial result: some source files were not analyzed because they exceed the analysis limits.", "部分结果：部分源码超过分析限制，未纳入调用关系。")}</div> : null}
@@ -465,7 +469,7 @@ export function ProgramsPage({
                         {ancestorContinuations.map((continues, index) => <i key={index} className={continues ? styles.callGuideActive : ""} />)}
                         <i className={isLast ? styles.callGuideLast : styles.callGuideBranch} />
                       </span> : null}
-                      <span className={styles.callIcon}>{usesWorkflowIcon(node) ? <Workflow size={15} /> : node.program_kind === "application" ? <Boxes size={15} /> : <Wrench size={15} />}</span><span className={styles.callLabel}><strong>{node.name}</strong><small>{node.path}</small></span><em>{cycle ? "cycle" : reference ? "reference" : depth === 0 ? "root" : depth === 1 ? "direct" : "transitive"}</em>
+                      <span className={styles.callIcon}>{usesWorkflowIcon(node) ? <Workflow size={15} /> : node.program_kind === "application" ? <Boxes size={15} /> : node.program_kind ? <Wrench size={15} /> : <FileCode size={15} />}</span><span className={styles.callLabel}><strong>{node.name}</strong><small>{node.path}</small></span><em>{cycle ? "cycle" : reference ? "reference" : depth === 0 ? "root" : depth === 1 ? "direct" : "transitive"}</em>
                     </div>)}
                     {callTree.truncated ? <div className={styles.noCalls}>{text("Additional references are hidden.", "其余引用已隐藏。")}</div> : null}
                     {logic.nodes.length === 1 && logic.analysis_complete !== false ? <div className={styles.noCalls}>{text("This Program has no detected Program or Agentic Programming calls.", "未检测到这个 Program 对其他 Program 或 Agentic Programming 原语的调用。")}</div> : null}
@@ -485,7 +489,7 @@ export function ProgramsPage({
                         })}
                       </svg>
                       {graphLayout.nodes.map((node) => <div key={node.id} className={`${styles.graphNode} ${node.id === logic.root ? styles.graphRoot : ""}`} style={{ left: node.x, top: node.y }} data-graph-node={node.id}>
-                        <span className={styles.graphNodeIcon}>{usesWorkflowIcon(node) ? <Workflow size={15} /> : node.program_kind === "application" ? <Boxes size={15} /> : <Wrench size={15} />}</span>
+                        <span className={styles.graphNodeIcon}>{usesWorkflowIcon(node) ? <Workflow size={15} /> : node.program_kind === "application" ? <Boxes size={15} /> : node.program_kind ? <Wrench size={15} /> : <FileCode size={15} />}</span>
                         <span><strong>{node.name}</strong><small>{node.path}</small></span>
                       </div>)}
                     </div> : null}

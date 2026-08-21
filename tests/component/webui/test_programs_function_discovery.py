@@ -81,10 +81,21 @@ def test_programs_treats_workflow_as_category_not_program() -> None:
     assert children["workflow/security_review"]["name"] == "security_review"
 
     goal_entry = _list_entries("workflow/goal")["entries"]
-    assert [
-        (entry["name"], entry["callable_name"], entry["logic_path"])
-        for entry in goal_entry
-    ] == [("goal", "goal", "workflow/goal")]
+    goal_by_name = {entry["name"]: entry for entry in goal_entry}
+    assert goal_by_name["goal"]["callable_name"] == "goal"
+    assert goal_by_name["goal"]["logic_path"] == "workflow/goal"
+    assert goal_by_name["goal"]["program_kind"] == "workflow"
+    assert {
+        "command", "judge", "loop", "notices", "refinement", "state",
+    } <= set(goal_by_name)
+    command = goal_by_name["command"]
+    assert "callable_name" not in command
+    assert command["path"] == "workflow/goal/command"
+    assert command["logic_path"] == "workflow/goal/command"
+    assert command["program_kind"] is None
+    command_logic = _program_logic("workflow/goal/command")
+    assert command_logic["root"] == "workflow/goal/command"
+    assert command_logic["nodes"][0]["program_kind"] is None
     docs_entry = _list_entries("workflow/docs_question")["entries"]
     assert [
         (entry["callable_name"], entry["logic_path"])

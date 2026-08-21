@@ -105,6 +105,52 @@ def _is_workflow_package(relative: str) -> bool:
     return any((root / relative).is_dir() for root in _catalog_roots())
 
 
+def _workflow_package_directory(relative: str) -> Path | None:
+    for root in _catalog_roots():
+        candidate = root / relative
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def _package_source_files(
+    relative: str, occupied_names: set[str],
+) -> list[tuple[str, Path]]:
+    """Return supporting ``.py`` files inside a registered Workflow package."""
+    directory = _workflow_package_directory(relative)
+    if directory is None:
+        return []
+    found: list[tuple[str, Path]] = []
+    for child in _visible_children(directory):
+        if (
+            not child.is_file()
+            or child.suffix != ".py"
+            or child.name == "__init__.py"
+            or child.name.startswith("_")
+            or child.stem in occupied_names
+            or child.stem in _WORKFLOW_INTERNAL_NAMES
+        ):
+            continue
+        found.append((f"{relative}/{child.stem}", child))
+    return found
+
+
+def _package_source_entries(
+    relative: str, occupied_names: set[str],
+) -> list[dict]:
+    return [
+        {
+            "name": Path(path).name,
+            "path": path,
+            "kind": "file",
+            "program_kind": None,
+            "has_children": False,
+            "logic_path": path,
+        }
+        for path, _source in _package_source_files(relative, occupied_names)
+    ]
+
+
 def _visible_children(directory: Path) -> list[Path]:
     return sorted(
         (
@@ -144,11 +190,14 @@ def _entity_paths() -> dict[str, Path]:
     for source_path, rows in _registered_agentic_callables().items():
         if len(rows) == 1:
             entities.setdefault(source_path, rows[0]["source"])
-            continue
-        for row in rows:
-            entities.setdefault(
-                f"{source_path}/{row['name']}", row["source"],
-            )
+        else:
+            for row in rows:
+                entities.setdefault(
+                    f"{source_path}/{row['name']}", row["source"],
+                )
+        occupied = {row["name"] for row in rows}
+        for path, source in _package_source_files(source_path, occupied):
+            entities.setdefault(path, source)
 
     scan_roots = []
     scan_roots.extend(
@@ -187,19 +236,55 @@ def _default_selection() -> str | None:
     return None
 
 
+def _agentic_entry_name(relative: str) -> str | None:
+    """Registered Agentic function for this catalog path, if any."""
+    if not relative.startswith("workflow/"):
+        return None
+    for source_path, rows in _registered_agentic_callables().items():
+        if relative == source_path:
+            if len(rows) == 1:
+                return rows[0]["name"]
+            return None
+        if relative.startswith(source_path + "/"):
+            requested = relative.removeprefix(source_path + "/")
+            if any(row["name"] == requested for row in rows):
+                return requested
+    return None
+
+
+def _analysis_entry_name(relative: str) -> str | None:
+    """Function to analyse for call logic, or the whole file for helpers."""
+    registered = _agentic_entry_name(relative)
+    if registered:
+        return registered
+    parent = Path(relative).parent.as_posix()
+    if parent in _registered_agentic_callables():
+        return None
+    if relative.startswith("workflow/"):
+        return Path(relative).stem
+    return None
+
+
+def _logic_program_kind(relative: str) -> str | None:
+    if relative.startswith("agentic_programming/"):
+        return "runtime_primitive"
+    parent = Path(relative).parent.as_posix()
+    if (
+        relative.startswith("workflow/")
+        and parent in _registered_agentic_callables()
+        and _agentic_entry_name(relative) is None
+    ):
+        return None
+    return _program_kind(relative)
+
+
 def _callable_name(relative: str) -> str:
     """Return the registered function name for a Programs entity."""
+    found = _agentic_entry_name(relative)
+    if found:
+        return found
     name = Path(relative).stem
-    if relative.startswith("workflow/"):
-        for source_path, rows in _registered_agentic_callables().items():
-            if relative == source_path and len(rows) == 1:
-                return rows[0]["name"]
-            if relative.startswith(source_path + "/"):
-                requested = relative.removeprefix(source_path + "/")
-                if any(row["name"] == requested for row in rows):
-                    return requested
-        return name
-    if not relative.startswith("applications/"):
+    if relative.startswith("workflow/") or not relative.startswith("applications/"):
         return name
     from openprogram.programs._programs import KNOWN_PROGRAMS
 
@@ -278,13 +363,13 @@ def _registered_agentic_callables() -> dict[str, list[dict]]:
 def _agentic_entries(
     relative: str, indexed: dict[str, list[dict]] | None = None,
 ) -> list[dict]:
-    """List immediate categories or registered functions below a path."""
+    """List immediate categories, registered functions, or package files."""
     if indexed is None:
         indexed = _registered_agentic_callables()
     if relative in indexed:
         rows = indexed[relative]
         if len(rows) > 1 or _is_workflow_package(relative):
-            return [
+            entries = [
                 {
                     "name": row["name"],
                     "path": (
@@ -305,6 +390,10 @@ def _agentic_entries(
                 }
                 for row in rows
             ]
+            occupied = {entry["name"] for entry in entries}
+            entries.extend(_package_source_entries(relative, occupied))
+            entries.sort(key=lambda entry: entry["name"].lower())
+            return entries
 
     prefix = Path(relative)
     entries: dict[str, dict] = {}
@@ -575,7 +664,7 @@ def _direct_calls(
     targets: set[str] = set()
     if relative.startswith("workflow/"):
         modules, warnings = _called_import_modules(
-            entities[relative], _callable_name(relative),
+            entities[relative], _analysis_entry_name(relative),
         )
     else:
         modules, warnings = _imported_modules(entities[relative])
@@ -586,7 +675,7 @@ def _direct_calls(
                 break
     if relative.startswith("workflow/"):
         nodes, _, local_warnings = _analysis_nodes(
-            entities[relative], _callable_name(relative),
+            entities[relative], _analysis_entry_name(relative),
         )
         warnings.update(local_warnings)
         called_names = {
@@ -655,7 +744,7 @@ def _analysis_nodes(
 
 
 def _called_import_modules(
-    path: Path, entry_name: str,
+    path: Path, entry_name: str | None,
 ) -> tuple[set[str], set[str]]:
     """Return imported call targets reachable from one Agentic entry."""
     nodes, trees, warnings = _analysis_nodes(path, entry_name)
@@ -780,11 +869,7 @@ def _program_logic(relative: str) -> dict:
             if target not in depths:
                 depths[target] = depths[source] + 1
                 queue.append(target)
-        entry_name = (
-            _callable_name(source)
-            if source.startswith("workflow/")
-            else None
-        )
+        entry_name = _analysis_entry_name(source)
         primitives, warnings = _called_agentic_primitives(
             entities[source], entry_name=entry_name,
         )
@@ -806,11 +891,7 @@ def _program_logic(relative: str) -> dict:
             "id": path,
             "name": Path(path).stem,
             "path": path,
-            "program_kind": (
-                "runtime_primitive"
-                if path.startswith("agentic_programming/")
-                else _program_kind(path)
-            ),
+            "program_kind": _logic_program_kind(path),
             "depth": depth,
         }
         for path, depth in sorted(depths.items(), key=lambda item: (item[1], Path(item[0]).stem))

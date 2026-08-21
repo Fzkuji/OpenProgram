@@ -4,7 +4,7 @@ export type LogicNode = {
   id: string;
   name: string;
   path: string;
-  program_kind: ProgramKind;
+  program_kind: ProgramKind | null;
   depth: number;
 };
 

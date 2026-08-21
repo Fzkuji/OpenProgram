@@ -410,3 +410,42 @@ def test_programs_logic_reports_unparseable_source(
 
     assert payload["analysis_complete"] is False
     assert "source_parse_failed" in payload["analysis_warnings"]
+
+
+def test_workflow_package_lists_supporting_source_files(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from openprogram.webui.routes import programs
+
+    root = tmp_path / "openprogram" / "programs"
+    package = root / "workflow" / "goal"
+    _write(package / "__init__.py", "")
+    _write(package / "goal.py", "def goal():\n    return None\n")
+    _write(package / "command.py", "def handle_goal_command():\n    return None\n")
+    _write(package / "judge.py", "def judge_goal():\n    return None\n")
+    indexed = {
+        "workflow/goal": [
+            {
+                "name": "goal",
+                "description": "Goal loop",
+                "source": package / "goal.py",
+            },
+        ],
+    }
+    monkeypatch.setattr(programs, "PROGRAMS_ROOT", root)
+    monkeypatch.setattr(programs, "_registered_agentic_callables", lambda: indexed)
+
+    entries = {
+        entry["name"]: entry
+        for entry in programs._list_entries("workflow/goal")["entries"]
+    }
+    assert entries["goal"]["callable_name"] == "goal"
+    assert entries["goal"]["program_kind"] == "workflow"
+    assert "callable_name" not in entries["command"]
+    assert entries["command"]["path"] == "workflow/goal/command"
+    assert entries["command"]["program_kind"] is None
+    assert set(entries) >= {"goal", "command", "judge"}
+
+    logic = programs._program_logic("workflow/goal/command")
+    assert logic["root"] == "workflow/goal/command"
+    assert logic["nodes"][0]["program_kind"] is None
