@@ -212,6 +212,16 @@
 .textareaWrap {
   position: relative;
 }
+.field:has(.textareaWrap[data-expanded]) {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.textareaWrap[data-expanded] {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .expandBtn {
   position: absolute;
   top: 6px;
@@ -244,8 +254,11 @@
   overflow-y: auto;
 }
 .textareaWrap[data-expanded] .textarea {
+  flex: 1 1 auto;
+  min-height: 160px;
   max-height: none;
-  overflow-y: hidden;
+  height: auto;
+  overflow-y: auto;
 }
 .inputError {
   border-color: var(--accent-red) !important;

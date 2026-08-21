@@ -154,8 +154,9 @@ export function useFnFormWrapper({
     const apply = () => {
       if (measuring) return;
       measuring = true;
-      const next = measureFnFormHeight(el);
       const cap = availableComposerHeight(el);
+      const expanded = !!el.querySelector("[data-expanded]");
+      const next = expanded ? cap : measureFnFormHeight(el);
       measuring = false;
       if (Math.abs(next - last) < 1) return;
       last = next;
@@ -166,10 +167,13 @@ export function useFnFormWrapper({
     const ro = new ResizeObserver(() => requestAnimationFrame(apply));
     const body = el.querySelector("[data-fn-form-body]");
     if (body) ro.observe(body);
+    const mo = new MutationObserver(() => requestAnimationFrame(apply));
+    mo.observe(el, { subtree: true, attributes: true, attributeFilter: ["data-expanded"] });
     window.addEventListener("resize", apply);
     return () => {
       cancelAnimationFrame(id);
       ro.disconnect();
+      mo.disconnect();
       window.removeEventListener("resize", apply);
     };
   }, [morphed, fnFormClosing, fnFormFunction, decisionKey, wrapperRef]);
