@@ -211,9 +211,6 @@
 .textareaWrap {
   position: relative;
 }
-.textareaWrap .textarea {
-  padding-right: 34px;
-}
 .expandBtn {
   position: absolute;
   top: 6px;
@@ -237,17 +234,20 @@
   color: var(--text-bright);
 }
 .input.textarea {
+  /* Multi-line textareas grow with content (auto-resized by
+     fn-form-fields.tsx) so the height + line-height that the single-
+     line variants share don't apply. Reset to natural so the
+     min-height 48 / max-height 160 govern. */
   height: auto;
   line-height: 1.5;
   padding: 8px 12px;
   min-height: 48px;
-  max-height: 72px;
+  max-height: 160px;
   resize: none;
   overflow-y: auto;
 }
 .textareaWrap[data-expanded] .textarea {
   max-height: none;
-  overflow-y: hidden;
 }
 .inputError {
   border-color: var(--accent-red) !important;
