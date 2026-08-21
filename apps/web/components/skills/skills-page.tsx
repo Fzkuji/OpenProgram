@@ -5,43 +5,74 @@ import { useSkills } from "@/lib/state/skills-store";
 import { SkillsList } from "./skills-list";
 import { NewSkillDialog } from "./new-skill-dialog";
 import { DiscoverySources } from "./discovery";
-import { ManagePageHeader, managePageStyles as styles } from "@/components/ui/manage-page";
+import { ManagePageHeader, ManageSubnav, managePageStyles as styles } from "@/components/ui/manage-page";
 import { useTranslation } from "@/lib/i18n";
 
 type Tab = "browse" | "discovery";
 
-export function SkillsPage() {
+export function SkillsPage({
+  embedded,
+  query,
+  newOpen: newOpenProp,
+  onNewClose,
+}: {
+  embedded?: boolean;
+  query?: string;
+  newOpen?: boolean;
+  onNewClose?: () => void;
+} = {}) {
   const { t, text } = useTranslation();
   const { skills, fetchSkills, error } = useSkills();
   const [tab, setTab] = useState<Tab>("browse");
-  const [newOpen, setNewOpen] = useState(false);
+  const [localNewOpen, setLocalNewOpen] = useState(false);
+  const newOpen = newOpenProp ?? localNewOpen;
+  const closeNew = onNewClose ?? (() => setLocalNewOpen(false));
 
   useEffect(() => { fetchSkills(); }, [fetchSkills]);
+
+  const tabs = [
+    { id: "browse", label: text("Browse", "浏览"), count: skills.length },
+    { id: "discovery", label: text("Discovery", "发现") },
+  ];
+
+  const body = tab === "browse" ? <SkillsList externalFilter={query} /> : <DiscoverySources />;
+
+  if (embedded) {
+    return (
+      <>
+        <ManageSubnav
+          tabs={tabs}
+          activeTab={tab}
+          onTabChange={(id) => setTab(id as Tab)}
+        />
+        {error && <div className={styles.errorBar}>{error}</div>}
+        <div className={styles.body}>{body}</div>
+        <NewSkillDialog open={newOpen} onClose={closeNew} />
+      </>
+    );
+  }
 
   return (
     <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
     <div className={styles.view}>
       <ManagePageHeader
         title={t("nav.skills")}
-        tabs={[
-          { id: "browse", label: text("Browse", "浏览"), count: skills.length },
-          { id: "discovery", label: text("Discovery", "发现") },
-        ]}
+        tabs={tabs}
         activeTab={tab}
         onTabChange={(id) => setTab(id as Tab)}
         actions={[
           { label: t("sidebar.refresh"), onClick: () => { void fetchSkills(); } },
-          { label: text("New skill", "新建技能"), onClick: () => setNewOpen(true), primary: true },
+          { label: text("New skill", "新建技能"), onClick: () => setLocalNewOpen(true), primary: true },
         ]}
       />
 
       {error && <div className={styles.errorBar}>{error}</div>}
 
       <div className={styles.body}>
-        {tab === "browse" ? <SkillsList /> : <DiscoverySources />}
+        {body}
       </div>
 
-      <NewSkillDialog open={newOpen} onClose={() => setNewOpen(false)} />
+      <NewSkillDialog open={newOpen} onClose={closeNew} />
     </div>
     </div>
   );

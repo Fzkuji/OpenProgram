@@ -3,8 +3,8 @@
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 
-const SkillsPage = dynamic(
-  () => import("@/components/skills/skills-page").then((m) => m.SkillsPage),
+const CapabilitiesPage = dynamic(
+  () => import("@/components/capabilities/capabilities-page").then((m) => m.CapabilitiesPage),
   { ssr: false },
 );
 const SkillDetailPage = dynamic(
@@ -21,5 +21,5 @@ export default function Page() {
   if (m) {
     return <SkillDetailPage name={m[1].split("/").map(decodeURIComponent).join("/")} />;
   }
-  return <SkillsPage />;
+  return <CapabilitiesPage />;
 }

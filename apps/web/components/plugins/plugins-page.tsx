@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import styles from "./plugins.module.css";
-import { ManagePageHeader, managePageStyles as shared } from "@/components/ui/manage-page";
+import { ManagePageHeader, ManageSubnav, managePageStyles as shared } from "@/components/ui/manage-page";
 import { usePluginsStore } from "@/lib/state/plugins-store";
 import { useTranslation } from "@/lib/i18n";
 import { useModalA11y } from "@/lib/use-modal-a11y";
@@ -10,10 +10,22 @@ import { InstalledList } from "./views/installed-list";
 import { MarketplaceBrowser } from "./views/marketplace-browser";
 import { PluginErrors } from "./views/plugin-errors";
 
-export function PluginsPage() {
+export function PluginsPage({
+  embedded,
+  query,
+  installOpen: installOpenProp,
+  onInstallClose,
+}: {
+  embedded?: boolean;
+  query?: string;
+  installOpen?: boolean;
+  onInstallClose?: () => void;
+} = {}) {
   const { t, text } = useTranslation();
   const { tab, setTab, refresh, plugins, errors } = usePluginsStore();
-  const [installOpen, setInstallOpen] = useState(false);
+  const [localInstallOpen, setLocalInstallOpen] = useState(false);
+  const installOpen = installOpenProp ?? localInstallOpen;
+  const closeInstall = onInstallClose ?? (() => setLocalInstallOpen(false));
 
   useEffect(() => {
     refresh();
@@ -21,29 +33,51 @@ export function PluginsPage() {
 
   const errCount = Object.keys(errors).length + plugins.filter((p) => p.error).length;
 
+  const tabs = [
+    { id: "installed", label: text("Installed", "已安装"), count: plugins.length },
+    { id: "marketplace", label: text("Marketplace", "市场") },
+    { id: "errors", label: text("Errors", "错误"), count: errCount },
+  ];
+
+  const body = (
+    <>
+      {tab === "installed" && <InstalledList externalFilter={query} />}
+      {tab === "marketplace" && <MarketplaceBrowser externalFilter={query} />}
+      {tab === "errors" && <PluginErrors filter={query} />}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <>
+        <ManageSubnav
+          tabs={tabs}
+          activeTab={tab}
+          onTabChange={(id) => setTab(id as typeof tab)}
+        />
+        <div className={shared.body}>{body}</div>
+        {installOpen && <ManualInstallDialog onClose={closeInstall} />}
+      </>
+    );
+  }
+
   return (
     <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
     <div className={shared.view}>
       <ManagePageHeader
         title={t("nav.plugins")}
-        tabs={[
-          { id: "installed", label: text("Installed", "已安装"), count: plugins.length },
-          { id: "marketplace", label: "Marketplace" },
-          { id: "errors", label: text("Errors", "错误"), count: errCount },
-        ]}
+        tabs={tabs}
         activeTab={tab}
         onTabChange={(id) => setTab(id as typeof tab)}
         actions={[
           { label: t("sidebar.refresh"), onClick: () => { void refresh(); } },
-          { label: text("Install", "安装"), onClick: () => setInstallOpen(true), primary: true },
+          { label: text("Install", "安装"), onClick: () => setLocalInstallOpen(true), primary: true },
         ]}
       />
       <div className={shared.body}>
-        {tab === "installed" && <InstalledList />}
-        {tab === "marketplace" && <MarketplaceBrowser />}
-        {tab === "errors" && <PluginErrors />}
+        {body}
       </div>
-      {installOpen && <ManualInstallDialog onClose={() => setInstallOpen(false)} />}
+      {installOpen && <ManualInstallDialog onClose={closeInstall} />}
     </div>
     </div>
   );

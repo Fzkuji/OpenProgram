@@ -2,11 +2,11 @@
 
 import dynamic from "next/dynamic";
 
-const ProjectsPage = dynamic(
-  () => import("@/components/projects/projects-page").then((m) => m.ProjectsPage),
+const HistoryPage = dynamic(
+  () => import("@/components/history/history-page").then((m) => m.HistoryPage),
   { ssr: false },
 );
 
 export default function Page() {
-  return <ProjectsPage />;
+  return <HistoryPage />;
 }

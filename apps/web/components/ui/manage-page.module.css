@@ -233,3 +233,13 @@
   border-color: color-mix(in srgb, var(--accent-red) 27%, transparent);
   background: color-mix(in srgb, var(--accent-red) 7%, transparent);
 }
+
+/* Slim inner tabs when a manage page is embedded in a hub header. */
+.subnav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 24px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}

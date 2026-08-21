@@ -50,7 +50,13 @@ import styles from "./memory-page.module.css";
 import { SearchInput } from "@/components/ui/search-input";
 import { coreSaveStatus } from "./core-save-state";
 
-export function MemoryPage() {
+export function MemoryPage({
+  embedded,
+  query,
+}: {
+  embedded?: boolean;
+  query?: string;
+} = {}) {
   const { t, text, locale } = useTranslation();
   const refreshIconRef = useRef<AnimatedNavIconHandle>(null);
   const [tab, setTab] = useState<Tab>("topics");
@@ -62,6 +68,7 @@ export function MemoryPage() {
   const [topicEditor, setTopicEditor] = useState<EditorState>({ content: "", saving: false, saveStatus: "", viewMode: "edit" });
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
+  const searchValue = query !== undefined ? query : search;
 
   // Timeline state
   const [timelineDays, setTimelineDays] = useState<TimelineDay[]>([]);
@@ -259,12 +266,12 @@ export function MemoryPage() {
   }
 
   const filteredTopics = useMemo(() => {
-    if (!search.trim()) return topicPages;
-    const q = search.toLowerCase();
+    if (!searchValue.trim()) return topicPages;
+    const q = searchValue.toLowerCase();
     return topicPages.filter(
       (p) => p.path.toLowerCase().includes(q) || (p.title || "").toLowerCase().includes(q) || (p.type || "").toLowerCase().includes(q)
     );
-  }, [topicPages, search]);
+  }, [topicPages, searchValue]);
 
   const topicGroups = groupByFolder(filteredTopics);
   const timelineGroups = useMemo(() => groupTimelineDays(timelineDays, locale), [timelineDays, locale]);
@@ -280,10 +287,9 @@ export function MemoryPage() {
     if (page) openTopic(page);
   }
 
-  return (
-    <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
-    <div className={styles.view}>
-      {/* Header — same pattern as functions page */}
+  const view = (
+    <div className={styles.view} style={embedded ? { flex: 1, minHeight: 0, height: "auto" } : undefined}>
+      {!embedded && (
       <div className={styles.topbar}>
         <span className={styles.title}>{t("nav.memory")}</span>
         <Link className={styles.settingsLink} href="/settings/memory">
@@ -291,6 +297,7 @@ export function MemoryPage() {
           {text("Memory settings", "Memory 设置")}
         </Link>
       </div>
+      )}
 
       {/* Body — single grid: tabBar (row 1 col 1) + tree (row 2 col 1) +
           editor/placeholder (col 2 spans both rows so it starts right at
@@ -310,12 +317,14 @@ export function MemoryPage() {
               <div className={styles.tree}>
               {/* Search + refresh */}
               <div className={styles.treeToolbar}>
+                {query === undefined && (
                 <SearchInput
                   className="flex-1"
                   placeholder={text("Search topics...", "搜索主题...")}
                   value={search}
                   onChange={setSearch}
                 />
+                )}
                 <button
                   className={styles.iconBtn}
                   onClick={fetchTopics}
@@ -329,8 +338,8 @@ export function MemoryPage() {
               {topicsLoading ? <LoadingSkeleton /> : filteredTopics.length === 0 ? (
                 <EmptyState
                   icon="doc"
-                  text={search ? text("No matches", "没有匹配结果") : text("No topics yet", "还没有主题")}
-                  sub={search ? text("Try a different query", "换一个查询试试") : text("Conversations are written here in the background", "对话会在后台写入这里")}
+                  text={searchValue ? text("No matches", "没有匹配结果") : text("No topics yet", "还没有主题")}
+                  sub={searchValue ? text("Try a different query", "换一个查询试试") : text("Conversations are written here in the background", "对话会在后台写入这里")}
                 />
               ) : (
                 <div className={styles.treeContent}>
@@ -343,7 +352,7 @@ export function MemoryPage() {
                       onToggle={toggleFolder}
                       selected={selectedTopic}
                       onSelect={openTopic}
-                      forceOpen={!!search}
+                      forceOpen={!!searchValue}
                     />
                   ))}
                 </div>
@@ -366,7 +375,7 @@ export function MemoryPage() {
                     onViewMode={(m) => setTopicEditor((e) => ({ ...e, viewMode: m }))}
                     onPreviewClick={handlePreviewClick}
                   />
-                ) : !topicsLoading && topicPages.length === 0 && !search ? (
+                ) : !topicsLoading && topicPages.length === 0 && !searchValue ? (
                   <div className={styles.emptyPanel}>
                     <FileTextIcon size={25} />
                     <h2>{text("No topics yet", "还没有主题")}</h2>
@@ -600,6 +609,12 @@ export function MemoryPage() {
         </div>
       </div>
     </div>
+  );
+
+  if (embedded) return view;
+  return (
+    <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
+      {view}
     </div>
   );
 }

@@ -22,7 +22,7 @@ interface IndexItem {
 
 type SortKey = "default" | "name" | "official";
 
-export function MarketplaceBrowser() {
+export function MarketplaceBrowser({ externalFilter }: { externalFilter?: string } = {}) {
   const { text } = useTranslation();
   const {
     plugins,
@@ -45,6 +45,7 @@ export function MarketplaceBrowser() {
   const [busySpec, setBusySpec] = useState("");
   const [filter, setFilter] = useState("");
   const [sort, setSort] = useState<SortKey>("default");
+  const filterValue = externalFilter !== undefined ? externalFilter : filter;
 
   useEffect(() => {
     refreshMarketplaces();
@@ -89,8 +90,8 @@ export function MarketplaceBrowser() {
 
   const filterAndSort = useCallback((arr: IndexItem[]): IndexItem[] => {
     let out = arr;
-    if (filter.trim()) {
-      const q = filter.toLowerCase();
+    if (filterValue.trim()) {
+      const q = filterValue.toLowerCase();
       out = out.filter(
         (i) =>
           (i.name || "").toLowerCase().includes(q) ||
@@ -105,7 +106,7 @@ export function MarketplaceBrowser() {
       out = [...out].sort((a, b) => (b.official ? 1 : 0) - (a.official ? 1 : 0));
     }
     return out;
-  }, [filter, sort]);
+  }, [filterValue, sort]);
 
   const shownBuiltin = useMemo(() => filterAndSort(builtin), [builtin, filterAndSort]);
   const shownItems = useMemo(() => filterAndSort(items), [items, filterAndSort]);
@@ -114,12 +115,14 @@ export function MarketplaceBrowser() {
     <div className="space-y-5">
       {/* Search + sort */}
       <div className="flex items-center gap-2">
+        {externalFilter === undefined && (
         <SearchInput
           className="flex-1"
           value={filter}
           onChange={setFilter}
           placeholder={text("Search plugins...", "搜索插件...")}
         />
+        )}
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value as SortKey)}
@@ -157,7 +160,7 @@ export function MarketplaceBrowser() {
           ))}
           {shownBuiltin.length === 0 && (
             <div className="col-span-full text-xs text-[var(--text-tertiary)] py-2">
-              {filter.trim() ? text("No matches.", "没有匹配结果。") : text("No built-in plugins available.", "没有可用的内置插件。")}
+              {filterValue.trim() ? text("No matches.", "没有匹配结果。") : text("No built-in plugins available.", "没有可用的内置插件。")}
             </div>
           )}
         </div>

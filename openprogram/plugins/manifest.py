@@ -1,11 +1,15 @@
 """统一 manifest 解析。
 
-支持三种声明，任一形式解析成同一份 ``PluginManifest``：
-1. ``plugin.json`` (顶级，claude-code / hermes 风格)
+支持这些声明，任一形式解析成同一份 ``PluginManifest``：
+1. ``.claude-plugin/plugin.json`` (Claude Code 现行路径) 或根目录 ``plugin.json``
 2. ``pyproject.toml`` 中 ``[tool.openprogram.plugin]``
-3. ``package.json`` 中 ``"openprogram"`` 字段 (opencode 风格)
+3. ``package.json`` 中 ``openprogram`` / ``opencode`` / ``hermes`` 字段
+4. 根目录 ``plugin.yaml`` / ``plugin.yml`` (Hermes)
 
-解析顺序：plugin.json > pyproject.toml > package.json。第一个解析成功的胜出。
+解析顺序按上面往下，第一个成功的胜出。
+
+Claude Code 把 commands/skills/agents/hooks/mcpServers 写在清单顶层，
+这里会提升进 ``entrypoints``，所以别人的包不用改清单就能被认出来。
 """
 from __future__ import annotations
 
@@ -27,36 +31,59 @@ class PluginManifest:
     description: str = ""
     deprecated: bool = False
     compatibility: str = ""
-    trust: str = "community"  # community | verified；untrusted 由 trust.py 控制
+    trust: str = "community"
     entrypoints: dict[str, Any] = field(default_factory=dict)
     sidebar: list[dict[str, Any]] = field(default_factory=list)
     options: dict[str, Any] = field(default_factory=dict)
-    # Plugin → plugin dependency list. Each item is a plugin ``name``;
-    # the loader topologically orders enable order and surfaces a
-    # ``missing dependencies: ...`` error when a required plugin
-    # isn't installed yet. Matches claude-code's dependencyResolver.
     requires: list[str] = field(default_factory=list)
-    # 元信息
-    source_kind: str = ""    # pip | npm | path | project
-    root: str = ""           # 解析时的目录绝对路径
-    manifest_form: str = ""  # plugin.json | pyproject.toml | package.json | entry_points
+    source_kind: str = ""
+    root: str = ""
+    manifest_form: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
-def _from_plugin_json(p: Path) -> dict[str, Any] | None:
-    f = p / "plugin.json"
-    if not f.is_file():
-        return None
+_CONTRIB_KEYS = (
+    "commands", "skills", "agents", "hooks", "mcpServers",
+    "providers", "web", "lspServers", "outputStyles",
+)
+
+
+def _lift_entrypoints(data: dict[str, Any]) -> dict[str, Any]:
+    """Copy top-level contribution fields into entrypoints without clobbering."""
+    eps = dict(data.get("entrypoints") or {})
+    for key in _CONTRIB_KEYS:
+        if key in data and key not in eps and data[key] not in (None, "", [], {}):
+            eps[key] = data[key]
+    data["entrypoints"] = eps
+    return data
+
+
+def _read_json_file(f: Path) -> dict[str, Any] | None:
     try:
         data = json.loads(f.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            return None
-        data["__form__"] = "plugin.json"
-        return data
     except Exception:
         return None
+    return data if isinstance(data, dict) else None
+
+
+def _from_plugin_json(p: Path) -> dict[str, Any] | None:
+    for rel, form in (
+        (".claude-plugin/plugin.json", "claude-plugin.json"),
+        ("plugin.json", "plugin.json"),
+    ):
+        f = p / rel
+        if not f.is_file():
+            continue
+        data = _read_json_file(f)
+        if not data:
+            continue
+        if not (data.get("name") or "").strip():
+            data["name"] = p.name
+        data["__form__"] = form
+        return _lift_entrypoints(data)
+    return None
 
 
 def _from_pyproject(p: Path) -> dict[str, Any] | None:
@@ -71,7 +98,6 @@ def _from_pyproject(p: Path) -> dict[str, Any] | None:
     plug = section.get("plugin") if "plugin" in section else section
     if not isinstance(plug, dict) or not plug:
         return None
-    # 若 name 缺，尝试 [project].name
     if "name" not in plug:
         proj = data.get("project", {}) or {}
         if isinstance(proj, dict) and proj.get("name"):
@@ -79,33 +105,60 @@ def _from_pyproject(p: Path) -> dict[str, Any] | None:
             plug.setdefault("version", proj.get("version", "0.0.0"))
             plug.setdefault("description", proj.get("description", ""))
     plug["__form__"] = "pyproject.toml"
-    return plug
+    return _lift_entrypoints(plug)
 
 
 def _from_package_json(p: Path) -> dict[str, Any] | None:
     f = p / "package.json"
     if not f.is_file():
         return None
-    try:
-        data = json.loads(f.read_text(encoding="utf-8"))
-    except Exception:
+    data = _read_json_file(f)
+    if not data:
         return None
-    plug = data.get("openprogram")
-    if not isinstance(plug, dict):
+    plug = None
+    form = "package.json"
+    for key in ("openprogram", "opencode", "hermes"):
+        cand = data.get(key)
+        if isinstance(cand, dict) and cand:
+            plug = dict(cand)
+            form = f"package.json#{key}"
+            break
+    if plug is None:
         return None
-    plug.setdefault("name", data.get("name", ""))
+    plug.setdefault("name", data.get("name", "") or p.name)
     plug.setdefault("version", data.get("version", "0.0.0"))
     plug.setdefault("description", data.get("description", ""))
-    plug["__form__"] = "package.json"
-    return plug
+    plug["__form__"] = form
+    return _lift_entrypoints(plug)
+
+
+def _from_plugin_yaml(p: Path) -> dict[str, Any] | None:
+    f = None
+    for name in ("plugin.yaml", "plugin.yml"):
+        cand = p / name
+        if cand.is_file():
+            f = cand
+            break
+    if f is None:
+        return None
+    try:
+        import yaml  # type: ignore
+        data = yaml.safe_load(f.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    if not (data.get("name") or "").strip():
+        data["name"] = p.name
+    data["__form__"] = "plugin.yaml"
+    return _lift_entrypoints(data)
 
 
 def parse_manifest_dir(directory: Path) -> PluginManifest | None:
-    """从目录解析 manifest。三种形式按优先级尝试。"""
     if not directory or not Path(directory).is_dir():
         return None
     d = Path(directory)
-    for fn in (_from_plugin_json, _from_pyproject, _from_package_json):
+    for fn in (_from_plugin_json, _from_pyproject, _from_package_json, _from_plugin_yaml):
         data = fn(d)
         if data:
             return _from_dict(data, root=str(d.resolve()))
@@ -120,10 +173,13 @@ def _from_dict(data: dict[str, Any], root: str = "", source_kind: str = "") -> P
     if isinstance(raw_req, str):
         raw_req = [raw_req]
     requires = [str(x).strip() for x in raw_req if isinstance(x, str) and str(x).strip()]
+    desc = data.get("description", "")
+    if isinstance(desc, dict):
+        desc = desc.get("name") or desc.get("text") or ""
     return PluginManifest(
         name=name,
         version=str(data.get("version", "0.0.0")),
-        description=str(data.get("description", "")),
+        description=str(desc or ""),
         deprecated=bool(data.get("deprecated", False)),
         compatibility=str(data.get("compatibility", "")),
         trust=str(data.get("trust", "community")),
@@ -138,7 +194,6 @@ def _from_dict(data: dict[str, Any], root: str = "", source_kind: str = "") -> P
 
 
 def from_entry_point_metadata(name: str, dist_meta: dict[str, Any], root: str = "") -> PluginManifest:
-    """pip entry_points 来源的兜底 manifest：基本字段从 distribution metadata 填。"""
     return PluginManifest(
         name=name,
         version=str(dist_meta.get("version", "0.0.0")),
@@ -150,7 +205,6 @@ def from_entry_point_metadata(name: str, dist_meta: dict[str, Any], root: str = 
 
 
 def check_compatibility(compat: str, current: str) -> tuple[bool, str]:
-    """简单版本比较：支持 ``>=x.y.z`` / ``==x.y.z`` / 空串 (兼容)。"""
     if not compat:
         return True, ""
     try:

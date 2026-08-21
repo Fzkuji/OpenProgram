@@ -5,7 +5,7 @@ import { useTranslation } from "@/lib/i18n";
 import styles from "./shell-loading.module.css";
 
 /**
- * Suspense fallback for /programs, /skills, /memory, /mcp, /plugins,
+ * Suspense fallback for /programs, /skills, /memory, /mcp, /plugins, /capabilities, /ability,
  * /chats, and any other (shell) subroute that doesn't ship its own
  * loading.tsx. Without this file, clicking a sidebar item left the
  * old page on screen for the full route-compile (~200-1500ms in dev
@@ -17,14 +17,19 @@ import styles from "./shell-loading.module.css";
  * /s/<id> don't suspense because their UI is mounted inside AppShell
  * itself — their page.tsx is just ``return null;``.
  */
-const ROUTE_KEYS: Record<string, "nav.functions"|"nav.skills"|"nav.memory"|"nav.scheduler"|"nav.mcp"|"nav.plugins"|"nav.chats"> = {
+const ROUTE_KEYS: Record<string, "nav.functions"|"nav.ability"|"nav.history"|"nav.scheduler"> = {
   functions: "nav.functions",
-  skills: "nav.skills",
-  memory: "nav.memory",
+  programs: "nav.ability",
+  skills: "nav.ability",
+  memory: "nav.history",
   scheduler: "nav.scheduler",
-  mcp: "nav.mcp",
-  plugins: "nav.plugins",
-  chats: "nav.chats",
+  mcp: "nav.ability",
+  plugins: "nav.ability",
+  capabilities: "nav.ability",
+  ability: "nav.ability",
+  chats: "nav.history",
+  projects: "nav.history",
+  history: "nav.history",
 };
 
 export default function ShellLoading() {

@@ -99,7 +99,15 @@ function EntryIcon({ entry, expanded }: { entry: ExplorerEntry; expanded: boolea
   return <Wrench size={15} className={fileStyles.treeIcon} />;
 }
 
-export function ProgramsPage() {
+export function ProgramsPage({
+  embedded,
+  query,
+  reloadNonce,
+}: {
+  embedded?: boolean;
+  query?: string;
+  reloadNonce?: number;
+} = {}) {
   const { t, text } = useTranslation();
   const router = useRouter();
   const [directories, setDirectories] = useState<Record<string, ExplorerEntry[]>>({});
@@ -260,6 +268,21 @@ export function ProgramsPage() {
     return () => clearTimeout(timer);
   }, [currentSearchPath]);
 
+  useEffect(() => {
+    if (query === undefined) return;
+    setSearch(query);
+    setSearchOpen(Boolean(query.trim()));
+    if (query.trim()) setSearchMode("filter");
+  }, [query]);
+
+  useEffect(() => {
+    if (!reloadNonce) return;
+    void (async () => {
+      await fetch("/api/programs/refresh", { method: "POST" }).catch(() => undefined);
+      setReloadToken((value) => value + 1);
+    })();
+  }, [reloadNonce]);
+
   async function loadOpenedDirectory(path: string) {
     const entry = treeEntriesByPath.get(path);
     if (!entry || entry.kind !== "folder" || directories[path]) return;
@@ -352,10 +375,7 @@ export function ProgramsPage() {
     }).catch(() => undefined);
   }
 
-  return (
-    <div className="main">
-      <div className={managePageStyles.view}>
-        <ManagePageHeader title={t("nav.programs")} />
+  const workspace = (
         <div className={styles.workspace}>
           <aside ref={explorerRef} className={styles.explorer} data-testid="programs-explorer">
             <ExplorerHeader
@@ -457,6 +477,15 @@ export function ProgramsPage() {
             )}
           </section>
         </div>
+  );
+
+  if (embedded) return workspace;
+
+  return (
+    <div className="main">
+      <div className={managePageStyles.view}>
+        <ManagePageHeader title={t("nav.programs")} />
+        {workspace}
       </div>
     </div>
   );

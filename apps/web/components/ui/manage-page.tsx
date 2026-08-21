@@ -109,6 +109,37 @@ export function ManagePageHeader({
 }
 
 /**
+ * Slim inner tab row for a page embedded in a hub (no second 64px title).
+ * Same pill styles as ManagePageHeader tabs.
+ */
+export function ManageSubnav({
+  tabs,
+  activeTab,
+  onTabChange,
+}: {
+  tabs: ManageTab[];
+  activeTab: string;
+  onTabChange: (id: string) => void;
+}) {
+  return (
+    <div className={styles.subnav} role="tablist">
+      {tabs.map((tb) => (
+        <button
+          key={tb.id}
+          type="button"
+          role="tab"
+          aria-selected={activeTab === tb.id}
+          onClick={() => onTabChange(tb.id)}
+          className={cn(styles.tabBtn, activeTab === tb.id && styles.active)}
+        >
+          {tb.count === undefined ? tb.label : `${tb.label} (${tb.count})`}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
  * One manageable item. `icon` is a 16px node (animated-icons or
  * lucide), `meta` holds badges shown next to the name, `actions`
  * holds the trailing controls (a Switch, buttons, ...).

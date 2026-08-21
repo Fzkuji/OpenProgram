@@ -147,9 +147,11 @@ const DICT = {
   "nav.projects": { en: "Projects", zh: "项目" },
   "nav.plugins": { en: "Plugins", zh: "插件" },
   "nav.mcp": { en: "MCP Servers", zh: "MCP 服务器" },
+  "nav.ability": { en: "Abilities", zh: "能力" },
   "nav.memory": { en: "Memory", zh: "记忆" },
   "nav.scheduler": { en: "Scheduler", zh: "定时任务" },
   "nav.chats": { en: "Chats", zh: "会话历史" },
+  "nav.history": { en: "History", zh: "历史" },
 
   // Sidebar secondary labels and actions
   "sidebar.toggle": { en: "Toggle sidebar", zh: "切换侧边栏" },

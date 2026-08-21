@@ -4,16 +4,30 @@ import styles from "../plugins.module.css";
 import type { PluginRow } from "@/lib/state/plugins-store";
 import { useTranslation } from "@/lib/i18n";
 import { useModalA11y } from "@/lib/use-modal-a11y";
+import { Button } from "@/components/ui/button";
 
 interface Props {
   plugin: PluginRow;
+  busy?: boolean;
   onClose: () => void;
+  onOptions?: () => void;
+  onValidate?: () => void;
+  onReload?: () => void;
+  onUninstall?: () => void;
 }
 
-export function PluginDetailDialog({ plugin, onClose }: Props) {
+export function PluginDetailDialog({
+  plugin,
+  busy,
+  onClose,
+  onOptions,
+  onValidate,
+  onReload,
+  onUninstall,
+}: Props) {
   const { text } = useTranslation();
-  // Escape / Tab-trap / focus restore for this hand-rolled panel.
   const modal = useModalA11y(onClose, plugin.name);
+  const contrib = Object.keys(plugin.entrypoints || {});
 
   return (
     <div className={styles.dialogBackdrop} onClick={onClose}>
@@ -25,32 +39,38 @@ export function PluginDetailDialog({ plugin, onClose }: Props) {
         <div className={styles.dialogTitle}>{plugin.name}</div>
         <div className={styles.dialogBody}>
           <div className={styles.rowMeta}>
-            v{plugin.version} · source={plugin.source} · manifest={plugin.manifest_form}
-            {plugin.compatibility && ` · compat=${plugin.compatibility}`}
-            {plugin.deprecated && text(" · DEPRECATED", " · 已废弃")}
+            v{plugin.version}
+            {plugin.source ? ` · ${plugin.source}` : ""}
+            {plugin.deprecated ? text(" · deprecated", " · 已废弃") : ""}
           </div>
           {plugin.description && <p style={{ marginTop: 8 }}>{plugin.description}</p>}
-          <pre style={{
-            marginTop: 12,
-            padding: 10,
-            background: "var(--bg-secondary)",
-            border: "1px solid var(--border)",
-            borderRadius: 6,
-            fontSize: 12,
-            overflow: "auto",
-          }}>
-{JSON.stringify({
-  root: plugin.root,
-  entrypoints: plugin.entrypoints,
-  sidebar: plugin.sidebar,
-  trust: plugin.trust,
-  loaded: plugin.loaded,
-  error: plugin.error || null,
-}, null, 2)}
-          </pre>
+          {contrib.length > 0 && (
+            <p style={{ marginTop: 8 }}>
+              {text("Provides", "提供")} {contrib.join(", ")}
+            </p>
+          )}
+          {plugin.error && (
+            <pre className={styles.errorBox} style={{ marginTop: 12 }}>{plugin.error}</pre>
+          )}
         </div>
         <div className={styles.dialogActions}>
-          <button className={styles.btn} onClick={onClose}>{text("Close", "关闭")}</button>
+          {onOptions && (
+            <Button size="sm" variant="outline" onClick={onOptions}>{text("Options", "选项")}</Button>
+          )}
+          {onValidate && (
+            <Button size="sm" variant="outline" onClick={onValidate}>{text("Validate", "校验")}</Button>
+          )}
+          {onReload && (
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => { void onReload(); }}>
+              {text("Reload", "重新加载")}
+            </Button>
+          )}
+          {onUninstall && (
+            <Button size="sm" variant="destructive" disabled={busy} onClick={() => { void onUninstall(); }}>
+              {text("Uninstall", "卸载")}
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={onClose}>{text("Close", "关闭")}</Button>
         </div>
       </div>
     </div>

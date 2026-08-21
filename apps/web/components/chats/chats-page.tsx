@@ -43,13 +43,21 @@ type StatusFilter = "all" | "active" | "archived";
 
 type FilterId = "all" | "today" | "past7" | "older";
 
-export function ChatsPage() {
+export function ChatsPage({
+  embedded,
+  query: queryProp,
+}: {
+  embedded?: boolean;
+  query?: string;
+} = {}) {
   const { t, text, locale } = useTranslation();
   // Same store the sidebar Recents list reads — one pipeline, no second
   // WebSocket. Adds / renames / deletes / archive flags land here the
   // moment the runtime-bridge processes `sessions_list`.
   const conversations = useSessionStore((s) => s.conversations);
-  const [query, setQuery] = useState("");
+  const [localQuery, setLocalQuery] = useState("");
+  const query = queryProp !== undefined ? queryProp : localQuery;
+  const setQuery = setLocalQuery;
   const [filter, setFilter] = useState<FilterId>("all");
   const [sort, setSort] = useState<SortKey>("recent");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -158,18 +166,19 @@ export function ChatsPage() {
     past7: text("Last 7 days", "最近 7 天"),
   };
 
-  return (
-    <div className="main">
-      <div className={styles.view}>
+  const view = (
+      <div className={styles.view} style={embedded ? { flex: 1, minHeight: 0, height: "auto" } : undefined}>
         <div className={styles.topbar}>
-          <span className={styles.title}>{t("nav.chats")}</span>
+          {!embedded && <span className={styles.title}>{t("nav.chats")}</span>}
           <div className={styles.toolbar}>
-            <SearchInput
-              className="flex-1 max-w-[320px]"
-              placeholder={text("Search chats...", "搜索会话...")}
-              value={query}
-              onChange={setQuery}
-            />
+            {queryProp === undefined && (
+              <SearchInput
+                className="flex-1 max-w-[320px]"
+                placeholder={text("Search chats...", "搜索会话...")}
+                value={query}
+                onChange={setQuery}
+              />
+            )}
             <CustomSelect
               value={sort}
               onChange={setSort}
@@ -265,8 +274,10 @@ export function ChatsPage() {
           </div>
         </div>
       </div>
-    </div>
   );
+
+  if (embedded) return view;
+  return <div className="main">{view}</div>;
 }
 
 function ChatRow({

@@ -41,7 +41,13 @@ function cls(...xs: (string | false | undefined)[]) {
   return xs.filter(Boolean).join(" ");
 }
 
-export function ProjectsPage() {
+export function ProjectsPage({
+  embedded,
+  query: queryProp,
+}: {
+  embedded?: boolean;
+  query?: string;
+} = {}) {
   const { text, locale } = useTranslation();
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
@@ -49,7 +55,9 @@ export function ProjectsPage() {
   const [tab, setTab] = useState<Tab>("settings");
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
+  const [localQuery, setLocalQuery] = useState("");
+  const query = queryProp !== undefined ? queryProp : localQuery;
+  const setQuery = setLocalQuery;
 
   const refresh = useCallback(async () => {
     for (let i = 0; i < 10; i++) {
@@ -114,20 +122,23 @@ export function ProjectsPage() {
     }
   }, [refresh]);
 
-  return (
-    <div className="main">
-      <div className={fx.view}>
-        <div className={fx.topbar}>
-          <span className={fx.title}>{text("Projects", "项目")}</span>
-          <div className={fx.toolbar}>
-            <SearchInput
-              className="flex-1 max-w-[320px]"
-              placeholder={text("Search projects...", "搜索项目...")}
-              value={query}
-              onChange={setQuery}
-            />
+  const view = (
+      <div className={fx.view} style={embedded ? { flex: 1, minHeight: 0, height: "auto" } : undefined}>
+        {(!embedded || queryProp === undefined) && (
+          <div className={fx.topbar}>
+            {!embedded && <span className={fx.title}>{text("Projects", "项目")}</span>}
+            {queryProp === undefined && (
+              <div className={fx.toolbar}>
+                <SearchInput
+                  className="flex-1 max-w-[320px]"
+                  placeholder={text("Search projects...", "搜索项目...")}
+                  value={query}
+                  onChange={setQuery}
+                />
+              </div>
+            )}
           </div>
-        </div>
+        )}
 
         {error && <div className={styles.errorBar}>{error}</div>}
 
@@ -241,8 +252,10 @@ export function ProjectsPage() {
           </div>
         </div>
       </div>
-    </div>
   );
+
+  if (embedded) return view;
+  return <div className="main">{view}</div>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

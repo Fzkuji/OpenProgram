@@ -2,11 +2,11 @@
 
 import dynamic from "next/dynamic";
 
-const ProgramsPage = dynamic(
-  () => import("@/components/programs/programs-page").then((m) => m.ProgramsPage),
+const CapabilitiesPage = dynamic(
+  () => import("@/components/capabilities/capabilities-page").then((m) => m.CapabilitiesPage),
   { ssr: false },
 );
 
 export default function Page() {
-  return <ProgramsPage />;
+  return <CapabilitiesPage />;
 }

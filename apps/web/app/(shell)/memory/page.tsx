@@ -2,11 +2,11 @@
 
 import dynamic from "next/dynamic";
 
-const MemoryPage = dynamic(
-  () => import("@/components/memory").then((m) => m.MemoryPage),
+const HistoryPage = dynamic(
+  () => import("@/components/history/history-page").then((m) => m.HistoryPage),
   { ssr: false },
 );
 
 export default function Page() {
-  return <MemoryPage />;
+  return <HistoryPage />;
 }

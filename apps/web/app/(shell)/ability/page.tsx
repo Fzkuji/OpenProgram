@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 
 const CapabilitiesPage = dynamic(
@@ -8,5 +10,9 @@ const CapabilitiesPage = dynamic(
 );
 
 export default function Page() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/plugins");
+  }, [router]);
   return <CapabilitiesPage />;
 }

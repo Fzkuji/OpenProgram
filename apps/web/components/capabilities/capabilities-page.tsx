@@ -1,0 +1,148 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+
+import { McpPage } from "@/components/mcp/mcp-page";
+import { PluginsPage } from "@/components/plugins/plugins-page";
+import { ProgramsPage } from "@/components/programs/programs-page";
+import { SkillsPage } from "@/components/skills/skills-page";
+import { SearchInput } from "@/components/ui/search-input";
+import { ManagePageHeader, managePageStyles as shared } from "@/components/ui/manage-page";
+import { useTranslation } from "@/lib/i18n";
+import { usePluginsStore } from "@/lib/state/plugins-store";
+import { useSkills } from "@/lib/state/skills-store";
+
+export type CapabilityKind = "programs" | "plugins" | "skills" | "mcp";
+
+/** Survives remounts when tab routes swap page.tsx. */
+let persistedQuery = "";
+
+function kindFromPath(pathname: string): CapabilityKind {
+  if (pathname.startsWith("/programs")) return "programs";
+  if (pathname.startsWith("/skills")) return "skills";
+  if (pathname.startsWith("/mcp")) return "mcp";
+  return "plugins";
+}
+
+function kindHref(id: string): string {
+  if (id === "mcp") return "/mcp";
+  return `/${id}`;
+}
+
+export function CapabilitiesPage() {
+  const pathname = usePathname() || "";
+  const router = useRouter();
+  const { t, text } = useTranslation();
+  const kind = kindFromPath(pathname);
+  const [query, setQueryState] = useState(persistedQuery);
+  const [pluginInstallOpen, setPluginInstallOpen] = useState(false);
+  const [skillNewOpen, setSkillNewOpen] = useState(false);
+  const [mcpCatalogOpen, setMcpCatalogOpen] = useState(false);
+  const [mcpReloadNonce, setMcpReloadNonce] = useState(0);
+  const [mcpAddNonce, setMcpAddNonce] = useState(0);
+  const [programReloadNonce, setProgramReloadNonce] = useState(0);
+
+  const refreshPlugins = usePluginsStore((s) => s.refresh);
+  const fetchSkills = useSkills((s) => s.fetchSkills);
+
+  const setQuery = (value: string) => {
+    persistedQuery = value;
+    setQueryState(value);
+  };
+
+  const goKind = (id: string) => {
+    setPluginInstallOpen(false);
+    setSkillNewOpen(false);
+    setMcpCatalogOpen(false);
+    setMcpReloadNonce(0);
+    setMcpAddNonce(0);
+    setProgramReloadNonce(0);
+    router.push(kindHref(id));
+  };
+
+  const actions = useMemo(() => {
+    if (kind === "programs") {
+      return [
+        { label: t("sidebar.refresh"), onClick: () => setProgramReloadNonce((n) => n + 1) },
+      ];
+    }
+    if (kind === "plugins") {
+      return [
+        { label: t("sidebar.refresh"), onClick: () => { void refreshPlugins(); } },
+        { label: text("Install", "安装"), onClick: () => setPluginInstallOpen(true), primary: true },
+      ];
+    }
+    if (kind === "skills") {
+      return [
+        { label: t("sidebar.refresh"), onClick: () => { void fetchSkills(); } },
+        { label: text("New skill", "新建技能"), onClick: () => setSkillNewOpen(true), primary: true },
+      ];
+    }
+    return [
+      { label: t("sidebar.refresh"), onClick: () => setMcpReloadNonce((n) => n + 1) },
+      { label: text("Browse catalog", "浏览目录"), onClick: () => setMcpCatalogOpen(true) },
+      { label: text("Add server", "添加服务器"), onClick: () => setMcpAddNonce((n) => n + 1), primary: true },
+    ];
+  }, [kind, t, text, refreshPlugins, fetchSkills]);
+
+  return (
+    <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
+      <div className={shared.view}>
+        <ManagePageHeader
+          title={t("nav.ability")}
+          tabs={[
+            { id: "programs", label: t("nav.programs") },
+            { id: "plugins", label: t("nav.plugins") },
+            { id: "skills", label: t("nav.skills") },
+            { id: "mcp", label: "MCP" },
+          ]}
+          activeTab={kind}
+          onTabChange={goKind}
+          toolbar={(
+            <SearchInput
+              className="min-w-[140px] w-[clamp(150px,24vw,280px)]"
+              value={query}
+              onChange={setQuery}
+              placeholder={text("Search Programs, Plugins, Skills, MCPs...", "搜索程序、插件、技能、MCP...")}
+            />
+          )}
+          actions={actions}
+        />
+        {kind === "programs" && (
+          <ProgramsPage
+            embedded
+            query={query}
+            reloadNonce={programReloadNonce}
+          />
+        )}
+        {kind === "plugins" && (
+          <PluginsPage
+            embedded
+            query={query}
+            installOpen={pluginInstallOpen}
+            onInstallClose={() => setPluginInstallOpen(false)}
+          />
+        )}
+        {kind === "skills" && (
+          <SkillsPage
+            embedded
+            query={query}
+            newOpen={skillNewOpen}
+            onNewClose={() => setSkillNewOpen(false)}
+          />
+        )}
+        {kind === "mcp" && (
+          <McpPage
+            embedded
+            query={query}
+            catalogOpen={mcpCatalogOpen}
+            onCatalogClose={() => setMcpCatalogOpen(false)}
+            reloadNonce={mcpReloadNonce}
+            addNonce={mcpAddNonce}
+          />
+        )}
+      </div>
+    </div>
+  );
+}

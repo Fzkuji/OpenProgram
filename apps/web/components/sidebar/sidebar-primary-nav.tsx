@@ -14,13 +14,8 @@ import {
   type AnimatedNavIconProps,
   BotIcon,
   BoxesIcon,
-  BrainIcon,
   ClockIcon,
-  FoldersIcon,
-  GraduationCapIcon,
-  LayersIcon,
   MessageCircleIcon,
-  WorkflowIcon,
 } from "../animated-icons";
 import { useTranslation } from "@/lib/i18n";
 import { refreshFunctionsList } from "@/lib/state/functions-actions";
@@ -137,33 +132,29 @@ export function SidebarPrimaryNav() {
       icon: BotIcon,
     },
     {
-      href: "/skills",
-      id: "navSkills",
-      active: pathname.startsWith("/skills"),
-      label: t("nav.skills"),
-      icon: GraduationCapIcon,
-    },
-    {
-      href: "/projects",
-      id: "navProjects",
-      active: pathname.startsWith("/projects"),
-      label: t("nav.projects"),
-      icon: FoldersIcon,
-    },
-    {
       href: "/plugins",
-      id: "navPlugins",
+      id: "navAbility",
       active:
-        pathname.startsWith("/plugins") || pathname.startsWith("/plugin/"),
-      label: t("nav.plugins"),
+        pathname.startsWith("/skills")
+        || pathname.startsWith("/plugins")
+        || pathname.startsWith("/plugin/")
+        || pathname.startsWith("/mcp")
+        || pathname.startsWith("/capabilities")
+        || pathname.startsWith("/ability")
+        || pathname.startsWith("/programs"),
+      label: t("nav.ability"),
       icon: BoxesIcon,
     },
     {
-      href: "/mcp",
-      id: "navMcp",
-      active: pathname.startsWith("/mcp"),
-      label: t("nav.mcp"),
-      icon: LayersIcon,
+      href: "/chats",
+      id: "navHistory",
+      active:
+        pathname.startsWith("/chats")
+        || pathname.startsWith("/projects")
+        || pathname.startsWith("/memory")
+        || pathname.startsWith("/history"),
+      label: t("nav.history"),
+      icon: MessageCircleIcon,
     },
     {
       href: "/scheduler",
@@ -171,21 +162,6 @@ export function SidebarPrimaryNav() {
       active: pathname.startsWith("/scheduler"),
       label: t("nav.scheduler"),
       icon: ClockIcon,
-    },
-    {
-      href: "/memory",
-      id: "navMemory",
-      active: pathname.startsWith("/memory"),
-      label: t("nav.memory"),
-      icon: BrainIcon,
-    },
-    {
-      href: "/chats",
-      id: "navChats",
-      active: pathname.startsWith("/chats"),
-      label: t("nav.chats"),
-      icon: MessageCircleIcon,
-      className: " sidebar-nav-chats",
     },
   ];
 
@@ -223,16 +199,12 @@ export function SidebarPrimaryNav() {
 
   return (
     <div className="flex flex-col gap-px shrink-0 px-[8px] pt-px">
-      <SidebarNavLink
-        href="/programs"
-        id="navPrograms"
-        active={pathname.startsWith("/programs")}
-        label={t("nav.programs")}
-        icon={WorkflowIcon}
-        action={refreshAction}
-      />
       {items.map((item) => (
-        <SidebarNavLink key={item.id} {...item} />
+        <SidebarNavLink
+          key={item.id}
+          {...item}
+          action={item.id === "navAbility" ? refreshAction : undefined}
+        />
       ))}
     </div>
   );

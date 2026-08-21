@@ -172,11 +172,12 @@ function TreeBranch({
   );
 }
 
-export function SkillsList() {
+export function SkillsList({ externalFilter }: { externalFilter?: string } = {}) {
   const { text } = useTranslation();
   const { skills, toggleSkill } = useSkills();
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set<string>());
   const [filter, setFilter] = useState("");
+  const filterValue = externalFilter !== undefined ? externalFilter : filter;
 
   // Server-driven full-text search when ?body=true so query hits the
   // actual SKILL.md content. Local name/description filter handles the
@@ -184,12 +185,12 @@ export function SkillsList() {
   const [searchBody, setSearchBody] = useState(false);
   const [bodyHits, setBodyHits] = useState<Set<string> | null>(null);
   useEffect(() => {
-    if (!searchBody || !filter.trim()) { setBodyHits(null); return; }
+    if (!searchBody || !filterValue.trim()) { setBodyHits(null); return; }
     let cancelled = false;
     (async () => {
       try {
         const r = await fetch(
-          `/api/skills/_search?body=true&q=${encodeURIComponent(filter)}&limit=200`,
+          `/api/skills/_search?body=true&q=${encodeURIComponent(filterValue)}&limit=200`,
         );
         if (!r.ok) return;
         const data: { name: string }[] = await r.json();
@@ -197,11 +198,11 @@ export function SkillsList() {
       } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };
-  }, [filter, searchBody]);
+  }, [filterValue, searchBody]);
 
   const filtered = useMemo(() => {
-    if (!filter.trim()) return skills;
-    const q = filter.toLowerCase();
+    if (!filterValue.trim()) return skills;
+    const q = filterValue.toLowerCase();
     return skills.filter((s) => {
       if (
         s.name.toLowerCase().includes(q) ||
@@ -210,7 +211,7 @@ export function SkillsList() {
       if (searchBody && bodyHits) return bodyHits.has(s.name);
       return false;
     });
-  }, [skills, filter, searchBody, bodyHits]);
+  }, [skills, filterValue, searchBody, bodyHits]);
 
   // Split optional skills off so they live in a collapsible section
   // at the bottom — mirrors hermes' optional-skills/ idea.
@@ -229,7 +230,7 @@ export function SkillsList() {
 
   // Auto-expand all when filtering so matches are visible.
   const effectiveExpanded = useMemo(() => {
-    if (!filter.trim()) return expanded;
+    if (!filterValue.trim()) return expanded;
     const all = new Set<string>();
     const walk = (n: TreeNode) => {
       if (n.path) all.add(n.path);
@@ -237,7 +238,7 @@ export function SkillsList() {
     };
     walk(tree);
     return all;
-  }, [expanded, filter, tree]);
+  }, [expanded, filterValue, tree]);
 
   const toggleExpanded = (path: string) => {
     setExpanded((prev) => {
@@ -268,12 +269,14 @@ export function SkillsList() {
   return (
     <div>
       <div className="mb-3 flex items-center gap-1">
+        {externalFilter === undefined && (
         <SearchInput
           className="flex-1 min-w-0"
           value={filter}
           onChange={setFilter}
           placeholder={text("Search skills...", "搜索技能...")}
         />
+        )}
         <button
           onClick={() => setSearchBody((v) => !v)}
           title={searchBody

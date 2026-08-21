@@ -30,7 +30,21 @@ import {
 import { EditDialog, type EditTarget } from "./mcp-edit-dialog";
 import styles from "./mcp-page.module.css";
 
-export function McpPage() {
+export function McpPage({
+  embedded,
+  query,
+  catalogOpen: catalogOpenProp,
+  onCatalogClose,
+  reloadNonce,
+  addNonce,
+}: {
+  embedded?: boolean;
+  query?: string;
+  catalogOpen?: boolean;
+  onCatalogClose?: () => void;
+  reloadNonce?: number;
+  addNonce?: number;
+} = {}) {
   const { t, text } = useTranslation();
   const [servers, setServers] = useState<ServerStatus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,8 +53,11 @@ export function McpPage() {
   const [detail, setDetail] = useState<ServerDetail | null>(null);
   const [editing, setEditing] = useState<EditTarget | null>(null);
   const [busy, setBusy] = useState<BusyAction>(null);
-  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [localCatalogOpen, setLocalCatalogOpen] = useState(false);
+  const catalogOpen = catalogOpenProp ?? localCatalogOpen;
+  const closeCatalog = onCatalogClose ?? (() => setLocalCatalogOpen(false));
   const [filter, setFilter] = useState("");
+  const filterValue = query !== undefined ? query : filter;
 
   // ``reload`` only refreshes the server list; it never touches
   // ``selected``. Selection bookkeeping lives in a separate effect
@@ -63,6 +80,11 @@ export function McpPage() {
       if (!signal?.aborted) setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!reloadNonce) return;
+    void reload();
+  }, [reloadNonce, reload]);
 
   // ``busy`` shadowed in a ref so the polling effect doesn't re-mount
   // when an action starts. The previous version listed ``busy`` in
@@ -247,36 +269,31 @@ export function McpPage() {
     });
   }
 
+  useEffect(() => {
+    if (!addNonce) return;
+    openAdd();
+  }, [addNonce]);
+
   const selectedServer = servers.find((s) => s.name === selected) || null;
 
   const shownServers = useMemo(() => {
-    const q = filter.trim().toLowerCase();
+    const q = filterValue.trim().toLowerCase();
     if (!q) return servers;
-    return servers.filter((s) => s.name.toLowerCase().includes(q));
-  }, [servers, filter]);
+    return servers.filter((s) => {
+      if (s.name.toLowerCase().includes(q)) return true;
+      if ((s.url || "").toLowerCase().includes(q)) return true;
+      if ((s.command || []).join(" ").toLowerCase().includes(q)) return true;
+      if ((s.error || "").toLowerCase().includes(q)) return true;
+      if ((s.tools || []).some((tool) => tool.toLowerCase().includes(q))) return true;
+      return false;
+    });
+  }, [servers, filterValue]);
 
-  return (
-    <div className="main">
-      <div className={shared.view}>
-        <ManagePageHeader
-          title={t("nav.mcp")}
-          tabs={[
-            {
-              id: "servers",
-              label: text("Servers", "服务器"),
-              count: servers.length,
-            },
-          ]}
-          activeTab="servers"
-          actions={[
-            { label: t("sidebar.refresh"), onClick: () => { void reload(); } },
-            { label: text("Browse catalog", "浏览目录"), onClick: () => setCatalogOpen(true) },
-            { label: text("Add server", "添加服务器"), onClick: openAdd, primary: true },
-          ]}
-        />
-
+  const splitAndDialogs = (
+    <>
         <div className={shared.splitBody}>
           <div className={styles.serversNav}>
+            {query === undefined && (
             <div className={styles.navSearch}>
               <SearchInput
                 value={filter}
@@ -284,6 +301,7 @@ export function McpPage() {
                 placeholder={text("Search servers...", "搜索服务器...")}
               />
             </div>
+            )}
             {loading && servers.length === 0 ? (
               <div className={styles.serverItem} style={{ cursor: "default" }}>
                 <span className={styles.serverName} style={{ color: "var(--text-muted)" }}>
@@ -293,7 +311,7 @@ export function McpPage() {
             ) : shownServers.length === 0 ? (
               <div className={styles.serverItem} style={{ cursor: "default" }}>
                 <span className={styles.serverName} style={{ color: "var(--text-muted)" }}>
-                  {filter.trim()
+                  {filterValue.trim()
                     ? text("No matches", "没有匹配结果")
                     : text("No servers", "没有服务器")}
                 </span>
@@ -353,7 +371,6 @@ export function McpPage() {
             )}
           </div>
         </div>
-      </div>
 
       {editing !== null && (
         <EditDialog
@@ -370,14 +387,40 @@ export function McpPage() {
       {catalogOpen && (
         <CatalogDialog
           existingNames={new Set(servers.map((s) => s.name))}
-          onClose={() => setCatalogOpen(false)}
+          onClose={() => closeCatalog()}
           onInstalled={async (name) => {
-            setCatalogOpen(false);
+            closeCatalog();
             await reload();
             setSelected(name);
           }}
         />
       )}
+    </>
+  );
+
+  if (embedded) return splitAndDialogs;
+
+  return (
+    <div className="main">
+      <div className={shared.view}>
+        <ManagePageHeader
+          title={t("nav.mcp")}
+          tabs={[
+            {
+              id: "servers",
+              label: text("Servers", "服务器"),
+              count: servers.length,
+            },
+          ]}
+          activeTab="servers"
+          actions={[
+            { label: t("sidebar.refresh"), onClick: () => { void reload(); } },
+            { label: text("Browse catalog", "浏览目录"), onClick: () => setLocalCatalogOpen(true) },
+            { label: text("Add server", "添加服务器"), onClick: openAdd, primary: true },
+          ]}
+        />
+        {splitAndDialogs}
+      </div>
     </div>
   );
 }

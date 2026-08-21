@@ -5,7 +5,6 @@ import { usePluginsStore, type PluginRow } from "@/lib/state/plugins-store";
 import { useTranslation } from "@/lib/i18n";
 import { Switch } from "@/components/ui/switch";
 import { SearchInput } from "@/components/ui/search-input";
-import { Button } from "@/components/ui/button";
 import { ManageRow, managePageStyles as shared } from "@/components/ui/manage-page";
 import { BlocksIcon } from "@/components/animated-icons";
 import { PluginTrustWarning } from "../dialogs/plugin-trust-warning";
@@ -22,7 +21,7 @@ function TrustBadge({ level }: { level: string }) {
   return <span className={`${shared.badge} ${shared.badgeRed}`}>{text("untrusted", "未信任")}</span>;
 }
 
-export function InstalledList() {
+export function InstalledList({ externalFilter }: { externalFilter?: string } = {}) {
   const { text } = useTranslation();
   const { plugins, toggle, uninstall, reload } = usePluginsStore();
   const [trustDialog, setTrustDialog] = useState<PluginRow | null>(null);
@@ -31,9 +30,11 @@ export function InstalledList() {
   const [detailDialog, setDetailDialog] = useState<PluginRow | null>(null);
   const [busy, setBusy] = useState<string>("");
   const [filter, setFilter] = useState("");
+  const [notice, setNotice] = useState("");
+  const filterValue = externalFilter !== undefined ? externalFilter : filter;
 
   const shown = useMemo(() => {
-    const q = filter.trim().toLowerCase();
+    const q = filterValue.trim().toLowerCase();
     if (!q) return plugins;
     return plugins.filter(
       (p) =>
@@ -41,7 +42,7 @@ export function InstalledList() {
         (p.description || "").toLowerCase().includes(q) ||
         (p.source || "").toLowerCase().includes(q),
     );
-  }, [plugins, filter]);
+  }, [plugins, filterValue]);
 
   const tryToggle = async (p: PluginRow) => {
     if (!p.enabled && p.trust === "untrusted") {
@@ -52,11 +53,8 @@ export function InstalledList() {
     try {
       const r = (await toggle(p.name, !p.enabled)) as { error?: string; code?: string };
       if (r && "error" in r && r.error) {
-        if (r.code === "trust") {
-          setTrustDialog(p);
-        } else {
-          alert(r.error);
-        }
+        if (r.code === "trust") setTrustDialog(p);
+        else setNotice(r.error);
       }
     } finally {
       setBusy("");
@@ -64,11 +62,16 @@ export function InstalledList() {
   };
 
   if (plugins.length === 0) {
-    return <div className={shared.empty}>{text("No installed plugins. Install from Marketplace or pin a local directory.", "暂无已安装插件。可从 Marketplace 安装或本地 pin 一个目录。")}</div>;
+    return (
+      <div className={shared.empty}>
+        {text("No plugins yet. Install from the marketplace, or add a local folder.", "还没有插件。可以从市场安装，或添加一个本地文件夹。")}
+      </div>
+    );
   }
 
   return (
     <div>
+      {externalFilter === undefined && (
       <div className="mb-3">
         <SearchInput
           value={filter}
@@ -76,6 +79,8 @@ export function InstalledList() {
           placeholder={text("Search plugins...", "搜索插件...")}
         />
       </div>
+      )}
+      {notice && <div className={shared.empty} style={{ padding: "8px 0" }}>{notice}</div>}
       <div className="space-y-1">
       {shown.map((p) => (
         <ManageRow
@@ -89,54 +94,18 @@ export function InstalledList() {
             <>
               <span className={shared.rowCount}>v{p.version}</span>
               <TrustBadge level={p.trust} />
-              <span className={shared.badge}>{p.source}</span>
-              {p.deprecated && (
-                <span className={`${shared.badge} ${shared.badgeRed}`}>{text("deprecated", "已废弃")}</span>
-              )}
               {p.error && (
                 <span className={`${shared.badge} ${shared.badgeRed}`}>{text("error", "错误")}</span>
               )}
             </>
           }
           actions={
-            <>
-              <Button size="sm" variant="outline" onClick={() => setOptsDialog(p)}>
-                {text("Options", "选项")}
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setValidateDialog(p)}>
-                {text("Validate", "校验")}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy === p.name}
-                onClick={async () => {
-                  setBusy(p.name);
-                  try { await reload(p.name); } finally { setBusy(""); }
-                }}
-              >{text("Reload", "重新加载")}</Button>
-              <Button
-                size="sm"
-                variant="destructive"
-                disabled={busy === p.name}
-                onClick={async () => {
-                  if (!confirm(text(`Uninstall ${p.name}?`, `卸载 ${p.name}？`))) return;
-                  setBusy(p.name);
-                  try {
-                    const r = await uninstall(p.name);
-                    if (!r.success) alert(r.log);
-                  } finally {
-                    setBusy("");
-                  }
-                }}
-              >{text("Uninstall", "卸载")}</Button>
-              <Switch
-                checked={p.enabled}
-                disabled={busy === p.name}
-                onCheckedChange={() => void tryToggle(p)}
-                aria-label={p.enabled ? text("Disable", "禁用") : text("Enable", "启用")}
-              />
-            </>
+            <Switch
+              checked={p.enabled}
+              disabled={busy === p.name}
+              onCheckedChange={() => { void tryToggle(p); }}
+              aria-label={p.enabled ? text("Disable", "禁用") : text("Enable", "启用")}
+            />
           }
         />
       ))}
@@ -150,14 +119,12 @@ export function InstalledList() {
           name={trustDialog.name}
           currentLevel={trustDialog.trust}
           onDone={async () => {
-            // After the user elevates trust, finish the original
-            // enable flow they started — toggling the plugin on.
             const target = trustDialog;
             setTrustDialog(null);
             setBusy(target.name);
             try {
               const r = (await toggle(target.name, true)) as { error?: string; code?: string };
-              if (r && "error" in r && r.error) alert(r.error);
+              if (r && "error" in r && r.error) setNotice(r.error);
             } finally {
               setBusy("");
             }
@@ -172,7 +139,27 @@ export function InstalledList() {
         <ValidatePluginDialog name={validateDialog.name} onClose={() => setValidateDialog(null)} />
       )}
       {detailDialog && (
-        <PluginDetailDialog plugin={detailDialog} onClose={() => setDetailDialog(null)} />
+        <PluginDetailDialog
+          plugin={detailDialog}
+          busy={busy === detailDialog.name}
+          onClose={() => setDetailDialog(null)}
+          onOptions={() => setOptsDialog(detailDialog)}
+          onValidate={() => setValidateDialog(detailDialog)}
+          onReload={async () => {
+            setBusy(detailDialog.name);
+            try { await reload(detailDialog.name); } finally { setBusy(""); }
+          }}
+          onUninstall={async () => {
+            setBusy(detailDialog.name);
+            try {
+              const r = await uninstall(detailDialog.name);
+              if (!r.success) setNotice(r.log);
+              else setDetailDialog(null);
+            } finally {
+              setBusy("");
+            }
+          }}
+        />
       )}
     </div>
   );
