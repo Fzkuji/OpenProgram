@@ -31,7 +31,7 @@
    The rows inside are plain ConvItems (ui-list-item: 8px padding +
    16px marker slot + 12px gap → text left edge lands at 36px, the
    exact x where the header's label starts); this wrapper only steps
-   them down a size — 28px tall, 13px text — and draws the 1px
+   keep them the same 30px row as the project header, 13px text — and draws the 1px
    vertical guide through the icon/dot optical center. */
 .projectKids {
   position: relative;
@@ -43,23 +43,21 @@
   /* ui-list-item is border-box with a 1px transparent border + padding
      6px 8px + a 16px marker slot, so dot/folder optical center x =
      1 + 8 + 8 = 17px (not 16). translateX(-50%) keeps the 1px line
-     on that axis. Child rows are 28px, so last-dot center is 14px
-     from the bottom (bottom: 14px — no stub past the last circle).
+     on that axis. Child rows match --ui-list-h (30px), so last-dot center is 15px
+     from the bottom (bottom: 15px — no stub past the last circle).
      Header is --ui-list-h (30px) with a 20px FoldersIcon + 1px gap;
      top: -4px leaves a short breath under the folder instead of leaving
      the folder icon. */
   left: 17px;
   transform: translateX(-50%);
   top: -4px;
-  bottom: 14px;
+  bottom: 15px;
   width: 1px;
   background: var(--border);
   pointer-events: none;
 }
 .projectKids :global(.ui-list-item) {
-  height: 28px;
-  padding-top: 4px;
-  padding-bottom: 4px;
+  height: var(--ui-list-h);
   font-size: 13px;
 }
 /* The row label carries its own `text-fs-base` (14px) utility —
