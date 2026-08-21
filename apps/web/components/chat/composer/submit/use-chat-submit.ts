@@ -12,8 +12,9 @@
  * payload to `sendChatMessage` — the bridge that fires the optimistic user
  * bubble, welcome-hide and running flip before the WS write.
  *
- * `stop` sends `execution.cancel` for the current execution. Local UI may
- * show cancelling immediately; server cancelling/cancelled wins on reload.
+ * `stop` sends `execution.cancel` for the current execution, patches the
+ * live assistant to cancelled, and clears runningTask so the send queue
+ * drains at 0ms. Server cancelled still wins on reload.
  */
 import { useCallback } from "react";
 
@@ -232,9 +233,10 @@ export function useChatSubmit({
 
 /**
  * Cancel the run on `sessionId`. Shared by the composer button and the
- * queued-row "cancel current and send now" action. Local state may show
- * cancelling immediately, but a server cancelling/cancelled record always
- * wins on reload.
+ * queued-row "cancel current and send now" action. Occupancy is released
+ * on cancel intent (Claude Code): the assistant is patched to cancelled
+ * and runningTask is cleared at 0ms so a queued message can go out now.
+ * A server cancelled record still wins on reload.
  */
 export function stopSession(
   targetSessionId: string,
@@ -245,19 +247,13 @@ export function stopSession(
   const executionId =
     task?.execution_id
     || (task?.msg_id ? `${task.msg_id}_reply` : "");
+  // 1. Tell the server first so the model HTTP stream can abort.
   if (executionId) {
     send({ action: "execution.cancel", execution_id: executionId });
   } else {
     send({ action: "stop", session_id: targetSessionId });
   }
-  store.setRunningTaskFor(targetSessionId, {
-    session_id: targetSessionId,
-    msg_id: task?.msg_id || "",
-    func_name: task?.func_name,
-    started_at: task?.started_at,
-    execution_id: executionId || task?.execution_id,
-    cancelling: true,
-  }, "never");
+  // 2. Patch the last live assistant to cancelled. Keep streamed text.
   const ids = store.messageOrder[targetSessionId] || [];
   for (let i = ids.length - 1; i >= 0; i--) {
     const m = store.messagesById[ids[i]];
@@ -269,8 +265,11 @@ export function stopSession(
       || m.status === "cancelling"
     ) break;
     store.updateMessage(targetSessionId, m.id, {
-      status: "cancelling",
+      status: "cancelled",
     });
     break;
   }
+  // 3. Drop the running task so the send queue drains immediately.
+  //    Leaving a cancelling flag on the task was the composer lock.
+  store.setRunningTaskFor(targetSessionId, null, "always");
 }

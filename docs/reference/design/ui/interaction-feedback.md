@@ -43,7 +43,7 @@ transient (stop, fn-form placeholder, branch checkout) inline the pattern.
 | Surface | First 100ms after the click |
 |---|---|
 | Chat send | welcome hides at 0ms; user bubble + reply placeholder land on `chat_ack` (~1 round trip) |
-| Stop button | runningTask cleared and the assistant message patched to `[cancelled by user]` at 0ms |
+| Stop button | runningTask cleared and the assistant message patched to `[cancelled by user]` at 0ms; the send queue drains at the same instant |
 | Function-call Retry | card flips to a spinner body + "running", switcher → N+1/N+1, at 0ms; reload backfills; 10s revert |
 | fn-form / welcome submit | a pending runtime card is inserted into the transcript at 0ms; hydration replaces it seamlessly; a POST failure removes it and toasts |
 | Runtime `< N/M >` switcher | current card → spinner body + target sibling index at 0ms; reload swaps content; 10s revert |

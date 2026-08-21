@@ -55,6 +55,7 @@ from ..types import (
     UsageCost,
     UserMessage,
 )
+from ..utils.cancelable_stream import iter_until_cancelled
 from ..utils.event_stream import EventStream
 from ..utils.json_parse import parse_partial_json, parse_streaming_json
 from ..utils.sanitize_unicode import sanitize_surrogates
@@ -779,13 +780,8 @@ async def stream_simple(
 
     try:
         async with client.messages.stream(**params) as ant_stream:
-            async for event in ant_stream:
-                # Caller cancel (Stop button): break mid-stream instead of
-                # draining the response. Exiting the ``async with`` closes
-                # the connection; the post-loop signal check finalizes the
-                # turn as "aborted".
-                if _cancelled():
-                    break
+            # <=250ms cancel poll — do not wait for the next token.
+            async for event in iter_until_cancelled(ant_stream, _cancelled):
                 # Dispatch on the SSE protocol field, NOT the Python class
                 # name. SDK 0.91 renamed the high-level stop events
                 # (ContentBlockStopEvent → ParsedContentBlockStopEvent), so a

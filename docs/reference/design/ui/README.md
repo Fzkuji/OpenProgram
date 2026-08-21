@@ -5,6 +5,7 @@ Web UI surfaces — the surface system, indicator dots, attachment handling, cha
 - [`invariants.md`](invariants.md) — cross-module UI invariants (walk the list before touching related modules)
 - [`chat-turn-visual-spec.html`](chat-turn-visual-spec.html) — chat-turn visual spec (execution timeline + manual function runs + message minimap; interactive demo, single source of truth)
 - [`interaction-feedback.md`](interaction-feedback.md) — the 0ms interaction-feedback rule (optimistic state first, data backfills)
+- [`turn-occupancy.md`](turn-occupancy.md) — stop, send-queue, and session-slot occupancy (released on cancel intent)
 - [`state-layer.md`](state-layer.md) — web state layer: one store instance per session, with genuinely shared data global
 - [`center-tabs-and-split-layout.html`](center-tabs-and-split-layout.html) — authoritative single-tab and composite split-tab lifecycle, rendering, persistence, and transfer design
 - [`built-in-browser.html`](built-in-browser.html) — built-in browser home, browser-profile import, compact History, and the four-entry new-pane launcher

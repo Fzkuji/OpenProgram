@@ -42,6 +42,7 @@ from ..types import (
     Usage,
     UserMessage,
 )
+from ..utils.cancelable_stream import iter_until_cancelled
 from ..utils.json_parse import parse_partial_json
 from .._shared.transform_messages import transform_messages as _transform_messages
 from .._shared.validate_modalities import validate_input_modalities
@@ -445,13 +446,8 @@ async def stream_simple(
 
     try:
         async with await client.chat.completions.create(**params) as stream:
-            async for chunk in stream:
-                # Caller cancel (Stop button): break mid-stream instead of
-                # draining the response. Exiting the ``async with`` closes
-                # the stream; the post-loop signal check finalizes the turn
-                # as "aborted".
-                if _cancelled():
-                    break
+            # <=250ms cancel poll — do not wait for the next token.
+            async for chunk in iter_until_cancelled(stream, _cancelled):
                 # Process usage from chunks
                 if chunk.usage:
                     usage = _usage_from_chunk(chunk.usage)

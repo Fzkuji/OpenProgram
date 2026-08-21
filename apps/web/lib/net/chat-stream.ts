@@ -369,6 +369,13 @@ function handleResponse(d: ChatResponseData | undefined): void {
   }
 
   if (d.type === "stream_event" && d.event) {
+    const existingReply = useSessionStore.getState().messagesById[rid];
+    if (
+      existingReply?.status === "cancelled"
+      || existingReply?.status === "cancelling"
+    ) {
+      return;
+    }
     // A `/run` turn: tag the reply as a runtime turn up front so
     // <MessageList /> routes it to <RuntimeBlock />, which renders the
     // `#runtime_pending` host the legacy CLI/tree stream handlers

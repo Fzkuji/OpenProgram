@@ -846,6 +846,51 @@ def _finish_owned_run(session_id: str, msg_id: str) -> bool:
     return True
 
 
+def _release_session_occupancy_for_execution(execution: dict) -> bool:
+    """Release the session slot as soon as cancel intent is accepted.
+
+    Occupancy is the running-task entry AND the active runtime.
+    Popping only ``_running_tasks`` is not enough: ``_is_run_active``
+    still returns True via ``_has_active_runtime``. A newer reservation
+    (different ``msg_id``) is left intact. Broadcasts
+    ``running_task_clear`` so every client matches.
+    """
+    session_id = execution.get("session_id") if execution else None
+    execution_id = (
+        (execution.get("execution_id") or "").strip() if execution else ""
+    )
+    if not session_id or not execution_id:
+        return False
+    msg_id = None
+    with _running_tasks_lock:
+        task = _running_tasks.get(session_id)
+        task_msg = task.get("msg_id") if task else None
+        task_exec = task.get("execution_id") if task else None
+    if task_msg:
+        if task_exec == execution_id or f"{task_msg}_reply" == execution_id:
+            msg_id = task_msg
+        else:
+            return False
+    elif execution_id.endswith("_reply"):
+        msg_id = execution_id[:-len("_reply")]
+    else:
+        return False
+    released = _finish_owned_run(session_id, msg_id)
+    if not released:
+        # Task already gone; still drop a leftover foreground runtime so
+        # ``_is_run_active`` cannot stay True via ``_has_active_runtime``.
+        with _running_tasks_lock:
+            leftover = _running_tasks.get(session_id)
+            if leftover is None or leftover.get("msg_id") == msg_id:
+                _unregister_active_runtime(session_id)
+                if leftover is not None:
+                    _running_tasks.pop(session_id, None)
+                released = True
+    if released:
+        _emit_running_task_event(session_id)
+    return released
+
+
 # One wording for every "you can't move HEAD right now" rejection, so
 # retry / edit / fn-dispatch / checkout / delete / attach / merge /
 # rewind all read identically in the UI.

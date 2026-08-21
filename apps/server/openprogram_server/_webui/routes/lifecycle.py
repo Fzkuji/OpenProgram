@@ -71,6 +71,8 @@ def register(app):
                 status_code=409,
             )
         emit_ws_frame({"type": "execution.updated", "execution": execution})
+        from openprogram.webui import server as _s
+        _s._release_session_occupancy_for_execution(execution)
         return JSONResponse(content={"execution": execution})
 
     @app.post("/api/execution/cancel")
@@ -107,4 +109,6 @@ def register(app):
                 status_code=409,
             )
         emit_ws_frame({"type": "execution.updated", "execution": execution})
+        from openprogram.webui import server as _s
+        _s._release_session_occupancy_for_execution(execution)
         return JSONResponse(content={"execution": execution})

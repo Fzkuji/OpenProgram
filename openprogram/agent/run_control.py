@@ -710,6 +710,21 @@ def _token_for(session_id: str, execution_id: str) -> CancellationToken | None:
     return None
 
 
+def _owner_needs_process_grace(owner: _OwnerEntry) -> bool:
+    """True when CANCEL_GRACE_S should wait for a real child to die.
+
+    Token-only chat owners have a cancel token and no subprocess. The
+    HTTP stream aborts on the cancel signal; do not extend another 4s.
+    A terminate hook is treated as "kills a child" — tools and
+    process runners keep the grace window.
+    """
+    if owner.process is not None:
+        return True
+    if owner.terminate is not None:
+        return True
+    return False
+
+
 def _owner_appears_live(owner: _OwnerEntry) -> bool:
     if owner.retired:
         return False
@@ -1045,6 +1060,10 @@ def _ensure_grace_watch(execution_id: str) -> None:
         return
     if owner.grace_deadline is not None:
         return
+    if not _owner_needs_process_grace(owner):
+        # Token-only: cancel signal + HTTP abort. Do not wait 4s.
+        _try_finalize(execution_id)
+        return
     owner.grace_deadline = time.time() + CANCEL_GRACE_S
     thread = threading.Thread(
         target=_grace_then_terminate,
@@ -1101,6 +1120,11 @@ def _grace_then_terminate(execution_id: str, generation: int) -> None:
                     return
                 continue
             if _owner_appears_live(owner):
+                if not _owner_needs_process_grace(owner):
+                    # Token-only owners must not get another 4s slice.
+                    if finalize_or_retry():
+                        return
+                    return
                 killed = False
                 try:
                     if owner.terminate is not None:

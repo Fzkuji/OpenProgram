@@ -214,3 +214,66 @@ def test_session_reload_preserves_cancelling_execution_status(
     assert execution["status"] == "cancelling"
     assert execution["reason_code"] == "cancel.user"
     assert loaded["data"]["run_active"] is True
+
+
+def test_cancel_releases_session_occupancy_for_next_turn(tmp_path, monkeypatch):
+    """Cancel intent must free the session slot before the turn thread dies."""
+    from openprogram.agent import run_control
+    from openprogram.webui import server as server
+    from openprogram.webui.ws_actions import runtime
+
+    store = SessionStore(tmp_path / "sessions-git")
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store)
+    import openprogram.store.session.session_store as store_module
+
+    monkeypatch.setattr(store_module, "_default_store", store)
+    with run_control._cancel_flags_lock:
+        run_control._current_tokens.clear()
+    run_control._owners.clear()
+
+    session_id = "occ-session"
+    msg_id = "user-1"
+    execution_id = f"{msg_id}_reply"
+    store.create_session(session_id, "main")
+    SessionNodeWriter(store, session_id).append(Call(
+        id=execution_id,
+        role=ROLE_CODE,
+        name="_chat",
+        metadata={"status": "running", "execution_kind": "chat"},
+    ))
+
+    assert server._try_reserve_run(session_id, msg_id)
+    assert server._activate_run_reservation(session_id, msg_id, object())
+    assert server._is_run_active(session_id)
+
+    broadcasts: list[dict] = []
+    monkeypatch.setattr(
+        server, "_broadcast", lambda payload: broadcasts.append(json.loads(payload)),
+    )
+
+    handler = runtime.ACTIONS["execution.cancel"]
+    ws = FakeWS()
+    try:
+        asyncio.run(handler(ws, {
+            "action": "execution.cancel",
+            "execution_id": execution_id,
+        }))
+        assert server._is_run_active(session_id) is False
+        assert server._try_reserve_run(session_id, "user-2") is True
+        assert server._is_run_active(session_id) is True
+        clears = [
+            frame for frame in broadcasts
+            if frame.get("type") == "running_task_clear"
+        ]
+        assert clears, "cancel must broadcast running_task_clear"
+        assert clears[-1]["data"]["session_id"] == session_id
+    finally:
+        server._finish_owned_run(session_id, "user-2")
+        server._finish_owned_run(session_id, msg_id)
+        for execution in list(run_control._owners):
+            run_control.retire_execution_owner(execution)
+        for thread in list(run_control._grace_threads.values()):
+            thread.join(1)
+        run_control._grace_threads.clear()
+        run_control._owners.clear()
+

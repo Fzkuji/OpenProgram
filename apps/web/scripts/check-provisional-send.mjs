@@ -620,12 +620,21 @@ const composer = readComposerSource(import.meta.url);
 assert.match(composer, /stopSession\(targetSessionId, send\)/);
 assert.match(
   composer,
-  /cancelling: true/,
-  "optimistic cancel must keep the running task until the server record lands",
+  /setRunningTaskFor\(targetSessionId, null, "always"\)/,
+  "stopSession must clear the running task so the send queue drains at 0ms",
+);
+assert.match(
+  composer,
+  /status:\s*"cancelled"/,
+  "stopSession must patch the assistant to cancelled at 0ms",
+);
+assert.doesNotMatch(
+  composer,
+  /cancelling:\s*true/,
+  "optimistic cancel must not leave cancelling:true on the running task",
 );
 assert.match(composer, /action: "execution.cancel", execution_id: executionId/);
 assert.match(composer, /text\("Cancel execution", "取消运行"\)/);
-assert.match(composer, /text\("Cancelling…", "正在取消"\)/);
 const wsSendBody = composer.slice(
   composer.indexOf("function wsSend("),
   composer.indexOf("const noop"),

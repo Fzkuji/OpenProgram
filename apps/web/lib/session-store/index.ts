@@ -214,8 +214,9 @@ interface ConvState {
    *  stale reply before the new one streams in. */
   truncateFrom: (sessionId: string, msgId: string) => void;
   /** Set / clear the running task for a specific session. Pass null
-   *  to clear. `always` identifies an authoritative server clear;
-   *  `never` keeps an optimistic UI stop from sending too early. */
+   *  to clear. `always` drains the send queue even if the session
+   *  already looked idle (stop at 0ms, or a server clear after stop).
+   *  `never` is for updates that must not drain. */
   setRunningTaskFor: (
     sessionId: string,
     t: RunningTask | null,
@@ -765,9 +766,10 @@ export const useSessionStore = create<ConvState>((set) => ({
       // legacy bridges, which have no React context to write through.
       pushToSessionStore(sessionId, { running: t });
       // Turn finished → hand the client-side send queue its chance to
-      // ship the next parked message. A server clear may follow an
-      // optimistic local idle, so it uses `always`; optimistic stop uses
-      // `never`. Deferred a tick so drain writes cannot re-enter this `set`.
+      // ship the next parked message. Stop and the server clear both
+      // use `always` so a queued message goes out once, at 0ms, and
+      // the later clear does not send it again. Deferred a tick so
+      // drain writes cannot re-enter this `set`.
       if (!t && drain !== "never" && (wasRunning || drain === "always")) {
         queueMicrotask(() => {
           void import("@/lib/state/send-queue").then((m) =>

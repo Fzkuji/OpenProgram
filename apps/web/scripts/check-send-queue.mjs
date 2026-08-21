@@ -251,7 +251,7 @@ const attachedId = enqueueMessage(A, draft("caption with image"), 1);
 assert.equal(attachedId, null, "an attached draft must not enter the text queue");
 assert.equal(useSendQueue.getState().queues[A], undefined);
 
-/* --- 11. stop-now waits for the server's authoritative clear -------- */
+/* --- 11. stop-now drains the queue at 0ms (Claude Code) ----------- */
 sent.length = 0;
 useSendQueue.setState({ queues: {} });
 run(A);
@@ -266,13 +266,18 @@ await settle();
 assert.equal(stopFrames.length, 1, "cancel is sent immediately");
 assert.equal(stopFrames[0].action, "execution.cancel");
 assert.equal(stopFrames[0].execution_id, "m_reply");
-assert.equal(sent.length, 0, "optimistic idle must not send before server clear");
-handleRunningTaskClear(A);
-await settle();
 assert.deepEqual(
   sent.map((m) => m.text),
   ["send-after-stop"],
-  "the authoritative server clear sends the promoted entry once",
+  "stopSession must send the promoted queued message at 0ms",
+);
+const sentOnce = sent.length;
+handleRunningTaskClear(A);
+await settle();
+assert.equal(
+  sent.length,
+  sentOnce,
+  "handleRunningTaskClear after stop must not send the queued message a second time",
 );
 
 console.log("check-send-queue: ok");

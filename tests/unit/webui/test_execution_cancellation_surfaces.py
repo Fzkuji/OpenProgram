@@ -71,5 +71,7 @@ def test_surfaces_send_execution_cancel_and_use_cancel_copy():
     assert '"execution_id": task.get("execution_id")' in (
         ROOT / "apps/server/openprogram_server/server.py"
     ).read_text(encoding="utf-8")
-    assert "cancelling: true" in composer
-    assert 'status: "cancelled"' not in composer.split("export function stopSession")[1][:1200]
+    assert "cancelling: true" not in composer
+    stop_body = composer.split("export function stopSession")[1][:1600]
+    assert 'status: "cancelled"' in stop_body
+    assert 'setRunningTaskFor(targetSessionId, null, "always")' in stop_body

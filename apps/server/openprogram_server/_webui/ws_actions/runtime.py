@@ -242,6 +242,8 @@ async def handle_stop(ws, cmd: dict):
         }))
         return
     _broadcast_execution(execution)
+    from openprogram.webui import server as _s
+    _s._release_session_occupancy_for_execution(execution)
 
 
 async def handle_execution_cancel(ws, cmd: dict):
@@ -275,6 +277,7 @@ async def handle_execution_cancel(ws, cmd: dict):
         "type": "execution.updated",
         "execution": execution,
     }, default=str))
+    _s._release_session_occupancy_for_execution(execution)
 
 
 async def handle_stats(ws, cmd: dict):

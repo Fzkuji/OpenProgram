@@ -423,17 +423,9 @@ export function handleRunningTask(rt: unknown): void {
       ? replyId
       : mid;
   const current = store.messagesById[targetId];
+  // Stop already marked this turn cancelled and released occupancy.
+  // A late running_task for the same msg_id must not revive the slot.
   if (current?.status === "cancelling" || current?.status === "cancelled") {
-    if (current.status === "cancelling") {
-      store.setRunningTaskFor(sid, {
-        session_id: sid,
-        msg_id: mid,
-        func_name: t.func_name,
-        started_at: t.started_at,
-        execution_id: executionId,
-        cancelling: true,
-      }, "never");
-    }
     return;
   }
   store.updateMessage(sid, targetId, { status: "running" });
