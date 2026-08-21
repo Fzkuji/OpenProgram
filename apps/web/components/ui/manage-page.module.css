@@ -61,7 +61,7 @@
 .tabBtn.active {
   color: var(--text-bright);
   border-color: var(--border);
-  background: var(--bg-secondary);
+  background: var(--bg-input);
 }
 
 .toolbar {
