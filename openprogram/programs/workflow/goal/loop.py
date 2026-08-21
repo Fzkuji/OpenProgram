@@ -226,6 +226,35 @@ def continue_goal_turns(req: Any, result: Any, *, run_turn: Callable,
         prev_req = next_req
 
 
+def apply_callable_verdict(goal: dict, verdict: str, reason: str) -> str | None:
+    """Stop rules for the public :func:`goal` callable.
+
+    Returns a terminal status (``achieved``, ``error``, ``capped``) or
+    ``None`` to keep working. Does not write session meta: a nested
+    Workflow must not overwrite a user's ``/goal``.
+    """
+    goal["last_reason"] = reason
+    if verdict == "met":
+        goal["status"] = "achieved"
+        goal["judge_parse_failures"] = 0
+        return "achieved"
+    if verdict == "judge_failure":
+        failures = int(goal.get("judge_parse_failures") or 0) + 1
+        goal["judge_parse_failures"] = failures
+        if failures >= _goal.JUDGE_PARSE_FAILURE_LIMIT:
+            goal["status"] = "error"
+            goal["last_reason"] = (
+                f"judge failed {failures} times in a row: {reason}")
+            return "error"
+        return None
+    goal["judge_parse_failures"] = 0
+    max_turns = goal.get("max_turns")
+    if max_turns and int(goal.get("turns_used") or 0) >= int(max_turns):
+        goal["status"] = "capped"
+        return "capped"
+    return None
+
+
 def _inherit_parent():
     from openprogram.agent.dispatcher.types import INHERIT_PARENT
     return INHERIT_PARENT

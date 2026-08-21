@@ -89,6 +89,7 @@ from openprogram.programs.workflow.goal.refinement import (  # noqa: F401
 from openprogram.programs.workflow.goal.loop import (  # noqa: F401
     _inherit_parent,
     _tools_with_forced_web_search,
+    apply_callable_verdict,
     continue_goal_turns,
 )
 from openprogram.programs.workflow.goal.command import (  # noqa: F401
