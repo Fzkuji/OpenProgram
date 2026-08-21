@@ -1,8 +1,6 @@
-# 表面系统（深色模式）
+# 表面系统
 
-深色模式 UI 分为两个**表面上下文**。每个表面拥有各自的
-交互语言，使眼睛能一眼分辨出当前悬停在应用的哪个
-"层"：导航层还是内容层。
+UI 分为两个**表面上下文**。每个表面有各自的交互语言，眼睛能一眼分清当前停在哪一层：导航层还是内容层。这些规则同时约束**浅色和深色**主题。浅色主题最容易踩坑（浅灰侧栏上铺白底）。
 
 ## 两个表面
 
@@ -10,68 +8,117 @@
 ─────────────────────────────────────────────────────────────────
 surface        background tone           where it lives
 ─────────────────────────────────────────────────────────────────
-deep           near-black ``--bg`` /     left sidebar, right
-               ``--bg-secondary``        sidebar (branches /
-                                         worktrees / mini-DAG)
+deep           `--bg` /                  左侧栏、右侧栏
+               `--bg-secondary`          （branches / worktrees /
+                                         mini-DAG）
 ─────────────────────────────────────────────────────────────────
-panel          slightly lifted greyish   chat stream, settings
-               ``--bg-surface`` /        panes, dialog content,
-               ``--bg-tertiary``         function-card grid,
-                                         attach card, runtime
-                                         blocks
+panel          略抬升的                  聊天流、设置页、对话框、
+               `--bg-surface` /          function-card 网格、
+               `--bg-tertiary`           attach 卡片、runtime 块
 ─────────────────────────────────────────────────────────────────
 ```
 
-**deep** 与 **panel** 之间的抬升是有意为之的——它替代了
-聊天内容列上显式的边框 / 阴影，使气泡区域看起来像一张
-漂浮在导航之上的独立纸面。
+**deep** 与 **panel** 之间的抬升是有意的——它替代聊天内容列上显式的边框 / 阴影，让气泡区读起来像一张浮在导航之上的纸。
 
 ## 各表面的交互语言
 
-鼠标操作任何按钮时都不绘制外部焦点圈。键盘聚焦普通按钮时只轻微提高亮度，
-不使用 outline 或 box-shadow。顶部 `role="tab"` 是唯一例外：它使用当前主题的
-`--focus-ring`，深色主题更亮，浅色主题更深。
+鼠标点按钮不画外圈焦点环。键盘聚焦普通按钮只轻微提高亮度，不用 outline 或 box-shadow。顶部 `role="tab"` 是唯一例外：用当前主题的 `--focus-ring`，深色更亮，浅色更深。
 
 ### Deep 表面（侧边栏）
 
-deep 表面上的组件是**列表行**——会话项、分支条目、
-函数收藏。它们不应当表现得像按钮：
+deep 表面上的组件是**列表行**——会话项、分支、收藏，以及内容区里同一套行（MCP 的 `drawio` / `linear` / `+ Add server`）。它们不应当表现得像按钮：
 
-- 闲置状态下无边框、无描边、无填充
-- 悬停 / 选中 → 背景切换为**略浅的灰色**
-  （``--bg-hover`` / ``--bg-selected``），文本保持
-  ``--text-primary`` 或 ``--text-secondary``
-- 避免使用品牌色字形处理，唯一例外是极小的状态 /
-  活动指示器（``.indicator-dot``）
+- 闲置：无边框、无描边、无填充
+- 悬停 / 选中：背景换成**看得出的灰色**（``--bg-hover`` / ``--bg-selected``），文字仍是 ``--text-primary`` 或 ``--text-secondary``
+- 选中行**禁止**用 ``--bg-input`` 填充。浅色主题里这个 token 是白的，铺在浅灰侧栏上会发白、发淡
+- 不用品牌色字形，唯一例外是极小的状态点（``.indicator-dot``）
 
-理由：侧边栏密集且被频繁扫视。一片品牌色胶囊会显得
-喧闹，并在视觉上与内容列竞争。悬停变灰让这一层保持
-克制，同时仍为点击目标提供足够的反馈。
+理由：侧栏密、扫得勤。一片品牌色胶囊会吵，还会跟内容列抢视线。悬停变灰让这一层安静，点击目标仍有反馈。
 
 ### Panel 表面（聊天内容 + 对话框）
 
 panel 表面上的组件就是按钮 / 胶囊 / 卡片：
 
-- 它们位于抬升的背景之上，因此"幽灵描边"模式
-  能干净地呈现
-- 闲置状态——``--bg-surface`` 背景，``--text-primary``
-  文本，主操作则用品牌色文本
-- 悬停——以品牌色填充，文本切换为其对比配对色
-  （``--text-on-accent``）
-- 这种反转式悬停让一连串"操作"感觉像同一个设计
-  家族——用户知道这种颜色变化在各处都统一表示
-  "这会执行某个动作"的可供性
+- 坐在抬升背景上，"幽灵描边"能干净地呈现
+- 闲置：``--bg-surface`` 底，``--text-primary`` 字，主操作用品牌色字
+- 悬停：品牌色填充，字切到对比色（``--text-on-accent``）
+- 这种反转式悬停让一串操作读起来是同一家人
+
+管理页顶部的 **tab 胶囊**（Abilities / Programs / Plugins / Skills）是唯一的亮底例外：选中态用 ``--bg-input``，跟搜索框一样偏亮，而不是更深。这个填充**只给这些胶囊**。不要抄到侧栏行或 MCP 服务器行上。
+
+## 列表行只有一套尺寸
+
+侧栏导航（`+ New chat`、Agents、Abilities、History、Scheduler）和内容区列表行（MCP 的 `drawio` / `linear` / `+ Add server`）共用**同一只盒子**。不要给右边那列另起一套高度、内边距、圆角或选中底。
+
+```
+属性         token / 值
+─────────────────────────────────────────────────────────────────
+高度         `--ui-list-h` → `--ui-button-h` → 30px
+内边距       6px 8px
+间距         12px
+圆角         `--ui-list-radius`（10px）
+闲置         透明；需要时用 1px 透明边只为对齐盒模型
+悬停         `--bg-hover`
+选中         `--bg-hover`（同一灰，绝不用白 / `--bg-input`）
+```
+
+`+ Add server` 跟 `+ New chat` 是同一种行：普通列表行，字略淡。不要斜体，不要另做一种"添加"样式。
+
+实现：`apps/web/app/styles/base.css` 的 `.ui-list-item` 是唯一来源。MCP 的 `.serverItem` 必须对齐这些数（优先 compose `.ui-list-item`，不要平行再写一套）。
+
+## 尺寸系统——两套，高度相同
+
+每个交互原语在两套尺寸里选一套。套内没有 sm / md / lg——选定 list 或 button 之后，高度和圆角就锁死。CSS 变量在 `apps/web/app/styles/base.css`：
+
+```
+set         height               radius             css tokens
+─────────────────────────────────────────────────────────────────
+list        30 px                10 px              --ui-list-h
+                                                    --ui-list-radius
+─────────────────────────────────────────────────────────────────
+button      30 px（与 list 相同） 10 px              --ui-button-h
+                                                    --ui-button-radius
+─────────────────────────────────────────────────────────────────
+```
+
+以前 list 32px、button 30px。这套高低差已废止：侧栏行、MCP tab 胶囊、MCP 服务器行都走 30px。`--ui-list-h: var(--ui-button-h)`。
+
+两套共用 10px 圆角。Claude 形状语言把列表行和小按钮放在 10px，12px（`--radius-lg`）留给卡片和面板。
+
+为什么套内无变体：允许 sm / md / lg 之后，每位作者都会跟设计讨价还价，尺寸跟着分叉。两套固定尺寸才能强制执行。
+
+`Button` 向后兼容：`size="sm" | "lg" | "icon-sm"` 仍指向 `default` 的同一高度。token 名称才是真相。
+
+页头那一行（搜索 + tab 胶囊 + 图标按钮）必须同一垂直中线。控件之间差 1–2px 高度是 bug，不是变体。
+
+## 输入框、下拉、边框
+
+输入框和下拉共用**一层 1px** 边（`border: 1px solid var(--border)`，底 `--bg-input`）。
+
+- 不要在这 1px 边上再叠 2px 的 `:focus-visible` 光晕。原生 `<select>` 收起后焦点还在，叠出来就是双层框。
+- 悬停必须**保住**这 1px 边。`border-color: transparent` 会让框像消失了一样（MCP catalog 按钮踩过）。
+- 不要每个页面另做一套输入框。设置、对话框、插件、MCP 编辑器都用同一套 1px + `--bg-input`。
+
+## 对话框
+
+对话框只做**淡入淡出**（大约 300ms）。不要从上往下滑动，不要突然消失。动的是透明度，不是位移。
+
+## 设置行
+
+设置页（General、Memory、System 以及其余）统一两列：
+
+- **左**：名称左对齐。说明文字留在这一列，不要伸进右边控件
+- **右**：控件 / 取值右对齐
+- 左右隔开。不要把标签堆在输入框上面
+- 状态标签（`LIVE`、`NEXT START` 等）放在对应控件的**左边**，不要一行左一行右
 
 ## 按钮变体指南
 
-`apps/web/components/ui/button.tsx` 已经暴露了两种主要
-模式：
+`apps/web/components/ui/button.tsx` 已经暴露主要模式：
 
-**无边框。** 每个 Button 变体在闲置和悬停状态下都没有
-边框。deep / panel 之间的表面抬升已经分隔了各层；在此
-之上再加显式的 ``border-input`` 会给密集行增添视觉噪声，
-并且与本应用在其他各处（function-card 网格、attach 卡片、
-fn-form 胶囊）使用的轻抬升幽灵胶囊约定相比显得过时。
+**Button 派生动作无边框。** 每个 Button 变体在闲置和悬停时都没有边框。deep / panel 的表面抬升已经分层；再加 ``border-input`` 只会给密行添噪声。
+
+表单控件不是 Button。它们保留上面的 1px 边。
 
 ```
 variant     idle                              hover
@@ -94,63 +141,23 @@ destructive bg-background + text-destructive  bg-destructive +
 
 按表面选择：
 
-- **Panel + 主操作**（Run、Save、Test、Apply、Check）→
-  `variant="default"`。默认为品牌色文本，悬停时品牌色
-  填充。大多数聊天 / 设置 / 函数对话框操作都应使用它。
-- **Panel + 次要操作**（Cancel、Close、Reset、Browse）→
-  `variant="outline"`（淡灰悬停）或 `ghost`。
-- **Deep 表面——侧边栏行** → 不要使用 Button 原语。
-  使用由 `sidebar.module.css` 设样式的普通锚点 / div，
-  因为行本身就是交互。
-- **破坏性操作**（Delete、Remove、Force）→
-  `variant="destructive"`。默认红色文本，悬停时红色填充。
+- **Panel + 主操作**（Run、Save、Test、Apply、Check）→ `variant="default"`
+- **Panel + 次要操作**（Cancel、Close、Reset、Browse）→ `variant="outline"` 或 `ghost`。页头次要按钮要跟搜索框并排读得出来时，给它和搜索框一样的 1px `--border`，不要无边框、看起来像裸文字
+- **Deep 表面——侧栏行** → 不用 Button，用 `.ui-list-item` / `nav-classes.ts`
+- **破坏性操作** → `variant="destructive"`
 
-要警惕的失效模式是：本该用 `default` 的地方用了 `outline`。
-`outline` 是 shadcn 开箱即用的样子，作者会下意识地选它，
-于是主操作拿到的是低调的悬停强调，而非品牌色填充。纠正它
-只能逐个调用点做，因为一个操作属于主还是次要，只有人能判断。
-
-## 尺寸系统——两套，套内无变体
-
-每个交互原语在两套尺寸中选其一。套内没有
-sm / md / lg 的阶梯——一旦你选定 list 还是 button，
-高度和圆角就被锁定。CSS 变量位于
-`apps/web/app/styles/base.css`：
-
-```
-set         height               radius             css tokens
-─────────────────────────────────────────────────────────────────
-list        32 px                10 px              --ui-list-h
-                                                    --ui-list-radius
-─────────────────────────────────────────────────────────────────
-button      30 px (slightly      10 px              --ui-button-h
-            shorter than list)                      --ui-button-radius
-─────────────────────────────────────────────────────────────────
-```
-
-为什么 button 比 list 矮：panel 表面上的胶囊在视觉上
-不应当压过它旁边的侧边栏行。两套共用同一个 10px 圆角
-—— Claude 的形状语言把列表行和小按钮都放在 10px，把
-12px（`--radius-lg`）留给卡片和面板。
-
-为什么套内无变体：当设计允许一个槽位从 sm / md / lg
-中挑选时，每位作者都会与设计讨价还价而不是遵循它，尺寸
-随之分叉。两套固定尺寸是可强制执行的。
-
-`Button` 的向后兼容：`size="sm" | "lg" | "icon-sm"` 作为
-别名为现有调用点保留，但它们解析到与 `default` 相同的
-高度。token 名称才是唯一可信来源。
+要警惕的失效：该用 `default` 的地方用了 `outline`。
 
 ## 禁止事项
 
-- 不要在未先于此处列出的情况下引入新的胶囊背景色。
-  三种风味（deep、panel、品牌填充）就是预算上限。
-- 不要在 deep 表面使用品牌色填充——它与近黑背景的
-  对比会让品牌色胶囊看起来像一条警报，而非点击目标。
-- 不要在任一表面添加悬停时位移（translate-y、scale-105）
-  效果。我们仅依赖背景切换；密集行内的运动会被读作
-  抖动，而非反馈。
-- 不要给 Button 派生组件添加 ``border`` / ``ring`` /
-  ``outline``。表面抬升已经把它们与背景分隔开；在抬升
-  之上再加边框会被读作一个堆叠的警报对话框或聚焦光晕，
-  而非一个安静的点击目标。
+- 不要每个页面另起一套悬停 / 选中 / 边框。一套配方，反复用。新样子先写进这份文件。
+- 不要在未先于此处列出的情况下引入新的胶囊底色。预算内：deep 灰悬停、panel、品牌填充，以及上面的页头 tab `--bg-input` 例外。
+- 不要在 deep 表面用品牌色填充。
+- 不要用白色 / `--bg-input` 做侧栏或内容区**列表行**的选中底。浅色主题会发白。
+- 不要给 MCP 服务器行（或任何内容区列表）另一套高度、内边距或选中底。
+- 不要加悬停位移（translate-y、scale-105）。只换背景。
+- 不要给 Button 派生组件加 ``border`` / ``ring`` / ``outline``。
+- 不要在 1px 输入/下拉边上再叠 2px 聚焦光晕。
+- 不要在悬停时丢掉控件的 1px 边。
+- 不要让对话框滑动。只淡入淡出。
+- 不要让设置说明伸进右侧控件列，也不要把标签堆在控件上面。
