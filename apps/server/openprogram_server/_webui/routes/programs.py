@@ -653,14 +653,87 @@ def _imported_modules(path: Path) -> tuple[set[str], set[str]]:
     return modules, warnings
 
 
+def _toplevel_names(path: Path) -> set[str]:
+    """Module-level functions and assignments in one Program source."""
+    names: set[str] = set()
+    sources, _truncated = _python_sources(path)
+    for source in sources:
+        try:
+            tree = ast.parse(source.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, SyntaxError):
+            continue
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                names.add(node.name)
+            elif isinstance(node, ast.Assign):
+                names.update(
+                    target.id for target in node.targets
+                    if isinstance(target, ast.Name)
+                )
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                names.add(node.target.id)
+    return names
+
+
+def _package_symbol_index(
+    entities: dict[str, Path],
+) -> dict[tuple[str, str], str]:
+    """Map ``(package path, top-level name)`` to the entity that defines it."""
+    registered = _registered_agentic_callables()
+    index: dict[tuple[str, str], str] = {}
+    for path, source in entities.items():
+        if not path.startswith("workflow/"):
+            continue
+        package = (
+            path
+            if path in registered or _is_workflow_package(path)
+            else Path(path).parent.as_posix()
+        )
+        for name in _toplevel_names(source):
+            index.setdefault((package, name), path)
+    return index
+
+
+def _resolve_package_import(
+    module: str,
+    prefix: str,
+    target: str,
+    symbols: dict[tuple[str, str], str],
+) -> str | None:
+    """Map a package-attribute import to the sibling that defines it.
+
+    Goal helpers call through ``import ...goal as _goal`` so tests can
+    patch the package. ``_goal.save_goal`` is ``state.py``, not the
+    public ``goal()`` Program — matching the package prefix would
+    otherwise inherit ``agent()`` / ``llm()``.
+    """
+    remainder = module[len(prefix):].lstrip(".")
+    attr = remainder.split(".", 1)[0] if remainder else ""
+    if not attr:
+        return target
+    specific = symbols.get((target, attr))
+    if specific:
+        return specific
+    registered = _registered_agentic_callables()
+    if target not in registered:
+        return target
+    if attr == _agentic_entry_name(target):
+        return target
+    return None
+
+
 def _direct_calls(
-    relative: str, entities: dict[str, Path]
+    relative: str,
+    entities: dict[str, Path],
+    symbols: dict[tuple[str, str], str] | None = None,
 ) -> tuple[list[str], set[str]]:
     prefixes = sorted(
         ((_module_prefix(path), path) for path in entities),
         key=lambda item: len(item[0]),
         reverse=True,
     )
+    if symbols is None:
+        symbols = _package_symbol_index(entities)
     targets: set[str] = set()
     if relative.startswith("workflow/"):
         modules, warnings = _called_import_modules(
@@ -670,9 +743,12 @@ def _direct_calls(
         modules, warnings = _imported_modules(entities[relative])
     for module in modules:
         for prefix, target in prefixes:
-            if target != relative and (module == prefix or module.startswith(prefix + ".")):
-                targets.add(target)
-                break
+            if not (module == prefix or module.startswith(prefix + ".")):
+                continue
+            resolved = _resolve_package_import(module, prefix, target, symbols)
+            if resolved and resolved != relative:
+                targets.add(resolved)
+            break
     if relative.startswith("workflow/"):
         nodes, _, local_warnings = _analysis_nodes(
             entities[relative], _analysis_entry_name(relative),
@@ -852,6 +928,7 @@ def _program_logic(relative: str) -> dict:
     entities = _entity_paths()
     if relative not in entities:
         raise FileNotFoundError(relative)
+    symbols = _package_symbol_index(entities)
     depths = {relative: 0}
     queue = deque([relative])
     edges: list[dict[str, str]] = []
@@ -859,7 +936,7 @@ def _program_logic(relative: str) -> dict:
     analysis_warnings: set[str] = set()
     while queue and len(depths) < 128:
         source = queue.popleft()
-        targets, warnings = _direct_calls(source, entities)
+        targets, warnings = _direct_calls(source, entities, symbols)
         analysis_warnings.update(warnings)
         for target in targets:
             edge = (source, target)

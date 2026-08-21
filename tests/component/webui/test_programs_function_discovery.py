@@ -96,6 +96,14 @@ def test_programs_treats_workflow_as_category_not_program() -> None:
     command_logic = _program_logic("workflow/goal/command")
     assert command_logic["root"] == "workflow/goal/command"
     assert command_logic["nodes"][0]["program_kind"] is None
+    notices_logic = _program_logic("workflow/goal/notices")
+    notice_ids = {node["id"] for node in notices_logic["nodes"]}
+    assert "agentic_programming/agent" not in notice_ids
+    assert "agentic_programming/llm" not in notice_ids
+    assert "workflow/goal" not in notice_ids
+    assert "workflow/goal/state" in notice_ids
+    goal_ids = {node["id"] for node in _program_logic("workflow/goal")["nodes"]}
+    assert "agentic_programming/agent" in goal_ids
     docs_entry = _list_entries("workflow/docs_question")["entries"]
     assert [
         (entry["callable_name"], entry["logic_path"])
