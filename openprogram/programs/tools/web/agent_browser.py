@@ -403,6 +403,7 @@ function(
     unsafe_in=['wechat', 'telegram'],
     max_result_chars=60_000,
     check_fn=check_agent_browser,
+    url_params=["url"],
 )(execute)
 
 __all__ = ["NAME", "SPEC", "DESCRIPTION", "execute", "check_agent_browser"]

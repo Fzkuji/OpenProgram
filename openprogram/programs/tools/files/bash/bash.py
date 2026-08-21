@@ -26,6 +26,10 @@ from .prompt import DEFAULT_MAX_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, DESCRIPTION
     persist_full=True,
     toolset=["core"],
     unsafe_in=["wechat", "telegram", "plan"],  # destructive in public channels; hidden in plan mode
+    # Exempt: paths live inside `command`, not on the parameter surface.
+    # wrap_command + the OS sandbox already inspect the argv/cwd tree.
+    path_params={},
+    url_params=[],
 )
 def bash(command: str,
         timeout: float | None = None,

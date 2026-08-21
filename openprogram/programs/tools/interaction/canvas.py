@@ -238,6 +238,7 @@ function(
     description=DESCRIPTION,
     parameters=SPEC["parameters"],
     toolset=['core'],
+    path_params={"path": "write"},
 )(execute)
 
 __all__ = ["NAME", "SPEC", "execute", "DESCRIPTION"]

@@ -30,6 +30,7 @@ def _fmt_size(n: int) -> str:
     accept_edits_safe=True,   # acceptEdits 档下自动放行（只读）
     description=_DESCRIPTION,
     toolset=["core", "research"],
+    path_params={"path": "read"},
 )
 def list_dir(path: str, show_hidden: bool = False) -> str:
     """List the contents of a directory.

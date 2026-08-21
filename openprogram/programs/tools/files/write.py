@@ -97,6 +97,7 @@ write = function(
     description=_DESCRIPTION,
     toolset=["core"],
     unsafe_in=["wechat", "telegram", "plan"],
+    path_params={"file_path": "write"},
 )(execute)
 
 

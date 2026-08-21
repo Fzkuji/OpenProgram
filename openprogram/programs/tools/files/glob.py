@@ -43,6 +43,7 @@ def _is_dangerous_root(root: str) -> bool:
     accept_edits_safe=True,   # acceptEdits 档下自动放行（只读）
     description=_DESCRIPTION,
     toolset=["core", "research"],
+    path_params={"path": "read"},
 )
 def glob_tool(pattern: str, path: str | None = None) -> str:
     """Find files matching a glob pattern.

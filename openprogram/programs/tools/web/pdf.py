@@ -155,6 +155,7 @@ function(
     max_result_chars=50_000,
     persist_full=True,
     check_fn=_tool_check_fn,
+    path_params={"file_path": "read"},
 )(execute)
 
 __all__ = ["NAME", "SPEC", "execute", "DESCRIPTION", "_tool_check_fn"]

@@ -26,6 +26,7 @@ _DESCRIPTION = (
     description=_DESCRIPTION,
     toolset=["core"],
     unsafe_in=["wechat", "telegram", "plan"],
+    path_params={"file_path": "write"},
 )
 def edit(file_path: str,
          old_string: str,

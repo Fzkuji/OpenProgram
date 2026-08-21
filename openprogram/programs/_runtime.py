@@ -91,6 +91,7 @@ from ._execution_common import (
     _normalize_result as _normalize_result_impl,
     _persist_full_result as _persist_full_result_impl,
     _tool_results_dir as _default_tool_results_dir,
+    dispatch_sandbox_error,
     invoke_callable,
     timeout_tool_result,
 )
@@ -677,6 +678,10 @@ def function(
     available_if: Optional[Callable[[], bool]] = None,
     defer: bool = False,
     register_globally: bool = True,
+    # Dispatch-layer sandbox / URL fail-closed. None = infer from
+    # path/file_path + tool name. {} / [] = explicit exemption.
+    path_params: Optional[dict[str, str]] = None,
+    url_params: Optional[list[str]] = None,
 ):
     """Wrap a plain function as a registered AgentTool.
 
@@ -747,6 +752,13 @@ def function(
         common-path prompt stays cheap; the LLM still discovers
         them by name from the catalog listing.
 
+      path_params: map of arg name → ``"read"`` / ``"write"``. Checked
+        against ``validate_read_path`` / ``validate_write_path`` before
+        the body runs. ``None`` falls back to ``path`` / ``file_path``
+        plus the tool name (unknown direction → write). ``{}`` exempts.
+      url_params: arg names checked with ``normalize_url`` (http/https
+        only). ``None`` / ``[]`` means no URL check at dispatch.
+
     Framework injects three optional kwargs into the wrapped fn if it
     declares them in its signature:
 
@@ -775,6 +787,7 @@ def function(
                 toolset=toolset, unsafe_in=unsafe_in, expose=expose,
                 available_if=available_if, defer=defer,
                 register_globally=register_globally,
+                path_params=path_params, url_params=url_params,
             )
         return _inner
 
@@ -884,6 +897,13 @@ def function(
                 )
             raise
         record_current_job_activity("operation_start")
+
+        denial = dispatch_sandbox_error(
+            actual_name, args,
+            path_params=path_params, url_params=url_params,
+        )
+        if denial is not None:
+            return denial
 
         # Cache check (after timeout clamp — clamp is part of the cache key).
         if cache:

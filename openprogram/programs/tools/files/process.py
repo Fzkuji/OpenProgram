@@ -280,4 +280,8 @@ function(
     parameters=SPEC["parameters"],
     toolset=['core'],
     unsafe_in=['wechat', 'telegram', 'plan'],
+    # Exempt: same as bash — the command string is not a surface path.
+    # Child sessions go through the backend / OS sandbox.
+    path_params={},
+    url_params=[],
 )(execute)

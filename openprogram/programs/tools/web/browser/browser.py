@@ -419,6 +419,11 @@ function(
     requires_approval=_browser_requires_approval,
     max_result_chars=60_000,
     check_fn=check_playwright,
+    # upload is read; screenshot/download are write. One `path` arg —
+    # write is the fail-closed direction (upload of a denied-read file
+    # still fails write-root / deny_write, and the tool re-checks read).
+    path_params={"path": "write"},
+    url_params=["url"],
 )(execute)
 
 __all__ = ["NAME", "SPEC", "DESCRIPTION", "execute", "check_playwright"]

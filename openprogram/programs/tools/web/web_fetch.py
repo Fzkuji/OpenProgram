@@ -376,6 +376,7 @@ function(
     toolset=['core', 'research'],
     max_result_chars=30_000,
     persist_full=True,
+    url_params=["url"],
 )(execute)
 
 __all__ = ["NAME", "SPEC", "execute", "DESCRIPTION"]

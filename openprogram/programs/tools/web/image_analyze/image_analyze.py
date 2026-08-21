@@ -129,6 +129,8 @@ function(
     parameters=SPEC["parameters"],
     toolset=['core', 'research'],
     check_fn=_tool_check_fn,
+    path_params={"image_paths": "read"},
+    url_params=["image_urls"],
 )(execute)
 
 __all__ = ["NAME", "SPEC", "execute", "DESCRIPTION", "_tool_check_fn"]

@@ -190,6 +190,7 @@ read = function(
     max_result_chars=200_000,
     persist_full=False,
     toolset=["core", "research"],
+    path_params={"file_path": "read"},
 )(execute)
 
 

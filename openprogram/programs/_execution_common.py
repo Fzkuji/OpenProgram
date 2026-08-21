@@ -9,6 +9,8 @@ What this module owns
 * ``asyncio.wait_for`` + sync-in-executor with copied Context
   (``invoke_callable``).
 * The timeout ``AgentToolResult`` text (``timeout_tool_result``).
+* Dispatch-layer sandbox / URL fail-closed
+  (``dispatch_sandbox_error``), called before the tool body runs.
 
 What stays local, and why
 -------------------------
@@ -48,6 +50,11 @@ DEFAULT_MAX_RESULT_CHARS = 30_000
 MIN_KEEP_CHARS = 2_000
 DEFAULT_HEAD_RATIO = 0.7
 TOOL_RESULTS_DIRNAME = "tool_results"
+
+# Surface-path names the undeclared-tool fallback will inspect.
+_FALLBACK_PATH_KEYS = frozenset({"path", "file_path"})
+_READ_NAME_HINTS = ("read", "list", "glob", "grep", "pdf")
+_WRITE_NAME_HINTS = ("write", "edit")
 
 
 @dataclass
@@ -192,6 +199,107 @@ def _normalize_result(
         details=details or None,
         is_error=is_error,
     )
+
+
+def _iter_str_values(value: Any):
+    if isinstance(value, str):
+        if value:
+            yield value
+        return
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            if isinstance(item, str) and item:
+                yield item
+
+
+def infer_path_direction(tool_name: str) -> str:
+    """Read if the name is clearly a reader; otherwise write (fail-closed)."""
+    lowered = tool_name.lower()
+    if any(hint in lowered for hint in _WRITE_NAME_HINTS):
+        return "write"
+    if any(hint in lowered for hint in _READ_NAME_HINTS):
+        return "read"
+    return "write"
+
+
+def resolve_path_params(
+    tool_name: str,
+    args: dict[str, Any],
+    declared: dict[str, str] | None,
+) -> dict[str, str]:
+    """Declared map wins. ``{}`` is an explicit exemption. ``None`` → fallback."""
+    if declared is not None:
+        return declared
+    direction = infer_path_direction(tool_name)
+    return {
+        key: direction
+        for key in _FALLBACK_PATH_KEYS
+        if key in args
+    }
+
+
+def _path_for_write_check(raw: str) -> str:
+    """Match write/edit: relative paths bind to the active worktree first.
+
+    ``validate_write_path`` realpaths a relative arg against process cwd
+    but compares writable roots to the worktree. File tools call
+    ``resolve_path`` before validating; dispatch does the same so a
+    worktree-relative write is not rejected as outside the roots.
+    """
+    import os
+    if os.path.isabs(raw):
+        return raw
+    try:
+        from openprogram.worktree.path_resolve import resolve_path
+        resolved, _ = resolve_path(raw)
+        return resolved
+    except Exception:
+        return raw
+
+
+def dispatch_sandbox_error(
+    tool_name: str,
+    args: dict[str, Any],
+    *,
+    path_params: dict[str, str] | None = None,
+    url_params: list[str] | None = None,
+) -> AgentToolResult | None:
+    """Fail-closed path/URL check. Returns an is_error result, or None to proceed.
+
+    Read paths go to ``validate_read_path`` unchanged (it already
+    ``expanduser`` + ``realpath``s; relative → process cwd). Write
+    paths are worktree-anchored first, same as the file tools.
+    """
+    from openprogram.sandbox import validate_read_path, validate_write_path
+    from openprogram.security.url_policy import URLPolicyError, normalize_url
+
+    resolved = resolve_path_params(tool_name, args, path_params)
+    for key, direction in resolved.items():
+        if key not in args:
+            continue
+        for raw in _iter_str_values(args[key]):
+            if direction == "read":
+                violation = validate_read_path(raw)
+            else:
+                violation = validate_write_path(_path_for_write_check(raw))
+            if violation:
+                return AgentToolResult(
+                    content=[TextContent(text=f"Error: sandbox policy: {violation}")],
+                    is_error=True,
+                )
+
+    for key in url_params or ():
+        if key not in args:
+            continue
+        for raw in _iter_str_values(args[key]):
+            try:
+                normalize_url(raw)
+            except URLPolicyError as exc:
+                return AgentToolResult(
+                    content=[TextContent(text=f"Error: {exc}")],
+                    is_error=True,
+                )
+    return None
 
 
 def timeout_tool_result(

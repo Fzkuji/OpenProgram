@@ -221,6 +221,7 @@ function(
     parameters=SPEC["parameters"],
     toolset=['core'],
     check_fn=_tool_check_fn,
+    path_params={"output_dir": "write"},
 )(execute)
 
 __all__ = ["NAME", "SPEC", "execute", "DESCRIPTION", "_tool_check_fn"]

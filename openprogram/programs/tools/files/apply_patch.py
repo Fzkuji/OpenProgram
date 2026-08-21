@@ -350,4 +350,8 @@ function(
     parameters=SPEC["parameters"],
     toolset=['core'],
     unsafe_in=['wechat', 'telegram', 'plan'],
+    # Exempt: paths are parsed out of the patch text, not a path/file_path
+    # argument. execute() already validate_write_path's each target.
+    path_params={},
+    url_params=[],
 )(execute)

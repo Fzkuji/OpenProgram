@@ -138,6 +138,7 @@ def _run_python_fallback(pattern: str, path: str, glob: str | None,
     description=_DESCRIPTION,
     max_result_chars=20_000,    # Claude Code default for grep
     toolset=["core", "research"],
+    path_params={"path": "read"},
 )
 def grep(pattern: str,
          path: str | None = None,
