@@ -15,6 +15,7 @@ as a decorator. The class form allows clean documentation and introspection.
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import inspect
 import logging
@@ -945,10 +946,15 @@ class agentic_function:
         # @agentic_function may be imported before openprogram.programs
         # is fully constructed.
         from openprogram.agent.types import AgentToolResult
+        from openprogram.programs._execution_common import (
+            invoke_callable,
+            timeout_tool_result,
+            _normalize_result,
+        )
         from openprogram.programs._runtime import (
             _build_and_register_tool,
-            _normalize_result,
             _effective_max_chars,
+            _persist_full_result,
             _cache_key,
             _cache_get,
             _cache_set,
@@ -997,57 +1003,35 @@ class agentic_function:
                     if hit is not None:
                         return hit
 
-                async def _invoke():
-                    raw = wrapper(**kwargs)
-                    if inspect.iscoroutine(raw):
-                        raw = await raw
-                    return raw
-
-                if exec_timeout is not None:
-                    import asyncio
-                    import contextvars as _cv
-                    try:
-                        if inspect.iscoroutinefunction(wrapper):
-                            raw = await asyncio.wait_for(
-                                _invoke(), timeout=exec_timeout)
-                        else:
-                            # A sync wrapper would block the event loop and
-                            # make wait_for useless — run it in a thread,
-                            # carrying the current Context so the body sees
-                            # the calling task's ContextVars (_store /
-                            # _call_id / _current_runtime).
-                            loop = asyncio.get_running_loop()
-                            ctx = _cv.copy_context()
-                            raw = await asyncio.wait_for(
-                                loop.run_in_executor(
-                                    None, lambda: ctx.run(wrapper, **kwargs)),
-                                timeout=exec_timeout,
-                            )
-                    except asyncio.TimeoutError:
-                        setter = getattr(cancel, "set", None)
-                        if callable(setter):
-                            setter()
-                        pending = _forced_node_id.get() or _call_id.get() or call_id
-                        if pending:
-                            _update_function_call_exit(
-                                pending_id=pending,
-                                output=None,
-                                error=(
-                                    f"function {name} timed out after "
-                                    f"{exec_timeout}s"
-                                ),
-                                status="error",
-                                expose=self.expose,
-                                started_at=None,
-                                ended_at=time.time(),
-                            )
-                        from openprogram.providers.types import TextContent
-                        return AgentToolResult(content=[TextContent(text=(
-                            f"[error] function {name} timed out after "
-                            f"{exec_timeout}s"
-                        ))], is_error=True)
-                else:
-                    raw = await _invoke()
+                try:
+                    raw = await invoke_callable(
+                        wrapper, kwargs,
+                        timeout=exec_timeout,
+                        is_async=inspect.iscoroutinefunction(wrapper),
+                        # No-timeout sync still runs on the loop thread.
+                        run_sync_in_executor=False,
+                    )
+                except asyncio.TimeoutError:
+                    if exec_timeout is None:
+                        raise
+                    setter = getattr(cancel, "set", None)
+                    if callable(setter):
+                        setter()
+                    pending = _forced_node_id.get() or _call_id.get() or call_id
+                    if pending:
+                        _update_function_call_exit(
+                            pending_id=pending,
+                            output=None,
+                            error=(
+                                f"function {name} timed out after "
+                                f"{exec_timeout}s"
+                            ),
+                            status="error",
+                            expose=self.expose,
+                            started_at=None,
+                            ended_at=time.time(),
+                        )
+                    return timeout_tool_result(name, exec_timeout)
             finally:
                 if cancel_token is not None:
                     _current_cancel.reset(cancel_token)
@@ -1061,6 +1045,7 @@ class agentic_function:
                     max_chars=_effective_max_chars(max_chars),
                     persist_full=persist_full,
                     head_ratio=head_ratio,
+                    persist=_persist_full_result,
                 )
             if use_cache and not result.is_error:
                 _cache_set(_cache_key(name, kwargs), result, cache_ttl)

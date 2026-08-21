@@ -74,49 +74,47 @@ import threading
 import time
 import traceback
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional, Union, get_args, get_origin
+from typing import Any, Callable, Optional, Union, get_args, get_origin
 
 from openprogram.agent.types import AgentTool, AgentToolResult
-from openprogram.providers.types import ImageContent, TextContent
+from openprogram.providers.types import TextContent
 
+from ._execution_common import (
+    DEFAULT_HEAD_RATIO,
+    DEFAULT_MAX_RESULT_CHARS,
+    MIN_KEEP_CHARS,
+    TOOL_RESULTS_DIRNAME,
+    ToolReturn,
+    _cap_result_text,
+    _normalize_result as _normalize_result_impl,
+    _persist_full_result as _persist_full_result_impl,
+    _tool_results_dir as _default_tool_results_dir,
+    invoke_callable,
+    timeout_tool_result,
+)
 
-# ---------------------------------------------------------------------------
-# Result type — ergonomic wrapper around AgentToolResult
-# ---------------------------------------------------------------------------
-
-@dataclass
-class ToolReturn:
-    """Optional structured return value. Tools can also return a plain
-    str (auto-wrapped as TextContent) or an AgentToolResult directly.
-
-    Use this when a tool needs to return text + images + structured
-    JSON together, or to mark itself as an error result without
-    raising an exception (for "the LLM should see this as a tool
-    error" semantics).
-    """
-    text: Optional[str] = None
-    images: list[Union[bytes, str]] = field(default_factory=list)
-    json_data: Any = None
-    is_error: bool = False
-
-
-# ---------------------------------------------------------------------------
-# Defaults — match references' values for sanity
-# ---------------------------------------------------------------------------
-
-DEFAULT_MAX_RESULT_CHARS = 30_000     # Bash tool default in Claude Code
-MIN_KEEP_CHARS = 2_000                 # OpenClaw safety floor
-DEFAULT_HEAD_RATIO = 0.7               # 70% head + 30% tail
-TOOL_RESULTS_DIRNAME = "tool_results"  # for persist_full mode
+# Re-export names tests and callers import from this module.
+# ``_tool_results_dir`` stays a local function so monkeypatches on
+# ``openprogram.programs._runtime._tool_results_dir`` still redirect persist.
 
 
 def _tool_results_dir() -> Path:
-    from openprogram.paths import get_state_dir
-    p = get_state_dir() / TOOL_RESULTS_DIRNAME
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+    return _default_tool_results_dir()
+
+
+def _persist_full_result(call_id: str, text: str) -> Path:
+    return _persist_full_result_impl(call_id, text, results_dir=_tool_results_dir())
+
+
+def _normalize_result(raw: Any, *, call_id: str, max_chars: int,
+                      persist_full: bool, head_ratio: float) -> AgentToolResult:
+    return _normalize_result_impl(
+        raw, call_id=call_id, max_chars=max_chars,
+        persist_full=persist_full, head_ratio=head_ratio,
+        persist=_persist_full_result,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -484,122 +482,6 @@ def _build_parameters_schema(fn: Callable) -> dict[str, Any]:
         "properties": properties,
         **({"required": required} if required else {}),
     }
-
-
-# ---------------------------------------------------------------------------
-# Result truncation
-# ---------------------------------------------------------------------------
-
-def _cap_result_text(text: str, max_chars: int,
-                     *, head_ratio: float = DEFAULT_HEAD_RATIO) -> str:
-    if len(text) <= max_chars:
-        return text
-    keep = max(max_chars, MIN_KEEP_CHARS)
-    head = int(keep * head_ratio)
-    tail = keep - head
-    elided = len(text) - head - tail
-    return (
-        text[:head]
-        + f"\n\n[... {elided:,} chars elided of {len(text):,} total —"
-        f" call again with narrower scope or check the persisted file ...]\n\n"
-        + text[-tail:]
-    )
-
-
-def _safe_result_id(call_id: str) -> str:
-    cleaned = re.sub(r"[^A-Za-z0-9_.-]", "_", str(call_id or ""))[:128]
-    return cleaned or "result"
-
-
-def _persist_full_result(call_id: str, text: str) -> Path:
-    p = _tool_results_dir() / f"{_safe_result_id(call_id)}.txt"
-    p.write_text(text, encoding="utf-8")
-    return p
-
-
-def _normalize_result(raw: Any, *, call_id: str, max_chars: int,
-                      persist_full: bool, head_ratio: float) -> AgentToolResult:
-    """Convert tool's raw return value into an AgentToolResult.
-
-    Accepted shapes:
-      - str → TextContent
-      - dict / list → JSON-serialized as TextContent
-      - ToolReturn → text + images + json
-      - AgentToolResult → passthrough
-
-    Then applies char cap with optional persist-to-disk for the full
-    version (so the LLM can lazy-load via a read tool when needed).
-    """
-    if isinstance(raw, AgentToolResult):
-        return raw
-
-    images: list[ImageContent] = []
-    is_error = False
-    json_payload: Any = None
-    text_part: Optional[str] = None
-
-    if isinstance(raw, ToolReturn):
-        text_part = raw.text
-        is_error = raw.is_error
-        json_payload = raw.json_data
-        for img in raw.images:
-            if isinstance(img, bytes):
-                import base64
-                b64 = base64.b64encode(img).decode("ascii")
-                images.append(ImageContent(data=b64, mime_type="image/png"))
-            elif isinstance(img, str):
-                # Assume already-base64 or URL — let the provider sort it out
-                images.append(ImageContent(data=img, mime_type="image/png"))
-    elif isinstance(raw, str):
-        text_part = raw
-    elif raw is None:
-        text_part = ""
-    else:
-        try:
-            text_part = json.dumps(raw, ensure_ascii=False, default=str)
-        except Exception:
-            text_part = repr(raw)
-
-    if text_part is None:
-        text_part = ""
-
-    if json_payload is not None and not text_part:
-        try:
-            text_part = json.dumps(json_payload, ensure_ascii=False, default=str)
-        except Exception:
-            pass
-
-    # Apply cap; optionally persist full version.
-    full_text = text_part
-    if len(full_text) > max_chars:
-        if persist_full:
-            try:
-                p = _persist_full_result(call_id, full_text)
-                marker = f"\n\n[Full result ({len(full_text):,} chars) saved at {p} — read tool can fetch it]"
-            except Exception:
-                marker = ""
-            text_part = _cap_result_text(full_text, max_chars,
-                                          head_ratio=head_ratio) + marker
-        else:
-            text_part = _cap_result_text(full_text, max_chars,
-                                          head_ratio=head_ratio)
-
-    content: list[Any] = []
-    if text_part:
-        content.append(TextContent(text=text_part))
-    content.extend(images)
-    if not content:
-        content.append(TextContent(text=""))
-
-    details: dict[str, Any] = {}
-    if json_payload is not None:
-        details["json"] = json_payload
-
-    return AgentToolResult(
-        content=content,
-        details=details or None,
-        is_error=is_error,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -1010,36 +892,20 @@ def function(
             if hit is not None:
                 return hit
 
-        async def _invoke():
-            if is_async_fn:
-                return await fn(**passable_kwargs)
-            loop = asyncio.get_running_loop()
-            # Propagate the current Context into the executor thread so
-            # tool bodies see ContextVars set on the calling task (e.g.
-            # ``_store`` / ``_current_turn_id`` for checkpoint,
-            # ``_call_id`` for nested @agentic_function attribution).
-            # ``run_in_executor`` does not copy context by default.
-            ctx = contextvars.copy_context()
-            return await loop.run_in_executor(
-                None, lambda: ctx.run(fn, **passable_kwargs))
-
         try:
-            if effective_timeout is not None:
-                raw = await asyncio.wait_for(_invoke(), timeout=effective_timeout)
-            else:
-                raw = await _invoke()
+            raw = await invoke_callable(
+                fn, passable_kwargs,
+                timeout=effective_timeout,
+                is_async=is_async_fn,
+            )
         except asyncio.TimeoutError:
             reason_code = current_job_operation_timeout_reason(effective_timeout)
-            return AgentToolResult(
-                content=[TextContent(text=(
-                    f"[error] function {actual_name} timed out after "
-                    f"{effective_timeout}s"
-                ))],
+            return timeout_tool_result(
+                actual_name, effective_timeout,
                 details={
                     "timeout": True,
                     "reason_code": reason_code or "error.operation_timeout",
                 },
-                is_error=True,
             )
         except asyncio.CancelledError:
             raise
