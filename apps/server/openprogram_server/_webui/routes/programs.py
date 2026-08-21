@@ -825,35 +825,44 @@ def _called_import_modules(
     """Return imported call targets reachable from one Agentic entry."""
     nodes, trees, warnings = _analysis_nodes(path, entry_name)
     aliases: dict[str, str] = {}
+
+    def record_import(node: ast.AST) -> None:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                local = alias.asname or alias.name.split(".", 1)[0]
+                aliases[local] = alias.name
+            return
+        if not isinstance(node, ast.ImportFrom):
+            return
+        module = node.module or ""
+        if node.level:
+            try:
+                relative = path.resolve().relative_to(
+                    PROGRAMS_ROOT.resolve(),
+                )
+                source_module = _module_prefix(relative.as_posix())
+                package = (
+                    source_module
+                    if path.is_dir()
+                    else source_module.rpartition(".")[0]
+                )
+                module = importlib.util.resolve_name(
+                    "." * node.level + module, package,
+                )
+            except (ImportError, ValueError):
+                return
+        for alias in node.names:
+            if alias.name != "*":
+                aliases[alias.asname or alias.name] = (
+                    f"{module}.{alias.name}" if module else alias.name
+                )
+
     for tree in trees:
         for node in tree.body:
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    local = alias.asname or alias.name.split(".", 1)[0]
-                    aliases[local] = alias.name
-            elif isinstance(node, ast.ImportFrom):
-                module = node.module or ""
-                if node.level:
-                    try:
-                        relative = path.resolve().relative_to(
-                            PROGRAMS_ROOT.resolve(),
-                        )
-                        source_module = _module_prefix(relative.as_posix())
-                        package = (
-                            source_module
-                            if path.is_dir()
-                            else source_module.rpartition(".")[0]
-                        )
-                        module = importlib.util.resolve_name(
-                            "." * node.level + module, package,
-                        )
-                    except (ImportError, ValueError):
-                        continue
-                for alias in node.names:
-                    if alias.name != "*":
-                        aliases[alias.asname or alias.name] = (
-                            f"{module}.{alias.name}" if module else alias.name
-                        )
+            record_import(node)
+    for root in nodes:
+        for node in ast.walk(root):
+            record_import(node)
 
     def imported_name(expr: ast.expr) -> str | None:
         if isinstance(expr, ast.Name):
