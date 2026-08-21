@@ -88,27 +88,25 @@ def enable_default_models_on_login(provider_id: str) -> list[str]:
     if not defaults:
         return []
     # Lazy: auth must not hard-depend on the webui storage layer at import.
-    from openprogram.webui._model_listing.storage import (
+    from openprogram.providers.storage import (
         _cache_lock,
-        _read_providers_cfg,
+        _update_providers_cfg,
         _upsert_spec_row,
-        _write_providers_cfg,
     )
     written: list[str] = []
     with _cache_lock:
-        cfg = _read_providers_cfg()
-        pcfg = cfg.setdefault(provider_id, {})
-        if pcfg.get("models"):
-            return []  # not fresh — respect the user's enable/disable history
-        for row in defaults:
-            spec = dict(row, source="subscription-login")
-            _upsert_spec_row(pcfg, spec)
-            written.append(row["id"])
-        pcfg.setdefault("enabled", True)
-        _write_providers_cfg(cfg)
-    if written:
-        from openprogram.providers import enabled_models as mg
-        mg.reload()
+
+        def seed(cfg: dict) -> None:
+            pcfg = cfg.setdefault(provider_id, {})
+            if pcfg.get("models"):
+                return
+            for row in defaults:
+                spec = dict(row, source="subscription-login")
+                _upsert_spec_row(pcfg, spec)
+                written.append(row["id"])
+            pcfg.setdefault("enabled", True)
+
+        _update_providers_cfg(seed)
     return written
 
 

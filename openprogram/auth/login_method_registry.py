@@ -45,7 +45,10 @@ _METHODS: dict[str, list[LoginMethod]] = {
     # renders and an api_key method would have no entry point there. Offer
     # import only, so CLI and web agree (use the Google provider for a key).
     "gemini-subscription": [("import_from_cli", "Import from ~/.gemini/oauth_creds.json")],
-    "xai-subscription":    [("pkce_oauth",  "Sign in with Grok (opens browser)")],
+    "xai-subscription":    [
+        ("pkce_oauth",  "Sign in with Grok (opens browser)"),
+        ("paste_token", "Paste Grok access token"),
+    ],
     # NOTE: qwen has a credential source but no provider runtime / catalog entry,
     # so it can't run models and never appears in the web provider list. Don't
     # advertise a login for it — CLI and web agree it isn't a usable provider.

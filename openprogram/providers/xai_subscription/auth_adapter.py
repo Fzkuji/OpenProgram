@@ -56,6 +56,7 @@ def build_pkce_config():
         },
         include_nonce=True,
         token_echo_challenge=True,
+        also_prompt_paste=True,
     )
 
 
@@ -141,8 +142,41 @@ def register_xai_subscription_auth() -> None:
 register_xai_subscription_auth()
 
 
+def import_pasted_token(token: str, *, account_id: str = "default") -> Credential:
+    """Store a pasted SuperGrok access token as an OAuth credential.
+
+    Used when the user already has a bearer (browser page, ~/.grok/auth.json)
+    and just wants to drop it on the Grok Subscription card.
+    """
+    token = (token or "").strip()
+    if not token:
+        raise RuntimeError("no access token pasted")
+    now_ms = int(time.time() * 1000)
+    return Credential(
+        provider_id=PROVIDER_ID,
+        account_id=account_id,
+        kind="oauth",
+        payload=CredentialData(
+            kind="oauth",
+            auth_value=token,
+            data={
+                "refresh_token": "",
+                "expires_at_ms": now_ms + 7 * 24 * 3600 * 1000,
+                "client_id": OAUTH_CLIENT_ID,
+                "token_endpoint": OAUTH_TOKEN_URL,
+            },
+        ),
+        status="valid",
+        created_at_ms=now_ms,
+        updated_at_ms=now_ms,
+        source="paste_token:xai-subscription",
+        metadata={},
+    )
+
+
 __all__ = [
     "PROVIDER_ID",
     "build_pkce_config",
     "register_xai_subscription_auth",
+    "import_pasted_token",
 ]

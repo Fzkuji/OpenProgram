@@ -97,20 +97,12 @@ _SETUP_HINTS: dict[str, str] = {
         "provider (no API key needed)."
     ),
     "xai-subscription": (
-        "Grok subscription uses SuperGrok or X Premium+ — no API key to paste.\n"
+        "This is the SuperGrok / X Premium+ card — not the xAI API-key row.\n"
+        "Click Sign in on this card. A browser tab opens to auth.x.ai; use the\n"
+        "account that holds the subscription and approve access.\n"
         "\n"
-        "Click Sign in on this card (or run the command below). A browser tab\n"
-        "opens to auth.x.ai; sign in with the account that holds the subscription\n"
-        "and approve access. The callback lands on 127.0.0.1:56121.\n"
-        "\n"
-        "$ openprogram providers login xai-subscription\n"
-        "\n"
-        "Tokens are saved under the xai-subscription pool and refreshed\n"
-        "automatically. Requests go to cli-chat-proxy.grok.com (the Grok CLI proxy),\n        not api.x.ai.\n"
-        "call, billed to the subscription rather than an API key.\n"
-        "\n"
-        "If you only have a pay-per-token xAI API key, use the regular **xAI**\n"
-        "provider instead — they're separate billing paths."
+        "When it comes back, pick Grok 4.5 (or Grok 4) in the chat model menu.\n"
+        "Do not paste anything into the **xAI** provider — that one is pay-per-token."
     ),
     "gemini-subscription": (
         "Gemini CLI reuses your Gemini Advanced / Workspace subscription\n"

@@ -67,6 +67,17 @@ async def run_login(
         from openprogram.providers.anthropic import auth_adapter as _anth
         cred = _anth.import_setup_token(token, account_id=account)
 
+    elif method == "paste_token":
+        if provider != "xai-subscription":
+            raise AuthConfigError(f"no paste-token login for {provider!r}")
+        token = (api_key or "").strip() or (
+            await ui.prompt("Paste the Grok access token", secret=True)
+        ).strip()
+        from openprogram.providers.xai_subscription.auth_adapter import (
+            import_pasted_token,
+        )
+        cred = import_pasted_token(token, account_id=account)
+
     elif method == "device_code":
         cred = await _run_device_code(provider, account, ui)
 

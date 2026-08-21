@@ -68,7 +68,7 @@ PROVIDER_LABELS: dict[str, str] = {
     # CLI provider). Tools come from OpenProgram's own registry instead
     # of the CLI's built-ins.
     "claude-code": "Claude Code",
-    "xai-subscription": "Grok",
+    "xai-subscription": "Grok Subscription",
     # CLI-backed:
     "gemini-cli": "Gemini CLI",
 }

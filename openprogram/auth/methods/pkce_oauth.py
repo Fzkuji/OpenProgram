@@ -107,6 +107,8 @@ class PkceConfig:
     include_nonce: bool = False
     # xAI token exchange re-validates the PKCE challenge; echo it back.
     token_echo_challenge: bool = False
+    # Also show a paste box (web UI) so a missed loopback still works.
+    also_prompt_paste: bool = False
 
 
 @dataclass
@@ -207,26 +209,33 @@ class PkceLoginMethod(LoginMethod):
             )
             return self._credential_from_tokens(tokens)
 
-        # Wait for the browser to hit our localhost callback. We used
-        # to race this against a manual-paste prompt, but the prompt
-        # runs `input()` on a worker thread that Python can't cancel
-        # when the callback wins — asyncio.run() then hangs joining
-        # the blocked thread. Keep the flow single-armed; SSH/headless
-        # users can Ctrl+C and copy the redirect URL into `providers
-        # login --paste-url <url>` (not yet implemented — local flow
-        # first).
-        try:
-            code = await asyncio.wait_for(
-                _run_callback_server(self._cfg, state),
-                timeout=self._cfg.timeout_seconds,
-            )
-        except asyncio.TimeoutError:
-            raise TimeoutError(
-                f"OAuth flow timed out after {self._cfg.timeout_seconds}s. "
-                "Browser didn't redirect back to the local callback. "
-                "If you're on SSH, forward the port with "
-                "`ssh -L 1455:localhost:1455 <host>` and retry."
-            )
+        # Web LoginUi.prompt is cancel-safe (a Future). CLI prompt uses
+        # blocking input() and must not be raced. Race only on the web
+        # session object (`_s`) or when the provider asked for paste.
+        use_paste = self._cfg.also_prompt_paste and hasattr(ui, "_s")
+        if use_paste:
+            try:
+                code = await _race_callback_and_manual_paste(
+                    ui=ui, cfg=self._cfg, expected_state=state,
+                )
+            except RuntimeError as exc:
+                if "Can't bind" not in str(exc):
+                    raise
+                await ui.show_progress(str(exc))
+                code = await _ask_manual_paste(ui, state)
+        else:
+            try:
+                code = await asyncio.wait_for(
+                    _run_callback_server(self._cfg, state),
+                    timeout=self._cfg.timeout_seconds,
+                )
+            except asyncio.TimeoutError:
+                raise TimeoutError(
+                    f"OAuth flow timed out after {self._cfg.timeout_seconds}s. "
+                    "Browser didn't redirect back to the local callback. "
+                    "If you're on SSH, forward the port with "
+                    "`ssh -L 1455:localhost:1455 <host>` and retry."
+                )
 
         tokens = await _exchange_code_for_tokens(
             cfg=self._cfg, code=code, verifier=verifier, redirect_uri=redirect_uri,
