@@ -10,6 +10,11 @@ def _navigate(session_id: str, url: str) -> str:
         return sess
     if not url:
         return "Error: `url` is required for navigate."
+    from openprogram.security.url_policy import URLPolicyError, normalize_url
+    try:
+        url = normalize_url(url).normalized_url
+    except URLPolicyError as e:
+        return f"Error: {e}"
     try:
         sess["page"].goto(url)
         return f"Navigated {session_id} → {url}\nTitle: {sess['page'].title()}"
@@ -106,6 +111,10 @@ def _upload(session_id: str, selector: str, path: str) -> str:
     import os
     if not os.path.isabs(path):
         path = os.path.abspath(path)
+    from openprogram.sandbox import validate_read_path
+    violation = validate_read_path(path)
+    if violation:
+        return f"Error: sandbox policy: {violation}"
     if not os.path.isfile(path):
         return f"Error: file not found: {path}"
     try:

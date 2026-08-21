@@ -24,9 +24,9 @@ def validate_and_retry(
     result = action()
 
     for attempt in range(max_retries + 1):
-        judgment = llm(
+        judgment = str(llm(
             f"判断结果是否满足：{check}\n\n结果：{result}\n\n回答 YES 或 NO"
-        )
+        ) or "")
 
         if "YES" in judgment.upper():
             return result

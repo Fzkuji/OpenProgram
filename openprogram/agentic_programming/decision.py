@@ -457,7 +457,13 @@ def _try_parse(reply: str, registry: dict, runtime, context: dict | None):
     spec = registry[call]
     is_text = spec.get("_is_text", False)
     input_spec = spec.get("input", {})
-    args = dict(action.get("args") or {})
+    raw_args = action.get("args") or {}
+    if not isinstance(raw_args, dict):
+        raise _ParseError(
+            "bad_args",
+            f"args must be an object, got {type(raw_args).__name__}",
+        )
+    args = dict(raw_args)
 
     if is_text:
         missing = [n for n in input_spec if n not in args]
@@ -747,10 +753,14 @@ def make(
     """
     runtime = _resolve_runtime(runtime)
     menu, value_table = _normalize_options(options)
+    from openprogram.providers.utils import deadline as _dl
+    remain = _dl.remaining()
+    timeout_s = None if remain is None else (remain if remain > 0 else 1e-9)
     reply = runtime.exec(content=[
         {"type": "text", "text": f"{prompt}\n\n{render_options(menu)}"},
-    ])
+    ], timeout_s=timeout_s)
     return resolve_decision(
         reply, menu, value_table, runtime,
         context=context, max_retries=max_retries,
+        timeout_s=timeout_s,
     )

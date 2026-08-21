@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from pathlib import Path
 from typing import Any
 
 from openprogram.paths import get_active_profile, get_state_dir
+
+logger = logging.getLogger(__name__)
 
 
 FUNCTIONS_META = "functions_meta.json"
@@ -26,15 +29,29 @@ def _legacy_path(filename: str) -> Path:
     return Path(package_file).resolve().parent / filename
 
 
+def _read_meta_object(path: Path) -> dict[str, Any] | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        logger.warning("ignoring damaged meta file %s", path)
+        return None
+    if not isinstance(data, dict):
+        logger.warning("ignoring damaged meta file %s", path)
+        return None
+    return data
+
+
 def load_meta(filename: str, default: dict[str, Any]) -> dict[str, Any]:
     """Read profile state, copying the old package-local file once."""
     state = _state_path(filename)
     if state.is_file():
-        return json.loads(state.read_text(encoding="utf-8"))
+        return _read_meta_object(state) or {}
 
     legacy = _legacy_path(filename)
     if get_active_profile() is None and legacy.is_file():
-        data = json.loads(legacy.read_text(encoding="utf-8"))
+        data = _read_meta_object(legacy)
+        if data is None:
+            return {}
         save_meta(filename, data)
         return data
     return default

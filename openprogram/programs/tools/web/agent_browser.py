@@ -251,6 +251,11 @@ def _navigate(session_id: str, url: str) -> str:
         return sess
     if not url:
         return "Error: `url` is required for navigate."
+    from openprogram.security.url_policy import URLPolicyError, normalize_url
+    try:
+        url = normalize_url(url).normalized_url
+    except URLPolicyError as e:
+        return f"Error: {e}"
     return _run(sess, "navigate", [url])
 
 

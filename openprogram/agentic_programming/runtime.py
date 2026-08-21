@@ -32,10 +32,11 @@ import asyncio
 import contextvars
 import inspect
 import json
+import logging
 import os
 import random
 import time
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from openprogram.providers.structured_output import StructuredOutputError
@@ -57,7 +58,30 @@ if TYPE_CHECKING:
 # deployments with non-default network characteristics (proxied,
 # offline-capable, very-low-latency local models) can re-tune without
 # touching code.
-_RETRY_BACKOFF = float(os.environ.get("OPENPROGRAM_RETRY_BACKOFF_BASE", "1.5"))
+try:
+    _RETRY_BACKOFF = float(os.environ.get("OPENPROGRAM_RETRY_BACKOFF_BASE", "1.5"))
+except (TypeError, ValueError):
+    _RETRY_BACKOFF = 1.5
+
+_log = logging.getLogger(__name__)
+
+
+@dataclass
+class _ExecCallState:
+    """Per-exec() scratch fields. Nested exec() must not share these."""
+
+    active_llm_node_id: Optional[str] = None
+    last_blocks: list = field(default_factory=list)
+    last_usage: Any = None
+    pending_tool_names: list = field(default_factory=list)
+    pending_system_prompt: str = ""
+    pending_breakdown: Any = None
+    last_agent_iteration_count: int = 0
+
+
+_current_exec_state: contextvars.ContextVar[Optional[_ExecCallState]] = (
+    contextvars.ContextVar("_current_exec_state", default=None)
+)
 
 
 def _default_max_retries() -> int:
@@ -534,9 +558,10 @@ class Runtime:
         import uuid as _uuid
 
         self._closed = False  # Set early so __del__ is safe even if __init__ raises.
-        self._active_llm_node_id = (
-            None  # llm node of the in-flight exec (for tool-loop attribution)
-        )
+        # Per-exec scratch lives in ``_current_exec_state``. This idle bag is
+        # only the post-exec fallback so ``rt.last_usage`` / ``rt.last_blocks``
+        # still work after exec() returns.
+        self._idle_exec_state = _ExecCallState()
         self._prompted_functions: set[str] = (
             set()
         )  # Functions whose docstrings have been sent
@@ -562,9 +587,6 @@ class Runtime:
         self.max_retries = max_retries
         self.has_session = False  # Subclasses set True if they manage their own context
         self.on_stream = None  # Optional callback: fn(event_dict) for streaming events
-        self.last_usage = (
-            None  # Last call's token usage: {input_tokens, output_tokens, ...}
-        )
         self.usage_is_cumulative = (
             False  # True if last_usage accumulates across calls (e.g. Codex CLI)
         )
@@ -617,6 +639,87 @@ class Runtime:
                 )
             self.api_model = resolved
             self.provider_id = provider
+
+    def _exec_state(self) -> _ExecCallState:
+        st = _current_exec_state.get()
+        if st is not None:
+            return st
+        idle = getattr(self, "_idle_exec_state", None)
+        if idle is None:
+            idle = _ExecCallState()
+            self._idle_exec_state = idle
+        return idle
+
+    def _publish_exec_state(self) -> None:
+        st = _current_exec_state.get()
+        idle = getattr(self, "_idle_exec_state", None)
+        if idle is None:
+            idle = _ExecCallState()
+            self._idle_exec_state = idle
+        if st is None or st is idle:
+            return
+        idle.last_usage = st.last_usage
+        idle.last_blocks = list(st.last_blocks)
+        idle.pending_breakdown = st.pending_breakdown
+        idle.pending_tool_names = list(st.pending_tool_names)
+        idle.pending_system_prompt = st.pending_system_prompt
+        idle.last_agent_iteration_count = st.last_agent_iteration_count
+
+    @property
+    def last_usage(self):
+        return self._exec_state().last_usage
+
+    @last_usage.setter
+    def last_usage(self, value) -> None:
+        self._exec_state().last_usage = value
+
+    @property
+    def last_blocks(self):
+        return self._exec_state().last_blocks
+
+    @last_blocks.setter
+    def last_blocks(self, value) -> None:
+        self._exec_state().last_blocks = value if value is not None else []
+
+    @property
+    def last_agent_iteration_count(self):
+        return self._exec_state().last_agent_iteration_count
+
+    @last_agent_iteration_count.setter
+    def last_agent_iteration_count(self, value) -> None:
+        self._exec_state().last_agent_iteration_count = value
+
+    @property
+    def _active_llm_node_id(self):
+        return self._exec_state().active_llm_node_id
+
+    @_active_llm_node_id.setter
+    def _active_llm_node_id(self, value) -> None:
+        self._exec_state().active_llm_node_id = value
+
+    @property
+    def _pending_tool_names(self):
+        return self._exec_state().pending_tool_names
+
+    @_pending_tool_names.setter
+    def _pending_tool_names(self, value) -> None:
+        self._exec_state().pending_tool_names = value if value is not None else []
+
+    @property
+    def _pending_system_prompt(self):
+        return self._exec_state().pending_system_prompt
+
+    @_pending_system_prompt.setter
+    def _pending_system_prompt(self, value) -> None:
+        self._exec_state().pending_system_prompt = value or ""
+
+    @property
+    def _pending_breakdown(self):
+        return self._exec_state().pending_breakdown
+
+    @_pending_breakdown.setter
+    def _pending_breakdown(self, value) -> None:
+        self._exec_state().pending_breakdown = value
 
     # --- Skills ---
 
@@ -1360,7 +1463,9 @@ class Runtime:
         call_input = content
 
         # --- Call the LLM (with retry) ---
-        tools_token = _current_tools.set(tools) if tools else None
+        # ``tools=[]`` means "no tools" and must be distinguished from
+        # "not specified" (None), which falls back to the default toolset.
+        tools_token = _current_tools.set(tools) if tools is not None else None
         stream_fn_token = (
             _current_stream_fn.set(stream_fn) if stream_fn is not None else None
         )
@@ -1423,21 +1528,23 @@ class Runtime:
                 }
             )
         _deadline_token = _dl.set_deadline(_deadline)
-        # One exec == one llm node. Open it now (status=running); the
-        # tool loop inside _call_via_providers repoints _call_id to this
-        # node (after the prompt is built) so the model's tool calls
-        # attribute here. Closed on success/failure below.
-        _llm_node_id = self._open_model_call_node(
-            model=use_model,
-            execution_kind=execution_kind,
-            content_text=content_text,
-        )
-        self._active_llm_node_id = _llm_node_id
-        self.last_agent_iteration_count = 0
+        _exec_token = _current_exec_state.set(_ExecCallState())
+        _llm_node_id = None
         _llm_closed = False
+        attempts_used = 0
         try:
+            # One exec == one llm node. Open it now (status=running); the
+            # tool loop inside _call_via_providers repoints _call_id to this
+            # node (after the prompt is built) so the model's tool calls
+            # attribute here. Closed on success/failure below.
+            _llm_node_id = self._open_model_call_node(
+                model=use_model,
+                execution_kind=execution_kind,
+                content_text=content_text,
+            )
+            self._active_llm_node_id = _llm_node_id
+            self.last_agent_iteration_count = 0
             errors: list[str] = []
-            attempts_used = 0
             while attempts_used < self.max_retries:
                 # Pre-attempt deadline check: previous sleep or _call
                 # may have already crossed the line, in which case we
@@ -1620,6 +1727,11 @@ class Runtime:
                     error=_exc if _st == "error" else None,
                 )
             self._active_llm_node_id = None
+            self._publish_exec_state()
+            try:
+                _current_exec_state.reset(_exec_token)
+            except (ValueError, LookupError):
+                pass
             _dl.reset_deadline(_deadline_token)
             if tools_token is not None:
                 _current_tools.reset(tools_token)
@@ -1762,15 +1874,17 @@ class Runtime:
                 }
             )
         _deadline_token = _dl.set_deadline(_deadline)
-        # One exec == one llm node (see exec() for the rationale).
-        _llm_node_id = self._open_model_call_node(
-            model=use_model,
-            content_text=content_text,
-        )
-        self._active_llm_node_id = _llm_node_id
+        _exec_token = _current_exec_state.set(_ExecCallState())
+        _llm_node_id = None
         _llm_closed = False
+        attempts_used = 0
         try:
-            attempts_used = 0
+            # One exec == one llm node (see exec() for the rationale).
+            _llm_node_id = self._open_model_call_node(
+                model=use_model,
+                content_text=content_text,
+            )
+            self._active_llm_node_id = _llm_node_id
             while attempts_used < self.max_retries:
                 # Pre-attempt deadline check (see exec() for the rationale).
                 if _deadline is not None and time.monotonic() >= _deadline:
@@ -1915,6 +2029,11 @@ class Runtime:
                     error=_exc if _st == "error" else None,
                 )
             self._active_llm_node_id = None
+            self._publish_exec_state()
+            try:
+                _current_exec_state.reset(_exec_token)
+            except (ValueError, LookupError):
+                pass
             _dl.reset_deadline(_deadline_token)
             if response_format_token is not None:
                 _current_response_format.reset(response_format_token)
@@ -2632,11 +2751,20 @@ def _build_pi_context(content: list[dict]):
         "audio": "audio/mp3",
     }
 
-    def _load_media(block: dict, default_mime: str) -> tuple[str, str]:
+    def _load_media(block: dict, default_mime: str) -> tuple[str, str] | None:
         data = block.get("data")
         mime = block.get("mime_type")
         if not data:
-            path = block["path"]
+            path = block.get("path")
+            if not path:
+                _log.warning("skipping media block without data or path")
+                return None
+            from openprogram.sandbox import validate_read_path
+
+            violation = validate_read_path(path)
+            if violation:
+                _log.warning("skipping media block: %s", violation)
+                return None
             with open(path, "rb") as f:
                 data = base64.b64encode(f.read()).decode()
             mime = mime or _guess_mime(path) or default_mime
@@ -2661,7 +2789,10 @@ def _build_pi_context(content: list[dict]):
                 )
             )
         elif btype == "image":
-            data, mime = _load_media(block, _media_defaults["image"])
+            loaded = _load_media(block, _media_defaults["image"])
+            if loaded is None:
+                continue
+            data, mime = loaded
             parts.append(
                 ImageContent(
                     type="image",
@@ -2671,10 +2802,16 @@ def _build_pi_context(content: list[dict]):
                 )
             )
         elif btype == "video":
-            data, mime = _load_media(block, _media_defaults["video"])
+            loaded = _load_media(block, _media_defaults["video"])
+            if loaded is None:
+                continue
+            data, mime = loaded
             parts.append(VideoContent(type="video", data=data, mime_type=mime))
         elif btype == "audio":
-            data, mime = _load_media(block, _media_defaults["audio"])
+            loaded = _load_media(block, _media_defaults["audio"])
+            if loaded is None:
+                continue
+            data, mime = loaded
             parts.append(AudioContent(type="audio", data=data, mime_type=mime))
         # other unknown block types are skipped silently
 
@@ -2699,6 +2836,64 @@ def _assistant_text(message) -> str:
         elif getattr(block, "type", None) == "text":
             out.append(block.text)
     return "".join(out)
+
+
+async def _invoke_adapted_executor(_exec, args: dict, signal):
+    """Call an OpenProgram tool executor with the pi-agent (args, signal) pair.
+
+    Retries the single-dict form only when the signature (or a bind-layer
+    TypeError) says ``**args`` is the wrong calling convention — not when
+    the function body itself raises TypeError.
+    """
+    kwargs = dict(args or {})
+    extra = {}
+    sig = None
+    try:
+        sig = inspect.signature(_exec)
+        params = sig.parameters
+    except (TypeError, ValueError):
+        params = {}
+    if "signal" in params:
+        extra["signal"] = signal
+        kwargs["signal"] = signal
+    elif "cancel" in params:
+        extra["cancel"] = signal
+        kwargs["cancel"] = signal
+
+    use_kwargs = True
+    if sig is not None:
+        try:
+            sig.bind(**kwargs)
+        except TypeError:
+            use_kwargs = False
+
+    async def _call(use_kw: bool):
+        if inspect.iscoroutinefunction(_exec):
+            if use_kw:
+                return await _exec(**kwargs)
+            return await _exec(args, **extra) if extra else await _exec(args)
+        if use_kw:
+            return await asyncio.to_thread(lambda: _exec(**kwargs))
+        if extra:
+            return await asyncio.to_thread(lambda: _exec(args, **extra))
+        return await asyncio.to_thread(lambda: _exec(args))
+
+    if sig is not None:
+        return await _call(use_kwargs)
+    try:
+        return await _call(True)
+    except TypeError as exc:
+        msg = str(exc)
+        if any(
+            m in msg
+            for m in (
+                "unexpected keyword",
+                "required positional argument",
+                "positional arguments but",
+            )
+        ):
+            return await _call(False)
+        raise
 
 
 def _adapt_tools(raw_tools: list) -> list:
@@ -2741,16 +2936,7 @@ def _adapt_tools(raw_tools: list) -> list:
         async def _run(
             tool_call_id: str, args: dict, signal, update_cb, _exec=captured_executor
         ) -> "AgentToolResult":
-            if inspect.iscoroutinefunction(_exec):
-                try:
-                    result = await _exec(**args)
-                except TypeError:
-                    result = await _exec(args)
-            else:
-                try:
-                    result = await asyncio.to_thread(lambda: _exec(**args))
-                except TypeError:
-                    result = await asyncio.to_thread(lambda: _exec(args))
+            result = await _invoke_adapted_executor(_exec, args, signal)
 
             if isinstance(result, str):
                 text = result

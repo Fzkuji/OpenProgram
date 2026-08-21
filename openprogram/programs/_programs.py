@@ -61,7 +61,9 @@ import importlib.util
 import json
 import os
 import sys
+import threading
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional
@@ -69,6 +71,7 @@ from typing import Iterator, Optional
 
 _GH = "https://github.com/Fzkuji"
 _PROGRAM_SOURCES_FILE = "program-sources.json"
+_sources_lock = threading.Lock()  # ponytail: one lock for the sources RMW; split if writers contend
 
 
 def _canonical_repo_url(value: str) -> str:
@@ -101,6 +104,40 @@ def _read_program_sources() -> list[dict]:
     return [row for row in rows if isinstance(row, dict)]
 
 
+def _recorded_root(row: dict) -> str | None:
+    raw = str(row.get("path", "")).strip()
+    if not raw:
+        return None
+    expanded = os.path.expanduser(raw)
+    if not os.path.isabs(expanded):
+        return None
+    return os.path.abspath(expanded)
+
+
+def _write_program_sources(rows: list[dict]) -> None:
+    target = _program_sources_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_text(
+            json.dumps({"version": 1, "programs": rows}, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _update_program_sources(mutate) -> None:
+    from openprogram.auth.credentials import _private_file_lock
+    from openprogram.paths import get_state_dir
+
+    target = _program_sources_path()
+    with _sources_lock:
+        with _private_file_lock(target, root=get_state_dir()):
+            mutate(_read_program_sources())
+
+
 def _is_direct_child(path: str, base: str) -> bool:
     # Check where the install entry lives, not where a deliberate dev
     # symlink points.  The owner records the entry under applications explicitly.
@@ -110,54 +147,58 @@ def _is_direct_child(path: str, base: str) -> bool:
 
 def record_program_source(path, *, source: str, kind: str = "git") -> None:
     """Record an owner-installed harness before runtime import is allowed."""
+    raw = os.fspath(path).strip()
+    if not raw:
+        raise ValueError("program source path must not be empty")
     base = applications_dir()
-    root = os.path.abspath(os.path.expanduser(os.fspath(path)))
+    root = os.path.abspath(os.path.expanduser(raw))
     if not base or not _is_direct_child(root, base) or not os.path.isdir(root):
         raise ValueError("program source must be a directory directly under applications")
-    rows = [
-        row for row in _read_program_sources()
-        if os.path.abspath(str(row.get("path", ""))).casefold()
-        != root.casefold()
-    ]
-    rows.append({
-        "path": root,
-        "source": str(source),
-        "kind": str(kind),
-        "recorded_at": time.time(),
-    })
-    target = _program_sources_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_suffix(target.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps({"version": 1, "programs": rows}, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    os.replace(temporary, target)
+
+    def _mutate(rows: list[dict]) -> None:
+        kept = [
+            row for row in rows
+            if (existing := _recorded_root(row)) is None
+            or existing.casefold() != root.casefold()
+        ]
+        kept.append({
+            "path": root,
+            "source": str(source),
+            "kind": str(kind),
+            "recorded_at": time.time(),
+        })
+        _write_program_sources(kept)
+
+    _update_program_sources(_mutate)
 
 
 def remove_program_source(path) -> None:
-    root = os.path.abspath(os.path.expanduser(os.fspath(path)))
-    rows = [
-        row for row in _read_program_sources()
-        if os.path.abspath(str(row.get("path", ""))).casefold()
-        != root.casefold()
-    ]
-    target = _program_sources_path()
-    if not target.exists():
-        return
-    temporary = target.with_suffix(target.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps({"version": 1, "programs": rows}, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    os.replace(temporary, target)
+    raw = os.fspath(path).strip()
+    if not raw:
+        raise ValueError("program source path must not be empty")
+    root = os.path.abspath(os.path.expanduser(raw))
+
+    def _mutate(rows: list[dict]) -> None:
+        target = _program_sources_path()
+        if not target.exists():
+            return
+        kept = [
+            row for row in rows
+            if (existing := _recorded_root(row)) is None
+            or existing.casefold() != root.casefold()
+        ]
+        _write_program_sources(kept)
+
+    _update_program_sources(_mutate)
 
 
 def owner_controlled_program_sources(base: str | None = None) -> list[dict]:
     """Return valid owner-recorded roots, optionally limited to one directory."""
     out = []
     for row in _read_program_sources():
-        root = os.path.abspath(str(row.get("path", "")))
+        root = _recorded_root(row)
+        if root is None:
+            continue
         if os.path.isdir(root) and (base is None or _is_direct_child(root, base)):
             out.append({**row, "path": root})
     return out
@@ -282,9 +323,11 @@ class Program:
     def is_installed(self) -> bool:
         """True when the program is available to import on this machine.
 
-        Either it's cloned in-tree under ``programs/applications/`` (the
-        standard layout) or its package is importable some other way
-        (e.g. ``pip install -e`` during local harness development).
+        In-tree clones under ``programs/applications/`` still need an
+        owner-recorded source (or a matching git origin that we migrate).
+        A pip/uv-installed distribution counts as owner-controlled.
+        A bare ``find_spec`` hit — cwd / PYTHONPATH shadow, no dist-info —
+        does not.
         """
         pkg_dir = self.in_tree_pkg_dir()
         if pkg_dir:
@@ -302,10 +345,30 @@ class Program:
                 else:
                     if is_owner_controlled_program_path(pkg_dir):
                         return True
+        if _has_installed_distribution(self.package):
+            return True
         try:
-            return importlib.util.find_spec(self.package) is not None
+            spec = importlib.util.find_spec(self.package)
         except (ImportError, ValueError):
             return False
+        if spec is None:
+            return False
+        origin = getattr(spec, "origin", None)
+        if origin and is_owner_controlled_program_path(origin):
+            return True
+        for loc in getattr(spec, "submodule_search_locations", None) or ():
+            if loc and is_owner_controlled_program_path(loc):
+                return True
+        return False
+
+
+def _has_installed_distribution(package: str) -> bool:
+    """True when pip/uv left dist-info that owns this import name."""
+    try:
+        from importlib.metadata import packages_distributions
+        return bool(packages_distributions().get(package))
+    except Exception:
+        return False
 
 
 # The catalogue. Order is the welcome-screen / menu priority order.

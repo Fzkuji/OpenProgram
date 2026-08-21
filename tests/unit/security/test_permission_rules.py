@@ -75,7 +75,8 @@ def test_compound_shell_command_never_matches_prefix_rule():
 
 
 def test_parse_command_write():
-    assert parse_command("write_file", {"path": "/tmp/x"}) == "/tmp/x"
+    import os
+    assert parse_command("write_file", {"path": "/tmp/x"}) == os.path.realpath("/tmp/x")
 
 
 def test_parse_command_no_field():

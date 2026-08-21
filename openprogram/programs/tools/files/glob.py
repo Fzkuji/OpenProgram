@@ -81,10 +81,26 @@ def glob_tool(pattern: str, path: str | None = None) -> str:
     violation = validate_read_path(root)
     if violation:
         return f"Error: sandbox policy: {violation}"
+    # os.path.join discards root when pattern is absolute; `..` walks out.
+    if os.path.isabs(pattern) or any(
+        part == ".." for part in pattern.replace("\\", "/").split("/")
+    ):
+        return (
+            f"Error: pattern must be relative to `path` and must not "
+            f"escape it, got {pattern!r}"
+        )
 
     full_pattern = os.path.join(root, pattern)
     matches = _glob.glob(full_pattern, recursive=True)
-    matches = [m for m in matches if os.path.isfile(m)]
+    root_real = os.path.realpath(root)
+    inside = []
+    for m in matches:
+        if not os.path.isfile(m):
+            continue
+        real = os.path.realpath(m)
+        if real == root_real or real.startswith(root_real + os.sep):
+            inside.append(m)
+    matches = inside
     # A filename list is itself the leak for `~/.ssh/**` and friends.
     denied = read_denier()
     if denied is not None:

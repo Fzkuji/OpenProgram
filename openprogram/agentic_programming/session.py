@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -38,6 +39,9 @@ import uuid
 # canonical ~/.openprogram state dir. This constant is only a default
 # hint — nothing live reads it — but keep it on the canonical name.
 SESSIONS_DIR = os.path.join(os.path.expanduser("~"), ".openprogram", "sessions")
+_SESSION_ID_RE = re.compile(r"[A-Za-z0-9_-]+")
+# Fields this module always writes; used to refuse clobbering SessionStore meta.json.
+_META_MARKERS = ("status", "created")
 
 
 def _sessions_dir() -> str:
@@ -45,11 +49,17 @@ def _sessions_dir() -> str:
     return str(get_sessions_dir())
 
 
+def _require_session_id(session_id: str) -> str:
+    if not _SESSION_ID_RE.fullmatch(session_id):
+        raise ValueError(f"invalid session_id: {session_id!r}")
+    return session_id
+
+
 class Session:
     """Manage a single follow-up session with file-based IPC."""
 
     def __init__(self, session_id: str = None):
-        self.session_id = session_id or uuid.uuid4().hex[:8]
+        self.session_id = _require_session_id(session_id or uuid.uuid4().hex[:8])
         self.dir = os.path.join(_sessions_dir(), self.session_id)
 
     def _meta_path(self):
@@ -64,7 +74,14 @@ class Session:
     def write_meta(self, question: str):
         """Write session metadata (called by the original process)."""
         os.makedirs(self.dir, exist_ok=True)
-        with open(self._meta_path(), "w", encoding="utf-8") as f:
+        path = self._meta_path()
+        if os.path.exists(path):
+            existing = self.read_meta()
+            if not existing or not all(key in existing for key in _META_MARKERS):
+                raise ValueError(
+                    f"refusing to overwrite unrelated meta.json in {self.dir}"
+                )
+        with open(path, "w", encoding="utf-8") as f:
             json.dump({
                 "question": question,
                 "pid": os.getpid(),
@@ -126,6 +143,8 @@ def list_sessions() -> list[dict]:
     if not os.path.isdir(_sessions_dir()):
         return results
     for name in os.listdir(_sessions_dir()):
+        if not _SESSION_ID_RE.fullmatch(name):
+            continue
         session = Session(name)
         if not session.exists():
             continue
@@ -142,11 +161,19 @@ def cleanup_stale_sessions(max_age: float = 3600):
         return
     now = time.time()
     for name in os.listdir(_sessions_dir()):
+        if not _SESSION_ID_RE.fullmatch(name):
+            continue
         session = Session(name)
         if not session.exists():
             continue
         meta = session.read_meta()
-        if meta and now - meta.get("created", 0) > max_age:
+        if not meta or "created" not in meta:
+            continue
+        try:
+            created = float(meta["created"])
+        except (TypeError, ValueError):
+            continue
+        if now - created > max_age:
             session.cleanup()
 
 
@@ -180,7 +207,7 @@ def run_with_session(func, *args, **kwargs):
         answer = session.wait_for_answer(timeout=300)
         if answer is None:
             session.cleanup()
-            return ""
+            raise TimeoutError("timed out waiting for follow-up answer")
         return answer
 
     set_ask_user(_handler)

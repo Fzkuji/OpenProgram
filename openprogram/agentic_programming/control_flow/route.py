@@ -19,13 +19,15 @@ def route(
     Returns:
         选中的选项（options 中的一个）
     """
+    if not options:
+        raise ValueError("route() options must not be empty")
     prompt_parts = [question, f"\n\n选项：{', '.join(options)}"]
     if context:
         prompt_parts.append(f"\n\n上下文：{context}")
     prompt_parts.append("\n\n只回答选项内容")
 
     prompt = "".join(prompt_parts)
-    result = llm(prompt)
+    result = str(llm(prompt) or "")
 
     for opt in options:
         if opt in result:

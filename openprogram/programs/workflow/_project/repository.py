@@ -535,7 +535,10 @@ def _publish_snapshot(
                 except InvalidWorkflow:
                     if worktree.exists():
                         shutil.rmtree(worktree)
-    return project_id, _git(project_dir, "rev-parse", "HEAD")
+        # Read HEAD inside the lock so a concurrent publish can't advance
+        # it between our commit and this read.
+        head = _git(project_dir, "rev-parse", "HEAD")
+    return project_id, head
 
 
 def _publish_candidate(candidate: dict, *, project_id: str, action: str) -> dict:

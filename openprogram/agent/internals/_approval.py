@@ -83,7 +83,9 @@ def _match_rule(rules, tool_name: str, args: dict) -> "str | None":
                 return behavior
             if cmd is None:
                 cmd = parse_command(tool_name, args)
-            if cmd is not None and pattern_matches(rv.pattern, cmd):
+            if cmd is not None and pattern_matches(
+                rv.pattern, cmd, allow=(behavior == "allow"),
+            ):
                 return behavior
     return None
 

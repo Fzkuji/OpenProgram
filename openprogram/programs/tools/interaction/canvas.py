@@ -100,6 +100,10 @@ def _resolve_path(path: str | None) -> str:
 
 
 def _read(path: str) -> str:
+    from openprogram.sandbox import validate_read_path
+    violation = validate_read_path(path)
+    if violation:
+        raise PermissionError(f"sandbox policy: {violation}")
     try:
         with open(path, "r", encoding="utf-8") as f:
             return f.read()
@@ -108,6 +112,10 @@ def _read(path: str) -> str:
 
 
 def _write(path: str, text: str) -> None:
+    from openprogram.sandbox import validate_write_path
+    violation = validate_write_path(path)
+    if violation:
+        raise PermissionError(f"sandbox policy: {violation}")
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
@@ -150,7 +158,18 @@ def execute(
         return f"Error: unknown action {action!r}. Expected set/append/get/list/delete."
 
     resolved = _resolve_path(path_arg)
-    current = _read(resolved)
+    from openprogram.sandbox import validate_read_path, validate_write_path
+    violation = validate_read_path(resolved)
+    if violation:
+        return f"Error: sandbox policy: {violation}"
+    if action in {"set", "append", "delete"}:
+        violation = validate_write_path(resolved)
+        if violation:
+            return f"Error: sandbox policy: {violation}"
+    try:
+        current = _read(resolved)
+    except PermissionError as e:
+        return f"Error: {e}"
 
     if action == "list":
         rows = [

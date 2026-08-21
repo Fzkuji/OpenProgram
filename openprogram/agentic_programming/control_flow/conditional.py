@@ -27,7 +27,7 @@ def conditional(
     prompt_parts.append("\n\n回答 YES 或 NO")
 
     prompt = "".join(prompt_parts)
-    judgment = llm(prompt)
+    judgment = str(llm(prompt) or "")
 
     if "YES" in judgment.upper():
         return if_true() if if_true else ""

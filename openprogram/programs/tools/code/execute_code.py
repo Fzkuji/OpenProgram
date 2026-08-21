@@ -155,9 +155,9 @@ def execute(
         # backend.spawn merges stderr into stdout (see Backend contract),
         # so stderr_b ends up empty; stack traces still appear in stdout
         # which is fine for the combined display below.
-        shell_cmd = f"{python} -"
+        shell_cmd = f"{shlex.quote(python)} -"
         if cwd:
-            shell_cmd = f"cd {cwd} && {shell_cmd}"
+            shell_cmd = f"cd {shlex.quote(cwd)} && {shell_cmd}"
         proc = backend.spawn(shell_cmd)
         try:
             stdout_text, _ = proc.communicate(input=code, timeout=timeout)

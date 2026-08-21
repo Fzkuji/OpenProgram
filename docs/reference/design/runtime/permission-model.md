@@ -301,13 +301,15 @@ def _match_rule(rules, tool_name: str, args: dict) -> "str | None":
                 return behavior
             if cmd is None:
                 cmd = parse_command(tool_name, args)    # see below
-            if cmd is not None and pattern_matches(rv.pattern, cmd):
+            if cmd is not None and pattern_matches(
+                rv.pattern, cmd, allow=(behavior == "allow"),
+            ):
                 return behavior
     return None
 ```
 
 - **per-tool** (`rv.pattern is None`): `rv.tool_name == tool_name` matches the whole tool. For example `deny: ["bash"]` blocks all bash.
-- **per-pattern** (`rv.pattern` non-empty): first derive the comparable command string `cmd = parse_command(...)`, then apply `pattern_matches` (`permission_rule.py:149-`): a trailing `:*` → prefix match (`git:*` matches `git status`, not `github`); containing a glob character (`*?[`) → `fnmatch` (`/etc/**` matches `/etc/passwd`); otherwise exact equality.
+- **per-pattern** (`rv.pattern` non-empty): first derive the comparable command string `cmd = parse_command(...)`, then apply `pattern_matches` (`permission_rule.py`): a trailing `:*` → prefix match (`git:*` matches `git status`, not `github`); containing a glob character (`*?[`) → `fnmatch` (`/etc/**` matches `/etc/passwd`); otherwise exact equality. Prefix matching strips leading assignments and `env` wrapping; allow matching refuses that strip when the dropped assignments include resolution-affecting variables (`PATH`, `LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`, …). Deny matching still strips them so a hijacked command cannot evade a deny rule.
 
 Command parser and rule parsing (`openprogram/programs/permission_rule.py`):
 

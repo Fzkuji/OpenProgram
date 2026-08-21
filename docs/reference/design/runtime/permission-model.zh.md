@@ -296,13 +296,15 @@ def _match_rule(rules, tool_name: str, args: dict) -> "str | None":
                 return behavior
             if cmd is None:
                 cmd = parse_command(tool_name, args)    # 见下
-            if cmd is not None and pattern_matches(rv.pattern, cmd):
+            if cmd is not None and pattern_matches(
+                rv.pattern, cmd, allow=(behavior == "allow"),
+            ):
                 return behavior
     return None
 ```
 
 - **per-tool**（`rv.pattern is None`）：`rv.tool_name == tool_name` 命中整工具。例 `deny: ["bash"]` 拦所有 bash。
-- **per-pattern**（`rv.pattern` 非空）：先取可比命令串 `cmd = parse_command(...)`，再 `pattern_matches`（`permission_rule.py:149-`）：`:*` 结尾→前缀匹配（`git:*` 匹配 `git status`、不匹配 `github`）；含 glob（`*?[`）→`fnmatch`（`/etc/**` 匹配 `/etc/passwd`）；否则精确相等。
+- **per-pattern**（`rv.pattern` 非空）：先取可比命令串 `cmd = parse_command(...)`，再 `pattern_matches`（`permission_rule.py`）：`:*` 结尾→前缀匹配（`git:*` 匹配 `git status`、不匹配 `github`）；含 glob（`*?[`）→`fnmatch`（`/etc/**` 匹配 `/etc/passwd`）；否则精确相等。前缀匹配会剥掉开头的赋值和 `env` 包装；allow 匹配在剥掉的赋值含 `PATH` / `LD_PRELOAD` / `DYLD_INSERT_LIBRARIES` 等影响解析的变量时不命中。deny 匹配仍剥离，避免被劫持的命令躲开 deny 规则。
 
 命令解析器 + 规则解析（`openprogram/programs/permission_rule.py`）：
 

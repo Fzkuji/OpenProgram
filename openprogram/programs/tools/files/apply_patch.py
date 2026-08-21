@@ -118,10 +118,10 @@ def _apply_add(path: str, body: list[str]) -> str:
     if os.path.exists(path):
         return f"Error: Add File target already exists: {path}"
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    content = "\n".join(l[1:] if l.startswith("+") else l for l in body)
+    content = _add_content(body)
     checkpoint_before_edit(path)
     with open(path, "w", encoding="utf-8") as f:
-        f.write(content + ("\n" if not content.endswith("\n") else ""))
+        f.write(content)
     # Baseline the new file so a later Update in the same session doesn't
     # trip the "never read" gate (the agent just created it).
     try:
@@ -142,23 +142,30 @@ def _apply_delete(path: str) -> str:
     return f"Deleted {path}"
 
 
-def _apply_update(path: str, body: list[str]) -> str:
-    if not os.path.exists(path):
-        return f"Error: Update File target not found: {path}"
+def _replace_line_span(
+    text: str, before_lines: list[str], after_lines: list[str],
+) -> tuple[int, str]:
+    """Replace one consecutive line sequence. Mid-line substrings do not match."""
+    lines = text.splitlines()
+    trailing = text.endswith("\n")
+    n = len(before_lines)
+    if n == 0:
+        return 0, text
+    hits = [i for i in range(len(lines) - n + 1) if lines[i:i + n] == before_lines]
+    if len(hits) != 1:
+        return len(hits), text
+    i = hits[0]
+    lines[i:i + n] = after_lines
+    if not lines:
+        return 1, "\n" if trailing else ""
+    out = "\n".join(lines)
+    return 1, out + ("\n" if trailing else "")
 
-    # Read-before-edit gate: updating an existing file the agent never
-    # read, or one changed on disk since, is refused (Claude-Code-style)
-    # so a concurrent user change isn't clobbered. No-op outside a turn.
-    try:
-        from openprogram.store.snapshot import read_tracking as _rt
-        _fresh = _rt.check_fresh(path)
-        if _fresh in (_rt.NEVER_READ, _rt.STALE):
-            return _rt.stale_message(path, _fresh)
-    except Exception:
-        pass
 
-    # Split body into hunks on lines starting with "@@". The text after "@@"
-    # (context hint) is informational only — we use the +/- lines to locate.
+def _apply_hunks_to_text(
+    text: str, body: list[str], path: str,
+) -> tuple[str | None, str | None, int]:
+    """Apply update hunks in memory. Returns (new_text, error, applied)."""
     hunks: list[list[str]] = []
     current: list[str] = []
     started = False
@@ -174,11 +181,7 @@ def _apply_update(path: str, body: list[str]) -> str:
     if started and current:
         hunks.append(current)
     if not started:
-        # no @@ marker — treat the whole body as one implicit hunk
         hunks = [body]
-
-    with open(path, "r", encoding="utf-8") as f:
-        text = f.read()
 
     applied = 0
     for idx, hunk in enumerate(hunks):
@@ -197,25 +200,43 @@ def _apply_update(path: str, body: list[str]) -> str:
                 before_lines.append(rest)
             elif tag == "+":
                 after_lines.append(rest)
-            else:
-                # stray marker / comment — ignore
-                pass
-
-        before = "\n".join(before_lines)
-        after = "\n".join(after_lines)
-        if not before:
-            return f"Error: hunk #{idx + 1} in {path} has no context or removal lines"
-
-        count = text.count(before)
+        if not "\n".join(before_lines):
+            return None, (
+                f"Error: hunk #{idx + 1} in {path} has no context or removal lines"
+            ), applied
+        count, text = _replace_line_span(text, before_lines, after_lines)
         if count == 0:
-            return f"Error: hunk #{idx + 1} not found in {path}"
+            return None, f"Error: hunk #{idx + 1} not found in {path}", applied
         if count > 1:
-            return (
+            return None, (
                 f"Error: hunk #{idx + 1} matches {count} locations in {path}; "
                 "add more context so the match is unique"
-            )
-        text = text.replace(before, after, 1)
+            ), applied
         applied += 1
+    return text, None, applied
+
+
+def _apply_update(path: str, body: list[str]) -> str:
+    if not os.path.exists(path):
+        return f"Error: Update File target not found: {path}"
+
+    # Read-before-edit gate: updating an existing file the agent never
+    # read, or one changed on disk since, is refused (Claude-Code-style)
+    # so a concurrent user change isn't clobbered. No-op outside a turn.
+    try:
+        from openprogram.store.snapshot import read_tracking as _rt
+        _fresh = _rt.check_fresh(path)
+        if _fresh in (_rt.NEVER_READ, _rt.STALE):
+            return _rt.stale_message(path, _fresh)
+    except Exception:
+        pass
+
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+
+    text, err, applied = _apply_hunks_to_text(text, body, path)
+    if err:
+        return err
 
     checkpoint_before_edit(path)
     with open(path, "w", encoding="utf-8") as f:
@@ -227,6 +248,11 @@ def _apply_update(path: str, body: list[str]) -> str:
         pass
     _emit_file_changed(path, "update")
     return f"Updated {path} ({applied} hunk{'s' if applied != 1 else ''})"
+
+
+def _add_content(body: list[str]) -> str:
+    content = "\n".join(l[1:] if l.startswith("+") else l for l in body)
+    return content + ("" if content.endswith("\n") else "\n")
 
 
 def execute(patch: str, **_: Any) -> str:
@@ -246,22 +272,72 @@ def execute(patch: str, **_: Any) -> str:
             if violation:
                 return f"Error: sandbox policy: {violation}"
 
-    results: list[str] = []
+    # Apply every section in memory first so a later failure does not
+    # leave an earlier file already written.
+    drafts: dict[str, str | None] = {}
+    fresh_ok: set[str] = set()
+    errors: list[str] = []
+
+    def _draft(path: str) -> str | None:
+        if path not in drafts:
+            if os.path.exists(path):
+                with open(path, encoding="utf-8") as f:
+                    drafts[path] = f.read()
+            else:
+                drafts[path] = None
+        return drafts[path]
+
     for op, path, body in sections:
         if not os.path.isabs(path):
-            results.append(f"Error: path must be absolute: {path}")
+            errors.append(f"Error: path must be absolute: {path}")
             continue
         try:
             if op == "add":
-                results.append(_apply_add(path, body))
+                if _draft(path) is not None:
+                    errors.append(f"Error: Add File target already exists: {path}")
+                else:
+                    drafts[path] = _add_content(body)
+                    fresh_ok.add(path)
             elif op == "update":
-                results.append(_apply_update(path, body))
+                text = _draft(path)
+                if text is None:
+                    errors.append(f"Error: Update File target not found: {path}")
+                    continue
+                if path not in fresh_ok:
+                    try:
+                        from openprogram.store.snapshot import read_tracking as _rt
+                        _fresh = _rt.check_fresh(path)
+                        if _fresh in (_rt.NEVER_READ, _rt.STALE):
+                            errors.append(_rt.stale_message(path, _fresh))
+                            continue
+                    except Exception:
+                        pass
+                new_text, err, _applied = _apply_hunks_to_text(text, body, path)
+                if err:
+                    errors.append(err)
+                else:
+                    drafts[path] = new_text
+                    fresh_ok.add(path)
             elif op == "delete":
-                results.append(_apply_delete(path))
+                if _draft(path) is None:
+                    errors.append(f"Error: Delete File target not found: {path}")
+                else:
+                    drafts[path] = None
             else:
-                results.append(f"Error: unknown op {op!r} for {path}")
+                errors.append(f"Error: unknown op {op!r} for {path}")
         except Exception as e:
-            results.append(f"Error applying {op} to {path}: {type(e).__name__}: {e}")
+            errors.append(f"Error applying {op} to {path}: {type(e).__name__}: {e}")
+    if errors:
+        return "\n".join(errors)
+
+    results: list[str] = []
+    for op, path, body in sections:
+        if op == "add":
+            results.append(_apply_add(path, body))
+        elif op == "update":
+            results.append(_apply_update(path, body))
+        else:
+            results.append(_apply_delete(path))
     return "\n".join(results)
 
 

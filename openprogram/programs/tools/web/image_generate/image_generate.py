@@ -81,6 +81,10 @@ SPEC: dict[str, Any] = {
 def _resolve_output_dir(override: str | None) -> Path:
     raw = override or os.environ.get("OPENPROGRAM_IMAGE_DIR") or "./generated_images"
     p = Path(raw).expanduser().resolve()
+    from openprogram.sandbox import validate_write_path
+    violation = validate_write_path(p)
+    if violation:
+        raise PermissionError(f"sandbox policy: {violation}")
     p.mkdir(parents=True, exist_ok=True)
     return p
 
@@ -99,11 +103,15 @@ def _ext_for_mime(mime: str) -> str:
 
 
 def _save(img: GeneratedImage, out_dir: Path, stem: str, idx: int) -> Path:
+    from openprogram.sandbox import validate_write_path
     if img.data:
         mime = detect_raster_mime(img.data)
         if mime is None:
             raise RuntimeError("unsupported raster image bytes")
         target = out_dir / f"{stem}_{idx}{_ext_for_mime(mime)}"
+        violation = validate_write_path(target)
+        if violation:
+            raise PermissionError(f"sandbox policy: {violation}")
         target.write_bytes(img.data)
     elif img.url:
         safe_error: RuntimeError | None = None
@@ -136,6 +144,9 @@ def _save(img: GeneratedImage, out_dir: Path, stem: str, idx: int) -> Path:
             if mime is None:
                 raise RuntimeError("unsupported raster image bytes")
             target = out_dir / f"{stem}_{idx}{_ext_for_mime(mime)}"
+            violation = validate_write_path(target)
+            if violation:
+                raise PermissionError(f"sandbox policy: {violation}")
             os.replace(staging, target)
     else:
         raise RuntimeError("GeneratedImage had neither bytes nor URL")
@@ -178,7 +189,10 @@ def execute(
     if not images:
         return f"Error: {backend.name} returned no images for prompt {prompt!r}."
 
-    out_dir = _resolve_output_dir(output_dir)
+    try:
+        out_dir = _resolve_output_dir(output_dir)
+    except PermissionError as e:
+        return f"Error: {e}"
     stem = time.strftime("%Y%m%d_%H%M%S")
     saved: list[Path] = []
     for i, img in enumerate(images, 1):

@@ -165,7 +165,7 @@ def test_untrusted_clone_does_not_hide_installed_distribution(tmp_path, monkeypa
     _harness(base, "demo_pkg")
     monkeypatch.setattr(_programs, "applications_dir", lambda: str(base))
     monkeypatch.setattr(_programs, "_catalogued_clone_origin", lambda *_: None)
-    monkeypatch.setattr(_programs.importlib.util, "find_spec", lambda _: object())
+    monkeypatch.setattr(_programs, "_has_installed_distribution", lambda _: True)
     program = _programs.Program(
         function="demo_agent",
         package="demo_pkg",

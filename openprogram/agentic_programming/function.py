@@ -164,8 +164,24 @@ def set_session_id_provider(hook: "Callable[[], str] | None") -> None:
     _session_id_provider = hook or _no_session_id
 
 
+# Cancel event for the in-flight tool/_execute invocation (asyncio.Event
+# or any object with is_set/aborted). Nested exec() reads this via
+# check_cancelled().
+_current_cancel: ContextVar = ContextVar("_current_cancel", default=None)
+
+_TERMINAL_EXIT_STATUSES = frozenset({
+    "completed", "failed", "interrupted", "cancelled", "error",
+})
+
+
 def check_cancelled() -> None:
     """Run the installed cancellation check (no-op when none is installed)."""
+    ev = _current_cancel.get()
+    if ev is not None:
+        if getattr(ev, "is_set", lambda: False)():
+            raise CancelledError("Cancelled by user")
+        if getattr(ev, "aborted", False):
+            raise CancelledError("Cancelled by user")
     _cancellation_check()
 
 
@@ -411,6 +427,14 @@ def _update_function_call_exit(
     if store is None:
         return
 
+    try:
+        node = store.load().nodes.get(pending_id)
+        current = (getattr(node, "metadata", None) or {}).get("status")
+        if current in _TERMINAL_EXIT_STATUSES:
+            return
+    except Exception:
+        pass
+
     duration = None
     if started_at is not None and ended_at is not None:
         duration = float(ended_at) - float(started_at)
@@ -478,9 +502,9 @@ def _inject_runtime(sig, args, kwargs):
       - Otherwise, create a new one (this function is the entry point).
 
     Returns:
-        (args, kwargs, runtime_token, owns_runtime)
+        (args, kwargs, runtime_token, owned_runtime)
         - runtime_token: ContextVar token to reset later (or None)
-        - owns_runtime: True if we created the runtime (need to close it)
+        - owned_runtime: the Runtime this call created (need to close it), else None
     """
     # bind_partial, NOT bind: a runtime parameter with no default (e.g.
     # `def f(pdf_path, runtime, …)`) is REQUIRED, so a full `sig.bind`
@@ -493,7 +517,7 @@ def _inject_runtime(sig, args, kwargs):
     bound.apply_defaults()
 
     runtime_token = None
-    owns_runtime = False
+    owned_runtime = None
 
     # Which runtime params this function declares, and which still need a
     # value (either bound to None via default, or missing entirely). A
@@ -512,7 +536,7 @@ def _inject_runtime(sig, args, kwargs):
     # Lazily resolve ONE runtime (from the call chain, else create one)
     # and share it across all the params that need it.
     def _resolve_rt():
-        nonlocal runtime_token, owns_runtime
+        nonlocal runtime_token, owned_runtime
         rt = _current_runtime.get(None)
         if rt is None:
             from openprogram.providers.registry import create_runtime
@@ -544,7 +568,7 @@ def _inject_runtime(sig, args, kwargs):
 
                 rt = Runtime(call=_no_provider_call, model="test")
             runtime_token = _current_runtime.set(rt)
-            owns_runtime = True
+            owned_runtime = rt
         return rt
 
     if needs:
@@ -561,7 +585,7 @@ def _inject_runtime(sig, args, kwargs):
                     runtime_token = _current_runtime.set(bound.arguments[p])
                 break
 
-    return bound.args, bound.kwargs, runtime_token, owns_runtime
+    return bound.args, bound.kwargs, runtime_token, owned_runtime
 
 
 def _apply_system(system, bound_args):
@@ -604,25 +628,21 @@ def _restore_system(saved):
             pass
 
 
-def _close_owned_runtime(bound_args: dict, owns_runtime: bool) -> None:
-    if not owns_runtime:
+def _close_owned_runtime(owned_runtime) -> None:
+    if owned_runtime is None or not hasattr(owned_runtime, "close"):
         return
-    for pname in _RUNTIME_PARAMS:
-        rt = bound_args.get(pname)
-        if rt is not None and hasattr(rt, "close"):
-            import sys
-            active_error = sys.exception()
-            try:
-                rt.close()
-            except Exception as exc:
-                if active_error is None:
-                    raise
-                _log.warning(
-                    "owned runtime close failed error_type=%s",
-                    type(exc).__name__,
-                    exc_info=True,
-                )
-            return
+    import sys
+    active_error = sys.exception()
+    try:
+        owned_runtime.close()
+    except Exception as exc:
+        if active_error is None:
+            raise
+        _log.warning(
+            "owned runtime close failed error_type=%s",
+            type(exc).__name__,
+            exc_info=True,
+        )
 
 
 class agentic_function:
@@ -966,47 +986,71 @@ class agentic_function:
             # semantics: memoize on (name, args); hard-kill after
             # ``timeout`` seconds with an is_error result.
             kwargs = dict(args or {})
+            cancel_token = (
+                _current_cancel.set(cancel) if cancel is not None else None
+            )
 
-            if use_cache:
-                key = _cache_key(name, kwargs)
-                hit = _cache_get(key)
-                if hit is not None:
-                    return hit
+            try:
+                if use_cache:
+                    key = _cache_key(name, kwargs)
+                    hit = _cache_get(key)
+                    if hit is not None:
+                        return hit
 
-            async def _invoke():
-                raw = wrapper(**kwargs)
-                if inspect.iscoroutine(raw):
-                    raw = await raw
-                return raw
+                async def _invoke():
+                    raw = wrapper(**kwargs)
+                    if inspect.iscoroutine(raw):
+                        raw = await raw
+                    return raw
 
-            if exec_timeout is not None:
-                import asyncio
-                import contextvars as _cv
-                try:
-                    if inspect.iscoroutinefunction(wrapper):
-                        raw = await asyncio.wait_for(
-                            _invoke(), timeout=exec_timeout)
-                    else:
-                        # A sync wrapper would block the event loop and
-                        # make wait_for useless — run it in a thread,
-                        # carrying the current Context so the body sees
-                        # the calling task's ContextVars (_store /
-                        # _call_id / _current_runtime).
-                        loop = asyncio.get_running_loop()
-                        ctx = _cv.copy_context()
-                        raw = await asyncio.wait_for(
-                            loop.run_in_executor(
-                                None, lambda: ctx.run(wrapper, **kwargs)),
-                            timeout=exec_timeout,
-                        )
-                except asyncio.TimeoutError:
-                    from openprogram.providers.types import TextContent
-                    return AgentToolResult(content=[TextContent(text=(
-                        f"[error] function {name} timed out after "
-                        f"{exec_timeout}s"
-                    ))], is_error=True)
-            else:
-                raw = await _invoke()
+                if exec_timeout is not None:
+                    import asyncio
+                    import contextvars as _cv
+                    try:
+                        if inspect.iscoroutinefunction(wrapper):
+                            raw = await asyncio.wait_for(
+                                _invoke(), timeout=exec_timeout)
+                        else:
+                            # A sync wrapper would block the event loop and
+                            # make wait_for useless — run it in a thread,
+                            # carrying the current Context so the body sees
+                            # the calling task's ContextVars (_store /
+                            # _call_id / _current_runtime).
+                            loop = asyncio.get_running_loop()
+                            ctx = _cv.copy_context()
+                            raw = await asyncio.wait_for(
+                                loop.run_in_executor(
+                                    None, lambda: ctx.run(wrapper, **kwargs)),
+                                timeout=exec_timeout,
+                            )
+                    except asyncio.TimeoutError:
+                        setter = getattr(cancel, "set", None)
+                        if callable(setter):
+                            setter()
+                        pending = _forced_node_id.get() or _call_id.get() or call_id
+                        if pending:
+                            _update_function_call_exit(
+                                pending_id=pending,
+                                output=None,
+                                error=(
+                                    f"function {name} timed out after "
+                                    f"{exec_timeout}s"
+                                ),
+                                status="error",
+                                expose=self.expose,
+                                started_at=None,
+                                ended_at=time.time(),
+                            )
+                        from openprogram.providers.types import TextContent
+                        return AgentToolResult(content=[TextContent(text=(
+                            f"[error] function {name} timed out after "
+                            f"{exec_timeout}s"
+                        ))], is_error=True)
+                else:
+                    raw = await _invoke()
+            finally:
+                if cancel_token is not None:
+                    _current_cancel.reset(cancel_token)
 
             if isinstance(raw, AgentToolResult):
                 result = raw
@@ -1067,7 +1111,7 @@ class agentic_function:
             _run_pre_invocation_hooks()
 
             # Auto-inject runtime if needed
-            new_args, new_kwargs, runtime_token, owns_runtime = _inject_runtime(sig, args, kwargs)
+            new_args, new_kwargs, runtime_token, owned_runtime = _inject_runtime(sig, args, kwargs)
 
             import uuid as _uuid
             # Reuse the id the parent dispatch path pre-created for this
@@ -1103,7 +1147,7 @@ class agentic_function:
             except BaseException:
                 if runtime_token is not None:
                     _current_runtime.reset(runtime_token)
-                _close_owned_runtime(bound.arguments, owns_runtime)
+                _close_owned_runtime(owned_runtime)
                 raise
             # Stamp ``_call_id`` so anything further down the call
             # tree (rt.exec → ModelCall.caller, ask_user → user
@@ -1152,7 +1196,7 @@ class agentic_function:
                 return output
             except CancelledError:
                 error = "Cancelled by user"
-                status = "error"
+                status = "cancelled"
                 raise
             except Exception as e:
                 error = str(e)
@@ -1177,7 +1221,7 @@ class agentic_function:
                         _usage_cur.reset(_usage_token)
                     if runtime_token is not None:
                         _current_runtime.reset(runtime_token)
-                    _close_owned_runtime(bound.arguments, owns_runtime)
+                    _close_owned_runtime(owned_runtime)
 
         wrapper._is_agentic = True
         return wrapper
@@ -1194,7 +1238,7 @@ class agentic_function:
             _run_pre_invocation_hooks()
 
             # Auto-inject runtime if needed
-            new_args, new_kwargs, runtime_token, owns_runtime = _inject_runtime(sig, args, kwargs)
+            new_args, new_kwargs, runtime_token, owned_runtime = _inject_runtime(sig, args, kwargs)
 
             import uuid as _uuid
             # Reuse the parent-pre-created id for a top-level run (see the
@@ -1228,7 +1272,7 @@ class agentic_function:
             except BaseException:
                 if runtime_token is not None:
                     _current_runtime.reset(runtime_token)
-                _close_owned_runtime(bound.arguments, owns_runtime)
+                _close_owned_runtime(owned_runtime)
                 raise
             _call_token = _call_id.set(_pending_call_id)
             # Apply the decorator's system= onto the injected runtime(s)
@@ -1280,7 +1324,7 @@ class agentic_function:
                 return output
             except CancelledError:
                 error = "Cancelled by user"
-                status = "error"
+                status = "cancelled"
                 raise
             except Exception as e:
                 error = str(e)
@@ -1305,7 +1349,7 @@ class agentic_function:
                         _usage_cur.reset(_usage_token)
                     if runtime_token is not None:
                         _current_runtime.reset(runtime_token)
-                    _close_owned_runtime(bound.arguments, owns_runtime)
+                    _close_owned_runtime(owned_runtime)
 
         wrapper._is_agentic = True
         return wrapper

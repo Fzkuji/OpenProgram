@@ -276,6 +276,12 @@ def _open(
     from openprogram.programs.tools.web.browser import browser as _b
     if not _b.check_playwright():
         return _b._install_hint()
+    if url:
+        from openprogram.security.url_policy import URLPolicyError, normalize_url
+        try:
+            url = normalize_url(url).normalized_url
+        except URLPolicyError as e:
+            return f"Error: {e}"
 
     # Auto-bootstrap is explicit: the default engine is `app`, which can
     # only attach to a visible OpenProgram desktop web tab. `auto` retains

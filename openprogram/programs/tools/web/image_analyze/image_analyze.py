@@ -97,6 +97,12 @@ def execute(
     if not paths and not urls:
         return "Error: at least one of `image_paths` / `image_urls` must be provided."
 
+    from openprogram.sandbox import validate_read_path
+    for p in paths:
+        violation = validate_read_path(p)
+        if violation:
+            return f"Error: sandbox policy: {violation}"
+
     images: list[ImageInput] = [ImageInput(path=p) for p in paths] + [ImageInput(url=u) for u in urls]
 
     try:

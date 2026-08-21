@@ -45,6 +45,10 @@ def sniff_mime(path_or_url: str) -> str:
 
 def read_b64(path: str) -> tuple[str, str]:
     """Return (mime, base64_data). Raises for non-existent / unreadable files."""
+    from openprogram.sandbox import validate_read_path
+    violation = validate_read_path(path)
+    if violation:
+        raise PermissionError(f"sandbox policy: {violation}")
     p = Path(path).expanduser()
     if not p.is_absolute():
         p = p.resolve()

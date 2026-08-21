@@ -79,6 +79,10 @@ def _screenshot(session_id: str, path: str) -> str:
         return sess
     if not path:
         return "Error: `path` is required for screenshot."
+    from openprogram.sandbox import validate_write_path
+    violation = validate_write_path(path)
+    if violation:
+        return f"Error: sandbox policy: {violation}"
     try:
         sess["page"].screenshot(path=path, full_page=True)
         return f"Saved screenshot → {path}"

@@ -70,6 +70,7 @@ import hashlib
 import inspect
 import json
 import re
+import threading
 import time
 import traceback
 import uuid
@@ -143,6 +144,8 @@ _unsafe_in_channel: dict[str, set[str]] = {}       # tool_name → set of unsafe
 # helpers that must never appear in any LLM tools array. Default is exposed,
 # so this is an opt-OUT set, not a whitelist.
 _unexposed: set[str] = set()
+# ponytail: one lock for register + iterate; split if watcher/request contention shows up
+_registry_lock = threading.Lock()
 _allowed_tool_names: contextvars.ContextVar[Optional[set[str]]] = contextvars.ContextVar(
     "_allowed_tool_names", default=None,
 )
@@ -159,24 +162,27 @@ def register(tool: AgentTool, *, toolsets: list[str] = (),
     every LLM tools array (internal helper), but it stays
     Python-callable and in the registry.
     """
-    _registry[tool.name] = tool
-    if toolsets:
-        _toolset_membership.setdefault(tool.name, set()).update(toolsets)
-    if unsafe_in:
-        _unsafe_in_channel.setdefault(tool.name, set()).update(unsafe_in)
-    if expose:
-        _unexposed.discard(tool.name)   # re-register as exposed clears prior opt-out
-    else:
-        _unexposed.add(tool.name)
+    with _registry_lock:
+        _registry[tool.name] = tool
+        if toolsets:
+            _toolset_membership.setdefault(tool.name, set()).update(toolsets)
+        if unsafe_in:
+            _unsafe_in_channel.setdefault(tool.name, set()).update(unsafe_in)
+        if expose:
+            _unexposed.discard(tool.name)   # re-register as exposed clears prior opt-out
+        else:
+            _unexposed.add(tool.name)
     return tool
 
 
 def get(name: str) -> Optional[AgentTool]:
-    return _registry.get(name)
+    with _registry_lock:
+        return _registry.get(name)
 
 
 def all_tools() -> list[AgentTool]:
-    return list(_registry.values())
+    with _registry_lock:
+        return list(_registry.values())
 
 
 def exposed_names() -> set[str]:
@@ -184,7 +190,8 @@ def exposed_names() -> set[str]:
     expose=False. This is the exposure universe — replaces the old
     hand-maintained static whitelist, so plugin / MCP tools are visible
     on registration."""
-    return set(_registry.keys()) - _unexposed
+    with _registry_lock:
+        return set(_registry.keys()) - _unexposed
 
 
 def filter_for(*, names: Optional[list[str]] = None,
@@ -193,25 +200,27 @@ def filter_for(*, names: Optional[list[str]] = None,
     """Pick tools by name list, toolset name, or both. Excludes any
     tool flagged unsafe in `source`.
     """
-    if names is not None:
-        candidates = [t for t in (_registry.get(n) for n in names) if t is not None]
-    elif toolset is not None:
-        candidates = [t for t in _registry.values()
-                      if toolset in _toolset_membership.get(t.name, ())]
-    else:
-        candidates = list(_registry.values())
-    if source:
-        candidates = [t for t in candidates
-                      if source not in _unsafe_in_channel.get(t.name, ())]
-    return candidates
+    with _registry_lock:
+        if names is not None:
+            candidates = [t for t in (_registry.get(n) for n in names) if t is not None]
+        elif toolset is not None:
+            candidates = [t for t in _registry.values()
+                          if toolset in _toolset_membership.get(t.name, ())]
+        else:
+            candidates = list(_registry.values())
+        if source:
+            candidates = [t for t in candidates
+                          if source not in _unsafe_in_channel.get(t.name, ())]
+        return candidates
 
 
 def reset_registry() -> None:
     """Test-only — wipe registered tools so test imports are repeatable."""
-    _registry.clear()
-    _toolset_membership.clear()
-    _unexposed.clear()
-    _unsafe_in_channel.clear()
+    with _registry_lock:
+        _registry.clear()
+        _toolset_membership.clear()
+        _unexposed.clear()
+        _unsafe_in_channel.clear()
     _allowed_tool_names.set(None)
 
 
@@ -223,26 +232,28 @@ def snapshot_registry() -> dict:
     imported (cached in sys.modules) their ``@function`` decorators won't
     re-fire — leaving every *later*-running test to see an empty registry.
     Snapshot before, restore after, and the isolation stays local."""
-    return {
-        "registry": dict(_registry),
-        "toolset_membership": {k: set(v) for k, v in _toolset_membership.items()},
-        "unsafe_in_channel": {k: set(v) for k, v in _unsafe_in_channel.items()},
-        "unexposed": set(_unexposed),
-    }
+    with _registry_lock:
+        return {
+            "registry": dict(_registry),
+            "toolset_membership": {k: set(v) for k, v in _toolset_membership.items()},
+            "unsafe_in_channel": {k: set(v) for k, v in _unsafe_in_channel.items()},
+            "unexposed": set(_unexposed),
+        }
 
 
 def restore_registry(snapshot: dict) -> None:
     """Test-only — put the registry back to a :func:`snapshot_registry` state."""
-    _registry.clear()
-    _registry.update(snapshot["registry"])
-    _toolset_membership.clear()
-    _toolset_membership.update(
-        {k: set(v) for k, v in snapshot["toolset_membership"].items()})
-    _unsafe_in_channel.clear()
-    _unsafe_in_channel.update(
-        {k: set(v) for k, v in snapshot["unsafe_in_channel"].items()})
-    _unexposed.clear()
-    _unexposed.update(snapshot["unexposed"])
+    with _registry_lock:
+        _registry.clear()
+        _registry.update(snapshot["registry"])
+        _toolset_membership.clear()
+        _toolset_membership.update(
+            {k: set(v) for k, v in snapshot["toolset_membership"].items()})
+        _unsafe_in_channel.clear()
+        _unsafe_in_channel.update(
+            {k: set(v) for k, v in snapshot["unsafe_in_channel"].items()})
+        _unexposed.clear()
+        _unexposed.update(snapshot["unexposed"])
 
 
 # ---------------------------------------------------------------------------
@@ -495,8 +506,13 @@ def _cap_result_text(text: str, max_chars: int,
     )
 
 
+def _safe_result_id(call_id: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]", "_", str(call_id or ""))[:128]
+    return cleaned or "result"
+
+
 def _persist_full_result(call_id: str, text: str) -> Path:
-    p = _tool_results_dir() / f"{call_id}.txt"
+    p = _tool_results_dir() / f"{_safe_result_id(call_id)}.txt"
     p.write_text(text, encoding="utf-8")
     return p
 
@@ -1345,7 +1361,7 @@ def _tool_search_by_name(payload: str) -> str:
     lines: list[str] = []
     for name in requested:
         allowed = _allowed_tool_names.get()
-        t = _registry.get(name) if allowed is None or name in allowed else None
+        t = get(name) if allowed is None or name in allowed else None
         if t is None:
             missing.append(name)
             continue
@@ -1391,10 +1407,11 @@ def _tool_search_by_keyword(query: str, *, max_results: int) -> str:
     # Candidate pool: deferred tools whose schema isn't already in this
     # session's provider tools array.
     loaded = _loaded_deferred.get() or set()
+    allowed = _allowed_tool_names.get()
     candidates = [
-        t for t in _registry.values()
+        t for t in all_tools()
         if getattr(t, "_defer", False) and t.name not in loaded
-        and (_allowed_tool_names.get() is None or t.name in _allowed_tool_names.get())
+        and (allowed is None or t.name in allowed)
     ]
 
     scored: list[tuple[int, str, AgentTool]] = []

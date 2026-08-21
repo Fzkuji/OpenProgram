@@ -181,6 +181,30 @@ def claim_fanout_slot(session_id: str, turn_id: str) -> int | None:
     return None
 
 
+def release_fanout_slot(session_id: str, turn_id: str) -> None:
+    """Return a slot reserved by :func:`claim_fanout_slot`."""
+    limit = max_spawn_fanout()
+    if not limit:
+        return
+    key = (session_id, turn_id)
+    with _fanout_lock:
+        used = _fanout_used.get(key, 0)
+        if used <= 1:
+            _fanout_used.pop(key, None)
+        else:
+            _fanout_used[key] = used - 1
+
+
+def _release_after_spawn_failure(
+    session_id: str, turn_id: str, exc: BaseException,
+) -> None:
+    """Release only real launch failures, not quota admission refusals."""
+    from openprogram.agent.resource_governance import AdmissionRejected
+    if isinstance(exc, AdmissionRejected):
+        return
+    release_fanout_slot(session_id, turn_id)
+
+
 def _spawn_parent_id() -> str | None:
     """The DAG node a clean spawn should hang off.
 
@@ -572,12 +596,14 @@ def _agent_impl(
         fork_sid = fork_sid.strip()
         fork_msg = fork_msg.strip()
         if not fork_sid or not fork_msg:
+            release_fanout_slot(sid, aid)
             return (
                 f"[agent error] start_from {start_from!r} — a node address needs "
                 "both parts: 'SID:MSG_ID'."
             )
         from openprogram.agent.session_db import default_db
         if default_db().get_session(fork_sid) is None:
+            release_fanout_slot(sid, aid)
             return (
                 f"[agent error] start_from {start_from!r} — session "
                 f"{fork_sid!r} not found (see list_agents)."
@@ -586,6 +612,7 @@ def _agent_impl(
         branch_from = fork_msg
         mode = "inherit"  # fork = inherit the chain up to the node
     else:
+        release_fanout_slot(sid, aid)
         return (
             f"[agent error] unknown start_from {start_from!r} — use 'clean' "
             "(default, new root, no parent history), 'inherit' (fork off "
@@ -660,6 +687,7 @@ def _agent_impl(
                     job_id=job_id,
                 )
         except Exception as e:  # noqa: BLE001
+            _release_after_spawn_failure(sid, aid, e)
             return f"[agent error] {type(e).__name__}: {e}"
         return (
             f"[agent spawned async] job_id={job_id}\n"
@@ -729,6 +757,7 @@ def _agent_impl(
             )
         except Exception:
             pass
+        _release_after_spawn_failure(sid, aid, e)
         return f"[agent error] {type(e).__name__}: {e}"
 
     # Write an attach pointer node so the DAG paints a `function=attach`

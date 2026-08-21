@@ -39,10 +39,12 @@ says "keep this one out of every LLM tool table".
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import importlib.util
 import logging
 import os
+import re
 import sys
 from typing import Iterator, Optional
 
@@ -239,7 +241,7 @@ def _iter_external_harness_dirs(applications_dir: str) -> Iterator[tuple[str, st
     from openprogram.programs._programs import owner_controlled_program_sources
     skip = set(_NOT_A_HARNESS) | _official_program_dir_names()
     for row in sorted(
-        owner_controlled_program_sources(),
+        owner_controlled_program_sources(applications_dir),
         key=lambda item: os.path.basename(item["path"]),
     ):
         name = os.path.basename(row["path"])
@@ -357,13 +359,26 @@ def _load_external_file(
     if sys_path_root not in sys.path:
         sys.path.insert(0, sys_path_root)
 
-    full_mod = f"openprogram.programs.workflow.{mod_name}"
+    slug = re.sub(r"[^A-Za-z0-9_]", "_", mod_name).strip("_") or "mod"
+    digest = hashlib.sha256(os.path.realpath(abs_path).encode()).hexdigest()[:12]
+    full_mod = f"openprogram.programs._external.{slug}_{digest}"
     spec = importlib.util.spec_from_file_location(full_mod, abs_path)
     if spec is None or spec.loader is None:
         return
     module = importlib.util.module_from_spec(spec)
     sys.modules[full_mod] = module
     spec.loader.exec_module(module)
+    # WebUI `_load_function` still looks up workflow.{mod_name}. Alias
+    # only when that key is free or already this same file — never clobber
+    # a builtin like workflow.browser / goal / text.
+    legacy = f"openprogram.programs.workflow.{mod_name}"
+    existing = sys.modules.get(legacy)
+    existing_file = getattr(existing, "__file__", None) if existing else None
+    if existing is None or (
+        existing_file
+        and os.path.realpath(existing_file) == os.path.realpath(abs_path)
+    ):
+        sys.modules[legacy] = module
 
 
 # ---------------------------------------------------------------------------

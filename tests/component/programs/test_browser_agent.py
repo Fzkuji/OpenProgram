@@ -254,7 +254,8 @@ def _controller():
 def test_browser_agent_is_an_explicit_internal_agentic_module():
     from openprogram.programs._registry import AGENTIC_MODULES
 
-    assert "workflow.browser" in AGENTIC_MODULES
+    # AGENTIC_MODULES stores workflow-relative short names.
+    assert "browser" in AGENTIC_MODULES
 
 
 def test_observe_returns_dom_aria_and_refs_without_a_screenshot():

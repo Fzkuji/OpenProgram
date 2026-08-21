@@ -69,9 +69,15 @@ SPEC: dict[str, Any] = {
 }
 
 
+_MAX_BUFFER_LINES = 2000
+_MAX_BUFFER_BYTES = 2 * 1024 * 1024
+_EXITED_TTL = 3600.0
+
+
 class _Session:
     __slots__ = ("id", "command", "proc", "started_at", "buffer", "offset",
-                 "_lock", "_reader", "backend_id")
+                 "_lock", "_reader", "backend_id", "truncated", "_bytes",
+                 "exited_at")
 
     def __init__(self, command: str, cwd: str | None):
         self.id = uuid.uuid4().hex[:8]
@@ -80,6 +86,9 @@ class _Session:
         self.offset = 0  # bytes of buffer already returned by poll()
         self._lock = threading.Lock()
         self.started_at = time.time()
+        self.truncated = False
+        self._bytes = 0
+        self.exited_at: float | None = None
         # Route through backend so `openprogram setup backend` takes
         # effect here too. LocalBackend.spawn reproduces the original
         # Popen flags; ssh / docker backends wrap appropriately.
@@ -89,18 +98,41 @@ class _Session:
         self._reader = threading.Thread(target=self._drain, daemon=True)
         self._reader.start()
 
+    def _trim_locked(self) -> None:
+        while (
+            self.buffer
+            and (
+                len(self.buffer) > _MAX_BUFFER_LINES
+                or self._bytes > _MAX_BUFFER_BYTES
+            )
+        ):
+            dropped = self.buffer.pop(0)
+            self._bytes -= len(dropped)
+            self.offset = max(0, self.offset - len(dropped))
+            self.truncated = True
+
+    def _mark_exited(self) -> None:
+        if self.exited_at is None and self.proc.poll() is not None:
+            self.exited_at = time.time()
+
     def _drain(self) -> None:
         assert self.proc.stdout is not None
         try:
             for line in self.proc.stdout:
                 with self._lock:
                     self.buffer.append(line)
+                    self._bytes += len(line)
+                    self._trim_locked()
         except Exception:
             pass
+        self._mark_exited()
 
     def status(self) -> str:
         code = self.proc.poll()
-        return "running" if code is None else f"exited({code})"
+        if code is None:
+            return "running"
+        self._mark_exited()
+        return f"exited({code})"
 
     def full_log(self) -> str:
         with self._lock:
@@ -121,14 +153,17 @@ class _Session:
 
     def kill(self) -> None:
         if self.proc.poll() is not None:
+            self._mark_exited()
             return
         try:
             self.proc.terminate()
             self.proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             self.proc.kill()
-        except Exception:
+            self.proc.wait(timeout=5)
+        except ProcessLookupError:
             pass
+        self._mark_exited()
 
 
 _SESSIONS: dict[str, _Session] = {}
@@ -143,6 +178,20 @@ def _get(sid: str) -> _Session | None:
 def _remove(sid: str) -> _Session | None:
     with _LOCK:
         return _SESSIONS.pop(sid, None)
+
+
+def _reap_exited(now: float | None = None) -> None:
+    now = time.time() if now is None else now
+    with _LOCK:
+        stale = []
+        for sid, sess in _SESSIONS.items():
+            if sess.proc.poll() is None:
+                continue
+            sess._mark_exited()
+            if sess.exited_at is not None and now - sess.exited_at >= _EXITED_TTL:
+                stale.append(sid)
+        for sid in stale:
+            _SESSIONS.pop(sid, None)
 
 
 def execute(
@@ -166,27 +215,37 @@ def execute(
         return f"started session_id={sess.id} pid={sess.proc.pid}{suffix}"
 
     if action == "list":
+        _reap_exited()
         with _LOCK:
             sessions = list(_SESSIONS.values())
         if not sessions:
             return "(no sessions)"
-        rows = [
-            f"{s.id}  {s.status():<12}  pid={s.proc.pid}  age={int(time.time() - s.started_at)}s  {s.command}"
-            for s in sessions
-        ]
+        rows = []
+        for s in sessions:
+            flag = "  truncated" if s.truncated else ""
+            rows.append(
+                f"{s.id}  {s.status():<12}  pid={s.proc.pid}  "
+                f"age={int(time.time() - s.started_at)}s{flag}  {s.command}"
+            )
         return "\n".join(rows)
 
     if not session_id:
         return f"Error: action={action} requires session_id"
+    if action == "poll":
+        _reap_exited()
     sess = _get(session_id)
     if sess is None:
         return f"Error: no session {session_id!r}"
 
     if action == "poll":
         delta = sess.poll_delta()
-        return f"status={sess.status()}\n--- new output ---\n{delta}" if delta else f"status={sess.status()} (no new output)"
+        extra = " truncated=1" if sess.truncated else ""
+        if delta:
+            return f"status={sess.status()}{extra}\n--- new output ---\n{delta}"
+        return f"status={sess.status()}{extra} (no new output)"
     if action == "log":
-        return f"status={sess.status()}\n--- log ---\n{sess.full_log()}"
+        extra = " truncated=1" if sess.truncated else ""
+        return f"status={sess.status()}{extra}\n--- log ---\n{sess.full_log()}"
     if action == "write":
         if input is None:
             return "Error: action=write requires input"
@@ -196,10 +255,16 @@ def execute(
             return f"Error writing to {session_id}: {type(e).__name__}: {e}"
         return f"wrote {len(input)} bytes to {session_id}"
     if action == "kill":
-        sess.kill()
+        try:
+            sess.kill()
+        except Exception as e:
+            return f"Error killing {session_id}: {type(e).__name__}: {e}"
         return f"killed {session_id} (status={sess.status()})"
     if action == "remove":
-        sess.kill()
+        try:
+            sess.kill()
+        except Exception as e:
+            return f"Error killing {session_id}: {type(e).__name__}: {e}"
         _remove(session_id)
         return f"removed {session_id}"
 
