@@ -36,16 +36,6 @@
   right: 0;
   bottom: 0;
   z-index: 5;
-  max-height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-}
-/* Workflow / decision form is open: clip so Local / project chips
-   stay glued above the box and never paint off the top of #chatView.
-   Slash menu is unused in this mode, so overflow:hidden is safe. */
-.inputArea[data-fn-open] {
-  overflow: hidden;
 }
 /* Bottom fade mask: solid at the bottom (hides chat content scrolling
    behind the composer) fading to transparent at the top — so there's no
@@ -106,7 +96,6 @@
      shift), slightly stronger on focus. */
   box-shadow: var(--composer-shadow);
   overflow: hidden;
-  min-height: 0;
   transition: box-shadow 180ms ease,
     height var(--composer-height-transition);
 }
@@ -549,7 +538,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  flex-shrink: 0;
   /* Same column as the box and the env pills, widened by 1px per side:
      the box's hairline ring is an OUTSET box-shadow, so its visual
      edge sits 1px outside the wrapper box. Matching that edge keeps
@@ -937,10 +925,6 @@
    ``bottom: 100%`` lands on the wrapper's top edge. */
 .composerStack {
   position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
 }
 .slashClip {
   position: absolute;

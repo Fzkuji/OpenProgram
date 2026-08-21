@@ -139,41 +139,7 @@ export function useFnFormWrapper({
     const el = wrapperRef.current;
     if (!el || !el.style.height) return;
     el.style.height = "";
-    el.style.maxHeight = "";
   }, [morphed, wrapperRef]);
-
-  // While the form is open, grow the box upward as the user types
-  // (env chips ride along just above it). Stop at the chat-column
-  // cap so those chips never leave the window; extra field content
-  // scrolls inside the form body.
-  useEffect(() => {
-    if (!morphed || fnFormClosing) return;
-    const el = wrapperRef.current;
-    if (!el) return;
-    let last = 0;
-    let measuring = false;
-    const apply = () => {
-      if (measuring) return;
-      measuring = true;
-      const next = measureFnFormHeight(el);
-      const cap = availableComposerHeight(el);
-      measuring = false;
-      if (Math.abs(next - last) < 1) return;
-      last = next;
-      el.style.height = `${next}px`;
-      el.style.maxHeight = `${cap}px`;
-    };
-    const id = requestAnimationFrame(apply);
-    const ro = new ResizeObserver(() => requestAnimationFrame(apply));
-    const body = el.querySelector("[data-fn-form-body]");
-    if (body) ro.observe(body);
-    window.addEventListener("resize", apply);
-    return () => {
-      cancelAnimationFrame(id);
-      ro.disconnect();
-      window.removeEventListener("resize", apply);
-    };
-  }, [morphed, fnFormClosing, fnFormFunction, decisionKey, wrapperRef]);
 
   return { outgoingFn };
 }
@@ -276,37 +242,5 @@ function measureFnFormHeight(el: HTMLDivElement): number {
   } else {
     body.removeAttribute("style");
   }
-  const raw = header.offsetHeight + bodyContentH + padBottom;
-  return Math.min(raw, availableComposerHeight(el));
-}
-
-/** Room left for the wrapper inside #chatView after the env chips,
- *  controls row, and inputArea padding. Keeps disconnected / project
- *  chips on screen when a workflow form is taller than the window. */
-function availableComposerHeight(el: HTMLDivElement): number {
-  const area = el.closest("[data-composer-input-area]") as HTMLElement | null;
-  const host = (
-    (area?.offsetParent as HTMLElement | null)
-    || (el.closest("#chatView") as HTMLElement | null)
-    || (area?.parentElement as HTMLElement | null)
-  );
-  const env = area?.querySelector("[data-environment-row]") as HTMLElement | null;
-  const controls = area?.querySelector(".composer-bottom-row") as HTMLElement | null;
-  const cs = area ? getComputedStyle(area) : null;
-  const pad = cs
-    ? parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
-    : 0;
-  const envH = env
-    ? env.offsetHeight + parseFloat(getComputedStyle(env).marginBottom || "0")
-    : 0;
-  const controlsH = controls
-    ? controls.offsetHeight + parseFloat(getComputedStyle(controls).marginTop || "0")
-    : 0;
-  let hostH = host?.clientHeight ?? 0;
-  if (hostH < 80 && area) {
-    const rect = area.getBoundingClientRect();
-    hostH = Math.max(hostH, window.innerHeight - (window.innerHeight - rect.bottom));
-  }
-  if (hostH < 80) hostH = window.innerHeight;
-  return Math.max(120, hostH - envH - controlsH - pad);
+  return header.offsetHeight + bodyContentH + padBottom;
 }
