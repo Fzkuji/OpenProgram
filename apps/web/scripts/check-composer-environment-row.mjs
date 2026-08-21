@@ -26,6 +26,7 @@ assert.match(environmentRow, /function EnvironmentRow/);
 assert.match(environmentRow, /useCompactEnvironmentRow/);
 assert.match(environmentRow, /<ConnectionStatusChip/);
 assert.match(environmentRow, /<WebSurfaceChip/);
+assert.match(environmentRow, /<WebPreviewChip/);
 assert.match(environmentRow, /<ProjectBadge/);
 assert.match(environmentRow, /<WorkingDirChips/);
 assert.match(environmentRow, /<GoalChip/);

@@ -1261,6 +1261,11 @@
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   background: var(--bg-secondary);
+  cursor: grab;
+  touch-action: none;
+}
+.webPipChrome:active {
+  cursor: grabbing;
 }
 .webPipTitle {
   flex: 1;
@@ -1271,10 +1276,28 @@
   font-size: 12px;
   color: var(--text-bright);
 }
+.webPipStage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .webPipBody {
   flex: 1;
   min-height: 0;
+  margin: 0 10px 10px 0;
   background: var(--bg-primary);
+}
+.webPipResize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 12px;
+  height: 12px;
+  cursor: nwse-resize;
+  touch-action: none;
+  background: linear-gradient(135deg, transparent 46%, var(--border) 46%);
 }
 .webPipFallback {
   height: 100%;

@@ -325,9 +325,10 @@
     <h2>06b Agent 画中画预览</h2>
     <p>Agent 通过 <code>webtab.command(op=open)</code> 开页时，若当前 active 条目是 session 且尚未与 Web 组成 pair，前端创建或复用 leaf WebTab，保持聊天焦点，并把该 WebTab 的 native <code>WebContentsView</code> 以小尺寸 bounds 画在聊天角落。已有分屏 Web 成员时仍走 <code>openWebTabInSplit</code>，只导航不另开第三 pane。</p>
     <ul>
-      <li><strong>展开为分屏：</strong><code>setSplitWebTab(id)</code> 与当前 session 建组，小窗卸载，Web 进入右 pane。</li>
+      <li><strong>展开为分屏：</strong><code>setSplitWebTab(id)</code> 与当前 session 建组，小窗卸载，Web 进入右 pane。当前 session 已与文件（或其它非该 Web）组成满员 pair 时，先把另一成员换出到条上，再建立 session+web；不禁用按钮，也不创建第三 pane。</li>
       <li><strong>全屏接管：</strong><code>setActive(id)</code>，中间栏只显示该 WebTab。</li>
-      <li><strong>关闭预览：</strong>清除 ephemeral pip 状态并注销 visible bounds；leaf tab 保留。Agent 仍可用 <code>resolve</code> 访问后台页，<code>activate</code>/<code>preview</code> 要求可见。</li>
+      <li><strong>关闭预览：</strong>清除可见 pip host 并注销 visible bounds；leaf tab 与内存中的位置尺寸保留。Agent 仍可用 <code>resolve</code> 访问后台页，<code>activate</code>/<code>preview</code> 要求可见。此时若该 WebTab 仍在后台且未进入 active/split，composer 环境条出现「显示网页预览」，点一下重新打开小窗。</li>
+      <li>标题栏拖动改位置，右下角拖拽改尺寸；矩形写入 pip store，不进 version 2 payload。小窗限制在聊天 pane 内，最小 <code>240×160</code>。桌面端 native bounds 跟随 body；拖动时 <code>syncVisible</code> 按 100ms 节流，指针抬起立即发布。</li>
       <li>pip 状态不写入 version 2 payload。Web 版没有 BrowserView，小窗 body 降级为 iframe 或「在新标签打开」。</li>
     </ul>
   </section>
@@ -523,7 +524,7 @@ git diff --check</code></pre>
   <section id="status">
     <h2>12 实现与验证状态</h2>
     <div class="card">
-      <p><strong>顶部复合 tab、分屏宽度调整、Web toolbar 显式成员选择与 Agent 画中画预览均已实现。</strong></p>
+      <p><strong>顶部复合 tab、分屏宽度调整、Web toolbar 显式成员选择与 Agent 画中画预览均已实现。</strong>小窗可拖动与调尺寸；session 已与文件成对时展开分屏会换出文件成员；关闭预览后可从环境条重新打开后台页。</p>
       <p>toolbar picker 的 focused checks、TypeScript、production build、Desktop WebTab/transfer checks 与文档链接检查通过。默认安装版验证了：选择前不创建 group；选择指定 target 后只生成该精确 pair；Escape 不改持久化状态；非空候选首项获得焦点；空候选 Close 获得焦点；outside dismissal 保留实际点击目标焦点。验收结束后恢复原 tabs、groups、activeId、URL 与 split ratio。</p>
       <p><strong>主题化 active 对比度：</strong>选中 tab 统一使用内容 surface，未选中 tab 保持透明并显示更深的 tab 栏 surface；浅色和深色主题均遵循“栏面更暗、选中面更亮”，不再使用浅色主题下的反向灰色 active 面。</p>
       <p><strong>桌面顶部几何：</strong>最顶部全局 tab strip 固定为 <code>40px</code>，普通与复合 tab 固定为 <code>28px</code> 并垂直居中，上下各保留 <code>6px</code>；关闭按钮为 <code>20px</code>，新增与主菜单按钮为 <code>28px</code>。默认 18100 安装版实测 strip 为 <code>39.995px</code>、普通 tab 为 <code>27.999px</code>、tab 顶部位置为 <code>5.998px</code>；独立 specification 与 quality review 均为 PASS。</p>

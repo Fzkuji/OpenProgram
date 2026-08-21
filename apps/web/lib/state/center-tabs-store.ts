@@ -731,7 +731,25 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         if (tabId === s.splitWebTabId && group?.memberIds.includes(tabId)
             && group.visibleIds.includes(active!.id)
             && group.visibleIds.includes(tabId)) return {};
-        return commitCenterTabsState(s, { splitWebTabId: tabId });
+        let groups = s.groups;
+        let tabs = s.tabs;
+        // Session already in a pair (usually session+file): evict the
+        // other member so session+web can form. The evicted tab stays
+        // in the strip. A full group cannot accept a third pane.
+        if (active?.kind === "session" && group && !group.memberIds.includes(tabId)) {
+          let layout = {
+            tabIds: s.tabs.map((tab) => tab.id),
+            groups: s.groups,
+          };
+          for (const memberId of group.memberIds) {
+            if (memberId !== active.id) {
+              layout = ungroupCenterTab(layout, memberId);
+            }
+          }
+          groups = layout.groups;
+          tabs = tabsForLayout(s.tabs, layout);
+        }
+        return commitCenterTabsState(s, { tabs, groups, splitWebTabId: tabId });
       }),
 
     setSplitRatio: (ratio) =>

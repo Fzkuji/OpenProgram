@@ -5,6 +5,7 @@ import { useRef, type ReactNode } from "react";
 import { GoalChip } from "../../goal-chip";
 import { ProjectBadge, WorkingDirChips } from "../../top-bar";
 import { ConnectionStatusChip } from "./chips/connection-status-chip";
+import { WebPreviewChip } from "./chips/web-preview-chip";
 import { WebSurfaceChip } from "./chips/web-surface-chip";
 import { useCompactEnvironmentRow } from "./use-compact-environment-row";
 import styles from "./environment-row.module.css";
@@ -35,6 +36,7 @@ export function EnvironmentRow({
         toolsEnabled={toolsEnabled}
         onToggleAccess={onToggleAccess}
       />
+      <WebPreviewChip />
       <ProjectBadge />
       <WorkingDirChips />
       <GoalChip />

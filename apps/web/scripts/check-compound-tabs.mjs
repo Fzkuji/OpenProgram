@@ -799,6 +799,37 @@ assert.deepEqual(state.groups[0].memberIds, [`s:${draftId}`, "w:one"]);
 assert.deepEqual(state.groups[0].visibleIds, [`s:${draftId}`, "w:one"]);
 assert.equal(state.activeId, `s:${draftId}`);
 
+useCenterTabs.setState({
+  tabs: [
+    { id: "s:chat", kind: "session", title: "Chat", sessionId: "chat" },
+    { id: "f:p:readme.md", kind: "file", title: "readme.md", projectId: "p", path: "readme.md" },
+    { id: "w:pip", kind: "web", title: "Pip", url: "https://pip.test/" },
+  ],
+  groups: [{
+    id: "g:file",
+    memberIds: ["s:chat", "f:p:readme.md"],
+    visibleIds: ["s:chat", "f:p:readme.md"],
+    focusedId: "s:chat",
+  }],
+  activeId: "s:chat",
+  splitWebTabId: null,
+  splitRatio: 0.5,
+});
+useCenterTabs.getState().setSplitWebTab("w:pip");
+state = useCenterTabs.getState();
+assert.deepEqual(
+  state.groups[0].memberIds,
+  ["s:chat", "w:pip"],
+  "pip expand must evict the file member and pair session+web",
+);
+assert.deepEqual(state.groups[0].visibleIds, ["s:chat", "w:pip"]);
+assert.equal(state.splitWebTabId, "w:pip");
+assert.equal(state.tabs.some((tab) => tab.id === "f:p:readme.md"), true);
+assert.equal(
+  state.groups.some((group) => group.memberIds.includes("f:p:readme.md")),
+  false,
+);
+
 const mainPayload = storageValues.get("centerTabs:main");
 window.openprogramDesktop.windowId = "secondary";
 const { useCenterTabs: secondaryTabs } = await import(

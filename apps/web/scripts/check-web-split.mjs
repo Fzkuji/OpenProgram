@@ -2356,7 +2356,13 @@ assert.equal(
   useCenterTabs.getState().tabs.filter((tab) => tab.kind === "web").length,
   1,
 );
-const { peekWebTabPipId, useWebTabPip } = await import("../lib/state/web-tab-pip-store.ts");
+const {
+  peekWebTabPipId,
+  peekWebTabPipBackgroundId,
+  useWebTabPip,
+  clampPipRect,
+  pipCoversCenter,
+} = await import("../lib/state/web-tab-pip-store.ts");
 useWebTabPip.getState().show(pipOnlyId);
 assert.equal(peekWebTabPipId(), pipOnlyId);
 registerVisibleWebTabBounds(
@@ -2366,10 +2372,62 @@ registerVisibleWebTabBounds(
 );
 setWebTabReady(pipOnlyId, true);
 assert.equal(visibleWebTab()?.id, pipOnlyId);
+assert.equal(
+  pipCoversCenter(pipOnlyId, useCenterTabs.getState()),
+  true,
+);
 useWebTabPip.getState().hide();
 removeVisibleWebTabBounds({ webTab: { syncVisible() {} } }, pipOnlyId);
 setWebTabReady(pipOnlyId, false);
 assert.equal(peekWebTabPipId(), null);
+assert.equal(peekWebTabPipBackgroundId(), pipOnlyId);
+assert.deepEqual(
+  clampPipRect(
+    { x: -20, y: -10, width: 100, height: 80 },
+    { x: 0, y: 0, width: 400, height: 300 },
+  ),
+  { x: 0, y: 0, width: 240, height: 160 },
+);
+assert.deepEqual(
+  clampPipRect(
+    { x: 500, y: 400, width: 360, height: 220 },
+    { x: 10, y: 20, width: 400, height: 300 },
+  ),
+  { x: 50, y: 100, width: 360, height: 220 },
+);
+const pipSource = await readFile(
+  new URL("../components/center-tabs/web-tab-pip.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(pipSource, /onPointerDown=\{\(event\) => onDragPointerDown\("move"/);
+assert.match(pipSource, /onPointerDown=\{\(event\) => onDragPointerDown\("resize"/);
+assert.match(pipSource, /const BOUNDS_THROTTLE_MS = 100;/);
+assert.match(pipSource, /reportRef\.current\(true\)/);
+const pipCss = await readFile(
+  new URL("../components/center-tabs/center-tabs.module.css", import.meta.url),
+  "utf8",
+);
+assert.match(pipCss, /\.webPipResize/);
+const previewChipSource = await readFile(
+  new URL("../components/chat/composer/environment-row/chips/web-preview-chip.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(previewChipSource, /Show page preview/);
+assert.match(previewChipSource, /peekWebTabPipBackgroundId|backgroundTabId/);
+assert.match(
+  await readFile(
+    new URL("../components/chat/composer/environment-row/environment-row.tsx", import.meta.url),
+    "utf8",
+  ),
+  /<WebPreviewChip \/>/,
+);
+assert.match(
+  await readFile(
+    new URL("../lib/state/center-tabs-store.ts", import.meta.url),
+    "utf8",
+  ),
+  /if \(active\?\.kind === "session" && group && !group\.memberIds.includes\(tabId\)\)/,
+);
 
 const id = useCenterTabs.getState().openWebTabInSplit("https://example.com/");
 assert.equal(id, "w:https://example.com/");
