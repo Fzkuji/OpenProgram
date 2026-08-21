@@ -10,11 +10,40 @@ import uuid
 from typing import Any, Callable, Mapping
 
 from openprogram.programs import ToolReturn
-from openprogram.web_use_contract import SUPPORTED_WEB_USE_BACKENDS
+from openprogram.web_use_contract import (
+    SUPPORTED_WEB_USE_BACKENDS,
+    normalize_web_use_arguments,
+)
 
 
 SUPPORTED_BACKENDS = SUPPORTED_WEB_USE_BACKENDS
 DEFAULT_BACKEND = SUPPORTED_BACKENDS[0]
+
+
+def _unresolved_session_id(value: str) -> bool:
+    return str(value or "").strip().lower() in {"", "pending"}
+
+
+def _session_frame_id(session: WebUseSession) -> str:
+    frame_id = str(session.state.get("frame_id") or "").strip()
+    if frame_id:
+        return frame_id
+    controller = session.controller
+    frame = getattr(controller, "_frame", None) if controller is not None else None
+    if isinstance(frame, dict):
+        return str(frame.get("frame_id") or "").strip()
+    return ""
+
+
+def _result_frame_id(result: Any) -> str:
+    payload = (
+        result.json_data
+        if isinstance(result, ToolReturn) and isinstance(result.json_data, dict)
+        else result if isinstance(result, dict) else None
+    )
+    if not isinstance(payload, dict):
+        return ""
+    return str(payload.get("frame_id") or "").strip()
 
 
 def _is_timeout_error(exc: Exception) -> bool:
@@ -136,6 +165,19 @@ class WebUseSessionRegistry:
         self._binding_validator = binding_validator
         self._lock = threading.RLock()
 
+    def _latest_owner_session_id(self, owner_id: str) -> str:
+        if not owner_id:
+            return ""
+        with self._lock:
+            for session in reversed(list(self._sessions.values())):
+                if (
+                    session.owner_id == owner_id
+                    and not session.closing
+                    and not session.closed
+                ):
+                    return session.id
+        return ""
+
     def _detach_locked(self, session: WebUseSession) -> None:
         self._sessions.pop(session.id, None)
         for token, capability in list(self._page_capabilities.items()):
@@ -250,7 +292,12 @@ class WebUseSessionRegistry:
         page_context: dict[str, Any] | None = None,
         arguments: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
-        params = dict(arguments or {})
+        params = dict(normalize_web_use_arguments({"arguments": arguments}).get("arguments") or {})
+        if _unresolved_session_id(web_session_id):
+            web_session_id = (
+                "" if command == "observe"
+                else self._latest_owner_session_id(owner_id)
+            )
         created_session = command == "observe" and not web_session_id
         reused_session = False
         if created_session:
@@ -356,6 +403,11 @@ class WebUseSessionRegistry:
                     "backend": session.backend,
                 }
 
+            if command in {"act", "verify"}:
+                if not str(params.get("expected_frame_id") or "").strip():
+                    frame_id = _session_frame_id(session)
+                    if frame_id:
+                        params["expected_frame_id"] = frame_id
             if command == "act":
                 missing = [
                     name for name in ("action", "expected_frame_id")
@@ -448,15 +500,11 @@ class WebUseSessionRegistry:
                     "observe_required": True,
                 }
 
-            if created_session:
-                frame_id = (
-                    result.json_data.get("frame_id")
-                    if isinstance(result, ToolReturn)
-                    and isinstance(result.json_data, dict)
-                    else result.get("frame_id") if isinstance(result, dict) else None
-                )
-                if not frame_id:
-                    self._cleanup_session(session, suppress_errors=True)
+            frame_id = _result_frame_id(result)
+            if frame_id:
+                session.state["frame_id"] = frame_id
+            if created_session and not frame_id:
+                self._cleanup_session(session, suppress_errors=True)
 
         if isinstance(result, ToolReturn):
             metadata = (

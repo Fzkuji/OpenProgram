@@ -1236,6 +1236,57 @@
   background: var(--bg-primary);
 }
 
+.webPip {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 8;
+  width: 360px;
+  height: 220px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.webPipChrome {
+  height: 32px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px 0 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+}
+.webPipTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-bright);
+}
+.webPipBody {
+  flex: 1;
+  min-height: 0;
+  background: var(--bg-primary);
+}
+.webPipFallback {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
 /* ---- Built-in library pages (bookmarks / history) ------------------ */
 /* Chrome-style bookmark manager: fixed search header, folder rail, and
    the selected folder's direct children. The accent comes from the active

@@ -21,6 +21,7 @@ import {
   useCenterTabs,
   validateTransferredTabs,
 } from "@/lib/state/center-tabs-store";
+import { peekWebTabPipId, useWebTabPip } from "@/lib/state/web-tab-pip-store";
 import {
   centerTabStripEntries,
   findCenterTabGroup,
@@ -338,12 +339,17 @@ export function visibleWebTab() {
       .flatMap((pane) => pane.kind === "tab" ? [pane.tabId] : [])
       .map((id) => state.tabs.find((tab) => tab.id === id))
       .filter((tab) => tab?.kind === "web" && isWebTabReady(tab.id));
-    return visibleWebTabs.find((tab) => tab?.id === group.focusedId)
+    const fromGroup = visibleWebTabs.find((tab) => tab?.id === group.focusedId)
       ?? visibleWebTabs[0]
       ?? null;
+    if (fromGroup) return fromGroup;
   }
   const active = state.tabs.find((tab) => tab.id === state.activeId);
   if (active?.kind === "web" && isWebTabReady(active.id)) return active;
+  const pipId = peekWebTabPipId();
+  if (pipId && isWebTabReady(pipId)) {
+    return state.tabs.find((tab) => tab.id === pipId && tab.kind === "web") ?? null;
+  }
   return null;
 }
 
@@ -363,6 +369,8 @@ function visibleWebTabById(tabId: string) {
   if (state.activeId && state.splitWebTabId) {
     visibleIds.add(state.splitWebTabId);
   }
+  const pipId = peekWebTabPipId();
+  if (pipId) visibleIds.add(pipId);
   return visibleIds.has(tabId) && isWebTabActuallyVisible(tabId)
     ? state.tabs.find((tab) => tab.id === tabId && tab.kind === "web") ?? null
     : null;
@@ -652,6 +660,12 @@ export function surfaceRefForChat(
       (tab) => tab.id === state.splitWebTabId && tab.kind === "web",
     );
   }
+  if (!web && state.activeId === chat.id) {
+    const pipId = peekWebTabPipId();
+    if (pipId) {
+      web = state.tabs.find((tab) => tab.id === pipId && tab.kind === "web");
+    }
+  }
   if (!web || web.kind !== "web") return null;
   if (!isWebTabActuallyVisible(web.id)) return null;
   const region = !group
@@ -858,13 +872,17 @@ export function installDesktopMenuHandlers(): void {
       ) ?? false;
       const split = active?.kind === "session"
         && isDesktopSplitLayoutAvailable()
-        && (!activeGroup || activeGroupHasWeb);
+        && activeGroupHasWeb;
+      const usePip = active?.kind === "session" && !split;
       const routeVisible =
         window.location.pathname === "/chat" ||
         window.location.pathname.startsWith("/s/");
       let id: string | null;
       if (split) {
         id = state.openWebTabInSplit(d.url);
+      } else if (usePip) {
+        id = state.ensureWebTab(d.url);
+        useWebTabPip.getState().show(id);
       } else {
         state.openWebTab(d.url);
         id = useCenterTabs.getState().activeId;

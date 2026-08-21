@@ -2073,6 +2073,8 @@ assert.match(
 assert.match(desktopBridgeSource, /const visibleWebBounds = new Map/);
 assert.match(desktopBridgeSource, /targetBridge\.webTab\.syncVisible/);
 assert.match(desktopBridgeSource, /state\.openWebTabInSplit\(d\.url\)/);
+assert.match(desktopBridgeSource, /state\.ensureWebTab\(d\.url\)/);
+assert.match(desktopBridgeSource, /useWebTabPip\.getState\(\)\.show\(id\)/);
 assert.match(desktopBridgeSource, /waitForWebTabReady\(id, 2000\)/);
 assert.match(desktopBridgeSource, /subscribeWebTabPopups\(bridge\)/);
 assert.match(desktopBridgeSource, /state\.openPopupWebTab\(popup\.url, popup\.openerId\)/);
@@ -2093,6 +2095,7 @@ assert.match(
   /findCenterTabGroup,[\s\S]*?resolveCenterTabPanes/,
   "AppShell must use the shared group and pane resolver",
 );
+assert.match(appShellSource, /<WebTabPip \/>/);
 assert.match(appShellSource, /const tabs = useCenterTabs\(\(s\) => s\.tabs\);/);
 assert.match(appShellSource, /const groups = useCenterTabs\(\(s\) => s\.groups\);/);
 assert.match(appShellSource, /const activeId = useCenterTabs\(\(s\) => s\.activeId\);/);
@@ -2336,6 +2339,38 @@ useCenterTabs.setState({
   splitWebTabId: null,
   splitRatio: 0.45,
 });
+const pipOnlyId = useCenterTabs.getState().ensureWebTab("https://pip.example/");
+assert.equal(pipOnlyId, "w:https://pip.example/");
+assert.equal(useCenterTabs.getState().activeId, "s:chat");
+assert.equal(useCenterTabs.getState().splitWebTabId, null);
+assert.equal(useCenterTabs.getState().groups.length, 0);
+assert.equal(
+  useCenterTabs.getState().tabs.find((tab) => tab.id === pipOnlyId)?.url,
+  "https://pip.example/",
+);
+assert.equal(
+  useCenterTabs.getState().ensureWebTab("https://pip.example/"),
+  pipOnlyId,
+);
+assert.equal(
+  useCenterTabs.getState().tabs.filter((tab) => tab.kind === "web").length,
+  1,
+);
+const { peekWebTabPipId, useWebTabPip } = await import("../lib/state/web-tab-pip-store.ts");
+useWebTabPip.getState().show(pipOnlyId);
+assert.equal(peekWebTabPipId(), pipOnlyId);
+registerVisibleWebTabBounds(
+  { webTab: { syncVisible() {} } },
+  pipOnlyId,
+  { x: 40, y: 40, width: 360, height: 188 },
+);
+setWebTabReady(pipOnlyId, true);
+assert.equal(visibleWebTab()?.id, pipOnlyId);
+useWebTabPip.getState().hide();
+removeVisibleWebTabBounds({ webTab: { syncVisible() {} } }, pipOnlyId);
+setWebTabReady(pipOnlyId, false);
+assert.equal(peekWebTabPipId(), null);
+
 const id = useCenterTabs.getState().openWebTabInSplit("https://example.com/");
 assert.equal(id, "w:https://example.com/");
 assert.equal(useCenterTabs.getState().activeId, "s:chat");

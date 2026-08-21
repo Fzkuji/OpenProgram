@@ -299,7 +299,7 @@ def test_backend_parity_lifecycle(monkeypatch, backend):
     assert missing == {
         "ok": False,
         "reason_code": "invalid_arguments",
-        "missing_arguments": ["action", "expected_frame_id"],
+        "missing_arguments": ["action"],
         "web_session_id": session_id,
         "backend": backend,
     }

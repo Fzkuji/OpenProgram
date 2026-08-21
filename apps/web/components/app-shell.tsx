@@ -14,6 +14,7 @@ import { FilesPage } from "./center-tabs/files-page";
 import { NewTabPage } from "./center-tabs/new-tab-page";
 import { TerminalPage } from "./center-tabs/terminal-page";
 import { WebTabPane } from "./center-tabs/web-tab-pane";
+import { WebTabPip } from "./center-tabs/web-tab-pip";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   findCenterTabGroup,
@@ -576,6 +577,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 );
               })
             : null}
+          {showChat ? <WebTabPip /> : null}
         </div>
       </div>
       {/* Non-chat routes render their own page content via the router. */}

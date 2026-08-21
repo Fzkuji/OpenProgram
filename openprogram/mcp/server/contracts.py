@@ -150,6 +150,9 @@ def validate_tool_call(
 
     if name == "tool_call" and normalized.get("arguments") is None:
         normalized["arguments"] = {}
+    if name == "web_use":
+        from openprogram.web_use_contract import normalize_web_use_arguments
+        normalized = normalize_web_use_arguments(normalized)
 
     errors = sorted(
         validator.iter_errors(normalized),

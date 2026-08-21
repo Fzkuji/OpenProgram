@@ -198,6 +198,8 @@ export interface CenterTabsState {
   openWebTab: (url: string) => void;
   /** Always append a distinct web tab for a native page popup. */
   openPopupWebTab: (url: string, openerTabId: string) => string;
+  /** Create or reuse a web tab without focusing it or opening a split. */
+  ensureWebTab: (url: string) => string;
   /** Appends or reuses a split web tab; an existing owner composite becomes active. */
   openWebTabInSplit: (url: string) => string;
   setSplitWebTab: (id: string | null) => void;
@@ -621,6 +623,25 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         ],
         activeId: id,
       }));
+      return id;
+    },
+
+    ensureWebTab: (url) => {
+      const id = webTabId(url);
+      set((s) => {
+        const existing = s.tabs.find((tab) => tab.id === id);
+        if (!existing) {
+          return commitCenterTabsState(s, {
+            tabs: [...s.tabs, { id, kind: "web", title: hostnameOf(url), url }],
+          });
+        }
+        if (existing.url === url) return {};
+        return commitCenterTabsState(s, {
+          tabs: s.tabs.map((tab) =>
+            tab.id === id ? { ...tab, url, title: hostnameOf(url) } : tab,
+          ),
+        });
+      });
       return id;
     },
 

@@ -145,6 +145,7 @@
     <a href="#references">参考比较</a>
     <a href="#model">目标模型</a>
     <a href="#transitions">状态转移</a>
+    <a href="#pip">Agent 画中画预览</a>
     <a href="#visual">显示与无障碍</a>
     <a href="#routing">操作路由</a>
     <a href="#persistence">持久化与迁移</a>
@@ -159,7 +160,7 @@
       <p><strong>分屏是一个复合顶部 tab，不是窗口级固定布局。</strong>复合 tab 包含两个内容视图。选择另一个顶部 tab 时，左右两侧一起隐藏；再次选择该复合 tab 时，两个视图和比例一起恢复。</p>
       <p><strong>左右两侧没有产品级“当前选中侧”。</strong>点击左侧或右侧不会改变顶部样式，不显示 active pane 边框、方向图标或成员高亮，也不持久化 <code>focusedId</code>。</p>
       <p><strong>顶部只选择条目，但必须看得出两个成员。</strong>单 tab 是一个条目，分屏 pair 也是一个条目。复合条目内部显示两个等宽成员槽位，各自保留图标、截断标题和成员关闭按钮；它们不产生独立 <code>aria-selected</code>、active 背景或拖动对象。</p>
-      <p><strong>Web 不固定在整个窗口。</strong>Web 只在包含它的复合条目被选择时显示。切换到另一个会话、文件或页面条目时，Web 必须同时隐藏，不能跟随新的条目重新组合。</p>
+      <p><strong>Web 不固定在整个窗口。</strong>用户选择的 Web 只在包含它的复合条目被选择时作为分屏 pane 显示。切换到另一个会话、文件或页面条目时，该分屏 Web 必须同时隐藏，不能跟随新的条目重新组合。Agent 在后台开页时，允许同一 WebTab 以未持久化的画中画浮窗显示在聊天角落，直到用户展开分屏、全屏接管或关闭预览。</p>
       <p><strong>创建分屏必须显式选择两个成员。</strong>用户从某个 Web toolbar 点击 Split 时，该 Web tab 是固定 source；界面必须先列出同一窗口内可用的其他 single tabs，用户选择 target 后才调用 <code>groupTab()</code>。不得根据 route、active session、draft 或 tab 顺序自动选择另一成员。</p>
       <p><strong>新分屏从确定状态开始。</strong>合法 target 提交后，新复合条目必须立即成为 active entry，并把当前窗口的 <code>splitRatio</code> 重置为 <code>0.5</code>。此前其他分屏或已拆分条目留下的比例不能影响新组合；用户随后拖动 divider 产生的新比例仍按 version 2 payload 持久化。</p>
     </div>
@@ -314,8 +315,20 @@
       <li><code>groupTab()</code> 接受一个此前未组成 pair 的 source/target 后，在同一次持久状态提交中写入新 group、把 <code>activeId</code> 设为用户刚选择的成员，并写入 <code>splitRatio=0.5</code>。选择 session 时，这个 activeId 变化还会触发现有 session route 同步，保证 composer 与所选 pane 使用同一 session；不能只激活 Web 成员而保留旧会话路由，也不能继承旧 ratio。</li>
       <li>关闭 picker、按 Escape、点外部或没有候选项都不修改 tabs、groups、activeId、route 或 session store；不得为创建分屏自动创建 draft/session。</li>
       <li><code>openWebTabInSplit(url)</code> 在当前复合条目已有 Web 时复用该 Web 成员并导航，不创建不可见的第三成员。</li>
+      <li>当前会话尚未与 Web 组成 pair 时，<code>webtab.command(op=open)</code> 走 <code>ensureWebTab(url)</code> 加画中画，不抢聊天焦点，也不自动建组。</li>
       <li>相同 deterministic URL 已属于另一个非活动复合条目时，激活该 owner composite；不能把 Web 移到当前会话，也不能在不可见状态下返回成功。</li>
       <li>session 已属于完整 split 时，不替换现有成员、不创建第三 pane。普通顶部 activation 不能重新组合成员。</li>
+    </ul>
+  </section>
+
+  <section id="pip">
+    <h2>06b Agent 画中画预览</h2>
+    <p>Agent 通过 <code>webtab.command(op=open)</code> 开页时，若当前 active 条目是 session 且尚未与 Web 组成 pair，前端创建或复用 leaf WebTab，保持聊天焦点，并把该 WebTab 的 native <code>WebContentsView</code> 以小尺寸 bounds 画在聊天角落。已有分屏 Web 成员时仍走 <code>openWebTabInSplit</code>，只导航不另开第三 pane。</p>
+    <ul>
+      <li><strong>展开为分屏：</strong><code>setSplitWebTab(id)</code> 与当前 session 建组，小窗卸载，Web 进入右 pane。</li>
+      <li><strong>全屏接管：</strong><code>setActive(id)</code>，中间栏只显示该 WebTab。</li>
+      <li><strong>关闭预览：</strong>清除 ephemeral pip 状态并注销 visible bounds；leaf tab 保留。Agent 仍可用 <code>resolve</code> 访问后台页，<code>activate</code>/<code>preview</code> 要求可见。</li>
+      <li>pip 状态不写入 version 2 payload。Web 版没有 BrowserView，小窗 body 降级为 iframe 或「在新标签打开」。</li>
     </ul>
   </section>
 
@@ -510,7 +523,7 @@ git diff --check</code></pre>
   <section id="status">
     <h2>12 实现与验证状态</h2>
     <div class="card">
-      <p><strong>顶部复合 tab、分屏宽度调整与 Web toolbar 显式成员选择均已实现并通过独立规格与质量复核。</strong></p>
+      <p><strong>顶部复合 tab、分屏宽度调整、Web toolbar 显式成员选择与 Agent 画中画预览均已实现。</strong></p>
       <p>toolbar picker 的 focused checks、TypeScript、production build、Desktop WebTab/transfer checks 与文档链接检查通过。默认安装版验证了：选择前不创建 group；选择指定 target 后只生成该精确 pair；Escape 不改持久化状态；非空候选首项获得焦点；空候选 Close 获得焦点；outside dismissal 保留实际点击目标焦点。验收结束后恢复原 tabs、groups、activeId、URL 与 split ratio。</p>
       <p><strong>主题化 active 对比度：</strong>选中 tab 统一使用内容 surface，未选中 tab 保持透明并显示更深的 tab 栏 surface；浅色和深色主题均遵循“栏面更暗、选中面更亮”，不再使用浅色主题下的反向灰色 active 面。</p>
       <p><strong>桌面顶部几何：</strong>最顶部全局 tab strip 固定为 <code>40px</code>，普通与复合 tab 固定为 <code>28px</code> 并垂直居中，上下各保留 <code>6px</code>；关闭按钮为 <code>20px</code>，新增与主菜单按钮为 <code>28px</code>。默认 18100 安装版实测 strip 为 <code>39.995px</code>、普通 tab 为 <code>27.999px</code>、tab 顶部位置为 <code>5.998px</code>；独立 specification 与 quality review 均为 PASS。</p>

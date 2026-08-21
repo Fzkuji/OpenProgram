@@ -694,16 +694,17 @@ def test_public_web_use_schema_is_command_based_and_legacy_name_is_hidden():
         if rule["if"]["properties"]["command"].get("const") == "act"
     )
     act_arguments = act_rule["properties"]["arguments"]
-    assert act_rule["required"] == ["web_session_id", "arguments"]
-    assert act_arguments["required"] == ["action", "expected_frame_id"]
+    assert "web_session_id" not in (act_rule.get("required") or [])
+    assert "action" in properties
+    assert "expected_frame_id" not in act_arguments.get("required", [])
     assert act_arguments["additionalProperties"] is False
     verify_rule = next(
         rule["then"] for rule in tool.parameters["allOf"]
         if rule["if"]["properties"]["command"].get("const") == "verify"
     )
-    assert verify_rule["required"] == ["web_session_id", "arguments"]
+    assert verify_rule["required"] == ["web_session_id"]
     assert verify_rule["properties"]["arguments"]["required"] == [
-        "expected_frame_id", "assertion", "value",
+        "assertion", "value",
     ]
     close_rule = next(
         rule["then"] for rule in tool.parameters["allOf"]
@@ -726,6 +727,52 @@ def test_public_web_use_schema_is_command_based_and_legacy_name_is_hidden():
             arguments=retried_list_pages,
         ),
     ) == retried_list_pages
+
+    session_act = {
+        "command": "act",
+        "backend": "playwright_mcp",
+        "page": "",
+        "page_context_token": "page_ctx_9516a306add9441fbae27d4e394a153c",
+        "web_session_id": "pending",
+        "arguments": {},
+    }
+    assert validate_tool_arguments(
+        tool,
+        ToolCall(id="call-act-pending", name="web_use", arguments=session_act),
+    ) == session_act
+
+    lifted = validate_tool_arguments(
+        tool,
+        ToolCall(
+            id="call-act-top-level",
+            name="web_use",
+            arguments={
+                "command": "act",
+                "web_session_id": "cs_1",
+                "action": "navigate",
+                "url": "https://example.test/",
+            },
+        ),
+    )
+    assert lifted["arguments"]["action"] == "navigate"
+    assert lifted["arguments"]["url"] == "https://example.test/"
+    assert "action" not in lifted or lifted.get("action") is None
+
+    opened = validate_tool_arguments(
+        tool,
+        ToolCall(
+            id="call-act-open",
+            name="web_use",
+            arguments={
+                "command": "act",
+                "action": "navigate",
+                "url": "https://example.test/",
+            },
+        ),
+    )
+    assert opened["arguments"]["action"] == "navigate"
+    assert opened["arguments"]["url"] == "https://example.test/"
+    assert "url" not in lifted
 
 
 def test_openprogram_mcp_exposes_only_web_use_as_browser_control_tool():
@@ -1883,3 +1930,168 @@ def test_gui_harness_releases_same_request_screenshot_on_runtime_error(
 
     assert captured["result"].images == []
     assert registry.revoked == 1
+
+
+def test_act_fills_expected_frame_id_and_resolves_pending_session():
+    from openprogram.programs.workflow.browser.web_use_runtime import (
+        WebUseSessionRegistry,
+    )
+
+    adapters = {
+        name: _Adapter(name) for name in (
+            "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
+        )
+    }
+    registry = WebUseSessionRegistry(
+        adapters=adapters, binding_validator=_allow_binding,
+    )
+    observed = registry.execute(
+        command="observe", backend="playwright_mcp",
+        binding_id="binding-1", owner_id="owner-1",
+    )
+    acted = registry.execute(
+        command="act", web_session_id="pending", owner_id="owner-1",
+        arguments={"action": "click", "ref": "e1"},
+    )
+    assert acted["ok"] is True
+    assert acted["web_session_id"] == observed["web_session_id"]
+    assert adapters["playwright_mcp"].calls[-1] == (
+        "act",
+        {"action": "click", "expected_frame_id": "frame-1", "ref": "e1"},
+    )
+    assert registry.execute(
+        command="act", web_session_id="pending", owner_id="owner-missing",
+        arguments={"action": "click", "ref": "e1"},
+    )["reason_code"] == "web_session_not_found"
+
+
+def test_observe_with_page_token_does_not_capture_active(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as module
+    from openprogram.programs.workflow.browser import web_use_runtime
+
+    captures = []
+
+    class _Registry:
+        def execute(self, **kwargs):
+            return {"ok": False, "reason_code": "page_context_not_found"}
+
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
+    monkeypatch.setattr(surface_context, "current", lambda: None)
+    monkeypatch.setattr(
+        surface_context, "capture_active",
+        lambda: captures.append("active") or {"context_id": "ctx"},
+    )
+    monkeypatch.setattr(
+        surface_context, "capture_pages",
+        lambda *_args, **_kwargs: captures.append("pages") or {"context_id": "ctx"},
+    )
+
+    result = module.web_use(
+        command="observe",
+        backend="playwright_mcp",
+        page_context_token="page_ctx_deadbeef",
+    )
+    assert result["reason_code"] == "page_context_not_found"
+    assert captures == []
+
+
+def test_observe_with_url_opens_desktop_tab_when_no_page(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as module
+    from openprogram.programs.workflow.browser import web_use_runtime
+
+    opens = []
+
+    class _Registry:
+        def list_pages(self, **kwargs):
+            return {
+                "ok": True,
+                "pages": [{"page_context_token": "pct_opened"}],
+            }
+
+        def execute(self, **kwargs):
+            return {
+                "ok": True,
+                "web_session_id": "cs_opened",
+                "frame_id": "frame-1",
+                "command": kwargs["command"],
+            }
+
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
+    monkeypatch.setattr(surface_context, "current", lambda: None)
+    monkeypatch.setattr(
+        surface_context,
+        "open_page",
+        lambda url: opens.append(url) or {
+            "context_id": "page_ctx_opened",
+            "surfaces": [{"binding_id": "surface_opened"}],
+        },
+    )
+    monkeypatch.setattr(
+        surface_context, "capture_active",
+        lambda: (_ for _ in ()).throw(AssertionError("should open, not capture")),
+    )
+
+    result = module.web_use(
+        command="observe",
+        backend="playwright_mcp",
+        arguments={"url": "https://example.test/form"},
+    )
+    assert opens == ["https://example.test/form"]
+    assert result["ok"] is True
+    assert result["web_session_id"] == "cs_opened"
+    assert result["page_context_token"] == "pct_opened"
+
+    opens.clear()
+    acted = module.web_use(
+        command="act",
+        arguments={"action": "navigate", "url": "https://example.test/form"},
+    )
+    assert opens == ["https://example.test/form"]
+    assert acted["ok"] is True
+    assert acted["web_session_id"] == "cs_opened"
+    assert acted["page_context_token"] == "pct_opened"
+
+
+def test_act_with_url_rejects_non_http_scheme(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as module
+
+    monkeypatch.setattr(surface_context, "current", lambda: None)
+    monkeypatch.setattr(
+        surface_context,
+        "open_page",
+        surface_context.open_page,
+    )
+    result = module.web_use(
+        command="act",
+        arguments={"action": "navigate", "url": "file:///etc/passwd"},
+    )
+    assert result["ok"] is False
+    assert result["reason_code"] == "unsupported_url"
+    assert "SCHEME_FORBIDDEN" in result["error"]
+
+
+def test_act_with_url_reports_desktop_unavailable(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as module
+
+    monkeypatch.setattr(surface_context, "current", lambda: None)
+    monkeypatch.setattr(
+        surface_context,
+        "open_page",
+        lambda url: {
+            "ok": False,
+            "reason_code": "desktop_unavailable",
+            "error": surface_context.DESKTOP_UNAVAILABLE_ERROR,
+        },
+    )
+    result = module.web_use(
+        command="act",
+        arguments={"action": "navigate", "url": "https://example.test/"},
+    )
+    assert result["ok"] is False
+    assert result["reason_code"] == "desktop_unavailable"
+    assert "Launch the desktop app" in result["error"]
+    assert "background web tab" in result["error"]

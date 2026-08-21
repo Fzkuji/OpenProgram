@@ -34,7 +34,9 @@ OpenProgram does not import passwords, payment or address autofill data, downloa
 
 ## Agent access to a split Browser pane
 
-When a chat turn has a visible built-in Browser pane in the same app window, OpenProgram attaches a bounded description of that exact WebTab to the turn before the first model response. The Agent receives the page title, origin, visible text, ARIA landmarks, and a browser-control tool. This works whether the Browser pane is on the left or right and does not require the app window or Browser pane to have operating-system focus.
+When a chat turn has a visible built-in Browser pane in the same app window, OpenProgram attaches a bounded description of that exact WebTab to the turn before the first model response. The Agent receives the page title, origin, visible text, ARIA landmarks, and a browser-control tool. This works whether the Browser pane is on the left or right, in a picture-in-picture preview over chat, and does not require the app window or Browser pane to have operating-system focus.
+
+If the Agent opens a page while you stay in chat, Desktop shows that live WebTab as a small corner preview. The preview can expand into a chat-and-page split, take over the center pane, or close without destroying the tab. Closing the preview only hides it; the page remains in the tab strip. The web UI (a browser tab, not the Desktop App) has no native BrowserView, so the same preview falls back to an iframe or an Open-in-new-tab control.
 
 Actions remain bound to the originating window and WebTab. The default path uses DOM, ARIA, page text, and element references. A single current-viewport screenshot is used only for a visual task or when the page cannot be located structurally. The product does not add OCR, object detection, iterative crops, component memory, vision memory, or workflow replay to this path.
 

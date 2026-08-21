@@ -337,6 +337,99 @@ def capture_active() -> dict:
     }
 
 
+DESKTOP_UNAVAILABLE_ERROR = (
+    "OpenProgram desktop app is not connected. "
+    "Launch the desktop app to open a background web tab."
+)
+
+
+def open_page(url: str) -> dict:
+    """Open a desktop web tab and capture it as a Page context.
+
+    Success matches ``capture_active()``. Failure is a dict with
+    ``ok=False`` and ``reason_code`` (never a silent empty context).
+    """
+    from openprogram.security.url_policy import URLPolicyError, normalize_url
+    from openprogram.webui import server as _server
+    from openprogram.webui.ws_actions import webtab
+
+    try:
+        normalized = normalize_url(url).normalized_url
+    except URLPolicyError as exc:
+        return {
+            "ok": False,
+            "reason_code": "unsupported_url",
+            "error": f"unsupported url ({exc.reason}): {exc.safe_url}",
+        }
+
+    registered = webtab.registered_desktop_windows()
+    connections = list(_server._ws_connections)
+    if registered:
+        owner_ws, window_id, connection_revision = registered[0]
+    elif len(connections) == 1:
+        owner_ws = connections[0]
+        window_id = ""
+        connection_revision = webtab.ensure_connection_revision(owner_ws)
+    else:
+        return {
+            "ok": False,
+            "reason_code": "desktop_unavailable",
+            "error": DESKTOP_UNAVAILABLE_ERROR,
+        }
+
+    result = webtab.request_on_ws(
+        owner_ws, {"op": "open", "url": normalized}, timeout=15.0,
+    )
+    window_id = _text((result or {}).get("window_id"), 160) or window_id
+    tab_id = _text((result or {}).get("tab_id"), 512)
+    target_id = _text((result or {}).get("target_id"), 512)
+    if (
+        not isinstance(result, dict)
+        or not result.get("ok")
+        or not window_id
+        or not tab_id
+        or not target_id
+    ):
+        return {
+            "ok": False,
+            "reason_code": "desktop_unavailable",
+            "error": (
+                "desktop app did not create a web tab ("
+                + str((result or {}).get("error") or "missing tab identity")
+                + ")"
+            ),
+        }
+    binding_id = webtab.register_binding(
+        owner_ws,
+        window_id,
+        tab_id,
+        target_id,
+        geometry_revision=_revision(result.get("geometry_revision")),
+        expected_connection_revision=connection_revision,
+        allow_background=True,
+    )
+    revisions = webtab.binding_revisions(binding_id)
+    surface = {
+        "surface_key": "p1",
+        "aliases": ["focused", "web:1"],
+        "kind": "web_tab",
+        "region": "center",
+        "title": _text(result.get("title"), 240),
+        "origin": _origin(str(result.get("url") or normalized)),
+        "capabilities": ["observe", "interact", "navigate"],
+        "preview_status": "ready",
+        "binding_id": binding_id,
+        "page_key": webtab.binding_page_key(binding_id),
+        **revisions,
+    }
+    return {
+        "context_id": "page_ctx_" + uuid.uuid4().hex,
+        "primary_surface_key": "p1",
+        "alias_map": {"p1": "p1", "focused": "p1", "web:1": "p1"},
+        "surfaces": [surface],
+    }
+
+
 def capture_pages(context: dict | None = None) -> dict:
     """Capture every browser Page across registered Desktop windows."""
     from openprogram.webui import server as _server

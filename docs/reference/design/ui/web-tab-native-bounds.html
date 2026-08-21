@@ -38,7 +38,7 @@
       <tr><td>Desktop main/context/bookmark 原生菜单</td><td>main process 独立 overlay owner</td><td>沿用原生菜单生命周期，不由 renderer DOM 重复管理。</td></tr>
     </tbody>
   </table>
-  <p>多 Web 分屏不共享一个全局 visible flag。每个 <code>WebTabPane</code> 使用自己的 body bounds 与同一组当前浮层分别计算；一个菜单只覆盖左侧 Web 时，右侧 Web 保持可见。浮层关闭、移动或 resize 后由现有 MutationObserver、ResizeObserver 和 scroll/resize listener 重新发布 bounds。</p>
+  <p>多 Web 分屏不共享一个全局 visible flag。每个 <code>WebTabPane</code> 使用自己的 body bounds 与同一组当前浮层分别计算；一个菜单只覆盖左侧 Web 时，右侧 Web 保持可见。Agent 画中画预览复用同一套 <code>registerVisibleWebTabBounds</code> / <code>syncVisible</code> 路径，只发布小窗 body 矩形，工具条按钮留在 native view 之外。浮层关闭、移动或 resize 后由现有 MutationObserver、ResizeObserver 和 scroll/resize listener 重新发布 bounds。</p>
 
   <h2>设计</h2>
   <ul>

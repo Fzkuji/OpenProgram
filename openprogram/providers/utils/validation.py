@@ -120,6 +120,9 @@ def validate_tool_arguments(tool: Tool, tool_call: ToolCall) -> dict[str, Any]:
     
     # Apply type coercion first (like AJV's coerceTypes)
     coerced_args = _coerce_types(coerced_args, schema)
+    if tool.name == "web_use":
+        from openprogram.web_use_contract import normalize_web_use_arguments
+        coerced_args = normalize_web_use_arguments(coerced_args)
     
     # Validate with jsonschema
     try:
@@ -151,6 +154,9 @@ def _validate_basic(tool: Tool, tool_call: ToolCall, args: dict[str, Any], schem
     path so callers get consistent behavior across environments.
     """
     coerced_args = _coerce_types(copy.deepcopy(args), schema)
+    if tool.name == "web_use":
+        from openprogram.web_use_contract import normalize_web_use_arguments
+        coerced_args = normalize_web_use_arguments(coerced_args)
 
     required = schema.get("required", [])
     for field in required:

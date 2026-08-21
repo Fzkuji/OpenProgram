@@ -423,6 +423,68 @@ def test_direct_mcp_page_capture_requires_one_desktop_connection(monkeypatch):
         raise AssertionError("multiple desktop connections must be rejected")
 
 
+def test_open_page_opens_background_tab_on_registered_desktop(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    webtab.ensure_connection_revision(owner)
+    webtab._desktop_windows[owner] = "window-1"
+    sent = []
+    monkeypatch.setattr(server, "_ws_connections", [owner])
+    monkeypatch.setattr(
+        webtab,
+        "request_on_ws",
+        lambda ws, command, timeout=15.0: sent.append((ws, command)) or {
+            "ok": True,
+            "window_id": "window-1",
+            "tab_id": "w:https://example.test/",
+            "target_id": "target-opened",
+            "url": "https://example.test/",
+            "title": "Example",
+        },
+    )
+    context = {}
+    try:
+        context = surface_context.open_page("https://example.test/")
+        surface = context["surfaces"][0]
+        assert sent == [(owner, {"op": "open", "url": "https://example.test/"})]
+        assert surface["binding_id"] in webtab._bindings
+        assert webtab._bindings[surface["binding_id"]][8] is True
+    finally:
+        for surface in context.get("surfaces") or []:
+            webtab.release_binding(surface["binding_id"])
+        webtab.release_connection(owner)
+
+
+def test_open_page_rejects_non_http_scheme_without_desktop_ipc(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui.ws_actions import webtab
+
+    def fail_request(*_args, **_kwargs):
+        raise AssertionError("invalid scheme must not reach desktop")
+
+    monkeypatch.setattr(webtab, "request_on_ws", fail_request)
+    result = surface_context.open_page("javascript:alert(1)")
+    assert result["ok"] is False
+    assert result["reason_code"] == "unsupported_url"
+    assert "SCHEME_FORBIDDEN" in result["error"]
+
+
+def test_open_page_reports_missing_desktop(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    monkeypatch.setattr(server, "_ws_connections", [])
+    monkeypatch.setattr(webtab, "registered_desktop_windows", lambda: [])
+    result = surface_context.open_page("https://example.test/")
+    assert result["ok"] is False
+    assert result["reason_code"] == "desktop_unavailable"
+    assert result["error"] == surface_context.DESKTOP_UNAVAILABLE_ERROR
+
+
 def test_direct_page_inventory_includes_background_and_popup_provenance(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.webui import server

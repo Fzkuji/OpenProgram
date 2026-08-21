@@ -17,7 +17,10 @@ from openprogram.agentic_programming.function import CancelledError, agentic_fun
 from openprogram.programs import ToolReturn
 from openprogram.programs._runtime import function
 from openprogram.providers.utils.errors import ExecInterrupt
-from openprogram.web_use_contract import web_use_parameters
+from openprogram.web_use_contract import (
+    normalize_web_use_arguments,
+    web_use_parameters,
+)
 
 
 _INTERACTIVE_SELECTOR = (
@@ -1318,6 +1321,67 @@ def _run_browser_task_commands(
                 release_owner(owner_id)
 
 
+def _requested_url(arguments: dict | None) -> str:
+    if not isinstance(arguments, dict):
+        return ""
+    url = arguments.get("url")
+    return url.strip() if isinstance(url, str) else ""
+
+
+def _has_usable_page(context, web_session_id: str, page_context_token: str) -> bool:
+    from .web_use_runtime import _unresolved_session_id
+
+    if web_session_id and not _unresolved_session_id(web_session_id):
+        return True
+    if page_context_token.startswith("pct_"):
+        return True
+    for surface in (context or {}).get("surfaces") or []:
+        if isinstance(surface, dict) and surface.get("binding_id"):
+            return True
+    return False
+
+
+def _open_page_error(opened: dict) -> dict:
+    from openprogram.agent.surface_context import DESKTOP_UNAVAILABLE_ERROR
+
+    return {
+        "ok": False,
+        "reason_code": opened.get("reason_code") or "desktop_unavailable",
+        "error": opened.get("error") or DESKTOP_UNAVAILABLE_ERROR,
+    }
+
+
+def _start_session_on_opened_page(*, context, owner_id: str, backend: str, arguments: dict):
+    from openprogram.agent import surface_context
+    from .web_use_runtime import get_registry
+
+    registry = get_registry()
+    listed = registry.list_pages(context=context, owner_id=owner_id)
+    pages = listed.get("pages") if isinstance(listed, dict) else None
+    token = ""
+    if isinstance(pages, list) and pages and isinstance(pages[0], dict):
+        token = str(pages[0].get("page_context_token") or "")
+    if not token:
+        surface_context.release_bindings(context)
+        return {
+            "ok": False,
+            "reason_code": "desktop_unavailable",
+            "error": "desktop app opened a tab but no Page token was issued",
+        }
+    observed = registry.execute(
+        command="observe",
+        backend=backend,
+        owner_id=owner_id,
+        page_context_token=token,
+        page_context=context,
+        arguments=arguments,
+    )
+    if isinstance(observed, dict):
+        observed = dict(observed)
+        observed["page_context_token"] = token
+    return observed
+
+
 @agentic_function(
     name="web_use",
     toolset=("browser",),
@@ -1327,14 +1391,20 @@ def _run_browser_task_commands(
     timeout=120,
     parameters=web_use_parameters(),
     input={
-        "command": {"description": "Call list_pages first; then observe, act, verify, or close"},
+        "command": {
+            "description": (
+                "Call list_pages first; then observe, act, verify, or close. "
+                "observe or act with url opens a desktop web tab when no Page exists."
+            ),
+        },
         "backend": {"description": "Backend used when observe creates a session"},
         "page": {"description": "Turn Page alias used by observe; never a URL"},
         "web_session_id": {"description": "Session returned by observe"},
         "arguments": {
             "description": (
-                "Command-specific arguments. act requires action and the latest "
-                "expected_frame_id returned by observe."
+                "Command-specific arguments. act needs action; expected_frame_id "
+                "is filled from the last observe when omitted. action, url, text, "
+                "and ref may also be passed at the top level."
             ),
         },
         "runtime": {"hidden": True},
@@ -1352,16 +1422,57 @@ def web_use(
     """List, observe, or control exact Pages in OpenProgram's built-in browser.
 
     Start with ``list_pages``. Select a returned ``page_context_token`` for
-    ``observe``; do not pass a URL as ``page``.
+    ``observe``; do not pass a URL as ``page``. ``observe`` or ``act`` with
+    ``url`` opens a desktop web tab when no Page is available.
     """
     del runtime
     from openprogram.agent import surface_context
     from .web_use_runtime import get_registry
 
+    payload = normalize_web_use_arguments({
+        "command": command,
+        "backend": backend,
+        "page": page,
+        "page_context_token": page_context_token,
+        "web_session_id": web_session_id,
+        "arguments": arguments,
+    })
+    command = str(payload.get("command") or command)
+    backend = str(payload.get("backend") or "")
+    page = str(payload.get("page") or "")
+    page_context_token = str(payload.get("page_context_token") or "")
+    web_session_id = str(payload.get("web_session_id") or "")
+    arguments = payload.get("arguments") if isinstance(payload.get("arguments"), dict) else {}
+
     context = surface_context.current()
     owner_context_id = str((context or {}).get("context_id") or "")
     captured_here = False
-    if context is None and command in {"list_pages", "observe"}:
+    opened_here = False
+    url = _requested_url(arguments)
+    if command in {"observe", "act"} and url and not _has_usable_page(
+        context, web_session_id, page_context_token,
+    ):
+        opened = surface_context.open_page(url)
+        if "surfaces" not in opened:
+            return _open_page_error(opened)
+        context = opened
+        captured_here = True
+        opened_here = True
+        web_session_id = ""
+        page_context_token = ""
+    needs_page_capture = (
+        not opened_here
+        and context is None
+        and (
+            command == "list_pages"
+            or (
+                command == "observe"
+                and not web_session_id
+                and not page_context_token
+            )
+        )
+    )
+    if needs_page_capture:
         context = (
             surface_context.capture_pages()
             if command == "list_pages"
@@ -1389,6 +1500,48 @@ def web_use(
             surface_context.release_bindings(context)
         return result
 
+    owner_id = surface_context.web_use_owner_id(
+        {"context_id": owner_context_id} if owner_context_id else context
+    )
+    if opened_here:
+        try:
+            observed = _start_session_on_opened_page(
+                context=context,
+                owner_id=owner_id,
+                backend=backend,
+                arguments=arguments if command == "observe" else {},
+            )
+        except Exception:
+            surface_context.release_bindings(context)
+            raise
+        if not observed.get("ok"):
+            surface_context.release_bindings(context)
+            return observed
+        if command == "observe" or str(arguments.get("action") or "") in {
+            "", "navigate",
+        }:
+            return observed
+        try:
+            result = get_registry().execute(
+                command="act",
+                backend=backend,
+                web_session_id=str(observed.get("web_session_id") or ""),
+                owner_id=owner_id,
+                page_context_token=str(observed.get("page_context_token") or ""),
+                page_context=context,
+                arguments=arguments,
+            )
+        except Exception:
+            surface_context.release_bindings(context)
+            raise
+        if isinstance(result, dict):
+            result = dict(result)
+            result.setdefault(
+                "page_context_token", observed.get("page_context_token"),
+            )
+            result.setdefault("web_session_id", observed.get("web_session_id"))
+        return result
+
     binding_id = ""
     page_key = ""
     if command == "observe" and not web_session_id and not page_context_token:
@@ -1409,9 +1562,7 @@ def web_use(
             web_session_id=web_session_id,
             binding_id=binding_id,
             page_key=page_key,
-            owner_id=surface_context.web_use_owner_id(
-                {"context_id": owner_context_id} if owner_context_id else context
-            ),
+            owner_id=owner_id,
             page_context_token=page_context_token,
             page_context=context,
             arguments=arguments,
@@ -1439,6 +1590,7 @@ def execute_direct_web_use(arguments: dict, *, owner_id: str):
     from openprogram.agent import surface_context
     from .web_use_runtime import get_registry
 
+    arguments = normalize_web_use_arguments(arguments)
     command = str(arguments.get("command") or "")
     registry = get_registry()
     if command == "list_pages":
@@ -1451,13 +1603,60 @@ def execute_direct_web_use(arguments: dict, *, owner_id: str):
         if not result.get("ok"):
             surface_context.release_bindings(context)
         return result
+    nested = (
+        arguments.get("arguments")
+        if isinstance(arguments.get("arguments"), dict)
+        else {}
+    )
+    web_session_id = str(arguments.get("web_session_id") or "")
+    page_context_token = str(arguments.get("page_context_token") or "")
+    url = _requested_url(nested)
+    if command in {"observe", "act"} and url and not _has_usable_page(
+        None, web_session_id, page_context_token,
+    ):
+        opened = surface_context.open_page(url)
+        if "surfaces" not in opened:
+            return _open_page_error(opened)
+        try:
+            observed = _start_session_on_opened_page(
+                context=opened,
+                owner_id=owner_id,
+                backend=str(arguments.get("backend") or ""),
+                arguments=nested if command == "observe" else {},
+            )
+        except Exception:
+            surface_context.release_bindings(opened)
+            raise
+        if not observed.get("ok"):
+            surface_context.release_bindings(opened)
+            return observed
+        if command == "observe" or str(nested.get("action") or "") in {
+            "", "navigate",
+        }:
+            return observed
+        result = registry.execute(
+            command="act",
+            backend=str(arguments.get("backend") or ""),
+            web_session_id=str(observed.get("web_session_id") or ""),
+            owner_id=owner_id,
+            page_context_token=str(observed.get("page_context_token") or ""),
+            page_context=opened,
+            arguments=nested,
+        )
+        if isinstance(result, dict):
+            result = dict(result)
+            result.setdefault(
+                "page_context_token", observed.get("page_context_token"),
+            )
+            result.setdefault("web_session_id", observed.get("web_session_id"))
+        return result
     return registry.execute(
         command=command,
         backend=str(arguments.get("backend") or ""),
-        web_session_id=str(arguments.get("web_session_id") or ""),
+        web_session_id=web_session_id,
         owner_id=owner_id,
-        page_context_token=str(arguments.get("page_context_token") or ""),
-        arguments=arguments.get("arguments") or {},
+        page_context_token=page_context_token,
+        arguments=nested,
     )
 
 
