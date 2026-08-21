@@ -14,7 +14,7 @@ import {
   type AnimatedNavIconProps,
   BotIcon,
   CpuIcon,
-  ClockIcon,
+  CalendarCogIcon,
   HistoryIcon,
 } from "../animated-icons";
 import { useTranslation } from "@/lib/i18n";
@@ -167,7 +167,7 @@ export function SidebarPrimaryNav() {
       id: "navScheduler",
       active: pathname.startsWith("/scheduler"),
       label: t("nav.scheduler"),
-      icon: ClockIcon,
+      icon: CalendarCogIcon,
     },
   ];
 
