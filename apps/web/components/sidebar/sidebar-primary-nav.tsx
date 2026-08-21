@@ -13,7 +13,7 @@ import {
   type AnimatedNavIconHandle,
   type AnimatedNavIconProps,
   BotIcon,
-  BoxesIcon,
+  CpuIcon,
   ClockIcon,
   HistoryIcon,
 } from "../animated-icons";
@@ -149,7 +149,7 @@ export function SidebarPrimaryNav() {
         || pathname.startsWith("/mcp")
         || pathname.startsWith("/programs"),
       label: t("nav.ability"),
-      icon: BoxesIcon,
+      icon: CpuIcon,
     },
     {
       href: "/chats",
