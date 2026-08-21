@@ -39,12 +39,18 @@
 }
 
 .tabBtn {
-  padding: 6px 12px;
+  /* Same height + corner as every other control in the header row
+     (Button, SearchInput), so the pills don't read as a different
+     component family. */
+  display: inline-flex;
+  align-items: center;
+  height: var(--ui-button-h);
+  padding: 0 12px;
   font-size: 13px;
   color: var(--text-dim);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--ui-button-radius);
   cursor: pointer;
   transition: background 150ms ease-out, color 150ms ease-out;
   font-family: inherit;
