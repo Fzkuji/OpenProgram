@@ -326,9 +326,8 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     function onDoc(ev: MouseEvent) {
       const t = ev.target as Node | null;
       if (!t) return;
-      const wrapper = textareaRef.current?.closest(`.${styles.inputWrapper}`);
-      if (!wrapper) return;
-
+      // Do not require the chat textarea wrapper: fn-form unmounts it,
+      // and that used to skip this handler so the effort card stuck.
       if (
         thinkingTriggerRef.current &&
         !thinkingTriggerRef.current.contains(t)
