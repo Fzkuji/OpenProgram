@@ -142,54 +142,33 @@ export function useFnFormWrapper({
     el.style.maxHeight = "";
   }, [morphed, wrapperRef]);
 
-  // Type-to-grow up to ~1/4 of the chat view. Expand grows the whole
-  // card to ~1/2. Animate only on the expand toggle so typing does
-  // not flash, and never mutate body styles while measuring.
+  // One height on the card; the task field always fills it so the
+  // gap to the bottom edge stays the body padding. CSS animates
+  // every change (empty, type-to-1/4, expand-to-1/2).
   useEffect(() => {
     if (!morphed || fnFormClosing) return;
     const el = wrapperRef.current;
     if (!el) return;
-    let last = 0;
-    let lastExpanded = el.querySelector("[data-expanded]") != null;
-    let measuring = false;
-    const apply = (animate: boolean) => {
-      if (measuring) return;
-      measuring = true;
-      const host = hostViewHeight(el);
+    let last = el.offsetHeight;
+    const apply = () => {
+      const next = targetFnFormHeight(el);
       const avail = availableComposerHeight(el);
-      const expanded = !!el.querySelector("[data-expanded]");
-      const half = Math.max(160, host * 0.5);
-      const next = expanded
-        ? Math.min(half, avail)
-        : Math.min(measureFnFormHeight(el), avail);
-      measuring = false;
-      if (expanded) el.setAttribute("data-form-expanded", "");
-      else el.removeAttribute("data-form-expanded");
-      if (Math.abs(next - last) < 1 && expanded === lastExpanded) return;
+      if (Math.abs(next - last) < 1) return;
       last = next;
-      lastExpanded = expanded;
-      if (!animate) el.style.transition = "none";
       el.style.height = `${next}px`;
       el.style.maxHeight = `${avail}px`;
-      if (!animate) {
-        void el.offsetHeight;
-        el.style.transition = "";
-      }
     };
-    const onResize = () => apply(false);
-    const id = requestAnimationFrame(() => apply(false));
-    const ro = new ResizeObserver(() => {
-      if (el.querySelector("[data-expanded]")) return;
-      apply(false);
-    });
-    const body = el.querySelector("[data-fn-form-body]");
-    if (body) ro.observe(body);
-    const mo = new MutationObserver(() => apply(true));
+    const ta = el.querySelector("textarea");
+    const onInput = () => apply();
+    ta?.addEventListener("input", onInput);
+    const mo = new MutationObserver(() => apply());
     mo.observe(el, { subtree: true, attributes: true, attributeFilter: ["data-expanded"] });
+    const onResize = () => apply();
     window.addEventListener("resize", onResize);
+    const id = requestAnimationFrame(apply);
     return () => {
       cancelAnimationFrame(id);
-      ro.disconnect();
+      ta?.removeEventListener("input", onInput);
       mo.disconnect();
       window.removeEventListener("resize", onResize);
     };
@@ -286,8 +265,39 @@ function measureFnFormHeight(el: HTMLDivElement): number {
   ) as HTMLElement | null;
   const padBottom = parseFloat(getComputedStyle(el).paddingBottom);
   if (!header || !body) return el.scrollHeight;
-  const raw = header.offsetHeight + body.offsetHeight + padBottom;
-  return raw;
+  return targetFnFormHeight(el);
+}
+
+function textareaContentHeight(el: HTMLDivElement): number {
+  const ta = el.querySelector("textarea") as HTMLTextAreaElement | null;
+  if (!ta) return 48;
+  const prev = ta.style.height;
+  ta.style.height = "auto";
+  const h = ta.scrollHeight;
+  ta.style.height = prev;
+  return Math.max(48, h);
+}
+
+function targetFnFormHeight(el: HTMLDivElement): number {
+  const header = el.querySelector("[data-fn-form-header]") as HTMLElement | null;
+  const body = el.querySelector("[data-fn-form-body]") as HTMLElement | null;
+  const host = hostViewHeight(el);
+  const avail = availableComposerHeight(el);
+  const expanded = !!el.querySelector("[data-expanded]");
+  const headerH = header?.offsetHeight ?? 48;
+  const bcs = body ? getComputedStyle(body) : null;
+  const pad = bcs
+    ? parseFloat(bcs.paddingTop) + parseFloat(bcs.paddingBottom)
+    : 24;
+  const gap = bcs ? parseFloat(bcs.gap || "0") : 0;
+  const label = body?.querySelector("label, [class*='label']") as HTMLElement | null;
+  const labelH = label ? label.offsetHeight + gap : 0;
+  const chrome = headerH + pad + labelH + (parseFloat(getComputedStyle(el).paddingBottom) || 0);
+  if (expanded) {
+    return Math.min(Math.max(host * 0.5, chrome + 48), avail);
+  }
+  const box = Math.min(textareaContentHeight(el), Math.max(48, host * 0.25 - chrome));
+  return Math.min(Math.max(chrome + box, chrome + 48), avail);
 }
 
 function hostViewHeight(el: HTMLDivElement): number {

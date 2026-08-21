@@ -304,18 +304,9 @@ function AutoTextarea({
   useEffect(() => {
     const t = ref.current;
     if (!t) return;
-    if (expanded) {
-      t.style.height = "";
-      t.style.maxHeight = "";
-      return;
-    }
-    const host = (t.closest("#chatView") as HTMLElement | null)?.clientHeight
-      || window.innerHeight;
-    const cap = Math.max(48, host * 0.25);
-    t.style.maxHeight = `${cap}px`;
-    t.style.height = "auto";
-    t.style.height = `${Math.min(t.scrollHeight, cap)}px`;
-  }, [value, expanded]);
+    t.style.height = "";
+    t.style.maxHeight = "";
+  }, [expanded]);
   const label = expanded
     ? text("Collapse input", "收起输入框")
     : text("Expand input", "展开输入框");

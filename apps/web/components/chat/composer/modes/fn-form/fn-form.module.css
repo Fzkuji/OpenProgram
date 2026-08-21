@@ -116,8 +116,9 @@
   /* 自然高度（不 `flex: 1` 撑满）：flex 填充会把 wrapper 多出来的高度
      堆到 body 底部，造成「底 padding 比顶多几 px」的不可控余量。改成
      内容高度后顶底 padding 严格对称、所见即所得。内容超长仍可内部滚动。 */
-  flex: 0 0 auto;
-  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
   /* Keep the body scrollable but hide the scrollbar chrome — same
      treatment as `.slashMenu` / `.scroll-overlay` elsewhere in the app. */
   scrollbar-width: none; /* Firefox */
@@ -208,14 +209,12 @@
   font-family: var(--font-sans);
   font-size: var(--fs-base);
 }
-.textareaWrap {
-  position: relative;
-}
-.field:has(.textareaWrap[data-expanded]) {
+.field:has(.textareaWrap) {
   flex: 1 1 auto;
   min-height: 0;
 }
-.textareaWrap[data-expanded] {
+.textareaWrap {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
@@ -244,19 +243,13 @@
   color: var(--text-bright);
 }
 .input.textarea {
+  flex: 1 1 auto;
   height: auto;
-  line-height: 1.5;
-  padding: 8px 12px;
   min-height: 48px;
   max-height: none;
+  line-height: 1.5;
+  padding: 8px 12px;
   resize: none;
-  overflow-y: auto;
-}
-.textareaWrap[data-expanded] .textarea {
-  flex: 1 1 auto;
-  min-height: 0;
-  max-height: none;
-  height: 100%;
   overflow-y: auto;
 }
 .inputError {
