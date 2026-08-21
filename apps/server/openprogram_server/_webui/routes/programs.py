@@ -326,13 +326,18 @@ def _agentic_entries(
             or len(rows) > 1
             or _is_workflow_package(child_path)
         ):
-            entries[child_path] = {
+            folder = {
                 "name": remainder[0],
                 "path": child_path,
                 "kind": "folder",
                 "program_kind": None,
                 "has_children": True,
             }
+            if len(rows) == 1 and len(remainder) == 1:
+                folder["callable_name"] = rows[0]["name"]
+                folder["logic_path"] = child_path
+                folder["description"] = rows[0]["description"]
+            entries[child_path] = folder
             continue
         row = rows[0]
         entries[child_path] = {

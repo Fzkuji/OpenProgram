@@ -339,12 +339,14 @@ export function ProgramsPage({
       return (
         <div className={fileStyles.treeNode} key={entry.path}>
           <div
-            className={`${fileStyles.treeRow} ${selected === entry.path ? fileStyles.treeRowSelected : ""}`}
+            className={`${fileStyles.treeRow} ${selected === (entry.logic_path || entry.path) || selected === entry.path ? fileStyles.treeRowSelected : ""}`}
             style={{ paddingLeft: EXPLORER_BASE_PAD + depth * EXPLORER_INDENT }}
             data-program-path={entry.path}
             title={entry.path}
             onClick={() => {
-              if (entry.program_kind) setSelected(entry.path);
+              if (entry.program_kind || entry.callable_name) {
+                setSelected(entry.logic_path || entry.path);
+              }
               if (isBranch) toggleDirectory(entry);
             }}
           >

@@ -75,6 +75,8 @@ def test_programs_treats_workflow_as_category_not_program() -> None:
     assert children["workflow/goal"]["has_children"] is True
     assert children["workflow/goal"]["program_kind"] is None
     assert children["workflow/goal"]["name"] == "goal"
+    assert children["workflow/goal"]["callable_name"] == "goal"
+    assert children["workflow/goal"]["logic_path"] == "workflow/goal"
     assert children["workflow/security_review"]["has_children"] is True
     assert children["workflow/security_review"]["name"] == "security_review"
 
