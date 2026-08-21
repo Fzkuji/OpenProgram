@@ -217,7 +217,9 @@ def prepare_turn(
         # the caller didn't pass a history_override.
         if req.history_override is None:
             from openprogram.context.persistence import rendered_history
-            history = rendered_history(db, req.session_id) or history
+            history = rendered_history(
+                db, req.session_id, head_id=user_msg_id,
+            ) or history
 
     # 事件层 tap：无论哪条持久化路径（webui 先存 / dispatcher 自己存），
     # "用户消息提交了"都成立，所以放在分支外。

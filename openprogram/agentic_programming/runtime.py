@@ -1054,6 +1054,9 @@ class Runtime:
             )
             if outcome == "answered":
                 return value if isinstance(value, list) else []
+            if outcome == "cancelled":
+                from openprogram.agentic_programming.function import CancelledError
+                raise CancelledError(prompt or "ask")
             if outcome == "declined":
                 raise UserDeclined(prompt or "ask")
             if default is not None:
@@ -1071,6 +1074,9 @@ class Runtime:
         )
         if outcome == "answered":
             return value
+        if outcome == "cancelled":
+            from openprogram.agentic_programming.function import CancelledError
+            raise CancelledError(prompt or "ask")
         if outcome == "declined":
             raise UserDeclined(prompt or "ask")
         if default is not None:
@@ -1098,6 +1104,9 @@ class Runtime:
             if isinstance(value, str):
                 return value.strip() in ("确认", "yes", "y", "true", "ok", "是")
             return bool(value)
+        if outcome == "cancelled":
+            from openprogram.agentic_programming.function import CancelledError
+            raise CancelledError(prompt)
         if outcome == "declined":
             return False
         return default  # timeout
@@ -1135,6 +1144,9 @@ class Runtime:
         )
         if outcome == "answered":
             return value if isinstance(value, dict) else {}
+        if outcome == "cancelled":
+            from openprogram.agentic_programming.function import CancelledError
+            raise CancelledError(prompt)
         if outcome == "declined":
             raise UserDeclined(prompt)
         if default is not None:

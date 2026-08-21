@@ -115,7 +115,18 @@ def run_query(
     # turn (chat, job worker, MCP, ACP) already owns this session, so a
     # second turn can never displace the live one mid-flight.
     _chat_cancel_event = threading.Event()
-    if not _s._claim_cancel_event(session_id, _chat_cancel_event):
+    _chat_execution_id = msg_id + "_reply"
+    with _s._running_tasks_lock:
+        task = _s._running_tasks.get(session_id)
+        if isinstance(task, dict):
+            task["execution_id"] = _chat_execution_id
+    _s._emit_running_task_event(session_id)
+    if not _s._claim_cancel_event(
+        session_id, _chat_cancel_event,
+        execution_id=_chat_execution_id, foreground=True,
+    ):
+        from openprogram.agent.run_control import mark_execution_terminal
+        mark_execution_terminal(_chat_execution_id, "interrupted")
         with _s._running_tasks_lock:
             _s._running_tasks.pop(session_id, None)
         _s._emit_running_task_event(session_id)
@@ -320,7 +331,9 @@ def run_query(
             _s._emit_running_task_event(session_id)
         # Pass our Event so a newer turn's registration (if any) is
         # left intact — see unregister_cancel_event.
-        _s._unregister_cancel_event(session_id, _chat_cancel_event)
+        _s._unregister_cancel_event(
+            session_id, _chat_cancel_event, execution_id=_chat_execution_id,
+        )
         # Status dot: a turn just finished. If no connected client is
         # currently viewing this session, light its blue "unread" dot so the
         # background result gets noticed; cleared when the user opens it

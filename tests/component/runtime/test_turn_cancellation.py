@@ -23,10 +23,12 @@ def _clean_registry():
     with ps._cancel_flags_lock:
         ps._current_tokens.clear()
         getattr(ps, "_cancel_cleanup_leases", {}).clear()
+    ps.clear_turn_context()
     yield
     with ps._cancel_flags_lock:
         ps._current_tokens.clear()
         getattr(ps, "_cancel_cleanup_leases", {}).clear()
+    ps.clear_turn_context()
 
 
 # --- token lifecycle -------------------------------------------------------

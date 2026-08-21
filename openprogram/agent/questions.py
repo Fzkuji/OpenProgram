@@ -37,6 +37,7 @@ class PendingQuestion:
     session_id: str           # webui session（前端路由用），可空
     kind: str                 # "ask" | "confirm" | "approval" | "form" | "ask_many"
     prompt: str
+    execution_id: str = ""    # owning execution; cancel closes these as cancelled
     options: list[str] = field(default_factory=list)
     multi: bool = False
     allow_custom: bool = True
@@ -103,6 +104,25 @@ class QuestionRegistry:
                    if p.session_id == session_id]
         for qid in ids:
             self.resolve(qid, "declined", None)
+
+    def cancel_execution(
+        self, session_id: str, execution_id: str | None = None,
+    ) -> None:
+        """Close waits for one execution as cancelled, not permission-denied."""
+        with self._lock:
+            ids = []
+            for qid, pending in self._pending.items():
+                if pending.session_id != session_id:
+                    continue
+                if (
+                    execution_id
+                    and pending.execution_id
+                    and pending.execution_id != execution_id
+                ):
+                    continue
+                ids.append(qid)
+        for qid in ids:
+            self.resolve(qid, "cancelled", None)
 
 
 _registry: QuestionRegistry | None = None
@@ -238,8 +258,15 @@ def open_question(
     """
     reg = get_question_registry()
     now = time.time()
+    execution_id = ""
+    try:
+        from openprogram.agent.run_control import get_current_execution_id
+        execution_id = get_current_execution_id() or ""
+    except Exception:
+        execution_id = ""
     q = PendingQuestion(
-        id=new_question_id(), session_id=session_id or "", kind=kind,
+        id=new_question_id(), session_id=session_id or "",
+        execution_id=execution_id, kind=kind,
         prompt=prompt, options=list(options or []), multi=multi,
         allow_custom=allow_custom, detail=detail, schema=dict(schema or {}),
         questions=list(questions or []),
@@ -301,6 +328,7 @@ def ask_blocking(
     outcome:
       * "answered" — value 是答案（str 或 list[str]）
       * "declined" — value 是 None
+      * "cancelled" — execution cancel closed the wait; value 是 None
       * "timeout"  — value 是 None
     on_asked(PendingQuestion) 由调用方提供，负责把问题广播到前端（emit 事件）。
     超时不抛——把 outcome="timeout" 交给上层（runtime.ask/confirm）按各自语义处理；

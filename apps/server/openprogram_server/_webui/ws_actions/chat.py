@@ -808,6 +808,31 @@ async def handle_chat(ws, cmd: dict):
         _s._release_run_reservation(session_id, msg_id)
         raise
 
+    execution_id = f"{msg_id}_reply"
+    from openprogram.agent.internals._turn_lifecycle import insert_placeholder
+    from openprogram.agent.session_db import default_db
+    if not insert_placeholder(
+        default_db(),
+        session_id,
+        execution_id,
+        msg_id,
+        "web",
+        authority=_local_authority,
+    ):
+        _s._release_run_reservation(session_id, msg_id)
+        await ws.send_text(json.dumps({
+            "type": "error",
+            "data": {
+                "code": "execution_record_failed",
+                "message": "failed to persist the execution record",
+            },
+        }))
+        return
+
+    def _mark_setup_interrupted() -> None:
+        from openprogram.agent.run_control import mark_execution_terminal
+        mark_execution_terminal(execution_id, "interrupted")
+
     # chat.before_send on the bus — plugin subscribers observe the
     # message about to enter the runtime. emit_safe swallows failures
     # so a bad subscriber can't poison the chat path.
@@ -821,6 +846,7 @@ async def handle_chat(ws, cmd: dict):
             "attachments": bool(attachments),
         }, {"session": session_id})
     except BaseException:
+        _mark_setup_interrupted()
         _s._release_run_reservation(session_id, msg_id)
         raise
 
@@ -833,7 +859,12 @@ async def handle_chat(ws, cmd: dict):
     try:
         await ws.send_text(json.dumps({
             "type": "chat_ack",
-            "data": {"session_id": session_id, "msg_id": msg_id, "text": text},
+            "data": {
+                "session_id": session_id,
+                "msg_id": msg_id,
+                "text": text,
+                "execution_id": execution_id,
+            },
         }))
     except Exception:
         # The turn is already persisted. Losing its originating socket must
@@ -854,6 +885,7 @@ async def handle_chat(ws, cmd: dict):
             "started_at": _t.time(), "last_event_at": _t.time(),
             "display_params": "", "loaded_func_ref": None,
             "stream_events": [],
+            "execution_id": execution_id,
         })
     _s._emit_running_task_event(session_id)
     try:
@@ -866,6 +898,7 @@ async def handle_chat(ws, cmd: dict):
         try:
             return threading.Thread(**kwargs)
         except BaseException:
+            _mark_setup_interrupted()
             _s._release_run_reservation(session_id, msg_id)
             raise
 
@@ -914,12 +947,14 @@ async def handle_chat(ws, cmd: dict):
             daemon=True,
         )
     else:
+        _mark_setup_interrupted()
         _s._release_run_reservation(session_id, msg_id)
         raise RuntimeError(f"unsupported chat action: {parsed['action']}")
 
     try:
         run_thread.start()
     except BaseException:
+        _mark_setup_interrupted()
         _s._release_run_reservation(session_id, msg_id)
         raise
 
@@ -1048,6 +1083,7 @@ async def handle_retry_function(ws, cmd: dict):
         # after the spawned child's import finishes). See wsHandleChatAck.
         "data": {"session_id": result.get("session_id", session_id),
                  "msg_id": result.get("msg_id", ""),
+                 "execution_id": result.get("msg_id") or result.get("execution_id") or "",
                  "function_run": True},
     }))
 

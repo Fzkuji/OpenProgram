@@ -20,6 +20,7 @@ import inspect
 import logging
 import os
 import time
+from contextlib import nullcontext
 from contextvars import ContextVar
 from typing import Callable, Optional
 
@@ -257,6 +258,11 @@ def create_pending_call_node(
         caller = _call_id.get() or ""
     if forced_predecessor is None:
         forced_predecessor = _forced_predecessor.get()
+    if caller and store is not None:
+        session_id = getattr(store, "session_id", None)
+        if session_id:
+            from openprogram.agent.run_control import admit_child_execution
+            admit_child_execution(session_id, caller)
 
     meta: dict = {
         "expose": expose,
@@ -352,28 +358,35 @@ def _append_function_call_entry(
     if store is None:
         return
 
-    node = create_pending_call_node(
-        pending_id=pending_id,
-        function_name=function_name,
-        arguments=arguments,
-        expose=expose,
-        render_range=render_range,
-        started_at=started_at,
-        docstring=docstring,
-        store=store,
-    )
-    if node is None:
-        return
-    try:
-        store.append(node)
-    except Exception as exc:
-        # DAG persistence failure must never break the user's function call.
-        _log.warning(
-            "DAG persistence failed phase=entry node_id=%s error_type=%s",
-            pending_id,
-            type(exc).__name__,
-            exc_info=True,
+    parent_id = _call_id.get() or ""
+    admission = nullcontext()
+    if parent_id:
+        from openprogram.agent.run_control import child_execution_admission
+        admission = child_execution_admission(store.session_id, parent_id)
+
+    with admission:
+        node = create_pending_call_node(
+            pending_id=pending_id,
+            function_name=function_name,
+            arguments=arguments,
+            expose=expose,
+            render_range=render_range,
+            started_at=started_at,
+            docstring=docstring,
+            store=store,
         )
+        if node is None:
+            return
+        try:
+            store.append(node)
+        except Exception as exc:
+            # DAG persistence failure must never break the user's function call.
+            _log.warning(
+                "DAG persistence failed phase=entry node_id=%s error_type=%s",
+                pending_id,
+                type(exc).__name__,
+                exc_info=True,
+            )
 
 
 def _update_function_call_exit(
@@ -412,10 +425,19 @@ def _update_function_call_exit(
             pending_id,
             output=result_payload,
             metadata={
-                "status": status,
                 "duration_seconds": duration,
             },
         )
+        from openprogram.agent.run_control import mark_execution_terminal
+        bound_store = getattr(store, "store", None)
+        if status == "error":
+            mark_execution_terminal(pending_id, "error", store=bound_store)
+        elif status == "cancelled":
+            mark_execution_terminal(pending_id, "cancelled", store=bound_store)
+        elif status in {"failed", "interrupted"}:
+            mark_execution_terminal(pending_id, status, store=bound_store)
+        else:
+            mark_execution_terminal(pending_id, "completed", store=bound_store)
     except Exception as exc:
         _log.warning(
             "DAG persistence failed phase=exit node_id=%s error_type=%s",

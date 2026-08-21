@@ -102,6 +102,7 @@ export interface WsEventsCtx {
   agentSetRef: React.MutableRefObject<boolean>;
   sessionAliasesPrintRef: React.MutableRefObject<boolean>;
   sessionAliasesRef: React.MutableRefObject<SessionAliasRow[]>;
+  executionIdRef: React.MutableRefObject<string | undefined>;
 }
 
 type JobEnvelopeCtx = Pick<
@@ -141,6 +142,27 @@ export function handleJobEnvelope(ev: WsEnvelope, ctx: JobEnvelopeCtx): boolean 
   return true;
 }
 
+type RunningTaskEnvelopeCtx = Pick<
+  WsEventsCtx,
+  'conversationId' | 'executionIdRef' | 'setStreaming'
+>;
+
+export function handleRunningTaskEnvelope(
+  ev: WsEnvelope,
+  ctx: RunningTaskEnvelopeCtx,
+): boolean {
+  if (ev.type !== 'running_task') return false;
+  if (ev.data.session_id !== ctx.conversationId) return true;
+  const executionId = ev.data.execution_id;
+  if (executionId) {
+    ctx.executionIdRef.current = executionId;
+    ctx.setStreaming((streaming) => (
+      streaming ? { ...streaming, executionId } : streaming
+    ));
+  }
+  return true;
+}
+
 export function useWsEvents(ctx: WsEventsCtx): void {
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
@@ -156,8 +178,29 @@ export function useWsEvents(ctx: WsEventsCtx): void {
       };
       if (handleJobEnvelope(ev, c)) {
         return;
+      } else if (handleRunningTaskEnvelope(ev, c)) {
+        return;
       } else if (ev.type === 'chat_ack') {
         c.setConversationId(ev.data.session_id);
+        const executionId = ev.data.execution_id;
+        if (executionId) {
+          c.executionIdRef.current = executionId;
+          c.setStreaming((s) => (s ? { ...s, executionId } : s));
+        }
+      } else if (ev.type === 'execution.updated') {
+        const execution = ev.execution;
+        const currentId = c.executionIdRef.current;
+        if (execution?.execution_id && currentId && execution.execution_id === currentId) {
+          if (
+            execution.status === 'cancelled'
+            || execution.status === 'failed'
+            || execution.status === 'interrupted'
+            || execution.status === 'completed'
+            || execution.status === 'error'
+          ) {
+            c.finishTurn();
+          }
+        }
       } else if (ev.type === 'chat_response') {
         handleChatResponse(ev.data, c, markSessionLive);
       } else if (ev.type === 'stats') {

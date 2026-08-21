@@ -395,6 +395,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_ss_exp.add_argument("--output", default=None,
         help="Write here instead of ./<session-id>.<format>")
 
+    # ---- execution --------------------------------------------------------
+    p_execution = sub.add_parser(
+        "execution",
+        help="Inspect or cancel a single execution",
+    )
+    execution_sub = p_execution.add_subparsers(
+        dest="execution_verb", metavar="verb",
+    )
+    p_execution_cancel = execution_sub.add_parser(
+        "cancel", help="Cancel one execution by id",
+    )
+    p_execution_cancel.add_argument(
+        "execution_id", help="Execution id to cancel",
+    )
+
     # ---- jobs -------------------------------------------------------------
     p_jobs = sub.add_parser(
         "jobs", help="Inspect canonical resource state for background jobs",
@@ -913,7 +928,7 @@ def build_parser() -> argparse.ArgumentParser:
     # 但它们是本函数局部变量 — 经 set_defaults 盖进 args,嵌套子命令
     # 由更深一层覆盖,args._cmd_parser 恒为选中路径上最深的一个。
     for _p in (p_logs, p_programs, p_skills, p_plugins, p_trash, p_backup, p_sessions,
-               p_jobs,
+               p_execution, p_jobs,
                p_subagent, p_memory, p_worker, p_channels, p_chacct,
                p_chaccess, p_chb, p_mcp, p_browser, p_agents,
                p_config, p_recordings, p_upgrade, p_providers):

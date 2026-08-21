@@ -234,11 +234,25 @@ def persist_assistant_message(
                 if k not in {"id", "role", "content", "timestamp"}
                 and v is not None
             }
+            wanted_status = _meta.pop("status", None)
             _shim.update(
                 assistant_msg["id"],
                 output=assistant_msg.get("content") or "",
                 metadata=_meta,
             )
+            from openprogram.agent.run_control import mark_execution_terminal
+            if wanted_status == "completed":
+                mark_execution_terminal(
+                    assistant_msg["id"], "completed", store=db,
+                )
+            elif wanted_status in {"failed", "error", "interrupted"}:
+                mark_execution_terminal(
+                    assistant_msg["id"], wanted_status, store=db,
+                )
+            elif wanted_status == "cancelled":
+                mark_execution_terminal(
+                    assistant_msg["id"], "cancelled", store=db,
+                )
         except Exception:
             db.append_message(req.session_id, assistant_msg)
     else:

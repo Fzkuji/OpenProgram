@@ -25,7 +25,7 @@ export type RuntimeConclusion = {
   tone: "success" | "error" | "cancelled";
 };
 
-const RUNNING = new Set(["pending", "running", "streaming"]);
+const RUNNING = new Set(["pending", "running", "streaming", "cancelling"]);
 
 function epochMs(value: number): number {
   return value > 1e12 ? value : value * 1000;
@@ -207,10 +207,13 @@ export function runtimeSummaryLabel(input: RuntimeSummaryInput): string {
   const rawStatus = resolvedStatus(input);
   const running = RUNNING.has(rawStatus);
   const cancelled = rawStatus === "cancelled" || rawStatus === "canceled";
+  const cancelling = rawStatus === "cancelling";
   const interrupted = rawStatus === "interrupted";
   const capped = rawStatus === "capped";
   const failed = rawStatus === "error" || rawStatus === "failed" || Boolean(input.tree?.error);
-  const status = running
+  const status = cancelling
+    ? text("Cancelling…", "正在取消")
+    : running
     ? text("Running…", "运行中…")
     : cancelled
       ? text("Cancelled", "已取消")

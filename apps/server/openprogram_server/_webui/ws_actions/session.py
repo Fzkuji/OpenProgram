@@ -401,6 +401,21 @@ async def handle_load_session(ws, cmd: dict):
         _db_load = _db_for_load()
         try:
             raw_msgs = _db_load.get_messages(conv["id"]) or []
+            hidden_ids = {
+                m.get("id") for m in raw_msgs
+                if m.get("execution_control") and m.get("id")
+            }
+            changed = True
+            while changed:
+                before = len(hidden_ids)
+                hidden_ids.update(
+                    m.get("id") for m in raw_msgs
+                    if m.get("caller") in hidden_ids
+                )
+                changed = len(hidden_ids) != before
+            raw_msgs = [
+                m for m in raw_msgs if m.get("id") not in hidden_ids
+            ]
             # Fold standalone role="tool" rows into their parent assistant's
             # tool_calls[] so the chat UI sees the same shape on refresh
             # as it does on live WS stream.
@@ -716,6 +731,7 @@ async def handle_load_session(ws, cmd: dict):
                     "session_id": session_id,
                     "msg_id": task_info["msg_id"],
                     "func_name": task_info["func_name"],
+                    "execution_id": task_info.get("execution_id"),
                     "started_at": task_info["started_at"],
                     "display_params": task_info.get("display_params", ""),
                     "partial_tree": None,

@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 
 # WELCOME_STATS_SESSION_LIMIT lives on the server module — we read it lazily.
 
@@ -200,146 +199,56 @@ async def handle_browser(ws, cmd: dict):
     }, default=str))
 
 
-# Sessions for which a graceful stop has already been requested. A second
-# stop click (or mode="force") on a still-running session escalates to a
-# hard SIGKILL. Cleared when the turn ends.
-_graceful_pending: set[str] = set()
-_GRACEFUL_GRACE_S = 4.0  # how long a graceful stop has before auto-escalation
+# Compatibility: WS ``stop`` resolves the current execution and calls
+# cancel_execution. ``mode="force"`` is ignored as a distinct user action.
+
+
+def _broadcast_execution(execution: dict) -> None:
+    from openprogram.webui import server as _s
+    _s._broadcast(json.dumps({
+        "type": "execution.updated",
+        "execution": execution,
+    }, default=str))
 
 
 async def handle_stop(ws, cmd: dict):
-    """Mirror /api/stop — stop the in-flight turn for a conv, two-stage.
+    """Compatibility session stop: resolve the active execution and cancel it.
 
-    First stop = GRACEFUL: ask the @agentic_function subprocess to finish its
-    current unit, save, and exit (so a long research/gui run keeps its
-    partial artifacts + conclusion). Second stop on the same still-running
-    session — or ``mode="force"`` — = HARD: SIGKILL the process group
-    instantly (the escape hatch when the model hangs). A graceful stop that
-    doesn't exit within the grace window auto-escalates to hard.
-
-    Either way, subsequent chat-response broadcasts are gagged and any
-    ``status=running`` rows are patched to ``cancelled``.
+    ``mode="force"`` and a second click are the same cancel operation.
     """
-    from openprogram.webui import server as _s
-    # TUI sends conv_id, web composer sends session_id — accept both.
+    from openprogram.agent import run_control
+    run_control.set_execution_update_hook(_broadcast_execution)
+
     session_id = cmd.get("session_id") or cmd.get("conv_id")
-    if not session_id:
-        return
-
-    force = (cmd.get("mode") == "force") or (session_id in _graceful_pending)
-
-    if not force:
-        # ---- Stage 1: graceful ----
-        from openprogram.agent.process_runner import (
-            request_graceful_stop, kill_active_subprocess,
-            is_subprocess_alive,
-        )
-        asked = False
-        try:
-            asked = request_graceful_stop(session_id)
-        except Exception:
-            asked = False
-        if asked:
-            _graceful_pending.add(session_id)
-            _s._broadcast(json.dumps({
-                "type": "status", "paused": False, "stopping": True,
-                "session_id": session_id,
-            }))
-
-            # Auto-escalate: if the child hasn't exited within the grace
-            # window, hard-kill it (covers a wedged model that ignores the
-            # cooperative checkpoints).
-            async def _escalate():
-                await asyncio.sleep(_GRACEFUL_GRACE_S)
-                try:
-                    if is_subprocess_alive(session_id):
-                        kill_active_subprocess(session_id)
-                        _s._kill_active_runtime(session_id)
-                except Exception:
-                    pass
-                finally:
-                    _graceful_pending.discard(session_id)
-            try:
-                asyncio.ensure_future(_escalate())
-            except Exception:
-                _graceful_pending.discard(session_id)
+    execution_id = (cmd.get("execution_id") or "").strip()
+    if not execution_id:
+        if not session_id:
             return
-        # No live subprocess to ask gracefully → fall through to hard stop
-        # (e.g. a non-subprocess turn, or it already exited).
-
-    # ---- Stage 2: hard ----
-    _graceful_pending.discard(session_id)
-    _s._mark_cancelled(session_id)
-    # Session-level stop means "all of this session's work stops":
-    # queued send_message entries would each start a fresh turn at the
-    # next drain, so clear them and notify each sender.
+        execution_id = run_control.resolve_foreground_execution(session_id) or ""
+    if not execution_id:
+        return
     try:
-        from openprogram.agent import inbox as _inbox
-        _inbox.clear(session_id, reason="the target session was stopped by the user")
-    except Exception:
-        pass
-    _s.resume_execution()
-    # SIGKILL the @agentic_function subprocess (if any) for this session
-    # *before* signaling cooperative cancel paths. This is what makes
-    # stop instantaneous for gui_agent / research_agent / wiki_agent —
-    # the process group dies in milliseconds.
-    try:
-        from openprogram.agent.process_runner import kill_active_subprocess
-        kill_active_subprocess(session_id)
-    except Exception:
-        pass
-    _s._kill_active_runtime(session_id)
-    with _s._follow_up_lock:
-        q = _s._follow_up_queues.get(session_id)
-    if q is not None:
-        try:
-            q.put_nowait({"_cancelled": True})
-        except Exception:
-            pass
-    # 解除该 session 所有待答 runtime.ask 问题（按 declined 处理），
-    # 否则阻塞在 ask 上的函数会一直等到 timeout。
-    try:
-        from openprogram.agent.questions import get_question_registry
-        get_question_registry().cancel_session(session_id)
-    except Exception:
-        pass
-    # Patch any ``status=running`` rows for this session to
-    # ``cancelled`` so the chat doesn't show a stuck spinner after
-    # refresh. Runs synchronously inside the stop handler — cheap,
-    # ~10ms for a small session.
-    try:
-        from openprogram.agent.session_db import default_db
-        from openprogram.store import SessionNodeWriter
-        _db = default_db()
-        _msgs = _db.get_messages(session_id) or []
-        _shim: SessionNodeWriter | None = None
-        for _m in _msgs:
-            if (_m.get("status") or "done") != "running":
-                continue
-            if _shim is None:
-                _shim = SessionNodeWriter(_db, session_id)
-            _shim.update(
-                _m["id"],
-                metadata={
-                    "status": "cancelled",
-                    "last_update_at": time.time(),
-                    "_cancelled_reason": "user_stop",
-                },
-            )
-    except Exception:
-        pass
-    _s._broadcast(json.dumps({
-        "type": "status",
-        "paused": False,
-        "stopped": True,
-        "session_id": session_id,
-    }))
+        execution = run_control.cancel_execution(execution_id)
+    except (
+        run_control.ExecutionNotFound,
+        run_control.ExecutionNotCancellable,
+    ) as exc:
+        await ws.send_text(json.dumps({
+            "type": "error",
+            "data": {
+                "code": type(exc).__name__,
+                "message": str(exc),
+            },
+        }))
+        return
+    _broadcast_execution(execution)
 
 
 async def handle_execution_cancel(ws, cmd: dict):
     """Cancel one execution and broadcast its canonical record."""
     from openprogram.agent import run_control
     from openprogram.webui import server as _s
+    run_control.set_execution_update_hook(_broadcast_execution)
 
     execution_id = (cmd.get("execution_id") or "").strip()
     if not execution_id:

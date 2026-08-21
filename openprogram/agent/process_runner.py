@@ -39,13 +39,11 @@ import uuid
 from typing import Any, Callable, Optional
 
 
-# session_id → live Process. We only ever keep one in-flight forced /
-# agentic subprocess per session at a time (matches the existing
-# single-turn-per-session contract).
+# execution_id → live Process. Session is a secondary index so a
+# compatibility session-level lookup still finds the current owner.
 _active: dict[str, mp.Process] = {}
-# session_id → the parent→child stop_queue for the in-flight subprocess,
-# so a graceful-stop request can reach the child before we SIGKILL it.
 _active_stop_q: dict[str, "mp.Queue"] = {}
+_session_execution: dict[str, str] = {}
 _active_lock = threading.Lock()
 
 
@@ -595,6 +593,7 @@ def run_agentic_in_subprocess(
     work_dir: Optional[str] = None,
     on_event: Optional[Callable[[dict], None]] = None,
     parent_call_id: Optional[str] = None,
+    execution_id: Optional[str] = None,
     authority: Optional[dict] = None,
     permission_rules_snapshot: Optional[dict] = None,
     surface_context_snapshot: Optional[dict] = None,
@@ -653,10 +652,18 @@ def run_agentic_in_subprocess(
     )
     p.start()
 
+    eid = execution_id or parent_call_id or session_id
     with _active_lock:
-        # If a prior subprocess is somehow still tracked, replace it.
-        _active[session_id] = p
-        _active_stop_q[session_id] = stop_queue
+        _active[eid] = p
+        _active_stop_q[eid] = stop_queue
+        _session_execution[session_id] = eid
+    try:
+        from openprogram.agent.run_control import register_execution_owner
+        register_execution_owner(
+            eid, session_id, process=p, stop_queue=stop_queue,
+        )
+    except Exception:
+        pass
 
     # Drain events from the queue and forward to parent's on_event
     # while the child runs. Stops when the child exits + the queue
@@ -722,9 +729,16 @@ def run_agentic_in_subprocess(
         except Exception:
             pass
         with _active_lock:
-            if _active.get(session_id) is p:
-                _active.pop(session_id, None)
-            _active_stop_q.pop(session_id, None)
+            if _active.get(eid) is p:
+                _active.pop(eid, None)
+            _active_stop_q.pop(eid, None)
+            if _session_execution.get(session_id) == eid:
+                _session_execution.pop(session_id, None)
+        try:
+            from openprogram.agent.run_control import retire_execution_owner
+            retire_execution_owner(eid)
+        except Exception:
+            pass
 
     # Pick up the result, if any.
     out: dict
@@ -745,22 +759,36 @@ def run_agentic_in_subprocess(
     return out
 
 
-def is_subprocess_alive(session_id: str) -> bool:
-    """True if there's a live in-flight subprocess for this session."""
+def _execution_key(session_id: str, execution_id: str | None = None) -> str:
+    if execution_id:
+        return execution_id
     with _active_lock:
-        p = _active.get(session_id)
+        return _session_execution.get(session_id) or session_id
+
+
+def is_subprocess_alive(
+    session_id: str, *, execution_id: str | None = None,
+) -> bool:
+    """True if there's a live in-flight subprocess for this execution."""
+    key = _execution_key(session_id, execution_id)
+    with _active_lock:
+        p = _active.get(key)
+        if p is None and execution_id is None:
+            p = _active.get(session_id)
     return p is not None and p.is_alive()
 
 
-def request_graceful_stop(session_id: str) -> bool:
-    """Ask the in-flight subprocess to stop GRACEFULLY (finish the current
-    unit, save, return) by sending a sentinel down its stop_queue. Returns
-    True if a live subprocess was found and signaled. Does NOT kill — the
-    caller escalates to ``kill_active_subprocess`` if the child doesn't exit
-    within a grace window (the second stop click / a timeout)."""
+def request_graceful_stop(
+    session_id: str, *, execution_id: str | None = None,
+) -> bool:
+    """Ask the in-flight subprocess to stop cooperatively via its stop queue."""
+    key = _execution_key(session_id, execution_id)
     with _active_lock:
-        q = _active_stop_q.get(session_id)
-        p = _active.get(session_id)
+        q = _active_stop_q.get(key)
+        p = _active.get(key)
+        if q is None and execution_id is None:
+            q = _active_stop_q.get(session_id)
+            p = _active.get(session_id)
     if q is None or p is None or not p.is_alive():
         return False
     try:
@@ -770,13 +798,19 @@ def request_graceful_stop(session_id: str) -> bool:
         return False
 
 
-def kill_active_subprocess(session_id: str) -> bool:
-    """SIGKILL the entire process group of the in-flight subprocess for
-    ``session_id``. Returns True if a subprocess was found and signaled.
-    """
+def kill_active_subprocess(
+    session_id: str, *, execution_id: str | None = None,
+) -> bool:
+    """SIGKILL the process group of the in-flight subprocess for this execution."""
+    key = _execution_key(session_id, execution_id)
     with _active_lock:
-        p = _active.pop(session_id, None)
-        _active_stop_q.pop(session_id, None)
+        p = _active.pop(key, None)
+        _active_stop_q.pop(key, None)
+        if p is None and execution_id is None:
+            p = _active.pop(session_id, None)
+            _active_stop_q.pop(session_id, None)
+        if _session_execution.get(session_id) == key:
+            _session_execution.pop(session_id, None)
     if p is None:
         return False
     if not p.is_alive():

@@ -277,6 +277,54 @@ export function useWS(): void {
             refreshFunctionsList();
           });
           return true;
+        case "execution.updated": {
+          const execution = (msg as { execution?: {
+            execution_id?: string;
+            session_id?: string;
+            status?: string;
+            reason_code?: string;
+          } }).execution || d;
+          if (!execution?.execution_id) return true;
+          import("@/lib/session-store").then(({ useSessionStore }) => {
+            const store = useSessionStore.getState();
+            const sid = String(execution.session_id || "");
+            const eid = String(execution.execution_id);
+            if (sid) {
+              const current = store.messagesById[eid];
+              if (current) {
+                store.updateMessage(sid, eid, {
+                  status: execution.status as never,
+                });
+              }
+            }
+            const task = sid ? store.runningTasks[sid] : undefined;
+            const matches = Boolean(
+              task && (
+                task.execution_id === eid
+                || (task.msg_id && `${task.msg_id}_reply` === eid)
+              ),
+            );
+            if (execution.status === "cancelling" && sid) {
+              store.setRunningTaskFor(sid, {
+                session_id: sid,
+                msg_id: task?.msg_id || "",
+                func_name: task?.func_name,
+                started_at: task?.started_at,
+                execution_id: eid,
+                cancelling: true,
+              }, "never");
+            } else if (
+              matches
+              && (execution.status === "cancelled"
+                || execution.status === "completed"
+                || execution.status === "failed"
+                || execution.status === "interrupted")
+            ) {
+              store.setRunningTaskFor(sid, null, "always");
+            }
+          });
+          return true;
+        }
         case "running_task":
           handleRunningTask(d);
           return true;

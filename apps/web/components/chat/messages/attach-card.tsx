@@ -371,13 +371,14 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
             className="attach-card-cancel"
             onClick={() => {
               wsSend({
-                action: "cancel_job",
-                job_id: attach.job_id,
+                action: "execution.cancel",
+                execution_id: attach.job_id,
               });
             }}
-            title={text("Stop this sub-agent", "停止这个子 Agent")}
+            title={text("Cancel execution", "取消运行")}
+            aria-label={text("Cancel execution", "取消运行")}
           >
-            {text("Cancel", "取消")}
+            {text("Cancel execution", "取消运行")}
           </button>
         </div>
       ) : null}

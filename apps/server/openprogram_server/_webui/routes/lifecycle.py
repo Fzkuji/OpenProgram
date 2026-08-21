@@ -29,68 +29,82 @@ def register(app):
 
     @app.post("/api/stop")
     async def api_stop(body: dict = None):
-        """Stop the currently running task for a conversation.
+        """Compatibility stop: resolve the active execution and cancel it."""
+        from openprogram.agent import run_control
+        run_control.set_execution_update_hook(
+            lambda execution: emit_ws_frame({
+                "type": "execution.updated",
+                "execution": execution,
+            }),
+        )
 
-        Flow: mark cancel flag → resume (in case paused) → kill exec
-        subprocess → unblock any pending ask_user queue → force-clear
-        server-side run state → broadcast terminal envelopes.
-        """
-        from openprogram.webui import server as _s
-        session_id = (body or {}).get("session_id")
-        if not session_id:
+        payload = body or {}
+        session_id = payload.get("session_id")
+        execution_id = (payload.get("execution_id") or "").strip()
+        if not execution_id:
+            if not session_id:
+                return JSONResponse(
+                    content={"error": "missing execution_id"},
+                    status_code=400,
+                )
+            execution_id = run_control.resolve_foreground_execution(
+                session_id,
+            ) or ""
+        if not execution_id:
             return JSONResponse(
-                content={"stopped": False, "error": "missing session_id"},
+                content={"error": "no active execution"},
+                status_code=404,
+            )
+        try:
+            execution = run_control.cancel_execution(execution_id)
+        except run_control.ExecutionNotFound:
+            return JSONResponse(
+                content={"error": "ExecutionNotFound"},
+                status_code=404,
+            )
+        except run_control.ExecutionNotCancellable as exc:
+            return JSONResponse(
+                content={
+                    "error": "ExecutionNotCancellable",
+                    "execution": exc.execution,
+                },
+                status_code=409,
+            )
+        emit_ws_frame({"type": "execution.updated", "execution": execution})
+        return JSONResponse(content={"execution": execution})
+
+    @app.post("/api/execution/cancel")
+    async def api_execution_cancel(body: dict = None):
+        """Cancel one execution inside the default worker process."""
+        from openprogram.agent import run_control
+        run_control.set_execution_update_hook(
+            lambda execution: emit_ws_frame({
+                "type": "execution.updated",
+                "execution": execution,
+            }),
+        )
+
+        payload = body or {}
+        execution_id = (payload.get("execution_id") or "").strip()
+        if not execution_id:
+            return JSONResponse(
+                content={"error": "missing execution_id"},
                 status_code=400,
             )
-        _s._mark_cancelled(session_id)
-        # Session-level stop also discards queued send_message entries —
-        # each would start a fresh turn at the next drain. Senders get a
-        # system notice.
         try:
-            from openprogram.agent import inbox as _inbox
-            _inbox.clear(
-                session_id,
-                reason="the target session was stopped by the user",
+            execution = run_control.cancel_execution(execution_id)
+        except run_control.ExecutionNotFound:
+            return JSONResponse(
+                content={"error": "ExecutionNotFound"},
+                status_code=404,
             )
-        except Exception:
-            pass
-        _s.resume_execution()
-        try:
-            from openprogram.agent.process_runner import kill_active_subprocess
-            kill_active_subprocess(session_id)
-        except Exception:
-            pass
-        _s._kill_active_runtime(session_id)
-        with _s._follow_up_lock:
-            q = _s._follow_up_queues.get(session_id)
-        if q is not None:
-            try:
-                q.put_nowait({"_cancelled": True})
-            except Exception:
-                pass
-        with _s._running_tasks_lock:
-            _s._running_tasks.pop(session_id, None)
-        try:
-            _s._unregister_active_runtime(session_id)
-        except Exception:
-            pass
-        try:
-            _s._unregister_cancel_event(session_id)
-        except Exception:
-            pass
-        emit_ws_frame({
-            "type": "chat_response",
-            "data": {
-                "type": "cancelled",
-                "session_id": session_id,
-                "content": "Execution stopped by user.",
-                "cancelled": True,
-            },
-        })
-        emit_ws_frame({
-            "type": "status",
-            "paused": False,
-            "stopped": True,
-            "session_id": session_id,
-        })
-        return JSONResponse(content={"stopped": True})
+        except run_control.ExecutionNotCancellable as exc:
+            return JSONResponse(
+                content={
+                    "error": "ExecutionNotCancellable",
+                    "execution": exc.execution,
+                },
+                status_code=409,
+            )
+        emit_ws_frame({"type": "execution.updated", "execution": execution})
+        return JSONResponse(content={"execution": execution})

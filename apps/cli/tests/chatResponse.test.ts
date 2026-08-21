@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { handleChatResponse } from '../src/screens/repl/wsHandlers/handleChatResponse.js';
-import type { WsEventsCtx } from '../src/screens/repl/useWsEvents.js';
+import {
+  handleRunningTaskEnvelope,
+  type WsEventsCtx,
+} from '../src/screens/repl/useWsEvents.js';
 import type { Turn } from '../src/components/Turn.js';
 
 
@@ -82,5 +85,33 @@ describe('handleChatResponse', () => {
     );
 
     expect(setStreaming).toHaveBeenCalledWith(null);
+  });
+});
+
+describe('handleRunningTaskEnvelope', () => {
+  it('does not replace the focused execution with another session', () => {
+    const executionIdRef = { current: 'exec-a' };
+    const setStreaming = vi.fn();
+    const ctx = {
+      conversationId: 'session-a',
+      executionIdRef,
+      setStreaming,
+    } as unknown as WsEventsCtx;
+
+    handleRunningTaskEnvelope({
+      type: 'running_task',
+      data: { session_id: 'session-b', execution_id: 'exec-b' },
+    }, ctx);
+
+    expect(executionIdRef.current).toBe('exec-a');
+    expect(setStreaming).not.toHaveBeenCalled();
+
+    handleRunningTaskEnvelope({
+      type: 'running_task',
+      data: { session_id: 'session-a', execution_id: 'exec-a-next' },
+    }, ctx);
+
+    expect(executionIdRef.current).toBe('exec-a-next');
+    expect(setStreaming).toHaveBeenCalledOnce();
   });
 });

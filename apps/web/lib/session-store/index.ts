@@ -55,7 +55,10 @@ import type {
  *  the store until the turn finalizes. */
 function isLiveRow(m: ChatMsg): boolean {
   return (
-    m.status === "streaming" || m.status === "running" || m.status === "pending"
+    m.status === "streaming"
+    || m.status === "running"
+    || m.status === "cancelling"
+    || m.status === "pending"
   );
 }
 

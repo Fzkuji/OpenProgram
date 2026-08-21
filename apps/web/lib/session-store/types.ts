@@ -7,6 +7,7 @@ export type MessageStatus =
   | "pending"
   | "streaming"
   | "running"
+  | "cancelling"
   | "done"
   | "completed"
   | "error"
@@ -199,7 +200,7 @@ export interface ChatMsg {
      *  → running → completed / errored / cancelled. Drives the
      *  status pill in the attach card so the user can see whether
      *  the embedded content is finalised. */
-    status?: "pending" | "queued" | "running" | "completed"
+    status?: "pending" | "queued" | "running" | "cancelling" | "completed"
       | "errored" | "cancelled";
     /** Cross-reference to the Job entity that owns this attach. */
     job_id?: string;
@@ -276,6 +277,8 @@ export interface RunningTask {
   msg_id: string;
   func_name?: string;
   started_at?: number;
+  execution_id?: string;
+  cancelling?: boolean;
 }
 
 export interface TreeNode {

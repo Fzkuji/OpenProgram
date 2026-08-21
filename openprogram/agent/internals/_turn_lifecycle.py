@@ -122,11 +122,14 @@ def fold_error_into_placeholder(
             assistant_msg_id,
             output=err_text,
             metadata={
-                "status": "error",
                 "error": str(exc),
                 "error_type": type(exc).__name__,
                 "trace": trace,
             },
+        )
+        from openprogram.agent.run_control import mark_execution_terminal
+        mark_execution_terminal(
+            assistant_msg_id, "error", store=default_store(),
         )
         return err_text
     except Exception:

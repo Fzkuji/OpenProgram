@@ -228,6 +228,7 @@ def _emit_running_task_event(session_id: str) -> None:
                     "func_name": task.get("func_name"),
                     "started_at": task.get("started_at"),
                     "display_params": task.get("display_params", ""),
+                    "execution_id": task.get("execution_id"),
                 },
             }
         else:
@@ -803,6 +804,7 @@ def _try_reserve_run(session_id: str, msg_id: str) -> bool:
             "display_params": "",
             "loaded_func_ref": None,
             "stream_events": [],
+            "execution_id": f"{msg_id}_reply",
             "_reserved": True,
         }
     return True

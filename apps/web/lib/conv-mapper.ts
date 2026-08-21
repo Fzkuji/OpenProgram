@@ -104,7 +104,7 @@ export interface AttachMeta {
    *  completed / errored / cancelled. The card uses it to show a
    *  live status pill so the user can tell whether the embedded
    *  content is still being filled in. */
-  status?: "pending" | "queued" | "running" | "completed"
+  status?: "pending" | "queued" | "running" | "cancelling" | "completed"
     | "errored" | "cancelled";
   /** Cross-reference to the Job entity that produced this attach
    *  (when one exists — manual attaches don't have a job). */

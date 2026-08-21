@@ -12,10 +12,8 @@
  * payload to `sendChatMessage` — the bridge that fires the optimistic user
  * bubble, welcome-hide and running flip before the WS write.
  *
- * `stop` flips the UI optimistically: it clears the running task and marks
- * the streaming assistant placeholder cancelled immediately rather than
- * waiting for the backend's stopped envelope, which can be several seconds
- * behind an in-flight LLM stream.
+ * `stop` sends `execution.cancel` for the current execution. Local UI may
+ * show cancelling immediately; server cancelling/cancelled wins on reload.
  */
 import { useCallback } from "react";
 
@@ -233,49 +231,46 @@ export function useChatSubmit({
 }
 
 /**
- * Stop the run on `sessionId`: flip the UI optimistically, then write
- * the socket. Shared by the composer's stop button and the queued-row
- * "stop current and send now" action, so both paths cancel identically.
+ * Cancel the run on `sessionId`. Shared by the composer button and the
+ * queued-row "cancel current and send now" action. Local state may show
+ * cancelling immediately, but a server cancelling/cancelled record always
+ * wins on reload.
  */
 export function stopSession(
   targetSessionId: string,
   send: (payload: unknown) => boolean,
 ): void {
-  {
-    // Optimistic UI flip: clear runningTask immediately so the Stop
-    // button turns back into Send right when the user clicks. Don't
-    // wait for the backend's stopped envelope — the dispatcher main
-    // thread can be blocked for several seconds on an in-flight LLM
-    // stream while cancel propagates. The actual backend cleanup
-    // still runs (subprocess SIGKILL is instant; cancel hook reaches
-    // a hook point within ~1s for the chat path), it just no longer
-    // gates the UI.
-    const store = useSessionStore.getState();
-    store.setRunningTaskFor(targetSessionId, null, "never");
-    // Also patch the running assistant placeholder (the row that
-    // would otherwise be filled in 5-6s later with the late-arriving
-    // LLM response) to a cancelled state right now. Backend's
-    // dispatcher will overwrite the persisted node with the same
-    // ``[cancelled by user]`` content + status=cancelled when its
-    // cancel-aware finalize runs, so the React store and the on-disk
-    // node converge. Without this the chat would show a Thinking
-    // spinner until the model's stream completed naturally.
-    const ids = store.messageOrder[targetSessionId] || [];
-    for (let i = ids.length - 1; i >= 0; i--) {
-      const m = store.messagesById[ids[i]];
-      if (!m) continue;
-      if (m.role !== "assistant") continue;
-      if (m.status === "done" || m.status === "completed"
-          || m.status === "cancelled" || m.status === "error") break;
-      store.updateMessage(targetSessionId, m.id, {
-        status: "cancelled",
-        content: m.content && m.content.trim()
-          ? `${m.content}\n\n*[cancelled by user]*`
-          : "*[cancelled by user]*",
-        thinking: undefined,
-      });
-      break;
-    }
+  const store = useSessionStore.getState();
+  const task = store.runningTasks[targetSessionId];
+  const executionId =
+    task?.execution_id
+    || (task?.msg_id ? `${task.msg_id}_reply` : "");
+  if (executionId) {
+    send({ action: "execution.cancel", execution_id: executionId });
+  } else {
     send({ action: "stop", session_id: targetSessionId });
+  }
+  store.setRunningTaskFor(targetSessionId, {
+    session_id: targetSessionId,
+    msg_id: task?.msg_id || "",
+    func_name: task?.func_name,
+    started_at: task?.started_at,
+    execution_id: executionId || task?.execution_id,
+    cancelling: true,
+  }, "never");
+  const ids = store.messageOrder[targetSessionId] || [];
+  for (let i = ids.length - 1; i >= 0; i--) {
+    const m = store.messagesById[ids[i]];
+    if (!m) continue;
+    if (m.role !== "assistant") continue;
+    if (
+      m.status === "done" || m.status === "completed"
+      || m.status === "cancelled" || m.status === "error"
+      || m.status === "cancelling"
+    ) break;
+    store.updateMessage(targetSessionId, m.id, {
+      status: "cancelling",
+    });
+    break;
   }
 }

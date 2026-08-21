@@ -27,6 +27,7 @@ export function shouldHydrateTranscriptForTreeUpdate(
       message.display !== "runtime" &&
       (message.status === "streaming" ||
         message.status === "running" ||
+        message.status === "cancelling" ||
         message.status === "pending")
     );
   });

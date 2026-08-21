@@ -28,6 +28,19 @@ from contextlib import contextmanager
 from typing import Optional
 
 
+def _without_control_subtrees(nodes: list) -> list:
+    hidden_ids = {
+        n.id for n in nodes
+        if (n.metadata or {}).get("execution_control")
+    }
+    changed = True
+    while changed:
+        before = len(hidden_ids)
+        hidden_ids.update(n.id for n in nodes if n.caller in hidden_ids)
+        changed = len(hidden_ids) != before
+    return [n for n in nodes if n.id not in hidden_ids]
+
+
 # Tree reconstruction
 
 def _exec_tnode(n, kids: dict[str, list]) -> dict:
@@ -94,7 +107,9 @@ def build_exec_dag_by_id(session_id: str,
     """
     try:
         from openprogram.agent.session_db import default_db
-        nodes_list = default_db().get_nodes(session_id)
+        nodes_list = _without_control_subtrees(
+            default_db().get_nodes(session_id),
+        )
     except Exception:
         return None
     nodes = sorted(nodes_list, key=lambda n: n.seq)
@@ -126,7 +141,9 @@ def build_exec_dag(session_id: str, func_name: str,
     """
     try:
         from openprogram.agent.session_db import default_db
-        nodes_list = default_db().get_nodes(session_id)
+        nodes_list = _without_control_subtrees(
+            default_db().get_nodes(session_id),
+        )
     except Exception:
         return None
     nodes = sorted(nodes_list, key=lambda n: n.seq)
@@ -388,18 +405,32 @@ def reconcile_interrupted_runs() -> int:
             status = meta.get("status")
             if status not in {"running", "cancelling"}:
                 continue
-            new_meta = dict(meta)
             if status == "cancelling":
+                try:
+                    from openprogram.agent import run_control
+                    if run_control.owner_is_alive(node.id):
+                        run_control.resume_cancel(node.id)
+                        continue
+                except Exception:
+                    pass
+                new_meta = dict(meta)
                 new_meta["status"] = "cancelled"
                 new_meta.setdefault("finished_at", time.time())
-            else:
-                new_meta["status"] = "interrupted"
-                new_meta.setdefault(
-                    "error", "Worker restarted before this turn finished",
-                )
-                new_meta["interrupted_at"] = time.time()
+                output = node.output
+                try:
+                    shim.update(node.id, output=output, metadata=new_meta)
+                    fixed += 1
+                except Exception:
+                    continue
+                continue
+            new_meta = dict(meta)
+            new_meta["status"] = "interrupted"
+            new_meta.setdefault(
+                "error", "Worker restarted before this turn finished",
+            )
+            new_meta["interrupted_at"] = time.time()
             output = node.output
-            if not output and status == "running":
+            if not output:
                 output = "[interrupted] worker restarted mid-turn"
             try:
                 shim.update(node.id, output=output, metadata=new_meta)

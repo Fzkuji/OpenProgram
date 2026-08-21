@@ -20,6 +20,8 @@ export type TurnBlock =
 
 export interface Turn {
   id: string;
+  /** Server canonical execution id. Distinct from the local row `id`. */
+  executionId?: string;
   role: Role;
   text: string;
   /**

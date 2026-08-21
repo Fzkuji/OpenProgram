@@ -48,6 +48,21 @@ def build_session_graph(
     nodes = []
     try:
         nodes = db.get_nodes(session_id) or []
+        hidden_ids = {
+            n.id for n in nodes
+            if (n.metadata or {}).get("execution_control")
+        }
+        changed = True
+        while changed:
+            before = len(hidden_ids)
+            hidden_ids.update(
+                n.id for n in nodes if n.caller in hidden_ids
+            )
+            changed = len(hidden_ids) != before
+        nodes = [n for n in nodes if n.id not in hidden_ids]
+        full_msgs = [
+            m for m in full_msgs if m.get("id") not in hidden_ids
+        ]
         for n in nodes:
             if n.caller:
                 caller_map[n.id] = n.caller

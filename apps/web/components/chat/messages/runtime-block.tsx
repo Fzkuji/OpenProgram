@@ -129,7 +129,8 @@ export function RuntimeBlock({
   const streaming =
     msg.status === "streaming" ||
     msg.status === "pending" ||
-    msg.status === "running";
+    msg.status === "running" ||
+    msg.status === "cancelling";
   const { fn } = parseRun(msg.function || msg.content || "");
   const fnName = msg.function || fn;
   const tree = displayTree(msg);

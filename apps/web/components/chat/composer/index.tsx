@@ -188,6 +188,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const send = wsSend;
 
   const isRunning = runningTask !== null;
+  const isCancelling = Boolean(runningTask?.cancelling);
   const fnFormActive = fnFormFunction !== null;
   // 右下角圆按钮是否该显示红色停止 ■：仅当任务真在跑、且当前没有 decision
   // 占据输入区。decision 在场时函数虽“运行”着，但它在等用户答题——此刻这个
@@ -762,7 +763,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           <button
             className={`${styles.actionBtn} ${showStop ? styles.stopBtn : styles.sendBtn}`}
             onClick={showStop ? stop : onSendButtonClick}
-            disabled={!showStop && sendDisabled}
+            disabled={isCancelling || (!showStop && sendDisabled)}
             data-fn-missing={
               !showStop && fnFormActive && missingFnParams.length > 0
                 ? "true"
@@ -770,8 +771,20 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
             }
             onMouseEnter={() => sendIconRef.current?.startAnimation?.()}
             onMouseLeave={() => sendIconRef.current?.stopAnimation?.()}
-            title={showStop ? text("Stop", "停止") : sendTitle}
-            aria-label={showStop ? text("Stop", "停止") : sendTitle}
+            title={
+              isCancelling
+                ? text("Cancelling…", "正在取消")
+                : showStop
+                  ? text("Cancel execution", "取消运行")
+                  : sendTitle
+            }
+            aria-label={
+              isCancelling
+                ? text("Cancelling…", "正在取消")
+                : showStop
+                  ? text("Cancel execution", "取消运行")
+                  : sendTitle
+            }
             type="button"
           >
             {showStop ? <StopIcon /> : <SendIcon ref={sendIconRef} />}

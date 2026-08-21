@@ -76,6 +76,7 @@ export function setRunActive(active: boolean): void {
 interface ChatAckData {
   session_id?: string;
   msg_id?: string;
+  execution_id?: string;
   /** Set by a function dispatch (retry_function) whose top-level code node
    *  was pre-created on disk at dispatch time — lets us hydrate the
    *  transcript immediately instead of waiting for the first tree_update. */
@@ -149,7 +150,12 @@ export function wsHandleChatAck(data: ChatAckData): void {
     // sending tab's row appears but doesn't flow until that round-trip.
     useSessionStore
       .getState()
-      .setRunningTaskFor(sid, { session_id: sid, msg_id: data.msg_id || "" });
+      .setRunningTaskFor(sid, {
+        session_id: sid,
+        msg_id: data.msg_id || "",
+        execution_id: data.execution_id
+          || (data.msg_id ? `${data.msg_id}_reply` : undefined),
+      });
     if (isActive) {
       void loadAgentSettings();
       refreshChannelBadge();
@@ -386,6 +392,7 @@ export function handleRunningTask(rt: unknown): void {
     started_at?: number;
     display_params?: string;
     stream_events?: unknown[];
+    execution_id?: string;
   };
 
   // 1) Flip the composer's send/stop button immediately — but only
@@ -409,13 +416,33 @@ export function handleRunningTask(rt: unknown): void {
   if (!sid || !mid) return;
   const store = useSessionStore.getState();
   const replyId = mid + "_reply";
-  const targetId = store.messagesById[replyId] ? replyId : mid;
+  const executionId = t.execution_id || replyId;
+  const targetId = store.messagesById[executionId]
+    ? executionId
+    : store.messagesById[replyId]
+      ? replyId
+      : mid;
+  const current = store.messagesById[targetId];
+  if (current?.status === "cancelling" || current?.status === "cancelled") {
+    if (current.status === "cancelling") {
+      store.setRunningTaskFor(sid, {
+        session_id: sid,
+        msg_id: mid,
+        func_name: t.func_name,
+        started_at: t.started_at,
+        execution_id: executionId,
+        cancelling: true,
+      }, "never");
+    }
+    return;
+  }
   store.updateMessage(sid, targetId, { status: "running" });
   store.setRunningTaskFor(sid, {
     session_id: sid,
     msg_id: mid,
     func_name: t.func_name,
     started_at: t.started_at,
+    execution_id: executionId,
   });
 }
 

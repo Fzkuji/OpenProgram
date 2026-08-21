@@ -263,7 +263,9 @@ stopSession(A, (payload) => {
   return true;
 });
 await settle();
-assert.equal(stopFrames.length, 1, "stop is sent immediately");
+assert.equal(stopFrames.length, 1, "cancel is sent immediately");
+assert.equal(stopFrames[0].action, "execution.cancel");
+assert.equal(stopFrames[0].execution_id, "m_reply");
 assert.equal(sent.length, 0, "optimistic idle must not send before server clear");
 handleRunningTaskClear(A);
 await settle();

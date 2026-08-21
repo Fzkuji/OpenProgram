@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import json
 import logging
 import os
@@ -524,40 +524,45 @@ class JobRunner:
             status=JobStatus.PENDING,
             created_at=existing.created_at if existing is not None else time.time(),
         )
-        if resume_deferred:
-            admission_id = existing.admission_id
-            if not admission_id or parent_msg_id is None:
-                raise RuntimeError(
-                    f"deferred job {job.id!r} has no resumable admission fence"
+        admission = nullcontext()
+        if parent_job_id:
+            from openprogram.agent.run_control import child_execution_admission
+            admission = child_execution_admission(session_id, parent_job_id)
+        with admission:
+            if resume_deferred:
+                admission_id = existing.admission_id
+                if not admission_id or parent_msg_id is None:
+                    raise RuntimeError(
+                        f"deferred job {job.id!r} has no resumable admission fence"
+                    )
+                if not self._governor.stage_deferred_resume(
+                    job.id,
+                    admission_id=admission_id,
+                    parent_msg_id=parent_msg_id,
+                ):
+                    raise RuntimeError(
+                        f"deferred job {job.id!r} could not stage its target head"
+                    )
+                job = replace(existing, parent_msg_id=parent_msg_id)
+                _store_save(session_id, job)
+                if not self._governor.mark_dispatch_ready(
+                    job.id,
+                    admission_id=admission_id,
+                    parent_msg_id=parent_msg_id,
+                ):
+                    raise RuntimeError(
+                        f"deferred job {job.id!r} could not become dispatchable"
+                    )
+                idempotent = True
+            else:
+                decision = self.admit_job_entity(
+                    job,
+                    creates_agent=creates_agent,
+                    caller_turn_id=caller_msg_id,
+                    dispatch_ready=not defer_dispatch and borrowed_claim is None,
+                    borrowed_claim=(borrowed_claim[:3] if borrowed_claim else None),
                 )
-            if not self._governor.stage_deferred_resume(
-                job.id,
-                admission_id=admission_id,
-                parent_msg_id=parent_msg_id,
-            ):
-                raise RuntimeError(
-                    f"deferred job {job.id!r} could not stage its target head"
-                )
-            job = replace(existing, parent_msg_id=parent_msg_id)
-            _store_save(session_id, job)
-            if not self._governor.mark_dispatch_ready(
-                job.id,
-                admission_id=admission_id,
-                parent_msg_id=parent_msg_id,
-            ):
-                raise RuntimeError(
-                    f"deferred job {job.id!r} could not become dispatchable"
-                )
-            idempotent = True
-        else:
-            decision = self.admit_job_entity(
-                job,
-                creates_agent=creates_agent,
-                caller_turn_id=caller_msg_id,
-                dispatch_ready=not defer_dispatch and borrowed_claim is None,
-                borrowed_claim=(borrowed_claim[:3] if borrowed_claim else None),
-            )
-            idempotent = decision.idempotent
+                idempotent = decision.idempotent
         if on_accepted is not None and not idempotent:
             try:
                 on_accepted(job)

@@ -198,9 +198,13 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   const startTurn = (verb: string) =>
     setActivity({ verb, startedAt: Date.now() });
 
+  const executionIdRef = useRef<string | undefined>(undefined);
+  const stopStageRef = useRef<0 | 1 | 2>(0);
+
   const finishTurn = () => {
     setActivity(null);
     stopStageRef.current = 0;  // reset three-stage stop for the next turn
+    executionIdRef.current = undefined;
   };
 
 
@@ -220,6 +224,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     setSearchResults, setContextSearchQuery, setSessionLiveByConv,
     setChannelActivityByConv,
     agentSetRef, sessionAliasesPrintRef, sessionAliasesRef,
+    executionIdRef,
   });
 
 
@@ -230,10 +235,8 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   const [exitPending, setExitPending] = useState(false);
   const exitTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastCtrlCRef = useRef<number>(0);
-  // Three-stage stop while a turn is streaming (Claude-Code style):
-  // 0 = idle, 1 = hinted ("press again to stop"), 2 = graceful sent
-  // (next press forces). Reset when the turn ends.
-  const stopStageRef = useRef<0 | 1 | 2>(0);
+  // Cancel while a turn is streaming: 0 idle, 1 hinted, 2 cancel sent.
+  // Further presses repeat the same cancel operation.
 
   useEffect(() => () => {
     if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
@@ -241,40 +244,34 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
 
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
-      // While a turn is streaming, Ctrl-C means STOP the turn (three-stage,
-      // Claude-Code style), not exit the app:
-      //   1st  → hint "Press Ctrl-C again to stop" (avoid mistouch)
-      //   2nd  → graceful stop (finish current unit, save, conclusion)
-      //   3rd  → force stop (instant SIGKILL — the model is wedged)
+      // While a turn is streaming, Ctrl-C cancels the current execution.
+      // First press is a mistouch hint; later presses send the same
+      // cancel operation (no force mode).
       if (streaming && conversationId) {
         const stage = stopStageRef.current;
         if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
         if (stage === 0) {
           stopStageRef.current = 1;
-          setExitPending(true);  // BottomBar shows the hint
+          setExitPending(true);
           exitTimerRef.current = setTimeout(() => {
             exitTimerRef.current = null;
             stopStageRef.current = 0;
             setExitPending(false);
           }, 1500);
-        } else if (stage === 1) {
+        } else {
           stopStageRef.current = 2;
-          client.send({ action: 'stop', session_id: conversationId });
-          pushSystem('Stopping gracefully — finishing the current step. '
-            + 'Press Ctrl-C again to force-stop.');
-          // Keep exitPending so the hint stays; reset stage after a window.
+          const executionId = executionIdRef.current || streaming.executionId;
+          if (executionId) {
+            client.send({ action: 'execution.cancel', execution_id: executionId });
+          } else {
+            client.send({ action: 'stop', session_id: conversationId });
+          }
+          pushSystem('Cancel execution');
           exitTimerRef.current = setTimeout(() => {
             exitTimerRef.current = null;
             stopStageRef.current = 0;
             setExitPending(false);
           }, 5000);
-        } else {
-          stopStageRef.current = 0;
-          setExitPending(false);
-          client.send({ action: 'stop', session_id: conversationId, mode: 'force' });
-          setStreaming(null);
-          finishTurn();
-          pushSystem('Force-stopped.');
         }
         return;
       }
@@ -495,10 +492,13 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
 
   const onCancel = () => {
     if (!conversationId) return;
-    client.send({ action: 'stop', session_id: conversationId });
-    setStreaming(null);
-    finishTurn();
-    pushSystem('Stopped.');
+    const executionId = executionIdRef.current || streaming?.executionId;
+    if (executionId) {
+      client.send({ action: 'execution.cancel', execution_id: executionId });
+    } else {
+      client.send({ action: 'stop', session_id: conversationId });
+    }
+    pushSystem('Cancel execution');
   };
 
   const elapsed = activity ? (Date.now() - activity.startedAt) / 1000 : undefined;

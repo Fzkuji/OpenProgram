@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import uuid
 from pathlib import Path
 
@@ -127,6 +128,62 @@ def test_session_loaded_returns_additional_working_dirs(
     assert loaded
     settings = loaded[0]["data"]["settings"]
     assert settings["additional_working_dirs"] == [str(extra)]
+
+
+def test_session_loaded_replays_running_execution_id(env, monkeypatch):
+    db, _, sid = env
+    db.create_session(sid, "main")
+    from openprogram.context.nodes import Call, ROLE_CODE
+    from openprogram.store import SessionNodeWriter
+    writer = SessionNodeWriter(db, sid)
+    writer.append(Call(
+        id="hidden-control",
+        role=ROLE_CODE,
+        name="hidden_probe",
+        metadata={
+            "status": "running",
+            "expose": "hidden",
+            "execution_control": True,
+        },
+    ))
+    writer.append(Call(
+        id="hidden-child",
+        role=ROLE_CODE,
+        name="nested_hidden_work",
+        input={"secret": "never-show"},
+        caller="hidden-control",
+        metadata={"status": "running"},
+    ))
+    from openprogram.webui import server as _s
+    execution_id = "exec-hidden-direct"
+    with _s._sessions_lock:
+        _s._sessions[sid] = {"id": sid}
+    with _s._running_tasks_lock:
+        _s._running_tasks[sid] = {
+            "msg_id": "m1",
+            "func_name": "hidden_probe",
+            "execution_id": execution_id,
+            "started_at": time.time(),
+            "last_event_at": time.time(),
+            "stream_events": [],
+        }
+    monkeypatch.setattr(_s, "_get_provider_info", lambda sid=None: {})
+    monkeypatch.setattr(_s, "_is_run_active", lambda sid: True)
+
+    ws = FakeWS()
+    try:
+        asyncio.run(ws_session.handle_load_session(ws, {"session_id": sid}))
+    finally:
+        with _s._sessions_lock:
+            _s._sessions.pop(sid, None)
+        with _s._running_tasks_lock:
+            _s._running_tasks.pop(sid, None)
+
+    replay = next(frame for frame in ws.sent if frame["type"] == "running_task")
+    assert replay["data"]["execution_id"] == execution_id
+    loaded = next(frame for frame in ws.sent if frame["type"] == "session_loaded")
+    assert "never-show" not in str(loaded["data"]["messages"])
+    assert "never-show" not in str(loaded["data"]["graph"])
 
 
 def test_session_loaded_keeps_workflow_llm_output_inside_runtime_card(

@@ -126,7 +126,8 @@ export function AssistantBubble({ msg, verdict }: {
   const streaming =
     msg.status === "streaming" ||
     msg.status === "pending" ||
-    msg.status === "running";
+    msg.status === "running" ||
+    msg.status === "cancelling";
   const tools = msg.tools ?? [];
   // Files the turn handed back via ``send_file`` ride the reply text as
   // the same ``[attachment: … @ /abs]`` marker an inbound attachment

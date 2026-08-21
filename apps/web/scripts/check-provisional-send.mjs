@@ -617,6 +617,15 @@ assert.equal(
 // readComposerSource concatenates them in source order so the
 // assertions below read it as one text, unchanged.
 const composer = readComposerSource(import.meta.url);
+assert.match(composer, /stopSession\(targetSessionId, send\)/);
+assert.match(
+  composer,
+  /cancelling: true/,
+  "optimistic cancel must keep the running task until the server record lands",
+);
+assert.match(composer, /action: "execution.cancel", execution_id: executionId/);
+assert.match(composer, /text\("Cancel execution", "取消运行"\)/);
+assert.match(composer, /text\("Cancelling…", "正在取消"\)/);
 const wsSendBody = composer.slice(
   composer.indexOf("function wsSend("),
   composer.indexOf("const noop"),
@@ -636,7 +645,7 @@ assert.match(
 );
 assert.match(composer, /pendingProjectsByChat\[pendingProjectKey\]/);
 assert.match(composer, /action:\s*"set_session_project"/);
-assert.match(composer, /takePendingProject\(pendingProjectKey\)/);
+assert.match(composer, /takePendingProject\(confirmedProjectKey\)/);
 assert.match(composer, /const shouldActivate = sessionAckIsActive\(sid\);/);
 assert.match(composer, /useCenterTabs\.getState\(\)\.markSessionReady\(sid\);/);
 assert.match(
@@ -661,15 +670,10 @@ assert.match(
 
 const stopBody = composer.slice(
   composer.indexOf("function stop()"),
-  composer.indexOf("// Pick a slash command"),
+  composer.indexOf("return { submit, stop }"),
 );
 assert.match(stopBody, /const targetSessionId = resolveFnFormSessionId\(/);
-assert.match(
-  stopBody,
-  /setRunningTaskFor\(targetSessionId, null, "never"\)/,
-  "optimistic stop must wait for authoritative clear before queue drain",
-);
-assert.match(stopBody, /action: "stop", session_id: targetSessionId/);
+assert.match(stopBody, /stopSession\(targetSessionId, send\)/);
 
 const attachmentHook = readFileSync(
   new URL(

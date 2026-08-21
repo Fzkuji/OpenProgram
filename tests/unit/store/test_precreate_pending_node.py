@@ -35,7 +35,7 @@ def _head(store) -> str | None:
 
 # ---- 1. parent pre-creates + head moves before dispatch returns --------
 
-def test_parent_precreates_node_and_moves_head(monkeypatch, tmp_path):
+def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_path):
     from openprogram.webui.routes import chat as routes_chat
 
     store = _store(tmp_path)
@@ -73,6 +73,10 @@ def test_parent_precreates_node_and_moves_head(monkeypatch, tmp_path):
 
     def _stop_dispatch(**kw):
         captured["anchor"] = kw.get("anchor_msg_id")
+        captured["execution_id"] = kw.get("execution_id")
+        captured["record_exists"] = store.message_exists(
+            "s1", kw.get("execution_id") or "",
+        )
         captured["provider"] = kw.get("provider")
         captured["model"] = kw.get("model")
         return {"runtime_msg_id": None, "ok": True}
@@ -109,8 +113,104 @@ def test_parent_precreates_node_and_moves_head(monkeypatch, tmp_path):
     # The child received the pre-created id as a ``|node:<id>`` anchor
     # suffix so its wrapper reuses it instead of appending a second node.
     assert captured["anchor"] == f"|node:{node.id}"
+    assert captured["execution_id"] == node.id
+    assert captured["record_exists"] is True
     assert captured["provider"] == "minimax-cn-coding-plan"
     assert captured["model"] == "MiniMax-M3"
+
+    from openprogram.agentic_programming import function as function_module
+
+    hidden = SimpleNamespace(
+        expose="hidden",
+        tool_name="hidden_probe",
+        render_range=None,
+        _fn=lambda: None,
+    )
+    monkeypatch.setitem(function_module._registry, "hidden_probe", hidden)
+
+    class _HiddenTool:
+        name = "hidden_probe"
+        _is_agentic = True
+
+    monkeypatch.setattr(
+        "openprogram.programs.agent_tools",
+        lambda names=None: [_HiddenTool()],
+    )
+    captured.clear()
+
+    res = routes_chat.run_agentic_function_call(
+        "hidden_probe", {"secret": "do-not-persist"}, "s1",
+    )
+
+    hidden_id = captured["execution_id"]
+    assert res["execution_id"] == hidden_id
+    assert hidden_id
+    assert captured["record_exists"] is True
+    hidden_node = next(n for n in store.get_nodes("s1") if n.id == hidden_id)
+    assert hidden_node.input in (None, {})
+    assert "do-not-persist" not in str(hidden_node)
+    assert "do-not-persist" not in (store.get_session("s1") or {}).get("title", "")
+    assert "do-not-persist" not in str(store.get_messages("s1"))
+    assert hidden_node.metadata["expose"] == "hidden"
+    from openprogram.context.nodes import Call, ROLE_CODE
+    SessionNodeWriter(store, "s1").append(Call(
+        id="hidden-child",
+        role=ROLE_CODE,
+        name="nested_hidden_work",
+        input={"secret": "nested-do-not-persist"},
+        caller=hidden_id,
+        metadata={"status": "running"},
+    ))
+    from openprogram.webui.graph_builder import build_session_graph
+    from openprogram.webui._exec_dag import build_exec_dag_by_id
+    graph = build_session_graph("s1")
+    assert all(row["id"] not in {hidden_id, "hidden-child"} for row in graph)
+    assert "nested-do-not-persist" not in str(graph)
+    assert build_exec_dag_by_id("s1", hidden_id) is None
+    from openprogram.agent.run_control import cancel_execution
+    assert cancel_execution(hidden_id)["status"] == "cancelled"
+
+    monkeypatch.setattr(
+        "openprogram.programs.agent_tools", lambda names=None: [_Tool()])
+
+    original_precreate = function_module.create_pending_call_node
+    attempts = 0
+
+    def _fail_precreate_once(**kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("pre-create failed")
+        return original_precreate(**kwargs)
+
+    monkeypatch.setattr(
+        "openprogram.agentic_programming.function.create_pending_call_node",
+        _fail_precreate_once,
+    )
+    captured.clear()
+
+    res = routes_chat.run_agentic_function_call(
+        "word_count", {"text": "again"}, "s1",
+    )
+    assert "error" not in res
+    assert captured["execution_id"]
+    assert captured["anchor"] == f"|node:{captured['execution_id']}"
+    assert captured["record_exists"] is True
+
+    def _always_fail_precreate(**kwargs):
+        raise RuntimeError("persistent pre-create failure")
+
+    monkeypatch.setattr(
+        "openprogram.agentic_programming.function.create_pending_call_node",
+        _always_fail_precreate,
+    )
+    captured.clear()
+
+    res = routes_chat.run_agentic_function_call(
+        "word_count", {"text": "never starts"}, "s1",
+    )
+    assert res["code"] == "execution_record_failed"
+    assert captured == {}
 
 
 def test_missing_session_model_refuses_before_dispatch(monkeypatch):

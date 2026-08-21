@@ -94,6 +94,7 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
         "providers", "web", "resume", "init", "doctor", "browser",
         "worker", "update", "memory", "mcp", "trash", "backup",
         "recordings", "stop", "status", "restart", "upgrade", "help",
+        "execution", "jobs",
     }
     bypass_flags = {
         "--print", "-p", "--help", "-h", "--version", "--print-prompt",
@@ -668,6 +669,14 @@ def main():
         else:
             _need_subcommand(args._cmd_parser)
         return
+
+    if args.command == "execution":
+        from openprogram.cli.commands.execution import _cmd_execution_cancel
+
+        verb = getattr(args, "execution_verb", None)
+        if verb == "cancel":
+            sys.exit(_cmd_execution_cancel(args.execution_id))
+        _need_subcommand(args._cmd_parser)
 
     if args.command == "jobs":
         from openprogram.cli.commands.jobs import _cmd_jobs_get, _cmd_jobs_list

@@ -467,8 +467,11 @@ export function SubAgentStep({ card }: { card: ChatMsg }) {
     || text("Sub-agent", "子代理");
   const status = attach.status;
   const running = status === "running" || status === "pending" || status === "queued";
+  const cancelling = status === "cancelling";
   const isError = status === "errored";
-  const statusNote = running
+  const statusNote = cancelling
+    ? text("cancelling…", "正在取消")
+    : running
     ? text("running…", "运行中…")
     : status === "cancelled"
       ? text("cancelled", "已取消")
@@ -489,7 +492,10 @@ export function SubAgentStep({ card }: { card: ChatMsg }) {
   }
   function cancel(e: React.MouseEvent) {
     e.stopPropagation();
-    if (attach.job_id) wsSend({ action: "cancel_job", job_id: attach.job_id });
+    const executionId = attach.job_id || card.id;
+    if (executionId) {
+      wsSend({ action: "execution.cancel", execution_id: executionId });
+    }
   }
   const preview = card.content || "";
   const detail: DetailNode = {
@@ -512,9 +518,18 @@ export function SubAgentStep({ card }: { card: ChatMsg }) {
       actions={
         <>
           <MessageTimestamp timestamp={card.timestamp} />
-          {running && attach.job_id ? (
-            <button type="button" className="tl-btn" onClick={cancel}>
-              {text("Cancel", "取消")}
+          {(running || cancelling) && (attach.job_id || card.id) ? (
+            <button
+              type="button"
+              className="tl-btn"
+              onClick={cancel}
+              disabled={cancelling}
+              title={text("Cancel execution", "取消运行")}
+              aria-label={text("Cancel execution", "取消运行")}
+            >
+              {cancelling
+                ? text("Cancelling…", "正在取消")
+                : text("Cancel execution", "取消运行")}
             </button>
           ) : null}
           {targetHead ? (

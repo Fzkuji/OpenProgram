@@ -22,6 +22,16 @@ from openprogram.agent.dispatcher.types import EventCallback, _noop
 _log = logging.getLogger(__name__)
 
 
+def _execution_id_from_anchor(anchor_msg_id: str | None) -> str | None:
+    if not isinstance(anchor_msg_id, str):
+        return None
+    marker = "|node:"
+    if marker not in anchor_msg_id:
+        return None
+    node_id = anchor_msg_id.rsplit(marker, 1)[-1].strip()
+    return node_id or None
+
+
 def dispatch_forced_tool_call(
     session_id: str,
     anchor_msg_id: str,
@@ -35,6 +45,7 @@ def dispatch_forced_tool_call(
     model: Optional[str] = None,
     response_format=None,
     on_event: Optional[EventCallback] = None,
+    execution_id: Optional[str] = None,
 ) -> dict:
     """Run a single @agentic_function without invoking the LLM.
 
@@ -93,6 +104,9 @@ def dispatch_forced_tool_call(
     )
     _cid_token = _set_cid(session_id)
     try:
+        resolved_execution_id = (
+            execution_id or _execution_id_from_anchor(anchor_msg_id)
+        )
         out = run_agentic_in_subprocess(
             tool_name=tool_name,
             kwargs=dict(tool_input or {}),
@@ -100,6 +114,7 @@ def dispatch_forced_tool_call(
             anchor_msg_id=anchor_msg_id,
             work_dir=work_dir,
             on_event=on_event,
+            execution_id=resolved_execution_id,
             provider=provider,
             model=model,
             response_format=response_format,
@@ -144,6 +159,40 @@ def dispatch_forced_tool_call(
                 _log.warning("failed to advance head for session %s",
                              session_id, exc_info=True)
 
+    _terminal_status = "interrupted"
+    if resolved_execution_id:
+        from openprogram.agent.run_control import mark_execution_terminal
+        if out.get("killed"):
+            _cancel_intent = False
+            try:
+                from openprogram.agent.session_db import default_db as _ddb
+                _record = next(
+                    (
+                        node for node in _ddb().get_nodes(session_id)
+                        if node.id == resolved_execution_id
+                    ),
+                    None,
+                )
+                _meta = (_record.metadata or {}) if _record is not None else {}
+                _cancel_intent = bool(
+                    _meta.get("cancellation_requested_at")
+                    or _meta.get("status") in {"cancelling", "cancelled"}
+                )
+            except Exception:
+                _log.debug(
+                    "failed to read cancellation intent for %s",
+                    resolved_execution_id,
+                    exc_info=True,
+                )
+            _terminal_status = (
+                "cancelled" if _cancel_intent else "interrupted"
+            )
+        elif out.get("error"):
+            _terminal_status = "error"
+        else:
+            _terminal_status = "completed"
+        mark_execution_terminal(resolved_execution_id, _terminal_status)
+
     if out.get("killed"):
         # If the subprocess was SIGKILLed before it could finalize the
         # runtime-block, patch the placeholder so the UI doesn't show
@@ -159,9 +208,12 @@ def dispatch_forced_tool_call(
                     _shim.update(
                         _m["id"],
                         metadata={
-                            "status": "cancelled",
+                            "status": _terminal_status,
                             "last_update_at": time.time(),
-                            "_cancelled_reason": "user_stop",
+                            **(
+                                {"_cancelled_reason": "user_stop"}
+                                if _terminal_status == "cancelled" else {}
+                            ),
                         },
                     )
         except Exception:

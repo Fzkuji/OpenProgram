@@ -364,18 +364,21 @@ def run_agentic_function_call(
     # session head). Mirror the @agentic_function wrapper's resolution so
     # the pre-created node is byte-identical to what the child would write.
     _forced_node_id = None
-    try:
-        from openprogram.agentic_programming.function import (
-            create_pending_call_node as _mk_node,
-            _registry as _fn_registry,
-        )
-        from openprogram.store import SessionNodeWriter as _GS2
-        _inst = _fn_registry.get(name) or next(
-            (v for v in _fn_registry.values()
-             if getattr(v, "tool_name", None) == name), None,
-        )
-        _expose = getattr(_inst, "expose", "io") if _inst else "io"
-        if _expose != "hidden":
+    _pending_nid = uuid.uuid4().hex[:12]
+    _precreate_error = None
+    for _attempt in range(2):
+        try:
+            from openprogram.agentic_programming.function import (
+                create_pending_call_node as _mk_node,
+                _registry as _fn_registry,
+            )
+            from openprogram.store import SessionNodeWriter as _GS2
+            _inst = _fn_registry.get(name) or next(
+                (v for v in _fn_registry.values()
+                 if getattr(v, "tool_name", None) == name), None,
+            )
+            _expose = getattr(_inst, "expose", "io") if _inst else "io"
+            _hidden = _expose == "hidden"
             _caller = ""
             _forced_pred = None
             if isinstance(anchor_msg_id, str) and anchor_msg_id.startswith("pred:"):
@@ -383,30 +386,46 @@ def run_agentic_function_call(
             elif anchor_msg_id:
                 _caller = anchor_msg_id
             _shim = _GS2(default_db(), session_id)
-            _pending_nid = uuid.uuid4().hex[:12]
             _node = _mk_node(
                 pending_id=_pending_nid,
                 function_name=name,
-                arguments=kwargs,
-                expose=_expose,
-                render_range=getattr(_inst, "render_range", None) if _inst else None,
-                docstring=(getattr(getattr(_inst, "_fn", None), "__doc__", "") or "").strip()
-                    if _inst else "",
+                arguments={} if _hidden else kwargs,
+                expose="io" if _hidden else _expose,
+                render_range=(
+                    None if _hidden
+                    else getattr(_inst, "render_range", None) if _inst else None
+                ),
+                docstring=(
+                    "" if _hidden
+                    else (getattr(getattr(_inst, "_fn", None), "__doc__", "") or "").strip()
+                    if _inst else ""
+                ),
                 caller=_caller,
                 forced_predecessor=_forced_pred,
                 store=_shim,
             )
             if _node is not None:
+                if _hidden:
+                    _node.input = None
+                    _node.metadata.update({
+                        "expose": "hidden",
+                        "execution_control": True,
+                    })
                 _shim.append(_node)
                 _forced_node_id = _pending_nid
                 # Thread the pre-created id to the child so its wrapper
                 # reuses it instead of appending a duplicate top-level node.
                 anchor_msg_id = f"{anchor_msg_id}|node:{_pending_nid}"
-    except Exception:
-        # Pre-create is a latency optimisation, never a correctness
-        # requirement — on any failure fall back to the child creating the
-        # node itself (the original ~1s-late-but-correct behaviour).
-        _forced_node_id = None
+            _precreate_error = None
+            break
+        except Exception as exc:
+            _precreate_error = exc
+    if _precreate_error is not None:
+        return {
+            "error": "failed to persist the execution record",
+            "code": "execution_record_failed",
+            "status_code": 500,
+        }
 
     from openprogram.agent.session_db import default_db as _rc_db2
     agent_id = (_rc_db2().get_session(session_id) or {}).get("agent_id") or _s._default_agent_id()
@@ -423,7 +442,7 @@ def run_agentic_function_call(
     # here, so stage-2 is free to rename it — fn-form is not pinned.
     _fn_title = ""
     try:
-        _arg_bits = ", ".join(
+        _arg_bits = "" if _hidden else ", ".join(
             f"{k}={v!r}" if not isinstance(v, str) or len(v) <= 40
             else f"{k}={v[:37]!r}…"
             for k, v in (kwargs or {}).items()
@@ -454,11 +473,15 @@ def run_agentic_function_call(
                     provider=provider,
                     model=model,
                     response_format=response_format,
+                    execution_id=_forced_node_id,
                     on_event=lambda env: _s._broadcast_envelope(env)
                         if hasattr(_s, "_broadcast_envelope")
                         else _s._broadcast(__import__("json").dumps(env, default=str)),
                 )
             except Exception as e:  # noqa: BLE001
+                if _forced_node_id:
+                    from openprogram.agent.run_control import mark_execution_terminal
+                    mark_execution_terminal(_forced_node_id, "error")
                 _s._broadcast_chat_response(session_id, msg_id, {
                     "type": "error",
                     "content": f"function call failed: {type(e).__name__}: {e}",
@@ -503,6 +526,7 @@ def run_agentic_function_call(
                 "started_at": time.time(), "last_event_at": time.time(),
                 "display_params": "", "loaded_func_ref": None,
                 "stream_events": [],
+                "execution_id": _forced_node_id,
             })
         _s._emit_running_task_event(session_id)
     except Exception:
@@ -521,4 +545,8 @@ def run_agentic_function_call(
     except Exception:
         pass
 
-    return {"session_id": session_id, "msg_id": msg_id}
+    return {
+        "session_id": session_id,
+        "msg_id": msg_id,
+        "execution_id": _forced_node_id,
+    }
