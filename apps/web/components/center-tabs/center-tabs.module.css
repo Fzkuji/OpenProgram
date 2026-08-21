@@ -1251,6 +1251,10 @@
   box-shadow: var(--shadow);
   overflow: hidden;
 }
+.webPipDragging {
+  will-change: transform;
+  transition: none;
+}
 .webPipChrome {
   height: 32px;
   box-sizing: border-box;

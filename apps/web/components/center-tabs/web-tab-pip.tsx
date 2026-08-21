@@ -82,6 +82,8 @@ export function WebTabPip() {
   const rootRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<PipDrag | null>(null);
+  const pendingRectRef = useRef<WebTabPipRect | null>(null);
+  const rafRef = useRef(0);
   const throttleRef = useRef(0);
   const lastPublishRef = useRef(0);
   const reportRef = useRef<(immediate?: boolean) => void>(() => {});
@@ -91,6 +93,10 @@ export function WebTabPip() {
   useEffect(() => {
     if (tabId && !visible) hide();
   }, [tabId, visible, hide, activeId, groups, tabs]);
+
+  useEffect(() => () => {
+    if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
+  }, []);
 
   useEffect(() => {
     const el = rootRef.current;
@@ -138,6 +144,7 @@ export function WebTabPip() {
       setWebTabReady(tabId, true);
     };
     const report = (immediate = false) => {
+      if (dragRef.current) return;
       if (immediate) {
         window.clearTimeout(throttleRef.current);
         throttleRef.current = 0;
@@ -154,6 +161,7 @@ export function WebTabPip() {
       if (throttleRef.current) return;
       throttleRef.current = window.setTimeout(() => {
         throttleRef.current = 0;
+        if (dragRef.current) return;
         publish();
       }, wait) as unknown as number;
     };
@@ -202,6 +210,36 @@ export function WebTabPip() {
   const liveRect = (el: HTMLElement) =>
     rect ?? measuredRect(el);
 
+  const previewRect = (
+    el: HTMLElement,
+    drag: PipDrag,
+    next: WebTabPipRect,
+  ) => {
+    if (drag.kind === "move") {
+      el.style.transform = `translate(${next.x - drag.origin.x}px, ${next.y - drag.origin.y}px)`;
+      return;
+    }
+    el.style.left = `${next.x}px`;
+    el.style.top = `${next.y}px`;
+    el.style.width = `${next.width}px`;
+    el.style.height = `${next.height}px`;
+    el.style.right = "auto";
+    el.style.bottom = "auto";
+  };
+
+  const commitRect = (el: HTMLElement, next: WebTabPipRect) => {
+    el.style.transform = "";
+    el.style.willChange = "";
+    el.style.left = `${next.x}px`;
+    el.style.top = `${next.y}px`;
+    el.style.width = `${next.width}px`;
+    el.style.height = `${next.height}px`;
+    el.style.right = "auto";
+    el.style.bottom = "auto";
+    el.classList.remove(styles.webPipDragging);
+    setRect(next);
+  };
+
   const onDragPointerDown = (
     kind: "move" | "resize",
     event: React.PointerEvent<HTMLElement>,
@@ -218,6 +256,13 @@ export function WebTabPip() {
       startY: event.clientY,
       origin: liveRect(el),
     };
+    pendingRectRef.current = dragRef.current.origin;
+    el.classList.add(styles.webPipDragging);
+    el.style.willChange = kind === "move" ? "transform" : "left, top, width, height";
+    if (bridge && tabId) {
+      removeVisibleWebTabBounds(bridge, tabId);
+      setWebTabReady(tabId, false);
+    }
   };
 
   const onDragPointerMove = (event: React.PointerEvent<HTMLElement>) => {
@@ -226,15 +271,36 @@ export function WebTabPip() {
     if (!drag || drag.pointerId !== event.pointerId || !el) return;
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
-    const next = drag.kind === "move"
-      ? { ...drag.origin, x: drag.origin.x + dx, y: drag.origin.y + dy }
-      : { ...drag.origin, width: drag.origin.width + dx, height: drag.origin.height + dy };
-    setRect(clampPipRect(next, containerBox(el)));
+    const next = clampPipRect(
+      drag.kind === "move"
+        ? { ...drag.origin, x: drag.origin.x + dx, y: drag.origin.y + dy }
+        : { ...drag.origin, width: drag.origin.width + dx, height: drag.origin.height + dy },
+      containerBox(el),
+    );
+    pendingRectRef.current = next;
+    if (rafRef.current) return;
+    rafRef.current = window.requestAnimationFrame(() => {
+      rafRef.current = 0;
+      const live = pendingRectRef.current;
+      const current = dragRef.current;
+      const node = rootRef.current;
+      if (!live || !current || !node) return;
+      previewRect(node, current, live);
+    });
   };
 
   const onDragPointerUp = (event: React.PointerEvent<HTMLElement>) => {
-    if (!dragRef.current || dragRef.current.pointerId !== event.pointerId) return;
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (rafRef.current) {
+      window.cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    }
+    const el = rootRef.current;
+    const next = pendingRectRef.current;
     dragRef.current = null;
+    pendingRectRef.current = null;
+    if (el && next) commitRect(el, next);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }

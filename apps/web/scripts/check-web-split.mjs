@@ -2403,11 +2403,16 @@ assert.match(pipSource, /onPointerDown=\{\(event\) => onDragPointerDown\("move"/
 assert.match(pipSource, /onPointerDown=\{\(event\) => onDragPointerDown\("resize"/);
 assert.match(pipSource, /const BOUNDS_THROTTLE_MS = 100;/);
 assert.match(pipSource, /reportRef\.current\(true\)/);
+assert.match(pipSource, /if \(dragRef\.current\) return;/);
+assert.match(pipSource, /translate\(\$\{next\.x - drag\.origin\.x\}px/);
+assert.match(pipSource, /requestAnimationFrame/);
+assert.match(pipSource, /removeVisibleWebTabBounds\(bridge, tabId\)/);
 const pipCss = await readFile(
   new URL("../components/center-tabs/center-tabs.module.css", import.meta.url),
   "utf8",
 );
 assert.match(pipCss, /\.webPipResize/);
+assert.match(pipCss, /\.webPipDragging/);
 const previewChipSource = await readFile(
   new URL("../components/chat/composer/environment-row/chips/web-preview-chip.tsx", import.meta.url),
   "utf8",
