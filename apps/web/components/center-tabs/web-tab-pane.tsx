@@ -332,7 +332,6 @@ function DesktopWebTabPane({
   return (
     <div className={styles.webPane} onKeyDownCapture={handleRendererShortcut}>
       <div className={styles.webToolbar}>
-        <CollapseToPipButton tabId={tabId} />
         <button
           type="button"
           className={styles.webToolbarBtn}
@@ -385,6 +384,7 @@ function DesktopWebTabPane({
         >
           <ExternalLink size={14} />
         </button>
+        <CollapseToPipButton tabId={tabId} />
         <BrowserMenu
           ownerId={menuOwnerId}
           actions={{
@@ -480,7 +480,6 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
   return (
     <div className={styles.webPane}>
       <div className={styles.webToolbar}>
-        <CollapseToPipButton tabId={tabId} />
         <button
           type="button"
           className={styles.webToolbarBtn}
@@ -511,6 +510,7 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
         >
           <ExternalLink size={14} />
         </button>
+        <CollapseToPipButton tabId={tabId} />
         <BrowserMenu
           ownerId={menuOwnerId}
           actions={{

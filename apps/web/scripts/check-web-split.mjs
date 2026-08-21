@@ -2067,6 +2067,11 @@ assert.equal(
 );
 assert.match(webTabPaneSource, /text\("Collapse to floating window",\s*"收起到悬浮窗"\)/);
 assert.match(webTabPaneSource, /collapseToPip: \(\) => \{ collapseWebTabToPip\(tabId\); \}/);
+assert.match(
+  webTabPaneSource,
+  /Open in browser[\s\S]*?<CollapseToPipButton tabId=\{tabId\} \/>\s*<BrowserMenu/,
+  "collapse-to-PiP belongs on the trailing toolbar cluster",
+);
 
 assert.match(desktopBridgeSource, /function visibleWebTab\(\)/);
 assert.match(
