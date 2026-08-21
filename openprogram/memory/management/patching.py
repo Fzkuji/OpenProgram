@@ -400,9 +400,9 @@ def _parse_memory_changes(
                     raise TransactionError(
                         "INVALID_ARGUMENT", f"{source_prefix}.source is required"
                     )
-                if not isinstance(label, str):
+                if not isinstance(label, str) or not label.strip():
                     raise TransactionError(
-                        "INVALID_ARGUMENT", f"{source_prefix}.label must be a string"
+                        "INVALID_ARGUMENT", f"{source_prefix}.label is required"
                     )
                 ref = ref.strip()
                 refs_list.append(ref)

@@ -587,6 +587,64 @@ def test_direct_writer_preserves_agent_source_labels(tmp_path):
     ]
 
 
+def test_direct_writer_cannot_replace_an_invalid_target_with_its_label(tmp_path):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.markdown import TopicFormatError
+    from openprogram.memory.runtime.state import SourceRecord
+
+    root = tmp_path / "memory"
+    record = SourceRecord(
+        "openprogram", "thread-real", "m1", 1, "user", "real source"
+    )
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.archive_source_records([record])
+        baseline = workspace.baseline()
+        (workspace.stage_dir / "topics").mkdir(exist_ok=True)
+        (workspace.stage_dir / "topics/forged.md").write_text(
+            "Forged source target.[^e1]\n\n"
+            "[^e1]: Time: `2026-08-20`; Sources: "
+            f"[{record.source_id}](openprogram/thread-missing/m9)\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(TopicFormatError, match="invalid source target"):
+            workspace.commit_edits(*baseline)
+
+    assert not (root / "topics/forged.md").exists()
+
+
+def test_structured_source_label_must_not_be_empty(tmp_path):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management.transaction import TransactionError
+    from openprogram.memory.runtime.state import SourceRecord
+
+    root = tmp_path / "memory"
+    record = SourceRecord(
+        "openprogram", "thread-1", "m1", 1, "user", "source text"
+    )
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.archive_source_records([record])
+        revision = workspace.revision()
+        with pytest.raises(TransactionError, match="label is required"):
+            workspace.update(
+                base_revision=revision,
+                memory_changes=[{
+                    "op": "create_record",
+                    "content": "A record with an empty display label.",
+                    "time": "2026-08-20",
+                    "sources": [{"source": record.source_id, "label": "   "}],
+                    "destination": {
+                        "topic_path": "topics/empty-label.md",
+                        "headings": [],
+                        "position": "end",
+                    },
+                }],
+                git_commit="off",
+            )
+        assert workspace.revision() == revision
+
+    assert not (root / "topics/empty-label.md").exists()
+
+
 def test_invalid_record_change_rolls_back_every_record(tmp_path):
     from openprogram.memory.management import MemoryWorkspace
     from openprogram.memory.management.transaction import TransactionError

@@ -111,7 +111,7 @@ def _append_topic(
         additions.append(
             f"{fact}[^{evidence_id}] ^{block_id}\n\n"
             f"[^{evidence_id}]: Time: `2026-08-10`; Sources: "
-            f"[{source_id}]({_source_link(root, source_id)})"
+            f"[{source_id}]({source_id})"
         )
     target.write_text(
         existing.rstrip() + "\n\n" + "\n\n".join(additions) + "\n",

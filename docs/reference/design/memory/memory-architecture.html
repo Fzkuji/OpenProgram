@@ -1378,7 +1378,7 @@
     </div>
     <div class="oc">
       <h4>引用关键词</h4>
-      <div class="d"><code>label</code>是本条引用的局部显示文本，由同一次 Memory 写入调用生成，不是 Source 的永久标题。Memory agent 的 prompt 与工具 schema 要求它使用简短、与上下文相关的关键词，并避免 Markdown、URL、Source ID、说话人或时间模板。Runtime 不判断关键词质量，不截断或改写模型返回的 label，也不为标签增加模型调用。</div>
+      <div class="d"><code>label</code>是本条引用的局部显示文本，由同一次 Memory 写入调用生成，不是 Source 的永久标题。Memory agent 的 prompt 与工具 schema 要求它使用简短、与上下文相关的关键词，并避免 Markdown、URL、Source ID、说话人或时间模板。除必须是非空字符串这一 Markdown 结构要求外，Runtime 不判断关键词质量，不截断或改写模型返回的 label，也不为标签增加模型调用。</div>
     </div>
   </div>
 

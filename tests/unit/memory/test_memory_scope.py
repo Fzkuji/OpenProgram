@@ -818,7 +818,7 @@ def _topic_citing(root, source_ids, *, path="topics/note.md", block="b1"):
     target.parent.mkdir(parents=True, exist_ok=True)
     citations = "".join(f"[^e{n}]" for n, _ in enumerate(source_ids, start=1))
     definitions = "\n".join(
-        f"[^e{n}]: Time: `2026-08-10`; Sources: [{ref}](../sources/x#a)"
+        f"[^e{n}]: Time: `2026-08-10`; Sources: [{ref}]({ref})"
         for n, ref in enumerate(source_ids, start=1)
     )
     target.write_text(
@@ -971,10 +971,10 @@ def test_core_renders_only_blocks_whose_sources_are_trusted(tmp_path):
         "# Core\n\n"
         "a vouched always-on fact[^e1] ^keepme\n\n"
         "[^e1]: Time: `2026-08-10`; Sources: "
-        f"[{trusted.source_id}](../sources/x#a)\n\n"
+        f"[{trusted.source_id}]({trusted.source_id})\n\n"
         "an unvouched always-on fact[^e2] ^dropme\n\n"
         "[^e2]: Time: `2026-08-10`; Sources: "
-        f"[{pending.source_id}](../sources/x#a)\n",
+        f"[{pending.source_id}]({pending.source_id})\n",
         encoding="utf-8",
     )
 

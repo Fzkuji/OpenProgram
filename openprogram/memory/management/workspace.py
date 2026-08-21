@@ -194,7 +194,15 @@ class MemoryWorkspace(
 
     def baseline(self) -> tuple[list[Any], set[str], dict[str, str], str]:
         """Snapshot the staged tree so an edit can be committed against it."""
-        units = parse_topic_tree(self.stage_dir / "topics")
+        # A restricted writer cannot see the source archive. Its untouched
+        # Topic baseline is the committed tree, whose targets remain
+        # verifiable without treating display labels as source identity.
+        topic_root = (
+            self.memory_dir / "topics"
+            if self._allowed_new_source_refs is not None
+            else self.stage_dir / "topics"
+        )
+        units = parse_topic_tree(topic_root)
         block_ids = {unit.memory_id for unit in units}
         return (
             units,
@@ -261,7 +269,10 @@ class MemoryWorkspace(
                     self._synchronize()
             finally:
                 self._transaction_source_refs = None
-            after_units = parse_topic_tree(self.stage_dir / "topics")
+            # A restricted writer stage hides sources again after install.
+            # Parse the committed tree, where relative source targets can be
+            # verified against the archive instead of inferred from labels.
+            after_units = parse_topic_tree(self.memory_dir / "topics")
             after_topics = self._topic_fingerprints(self.stage_dir / "topics")
             self.last_changed_topics = [
                 "topics/" + path

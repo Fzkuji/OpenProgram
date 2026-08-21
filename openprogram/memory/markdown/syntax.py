@@ -39,9 +39,6 @@ BLOCK_SUFFIX_RUN = re.compile(rf"(?:\s+\^{BLOCK_ID})+\s*$")
 ANY_BLOCK_SUFFIX = re.compile(r"\s+\^(?P<id>\S+)\s*$")
 BLOCK_TARGET_ID = rf"(?:{MEMORY_ID}|{BLOCK_ID})"
 BLOCK_LINK = re.compile(rf"\[[^]]+\]\([^)#]*#\^(?P<id>{BLOCK_TARGET_ID})\)")
-SOURCE_HANDLE = re.compile(
-    r"^(D\d+:\d+|[^/\s,]+/[^/\s,]+/[^/\s,]+)(?:\s*(?:,|·)\s*|\s+|$)"
-)
 def definition_match(line: str) -> re.Match[str] | None:
     """Match canonical definitions plus legacy definitions for migration."""
     return DEFINITION.match(line) or LEGACY_DEFINITION.match(line)
@@ -112,7 +109,7 @@ def _source_from_target(
 
 
 def source_reference(
-    label: str,
+    _label: str,
     target: str,
     *,
     topic_path: Path | None = None,
@@ -127,11 +124,10 @@ def source_reference(
     )
     if resolved is not None:
         return resolved
-    handle = SOURCE_HANDLE.match(label.strip())
-    if handle:
-        return handle.group(1)
     anchor = re.search(r"#d(\d+)-(\d+)$", target, re.IGNORECASE)
-    return f"D{anchor.group(1)}:{anchor.group(2)}" if anchor else label
+    if anchor:
+        return f"D{anchor.group(1)}:{anchor.group(2)}"
+    raise TopicFormatError(f"invalid source target: {target}")
 
 
 def definitions(
@@ -161,6 +157,10 @@ def definitions(
         if not links:
             raise TopicFormatError(
                 f"memory source links required: {citation_id}"
+            )
+        if any(not label.strip() for label, _target in links):
+            raise TopicFormatError(
+                f"memory source labels required: {citation_id}"
             )
         values[citation_id] = (
             None if when == "undated" else when,
