@@ -196,6 +196,38 @@ def test_hidden_code_call_skipped_even_if_in_reads():
     assert render_dag_messages(g, [c.id]) == []
 
 
+def test_failed_program_predecessor_is_labeled_do_not_continue():
+    g = Graph()
+    c = g.add(Call(
+        role=ROLE_CODE,
+        name="auto_workflow",
+        input={"task": "submit weekly report"},
+        output=None,
+        metadata={"status": "error"},
+    ))
+    msgs = render_dag_messages(g, [c.id])
+    assert _roles(msgs) == ["user", "assistant"]
+    blob = "\n".join(_texts(msgs))
+    assert "ended in error" in blob
+    assert "unless the user explicitly asks" in blob
+    assert "auto_workflow" in blob
+
+
+def test_cancelled_program_predecessor_is_labeled_do_not_continue():
+    g = Graph()
+    c = g.add(Call(
+        role=ROLE_CODE,
+        name="auto_workflow",
+        input={"task": "submit weekly report"},
+        output={"partial": True},
+        metadata={"status": "cancelled"},
+    ))
+    msgs = render_dag_messages(g, [c.id])
+    user_text = _texts(msgs)[0]
+    assert "was cancelled" in user_text
+    assert "unless the user explicitly asks" in user_text
+
+
 def test_code_call_error_result_shown_with_prefix():
     g = Graph()
     c = g.add(Call(

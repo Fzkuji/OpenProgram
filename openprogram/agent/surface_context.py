@@ -306,7 +306,10 @@ def capture_active() -> dict:
     tab_id = _text(result.get("tab_id"), 512) if isinstance(result, dict) else ""
     target_id = _text(result.get("target_id"), 512) if isinstance(result, dict) else ""
     if not result.get("ok") or not window_id or not tab_id or not target_id:
-        raise RuntimeError("no active OpenProgram Page is available")
+        raise RuntimeError(
+            "no active OpenProgram Page is available — no pages are open; "
+            "use navigate to open a URL first"
+        )
     binding_id = webtab.register_binding(
         owner_ws,
         window_id,

@@ -1231,10 +1231,36 @@ def _tool_schema_line(t: AgentTool) -> str:
 
 _SCHEMA_PREAMBLE = (
     "Their full schemas follow. You can call these tools immediately, in "
-    "THIS turn, by constructing the call from the schema below — the tools "
-    "array is fixed for the remainder of this turn (it is the root of the "
-    "prompt cache), and they join it automatically on the next turn."
+    "THIS turn, by constructing the call from the schema below."
 )
+
+
+def _already_callable_hint(query: str) -> str:
+    """Point the model at a tool it already has instead of 'no match'."""
+    q = query.strip()
+    if not q:
+        return ""
+    loaded = _loaded_deferred.get() or set()
+    t = get(q)
+    if t is None:
+        qlow = q.lower()
+        hits = [name for name in sorted(loaded) if name.lower() == qlow]
+    elif t.name in loaded or not getattr(t, "_defer", False):
+        hits = [t.name]
+    else:
+        hits = []
+    if not hits:
+        return ""
+    if len(hits) == 1:
+        return (
+            f"Tool '{hits[0]}' is already loaded in this turn's tool list — "
+            "call it directly instead of searching again."
+        )
+    quoted = ", ".join(f"'{n}'" for n in hits)
+    return (
+        f"Tools {quoted} are already loaded in this turn's tool list — "
+        "call them directly instead of searching again."
+    )
 
 
 def _tool_search_by_name(payload: str) -> str:
@@ -1251,8 +1277,12 @@ def _tool_search_by_name(payload: str) -> str:
         if t is None:
             missing.append(name)
             continue
-        if not getattr(t, "_defer", False):
-            lines.append(f"- {name} (not deferred — already in tools array)")
+        already = _loaded_deferred.get() or set()
+        if name in already or not getattr(t, "_defer", False):
+            lines.append(
+                f"Tool '{name}' is already loaded in this turn's tool list — "
+                "call it directly instead of searching again."
+            )
             continue
         loaded.append(t)
 
@@ -1289,6 +1319,10 @@ def _tool_search_by_keyword(query: str, *, max_results: int) -> str:
     weighted = [t.lower() for t in raw_terms if not t.startswith("+")]
     if not raw_terms:
         return "Error: empty query."
+
+    hint = _already_callable_hint(query)
+    if hint:
+        return hint
 
     # Candidate pool: deferred tools whose schema isn't already in this
     # session's provider tools array.
@@ -1366,9 +1400,7 @@ tool_search = AgentTool(
         "Find deferred tools within the current Agent's allowed scope and "
         "load their parameter schemas. Their names and JSON Schemas are not "
         "sent at turn start. This returns a small matching set with full "
-        "schemas, so you can call the tools "
-        "immediately in the same turn, and they join the tools array on "
-        "the next turn.\n"
+        "schemas, so you can call the tools immediately in the same turn.\n"
         "\n"
         "Query forms:\n"
         "  `select:name1,name2`  — load these exact tools by name.\n"

@@ -216,6 +216,9 @@ def render_dag_messages(graph: Graph, read_ids: list[str],
             doc = md.get("doc")
             if doc:
                 call_text = f"{doc}\n\n{call_text}"
+            ended = _ended_task_note(md)
+            if ended:
+                call_text = f"{ended}\n{call_text}"
             messages.append(UserMessage(
                 role="user",
                 content=[TextContent(type="text", text=call_text)],
@@ -223,6 +226,8 @@ def render_dag_messages(graph: Graph, read_ids: list[str],
             ))
             if node.output is not None:
                 messages.append(_assistant(_result_text_for(node), ts_ms))
+            elif ended:
+                messages.append(_assistant(ended, ts_ms))
 
     return messages
 
@@ -245,6 +250,22 @@ def _text(value: Any) -> str:
     if isinstance(value, str):
         return value
     return str(value)
+
+
+def _ended_task_note(md: dict) -> str:
+    """Label a failed/cancelled program Call so the model does not resume it."""
+    status = (md.get("status") or "").strip()
+    if status == "error":
+        return (
+            "[This program task ended in error. Do not continue or retry it "
+            "unless the user explicitly asks.]"
+        )
+    if status == "cancelled":
+        return (
+            "[This program task was cancelled. Do not continue or retry it "
+            "unless the user explicitly asks.]"
+        )
+    return ""
 
 
 def _format_call_signature(node: Call) -> str:

@@ -214,6 +214,31 @@ def test_tool_search_returns_the_schema_for_same_turn_use():
     assert '"properties"' in text
     # And it says the tool is callable right now.
     assert "THIS turn" in text
+    assert "next turn" not in text
+    install_loaded_deferred()
+
+
+def test_tool_search_already_loaded_keyword_points_to_direct_call():
+    install_loaded_deferred()
+    apply_default_deferral()
+    from openprogram.programs._runtime import _tool_search_impl
+
+    first = _tool_search_impl("select:playwright_browser")
+    assert "Loaded 1 deferred tool" in first
+    again = _tool_search_impl("playwright_browser")
+    assert "already loaded in this turn's tool list" in again
+    assert "call it directly" in again
+    assert "No deferred tools matched" not in again
+    install_loaded_deferred()
+
+
+def test_tool_search_true_miss_still_says_no_match():
+    install_loaded_deferred()
+    apply_default_deferral()
+    from openprogram.programs._runtime import _tool_search_impl
+
+    text = _tool_search_impl("zzzz_no_such_deferred_tool_qqq")
+    assert text.startswith("No deferred tools matched query")
     install_loaded_deferred()
 
 

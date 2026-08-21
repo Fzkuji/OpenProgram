@@ -371,6 +371,7 @@ async def _run_loop(
 
         has_more_tool_calls = True
         steering_after_tools: list[AgentMessage] | None = None
+        repeat_failures: dict[str, int] = {}
 
         while has_more_tool_calls or len(pending_messages) > 0:
             inner_iterations += 1
@@ -574,6 +575,7 @@ async def _run_loop(
                     cancel_event,
                     ev_stream,
                     config.get_steering_messages,
+                    repeat_failures,
                 )
                 tool_results.extend(execution["tool_results"])
                 steering_after_tools = execution.get("steering_messages")
@@ -1089,12 +1091,25 @@ def _checkpoint_changed_files(
             pass
 
 
+class _SkipExecute(Exception):
+    """Internal: repeat-fail trip already built a tool result."""
+
+
+def _tool_repeat_key(name: str, args: Any) -> str:
+    try:
+        blob = json.dumps(args, ensure_ascii=False, sort_keys=True, default=str)
+    except TypeError:
+        blob = repr(args)
+    return f"{name}\0{blob}"
+
+
 async def _execute_tool_calls(
     tools: list[AgentTool] | None,
     assistant_message: AssistantMessage,
     cancel_event: asyncio.Event | None,
     ev_stream: EventStream[AgentEvent, list[AgentMessage]],
     get_steering_messages: Any | None = None,
+    repeat_failures: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """
     Execute tool calls from an assistant message.
@@ -1103,12 +1118,16 @@ async def _execute_tool_calls(
     tool_calls = [c for c in assistant_message.content if isinstance(c, ToolCall)]
     results: list[ToolResultMessage] = []
     steering_messages: list[AgentMessage] | None = None
+    if repeat_failures is None:
+        repeat_failures = {}
 
     from openprogram.context.cache_aware_microcompact import increment_tool_calls
     increment_tool_calls(len(tool_calls))
 
     for index, tool_call in enumerate(tool_calls):
         tool = next((t for t in (tools or []) if t.name == tool_call.name), None)
+        fail_key = _tool_repeat_key(tool_call.name, tool_call.arguments)
+        streak = repeat_failures.get(fail_key, 0)
 
         ev_stream.push(AgentEventToolStart(
             tool_call_id=tool_call.id,
@@ -1129,7 +1148,24 @@ async def _execute_tool_calls(
         gate_denial = decide_tool_gate(before_ev)
 
         result: AgentToolResult
+        skipped_repeat = streak >= 2
+        if skipped_repeat:
+            n = streak + 1
+            repeat_failures[fail_key] = n
+            result = AgentToolResult(
+                content=[TextContent(
+                    type="text",
+                    text=(
+                        f"你已连续 {n} 次重复同一失败调用，"
+                        "请改变方法或向用户说明阻碍"
+                    ),
+                )],
+                details={},
+                is_error=True,
+            )
         try:
+            if skipped_repeat:
+                raise _SkipExecute()
             if gate_denial is not None:
                 raise ToolGateDenied(f"Tool call blocked: {gate_denial}")
             if not tool:
@@ -1172,6 +1208,8 @@ async def _execute_tool_calls(
                 _checkpoint_changed_files(tool_call.name, pre_snapshot)
                 raise
             _checkpoint_changed_files(tool_call.name, pre_snapshot)
+        except _SkipExecute:
+            pass
         except Exception as e:
             result = AgentToolResult(
                 content=[TextContent(type="text", text=str(e))],
@@ -1199,6 +1237,12 @@ async def _execute_tool_calls(
                 is_error=True,
             ))
             raise
+
+        if not skipped_repeat:
+            if result.is_error:
+                repeat_failures[fail_key] = streak + 1
+            else:
+                repeat_failures.pop(fail_key, None)
 
         ev_stream.push(AgentEventToolEnd(
             tool_call_id=tool_call.id,

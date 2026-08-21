@@ -423,6 +423,18 @@ def test_direct_mcp_page_capture_requires_one_desktop_connection(monkeypatch):
         raise AssertionError("multiple desktop connections must be rejected")
 
 
+def test_capture_active_without_page_tells_model_to_navigate(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    monkeypatch.setattr(server, "_ws_connections", [owner])
+    monkeypatch.setattr(webtab, "request_on_ws", lambda *a, **k: {"ok": False})
+    with pytest.raises(RuntimeError, match="use navigate to open a URL first"):
+        surface_context.capture_active()
+
+
 def test_open_page_opens_background_tab_on_registered_desktop(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.webui import server
