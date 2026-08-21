@@ -92,12 +92,18 @@
 .textarea {
   width: 100%;
   padding: 8px 10px;
-  background: var(--bg-secondary);
+  background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--ui-button-radius);
   color: var(--text-primary);
   font-size: 13px;
   box-sizing: border-box;
+}
+.input:focus,
+.textarea:focus,
+.select:focus {
+  outline: none;
+  border-color: var(--accent-blue);
 }
 .input {
   height: var(--ui-button-h);
@@ -114,7 +120,7 @@
   height: var(--ui-button-h);
   padding: 0 10px;
   box-sizing: border-box;
-  background: var(--bg-secondary);
+  background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--ui-button-radius);
   color: var(--text-primary);

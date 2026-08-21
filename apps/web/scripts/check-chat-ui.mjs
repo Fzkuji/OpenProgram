@@ -184,6 +184,7 @@ const inputTsx = source("components/ui/input.tsx");
 assert.match(inputTsx, /["']ui-text-input |ui-text-input /);
 assert.match(baseCss, /\.search-input-field:focus-visible\s*\{[^}]*outline:\s*none/s);
 assert.match(baseCss, /\.ui-text-input:focus-visible\s*\{[^}]*outline:\s*none/s);
+assert.match(baseCss, /input:focus-visible,\s*select:focus-visible,\s*textarea:focus-visible\s*\{[^}]*outline:\s*none/s);
 for (const themeCss of [darkTheme, beigeDarkTheme]) {
   assert.match(themeCss, /--focus-ring:\s*color-mix\(in srgb, var\(--text-bright\) 50%, transparent\);/);
 }

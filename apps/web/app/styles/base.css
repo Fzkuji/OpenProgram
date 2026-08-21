@@ -366,6 +366,14 @@ button:focus-visible:not([role="tab"]),
 .ui-text-input:focus-visible {
   outline: none;
 }
+/* Native fields already draw their own 1px border. After a <select>
+   menu closes the control stays focused, so the global 2px halo was
+   stacking a second frame around it. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+}
 /* Display serif for hero text (welcome title). System serif only —
    no font files shipped. */
 .display-serif {
