@@ -7,7 +7,7 @@ function logic(size) {
   const nodes = Array.from({ length: size }, (_, index) => ({
     id: `n${index}`,
     name: `n${index}`,
-    path: `workflows/n${index}`,
+    path: `workflow/n${index}`,
     program_kind: "workflow",
     depth: index,
   }));
@@ -33,7 +33,7 @@ test("diamond DAG keeps the second shared child as a reference", () => {
   const result = buildCallTreeRows({
     root: "a",
     nodes: ["a", "b", "c", "d"].map((id) => ({
-      id, name: id, path: `workflows/${id}`, program_kind: "workflow", depth: 0,
+      id, name: id, path: `workflow/${id}`, program_kind: "workflow", depth: 0,
     })),
     edges: [
       { source: "a", target: "b" }, { source: "a", target: "c" },
@@ -49,7 +49,7 @@ test("call tree rows retain ancestor continuation lines", () => {
   const result = buildCallTreeRows({
     root: "a",
     nodes: ["a", "b", "c", "d"].map((id) => ({
-      id, name: id, path: `workflows/${id}`, program_kind: "workflow", depth: 0,
+      id, name: id, path: `workflow/${id}`, program_kind: "workflow", depth: 0,
     })),
     edges: [
       { source: "a", target: "b" }, { source: "a", target: "c" },
@@ -69,7 +69,7 @@ test("graph layout renders each Program once in dependency layers", () => {
   const layout = buildGraphLayout({
     root: "a",
     nodes: ["a", "b", "c", "d"].map((id) => ({
-      id, name: id, path: `workflows/${id}`, program_kind: "workflow", depth: 0,
+      id, name: id, path: `workflow/${id}`, program_kind: "workflow", depth: 0,
     })),
     edges: [
       { source: "a", target: "b" }, { source: "a", target: "c" },

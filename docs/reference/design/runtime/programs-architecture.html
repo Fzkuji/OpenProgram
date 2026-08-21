@@ -1,109 +1,46 @@
 <!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OpenProgram Programs 四层代码结构</title>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenProgram Programs 目标代码结构</title>
 <style>
-  :root{color-scheme:dark;--bg:#111317;--surface:#181b21;--surface2:#20242c;--line:#323743;--text:#eceef2;--muted:#a6abb5;--blue:#70a7ff;--cyan:#5fd1df;--orange:#ef9d70;--green:#70d7a7;--mono:ui-monospace,"SFMono-Regular",Menlo,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
-  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 var(--sans)}a{color:#88b6ff}code,pre{font-family:var(--mono)}code{padding:1px 5px;border-radius:4px;background:#272b33;color:#e1e4ea;font-size:.9em}.page{width:min(1120px,calc(100% - 32px));margin:auto;padding:28px 0 72px}.nav{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:20px}.nav a{padding:5px 9px;border:1px solid var(--line);border-radius:7px;color:#b4bac5;text-decoration:none;font-size:12px}.nav a[aria-current="page"]{border-color:#3f7882;background:#162328;color:#8be0eb}header{padding:0 0 24px;border-bottom:1px solid var(--line)}.eyebrow{color:var(--cyan);font:11px var(--mono);letter-spacing:.08em;text-transform:uppercase}h1{margin:7px 0 10px;font-size:clamp(28px,4vw,42px);line-height:1.15}h2{margin:0 0 13px;font-size:23px}h3{margin:0 0 7px;font-size:16px}.lead{max-width:880px;margin:0;color:#c7cbd3;font-size:16px}.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.tag{padding:4px 8px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font:11px var(--mono)}section{padding:30px 0;border-bottom:1px solid var(--line)}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.card{padding:15px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}.card p{margin:5px 0 0;color:var(--muted)}.tree{overflow:auto;padding:18px 20px;border:1px solid var(--line);border-radius:10px;background:#0d0f12;color:#dce0e7;font-size:13px;line-height:1.65}.flow{display:grid;grid-template-columns:1fr 42px 1fr 42px 1fr;align-items:center;margin:16px 0}.node{padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);text-align:center}.node strong{display:block}.node span{display:block;margin-top:4px;color:var(--muted);font-size:12px}.arrow{text-align:center;color:#747c89}table{width:100%;margin:14px 0;border-collapse:collapse;font-size:13px}th,td{padding:10px 11px;border:1px solid var(--line);text-align:left;vertical-align:top}th{background:var(--surface2)}td{color:#c3c7cf}.callout{margin:14px 0;padding:12px 14px;border-left:3px solid var(--cyan);background:#162328;color:#cadce0}.status{display:grid;grid-template-columns:150px 1fr;gap:0;border:1px solid var(--line);border-radius:9px;overflow:hidden}.status div{padding:10px 12px;border-bottom:1px solid var(--line)}.status div:nth-last-child(-n+2){border-bottom:0}.status div:nth-child(odd){background:var(--surface2);font-weight:600}.status div:nth-child(even){color:#c3c7cf}@media(max-width:760px){.grid{grid-template-columns:1fr}.flow{grid-template-columns:1fr}.arrow{transform:rotate(90deg)}.status{grid-template-columns:1fr}.status div:nth-last-child(2){border-bottom:1px solid var(--line)}}
-</style>
-</head>
-<body><main class="page">
-  <nav class="nav" aria-label="Self-Programming Workflow 文档集">
-    <a href="./self-programmed-agentic-workflow.html">总览</a>
-    <a href="./programs-architecture.html" aria-current="page">Programs 代码结构</a>
-    <a href="./self-programming-workflow-model.html">编程模型与组合</a>
-    <a href="./self-programming-workflow-authoring.html">发现、创建与自动执行</a>
-    <a href="./self-programming-workflow-ui.html">DAG 与 Programs</a>
-    <a href="./agent-tool-configuration-ui.html">Agent 工具配置</a>
-  </nav>
-  <header>
-    <div class="eyebrow">Architecture contract</div>
-    <h1>Programs 四层代码结构</h1>
-    <p class="lead">本页定义 <code>openprogram/programs/</code> 中 Functions、Workflows 与 Applications 的代码所有权、依赖方向、发现方式和迁移验收。读者是实现注册器、Workflow 生成器、Programs 页面和打包流程的开发者。</p>
-    <div class="meta"><span class="tag">状态：已实现并验证</span><span class="tag">范围：源码、发现、导入、打包</span><span class="tag">不包含：运行历史版本系统</span></div>
-  </header>
+:root{color-scheme:dark;--bg:#111317;--p:#191c22;--p2:#22262e;--line:#353b46;--text:#eef0f4;--muted:#a8aeb9;--cyan:#62d2df;--blue:#75aaff;--green:#72d3a2;--red:#ef827b;--mono:ui-monospace,"SFMono-Regular",Menlo,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 var(--sans)}a{color:#91bdff}code,pre{font-family:var(--mono)}code{padding:1px 5px;border-radius:4px;background:#292e37;font-size:.9em}.page{width:min(1160px,calc(100% - 32px));margin:auto;padding:28px 0 72px}.nav{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:20px}.nav a{padding:5px 9px;border:1px solid var(--line);border-radius:7px;color:#bbc0ca;text-decoration:none;font-size:12px}.nav a[aria-current=page]{border-color:#447b84;background:#16262a;color:#8de4ed}header{padding-bottom:25px;border-bottom:1px solid var(--line)}.eyebrow{color:var(--cyan);font:11px var(--mono);letter-spacing:.09em;text-transform:uppercase}h1{margin:7px 0 10px;font-size:clamp(28px,4vw,43px);line-height:1.14}h2{margin:0 0 14px;font-size:23px}h3{margin:0 0 7px;font-size:16px}.lead{max-width:920px;margin:0;color:#cbd0d8;font-size:16px}.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.tag{padding:4px 8px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font:11px var(--mono)}section{padding:30px 0;border-bottom:1px solid var(--line)}.tree{overflow:auto;margin:0;padding:20px 22px;border:1px solid var(--line);border-radius:11px;background:#0d0f12;color:#dfe3ea;font-size:13px;line-height:1.68}.callout{margin-top:14px;padding:12px 14px;border-left:3px solid var(--cyan);background:#162429;color:#cedde0}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}.card{padding:16px;border:1px solid var(--line);border-radius:10px;background:var(--p)}.card p{margin:5px 0 0;color:var(--muted)}.path{display:block;margin-bottom:9px;color:var(--cyan);font:12px var(--mono)}.flow{display:grid;grid-template-columns:1fr 44px 1fr 44px 1fr;align-items:center;margin:17px 0}.node{min-height:104px;padding:15px;border:1px solid #41678d;border-radius:10px;background:var(--p);text-align:center}.node:first-child{border-color:#397983;background:#152429}.node strong,.node span{display:block}.node span{margin-top:5px;color:var(--muted);font-size:12px}.arrow{text-align:center;color:#7d8591;font-size:20px}table{width:100%;margin:14px 0;border-collapse:collapse;font-size:13px}th,td{padding:10px 11px;border:1px solid var(--line);text-align:left;vertical-align:top}th{background:var(--p2)}td{color:#c8ccd4}.rules{display:grid;gap:9px}.rule{display:grid;grid-template-columns:170px 1fr;border:1px solid var(--line);border-radius:9px;overflow:hidden}.rule strong,.rule div{padding:10px 12px}.rule strong{background:var(--p2)}.rule div{color:#c9cdd5}.good{color:var(--green)}.bad{color:var(--red)}.note{color:var(--muted);font-size:13px}@media(max-width:820px){.grid,.flow{grid-template-columns:1fr}.flow{gap:8px}.arrow{transform:rotate(90deg)}.rule{grid-template-columns:1fr}.rule strong{border-bottom:1px solid var(--line)}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style></head><body><main class="page">
+<nav class="nav" aria-label="Workflow 文档集"><a href="./self-programmed-agentic-workflow.html">总览</a><a href="./programs-architecture.html" aria-current="page">Programs 代码结构</a><a href="./self-programming-workflow-model.html">编程模型</a><a href="./self-programming-workflow-authoring.html">创建与执行</a><a href="./self-programming-workflow-ui.html">DAG 与 Programs</a></nav>
+<header><div class="eyebrow">Current architecture contract</div><h1>Programs 代码结构</h1><p class="lead">确定性工具放在 <code>tools/</code>，所有需要模型推理或流程编排的完整能力放在 <code>workflow/</code>，完整产品放在 <code>applications/</code>。基础调用原语只保留 <code>llm()</code> 与 <code>agent()</code>。</p><div class="meta"><span class="tag">状态：当前设计</span><span class="tag">范围：源码、注册、Programs UI、打包</span></div></header>
 
-  <section id="tree"><h2>1. 唯一目录合同</h2>
-<pre class="tree">openprogram/programs/
-├── functions/
-│   ├── vanilla/       # 确定性的普通 @function
-│   └── agentic/       # 恰好一次 llm() 的 @agentic_function，可按职责分目录
-│       └── workflow/  # 复杂内置 Workflow 的源码分类，不是Program
-├── workflows/         # Agent 生成并可复用的 Python 小项目
-├── applications/      # 可调用上述全部能力的完整应用，可包含 UI/assets
-├── _registry.py       # 统一注册与发现
-└── _programs.py       # Application 元数据与加载</pre>
-    <div class="callout">所有实体代码都位于仓库内的 <code>openprogram/programs/</code>。目录是源码分类，注册函数才是运行实体。分类目录、入口文件、helper文件和内部子目录本身都不是Program。不使用 <code>~/.openprogram/workflows/</code> 作为源码目录，也不保留旧 <code>openprogram.programs.agentic_functions</code> 兼容包。</div>
-  </section>
+<section><h2>1. 唯一目录合同</h2><pre class="tree">openprogram/
+├── agentic_programming/
+│   ├── llm.py                  # 单次模型调用原语
+│   └── agent.py                # 带工具调用的 Agent 循环原语
+└── programs/
+    ├── tools/                  # 确定性、可直接调用的工具
+    │   ├── files/  web/  code/  planning/  ...
+    ├── workflow/               # 所有模型推理、Agent 编排和复合能力
+    │   ├── auto_workflow.py    # 单文件完整 Workflow，不建同名空目录
+    │   ├── goal/               # 唯一 Goal Workflow 与会话 Goal 机制
+    │   │   ├── __init__.py     # 唯一公开入口
+    │   │   ├── workflow.py     # 可复用 goal()
+    │   │   ├── verification.py # 完成条件判定与结果解析
+    │   │   ├── state.py        # 会话 Goal 状态
+    │   │   ├── loop.py         # 继续、暂停、重试、停止
+    │   │   └── command.py      # /goal 命令适配
+    │   ├── browser/  document/  research/  ...
+    ├── applications/           # 带 UI、服务、资产或独立依赖的应用
+    ├── _registry.py            # 统一注册与发现
+    └── _programs.py            # Application 来源与安装元数据</pre><div class="callout">不再存在 <code>programs/functions/</code>、<code>programs/functions/agentic/</code>、<code>programs/workflows/</code> 或 <code>agentic_programming/goal.py</code>。同一能力只有一个权威实现和一个公开导入路径。</div></section>
 
-  <section id="roles"><h2>2. 四类实体的职责</h2>
-    <div class="grid">
-      <div class="card"><h3>Functions / vanilla</h3><p>确定性能力。使用现有 <code>@function</code> 注册，可被 Agentic Function、Workflow 和 Application 普通 import。</p></div>
-      <div class="card"><h3>Functions / agentic</h3><p>恰好调用一次 <code>llm()</code> 的可调用能力，不包含 Agent loop、Goal 或多阶段编排。使用现有 <code>@agentic_function</code>，不引入新的装饰器。</p></div>
-      <div class="card"><h3>Workflows</h3><p>Agent 写出的可维护多文件 Python 项目。入口仍是 <code>@agentic_function</code>；Workflow 之间通过静态 import 和普通函数调用复用。</p></div>
-      <div class="card"><h3>Applications</h3><p>面向完整使用场景的应用，可调用 Vanilla、Agentic 与 Workflow，并可包含服务、配置、UI 与资源文件。</p></div>
-    </div>
-  </section>
+<section><h2>2. 三类 Program</h2><div class="grid"><article class="card"><span class="path">programs/tools/</span><h3>Tools</h3><p>输入到输出由普通代码决定，不发起模型推理，不启动 Agent loop。使用 <code>@function</code> 注册，可被 Agent、Workflow 和 Application 复用。</p></article><article class="card"><span class="path">programs/workflow/</span><h3>Workflow</h3><p>凡是调用 <code>llm()</code>、<code>agent()</code>、其他 Workflow，或包含多阶段状态与完成判定的能力，都归入这里。单次模型调用能力也属于 Workflow，不再单列 Agentic Function 目录。</p></article><article class="card"><span class="path">programs/applications/</span><h3>Applications</h3><p>包含完整交互界面、服务、资产、独立依赖或独立发布边界。Application 调用公开 Tool 和 Workflow，不复制实现。</p></article></div></section>
 
-  <section id="dependency"><h2>3. 依赖方向</h2>
-    <div class="flow"><div class="node"><strong>Applications</strong><span>Functions + Workflows + UI</span></div><div class="arrow">←</div><div class="node"><strong>Workflows</strong><span>组合 Functions 或其他 Workflow</span></div><div class="arrow">←</div><div class="node"><strong>Functions</strong><span>Vanilla / Agentic 基础能力</span></div></div>
-    <table><thead><tr><th>调用方</th><th>允许调用</th><th>禁止</th></tr></thead><tbody>
-      <tr><td>Vanilla Function</td><td>标准库、批准的依赖、其他无环 Vanilla helper</td><td>依赖 Workflow 或 Application</td></tr>
-      <tr><td>Agentic Function</td><td>Vanilla Function、内部确定性 helper、恰好一次 <code>llm()</code></td><td><code>agent()</code>、<code>goal()</code>、模型工具循环、Workflow 或 Application</td></tr>
-      <tr><td>Workflow</td><td>Vanilla、Agentic、其他无环 Workflow</td><td>字符串 dispatcher、隐式全局 Workflow 注入</td></tr>
-      <tr><td>Application</td><td>上述全部公开入口</td><td>修改被调用实体的源码或运行快照</td></tr>
-    </tbody></table>
-  </section>
+<section><h2>3. 基础原语与 Workflow</h2><div class="flow" role="img" aria-label="Workflow、Agent、LLM 调用关系"><div class="node"><strong>Workflow</strong><span>决定流程、状态和验收</span></div><div class="arrow">→</div><div class="node"><strong>agent()</strong><span>模型多轮推理并调用 Tools</span></div><div class="arrow">→</div><div class="node"><strong>llm()</strong><span>单次模型请求与结构化输出</span></div></div><table><thead><tr><th>入口</th><th>含义</th><th>唯一位置</th></tr></thead><tbody><tr><td><code>llm()</code></td><td>单次模型调用，不包含工具循环。</td><td><code>agentic_programming/llm.py</code></td></tr><tr><td><code>agent()</code></td><td>模型工具调用循环。</td><td><code>agentic_programming/agent.py</code></td></tr><tr><td><code>goal()</code></td><td>反复执行 Agent 并验证完成条件，是完整 Workflow，不是第三个基础原语。</td><td><code>programs/workflow/goal/</code></td></tr></tbody></table></section>
 
-  <section id="runtime"><h2>4. Workflow 与 Goal / Agent / LLM</h2>
-    <div class="flow"><div class="node"><strong>Goal</strong><span>以 Agent loop 完成有判定条件的目标</span></div><div class="arrow">→</div><div class="node"><strong>Agent</strong><span>基于 LLM 的多轮工具循环</span></div><div class="arrow">→</div><div class="node"><strong>LLM</strong><span>单次模型调用</span></div></div>
-    <p>三者仍由 <code>openprogram/agentic_programming/</code> 提供，不移动到 Programs，也不形成产品导航或独立管理页。只有 Workflow 和 Application 可以直接使用 <code>agent()</code> 或 <code>goal()</code>；普通 Agentic Function 只使用一次 <code>llm()</code>。完整分类合同以<a href="./self-programming-workflow-model.html">编程模型与分类</a>为准。</p>
-  </section>
+<section><h2>4. Goal 只有一个实现</h2><div class="rules"><div class="rule"><strong>公开入口</strong><div><code>from openprogram.programs.workflow.goal import goal</code>。Auto Workflow、其他 Workflow 和 Application 均使用该入口。</div></div><div class="rule"><strong>会话能力</strong><div><code>/goal</code> 的状态、暂停、恢复、通知和继续执行位于同一个包内，作为 Goal Workflow 的会话适配。</div></div><div class="rule"><strong>内部模块</strong><div><code>verification.py</code>、<code>state.py</code>、<code>loop.py</code> 只做职责分解，不注册第二个名为 <code>goal</code> 的 Program。</div></div><div class="rule"><strong>禁止重复</strong><div class="bad">不得在 <code>agentic_programming</code>、<code>agent/</code> 或其他 Programs 目录再次实现 Goal。</div></div></div></section>
 
-  <section id="discovery"><h2>5. 发现与加载只有一套语义</h2>
-    <table><thead><tr><th>阶段</th><th>合同</th></tr></thead><tbody>
-      <tr><td>导入</td><td><code>openprogram.programs.functions.vanilla</code> 导入 <code>vanilla</code> 与 <code>agentic</code>，触发现有装饰器注册副作用。</td></tr>
-      <tr><td>Agentic 扫描</td><td>注册器导入 <code>openprogram.programs.functions.agentic</code> 下声明的模块；Web目录按实际源码路径生成分类节点，但可运行函数只能来自 <code>@agentic_function</code> Registry。</td></tr>
-      <tr><td>分类与身份</td><td>分类目录可以包含多个入口、helper文件和更深子目录；移动源码不改变注册函数名、Schema、exposure、调用方式或运行状态合同。</td></tr>
-      <tr><td>Workflow 路径</td><td>生成器以 <code>openprogram/programs/workflows/</code> 为唯一源码根，不依赖调用模块的父目录层数。</td></tr>
-      <tr><td>跨 Workflow 调用</td><td>静态 <code>from ... import ...</code> 加普通 Python 调用；不增加 <code>@workflow</code>、<code>call_workflow()</code> 或 <code>invoke_workflow()</code>。</td></tr>
-      <tr><td>Application</td><td>由现有 application catalog 发现；内部可按公开 Python 路径导入 Function 与 Workflow。</td></tr>
-    </tbody></table>
-  </section>
+<section><h2>5. 文件与目录的选择</h2><table><thead><tr><th>形态</th><th>使用条件</th><th>示例</th></tr></thead><tbody><tr><td>单个 <code>.py</code></td><td>一个公开入口和少量局部 helper，文件可以独立阅读。</td><td><code>workflow/auto_workflow.py</code></td></tr><tr><td>同名包</td><td>存在多个明确职责模块、资源文件或会话适配。</td><td><code>workflow/goal/</code>、<code>workflow/browser/</code></td></tr><tr><td>内部目录</td><td>只服务于相邻 Workflow 的共享实现，以 <code>_</code> 开头，不成为 Programs UI 节点。</td><td><code>workflow/_runtime/</code></td></tr></tbody></table><p class="note">不为形式统一而给每个 Workflow 创建同名文件夹。文件数量与职责边界决定是否拆包。</p></section>
 
-  <section id="failure"><h2>6. 失败、隔离与信任边界</h2>
-    <table><thead><tr><th>情况</th><th>行为</th></tr></thead><tbody>
-      <tr><td>旧路径 import</td><td>立即产生 <code>ImportError</code>，促使仓库内引用一次性迁移；不维护双路径。</td></tr>
-      <tr><td>缺失 Workflow 依赖</td><td>发布或执行前失败，报告具体静态 import；不在运行时猜测同名项目。</td></tr>
-      <tr><td>Workflow 环</td><td>在隔离 worker 启动前拒绝。</td></tr>
-      <tr><td>运行隔离</td><td>执行使用固定代码快照、同一 Runtime、权限、取消和 DAG caller；其他进程更新源码不改变当前 run。</td></tr>
-      <tr><td>Application UI</td><td>UI 与外部服务属于 Application 边界，不使 Functions 或 Workflows 获得额外权限。</td></tr>
-    </tbody></table>
-  </section>
+<section><h2>6. 允许的依赖方向</h2><table><thead><tr><th>调用方</th><th class="good">允许</th><th class="bad">禁止</th></tr></thead><tbody><tr><td>Tool</td><td>标准库、批准的依赖、确定性 helper。</td><td><code>llm()</code>、<code>agent()</code>、Workflow、Application。</td></tr><tr><td>Workflow</td><td>Tools、<code>llm()</code>、<code>agent()</code>、无环的其他 Workflow。</td><td>依赖 Application、复制其他 Workflow、字符串名称调度。</td></tr><tr><td>Application</td><td>公开 Tool、公开 Workflow、应用自己的 UI 与服务。</td><td>修改被调用 Program，或维护第二份实现。</td></tr></tbody></table></section>
 
-  <section id="acceptance"><h2>7. 迁移验收</h2>
-    <div class="status">
-      <div>源码结构</div><div>新四层目录存在；旧 <code>agentic_functions/</code> 不存在。</div>
-      <div>公开导入</div><div>仓库内代码与测试全部使用 <code>functions.vanilla</code> 或 <code>functions.agentic</code>。</div>
-      <div>注册发现</div><div>Vanilla 与 Agentic 工具数量、名称和 schema 在迁移前后保持一致。</div>
-      <div>分类边界</div><div>Programs只把目录显示为导航，只把注册函数显示为可运行项；helper文件和内部目录不成为Program。</div>
-      <div>Workflow</div><div>生成、发布、复用与项目根路径仍指向仓库内 <code>programs/workflows</code>。</div>
-      <div>打包</div><div>Wheel 与封装 App 包含新目录且不包含旧路径；App/Web/TUI 共用默认 18100 实例。</div>
-      <div>文档与技能</div><div>示例、CLI 帮助和 bundled skill 不再给出旧 import 路径。</div>
-    </div>
-  </section>
+<section><h2>7. 注册与 Programs UI</h2><div class="rules"><div class="rule"><strong>统一注册</strong><div><code>_registry.py</code> 从 <code>tools/</code> 和 <code>workflow/</code> 加载公开入口；Application 使用来源记录与安装合同。</div></div><div class="rule"><strong>UI 顶层</strong><div>只显示 <code>Tools</code>、<code>Workflow</code>、<code>Applications</code>，不再显示 Functions、Vanilla、Agentic Function 等历史层级。</div></div><div class="rule"><strong>实体识别</strong><div>注册入口是可运行实体；helper、<code>__init__.py</code>、内部目录和职责模块不单独成为 Program。</div></div><div class="rule"><strong>唯一路径</strong><div>迁移后只支持新 import。旧路径直接失败，不设置 alias，不同时扫描新旧目录。</div></div><div class="rule"><strong>稳定合同</strong><div>移动源码不改变公开名称、参数 Schema、权限、DAG 语义和会话状态格式。</div></div></div></section>
 
-  <section id="evidence"><h2>8. 实现与验证记录</h2>
-    <table><thead><tr><th>项目</th><th>实现证据</th><th>验证</th></tr></thead><tbody>
-      <tr><td>目录迁移</td><td>Vanilla 与 Agentic 源码分别迁移到 <code>functions/vanilla</code> 和 <code>functions/agentic</code>；旧目录删除且无 alias。</td><td>四层仓库合同 3 项通过；旧模块 <code>find_spec</code> 返回空。</td></tr>
-      <tr><td>注册与发现</td><td>Programs import、Agentic registry、Web discovery、CLI 与源码编辑路由统一使用新路径。</td><td>迁移前后注册工具名称逐项一致；Programs 定向测试 939 项通过。</td></tr>
-      <tr><td>Workflow 根</td><td><code>_workflow_projects_root()</code> 从 Programs package 根解析，不再依赖调用文件层数。</td><td>Workflow / 三层模型 / 控制流测试共 76 项通过。</td></tr>
-      <tr><td>跨仓库影响</td><td>三个 Applications 独立仓库不含旧 Programs import。</td><td>对 applications 全目录执行旧路径扫描，结果为空。</td></tr>
-      <tr><td>发布产物</td><td>Setuptools 自动发现新包；CJS package-data 路径迁移到 Agentic 新目录。</td><td>Wheel 同时包含四层入口，不包含 <code>programs/agentic_functions</code>。</td></tr>
-      <tr><td>回归与文档</td><td>仓库内 Python、测试、bundled skill、说明与设计链接同步迁移。</td><td>unit/component/contracts 5649 项初次通过；8 个失败修正或补齐环境后逐项通过；Ruff、链接检查与桌面/窄屏渲染通过。</td></tr>
-    </tbody></table>
-  </section>
-</main></body>
-</html>
+<section><h2>8. 一次性迁移验收</h2><table><thead><tr><th>迁移项</th><th>理想状态</th></tr></thead><tbody><tr><td><code>functions/vanilla → tools</code></td><td>全部确定性工具从新路径注册，旧目录不存在。</td></tr><tr><td><code>functions/agentic + workflows → workflow</code></td><td>模型能力和复合流程只从 singular <code>workflow/</code> 加载。</td></tr><tr><td>Goal 合并</td><td><code>agentic_programming</code> 只导出 <code>llm</code>、<code>agent</code>；Goal 只位于 <code>workflow/goal/</code>。</td></tr><tr><td>调用方</td><td>Python import、注册器、CLI、Server、Web Programs、文档和打包配置全部使用新路径。</td></tr><tr><td>旧结构</td><td>不存在旧目录、兼容模块、重复装饰器注册和双路径扫描。</td></tr><tr><td>功能</td><td>公开名称和 Schema 不变；Goal、Auto Workflow、Programs 浏览和运行入口均可使用。</td></tr></tbody></table></section>
+
+<section><h2>9. 不引入的设计</h2><div class="grid"><article class="card"><h3>不增加新装饰器</h3><p>不新增 <code>@workflow</code>；目录与元数据表达分类。</p></article><article class="card"><h3>不增加字符串调度</h3><p>Workflow 使用普通 Python import 和调用，不新增 <code>call_workflow(name)</code>。</p></article><article class="card"><h3>不保留两套结构</h3><p>不按版本并存新旧目录，不在运行时判断加载哪一套。</p></article></div><p class="note" style="margin-top:18px">源码、注册表、Programs explorer 与 <code>/goal</code> 均按本页目录合同加载。公开名称和 Schema 不因源码移动而改变。</p></section>
+</main></body></html>

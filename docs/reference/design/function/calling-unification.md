@@ -669,7 +669,7 @@ openprogram/agent/agent_loop.py
                                                        schemas appear on
                                                        the next call)
 
-openprogram/programs/functions/agentic/*/__init__.py           @agentic_function
+openprogram/programs/workflow/*/__init__.py           @agentic_function
                                                        modules (each its
                                                        own directory).
                                                        Includes harness

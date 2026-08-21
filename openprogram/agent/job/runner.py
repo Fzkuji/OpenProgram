@@ -747,7 +747,7 @@ class JobRunner:
                     raise RuntimeError(
                         f"borrowed job {job.id!r} lost its activity fence"
                     )
-                from openprogram.programs.functions.vanilla.agents.send_message.send_message.depth import (
+                from openprogram.programs.tools.agents.send_message.send_message.depth import (
                     set_chain_generations,
                     set_chain_messages,
                 )
@@ -1710,7 +1710,7 @@ class JobRunner:
                 # with the same generation count it was sent at.
                 _chain_tokens: list = []
                 try:
-                    from openprogram.programs.functions.vanilla.agents.send_message.send_message.depth import (
+                    from openprogram.programs.tools.agents.send_message.send_message.depth import (
                         set_chain_generations, set_chain_messages,
                     )
                     _chain_tokens = [
@@ -2515,7 +2515,7 @@ class JobRunner:
             # would restart at 0 (A↔B ping-pong could never exhaust it)
             # and jobs spawned here would record no parent, escaping the
             # cascade in cancel_job.
-            from openprogram.programs.functions.vanilla.agents.send_message.send_message.depth import (
+            from openprogram.programs.tools.agents.send_message.send_message.depth import (
                 set_chain_generations, set_chain_messages,
             )
             # The reply hop costs what the child already spent — an

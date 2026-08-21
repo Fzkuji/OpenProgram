@@ -41,8 +41,8 @@ def register(app):
         from openprogram.webui import server as _s
         programs_root = os.fspath(_programs_root())
         # Unified agentics layout: each function is its own package
-        # (programs/functions/agentic/<name>/__init__.py), or a flat
-        # programs/functions/agentic/<name>.py for legacy entries.
+        # (programs/workflow/<name>/__init__.py), or a flat
+        # programs/workflow/<name>.py for legacy entries.
         agentics_base = os.path.join(programs_root, "functions", "agentic")
         candidates = [
             (os.path.join(agentics_base, name, "__init__.py"), "agentic"),
@@ -159,7 +159,7 @@ def register(app):
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(body["source"])
-        mod_name = f"openprogram.programs.functions.agentic.{name}"
+        mod_name = f"openprogram.programs.workflow.{name}"
         if mod_name in sys.modules:
             del sys.modules[mod_name]
         return JSONResponse(content={"saved": True, "filepath": filepath})
@@ -193,7 +193,7 @@ def register(app):
     async def delete_function(name: str):
         """Delete a user function file."""
         programs_root = os.fspath(_programs_root())
-        # Agentic functions live as packages under programs/functions/agentic/<name>/__init__.py.
+        # Agentic functions live as packages under programs/workflow/<name>/__init__.py.
         agentics_dir = os.path.join(
             programs_root, "functions", "agentic", name
         )
@@ -212,7 +212,7 @@ def register(app):
         if name in builtin_names:
             return JSONResponse(content={"error": "cannot delete built-in function"}, status_code=403)
         os.remove(filepath)
-        mod_name = f"openprogram.programs.functions.agentic.{name}"
+        mod_name = f"openprogram.programs.workflow.{name}"
         if mod_name in sys.modules:
             del sys.modules[mod_name]
         return JSONResponse(content={"deleted": True})

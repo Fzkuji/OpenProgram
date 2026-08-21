@@ -90,13 +90,13 @@ export function FunctionsPage() {
   const sourceCategories = [
     {
       id: "__functions__",
-      name: text("Functions", "函数"),
+      name: text("Tools", "工具"),
       icon: <WrenchIcon size={16} />,
       count: catalogTools.length,
     },
     {
       id: "__agentic_functions__",
-      name: text("Agentic Functions", "Agentic 函数"),
+      name: text("Workflows", "工作流"),
       icon: <BotIcon size={16} />,
       count: functions.filter((program) => program.category !== "app").length,
     },
@@ -296,14 +296,14 @@ export function FunctionsPage() {
                 ) : null}
                 {visibleTools.length > 0 || !search ? (
                   <section id="program-source-functions" className={styles.sourceSection}>
-                    <div className={styles.sourceHeader}><h2>{text("Functions", "函数")}</h2><span>{visibleTools.length}</span></div>
-                    {visibleTools.length > 0 ? renderToolGroups() : <div className={styles.sourceEmpty}>{text("No matching functions", "没有匹配的函数")}</div>}
+                    <div className={styles.sourceHeader}><h2>{text("Tools", "工具")}</h2><span>{visibleTools.length}</span></div>
+                    {visibleTools.length > 0 ? renderToolGroups() : <div className={styles.sourceEmpty}>{text("No matching tools", "没有匹配的工具")}</div>}
                   </section>
                 ) : null}
                 {visibleAgenticFunctions.length > 0 || !search ? (
                   <section id="program-source-agentic" className={styles.sourceSection}>
-                    <div className={styles.sourceHeader}><h2>{text("Agentic Functions", "Agentic 函数")}</h2><span>{visibleAgenticFunctions.length}</span></div>
-                    {renderProgramCards(visibleAgenticFunctions) || <div className={styles.sourceEmpty}>{text("No agentic functions", "暂无 Agentic 函数")}</div>}
+                    <div className={styles.sourceHeader}><h2>{text("Workflows", "工作流")}</h2><span>{visibleAgenticFunctions.length}</span></div>
+                    {renderProgramCards(visibleAgenticFunctions) || <div className={styles.sourceEmpty}>{text("No workflows", "暂无工作流")}</div>}
                   </section>
                 ) : null}
                 {visibleApplications.length > 0 || !search ? (

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.programs.functions.vanilla.agents.send_message.send_message.send_message import (
+from openprogram.programs.tools.agents.send_message.send_message.send_message import (
     _send_message_impl,
     _parse_to,
 )
@@ -34,7 +34,7 @@ def test_resolve_parent_falls_back_to_head(tmp_path, monkeypatch):
     anchor falls back to the session head (fixes 'no active parent turn')."""
     from openprogram.store.session.session_store import SessionStore
     from openprogram.agent import session_db as sdb_mod
-    from openprogram.programs.functions.vanilla.agents.send_message.send_message.send_message import _resolve_parent
+    from openprogram.programs.tools.agents.send_message.send_message.send_message import _resolve_parent
 
     s = SessionStore(tmp_path / "g")
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
@@ -240,7 +240,7 @@ def test_existing_unknown_node_errors(parent_turn):
 # --- C6: robustness ---
 
 def test_message_budget_refuses(parent_turn):
-    from openprogram.programs.functions.vanilla.agents.send_message.send_message.depth import (
+    from openprogram.programs.tools.agents.send_message.send_message.depth import (
         set_chain_messages, _chain_messages, MAX_MESSAGES,
     )
     tok = set_chain_messages(MAX_MESSAGES)
@@ -260,7 +260,7 @@ def test_self_target_refused(parent_turn):
 
 
 def test_delivery_inherits_chain_messages(parent_turn):
-    from openprogram.programs.functions.vanilla.agents.send_message.send_message.depth import (
+    from openprogram.programs.tools.agents.send_message.send_message.depth import (
         set_chain_messages, _chain_messages,
     )
     tok = set_chain_messages(2)

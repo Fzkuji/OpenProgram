@@ -59,6 +59,10 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         _is_agentic = True
     monkeypatch.setattr(
         "openprogram.programs.agent_tools", lambda names=None: [_Tool()])
+    monkeypatch.setattr(
+        "openprogram.programs._runtime.get",
+        lambda name, *a, **k: _Tool() if name == _Tool.name else None,
+    )
 
     class _RM:
         def _enabled_model_keys(self):
@@ -136,6 +140,10 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         "openprogram.programs.agent_tools",
         lambda names=None: [_HiddenTool()],
     )
+    monkeypatch.setattr(
+        "openprogram.programs._runtime.get",
+        lambda name, *a, **k: _HiddenTool() if name == _HiddenTool.name else None,
+    )
     captured.clear()
 
     res = routes_chat.run_agentic_function_call(
@@ -172,6 +180,10 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
 
     monkeypatch.setattr(
         "openprogram.programs.agent_tools", lambda names=None: [_Tool()])
+    monkeypatch.setattr(
+        "openprogram.programs._runtime.get",
+        lambda name, *a, **k: _Tool() if name == _Tool.name else None,
+    )
 
     original_precreate = function_module.create_pending_call_node
     attempts = 0
@@ -232,6 +244,10 @@ def test_missing_session_model_refuses_before_dispatch(monkeypatch):
     monkeypatch.setattr(
         "openprogram.programs.agent_tools",
         lambda names=None: [Tool()],
+    )
+    monkeypatch.setattr(
+        "openprogram.programs._runtime.get",
+        lambda name, *a, **k: Tool() if name == Tool.name else None,
     )
 
     class RuntimeManagement:
@@ -380,6 +396,10 @@ def test_child_error_marks_precreated_running_node(monkeypatch, tmp_path):
         _is_agentic = True
     monkeypatch.setattr(
         "openprogram.programs.agent_tools", lambda names=None: [_Tool()])
+    monkeypatch.setattr(
+        "openprogram.programs._runtime.get",
+        lambda name, *a, **k: _Tool() if name == _Tool.name else None,
+    )
     # Child crashes before its wrapper could finalize → returns an error.
     monkeypatch.setattr(
         "openprogram.agent.process_runner.run_agentic_in_subprocess",

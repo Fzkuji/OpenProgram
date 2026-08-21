@@ -1115,7 +1115,7 @@ def test_inspect_rejects_embedding_with_speaker(tmp_path: Path) -> None:
 def test_memory_search_schema_and_function_forward_speaker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.programs.functions.vanilla.knowledge.memory import memory as tool
+    from openprogram.programs.tools.knowledge.memory import memory as tool
 
     seen: dict = {}
 

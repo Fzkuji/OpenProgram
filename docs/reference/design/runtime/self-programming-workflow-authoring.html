@@ -38,7 +38,7 @@
           <div class="card"><h3>用户手动路径</h3><span class="sig">User → auto_workflow(task)</span><p>一次请求完成搜索、一次可见选择、必要时创建、随后执行；每一步仍在DAG中独立可见。</p></div>
         </div>
         <div class="callout warn"><code>auto_workflow</code> 是便捷编排入口，不是候选 Workflow，也不是组件。搜索结果必须排除它，生成代码不得 import 它，Agent 工具集合不得暴露它。</div>
-        <div class="callout"><code>functions/agentic/workflow/</code> 只用于按代码类型归类。目录、辅助文件和内部子目录都不是 Program；Programs、Registry 和调用图只把实际注册的 <code>@agentic_function</code> 作为可运行实体。目录层级不得改变公开名称、调用方式或运行语义。</div>
+        <div class="callout"><code>workflow/</code> 只用于按代码类型归类。目录、辅助文件和内部子目录都不是 Program；Programs、Registry 和调用图只把实际注册的 <code>@agentic_function</code> 作为可运行实体。目录层级不得改变公开名称、调用方式或运行语义。</div>
       </section>
 
       <section id="current">
@@ -53,14 +53,14 @@
             <tr><td><code>auto_workflow</code> 出现在用户表单和 Programs 页（自动入口 · 仅用户手动），不出现在 Agent 工具清单。</td><td>用户需要完整入口，Agent 已有自己的任务路由，二者语义不同。</td><td><code>auto_workflow</code> 用户可见、Agent 不可见。</td></tr>
             <tr><td><code>@agentic_function(tool_visible=)</code> 传入 Layer-2 <code>register(..., expose)</code>；默认 <code>True</code>，现有函数仍全部曝光。</td><td>需要用装饰器表达“用户可见、Agent 工具不可见”。</td><td><code>auto_workflow</code> 以 <code>tool_visible=False</code> 注册。</td></tr>
             <tr><td>执行期 repair 已删除。<code>create_workflow</code> 内保留发布前 bounded author 重试（<code>PROJECT_AUTHOR_ATTEMPTS</code>）。</td><td>普通运行失败不得自动发布新 revision。</td><td>已发布修改只走显式 <code>revise_workflow</code>。</td></tr>
-            <tr><td>四个公开入口已迁入 <code>functions/agentic/workflow/</code>，旧源码目录已删除。</td><td>分类路径与运行身份必须持续保持独立。</td><td>Programs只把分类目录用于导航，函数节点和函数级调用图来自Registry与所选入口的可达AST。</td></tr>
+            <tr><td>四个公开入口已迁入 <code>workflow/</code>，旧源码目录已删除。</td><td>分类路径与运行身份必须持续保持独立。</td><td>Programs只把分类目录用于导航，函数节点和函数级调用图来自Registry与所选入口的可达AST。</td></tr>
           </tbody>
         </table>
         <p>本设计复用已有的 Workflow package、Git、snapshot、checkpoint、DAG caller 和取消状态设施；不引入第二个执行Runtime、图DSL、Workflow数据库或字符串dispatcher。</p>
 
         <h3>代码分类与运行身份</h3>
         <p>Python目录只负责源码组织，运行身份只来自注册信息。两者不得互相推导：目录名不能自动成为Program，移动文件也不能自动改变公开函数名。</p>
-        <pre><code>openprogram/programs/functions/agentic/
+        <pre><code>openprogram/programs/workflow/
 └── workflow/                         # 分类目录，不可运行
     ├── __init__.py                   # 可放入口与共享实现
     ├── &lt;helper&gt;.py                   # 仅在确有独立职责时创建
@@ -293,12 +293,12 @@ Registry / Programs 展示的运行实体：
         <div class="phase"><div class="phase-id">Phase 2</div><div><h3>拆出创建与修订</h3><p>将candidate、验证、依赖固定和publish迁入 <code>create_workflow</code>；再以显式目标和新revision实现 <code>revise_workflow</code>。创建不执行用户任务。删除执行期repair路径；author/validate/publish测试迁到新入口。</p><div class="gate">Gate：create只新增一个项目；revise只新增一个revision；失败、取消、terminal error均不发布；不存在执行期自动发布路径。</div></div></div>
         <div class="phase"><div class="phase-id">Phase 3</div><div><h3>建立用户级 auto_workflow</h3><p>使用前两阶段公共能力实现search → visible select → reuse/create → run。完整DAG显示每个步骤；调用表单仅含 <code>task</code> 并继承会话Project；用Phase 0机制注册为Agent不可见。</p><div class="gate">Gate：用户表单可见，Agent工具清单不可见；reuse和create两条真实App路径可区分。</div></div></div>
         <div class="phase"><div class="phase-id">Phase 4</div><div><h3>移除新 agentic_workflow 调用</h3><p>停止注册旧入口，删除只服务旧复合路径的selection/repair分支。保留显式 <code>resume_workflow(run_id)</code> 和legacy只读执行器。剩余锚定单体入口的测试删除或迁移，resume/legacy测试保留。</p><div class="gate">Gate：新catalog、新DAG和新run不出现 <code>agentic_workflow</code>；历史run仍可查看和恢复且artifact不变。</div></div></div>
-        <div class="phase"><div class="phase-id">Phase 5</div><div><h3>分类目录、UI、文档和最终门禁</h3><p>先固定“目录只分类、Registry定义运行身份”的合同，再将相关源码归入 <code>functions/agentic/workflow/</code>。Programs按实际目录生成可展开导航，按Registry生成函数节点；调用图根节点使用被选择的函数名。最后同步产品文档，并在默认App完成direct、reuse、create、cancel和legacy恢复验收。</p><div class="gate">Gate：源码树不存在旧 <code>agentic_workflow/</code>；Registry不存在旧名称；Programs中 <code>workflow</code> 只能展开，不能运行；展开后只显示四个注册函数；helper文件和内部目录不显示为Program；调用图根节点使用所选函数名；目录移动不改变注册Schema、执行、恢复和取消行为；这些约束必须有自动化回归测试，随后通过文档构建、0死链和默认App可视验收。</div></div></div>
+        <div class="phase"><div class="phase-id">Phase 5</div><div><h3>分类目录、UI、文档和最终门禁</h3><p>先固定“目录只分类、Registry定义运行身份”的合同，再将相关源码归入 <code>workflow/</code>。Programs按实际目录生成可展开导航，按Registry生成函数节点；调用图根节点使用被选择的函数名。最后同步产品文档，并在默认App完成direct、reuse、create、cancel和legacy恢复验收。</p><div class="gate">Gate：源码树不存在旧 <code>agentic_workflow/</code>；Registry不存在旧名称；Programs中 <code>workflow</code> 只能展开，不能运行；展开后只显示四个注册函数；helper文件和内部目录不显示为Program；调用图根节点使用所选函数名；目录移动不改变注册Schema、执行、恢复和取消行为；这些约束必须有自动化回归测试，随后通过文档构建、0死链和默认App可视验收。</div></div></div>
         <h3>最小文件边界</h3>
         <table>
           <thead><tr><th>范围</th><th>首选改动位置</th><th>明确不做</th></tr></thead>
           <tbody>
-            <tr><td>Runtime与公共函数</td><td><code>openprogram/programs/functions/agentic/workflow/</code> 分类目录；入口文件、共享实现和必要的内部子目录在该分类内按普通Python代码组织。</td><td>不把分类目录注册为Program；不在移动源码时重写执行Runtime；不预造没有实际职责的文件。</td></tr>
+            <tr><td>Runtime与公共函数</td><td><code>openprogram/programs/workflow/</code> 分类目录；入口文件、共享实现和必要的内部子目录在该分类内按普通Python代码组织。</td><td>不把分类目录注册为Program；不在移动源码时重写执行Runtime；不预造没有实际职责的文件。</td></tr>
             <tr><td>注册和曝光</td><td><code>openprogram/programs/_registry.py</code>、<code>_runtime.py</code> 的现有exposure机制。</td><td>不新增第二套权限或工具注册系统。</td></tr>
             <tr><td>组件与运行测试</td><td>现有Workflow公共入口测试、注册合同测试和legacy恢复测试；测试文件名可后续独立清理，不参与运行身份。</td><td>不因源码迁移重写Runtime测试；不以mock-only测试替代公共入口。</td></tr>
             <tr><td>Programs UI</td><td>现有Programs route、catalog和page组件；后端分别返回分类节点与注册函数节点。</td><td>不在前端维护第二份Workflow函数清单；不新建Workflow数据库或独立管理应用。</td></tr>
@@ -337,11 +337,11 @@ Registry / Programs 展示的运行实体：
             <tr><td><code>@agentic_function</code> 工具级曝光接线到Layer-2</td><td><code>@agentic_function(tool_visible=)</code> 传入 Layer-2 <code>register(..., expose)</code>；默认 <code>True</code>，现有函数仍全部曝光。</td><td><span class="tag current">Implemented</span></td></tr>
             <tr><td>独立 <code>search_workflows</code></td><td>公共只读入口返回固定 revision、Schema、权限和命中依据；排除 <code>auto_workflow</code> 与无入口 legacy 项目；不调用模型、不写文件、不执行、不发布。</td><td><span class="tag current">Implemented</span></td></tr>
             <tr><td>独立 <code>create_workflow</code> / <code>revise_workflow</code></td><td>create 只新增项目且不执行用户任务；revise 在候选与 active revision 内容相同时拒绝发布（<code>revision unchanged</code>），否则只新增一个 revision；依赖 revision 写入 <code>pyproject.toml</code> 的 <code>workflow-dependencies</code>；失败与取消不发布。</td><td><span class="tag current">Implemented</span></td></tr>
-            <tr><td>用户级 <code>auto_workflow</code></td><td>用户表单与 Programs 自动入口可见；以 <code>tool_visible=False</code> 注册；编排 search → 可见 selection Agent（public <code>agent()</code>，<code>AUTO_DECISION_ATTEMPTS=3</code>）→ reuse/create → 按 pin 执行；不自动 revise。</td><td><span class="tag current">Implemented</span></td></tr>
+            <tr><td>用户级 <code>auto_workflow</code></td><td>源码位于 <code>openprogram/programs/workflow/auto_workflow.py</code>；用户表单与 Programs 自动入口可见；以 <code>tool_visible=False</code> 注册；编排 search → 可见 selection Agent（public <code>agent()</code>，<code>AUTO_DECISION_ATTEMPTS=3</code>）→ reuse/create → 按 pin 执行；不自动 revise。该入口是单文件完整 Workflow，当前没有独立 steps、依赖或测试包，因此不增加同名目录。</td><td><span class="tag current">Implemented</span></td></tr>
             <tr><td>按 revision 执行与依赖 pin</td><td><code>_run_published_workflow</code> 通过 <code>git archive</code> 检出选定 revision；<code>workflow_dependencies</code> 随发布持久化并在执行时 pin，旧 revision 在新 HEAD 发布后仍可运行。</td><td><span class="tag current">Implemented</span></td></tr>
             <tr><td>legacy <code>code.py</code> resume</td><td><code>resume_workflow</code> 对 legacy run 只读重放 snapshot/<code>code.py</code>；失败返回 failed，不调用 planner、不改写 artifact。</td><td><span class="tag current">Implemented</span></td></tr>
             <tr><td>停止新的 <code>agentic_workflow</code> 调用</td><td>旧入口不再注册；新 catalog、新 DAG 和新 run 不出现 <code>agentic_workflow</code>；<code>resume_workflow</code> 保留为内部函数。</td><td><span class="tag current">Completed</span></td></tr>
-            <tr><td>分类目录与运行实体分离</td><td><code>functions/agentic/workflow/</code> 仅作为分类；Programs按Registry展示四个公开函数，支持嵌套分类和多入口文件；调用图按所选函数及可达helper分析，目录和helper不参与运行身份。规格与质量复审均通过。</td><td><span class="tag current">Implemented</span></td></tr>
+            <tr><td>分类目录与运行实体分离</td><td><code>workflow/</code> 仅作为分类；Programs按Registry展示四个公开函数，支持嵌套分类和多入口文件；调用图按所选函数及可达helper分析，目录和helper不参与运行身份。规格与质量复审均通过。</td><td><span class="tag current">Implemented</span></td></tr>
             <tr><td>默认App真实验收</td><td>代码与文档门禁已齐，等待默认 <code>/Applications/OpenProgram.app</code> 完成 direct / reuse / create / cancel / legacy resume 可视验收。</td><td><span class="tag target">Pending</span></td></tr>
           </tbody>
         </table>

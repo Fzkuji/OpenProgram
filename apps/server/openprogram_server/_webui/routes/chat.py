@@ -242,12 +242,11 @@ def run_agentic_function_call(
     # produced output. Reject early so the caller sees the reason
     # in the response body.
     try:
-        from openprogram.programs import agent_tools as _agent_tools
-        _tools = _agent_tools(names=[name]) or []
+        from openprogram.programs._runtime import get as _get_tool
+        _tool = _get_tool(name)
     except Exception as e:  # noqa: BLE001
         return {"error": f"failed to resolve tool {name!r}: {type(e).__name__}: {e}",
                 "status_code": 500}
-    _tool = next((t for t in _tools if t.name == name), None)
     if _tool is None:
         return {"error": f"tool not found: {name!r}", "status_code": 404}
     if not getattr(_tool, "_is_agentic", False):

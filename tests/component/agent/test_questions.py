@@ -257,7 +257,7 @@ def test_form_schema_reaches_pending_question():
 def test_ask_user_routes_to_runtime_ask(monkeypatch):
     """有前端执行上下文（runtime.can_ask）时，ask_user 走 runtime.ask 活链路，
     不再返回 None。"""
-    import openprogram.programs.functions.agentic.ask_user as A
+    import openprogram.programs.workflow.ask_user as A
     from openprogram.agentic_programming.function import _current_runtime
 
     # 没有旧全局 handler（webui 路径本来就没注册）
@@ -276,7 +276,7 @@ def test_ask_user_routes_to_runtime_ask(monkeypatch):
 
 def test_ask_user_no_runtime_no_handler_returns_none(monkeypatch):
     """无 handler、无可问 runtime、非 TTY → 老语义 None（不崩）。"""
-    import openprogram.programs.functions.agentic.ask_user as A
+    import openprogram.programs.workflow.ask_user as A
     from openprogram.agentic_programming.function import _current_runtime
 
     A.set_ask_user(None)

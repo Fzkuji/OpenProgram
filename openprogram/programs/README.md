@@ -41,7 +41,7 @@ relies on.
 ## Sub-packages
 
 - **`applications/`** — Complete programs installed and loaded through their package entry points
-- **`functions/`** — Shipped callable functions, grouped by execution semantics
-- **`workflows/`** — Reusable self-programming Workflow projects
+- **`tools/`** — Deterministic `@function` tools, grouped by purpose
+- **`workflow/`** — Model-aware Workflows, including Goal and Auto Workflow
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

@@ -57,7 +57,7 @@ def test_agent_recall_mode_skips_ranked_automatic_and_tool_search(
 ):
     from openprogram.memory.local_backend import LocalMemoryBackend
     from openprogram.memory.management.config import MemoryConfig
-    from openprogram.programs.functions.vanilla.knowledge.memory import (
+    from openprogram.programs.tools.knowledge.memory import (
         memory as memory_tool,
     )
 

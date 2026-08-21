@@ -78,9 +78,10 @@ function kindLabel(
   if (isWorkflowCapability(entry)) return text("Workflow capability", "Workflow 管理能力");
   if (kind === "workflow") return text("Workflow", "工作流");
   if (kind === "application") return text("Application", "应用");
-  if (kind === "agentic_function") return text("Agentic Function", "Agentic 函数");
+  if (kind === "agentic_function") return text("Workflow", "工作流");
   if (kind === "runtime_primitive") return text("Agentic Programming primitive", "Agentic Programming 原语");
-  return text("Function", "函数");
+  if (kind === "vanilla_function") return text("Tool", "工具");
+  return text("Tool", "工具");
 }
 
 function usesWorkflowIcon(entry: ProgramSourceEntry) {

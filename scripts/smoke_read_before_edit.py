@@ -96,9 +96,9 @@ def main() -> int:
         import asyncio
         from openprogram.store.session.session_store import SessionStore
         from openprogram.store import SessionNodeWriter, _store, _current_turn_id
-        from openprogram.programs.functions.vanilla.files.read import read as read_tool
-        from openprogram.programs.functions.vanilla.files.edit import edit as edit_tool
-        from openprogram.programs.functions.vanilla.files.write import write as write_tool
+        from openprogram.programs.tools.files.read import read as read_tool
+        from openprogram.programs.tools.files.edit import edit as edit_tool
+        from openprogram.programs.tools.files.write import write as write_tool
 
         # @function wraps each tool as an AgentTool; call .execute (async)
         # and pull the text out of AgentToolResult.content[0].text. The

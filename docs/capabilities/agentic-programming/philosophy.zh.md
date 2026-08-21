@@ -82,7 +82,7 @@ LLM 调用的运行时抽象。负责：
 
 ### LLM 也写代码
 
-LLM 不只是运行时的推理引擎，它也可以**写代码**——生成、修改、修复符合 API 文档的 `@agentic_function`。这件事不需要专门的 `create()` / `fix()` 框架函数；agent 直接用普通文件编辑工具完成。后台 watcher 会重扫 `programs/functions/agentic/` 并热加载新模块：import 时 `@agentic_function` 装饰器触发、自行注册，刚写完的函数无需重启即可调用。
+LLM 不只是运行时的推理引擎，它也可以**写代码**——生成、修改、修复符合 API 文档的 `@agentic_function`。这件事不需要专门的 `create()` / `fix()` 框架函数；agent 直接用普通文件编辑工具完成。后台 watcher 会重扫 `programs/workflow/` 并热加载新模块：import 时 `@agentic_function` 装饰器触发、自行注册，刚写完的函数无需重启即可调用。
 
 代码是数据，LLM 是编译器，函数是产品 —— 循环闭合。
 
@@ -90,7 +90,7 @@ LLM 不只是运行时的推理引擎，它也可以**写代码**——生成、
 
 Agentic Programming 同时是：
 - **一个库** —— 你写 `@agentic_function`，手动搭 pipeline
-- **一个跑着的产品** —— 在 CLI 或 WebUI 里聊天，让 agent 帮你把函数写出来；生成的文件落到 `programs/functions/agentic/` 并热加载
+- **一个跑着的产品** —— 在 CLI 或 WebUI 里聊天，让 agent 帮你把函数写出来；生成的文件落到 `programs/workflow/` 并热加载
 
 初学者从提需求开始，拿到手的就是完整可读的 Python 文件。想深挖的人再 import 手写。这是一个**可以被逐步理解**的工具。
 
@@ -107,7 +107,7 @@ Agentic Programming 同时是：
 
 ## OpenProgram = 范式的产品化
 
-`agentic_programming/` 子包是范式的引擎代码。`context/` 实现扁平 DAG 上下文模型。`providers/` 适配各家 LLM。`programs/functions/agentic/` 是这个范式下已经写好的函数和应用。`webui/` 让初学者不写代码也能跑。
+`agentic_programming/` 子包是范式的引擎代码。`context/` 实现扁平 DAG 上下文模型。`providers/` 适配各家 LLM。`programs/workflow/` 是这个范式下已经写好的函数和应用。`webui/` 让初学者不写代码也能跑。
 
 范式先行，产品为用。
 

@@ -1,6 +1,6 @@
 # 内置工具
 
-OpenProgram 自带一批注册为工具的函数，模型在聊天里直接调用。这一页按 `openprogram/programs/functions/vanilla/` 目录逐个列出：每个工具做什么、需要什么 key 或本地依赖。大多数工具零配置；需要 key 的集中在网络检索和图像两类。
+OpenProgram 自带一批注册为工具的函数，模型在聊天里直接调用。这一页按 `openprogram/programs/tools/` 目录逐个列出：每个工具做什么、需要什么 key 或本地依赖。大多数工具零配置；需要 key 的集中在网络检索和图像两类。
 
 ## 文件与代码
 

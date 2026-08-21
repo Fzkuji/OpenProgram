@@ -210,12 +210,12 @@ The detailed tour of each one — code samples, design rationale, where to look 
 
 ```
 openprogram/                         # Python product package
-├── agent/                           # model loop, tools, goals, compaction
-├── agentic_programming/             # @agentic_function runtime and context
+├── agent/                           # model loop, compaction, session runtime
+├── agentic_programming/             # llm() / agent() primitives and @agentic_function
 ├── programs/
-│   ├── _registry.py                 # internal agentic-function registry
-│   ├── agentic_functions/           # internal @agentic_function modules
-│   ├── functions/                   # deterministic @function tools
+│   ├── _registry.py                 # Workflow registry and discovery
+│   ├── tools/                       # deterministic @function tools
+│   ├── workflow/                    # llm()/agent() Workflows, including goal/
 │   └── applications/                # owner-recorded external Program checkouts
 ├── channels/                        # external chat transports
 ├── scheduler/                       # durable schedules and execution

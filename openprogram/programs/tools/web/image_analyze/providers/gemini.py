@@ -1,0 +1,108 @@
+"""Google Gemini vision provider (gemini-1.5-flash, gemini-1.5-pro)."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+
+import httpx
+
+from openprogram.programs.tools.web.web_search._http import post_json
+from openprogram.security.safe_http import safe_client
+from openprogram.security.url_policy import normalize_origin
+
+from .._encode import detect_raster_mime, read_b64
+from ..registry import ImageInput
+
+
+API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+TIMEOUT = 120.0
+DEFAULT_MODEL = "gemini-1.5-flash"
+
+
+@dataclass
+class GeminiVisionProvider:
+    name: str = "gemini"
+    priority: int = 85
+    requires_env: tuple = ()
+    supported_models: list[str] = field(default_factory=lambda: [
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+        "gemini-2.0-flash-exp",
+    ])
+
+    def is_available(self) -> bool:
+        return bool(self._resolve_key())
+
+    @staticmethod
+    def _resolve_key() -> str:
+        from openprogram.providers.env_api_keys import resolve_provider_key
+        return resolve_provider_key("google") or ""
+
+    def analyze(
+        self,
+        images: list[ImageInput],
+        prompt: str,
+        *,
+        model: str | None = None,
+    ) -> str:
+        key = self._resolve_key()
+        if not key:
+            raise RuntimeError("GEMINI_API_KEY or GOOGLE_API_KEY not set")
+        mdl = model or DEFAULT_MODEL
+
+        # Gemini expects inlineData for local files. For URLs we have to
+        # fetch+encode ourselves since its REST API doesn't take URLs.
+        parts: list[dict] = []
+        for img in images:
+            if img.path:
+                mime, b64 = read_b64(img.path)
+                parts.append({"inlineData": {"mimeType": mime, "data": b64}})
+            elif img.url:
+                b64, mime = _url_to_b64(img.url)
+                parts.append({"inlineData": {"mimeType": mime, "data": b64}})
+        parts.append({"text": prompt})
+
+        url = f"{API_BASE}/{mdl}:generateContent?key={key}"
+        payload = {"contents": [{"parts": parts}]}
+        data = post_json(
+            url,
+            body=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=TIMEOUT,
+            provider_label="Gemini vision",
+            consumer="tool.image_api.fixed",
+        )
+
+        candidates = data.get("candidates") or []
+        if not candidates:
+            return ""
+        out_parts = candidates[0].get("content", {}).get("parts", [])
+        return "".join(p.get("text", "") for p in out_parts)
+
+
+def _url_to_b64(url: str) -> tuple[str, str]:
+    import base64
+
+    safe_error: RuntimeError | None = None
+    try:
+        with safe_client("tool.image_result.download") as client:
+            with client.stream("GET", url, timeout=30) as response:
+                response.raise_for_status()
+                data = response.read()
+    except httpx.HTTPStatusError as e:
+        safe_error = RuntimeError(
+            f"Gemini image download HTTP {e.response.status_code} "
+            f"{e.response.reason_phrase} for {normalize_origin(url)}"
+        )
+    except httpx.RequestError as e:
+        safe_error = RuntimeError(
+            f"Gemini image download {type(e).__name__} for "
+            f"{normalize_origin(url)}"
+        )
+    if safe_error is not None:
+        raise safe_error from None
+    mime = detect_raster_mime(data)
+    if mime is None:
+        raise RuntimeError("Gemini image download returned unsupported raster bytes")
+    return base64.b64encode(data).decode("ascii"), mime

@@ -4,7 +4,9 @@ import importlib
 
 
 def test_goal_judgment_uses_valid_json_schema(monkeypatch) -> None:
-    goal_module = importlib.import_module("openprogram.agentic_programming.goal")
+    goal_module = importlib.import_module(
+        "openprogram.programs.workflow.goal.workflow"
+    )
     agent_module = importlib.import_module("openprogram.agentic_programming.agent")
     llm_module = importlib.import_module("openprogram.agentic_programming.llm")
     calls = []

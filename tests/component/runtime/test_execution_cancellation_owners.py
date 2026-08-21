@@ -487,6 +487,10 @@ def test_forced_tool_passes_canonical_execution_id(monkeypatch):
         "openprogram.programs.agent_tools", lambda names=None: [_Tool()],
     )
     monkeypatch.setattr(
+        "openprogram.programs._runtime.get",
+        lambda name, *a, **k: _Tool() if name == _Tool.name else None,
+    )
+    monkeypatch.setattr(
         "openprogram.agent.process_runner.run_agentic_in_subprocess",
         lambda **kw: captured.update(kw) or dict(runner_out),
     )

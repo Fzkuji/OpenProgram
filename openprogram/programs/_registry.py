@@ -3,16 +3,19 @@
 Two mechanisms, in order:
 
   1. **AGENTIC_MODULES** — hand-maintained list of internal agentic
-     module names (``openprogram/programs/functions/agentic/<name>/``). Loaded
+     module names (``openprogram/programs/workflow/<name>/``). Loaded
      explicitly so that import order and dependency conditions are
      obvious.
 
-  2. **Validated workflow projects** — Git-backed packages under
-     ``openprogram/programs/workflows/``. Importing their public package fires
+  2. **Built-in Workflows** — explicitly named modules under
+     ``openprogram/programs/workflow/``.
+
+  3. **Validated workflow projects** — Git-backed packages under
+     ``openprogram/programs/workflow/``. Importing their public package fires
      the existing ``@agentic_function`` decorator; execution still uses the
      shared registry and runtime.
 
-  3. **Auto-discovered external harnesses** — owner-recorded symlinks and
+  4. **Auto-discovered external harnesses** — owner-recorded symlinks and
      directories under ``openprogram/programs/applications/`` are treated as
      external harnesses. For each, we find its Python package
      (``<harness>/<pkg>/__init__.py``) and import ``<pkg>.agentics``.
@@ -47,24 +50,27 @@ from typing import Iterator, Optional
 logger = logging.getLogger(__name__)
 
 
-AGENTIC_MODULES: list[str] = [
+WORKFLOW_MODULES: list[str] = [
     # Framework primitive: ask the human during an execution.
     "ask_user",
-    # Ordinary Agentic Functions: exactly one llm() call site.
+    # Single-model Workflows: exactly one llm() call site.
     "document.extract_pdf_figures",
     "document.extract_pdf_tables",
     "text",
-    # Workflows: agent loops, goals, multi-stage control flow.
-    "workflow.search_workflows",
-    "workflow.create_workflow",
-    "workflow.revise_workflow",
-    "workflow.auto_workflow",
-    "workflow.browser",
-    "workflow.docs_question",
-    "workflow.security_review",
-    "workflow.goal",
-    "workflow.deep_work",
+    # Multi-step Workflows: agent loops, goals, and control flow.
+    "search_workflows",
+    "create_workflow",
+    "revise_workflow",
+    "browser",
+    "docs_question",
+    "security_review",
+    "goal",
+    "deep_work",
+    "auto_workflow",
 ]
+
+AGENTIC_MODULES = WORKFLOW_MODULES
+BUILTIN_WORKFLOW_MODULES: list[str] = []
 
 
 # Names that should never be treated as external harnesses even if their
@@ -88,20 +94,29 @@ def load_agentic_modules(
     swallowed errors.
     """
     # 1. Internal explicit list
-    for mod_name in AGENTIC_MODULES:
+    for mod_name in WORKFLOW_MODULES:
         try:
             importlib.import_module(
-                f"openprogram.programs.functions.agentic.{mod_name}"
+                f"openprogram.programs.workflow.{mod_name}"
             )
         except Exception as e:
             _debug_registry_error(mod_name, e)
             continue
 
-    # 2. Validated Workflow projects — importing the package registers its
+    # 2. Shipped Workflow modules — explicit so arbitrary files added to the
+    #    owner-controlled workflow catalog are never imported as trusted code.
+    for mod_name in BUILTIN_WORKFLOW_MODULES:
+        try:
+            importlib.import_module(f"openprogram.programs.workflow.{mod_name}")
+        except Exception as e:
+            _debug_registry_error(f"workflow:{mod_name}", e)
+            continue
+
+    # 3. Validated Workflow projects — importing the package registers its
     #    public @agentic_function with the same shared tool registry.
     _load_workflow_projects()
 
-    # 3. First-party *programs* — the agentic harnesses shipped as
+    # 4. First-party *programs* — the agentic harnesses shipped as
     #    separate pip-installable packages (gui_harness / research_harness
     #    / wiki_agent_harness). Importing an installed package fires its
     #    @agentic_function decorator and self-registers the entry point.
@@ -114,7 +129,7 @@ def load_agentic_modules(
     except Exception as e:
         _debug_registry_error("programs", e)
 
-    # 4. Auto-discovered external harnesses (owner-recorded directories or
+    # 5. Auto-discovered external harnesses (owner-recorded directories or
     #    local-dev symlinks in applications_dir). Still supported for the
     #    ``<pkg>/agentics/__init__.py`` convention, but no longer the
     #    primary path — a developer working on a harness locally can just
@@ -151,7 +166,7 @@ def load_agentic_modules(
 def _load_workflow_projects() -> None:
     """Import each valid owner workflow package so its decorator registers it."""
     try:
-        from openprogram.programs.functions.agentic.workflow._project import catalog
+        from openprogram.programs.workflow._project import catalog
 
         root = catalog._workflow_projects_root()
     except Exception as exc:
@@ -173,6 +188,7 @@ def _load_workflow_projects() -> None:
                 not project_dir.is_dir()
                 or project_dir.is_symlink()
                 or project_dir.name.startswith((".", "_"))
+                or not (project_dir / ".git").exists()
             ):
                 continue
             try:
@@ -180,7 +196,9 @@ def _load_workflow_projects() -> None:
                 entrypoint = index["project_metadata"].get("entrypoint")
                 if entrypoint != project_dir.name:
                     continue
-                importlib.import_module(f"workflows.{entrypoint}")
+                importlib.import_module(
+                    f"openprogram.programs.workflow.{entrypoint}"
+                )
             except Exception as exc:
                 _debug_registry_error(f"workflow:{project_dir.name}", exc)
     finally:
@@ -339,7 +357,7 @@ def _load_external_file(
     if sys_path_root not in sys.path:
         sys.path.insert(0, sys_path_root)
 
-    full_mod = f"openprogram.programs.functions.agentic.{mod_name}"
+    full_mod = f"openprogram.programs.workflow.{mod_name}"
     spec = importlib.util.spec_from_file_location(full_mod, abs_path)
     if spec is None or spec.loader is None:
         return
@@ -375,7 +393,8 @@ def iter_agentic_files(
         if os.path.isfile(simple):
             yield mod_name, simple, False
         elif os.path.isfile(pkg):
-            yield mod_name, pkg, False
+            workflow_py = os.path.join(agentic_functions_dir, *parts, "workflow.py")
+            yield mod_name, workflow_py if os.path.isfile(workflow_py) else pkg, False
 
     # Auto-discovered external harnesses — yield the actual source file
     # of every function listed in AGENTIC_FUNCTIONS, so the WebUI scanner
@@ -437,11 +456,11 @@ def _debug_registry_error(name: str, e: Exception) -> None:
 
 
 def _default_agentic_functions_dir() -> Optional[str]:
-    """The live ``programs/functions/agentic/`` directory, or None if it can't be
+    """The live ``programs/workflow/`` directory, or None if it can't be
     located. Used as :func:`rescan`'s default scan root."""
     try:
-        from openprogram.programs.functions import agentic as _ag
-        return os.path.dirname(_ag.__file__)
+        import openprogram.programs.workflow as _workflow
+        return os.path.dirname(_workflow.__file__)
     except Exception:
         return None
 

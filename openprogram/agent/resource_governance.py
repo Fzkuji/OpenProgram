@@ -740,7 +740,7 @@ class ResourceGovernor:
         ).effective_limits()
         spawn_depth_limit = spawn_fanout_limit = 0
         if creates_agent:
-            from openprogram.programs.functions.vanilla.agents.agent.agent.agent import (
+            from openprogram.programs.tools.agents.agent.agent.agent import (
                 max_spawn_depth,
                 max_spawn_fanout,
             )

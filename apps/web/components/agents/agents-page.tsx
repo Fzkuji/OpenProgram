@@ -345,7 +345,7 @@ export function AgentsPage() {
           ...builtinTools.flatMap((group) => group.items.map((tool) => ({
               name: tool.name,
               description: tool.description || "",
-              group: `${text("Functions", "函数")} · ${groupLabels.get(group.name) || group.name}`,
+              group: `${text("Tools", "工具")} · ${groupLabels.get(group.name) || group.name}`,
               available: !tool.disabled,
             }))),
           ...connectedTools.flatMap((group) => group.items.map((tool) => ({
@@ -359,7 +359,7 @@ export function AgentsPage() {
             description: program.description || "",
             group: program.category === "app"
               ? text("Applications", "应用")
-              : text("Agentic Functions", "Agentic 函数"),
+              : text("Workflows", "工作流"),
             available: true,
           })),
         ]);
@@ -690,7 +690,7 @@ function ModelPanel({ draft, update, text }: PanelProps) {
 function ProgramsPanel({ draft, update, presets, openPicker, text }: PanelProps & { presets: Record<string, string[]>; openPicker: () => void }) {
   const selected = selectedProgramNames(draft.tools, presets);
   return <>
-    <PanelIntro title="Programs" description={text("Control callable Functions, Agentic Functions, and Applications.", "控制可调用的 Functions、Agentic Functions 与 Applications。")}/>
+    <PanelIntro title="Programs" description={text("Control callable Tools, Workflows, and Applications.", "控制可调用的 Tools、Workflows 与 Applications。")}/>
     <div className={styles.modeGrid}>
       {([
         ["automatic", text("All Programs", "全部 Programs"), text("All available Programs; schemas load only when needed.", "允许全部可用 Programs，schema 仅在需要时加载。")],

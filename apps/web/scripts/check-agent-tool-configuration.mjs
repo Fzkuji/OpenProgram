@@ -28,7 +28,7 @@ assert.match(page, /method:\s*"DELETE"/);
 assert.match(page, /Overview[\s\S]*Model & Instructions[\s\S]*Programs[\s\S]*Skills[\s\S]*MCP[\s\S]*Sessions/);
 assert.match(page, /mode:\s*"automatic"\s*\|\s*"selected"\s*\|\s*"none"/);
 assert.match(page, /Access preset/);
-assert.match(page, /Functions[\s\S]*Connected Services[\s\S]*Agentic Functions[\s\S]*Applications/);
+assert.match(page, /Tools[\s\S]*Connected Services[\s\S]*Workflows[\s\S]*Applications/);
 assert.match(page, /Browse programs/);
 assert.match(page, /fetch\("\/api\/skills"/);
 assert.match(page, /fetch\("\/api\/mcp\/servers"/);

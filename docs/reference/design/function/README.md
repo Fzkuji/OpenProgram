@@ -20,5 +20,5 @@ moved to the user guide:
 - `openprogram/agentic_programming/function.py`
 - `openprogram/agentic_programming/runtime.py`
 - `openprogram/agentic_programming/decision.py`
-- `openprogram/programs/functions/vanilla/<name>/`
-- `openprogram/programs/functions/agentic/text/__init__.py`
+- `openprogram/programs/tools/<name>/`
+- `openprogram/programs/workflow/text/__init__.py`

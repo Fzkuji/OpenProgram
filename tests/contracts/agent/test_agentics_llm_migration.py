@@ -11,30 +11,30 @@ import pytest
 from tests.support.repository import tracked_python_files
 
 MIGRATED_FUNCTIONS = {
-    "openprogram.programs.functions.agentic.workflow.deep_work": ("_clarify", "_evaluate"),
-    "openprogram.programs.functions.agentic.document.extract_pdf_figures": ("extract_pdf_figures",),
-    "openprogram.programs.functions.agentic.document.extract_pdf_tables": ("extract_pdf_tables",),
-    "openprogram.programs.functions.agentic.text": (
+    "openprogram.programs.workflow.deep_work": ("_clarify", "_evaluate"),
+    "openprogram.programs.workflow.document.extract_pdf_figures": ("extract_pdf_figures",),
+    "openprogram.programs.workflow.document.extract_pdf_tables": ("extract_pdf_tables",),
+    "openprogram.programs.workflow.text": (
         "summarize_text",
         "translate_to_chinese",
         "polish_text",
     ),
-    "openprogram.programs.functions.agentic.workflow.research.evaluate": ("_evaluate_candidates",),
-    "openprogram.programs.functions.agentic.workflow.research.stages.idea": (
+    "openprogram.programs.workflow.research.evaluate": ("_evaluate_candidates",),
+    "openprogram.programs.workflow.research.stages.idea": (
         "generate_ideas",
         "check_novelty",
         "rank_ideas",
     ),
-    "openprogram.programs.functions.agentic.workflow.research.stages.literature": (
+    "openprogram.programs.workflow.research.stages.literature": (
         "survey_topic",
         "identify_gaps",
     ),
-    "openprogram.programs.functions.agentic.workflow.research.stages.experiment": (
+    "openprogram.programs.workflow.research.stages.experiment": (
         "design_experiments",
         "run_experiment",
         "check_training",
     ),
-    "openprogram.programs.functions.agentic.workflow.research.stages.writing": (
+    "openprogram.programs.workflow.research.stages.writing": (
         "write_section",
         "translate_zh2en",
         "translate_en2zh",
@@ -45,11 +45,11 @@ MIGRATED_FUNCTIONS = {
         "compress_text",
         "expand_text",
     ),
-    "openprogram.programs.functions.agentic.workflow.research.stages.review": (
+    "openprogram.programs.workflow.research.stages.review": (
         "review_paper",
         "fix_paper",
     ),
-    "openprogram.programs.functions.agentic.workflow.research.stages.submission": (
+    "openprogram.programs.workflow.research.stages.submission": (
         "check_submission",
     ),
 }
@@ -77,7 +77,7 @@ def test_migrated_function_passes_content_blocks_to_llm(monkeypatch):
         return "summary"
 
     module = importlib.import_module(
-        "openprogram.programs.functions.agentic.text"
+        "openprogram.programs.workflow.text"
     )
     monkeypatch.setattr(module, "llm", fake_llm)
 

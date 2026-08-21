@@ -18,9 +18,9 @@ import pytest
 
 from openprogram.channels import _attachments, _transport
 from openprogram.channels._message import Attachment
-from openprogram.programs.functions.vanilla.web.image_analyze.providers import gemini
-from openprogram.programs.functions.vanilla.web.image_generate import image_generate
-from openprogram.programs.functions.vanilla.web.image_generate.registry import GeneratedImage
+from openprogram.programs.tools.web.image_analyze.providers import gemini
+from openprogram.programs.tools.web.image_generate import image_generate
+from openprogram.programs.tools.web.image_generate.registry import GeneratedImage
 from openprogram.security import safe_http
 from openprogram.security.safe_http import OutboundSecurityConfig
 

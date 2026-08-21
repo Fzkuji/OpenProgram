@@ -182,7 +182,7 @@ class TurnBindings:
         )
         try:
             if self._web_use_owner_id is not None:
-                from openprogram.programs.functions.agentic.workflow.browser.web_use_runtime import (
+                from openprogram.programs.workflow.browser.web_use_runtime import (
                     release_owner_if_initialized as _release_web_use_owner,
                 )
                 _release_web_use_owner(self._web_use_owner_id)

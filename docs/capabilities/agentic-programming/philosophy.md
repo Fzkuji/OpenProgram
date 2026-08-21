@@ -82,7 +82,7 @@ So context management stops being prompt plumbing and becomes a property you dec
 
 ### The LLM Writes Code Too
 
-The LLM isn't just the runtime's reasoning engine; it can also **write code** — generating, modifying, and fixing `@agentic_function`s that conform to the documented API. This needs no dedicated `create()` / `fix()` framework functions; the agent authors new functions with ordinary file edits. A background watcher rescans `programs/functions/agentic/` and hot-loads new modules: their `@agentic_function` decorators fire on import and self-register, so a freshly written function is callable without a restart.
+The LLM isn't just the runtime's reasoning engine; it can also **write code** — generating, modifying, and fixing `@agentic_function`s that conform to the documented API. This needs no dedicated `create()` / `fix()` framework functions; the agent authors new functions with ordinary file edits. A background watcher rescans `programs/workflow/` and hot-loads new modules: their `@agentic_function` decorators fire on import and self-register, so a freshly written function is callable without a restart.
 
 Code is data, the LLM is the compiler, and functions are the product — the loop closes.
 
@@ -90,7 +90,7 @@ Code is data, the LLM is the compiler, and functions are the product — the loo
 
 Agentic Programming is at the same time:
 - **A library** — you write `@agentic_function`s and wire up the pipeline by hand
-- **A running product** — chat in the CLI or WebUI and ask the agent to write the function for you; the generated file lands in `programs/functions/agentic/` and hot-loads
+- **A running product** — chat in the CLI or WebUI and ask the agent to write the function for you; the generated file lands in `programs/workflow/` and hot-loads
 
 Beginners start by asking, and what they get is a complete, readable Python file. Those who want to dig deeper can then import and hand-write. This is a tool that **can be understood incrementally**.
 
@@ -107,7 +107,7 @@ This isn't to say agent frameworks are wrong; they suit a class of tasks (fully 
 
 ## OpenProgram = the Productized Paradigm
 
-The `agentic_programming/` subpackage is the paradigm's engine code. `context/` implements the flat-DAG context model. `providers/` adapts the various LLMs. `programs/functions/agentic/` holds the functions and applications already written under this paradigm. `webui/` lets beginners run things without writing code.
+The `agentic_programming/` subpackage is the paradigm's engine code. `context/` implements the flat-DAG context model. `providers/` adapts the various LLMs. `programs/workflow/` holds the functions and applications already written under this paradigm. `webui/` lets beginners run things without writing code.
 
 The paradigm comes first; the product exists to use it.
 

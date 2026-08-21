@@ -272,7 +272,7 @@ def register(app):
     async def get_canvas(path: str = None):
         """Return the current canvas.md content + path + mtime."""
         import os as _os
-        from openprogram.programs.functions.vanilla.interaction.canvas import _resolve_path, _BLOCK_RE
+        from openprogram.programs.tools.interaction.canvas import _resolve_path, _BLOCK_RE
         resolved = _resolve_path(path)
         try:
             st = _os.stat(resolved)

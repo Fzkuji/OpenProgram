@@ -116,7 +116,7 @@
         <table><thead><tr><th>位置</th><th>当前职责</th><th>问题</th><th>目标</th></tr></thead><tbody>
           <tr><td><code>agentic_programming.agent</code></td><td>当前 Runtime 内工具循环</td><td>参数能力不完整，DAG 标签不够明确</td><td>扩展为唯一公共 Agent 合同</td></tr>
           <tr><td><code>agent.sub_agent_run</code></td><td>会话分支和 durable Job</td><td>被 Workflow 内部规划直接调用</td><td>只保留为内部生命周期适配层</td></tr>
-          <tr><td>Workflow 管理函数</td><td><code>search_workflows</code>、<code>create_workflow</code>、<code>revise_workflow</code> 与用户级 <code>auto_workflow</code></td><td>旧复合入口曾混合不同副作用</td><td>四个独立注册函数；<code>workflow/</code> 仅是源码分类</td></tr>
+          <tr><td>Workflow 管理与入口</td><td><code>search_workflows</code>、<code>create_workflow</code>、<code>revise_workflow</code>，以及 <code>workflows/auto_workflow.py</code></td><td>旧复合入口曾混合不同副作用</td><td>前三项保留为可复用管理函数；完整自动流程位于 <code>workflows/</code> 并保持独立注册</td></tr>
           <tr><td><code>Runtime.exec</code></td><td>统一 LLM/工具循环底层</td><td>公共参数未完全上浮</td><td>继续作为唯一 Agent loop 内核，不公开 session 语义</td></tr>
         </tbody></table>
       </section>

@@ -17,15 +17,15 @@ tmp/
 
 # Runtime/generated artifacts — generated functions live in third_party/
 # (the framework-provided buildin/meta functions are always tracked)
-openprogram/programs/functions/vanilla/third_party/*.py
-!openprogram/programs/functions/vanilla/third_party/__init__.py
-!openprogram/programs/functions/vanilla/third_party/llm_call_example.py
-!openprogram/programs/functions/vanilla/third_party/sentiment.py
-!openprogram/programs/functions/vanilla/third_party/sentiment_v2.py
-!openprogram/programs/functions/vanilla/third_party/word_count.py
-!openprogram/programs/functions/vanilla/third_party/test.py
-!openprogram/programs/functions/vanilla/third_party/test_framework.py
-!openprogram/programs/functions/vanilla/third_party/test_resume.py
+openprogram/programs/tools/third_party/*.py
+!openprogram/programs/tools/third_party/__init__.py
+!openprogram/programs/tools/third_party/llm_call_example.py
+!openprogram/programs/tools/third_party/sentiment.py
+!openprogram/programs/tools/third_party/sentiment_v2.py
+!openprogram/programs/tools/third_party/word_count.py
+!openprogram/programs/tools/third_party/test.py
+!openprogram/programs/tools/third_party/test_framework.py
+!openprogram/programs/tools/third_party/test_resume.py
 
 # Scratch skill
 skills/init-research/
@@ -51,12 +51,8 @@ references/opencode/
 # untracked package directories while preserving flat bundled modules;
 # tracked bundled directories remain tracked. New bundled directories
 # need one explicit `git add -f`.
-openprogram/programs/functions/agentic/*
-!openprogram/programs/functions/agentic/*.py
 openprogram/programs/applications/*
 !openprogram/programs/applications/__init__.py
-openprogram/programs/workflows/*
-!openprogram/programs/workflows/__init__.py
 
 # Local OpenProgram runtime state
 .openprogram/

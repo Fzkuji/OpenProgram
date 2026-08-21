@@ -25,7 +25,7 @@ EXPECTED_SOURCES = {
 
 
 def test_shipped_vanilla_sources_use_physical_purpose_directories() -> None:
-    root = Path(openprogram.__file__).resolve().parent / "programs/functions/vanilla"
+    root = Path(openprogram.__file__).resolve().parent / "programs/tools"
 
     categories = {
         child.name
@@ -50,7 +50,7 @@ def test_shipped_vanilla_sources_use_physical_purpose_directories() -> None:
 
 
 def test_single_file_tools_are_modules_and_multi_file_tools_are_packages() -> None:
-    root = Path(openprogram.__file__).resolve().parent / "programs/functions/vanilla"
+    root = Path(openprogram.__file__).resolve().parent / "programs/tools"
 
     assert (root / "files/read.py").is_file()
     assert not (root / "files/read").exists()

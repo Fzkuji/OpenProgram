@@ -185,7 +185,7 @@ def process_user_turn(
     Every caller (webui / channels / CLI / job runner) enters here, so
     an active session goal (``/goal``) is honoured no matter who
     triggered the turn: after the turn — finalize (phase 6/7) included —
-    :func:`openprogram.agent.goal.continue_goal_turns` judges the goal
+    :func:`openprogram.programs.workflow.goal.continue_goal_turns` judges the goal
     and, while unmet and under budget, keeps running follow-up turns
     (``source="goal_continue"``). Each continuation runs through
     :func:`_process_turn_once` like any other turn — its own
@@ -213,7 +213,7 @@ def process_user_turn(
     # as a goal session.
     goal_session = False
     try:
-        from openprogram.agent.goal import load_goal
+        from openprogram.programs.workflow.goal import load_goal
         _g = load_goal(req.session_id)
         goal_session = bool(_g and _g.get("status") in ("active",
                                                         "waiting_user"))
@@ -226,7 +226,7 @@ def process_user_turn(
         req, on_event=on_event, cancel_event=cancel_event)
     continue_goal_turns = None
     try:
-        from openprogram.agent.goal import continue_goal_turns
+        from openprogram.programs.workflow.goal import continue_goal_turns
         result = continue_goal_turns(
             req, result, run_turn=_process_turn_once,
             on_event=on_event, cancel_event=cancel_event)
@@ -358,7 +358,7 @@ def _process_turn_once(
     _project_baseline = _bindings.project_baseline
     # Fresh outbound-attachment list for this turn — ``send_file`` calls
     # append to it, step 4b below folds it into the reply text.
-    from openprogram.programs.functions.vanilla.interaction import send_file as _send_file
+    from openprogram.programs.tools.interaction import send_file as _send_file
     _send_file.begin_turn()
 
     # 3b. Persist an assistant *placeholder* row so the row exists in

@@ -29,7 +29,7 @@ def _skill_inventory() -> tuple[int, list[tuple[str, str]]]:
 
 
 def _function_inventory() -> tuple[int, list[str]]:
-    """Return (count, [name, ...]) of agentic functions in programs/functions/agentic/.
+    """Return (count, [name, ...]) of agentic functions in programs/workflow/.
 
     Harness apps (the *-Agent-Harness symlinks) are reported separately
     by :func:`_application_inventory`.

@@ -47,16 +47,17 @@ from ._runtime import (
     tool_search,
 )
 
-# Side-effect imports — ``functions/vanilla`` holds @function-decorated leaf
-# tools and ``functions/agentic`` holds @agentic_function bodies. Each
+# Side-effect imports — ``tools`` holds @function-decorated leaf
+# tools and ``workflow`` holds @agentic_function bodies. Each
 # subpackage's
 # ``__init__`` triggers the decorator side-effects so every shipped
 # function lands in the shared ``_registry`` by the time the parent
 # package finishes loading. The source tree split
 # mirrors the semantic split (deterministic leaf vs LLM-aware
 # composable); both end up in the same registry.
-from . import functions as _functions_self_register  # noqa: F401
-from .functions.vanilla.knowledge.memory import MEMORY_TOOL_NAMES
+from . import tools as _tools_self_register  # noqa: F401
+from .tools.knowledge.memory import MEMORY_TOOL_NAMES
+from . import workflow as _workflow_self_register  # noqa: F401
 
 # Layer 2 — exposure is registration-driven: ``exposed_names()`` (see
 # ``_runtime.py``) is every registered tool minus the ones registered
@@ -536,12 +537,12 @@ def resolve_function_module(name: str):
     # AGENTIC_MODULES but skipped at load time).
     try:
         return importlib.import_module(
-            f"openprogram.programs.functions.agentic.{name}"
+            f"openprogram.programs.workflow.{name}"
         )
     except ImportError:
         raise ImportError(
             f"No @agentic_function named {name!r} found in the "
-            f"agentic registry or under openprogram/programs/functions/agentic/."
+            f"agentic registry or under openprogram/programs/workflow/."
         )
 
 

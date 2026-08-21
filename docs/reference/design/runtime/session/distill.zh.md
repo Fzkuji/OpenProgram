@@ -9,7 +9,7 @@
 | 部件 | 位置 | 做什么 |
 |---|---|---|
 | 转写器 | `openprogram/store/session/transcript.py` | `render_read_conversation()`——把会话的一条分支渲染成 LLM 可读的纯文本 |
-| 模型可调工具 | `openprogram/programs/functions/vanilla/knowledge/read_conversation/` | `read_conversation`——转写器的 `@function` 封装，缺省读当前会话 |
+| 模型可调工具 | `openprogram/programs/tools/knowledge/read_conversation/` | `read_conversation`——转写器的 `@function` 封装，缺省读当前会话 |
 | 产品文档 | `docs/capabilities/distill.md` | 面向用户的说明 |
 
 ## 转写器
@@ -47,7 +47,7 @@ store 走 `default_db()` 而不是写死 `~/.openprogram` 路径，这样绑定�
 
 ## 会话发现复用已有工具
 
-`list_agents`（`programs/functions/send_message/`）已经能列出会话 id 和 `SID:HEAD` 分支端点。这正是 `read_conversation` 要的参数，所以不新增列表工具。工具接受整串 `SID:HEAD` 传进 `session_id` 并自行拆分，因为那就是 `list_agents` 打印的形式。
+`list_agents`（`programs/tools/send_message/`）已经能列出会话 id 和 `SID:HEAD` 分支端点。这正是 `read_conversation` 要的参数，所以不新增列表工具。工具接受整串 `SID:HEAD` 传进 `session_id` 并自行拆分，因为那就是 `list_agents` 打印的形式。
 
 ## 判断放在 skill 里
 

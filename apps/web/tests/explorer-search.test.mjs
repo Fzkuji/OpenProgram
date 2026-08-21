@@ -16,14 +16,14 @@ test("fuzzy and exact matching return only matched character positions", () => {
 
 test("filter mode retains matching paths and their ancestors", () => {
   const paths = [
-    "functions",
-    "workflows",
-    "workflows/paper_search",
-    "workflows/research_pipeline",
+    "tools",
+    "workflow",
+    "workflow/paper_search",
+    "workflow/research_pipeline",
     "applications",
   ];
   assert.deepEqual(
     [...visibleSearchPaths(paths, "pa", true)],
-    ["workflows", "workflows/paper_search", "applications"],
+    ["workflow", "workflow/paper_search", "applications"],
   );
 });

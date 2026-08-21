@@ -216,7 +216,7 @@ def register_shared_builtins() -> None:
         )
 
     try:
-        from openprogram.agent.goal import goal_builtin_handler
+        from openprogram.programs.workflow.goal import goal_builtin_handler
     except Exception:
         # A broken goal module must not poison the rest of the registry.
         return

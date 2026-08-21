@@ -136,7 +136,7 @@ context: inline          (default)
   the rendered prompt enters the current session context
 
 context: fork
-  run in an agent sub-agent (uses existing programs/functions/agent)
+  run in an agent sub-agent (uses existing programs/tools/agent)
   the agent field determines subagent_type; allowed-tools determines the visible tool set
   the sub-agent's final message is presented as a "command result" and does not pollute the main context
 ```

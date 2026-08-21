@@ -16,7 +16,7 @@ import time
 import pytest
 
 import openprogram.agentic_programming.session as session_module
-from openprogram.programs.functions.agentic.ask_user import (
+from openprogram.programs.workflow.ask_user import (
     FollowUp,
     ask_user,
     run_with_follow_up,

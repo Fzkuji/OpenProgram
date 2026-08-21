@@ -273,7 +273,7 @@ async def _approve_then_run(call_id, args, cancel, on_update):
 
 Numbering matches the pseudocode in 3.2:
 
-- **acceptEdits (⑥)**: three parts — ① `@function` takes an `accept_edits_safe: bool = False` parameter (`functions/_runtime.py:767`) that lands on the tool object as `_accept_edits_safe` (`:1079`); read/write/edit/glob/grep/list each mark `True` in their `@function` (e.g. `programs/functions/write/write.py:24`, `edit/edit.py:25`, `read/read.py:28`, `grep/grep.py:101`, `list/list.py:30`, `glob/glob.py:43`), while bash/exec/execute_code do not (default `False`); ② `_path_is_safe` (`internals/_approval.py:72-87`) reuses `check_path_safety` from 3.5 (path inside the working directory set, not a dangerous file/directory, no Windows bypass); ③ command-class tools fall through to ⑧ forced approval even when a broad allow exists.
+- **acceptEdits (⑥)**: three parts — ① `@function` takes an `accept_edits_safe: bool = False` parameter (`functions/_runtime.py:767`) that lands on the tool object as `_accept_edits_safe` (`:1079`); read/write/edit/glob/grep/list each mark `True` in their `@function` (e.g. `programs/tools/write/write.py:24`, `edit/edit.py:25`, `read/read.py:28`, `grep/grep.py:101`, `list/list.py:30`, `glob/glob.py:43`), while bash/exec/execute_code do not (default `False`); ② `_path_is_safe` (`internals/_approval.py:72-87`) reuses `check_path_safety` from 3.5 (path inside the working directory set, not a dangerous file/directory, no Windows bypass); ③ command-class tools fall through to ⑧ forced approval even when a broad allow exists.
 - **plan (visibility control)**: `apply_tool_policy(tools, source="plan")` (`dispatcher/__init__.py:798`) filters out write-class tools so they never enter the model's tool list. Plan state lives in a boolean set (`_active` in `agent/plan_mode.py`) and **does not switch approval strength** — it is orthogonal to the approval tier (details in §3.7). `_gated_execute` has no plan-specific branch (write-class tools are already filtered, read-only tools follow the current tier as usual).
 - **auto (⑦)**: the LLM classifier tier, with three levels of filtering to save calls (`internals/_auto_classifier.py`): obviously safe read-only tools already passed at ⑤; `RISKY_AUTO_DENYLIST` (bash/exec/shell/execute_code/process) returns `[denied]` outright; anything else uncertain gets one `auto_classify_tool` call to haiku. Rule-layer deny/ask (①) still applies ahead of it, and allow (④) is unaffected.
 - **ask**: every tool that misses allow, is not on the read-only allowlist, and is not per-tool exempt lands at ⑧.
@@ -352,7 +352,7 @@ def _risk_level(tool_name: str, args: dict) -> str:
 
 `_approval_detail` (`internals/_approval.py:232-242`, producing "tool name + full arguments, head and tail truncated when too long") gives the approval card a readable summary (the first version does not highlight dangerous tokens). The `question.asked` frame from `_on_asked` (inside `await_user_approval`) carries `tool`/`args`/`risk_level`, which the frontend uses for coloring (§4.2).
 
-**Path safety** (`openprogram/programs/functions/vanilla/files/file_safety.py`):
+**Path safety** (`openprogram/programs/tools/files/file_safety.py`):
 
 ```python
 # file_safety.py:20-40, 63
@@ -611,13 +611,13 @@ Attended mode lives in `openprogram/agent/attended.py`. The core (`attended.py:1
 |---|---|
 | Decision chain `_gated_execute` / `_match_rule` / `await_user_approval` / `_persist_always_allow_rule` / `_risk_level` | `openprogram/agent/internals/_approval.py` |
 | Rule string parsing, matching, multi-layer merging | `openprogram/programs/permission_rule.py` (`parse_rule` / `parse_command` / `pattern_matches` / `load_merged_rules`) |
-| Path safety / dangerous files and directories / Windows bypass | `openprogram/programs/functions/vanilla/files/file_safety.py` |
+| Path safety / dangerous files and directories / Windows bypass | `openprogram/programs/tools/files/file_safety.py` |
 | gate hard block | `openprogram/events/tool_gate.py` |
 | Permission mode legal values + normalization + SessionRunConfig fields | `openprogram/agent/session_config.py` |
 | `PermissionMode` type + TurnRequest fields and defaults | `openprogram/agent/dispatcher/types.py` |
 | Schemaless session meta storage | `openprogram/store/session/session_store.py` |
 | Project-level settings read/write + `project_for_session` | `openprogram/store/project/project_store.py` |
-| `accept_edits_safe` declaration + per-tool `requires_approval` | `openprogram/programs/_runtime.py`; tool markings in `openprogram/programs/functions/vanilla/{read,write,edit,glob,grep,list}/` |
+| `accept_edits_safe` declaration + per-tool `requires_approval` | `openprogram/programs/_runtime.py`; tool markings in `openprogram/programs/tools/{read,write,edit,glob,grep,list}/` |
 | Web default bypass + effective_permission | `openprogram/webui/_execute/__init__.py`; `additional_working_dirs` populated in `_execute/chat.py`, `channels/_conversation.py` |
 | WS: approval replies + project rule list/add/remove | `openprogram/webui/ws_actions/session.py`, `chat.py` |
 | Attended mode (orthogonal mechanism) | `openprogram/agent/attended.py`, `openprogram/webui/ws_actions/runtime.py` |

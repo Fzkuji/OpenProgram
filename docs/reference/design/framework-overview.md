@@ -331,8 +331,8 @@ decisions.
 
 **Responsibility**: deliver messages between branches and sessions, run the
 target branch, and bring the reply back.
-**Key files**: `programs/functions/send_message/send_message/send_message.py`,
-`programs/functions/send_message/list_agents/list_agents.py`.
+**Key files**: `programs/tools/send_message/send_message/send_message.py`,
+`programs/tools/send_message/list_agents/list_agents.py`.
 **Mechanisms**:
 - `send_message(message, to, agent_id)` →
   `_send_message_impl`.

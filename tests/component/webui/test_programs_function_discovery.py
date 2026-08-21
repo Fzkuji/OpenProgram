@@ -11,8 +11,6 @@ def test_workflow_category_exports_only_named_public_entries() -> None:
         Path(__file__).parents[3]
         / "openprogram"
         / "programs"
-        / "functions"
-        / "agentic"
         / "workflow"
     )
     names = set()
@@ -20,10 +18,14 @@ def test_workflow_category_exports_only_named_public_entries() -> None:
         "search_workflows.py",
         "create_workflow.py",
         "revise_workflow.py",
-        "auto_workflow.py",
     ):
         programs = _extract_all_functions(str(workflow_dir / filename), "agentic")
         names.update(program["name"] for program in programs)
+    auto_source = Path(__file__).parents[3] / "openprogram/programs/workflow/auto_workflow.py"
+    names.update(
+        program["name"]
+        for program in _extract_all_functions(str(auto_source), "workflow")
+    )
 
     assert "agentic_workflow" not in names
     assert {
@@ -37,50 +39,54 @@ def test_workflow_category_exports_only_named_public_entries() -> None:
 def test_programs_treats_workflow_as_category_not_program() -> None:
     from openprogram.webui.routes.programs import _list_entries, _program_logic
 
-    agentic = _list_entries("functions/agentic")
+    root_entries = _list_entries("")
     workflow = next(
-        entry for entry in agentic["entries"]
-        if entry["path"] == "functions/agentic/workflow"
+        entry for entry in root_entries["entries"]
+        if entry["path"] == "workflow"
     )
     assert workflow["program_kind"] is None
     assert workflow["has_children"] is True
     assert not any(
-        entry["path"] == "functions/agentic/agentic_workflow"
-        for entry in agentic["entries"]
+        entry["path"] == "workflow/agentic_workflow"
+        for entry in root_entries["entries"]
     )
 
     children = {
         entry["path"]: entry
-        for entry in _list_entries("functions/agentic/workflow")["entries"]
+        for entry in _list_entries("workflow")["entries"]
     }
-    assert children["functions/agentic/workflow/search_workflows"]["has_children"] is False
-    assert children["functions/agentic/workflow/create_workflow"]["callable_name"] == "create_workflow"
-    assert children["functions/agentic/workflow/revise_workflow"]["program_kind"] == "agentic_function"
-    assert children["functions/agentic/workflow/auto_workflow"]["callable_name"] == "auto_workflow"
-    assert "functions/agentic/workflow/authoring" not in children
+    assert children["workflow/search_workflows"]["has_children"] is False
+    assert children["workflow/create_workflow"]["callable_name"] == "create_workflow"
+    assert children["workflow/revise_workflow"]["program_kind"] == "workflow"
+    assert "workflow/auto_workflow" in children
+    assert "workflow/authoring" not in children
     assert not any(entry["name"].startswith("_") for entry in children.values())
-    assert "functions/agentic/workflow/browser" in children
-    assert "functions/agentic/workflow/docs_question" in children
-    assert "functions/agentic/workflow/goal" in children
-    assert "functions/agentic/workflow/security_review" in children
+    assert "workflow/browser" in children
+    assert "workflow/docs_question" in children
+    assert "workflow/goal" in children
+    assert "workflow/security_review" in children
 
-    entries = [
+    management_entries = [
         children[path]
         for path in (
-            "functions/agentic/workflow/search_workflows",
-            "functions/agentic/workflow/create_workflow",
-            "functions/agentic/workflow/revise_workflow",
-            "functions/agentic/workflow/auto_workflow",
+            "workflow/search_workflows",
+            "workflow/create_workflow",
+            "workflow/revise_workflow",
         )
     ]
+    workflow_entries = {
+        entry["path"]: entry for entry in _list_entries("workflow")["entries"]
+    }
+    auto_entry = workflow_entries["workflow/auto_workflow"]
+    entries = [*management_entries, auto_entry]
     assert {
         (entry["name"], entry["callable_name"], entry["program_kind"])
         for entry in entries
     } == {
-        ("search_workflows", "search_workflows", "agentic_function"),
-        ("create_workflow", "create_workflow", "agentic_function"),
-        ("revise_workflow", "revise_workflow", "agentic_function"),
-        ("auto_workflow", "auto_workflow", "agentic_function"),
+        ("search_workflows", "search_workflows", "workflow"),
+        ("create_workflow", "create_workflow", "workflow"),
+        ("revise_workflow", "revise_workflow", "workflow"),
+        ("auto_workflow", "auto_workflow", "workflow"),
     }
     for entry in entries:
         assert entry["logic_path"] == entry["path"]
@@ -90,23 +96,21 @@ def test_programs_treats_workflow_as_category_not_program() -> None:
         assert root["name"] == entry["name"]
 
     search_logic = _program_logic(
-        "functions/agentic/workflow/search_workflows"
+        "workflow/search_workflows"
     )
     assert search_logic["edges"] == []
-    auto_logic = _program_logic(
-        "functions/agentic/workflow/auto_workflow"
-    )
+    auto_logic = _program_logic("workflow/auto_workflow")
     assert {
         edge["target"] for edge in auto_logic["edges"]
         if edge["source"] == auto_logic["root"]
     } >= {
-        "functions/agentic/workflow/search_workflows",
-        "functions/agentic/workflow/create_workflow",
+        "workflow/search_workflows",
+        "workflow/create_workflow",
     }
 
     old_source = (
         Path(__file__).parents[3]
-        / "openprogram/programs/functions/agentic/agentic_workflow"
+        / "openprogram/programs/workflow/agentic_workflow"
     )
     assert not old_source.exists()
 
@@ -147,11 +151,11 @@ def test_nested_multi_entry_agentic_file_expands_as_virtual_group(
 ) -> None:
     from openprogram.webui.routes import programs
 
-    source = tmp_path / "functions/agentic/deep/category/tools.py"
+    source = tmp_path / "workflow/deep/category/tools.py"
     source.parent.mkdir(parents=True)
     source.write_text("# test source\n", encoding="utf-8")
     indexed = {
-        "functions/agentic/deep/category/tools": [
+        "workflow/deep/category/tools": [
             {"name": "alpha", "description": "", "source": source},
             {"name": "beta", "description": "", "source": source},
         ],
@@ -161,12 +165,12 @@ def test_nested_multi_entry_agentic_file_expands_as_virtual_group(
         programs, "_registered_agentic_callables", lambda: indexed,
     )
 
-    category = programs._list_entries("functions/agentic/deep/category")
+    category = programs._list_entries("workflow/deep/category")
     group = next(entry for entry in category["entries"] if entry["name"] == "tools")
     assert group["program_kind"] is None
     assert group["has_children"] is True
     entries = programs._list_entries(
-        "functions/agentic/deep/category/tools"
+        "workflow/deep/category/tools"
     )["entries"]
     assert [entry["name"] for entry in entries] == ["alpha", "beta"]
 
@@ -195,8 +199,8 @@ def test_agentic_registry_discovery_uses_a_stable_snapshot(monkeypatch) -> None:
 
     indexed = _registered_agentic_callables()
 
-    assert "functions/agentic/workflow/search_workflows" in indexed
-    assert "functions/agentic/workflow/auto_workflow" in indexed
+    assert "workflow/search_workflows" in indexed
+    assert "workflow/auto_workflow" in indexed
 
 
 def test_multi_entry_call_graph_scopes_imports_to_selected_function(
@@ -206,7 +210,7 @@ def test_multi_entry_call_graph_scopes_imports_to_selected_function(
 
     group = tmp_path / "group.py"
     group.write_text(
-        "from openprogram.programs.functions.agentic.dep import zz_dep\n"
+        "from openprogram.programs.workflow.dep import zz_dep\n"
         "def zz_alpha():\n"
         "    return zz_dep()\n"
         "def zz_beta():\n"
@@ -216,18 +220,18 @@ def test_multi_entry_call_graph_scopes_imports_to_selected_function(
     dependency = tmp_path / "dep.py"
     dependency.write_text("def zz_dep():\n    return None\n", encoding="utf-8")
     indexed = {
-        "functions/agentic/group": [
+        "workflow/group": [
             {"name": "zz_alpha", "description": "", "source": group},
             {"name": "zz_beta", "description": "", "source": group},
         ],
-        "functions/agentic/dep": [
+        "workflow/dep": [
             {"name": "zz_dep", "description": "", "source": dependency},
         ],
     }
     entities = {
-        "functions/agentic/group/zz_alpha": group,
-        "functions/agentic/group/zz_beta": group,
-        "functions/agentic/dep": dependency,
+        "workflow/group/zz_alpha": group,
+        "workflow/group/zz_beta": group,
+        "workflow/dep": dependency,
     }
     monkeypatch.setattr(programs, "_inside_programs", lambda _path: True)
     monkeypatch.setattr(
@@ -235,15 +239,15 @@ def test_multi_entry_call_graph_scopes_imports_to_selected_function(
     )
     monkeypatch.setattr(programs, "_entity_paths", lambda: entities)
 
-    alpha = programs._program_logic("functions/agentic/group/zz_alpha")
-    beta = programs._program_logic("functions/agentic/group/zz_beta")
+    alpha = programs._program_logic("workflow/group/zz_alpha")
+    beta = programs._program_logic("workflow/group/zz_beta")
 
     assert {
         (edge["source"], edge["target"]) for edge in alpha["edges"]
     } == {
         (
-            "functions/agentic/group/zz_alpha",
-            "functions/agentic/dep",
+            "workflow/group/zz_alpha",
+            "workflow/dep",
         ),
     }
     assert beta["edges"] == []

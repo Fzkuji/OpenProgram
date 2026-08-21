@@ -243,7 +243,7 @@ class _FakeBrowserAPI:
 
 
 def _controller():
-    from openprogram.programs.functions.agentic.workflow.browser import (
+    from openprogram.programs.workflow.browser import (
         BrowserPageController,
     )
 
@@ -698,7 +698,7 @@ def test_planner_tool_excludes_runtime_owned_observe_action():
 
 
 def test_step_prompt_marks_page_strings_as_untrusted():
-    from openprogram.programs.functions.agentic.workflow.browser import _step_prompt
+    from openprogram.programs.workflow.browser import _step_prompt
 
     prompt = _step_prompt(
         "Click Save",
@@ -713,7 +713,7 @@ def test_step_prompt_marks_page_strings_as_untrusted():
 
 
 def test_public_browser_agent_uses_restricted_tool_and_closes(monkeypatch):
-    from openprogram.programs.functions.agentic.workflow import browser as module
+    from openprogram.programs.workflow import browser as module
 
     class _StubController:
         def __init__(self):
@@ -773,7 +773,7 @@ def test_public_browser_agent_uses_restricted_tool_and_closes(monkeypatch):
 
 
 def test_browser_agent_keeps_forcing_one_browser_page_call_until_verified(monkeypatch):
-    from openprogram.programs.functions.agentic.workflow import browser as module
+    from openprogram.programs.workflow import browser as module
 
     state = {"calls": 0}
 
@@ -836,7 +836,7 @@ def test_browser_agent_keeps_forcing_one_browser_page_call_until_verified(monkey
 
 
 def test_browser_agent_sends_one_screenshot_to_next_point_click_request(monkeypatch):
-    from openprogram.programs.functions.agentic.workflow import browser as module
+    from openprogram.programs.workflow import browser as module
 
     controller, api = _controller()
     monkeypatch.setattr(module, "_new_controller", lambda: controller)
@@ -891,7 +891,7 @@ def test_browser_agent_sends_one_screenshot_to_next_point_click_request(monkeypa
 
 
 def test_screenshot_payload_is_released_when_provider_request_is_cancelled(monkeypatch):
-    from openprogram.programs.functions.agentic.workflow import browser as module
+    from openprogram.programs.workflow import browser as module
     from openprogram.providers.utils.errors import ExecInterrupt
 
     controller, _api = _controller()
@@ -927,7 +927,7 @@ def test_screenshot_payload_is_released_when_provider_request_is_cancelled(monke
 
 
 def test_unsent_final_screenshot_payload_is_released(monkeypatch):
-    from openprogram.programs.functions.agentic.workflow import browser as module
+    from openprogram.programs.workflow import browser as module
 
     controller, _api = _controller()
     monkeypatch.setattr(module, "_new_controller", lambda: controller)
@@ -959,7 +959,7 @@ def test_unsent_final_screenshot_payload_is_released(monkeypatch):
 def test_same_request_screenshot_is_released_when_runtime_raises(
     monkeypatch, cancelled,
 ):
-    from openprogram.programs.functions.agentic.workflow import browser as module
+    from openprogram.programs.workflow import browser as module
     from openprogram.providers.utils.errors import ExecInterrupt
 
     controller, _api = _controller()
@@ -994,7 +994,7 @@ def test_screenshot_point_capability_expires_after_image_request(
     monkeypatch,
     image_request_action,
 ):
-    from openprogram.programs.functions.agentic.workflow import browser as module
+    from openprogram.programs.workflow import browser as module
 
     controller, api = _controller()
     monkeypatch.setattr(module, "_new_controller", lambda: controller)
@@ -1058,7 +1058,7 @@ def test_screenshot_point_capability_expires_after_image_request(
 
 
 def test_external_initial_url_requires_approval_but_localhost_does_not():
-    from openprogram.programs.functions.agentic.workflow.browser import (
+    from openprogram.programs.workflow.browser import (
         _browser_agent_requires_approval,
     )
 
@@ -1098,8 +1098,8 @@ def test_bound_controller_open_forwards_exact_page_revisions():
 
 
 def test_browser_open_forwards_exact_page_revisions_to_app_session(monkeypatch):
-    from openprogram.programs.functions.vanilla.web.browser import browser as browser_api
-    from openprogram.programs.functions.vanilla.web.browser._actions import open_action
+    from openprogram.programs.tools.web.browser import browser as browser_api
+    from openprogram.programs.tools.web.browser._actions import open_action
 
     captured = {}
 
@@ -1135,7 +1135,7 @@ def test_browser_open_forwards_exact_page_revisions_to_app_session(monkeypatch):
 )
 def test_runtime_cancellation_returns_cancelled_and_closes(monkeypatch, interrupt):
     from openprogram.agentic_programming.function import CancelledError
-    from openprogram.programs.functions.agentic.workflow import browser as module
+    from openprogram.programs.workflow import browser as module
     from openprogram.providers.utils.errors import ExecInterrupt
 
     raised = (
@@ -1183,7 +1183,7 @@ def test_runtime_cancellation_returns_cancelled_and_closes(monkeypatch, interrup
 
 
 def test_unhandled_control_signal_propagates_after_cleanup(monkeypatch):
-    from openprogram.programs.functions.agentic.workflow import browser as module
+    from openprogram.programs.workflow import browser as module
 
     class _Controller:
         tool = SimpleNamespace(name="browser_page")
@@ -1216,7 +1216,7 @@ def test_unhandled_control_signal_propagates_after_cleanup(monkeypatch):
 
 
 def test_invalid_initial_url_fails_before_runtime_or_browser_open(monkeypatch):
-    from openprogram.programs.functions.agentic.workflow import browser as module
+    from openprogram.programs.workflow import browser as module
 
     controller, api = _controller()
     monkeypatch.setattr(module, "_new_controller", lambda: controller)
@@ -1235,7 +1235,7 @@ def test_invalid_initial_url_fails_before_runtime_or_browser_open(monkeypatch):
 
 
 def test_cleanup_failure_is_reported_and_downgrades_success(monkeypatch):
-    from openprogram.programs.functions.agentic.workflow import browser as module
+    from openprogram.programs.workflow import browser as module
 
     class _Controller:
         tool = SimpleNamespace(name="browser_page")
@@ -1266,7 +1266,7 @@ def test_cleanup_failure_is_reported_and_downgrades_success(monkeypatch):
 
 def test_browser_agent_source_has_no_heavy_gui_or_auxiliary_vision_imports():
     import inspect
-    from openprogram.programs.functions.agentic.workflow import browser as module
+    from openprogram.programs.workflow import browser as module
 
     source = inspect.getsource(module)
     assert "import gui_harness" not in source

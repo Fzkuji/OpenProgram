@@ -258,7 +258,7 @@ def test_acceptedits_command_still_asks():
 # ── path safety (file_safety.py) ──
 
 def test_path_safety(tmp_path):
-    from openprogram.programs.functions.vanilla.files.file_safety import check_path_safety
+    from openprogram.programs.tools.files.file_safety import check_path_safety
     import os
     d = str(tmp_path)
     assert check_path_safety(os.path.join(d, "a.txt"), [d])["safe"]
@@ -311,7 +311,7 @@ def test_path_is_safe_uses_worktree_contextvar(tmp_path, monkeypatch):
 
 
 def test_is_dangerous_allow_rule():
-    from openprogram.programs.functions.vanilla.files.file_safety import is_dangerous_allow_rule
+    from openprogram.programs.tools.files.file_safety import is_dangerous_allow_rule
     assert is_dangerous_allow_rule("bash", "python:*")   # interpreter
     assert not is_dangerous_allow_rule("bash", "git:*")  # ordinary
     assert is_dangerous_allow_rule("bash", None)         # whole bash tool

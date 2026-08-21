@@ -6,7 +6,7 @@ import pytest
 
 
 def test_semble_tools_hint_when_package_absent(monkeypatch):
-    import openprogram.programs.functions.vanilla.code.semble.shared as tool_module
+    import openprogram.programs.tools.code.semble.shared as tool_module
 
     monkeypatch.setattr(tool_module, "_index_cache", {})
     monkeypatch.delitem(sys.modules, "semble", raising=False)

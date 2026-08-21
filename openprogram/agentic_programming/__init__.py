@@ -6,8 +6,7 @@ Primitives:
     1. @agentic_function  — turn a Python function into one that can call an LLM
     2. llm                 — make one model request through the ambient Runtime
     3. agent               — make a tool loop through the ambient Runtime
-    4. goal                — make a judgment loop through the ambient Runtime
-    5. decision.make       — let the LLM make the next-step decision
+    4. decision.make       — let the LLM make the next-step decision
 
 Infrastructure:
 
@@ -28,7 +27,6 @@ from openprogram.agentic_programming.function import (
 from openprogram.agentic_programming.runtime import Runtime
 from openprogram.agentic_programming.llm import llm
 from openprogram.agentic_programming.agent import agent
-from openprogram.agentic_programming.goal import goal
 from openprogram.agentic_programming import decision
 from openprogram.agentic_programming.session import Session
 from openprogram.agentic_programming.control_flow import (
@@ -43,7 +41,6 @@ __all__ = [
     "Runtime",
     "llm",
     "agent",
-    "goal",
     "decision",
     "Session",
     "validate_and_retry",

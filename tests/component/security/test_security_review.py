@@ -1,5 +1,5 @@
 """Unit tests for the security_review agentic function
-(``openprogram/programs/functions/agentic/security_review/``): baseline
+(``openprogram/programs/workflow/security_review/``): baseline
 selection, diff collection over a real git repository, the short-circuit
 that returns no findings without spawning an agent, and the shape of
 what comes back.
@@ -16,7 +16,7 @@ import subprocess
 
 import pytest
 
-import openprogram.programs.functions.agentic.workflow.security_review as SR
+import openprogram.programs.workflow.security_review as SR
 
 
 def _run(repo, *args):

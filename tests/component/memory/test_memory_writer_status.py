@@ -319,7 +319,7 @@ def test_concurrent_success_and_failure_preserve_both_fields(
 
 
 def test_memory_status_tool_exposes_the_same_writer_contract(environment):
-    from openprogram.programs.functions.vanilla.knowledge.memory import memory as memory_tools
+    from openprogram.programs.tools.knowledge.memory import memory as memory_tools
 
     _db, _root = environment
     result = json.loads(memory_tools.memory_status())

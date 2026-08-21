@@ -58,9 +58,9 @@ agent 的 agent.json `model`。当前默认掉出启用集合时，三处必须*
 ## 6. spawn 的三个入口语义必须一致
 
 spawn 一个 sub-agent 分支有三个入口：`agent()` 同步路径
-（programs/functions/agent/agent/agent.py）、异步 runner
+（programs/tools/agent/agent/agent.py）、异步 runner
 （agent/job/runner.py）、`send_message`
-（programs/functions/send_message/）。三者对 clean 模式必须一致地传
+（programs/tools/send_message/）。三者对 clean 模式必须一致地传
 `spawn_caller=<发起节点>`，使分支根节点 `caller` 指向发起它的那轮
 （dag/overview.md §4），而不是挂在 ROOT 上。改 spawn 语义时三个入口
 一起改，一起测。

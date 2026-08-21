@@ -13,20 +13,33 @@ def _write(path: Path, content: str = "") -> None:
 
 def _client(tmp_path: Path, monkeypatch) -> TestClient:
     root = tmp_path / "openprogram" / "programs"
-    _write(root / "functions" / "vanilla" / "web" / "__init__.py", "")
-    _write(root / "functions" / "vanilla" / "web" / "agent_browser.py", "")
-    _write(root / "functions" / "vanilla" / "web" / "browser" / "__init__.py", "")
-    _write(root / "functions" / "agentic" / "alpha" / "__init__.py", "")
-    _write(root / "workflows" / "__init__.py", "")
+    _write(root / "tools" / "web" / "__init__.py", "")
+    _write(root / "tools" / "web" / "agent_browser.py", "")
+    _write(root / "tools" / "web" / "browser" / "__init__.py", "")
+    _write(root / "workflow" / "alpha" / "__init__.py", "")
+    _write(root / "workflow" / "__init__.py", "")
     _write(
-        root / "workflows" / "research_pipeline" / "workflow.py",
-        "from openprogram.programs.workflows import literature_review\n",
+        root / "workflow" / "research_pipeline" / "workflow.py",
+        "from openprogram.programs.workflow.literature_review import literature_review\n"
+        "\n"
+        "def research_pipeline(task: str):\n"
+        "    return literature_review(task)\n",
     )
     _write(
-        root / "workflows" / "literature_review" / "workflow.py",
-        "from openprogram.programs.workflows.paper_search import run\n",
+        root / "workflow" / "literature_review" / "workflow.py",
+        "from openprogram.programs.workflow.paper_search import run\n"
+        "\n"
+        "def literature_review(task: str):\n"
+        "    return run()\n",
     )
-    _write(root / "workflows" / "paper_search" / "workflow.py", "def run(): pass\n")
+    _write(
+        root / "workflow" / "paper_search" / "workflow.py",
+        "def paper_search():\n"
+        "    return run()\n"
+        "\n"
+        "def run():\n"
+        "    pass\n",
+    )
     _write(root / "applications" / "research_app" / "pyproject.toml", "")
     _write(root / "applications" / "gui_harness" / "pyproject.toml", "")
     _write(root / ".hidden", "ignored")
@@ -49,30 +62,23 @@ def test_programs_explorer_lists_program_catalog_lazily(tmp_path: Path, monkeypa
 
     root = client.get("/api/programs/explorer").json()
     assert [entry["path"] for entry in root["entries"]] == [
-        "functions",
-        "workflows",
+        "tools",
+        "workflow",
         "applications",
     ]
-    assert root["default_selection"] == "workflows/literature_review"
+    assert root["default_selection"] == "workflow/alpha"
 
-    functions = client.get(
-        "/api/programs/explorer", params={"path": "functions"}
-    ).json()
-    assert [entry["path"] for entry in functions["entries"]] == [
-        "functions/vanilla",
-        "functions/agentic",
-    ]
     vanilla = client.get(
-        "/api/programs/explorer", params={"path": "functions/vanilla"}
+        "/api/programs/explorer", params={"path": "tools"}
     ).json()
     assert [
         (entry["name"], entry["path"], entry["program_kind"], entry["has_children"])
         for entry in vanilla["entries"]
     ] == [
-        ("web", "functions/vanilla/web", None, True),
+        ("web", "tools/web", None, True),
     ]
     web = client.get(
-        "/api/programs/explorer", params={"path": "functions/vanilla/web"}
+        "/api/programs/explorer", params={"path": "tools/web"}
     ).json()
     assert [
         (
@@ -83,24 +89,25 @@ def test_programs_explorer_lists_program_catalog_lazily(tmp_path: Path, monkeypa
     ] == [
         (
             "agent_browser",
-            "functions/vanilla/web/agent_browser",
+            "tools/web/agent_browser",
             "vanilla_function",
             False,
-            "functions/vanilla/web/agent_browser",
+            "tools/web/agent_browser",
         ),
         (
             "playwright_browser",
-            "functions/vanilla/web/browser",
+            "tools/web/browser",
             "vanilla_function",
             False,
-            "functions/vanilla/web/browser",
+            "tools/web/browser",
         ),
     ]
 
     workflows = client.get(
-        "/api/programs/explorer", params={"path": "workflows"}
+        "/api/programs/explorer", params={"path": "workflow"}
     ).json()
     assert [entry["name"] for entry in workflows["entries"]] == [
+        "alpha",
         "literature_review",
         "paper_search",
         "research_pipeline",
@@ -109,11 +116,12 @@ def test_programs_explorer_lists_program_catalog_lazily(tmp_path: Path, monkeypa
         "workflow",
         "workflow",
         "workflow",
+        "workflow",
     ]
     assert all(entry["has_children"] is False for entry in workflows["entries"])
 
     workflow = client.get(
-        "/api/programs/explorer", params={"path": "workflows/research_pipeline"}
+        "/api/programs/explorer", params={"path": "workflow/research_pipeline"}
     )
     assert workflow.status_code == 404
 
@@ -134,15 +142,15 @@ def test_multi_callable_package_remains_an_expandable_group(
 ) -> None:
     client = _client(tmp_path, monkeypatch)
     root = tmp_path / "openprogram" / "programs"
-    _write(root / "functions" / "vanilla" / "knowledge" / "__init__.py", "")
+    _write(root / "tools" / "knowledge" / "__init__.py", "")
     _write(
-        root / "functions" / "vanilla" / "knowledge" / "memory" / "__init__.py",
+        root / "tools" / "knowledge" / "memory" / "__init__.py",
         "",
     )
 
     knowledge = client.get(
         "/api/programs/explorer",
-        params={"path": "functions/vanilla/knowledge"},
+        params={"path": "tools/knowledge"},
     ).json()
     assert [
         (entry["name"], entry["program_kind"], entry["has_children"])
@@ -151,7 +159,7 @@ def test_multi_callable_package_remains_an_expandable_group(
 
     memory = client.get(
         "/api/programs/explorer",
-        params={"path": "functions/vanilla/knowledge/memory"},
+        params={"path": "tools/knowledge/memory"},
     ).json()
     assert {entry["name"] for entry in memory["entries"]} == {
         "memory_browse",
@@ -176,22 +184,22 @@ def test_known_application_directories_resolve_to_registered_callables() -> None
 def test_agentic_source_directory_resolves_to_registered_callable() -> None:
     from openprogram.webui.routes.programs import _callable_name
 
-    assert _callable_name("functions/agentic/workflow/docs_question") == "run_docs_question"
-    assert _callable_name("functions/agentic/workflow/security_review") == "run_security_review"
+    assert _callable_name("workflow/docs_question") == "run_docs_question"
+    assert _callable_name("workflow/security_review") == "run_security_review"
 
 
 def test_installed_app_uses_owner_recorded_program_catalog(
     tmp_path: Path, monkeypatch
 ) -> None:
     installed_root = tmp_path / "installed" / "openprogram" / "programs"
-    _write(installed_root / "functions" / "agentic" / "alpha" / "__init__.py", "")
-    _write(installed_root / "workflows" / "__init__.py", "")
+    _write(installed_root / "workflow" / "alpha" / "__init__.py", "")
+    _write(installed_root / "workflow" / "__init__.py", "")
     _write(installed_root / "applications" / "__init__.py", "")
 
     source_root = tmp_path / "checkout" / "openprogram" / "programs"
     application = source_root / "applications" / "gui_harness"
     _write(application / "pyproject.toml", "")
-    _write(source_root / "workflows" / "literature_review" / "workflow.py", "")
+    _write(source_root / "workflow" / "literature_review" / "workflow.py", "")
 
     from openprogram.programs import _programs
     from openprogram.webui.routes import programs
@@ -210,11 +218,14 @@ def test_installed_app_uses_owner_recorded_program_catalog(
         "/api/programs/explorer", params={"path": "applications"}
     ).json()
     workflows = client.get(
-        "/api/programs/explorer", params={"path": "workflows"}
+        "/api/programs/explorer", params={"path": "workflow"}
     ).json()
 
     assert [entry["name"] for entry in applications["entries"]] == ["gui_harness"]
-    assert [entry["name"] for entry in workflows["entries"]] == ["literature_review"]
+    assert [entry["name"] for entry in workflows["entries"]] == [
+        "alpha",
+        "literature_review",
+    ]
 
 
 def test_programs_logic_builds_transitive_workflow_calls(
@@ -223,7 +234,7 @@ def test_programs_logic_builds_transitive_workflow_calls(
     client = _client(tmp_path, monkeypatch)
 
     response = client.get(
-        "/api/programs/logic", params={"path": "workflows/research_pipeline"}
+        "/api/programs/logic", params={"path": "workflow/research_pipeline"}
     )
 
     assert response.status_code == 200
@@ -234,8 +245,8 @@ def test_programs_logic_builds_transitive_workflow_calls(
         ("paper_search", 2),
     ]
     assert payload["edges"] == [
-        {"source": "workflows/research_pipeline", "target": "workflows/literature_review"},
-        {"source": "workflows/literature_review", "target": "workflows/paper_search"},
+        {"source": "workflow/research_pipeline", "target": "workflow/literature_review"},
+        {"source": "workflow/literature_review", "target": "workflow/paper_search"},
     ]
 
 
@@ -245,16 +256,16 @@ def test_programs_logic_includes_agentic_programming_primitive_chain(
     client = _client(tmp_path, monkeypatch)
     root = tmp_path / "openprogram" / "programs"
     _write(
-        root / "workflows" / "research_pipeline" / "workflow.py",
-        "from openprogram.agentic_programming import agentic_function, goal\n"
+        root / "workflow" / "research_pipeline" / "workflow.py",
+        "from openprogram.agentic_programming import agentic_function, agent\n"
         "\n"
         "@agentic_function\n"
         "def research_pipeline(task: str):\n"
-        "    return goal(task, 'done')\n",
+        "    return agent(task)\n",
     )
 
     payload = client.get(
-        "/api/programs/logic", params={"path": "workflows/research_pipeline"}
+        "/api/programs/logic", params={"path": "workflow/research_pipeline"}
     ).json()
 
     assert [
@@ -262,13 +273,11 @@ def test_programs_logic_includes_agentic_programming_primitive_chain(
         for node in payload["nodes"]
     ] == [
         ("research_pipeline", "workflow", 0),
-        ("goal", "runtime_primitive", 1),
-        ("agent", "runtime_primitive", 2),
-        ("llm", "runtime_primitive", 3),
+        ("agent", "runtime_primitive", 1),
+        ("llm", "runtime_primitive", 2),
     ]
     assert payload["edges"] == [
-        {"source": "workflows/research_pipeline", "target": "agentic_programming/goal"},
-        {"source": "agentic_programming/goal", "target": "agentic_programming/agent"},
+        {"source": "workflow/research_pipeline", "target": "agentic_programming/agent"},
         {"source": "agentic_programming/agent", "target": "agentic_programming/llm"},
     ]
 
@@ -288,31 +297,31 @@ def test_programs_explorer_ignores_symlinks_outside_root(
     client = _client(tmp_path, monkeypatch)
     root = tmp_path / "openprogram" / "programs"
     external = tmp_path / "external"
-    _write(external / "workflow.py", "import openprogram.programs.workflows.paper_search\n")
-    (root / "workflows" / "leak").symlink_to(external, target_is_directory=True)
-    (root / "workflows" / "leak.py").symlink_to(external / "workflow.py")
+    _write(external / "workflow.py", "import openprogram.programs.workflow.paper_search\n")
+    (root / "workflow" / "leak").symlink_to(external, target_is_directory=True)
+    (root / "workflow" / "leak.py").symlink_to(external / "workflow.py")
 
     workflows = client.get(
-        "/api/programs/explorer", params={"path": "workflows"}
+        "/api/programs/explorer", params={"path": "workflow"}
     ).json()
 
     assert "leak" not in {entry["name"] for entry in workflows["entries"]}
     assert "leak.py" not in {entry["name"] for entry in workflows["entries"]}
     assert client.get(
-        "/api/programs/logic", params={"path": "workflows/leak"}
+        "/api/programs/logic", params={"path": "workflow/leak"}
     ).status_code == 404
 
     _write(
         external / "linked.py",
-        "import openprogram.programs.functions.agentic.alpha\n",
+        "import openprogram.programs.workflow.alpha\n",
     )
-    (root / "workflows" / "research_pipeline" / "linked.py").symlink_to(
+    (root / "workflow" / "research_pipeline" / "linked.py").symlink_to(
         external / "linked.py"
     )
     payload = client.get(
-        "/api/programs/logic", params={"path": "workflows/research_pipeline"}
+        "/api/programs/logic", params={"path": "workflow/research_pipeline"}
     ).json()
-    assert "functions/agentic/alpha" not in {
+    assert "workflow/alpha" not in {
         edge["target"] for edge in payload["edges"]
     }
     assert payload["analysis_complete"] is True
@@ -324,21 +333,27 @@ def test_programs_logic_resolves_relative_workflow_imports(
     client = _client(tmp_path, monkeypatch)
     root = tmp_path / "openprogram" / "programs"
     _write(
-        root / "workflows" / "research_pipeline" / "workflow.py",
-        "from ..literature_review import run\n",
+        root / "workflow" / "research_pipeline" / "workflow.py",
+        "from ..literature_review import run\n"
+        "\n"
+        "def research_pipeline(task: str):\n"
+        "    return run()\n",
     )
     _write(
-        root / "workflows" / "literature_review" / "__init__.py",
-        "from ..paper_search import run\n",
+        root / "workflow" / "literature_review" / "__init__.py",
+        "from ..paper_search import run\n"
+        "\n"
+        "def literature_review(task: str):\n"
+        "    return run()\n",
     )
 
     payload = client.get(
-        "/api/programs/logic", params={"path": "workflows/research_pipeline"}
+        "/api/programs/logic", params={"path": "workflow/research_pipeline"}
     ).json()
 
     assert payload["edges"] == [
-        {"source": "workflows/research_pipeline", "target": "workflows/literature_review"},
-        {"source": "workflows/literature_review", "target": "workflows/paper_search"},
+        {"source": "workflow/research_pipeline", "target": "workflow/literature_review"},
+        {"source": "workflow/literature_review", "target": "workflow/paper_search"},
     ]
 
 
@@ -348,15 +363,15 @@ def test_programs_logic_skips_oversized_python_sources(
     client = _client(tmp_path, monkeypatch)
     root = tmp_path / "openprogram" / "programs"
     _write(
-        root / "workflows" / "research_pipeline" / "large.py",
-        "import openprogram.programs.functions.agentic.alpha\n#" + "x" * 1_000_000,
+        root / "workflow" / "research_pipeline" / "large.py",
+        "import openprogram.programs.workflow.alpha\n#" + "x" * 1_000_000,
     )
 
     payload = client.get(
-        "/api/programs/logic", params={"path": "workflows/research_pipeline"}
+        "/api/programs/logic", params={"path": "workflow/research_pipeline"}
     ).json()
 
-    assert "functions/agentic/alpha" not in {
+    assert "workflow/alpha" not in {
         edge["target"] for edge in payload["edges"]
     }
     assert payload["analysis_complete"] is False
@@ -367,12 +382,12 @@ def test_programs_logic_reports_source_file_limit(
     tmp_path: Path, monkeypatch
 ) -> None:
     client = _client(tmp_path, monkeypatch)
-    root = tmp_path / "openprogram" / "programs" / "workflows" / "research_pipeline"
+    root = tmp_path / "openprogram" / "programs" / "workflow" / "research_pipeline"
     for index in range(201):
         _write(root / f"part_{index:03d}.py", "")
 
     payload = client.get(
-        "/api/programs/logic", params={"path": "workflows/research_pipeline"}
+        "/api/programs/logic", params={"path": "workflow/research_pipeline"}
     ).json()
 
     assert payload["analysis_complete"] is False
@@ -383,14 +398,14 @@ def test_programs_logic_reports_unparseable_source(
     tmp_path: Path, monkeypatch
 ) -> None:
     client = _client(tmp_path, monkeypatch)
-    root = tmp_path / "openprogram" / "programs" / "workflows" / "research_pipeline"
+    root = tmp_path / "openprogram" / "programs" / "workflow" / "research_pipeline"
     _write(
         root / "broken.py",
-        "import openprogram.programs.functions.agentic.alpha\ndef broken(:\n",
+        "import openprogram.programs.workflow.alpha\ndef broken(:\n",
     )
 
     payload = client.get(
-        "/api/programs/logic", params={"path": "workflows/research_pipeline"}
+        "/api/programs/logic", params={"path": "workflow/research_pipeline"}
     ).json()
 
     assert payload["analysis_complete"] is False

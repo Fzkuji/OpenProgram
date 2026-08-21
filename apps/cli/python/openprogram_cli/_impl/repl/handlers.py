@@ -27,7 +27,7 @@ _BUILTIN_SPECS: list[tuple[str, tuple[str, ...], str, str]] = [
     ("copy", (), "", "copy the last assistant reply to the clipboard"),
     ("tools", (), "", "list available tools"),
     ("skills", (), "", "list discovered skills"),
-    ("functions", ("fns",), "", "list agentic functions (programs/functions/agentic/)"),
+    ("functions", ("fns",), "", "list agentic functions (programs/workflow/)"),
     ("apps", ("applications",), "",
      "list installed programs (gui/research/wiki agents)"),
     ("mcp", (), "[verb]",
@@ -341,7 +341,7 @@ def _handle_goal(args: list[str], console, agent, session_id: str) -> bool:
     if not session_id:
         console.print("[yellow]No active session.[/]")
         return False
-    from openprogram.agent.goal import handle_goal_command
+    from openprogram.programs.workflow.goal import handle_goal_command
     out = handle_goal_command(session_id, " ".join(args))
     if out.get("text"):
         console.print(out["text"], markup=False)

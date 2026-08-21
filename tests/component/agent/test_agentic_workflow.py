@@ -20,7 +20,7 @@ from tests.support.workflow_tl import TL
 def test_workflow_projects_live_under_openprogram_programs() -> None:
     programs_dir = Path(programs.__file__).resolve().parent
 
-    assert TL._workflow_projects_root() == programs_dir / "workflows"
+    assert TL._workflow_projects_root() == programs_dir / "workflow"
 
 
 def test_workflow_projects_use_owner_source_catalog(
@@ -39,7 +39,7 @@ def test_workflow_projects_use_owner_source_catalog(
         lambda base=None: [{"path": str(application)}],
     )
 
-    assert TL._workflow_projects_root() == application.parent.parent / "workflows"
+    assert TL._workflow_projects_root() == application.parent.parent / "workflow"
 
 
 def test_workflow_import_catalog_ignores_non_project_directories(
@@ -1319,7 +1319,7 @@ def test_package_rejects_relative_import_outside_own_package() -> None:
 def test_package_accepts_registered_vanilla_function_import() -> None:
     candidate = json.loads(_package_project())
     candidate["files"]["steps/discover.py"] = (
-        "from openprogram.programs.functions.vanilla.web.web_search "
+        "from openprogram.programs.tools.web.web_search "
         "import execute as web_search\n\n"
         "def discover(task):\n"
         "    return web_search(query=task, provider='arxiv')\n"

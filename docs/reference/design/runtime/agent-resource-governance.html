@@ -138,7 +138,7 @@
     <tr><td>取消与恢复</td><td>取消继续按父子关系级联，运行任务使用 cancel/kill/watchdog；governor 已有 lease、stopping 与 release 原语。</td><td>当前 main 尚未完成 owner-fenced reconciler 和“线程真正退出后才返还 live”的全部竞争条件修复。</td><td><span class="source">openprogram/agent/job/runner.py · cancel_job / _run_one<br>openprogram/agent/resource_governance.py · renew_lease / request_stop / release_task</span></td></tr>
     <tr><td>token / cost</td><td>scope、reservation、start、settle 数据结构和事务方法已存在；unknown cost 仍由 usage ledger 保留来源。</td><td><code>reserve_tokens()</code>、<code>reserve_cost()</code> 当前只有测试调用；真实 provider 请求没有安全上界预占、output cap 收紧、结算或未知价格 fail-closed。</td><td><span class="source">openprogram/agent/resource_governance.py · reserve_tokens / reserve_cost / settle_reservation<br>tests/component/runtime/test_resource_governance.py</span></td></tr>
     <tr><td>runtime / idle</td><td>配置和 budget scope 可以保存 <code>max_runtime_seconds</code>、<code>idle_timeout_seconds</code>；既有 provider/tool timeout 仍独立工作。</td><td>main runner 没有 active timer、meaningful activity、deadline clamp 或 non-preemptible operation gate；排队时间与运行时间也未形成完整用户诊断。</td><td><span class="source">openprogram/config_schema.py<br>openprogram/providers/utils/deadline.py<br>openprogram/agent/job/runner.py</span></td></tr>
-    <tr><td>用户状态</td><td>Web 与模型工具已有任务 list/get/cancel 和状态广播；<code>JobResourceView</code> 可生成基础结构。</td><td>Web/TUI/CLI/model 尚未共享完整 DTO；token/cost/runtime 的 <code>used</code> 或 <code>shared_remaining</code> 仍可能为空，不能据此宣称预算已执行。</td><td><span class="source">openprogram/agent/resource_governance.py · JobResourceView / build_task_resource_view<br>openprogram/webui/ws_actions/task.py<br>openprogram/programs/functions/vanilla/agents/agent/list_tasks/</span></td></tr>
+    <tr><td>用户状态</td><td>Web 与模型工具已有任务 list/get/cancel 和状态广播；<code>JobResourceView</code> 可生成基础结构。</td><td>Web/TUI/CLI/model 尚未共享完整 DTO；token/cost/runtime 的 <code>used</code> 或 <code>shared_remaining</code> 仍可能为空，不能据此宣称预算已执行。</td><td><span class="source">openprogram/agent/resource_governance.py · JobResourceView / build_task_resource_view<br>openprogram/webui/ws_actions/task.py<br>openprogram/programs/tools/agents/agent/list_tasks/</span></td></tr>
   </table>
   </div>
 
@@ -536,10 +536,10 @@ Job JSON + optional fields:
   <table>
     <tr><th>主题</th><th>本仓库证据</th></tr>
     <tr><td>JobRunner、单 worker、取消和孤儿恢复</td><td><code>openprogram/agent/job/runner.py</code>；<code>openprogram/agent/job/store.py</code>；<code>openprogram/agent/job/types.py</code>；<code>openprogram/worker/paths.py</code></td></tr>
-    <tr><td>派生和消息预算</td><td><code>openprogram/programs/functions/vanilla/agents/agent/agent/agent.py</code>；<code>openprogram/programs/functions/vanilla/agents/send_message/send_message/depth.py</code>；<code>openprogram/config_schema.py</code></td></tr>
+    <tr><td>派生和消息预算</td><td><code>openprogram/programs/tools/agents/agent/agent/agent.py</code>；<code>openprogram/programs/tools/agents/send_message/send_message/depth.py</code>；<code>openprogram/config_schema.py</code></td></tr>
     <tr><td>Usage 与 provider 记录</td><td><code>openprogram/usage/event.py</code>；<code>openprogram/usage/ledger.py</code>；<code>openprogram/usage/recorder.py</code>；<code>openprogram/providers/stream.py</code></td></tr>
     <tr><td>Deadline 与函数 timeout</td><td><code>openprogram/providers/utils/deadline.py</code>；<code>openprogram/programs/_runtime.py</code></td></tr>
-    <tr><td>任务界面与协议</td><td><code>openprogram/webui/ws_actions/task.py</code>、Web branch/task cards、<code>openprogram/programs/functions/vanilla/agents/agent/list_tasks/</code>、<code>task_output/</code>、<code>task_stop/</code></td></tr>
+    <tr><td>任务界面与协议</td><td><code>openprogram/webui/ws_actions/task.py</code>、Web branch/task cards、<code>openprogram/programs/tools/agents/agent/list_tasks/</code>、<code>task_output/</code>、<code>task_stop/</code></td></tr>
     <tr><td>竞品与既有设计</td><td><a href="agent-collab-comparison.html">agent-collab-comparison.html</a>；<a href="agent-collaboration.zh.html">agent-collaboration.zh.html</a>；<a href="execution/async-job-lifecycle.zh.html">async-job-lifecycle.zh.html</a>；<a href="../usage-metering.zh.html">usage-metering.zh.html</a></td></tr>
   </table>
   </div>

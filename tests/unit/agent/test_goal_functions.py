@@ -1,12 +1,12 @@
 """Unit tests for the goal agentic function
-(``openprogram/programs/functions/agentic/workflow/goal/``): the single decision entry
+(``openprogram/programs/workflow/goal/``): the single decision entry
 ``goal`` — prompt assembly, JSON parse path, failure path. The loop
 semantics around it live in test_goal_loop.py."""
 from __future__ import annotations
 
 import pytest
 
-import openprogram.programs.functions.agentic.workflow.goal as GF
+import openprogram.programs.workflow.goal.verification as GF
 
 
 @pytest.fixture
@@ -72,7 +72,7 @@ def test_goal_decision_parses_and_forwards(monkeypatch, stub_view) -> None:
                 '"need_user": false, "question": ""} after')
 
     monkeypatch.setattr(GF, "_run_decision_turn", _fake_turn)
-    out = GF.goal(goal="MY-GOAL", session_id="s1",
+    out = GF.judge_goal(goal="MY-GOAL", session_id="s1",
                   spawn_caller="a1", agent_id="main")
     assert out == {"met": True, "reason": "done",
                    "need_user": False, "question": "", "options": [],
@@ -88,7 +88,7 @@ def test_goal_decision_optional_fields_default(monkeypatch, stub_view) -> None:
     # Replies without need_user/question stay valid.
     monkeypatch.setattr(GF, "_run_decision_turn",
                         lambda *a, **k: '{"met": false, "reason": "not yet"}')
-    out = GF.goal(goal="g", session_id="s1")
+    out = GF.judge_goal(goal="g", session_id="s1")
     assert out == {"met": False, "reason": "not yet",
                    "need_user": False, "question": "", "options": [],
                    "checklist": None}
@@ -103,12 +103,12 @@ def test_goal_decision_checklist_in_prompt_and_reply(monkeypatch,
         return '{"met": false, "reason": "r", "checklist": [true, false]}'
 
     monkeypatch.setattr(GF, "_run_decision_turn", _fake_turn)
-    out = GF.goal(goal="g", session_id="s1", checklist=["item A", "item B"])
+    out = GF.judge_goal(goal="g", session_id="s1", checklist=["item A", "item B"])
     assert "<checklist>\n1. item A\n2. item B\n</checklist>" in prompts[0]
     assert out["checklist"] == [True, False]
     # No checklist input → no rendered block (the docstring's own
     # mention of <checklist> stays, the payload block does not).
-    GF.goal(goal="g", session_id="s1")
+    GF.judge_goal(goal="g", session_id="s1")
     assert "<checklist>\n1." not in prompts[1]
 
 
@@ -116,7 +116,7 @@ def test_goal_decision_invalid_reply_raises(monkeypatch, stub_view) -> None:
     monkeypatch.setattr(GF, "_run_decision_turn",
                         lambda *a, **k: "no json here")
     with pytest.raises(ValueError):
-        GF.goal(goal="g", session_id="s1")
+        GF.judge_goal(goal="g", session_id="s1")
 
 
 def test_goal_decision_turn_failure_propagates(monkeypatch, stub_view) -> None:
@@ -124,7 +124,7 @@ def test_goal_decision_turn_failure_propagates(monkeypatch, stub_view) -> None:
         GF, "_run_decision_turn",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("spawn down")))
     with pytest.raises(RuntimeError):
-        GF.goal(goal="g", session_id="s1")
+        GF.judge_goal(goal="g", session_id="s1")
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +170,7 @@ def test_refine_parses_and_forwards(monkeypatch) -> None:
                 '"checklist": ["tests pass"]} ')
 
     monkeypatch.setattr(GF, "_run_refine_turn", _fake_turn)
-    out = GF.refine("tests pass", session_id="s1", agent_id="main")
+    out = GF.refine_goal_spec_candidate("tests pass", session_id="s1", agent_id="main")
     assert out == ("criteria: tests pass", ["tests pass"])
     sid, prompt, agent_id, spawn_caller = calls[0]
     assert (sid, agent_id, spawn_caller) == ("s1", "main", None)
@@ -183,7 +183,7 @@ def test_refine_turn_failure_propagates(monkeypatch) -> None:
         GF, "_run_refine_turn",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("spawn down")))
     with pytest.raises(RuntimeError):
-        GF.refine("g", session_id="s1")
+        GF.refine_goal_spec_candidate("g", session_id="s1")
 
 
 # ---------------------------------------------------------------------------
@@ -230,8 +230,8 @@ def test_goal_decision_mode_in_prompt(monkeypatch, stub_view) -> None:
         return '{"met": false, "reason": "r"}'
 
     monkeypatch.setattr(GF, "_run_decision_turn", _fake_turn)
-    GF.goal(goal="g", session_id="s1")                    # default attended
-    GF.goal(goal="g", session_id="s1", attended=False)
+    GF.judge_goal(goal="g", session_id="s1")                    # default attended
+    GF.judge_goal(goal="g", session_id="s1", attended=False)
     assert "<mode>\nattended\n</mode>" in prompts[0]
     assert "<mode>\nunattended\n</mode>" in prompts[1]
     # Both policies are spelled out in the docstring prompt.

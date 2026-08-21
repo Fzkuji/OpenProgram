@@ -73,19 +73,17 @@
 <body>
 <main>
   <h1>Programs source categories</h1>
-  <p class="lead">The Programs explorer follows the installed Python source hierarchy. Regular Functions are physically grouped by purpose under <code>openprogram/programs/functions/vanilla/</code>; the UI reads that hierarchy instead of rebuilding unrelated folders from runtime tool metadata.</p>
+  <p class="lead">The Programs explorer follows the installed Python source hierarchy. Regular Functions are physically grouped by purpose under <code>openprogram/programs/tools/</code>; the UI reads that hierarchy instead of rebuilding unrelated folders from runtime tool metadata.</p>
 
   <section class="contract" aria-label="Target Programs sidebar structure">
     <div class="nav">
-      <div class="row active"><span class="icon">⌄</span><span>functions</span><span class="count">71</span></div>
-      <div class="row"><span class="icon">⌄</span><span>vanilla</span><span class="count">9 dirs</span></div>
+      <div class="row active"><span class="icon">⌄</span><span>tools</span><span class="count">9 dirs</span></div>
       <div class="row"><span class="icon">□</span><span>files</span><span class="count">10</span></div>
       <div class="row"><span class="icon">⌄</span><span>web</span><span class="count">7</span></div>
       <div class="row active"><span class="icon">ƒ</span><span>playwright_browser</span><span class="count"></span></div>
       <div class="row"><span class="icon">□</span><span>knowledge</span><span class="count">2</span></div>
-      <div class="row"><span class="icon">⌄</span><span>agentic</span><span class="count">11</span></div>
       <div class="sep"></div>
-      <div class="row"><span class="icon">□</span><span>workflows</span><span class="count">4</span></div>
+      <div class="row"><span class="icon">□</span><span>workflow</span><span class="count">16</span></div>
       <div class="row"><span class="icon">□</span><span>applications</span><span class="count">3</span></div>
     </div>
     <div class="content">
@@ -105,9 +103,9 @@
   <table>
     <thead><tr><th>Current boundary</th><th>Verified behavior</th><th>Gap</th></tr></thead>
     <tbody>
-      <tr><td><code>functions/vanilla</code></td><td>Currently stores 34 tool packages in one flat directory.</td><td>Move each package once into one of nine purpose directories; keep public callable names unchanged.</td></tr>
+      <tr><td><code>tools</code></td><td>Purpose directories under <code>openprogram/programs/tools/</code> hold deterministic <code>@function</code> packages.</td><td>None — public callable names stay unchanged.</td></tr>
       <tr><td><code>GET /api/tools</code></td><td>Returns runtime callables, including MCP-backed tools and display groups.</td><td>It remains a runtime/configuration endpoint and no longer defines Programs folders.</td></tr>
-      <tr><td><code>GET /api/programs/explorer</code></td><td>Already owns Workflows and Applications, but only understands flat Function packages.</td><td>Extend it to traverse categories, discover both single-file modules and multi-file packages, and return callable-first rows.</td></tr>
+      <tr><td><code>GET /api/programs/explorer</code></td><td>Lists <code>tools/</code>, <code>workflow/</code>, and <code>applications/</code> as callable-first rows.</td><td>None — leaf Workflow packages are not expandable.</td></tr>
     </tbody>
   </table>
 
@@ -115,10 +113,9 @@
   <table>
     <thead><tr><th>Sidebar row</th><th>Canonical evidence</th><th>Items shown</th><th>Mutation</th></tr></thead>
     <tbody>
-      <tr><td><code>functions/vanilla</code></td><td>Physical directories beneath the installed package</td><td><code>files</code>, <code>web</code>, <code>knowledge</code>, <code>planning</code>, <code>agents</code>, <code>jobs</code>, <code>code</code>, <code>interaction</code>, and <code>runtime</code>.</td><td>Read-only catalog</td></tr>
-      <tr><td><code>functions/vanilla/&lt;purpose&gt;/&lt;module-or-package&gt;</code></td><td>Physical Python source plus registration metadata</td><td>A singleton source is one callable row. A source that registers several callables is one expandable group containing those callable rows.</td><td>Favorite and Use operate on the callable</td></tr>
-      <tr><td><code>functions/agentic</code></td><td><code>/api/programs category=agentic</code></td><td>Each registered Agentic Function by its callable name, including multiple exports from one package.</td><td>Favorite and Use remain available</td></tr>
-      <tr><td><code>workflows</code></td><td><code>/api/programs/explorer</code></td><td>Reusable source-backed workflows.</td><td>Existing call tree and graph</td></tr>
+      <tr><td><code>tools</code></td><td>Physical directories beneath the installed package</td><td><code>files</code>, <code>web</code>, <code>knowledge</code>, <code>planning</code>, <code>agents</code>, <code>jobs</code>, <code>code</code>, <code>interaction</code>, and <code>runtime</code>.</td><td>Read-only catalog</td></tr>
+      <tr><td><code>tools/&lt;purpose&gt;/&lt;module-or-package&gt;</code></td><td>Physical Python source plus registration metadata</td><td>A singleton source is one callable row. A source that registers several callables is one expandable group containing those callable rows.</td><td>Favorite and Use operate on the callable</td></tr>
+      <tr><td><code>workflow</code></td><td>Physical directories and modules under <code>openprogram/programs/workflow/</code></td><td>Each registered Workflow by its callable name, including multiple exports from one package.</td><td>Favorite and Use remain available</td></tr>
       <tr><td><code>applications</code></td><td><code>/api/programs/explorer</code></td><td>Installed application packages.</td><td>Existing call tree and graph</td></tr>
     </tbody>
   </table>
@@ -165,11 +162,11 @@
 
   <h2>Task brief and gate manifest</h2>
   <p><strong>Production files:</strong> physical vanilla packages, their imports, the Programs explorer endpoint, and the existing Programs page. <strong>Test files:</strong> explorer public-entry tests, registry/import tests, and the Programs UI contract. <strong>Excluded:</strong> public callable renames, tool-profile policy changes, card restyling, dependencies, and external MCP catalog changes.</p>
-  <p><strong>Acceptance:</strong> every shipped vanilla source lives under exactly one purpose directory; simple sources are modules and complex sources are packages; no old top-level source remains; <code>playwright_browser</code> is directly visible and retains <code>functions/vanilla/web/browser</code> as its logic path; all registered vanilla callable names remain available; Workflows and Applications are unchanged.</p>
+  <p><strong>Acceptance:</strong> every shipped vanilla source lives under exactly one purpose directory; simple sources are modules and complex sources are packages; no old top-level source remains; <code>playwright_browser</code> is directly visible and retains <code>tools/web/browser</code> as its logic path; all registered vanilla callable names remain available; Workflows and Applications are unchanged.</p>
   <p><strong>Verification:</strong> focused explorer and registry RED/GREEN tests, import smoke test, Programs UI check, TypeScript compile, build, default 18100 packaged-App DOM and screenshot, and <code>git diff --check</code>.</p>
 
   <h2>Application import compatibility</h2>
-  <p>Applications loaded from <code>openprogram/programs/applications</code> must import built-in Agentic Functions through the canonical <code>openprogram.programs.functions.agentic</code> namespace. The removed <code>openprogram.programs.agentic_functions</code> namespace is not restored as a second compatibility package.</p>
+  <p>Applications loaded from <code>openprogram/programs/applications</code> must import built-in Agentic Functions through the canonical <code>openprogram.programs.workflow</code> namespace. The removed <code>openprogram.programs.agentic_functions</code> namespace is not restored as a second compatibility package.</p>
   <p><strong>Acceptance:</strong> the packaged <code>gui_agent</code> public entry can begin a desktop run without a module-import error; the GUI, research, and wiki application packages contain no production import of the removed namespace.</p>
 
   <h2>Implementation status</h2>

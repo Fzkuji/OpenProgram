@@ -9,23 +9,25 @@ from __future__ import annotations
 import importlib
 
 from openprogram.agentic_programming import function as agentic_fn
-from openprogram.programs.functions.agentic import workflow as pkg
-from openprogram.programs.functions.agentic.workflow import errors
+import openprogram.programs.workflow as pkg
+from openprogram.programs.workflow import errors
 
-_PKG = "openprogram.programs.functions.agentic.workflow"
-auto_workflow_mod = importlib.import_module(f"{_PKG}.auto_workflow")
+_PKG = "openprogram.programs.workflow"
+auto_workflow_mod = importlib.import_module(
+    "openprogram.programs.workflow.auto_workflow"
+)
 create_workflow_mod = importlib.import_module(f"{_PKG}.create_workflow")
 resume_workflow_mod = importlib.import_module(f"{_PKG}.resume_workflow")
 revise_workflow_mod = importlib.import_module(f"{_PKG}.revise_workflow")
 search_workflows_mod = importlib.import_module(f"{_PKG}.search_workflows")
-from openprogram.programs.functions.agentic.workflow._generation import planner
-from openprogram.programs.functions.agentic.workflow._generation import prompts
-from openprogram.programs.functions.agentic.workflow._project import catalog
-from openprogram.programs.functions.agentic.workflow._project import repository
-from openprogram.programs.functions.agentic.workflow._project import validation
-from openprogram.programs.functions.agentic.workflow._runtime import bindings
-from openprogram.programs.functions.agentic.workflow._runtime import execution
-from openprogram.programs.functions.agentic.workflow._runtime import state
+from openprogram.programs.workflow._generation import planner
+from openprogram.programs.workflow._generation import prompts
+from openprogram.programs.workflow._project import catalog
+from openprogram.programs.workflow._project import repository
+from openprogram.programs.workflow._project import validation
+from openprogram.programs.workflow._runtime import bindings
+from openprogram.programs.workflow._runtime import execution
+from openprogram.programs.workflow._runtime import state
 
 _OWNERS = {
     "AUTO_DECISION_ATTEMPTS": prompts,

@@ -11,7 +11,7 @@
 
 ## 0. The one rule that matters
 
-**A harness is anything you drop into `<openprogram>/programs/functions/agentic/`
+**A harness is anything you drop into `<openprogram>/programs/workflow/`
 that exposes its functions through `<pkg>/agentics/__init__.py`.** The host
 walks that folder on startup (and, with hot-reload, whenever it changes),
 finds the inner package, imports `<pkg>.agentics`, and the

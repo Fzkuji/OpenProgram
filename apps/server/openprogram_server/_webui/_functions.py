@@ -18,7 +18,7 @@ from typing import Optional
 from openprogram.agentic_programming.runtime import Runtime
 
 
-# Base of the openprogram package. Discovery scans under programs/functions/agentic/.
+# Base of the openprogram package. Discovery scans under programs/workflow/.
 import openprogram as _op_pkg
 _PKG_BASE = os.path.dirname(os.path.abspath(_op_pkg.__file__))
 
@@ -28,7 +28,7 @@ _PKG_BASE = os.path.dirname(os.path.abspath(_op_pkg.__file__))
 # ---------------------------------------------------------------------------
 
 def _discover_functions() -> list[dict]:
-    """Scan openprogram/programs/functions/agentic/ to build the function list.
+    """Scan openprogram/programs/workflow/ to build the function list.
 
     Each agentic function lives in its own directory with code in
     ``__init__.py``. Harness apps (e.g. Research-Agent-Harness) are
@@ -47,7 +47,7 @@ def _discover_functions() -> list[dict]:
     # more buildin/third_party split; that distinction is gone after
     # the function-calling unification.
     from openprogram.programs._registry import iter_agentic_files
-    from openprogram.programs.functions import agentic as _agentics_pkg
+    import openprogram.programs.workflow as _agentics_pkg
     import os as _os
     agentics_dir = _os.path.dirname(_agentics_pkg.__file__)
     for mod_name, full_path, is_harness in iter_agentic_files(agentics_dir):
@@ -56,7 +56,7 @@ def _discover_functions() -> list[dict]:
             if info:
                 result.append(info)
         else:
-            infos = _extract_all_functions(full_path, "agentic")
+            infos = _extract_all_functions(full_path, "workflow")
             result.extend(infos)
 
     # First-party *programs* — pip-installed harnesses (gui_harness /
@@ -69,10 +69,9 @@ def _discover_functions() -> list[dict]:
     result.extend(_discover_program_functions({r["name"] for r in result}))
 
     # Git-backed Workflow packages register through the same
-    # @agentic_function registry, but their source intentionally lives under
-    # programs/workflows rather than functions/agentic. Include those
-    # registered callables in the live function list so favorites and the
-    # chat launcher can resolve them by name.
+    # @agentic_function registry. Include those registered callables in
+    # the live function list so favorites and the chat launcher can
+    # resolve them by name.
     result.extend(_discover_workflow_functions({r["name"] for r in result}))
 
     return result
@@ -87,10 +86,16 @@ def _discover_workflow_functions(seen: set[str]) -> list[dict]:
 
     out: list[dict] = []
     for name, registered in _registry.items():
-        if name in seen:
+        if name in seen or name.startswith("_"):
             continue
         fn = getattr(registered, "_fn", None) or registered
-        if not getattr(fn, "__module__", "").startswith("workflows."):
+        module = str(getattr(fn, "__module__", "") or "")
+        if not (
+            module.startswith("openprogram.programs.workflow.")
+            or module.startswith("workflows.")
+        ):
+            continue
+        if "._generation." in module or "._project." in module or "._runtime." in module:
             continue
         try:
             src = inspect.getsourcefile(fn)
@@ -466,7 +471,7 @@ def _load_function(func_name: str):
     Search target: every module listed in
     ``openprogram.programs._registry.AGENTIC_MODULES`` (covers both
     flat agentic functions and the harness apps under the unified
-    ``programs/functions/agentic/`` tree). For each registered module we import,
+    ``programs/workflow/`` tree). For each registered module we import,
     reload, and look up ``func_name`` as a top-level attribute. Harness
     apps go through the same path but are loaded via
     ``spec_from_file_location`` since their external dirs have hyphen
@@ -479,12 +484,12 @@ def _load_function(func_name: str):
     from openprogram.programs._registry import (
         iter_agentic_files, _load_external_file,
     )
-    from openprogram.programs.functions import agentic as _agentics_pkg
+    import openprogram.programs.workflow as _agentics_pkg
     agentics_dir = os.path.dirname(_agentics_pkg.__file__)
     import importlib.util as _imputil
 
     for mod_name, fpath, is_harness in iter_agentic_files(agentics_dir):
-        full_mod = f"openprogram.programs.functions.agentic.{mod_name}"
+        full_mod = f"openprogram.programs.workflow.{mod_name}"
         try:
             if is_harness:
                 # Re-execute the file under its registered module name

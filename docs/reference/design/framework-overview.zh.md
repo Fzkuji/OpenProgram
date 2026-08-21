@@ -205,7 +205,7 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 ### ⑤ 协作　send_message + 跨 session + 防护
 
 **职责**：分支/会话之间投递消息、跑分支、把回复带回来。
-**关键文件**：`programs/functions/send_message/send_message/send_message.py`、`programs/functions/send_message/list_agents/list_agents.py`。
+**关键文件**：`programs/tools/send_message/send_message/send_message.py`、`programs/tools/send_message/list_agents/list_agents.py`。
 **关键机制**：
 - `send_message(message, to, agent_id)`（→ `_send_message_impl`）。
 - to 语义（`_parse_to`）：`SID:HEAD`（投到已存在分支 = 从其 head 再跑一轮）或分支名。建分支归 `agent` 工具（spawn / 从节点 fork）；`to="new"` 语法直接报错并指向它。

@@ -268,7 +268,7 @@ async def _approve_then_run(call_id, args, cancel, on_update):
 
 对应 3.2 伪代码编号：
 
-- **acceptEdits（⑥）**：三部分——① `@function` 有 `accept_edits_safe: bool = False` 参数（`functions/_runtime.py:767`），落到工具对象的 `_accept_edits_safe`（`:1079`）；read/write/edit/glob/grep/list 各自的 `@function` 标 `True`（如 `programs/functions/write/write.py:24`、`edit/edit.py:25`、`read/read.py:28`、`grep/grep.py:101`、`list/list.py:30`、`glob/glob.py:43`），bash/exec/execute_code 不标（默认 `False`）；② `_path_is_safe`（`internals/_approval.py:72-87`）复用 3.5 的 `check_path_safety`（路径在工作目录集内、非危险文件/目录、无 Windows 绕过）；③ 命令类工具即使有宽 allow 也 fall-through 到 ⑧ 强制审批。
+- **acceptEdits（⑥）**：三部分——① `@function` 有 `accept_edits_safe: bool = False` 参数（`functions/_runtime.py:767`），落到工具对象的 `_accept_edits_safe`（`:1079`）；read/write/edit/glob/grep/list 各自的 `@function` 标 `True`（如 `programs/tools/write/write.py:24`、`edit/edit.py:25`、`read/read.py:28`、`grep/grep.py:101`、`list/list.py:30`、`glob/glob.py:43`），bash/exec/execute_code 不标（默认 `False`）；② `_path_is_safe`（`internals/_approval.py:72-87`）复用 3.5 的 `check_path_safety`（路径在工作目录集内、非危险文件/目录、无 Windows 绕过）；③ 命令类工具即使有宽 allow 也 fall-through 到 ⑧ 强制审批。
 - **plan（可见性控制）**：`apply_tool_policy(tools, source="plan")`（`dispatcher/__init__.py:798`）滤掉写类工具，根本不进模型工具列表。plan 状态存布尔集（`agent/plan_mode.py` 的 `_active`），**不切批准强度**——与批准档正交（详见 §3.7）。`_gated_execute` 无 plan 专属分支（写类已被滤掉，只读工具按当前档常规走）。
 - **auto（⑦）**：LLM 分类器档，三级过滤省调用（`internals/_auto_classifier.py`）：明显安全的只读工具在 ⑤ 已放行；`RISKY_AUTO_DENYLIST`（bash/exec/shell/execute_code/process）直接 `[denied]`；其余拿不准的调一次 `auto_classify_tool` 问 haiku。规则层 deny/ask（①）仍在其前生效，allow（④）不受影响。
 - **ask**：不命中 allow、不在只读白名单、per-tool 不免审的工具全部落 ⑧。
@@ -345,7 +345,7 @@ def _risk_level(tool_name: str, args: dict) -> str:
 
 `_approval_detail`（`internals/_approval.py:232-242`，生成"工具名 + 参数全文，超长首尾截断"）给审批卡片一段可读摘要（第一版不做危险 token 高亮）。`_on_asked`（`await_user_approval` 内）的 `question.asked` 帧带上 `tool`/`args`/`risk_level`，前端据此上色（§4.2）。
 
-**路径安全**（`openprogram/programs/functions/vanilla/files/file_safety.py`）：
+**路径安全**（`openprogram/programs/tools/files/file_safety.py`）：
 
 ```python
 # file_safety.py:20-40, 63
@@ -603,13 +603,13 @@ hook 返回 `{mode, options, set}`。
 |---|---|
 | 判定链 `_gated_execute` / `_match_rule` / `await_user_approval` / `_persist_always_allow_rule` / `_risk_level` | `openprogram/agent/internals/_approval.py` |
 | 规则字符串解析、匹配、多层合并 | `openprogram/programs/permission_rule.py`（`parse_rule` / `parse_command` / `pattern_matches` / `load_merged_rules`） |
-| 路径安全 / 危险文件目录 / Windows 绕过 | `openprogram/programs/functions/vanilla/files/file_safety.py` |
+| 路径安全 / 危险文件目录 / Windows 绕过 | `openprogram/programs/tools/files/file_safety.py` |
 | gate 硬拦截 | `openprogram/events/tool_gate.py` |
 | 权限模式合法值 + 规范化 + SessionRunConfig 字段 | `openprogram/agent/session_config.py` |
 | `PermissionMode` 类型 + TurnRequest 字段/默认 | `openprogram/agent/dispatcher/types.py` |
 | 会话 meta schemaless 存储 | `openprogram/store/session/session_store.py` |
 | 项目级 settings 读写 + `project_for_session` | `openprogram/store/project/project_store.py` |
-| `accept_edits_safe` 声明 + per-tool `requires_approval` | `openprogram/programs/_runtime.py`；工具标记在 `openprogram/programs/functions/vanilla/{read,write,edit,glob,grep,list}/` |
+| `accept_edits_safe` 声明 + per-tool `requires_approval` | `openprogram/programs/_runtime.py`；工具标记在 `openprogram/programs/tools/{read,write,edit,glob,grep,list}/` |
 | web 默认 bypass + effective_permission | `openprogram/webui/_execute/__init__.py`；`additional_working_dirs` 填充在 `_execute/chat.py`、`channels/_conversation.py` |
 | WS：审批应答 + 项目规则 list/add/remove | `openprogram/webui/ws_actions/session.py`、`chat.py` |
 | 值守（正交机制） | `openprogram/agent/attended.py`、`openprogram/webui/ws_actions/runtime.py` |

@@ -480,7 +480,7 @@ def test_session_context_without_active_turn_does_not_inject():
 
 def test_execute_code_honors_sandbox_unavailable_refuse(agent_run, monkeypatch):
     from openprogram import sandbox
-    from openprogram.programs.functions.vanilla.code.execute_code import execute
+    from openprogram.programs.tools.code.execute_code import execute
 
     marker = agent_run / "must-not-exist"
     monkeypatch.setattr(
@@ -500,7 +500,7 @@ def test_execute_code_routes_interpreter_script_and_cwd_through_local_backend(
 ):
     from openprogram.backend.local import LocalBackend
     from openprogram.backend.base import RunResult
-    from openprogram.programs.functions.vanilla.code.execute_code import execute
+    from openprogram.programs.tools.code.execute_code import execute
 
     seen = {}
 
@@ -593,7 +593,7 @@ def test_agent_shell_rm_rmdir_and_unlink_are_recoverable(agent_run):
 
 def test_agent_python_and_execute_code_deletions_are_recoverable(agent_run):
     from openprogram.backend.local import LocalBackend
-    from openprogram.programs.functions.vanilla.code.execute_code import execute
+    from openprogram.programs.tools.code.execute_code import execute
 
     work = agent_run / "python-work"
     work.mkdir()
@@ -679,7 +679,7 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
     config = tomllib.loads((repo / "pyproject.toml").read_text())
     package_data = config["tool"]["setuptools"]["package-data"]["openprogram"]
     assert "sandbox/shims/*.py" in package_data
-    assert "programs/functions/agentic/workflow/browser/*.cjs" in package_data
+    assert "programs/workflow/browser/*.cjs" in package_data
 
     project = tmp_path / "project"
     (project / "openprogram" / "sandbox" / "shims").mkdir(parents=True)
@@ -688,9 +688,9 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
         "openprogram/sandbox/__init__.py", "openprogram/sandbox/shims/sitecustomize.py",
         "openprogram/sandbox/shims/node_preload.cjs",
         "openprogram/programs/__init__.py",
-        "openprogram/programs/functions/agentic/__init__.py",
-        "openprogram/programs/functions/agentic/workflow/browser/__init__.py",
-        "openprogram/programs/functions/agentic/workflow/browser/playwright_exact_page_mcp.cjs",
+        "openprogram/programs/workflow/__init__.py",
+        "openprogram/programs/workflow/browser/__init__.py",
+        "openprogram/programs/workflow/browser/playwright_exact_page_mcp.cjs",
         "openprogram/sandbox/recoverable_delete.py",
         "openprogram/webui/__init__.py",
     ):
@@ -721,7 +721,7 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
     assert "openprogram/sandbox/shims/sitecustomize.py" in names
     assert "openprogram/sandbox/shims/node_preload.cjs" in names
     assert (
-        "openprogram/programs/functions/agentic/workflow/browser/"
+        "openprogram/programs/workflow/browser/"
         "playwright_exact_page_mcp.cjs"
     ) in names
     assert "openprogram/webui/functions_meta.json" not in names
@@ -742,7 +742,7 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
     assert (installed_shims / "sitecustomize.py").is_file()
     assert (installed / "openprogram/sandbox/shims/node_preload.cjs").is_file()
     assert (
-        installed / "openprogram/programs/functions/agentic/workflow/browser/"
+        installed / "openprogram/programs/workflow/browser/"
         "playwright_exact_page_mcp.cjs"
     ).is_file()
 

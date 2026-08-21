@@ -737,7 +737,7 @@
   <table>
     <thead><tr><th>范围</th><th>合同</th></tr></thead>
     <tbody>
-      <tr><td>生产文件</td><td><code>functions/agentic/workflow/__init__.py</code> 中的运行总结逻辑生成结构化 handoff；<code>runtime-summary.ts</code> 只把带版本标记的 handoff 当作 Conclusion，并仅在 <code>return_result=true</code> 时暴露原始结果；<code>runtime-block.tsx</code> 在同一 Conclusion 中分开渲染工作总结与明确要求的直接结果。</td></tr>
+      <tr><td>生产文件</td><td><code>workflow/__init__.py</code> 中的运行总结逻辑生成结构化 handoff；<code>runtime-summary.ts</code> 只把带版本标记的 handoff 当作 Conclusion，并仅在 <code>return_result=true</code> 时暴露原始结果；<code>runtime-block.tsx</code> 在同一 Conclusion 中分开渲染工作总结与明确要求的直接结果。</td></tr>
       <tr><td>公共入口</td><td>从 Programs 或 fn-form 在会话中直接运行用户级 <code>auto_workflow</code>，刷新历史会话后也必须得到相同结论。</td></tr>
       <tr><td>兼容与失败</td><td>非 workflow 的 Function 行、运行中的 workflow、嵌套 LLM 工具调用保持现状；JSON 不完整、失败、取消时不得抛出渲染异常或伪造成功数字。</td></tr>
       <tr><td>明确排除</td><td>不新增依赖、不改变 DAG、不改变按钮内容、顺序或行为、不修改普通 assistant 消息和嵌套函数，不让 summary 函数使用工具或再次执行任务。</td></tr>
@@ -748,7 +748,7 @@
   <h2>实现证据</h2>
   <div class="not-decided">
     <strong>聊天窗口实现：</strong><code>runtime-block.tsx</code> 仅为顶层 Program 增加专用头像与 <code>ExecutionStrip</code>；执行树与 usage 作为同一折叠内容，footer 位于折叠区和 <code>Conclusion</code> 之后，并由 <code>execution-strip.css</code> 复用 assistant 消息的 12px 正文到 footer 段落间距；嵌套 LLM 工具调用保留原结构。成功态 Conclusion 只把带 <code>workflow_handoff_v1</code> 标记的内容当作工作总结，只有 <code>return_result=true</code> 时才在其后单独显示完整结果；capped、取消、interrupted 与失败态由 <code>runtime-summary.ts</code> 确定性生成状态或错误 Conclusion，不调用模型。旧 payload 的原始 <code>summary</code> 不再被当作工作总结。<br>
-    <strong>后端实现：</strong><code>functions/agentic/workflow/__init__.py</code> 在当前package Workflow成功后调用一次独立的无工具summary函数。它接收任务、执行函数名、状态、原始结果长度，以及仅限agent步骤的240字operational handoff；不接收调用参数、完整原始结果或其他函数的结果摘要。正文披露授权由只读原始task的确定性guard计算。summary格式错误或调用失败时生成安全交接，并把错误只留在state。历史planner与SINGLE文件交付规则仅保留给显式legacy resume。<br>
+    <strong>后端实现：</strong><code>workflow/__init__.py</code> 在当前package Workflow成功后调用一次独立的无工具summary函数。它接收任务、执行函数名、状态、原始结果长度，以及仅限agent步骤的240字operational handoff；不接收调用参数、完整原始结果或其他函数的结果摘要。正文披露授权由只读原始task的确定性guard计算。summary格式错误或调用失败时生成安全交接，并把错误只留在state。历史planner与SINGLE文件交付规则仅保留给显式legacy resume。<br>
     <strong>自动检查：</strong><code>pytest -q tests/component/agent/test_agentic_workflow.py</code> 覆盖当前package Workflow与显式legacy resume，两者不得混合创建路径；完整Web check、Web typecheck、文档链接检查与 <code>git diff --check</code> 同时验证。<br>
     <strong>真实验收：</strong>历史会话中的旧 workflow payload 不具备 <code>workflow_handoff_v1</code> 标记，因此不再把旧的 12198 字任务结果显示为 Conclusion。新 handoff 的真实 18100 验收必须使用新建 workflow 运行，且只使用 <code>/Applications/OpenProgram.app</code>、默认 <code>~/.openprogram</code> 与 <code>18100</code>；不启动 <code>18200</code>。DAG 节点投影未在本次实现中改动。
   </div>

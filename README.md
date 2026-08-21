@@ -199,13 +199,13 @@ Four levels, from a one-line edit to a distributable package. Start at the top a
 
 ### Level 1 — Write your own agentic function
 
-Add a directory under `openprogram/programs/functions/agentic/<your_function>/`
+Add a directory under `openprogram/programs/workflow/<your_function>/`
 with the code in `__init__.py`, then add its module name to
 `openprogram/programs/_registry.py::AGENTIC_MODULES`. The registry imports the
 module on startup and exposes its decorated functions.
 
 ```python
-# openprogram/programs/functions/agentic/changelog/__init__.py
+# openprogram/programs/workflow/changelog/__init__.py
 import subprocess
 from openprogram import agentic_function
 

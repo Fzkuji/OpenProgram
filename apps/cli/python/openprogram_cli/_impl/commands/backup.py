@@ -3,7 +3,7 @@
 Scope is an explicit allowlist of top-level entries under the state dir
 (``~/.openprogram/`` or ``~/.openprogram-<profile>/``) — the things that
 represent *what the user built*: memory workspace, sessions, config,
-programs/functions metadata, channel bindings, agents, skills, plugins.
+programs metadata, channel bindings, agents, skills, plugins.
 
 Everything else is excluded by construction, because an allowlist can't
 silently start capturing a new cache directory the way a denylist would.

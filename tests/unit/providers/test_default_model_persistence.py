@@ -229,6 +229,10 @@ def test_restored_session_function_run_uses_its_agent_model(monkeypatch):
         "openprogram.programs.agent_tools",
         lambda names=None: [Tool()],
     )
+    monkeypatch.setattr(
+        "openprogram.programs._runtime.get",
+        lambda name, *a, **k: Tool() if name == Tool.name else None,
+    )
 
     class DB:
         def message_exists(self, session_id, msg_id):
@@ -246,6 +250,10 @@ def test_restored_session_function_run_uses_its_agent_model(monkeypatch):
     monkeypatch.setattr(
         "openprogram.agent.dispatcher.dispatch_forced_tool_call",
         lambda **kwargs: captured.update(kwargs) or {"ok": False},
+    )
+    monkeypatch.setattr(
+        "openprogram.agentic_programming.function.create_pending_call_node",
+        lambda **k: None,
     )
 
     def inline_thread(target=None, args=(), kwargs=None, daemon=None):

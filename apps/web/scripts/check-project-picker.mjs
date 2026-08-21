@@ -19,7 +19,7 @@ const fnFormSubmit = source(
   "components/chat/composer/modes/fn-form/use-fn-form-submit.ts",
 );
 const workflowSource = source(
-  "../../openprogram/programs/functions/agentic/workflow/__init__.py",
+  "../../openprogram/programs/workflow/auto_workflow.py",
 );
 const chatCss = readChatCss(root);
 

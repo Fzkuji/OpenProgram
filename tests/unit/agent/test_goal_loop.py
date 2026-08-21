@@ -20,8 +20,8 @@ from unittest.mock import patch
 
 import pytest
 
-import openprogram.agent.goal as G
-import openprogram.programs.functions.agentic.workflow.goal as GF
+import openprogram.programs.workflow.goal as G
+import openprogram.programs.workflow.goal.verification as GF
 
 # The autouse fixture replaces G._emit_goal_update with a collector;
 # keep a module-import-time reference so the payload-shape test can
@@ -168,7 +168,7 @@ def test_refine_goal_spec_stores_spec(tmp_db: SessionDB, monkeypatch,
     _set_goal(tmp_db, "s1", text="tests pass")
     notices: list = []
     monkeypatch.setattr(
-        GF, "refine",
+        G, "refine_goal_spec_candidate",
         lambda text, session_id="", **k: (f"SPEC({text})", ["a", "b"]))
     monkeypatch.setattr(
         G, "_emit_goal_spec_notice",
@@ -192,7 +192,7 @@ def test_refine_goal_spec_empty_checklist_stores_none(tmp_db: SessionDB,
     """A prose-fallback refinement (checklist []) leaves the goal
     without a checklist key — the judge sees no <checklist> block."""
     _set_goal(tmp_db, "s1", text="tests pass")
-    monkeypatch.setattr(GF, "refine",
+    monkeypatch.setattr(G, "refine_goal_spec_candidate",
                         lambda text, session_id="", **k: ("SPEC", []))
     monkeypatch.setattr(G, "_emit_goal_spec_notice", lambda *a, **k: None)
     G.refine_goal_spec("s1")
@@ -204,7 +204,7 @@ def test_refine_goal_spec_failure_fails_open(tmp_db: SessionDB,
                                              monkeypatch) -> None:
     _set_goal(tmp_db, "s1")
     monkeypatch.setattr(
-        GF, "refine",
+        G, "refine_goal_spec_candidate",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("spawn down")))
     G.refine_goal_spec("s1")                     # must not raise
     goal = G.load_goal("s1")
@@ -221,7 +221,7 @@ def test_refine_goal_spec_respects_clear_race(tmp_db: SessionDB,
         G.handle_goal_command("s1", "clear")
         return "SPEC", []
 
-    monkeypatch.setattr(GF, "refine", _refine_then_cleared)
+    monkeypatch.setattr(G, "refine_goal_spec_candidate", _refine_then_cleared)
     G.refine_goal_spec("s1")
     goal = G.load_goal("s1")
     assert goal["status"] == "cleared" and "spec" not in goal
@@ -236,7 +236,7 @@ def test_judge_prefers_spec_over_text(tmp_db: SessionDB, monkeypatch) -> None:
         return {"met": True, "reason": "done", "need_user": False,
                 "question": ""}
 
-    monkeypatch.setattr(GF, "goal", _fake_decision)
+    monkeypatch.setattr(G, "judge_goal", _fake_decision)
     verdict, _, _, _ = G.evaluate_goal("s1", goal, agent_id="main")
     assert verdict == "met"
     assert seen == ["THE-SPEC"]
@@ -990,7 +990,7 @@ def test_spawned_turns_skip_goal_loop(monkeypatch):
         called["goal"] = True
 
     monkeypatch.setattr(disp, "_process_turn_once", fake_once)
-    import openprogram.agent.goal as goal_mod
+    import openprogram.programs.workflow.goal as goal_mod
     monkeypatch.setattr(goal_mod, "continue_goal_turns", fake_goal)
 
     req = disp.TurnRequest(session_id="s1", user_text="x",

@@ -14,10 +14,10 @@ from pathlib import Path
 import pytest
 
 # Importing the modules registers the AgentTool in the global registry.
-import openprogram.programs.functions.vanilla.files.read  # noqa: F401
-import openprogram.programs.functions.vanilla.files.write  # noqa: F401
-import openprogram.programs.functions.vanilla.files.edit  # noqa: F401
-import openprogram.programs.functions.vanilla.files.apply_patch  # noqa: F401
+import openprogram.programs.tools.files.read  # noqa: F401
+import openprogram.programs.tools.files.write  # noqa: F401
+import openprogram.programs.tools.files.edit  # noqa: F401
+import openprogram.programs.tools.files.apply_patch  # noqa: F401
 
 from openprogram.programs._runtime import get as get_tool
 from openprogram.store import _store, _current_turn_id, SessionStore, SessionNodeWriter

@@ -238,6 +238,10 @@ def test_new_run_rejected_while_run_active(monkeypatch):
     monkeypatch.setattr(
         "openprogram.programs.agent_tools", lambda names=None: [_Tool()]
     )
+    monkeypatch.setattr(
+        "openprogram.programs._runtime.get",
+        lambda name, *a, **k: _Tool() if name == _Tool.name else None,
+    )
 
     class _RM:
         def _enabled_model_keys(self):
@@ -350,6 +354,10 @@ def test_new_run_passes_empty_caller_so_decorator_stamps_head(monkeypatch):
     monkeypatch.setattr(
         "openprogram.programs.agent_tools", lambda names=None: [_Tool()]
     )
+    monkeypatch.setattr(
+        "openprogram.programs._runtime.get",
+        lambda name, *a, **k: _Tool() if name == _Tool.name else None,
+    )
 
     class _RM:
         def _enabled_model_keys(self):
@@ -378,6 +386,10 @@ def test_new_run_passes_empty_caller_so_decorator_stamps_head(monkeypatch):
         raise RuntimeError("stop-after-anchor")
     monkeypatch.setattr(
         "openprogram.agent.dispatcher.dispatch_forced_tool_call", _stop_dispatch
+    )
+    monkeypatch.setattr(
+        "openprogram.agentic_programming.function.create_pending_call_node",
+        lambda **k: None,
     )
     monkeypatch.setattr(
         "openprogram.webui.server._emit_running_task_event", lambda *a, **k: None

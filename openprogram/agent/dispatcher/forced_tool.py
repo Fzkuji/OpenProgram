@@ -60,13 +60,13 @@ def dispatch_forced_tool_call(
     """
     on_event = on_event or _noop
 
-    # Look up the tool by name from the global catalog.
+    # Look up by registry name so user-only tools (expose=False) can still
+    # be started from Programs / fn-form. Agent tool tables stay filtered.
     try:
-        from openprogram.programs import agent_tools as _agent_tools
-        tools = _agent_tools(names=[tool_name]) or []
+        from openprogram.programs._runtime import get as _get_tool
+        tool = _get_tool(tool_name)
     except Exception as e:  # noqa: BLE001
         raise ValueError(f"failed to resolve tool {tool_name!r}: {e}") from e
-    tool = next((t for t in tools if t.name == tool_name), None)
     if tool is None:
         # The welcome screen advertises the bundled programs whether or
         # not they are installed — a catalogued-but-missing one gets an
