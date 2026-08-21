@@ -30,6 +30,8 @@ assert.doesNotMatch(
   "Memory settings persist immediately and must not expose a Save bar",
 );
 assert.doesNotMatch(design, /save-strip|saveSettings|Save changes/);
+assert.doesNotMatch(design, /status restart[^>]*>Next start/);
+assert.match(design, /Changing this switch requires restarting OpenProgram/);
 assert.match(settings, /async function update[\s\S]*?method: "POST"/);
 assert.match(settings, /if \(!settingsReady \|\| saving \|\| installing\) return/);
 assert.match(settings, /\[key\]: previous/);
@@ -98,6 +100,14 @@ assert.equal((settings.match(/styles\.monoValue/g) || []).length, 1);
 
 const settingRows = [...settings.matchAll(/<SettingsRow[\s\S]*?<\/SettingsRow>/g)].map((match) => match[0]);
 assert.ok(settingRows.length >= 4, "expected Memory setting rows");
+const enableMemoryRow = settingRows.find((row) => row.includes('label={text("Enable Memory"')) ?? "";
+assert.ok(enableMemoryRow, "expected Enable Memory row");
+assert.doesNotMatch(
+  enableMemoryRow,
+  /<Status/,
+  "Enable Memory must not present a permanent next-start badge as pending state",
+);
+assert.match(enableMemoryRow, /Changing this switch requires restarting OpenProgram/);
 for (const row of settingRows) {
   const statusIdx = row.search(/<Status[\s>]/);
   const controlIdx = row.search(/<(?:select|Switch)\b/);

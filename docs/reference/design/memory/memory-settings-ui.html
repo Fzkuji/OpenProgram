@@ -458,7 +458,7 @@
             </div>
 
             <section class="settings-section"><h2>Memory service</h2><div class="settings-card">
-              <div class="setting-row"><div class="setting-label"><strong>Enable Memory</strong><span>Turns on recall, background writing, organization, and Memory tools.</span></div><div class="setting-control"><span class="status restart">Next start</span><label class="switch"><input type="checkbox" checked aria-label="Enable Memory"><span class="switch-track"></span></label></div></div>
+              <div class="setting-row"><div class="setting-label"><strong>Enable Memory</strong><span>Turns on recall, background writing, organization, and Memory tools. Changing this switch requires restarting OpenProgram.</span></div><div class="setting-control"><label class="switch"><input type="checkbox" checked aria-label="Enable Memory"><span class="switch-track"></span></label></div></div>
               <div class="setting-row"><div class="setting-label"><strong>Storage</strong><span>Topic Markdown with derived views and Git history.</span></div><div class="setting-control"><span class="path-value">Local workspace · Git enabled</span></div></div>
             </div></section>
 
@@ -495,6 +495,7 @@
       <li>Settings reads and writes the same schema used by the CLI and TUI.</li>
       <li>Memory reuses the shared Settings fixed header, body gutter, typography, section-card, and compact row contracts. The lifecycle summary is the only Memory-specific visual structure.</li>
       <li>Every editable Memory control persists through <code>POST /api/settings</code> immediately after the user changes it. The page has no separate Save button; a rejected write restores the previous value and exposes an inline error.</li>
+      <li>The Memory backend switch explains that changing it requires an OpenProgram restart, but does not show a permanent “Next start” status badge because the settings API does not expose a pending-restart state.</li>
       <li>Opening <code>/settings/memory</code> requests only the declared <code>memory.*</code> rows and renders them as soon as that bounded request finishes; workspace status and writer-model choices load independently and never gate the editable page.</li>
       <li><code>GET /api/memory/status?settings=true</code> returns only the workspace path and fixed embedding snapshot availability. It does not parse Topics, walk Sources, compute revisions, or scan sessions and writer state.</li>
       <li>The status path checks whether every required file in the fixed embedding snapshot exists and is non-empty, without importing numerical retrieval code, constructing the encoder, or loading model weights. Encoder initialization belongs to semantic retrieval, not Settings.</li>

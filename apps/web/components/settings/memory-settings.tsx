@@ -146,8 +146,7 @@ export function MemorySettings() {
         </div>
 
         <SettingsSection title={text("Memory service", "Memory 服务")}>
-          <SettingsRow label={text("Enable Memory", "启用 Memory")} description={text("Turns on recall, background writing, organization, and Memory tools.", "启用检索、后台写入、整理和 Memory 工具。") }>
-            <Status>{text("Next start", "下次启动")}</Status>
+          <SettingsRow label={text("Enable Memory", "启用 Memory")} description={text("Turns on recall, background writing, organization, and Memory tools. Changing this switch requires restarting OpenProgram.", "启用检索、后台写入、整理和 Memory 工具。更改此开关后需要重启 OpenProgram 才会生效。") }>
             <Switch aria-label={text("Enable Memory", "启用 Memory")} disabled={controlsDisabled} checked={backend === "local"} onCheckedChange={(checked) => update("memory.backend", checked ? "local" : "none")} />
           </SettingsRow>
           <SettingsRow label={text("Storage", "存储")} description={text("Topic Markdown with derived views and Git history.", "使用 Topic Markdown、派生视图和 Git 历史。") }>
