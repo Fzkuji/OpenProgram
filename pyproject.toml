@@ -230,7 +230,7 @@ namespaces = false
 "openprogram" = [
     "sandbox/shims/*.cjs",
     "sandbox/shims/*.py",
-    "programs/functions/agentic/browser_agent/*.cjs",
+    "programs/functions/agentic/workflow/browser/*.cjs",
     # Provider registry — endpoints/model metadata read by
     # providers/_provider_meta.py and enabled_models.py.
     "providers/provider.json",

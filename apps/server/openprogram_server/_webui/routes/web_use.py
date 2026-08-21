@@ -27,7 +27,7 @@ def register(app: FastAPI) -> None:
             )
         owner_id = _owner_id(payload)
         from openprogram.programs._runtime import _normalize_result
-        from openprogram.programs.functions.agentic.browser_agent import (
+        from openprogram.programs.functions.agentic.workflow.browser import (
             execute_direct_web_use,
         )
 
@@ -67,7 +67,7 @@ def register(app: FastAPI) -> None:
     @app.post("/api/computer-use/release-owner", include_in_schema=False)
     def release_owner(payload: dict[str, Any]):
         owner_id = _owner_id(payload)
-        from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
+        from openprogram.programs.functions.agentic.workflow.browser.web_use_runtime import (
             get_registry,
         )
 
@@ -82,7 +82,7 @@ def register(app: FastAPI) -> None:
             not isinstance(token, str) or not token for token in tokens
         ):
             raise HTTPException(status_code=400, detail="invalid page capabilities")
-        from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
+        from openprogram.programs.functions.agentic.workflow.browser.web_use_runtime import (
             get_registry,
         )
 

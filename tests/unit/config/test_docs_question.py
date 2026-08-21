@@ -1,5 +1,5 @@
 """Unit tests for the docs_question agentic function
-(``openprogram/programs/functions/agentic/docs_question/``): the entry point's
+(``openprogram/programs/functions/agentic/workflow/docs_question/``): the entry point's
 input validation, the page listing it builds its prompt from, source
 path normalization, and the shape it returns once the spawned agent has
 replied.
@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-import openprogram.programs.functions.agentic.docs_question as DQ
+import openprogram.programs.functions.agentic.workflow.docs_question as DQ
 
 
 @pytest.fixture
@@ -226,7 +226,7 @@ def test_sources_are_deduplicated_in_order(fake_docs) -> None:
 
 def test_module_is_registered() -> None:
     from openprogram.programs._registry import AGENTIC_MODULES
-    assert "docs_question" in AGENTIC_MODULES
+    assert "workflow.docs_question" in AGENTIC_MODULES
 
 
 def test_docs_root_points_at_the_repository_docs_tree() -> None:

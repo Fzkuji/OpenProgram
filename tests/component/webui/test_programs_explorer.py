@@ -176,8 +176,8 @@ def test_known_application_directories_resolve_to_registered_callables() -> None
 def test_agentic_source_directory_resolves_to_registered_callable() -> None:
     from openprogram.webui.routes.programs import _callable_name
 
-    assert _callable_name("functions/agentic/docs_question") == "run_docs_question"
-    assert _callable_name("functions/agentic/security_review") == "run_security_review"
+    assert _callable_name("functions/agentic/workflow/docs_question") == "run_docs_question"
+    assert _callable_name("functions/agentic/workflow/security_review") == "run_security_review"
 
 
 def test_installed_app_uses_owner_recorded_program_catalog(

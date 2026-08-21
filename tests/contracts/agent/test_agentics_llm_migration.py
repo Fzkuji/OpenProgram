@@ -11,30 +11,30 @@ import pytest
 from tests.support.repository import tracked_python_files
 
 MIGRATED_FUNCTIONS = {
-    "openprogram.programs.functions.agentic.deep_work": ("_clarify", "_evaluate"),
-    "openprogram.programs.functions.agentic.extract_pdf_figures": ("extract_pdf_figures",),
-    "openprogram.programs.functions.agentic.extract_pdf_tables": ("extract_pdf_tables",),
-    "openprogram.programs.functions.agentic.llm_call_example": (
+    "openprogram.programs.functions.agentic.workflow.deep_work": ("_clarify", "_evaluate"),
+    "openprogram.programs.functions.agentic.document.extract_pdf_figures": ("extract_pdf_figures",),
+    "openprogram.programs.functions.agentic.document.extract_pdf_tables": ("extract_pdf_tables",),
+    "openprogram.programs.functions.agentic.text": (
         "summarize_text",
         "translate_to_chinese",
         "polish_text",
     ),
-    "openprogram.programs.functions.agentic.research.evaluate": ("_evaluate_candidates",),
-    "openprogram.programs.functions.agentic.research.stages.idea": (
+    "openprogram.programs.functions.agentic.workflow.research.evaluate": ("_evaluate_candidates",),
+    "openprogram.programs.functions.agentic.workflow.research.stages.idea": (
         "generate_ideas",
         "check_novelty",
         "rank_ideas",
     ),
-    "openprogram.programs.functions.agentic.research.stages.literature": (
+    "openprogram.programs.functions.agentic.workflow.research.stages.literature": (
         "survey_topic",
         "identify_gaps",
     ),
-    "openprogram.programs.functions.agentic.research.stages.experiment": (
+    "openprogram.programs.functions.agentic.workflow.research.stages.experiment": (
         "design_experiments",
         "run_experiment",
         "check_training",
     ),
-    "openprogram.programs.functions.agentic.research.stages.writing": (
+    "openprogram.programs.functions.agentic.workflow.research.stages.writing": (
         "write_section",
         "translate_zh2en",
         "translate_en2zh",
@@ -45,11 +45,11 @@ MIGRATED_FUNCTIONS = {
         "compress_text",
         "expand_text",
     ),
-    "openprogram.programs.functions.agentic.research.stages.review": (
+    "openprogram.programs.functions.agentic.workflow.research.stages.review": (
         "review_paper",
         "fix_paper",
     ),
-    "openprogram.programs.functions.agentic.research.stages.submission": (
+    "openprogram.programs.functions.agentic.workflow.research.stages.submission": (
         "check_submission",
     ),
 }
@@ -77,7 +77,7 @@ def test_migrated_function_passes_content_blocks_to_llm(monkeypatch):
         return "summary"
 
     module = importlib.import_module(
-        "openprogram.programs.functions.agentic.llm_call_example"
+        "openprogram.programs.functions.agentic.text"
     )
     monkeypatch.setattr(module, "llm", fake_llm)
 
@@ -118,22 +118,5 @@ def test_only_deferred_tool_loops_still_call_runtime_exec():
             ):
                 remaining.append((path.relative_to(root).as_posix(), node.lineno))
 
-    expected_paths = [
-        "browser_agent/__init__.py",
-        "browser_agent/__init__.py",
-        "deep_work/__init__.py",
-        "llm_call_example/__init__.py",
-    ]
-    expected_markers = {
-        "browser_agent/__init__.py": "deferred browser tool loop",
-        "deep_work/__init__.py": "tool loop, migrates with agent() in a later batch",
-        "llm_call_example/__init__.py": (
-            "tool loop, migrates with agent() in a later batch"
-        ),
-    }
     remaining.sort()
-    assert [path for path, _ in remaining] == sorted(expected_paths)
-    for relative_path, line_number in remaining:
-        lines = (root / relative_path).read_text(encoding="utf-8").splitlines()
-        nearby = "\n".join(lines[max(0, line_number - 3):line_number])
-        assert expected_markers[relative_path] in nearby
+    assert remaining == []

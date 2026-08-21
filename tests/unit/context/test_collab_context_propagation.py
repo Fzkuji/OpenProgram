@@ -197,7 +197,7 @@ def test_dispatcher_binds_the_session_id_when_nothing_did(tmp_db):
 def test_dispatcher_releases_web_use_owner_at_turn_end(tmp_db, monkeypatch):
     from openprogram.agent.dispatcher.turn_context import TurnBindings
     from openprogram.agent.dispatcher.types import TurnRequest
-    from openprogram.programs.functions.agentic.browser_agent import web_use_runtime
+    from openprogram.programs.functions.agentic.workflow.browser import web_use_runtime
 
     released = []
 

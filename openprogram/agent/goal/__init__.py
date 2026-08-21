@@ -8,7 +8,7 @@ continuation turn is persisted, committed and compacted like any
 user-sent turn.
 
 Evaluation is one decision agent turn: the single ``goal`` agentic
-function in ``openprogram/programs/functions/agentic/goal/`` (prompt in its
+function in ``openprogram/programs/functions/agentic/workflow/goal/`` (prompt in its
 docstring; the one panel-runnable entry) reads the session's compacted
 context view plus the goal text and answers strict JSON
 ``{"met", "reason", "need_user", "question"}``. Only its "met" counts

@@ -11,11 +11,11 @@ import pytest
 
 fitz = pytest.importorskip("fitz")
 
-from openprogram.programs.functions.agentic._layout import (
+from openprogram.programs.functions.agentic.document.pdf_layout import (
     page_layout,
     pdf_pages,
 )
-from openprogram.programs.functions.agentic.extract_pdf_tables import (
+from openprogram.programs.functions.agentic.document.extract_pdf_tables import (
     _parse_pages,
 )
 

@@ -16,7 +16,7 @@ def evaluate_goal(
     (empty for every non-``needs_user`` verdict).
 
     One call to the ``goal`` agentic function
-    (``openprogram/programs/functions/agentic/goal/``) — the only judgment
+    (``openprogram/programs/functions/agentic/workflow/goal/``) — the only judgment
     there is. It reads the session's compacted context view plus the
     goal text (inspection tools available, the agent decides whether to
     use them) and answers ``{"met", "reason", "need_user",
@@ -29,7 +29,7 @@ def evaluate_goal(
     question is treated as plain unmet. The 1-hour ask rate limit is
     enforced by the loop, not here."""
     from openprogram.agent.attended import is_attended
-    from openprogram.programs.functions.agentic.goal import goal as goal_decision
+    from openprogram.programs.functions.agentic.workflow.goal import goal as goal_decision
 
     items = [it for it in (goal.get("checklist") or [])
              if isinstance(it, dict)]

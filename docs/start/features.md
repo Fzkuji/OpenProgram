@@ -45,7 +45,7 @@ standards, `deep_work` runs an autonomous plan-execute-evaluate
 loop until the result meets the specified quality level:
 
 ```python
-from openprogram.programs.functions.agentic.deep_work import deep_work
+from openprogram.programs.functions.agentic.workflow.deep_work import deep_work
 
 result = deep_work(
     task="Write a survey on context management in LLM agents.",

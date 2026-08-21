@@ -21,7 +21,7 @@ Quality levels (from low to high):
 
 Usage:
     from openprogram.providers.registry import create_runtime
-    from openprogram.programs.functions.agentic.deep_work import deep_work
+    from openprogram.programs.functions.agentic.workflow.deep_work import deep_work
 
     runtime = create_runtime()
 
@@ -43,7 +43,7 @@ from typing import Optional
 from openprogram.agentic_programming import llm
 from openprogram.agentic_programming.function import agentic_function
 from openprogram.agentic_programming.runtime import Runtime
-from openprogram.programs.functions.agentic._utils import parse_json
+from openprogram.programs.functions.agentic.json_parsing import parse_json
 
 
 # ---------------------------------------------------------------------------

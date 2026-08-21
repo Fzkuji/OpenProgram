@@ -14,7 +14,7 @@ from typing import Optional
 from openprogram.agentic_programming import llm
 from openprogram.agentic_programming.function import _current_runtime, agentic_function
 from openprogram.agentic_programming.runtime import Runtime
-from openprogram.programs.functions.agentic._utils import parse_json
+from openprogram.programs.functions.agentic.json_parsing import parse_json
 
 
 @agentic_function(render_range={"depth": 0, "siblings": 0})

@@ -14,6 +14,7 @@ def test_workflow_category_exports_only_named_public_entries() -> None:
         / "functions"
         / "agentic"
         / "workflow"
+        / "authoring"
         / "__init__.py"
     )
 
@@ -44,7 +45,17 @@ def test_programs_treats_workflow_as_category_not_program() -> None:
         for entry in agentic["entries"]
     )
 
-    entries = _list_entries("functions/agentic/workflow")["entries"]
+    children = {
+        entry["path"]: entry
+        for entry in _list_entries("functions/agentic/workflow")["entries"]
+    }
+    assert children["functions/agentic/workflow/authoring"]["has_children"] is True
+    assert "functions/agentic/workflow/browser" in children
+    assert "functions/agentic/workflow/docs_question" in children
+    assert "functions/agentic/workflow/goal" in children
+    assert "functions/agentic/workflow/security_review" in children
+
+    entries = _list_entries("functions/agentic/workflow/authoring")["entries"]
     assert {
         (entry["name"], entry["callable_name"], entry["program_kind"])
         for entry in entries
@@ -62,16 +73,18 @@ def test_programs_treats_workflow_as_category_not_program() -> None:
         assert root["name"] == entry["name"]
 
     search_logic = _program_logic(
-        "functions/agentic/workflow/search_workflows"
+        "functions/agentic/workflow/authoring/search_workflows"
     )
     assert search_logic["edges"] == []
-    auto_logic = _program_logic("functions/agentic/workflow/auto_workflow")
+    auto_logic = _program_logic(
+        "functions/agentic/workflow/authoring/auto_workflow"
+    )
     assert {
         edge["target"] for edge in auto_logic["edges"]
         if edge["source"] == auto_logic["root"]
     } == {
-        "functions/agentic/workflow/search_workflows",
-        "functions/agentic/workflow/create_workflow",
+        "functions/agentic/workflow/authoring/search_workflows",
+        "functions/agentic/workflow/authoring/create_workflow",
         "agentic_programming/agent",
     }
 
@@ -166,7 +179,7 @@ def test_agentic_registry_discovery_uses_a_stable_snapshot(monkeypatch) -> None:
 
     indexed = _registered_agentic_callables()
 
-    assert "functions/agentic/workflow" in indexed
+    assert "functions/agentic/workflow/authoring" in indexed
 
 
 def test_multi_entry_call_graph_scopes_imports_to_selected_function(

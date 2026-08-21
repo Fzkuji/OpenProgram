@@ -17,7 +17,7 @@ Stages:
 All prompts are @agentic_function docstrings. No external prompt files.
 """
 
-from openprogram.programs.functions.agentic.research.pipeline import research_pipeline, STAGES
-from openprogram.programs.functions.agentic.research.evaluate import compete
+from openprogram.programs.functions.agentic.workflow.research.pipeline import research_pipeline, STAGES
+from openprogram.programs.functions.agentic.workflow.research.evaluate import compete
 
 __all__ = ["research_pipeline", "compete", "STAGES"]

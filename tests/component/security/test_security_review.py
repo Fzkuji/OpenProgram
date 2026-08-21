@@ -16,7 +16,7 @@ import subprocess
 
 import pytest
 
-import openprogram.programs.functions.agentic.security_review as SR
+import openprogram.programs.functions.agentic.workflow.security_review as SR
 
 
 def _run(repo, *args):

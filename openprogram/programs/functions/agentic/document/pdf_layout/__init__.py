@@ -16,7 +16,7 @@ leave the part that needs *judgement* to an LLM.
 
 * Needs judgement — deciding which rows form a table, where a table
   starts and ends, separating a table from a neighbouring text column.
-  That is what :mod:`openprogram.programs.functions.agentic.extract_pdf_tables`
+  That is what :mod:`openprogram.programs.functions.agentic.document.extract_pdf_tables`
   hands to an LLM, which reasons about any layout instead of
   pattern-matching a fixed set of templates.
 

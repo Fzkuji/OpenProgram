@@ -5,7 +5,7 @@ A security review audits what your branch changed, not what your repository cont
 Run it from the Programs panel as `run_security_review`, or call it from Python:
 
 ```python
-from openprogram.programs.functions.agentic.security_review import run_security_review
+from openprogram.programs.functions.agentic.workflow.security_review import run_security_review
 
 result = run_security_review()
 ```

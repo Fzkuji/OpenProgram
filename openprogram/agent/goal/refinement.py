@@ -31,7 +31,7 @@ def refine_goal_spec(session_id: str) -> None:
         return
     text = goal.get("text") or ""
     try:
-        from openprogram.programs.functions.agentic.goal import refine as _refine
+        from openprogram.programs.functions.agentic.workflow.goal import refine as _refine
         spec, checklist = _refine(text, session_id=session_id)
     except Exception:
         _log.warning("goal spec refinement failed (fail-open) for session %s",

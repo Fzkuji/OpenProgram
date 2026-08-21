@@ -48,36 +48,26 @@ logger = logging.getLogger(__name__)
 
 
 AGENTIC_MODULES: list[str] = [
-    # Framework primitive: ask_user is the in-execution "ask the human"
-    # channel every agentic function can call — infrastructure, not a
-    # user-facing app (the UI lists it under regular tools).
+    # Framework primitive: ask the human during an execution.
     "ask_user",
-    # The goal decision agent — the single judgment entry called by
-    # openprogram/agent/goal/ (the deterministic loop), runnable from the
-    # Functions panel; the module also holds the goal-spec refiner.
-    "goal",
-    # Domain functions
-    "extract_pdf_figures",
-    "extract_pdf_tables",
-    # Answers questions about OpenProgram itself by reading the product
-    # documentation tree, with a read-only agent scoped to docs/.
-    "docs_question",
-    # DOM-first control of the visible OpenProgram browser tab.
-    "browser_agent",
-    # 交互自测：串行走一遍 ask/confirm/form/ask_many 各形态（手动点 Run 体验）。
-    "interaction_demo",
-    # Workflow discovery, authoring, revision, and user-only orchestration.
-    "workflow",
-    # Security review of the current branch's diff — read-only audit of
-    # what this change introduced, not of the repository.
-    "security_review",
+    # Ordinary Agentic Functions: exactly one llm() call site.
+    "document.extract_pdf_figures",
+    "document.extract_pdf_tables",
+    "text",
+    # Workflows: agent loops, goals, multi-stage control flow.
+    "workflow.authoring",
+    "workflow.browser",
+    "workflow.docs_question",
+    "workflow.security_review",
+    "workflow.goal",
+    "workflow.deep_work",
 ]
 
 
 # Names that should never be treated as external harnesses even if their
 # directory looks like one (e.g. internal package private dirs).
 _NOT_A_HARNESS = {
-    "__pycache__", "pdf_layout",
+    "__pycache__", "pdf_layout", "document", "text", "workflow",
 }
 
 
@@ -157,7 +147,7 @@ def load_agentic_modules(
 def _load_workflow_projects() -> None:
     """Import each valid owner workflow package so its decorator registers it."""
     try:
-        from openprogram.programs.functions.agentic.workflow import (
+        from openprogram.programs.functions.agentic.workflow.authoring import (
             _read_project_index,
             _workflow_projects_root,
         )
@@ -377,8 +367,9 @@ def iter_agentic_files(
     """
     # Internal explicit list
     for mod_name in AGENTIC_MODULES:
-        simple = os.path.join(agentic_functions_dir, f"{mod_name}.py")
-        pkg = os.path.join(agentic_functions_dir, mod_name, "__init__.py")
+        parts = mod_name.split(".")
+        simple = os.path.join(agentic_functions_dir, *parts[:-1], f"{parts[-1]}.py") if len(parts) > 1 else os.path.join(agentic_functions_dir, f"{mod_name}.py")
+        pkg = os.path.join(agentic_functions_dir, *parts, "__init__.py")
         if os.path.isfile(simple):
             yield mod_name, simple, False
         elif os.path.isfile(pkg):

@@ -7,7 +7,7 @@ analysis → writing → review → submission.
 Each stage can run independently. Supports starting from any stage.
 
 Usage:
-    from openprogram.programs.functions.agentic.research.pipeline import research_pipeline
+    from openprogram.programs.functions.agentic.workflow.research.pipeline import research_pipeline
 
     # Full pipeline
     result = research_pipeline(
@@ -129,26 +129,26 @@ def _stage_init(project_dir, venue):
 
 
 def _stage_literature(project_dir, topic, runtime):
-    from openprogram.programs.functions.agentic.research.stages.literature import run_literature
+    from openprogram.programs.functions.agentic.workflow.research.stages.literature import run_literature
     if not topic:
         return {"status": "skipped", "reason": "no topic provided"}
     return run_literature(topic=topic, project_dir=project_dir, runtime=runtime)
 
 
 def _stage_idea(project_dir, topic, runtime):
-    from openprogram.programs.functions.agentic.research.stages.idea import run_idea
+    from openprogram.programs.functions.agentic.workflow.research.stages.idea import run_idea
     if not topic:
         return {"status": "skipped", "reason": "no topic provided"}
     return run_idea(topic=topic, project_dir=project_dir, runtime=runtime)
 
 
 def _stage_experiment(project_dir, runtime):
-    from openprogram.programs.functions.agentic.research.stages.experiment import run_experiments
+    from openprogram.programs.functions.agentic.workflow.research.stages.experiment import run_experiments
     return run_experiments(project_dir=project_dir, runtime=runtime)
 
 
 def _stage_analysis(project_dir, runtime):
-    from openprogram.programs.functions.agentic.research.stages.writing import analyze_results
+    from openprogram.programs.functions.agentic.workflow.research.stages.writing import analyze_results
     exp_dir = os.path.join(project_dir, "experiments")
     if not os.path.isdir(exp_dir):
         return {"status": "no_experiments_dir"}
@@ -171,7 +171,7 @@ def _stage_analysis(project_dir, runtime):
 
 
 def _stage_writing(project_dir, runtime):
-    from openprogram.programs.functions.agentic.research.stages.writing import write_section, gather_context
+    from openprogram.programs.functions.agentic.workflow.research.stages.writing import write_section, gather_context
     sections = ["introduction", "method", "experiments", "related_work", "conclusion"]
     section_files = {
         "introduction": "1Introduction.tex",
@@ -196,7 +196,7 @@ def _stage_writing(project_dir, runtime):
 
 
 def _stage_review(project_dir, venue, exec_runtime, review_runtime, callback):
-    from openprogram.programs.functions.agentic.research.stages.review import review_loop
+    from openprogram.programs.functions.agentic.workflow.research.stages.review import review_loop
     paper_dir = os.path.join(project_dir, "paper")
     return review_loop(
         paper_dir=paper_dir, venue=venue or "NeurIPS",
@@ -207,7 +207,7 @@ def _stage_review(project_dir, venue, exec_runtime, review_runtime, callback):
 
 
 def _stage_submission(project_dir, venue, runtime):
-    from openprogram.programs.functions.agentic.research.stages.submission import run_submission_check
+    from openprogram.programs.functions.agentic.workflow.research.stages.submission import run_submission_check
     return run_submission_check(
         project_dir=project_dir, venue=venue or "NeurIPS", runtime=runtime,
     )

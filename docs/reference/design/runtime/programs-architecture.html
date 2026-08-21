@@ -29,8 +29,8 @@
 <pre class="tree">openprogram/programs/
 ├── functions/
 │   ├── vanilla/       # 确定性的普通 @function
-│   └── agentic/       # 使用模型能力的 @agentic_function，可继续按类型分目录
-│       └── workflow/  # Workflow 管理能力的源码分类，不是Program
+│   └── agentic/       # 恰好一次 llm() 的 @agentic_function，可按职责分目录
+│       └── workflow/  # 复杂内置 Workflow 的源码分类，不是Program
 ├── workflows/         # Agent 生成并可复用的 Python 小项目
 ├── applications/      # 可调用上述全部能力的完整应用，可包含 UI/assets
 ├── _registry.py       # 统一注册与发现
@@ -41,7 +41,7 @@
   <section id="roles"><h2>2. 四类实体的职责</h2>
     <div class="grid">
       <div class="card"><h3>Functions / vanilla</h3><p>确定性能力。使用现有 <code>@function</code> 注册，可被 Agentic Function、Workflow 和 Application 普通 import。</p></div>
-      <div class="card"><h3>Functions / agentic</h3><p>需要模型、Agent loop 或 Goal 的可调用能力。使用现有 <code>@agentic_function</code>，不引入新的装饰器。</p></div>
+      <div class="card"><h3>Functions / agentic</h3><p>恰好调用一次 <code>llm()</code> 的可调用能力，不包含 Agent loop、Goal 或多阶段编排。使用现有 <code>@agentic_function</code>，不引入新的装饰器。</p></div>
       <div class="card"><h3>Workflows</h3><p>Agent 写出的可维护多文件 Python 项目。入口仍是 <code>@agentic_function</code>；Workflow 之间通过静态 import 和普通函数调用复用。</p></div>
       <div class="card"><h3>Applications</h3><p>面向完整使用场景的应用，可调用 Vanilla、Agentic 与 Workflow，并可包含服务、配置、UI 与资源文件。</p></div>
     </div>
@@ -51,7 +51,7 @@
     <div class="flow"><div class="node"><strong>Applications</strong><span>Functions + Workflows + UI</span></div><div class="arrow">←</div><div class="node"><strong>Workflows</strong><span>组合 Functions 或其他 Workflow</span></div><div class="arrow">←</div><div class="node"><strong>Functions</strong><span>Vanilla / Agentic 基础能力</span></div></div>
     <table><thead><tr><th>调用方</th><th>允许调用</th><th>禁止</th></tr></thead><tbody>
       <tr><td>Vanilla Function</td><td>标准库、批准的依赖、其他无环 Vanilla helper</td><td>依赖 Workflow 或 Application</td></tr>
-      <tr><td>Agentic Function</td><td>Vanilla Function、<code>llm()</code>、<code>agent()</code>、<code>goal()</code></td><td>依赖 Application</td></tr>
+      <tr><td>Agentic Function</td><td>Vanilla Function、内部确定性 helper、恰好一次 <code>llm()</code></td><td><code>agent()</code>、<code>goal()</code>、模型工具循环、Workflow 或 Application</td></tr>
       <tr><td>Workflow</td><td>Vanilla、Agentic、其他无环 Workflow</td><td>字符串 dispatcher、隐式全局 Workflow 注入</td></tr>
       <tr><td>Application</td><td>上述全部公开入口</td><td>修改被调用实体的源码或运行快照</td></tr>
     </tbody></table>
@@ -59,7 +59,7 @@
 
   <section id="runtime"><h2>4. Workflow 与 Goal / Agent / LLM</h2>
     <div class="flow"><div class="node"><strong>Goal</strong><span>以 Agent loop 完成有判定条件的目标</span></div><div class="arrow">→</div><div class="node"><strong>Agent</strong><span>基于 LLM 的多轮工具循环</span></div><div class="arrow">→</div><div class="node"><strong>LLM</strong><span>单次模型调用</span></div></div>
-    <p>三者仍由 <code>openprogram/agentic_programming/</code> 提供，不移动到 Programs，也不形成产品导航或独立管理页。Workflow 是最高层组合，可以直接调用其中任意一层，也可以在不同步骤组合多层；依赖顺序始终是 <code>goal → agent → llm</code>。</p>
+    <p>三者仍由 <code>openprogram/agentic_programming/</code> 提供，不移动到 Programs，也不形成产品导航或独立管理页。只有 Workflow 和 Application 可以直接使用 <code>agent()</code> 或 <code>goal()</code>；普通 Agentic Function 只使用一次 <code>llm()</code>。完整分类合同以<a href="./self-programming-workflow-model.html">编程模型与分类</a>为准。</p>
   </section>
 
   <section id="discovery"><h2>5. 发现与加载只有一套语义</h2>

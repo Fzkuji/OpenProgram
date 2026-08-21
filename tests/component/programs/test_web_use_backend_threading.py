@@ -53,13 +53,13 @@ class _Client:
 
 
 def test_chrome_backend_marker_stays_on_playwright_owner_thread(monkeypatch):
-    from openprogram.programs.functions.agentic.browser_agent import (
+    from openprogram.programs.functions.agentic.workflow.browser import (
         BrowserPageController,
     )
-    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.workflow.browser.web_use_runtime import (
         WebUseSession,
     )
-    from openprogram.programs.functions.agentic.browser_agent.mcp_backends import (
+    from openprogram.programs.functions.agentic.workflow.browser.mcp_backends import (
         OfficialMCPPageBackend,
     )
     from openprogram.programs.functions.vanilla.web.browser import _chrome_bootstrap
@@ -87,10 +87,10 @@ def test_chrome_backend_marker_stays_on_playwright_owner_thread(monkeypatch):
 
 
 def test_official_backend_action_uses_controller_thread_boundary():
-    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.workflow.browser.web_use_runtime import (
         WebUseSession,
     )
-    from openprogram.programs.functions.agentic.browser_agent.mcp_backends import (
+    from openprogram.programs.functions.agentic.workflow.browser.mcp_backends import (
         OfficialMCPPageBackend,
     )
 

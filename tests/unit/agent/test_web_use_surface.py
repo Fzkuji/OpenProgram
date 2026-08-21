@@ -980,7 +980,7 @@ def test_bound_browser_task_bypasses_only_the_nested_default_ask(monkeypatch):
         reset_turn_request,
         set_turn_request,
     )
-    from openprogram.programs.functions.agentic import browser_agent as module
+    from openprogram.programs.functions.agentic.workflow import browser as module
 
     class _Controller:
         tool = SimpleNamespace(name="browser_page")

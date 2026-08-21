@@ -679,7 +679,7 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
     config = tomllib.loads((repo / "pyproject.toml").read_text())
     package_data = config["tool"]["setuptools"]["package-data"]["openprogram"]
     assert "sandbox/shims/*.py" in package_data
-    assert "programs/functions/agentic/browser_agent/*.cjs" in package_data
+    assert "programs/functions/agentic/workflow/browser/*.cjs" in package_data
 
     project = tmp_path / "project"
     (project / "openprogram" / "sandbox" / "shims").mkdir(parents=True)
@@ -689,8 +689,8 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
         "openprogram/sandbox/shims/node_preload.cjs",
         "openprogram/programs/__init__.py",
         "openprogram/programs/functions/agentic/__init__.py",
-        "openprogram/programs/functions/agentic/browser_agent/__init__.py",
-        "openprogram/programs/functions/agentic/browser_agent/playwright_exact_page_mcp.cjs",
+        "openprogram/programs/functions/agentic/workflow/browser/__init__.py",
+        "openprogram/programs/functions/agentic/workflow/browser/playwright_exact_page_mcp.cjs",
         "openprogram/sandbox/recoverable_delete.py",
         "openprogram/webui/__init__.py",
     ):
@@ -721,7 +721,7 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
     assert "openprogram/sandbox/shims/sitecustomize.py" in names
     assert "openprogram/sandbox/shims/node_preload.cjs" in names
     assert (
-        "openprogram/programs/functions/agentic/browser_agent/"
+        "openprogram/programs/functions/agentic/workflow/browser/"
         "playwright_exact_page_mcp.cjs"
     ) in names
     assert "openprogram/webui/functions_meta.json" not in names
@@ -742,7 +742,7 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
     assert (installed_shims / "sitecustomize.py").is_file()
     assert (installed / "openprogram/sandbox/shims/node_preload.cjs").is_file()
     assert (
-        installed / "openprogram/programs/functions/agentic/browser_agent/"
+        installed / "openprogram/programs/functions/agentic/workflow/browser/"
         "playwright_exact_page_mcp.cjs"
     ).is_file()
 

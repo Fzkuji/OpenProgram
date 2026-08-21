@@ -224,11 +224,11 @@ class _Client:
 
 
 def _registry(monkeypatch):
-    from openprogram.programs.functions.agentic.browser_agent.web_use_runtime import (
+    from openprogram.programs.functions.agentic.workflow.browser.web_use_runtime import (
         WebUseSessionRegistry,
         ControllerBackend,
     )
-    from openprogram.programs.functions.agentic.browser_agent.mcp_backends import (
+    from openprogram.programs.functions.agentic.workflow.browser.mcp_backends import (
         OfficialMCPPageBackend,
     )
     from openprogram.programs.functions.vanilla.web.browser import _chrome_bootstrap
@@ -282,7 +282,7 @@ def _write_count(backend, controllers, clients):
 @pytest.mark.parametrize("backend", BACKENDS)
 def test_backend_parity_lifecycle(monkeypatch, backend):
     from openprogram.programs import ToolReturn
-    from openprogram.programs.functions.agentic.browser_agent import _result_for_prompt
+    from openprogram.programs.functions.agentic.workflow.browser import _result_for_prompt
 
     registry, controllers, clients, released = _registry(monkeypatch)
     observed = _observe(registry, backend)

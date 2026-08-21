@@ -7,7 +7,7 @@ runs each function on the same input, then uses a (potentially
 different) LLM to pick the best output.
 
 Usage:
-    from openprogram.programs.functions.agentic.research.evaluate import compete
+    from openprogram.programs.functions.agentic.workflow.research.evaluate import compete
 
     best = compete(
         functions=[polish_v1, polish_v2],
@@ -25,7 +25,7 @@ from typing import Optional
 from openprogram.agentic_programming import llm
 from openprogram.agentic_programming.function import _current_runtime, agentic_function
 from openprogram.agentic_programming.runtime import Runtime
-from openprogram.programs.functions.agentic._utils import parse_json
+from openprogram.programs.functions.agentic.json_parsing import parse_json
 
 
 @agentic_function(render_range={"callers": 0})
