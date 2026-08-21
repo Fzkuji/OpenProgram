@@ -154,7 +154,15 @@ export function useFnFormWrapper({
       const next = targetFnFormHeight(el);
       const avail = availableComposerHeight(el);
       if (Math.abs(next - last) < 1) return;
+      const from = last || el.offsetHeight;
       last = next;
+      // Same travel speed both ways. Expand's 0.3s / ~250px is the
+      // reference; a shorter collapse must not still take the full 0.3s.
+      const ms = Math.min(300, Math.max(160, Math.abs(next - from) * 1.2));
+      el.style.setProperty(
+        "--composer-height-transition",
+        `${ms}ms cubic-bezier(0.25, 0.1, 0.25, 1)`,
+      );
       el.style.height = `${next}px`;
       el.style.maxHeight = `${avail}px`;
     };
@@ -165,11 +173,6 @@ export function useFnFormWrapper({
     mo.observe(el, { subtree: true, attributes: true, attributeFilter: ["data-expanded"] });
     const onResize = () => apply();
     window.addEventListener("resize", onResize);
-    const ro = typeof ResizeObserver === "undefined"
-      ? null
-      : new ResizeObserver(() => apply());
-    const body = el.querySelector("[data-fn-form-body]");
-    if (ro && body) ro.observe(body);
     const id = requestAnimationFrame(() => {
       apply();
       requestAnimationFrame(apply);
@@ -178,7 +181,6 @@ export function useFnFormWrapper({
       cancelAnimationFrame(id);
       ta?.removeEventListener("input", onInput);
       mo.disconnect();
-      ro?.disconnect();
       window.removeEventListener("resize", onResize);
     };
   }, [morphed, fnFormClosing, fnFormFunction, decisionKey, wrapperRef]);
@@ -280,10 +282,18 @@ function measureFnFormHeight(el: HTMLDivElement): number {
 function textareaContentHeight(el: HTMLDivElement): number {
   const ta = el.querySelector("textarea") as HTMLTextAreaElement | null;
   if (!ta) return 48;
-  const prev = ta.style.height;
-  ta.style.height = "auto";
+  // Collapse from a flex-filled field: height:auto still reports the
+  // stretched box. Zero the used height so scrollHeight is content.
+  const prevH = ta.style.height;
+  const prevMin = ta.style.minHeight;
+  const prevFlex = ta.style.flex;
+  ta.style.flex = "none";
+  ta.style.minHeight = "0";
+  ta.style.height = "0px";
   const h = ta.scrollHeight;
-  ta.style.height = prev;
+  ta.style.height = prevH;
+  ta.style.minHeight = prevMin;
+  ta.style.flex = prevFlex;
   return Math.max(48, h);
 }
 
