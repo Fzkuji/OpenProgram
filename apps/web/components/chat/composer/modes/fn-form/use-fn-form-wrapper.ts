@@ -149,7 +149,7 @@ export function useFnFormWrapper({
     if (!morphed || fnFormClosing) return;
     const el = wrapperRef.current;
     if (!el) return;
-    let last = el.offsetHeight;
+    let last = 0;
     const apply = () => {
       const next = targetFnFormHeight(el);
       const avail = availableComposerHeight(el);
@@ -165,11 +165,20 @@ export function useFnFormWrapper({
     mo.observe(el, { subtree: true, attributes: true, attributeFilter: ["data-expanded"] });
     const onResize = () => apply();
     window.addEventListener("resize", onResize);
-    const id = requestAnimationFrame(apply);
+    const ro = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(() => apply());
+    const body = el.querySelector("[data-fn-form-body]");
+    if (ro && body) ro.observe(body);
+    const id = requestAnimationFrame(() => {
+      apply();
+      requestAnimationFrame(apply);
+    });
     return () => {
       cancelAnimationFrame(id);
       ta?.removeEventListener("input", onInput);
       mo.disconnect();
+      ro?.disconnect();
       window.removeEventListener("resize", onResize);
     };
   }, [morphed, fnFormClosing, fnFormFunction, decisionKey, wrapperRef]);
@@ -278,21 +287,54 @@ function textareaContentHeight(el: HTMLDivElement): number {
   return Math.max(48, h);
 }
 
-function targetFnFormHeight(el: HTMLDivElement): number {
+function labelLineHeight(body: HTMLElement | null): number {
+  const sample = (body?.querySelector("[data-fn-field-label]") as HTMLElement | null) || body;
+  if (!sample) return 21;
+  const cs = getComputedStyle(sample);
+  const fs = parseFloat(cs.fontSize) || 14;
+  const lh = parseFloat(cs.lineHeight);
+  return Number.isFinite(lh) && lh > 4 ? lh : fs * 1.5;
+}
+
+/** Header + padding + every field label. Uses scrollHeight (and a
+ *  one-line floor) so a squeezed first paint cannot shrink the card
+ *  under the label. */
+function formChromeHeight(el: HTMLDivElement): number {
   const header = el.querySelector("[data-fn-form-header]") as HTMLElement | null;
   const body = el.querySelector("[data-fn-form-body]") as HTMLElement | null;
-  const host = hostViewHeight(el);
-  const avail = availableComposerHeight(el);
-  const expanded = !!el.querySelector("[data-expanded]");
-  const headerH = header?.offsetHeight ?? 48;
+  const headerH = header?.offsetHeight || 48;
   const bcs = body ? getComputedStyle(body) : null;
   const pad = bcs
     ? parseFloat(bcs.paddingTop) + parseFloat(bcs.paddingBottom)
     : 24;
-  const gap = bcs ? parseFloat(bcs.gap || "0") : 0;
-  const label = body?.querySelector("label, [class*='label']") as HTMLElement | null;
-  const labelH = label ? label.offsetHeight + gap : 0;
-  const chrome = headerH + pad + labelH + (parseFloat(getComputedStyle(el).paddingBottom) || 0);
+  const wrapPad = parseFloat(getComputedStyle(el).paddingBottom) || 0;
+  const line = labelLineHeight(body);
+  const labels = body
+    ? Array.from(body.querySelectorAll("[data-fn-field-label]")) as HTMLElement[]
+    : [];
+  let fields = 0;
+  if (labels.length === 0) {
+    fields = line + 6;
+  } else {
+    for (const label of labels) {
+      const field = label.parentElement;
+      const gap = field
+        ? parseFloat(getComputedStyle(field).gap || "0") || 6
+        : 6;
+      fields += Math.max(label.scrollHeight, line) + gap;
+    }
+    if (body && labels.length > 1 && bcs) {
+      fields += parseFloat(bcs.gap || "0") * (labels.length - 1);
+    }
+  }
+  return headerH + pad + fields + wrapPad;
+}
+
+function targetFnFormHeight(el: HTMLDivElement): number {
+  const host = hostViewHeight(el);
+  const avail = availableComposerHeight(el);
+  const expanded = !!el.querySelector("[data-expanded]");
+  const chrome = formChromeHeight(el);
   if (expanded) {
     return Math.min(Math.max(host * 0.5, chrome + 48), avail);
   }

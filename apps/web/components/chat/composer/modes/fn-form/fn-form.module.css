@@ -144,6 +144,7 @@
    wraps and reveals. */
 .label {
   display: block;
+  flex-shrink: 0;
   font-family: var(--font-sans);
   font-size: var(--fs-base);
   line-height: 1.5;
