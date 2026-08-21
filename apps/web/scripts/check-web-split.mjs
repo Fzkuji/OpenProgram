@@ -2445,6 +2445,8 @@ assert.match(pipSource, /removeVisibleWebTabBounds\(bridge, tabId\)/);
 assert.match(pipSource, /showShot\(pipSnapshots\.get\(tabId\)/);
 assert.match(pipSource, /showShot\(null\)/);
 assert.match(pipSource, /className=\{styles\.webPipShot\}/);
+assert.match(pipSource, /setPipZoom\?\.\(tabId, bounds\.width\)/);
+assert.match(pipSource, /setPipZoom\?\.\(tabId, null\)/);
 assert.match(
   await readFile(
     new URL("../lib/state/web-tab-pip-store.ts", import.meta.url),

@@ -144,6 +144,7 @@ export function WebTabPip() {
         return;
       }
       registerVisibleWebTabBounds(bridge, tabId, bounds);
+      bridge.webTab.setPipZoom?.(tabId, bounds.width);
       setWebTabReady(tabId, true);
     };
     const report = (immediate = false) => {
@@ -185,6 +186,7 @@ export function WebTabPip() {
       window.removeEventListener("resize", onWindowChange);
       window.removeEventListener("scroll", onWindowChange, true);
       removeVisibleWebTabBounds(bridge, tabId);
+      bridge.webTab.setPipZoom?.(tabId, null);
       setWebTabReady(tabId, false);
     };
   }, [bridge, tabId, url, visible]);

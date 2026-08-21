@@ -99,6 +99,8 @@ export interface DesktopWebTabApi {
   print?(id: string): Promise<boolean>;
   /** Snapshot of the native page as a data URL, for PiP drag placeholders. */
   capture?(id: string): Promise<string | null>;
+  /** PiP-only layout scale. Pass the content width, or null to restore user zoom. */
+  setPipZoom?(id: string, width: number | null): void;
   /** Navigation/title/loading events pushed from main; returns the
    *  unsubscribe function. */
   onState(cb: (state: DesktopWebTabState) => void): () => void;

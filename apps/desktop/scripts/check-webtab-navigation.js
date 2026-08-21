@@ -685,9 +685,11 @@ function checkPreloadWindowIdentity() {
   exposed.webTab.zoom("pane-a", "in");
   exposed.webTab.print("pane-a");
   exposed.webTab.capture("pane-a");
-  assert.deepEqual(sent.slice(-2), [
+  exposed.webTab.setPipZoom("pane-a", 640);
+  assert.deepEqual(sent.slice(-3), [
     ["webtab:find", "pane-a", "needle", { forward: false, findNext: true }],
     ["webtab:stop-find", "pane-a", "clearSelection"],
+    ["webtab:set-pip-zoom", "pane-a", 640],
   ]);
   assert.deepEqual(invoked, [
     ["webtab:zoom", "pane-a", "in"],
@@ -1102,6 +1104,7 @@ async function checkSenderOwnership() {
   assert.equal(await ipcHandlers.get("webtab:zoom")(eventB, "owned-a", "in"), null);
   assert.equal(await ipcHandlers.get("webtab:print")(eventB, "owned-a"), false);
   assert.equal(await ipcHandlers.get("webtab:capture")(eventB, "owned-a"), null);
+  ipcListeners.get("webtab:set-pip-zoom")(eventB, "owned-a", 640);
   ipcListeners.get("webtab:set-bounds")(
     eventB,
     "owned-a",
@@ -1166,6 +1169,16 @@ async function checkSenderOwnership() {
   ]);
   assert.deepEqual(a.nativeCalls.stopFind, ["clearSelection"]);
   assert.deepEqual(a.nativeCalls.zoom, [1.1, 1, 1]);
+  ipcListeners.get("webtab:set-pip-zoom")(eventA, "owned-a", 640);
+  assert.equal(a.nativeCalls.zoom.at(-1), 0.5);
+  assert.equal(await ipcHandlers.get("webtab:zoom")(eventA, "owned-a", "in"), 110);
+  assert.equal(a.nativeCalls.zoom.at(-1), 0.5);
+  ipcListeners.get("webtab:set-pip-zoom")(eventA, "owned-a", 240);
+  assert.equal(a.nativeCalls.zoom.at(-1), 0.25);
+  ipcListeners.get("webtab:set-pip-zoom")(eventA, "owned-a", 2000);
+  assert.equal(a.nativeCalls.zoom.at(-1), 1);
+  ipcListeners.get("webtab:set-pip-zoom")(eventA, "owned-a", null);
+  assert.equal(a.nativeCalls.zoom.at(-1), 1.1);
   assert.deepEqual(plain(a.nativeCalls.print), [{ silent: false, printBackground: true }]);
   assert.deepEqual(a.nativeCalls.printToPDF, []);
   assert.deepEqual(shownPrintSaveDialogs, []);
@@ -2446,6 +2459,11 @@ async function checkLockedRecordsRejectOrdinaryIpc() {
   assert.equal(
     await ipcHandlers.get("webtab:capture")(eventFor(destinationWin), "locked-ipc-web"),
     null,
+  );
+  ipcListeners.get("webtab:set-pip-zoom")(
+    eventFor(destinationWin),
+    "locked-ipc-web",
+    640,
   );
   ipcListeners.get("webtab:show")(eventFor(destinationWin), "locked-ipc-web");
   ipcListeners.get("webtab:hide")(eventFor(destinationWin), "locked-ipc-web");
@@ -4333,6 +4351,9 @@ assert.doesNotMatch(source, /\blet mainWindow\b/);
 assert.doesNotMatch(source, /\bconst views = new Map\(\)/);
 assert.doesNotMatch(source, /\bvisibleViewId\b/);
 assert.match(source, /ipcMain\.on\("webtab:sync-visible"/);
+assert.match(source, /ipcMain\.on\("webtab:set-pip-zoom"/);
+assert.match(source, /const PIP_VIRTUAL_WIDTH = 1280/);
+assert.match(source, /if \(!record\.pipLayoutZoom\) wc\.setZoomFactor\(factor\)/);
 assert.match(source, /ipcMain\.on\("tab-transfer:prepare"/);
 // Cross-window drop cue channels + clean teardown (no stuck highlight).
 assert.match(source, /tab-transfer:hover-enter/, "main must push the hover-enter cue");

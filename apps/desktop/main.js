@@ -1835,6 +1835,43 @@ async function navigateView(ctx, id, url) {
 }
 
 const WEBTAB_ZOOM_FACTORS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+const PIP_VIRTUAL_WIDTH = 1280;
+const PIP_ZOOM_MIN = 0.25;
+
+function pipLayoutZoom(width) {
+  return Math.max(PIP_ZOOM_MIN, Math.min(1, width / PIP_VIRTUAL_WIDTH));
+}
+
+function rememberUserZoom(record) {
+  if (record.userZoomFactor != null) return;
+  try {
+    record.userZoomFactor = record.pipLayoutZoom
+      ? 1
+      : record.view.webContents.getZoomFactor();
+  } catch (_error) {
+    record.userZoomFactor = 1;
+  }
+}
+
+function setPipZoom(ctx, id, width) {
+  const record = recordFor(ctx, id);
+  if (!record) return false;
+  const wc = record.view.webContents;
+  try {
+    if (typeof width === "number" && width > 0) {
+      rememberUserZoom(record);
+      const factor = pipLayoutZoom(width);
+      record.pipLayoutZoom = factor;
+      wc.setZoomFactor(factor);
+      return true;
+    }
+    record.pipLayoutZoom = null;
+    wc.setZoomFactor(record.userZoomFactor ?? 1);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
 
 function findView(ctx, id, query, options) {
   const record = recordFor(ctx, id);
@@ -1884,7 +1921,8 @@ function zoomView(ctx, id, action) {
   if (!record || !["in", "out", "reset"].includes(action)) return null;
   try {
     const wc = record.view.webContents;
-    const current = wc.getZoomFactor();
+    rememberUserZoom(record);
+    const current = record.userZoomFactor ?? wc.getZoomFactor();
     const nearest = WEBTAB_ZOOM_FACTORS.reduce(
       (best, value, index) => Math.abs(value - current) < Math.abs(WEBTAB_ZOOM_FACTORS[best] - current)
         ? index
@@ -1898,7 +1936,8 @@ function zoomView(ctx, id, action) {
           Math.min(WEBTAB_ZOOM_FACTORS.length - 1, nearest + (action === "in" ? 1 : -1)),
         );
     const factor = WEBTAB_ZOOM_FACTORS[index];
-    wc.setZoomFactor(factor);
+    record.userZoomFactor = factor;
+    if (!record.pipLayoutZoom) wc.setZoomFactor(factor);
     return Math.round(factor * 100);
   } catch (_error) {
     return null;
@@ -2725,6 +2764,10 @@ function registerWebTabIpc() {
   ipcMain.handle("webtab:zoom", (event, id, action) => {
     const ctx = contextForSender(event);
     return ctx ? zoomView(ctx, id, action) : null;
+  });
+  ipcMain.on("webtab:set-pip-zoom", (event, id, width) => {
+    const ctx = contextForSender(event);
+    if (ctx) setPipZoom(ctx, id, width);
   });
   ipcMain.handle("webtab:print", (event, id) => {
     const ctx = contextForSender(event);

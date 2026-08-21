@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
     zoom: (id, action) => ipcRenderer.invoke("webtab:zoom", id, action),
     print: (id) => ipcRenderer.invoke("webtab:print", id),
     capture: (id) => ipcRenderer.invoke("webtab:capture", id),
+    setPipZoom: (id, width) => ipcRenderer.send("webtab:set-pip-zoom", id, width),
     onState: (cb) => {
       const listener = (_event, state) => cb(state);
       ipcRenderer.on("webtab:state", listener);
