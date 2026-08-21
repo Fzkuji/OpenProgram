@@ -673,6 +673,18 @@ def test_restricted_writer_shell_uses_the_committed_source_baseline(
             git_commit="off",
         )
 
+    from openprogram.memory.source_format import provider_source_location
+
+    location = provider_source_location(record.source_id, v2=True)
+    assert location is not None
+    source_path, source_anchor = location
+    (root / "topics/legacy.md").write_text(
+        "# Legacy\n\nLegacy record.[^mem_old]\n\n"
+        "[^mem_old]: Time: `2026-08-20`; Sources: "
+        f"[legacy](../{source_path.as_posix()}#{source_anchor})\n",
+        encoding="utf-8",
+    )
+
     monkeypatch.setattr(
         "openprogram.memory.management.workspace._sandbox.resolve_policy",
         lambda *, required: object(),
@@ -689,12 +701,15 @@ def test_restricted_writer_shell_uses_the_committed_source_baseline(
         assert workspace.shell("true").returncode == 0
         moved = workspace.shell(
             "mkdir -p topics/moved && "
-            "mv topics/original.md topics/moved/renamed.md"
+            "mv topics/original.md topics/moved/renamed.md && "
+            "mv topics/legacy.md topics/moved/legacy.md"
         )
         assert moved.returncode == 0
 
     assert not (root / "topics/original.md").exists()
     assert (root / "topics/moved/renamed.md").is_file()
+    assert not (root / "topics/legacy.md").exists()
+    assert (root / "topics/moved/legacy.md").is_file()
 
 
 def test_invalid_record_change_rolls_back_every_record(tmp_path):

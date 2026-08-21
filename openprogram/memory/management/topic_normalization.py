@@ -10,6 +10,7 @@ from urllib.parse import unquote
 from ..markdown import (
     BLOCK_ID_LENGTH,
     MEMORY_ID,
+    TopicFormatError,
     definition_match,
     paragraph_spans,
     parse_topic_tree,
@@ -21,6 +22,7 @@ from ..markdown.syntax import (
     LINK,
     SINGLE_CITATION,
     is_plain_source_handle,
+    source_reference,
 )
 
 # Footnote labels the writer supplies, e.g. [^e1]. Stable IDs the Runtime
@@ -149,19 +151,29 @@ class TopicNormalizationMixin:
             for start, end in self._paragraph_spans(text):
                 paragraph = "\n".join(lines[start:end])
                 suffix = BLOCK_SUFFIX.search(paragraph)
-                if suffix is None:
-                    continue
                 citations = set(SINGLE_CITATION.findall(paragraph))
-                for block_id in re.findall(
-                    r"\^([A-Za-z0-9-]+)", paragraph[suffix.start():]
-                ):
+                record_ids = (
+                    re.findall(
+                        r"\^([A-Za-z0-9-]+)", paragraph[suffix.start():]
+                    )
+                    if suffix is not None
+                    else [
+                        value for value in citations
+                        if re.fullmatch(MEMORY_ID, value)
+                    ]
+                )
+                for block_id in record_ids:
                     previous = previous_by_id.get(block_id)
                     if previous is None or previous.topic_path == relative:
                         continue
-                    for annotation in previous.evidence:
-                        if annotation.citation_id in citations:
+                    annotations = previous.evidence or (previous,)
+                    for annotation in annotations:
+                        citation_id = getattr(
+                            annotation, "citation_id", previous.memory_id
+                        )
+                        if citation_id in citations:
                             relocated_evidence.setdefault(
-                                (path, annotation.citation_id), annotation
+                                (path, citation_id), annotation
                             )
 
         # Evidence labels are content-addressed, so the same claim keeps its
@@ -316,8 +328,20 @@ class TopicNormalizationMixin:
                     sources = []
                     linked_sources = LINK.findall(raw_sources)
                     relocated = relocated_evidence.get((path, match.group("id")))
+                    targets_resolve = True
+                    try:
+                        for label, target in linked_sources:
+                            source_reference(
+                                label,
+                                target.strip(),
+                                topic_path=path,
+                                topics=topics,
+                            )
+                    except TopicFormatError:
+                        targets_resolve = False
                     if (
                         relocated is not None
+                        and not targets_resolve
                         and len(linked_sources) == len(relocated.source_refs)
                     ):
                         sources.extend(
