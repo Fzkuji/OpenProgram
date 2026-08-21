@@ -139,7 +139,7 @@ export function CatalogDialog({
                     key={s.url}
                     title={s.description || s.url}
                     onClick={() => { setUrl(s.url); void fetchCatalog(); }}
-                    className={cn(styles.actionBtn, styles.actionBtnSecondary)}
+                    className={styles.actionBtn}
                   >
                     {s.label}
                   </button>
@@ -156,7 +156,7 @@ export function CatalogDialog({
                   const installed = existingNames.has(s.name);
                   return (
                     <div key={s.name}
-                         className="flex items-start gap-3 rounded-md border px-3 py-2"
+                         className="flex items-center gap-3 rounded-md border px-3 py-2"
                          style={{ borderColor: "var(--border)" }}>
                       <div className="flex-1 min-w-0">
                         <div className="font-mono text-sm font-semibold">{s.name}</div>
@@ -229,7 +229,7 @@ export function CatalogDialog({
                   const installed = existingNames.has(s.name);
                   return (
                     <div key={s.name}
-                         className="flex items-start gap-3 rounded-md border px-3 py-2"
+                         className="flex items-center gap-3 rounded-md border px-3 py-2"
                          style={{ borderColor: "var(--border)" }}>
                       <div className="flex-1">
                         <div className="font-mono text-sm font-semibold">

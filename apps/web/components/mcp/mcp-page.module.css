@@ -113,19 +113,18 @@
   gap: 6px;
   height: var(--ui-button-h);
   padding: 0 12px;
-  background: var(--bg-primary);
-  border: 0.5px solid var(--border);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
   border-radius: var(--ui-button-radius);
   font-size: 13px;
   color: var(--text-primary);
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s;
   white-space: nowrap;
   font-family: inherit;
 }
 .actionBtn:hover:not(:disabled) {
-  border-color: transparent;
-  background: var(--bg-hover-contrast, var(--bg-hover));
+  background: var(--bg-hover);
   color: var(--text-bright);
 }
 .actionBtn:disabled {
@@ -136,17 +135,15 @@
   color: var(--accent-red);
 }
 .actionBtnDanger:hover:not(:disabled) {
-  color: var(--text-bright);
-  background: var(--accent-red);
-  border-color: transparent;
+  color: var(--accent-red);
+  background: var(--bg-hover);
 }
 .actionBtnPrimary {
   color: var(--accent-blue);
 }
 .actionBtnPrimary:hover:not(:disabled) {
-  color: var(--primary-foreground);
-  background: var(--accent-blue);
-  border-color: transparent;
+  color: var(--accent-blue);
+  background: var(--bg-hover);
 }
 
 /* Empty state in the content pane (no server selected, etc.) */
