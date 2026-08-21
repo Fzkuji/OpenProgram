@@ -1,5 +1,9 @@
+"use client"
+
 import * as React from "react"
-import { Search, X } from "lucide-react"
+
+import { SearchIcon, XIcon } from "@/components/animated-icons"
+import type { AnimatedNavIconHandle } from "@/components/animated-icons"
 
 import { cn } from "@/lib/utils"
 
@@ -22,6 +26,8 @@ interface SearchInputProps {
 const SearchInput = React.forwardRef<HTMLInputElement, SearchInputProps>(
   ({ value, onChange, placeholder, className, autoFocus, onKeyDown, ...rest }, ref) => {
     const innerRef = React.useRef<HTMLInputElement>(null)
+    const searchRef = React.useRef<AnimatedNavIconHandle>(null)
+    const clearRef = React.useRef<AnimatedNavIconHandle>(null)
     React.useImperativeHandle(ref, () => innerRef.current as HTMLInputElement)
 
     return (
@@ -32,8 +38,10 @@ const SearchInput = React.forwardRef<HTMLInputElement, SearchInputProps>(
           "focus-within:border-[color:var(--accent-blue)]",
           className
         )}
+        onMouseEnter={() => searchRef.current?.startAnimation?.()}
+        onMouseLeave={() => searchRef.current?.stopAnimation?.()}
       >
-        <Search size={14} className="shrink-0 text-[var(--text-dim)]" aria-hidden="true" />
+        <SearchIcon size={14} className="shrink-0 text-[var(--text-dim)]" ref={searchRef} aria-hidden="true" />
         <input
           ref={innerRef}
           value={value}
@@ -55,8 +63,10 @@ const SearchInput = React.forwardRef<HTMLInputElement, SearchInputProps>(
             }}
             className="shrink-0 text-[var(--text-dim)] hover:text-[var(--text-primary)] transition-colors"
             aria-label="Clear"
+            onMouseEnter={() => clearRef.current?.startAnimation?.()}
+            onMouseLeave={() => clearRef.current?.stopAnimation?.()}
           >
-            <X size={14} />
+            <XIcon size={14} ref={clearRef} />
           </button>
         )}
       </div>

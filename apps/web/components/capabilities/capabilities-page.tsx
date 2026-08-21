@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Download, LayoutGrid, Plus, RefreshCw } from "lucide-react";
+import { Download, LayoutGrid } from "lucide-react";
 import {
   BlocksIcon,
   GraduationCapIcon,
   PlugZapIcon,
+  PlusIcon,
+  RefreshCwIcon,
   WorkflowIcon,
 } from "@/components/animated-icons";
 
@@ -83,7 +85,7 @@ export function CapabilitiesPage() {
     const refresh = (onClick: () => void) => ({
       label: t("sidebar.refresh"),
       onClick,
-      icon: <RefreshCw />,
+      icon: RefreshCwIcon,
       iconOnly: true,
     });
     if (kind === "programs") {
@@ -98,13 +100,13 @@ export function CapabilitiesPage() {
     if (kind === "skills") {
       return [
         refresh(() => { void fetchSkills(); }),
-        { label: text("New skill", "新建技能"), onClick: () => setSkillNewOpen(true), icon: <Plus />, primary: true },
+        { label: text("New skill", "新建技能"), onClick: () => setSkillNewOpen(true), icon: PlusIcon, primary: true },
       ];
     }
     return [
       refresh(() => setMcpReloadNonce((n) => n + 1)),
       { label: text("Browse catalog", "浏览目录"), onClick: () => setMcpCatalogOpen(true), icon: <LayoutGrid /> },
-      { label: text("Add server", "添加服务器"), onClick: () => setMcpAddNonce((n) => n + 1), icon: <Plus />, primary: true },
+      { label: text("Add server", "添加服务器"), onClick: () => setMcpAddNonce((n) => n + 1), icon: PlusIcon, primary: true },
     ];
   }, [kind, t, text, refreshPlugins, fetchSkills]);
 

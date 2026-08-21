@@ -84,13 +84,38 @@ function ManageTabButton({
 export interface ManageAction {
   label: string;
   onClick: () => void;
-  /** Optional 16px leading icon (lucide node). */
-  icon?: ReactNode;
+  /** 16px leading icon: a pqoqubbw component or a lucide node. */
+  icon?: ManageTabIcon | ReactNode;
   /** Icon-only square button; label becomes the tooltip. */
   iconOnly?: boolean;
   /** Primary = the page's main call to action (New / Add / Install). */
   primary?: boolean;
   disabled?: boolean;
+}
+
+function isTabIcon(icon: ManageAction["icon"]): icon is ManageTabIcon {
+  return typeof icon === "function";
+}
+
+function ManageActionButton({ a }: { a: ManageAction }) {
+  const iconRef = useRef<AnimatedNavIconHandle>(null);
+  const Icon = isTabIcon(a.icon) ? a.icon : null;
+  return (
+    <Button
+      size={a.iconOnly ? "icon" : "sm"}
+      variant={a.primary ? "default" : "outline"}
+      className={a.primary ? undefined : "border border-[var(--border)] text-[var(--text-primary)]"}
+      onClick={a.onClick}
+      disabled={a.disabled}
+      title={a.iconOnly ? a.label : undefined}
+      aria-label={a.iconOnly ? a.label : undefined}
+      onMouseEnter={() => iconRef.current?.startAnimation?.()}
+      onMouseLeave={() => iconRef.current?.stopAnimation?.()}
+    >
+      {Icon ? <Icon ref={iconRef} size={16} /> : a.icon}
+      {!a.iconOnly && a.label}
+    </Button>
+  );
 }
 
 /**
@@ -147,22 +172,7 @@ export function ManagePageHeader({
         <div className={styles.toolbar}>
           {toolbar}
           {actions.map((a) => (
-            <Button
-              key={a.label}
-              size={a.iconOnly ? "icon" : "sm"}
-              variant={a.primary ? "default" : "outline"}
-              // The bare outline variant reads as plain text next to the
-              // search box; secondary actions get the same quiet border so
-              // every control in the row shares one visual weight.
-              className={a.primary ? undefined : "border border-[var(--border)] text-[var(--text-primary)]"}
-              onClick={a.onClick}
-              disabled={a.disabled}
-              title={a.iconOnly ? a.label : undefined}
-              aria-label={a.iconOnly ? a.label : undefined}
-            >
-              {a.icon}
-              {!a.iconOnly && a.label}
-            </Button>
+            <ManageActionButton key={a.label} a={a} />
           ))}
         </div>
       )}
