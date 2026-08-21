@@ -11,7 +11,18 @@
  * (mcp's server rail, plugins' dialogs, skills' discovery) stays put.
  */
 
-import type { ReactNode } from "react";
+import type {
+  ForwardRefExoticComponent,
+  KeyboardEvent,
+  ReactNode,
+  RefAttributes,
+} from "react";
+import { useRef } from "react";
+
+import type {
+  AnimatedNavIconHandle,
+  AnimatedNavIconProps,
+} from "@/components/animated-icons";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -19,11 +30,55 @@ import styles from "./manage-page.module.css";
 
 export { styles as managePageStyles };
 
+export type ManageTabIcon = ForwardRefExoticComponent<
+  AnimatedNavIconProps & RefAttributes<AnimatedNavIconHandle>
+>;
+
 export interface ManageTab {
   id: string;
   label: string;
   /** Optional trailing count, rendered as `label (n)`. */
   count?: number;
+  /** Optional pqoqubbw animated icon; hover is driven by the pill. */
+  icon?: ManageTabIcon;
+}
+
+function ManageTabButton({
+  tab,
+  active,
+  tabIndex,
+  onClick,
+  onKeyDown,
+}: {
+  tab: ManageTab;
+  active: boolean;
+  tabIndex: number;
+  onClick: () => void;
+  onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void;
+}) {
+  const iconRef = useRef<AnimatedNavIconHandle>(null);
+  const Icon = tab.icon;
+  const label = tab.count === undefined ? tab.label : `${tab.label} (${tab.count})`;
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      tabIndex={tabIndex}
+      onClick={onClick}
+      onKeyDown={onKeyDown}
+      onMouseEnter={() => iconRef.current?.startAnimation?.()}
+      onMouseLeave={() => iconRef.current?.stopAnimation?.()}
+      className={cn(styles.tabBtn, active && styles.active)}
+    >
+      {Icon ? (
+        <span className={styles.tabIcon} aria-hidden>
+          <Icon ref={iconRef} size={16} />
+        </span>
+      ) : null}
+      {label}
+    </button>
+  );
 }
 
 export interface ManageAction {
@@ -77,18 +132,14 @@ export function ManagePageHeader({
       {tabs && tabs.length > 0 && (
         <div className={styles.tabs} role="tablist">
           {tabs.map((tb, index) => (
-            <button
+            <ManageTabButton
               key={tb.id}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === tb.id}
+              tab={tb}
+              active={activeTab === tb.id}
               tabIndex={activeTab === tb.id ? 0 : -1}
               onClick={() => onTabChange?.(tb.id)}
               onKeyDown={(event) => moveTab(event, index)}
-              className={cn(styles.tabBtn, activeTab === tb.id && styles.active)}
-            >
-              {tb.count === undefined ? tb.label : `${tb.label} (${tb.count})`}
-            </button>
+            />
           ))}
         </div>
       )}
@@ -135,16 +186,13 @@ export function ManageSubnav({
   return (
     <div className={styles.subnav} role="tablist">
       {tabs.map((tb) => (
-        <button
+        <ManageTabButton
           key={tb.id}
-          type="button"
-          role="tab"
-          aria-selected={activeTab === tb.id}
+          tab={tb}
+          active={activeTab === tb.id}
+          tabIndex={activeTab === tb.id ? 0 : -1}
           onClick={() => onTabChange(tb.id)}
-          className={cn(styles.tabBtn, activeTab === tb.id && styles.active)}
-        >
-          {tb.count === undefined ? tb.label : `${tb.label} (${tb.count})`}
-        </button>
+        />
       ))}
     </div>
   );

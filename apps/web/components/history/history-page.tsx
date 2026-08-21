@@ -3,6 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Settings } from "lucide-react";
+import {
+  BrainIcon,
+  FolderCodeIcon,
+  MessageCircleIcon,
+} from "@/components/animated-icons";
 
 import { ChatsPage } from "@/components/chats/chats-page";
 import { MemoryPage } from "@/components/memory";
@@ -68,9 +73,9 @@ export function HistoryPage() {
         <ManagePageHeader
           title={t("nav.history")}
           tabs={[
-            { id: "chats", label: t("nav.chats") },
-            { id: "projects", label: t("nav.projects") },
-            { id: "memory", label: t("nav.memory") },
+            { id: "chats", label: t("nav.chats"), icon: MessageCircleIcon },
+            { id: "projects", label: t("nav.projects"), icon: FolderCodeIcon },
+            { id: "memory", label: t("nav.memory"), icon: BrainIcon },
           ]}
           activeTab={kind}
           onTabChange={goKind}

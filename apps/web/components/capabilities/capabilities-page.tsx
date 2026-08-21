@@ -3,6 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Download, LayoutGrid, Plus, RefreshCw } from "lucide-react";
+import {
+  BlocksIcon,
+  GraduationCapIcon,
+  PlugZapIcon,
+  WorkflowIcon,
+} from "@/components/animated-icons";
 
 import { McpPage } from "@/components/mcp/mcp-page";
 import { PluginsPage } from "@/components/plugins/plugins-page";
@@ -108,10 +114,10 @@ export function CapabilitiesPage() {
         <ManagePageHeader
           title={t("nav.ability")}
           tabs={[
-            { id: "programs", label: t("nav.programs") },
-            { id: "plugins", label: t("nav.plugins") },
-            { id: "skills", label: t("nav.skills") },
-            { id: "mcp", label: t("nav.mcp_short") },
+            { id: "programs", label: t("nav.programs"), icon: WorkflowIcon },
+            { id: "plugins", label: t("nav.plugins"), icon: BlocksIcon },
+            { id: "skills", label: t("nav.skills"), icon: GraduationCapIcon },
+            { id: "mcp", label: t("nav.mcp_short"), icon: PlugZapIcon },
           ]}
           activeTab={kind}
           onTabChange={goKind}
