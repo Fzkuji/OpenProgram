@@ -26,19 +26,14 @@
 }
 
 .title {
-  display: inline-flex;
-  align-items: center;
-  height: var(--ui-button-h);
   font-size: 18px;
   font-weight: 600;
-  line-height: 1;
   color: var(--text-bright);
   flex-shrink: 0;
 }
 
 .tabs {
   display: flex;
-  align-items: center;
   gap: 6px;
   margin-left: 24px;
 }
@@ -49,11 +44,9 @@
      component family. */
   display: inline-flex;
   align-items: center;
-  box-sizing: border-box;
   height: var(--ui-button-h);
   padding: 0 12px;
   font-size: 13px;
-  line-height: 1;
   color: var(--text-dim);
   background: transparent;
   border: 1px solid transparent;
@@ -76,6 +69,7 @@
   align-items: center;
   gap: 10px;
   margin-left: auto;
+  padding-bottom: 2px;
 }
 
 /* Scrollable single-column body — the shape /skills browse uses. */
