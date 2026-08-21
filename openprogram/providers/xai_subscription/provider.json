@@ -1,0 +1,21 @@
+{
+  "id": "xai-subscription",
+  "endpoints": {
+    "default": {
+      "api": "openai-completions",
+      "base_url": "https://api.x.ai/v1"
+    }
+  },
+  "thinking": {
+    "wire_format": "effort_string",
+    "effort_map": {
+      "minimal": "none",
+      "low": "low",
+      "medium": "medium",
+      "high": "high",
+      "xhigh": "high",
+      "max": "high"
+    },
+    "default_effort": "medium"
+  }
+}

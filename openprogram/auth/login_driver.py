@@ -95,6 +95,9 @@ def _pkce_config(provider: str):
     if provider in ("anthropic", "claude-code"):
         from openprogram.providers.anthropic import auth_adapter
         return auth_adapter.build_pkce_config()
+    if provider == "xai-subscription":
+        from openprogram.providers.xai_subscription import auth_adapter
+        return auth_adapter.build_pkce_config()
     raise AuthConfigError(f"no PKCE config registered for {provider!r}")
 
 

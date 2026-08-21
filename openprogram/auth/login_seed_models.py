@@ -46,6 +46,14 @@ _DEFAULTS: dict[str, list[dict]] = {
         {"id": "gpt-5.5-codex", "name": "GPT-5.5 Codex", "api": "openai-codex",
          "reasoning": True},
     ],
+    "xai-subscription": [
+        {"id": "grok-4.5", "name": "Grok 4.5",
+         "api": "openai-completions", "base_url": "https://api.x.ai/v1",
+         "input": ["text", "image"], "reasoning": True},
+        {"id": "grok-4", "name": "Grok 4",
+         "api": "openai-completions", "base_url": "https://api.x.ai/v1",
+         "input": ["text", "image"], "reasoning": True},
+    ],
 }
 
 

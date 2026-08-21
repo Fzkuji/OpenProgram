@@ -91,6 +91,7 @@ def _result(
 # provider KIND classification (doc §6)
 _OAUTH_PROVIDERS = frozenset({
     "openai-codex", "gemini-subscription", "github-copilot",
+    "xai-subscription",
     "opencode", "opencode-go",
 })
 # claude-code speaks the anthropic-messages wire but uses OAuth subscription

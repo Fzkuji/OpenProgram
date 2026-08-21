@@ -96,6 +96,22 @@ _SETUP_HINTS: dict[str, str] = {
         "your existing Claude session instead, use the **Claude Code**\n"
         "provider (no API key needed)."
     ),
+    "xai-subscription": (
+        "Grok subscription uses SuperGrok or X Premium+ — no API key to paste.\n"
+        "\n"
+        "Click Sign in on this card (or run the command below). A browser tab\n"
+        "opens to auth.x.ai; sign in with the account that holds the subscription\n"
+        "and approve access. The callback lands on 127.0.0.1:56121.\n"
+        "\n"
+        "$ openprogram providers login xai-subscription\n"
+        "\n"
+        "Tokens are saved under the xai-subscription pool and refreshed\n"
+        "automatically. Requests go to api.x.ai as a normal chat-completions\n"
+        "call, billed to the subscription rather than an API key.\n"
+        "\n"
+        "If you only have a pay-per-token xAI API key, use the regular **xAI**\n"
+        "provider instead — they're separate billing paths."
+    ),
     "gemini-subscription": (
         "Gemini CLI reuses your Gemini Advanced / Workspace subscription\n"
         "via Google Cloud Code Assist — no API key to paste.\n"

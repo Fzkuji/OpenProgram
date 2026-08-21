@@ -176,6 +176,8 @@ _AUDITED_FIXED_ORIGINS = MappingProxyType(
                 "https://accounts.google.com",
                 "https://api.github.com",
                 "https://auth.openai.com",
+                "https://auth.x.ai",
+                "https://accounts.x.ai",
                 "https://claude.ai",
                 "https://console.anthropic.com",
                 "https://github.com",

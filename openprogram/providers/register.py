@@ -92,10 +92,14 @@ def register_auth_adapters() -> None:
             register_gemini_cli_auth,
         )
         from openprogram.providers.openai_codex.auth_adapter import register_codex_auth
+        from openprogram.providers.xai_subscription.auth_adapter import (
+            register_xai_subscription_auth,
+        )
 
         register_anthropic_auth()
         register_codex_auth()
         register_gemini_cli_auth()
+        register_xai_subscription_auth()
         _auth_registered = True
 
 

@@ -75,6 +75,7 @@ export const LOBE_ICONS: Record<string, LobeMatch> = {
   "vercel": { slug: "vercel", hasColor: false, hasMono: true },
   "vercel-ai-gateway": { slug: "vercel", hasColor: false, hasMono: true },
   "xai": { slug: "xai", hasColor: false, hasMono: true },
+  "xai-subscription": { slug: "xai", hasColor: false, hasMono: true },
   "zai": { slug: "zai", hasColor: false, hasMono: true },
   "zai-coding-plan": { slug: "zai", hasColor: false, hasMono: true },
   "zenmux": { slug: "zenmux", hasColor: false, hasMono: true },

@@ -40,6 +40,7 @@ _ALIASES: dict[str, str] = {
     # Map to the canonical ``claude-code`` provider id so model lookups
     # resolve to the same registry entries.
     "claude-max": "claude-code",
+    "grok-subscription": "xai-subscription",
     "gemini-cli": "gemini-subscription",
     "github-copilot-cli": "github-copilot",
     # Back-compat: this provider (Alibaba's token-plan.cn OpenAI-compatible

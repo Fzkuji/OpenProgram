@@ -25,6 +25,7 @@
 | `cerebras` | OpenAI Completions | API key（`CEREBRAS_API_KEY`） | |
 | `mistral` | OpenAI Completions | API key（`MISTRAL_API_KEY`） | |
 | `xai` | OpenAI Completions | API key（`XAI_API_KEY`） | |
+| `xai_subscription` | OpenAI Completions | OAuth（SuperGrok / X Premium+）：浏览器 PKCE 登录 | 模型与 `xai` 相同，走订阅额度 |
 | `zai` | OpenAI Completions | API key（`ZAI_API_KEY`） | |
 | `huggingface` | OpenAI Completions | API key（`HF_TOKEN`） | |
 | `minimax` / `minimax_cn` | Anthropic Messages | API key（`MINIMAX_API_KEY` / `MINIMAX_CN_API_KEY`） | 国际 / 国内两个端点 |

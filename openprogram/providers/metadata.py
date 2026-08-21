@@ -68,6 +68,7 @@ PROVIDER_LABELS: dict[str, str] = {
     # CLI provider). Tools come from OpenProgram's own registry instead
     # of the CLI's built-ins.
     "claude-code": "Claude Code",
+    "xai-subscription": "Grok",
     # CLI-backed:
     "gemini-cli": "Gemini CLI",
 }
@@ -133,6 +134,7 @@ ENV_API_KEYS: dict[str, str | None] = {
     "opencode": None,
     "opencode-go": "OPENCODE_API_KEY",
     "openai-codex": None,  # OAuth via ~/.codex/auth.json
+    "xai-subscription": None,  # SuperGrok / X Premium+ OAuth
     "deepseek": "DEEPSEEK_API_KEY",
 }
 

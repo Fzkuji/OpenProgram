@@ -103,6 +103,10 @@ class PkceConfig:
     # When set, ``_exchange_code_for_tokens`` posts JSON directly instead of
     # trying form first.
     token_use_json: bool = False
+    # xAI authorize requires a nonce claim on the request.
+    include_nonce: bool = False
+    # xAI token exchange re-validates the PKCE challenge; echo it back.
+    token_echo_challenge: bool = False
 
 
 @dataclass
@@ -178,6 +182,8 @@ class PkceLoginMethod(LoginMethod):
             "state": state,
             **self._cfg.extra_authorize_params,
         }
+        if self._cfg.include_nonce:
+            params["nonce"] = secrets.token_hex(16)
         if self._cfg.scopes:
             params["scope"] = " ".join(self._cfg.scopes)
         auth_url = f"{self._cfg.authorize_url}?{urlencode(params)}"
@@ -197,7 +203,7 @@ class PkceLoginMethod(LoginMethod):
                 raise ValueError("no authorization code pasted")
             tokens = await _exchange_code_for_tokens(
                 cfg=self._cfg, code=code, verifier=verifier,
-                redirect_uri=redirect_uri, state=state,
+                redirect_uri=redirect_uri, state=state, challenge=challenge,
             )
             return self._credential_from_tokens(tokens)
 
@@ -224,6 +230,7 @@ class PkceLoginMethod(LoginMethod):
 
         tokens = await _exchange_code_for_tokens(
             cfg=self._cfg, code=code, verifier=verifier, redirect_uri=redirect_uri,
+            challenge=challenge,
         )
         return self._credential_from_tokens(tokens)
 
@@ -411,7 +418,7 @@ async def _ask_manual_paste(ui: LoginUi, expected_state: str) -> str:
 
 async def _exchange_code_for_tokens(
     *, cfg: PkceConfig, code: str, verifier: str, redirect_uri: str,
-    state: str = "",
+    state: str = "", challenge: str = "",
 ) -> PkceTokens:
     """POST the auth code + PKCE verifier to the token endpoint.
 
@@ -434,6 +441,9 @@ async def _exchange_code_for_tokens(
     }
     if state:
         params["state"] = state
+    if cfg.token_echo_challenge and challenge:
+        params["code_challenge"] = challenge
+        params["code_challenge_method"] = "S256"
     token_origin = normalize_origin(cfg.token_url)
     async with configured_safe_async_client(
         "provider.configured_api",

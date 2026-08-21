@@ -50,6 +50,7 @@ def _load_folded(dir_name: str, key: str, legacy_file: str) -> Optional[dict[str
 # Providers that share another provider's thinking config (same API).
 _THINKING_ALIASES: dict[str, str] = {
     "claude-code": "anthropic",
+    "xai-subscription": "xai",
 }
 
 _OPENAI_COMPAT_FALLBACK: dict[str, Any] = {

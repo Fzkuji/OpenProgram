@@ -16,6 +16,7 @@ _SUBSCRIPTION_BORROW = {
     "claude-code": "anthropic",
     "openai-codex": "openai",
     "gemini-subscription": "google",
+    "xai-subscription": "xai",
 }
 
 

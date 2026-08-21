@@ -25,6 +25,7 @@ Access methods: **API key** = a key stored in the credential store (`providers l
 | `cerebras` | OpenAI Completions | API key (`CEREBRAS_API_KEY`) | |
 | `mistral` | OpenAI Completions | API key (`MISTRAL_API_KEY`) | |
 | `xai` | OpenAI Completions | API key (`XAI_API_KEY`) | |
+| `xai_subscription` | OpenAI Completions | OAuth (SuperGrok / X Premium+): browser PKCE sign-in | Same models as `xai`, billed to the subscription |
 | `zai` | OpenAI Completions | API key (`ZAI_API_KEY`) | |
 | `huggingface` | OpenAI Completions | API key (`HF_TOKEN`) | |
 | `minimax` / `minimax_cn` | Anthropic Messages | API key (`MINIMAX_API_KEY` / `MINIMAX_CN_API_KEY`) | International / China endpoints |

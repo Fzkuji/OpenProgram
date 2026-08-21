@@ -55,6 +55,8 @@ export function Detail({
         // user-facing API key, so don't surface the ANTHROPIC_API_KEY env var
         // (which it carries only as an internal detail) as if you must set it.
         ? text("Runs on your Claude subscription — no API key", "用你的 Claude 订阅 — 无需 API key")
+        : provider.id === "xai-subscription"
+          ? text("Runs on your SuperGrok / X Premium+ subscription — no API key", "用你的 SuperGrok / X Premium+ 订阅 — 无需 API key")
         : provider.api_key_env
           ? text("API key provider", "API key 提供商")
           : text("Subscription required", "需要订阅");
