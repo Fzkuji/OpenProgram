@@ -32,21 +32,26 @@
    16px marker slot + 12px gap → text left edge lands at 36px, the
    exact x where the header's label starts); this wrapper only steps
    them down a size — 28px tall, 13px text — and draws the 1px
-   vertical guide at x=16px, the icon slot's optical center. */
+   vertical guide through the icon/dot optical center. */
 .projectKids {
   position: relative;
+  overflow: visible;
 }
 .projectKids::before {
   content: "";
   position: absolute;
-  /* 竖线要正好穿过子项圆点的圆心：圆点在 8px 左内边距 + 16px 标记槽内居中，
-     圆心 x = 8 + 16/2 = 16px；上方项目头文件夹图标中心也在 16px。1px 宽的线
-     若用 left:16px 会落在 x=[16,17]（中心 16.5px，偏右半像素），所以 left 定
-     在 16px 再 translateX(-50%) 让线跨在 16px 轴上，与圆心 / 图标中心同轴。 */
-  left: 16px;
+  /* ui-list-item is border-box with a 1px transparent border + padding
+     6px 8px + a 16px marker slot, so dot/folder optical center x =
+     1 + 8 + 8 = 17px (not 16). translateX(-50%) keeps the 1px line
+     on that axis. Child rows are 28px, so last-dot center is 14px
+     from the bottom (bottom: 14px — no stub past the last circle).
+     Header is --ui-list-h (30px) with a 20px FoldersIcon + 1px gap;
+     top: -12px grows the line up into the folder instead of leaving
+     a gap under the icon. */
+  left: 17px;
   transform: translateX(-50%);
-  top: 2px;
-  bottom: 2px;
+  top: -12px;
+  bottom: 14px;
   width: 1px;
   background: var(--border);
   pointer-events: none;
