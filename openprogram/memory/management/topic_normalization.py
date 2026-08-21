@@ -119,7 +119,11 @@ class TopicNormalizationMixin:
             for start, end, _headings in paragraph_spans(text.splitlines())
         ]
 
-    def _normalize_topic_edits(self, existing_block_ids: set[str]) -> None:
+    def _normalize_topic_edits(
+        self,
+        existing_block_ids: set[str],
+        previous_units: list[Any] | None = None,
+    ) -> None:
         # Callers that need to report assigned IDs read these afterwards.
         self.last_block_id_map: dict[str, str] = {}
         self.last_evidence_id_map: dict[str, str] = {}
@@ -131,6 +135,34 @@ class TopicNormalizationMixin:
         # What is on disk now. `texts` is rewritten in place below, so the
         # final write needs its own record of the original to compare against.
         on_disk = dict(texts)
+
+        # A shell move keeps the old relative Source targets in the file.
+        # Recover their identities from the committed block/evidence IDs,
+        # never from the display labels, before strict parsing runs.
+        previous_by_id = {
+            unit.memory_id: unit for unit in previous_units or []
+        }
+        relocated_evidence: dict[tuple[Path, str], Any] = {}
+        for path, text in texts.items():
+            relative = path.relative_to(topics).as_posix()
+            lines = text.splitlines()
+            for start, end in self._paragraph_spans(text):
+                paragraph = "\n".join(lines[start:end])
+                suffix = BLOCK_SUFFIX.search(paragraph)
+                if suffix is None:
+                    continue
+                citations = set(SINGLE_CITATION.findall(paragraph))
+                for block_id in re.findall(
+                    r"\^([A-Za-z0-9-]+)", paragraph[suffix.start():]
+                ):
+                    previous = previous_by_id.get(block_id)
+                    if previous is None or previous.topic_path == relative:
+                        continue
+                    for annotation in previous.evidence:
+                        if annotation.citation_id in citations:
+                            relocated_evidence.setdefault(
+                                (path, annotation.citation_id), annotation
+                            )
 
         # Evidence labels are content-addressed, so the same claim keeps its
         # footnote ID no matter what else the edit touched.
@@ -283,7 +315,18 @@ class TopicNormalizationMixin:
                     raw_sources = match.group("sources")
                     sources = []
                     linked_sources = LINK.findall(raw_sources)
-                    if linked_sources:
+                    relocated = relocated_evidence.get((path, match.group("id")))
+                    if (
+                        relocated is not None
+                        and len(linked_sources) == len(relocated.source_refs)
+                    ):
+                        sources.extend(
+                            self._source_link(topic_path, ref, label)
+                            for ref, (label, _target) in zip(
+                                relocated.source_refs, linked_sources
+                            )
+                        )
+                    elif linked_sources:
                         for label, target in linked_sources:
                             target = target.strip()
                             if is_plain_source_handle(target):

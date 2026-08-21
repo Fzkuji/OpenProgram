@@ -157,10 +157,9 @@ class MemoryWorkspace(
         self.last_changed_topics = []
         self.last_created_blocks = 0
         before = self._workspace_fingerprint()
-        before_topics = self._topic_fingerprints(self.stage_dir / "topics")
-        before_sources = self._tree_fingerprint(self.stage_dir / "sources")
-        before_units = parse_topic_tree(self.stage_dir / "topics")
-        before_block_ids = {unit.memory_id for unit in before_units}
+        before_units, before_block_ids, before_topics, before_sources = (
+            self.baseline()
+        )
         # This MCP endpoint is the nested agent's only command path. It is
         # always sandboxed, even while interactive shell sandboxing remains
         # disabled globally; an unavailable platform boundary is a refusal.
@@ -244,7 +243,7 @@ class MemoryWorkspace(
             if self._tree_fingerprint(self.stage_dir / "sources") != before_sources:
                 raise ValueError("Source Memory is append-only")
             preserve_creation_order(self, before_units)
-            self._normalize_topic_edits(before_block_ids)
+            self._normalize_topic_edits(before_block_ids, before_units)
             staged_ids = {
                 unit.memory_id
                 for unit in parse_topic_tree(self.stage_dir / "topics")

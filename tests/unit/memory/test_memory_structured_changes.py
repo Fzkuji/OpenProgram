@@ -645,6 +645,58 @@ def test_structured_source_label_must_not_be_empty(tmp_path):
     assert not (root / "topics/empty-label.md").exists()
 
 
+def test_restricted_writer_shell_uses_the_committed_source_baseline(
+    tmp_path, monkeypatch,
+):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.runtime.state import SourceRecord
+
+    root = tmp_path / "memory"
+    record = SourceRecord(
+        "openprogram", "thread-1", "m1", 1, "user", "source text"
+    )
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.archive_source_records([record])
+        workspace.update(
+            base_revision=workspace.revision(),
+            memory_changes=[{
+                "op": "create_record",
+                "content": "A movable record.",
+                "time": "2026-08-20",
+                "sources": [{"source": record.source_id, "label": "move"}],
+                "destination": {
+                    "topic_path": "topics/original.md",
+                    "headings": [],
+                    "position": "end",
+                },
+            }],
+            git_commit="off",
+        )
+
+    monkeypatch.setattr(
+        "openprogram.memory.management.workspace._sandbox.resolve_policy",
+        lambda *, required: object(),
+    )
+    monkeypatch.setattr(
+        "openprogram.backend.local._invocation",
+        lambda command, _cwd, **_kwargs: (
+            ["/bin/sh", "-c", command], False, None, True,
+        ),
+    )
+    with closing(MemoryWorkspace(
+        root, allowed_new_source_refs={record.source_id},
+    )) as workspace:
+        assert workspace.shell("true").returncode == 0
+        moved = workspace.shell(
+            "mkdir -p topics/moved && "
+            "mv topics/original.md topics/moved/renamed.md"
+        )
+        assert moved.returncode == 0
+
+    assert not (root / "topics/original.md").exists()
+    assert (root / "topics/moved/renamed.md").is_file()
+
+
 def test_invalid_record_change_rolls_back_every_record(tmp_path):
     from openprogram.memory.management import MemoryWorkspace
     from openprogram.memory.management.transaction import TransactionError

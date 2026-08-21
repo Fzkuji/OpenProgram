@@ -498,7 +498,7 @@ def install_state(
     Mirrors the successful branch of ``MemoryWorkspace.shell()``.
     """
     preserve_creation_order(workspace, before_units)
-    workspace._normalize_topic_edits(before_block_ids)
+    workspace._normalize_topic_edits(before_block_ids, before_units)
     required_ids = before_block_ids
     if isinstance(allow_removed, set):
         required_ids = before_block_ids - allow_removed
