@@ -304,6 +304,10 @@ function AutoTextarea({
   useEffect(() => {
     const t = ref.current;
     if (!t) return;
+    if (!expanded) {
+      t.style.height = "";
+      return;
+    }
     t.style.height = "auto";
     t.style.height = `${t.scrollHeight}px`;
   }, [value, expanded]);

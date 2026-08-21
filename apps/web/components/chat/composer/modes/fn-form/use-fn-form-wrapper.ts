@@ -139,7 +139,42 @@ export function useFnFormWrapper({
     const el = wrapperRef.current;
     if (!el || !el.style.height) return;
     el.style.height = "";
+    el.style.maxHeight = "";
   }, [morphed, wrapperRef]);
+
+  // Keep header (send / close) on screen: remasure as the user types
+  // or expands, and never grow past the room left under the env chips
+  // and above the detached controls row.
+  useEffect(() => {
+    if (!morphed || fnFormClosing) return;
+    const el = wrapperRef.current;
+    if (!el) return;
+    let last = 0;
+    let measuring = false;
+    const apply = () => {
+      if (measuring) return;
+      measuring = true;
+      const next = measureFnFormHeight(el);
+      const cap = availableComposerHeight(el);
+      measuring = false;
+      if (Math.abs(next - last) < 1) return;
+      last = next;
+      el.style.height = `${next}px`;
+      el.style.maxHeight = `${cap}px`;
+    };
+    const id = requestAnimationFrame(apply);
+    const ro = new ResizeObserver(() => requestAnimationFrame(apply));
+    const body = el.querySelector("[data-fn-form-body]");
+    if (body) ro.observe(body);
+    window.addEventListener("resize", apply);
+    return () => {
+      cancelAnimationFrame(id);
+      ro.disconnect();
+      window.removeEventListener("resize", apply);
+    };
+  }, [morphed, fnFormClosing, fnFormFunction, decisionKey, wrapperRef]);
+
+
 
   return { outgoingFn };
 }
@@ -242,5 +277,38 @@ function measureFnFormHeight(el: HTMLDivElement): number {
   } else {
     body.removeAttribute("style");
   }
-  return header.offsetHeight + bodyContentH + padBottom;
+  const raw = header.offsetHeight + bodyContentH + padBottom;
+  return Math.min(raw, availableComposerHeight(el));
 }
+
+/** Room left for the wrapper after env chips, the detached controls
+ *  row, and inputArea padding. Keeps send / close and those chips
+ *  on screen. */
+function availableComposerHeight(el: HTMLDivElement): number {
+  const area = el.closest("[data-composer-input-area]") as HTMLElement | null;
+  const host = (
+    (area?.offsetParent as HTMLElement | null)
+    || (el.closest("#chatView") as HTMLElement | null)
+    || (area?.parentElement as HTMLElement | null)
+  );
+  const env = area?.querySelector("[data-environment-row]") as HTMLElement | null;
+  const controls = area?.querySelector(".composer-bottom-row") as HTMLElement | null;
+  const cs = area ? getComputedStyle(area) : null;
+  const pad = cs
+    ? parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
+    : 0;
+  const envH = env
+    ? env.offsetHeight + parseFloat(getComputedStyle(env).marginBottom || "0")
+    : 0;
+  const controlsH = controls
+    ? controls.offsetHeight + parseFloat(getComputedStyle(controls).marginTop || "0")
+    : 0;
+  let hostH = host?.clientHeight ?? 0;
+  if (hostH < 80 && area) {
+    const rect = area.getBoundingClientRect();
+    hostH = Math.max(hostH, rect.bottom);
+  }
+  if (hostH < 80) hostH = window.innerHeight;
+  return Math.max(160, hostH - envH - controlsH - pad);
+}
+
