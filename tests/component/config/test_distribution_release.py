@@ -1118,6 +1118,20 @@ def test_local_app_refresh_restarts_worker_after_runtime_install() -> None:
     assert "worker stop >/dev/null 2>&1 || true" not in final_window
 
 
+def test_local_app_refresh_removes_stale_package_layout_before_install() -> None:
+    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+        encoding="utf-8"
+    )
+
+    cleanup = refresh.index('remove_stale_package_tree "$local_python"')
+    install = refresh.index('"$local_python" -m pip install')
+
+    assert cleanup < install
+    assert 'for package_name in ("openprogram", "openprogram_server")' in refresh
+    assert "package.parent != site_packages" in refresh
+    assert "shutil.rmtree(package)" in refresh
+
+
 def test_local_app_refresh_rejects_a_different_product_version_before_build(
     tmp_path: Path,
 ) -> None:

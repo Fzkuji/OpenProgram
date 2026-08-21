@@ -60,6 +60,27 @@ test -x "$app_python" || {
   exit 1
 }
 
+remove_stale_package_tree() {
+  local python_executable="$1"
+  "$python_executable" -I - "$python_executable" <<'PY'
+import shutil
+import sys
+import sysconfig
+from pathlib import Path
+
+expected = Path(sys.argv[1]).resolve()
+if Path(sys.executable).resolve() != expected:
+    raise SystemExit(0)
+site_packages = Path(sysconfig.get_paths()["purelib"]).resolve()
+for package_name in ("openprogram", "openprogram_server"):
+    package = (site_packages / package_name).resolve()
+    if package.parent != site_packages:
+        raise SystemExit(f"package path escapes site-packages: {package}")
+    if package.is_dir():
+        shutil.rmtree(package)
+PY
+}
+
 wheel_dir="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-local-wheel.XXXXXX")"
 install_lock_file="$(dirname -- "$app_path")/.openprogram-app-install.lock"
 install_lock_owned=0
@@ -167,6 +188,10 @@ if pgrep -x OpenProgram >/dev/null 2>&1; then
 fi
 "$local_python" -m openprogram worker stop >/dev/null 2>&1 || true
 
+# A wheel reinstall does not remove files left by an older package layout.
+# Remove only OpenProgram's validated package directories before reinstalling.
+remove_stale_package_tree "$local_python"
+remove_stale_package_tree "$app_python"
 "$local_python" -m pip install --disable-pip-version-check \
   --no-deps --force-reinstall "$wheel"
 "$app_python" -I -m pip install --disable-pip-version-check \
