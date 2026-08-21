@@ -106,7 +106,7 @@ _SETUP_HINTS: dict[str, str] = {
         "$ openprogram providers login xai-subscription\n"
         "\n"
         "Tokens are saved under the xai-subscription pool and refreshed\n"
-        "automatically. Requests go to api.x.ai as a normal chat-completions\n"
+        "automatically. Requests go to cli-chat-proxy.grok.com (the Grok CLI proxy),\n        not api.x.ai.\n"
         "call, billed to the subscription rather than an API key.\n"
         "\n"
         "If you only have a pay-per-token xAI API key, use the regular **xAI**\n"

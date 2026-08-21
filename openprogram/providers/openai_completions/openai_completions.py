@@ -293,6 +293,17 @@ async def stream_simple(
         or (model.base_url if model.base_url != "https://api.openai.com/v1" else None)
     extra_headers = {**(opts.headers or {}), **(_conn.headers if _conn else {})}
 
+    # SuperGrok / X Premium+ OAuth is not an api.x.ai key. Force the
+    # official CLI chat proxy + identity headers even if an older
+    # login seeded models at api.x.ai.
+    if model.provider == "xai-subscription":
+        from openprogram.providers.xai_subscription.headers import (
+            CLI_CHAT_PROXY_BASE_URL,
+            grok_cli_headers,
+        )
+        base_url = CLI_CHAT_PROXY_BASE_URL
+        extra_headers.update(grok_cli_headers(model.id))
+
     if not _client_api_key:
         if model.provider == "claude-code":
             # The local Meridian daemon authenticates via Claude Code's

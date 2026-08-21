@@ -48,10 +48,10 @@ _DEFAULTS: dict[str, list[dict]] = {
     ],
     "xai-subscription": [
         {"id": "grok-4.5", "name": "Grok 4.5",
-         "api": "openai-completions", "base_url": "https://api.x.ai/v1",
+         "api": "openai-completions", "base_url": "https://cli-chat-proxy.grok.com/v1",
          "input": ["text", "image"], "reasoning": True},
         {"id": "grok-4", "name": "Grok 4",
-         "api": "openai-completions", "base_url": "https://api.x.ai/v1",
+         "api": "openai-completions", "base_url": "https://cli-chat-proxy.grok.com/v1",
          "input": ["text", "image"], "reasoning": True},
     ],
 }

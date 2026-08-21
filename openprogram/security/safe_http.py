@@ -154,6 +154,7 @@ _AUDITED_FIXED_ORIGINS = MappingProxyType(
                 "https://api.mistral.ai",
                 "https://api.openai.com",
                 "https://api.x.ai",
+                "https://cli-chat-proxy.grok.com",
                 "https://api.z.ai",
                 "https://bedrock-runtime.us-east-1.amazonaws.com",
                 "https://chatgpt.com",

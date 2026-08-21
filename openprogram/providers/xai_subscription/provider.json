@@ -3,7 +3,7 @@
   "endpoints": {
     "default": {
       "api": "openai-completions",
-      "base_url": "https://api.x.ai/v1"
+      "base_url": "https://cli-chat-proxy.grok.com/v1"
     }
   },
   "thinking": {
