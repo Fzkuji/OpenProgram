@@ -3338,6 +3338,24 @@ function showWindowSmoothly(win) {
   step();
 }
 
+// Launch / dock-click / second-instance can all ask for a main window
+// before the first BrowserWindow is in getAllWindows(). Share one in-flight
+// create so a single click cannot open two mains.
+let mainWindowTask = null;
+
+function ensureMainWindow() {
+  const existing = windows.get("main");
+  if (existing && existing.win && !existing.win.isDestroyed()) {
+    return Promise.resolve(existing);
+  }
+  if (!mainWindowTask) {
+    mainWindowTask = createWindow({ windowId: "main" }).finally(() => {
+      mainWindowTask = null;
+    });
+  }
+  return mainWindowTask;
+}
+
 async function createWindow(options = {}) {
   const state = loadWindowState();
   const windowId = options.windowId || "main";
@@ -3509,7 +3527,7 @@ if (!primaryInstance) {
   app.on("second-instance", () => {
     const existing = BrowserWindow.getAllWindows();
     if (existing.length === 0) {
-      void createWindow();
+      void ensureMainWindow();
       return;
     }
     recoverErroredWindows();
@@ -3544,10 +3562,10 @@ if (!primaryInstance) {
     }
     initializeDesktopUpdates();
     buildMenu();
-    void createWindow();
+    void ensureMainWindow();
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
-        void createWindow();
+        void ensureMainWindow();
       } else {
         recoverErroredWindows();
       }
