@@ -40,15 +40,17 @@
 .serverItem {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 12px 6px 8px;
-  min-height: 36px;
+  gap: 12px;
+  box-sizing: border-box;
+  height: var(--ui-list-h);
+  padding: 6px 8px;
   flex-shrink: 0;
   cursor: pointer;
   font-family: inherit;
   font-size: 14px;
   font-weight: 400;
   color: var(--nav-color);
+  border: 1px solid transparent;
   border-radius: var(--ui-list-radius);
   transition: background 150ms ease-out, color 150ms ease-out;
   white-space: nowrap;
@@ -92,16 +94,13 @@
 
 .navAddItem {
   color: var(--text-muted);
-  font-style: italic;
   margin-top: 4px;
-  border: none;
   background: transparent;
   text-align: left;
   font-family: inherit;
 }
 .navAddItem:hover {
   color: var(--text-primary);
-  font-style: normal;
 }
 
 /* Action button — mirrors welcome-screen.module.css .example so

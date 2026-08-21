@@ -278,8 +278,7 @@ button, input, select, textarea, optgroup {
 }
 .ui-list-item:hover { background: var(--bg-hover); }
 .ui-list-item.active {
-  background: var(--bg-input);
-  border-color: var(--border);
+  background: var(--bg-hover);
 }
 
 /* 侧边栏会话标题的右缘渐隐。渐变本身在两组值之间不可插值——直接
