@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 import openprogram.programs as programs
-import openprogram.programs.functions.agentic.workflow.authoring as TL
+from tests.support.workflow_tl import TL
 
 
 def test_workflow_projects_live_under_openprogram_programs() -> None:

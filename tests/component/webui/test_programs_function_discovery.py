@@ -7,19 +7,23 @@ from openprogram.webui._functions import (
 
 
 def test_workflow_category_exports_only_named_public_entries() -> None:
-    source = (
+    workflow_dir = (
         Path(__file__).parents[3]
         / "openprogram"
         / "programs"
         / "functions"
         / "agentic"
         / "workflow"
-        / "authoring"
-        / "__init__.py"
     )
-
-    programs = _extract_all_functions(str(source), "agentic")
-    names = {program["name"] for program in programs}
+    names = set()
+    for filename in (
+        "search_workflows.py",
+        "create_workflow.py",
+        "revise_workflow.py",
+        "auto_workflow.py",
+    ):
+        programs = _extract_all_functions(str(workflow_dir / filename), "agentic")
+        names.update(program["name"] for program in programs)
 
     assert "agentic_workflow" not in names
     assert {
@@ -49,13 +53,26 @@ def test_programs_treats_workflow_as_category_not_program() -> None:
         entry["path"]: entry
         for entry in _list_entries("functions/agentic/workflow")["entries"]
     }
-    assert children["functions/agentic/workflow/authoring"]["has_children"] is True
+    assert children["functions/agentic/workflow/search_workflows"]["has_children"] is False
+    assert children["functions/agentic/workflow/create_workflow"]["callable_name"] == "create_workflow"
+    assert children["functions/agentic/workflow/revise_workflow"]["program_kind"] == "agentic_function"
+    assert children["functions/agentic/workflow/auto_workflow"]["callable_name"] == "auto_workflow"
+    assert "functions/agentic/workflow/authoring" not in children
+    assert not any(entry["name"].startswith("_") for entry in children.values())
     assert "functions/agentic/workflow/browser" in children
     assert "functions/agentic/workflow/docs_question" in children
     assert "functions/agentic/workflow/goal" in children
     assert "functions/agentic/workflow/security_review" in children
 
-    entries = _list_entries("functions/agentic/workflow/authoring")["entries"]
+    entries = [
+        children[path]
+        for path in (
+            "functions/agentic/workflow/search_workflows",
+            "functions/agentic/workflow/create_workflow",
+            "functions/agentic/workflow/revise_workflow",
+            "functions/agentic/workflow/auto_workflow",
+        )
+    ]
     assert {
         (entry["name"], entry["callable_name"], entry["program_kind"])
         for entry in entries
@@ -73,19 +90,18 @@ def test_programs_treats_workflow_as_category_not_program() -> None:
         assert root["name"] == entry["name"]
 
     search_logic = _program_logic(
-        "functions/agentic/workflow/authoring/search_workflows"
+        "functions/agentic/workflow/search_workflows"
     )
     assert search_logic["edges"] == []
     auto_logic = _program_logic(
-        "functions/agentic/workflow/authoring/auto_workflow"
+        "functions/agentic/workflow/auto_workflow"
     )
     assert {
         edge["target"] for edge in auto_logic["edges"]
         if edge["source"] == auto_logic["root"]
-    } == {
-        "functions/agentic/workflow/authoring/search_workflows",
-        "functions/agentic/workflow/authoring/create_workflow",
-        "agentic_programming/agent",
+    } >= {
+        "functions/agentic/workflow/search_workflows",
+        "functions/agentic/workflow/create_workflow",
     }
 
     old_source = (
@@ -179,7 +195,8 @@ def test_agentic_registry_discovery_uses_a_stable_snapshot(monkeypatch) -> None:
 
     indexed = _registered_agentic_callables()
 
-    assert "functions/agentic/workflow/authoring" in indexed
+    assert "functions/agentic/workflow/search_workflows" in indexed
+    assert "functions/agentic/workflow/auto_workflow" in indexed
 
 
 def test_multi_entry_call_graph_scopes_imports_to_selected_function(

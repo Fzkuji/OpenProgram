@@ -20,7 +20,14 @@ WORKFLOW_PLACEMENTS = {
     "goal": AGENTIC / "workflow" / "goal",
     "deep_work": AGENTIC / "workflow" / "deep_work",
     "research": AGENTIC / "workflow" / "research",
-    "authoring": AGENTIC / "workflow" / "authoring",
+}
+
+WORKFLOW_ENTRY_FILES = {
+    "search_workflows": AGENTIC / "workflow" / "search_workflows.py",
+    "create_workflow": AGENTIC / "workflow" / "create_workflow.py",
+    "revise_workflow": AGENTIC / "workflow" / "revise_workflow.py",
+    "auto_workflow": AGENTIC / "workflow" / "auto_workflow.py",
+    "resume_workflow": AGENTIC / "workflow" / "resume_workflow.py",
 }
 
 FORBIDDEN_PRODUCT_DIRS = (
@@ -53,6 +60,9 @@ def _module_path(mod_name: str) -> Path:
 def test_complex_capabilities_live_under_workflow_not_agentic_root():
     for name, path in WORKFLOW_PLACEMENTS.items():
         assert path.is_dir(), f"{name} must live under functions/agentic/workflow/"
+    for name, path in WORKFLOW_ENTRY_FILES.items():
+        assert path.is_file(), f"{name} must be a top-level workflow callable"
+    assert not (AGENTIC / "workflow" / "authoring").exists()
     for name in FORBIDDEN_PRODUCT_DIRS:
         leftover = AGENTIC / name
         assert not leftover.exists(), f"{name} must not remain at agentic root"

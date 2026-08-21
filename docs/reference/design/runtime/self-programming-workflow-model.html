@@ -22,7 +22,15 @@ body{overflow-x:hidden}h1,h2,h3,p,td{overflow-wrap:anywhere}
 │       ├── text/                        # 总结、翻译、改写、分类
 │       ├── research/                    # 只放单次模型阶段
 │       └── workflow/                    # 复杂内置流程的分类
-│           ├── authoring/               # search/create/revise/auto
+│           ├── search_workflows.py
+│           ├── create_workflow.py
+│           ├── revise_workflow.py
+│           ├── auto_workflow.py
+│           ├── resume_workflow.py
+│           ├── errors.py
+│           ├── _generation/             # 内部生成，不作为技能展示
+│           ├── _project/                # 内部项目管理，不作为技能展示
+│           ├── _runtime/                # 内部执行，不作为技能展示
 │           ├── browser/
 │           ├── docs_question/
 │           ├── security_review/

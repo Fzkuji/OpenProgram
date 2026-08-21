@@ -55,7 +55,10 @@ AGENTIC_MODULES: list[str] = [
     "document.extract_pdf_tables",
     "text",
     # Workflows: agent loops, goals, multi-stage control flow.
-    "workflow.authoring",
+    "workflow.search_workflows",
+    "workflow.create_workflow",
+    "workflow.revise_workflow",
+    "workflow.auto_workflow",
     "workflow.browser",
     "workflow.docs_question",
     "workflow.security_review",
@@ -68,6 +71,7 @@ AGENTIC_MODULES: list[str] = [
 # directory looks like one (e.g. internal package private dirs).
 _NOT_A_HARNESS = {
     "__pycache__", "pdf_layout", "document", "text", "workflow",
+    "_generation", "_project", "_runtime",
 }
 
 
@@ -147,11 +151,9 @@ def load_agentic_modules(
 def _load_workflow_projects() -> None:
     """Import each valid owner workflow package so its decorator registers it."""
     try:
-        from openprogram.programs.functions.agentic.workflow.authoring import (
-            _read_project_index,
-            _workflow_projects_root,
-        )
-        root = _workflow_projects_root()
+        from openprogram.programs.functions.agentic.workflow._project import catalog
+
+        root = catalog._workflow_projects_root()
     except Exception as exc:
         _debug_registry_error("workflows", exc)
         return
@@ -174,7 +176,7 @@ def _load_workflow_projects() -> None:
             ):
                 continue
             try:
-                index = _read_project_index(project_dir)
+                index = catalog._read_project_index(project_dir)
                 entrypoint = index["project_metadata"].get("entrypoint")
                 if entrypoint != project_dir.name:
                     continue

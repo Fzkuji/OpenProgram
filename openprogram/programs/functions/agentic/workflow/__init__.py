@@ -1,10 +1,18 @@
 """Complex built-in workflows. Directory nodes are source classification only."""
 
-from .authoring import *  # noqa: F403
-from . import authoring as _authoring
+from .auto_workflow import auto_workflow
+from .create_workflow import create_workflow
+from .errors import InvalidWorkflow, WorkflowExecutionCapped
+from .resume_workflow import resume_workflow
+from .revise_workflow import revise_workflow
+from .search_workflows import search_workflows
 
-for _name, _value in vars(_authoring).items():
-    if _name.startswith("__"):
-        continue
-    globals()[_name] = _value
-del _authoring, _name, _value
+__all__ = [
+    "InvalidWorkflow",
+    "WorkflowExecutionCapped",
+    "auto_workflow",
+    "create_workflow",
+    "resume_workflow",
+    "revise_workflow",
+    "search_workflows",
+]

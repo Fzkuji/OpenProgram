@@ -304,7 +304,7 @@ def _agentic_entries(
             remainder = source.relative_to(prefix).parts
         except ValueError:
             continue
-        if not remainder:
+        if not remainder or remainder[0].startswith("_"):
             continue
         child_path = (prefix / remainder[0]).as_posix()
         if len(remainder) > 1 or len(rows) > 1:

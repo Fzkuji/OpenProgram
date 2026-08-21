@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-import openprogram.programs.functions.agentic.workflow.authoring as TL
+from tests.support.workflow_tl import TL
 
 
 @pytest.fixture
