@@ -538,6 +538,14 @@ def _publish_snapshot(
         # Read HEAD inside the lock so a concurrent publish can't advance
         # it between our commit and this read.
         head = _git(project_dir, "rev-parse", "HEAD")
+    from openprogram.programs._programs import record_program_source
+
+    record_program_source(
+        project_dir,
+        source=f"workflow:{project_id}",
+        kind="workflow-publish",
+        base=str(root),
+    )
     return project_id, head
 
 

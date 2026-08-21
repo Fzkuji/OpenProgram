@@ -10,10 +10,12 @@ Two mechanisms, in order:
   2. **Built-in Workflows** — explicitly named modules under
      ``openprogram/programs/workflow/``.
 
-  3. **Validated workflow projects** — Git-backed packages under
-     ``openprogram/programs/workflow/``. Importing their public package fires
-     the existing ``@agentic_function`` decorator; execution still uses the
-     shared registry and runtime.
+  3. **Published workflow projects** — Git-backed packages under
+     ``openprogram/programs/workflow/`` recorded in ``program-sources.json``
+     by publish (or one-time migration). Importing their public package
+     fires the existing ``@agentic_function`` decorator; execution still
+     uses the shared registry and runtime. Unrecorded directories are not
+     imported.
 
   4. **Auto-discovered external harnesses** — owner-recorded symlinks and
      directories under ``openprogram/programs/applications/`` are treated as
@@ -114,7 +116,7 @@ def load_agentic_modules(
             _debug_registry_error(f"workflow:{mod_name}", e)
             continue
 
-    # 3. Validated Workflow projects — importing the package registers its
+    # 3. Published Workflow projects — importing the package registers its
     #    public @agentic_function with the same shared tool registry.
     _load_workflow_projects()
 
@@ -165,9 +167,48 @@ def load_agentic_modules(
             continue
 
 
+def _is_workflow_project_candidate(project_dir) -> bool:
+    return (
+        project_dir.is_dir()
+        and not project_dir.is_symlink()
+        and not project_dir.name.startswith((".", "_"))
+        and (project_dir / ".git").exists()
+    )
+
+
+def _migrate_workflow_project_sources(root) -> None:
+    """Once, record structurally valid workflow dirs that predate the allowlist."""
+    from openprogram.programs._programs import (
+        mark_workflow_projects_migrated,
+        record_program_source,
+        workflow_projects_migrated,
+    )
+    from openprogram.programs.workflow._project import catalog
+
+    if workflow_projects_migrated():
+        return
+    for project_dir in sorted(root.iterdir()):
+        if not _is_workflow_project_candidate(project_dir):
+            continue
+        try:
+            index = catalog._read_project_index(project_dir)
+            if index["project_metadata"].get("entrypoint") != project_dir.name:
+                continue
+            record_program_source(
+                project_dir,
+                source="workflow-migration",
+                kind="workflow-migration",
+                base=str(root),
+            )
+        except Exception:
+            continue
+    mark_workflow_projects_migrated()
+
+
 def _load_workflow_projects() -> None:
-    """Import each valid owner workflow package so its decorator registers it."""
+    """Import each published workflow package so its decorator registers it."""
     try:
+        from openprogram.programs._programs import owner_controlled_program_sources
         from openprogram.programs.workflow._project import catalog
 
         root = catalog._workflow_projects_root()
@@ -176,6 +217,12 @@ def _load_workflow_projects() -> None:
         return
     if not root.is_dir() or root.is_symlink():
         return
+
+    _migrate_workflow_project_sources(root)
+    allowed = {
+        os.path.normcase(os.path.realpath(row["path"]))
+        for row in owner_controlled_program_sources(str(root))
+    }
 
     import_root = str(root.parent)
     inserted = import_root not in sys.path
@@ -187,10 +234,8 @@ def _load_workflow_projects() -> None:
         importlib.invalidate_caches()
         for project_dir in sorted(root.iterdir()):
             if (
-                not project_dir.is_dir()
-                or project_dir.is_symlink()
-                or project_dir.name.startswith((".", "_"))
-                or not (project_dir / ".git").exists()
+                not _is_workflow_project_candidate(project_dir)
+                or os.path.normcase(os.path.realpath(project_dir)) not in allowed
             ):
                 continue
             try:

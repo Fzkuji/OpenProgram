@@ -95,13 +95,26 @@ def _program_sources_path() -> Path:
     return Path(program_sources_path())
 
 
-def _read_program_sources() -> list[dict]:
+_WORKFLOW_PROJECTS_MIGRATED = "workflow_projects_migrated"
+
+
+def _read_program_sources_document() -> dict:
     try:
         payload = json.loads(_program_sources_path().read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return []
-    rows = payload.get("programs", []) if isinstance(payload, dict) else []
-    return [row for row in rows if isinstance(row, dict)]
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    rows = payload.get("programs", [])
+    payload["version"] = 1
+    payload["programs"] = (
+        [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+    )
+    return payload
+
+
+def _read_program_sources() -> list[dict]:
+    return _read_program_sources_document()["programs"]
 
 
 def _recorded_root(row: dict) -> str | None:
@@ -114,18 +127,25 @@ def _recorded_root(row: dict) -> str | None:
     return os.path.abspath(expanded)
 
 
-def _write_program_sources(rows: list[dict]) -> None:
+def _write_program_sources_document(payload: dict) -> None:
     target = _program_sources_path()
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
     try:
         temporary.write_text(
-            json.dumps({"version": 1, "programs": rows}, indent=2, sort_keys=True),
+            json.dumps(payload, indent=2, sort_keys=True),
             encoding="utf-8",
         )
         os.replace(temporary, target)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _write_program_sources(rows: list[dict]) -> None:
+    payload = _read_program_sources_document()
+    payload["version"] = 1
+    payload["programs"] = rows
+    _write_program_sources_document(payload)
 
 
 def _update_program_sources(mutate) -> None:
@@ -145,14 +165,16 @@ def _is_direct_child(path: str, base: str) -> bool:
     return parent.casefold() == os.path.realpath(base).casefold()
 
 
-def record_program_source(path, *, source: str, kind: str = "git") -> None:
-    """Record an owner-installed harness before runtime import is allowed."""
+def record_program_source(
+    path, *, source: str, kind: str = "git", base: str | None = None
+) -> None:
+    """Record an owner-approved source before runtime import is allowed."""
     raw = os.fspath(path).strip()
     if not raw:
         raise ValueError("program source path must not be empty")
-    base = applications_dir()
+    allowed = base or applications_dir()
     root = os.path.abspath(os.path.expanduser(raw))
-    if not base or not _is_direct_child(root, base) or not os.path.isdir(root):
+    if not allowed or not _is_direct_child(root, allowed) or not os.path.isdir(root):
         raise ValueError("program source must be a directory directly under applications")
 
     def _mutate(rows: list[dict]) -> None:
@@ -188,6 +210,21 @@ def remove_program_source(path) -> None:
             or existing.casefold() != root.casefold()
         ]
         _write_program_sources(kept)
+
+    _update_program_sources(_mutate)
+
+
+def workflow_projects_migrated() -> bool:
+    return bool(_read_program_sources_document().get(_WORKFLOW_PROJECTS_MIGRATED))
+
+
+def mark_workflow_projects_migrated() -> None:
+    def _mutate(rows: list[dict]) -> None:
+        payload = _read_program_sources_document()
+        payload["version"] = 1
+        payload["programs"] = rows
+        payload[_WORKFLOW_PROJECTS_MIGRATED] = True
+        _write_program_sources_document(payload)
 
     _update_program_sources(_mutate)
 
