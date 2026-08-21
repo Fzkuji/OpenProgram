@@ -657,7 +657,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   );
 
   return (
-    <div ref={inputAreaRef} className={styles.inputArea} data-composer-input-area>
+    <div ref={inputAreaRef} className={styles.inputArea} data-composer-input-area data-fn-open={morphed ? "" : undefined}>
       {/* Drop overlay scoped to the chat main column (#chatArea) —
           covers the conversation surface but lets the sidebars stay
           interactive. ``dragActive`` is set by the window-level

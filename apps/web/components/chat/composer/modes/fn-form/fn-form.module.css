@@ -218,9 +218,9 @@
   line-height: 1.5;
   padding: 8px 12px;
   min-height: 48px;
-  max-height: 160px;
+  max-height: none;
   resize: none;
-  overflow-y: auto;
+  overflow-y: hidden;
 }
 .inputError {
   border-color: var(--accent-red) !important;

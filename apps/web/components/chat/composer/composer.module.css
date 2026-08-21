@@ -36,13 +36,16 @@
   right: 0;
   bottom: 0;
   z-index: 5;
-  /* Cap at the chat column so a tall workflow form cannot grow past
-     #chatView and shove the env chips (disconnected / project) off the
-     top of the window. Flex column + shrink-0 on the chip/control rows
-     keeps those rows visible; the wrapper/form body scrolls. */
   max-height: 100%;
   display: flex;
   flex-direction: column;
+  justify-content: flex-end;
+}
+/* Workflow / decision form is open: clip so Local / project chips
+   stay glued above the box and never paint off the top of #chatView.
+   Slash menu is unused in this mode, so overflow:hidden is safe. */
+.inputArea[data-fn-open] {
+  overflow: hidden;
 }
 /* Bottom fade mask: solid at the bottom (hides chat content scrolling
    behind the composer) fading to transparent at the top — so there's no

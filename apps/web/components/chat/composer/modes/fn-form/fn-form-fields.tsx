@@ -277,7 +277,7 @@ function AutoTextarea({
     const t = ref.current;
     if (!t) return;
     t.style.height = "auto";
-    t.style.height = `${Math.min(t.scrollHeight, 160)}px`;
+    t.style.height = `${t.scrollHeight}px`;
   }, [value]);
   return (
     <textarea
