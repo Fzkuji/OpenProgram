@@ -184,7 +184,6 @@ openprogram --print --resume local_d9a16a6b06 "and now?"
 | 功能 | 一句话总结 |
 |---|---|
 | **自动上下文** | 每次 `@agentic_function` 调用是一个树节点;runtime 把它穿进嵌套的 LLM 调用——不用手工拼 prompt。 |
-| **Deep work** | `deep_work(task, level)` 跑自主的计划 → 执行 → 评估 → 修订循环,直到输出达到选定的质量档。状态持久化到磁盘。 |
 | **函数编写函数** | 新建 / 修复 `@agentic_function` 由 agent 自己用普通文件编辑工具并按 API 文档完成。没有专门的 `create()` / `fix()` 调用。 |
 | **对话即 git DAG** | 会话是 commit + 分支 + 合并,右侧栏暴露这些操作。动文件的分支在隔离的 git worktree 里跑。 |
 | **自己写自己的记忆** | `~/.openprogram/memory/`下的Markdown:`core.md`(常驻注入)、`topics/`(一个主题一个文件,每个段落标注出处)、`sources/`(出处指向的对话原文)。对话在后台被折进主题文件,每次写入要么整体落地要么完全不落地。 |

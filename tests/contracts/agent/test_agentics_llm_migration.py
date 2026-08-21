@@ -11,7 +11,6 @@ import pytest
 from tests.support.repository import tracked_python_files
 
 MIGRATED_FUNCTIONS = {
-    "openprogram.programs.workflow.deep_work": ("_clarify", "_evaluate"),
     "openprogram.programs.workflow.document.extract_pdf_figures": ("extract_pdf_figures",),
     "openprogram.programs.workflow.document.extract_pdf_tables": ("extract_pdf_tables",),
     "openprogram.programs.workflow.text": (

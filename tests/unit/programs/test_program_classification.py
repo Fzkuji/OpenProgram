@@ -18,7 +18,6 @@ WORKFLOW_PLACEMENTS = {
     "docs_question": WORKFLOW / "docs_question",
     "security_review": WORKFLOW / "security_review",
     "goal": WORKFLOW / "goal",
-    "deep_work": WORKFLOW / "deep_work",
     "research": WORKFLOW / "research",
 }
 

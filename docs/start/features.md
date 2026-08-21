@@ -38,27 +38,6 @@ def navigate(target): ...
 the function itself sees (`0` walls it off completely);
 `{"subcalls": N}` bounds its own in-frame history in long loops.
 
-## Deep Work — autonomous quality loop
-
-For complex tasks that demand sustained effort and high
-standards, `deep_work` runs an autonomous plan-execute-evaluate
-loop until the result meets the specified quality level:
-
-```python
-from openprogram.programs.workflow.deep_work import deep_work
-
-result = deep_work(
-    task="Write a survey on context management in LLM agents.",
-    level="phd",        # high_school → bachelor → master → phd → professor
-    runtime=runtime,
-)
-```
-
-The agent clarifies requirements upfront, then works fully
-autonomously — executing, self-evaluating, and revising until
-the output passes quality review. State is persisted to disk,
-so interrupted work resumes where it left off.
-
 ## Functions that author functions
 
 Writing, fixing and scaffolding `@agentic_function`s is itself

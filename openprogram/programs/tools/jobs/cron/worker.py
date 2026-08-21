@@ -3,7 +3,7 @@
 Reads the task file produced by the ``scheduler`` tool every minute. For
 each due entry, spawns a
 detached subprocess running the entry's ``prompt`` via
-``openprogram deep-work``. Per-entry stdout/stderr lands in
+``process_user_turn``. Per-entry stdout/stderr lands in
 ``<schedule_dir>/logs/<entry_id>-<timestamp>.log``. Last-fired minute per
 entry is persisted to ``<schedule_dir>/worker-state.json`` so a worker
 restart within the same minute doesn't re-fire already-fired entries.

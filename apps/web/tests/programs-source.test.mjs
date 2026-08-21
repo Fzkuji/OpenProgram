@@ -51,8 +51,8 @@ test("ordinary programs stay on their source kind", () => {
     program_kind: "workflow",
   }), "workflow");
   assert.equal(isWorkflowCapability({
-    name: "deep_work",
-    path: "workflow/deep_work",
+    name: "docs_question",
+    path: "workflow/docs_question",
     program_kind: "agentic_function",
   }), false);
   assert.equal(programSourceCategory({

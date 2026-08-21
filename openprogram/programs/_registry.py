@@ -69,7 +69,6 @@ WORKFLOW_MODULES: list[str] = [
     "docs_question",
     "security_review",
     "goal",
-    "deep_work",
     "auto_workflow",
 ]
 

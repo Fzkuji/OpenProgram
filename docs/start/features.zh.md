@@ -36,25 +36,6 @@ def navigate(target): ...
 （`0` 表示完全隔断）；`{"subcalls": N}` 在长循环里约束它自己
 帧内历史的规模。
 
-## Deep Work — 自主质量循环
-
-对于需要持续投入和高标准的复杂任务，`deep_work` 会运行一个
-自主的「规划—执行—评估」循环，直到结果达到指定的质量等级：
-
-```python
-from openprogram.programs.workflow.deep_work import deep_work
-
-result = deep_work(
-    task="Write a survey on context management in LLM agents.",
-    level="phd",        # high_school → bachelor → master → phd → professor
-    runtime=runtime,
-)
-```
-
-agent 会先在前期厘清需求，然后完全自主地工作 —— 执行、自我评估、
-反复修订，直到产出通过质量审查。状态会持久化到磁盘，
-因此被中断的工作可以从断点处继续。
-
 ## 编写函数的函数
 
 编写、修复和搭建 `@agentic_function` 本身就是
