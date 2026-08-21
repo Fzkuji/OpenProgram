@@ -28,13 +28,10 @@
        taller so the click target is comfortable; corners are
        rounder so the pill silhouette is unmistakeable against
        the surrounding text. */
-  --ui-list-h: 32px;
+  --ui-list-h: var(--ui-button-h);
   /* 10px — Claude shape language: list rows and small buttons sit at
      10px; cards/panels at 12px (--radius-lg). */
   --ui-list-radius: 10px;
-  /* Button height intentionally a touch SHORTER than list height —
-     a pill on the panel surface should not visually outweigh the
-     sidebar rows it sits next to. */
   --ui-button-h: 30px;
   --ui-button-radius: 10px;
   /* 聊天列（消息列 + 输入框三条带共用）：空间够就扩，封顶 1000。
@@ -269,17 +266,21 @@ button, input, select, textarea, optgroup {
   display: flex;
   align-items: center;
   gap: 12px;
+  box-sizing: border-box;
   height: var(--ui-list-h);
   padding: 6px 8px;
   border-radius: var(--ui-list-radius);
   font-size: 14px;
   cursor: pointer;
-  border: none;
+  border: 1px solid transparent;
   box-shadow: none;
-  transition: background-color 150ms ease-out, color 150ms ease-out;
+  transition: background-color 150ms ease-out, color 150ms ease-out, border-color 150ms ease-out;
 }
 .ui-list-item:hover { background: var(--bg-hover); }
-.ui-list-item.active { background: var(--bg-hover); }
+.ui-list-item.active {
+  background: var(--bg-input);
+  border-color: var(--border);
+}
 
 /* 侧边栏会话标题的右缘渐隐。渐变本身在两组值之间不可插值——直接
    transition mask-image 会瞬变——所以把两个停靠点抽成注册过的百分比

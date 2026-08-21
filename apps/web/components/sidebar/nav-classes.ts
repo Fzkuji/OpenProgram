@@ -53,7 +53,7 @@ export const sidebarNavItemClass = [
 ].join(" ");
 
 /** Active variant — appended to `.sidebarNavItemClass` when current route matches. */
-export const sidebarNavItemActiveClass = "bg-bg-hover text-nav-color-hover";
+export const sidebarNavItemActiveClass = "border-[var(--border)] bg-[var(--bg-input)] text-nav-color-hover";
 
 /** 16-wide icon container, 20-tall. Holds a 20×20 SVG centered, so
  *  the SVG overflows ±2px horizontally without pushing the text.
