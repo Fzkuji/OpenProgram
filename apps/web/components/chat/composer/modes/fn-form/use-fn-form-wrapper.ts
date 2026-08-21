@@ -242,5 +242,29 @@ function measureFnFormHeight(el: HTMLDivElement): number {
   } else {
     body.removeAttribute("style");
   }
-  return header.offsetHeight + bodyContentH + padBottom;
+  const raw = header.offsetHeight + bodyContentH + padBottom;
+  return Math.min(raw, availableComposerHeight(el));
+}
+
+/** Room left for the wrapper inside #chatView after the env chips,
+ *  controls row, and inputArea padding. Keeps disconnected / project
+ *  chips on screen when a workflow form is taller than the window. */
+function availableComposerHeight(el: HTMLDivElement): number {
+  const chatView = el.closest("#chatView") as HTMLElement | null;
+  const area = el.closest("[data-composer-input-area]") as HTMLElement | null;
+  if (!chatView) return Number.POSITIVE_INFINITY;
+  const host = area ?? (el.parentElement?.parentElement as HTMLElement | null);
+  const env = host?.querySelector("[data-environment-row]") as HTMLElement | null;
+  const controls = host?.querySelector(".composer-bottom-row") as HTMLElement | null;
+  const cs = host ? getComputedStyle(host) : null;
+  const pad = cs
+    ? parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
+    : 0;
+  const envH = env
+    ? env.offsetHeight + parseFloat(getComputedStyle(env).marginBottom || "0")
+    : 0;
+  const controlsH = controls
+    ? controls.offsetHeight + parseFloat(getComputedStyle(controls).marginTop || "0")
+    : 0;
+  return Math.max(120, chatView.clientHeight - envH - controlsH - pad);
 }

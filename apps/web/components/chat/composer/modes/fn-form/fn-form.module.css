@@ -116,7 +116,8 @@
   /* 自然高度（不 `flex: 1` 撑满）：flex 填充会把 wrapper 多出来的高度
      堆到 body 底部，造成「底 padding 比顶多几 px」的不可控余量。改成
      内容高度后顶底 padding 严格对称、所见即所得。内容超长仍可内部滚动。 */
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   /* Keep the body scrollable but hide the scrollbar chrome — same
      treatment as `.slashMenu` / `.scroll-overlay` elsewhere in the app. */
