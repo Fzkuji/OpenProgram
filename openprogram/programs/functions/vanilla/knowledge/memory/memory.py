@@ -373,9 +373,28 @@ UPDATE_SPEC: dict[str, Any] = {
                             "type": "string",
                             "description": "YYYY, YYYY-MM, YYYY-MM-DD, or undated",
                         },
-                        "source_refs": {
+                        "sources": {
                             "type": "array",
-                            "items": {"type": "string"},
+                            "description": (
+                                "evidence identity plus a short display keyword"
+                            ),
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "source": {"type": "string"},
+                                    "label": {
+                                        "type": "string",
+                                        "description": (
+                                            "Context-specific plain keyword: Chinese at most "
+                                            "8 visible characters or English at most 6 words. "
+                                            "Do not use a source ID, speaker, date, URL, Markdown, "
+                                            "or a role/sequence template such as Owner 1 or S1."
+                                        ),
+                                    },
+                                },
+                                "required": ["source", "label"],
+                                "additionalProperties": False,
+                            },
                         },
                     },
                     "required": ["op"],

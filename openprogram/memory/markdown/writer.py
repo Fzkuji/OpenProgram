@@ -29,9 +29,14 @@ def append_memory_unit(path: Path, unit: MemoryUnit) -> None:
     if lines and lines[-1].strip():
         lines.append("")
     lines.append(f"{unit.content}[^{unit.memory_id}]")
+    labels = (
+        unit.source_labels
+        if len(unit.source_labels) == len(unit.source_refs)
+        else unit.source_refs
+    )
     links = [
         f"[{label}]({target})"
-        for label, target in zip(unit.source_refs, unit.source_links)
+        for label, target in zip(labels, unit.source_links)
     ]
     lines.extend(["", render_definition(unit.memory_id, unit.when, links)])
     path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")

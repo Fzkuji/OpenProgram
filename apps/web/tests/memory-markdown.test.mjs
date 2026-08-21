@@ -34,6 +34,7 @@ test("Memory preview renders evidence as numbered footnotes and hides block IDs"
     "[^e-first]: Time: `2026-08-17`; Sources: [first source](../sources/first.md#source-1)",
     "[^e-second]: Time: `2026-08-18`; Sources: [second source](../sources/second.md#source-2)",
     "  Continued with two leading spaces.",
+    "    Continued with four leading spaces.",
   ].join("\n"));
 
   assert.deepEqual(
@@ -50,6 +51,7 @@ test("Memory preview renders evidence as numbered footnotes and hides block IDs"
   assert.doesNotMatch(host.textContent, /\[\^e-|\^block-|\^legacy-block/);
   assert.match(host.querySelector("[data-footnotes]")?.textContent ?? "", /Time: 2026-08-17; Sources: first source/);
   assert.match(host.querySelector("[data-footnotes]")?.textContent ?? "", /Continued with two leading spaces/);
+  assert.match(host.querySelector("[data-footnotes]")?.textContent ?? "", /Continued with four leading spaces/);
   assert.deepEqual(
     [...host.querySelectorAll("[data-footnote-backref]")].map((node) => node.textContent),
     ["↩︎", "↩︎", "↩︎", "↩︎"],
@@ -114,4 +116,43 @@ test("Memory preview accepts independent fence indentation", () => {
   assert.equal(host.querySelectorAll("[data-footnote-backref]").length, 1);
   assert.match(host.textContent, /Literal \[\^known\] \^code-block/);
   assert.doesNotMatch(host.textContent, /\^known-block/);
+});
+
+test("Memory preview preserves indented code, escaped references, and source tokens", () => {
+  const host = render([
+    "Known.[^known] ^known-block",
+    "",
+    "    Code [^known] ^code-block",
+    "",
+    String.raw`Escaped \[^known] and escaped inline \^[literal note].`,
+    "",
+    "Literal private token: \uE0000\uE001",
+    "",
+    "[^known]: Definition",
+  ].join("\n"));
+
+  assert.equal(host.querySelectorAll("[data-footnote-ref]").length, 1);
+  assert.equal(host.querySelectorAll("[data-footnote-backref]").length, 1);
+  assert.match(host.textContent, /Code \[\^known\] \^code-block/);
+  assert.match(host.textContent, /Escaped \[\^known\] and escaped inline \^\[literal note\]/);
+  assert.match(host.textContent, /Literal private token: \uE0000\uE001/);
+});
+
+test("Memory preview distinguishes container code from list continuation", () => {
+  const host = render([
+    "Known.[^known] ^known-block",
+    "",
+    ">     Quoted code [^known] ^quoted-code-block",
+    "",
+    "10. item",
+    "    continuation [^known] ^para-block",
+    "",
+    "[^known]: Definition",
+  ].join("\n"));
+
+  assert.equal(host.querySelectorAll("[data-footnote-ref]").length, 2);
+  assert.equal(host.querySelectorAll("[data-footnote-backref]").length, 2);
+  assert.match(host.textContent, /Quoted code \[\^known\] \^quoted-code-block/);
+  assert.doesNotMatch(host.textContent, /\^para-block/);
+  assert.ok(host.querySelector('[id="^para-block"]'));
 });

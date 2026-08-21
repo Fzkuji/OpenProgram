@@ -130,9 +130,12 @@ def register(app):
     # /api/settings — the schema-driven settings the TUI panel + `openprogram
     # config` use, mirrored over REST so the web pages render the SAME source.
     @app.get("/api/settings")
-    async def get_settings_api():
+    async def get_settings_api(scope: str = ""):
         from openprogram.config_schema import get_settings
-        return JSONResponse(content={"settings": get_settings()})
+        prefix = "memory." if scope == "memory" else None
+        return JSONResponse(content={
+            "settings": get_settings(key_prefix=prefix),
+        })
 
     @app.post("/api/settings")
     async def set_setting_api(body: Any = Body(default=None)):

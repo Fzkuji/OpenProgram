@@ -14,9 +14,10 @@
 .rowCopy { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 3px; }
 .rowCopy strong { color: var(--text-bright); font-size: 14px; font-weight: 550; font-family: var(--font-sans); }
 .rowCopy span { color: var(--text-secondary); font-size: 13px; line-height: 1.45; font-family: var(--font-sans); }
-.controls { flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; min-width: 7.5rem; }
-.select { max-width: 360px; height: 34px; padding: 0 30px 0 10px; border: 1px solid var(--border); border-radius: var(--ui-button-radius); background: var(--bg-input); color: var(--text-primary); font: inherit; font-family: var(--font-sans); font-size: 13px; }
-.select:focus-visible, .installButton:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.controls { flex: 0 1 auto; display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; min-width: 7.5rem; }
+.select { min-width: 0; max-width: 360px; height: 34px; padding: 0 30px 0 10px; border: 1px solid var(--border); border-radius: var(--ui-button-radius); background: var(--bg-input); color: var(--text-primary); font: inherit; font-family: var(--font-sans); font-size: 13px; }
+.select:focus-visible { outline: none; border-color: var(--text-secondary); }
+.installButton:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
 .select:disabled { color: var(--text-muted); }
 .status { flex-shrink: 0; padding: 2px 7px; border-radius: 4px; color: var(--accent-yellow); background: color-mix(in srgb, var(--accent-yellow) 14%, transparent); font-size: 10px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; font-family: var(--font-sans); }
 .statusLive { color: var(--accent-green); background: color-mix(in srgb, var(--accent-green) 14%, transparent); }

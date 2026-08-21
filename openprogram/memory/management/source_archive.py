@@ -253,7 +253,7 @@ class SourceArchiveMixin:
         relative = os.path.relpath(target, topic_path.parent).replace(
             os.sep, "/"
         )
-        return f"[{label or ref}]({relative}#{anchor})"
+        return f"[{ref if label is None else label}]({relative}#{anchor})"
 
     def archive_source_records(
         self,

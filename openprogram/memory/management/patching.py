@@ -77,6 +77,7 @@ class MemoryChange:
     content: str | None = None
     when: str | None = None
     source_refs: tuple[str, ...] = ()
+    source_labels: tuple[str, ...] | None = None
 
 
 def apply_memory_changes(
@@ -206,10 +207,12 @@ def _parse_memory_changes(
             )
         allowed = {
             "create_record": {
-                "op", "content", "time", "source_refs", "destination",
+                "op", "content", "time", "source_refs", "sources",
+                "destination",
             },
             "update_record": {
                 "op", "memory_id", "content", "time", "source_refs",
+                "sources",
             },
             "delete_record": {"op", "memory_id"},
             "move_records": {"op", "memory_ids", "destination"},
@@ -368,19 +371,62 @@ def _parse_memory_changes(
                 f"{prefix}.time must be null or YYYY, YYYY-MM, or YYYY-MM-DD",
             )
         source_refs = item.get("source_refs")
-        if (
-            not isinstance(source_refs, list)
-            or not source_refs
-            or any(not isinstance(ref, str) or not ref.strip() for ref in source_refs)
-        ):
+        sources = item.get("sources")
+        if source_refs is not None and sources is not None:
             raise TransactionError(
                 "INVALID_ARGUMENT",
-                f"{prefix}.source_refs must be a non-empty string list",
+                f"{prefix} cannot contain both source_refs and sources",
             )
-        refs = tuple(ref.strip() for ref in source_refs)
+        if sources is not None:
+            if not isinstance(sources, list) or not sources:
+                raise TransactionError(
+                    "INVALID_ARGUMENT",
+                    f"{prefix}.sources must be a non-empty object list",
+                )
+            refs_list: list[str] = []
+            labels_list: list[str] = []
+            for source_index, source in enumerate(sources):
+                source_prefix = f"{prefix}.sources[{source_index}]"
+                if not isinstance(source, dict) or set(source) != {
+                    "source", "label",
+                }:
+                    raise TransactionError(
+                        "INVALID_ARGUMENT",
+                        f"{source_prefix} must contain source and label",
+                    )
+                ref = source.get("source")
+                label = source.get("label")
+                if not isinstance(ref, str) or not ref.strip():
+                    raise TransactionError(
+                        "INVALID_ARGUMENT", f"{source_prefix}.source is required"
+                    )
+                if not isinstance(label, str) or not label.strip():
+                    raise TransactionError(
+                        "INVALID_ARGUMENT", f"{source_prefix}.label is required"
+                    )
+                ref = ref.strip()
+                refs_list.append(ref)
+                labels_list.append(label)
+            refs = tuple(refs_list)
+            labels = tuple(labels_list)
+        else:
+            if (
+                not isinstance(source_refs, list)
+                or not source_refs
+                or any(
+                    not isinstance(ref, str) or not ref.strip()
+                    for ref in source_refs
+                )
+            ):
+                raise TransactionError(
+                    "INVALID_ARGUMENT",
+                    f"{prefix}.source_refs must be a non-empty string list",
+                )
+            refs = tuple(ref.strip() for ref in source_refs)
+            labels = None
         if len(set(refs)) != len(refs):
             raise TransactionError(
-                "INVALID_ARGUMENT", f"{prefix}.source_refs contains a duplicate"
+                "INVALID_ARGUMENT", f"{prefix}.sources contains a duplicate source"
             )
 
         destination = None
@@ -395,6 +441,7 @@ def _parse_memory_changes(
             content=content,
             when=when,
             source_refs=refs,
+            source_labels=labels,
         ))
     return parsed
 
@@ -529,8 +576,17 @@ def _render_record(change: MemoryChange, label: str, suffix: str = "") -> list[s
     return [
         *lines,
         "",
-        render_definition(label, change.when, change.source_refs),
+        render_definition(label, change.when, _render_sources(change)),
     ]
+
+
+def _render_sources(change: MemoryChange) -> tuple[str, ...]:
+    if change.source_labels is None:
+        return change.source_refs
+    return tuple(
+        f"[{label}]({ref})"
+        for ref, label in zip(change.source_refs, change.source_labels)
+    )
 
 
 def _insert_record(
@@ -659,7 +715,15 @@ def _insert_blocks(
         citation_id = match.group("id")
         existing = existing_definitions.get(citation_id)
         if existing is not None:
-            if _definition_signature(existing) != _definition_signature(line):
+            if _definition_signature(
+                existing,
+                topic_path=path,
+                topics=workspace.stage_dir / "topics",
+            ) != _definition_signature(
+                line,
+                topic_path=path,
+                topics=workspace.stage_dir / "topics",
+            ):
                 raise TransactionError(
                     "INVALID_ARGUMENT",
                     f"evidence definition conflicts in destination: {citation_id}",
@@ -707,13 +771,24 @@ def _locate_record(
     )
 
 
-def _definition_signature(line: str) -> tuple[str, tuple[str, ...]]:
+def _definition_signature(
+    line: str,
+    *,
+    topic_path: Path | None = None,
+    topics: Path | None = None,
+) -> tuple[str, tuple[str, ...]]:
     """Compare evidence semantics independently of relative link targets."""
     match = definition_match(line)
     assert match is not None
     sources = match.group("sources")
     references = tuple(
-        source_reference(label, target) for label, target in LINK.findall(sources)
+        source_reference(
+            label,
+            target,
+            topic_path=topic_path,
+            topics=topics,
+        )
+        for label, target in LINK.findall(sources)
     )
     if not references:
         references = tuple(
@@ -724,8 +799,38 @@ def _definition_signature(line: str) -> tuple[str, tuple[str, ...]]:
     return match.group("when"), references
 
 
+def _definition_for_topic(
+    workspace: Any,
+    line: str,
+    *,
+    source_path: Path,
+    target_topic: Path,
+) -> str:
+    match = definition_match(line)
+    assert match is not None
+    links = LINK.findall(match.group("sources"))
+    if not links:
+        return line
+    topics = workspace.stage_dir / "topics"
+    rendered = []
+    for label, target in links:
+        ref = source_reference(
+            label,
+            target,
+            topic_path=source_path,
+            topics=topics,
+        )
+        rendered.append(workspace._source_link(target_topic, ref, label))
+    return render_definition(
+        match.group("id"),
+        None if match.group("when") == "undated" else match.group("when"),
+        rendered,
+    )
+
+
 def _move_records(workspace: Any, change: MemoryChange) -> set[str]:
     assert change.destination is not None
+    target_topic = Path(change.destination.topic_path)
     selected = set(change.memory_ids)
     blocks: list[tuple[Path, int, int, str, tuple[str, ...]]] = []
     seen_blocks: set[tuple[Path, int, int]] = set()
@@ -755,11 +860,23 @@ def _move_records(workspace: Any, change: MemoryChange) -> set[str]:
         for citation in citations:
             if citation not in definitions:
                 continue
-            definition = definitions[citation]
+            definition = _definition_for_topic(
+                workspace,
+                definitions[citation],
+                source_path=path,
+                target_topic=target_topic,
+            )
             existing = seen_definitions.get(citation)
             if existing is not None:
-                if _definition_signature(existing) != _definition_signature(
-                    definition
+                target_path = workspace.stage_dir / target_topic
+                if _definition_signature(
+                    existing,
+                    topic_path=target_path,
+                    topics=workspace.stage_dir / "topics",
+                ) != _definition_signature(
+                    definition,
+                    topic_path=target_path,
+                    topics=workspace.stage_dir / "topics",
                 ):
                     raise TransactionError(
                         "INVALID_ARGUMENT",
@@ -879,7 +996,9 @@ def _replace_legacy_record(
                 rendered_lines.append(line)
             elif change.op == "update_record":
                 rendered_lines.append(render_definition(
-                    change.memory_id, change.when, change.source_refs
+                    change.memory_id,
+                    change.when,
+                    _render_sources(change),
                 ))
         lines = rendered_lines
         path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")

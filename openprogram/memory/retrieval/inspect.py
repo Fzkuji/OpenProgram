@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,10 @@ DERIVED_FILES = ("recent_events.jsonl", "relations.json")
 MAX_SNIPPET_CHARS = 300
 MAX_READ_LINES = 400
 MAX_READ_CHARS = 40_000
+
+_search_index_lock = threading.RLock()
+_bm25_indexes: dict[Path, tuple[tuple[tuple[Any, ...], ...], Any]] = {}
+_embedding_indexes: dict[Path, tuple[tuple[tuple[Any, ...], ...], Any]] = {}
 
 
 @dataclass(frozen=True)
@@ -154,7 +159,7 @@ def status(
 
 def embedding_is_available() -> bool:
     try:
-        from .embedding import default_model_is_cached
+        from .embedding_model import default_model_is_cached
     except Exception:
         return False
     return default_model_is_cached()
@@ -405,9 +410,7 @@ def search(
         return {"method": "embedding", "results": _embedding_search(
             root, query, capped, effective_prefix, date_from, date_to,
         )}
-    from .bm25 import MemoryBM25Index
-
-    index = MemoryBM25Index(root, persist=False)
+    index = _bm25_index(root)
     hits = index.search(
         query,
         top_k=capped,
@@ -415,6 +418,7 @@ def search(
         date_from=date_from,
         date_to=date_to,
         speaker=speaker,
+        refresh_index=False,
     )
     lexical = [_present(hit) for hit in hits]
     if method == "bm25":
@@ -437,9 +441,7 @@ def _embedding_search(
     date_to: str | None,
 ) -> list[dict[str, Any]]:
     try:
-        from .embedding import MemoryEmbeddingIndex
-
-        index = MemoryEmbeddingIndex(root)
+        index = _embedding_index(root)
         # The encoder loads lazily, so an absent backend only surfaces here.
         hits = index.search(
             query, top_k=top_k, date_from=date_from, date_to=date_to,
@@ -452,6 +454,54 @@ def _embedding_search(
             "EMBEDDING_UNAVAILABLE", f"embedding search unavailable: {exc}"
         ) from exc
     return [_present(hit) for hit in hits]
+
+
+def _index_signature(root: Path) -> tuple[tuple[Any, ...], ...]:
+    from .bm25 import _indexable_files
+
+    rows = []
+    for relative, path in sorted(_indexable_files(root).items()):
+        stat = path.stat()
+        rows.append((
+            relative,
+            stat.st_mtime_ns,
+            stat.st_ctime_ns,
+            stat.st_size,
+            stat.st_ino,
+        ))
+    return tuple(rows)
+
+
+def _bm25_index(root: Path) -> Any:
+    from .bm25 import MemoryBM25Index
+
+    signature = _index_signature(root)
+    with _search_index_lock:
+        cached = _bm25_indexes.get(root)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        index = MemoryBM25Index(root, persist=True)
+        _bm25_indexes[root] = (signature, index)
+        return index
+
+
+def _embedding_index(root: Path) -> Any:
+    from .embedding import MemoryEmbeddingIndex
+
+    signature = _index_signature(root)
+    with _search_index_lock:
+        cached = _embedding_indexes.get(root)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        index = MemoryEmbeddingIndex(root)
+        _embedding_indexes[root] = (signature, index)
+        return index
+
+
+def _clear_search_index_cache_for_tests() -> None:
+    with _search_index_lock:
+        _bm25_indexes.clear()
+        _embedding_indexes.clear()
 
 
 def _fuse_ranked(*rankings: list[dict[str, Any]]) -> list[dict[str, Any]]:

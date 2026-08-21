@@ -165,7 +165,8 @@ def test_status_route_returns_the_inspect_status_contract(
 def test_settings_status_skips_complete_workspace_inspection(
     client, monkeypatch, memory,
 ):
-    from openprogram.memory.retrieval import embedding, inspect
+    from openprogram.memory import store
+    from openprogram.memory.retrieval import embedding_model, inspect
 
     monkeypatch.setattr(
         inspect,
@@ -174,7 +175,17 @@ def test_settings_status_skips_complete_workspace_inspection(
             AssertionError("settings status must not inspect the workspace")
         ),
     )
-    monkeypatch.setattr(embedding, "default_model_is_cached", lambda: True)
+    monkeypatch.setattr(
+        store,
+        "ensure",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("settings status must not initialize the workspace")
+        ),
+    )
+    monkeypatch.setattr(store, "root", lambda: memory)
+    monkeypatch.setattr(
+        embedding_model, "default_model_is_cached", lambda: True,
+    )
 
     response = client.get("/api/memory/status?settings=true")
 
@@ -190,7 +201,7 @@ def test_embedding_install_downloads_snapshot_without_loading_encoder(
 ):
     import asyncio
 
-    from openprogram.memory.retrieval import embedding
+    from openprogram.memory.retrieval import embedding, embedding_model
 
     calls = []
     inside_worker = False
@@ -205,13 +216,13 @@ def test_embedding_install_downloads_snapshot_without_loading_encoder(
 
     monkeypatch.setattr(asyncio, "to_thread", fake_to_thread)
     monkeypatch.setattr(
-        embedding,
+        embedding_model,
         "install_default_model",
         lambda: calls.append(("install", inside_worker)),
         raising=False,
     )
     monkeypatch.setattr(
-        embedding,
+        embedding_model,
         "default_model_is_cached",
         lambda: calls.append(("verify", inside_worker)) or True,
     )
@@ -231,10 +242,10 @@ def test_embedding_install_downloads_snapshot_without_loading_encoder(
 
 
 def test_embedding_install_returns_a_retryable_error(client, monkeypatch):
-    from openprogram.memory.retrieval import embedding
+    from openprogram.memory.retrieval import embedding_model
 
     monkeypatch.setattr(
-        embedding,
+        embedding_model,
         "install_default_model",
         lambda: (_ for _ in ()).throw(OSError("offline")),
         raising=False,
@@ -250,10 +261,12 @@ def test_embedding_install_returns_a_retryable_error(client, monkeypatch):
 
 
 def test_embedding_install_rejects_an_unverified_download(client, monkeypatch):
-    from openprogram.memory.retrieval import embedding
+    from openprogram.memory.retrieval import embedding_model
 
-    monkeypatch.setattr(embedding, "install_default_model", lambda: None)
-    monkeypatch.setattr(embedding, "default_model_is_cached", lambda: False)
+    monkeypatch.setattr(embedding_model, "install_default_model", lambda: None)
+    monkeypatch.setattr(
+        embedding_model, "default_model_is_cached", lambda: False,
+    )
 
     response = client.post("/api/memory/embedding/install")
 
@@ -495,6 +508,19 @@ def test_memory_update_schema_constructs_a_google_function_declaration():
     assert item["properties"]["destination"]["properties"]["position"][
         "enum"
     ] == ["start", "end", "before", "after"]
+    sources = item["properties"]["sources"]
+    assert sources["items"]["required"] == ["source", "label"]
+    assert sources["items"]["additionalProperties"] is False
+    label_description = sources["items"]["properties"]["label"][
+        "description"
+    ].lower()
+    assert "context-specific" in label_description
+    assert "8 visible characters" in label_description
+    assert "6 words" in label_description
+    assert "speaker" in label_description
+    assert "sequence" in label_description
+    assert "markdown" in label_description
+    assert "source_refs" not in item["properties"]
 
 
 def test_structured_changes_api_reports_stale_revision(client, memory):

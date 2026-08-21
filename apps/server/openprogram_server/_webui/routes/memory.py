@@ -31,7 +31,7 @@ from fastapi.responses import JSONResponse
 WRITE_LOCK_TIMEOUT_S = 5.0
 
 
-def _require_memory_enabled() -> None:
+def _require_memory_enabled(request: Request) -> None:
     from openprogram.memory import DISABLED_MESSAGE, is_enabled
 
     if not is_enabled():
@@ -39,6 +39,12 @@ def _require_memory_enabled() -> None:
             status_code=503,
             detail={"code": "MEMORY_DISABLED", "message": DISABLED_MESSAGE},
         )
+    if (
+        request.method == "GET"
+        and request.url.path == "/api/memory/status"
+        and request.query_params.get("settings") == "true"
+    ):
+        return
     from openprogram.memory import store
     from openprogram.memory.management.transaction import TransactionError
 
@@ -95,12 +101,12 @@ def register(app):
     def get_status(settings: bool = False):
         from openprogram.memory import store
 
-        root = store.ensure()
         if settings:
-            from openprogram.memory.retrieval.embedding import (
+            from openprogram.memory.retrieval.embedding_model import (
                 default_model_is_cached,
             )
 
+            root = store.root()
             return JSONResponse(content={
                 "workspace_path": str(root.resolve()),
                 "embedding_available": default_model_is_cached(),
@@ -108,6 +114,7 @@ def register(app):
 
         from openprogram.memory.retrieval import inspect
 
+        root = store.ensure()
         # Owner-only surface (the whole memory router is), so the on-disk
         # location is shown; the model-facing tool omits it.
         return JSONResponse(
@@ -116,7 +123,7 @@ def register(app):
 
     @router.post("/api/memory/embedding/install")
     async def install_embedding_model():
-        from openprogram.memory.retrieval.embedding import (
+        from openprogram.memory.retrieval.embedding_model import (
             default_model_is_cached,
             install_default_model,
         )

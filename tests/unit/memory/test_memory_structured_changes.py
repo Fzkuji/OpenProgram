@@ -350,6 +350,12 @@ def test_record_changes_create_update_delete_and_rebuild_views(tmp_path):
     assert len(created) == 1
     assert created[0].content == "A record created through the API."
     assert created[0].memory_id in result.block_ids.values()
+    assert "[D1:1](../sources/D1.md#d1-1)" in (
+        root / "topics/note.md"
+    ).read_text(encoding="utf-8")
+    assert "[D1:1](../sources/D1.md#d1-1)" in (
+        root / "topics/api.md"
+    ).read_text(encoding="utf-8")
     recent = [
         json.loads(line)
         for line in (root / "recent_events.jsonl").read_text().splitlines()
@@ -360,6 +366,350 @@ def test_record_changes_create_update_delete_and_rebuild_views(tmp_path):
     }
     assert (root / "timeline/2026/02/01.md").is_file()
     assert (root / "timeline/2026/02/02.md").is_file()
+
+
+def test_record_sources_preserve_agent_labels_and_v2_identity(
+    tmp_path, monkeypatch,
+):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.markdown import parse_topic_tree
+    from openprogram.memory.markdown import syntax
+    from openprogram.memory.runtime.state import SourceRecord
+
+    root = tmp_path / "memory"
+    records = [
+        SourceRecord(
+            "openprogram", "thread-1", "m1", 1, "user", "scope evidence"
+        ),
+        SourceRecord(
+            "openprogram", "thread-1", "m2", 2, "assistant", "method evidence"
+        ),
+        SourceRecord(
+            "openprogram", "thread-1", "m3", 3, "assistant", "result evidence"
+        ),
+    ]
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.archive_source_records(records)
+        workspace.update(
+            base_revision=workspace.revision(),
+            memory_changes=[{
+                "op": "create_record",
+                "content": "A labelled memory record.",
+                "time": "2026-08-20",
+                "sources": [
+                    {
+                        "source": records[0].source_id,
+                        "label": "这是一个超过八个字的标签",
+                    },
+                    {
+                        "source": records[1].source_id,
+                        "label": "one two three four five six seven",
+                    },
+                    {
+                        "source": records[2].source_id,
+                        "label": records[2].source_id,
+                    },
+                ],
+                "destination": {
+                    "topic_path": "topics/labelled.md",
+                    "headings": [],
+                    "position": "end",
+                },
+            }],
+            git_commit="off",
+        )
+
+    topic = (root / "topics/labelled.md").read_text(encoding="utf-8")
+    assert "[这是一个超过八个字的标签](" in topic
+    assert "[one two three four five six seven](" in topic
+    assert f"[{records[2].source_id}](" in topic
+    scans = 0
+    original_scan = syntax.scan_source_archive
+
+    def counted_scan(*args, **kwargs):
+        nonlocal scans
+        scans += 1
+        return original_scan(*args, **kwargs)
+
+    monkeypatch.setattr(syntax, "scan_source_archive", counted_scan)
+    unit = parse_topic_tree(root / "topics")[0]
+    assert scans == 1
+    assert unit.source_refs == tuple(record.source_id for record in records)
+    assert unit.source_labels == (
+        "这是一个超过八个字的标签",
+        "one two three four five six seven",
+        records[2].source_id,
+    )
+    from openprogram.memory.retrieval.bm25 import MemoryBM25Index
+
+    indexed = next(
+        event
+        for event in MemoryBM25Index(root, persist=False).events
+        if event.path == "topics/labelled.md"
+    )
+    assert indexed.refs == list(unit.source_refs)
+    assert indexed.trust_state == "trusted"
+    timeline = (root / "timeline/2026/08/20.md").read_text(encoding="utf-8")
+    assert "[这是一个超过八个字的标签](" in timeline
+    assert "[one two three four five six seven](" in timeline
+    assert f"[{records[2].source_id}](" in timeline
+
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.update(
+            base_revision=workspace.revision(),
+            memory_changes=[{
+                "op": "move_records",
+                "memory_ids": [unit.memory_id],
+                "destination": {
+                    "topic_path": "topics/archive/labelled.md",
+                    "headings": ["Archive"],
+                    "position": "end",
+                },
+            }],
+            git_commit="off",
+        )
+
+    moved = parse_topic_tree(root / "topics")[0]
+    assert moved.source_refs == unit.source_refs
+    assert moved.source_labels == unit.source_labels
+    assert moved.topic_path == "archive/labelled.md"
+
+
+def test_source_labels_support_encoded_and_legacy_provider_archives(tmp_path):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.markdown import parse_topic_tree
+    from openprogram.memory.runtime.state import SourceRecord
+    from openprogram.memory.source_format import provider_source_location
+
+    root = tmp_path / "memory"
+    encoded = SourceRecord(
+        "openprogram", "encoded id", "m1", 1, "user", "encoded source"
+    )
+    legacy_ref = "openprogram/legacy-thread/m1"
+    legacy_path, legacy_anchor = provider_source_location(legacy_ref)
+    path = root / legacy_path
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "# legacy-thread\n\n"
+        f'<a id="{legacy_anchor}"></a>\n'
+        f"<!-- source-id:{legacy_ref} -->\n"
+        "[2026-08-20] user: legacy source\n",
+        encoding="utf-8",
+    )
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.archive_source_records([encoded])
+        workspace.update(
+            base_revision=workspace.revision(),
+            memory_changes=[{
+                "op": "create_record",
+                "content": "Encoded and legacy sources remain addressable.",
+                "time": "2026-08-20",
+                "sources": [
+                    {"source": encoded.source_id, "label": "编码来源"},
+                    {"source": legacy_ref, "label": "旧版来源"},
+                ],
+                "destination": {
+                    "topic_path": "topics/compatibility.md",
+                    "headings": [],
+                    "position": "end",
+                },
+            }],
+            git_commit="off",
+        )
+        baseline = workspace.baseline()
+        (workspace.stage_dir / "topics/direct-encoded.md").write_text(
+            "# Direct encoded\n\n"
+            "A direct Writer record.[^e1]\n\n"
+            "[^e1]: Time: `2026-08-20`; Sources: "
+            f"[编码来源]({encoded.source_id})\n",
+            encoding="utf-8",
+        )
+        workspace.commit_edits(*baseline)
+
+    units = parse_topic_tree(root / "topics")
+    assert {ref for unit in units for ref in unit.source_refs} == {
+        encoded.source_id,
+        legacy_ref,
+    }
+    compatibility = (root / "topics/compatibility.md").read_text(
+        encoding="utf-8"
+    )
+    assert "encoded%20id.md#" in compatibility
+    assert "legacy-thread.md#" in compatibility
+
+
+def test_direct_writer_preserves_agent_source_labels(tmp_path):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.markdown import parse_topic_tree
+    from openprogram.memory.runtime.state import SourceRecord
+
+    root = tmp_path / "memory"
+    record = SourceRecord(
+        "openprogram", "thread-1", "m1", 1, "user", "research scope"
+    )
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.archive_source_records([record])
+        baseline = workspace.baseline()
+        (workspace.stage_dir / "topics").mkdir(exist_ok=True)
+        (workspace.stage_dir / "topics/direct.md").write_text(
+            "# Direct\n\n"
+            "A direct writer record.[^e1]\n\n"
+            "A direct record with a sequence label.[^e2]\n\n"
+            "A direct record with a date label.[^e3]\n\n"
+            "A direct record with a URL label.[^e4]\n\n"
+            "[^e1]: Time: `2026-08-20`; Sources: "
+            f"[Owner 1]({record.source_id})\n"
+            "[^e2]: Time: `2026-08-20`; Sources: "
+            f"[S1]({record.source_id})\n"
+            "[^e3]: Time: `2026-08-20`; Sources: "
+            f"[2026-08-20]({record.source_id})\n"
+            "[^e4]: Time: `2026-08-20`; Sources: "
+            f"[https://example.com/source]({record.source_id})\n",
+            encoding="utf-8",
+        )
+        workspace.commit_edits(*baseline)
+
+    topic = (root / "topics/direct.md").read_text(encoding="utf-8")
+    for label in ("Owner 1", "S1", "2026-08-20", "https://example.com/source"):
+        assert f"[{label}](../sources/openprogram/_v2/thread-1.md#source-" in topic
+    units = parse_topic_tree(root / "topics")
+    assert [unit.source_refs for unit in units] == [
+        (record.source_id,),
+        (record.source_id,),
+        (record.source_id,),
+        (record.source_id,),
+    ]
+    assert [unit.source_labels for unit in units] == [
+        ("Owner 1",),
+        ("S1",),
+        ("2026-08-20",),
+        ("https://example.com/source",),
+    ]
+
+
+def test_direct_writer_cannot_replace_an_invalid_target_with_its_label(tmp_path):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.markdown import TopicFormatError
+    from openprogram.memory.runtime.state import SourceRecord
+
+    root = tmp_path / "memory"
+    record = SourceRecord(
+        "openprogram", "thread-real", "m1", 1, "user", "real source"
+    )
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.archive_source_records([record])
+        baseline = workspace.baseline()
+        (workspace.stage_dir / "topics").mkdir(exist_ok=True)
+        (workspace.stage_dir / "topics/forged.md").write_text(
+            "Forged source target.[^e1]\n\n"
+            "[^e1]: Time: `2026-08-20`; Sources: "
+            f"[{record.source_id}](openprogram/thread-missing/m9)\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(TopicFormatError, match="invalid source target"):
+            workspace.commit_edits(*baseline)
+
+    assert not (root / "topics/forged.md").exists()
+
+
+def test_structured_source_label_must_not_be_empty(tmp_path):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management.transaction import TransactionError
+    from openprogram.memory.runtime.state import SourceRecord
+
+    root = tmp_path / "memory"
+    record = SourceRecord(
+        "openprogram", "thread-1", "m1", 1, "user", "source text"
+    )
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.archive_source_records([record])
+        revision = workspace.revision()
+        with pytest.raises(TransactionError, match="label is required"):
+            workspace.update(
+                base_revision=revision,
+                memory_changes=[{
+                    "op": "create_record",
+                    "content": "A record with an empty display label.",
+                    "time": "2026-08-20",
+                    "sources": [{"source": record.source_id, "label": "   "}],
+                    "destination": {
+                        "topic_path": "topics/empty-label.md",
+                        "headings": [],
+                        "position": "end",
+                    },
+                }],
+                git_commit="off",
+            )
+        assert workspace.revision() == revision
+
+    assert not (root / "topics/empty-label.md").exists()
+
+
+def test_restricted_writer_shell_uses_the_committed_source_baseline(
+    tmp_path, monkeypatch,
+):
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.runtime.state import SourceRecord
+
+    root = tmp_path / "memory"
+    record = SourceRecord(
+        "openprogram", "thread-1", "m1", 1, "user", "source text"
+    )
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.archive_source_records([record])
+        workspace.update(
+            base_revision=workspace.revision(),
+            memory_changes=[{
+                "op": "create_record",
+                "content": "A movable record.",
+                "time": "2026-08-20",
+                "sources": [{"source": record.source_id, "label": "move"}],
+                "destination": {
+                    "topic_path": "topics/original.md",
+                    "headings": [],
+                    "position": "end",
+                },
+            }],
+            git_commit="off",
+        )
+
+    from openprogram.memory.source_format import provider_source_location
+
+    location = provider_source_location(record.source_id, v2=True)
+    assert location is not None
+    source_path, source_anchor = location
+    (root / "topics/legacy.md").write_text(
+        "# Legacy\n\nLegacy record.[^mem_old]\n\n"
+        "[^mem_old]: Time: `2026-08-20`; Sources: "
+        f"[legacy](../{source_path.as_posix()}#{source_anchor})\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "openprogram.memory.management.workspace._sandbox.resolve_policy",
+        lambda *, required: object(),
+    )
+    monkeypatch.setattr(
+        "openprogram.backend.local._invocation",
+        lambda command, _cwd, **_kwargs: (
+            ["/bin/sh", "-c", command], False, None, True,
+        ),
+    )
+    with closing(MemoryWorkspace(
+        root, allowed_new_source_refs={record.source_id},
+    )) as workspace:
+        assert workspace.shell("true").returncode == 0
+        moved = workspace.shell(
+            "mkdir -p topics/moved && "
+            "mv topics/original.md topics/moved/renamed.md && "
+            "mv topics/legacy.md topics/moved/legacy.md"
+        )
+        assert moved.returncode == 0
+
+    assert not (root / "topics/original.md").exists()
+    assert (root / "topics/moved/renamed.md").is_file()
+    assert not (root / "topics/legacy.md").exists()
+    assert (root / "topics/moved/legacy.md").is_file()
 
 
 def test_invalid_record_change_rolls_back_every_record(tmp_path):

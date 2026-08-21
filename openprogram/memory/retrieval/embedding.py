@@ -18,20 +18,13 @@ from .bm25 import (
     parse_source_file,
     parse_topic_file,
     prefer_v2_source_events,
+    resolve_topic_trust,
 )
-
-MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
-MODEL_FILES = (
-    "1_Pooling/config.json",
-    "config.json",
-    "config_sentence_transformers.json",
-    "modules.json",
-    "model.safetensors",
-    "sentence_bert_config.json",
-    "special_tokens_map.json",
-    "tokenizer.json",
-    "tokenizer_config.json",
-    "vocab.txt",
+from .embedding_model import (
+    MODEL_FILES,
+    MODEL_ID,
+    default_model_is_cached,
+    install_default_model,
 )
 _default_encoder: Any | None = None
 _default_encoder_lock = threading.RLock()
@@ -57,28 +50,6 @@ def default_model_is_available() -> bool:
     except Exception:
         return False
     return True
-
-
-def default_model_is_cached() -> bool:
-    """Whether the fixed encoder snapshot is present without loading it."""
-    try:
-        from huggingface_hub import snapshot_download
-
-        snapshot_download(
-            MODEL_ID,
-            allow_patterns=MODEL_FILES,
-            local_files_only=True,
-        )
-    except Exception:
-        return False
-    return True
-
-
-def install_default_model() -> None:
-    """Download the fixed encoder snapshot without loading model weights."""
-    from huggingface_hub import snapshot_download
-
-    snapshot_download(MODEL_ID, allow_patterns=MODEL_FILES)
 
 
 class MemoryEmbeddingIndex:
@@ -115,6 +86,7 @@ class MemoryEmbeddingIndex:
             if self._events_cache is not None:
                 return self._events_cache
             events = []
+            source_lookup: dict[Path, dict[str, str]] = {}
             for relative, path in sorted(
                 _indexable_files(
                     self.memory_dir, self._visible_files
@@ -123,8 +95,14 @@ class MemoryEmbeddingIndex:
                 if relative.startswith("sources/"):
                     events.extend(parse_source_file(path, self.sources_dir))
                 else:
-                    events.extend(parse_topic_file(path, self.topics_dir))
-            self._events_cache = prefer_v2_source_events(events)
+                    events.extend(parse_topic_file(
+                        path,
+                        self.topics_dir,
+                        source_lookup=source_lookup,
+                    ))
+            self._events_cache = resolve_topic_trust(
+                prefer_v2_source_events(events)
+            )
         return self._events_cache
 
     @staticmethod

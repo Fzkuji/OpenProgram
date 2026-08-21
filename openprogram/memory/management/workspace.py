@@ -157,10 +157,9 @@ class MemoryWorkspace(
         self.last_changed_topics = []
         self.last_created_blocks = 0
         before = self._workspace_fingerprint()
-        before_topics = self._topic_fingerprints(self.stage_dir / "topics")
-        before_sources = self._tree_fingerprint(self.stage_dir / "sources")
-        before_units = parse_topic_tree(self.stage_dir / "topics")
-        before_block_ids = {unit.memory_id for unit in before_units}
+        before_units, before_block_ids, before_topics, before_sources = (
+            self.baseline()
+        )
         # This MCP endpoint is the nested agent's only command path. It is
         # always sandboxed, even while interactive shell sandboxing remains
         # disabled globally; an unavailable platform boundary is a refusal.
@@ -194,7 +193,15 @@ class MemoryWorkspace(
 
     def baseline(self) -> tuple[list[Any], set[str], dict[str, str], str]:
         """Snapshot the staged tree so an edit can be committed against it."""
-        units = parse_topic_tree(self.stage_dir / "topics")
+        # A restricted writer cannot see the source archive. Its untouched
+        # Topic baseline is the committed tree, whose targets remain
+        # verifiable without treating display labels as source identity.
+        topic_root = (
+            self.memory_dir / "topics"
+            if self._allowed_new_source_refs is not None
+            else self.stage_dir / "topics"
+        )
+        units = parse_topic_tree(topic_root)
         block_ids = {unit.memory_id for unit in units}
         return (
             units,
@@ -236,7 +243,7 @@ class MemoryWorkspace(
             if self._tree_fingerprint(self.stage_dir / "sources") != before_sources:
                 raise ValueError("Source Memory is append-only")
             preserve_creation_order(self, before_units)
-            self._normalize_topic_edits(before_block_ids)
+            self._normalize_topic_edits(before_block_ids, before_units)
             staged_ids = {
                 unit.memory_id
                 for unit in parse_topic_tree(self.stage_dir / "topics")
@@ -261,7 +268,10 @@ class MemoryWorkspace(
                     self._synchronize()
             finally:
                 self._transaction_source_refs = None
-            after_units = parse_topic_tree(self.stage_dir / "topics")
+            # A restricted writer stage hides sources again after install.
+            # Parse the committed tree, where relative source targets can be
+            # verified against the archive instead of inferred from labels.
+            after_units = parse_topic_tree(self.memory_dir / "topics")
             after_topics = self._topic_fingerprints(self.stage_dir / "topics")
             self.last_changed_topics = [
                 "topics/" + path
@@ -430,6 +440,20 @@ class MemoryWorkspace(
                                     else ref
                                     for ref in refs
                                 ]
+                            citations = resolved_item.get("sources")
+                            if isinstance(citations, list):
+                                resolved_item["sources"] = [
+                                    {
+                                        **citation,
+                                        "source": resolve_source_labels(
+                                            citation.get("source"), mapping
+                                        ),
+                                    }
+                                    if isinstance(citation, dict)
+                                    and isinstance(citation.get("source"), str)
+                                    else citation
+                                    for citation in citations
+                                ]
                             resolved_memory_changes.append(resolved_item)
                         declared_refs = {
                             ref
@@ -437,6 +461,13 @@ class MemoryWorkspace(
                             if isinstance(item, dict)
                             for ref in item.get("source_refs", [])
                             if isinstance(ref, str)
+                        } | {
+                            citation.get("source")
+                            for item in resolved_memory_changes
+                            if isinstance(item, dict)
+                            for citation in item.get("sources", [])
+                            if isinstance(citation, dict)
+                            and isinstance(citation.get("source"), str)
                         }
                         # Unlike a raw file patch, the record API declares its
                         # evidence explicitly. Existing valid Source refs are

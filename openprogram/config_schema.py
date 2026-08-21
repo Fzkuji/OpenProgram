@@ -897,7 +897,11 @@ def _set_at(cfg: dict, path: tuple[str, ...], value: Any) -> None:
 # public API
 
 
-def get_settings(session_id: str | None = None) -> list[dict]:
+def get_settings(
+    session_id: str | None = None,
+    *,
+    key_prefix: str | None = None,
+) -> list[dict]:
     """Resolved current settings for every spec, ready to render.
 
     Reads the config once; each row carries its value, group, label,
@@ -919,6 +923,8 @@ def get_settings(session_id: str | None = None) -> list[dict]:
         )
     rows: list[dict] = []
     for s in SETTINGS:
+        if key_prefix is not None and not s.key.startswith(key_prefix):
+            continue
         raw = _get_at(cfg, s.path, s.default)
         row: dict = {
             "key": s.key,
@@ -952,6 +958,8 @@ def get_settings(session_id: str | None = None) -> list[dict]:
     # action — selecting one runs ``/login``. check_providers() is cheap
     # (~1ms; env + which checks). The web already has a full Providers tab;
     # this is the at-a-glance status for the TUI/CLI.
+    if key_prefix is not None:
+        return rows
     try:
         from openprogram.providers.registry import check_providers
         for name, st in check_providers().items():
