@@ -24,6 +24,7 @@ server set survives worker restarts.
 from __future__ import annotations
 
 import asyncio
+import re
 import tempfile
 from typing import Optional
 
@@ -226,6 +227,213 @@ async def _fetch_catalog_json(url: str):
             detail = str(e)
         raise RuntimeError(detail) from None
 
+BUNDLED_CATALOG_URL = "openprogram://bundled"
+OFFICIAL_REGISTRY_URL = (
+    "https://registry.modelcontextprotocol.io/v0.1/servers"
+    "?version=latest&limit=80"
+)
+
+
+def _bundled_catalog() -> dict:
+    """Local OpenProgram-shaped catalog — no network required."""
+    return {
+        "name": "OpenProgram bundled catalog",
+        "description": (
+            "Filesystem, git, fetch, sequential-thinking, time, memory — "
+            "local reference servers."
+        ),
+        "servers": [
+            {
+                "name": "filesystem",
+                "description": "Read/write files in a sandboxed root directory.",
+                "type": "local",
+                "command": [
+                    "npx", "-y",
+                    "@modelcontextprotocol/server-filesystem",
+                    tempfile.gettempdir(),
+                ],
+            },
+            {
+                "name": "git",
+                "description": (
+                    "Inspect commits, branches, diffs from any git repo."
+                ),
+                "type": "local",
+                "command": ["npx", "-y", "@modelcontextprotocol/server-git"],
+            },
+            {
+                "name": "fetch",
+                "description": (
+                    "HTTP fetch with safe parsing — read URLs the model "
+                    "would otherwise hallucinate."
+                ),
+                "type": "local",
+                "command": ["npx", "-y", "@modelcontextprotocol/server-fetch"],
+            },
+            {
+                "name": "sequential-thinking",
+                "description": (
+                    "Chain-of-thought scratchpad tool — the model writes "
+                    "reasoning to a private buffer."
+                ),
+                "type": "local",
+                "command": [
+                    "npx", "-y",
+                    "@modelcontextprotocol/server-sequential-thinking",
+                ],
+            },
+            {
+                "name": "time",
+                "description": "Current time and timezone conversion.",
+                "type": "local",
+                "command": ["npx", "-y", "@modelcontextprotocol/server-time"],
+            },
+            {
+                "name": "memory",
+                "description": (
+                    "Persistent knowledge-graph memory across conversations."
+                ),
+                "type": "local",
+                "command": ["npx", "-y", "@modelcontextprotocol/server-memory"],
+            },
+        ],
+    }
+
+
+def _catalog_display_name(raw: str, used: set[str]) -> str:
+    """Last path segment, sanitized; names with ``/`` break server routes."""
+    segment = (raw or "").strip().rsplit("/", 1)[-1]
+    name = re.sub(r"[^A-Za-z0-9._-]", "-", segment).strip(".-_") or "server"
+    base = name
+    n = 2
+    while name in used:
+        name = f"{base}-{n}"
+        n += 1
+    used.add(name)
+    return name
+
+
+def _package_arg_values(raw) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        return [raw] if raw else []
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for item in raw:
+        if isinstance(item, str):
+            if item:
+                out.append(item)
+        elif isinstance(item, dict) and item.get("value") is not None:
+            out.append(str(item["value"]))
+    return out
+
+
+def _package_command(pkg: dict) -> list[str] | None:
+    if not isinstance(pkg, dict):
+        return None
+    kind = str(pkg.get("registryType") or "").lower()
+    ident = pkg.get("identifier")
+    if not isinstance(ident, str) or not ident.strip():
+        return None
+    extra = (
+        _package_arg_values(pkg.get("runtimeArguments"))
+        + _package_arg_values(pkg.get("packageArguments"))
+    )
+    ident = ident.strip()
+    prefix = _bundled_catalog()["servers"][0]["command"][:2]
+    if kind == 'npm':
+        return [*prefix, ident, *extra]
+    if kind == 'pypi':
+        return ['uvx', ident, *extra]
+    return None
+
+
+def _from_official_server(item: dict, used: set[str]) -> dict | None:
+    if not isinstance(item, dict):
+        return None
+    server = item["server"] if isinstance(item.get("server"), dict) else item
+    raw_name = server.get("name")
+    if not isinstance(raw_name, str) or not raw_name.strip():
+        return None
+    entry: dict | None = None
+    remotes = server.get("remotes") or []
+    if isinstance(remotes, list):
+        for remote in remotes:
+            if not isinstance(remote, dict):
+                continue
+            rtype = str(remote.get("type") or "").lower()
+            rurl = remote.get("url")
+            if not isinstance(rurl, str) or not rurl.strip():
+                continue
+            if rtype in ("streamable-http", "http"):
+                entry = {"type": "http", "url": rurl.strip()}
+                break
+            if rtype == "sse":
+                entry = {"type": "sse", "url": rurl.strip()}
+                break
+    if entry is None:
+        packages = server.get("packages") or []
+        if isinstance(packages, list):
+            for pkg in packages:
+                cmd = _package_command(pkg) if isinstance(pkg, dict) else None
+                if cmd:
+                    entry = {"type": "local", "command": cmd}
+                    break
+    if entry is None:
+        return None
+    entry["name"] = _catalog_display_name(raw_name.strip(), used)
+    description = server.get("description")
+    if isinstance(description, str) and description.strip():
+        entry["description"] = description
+    homepage = server.get("websiteUrl") or server.get("homepage")
+    if isinstance(homepage, str) and homepage.strip():
+        entry["homepage"] = homepage
+    return entry
+
+
+def _is_openprogram_entry(item: dict) -> bool:
+    if not isinstance(item, dict) or isinstance(item.get("server"), dict):
+        return False
+    command = item.get("command")
+    if isinstance(command, list) and command:
+        return True
+    url = item.get("url")
+    return isinstance(url, str) and bool(url.strip())
+
+
+def _normalize_catalog_servers(data):
+    catalog_name = None
+    catalog_desc = None
+    if isinstance(data, list):
+        items = data
+    elif isinstance(data, dict):
+        name = data.get("name")
+        desc = data.get("description")
+        catalog_name = name if isinstance(name, str) and name.strip() else None
+        catalog_desc = desc if isinstance(desc, str) else None
+        items = data.get("servers") or []
+        if not isinstance(items, list):
+            items = []
+    else:
+        items = []
+    used: set[str] = set()
+    raw_servers: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if _is_openprogram_entry(item):
+            entry = dict(item)
+            name = entry.get("name")
+            if isinstance(name, str) and name.strip():
+                entry["name"] = _catalog_display_name(name.strip(), used)
+            raw_servers.append(entry)
+            continue
+        converted = _from_official_server(item, used)
+        if converted is not None:
+            raw_servers.append(converted)
+    return catalog_name, catalog_desc, raw_servers
 
 def register(app: FastAPI) -> None:
     @app.get("/api/mcp/servers")
@@ -584,19 +792,14 @@ def register(app: FastAPI) -> None:
         return JSONResponse(content={
             "suggested": [
                 {
-                    "label": "Anthropic reference servers",
-                    "url": "https://raw.githubusercontent.com/modelcontextprotocol/servers/main/catalog.json",
-                    "description": "Filesystem, git, sqlite, slack, github, postgres — the canonical MCP server suite maintained by the protocol team.",
+                    "label": "Official MCP Registry",
+                    "url": OFFICIAL_REGISTRY_URL,
+                    "description": "Latest servers from the official MCP registry.",
                 },
                 {
                     "label": "OpenProgram bundled catalog",
-                    "url": "https://raw.githubusercontent.com/openprogram/mcp-catalog/main/catalog.json",
-                    "description": "Project-recommended MCP servers wired to common dev workflows (drawio, linear, web fetch, etc.).",
-                },
-                {
-                    "label": "PulseMCP community",
-                    "url": "https://pulsemcp.com/api/catalog.json",
-                    "description": "Community-submitted MCP servers indexed by pulsemcp.com — broadest selection.",
+                    "url": BUNDLED_CATALOG_URL,
+                    "description": "Local reference servers, no network required.",
                 },
             ],
             # A handful of one-click entries that don't require a separate
@@ -650,24 +853,21 @@ def register(app: FastAPI) -> None:
         per call (small response, no need to cache server-side; the
         browser caches via HTTP semantics).
         """
-        if not url or not url.startswith(("http://", "https://")):
+        if url in (BUNDLED_CATALOG_URL, "bundled"):
+            data = _bundled_catalog()
+        elif url.startswith(("http://", "https://")):
+            try:
+                data = await _fetch_catalog_json(url)
+            except Exception as e:  # noqa: BLE001
+                raise HTTPException(status_code=502,
+                                    detail=f"catalog parse failed: {type(e).__name__}: {e}")
+        else:
             raise HTTPException(
                 status_code=400,
                 detail="url must be an http(s) URL",
             )
-        try:
-            data = await _fetch_catalog_json(url)
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(status_code=502,
-                                detail=f"catalog parse failed: {type(e).__name__}: {e}")
 
-        if not isinstance(data, dict):
-            raise HTTPException(status_code=502,
-                                detail="catalog root must be a JSON object")
-        raw_servers = data.get("servers") or []
-        if not isinstance(raw_servers, list):
-            raise HTTPException(status_code=502,
-                                detail="catalog.servers must be a list")
+        catalog_name, catalog_desc, raw_servers = _normalize_catalog_servers(data)
 
         # Validate each entry against the existing parser so the UI
         # never shows an entry it couldn't actually install. We feed
@@ -704,9 +904,9 @@ def register(app: FastAPI) -> None:
             valid.append(out)
 
         return JSONResponse(content={
-            "catalog_name": data.get("name") or url,
-            "description": data.get("description"),
-            "homepage": data.get("homepage"),
+            "catalog_name": catalog_name or url,
+            "description": catalog_desc,
+            "homepage": data.get("homepage") if isinstance(data, dict) else None,
             "servers": valid,
             "skipped": max(0, len(raw_servers) - len(valid)),
         })

@@ -66,13 +66,15 @@ export function CatalogDialog({
       .catch(() => { /* offline / fresh install — leave empty */ });
   }, []);
 
-  async function fetchCatalog() {
+  async function fetchCatalog(nextUrl?: string) {
+    const target = (nextUrl ?? url).trim();
+    if (nextUrl) setUrl(nextUrl);
     setErr(null); setCatalog(null);
-    if (!url.trim()) { setErr(text("paste a catalog URL first", "请先粘贴目录 URL")); return; }
+    if (!target) { setErr(text("paste a catalog URL first", "请先粘贴目录 URL")); return; }
     setBusy("fetch");
     try {
       const r = await fetch(
-        `/api/mcp/catalog?url=${encodeURIComponent(url.trim())}`,
+        `/api/mcp/catalog?url=${encodeURIComponent(target)}`,
       );
       const data = await r.json();
       if (!r.ok) {
@@ -138,7 +140,7 @@ export function CatalogDialog({
                   <button
                     key={s.url}
                     title={s.description || s.url}
-                    onClick={() => { setUrl(s.url); void fetchCatalog(); }}
+                    onClick={() => { void fetchCatalog(s.url); }}
                     className={styles.actionBtn}
                   >
                     {s.label}
