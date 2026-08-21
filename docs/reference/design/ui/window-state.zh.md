@@ -4,6 +4,7 @@
 
 相关代码：`apps/desktop/window-state.js`、`apps/desktop/main.js`、
 `apps/web/app/styles/base.css`、`apps/web/components/app-shell.tsx`。
+主窗口有几个、谁负责创建，见 [`window-lifecycle.md`](window-lifecycle.md)。
 
 ## 为什么贴边的普通窗口拖不动
 

@@ -57,6 +57,10 @@ const {
   browserWindowOptionsForPlan,
   applyRestoredChrome,
 } = require("./window-state");
+const {
+  createMainWindowGate,
+  registerSingleMainWindow,
+} = require("./window-lifecycle");
 const themeChrome = require("./theme-chrome");
 
 // 单实例：worker 单端口 18100（详见 docs/reference/design/cli/single-port.md）
@@ -3338,23 +3342,12 @@ function showWindowSmoothly(win) {
   step();
 }
 
-// Launch / dock-click / second-instance can all ask for a main window
-// before the first BrowserWindow is in getAllWindows(). Share one in-flight
-// create so a single click cannot open two mains.
-let mainWindowTask = null;
-
-function ensureMainWindow() {
-  const existing = windows.get("main");
-  if (existing && existing.win && !existing.win.isDestroyed()) {
-    return Promise.resolve(existing);
-  }
-  if (!mainWindowTask) {
-    mainWindowTask = createWindow({ windowId: "main" }).finally(() => {
-      mainWindowTask = null;
-    });
-  }
-  return mainWindowTask;
-}
+// Launch / dock-click / second-instance share one in-flight main-window
+// create. See docs/reference/design/ui/window-lifecycle.md.
+const ensureMainWindow = createMainWindowGate({
+  windows,
+  createWindow,
+});
 
 async function createWindow(options = {}) {
   const state = loadWindowState();
@@ -3518,26 +3511,12 @@ ${themeChrome.directoryListingCss(currentChrome)}
   session.fromPartition("persist:webtabs").protocol.handle("file", handler);
 }
 
-const primaryInstance =
-  typeof app.requestSingleInstanceLock !== "function" || app.requestSingleInstanceLock();
-
-if (!primaryInstance) {
-  app.quit();
-} else {
-  app.on("second-instance", () => {
-    const existing = BrowserWindow.getAllWindows();
-    if (existing.length === 0) {
-      void ensureMainWindow();
-      return;
-    }
-    recoverErroredWindows();
-    const win = BrowserWindow.getFocusedWindow() || existing[0];
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
-  });
-
-  app.whenReady().then(async () => {
+registerSingleMainWindow({
+  app,
+  BrowserWindow,
+  ensureMainWindow,
+  recoverErroredWindows,
+  async onReady() {
     resolveStartupChrome();
     registerFileDirectoryListing();
     registerDownloads();
@@ -3562,16 +3541,8 @@ if (!primaryInstance) {
     }
     initializeDesktopUpdates();
     buildMenu();
-    void ensureMainWindow();
-    app.on("activate", () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        void ensureMainWindow();
-      } else {
-        recoverErroredWindows();
-      }
-    });
-  });
-}
+  },
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

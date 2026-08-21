@@ -25,3 +25,4 @@ Web UI surfaces — the surface system, indicator dots, attachment handling, cha
 - [`avatar-randomization.html`](avatar-randomization.html) — shared Agent/User avatar picker: type first, then same-style variants or letter fields
 - [`web-styles.md`](web-styles.md) — web style organization (one component, one file; directories mirror the component tree)
 - [`window-state.md`](window-state.md) — desktop window bounds, maximize/fullscreen, and titlebar resize hit-testing
+- [`window-lifecycle.md`](window-lifecycle.md) — one main window: launch, Dock activate, and second-instance share a single create

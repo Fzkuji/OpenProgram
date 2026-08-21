@@ -25,3 +25,4 @@ Web UI 界面 — 界面系统、指示点、附件处理、聊天轮次视觉�
 - [`avatar-randomization.html`](avatar-randomization.html) — Agent/用户共用的头像选择器：先选类型，再进入同风格变体或字母字段
 - [`web-styles.md`](web-styles.md) — Web 样式组织（一个组件一个文件，目录对齐组件树）
 - [`window-state.md`](window-state.md) — 桌面窗口普通尺寸、最大化/全屏与标题栏缩放命中
+- [`window-lifecycle.md`](window-lifecycle.md) — 一个主窗口：启动、Dock、二次启动共用同一次创建

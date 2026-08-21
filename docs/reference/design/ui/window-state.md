@@ -7,6 +7,8 @@ sides — that is the “stuck, cannot resize” class of bugs.
 
 Related code: `apps/desktop/window-state.js`, `apps/desktop/main.js`,
 `apps/web/app/styles/base.css`, `apps/web/components/app-shell.tsx`.
+How many main windows exist, and who creates them, is
+[`window-lifecycle.md`](window-lifecycle.md).
 
 ## Why a flush normal window cannot be resized
 
