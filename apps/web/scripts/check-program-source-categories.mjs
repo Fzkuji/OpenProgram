@@ -52,7 +52,7 @@ assert.match(page, /method:\s*"POST"/);
 assert.match(page, /runtimeState\.programsMeta\s*=/);
 assert.match(page, /useFunctions\.getState\(\)\.setMeta/);
 assert.match(page, /aria-pressed=\{isFavorite\}/);
-assert.match(page, /programInvocationName\(selectedEntry \|\| selectedNode\)/);
+assert.match(page, /selectedEntry\?\.callable_name/);
 assert.match(page, /new URLSearchParams\(\{ run: invocationName/);
 assert.match(page, /text\("Use",\s*"使用"\)/);
 assert.match(css, /grid-template-columns:\s*var\(--programs-explorer-width\)\s+minmax\(0,\s*1fr\)/);
@@ -65,6 +65,14 @@ assert.doesNotMatch(page, /Programs files|Programs 文件/);
 assert.doesNotMatch(css, /font-family:\s*var\(--font-mono\)/);
 assert.doesNotMatch(page, /All Programs|Uncategorized|ProfileNavRow/);
 assert.match(catalog, /programInvocationName/);
+assert.match(
+  readFileSync(new URL("components/ui/manage-page.tsx", root), "utf8"),
+  /isManageActionIcon\(a\.icon\)/,
+);
+assert.match(
+  readFileSync(new URL("components/ui/manage-action-icon.ts", root), "utf8"),
+  /\"render\" in icon/,
+);
 assert.doesNotMatch(catalog, /buildRuntimeProgramDirectories|functions\/connected|tool\.source/);
 assert.match(source, /search_workflows/);
 assert.match(source, /create_workflow/);

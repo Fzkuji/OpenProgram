@@ -26,6 +26,7 @@ import type {
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { isManageActionIcon } from "./manage-action-icon";
 import styles from "./manage-page.module.css";
 
 export { styles as managePageStyles };
@@ -93,13 +94,9 @@ export interface ManageAction {
   disabled?: boolean;
 }
 
-function isTabIcon(icon: ManageAction["icon"]): icon is ManageTabIcon {
-  return typeof icon === "function";
-}
-
 function ManageActionButton({ a }: { a: ManageAction }) {
   const iconRef = useRef<AnimatedNavIconHandle>(null);
-  const Icon = isTabIcon(a.icon) ? a.icon : null;
+  const Icon = isManageActionIcon(a.icon) ? a.icon as ManageTabIcon : null;
   return (
     <Button
       size={a.iconOnly ? "icon" : "sm"}

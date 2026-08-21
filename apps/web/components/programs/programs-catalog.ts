@@ -14,5 +14,5 @@ export type ProgramExplorerEntry = {
 export function programInvocationName(
   entry: { name: string; callable_name?: string } | null | undefined,
 ): string {
-  return entry?.callable_name || "";
+  return entry?.callable_name || entry?.name || "";
 }

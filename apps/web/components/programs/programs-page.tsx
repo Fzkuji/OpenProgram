@@ -43,7 +43,6 @@ import {
   type ProgramKind,
 } from "./programs-logic";
 import {
-  programInvocationName,
   type ProgramExplorerEntry,
 } from "./programs-catalog";
 import {
@@ -247,7 +246,7 @@ export function ProgramsPage({
   }, [selected, selectedEntry, text]);
 
   const selectedNode = logic?.nodes.find((node) => node.id === logic.root) ?? null;
-  const invocationName = programInvocationName(selectedEntry || selectedNode);
+  const invocationName = selectedEntry?.callable_name || "";
   const isFavorite = Boolean(invocationName) && meta.favorites.includes(invocationName);
   const callTree = useMemo(() => logic ? buildCallTreeRows(logic) : { rows: [], truncated: false }, [logic]);
   const graphLayout = useMemo(() => logic ? buildGraphLayout(logic) : null, [logic]);
@@ -453,7 +452,7 @@ export function ProgramsPage({
                       >
                         <Star className={isFavorite ? styles.favoriteIconActive : styles.favoriteIcon} fill={isFavorite ? "currentColor" : "none"} />
                       </Button>
-                      <Button onClick={() => router.push(`/chat?${new URLSearchParams({ run: invocationName, cat: selectedNode.program_kind })}`)}>
+                      <Button onClick={() => router.push(`/chat?${new URLSearchParams({ run: invocationName, cat: selectedNode.program_kind || "" })}`)}>
                         {text("Use", "使用")}
                       </Button>
                     </div>
