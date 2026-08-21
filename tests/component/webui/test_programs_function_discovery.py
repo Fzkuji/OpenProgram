@@ -60,7 +60,13 @@ def test_programs_treats_workflow_as_category_not_program() -> None:
     assert children["workflow/revise_workflow"]["program_kind"] == "workflow"
     assert "workflow/auto_workflow" in children
     assert "workflow/authoring" not in children
+    assert "workflow/errors" not in children
+    assert "workflow/json_parsing" not in children
+    assert "workflow/ask_user" not in children
+    assert "workflow/resume_workflow" not in children
+    assert not any(path.endswith(".py") for path in children)
     assert not any(entry["name"].startswith("_") for entry in children.values())
+    assert len(children) == len({entry["name"] for entry in children.values()})
     assert "workflow/browser" in children
     assert "workflow/docs_question" in children
     assert "workflow/goal" in children

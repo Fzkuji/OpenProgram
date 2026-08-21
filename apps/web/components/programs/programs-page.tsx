@@ -64,6 +64,16 @@ type ExplorerResponse = {
 
 const ROOT_LABEL = "openprogram/programs";
 
+function catalogLabel(
+  entry: { name: string; path: string },
+  text: (en: string, zh: string) => string,
+) {
+  if (entry.path === "tools") return text("Tools", "工具");
+  if (entry.path === "workflow") return text("Workflow", "工作流");
+  if (entry.path === "applications") return text("Applications", "应用");
+  return entry.name;
+}
+
 function parentPaths(path: string) {
   const parts = path.split("/");
   return parts.slice(0, -1).map((_, index) => parts.slice(0, index + 1).join("/"));
@@ -242,9 +252,12 @@ export function ProgramsPage({
   const searchMatches = useMemo(() => {
     if (!search.trim()) return [];
     return [...treeEntriesByPath.values()]
-      .filter((entry) => matchingIndexes(entry.name, search, fuzzySearch))
+      .filter((entry) =>
+        matchingIndexes(entry.name, search, fuzzySearch)
+        || matchingIndexes(catalogLabel(entry, text), search, fuzzySearch)
+      )
       .sort((left, right) => left.path.localeCompare(right.path));
-  }, [fuzzySearch, search, treeEntriesByPath]);
+  }, [fuzzySearch, search, text, treeEntriesByPath]);
   const visiblePaths = useMemo(
     () => visibleSearchPaths([...treeEntriesByPath.keys()], search, fuzzySearch),
     [fuzzySearch, search, treeEntriesByPath],
@@ -336,7 +349,7 @@ export function ProgramsPage({
             }}
           >
             <EntryIcon entry={entry} expanded={displayOpen} />
-            <ExplorerMatchText className={fileStyles.treeName} value={entry.name} query={search} fuzzy={fuzzySearch} current={current} />
+            <ExplorerMatchText className={fileStyles.treeName} value={catalogLabel(entry, text)} query={search} fuzzy={fuzzySearch} current={current} />
           </div>
           {isBranch && displayOpen ? (
             <div
@@ -413,7 +426,7 @@ export function ProgramsPage({
           </aside>
           <section className={styles.logicPane}>
             {error ? <div className={styles.empty} role="alert"><span className={styles.error}>{error}</span></div> : !selected ? (
-              <div className={styles.empty}><Network size={32} /><strong>{text("No Programs found", "没有找到 Program")}</strong><span>{text("Add a Function, Workflow, or Application under openprogram/programs.", "请在 openprogram/programs 下添加 Function、Workflow 或 Application。")}</span></div>
+              <div className={styles.empty}><Network size={32} /><strong>{text("No Programs found", "没有找到 Program")}</strong><span>{text("Add a Tool, Workflow, or Application under openprogram/programs.", "请在 openprogram/programs 下添加 Tool、Workflow 或 Application。")}</span></div>
             ) : loadingLogic ? (
               <div className={styles.empty}><RefreshCw className={styles.spin} size={25} /><span>{text("Loading call logic…", "正在加载调用逻辑…")}</span></div>
             ) : !logic || !selectedNode ? (

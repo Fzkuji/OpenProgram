@@ -44,6 +44,14 @@ _VANILLA_RELATIVE = Path("tools")
 _VANILLA_MODULE_PREFIX = "openprogram.programs.tools."
 _AGENTIC_RELATIVE = Path("workflow")
 _AGENTIC_MODULE_PREFIX = "openprogram.programs.workflow."
+# Helpers and session adapters that live under workflow/ but are not
+# runnable Programs. They stay importable; they do not become explorer rows.
+_WORKFLOW_INTERNAL_NAMES = {
+    "ask_user",
+    "errors",
+    "json_parsing",
+    "resume_workflow",
+}
 
 
 def _inside_programs(path: Path) -> bool:
@@ -148,10 +156,11 @@ def _entity_paths() -> dict[str, Path]:
         if not directory.is_dir():
             continue
         for child in _visible_children(directory):
-            if child.name.startswith("_"):
+            name = child.stem if child.is_file() else child.name
+            if name.startswith("_") or name in _WORKFLOW_INTERNAL_NAMES:
                 continue
             if child.is_dir() or child.suffix == ".py":
-                relative = (parent / child.name).as_posix()
+                relative = (parent / name).as_posix()
                 if _program_kind(relative):
                     entities.setdefault(relative, child)
     return entities
@@ -289,7 +298,11 @@ def _agentic_entries(
             remainder = source.relative_to(prefix).parts
         except ValueError:
             continue
-        if not remainder or remainder[0].startswith("_"):
+        if (
+            not remainder
+            or remainder[0].startswith("_")
+            or remainder[0] in _WORKFLOW_INTERNAL_NAMES
+        ):
             continue
         child_path = (prefix / remainder[0]).as_posix()
         if len(remainder) > 1 or len(rows) > 1:
@@ -345,6 +358,8 @@ def _list_entries(relative: str) -> dict:
             existing = {entry["path"] for entry in entries}
             for path, source in sorted(_entity_paths().items()):
                 if Path(path).parent.as_posix() != "workflow" or path in existing:
+                    continue
+                if Path(path).stem in _WORKFLOW_INTERNAL_NAMES:
                     continue
                 entries.append({
                     "name": Path(path).stem,

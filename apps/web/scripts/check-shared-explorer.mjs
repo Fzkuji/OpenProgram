@@ -24,6 +24,8 @@ assert.match(header, /showRootPath \? \(/);
 assert.match(files, /rootPath=\{projectRoot\}/);
 assert.doesNotMatch(files, /showRootPath=\{false\}/);
 assert.match(programs, /showRootPath=\{false\}/);
+assert.match(programs, /catalogLabel/);
+assert.match(programs, /Add a Tool, Workflow, or Application/);
 assert.doesNotMatch(header, /<code\s+className=\{styles\.treeRootFullPath\}/);
 assert.match(css, /\.treeNameMatch/);
 assert.match(css, /\.treeKids/);
