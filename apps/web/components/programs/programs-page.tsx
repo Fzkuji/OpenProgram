@@ -437,7 +437,6 @@ export function ProgramsPage({
                     <Button onClick={() => router.push(`/chat?${new URLSearchParams({ run: invocationName, cat: selectedNode.program_kind })}`)}>
                       {text("Use", "使用")}
                     </Button>
-                    <span className={styles.headBadge}>HEAD</span>
                   </div>
                 </div>
                 <div className={styles.summary}><span>{logic.edges.filter((edge) => edge.source === logic.root).length} {text("direct calls", "个直接调用")}</span><span>{Math.max(0, logic.nodes.length - 1)} {text("reachable nodes", "个可达节点")}</span><span>{logic.edges.length} {text("edges", "条边")}</span></div>

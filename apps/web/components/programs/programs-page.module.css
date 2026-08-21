@@ -142,15 +142,6 @@
   font-size: var(--fs-sm);
 }
 
-.headBadge {
-  padding: 3px 7px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--text-muted);
-  background: var(--bg-secondary);
-  font-size: var(--fs-sm);
-}
-
 .summary {
   margin: 20px 0;
   display: flex;
