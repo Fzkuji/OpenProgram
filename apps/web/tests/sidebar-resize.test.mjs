@@ -41,7 +41,8 @@ test("left and right sidebars share one resize implementation", () => {
 test("side rail shells delegate navigation and detail content", () => {
   assert.match(sidebar, /<SidebarPrimaryNav\s*\/>/);
   assert.doesNotMatch(sidebar, /refreshFunctionsList|href="\/programs"/);
-  assert.match(primaryNav, /href="\/programs"/);
+  assert.match(primaryNav, /href=\{abilityHref\}|id:\s*"navAbility"/);
+  assert.match(primaryNav, /useState\("\/programs"\)/);
   assert.match(rightSidebar, /<DetailPanel\s*\/>/);
   assert.doesNotMatch(
     rightSidebar,

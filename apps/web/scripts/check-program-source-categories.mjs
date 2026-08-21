@@ -9,7 +9,10 @@ const catalog = readFileSync(new URL("components/programs/programs-catalog.ts", 
 const source = readFileSync(new URL("components/programs/programs-source.ts", root), "utf8");
 const css = readFileSync(new URL("components/programs/programs-page.module.css", root), "utf8");
 
-assert.match(route, /@\/components\/programs\/programs-page/);
+assert.match(route, /@\/components\/capabilities\/capabilities-page/);
+const hub = readFileSync(new URL("components/capabilities/capabilities-page.tsx", root), "utf8");
+assert.match(hub, /@\/components\/programs\/programs-page/);
+assert.match(hub, /<ProgramsPage/);
 assert.match(page, /ManagePageHeader/);
 assert.match(page, /ExplorerHeader/);
 assert.match(page, /showRootPath=\{false\}/);

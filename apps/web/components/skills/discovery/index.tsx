@@ -29,7 +29,7 @@ import { hostname, slugFromUrl } from "./helpers";
 import type { CatalogState, Source } from "./types";
 import { activateOnKey } from "@/lib/utils";
 
-export function DiscoverySources() {
+export function DiscoverySources({ query }: { query?: string } = {}) {
   const { text } = useTranslation();
   const {
     skills,
@@ -515,6 +515,7 @@ export function DiscoverySources() {
                         installingKey={installingKey}
                         onInstall={handleInstallOne}
                         bulkBusy={isBulkBusy}
+                        externalFilter={query}
                       />
                     )}
                   </div>

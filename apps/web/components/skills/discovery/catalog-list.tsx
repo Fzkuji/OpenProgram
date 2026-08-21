@@ -42,6 +42,7 @@ export const pillDanger =
 export function CatalogList({
   entries, source, installedNames, outdatedNames, installingKey, onInstall,
   bulkBusy,
+  externalFilter,
 }: {
   entries: CatalogEntry[];
   source: Source;
@@ -54,6 +55,7 @@ export function CatalogList({
   // so a user can't stack a Reinstall on top of a 200-skill batch
   // and confuse the queue.
   bulkBusy: boolean;
+  externalFilter?: string;
 }) {
   const { text, locale } = useTranslation();
   const { deleteSkill } = useSkills();
@@ -63,15 +65,16 @@ export function CatalogList({
   const [sort, setSort] = useState<SortKey>(hasMeta ? "downloads" : "default");
 
   const filtered = useMemo(() => {
-    if (!filter.trim()) return entries;
-    const q = filter.toLowerCase();
+    const active = externalFilter !== undefined ? externalFilter : filter;
+    if (!active.trim()) return entries;
+    const q = active.toLowerCase();
     return entries.filter(
       (e) =>
         e.name.toLowerCase().includes(q) ||
         (e.description || "").toLowerCase().includes(q) ||
         (e.display_name || "").toLowerCase().includes(q),
     );
-  }, [entries, filter]);
+  }, [entries, filter, externalFilter]);
 
   const shown = useMemo(() => {
     const arr = [...filtered];
@@ -98,6 +101,7 @@ export function CatalogList({
   return (
     <div>
       <div className="mb-3 flex items-center gap-2">
+        {externalFilter === undefined && (
         <div
           className="relative flex-1"
           onMouseEnter={() => searchIconRef.current?.startAnimation?.()}
@@ -118,6 +122,7 @@ export function CatalogList({
             className="w-full rounded-[var(--ui-button-radius)] border border-[var(--border)] bg-[var(--bg-input)] h-[var(--ui-button-h)] pl-9 pr-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition-colors focus:border-[color:var(--accent-blue)]"
           />
         </div>
+        )}
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value as SortKey)}

@@ -49,14 +49,13 @@ Each message's action menu has "Rewind to here": it truly rolls the session back
 
 | Route | Purpose |
 |---|---|
-| `/chats` | Session history list: search, filter by time and channel, create new sessions |
-| `/programs` | Function directory: favorites, custom folders (drag to organize), search and sort, grid / list views |
-| `/programs` | Agentic program directory: LLM programs with their own UIs, launch and run directly |
-| `/skills` | SKILL.md management: browse installed skills, discover new ones, create skills; each skill has a detail page |
-| `/plugins` | Plugin management: installed / marketplace / errors tabs |
-| `/mcp` | MCP server management: add from the directory, edit configs, view per-server status |
-| `/memory` | Persistent memory: browse and edit the wiki, journal, and core memories, with markdown and wikilink support |
-| `/projects` | Project management: per-project permission rules, default settings, associated sessions |
+| `/chats` | History hub: session list (also `/history`); Projects and Memory are tabs on the same page |
+| `/programs` | Abilities hub: Programs catalog (call tree / graph). Plugins, Skills, and MCP are sibling tabs |
+| `/skills` | Abilities → Skills: browse installed SKILL.md files, discover and create skills; each skill has a detail page |
+| `/plugins` | Abilities → Plugins: installed / marketplace / errors |
+| `/mcp` | Abilities → MCP: add from the directory, edit configs, view per-server status |
+| `/memory` | History → Memory: wiki, journal, and core memories |
+| `/projects` | History → Projects: per-project permission rules, default settings, associated sessions |
 | `/settings` | Settings: providers (models and credentials), search, general (including theme, runtime version, and Desktop update status when the Electron bridge is present), system, usage, auth, channels |
 
 Opening `/settings` directly lands on `/settings/general`. Model credentials stay on `/settings/providers`; see [configuring models](../models/README.md).

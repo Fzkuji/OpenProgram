@@ -50,6 +50,7 @@ _PUBLIC_FRONTEND_ROUTES = frozenset(
         "/chats",
         "/desktop-transfer-acceptance",
         "/functions",
+        "/history",
         "/mcp",
         "/memory",
         "/plugin",

@@ -212,7 +212,9 @@ def test_generated_cli_reference_names_the_current_parser_source(tmp_path) -> No
 def test_programs_route_uses_the_programs_workspace_component() -> None:
     route = (ROOT / "apps/web/app/(shell)/programs/page.tsx").read_text(encoding="utf-8")
 
-    assert "@/components/programs/programs-page" in route
+    assert "@/components/capabilities/capabilities-page" in route
+    hub = (ROOT / "apps/web/components/capabilities/capabilities-page.tsx").read_text(encoding="utf-8")
+    assert "@/components/programs/programs-page" in hub
     assert (ROOT / "apps/web/components/programs/programs-page.tsx").is_file()
     assert (ROOT / "apps/web/components/programs/programs-page.module.css").is_file()
 

@@ -35,6 +35,9 @@ export function CapabilitiesPage() {
   const router = useRouter();
   const { t, text } = useTranslation();
   const kind = kindFromPath(pathname);
+  if (typeof window !== "undefined") {
+    try { sessionStorage.setItem("op.ability.kind", kind); } catch { /* ignore */ }
+  }
   const [query, setQueryState] = useState(persistedQuery);
   const [pluginInstallOpen, setPluginInstallOpen] = useState(false);
   const [skillNewOpen, setSkillNewOpen] = useState(false);
@@ -95,7 +98,7 @@ export function CapabilitiesPage() {
             { id: "programs", label: t("nav.programs") },
             { id: "plugins", label: t("nav.plugins") },
             { id: "skills", label: t("nav.skills") },
-            { id: "mcp", label: "MCP" },
+            { id: "mcp", label: t("nav.mcp_short") },
           ]}
           activeTab={kind}
           onTabChange={goKind}

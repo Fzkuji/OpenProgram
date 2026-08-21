@@ -35,7 +35,7 @@ export function SkillsPage({
     { id: "discovery", label: text("Discovery", "发现") },
   ];
 
-  const body = tab === "browse" ? <SkillsList externalFilter={query} /> : <DiscoverySources />;
+  const body = tab === "browse" ? <SkillsList externalFilter={query} /> : <DiscoverySources query={query} />;
 
   if (embedded) {
     return (

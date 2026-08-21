@@ -93,6 +93,7 @@ export function ExplorerHeader({
   resultCount,
   resultIndex,
   onMoveResult,
+  hideSearch = false,
 }: {
   leading?: ReactNode;
   rootName: string;
@@ -110,6 +111,7 @@ export function ExplorerHeader({
   resultCount: number;
   resultIndex: number;
   onMoveResult: (delta: number) => void;
+  hideSearch?: boolean;
 }) {
   const { text } = useTranslation();
   const [pathExpanded, setPathExpanded] = useState(false);
@@ -180,6 +182,7 @@ export function ExplorerHeader({
           </div>
         ) : null}
         <div className={`${styles.treeToolbarActions} ${!showRootPath ? styles.treeToolbarActionsOnly : ""}`}>
+          {!hideSearch && (
           <button
             type="button"
             className={`${styles.iconBtn} ${searchOpen ? styles.iconBtnActive : ""}`}
@@ -189,9 +192,11 @@ export function ExplorerHeader({
           >
             <Search />
           </button>
+          )}
           {actions}
         </div>
       </div>
+      {!hideSearch && (
       <div
         className={`${styles.treeSearchPanel} ${searchOpen ? styles.treeSearchPanelOpen : ""}`}
         aria-hidden={!searchOpen}
@@ -234,6 +239,7 @@ export function ExplorerHeader({
           <button className={styles.treeSearchOption} type="button" aria-pressed={fuzzy} tabIndex={searchOpen ? 0 : -1} onClick={() => onFuzzyChange(!fuzzy)}><ScanSearch />Fuzzy</button>
         </div>
       </div>
+      )}
     </div>
   );
 }

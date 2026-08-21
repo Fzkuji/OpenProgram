@@ -25,8 +25,6 @@ const ROUTE_KEYS: Record<string, "nav.functions"|"nav.ability"|"nav.history"|"na
   scheduler: "nav.scheduler",
   mcp: "nav.ability",
   plugins: "nav.ability",
-  capabilities: "nav.ability",
-  ability: "nav.ability",
   chats: "nav.history",
   projects: "nav.history",
   history: "nav.history",

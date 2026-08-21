@@ -108,6 +108,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       "/settings/general",
       "/functions",
       "/agents",
+      "/programs",
       "/skills",
       "/settings/providers",
       "/memory",
@@ -214,10 +215,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // `.active` on mount, but nothing removes it on navigation — we own that.
   useEffect(() => {
     const items: Array<[string, string]> = [
-      ["navPrograms", "/functions"],
-      ["navMemory", "/memory"],
+      ["navAbility", "/programs"],
+      ["navHistory", "/chats"],
       ["navScheduler", "/scheduler"],
-      ["navChats", "/chats"],
     ];
     for (const [id, path] of items) {
       const el = document.getElementById(id);

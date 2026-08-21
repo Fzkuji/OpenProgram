@@ -147,6 +147,7 @@ const DICT = {
   "nav.projects": { en: "Projects", zh: "项目" },
   "nav.plugins": { en: "Plugins", zh: "插件" },
   "nav.mcp": { en: "MCP Servers", zh: "MCP 服务器" },
+  "nav.mcp_short": { en: "MCP", zh: "MCP" },
   "nav.ability": { en: "Abilities", zh: "能力" },
   "nav.memory": { en: "Memory", zh: "记忆" },
   "nav.scheduler": { en: "Scheduler", zh: "定时任务" },

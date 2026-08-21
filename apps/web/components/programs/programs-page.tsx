@@ -382,6 +382,7 @@ export function ProgramsPage({
               rootName="Programs"
               rootPath={ROOT_LABEL}
               showRootPath={false}
+              hideSearch={Boolean(embedded)}
               searchOpen={searchOpen}
               onSearchOpenChange={setSearchOpen}
               query={search}

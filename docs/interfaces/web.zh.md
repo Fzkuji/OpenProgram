@@ -49,14 +49,13 @@ openprogram web
 
 | 路由 | 用途 |
 |---|---|
-| `/chats` | 历史会话列表：搜索、按时间和渠道过滤、新建会话 |
-| `/programs` | 函数目录：收藏、自定义文件夹（拖拽整理）、搜索排序、网格 / 列表视图 |
-| `/programs` | agentic 程序目录：带自己界面的 LLM 程序，直接启动运行 |
-| `/skills` | SKILL.md 管理：浏览已装 skill、发现新 skill、新建 skill；每个 skill 有详情页 |
-| `/plugins` | 插件管理：已安装 / 市场 / 错误三个标签页 |
-| `/mcp` | MCP server 管理：从目录添加、编辑配置、查看每个 server 的状态 |
-| `/memory` | 持久记忆：wiki、journal 和核心记忆的浏览与编辑，支持 markdown 和 wikilink |
-| `/projects` | 项目管理：每个项目的权限规则、默认设置、关联会话 |
+| `/chats` | History 枢纽：会话列表（`/history` 同页）；Projects 和 Memory 是同一页上的 tab |
+| `/programs` | Abilities 枢纽：Programs 目录（调用树 / 图）。Plugins、Skills、MCP 是旁边的 tab |
+| `/skills` | Abilities → Skills：浏览已装 SKILL.md、发现和新建；每个 skill 有详情页 |
+| `/plugins` | Abilities → Plugins：已安装 / 市场 / 错误 |
+| `/mcp` | Abilities → MCP：从目录添加、编辑配置、查看状态 |
+| `/memory` | History → Memory：wiki、journal 和核心记忆 |
+| `/projects` | History → Projects：权限规则、默认设置、关联会话 |
 | `/settings` | 设置：providers（模型与凭据）、search、general（含主题、运行版本，以及存在 Electron bridge 时的 Desktop 更新状态）、system、usage、auth、channels |
 
 `/settings` 直接打开会跳到 `/settings/general`。模型凭据仍在 `/settings/providers`，见[配置模型](../models/README.md)。

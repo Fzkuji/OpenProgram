@@ -143,18 +143,20 @@ export function InstalledList({ externalFilter }: { externalFilter?: string } = 
           plugin={detailDialog}
           busy={busy === detailDialog.name}
           onClose={() => setDetailDialog(null)}
-          onOptions={() => setOptsDialog(detailDialog)}
-          onValidate={() => setValidateDialog(detailDialog)}
+          onOptions={() => { const target = detailDialog; setDetailDialog(null); setOptsDialog(target); }}
+          onValidate={() => { const target = detailDialog; setDetailDialog(null); setValidateDialog(target); }}
           onReload={async () => {
             setBusy(detailDialog.name);
             try { await reload(detailDialog.name); } finally { setBusy(""); }
           }}
           onUninstall={async () => {
-            setBusy(detailDialog.name);
+            if (!window.confirm(text("Uninstall this plugin?", "卸载这个插件？"))) return;
+            const target = detailDialog;
+            setDetailDialog(null);
+            setBusy(target.name);
             try {
-              const r = await uninstall(detailDialog.name);
+              const r = await uninstall(target.name);
               if (!r.success) setNotice(r.log);
-              else setDetailDialog(null);
             } finally {
               setBusy("");
             }

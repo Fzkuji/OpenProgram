@@ -73,6 +73,14 @@ function SidebarNavLink({
 export function SidebarPrimaryNav() {
   const pathname = usePathname();
   const { t } = useTranslation();
+  const [abilityHref, setAbilityHref] = useState("/programs");
+  useEffect(() => {
+    try {
+      const kind = sessionStorage.getItem("op.ability.kind");
+      if (kind === "mcp") setAbilityHref("/mcp");
+      else if (kind === "plugins" || kind === "skills" || kind === "programs") setAbilityHref(`/${kind}`);
+    } catch { /* ignore */ }
+  }, [pathname]);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshDone, setRefreshDone] = useState(false);
   const refreshSvgRef = useRef<SVGSVGElement>(null);
@@ -132,15 +140,13 @@ export function SidebarPrimaryNav() {
       icon: BotIcon,
     },
     {
-      href: "/plugins",
+      href: abilityHref,
       id: "navAbility",
       active:
         pathname.startsWith("/skills")
         || pathname.startsWith("/plugins")
         || pathname.startsWith("/plugin/")
         || pathname.startsWith("/mcp")
-        || pathname.startsWith("/capabilities")
-        || pathname.startsWith("/ability")
         || pathname.startsWith("/programs"),
       label: t("nav.ability"),
       icon: BoxesIcon,
