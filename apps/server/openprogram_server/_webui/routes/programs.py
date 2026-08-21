@@ -100,6 +100,11 @@ def _program_kind(relative: str) -> str | None:
     return None
 
 
+def _is_workflow_package(relative: str) -> bool:
+    """True when the catalog path is a directory, not a single .py file."""
+    return any((root / relative).is_dir() for root in _catalog_roots())
+
+
 def _visible_children(directory: Path) -> list[Path]:
     return sorted(
         (
@@ -275,17 +280,25 @@ def _agentic_entries(
         indexed = _registered_agentic_callables()
     if relative in indexed:
         rows = indexed[relative]
-        if len(rows) > 1:
+        if len(rows) > 1 or _is_workflow_package(relative):
             return [
                 {
                     "name": row["name"],
-                    "path": f"{relative}/{row['name']}",
+                    "path": (
+                        f"{relative}/{row['name']}"
+                        if _is_workflow_package(relative) or len(rows) > 1
+                        else relative
+                    ),
                     "kind": "file",
                     "program_kind": "workflow",
                     "has_children": False,
                     "callable_name": row["name"],
                     "description": row["description"],
-                    "logic_path": f"{relative}/{row['name']}",
+                    "logic_path": (
+                        f"{relative}/{row['name']}"
+                        if len(rows) > 1
+                        else relative
+                    ),
                 }
                 for row in rows
             ]
@@ -305,7 +318,11 @@ def _agentic_entries(
         ):
             continue
         child_path = (prefix / remainder[0]).as_posix()
-        if len(remainder) > 1 or len(rows) > 1:
+        if (
+            len(remainder) > 1
+            or len(rows) > 1
+            or _is_workflow_package(child_path)
+        ):
             entries[child_path] = {
                 "name": remainder[0],
                 "path": child_path,

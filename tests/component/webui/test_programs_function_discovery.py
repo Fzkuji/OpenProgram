@@ -68,9 +68,26 @@ def test_programs_treats_workflow_as_category_not_program() -> None:
     assert not any(entry["name"].startswith("_") for entry in children.values())
     assert len(children) == len({entry["name"] for entry in children.values()})
     assert "workflow/browser" in children
-    assert "workflow/docs_question" in children
-    assert "workflow/goal" in children
-    assert "workflow/security_review" in children
+    assert children["workflow/browser"]["has_children"] is True
+    assert children["workflow/docs_question"]["has_children"] is True
+    assert children["workflow/docs_question"]["program_kind"] is None
+    assert children["workflow/docs_question"]["name"] == "docs_question"
+    assert children["workflow/goal"]["has_children"] is True
+    assert children["workflow/goal"]["program_kind"] is None
+    assert children["workflow/goal"]["name"] == "goal"
+    assert children["workflow/security_review"]["has_children"] is True
+    assert children["workflow/security_review"]["name"] == "security_review"
+
+    goal_entry = _list_entries("workflow/goal")["entries"]
+    assert [
+        (entry["name"], entry["callable_name"], entry["logic_path"])
+        for entry in goal_entry
+    ] == [("goal", "goal", "workflow/goal")]
+    docs_entry = _list_entries("workflow/docs_question")["entries"]
+    assert [
+        (entry["callable_name"], entry["logic_path"])
+        for entry in docs_entry
+    ] == [("run_docs_question", "workflow/docs_question")]
 
     management_entries = [
         children[path]
