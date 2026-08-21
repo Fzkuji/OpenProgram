@@ -86,6 +86,53 @@ test("graph layout renders each Program once in dependency layers", () => {
   assert.ok(byId.get("b").x < byId.get("d").x);
 });
 
+test("graph layout ranks peer dependencies on later columns", () => {
+  const layout = buildGraphLayout({
+    root: "goal",
+    nodes: ["goal", "refinement", "notices", "state"].map((id) => ({
+      id, name: id, path: `workflow/${id}`, program_kind: "workflow", depth: 0,
+    })),
+    edges: [
+      { source: "goal", target: "refinement" },
+      { source: "goal", target: "notices" },
+      { source: "refinement", target: "notices" },
+      { source: "notices", target: "state" },
+    ],
+  });
+  const byId = new Map(layout.nodes.map((node) => [node.id, node]));
+  assert.ok(byId.get("refinement").x < byId.get("notices").x);
+  assert.ok(byId.get("notices").x < byId.get("state").x);
+});
+
+test("graph layout sits a node next to the neighbors it connects to", () => {
+  const layout = buildGraphLayout({
+    root: "goal",
+    nodes: ["goal", "agent", "judge", "loop", "notices", "refinement", "llm", "state"].map((id) => ({
+      id, name: id, path: `workflow/${id}`, program_kind: "workflow", depth: 0,
+    })),
+    edges: [
+      { source: "goal", target: "agent" },
+      { source: "goal", target: "judge" },
+      { source: "goal", target: "loop" },
+      { source: "goal", target: "notices" },
+      { source: "goal", target: "refinement" },
+      { source: "agent", target: "llm" },
+      { source: "loop", target: "state" },
+      { source: "notices", target: "state" },
+      { source: "refinement", target: "state" },
+    ],
+  });
+  const byId = new Map(layout.nodes.map((node) => [node.id, node]));
+  assert.ok(
+    Math.abs(byId.get("agent").y - byId.get("llm").y)
+    < Math.abs(byId.get("refinement").y - byId.get("llm").y),
+  );
+  assert.ok(
+    Math.abs(byId.get("notices").y - byId.get("state").y)
+    < Math.abs(byId.get("agent").y - byId.get("state").y),
+  );
+});
+
 test("a four-level graph fits the standard Programs detail width", () => {
   const nodes = ["workflow", "goal", "agent", "llm"].map((id, depth) => ({
     id, name: id, path: `agentic_programming/${id}`, program_kind: "agentic_function", depth,

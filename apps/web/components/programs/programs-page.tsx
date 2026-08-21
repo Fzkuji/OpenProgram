@@ -483,8 +483,13 @@ export function ProgramsPage({
                           const y1 = source.y + GRAPH_NODE_HEIGHT / 2;
                           const x2 = target.x;
                           const y2 = target.y + GRAPH_NODE_HEIGHT / 2;
-                          const bend = Math.max(12, (x2 - x1) / 2);
-                          return <path key={`${source.id}->${target.id}`} data-edge={`${source.id}->${target.id}`} d={`M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`} markerEnd="url(#program-graph-arrow)" />;
+                          const sameColumn = source.x === target.x;
+                          const skip = x2 - x1 > GRAPH_NODE_WIDTH + 24;
+                          const bend = Math.max(16, (x2 - x1) / 2);
+                          const d = sameColumn
+                            ? `M ${x1} ${y1} C ${x1 + 22} ${y1}, ${x1 + 22} ${y2}, ${x1} ${y2}`
+                            : `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`;
+                          return <path key={`${source.id}->${target.id}`} className={skip ? styles.graphSkipEdge : undefined} data-edge={`${source.id}->${target.id}`} d={d} markerEnd="url(#program-graph-arrow)" />;
                         })}
                       </svg>
                       {graphLayout.nodes.map((node) => <div key={node.id} className={`${styles.graphNode} ${node.id === logic.root ? styles.graphRoot : ""}`} style={{ left: node.x, top: node.y }} data-graph-node={node.id}>

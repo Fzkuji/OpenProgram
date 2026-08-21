@@ -722,10 +722,16 @@ def _resolve_package_import(
     return None
 
 
+_UNSET = object()
+
+
 def _direct_calls(
     relative: str,
     entities: dict[str, Path],
     symbols: dict[tuple[str, str], str] | None = None,
+    *,
+    entry_name: str | None | object = _UNSET,
+    reached: dict[str, str | None] | None = None,
 ) -> tuple[list[str], set[str]]:
     prefixes = sorted(
         ((_module_prefix(path), path) for path in entities),
@@ -734,10 +740,24 @@ def _direct_calls(
     )
     if symbols is None:
         symbols = _package_symbol_index(entities)
+    if entry_name is _UNSET:
+        entry_name = _analysis_entry_name(relative)
     targets: set[str] = set()
+
+    def record(target: str, attr: str = "") -> None:
+        targets.add(target)
+        if reached is None:
+            return
+        mark = attr or None
+        if target not in reached:
+            reached[target] = mark
+        elif reached[target] != mark:
+            reached[target] = None
+
+    analyzed_name = entry_name if isinstance(entry_name, str) else None
     if relative.startswith("workflow/"):
         modules, warnings = _called_import_modules(
-            entities[relative], _analysis_entry_name(relative),
+            entities[relative], analyzed_name,
         )
     else:
         modules, warnings = _imported_modules(entities[relative])
@@ -745,13 +765,15 @@ def _direct_calls(
         for prefix, target in prefixes:
             if not (module == prefix or module.startswith(prefix + ".")):
                 continue
+            remainder = module[len(prefix):].lstrip(".")
+            attr = remainder.split(".", 1)[0] if remainder else ""
             resolved = _resolve_package_import(module, prefix, target, symbols)
             if resolved and resolved != relative:
-                targets.add(resolved)
+                record(resolved, attr)
             break
     if relative.startswith("workflow/"):
         nodes, _, local_warnings = _analysis_nodes(
-            entities[relative], _analysis_entry_name(relative),
+            entities[relative], analyzed_name,
         )
         warnings.update(local_warnings)
         called_names = {
@@ -767,7 +789,7 @@ def _direct_calls(
                 and target_source == entities[relative]
                 and _callable_name(target) in called_names
             ):
-                targets.add(target)
+                record(target, _callable_name(target))
     return sorted(targets), warnings
 
 
@@ -800,8 +822,7 @@ def _analysis_nodes(
     }
     entry = functions.get(entry_name)
     if entry is None:
-        warnings.add("callable_source_not_found")
-        return [], trees, warnings
+        return list(trees), trees, warnings
     reachable: list[ast.AST] = []
     pending = deque([entry])
     seen: set[str] = set()
@@ -812,10 +833,17 @@ def _analysis_nodes(
         seen.add(node.name)
         reachable.append(node)
         for call in ast.walk(node):
-            if isinstance(call, ast.Call) and isinstance(call.func, ast.Name):
-                helper = functions.get(call.func.id)
-                if helper is not None and helper.name not in seen:
-                    pending.append(helper)
+            if not isinstance(call, ast.Call):
+                continue
+            func = call.func
+            name = (
+                func.id if isinstance(func, ast.Name)
+                else func.attr if isinstance(func, ast.Attribute)
+                else None
+            )
+            helper = functions.get(name) if name else None
+            if helper is not None and helper.name not in seen:
+                pending.append(helper)
     return reachable, trees, warnings
 
 
@@ -938,6 +966,7 @@ def _program_logic(relative: str) -> dict:
     if relative not in entities:
         raise FileNotFoundError(relative)
     symbols = _package_symbol_index(entities)
+    focus: dict[str, str | None] = {relative: _analysis_entry_name(relative)}
     depths = {relative: 0}
     queue = deque([relative])
     edges: list[dict[str, str]] = []
@@ -945,7 +974,12 @@ def _program_logic(relative: str) -> dict:
     analysis_warnings: set[str] = set()
     while queue and len(depths) < 128:
         source = queue.popleft()
-        targets, warnings = _direct_calls(source, entities, symbols)
+        incoming: dict[str, str | None] = {}
+        targets, warnings = _direct_calls(
+            source, entities, symbols,
+            entry_name=focus.get(source, _UNSET),
+            reached=incoming,
+        )
         analysis_warnings.update(warnings)
         for target in targets:
             edge = (source, target)
@@ -955,7 +989,12 @@ def _program_logic(relative: str) -> dict:
             if target not in depths:
                 depths[target] = depths[source] + 1
                 queue.append(target)
-        entry_name = _analysis_entry_name(source)
+            mark = incoming.get(target)
+            if target not in focus:
+                focus[target] = mark
+            elif focus[target] != mark:
+                focus[target] = None
+        entry_name = focus.get(source)
         primitives, warnings = _called_agentic_primitives(
             entities[source], entry_name=entry_name,
         )

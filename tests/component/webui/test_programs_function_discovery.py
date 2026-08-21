@@ -102,13 +102,17 @@ def test_programs_treats_workflow_as_category_not_program() -> None:
     assert "agentic_programming/llm" not in notice_ids
     assert "workflow/goal" not in notice_ids
     assert "workflow/goal/state" in notice_ids
-    goal_ids = {node["id"] for node in _program_logic("workflow/goal")["nodes"]}
+    goal_logic = _program_logic("workflow/goal")
+    goal_ids = {node["id"] for node in goal_logic["nodes"]}
+    goal_edges = {(edge["source"], edge["target"]) for edge in goal_logic["edges"]}
     assert "agentic_programming/agent" in goal_ids
     assert "workflow/goal/judge" in goal_ids
     assert "workflow/goal/refinement" in goal_ids
     assert "workflow/goal/loop" in goal_ids
     assert "workflow/goal/notices" in goal_ids
     assert "workflow/goal/command" not in goal_ids
+    assert ("workflow/goal/loop", "workflow/goal/judge") not in goal_edges
+    assert ("workflow/goal", "workflow/goal/judge") in goal_edges
     docs_entry = _list_entries("workflow/docs_question")["entries"]
     assert [
         (entry["callable_name"], entry["logic_path"])

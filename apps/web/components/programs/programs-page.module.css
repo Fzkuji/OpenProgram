@@ -376,6 +376,10 @@
   vector-effect: non-scaling-stroke;
 }
 
+.graphSkipEdge {
+  stroke: color-mix(in srgb, var(--theme-accent) 38%, var(--border-light));
+}
+
 .graphLines marker path {
   fill: color-mix(in srgb, var(--theme-accent) 62%, var(--border-light));
   stroke: none;
