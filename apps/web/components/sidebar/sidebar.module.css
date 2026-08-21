@@ -46,11 +46,11 @@
      on that axis. Child rows are 28px, so last-dot center is 14px
      from the bottom (bottom: 14px — no stub past the last circle).
      Header is --ui-list-h (30px) with a 20px FoldersIcon + 1px gap;
-     top: -12px grows the line up into the folder instead of leaving
-     a gap under the icon. */
+     top: -4px leaves a short breath under the folder instead of leaving
+     the folder icon. */
   left: 17px;
   transform: translateX(-50%);
-  top: -12px;
+  top: -4px;
   bottom: 14px;
   width: 1px;
   background: var(--border);
