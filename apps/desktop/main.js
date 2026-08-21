@@ -1861,6 +1861,20 @@ function stopFindView(ctx, id, action) {
   }
 }
 
+async function captureView(ctx, id) {
+  const record = recordFor(ctx, id);
+  if (!record) return null;
+  try {
+    const image = await record.view.webContents.capturePage();
+    if (!image || (typeof image.isEmpty === "function" && image.isEmpty())) {
+      return null;
+    }
+    return image.toDataURL();
+  } catch (_error) {
+    return null;
+  }
+}
+
 function zoomView(ctx, id, action) {
   const record = recordFor(ctx, id);
   if (!record || !["in", "out", "reset"].includes(action)) return null;
@@ -2711,6 +2725,10 @@ function registerWebTabIpc() {
   ipcMain.handle("webtab:print", (event, id) => {
     const ctx = contextForSender(event);
     return ctx ? printView(ctx, id) : false;
+  });
+  ipcMain.handle("webtab:capture", (event, id) => {
+    const ctx = contextForSender(event);
+    return ctx ? captureView(ctx, id) : null;
   });
   ipcMain.handle("history:list", (_event, options) => {
     try {

@@ -97,6 +97,8 @@ export interface DesktopWebTabApi {
   stopFind?(id: string, action: "clearSelection" | "keepSelection" | "activateSelection"): void;
   zoom?(id: string, action: "in" | "out" | "reset"): Promise<number | null>;
   print?(id: string): Promise<boolean>;
+  /** Snapshot of the native page as a data URL, for PiP drag placeholders. */
+  capture?(id: string): Promise<string | null>;
   /** Navigation/title/loading events pushed from main; returns the
    *  unsubscribe function. */
   onState(cb: (state: DesktopWebTabState) => void): () => void;

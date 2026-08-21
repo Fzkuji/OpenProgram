@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
     stopFind: (id, action) => ipcRenderer.send("webtab:stop-find", id, action),
     zoom: (id, action) => ipcRenderer.invoke("webtab:zoom", id, action),
     print: (id) => ipcRenderer.invoke("webtab:print", id),
+    capture: (id) => ipcRenderer.invoke("webtab:capture", id),
     onState: (cb) => {
       const listener = (_event, state) => cb(state);
       ipcRenderer.on("webtab:state", listener);

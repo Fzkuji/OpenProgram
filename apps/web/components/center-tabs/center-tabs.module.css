@@ -1288,10 +1288,20 @@
   flex-direction: column;
 }
 .webPipBody {
+  position: relative;
   flex: 1;
   min-height: 0;
   margin: 0 10px 10px 0;
   background: var(--bg-primary);
+}
+.webPipShot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  display: none;
 }
 .webPipResize {
   position: absolute;

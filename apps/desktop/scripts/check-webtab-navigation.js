@@ -443,6 +443,7 @@ function controlledRecord(id, currentUrl = "", loading = false) {
     zoom: [],
     print: [],
     printToPDF: [],
+    capturePage: 0,
   };
   let zoomFactor = 1;
   const webContents = {
@@ -502,6 +503,13 @@ function controlledRecord(id, currentUrl = "", loading = false) {
         return new Promise((resolve) => { pendingPrintPdfResolve = resolve; });
       }
       return Promise.resolve(printPdfResult);
+    },
+    capturePage() {
+      nativeCalls.capturePage += 1;
+      return Promise.resolve({
+        isEmpty: () => false,
+        toDataURL: () => "data:image/png;base64,TEST",
+      });
     },
     isDestroyed() { return webContentsDestroyed; },
     close() { closeCalls += 1; },
@@ -676,6 +684,7 @@ function checkPreloadWindowIdentity() {
   exposed.webTab.stopFind("pane-a", "clearSelection");
   exposed.webTab.zoom("pane-a", "in");
   exposed.webTab.print("pane-a");
+  exposed.webTab.capture("pane-a");
   assert.deepEqual(sent.slice(-2), [
     ["webtab:find", "pane-a", "needle", { forward: false, findNext: true }],
     ["webtab:stop-find", "pane-a", "clearSelection"],
@@ -683,6 +692,7 @@ function checkPreloadWindowIdentity() {
   assert.deepEqual(invoked, [
     ["webtab:zoom", "pane-a", "in"],
     ["webtab:print", "pane-a"],
+    ["webtab:capture", "pane-a"],
   ]);
 }
 
@@ -1091,6 +1101,7 @@ async function checkSenderOwnership() {
   ipcListeners.get("webtab:stop-find")(eventB, "owned-a", "clearSelection");
   assert.equal(await ipcHandlers.get("webtab:zoom")(eventB, "owned-a", "in"), null);
   assert.equal(await ipcHandlers.get("webtab:print")(eventB, "owned-a"), false);
+  assert.equal(await ipcHandlers.get("webtab:capture")(eventB, "owned-a"), null);
   ipcListeners.get("webtab:set-bounds")(
     eventB,
     "owned-a",
@@ -1122,6 +1133,7 @@ async function checkSenderOwnership() {
     zoom: [],
     print: [],
     printToPDF: [],
+    capturePage: 0,
   });
   assert.deepEqual(a.currentBounds(), initialBounds);
   assert.equal(a.visibility.at(-1), true);
@@ -1143,6 +1155,11 @@ async function checkSenderOwnership() {
   assert.equal(await ipcHandlers.get("webtab:zoom")(eventA, "owned-a", "out"), 100);
   assert.equal(await ipcHandlers.get("webtab:zoom")(eventA, "owned-a", "reset"), 100);
   assert.equal(await ipcHandlers.get("webtab:print")(eventA, "owned-a"), true);
+  assert.equal(
+    await ipcHandlers.get("webtab:capture")(eventA, "owned-a"),
+    "data:image/png;base64,TEST",
+  );
+  assert.equal(a.nativeCalls.capturePage, 1);
   assert.deepEqual(plain(a.nativeCalls.find), [
     ["needle", { forward: false, findNext: true }],
     ["needle", { forward: true, findNext: false }],
@@ -2426,6 +2443,10 @@ async function checkLockedRecordsRejectOrdinaryIpc() {
     await ipcHandlers.get("webtab:print")(eventFor(destinationWin), "locked-ipc-web"),
     false,
   );
+  assert.equal(
+    await ipcHandlers.get("webtab:capture")(eventFor(destinationWin), "locked-ipc-web"),
+    null,
+  );
   ipcListeners.get("webtab:show")(eventFor(destinationWin), "locked-ipc-web");
   ipcListeners.get("webtab:hide")(eventFor(destinationWin), "locked-ipc-web");
   ipcListeners.get("webtab:sync-visible")(eventFor(destinationWin), [{
@@ -2461,6 +2482,7 @@ async function checkLockedRecordsRejectOrdinaryIpc() {
     zoom: [],
     print: [],
     printToPDF: [],
+    capturePage: 0,
   });
   assert.deepEqual(controlled.currentBounds(), boundsBefore);
   assert.equal(controlled.visibility.length, visibilityCallsBefore);

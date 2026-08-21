@@ -23,7 +23,7 @@ import { isWebTabOccluded, measureWebTabBounds } from "@/lib/web-tab-bounds";
 import styles from "./center-tabs.module.css";
 
 const BOUNDS_THROTTLE_MS = 100;
-const DRAG_BOUNDS_MS = 33;
+const pipSnapshots = new Map<string, string>();
 
 type PipDrag = {
   kind: "move" | "resize";
@@ -87,7 +87,8 @@ export function WebTabPip() {
   const rafRef = useRef(0);
   const throttleRef = useRef(0);
   const lastPublishRef = useRef(0);
-  const lastDragBoundsRef = useRef(0);
+  const shotRef = useRef<HTMLImageElement>(null);
+  const captureGenRef = useRef(0);
   const reportRef = useRef<(immediate?: boolean) => void>(() => {});
   const bridge = desktopBridge();
   const url = tab?.url || (tabId?.startsWith("w:") ? tabId.slice(2) : "");
@@ -229,16 +230,16 @@ export function WebTabPip() {
     el.style.bottom = "auto";
   };
 
-  const followNativeView = () => {
-    if (!bridge || !tabId) return;
-    const body = bodyRef.current;
-    if (!body) return;
-    const now = Date.now();
-    if (now - lastDragBoundsRef.current < DRAG_BOUNDS_MS) return;
-    lastDragBoundsRef.current = now;
-    const bounds = measureWebTabBounds(body);
-    if (bounds.width <= 0 || bounds.height <= 0) return;
-    registerVisibleWebTabBounds(bridge, tabId, bounds);
+  const showShot = (dataUrl: string | null) => {
+    const img = shotRef.current;
+    if (!img) return;
+    if (dataUrl) {
+      img.src = dataUrl;
+      img.style.display = "block";
+      return;
+    }
+    img.removeAttribute("src");
+    img.style.display = "none";
   };
 
   const commitRect = (el: HTMLElement, next: WebTabPipRect) => {
@@ -273,7 +274,20 @@ export function WebTabPip() {
     pendingRectRef.current = dragRef.current.origin;
     el.classList.add(styles.webPipDragging);
     el.style.willChange = kind === "move" ? "transform" : "left, top, width, height";
-    lastDragBoundsRef.current = 0;
+    if (bridge && tabId) {
+      const gen = ++captureGenRef.current;
+      showShot(pipSnapshots.get(tabId) ?? null);
+      const capture = bridge.webTab.capture;
+      if (typeof capture === "function") {
+        void capture(tabId).then((dataUrl) => {
+          if (!dataUrl) return;
+          pipSnapshots.set(tabId, dataUrl);
+          if (captureGenRef.current === gen && dragRef.current) showShot(dataUrl);
+        });
+      }
+      removeVisibleWebTabBounds(bridge, tabId);
+      setWebTabReady(tabId, false);
+    }
   };
 
   const onDragPointerMove = (event: React.PointerEvent<HTMLElement>) => {
@@ -297,7 +311,6 @@ export function WebTabPip() {
       const node = rootRef.current;
       if (!live || !current || !node) return;
       previewRect(node, current, live);
-      followNativeView();
     });
   };
 
@@ -312,11 +325,13 @@ export function WebTabPip() {
     const next = pendingRectRef.current;
     dragRef.current = null;
     pendingRectRef.current = null;
+    captureGenRef.current += 1;
     if (el && next) commitRect(el, next);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     reportRef.current(true);
+    showShot(null);
   };
 
   const placed = !!rect;
@@ -389,6 +404,8 @@ export function WebTabPip() {
       </div>
       <div className={styles.webPipStage}>
         <div ref={bodyRef} className={styles.webPipBody}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img ref={shotRef} className={styles.webPipShot} alt="" />
           {bridge ? null : url.startsWith("file:") ? (
             <div className={styles.webPipFallback}>
               {text(
