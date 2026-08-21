@@ -368,7 +368,7 @@ def test_record_changes_create_update_delete_and_rebuild_views(tmp_path):
     assert (root / "timeline/2026/02/02.md").is_file()
 
 
-def test_record_sources_render_short_labels_and_preserve_v2_identity(
+def test_record_sources_preserve_agent_labels_and_v2_identity(
     tmp_path, monkeypatch,
 ):
     from openprogram.memory.management import MemoryWorkspace
@@ -403,11 +403,11 @@ def test_record_sources_render_short_labels_and_preserve_v2_identity(
                     },
                     {
                         "source": records[1].source_id,
-                        "label": "one.two.three.four.five.six.seven",
+                        "label": "one two three four five six seven",
                     },
                     {
                         "source": records[2].source_id,
-                        "label": "mem_abcd1234",
+                        "label": records[2].source_id,
                     },
                 ],
                 "destination": {
@@ -420,10 +420,9 @@ def test_record_sources_render_short_labels_and_preserve_v2_identity(
         )
 
     topic = (root / "topics/labelled.md").read_text(encoding="utf-8")
-    assert "[这是一个超过八个](" in topic
-    assert "[one.two.three.four.five.six](" in topic
-    assert "[相关内容](" in topic
-    assert f"[{records[0].source_id}]" not in topic
+    assert "[这是一个超过八个字的标签](" in topic
+    assert "[one two three four five six seven](" in topic
+    assert f"[{records[2].source_id}](" in topic
     scans = 0
     original_scan = syntax.scan_source_archive
 
@@ -437,9 +436,9 @@ def test_record_sources_render_short_labels_and_preserve_v2_identity(
     assert scans == 1
     assert unit.source_refs == tuple(record.source_id for record in records)
     assert unit.source_labels == (
-        "这是一个超过八个",
-        "one.two.three.four.five.six",
-        "相关内容",
+        "这是一个超过八个字的标签",
+        "one two three four five six seven",
+        records[2].source_id,
     )
     from openprogram.memory.retrieval.bm25 import MemoryBM25Index
 
@@ -451,9 +450,9 @@ def test_record_sources_render_short_labels_and_preserve_v2_identity(
     assert indexed.refs == list(unit.source_refs)
     assert indexed.trust_state == "trusted"
     timeline = (root / "timeline/2026/08/20.md").read_text(encoding="utf-8")
-    assert "[这是一个超过八个](" in timeline
-    assert "[one.two.three.four.five.six](" in timeline
-    assert "[相关内容](" in timeline
+    assert "[这是一个超过八个字的标签](" in timeline
+    assert "[one two three four five six seven](" in timeline
+    assert f"[{records[2].source_id}](" in timeline
 
     with closing(MemoryWorkspace(root)) as workspace:
         workspace.update(
@@ -539,7 +538,7 @@ def test_source_labels_support_encoded_and_legacy_provider_archives(tmp_path):
     assert "legacy-thread.md#" in compatibility
 
 
-def test_direct_writer_source_label_is_resolved_by_runtime(tmp_path):
+def test_direct_writer_preserves_agent_source_labels(tmp_path):
     from openprogram.memory.management import MemoryWorkspace
     from openprogram.memory.markdown import parse_topic_tree
     from openprogram.memory.runtime.state import SourceRecord
@@ -555,24 +554,24 @@ def test_direct_writer_source_label_is_resolved_by_runtime(tmp_path):
         (workspace.stage_dir / "topics/direct.md").write_text(
             "# Direct\n\n"
             "A direct writer record.[^e1]\n\n"
-            "A direct record with an invalid label.[^e2]\n\n"
-            "A direct record with another Source ID as its label.[^e3]\n\n"
-            "A direct record with a Runtime ID as its label.[^e4]\n\n"
+            "A direct record with a sequence label.[^e2]\n\n"
+            "A direct record with a date label.[^e3]\n\n"
+            "A direct record with a URL label.[^e4]\n\n"
             "[^e1]: Time: `2026-08-20`; Sources: "
-            f"[调研范围]({record.source_id})\n"
+            f"[Owner 1]({record.source_id})\n"
             "[^e2]: Time: `2026-08-20`; Sources: "
-            f"[{record.source_id}]({record.source_id})\n"
+            f"[S1]({record.source_id})\n"
             "[^e3]: Time: `2026-08-20`; Sources: "
-            f"[D1:1]({record.source_id})\n"
+            f"[2026-08-20]({record.source_id})\n"
             "[^e4]: Time: `2026-08-20`; Sources: "
-            f"[message_abcdef12]({record.source_id})\n",
+            f"[https://example.com/source]({record.source_id})\n",
             encoding="utf-8",
         )
         workspace.commit_edits(*baseline)
 
     topic = (root / "topics/direct.md").read_text(encoding="utf-8")
-    assert "[调研范围](../sources/openprogram/_v2/thread-1.md#source-" in topic
-    assert "[相关内容](../sources/openprogram/_v2/thread-1.md#source-" in topic
+    for label in ("Owner 1", "S1", "2026-08-20", "https://example.com/source"):
+        assert f"[{label}](../sources/openprogram/_v2/thread-1.md#source-" in topic
     units = parse_topic_tree(root / "topics")
     assert [unit.source_refs for unit in units] == [
         (record.source_id,),
@@ -581,10 +580,10 @@ def test_direct_writer_source_label_is_resolved_by_runtime(tmp_path):
         (record.source_id,),
     ]
     assert [unit.source_labels for unit in units] == [
-        ("调研范围",),
-        ("相关内容",),
-        ("相关内容",),
-        ("相关内容",),
+        ("Owner 1",),
+        ("S1",),
+        ("2026-08-20",),
+        ("https://example.com/source",),
     ]
 
 

@@ -238,26 +238,10 @@ def test_writer_jsonl_round_trips_untrusted_fields_without_new_records():
 
 def test_writer_prompt_requests_short_semantic_source_labels():
     from openprogram.memory.prompts import SYSTEM_PROMPT
-    from openprogram.memory.markdown.syntax import normalize_source_label
 
     assert "[plain label](source handle)" in SYSTEM_PROMPT
     assert "at most 8 visible characters" in SYSTEM_PROMPT
     assert "at most 6 words" in SYSTEM_PROMPT
-    assert normalize_source_label("Owner 1") == "相关内容"
-    assert normalize_source_label("【S1】") == "相关内容"
-    assert normalize_source_label("e-ff12decbb2") == "相关内容"
-    assert normalize_source_label("9227cbb2") == "相关内容"
-    assert normalize_source_label("source-c409e6ed3f938d97") == "相关内容"
-    assert normalize_source_label("9227cbb2_reply") == "相关内容"
-    assert normalize_source_label("mem_abcd1234") == "相关内容"
-    assert normalize_source_label("message_abcdef12") == "相关内容"
-    assert normalize_source_label("D1:1") == "相关内容"
-    assert normalize_source_label("one,two,three,four,five,six,seven") == (
-        "one,two,three,four,five,six"
-    )
-    assert normalize_source_label("one.two.three.four.five.six.seven") == (
-        "one.two.three.four.five.six"
-    )
 
 
 def test_source_text_stays_literal_through_writer_and_archive(tmp_path):

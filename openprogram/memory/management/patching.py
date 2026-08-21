@@ -24,7 +24,6 @@ from ..markdown.syntax import (
     CITATION_GROUP,
     LINK,
     SINGLE_CITATION,
-    normalize_source_label,
     render_definition,
     source_reference,
 )
@@ -407,7 +406,7 @@ def _parse_memory_changes(
                     )
                 ref = ref.strip()
                 refs_list.append(ref)
-                labels_list.append(normalize_source_label(label, ref))
+                labels_list.append(label)
             refs = tuple(refs_list)
             labels = tuple(labels_list)
         else:

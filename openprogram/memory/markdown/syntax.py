@@ -42,24 +42,6 @@ BLOCK_LINK = re.compile(rf"\[[^]]+\]\([^)#]*#\^(?P<id>{BLOCK_TARGET_ID})\)")
 SOURCE_HANDLE = re.compile(
     r"^(D\d+:\d+|[^/\s,]+/[^/\s,]+/[^/\s,]+)(?:\s*(?:,|·)\s*|\s+|$)"
 )
-_CJK = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
-_MARKDOWN_LABEL = re.compile(r"[\[\]()`*_~<>\\]")
-_GENERIC_LABEL = re.compile(
-    r"(?i)^(?:(?:owner|user|assistant|system|speaker|source|reference|ref|item|record)"
-    r"(?:\s*[-:#]?\s*\d+)?|[a-z]\d+|(?:用户|助手|系统|说话人|来源|引用|记录|条目)\s*\d*)$"
-)
-_DATE_LABEL = re.compile(r"^\d{4}(?:[-/]\d{1,2}){0,2}$")
-_UUID_LABEL = re.compile(
-    r"(?i)^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$"
-)
-_RUNTIME_ID_LABEL = re.compile(
-    r"(?i)^(?:D\d+:\d+|"
-    r"(?:(?:e|source|evidence|event|memory|mem|message|msg|block|thread|turn|reply)"
-    r"[-_])?[0-9a-f]{8,}(?:_?reply)?)$"
-)
-_ENGLISH_WORD = re.compile(r"[^\W_]+(?:['’][^\W_]+)*", re.UNICODE)
-
-
 def definition_match(line: str) -> re.Match[str] | None:
     """Match canonical definitions plus legacy definitions for migration."""
     return DEFINITION.match(line) or LEGACY_DEFINITION.match(line)
@@ -74,46 +56,6 @@ def render_definition(
         f"[^{citation_id}]: Time: `{when or 'undated'}`; Sources: "
         + ", ".join(sources)
     )
-
-
-def normalize_source_label(value: str, source_ref: str | None = None) -> str:
-    """Return a short plain display label; Source identity stays separate."""
-    raw_label = "".join(
-        character if character.isprintable() else " " for character in value
-    )
-    raw_label = " ".join(raw_label.split())
-    id_candidate = re.sub(r"^[^\w]+|[^\w]+$", "", raw_label)
-    if _RUNTIME_ID_LABEL.fullmatch(id_candidate):
-        return "相关内容"
-    label = raw_label
-    label = " ".join(_MARKDOWN_LABEL.sub("", label).split())
-    label = re.sub(r"^[^\w]+|[^\w]+$", "", label)
-    if (
-        not label
-        or label == source_ref
-        or "://" in label
-        or "/" in label
-        or _GENERIC_LABEL.fullmatch(label)
-        or _DATE_LABEL.fullmatch(label)
-        or _UUID_LABEL.fullmatch(label)
-        or _RUNTIME_ID_LABEL.fullmatch(label)
-    ):
-        return "相关内容"
-    if _CJK.search(label):
-        visible = 0
-        kept = []
-        for character in label:
-            if not character.isspace():
-                visible += 1
-                if visible > 8:
-                    break
-            kept.append(character)
-        label = "".join(kept).strip()
-    else:
-        words = list(_ENGLISH_WORD.finditer(label))
-        if len(words) > 6:
-            label = label[:words[5].end()].strip()
-    return label or "相关内容"
 
 
 def is_plain_source_handle(value: str) -> bool:

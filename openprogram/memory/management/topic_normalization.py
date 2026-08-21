@@ -21,7 +21,6 @@ from ..markdown.syntax import (
     LINK,
     SINGLE_CITATION,
     is_plain_source_handle,
-    normalize_source_label,
 )
 
 # Footnote labels the writer supplies, e.g. [^e1]. Stable IDs the Runtime
@@ -291,7 +290,7 @@ class TopicNormalizationMixin:
                                 sources.append(self._source_link(
                                     topic_path,
                                     target,
-                                    normalize_source_label(label, target),
+                                    label,
                                 ))
                             else:
                                 sources.append(f"[{label}]({target})")
