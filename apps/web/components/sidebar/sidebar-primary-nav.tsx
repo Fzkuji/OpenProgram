@@ -15,7 +15,7 @@ import {
   BotIcon,
   BoxesIcon,
   ClockIcon,
-  MessageCircleIcon,
+  HistoryIcon,
 } from "../animated-icons";
 import { useTranslation } from "@/lib/i18n";
 import { refreshFunctionsList } from "@/lib/state/functions-actions";
@@ -160,7 +160,7 @@ export function SidebarPrimaryNav() {
         || pathname.startsWith("/memory")
         || pathname.startsWith("/history"),
       label: t("nav.history"),
-      icon: MessageCircleIcon,
+      icon: HistoryIcon,
     },
     {
       href: "/scheduler",
