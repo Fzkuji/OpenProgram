@@ -201,8 +201,8 @@ export function migrateAppearancePreferences(
     if (!modeKnown) mode = legacy.mode;
   }
   if (style === "custom") style = DEFAULT_THEME_STYLE;
-  style = coerceThemeStyle(style);
-  mode = coerceThemeMode(mode);
+  const normalizedStyle = coerceThemeStyle(style);
+  const normalizedMode = coerceThemeMode(mode);
 
   const hasCss = Boolean(input.customCss?.trim());
   const enabledFlag = input.customCssEnabled;
@@ -217,8 +217,8 @@ export function migrateAppearancePreferences(
   if (storedStyleIsCustom && hasCss) customCssEnabled = true;
 
   return {
-    style,
-    mode,
+    style: normalizedStyle,
+    mode: normalizedMode,
     customCssEnabled,
     accent: coerceAccentColor(input.accent),
     migratedFromCustom,

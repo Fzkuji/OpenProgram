@@ -17,28 +17,33 @@ import styles from "@/components/settings/settings-page.module.css";
  *    appear the instant they click the Channels tab, instead of a
  *    grey rectangle. The body is still a skeleton until the page
  *    chunk lands.
+ *
+ * Memory intentionally omits a repeated content header. Providers and
+ * the other titled tabs keep their page title in the fallback.
  */
-const TAB_KEYS: Record<string, "settings.tab.providers"|"settings.tab.search"|"settings.tab.channels"|"settings.tab.general"|"settings.tab.memory"> = {
+const TAB_KEYS: Record<string, "settings.tab.providers"|"settings.tab.search"|"settings.tab.channels"|"settings.tab.general"> = {
   providers: "settings.tab.providers",
   search: "settings.tab.search",
   channels: "settings.tab.channels",
   general: "settings.tab.general",
-  memory: "settings.tab.memory",
 };
 
 export default function SettingsLoading() {
   const { t } = useTranslation();
   const pathname = usePathname() || "";
   const tab = pathname.split("/")[2] || "general";
+  const headerless = tab === "memory";
   const key = TAB_KEYS[tab];
   const title = key ? t(key) : t("settings.title");
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h2 className={styles.pageTitle}>{title}</h2>
-        <div className={styles.skelMeta} />
-      </div>
+      {!headerless && (
+        <div className={styles.pageHeader}>
+          <h2 className={styles.pageTitle}>{title}</h2>
+          <div className={styles.skelMeta} />
+        </div>
+      )}
       <div className={styles.pageBody}>
         <div className={styles.skelBlock} />
         <div className={styles.skelBlock} />

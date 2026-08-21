@@ -491,7 +491,7 @@
       <li>Topics, Timeline, Recent, and Core form a vertical section list above the Topic tree.</li>
       <li>At a 720px viewport the section list, tree, and content stack without removing Memory navigation.</li>
       <li>Settings reads and writes the same schema used by the CLI and TUI.</li>
-      <li>Memory uses the same fixed page header, 28px content gutter, 10px section-card radius, tertiary card surface, and compact row spacing as General and System. The lifecycle summary is the only Memory-specific visual structure.</li>
+      <li>Memory reuses the shared Settings page, body, typography, section-card, and compact row contracts, but does not render a repeated content header. The lifecycle summary is the only Memory-specific visual structure.</li>
       <li>Every editable Memory control persists through <code>POST /api/settings</code> immediately after the user changes it. The page has no separate Save button; a rejected write restores the previous value and exposes an inline error.</li>
       <li>Opening <code>/settings/memory</code> renders the editable settings as soon as their configuration requests finish; workspace and embedding status load independently and never gate the whole page.</li>
       <li><code>GET /api/memory/status?settings=true</code> returns only the workspace path and fixed embedding snapshot availability. It does not parse Topics, walk Sources, compute revisions, or scan sessions and writer state.</li>

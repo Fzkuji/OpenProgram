@@ -35,7 +35,7 @@ const KEYS = [
 ] as const;
 
 export function MemorySettings() {
-  const { t, text } = useTranslation();
+  const { text } = useTranslation();
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [models, setModels] = useState<Model[]>([]);
   const [memoryStatus, setMemoryStatus] = useState<MemoryStatus | null>(null);
@@ -113,18 +113,8 @@ export function MemorySettings() {
     }
   }
 
-  const pageHeader = (
-    <div className={shared.pageHeader}>
-      <h2 className={shared.pageTitle}>{t("settings.tab.memory")}</h2>
-      <p className={shared.pageMeta}>{text(
-        "Configure how OpenProgram writes, stores, and recalls long-term memory.",
-        "配置 OpenProgram 写入、存储和检索长期记忆的方式。",
-      )}</p>
-    </div>
-  );
-
   if (!loaded) {
-    return <div className={shared.page}>{pageHeader}<div className={styles.loading}>{text("Loading…", "加载中…")}</div></div>;
+    return <div className={`${shared.page} ${styles.memoryPage}`}><div className={styles.loading}>{text("Loading…", "加载中…")}</div></div>;
   }
 
   const backend = String(draft["memory.backend"] ?? "local");
@@ -136,9 +126,8 @@ export function MemorySettings() {
   const controlsDisabled = !settingsReady || saving || installing;
 
   return (
-    <div className={shared.page}>
-      {pageHeader}
-      <div className={shared.pageBody}>
+    <div className={`${shared.page} ${styles.memoryPage}`}>
+      <div className={`${shared.pageBody} ${styles.pageBody}`}>
         {message && <p className={styles.error} role="alert">{message}</p>}
         <div className={styles.lifecycle} aria-label={text("Memory lifecycle", "Memory 生命周期")}>
           <LifecycleStep icon={<Database size={15} />} label={text("Capture", "采集")} value={text("Conversation archive", "对话归档")} />
@@ -224,11 +213,11 @@ function LifecycleStep({ icon, label, value, warn = false }: { icon: ReactNode; 
 }
 
 function SettingsSection({ title, children }: { title: string; children: ReactNode }) {
-  return <section><h3 className={shared.sectionTitle}>{title}</h3><div className={shared.card}>{children}</div></section>;
+  return <section><h3 className={shared.sectionTitle}>{title}</h3><div className={styles.card}>{children}</div></section>;
 }
 
 function SettingsRow({ label, description, children }: { label: string; description: string; children: ReactNode }) {
-  return <div className={`${shared.row} ${shared.rowTop} ${shared.systemRow} ${styles.settingsRow}`}><div className={shared.label}><div>{label}</div><div className={styles.rowDescription}>{description}</div></div><div className={styles.controls}>{children}</div></div>;
+  return <div className={styles.row}><div className={styles.rowCopy}><strong>{label}</strong><span>{description}</span></div><div className={styles.controls}>{children}</div></div>;
 }
 
 function Status({ children, live = false, missing = false }: { children: ReactNode; live?: boolean; missing?: boolean }) {
