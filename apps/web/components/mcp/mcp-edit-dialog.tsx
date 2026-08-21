@@ -15,6 +15,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
@@ -249,8 +250,7 @@ export function EditDialog({
               value={state.transport}
               onChange={(e) =>
                 setState({ ...state, transport: e.target.value as EditTarget["transport"] })}
-              className="flex h-[var(--ui-button-h)] rounded-[var(--ui-button-radius)] border bg-background px-3 font-mono text-sm
-                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="ui-text-input flex h-[var(--ui-button-h)] w-full rounded-[var(--ui-button-radius)] border border-[var(--border)] bg-[var(--bg-input)] px-3 font-mono text-sm focus:outline-none focus:border-[color:var(--accent-blue)]"
             >
               <option value="local">local (stdio subprocess)</option>
               <option value="http">http (Streamable HTTP)</option>
@@ -273,14 +273,12 @@ export function EditDialog({
 
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="mcp-env">{text("Environment (KEY=VALUE per line)", "环境变量（每行 KEY=VALUE）")}</Label>
-                <textarea
+                <Textarea
                   id="mcp-env"
                   value={state.env}
                   onChange={(e) => setState({ ...state, env: e.target.value })}
                   placeholder="GITHUB_PERSONAL_ACCESS_TOKEN=ghp_..."
-                  className="flex min-h-[100px] rounded-md border bg-background px-3 py-2 font-mono text-sm
-                              placeholder:text-muted-foreground
-                              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="min-h-[100px] font-mono text-sm"
                 />
                 <StoredNames names={state.storedEnvNames} />
               </div>
@@ -300,14 +298,12 @@ export function EditDialog({
 
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="mcp-headers">{text("Headers (Key: Value per line)", "请求头（每行 Key: Value）")}</Label>
-                <textarea
+                <Textarea
                   id="mcp-headers"
                   value={state.headers}
                   onChange={(e) => setState({ ...state, headers: e.target.value })}
                   placeholder="X-Tenant: acme"
-                  className="flex min-h-[60px] rounded-md border bg-background px-3 py-2 font-mono text-sm
-                              placeholder:text-muted-foreground
-                              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="min-h-[60px] font-mono text-sm"
                 />
                 <StoredNames names={state.storedHeaderNames} />
               </div>
@@ -319,8 +315,7 @@ export function EditDialog({
                   value={state.authKind}
                   onChange={(e) =>
                     setState({ ...state, authKind: e.target.value as EditTarget["authKind"] })}
-                  className="flex h-[var(--ui-button-h)] rounded-[var(--ui-button-radius)] border bg-background px-3 font-mono text-sm
-                              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="ui-text-input flex h-[var(--ui-button-h)] w-full rounded-[var(--ui-button-radius)] border border-[var(--border)] bg-[var(--bg-input)] px-3 font-mono text-sm focus:outline-none focus:border-[color:var(--accent-blue)]"
                 >
                   <option value="none">{text("none", "无")}</option>
                   <option value="bearer">{text("bearer token (static)", "Bearer token（静态）")}</option>
