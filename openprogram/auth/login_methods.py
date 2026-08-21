@@ -47,6 +47,7 @@ _METHODS: dict[str, list[LoginMethod]] = {
     "gemini-subscription": [("import_from_cli", "Import from ~/.gemini/oauth_creds.json")],
     "xai-subscription":    [
         ("pkce_oauth",  "Sign in with Grok (opens browser)"),
+        ("import_from_cli", "Import from ~/.grok/auth.json"),
         ("paste_token", "Paste Grok access token"),
     ],
     # NOTE: qwen has a credential source but no provider runtime / catalog entry,

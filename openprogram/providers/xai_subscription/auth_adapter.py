@@ -142,15 +142,100 @@ def register_xai_subscription_auth() -> None:
 register_xai_subscription_auth()
 
 
-def import_pasted_token(token: str, *, account_id: str = "default") -> Credential:
-    """Store a pasted SuperGrok access token as an OAuth credential.
 
-    Used when the user already has a bearer (browser page, ~/.grok/auth.json)
-    and just wants to drop it on the Grok Subscription card.
-    """
+def grok_cli_auth_path():
+    from pathlib import Path
+    return Path.home() / ".grok" / "auth.json"
+
+
+def _entry_from_grok_auth(raw: dict) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    # Official CLI keys the blob as "{issuer}::{client_id}".
+    for value in raw.values():
+        if isinstance(value, dict) and (value.get("key") or value.get("access_token")):
+            return value
+    return None
+
+
+def import_from_grok_cli(*, account_id: str = "default"):
+    """Copy ~/.grok/auth.json into the xai-subscription pool."""
+    import json
+    from datetime import datetime, timezone
+
+    path = grok_cli_auth_path()
+    if not path.is_file():
+        return None
+    try:
+        raw = json.loads(path.read_text())
+    except Exception:
+        return None
+    entry = _entry_from_grok_auth(raw)
+    if not entry:
+        return None
+    token = (entry.get("key") or entry.get("access_token") or "").strip()
+    if not token:
+        return None
+    refresh = (entry.get("refresh_token") or "").strip()
+    expires_at_ms = 0
+    exp = entry.get("expires_at")
+    if isinstance(exp, str) and exp:
+        try:
+            expires_at_ms = int(
+                datetime.fromisoformat(exp.replace("Z", "+00:00")).timestamp() * 1000
+            )
+        except ValueError:
+            expires_at_ms = 0
+    if not expires_at_ms:
+        expires_at_ms = int(time.time() * 1000) + 7 * 24 * 3600 * 1000
+    now_ms = int(time.time() * 1000)
+    meta = {}
+    if entry.get("email"):
+        meta["email"] = entry["email"]
+    return Credential(
+        provider_id=PROVIDER_ID,
+        account_id=account_id,
+        kind="oauth",
+        payload=CredentialData(
+            kind="oauth",
+            auth_value=token,
+            data={
+                "refresh_token": refresh,
+                "expires_at_ms": expires_at_ms,
+                "client_id": entry.get("oidc_client_id") or OAUTH_CLIENT_ID,
+                "token_endpoint": OAUTH_TOKEN_URL,
+            },
+        ),
+        status="valid",
+        created_at_ms=now_ms,
+        updated_at_ms=now_ms,
+        source="import_from_cli:xai-subscription",
+        metadata=meta,
+    )
+
+
+def import_pasted_token(token: str, *, account_id: str = "default") -> Credential:
+    """Store a pasted SuperGrok access token, or exchange a refresh token."""
     token = (token or "").strip()
     if not token:
         raise RuntimeError("no access token pasted")
+    # A pasted refresh token is short and not a JWT. Exchange it.
+    if token.count(".") != 2 and len(token) < 200:
+        stub = Credential(
+            provider_id=PROVIDER_ID,
+            account_id=account_id,
+            kind="oauth",
+            payload=CredentialData(
+                kind="oauth",
+                auth_value="",
+                data={
+                    "refresh_token": token,
+                    "client_id": OAUTH_CLIENT_ID,
+                    "token_endpoint": OAUTH_TOKEN_URL,
+                },
+            ),
+        )
+        return _xai_refresh(stub)
     now_ms = int(time.time() * 1000)
     return Credential(
         provider_id=PROVIDER_ID,
@@ -179,4 +264,6 @@ __all__ = [
     "build_pkce_config",
     "register_xai_subscription_auth",
     "import_pasted_token",
+    "import_from_grok_cli",
+    "grok_cli_auth_path",
 ]

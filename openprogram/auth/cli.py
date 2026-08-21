@@ -654,6 +654,15 @@ def _login_import_from_cli(provider: str, account: str) -> Credential:
                 f"Run `gemini auth login` first."
             )
         return cred
+    if provider == "xai-subscription":
+        from openprogram.providers.xai_subscription import auth_adapter
+        cred = auth_adapter.import_from_grok_cli(account_id=account)
+        if cred is None:
+            raise AuthConfigError(
+                f"{auth_adapter.grok_cli_auth_path()} not found. "
+                f"Run `grok login` first, or Sign in on the Grok Subscription card."
+            )
+        return cred
     if provider == "qwen":
         from openprogram.auth.sources.qwen_cli import QwenCliSource
         src = QwenCliSource(account_id=account)
