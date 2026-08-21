@@ -102,6 +102,10 @@
 .inputWrapper:focus-within {
   box-shadow: var(--composer-shadow-focus);
 }
+.inputWrapper[data-form-expanded] [data-fn-form-body] {
+  flex: 1 1 auto;
+  min-height: 0;
+}
 /* Crossfade overlay shown briefly during fn-form A → fn-form B
    switches. Sits on top of the new form (z-index 1) and fades opacity
    1→0 over one composer fade duration. Covers the whole wrapper —

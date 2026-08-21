@@ -142,39 +142,56 @@ export function useFnFormWrapper({
     el.style.maxHeight = "";
   }, [morphed, wrapperRef]);
 
-  // Keep header (send / close) on screen: remasure as the user types
-  // or expands, and never grow past the room left under the env chips
-  // and above the detached controls row.
+  // Type-to-grow up to ~1/4 of the chat view. Expand grows the whole
+  // card to ~1/2. Animate only on the expand toggle so typing does
+  // not flash, and never mutate body styles while measuring.
   useEffect(() => {
     if (!morphed || fnFormClosing) return;
     const el = wrapperRef.current;
     if (!el) return;
     let last = 0;
+    let lastExpanded = el.querySelector("[data-expanded]") != null;
     let measuring = false;
-    const apply = () => {
+    const apply = (animate: boolean) => {
       if (measuring) return;
       measuring = true;
-      const cap = availableComposerHeight(el);
+      const host = hostViewHeight(el);
+      const avail = availableComposerHeight(el);
       const expanded = !!el.querySelector("[data-expanded]");
-      const next = expanded ? cap : measureFnFormHeight(el);
+      const half = Math.max(160, host * 0.5);
+      const next = expanded
+        ? Math.min(half, avail)
+        : Math.min(measureFnFormHeight(el), avail);
       measuring = false;
-      if (Math.abs(next - last) < 1) return;
+      if (expanded) el.setAttribute("data-form-expanded", "");
+      else el.removeAttribute("data-form-expanded");
+      if (Math.abs(next - last) < 1 && expanded === lastExpanded) return;
       last = next;
+      lastExpanded = expanded;
+      if (!animate) el.style.transition = "none";
       el.style.height = `${next}px`;
-      el.style.maxHeight = `${cap}px`;
+      el.style.maxHeight = `${avail}px`;
+      if (!animate) {
+        void el.offsetHeight;
+        el.style.transition = "";
+      }
     };
-    const id = requestAnimationFrame(apply);
-    const ro = new ResizeObserver(() => requestAnimationFrame(apply));
+    const onResize = () => apply(false);
+    const id = requestAnimationFrame(() => apply(false));
+    const ro = new ResizeObserver(() => {
+      if (el.querySelector("[data-expanded]")) return;
+      apply(false);
+    });
     const body = el.querySelector("[data-fn-form-body]");
     if (body) ro.observe(body);
-    const mo = new MutationObserver(() => requestAnimationFrame(apply));
+    const mo = new MutationObserver(() => apply(true));
     mo.observe(el, { subtree: true, attributes: true, attributeFilter: ["data-expanded"] });
-    window.addEventListener("resize", apply);
+    window.addEventListener("resize", onResize);
     return () => {
       cancelAnimationFrame(id);
       ro.disconnect();
       mo.disconnect();
-      window.removeEventListener("resize", apply);
+      window.removeEventListener("resize", onResize);
     };
   }, [morphed, fnFormClosing, fnFormFunction, decisionKey, wrapperRef]);
 
@@ -269,20 +286,18 @@ function measureFnFormHeight(el: HTMLDivElement): number {
   ) as HTMLElement | null;
   const padBottom = parseFloat(getComputedStyle(el).paddingBottom);
   if (!header || !body) return el.scrollHeight;
-  const prevBodyStyle = body.getAttribute("style") || "";
-  body.style.flex = "0 0 auto";
-  body.style.height = "auto";
-  body.style.maxHeight = "none";
-  body.style.minHeight = "auto";
-  body.style.overflow = "visible";
-  const bodyContentH = body.offsetHeight;
-  if (prevBodyStyle) {
-    body.setAttribute("style", prevBodyStyle);
-  } else {
-    body.removeAttribute("style");
-  }
-  const raw = header.offsetHeight + bodyContentH + padBottom;
-  return Math.min(raw, availableComposerHeight(el));
+  const raw = header.offsetHeight + body.offsetHeight + padBottom;
+  return raw;
+}
+
+function hostViewHeight(el: HTMLDivElement): number {
+  const host = (
+    (el.closest("#chatView") as HTMLElement | null)
+    || ((el.closest("[data-composer-input-area]") as HTMLElement | null)
+      ?.offsetParent as HTMLElement | null)
+  );
+  const h = host?.clientHeight ?? 0;
+  return h >= 80 ? h : window.innerHeight;
 }
 
 /** Room left for the wrapper after env chips, the detached controls
