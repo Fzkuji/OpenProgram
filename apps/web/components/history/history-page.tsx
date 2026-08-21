@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Settings } from "lucide-react";
 
@@ -10,6 +10,7 @@ import { ProjectsPage } from "@/components/projects/projects-page";
 import { SearchInput } from "@/components/ui/search-input";
 import { ManagePageHeader, managePageStyles as shared } from "@/components/ui/manage-page";
 import { useTranslation } from "@/lib/i18n";
+import { pushPath } from "@/lib/shallow-nav";
 
 export type HistoryKind = "chats" | "projects" | "memory";
 
@@ -32,8 +33,14 @@ export function HistoryPage() {
   const pathname = usePathname() || "";
   const router = useRouter();
   const { t, text } = useTranslation();
-  const kind = kindFromPath(pathname);
+  const [kind, setKind] = useState(() => kindFromPath(pathname));
   const [query, setQueryState] = useState(persistedQuery);
+
+  useEffect(() => {
+    const onPop = () => setKind(kindFromPath(window.location.pathname));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   const setQuery = (value: string) => {
     persistedQuery = value;
@@ -41,7 +48,9 @@ export function HistoryPage() {
   };
 
   const goKind = (id: string) => {
-    router.push(kindHref(id));
+    const href = kindHref(id);
+    setKind(kindFromPath(href));
+    pushPath(href);
   };
 
   const actions = useMemo(() => {

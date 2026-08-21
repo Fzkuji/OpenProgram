@@ -86,7 +86,7 @@
   color: var(--text-muted);
   background: var(--bg-tertiary);
   padding: 1px 6px;
-  border-radius: 10px;
+  border-radius: var(--ui-list-radius);
   flex-shrink: 0;
 }
 
@@ -111,11 +111,11 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 32px;
+  height: var(--ui-button-h);
   padding: 0 12px;
   background: var(--bg-primary);
   border: 0.5px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--ui-button-radius);
   font-size: 13px;
   color: var(--text-primary);
   cursor: pointer;

@@ -148,14 +148,14 @@
   color: var(--text-muted);
   background: var(--bg-tertiary);
   padding: 1px 6px;
-  border-radius: 10px;
+  border-radius: var(--ui-list-radius);
   flex-shrink: 0;
 }
 .renameInput {
   flex: 1;
   background: var(--bg-input);
   border: 1px solid var(--accent-blue);
-  border-radius: 4px;
+  border-radius: var(--ui-list-radius);
   color: var(--text-primary);
   font-size: 14px;
   padding: 2px 6px;

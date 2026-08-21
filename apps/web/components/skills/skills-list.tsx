@@ -283,7 +283,7 @@ export function SkillsList({ externalFilter }: { externalFilter?: string } = {})
             ? text("Searching name + description + body", "正在搜索名称、描述和正文")
             : text("Click to also search SKILL.md body", "点击后同时搜索 SKILL.md 正文")}
           className={
-            "shrink-0 rounded px-1.5 py-1 text-[11px] " +
+            "shrink-0 inline-flex items-center h-[var(--ui-button-h)] rounded-[var(--ui-button-radius)] px-2 text-[13px] leading-none " +
             (searchBody
               ? "bg-bg-hover text-nav-color-hover"
               : "text-[var(--text-secondary)] hover:bg-bg-hover hover:text-nav-color-hover")
@@ -291,10 +291,10 @@ export function SkillsList({ externalFilter }: { externalFilter?: string } = {})
         >body</button>
         <button onClick={expandAll}
           title={text("Expand all", "全部展开")}
-          className="shrink-0 rounded px-1.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-bg-hover hover:text-nav-color-hover">⊕</button>
+          className="shrink-0 inline-flex items-center justify-center h-[var(--ui-button-h)] min-w-[var(--ui-button-h)] rounded-[var(--ui-button-radius)] px-2 text-[13px] leading-none text-[var(--text-secondary)] hover:bg-bg-hover hover:text-nav-color-hover">⊕</button>
         <button onClick={collapseAll}
           title={text("Collapse all", "全部折叠")}
-          className="shrink-0 rounded px-1.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-bg-hover hover:text-nav-color-hover">⊖</button>
+          className="shrink-0 inline-flex items-center justify-center h-[var(--ui-button-h)] min-w-[var(--ui-button-h)] rounded-[var(--ui-button-radius)] px-2 text-[13px] leading-none text-[var(--text-secondary)] hover:bg-bg-hover hover:text-nav-color-hover">⊖</button>
       </div>
       <div className="space-y-1">
         {rootChildren.map((c) =>

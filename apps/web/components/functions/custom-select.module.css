@@ -8,13 +8,15 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
+  height: var(--ui-button-h);
+  padding: 0 10px;
+  box-sizing: border-box;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--ui-button-radius);
   background: var(--bg-tertiary);
   color: var(--text-primary);
   font-family: inherit;
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
   outline: none;
   white-space: nowrap;
@@ -35,7 +37,7 @@
   min-width: 100%;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--ui-button-radius);
   padding: 4px;
   box-shadow: var(--shadow-popover);
   z-index: 100;
@@ -53,7 +55,7 @@
   color: var(--text-primary);
   background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
   text-align: left;
   white-space: nowrap;

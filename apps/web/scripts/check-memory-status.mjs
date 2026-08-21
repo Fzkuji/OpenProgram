@@ -90,7 +90,7 @@ assert.ok(cssRules(".editorHeader").some((rule) => /min-height:\s*76px/.test(rul
 assert.match(cssRule(".tabBtn"), /height:\s*36px/);
 assert.match(cssRule(".sidebarRow"), /min-height:\s*36px/);
 assert.match(cssRule(".sidebarRow"), /padding:\s*0 10px/);
-assert.match(cssRule(".sidebarRow"), /border-radius:\s*8px/);
+assert.match(cssRule(".sidebarRow"), /border-radius:\s*var\(--ui-list-radius\)/);
 assert.match(cssRule(".sidebarRow"), /font-size:\s*13px/);
 assert.match(memoryParts, /styles\.folderRow[^\n]*styles\.sidebarRow/);
 assert.match(memoryParts, /styles\.fileRow[^\n]*styles\.sidebarRow/);

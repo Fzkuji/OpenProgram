@@ -87,7 +87,7 @@
   align-items: center;
   gap: 14px;
   padding: 12px 14px;
-  border-radius: var(--radius-lg, 12px);
+  border-radius: var(--radius-lg);
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   cursor: pointer;

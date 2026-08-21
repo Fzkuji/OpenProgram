@@ -27,7 +27,7 @@
 
 .settingsLink {
   margin-left: auto;
-  height: 32px;
+  height: var(--ui-button-h);
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -78,7 +78,7 @@
   color: var(--nav-color);
   background: transparent;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--ui-list-radius);
   cursor: pointer;
   outline: none;
   transition: background 0.1s, color 0.1s;
@@ -160,7 +160,7 @@
 .emptyPanel > svg { width: 18px; height: 18px; padding: 10px; box-sizing: content-box; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-tertiary); }
 .emptyPanel h2 { margin: 5px 0 0; color: var(--text-bright); font-size: 17px; font-weight: 600; }
 .emptyPanel p { max-width: 440px; margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
-.emptySettingsLink { margin-top: 7px; padding: 7px 11px; border: 1px solid var(--border); border-radius: var(--ui-button-radius); background: var(--bg-tertiary); color: var(--text-primary); font-size: 13px; text-decoration: none; }
+.emptySettingsLink { margin-top: 7px; display: inline-flex; align-items: center; height: var(--ui-button-h); padding: 0 11px; box-sizing: border-box; border: 1px solid var(--border); border-radius: var(--ui-button-radius); background: var(--bg-tertiary); color: var(--text-primary); font-size: 13px; text-decoration: none; }
 .emptySettingsLink:hover { background: var(--bg-hover); color: var(--text-bright); }
 .emptySettingsLink:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
 
@@ -451,9 +451,9 @@
    active fill via --bg-selected. */
 .modeSwitcher {
   display: inline-flex;
-  height: 30px;
+  height: var(--ui-button-h);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--ui-button-radius);
   background: var(--bg-primary);
   overflow: hidden;
 }
@@ -495,9 +495,12 @@
 }
 
 .saveBtn {
-  padding: 4px 14px;
-  font-size: 14px;
-  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  height: var(--ui-button-h);
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: var(--ui-button-radius);
   border: 1px solid var(--border);
   background: var(--bg-tertiary);
   color: var(--text-bright);
@@ -628,7 +631,7 @@
   gap: 4px;
   padding: 3px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--ui-button-radius);
   background: var(--bg-tertiary);
 }
 
@@ -638,7 +641,7 @@
   height: 28px;
   padding: 0 6px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--ui-list-radius);
   color: var(--text-primary);
   background: transparent;
   font-size: 12px;
@@ -863,7 +866,7 @@
   min-height: 36px;
   padding: 0 10px;
   box-sizing: border-box;
-  border-radius: 8px;
+  border-radius: var(--ui-list-radius);
   font-size: 13px;
   color: var(--text-primary);
 }
@@ -891,10 +894,10 @@
 }
 
 .iconBtn {
-  width: 32px;
-  height: 32px;
+  width: var(--ui-button-h);
+  height: var(--ui-button-h);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--ui-button-radius);
   background: var(--bg-tertiary);
   color: var(--text-primary);
   cursor: pointer;
@@ -915,7 +918,7 @@
   width: 22px;
   height: 22px;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--ui-list-radius);
   background: transparent;
   color: var(--text-primary);
   cursor: pointer;

@@ -112,7 +112,7 @@
   padding: 6px 12px 6px 8px;
   min-height: 44px;
   border: 1px solid transparent;
-  border-radius: var(--ui-list-radius, 6px);
+  border-radius: var(--ui-list-radius);
   cursor: pointer;
   transition: background 150ms ease-out, color 150ms ease-out;
 }
@@ -187,7 +187,7 @@
   gap: 8px;
   padding: 8px 12px 8px 8px;
   border: 1px solid transparent;
-  border-radius: var(--ui-list-radius, 6px);
+  border-radius: var(--ui-list-radius);
   background: color-mix(in srgb, var(--bg-secondary) 50%, transparent);
   cursor: pointer;
   user-select: none;

@@ -123,7 +123,7 @@
   display: grid;
   place-items: center;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--ui-button-radius);
   color: var(--theme-accent);
   background: var(--bg-secondary);
 }
@@ -161,7 +161,7 @@
 .summary span {
   padding: 5px 9px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--ui-list-radius);
   color: var(--text-secondary);
   background: var(--bg-secondary);
   font-size: var(--fs-sm);
@@ -213,7 +213,7 @@
   padding: 2px;
   display: flex;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--ui-button-radius);
   background: var(--bg-primary);
 }
 
@@ -223,7 +223,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  border-radius: 4px;
+  border-radius: var(--ui-list-radius);
   color: var(--text-muted);
   font-size: var(--fs-sm);
   cursor: pointer;
@@ -259,7 +259,7 @@
   align-items: center;
   gap: 7px;
   position: relative;
-  border-radius: 6px;
+  border-radius: var(--ui-list-radius);
 }
 
 .callRow:hover {
@@ -323,7 +323,7 @@
   height: 25px;
   display: grid;
   place-items: center;
-  border-radius: 6px;
+  border-radius: var(--ui-list-radius);
   color: var(--theme-accent);
   background: var(--bg-secondary);
 }
@@ -415,7 +415,7 @@
   height: 27px;
   display: grid;
   place-items: center;
-  border-radius: 6px;
+  border-radius: var(--ui-list-radius);
   color: var(--theme-accent);
   background: var(--bg-primary);
 }

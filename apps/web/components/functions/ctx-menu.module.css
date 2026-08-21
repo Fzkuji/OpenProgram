@@ -2,7 +2,7 @@
   position: fixed;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--ui-button-radius);
   padding: 4px 0;
   z-index: 999;
   box-shadow: var(--shadow-popover);

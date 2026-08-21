@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Download, LayoutGrid, Plus, RefreshCw } from "lucide-react";
 
 import { McpPage } from "@/components/mcp/mcp-page";
@@ -11,6 +11,7 @@ import { SkillsPage } from "@/components/skills/skills-page";
 import { SearchInput } from "@/components/ui/search-input";
 import { ManagePageHeader, managePageStyles as shared } from "@/components/ui/manage-page";
 import { useTranslation } from "@/lib/i18n";
+import { pushPath } from "@/lib/shallow-nav";
 import { usePluginsStore } from "@/lib/state/plugins-store";
 import { useSkills } from "@/lib/state/skills-store";
 
@@ -33,12 +34,8 @@ function kindHref(id: string): string {
 
 export function CapabilitiesPage() {
   const pathname = usePathname() || "";
-  const router = useRouter();
   const { t, text } = useTranslation();
-  const kind = kindFromPath(pathname);
-  if (typeof window !== "undefined") {
-    try { sessionStorage.setItem("op.ability.kind", kind); } catch { /* ignore */ }
-  }
+  const [kind, setKind] = useState(() => kindFromPath(pathname));
   const [query, setQueryState] = useState(persistedQuery);
   const [pluginInstallOpen, setPluginInstallOpen] = useState(false);
   const [skillNewOpen, setSkillNewOpen] = useState(false);
@@ -46,6 +43,15 @@ export function CapabilitiesPage() {
   const [mcpReloadNonce, setMcpReloadNonce] = useState(0);
   const [mcpAddNonce, setMcpAddNonce] = useState(0);
   const [programReloadNonce, setProgramReloadNonce] = useState(0);
+  if (typeof window !== "undefined") {
+    try { sessionStorage.setItem("op.ability.kind", kind); } catch { /* ignore */ }
+  }
+
+  useEffect(() => {
+    const onPop = () => setKind(kindFromPath(window.location.pathname));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   const refreshPlugins = usePluginsStore((s) => s.refresh);
   const fetchSkills = useSkills((s) => s.fetchSkills);
@@ -62,7 +68,9 @@ export function CapabilitiesPage() {
     setMcpReloadNonce(0);
     setMcpAddNonce(0);
     setProgramReloadNonce(0);
-    router.push(kindHref(id));
+    const href = kindHref(id);
+    setKind(kindFromPath(href));
+    pushPath(href);
   };
 
   const actions = useMemo(() => {

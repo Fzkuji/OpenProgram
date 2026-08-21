@@ -1,10 +1,13 @@
 .btn {
-  padding: 6px 12px;
+  display: inline-flex;
+  align-items: center;
+  height: var(--ui-button-h);
+  padding: 0 12px;
   font-size: 13px;
   border: 1px solid var(--border);
   background: var(--bg-secondary);
   color: var(--text-primary);
-  border-radius: 6px;
+  border-radius: var(--ui-button-radius);
   cursor: pointer;
 }
 
@@ -57,7 +60,7 @@
 .dialog {
   background: var(--bg-primary);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--ui-button-radius);
   padding: 20px;
   width: min(600px, 90vw);
   max-height: 80vh;
@@ -96,6 +99,10 @@
   font-size: 13px;
   box-sizing: border-box;
 }
+.input {
+  height: var(--ui-button-h);
+  padding: 0 10px;
+}
 
 .textarea {
   min-height: 200px;
@@ -104,7 +111,9 @@
 }
 
 .select {
-  padding: 6px 10px;
+  height: var(--ui-button-h);
+  padding: 0 10px;
+  box-sizing: border-box;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--ui-button-radius);
