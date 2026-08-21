@@ -48,13 +48,14 @@ def _block_unit(
         for citation_id in ids:
             if citation_id not in known_definitions:
                 raise TopicFormatError(f"undefined footnote: {citation_id}")
-            when, refs, links = known_definitions[citation_id]
+            when, refs, links, labels = known_definitions[citation_id]
             evidence.append(EvidenceAnnotation(
                 citation_id=citation_id,
                 quote=quote,
                 when=when,
                 source_refs=refs,
                 source_links=links,
+                source_labels=labels,
             ))
             used.add(citation_id)
         cursor = group.end()
@@ -64,16 +65,23 @@ def _block_unit(
         raise TopicFormatError(f"content after final evidence: {memory_id}")
     refs: list[str] = []
     links: list[str] = []
+    labels: list[str] = []
     for annotation in evidence:
-        for ref, link in zip(annotation.source_refs, annotation.source_links):
+        for ref, link, label in zip(
+            annotation.source_refs,
+            annotation.source_links,
+            annotation.source_labels,
+        ):
             if ref not in refs:
                 refs.append(ref)
                 links.append(link)
+                labels.append(label)
     shared = dict(
         content=SINGLE_CITATION.sub("", body).strip(),
         when=next((item.when for item in evidence if item.when is not None), None),
         source_refs=tuple(refs),
         source_links=tuple(links),
+        source_labels=tuple(labels),
         topic_path=path.relative_to(topics).as_posix(),
         headings=headings,
         created_order=created_order,
@@ -108,13 +116,14 @@ def _legacy_units(
         for memory_id in ids:
             if memory_id not in known_definitions:
                 raise TopicFormatError(f"undefined footnote: {memory_id}")
-            when, refs, links = known_definitions[memory_id]
+            when, refs, links, labels = known_definitions[memory_id]
             units.append(MemoryUnit(
                 memory_id=memory_id,
                 content=content,
                 when=when,
                 source_refs=refs,
                 source_links=links,
+                source_labels=labels,
                 topic_path=path.relative_to(topics).as_posix(),
                 headings=headings,
                 created_order=created_order + len(units),
@@ -129,9 +138,15 @@ def parse_topic_tree(topics: Path, *, strict: bool = True) -> list[MemoryUnit]:
     topics = Path(topics)
     units: list[MemoryUnit] = []
     seen: set[str] = set()
+    source_lookup: dict[Path, dict[str, str]] = {}
     for path in sorted(topics.rglob("*.md")):
         lines = path.read_text(encoding="utf-8").splitlines()
-        known_definitions = definitions(lines)
+        known_definitions = definitions(
+            lines,
+            topic_path=path,
+            topics=topics,
+            source_lookup=source_lookup,
+        )
         used_definitions: set[str] = set()
         for paragraph, headings in paragraphs(lines):
             parsed = _block_unit(

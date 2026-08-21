@@ -51,22 +51,20 @@ export function MemorySettings() {
       return response.json();
     }).then(setMemoryStatus).catch(() => setMemoryStatus({ failed: true }));
 
-    Promise.all([
-      fetch("/api/settings").then((response) => {
-        if (!response.ok) throw new Error(`settings: ${response.status}`);
-        return response.json();
-      }),
-      api.listEnabledModels().catch(() => []),
-    ]).then(([settingsPayload, enabledModels]) => {
+    void fetch("/api/settings?scope=memory").then((response) => {
+      if (!response.ok) throw new Error(`settings: ${response.status}`);
+      return response.json();
+    }).then((settingsPayload) => {
       const memoryRows = (settingsPayload.settings || []).filter(
         (row: SettingRow) => KEYS.includes(row.key as typeof KEYS[number]),
       );
       setDraft(Object.fromEntries(memoryRows.map((row: SettingRow) => [row.key, row.value])));
-      setModels(enabledModels);
       setSettingsReady(true);
     }).catch((error) => {
       setMessage(text(`Could not load Memory settings: ${error}`, `无法加载 Memory 设置：${error}`));
     }).finally(() => setLoaded(true));
+
+    void api.listEnabledModels().then(setModels).catch(() => setModels([]));
   }, [text]);
 
   async function update(key: string, value: unknown) {

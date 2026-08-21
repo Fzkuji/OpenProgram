@@ -236,6 +236,14 @@ def test_writer_jsonl_round_trips_untrusted_fields_without_new_records():
     }
 
 
+def test_writer_prompt_requests_short_semantic_source_labels():
+    from openprogram.memory.prompts import SYSTEM_PROMPT
+
+    assert "[plain label](source handle)" in SYSTEM_PROMPT
+    assert "at most 8 visible characters" in SYSTEM_PROMPT
+    assert "at most 6 words" in SYSTEM_PROMPT
+
+
 def test_source_text_stays_literal_through_writer_and_archive(tmp_path):
     from openprogram.memory import writing
     from openprogram.memory.management import MemoryWorkspace

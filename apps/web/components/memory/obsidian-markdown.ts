@@ -6,14 +6,17 @@ type Footnote = {
   referenceIds: string[];
 };
 
-const CODE_TOKEN = /\uE000(\d+)\uE001/g;
-
 type Fence = {
   containerDepth: number;
   indent: number;
   listItem: boolean;
   marker: string;
   trailing: string;
+};
+
+type ListContainer = {
+  depth: number;
+  indent: number;
 };
 
 function indentWidth(value: string): number {
@@ -64,15 +67,72 @@ function matchFence(line: string): Fence | null {
   };
 }
 
+function containerLine(line: string): { depth: number; rest: string } {
+  let rest = line;
+  let depth = 0;
+  while (true) {
+    const blockquote = rest.match(/^ {0,3}>[ \t]?/);
+    if (!blockquote) break;
+    rest = rest.slice(blockquote[0].length);
+    depth += 1;
+  }
+  return { depth, rest };
+}
+
 function stashCode(source: string): { source: string; restore: (value: string) => string } {
   const code: string[] = [];
+  let nonce = 0;
+  let prefix = "";
+  do {
+    prefix = `\uE000OPENPROGRAM-MEMORY-${nonce}:`;
+    nonce += 1;
+  } while (source.includes(prefix));
+  const token = (index: number) => `${prefix}${index}\uE001`;
   const stash = (value: string) => {
     code.push(value);
-    return `\uE000${code.length - 1}\uE001`;
+    return token(code.length - 1);
   };
   const lines = source.split("\n");
   const withoutFences: string[] = [];
+  let footnoteContinuation = false;
+  let activeList: ListContainer | null = null;
   for (let index = 0; index < lines.length; index += 1) {
+    if (footnoteContinuation && /^(?: {2,}|\t)/.test(lines[index])) {
+      withoutFences.push(lines[index]);
+      continue;
+    }
+    footnoteContinuation = /^\[\^[A-Za-z0-9][\w-]*\]:/.test(lines[index]);
+    if (footnoteContinuation) {
+      withoutFences.push(lines[index]);
+      continue;
+    }
+    const container = containerLine(lines[index]);
+    const listMarker = container.rest.match(
+      /^ {0,3}(?:[*+-]|\d{1,9}[.)])[ \t]+/,
+    );
+    const leading = container.rest.match(/^[ \t]*/)?.[0] ?? "";
+    const indentation = indentWidth(leading);
+    if (listMarker) {
+      activeList = {
+        depth: container.depth,
+        indent: indentWidth(listMarker[0]),
+      };
+    } else if (container.rest.trim() !== "") {
+      let inList = false;
+      let codeIndent = 4;
+      if (
+        activeList?.depth === container.depth
+        && indentation >= activeList.indent
+      ) {
+        inList = true;
+        codeIndent = activeList.indent + 4;
+      }
+      if (indentation >= codeIndent) {
+        withoutFences.push(stash(lines[index]));
+        continue;
+      }
+      if (!inList) activeList = null;
+    }
     const opening = matchFence(lines[index]);
     if (!opening || (!opening.listItem && opening.indent > 3)) {
       withoutFences.push(lines[index]);
@@ -123,8 +183,19 @@ function stashCode(source: string): { source: string; restore: (value: string) =
   }
   return {
     source: stashed,
-    restore: (value) => value.replace(CODE_TOKEN, (_match, index) => code[Number(index)] ?? ""),
+    restore: (value) => code.reduce(
+      (restored, item, index) => restored.split(token(index)).join(item),
+      value,
+    ),
   };
+}
+
+function isEscaped(source: string, offset: number): boolean {
+  let slashes = 0;
+  for (let index = offset - 1; index >= 0 && source[index] === "\\"; index -= 1) {
+    slashes += 1;
+  }
+  return slashes % 2 === 1;
 }
 
 function extractFootnotes(source: string): { body: string; definitions: Map<string, string> } {
@@ -185,7 +256,13 @@ export function renderObsidianMarkdown(source: string, parse: MarkdownParser): s
 
   const withReferences = body.replace(
     /\[\^([A-Za-z0-9][\w-]*)\]|\^\[([^\]\r\n]+)\]/g,
-    (raw, label: string | undefined, inline: string | undefined) => {
+    (
+      raw,
+      label: string | undefined,
+      inline: string | undefined,
+      offset: number,
+    ) => {
+      if (isEscaped(body, offset)) return raw;
       if (inline !== undefined) {
         const footnote = { content: inline, number: ordered.length + 1, referenceIds: [] };
         ordered.push(footnote);

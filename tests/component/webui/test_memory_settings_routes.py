@@ -2,6 +2,51 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 
+def test_enabled_model_listing_runs_outside_the_event_loop():
+    import inspect
+
+    from openprogram.webui.routes.providers import register
+
+    app = FastAPI()
+    register(app)
+    endpoint = next(
+        route.endpoint
+        for route in app.routes
+        if getattr(route, "path", "") == "/api/models/enabled"
+    )
+
+    assert not inspect.iscoroutinefunction(endpoint)
+
+
+def test_memory_settings_scope_skips_dynamic_provider_and_tool_rows(monkeypatch):
+    from openprogram.webui.routes.config import register
+
+    monkeypatch.setattr("openprogram.setup._read_config", lambda: {})
+    monkeypatch.setattr(
+        "openprogram.providers.registry.check_providers",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("memory settings must not inspect providers")
+        ),
+    )
+    monkeypatch.setattr(
+        "openprogram.programs.list_registered_agent_tools",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("memory settings must not enumerate tools")
+        ),
+    )
+    app = FastAPI()
+    register(app)
+
+    response = TestClient(app).get("/api/settings?scope=memory")
+
+    assert response.status_code == 200
+    assert response.json()["settings"]
+    assert all(
+        row["key"].startswith("memory.")
+        for row in response.json()["settings"]
+    )
+
+
 def test_settings_route_rejects_unavailable_embedding_method(monkeypatch):
     import asyncio
 

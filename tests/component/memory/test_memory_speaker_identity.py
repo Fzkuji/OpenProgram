@@ -1096,7 +1096,7 @@ def test_version_five_cache_is_rebuilt_as_the_current_version(tmp_path: Path) ->
 
     assert index.events[0].content != "stale cache row"
     assert index.events[0].speaker_id == "u456"
-    assert json.loads(cache.read_text(encoding="utf-8"))["version"] == 9
+    assert json.loads(cache.read_text(encoding="utf-8"))["version"] == 10
 
 
 def test_inspect_rejects_embedding_with_speaker(tmp_path: Path) -> None:

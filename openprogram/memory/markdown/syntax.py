@@ -2,7 +2,14 @@
 
 import re
 from collections.abc import Iterable, Iterator
+from pathlib import Path
 
+from ..source_format import (
+    is_v2_source_path,
+    provider_source_location,
+    scan_source_archive,
+    valid_v2_source_id,
+)
 from .models import (
     BLOCK_ID,
     FOOTNOTE_ID,
@@ -32,11 +39,6 @@ BLOCK_SUFFIX_RUN = re.compile(rf"(?:\s+\^{BLOCK_ID})+\s*$")
 ANY_BLOCK_SUFFIX = re.compile(r"\s+\^(?P<id>\S+)\s*$")
 BLOCK_TARGET_ID = rf"(?:{MEMORY_ID}|{BLOCK_ID})"
 BLOCK_LINK = re.compile(rf"\[[^]]+\]\([^)#]*#\^(?P<id>{BLOCK_TARGET_ID})\)")
-SOURCE_HANDLE = re.compile(
-    r"^(D\d+:\d+|[^/\s,]+/[^/\s,]+/[^/\s,]+)(?:\s*(?:,|·)\s*|\s+|$)"
-)
-
-
 def definition_match(line: str) -> re.Match[str] | None:
     """Match canonical definitions plus legacy definitions for migration."""
     return DEFINITION.match(line) or LEGACY_DEFINITION.match(line)
@@ -53,17 +55,91 @@ def render_definition(
     )
 
 
-def source_reference(label: str, target: str) -> str:
-    handle = SOURCE_HANDLE.match(label.strip())
-    if handle:
-        return handle.group(1)
+def is_plain_source_handle(value: str) -> bool:
+    value = value.strip()
+    return bool(re.fullmatch(r"D\d+:\d+", value)) or (
+        "#" not in value and valid_v2_source_id(value)
+    )
+
+
+def _source_from_target(
+    target: str,
+    *,
+    topic_path: Path | None,
+    topics: Path | None,
+    source_lookup: dict[Path, dict[str, str]] | None,
+) -> str | None:
+    if is_plain_source_handle(target):
+        return target.strip()
+    raw_path, separator, fragment = target.partition("#")
+    if not separator or not raw_path or topic_path is None or topics is None:
+        return None
+    memory_dir = Path(topics).resolve().parent
+    sources = (memory_dir / "sources").resolve()
+    unresolved = Path(topic_path).resolve().parent / raw_path
+    if unresolved.is_symlink():
+        return None
+    candidate = unresolved.resolve()
+    if (
+        not candidate.is_relative_to(sources)
+        or not candidate.is_file()
+    ):
+        return None
+    relative = candidate.relative_to(memory_dir)
+    lookup = source_lookup if source_lookup is not None else {}
+    if candidate not in lookup:
+        text = candidate.read_text(encoding="utf-8")
+        anchors = {}
+        if is_v2_source_path(relative):
+            for frame in scan_source_archive(text, relative).frames:
+                location = provider_source_location(frame.source_id, v2=True)
+                if location is not None:
+                    anchors[location[1]] = frame.source_id
+        else:
+            for anchor, source_id in re.findall(
+                r'<a id="([^"]+)"></a>\n'
+                r'<!-- source-id:([^>\r\n]+) -->',
+                text,
+            ):
+                location = provider_source_location(source_id)
+                if location == (relative, anchor):
+                    anchors[anchor] = source_id
+        lookup[candidate] = anchors
+    return lookup[candidate].get(fragment)
+
+
+def source_reference(
+    _label: str,
+    target: str,
+    *,
+    topic_path: Path | None = None,
+    topics: Path | None = None,
+    source_lookup: dict[Path, dict[str, str]] | None = None,
+) -> str:
+    resolved = _source_from_target(
+        target,
+        topic_path=topic_path,
+        topics=topics,
+        source_lookup=source_lookup,
+    )
+    if resolved is not None:
+        return resolved
     anchor = re.search(r"#d(\d+)-(\d+)$", target, re.IGNORECASE)
-    return f"D{anchor.group(1)}:{anchor.group(2)}" if anchor else label
+    if anchor:
+        return f"D{anchor.group(1)}:{anchor.group(2)}"
+    raise TopicFormatError(f"invalid source target: {target}")
 
 
 def definitions(
     lines: list[str],
-) -> dict[str, tuple[str | None, tuple[str, ...], tuple[str, ...]]]:
+    *,
+    topic_path: Path | None = None,
+    topics: Path | None = None,
+    source_lookup: dict[Path, dict[str, str]] | None = None,
+) -> dict[
+    str,
+    tuple[str | None, tuple[str, ...], tuple[str, ...], tuple[str, ...]],
+]:
     values = {}
     for line in lines:
         match = definition_match(line)
@@ -82,10 +158,24 @@ def definitions(
             raise TopicFormatError(
                 f"memory source links required: {citation_id}"
             )
+        if any(not label.strip() for label, _target in links):
+            raise TopicFormatError(
+                f"memory source labels required: {citation_id}"
+            )
         values[citation_id] = (
             None if when == "undated" else when,
-            tuple(source_reference(label, target) for label, target in links),
+            tuple(
+                source_reference(
+                    label,
+                    target,
+                    topic_path=topic_path,
+                    topics=topics,
+                    source_lookup=source_lookup,
+                )
+                for label, target in links
+            ),
             tuple(target for _label, target in links),
+            tuple(label for label, _target in links),
         )
     return values
 

@@ -290,16 +290,28 @@ def event_matches_time_window(
     return _event_overlaps_window(event, _query_time_window(date_from, date_to))
 
 
-def parse_topic_file(path: Path, topics_root: Path) -> list[MemoryEvent]:
+def parse_topic_file(
+    path: Path,
+    topics_root: Path,
+    *,
+    source_lookup: dict[Path, dict[str, str]] | None = None,
+) -> list[MemoryEvent]:
     """Parse legacy line records and current paragraph-block Topic files."""
     relative = path.relative_to(topics_root).as_posix()
     lines = path.read_text(encoding="utf-8").splitlines()
     definitions = {}
+    source_lookup = source_lookup if source_lookup is not None else {}
     for line in lines:
         match = definition_match(line)
         if match:
             labels = [
-                source_reference(label, target)
+                source_reference(
+                    label,
+                    target,
+                    topic_path=path,
+                    topics=topics_root,
+                    source_lookup=source_lookup,
+                )
                 for label, target in _MARKDOWN_LINK_RE.findall(
                     match.group("sources")
                 )
@@ -713,14 +725,14 @@ class MemoryBM25Index:
             return
         try:
             payload = json.loads(self.cache_path.read_text(encoding="utf-8"))
-            if payload.get("version") == 9 and isinstance(payload.get("files"), dict):
+            if payload.get("version") == 10 and isinstance(payload.get("files"), dict):
                 self._files = payload["files"]
         except (OSError, ValueError, TypeError):
             self._files = {}
 
     def _write_cache(self) -> None:
         self.memory_dir.mkdir(parents=True, exist_ok=True)
-        payload = {"version": 9, "files": self._files}
+        payload = {"version": 10, "files": self._files}
         fd, temporary = tempfile.mkstemp(prefix=f"{self._runtime_name}-bm25-", dir=self.memory_dir)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -739,6 +751,7 @@ class MemoryBM25Index:
 
         changed = set(self._files) != set(current)
         refreshed: dict[str, dict[str, Any]] = {}
+        source_lookup: dict[Path, dict[str, str]] = {}
         for relative, path in sorted(current.items()):
             digest = _file_hash(path)
             cached = self._files.get(relative)
@@ -746,21 +759,19 @@ class MemoryBM25Index:
                 refreshed[relative] = cached
                 continue
             changed = True
-            parser = (
-                parse_source_file
-                if relative.startswith("sources/")
-                else parse_topic_file
-            )
-            parser_root = (
-                self.sources_dir
-                if relative.startswith("sources/")
-                else self.topics_dir
+            is_source = relative.startswith("sources/")
+            events = (
+                parse_source_file(path, self.sources_dir)
+                if is_source
+                else parse_topic_file(
+                    path,
+                    self.topics_dir,
+                    source_lookup=source_lookup,
+                )
             )
             refreshed[relative] = {
                 "sha256": digest,
-                "events": [
-                    asdict(event) for event in parser(path, parser_root)
-                ],
+                "events": [asdict(event) for event in events],
             }
 
         self._files = refreshed
@@ -822,8 +833,10 @@ class MemoryBM25Index:
         date_to: str | None = None,
         speaker: str | None = None,
         rerank: bool = True,
+        refresh_index: bool = True,
     ) -> list[dict[str, Any]]:
-        self.refresh()
+        if refresh_index:
+            self.refresh()
         query_tokens = tokenize(query)
         if not query_tokens or not self.events:
             return []

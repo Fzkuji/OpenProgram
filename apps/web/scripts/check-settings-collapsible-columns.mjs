@@ -201,7 +201,8 @@ assert.match(css, /\.systemRow\s+\.control\s*\{[^}]*flex:\s*0 0 auto[^}]*margin-
 // and descriptive copy remain Memory-specific.
 assert.match(memory, /shared\.row[\s\S]*shared\.rowTop[\s\S]*shared\.systemRow/);
 assert.doesNotMatch(memoryCss, /\.row\s*\{|\.rowCopy\s*\{/);
-assert.match(memoryCss, /\.controls\s*\{[^}]*flex:\s*0 0 auto;[^}]*justify-content:\s*flex-end;[^}]*min-width:\s*7\.5rem/s);
+assert.match(memoryCss, /\.controls\s*\{[^}]*flex:\s*0 1 auto;[^}]*justify-content:\s*flex-end;[^}]*min-width:\s*7\.5rem/s);
+assert.match(memoryCss, /\.select\s*\{[^}]*min-width:\s*0/s);
 assert.doesNotMatch(memoryCss, /grid-template-columns:\s*minmax\(220px/);
 assert.match(memory, /styles\.chromeValue[\s\S]{0,80}Local workspace · Git enabled/);
 assert.match(memory, /styles\.monoValue[\s\S]{0,40}workspace_path/);

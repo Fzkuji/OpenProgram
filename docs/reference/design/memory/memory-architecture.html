@@ -1324,7 +1324,7 @@
         <tr><td><b>二级栏</b></td><td>分区下面的 Folder、Topic、Timeline 年/月/日、Recent 与 Core 入口全部使用同一套 36px 行高、10px 横向内边距、8px 圆角、13px 字号和选中背景。Folder 与 Timeline 年/月必须复用同一个 14×14 线性 ChevronRight SVG、路径和展开旋转规则，并使用相同的数字徽标；Timeline 只用缩进表达层级；Topics 不重复显示由 Core 分区管理的 <code>topics/core.md</code></td><td>展开控件不再使用过小的实心三角，Timeline 不再显示与 Topics 不同的计数文本</td></tr>
         <tr><td><b>内容标题</b></td><td>名称、类型、路径、修改时间、视图与编辑操作集中在一个 76px 区域</td><td>删除独立 meta 横条和分散的 Core 状态</td></tr>
         <tr><td><b>正文</b></td><td>Preview/Timeline/Recent/Core 使用最大 780px 阅读面；Edit 保持全宽等宽字体编辑器</td><td>避免超宽文本和大片无结构空白</td></tr>
-        <tr><td><b>Markdown 预览</b></td><td>Topics、Timeline 与 Core 在现有 <code>marked</code> 和 HTML 清洗链路内解释 Memory 使用的 Obsidian Flavored Markdown：命名 <code>[^id]</code> 显示为连续 <code>[1]</code> 上标，定义集中到带分隔线的文末有序列表，支持两个空格缩进的续行与 <code>^[inline footnote]</code>；段末或独立行 <code>^block-id</code> 只保留不可见锚点，ID 仅接受 Latin 字母、数字和连字符</td><td>不在阅读正文中暴露内部 evidence ID 和 block ID；不改变可编辑的磁盘原文</td></tr>
+        <tr><td><b>Markdown 预览</b></td><td>Topics、Timeline 与 Core 在现有 <code>marked</code> 和 HTML 清洗链路内解释 Memory 使用的 Obsidian Flavored Markdown：命名 <code>[^id]</code> 显示为连续 <code>[1]</code> 上标，定义集中到带分隔线的文末有序列表，支持两个空格缩进的续行与 <code>^[inline footnote]</code>；段末或独立行 <code>^block-id</code> 只保留不可见锚点，ID 仅接受 Latin 字母、数字和连字符；围栏代码、四空格缩进代码以及反斜杠转义的脚注语法保持字面内容</td><td>不在阅读正文中暴露内部 evidence ID 和 block ID；不改变可编辑的磁盘原文</td></tr>
         <tr><td><b>窄宽度</b></td><td>分区图标栏 + 列表/详情单页切换</td><td>不自动折叠桌面栏，不把三块上下堆叠，不允许内容区重叠</td></tr>
       </tbody>
     </table>
@@ -1343,13 +1343,13 @@
     </div>
   </div>
 
-  <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；Recent 与 Core 不在中间栏重复标题、数量、视图切换或注入状态，Core 的切换和状态只在右侧内容头部出现一次；Recent 右侧标题显示当前记录数与实时 <code>memory.recent.limit</code>，例如 <code>7 / 50 records</code>，不把记录条数误写成 token 预算；顶部不把受截断的 Recent 数量表述为 Memory 总量；右侧 Preview、Timeline、Recent 与 Core 使用居中的文档面，空 Topics 使用独立空状态卡；Topics、Timeline 与 Core 的 Markdown 预览把已定义命名脚注和 inline footnote 按出现顺序显示为 <code>[1]</code> 上标和文末脚注列表，两个空格缩进的续行属于上一条脚注，正文不显示 evidence ID 或合法的段末 block ID，脚注链接、重复引用、未定义引用、行内代码和代码块保持可预测；Timeline 按年、月、日折叠且不把派生文件重建时间显示成记录时间；Core 明确区分只读 Prompt preview 与可编辑 Source records；Topics 列表不显示 <code>core.md</code>；小于 720px 时不得产生横向重叠，编辑器操作进入独立下一行并可换行。页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
+  <div class="note"><b>验收边界：</b>公开入口 <code>/memory</code> 在桌面宽度显示固定二级栏和完整内容区；Recent 与 Core 不在中间栏重复标题、数量、视图切换或注入状态，Core 的切换和状态只在右侧内容头部出现一次；Recent 右侧标题显示当前记录数与实时 <code>memory.recent.limit</code>，例如 <code>7 / 50 records</code>，不把记录条数误写成 token 预算；顶部不把受截断的 Recent 数量表述为 Memory 总量；右侧 Preview、Timeline、Recent 与 Core 使用居中的文档面，空 Topics 使用独立空状态卡；Topics、Timeline 与 Core 的 Markdown 预览把已定义命名脚注和 inline footnote 按出现顺序显示为 <code>[1]</code> 上标和文末脚注列表，两个空格缩进的续行属于上一条脚注，正文不显示 evidence ID 或合法的段末 block ID，脚注链接、重复引用和未定义引用保持可预测，行内、围栏、列表围栏和四空格缩进代码中的相同文本不参与转换，反斜杠转义引用保持字面内容，任意原文字符不能与内部占位符冲突；Timeline 按年、月、日折叠且不把派生文件重建时间显示成记录时间；Core 明确区分只读 Prompt preview 与可编辑 Source records；Topics 列表不显示 <code>core.md</code>；小于 720px 时不得产生横向重叠，编辑器操作进入独立下一行并可换行。页面不请求或渲染 writer 状态、pending 数、Commitments 或 Scheduler 状态。</div>
   <div class="legend"><b>本轮实现状态：</b>Recent 和 Core 已删除中间栏的重复上下文块；Recent 的标题与容量只在右侧内容头部显示，并从 Recent API 响应头读取当前 <code>memory.recent.limit</code>，呈现为“当前记录数 / 配置上限”；Core 的 Prompt preview / Source records 切换、注入状态和 token 用量也只在右侧显示一次。Timeline 年/月/日折叠继续保留。正式 Memory 已通过结构化事务删除 survey test 项目记录；后台 writer 后续仍可按正常行为生成新 Topic。居中文档面、卡片化空状态、76px 单一标题区、780px 阅读宽度和窄窗编辑操作换行已经进入生产代码。Topics 文件行、Timeline 年/月/日入口继续复用 36px 行高、10px 横向内边距、8px 圆角和 13px 字号的侧栏行；Folder、Timeline 年和 Timeline 月也已复用同一个 14×14 线性 ChevronRight 与数字徽标，Timeline 只以缩进表达层级。Memory 专用 Preview 已把命名脚注和 inline footnote 转换成 Obsidian Reading/Publish 风格的数字上标与文末有序列表，并隐藏合法的段末 block ID；编辑器和磁盘原文保持不变。小于 720px 的完整列表/详情互斥仍不在本轮生产实现范围。</div>
 
   <div class="grid2">
     <div class="oc">
       <h4>实现证据</h4>
-      <div class="d">提交 <code>5f1f06c4</code> 实现文档面、空状态和紧凑上下文栏；<code>1c770a4e</code> 将路径元数据合入 76px 标题区并统一 36px/780px 尺寸；<code>b583833d</code> 删除不准确的顶部总量并补齐窄窗操作换行；<code>7ef440c6</code> 统一 Topics、Timeline、Recent 与 Core 的二级侧栏行。<code>check-memory-status</code> 从父提交 RED 变为 GREEN；Memory 设置、Markdown 清洗、TypeScript、production build、HTML、链接与 diff 检查通过。Memory Markdown 行为测试覆盖命名脚注、重复引用、inline footnote、两个空格续行、代码字面保留、block ID 隐藏与 sanitizer；默认 18100 App 的真实 Topic 显示 <code>[1]</code>–<code>[4]</code> 及带 <code>1.</code>–<code>4.</code> marker 的文末脚注列表，正文不再出现内部 ID。</div>
+      <div class="d">提交 <code>5f1f06c4</code> 实现文档面、空状态和紧凑上下文栏；<code>1c770a4e</code> 将路径元数据合入 76px 标题区并统一 36px/780px 尺寸；<code>b583833d</code> 删除不准确的顶部总量并补齐窄窗操作换行；<code>7ef440c6</code> 统一 Topics、Timeline、Recent 与 Core 的二级侧栏行。<code>check-memory-status</code> 从父提交 RED 变为 GREEN；Memory 设置、Markdown 清洗、TypeScript、production build、HTML、链接与 diff 检查通过。Memory Markdown 行为测试覆盖命名脚注、重复引用、inline footnote、两个空格续行、行内/围栏/列表围栏/四空格缩进代码字面保留、转义引用、占位冲突、block ID 隐藏与 sanitizer；默认 18100 App 的真实 Topic 显示 <code>[1]</code>–<code>[4]</code> 及带 <code>1.</code>–<code>4.</code> marker 的文末脚注列表，正文不再出现内部 ID。</div>
     </div>
     <div class="oc">
       <h4>兼容要求</h4>
@@ -1363,13 +1363,26 @@
   <div class="grid2">
     <div class="oc">
       <h4>方式一 · 直接编辑文件</h4>
-      <div class="d">后台 writer 或整理模型在 Runtime 提供的暂存目录中直接创建、重写、移动或删除 <code>topics/**/*.md</code>。编辑结束后不能直接覆盖正式 Memory；必须调用 <code>commit_edits</code>，由 Runtime 分配和保留 ID、检查 Source 与 block 链接、重建 Timeline/Recent/Relations/Core，再整体安装。Web 与 CLI 的文件编辑走同样的 <code>staged_edit</code> 收口。</div>
+      <div class="d">后台 writer 或整理模型在 Runtime 提供的暂存目录中直接创建、重写、移动或删除 <code>topics/**/*.md</code>。新脚注中的每个 Source 写成 <code>[简短关键词](source_ref)</code>；模型只决定关键词和选择哪个已有 Source，不能决定最终链接。编辑结束后不能直接覆盖正式 Memory；必须调用 <code>commit_edits</code>，由 Runtime 分配和保留 ID、把 <code>source_ref</code>解析为归档链接、检查 Source 与 block 链接、重建 Timeline/Recent/Relations/Core，再整体安装。Web 与 CLI 的文件编辑走同样的 <code>staged_edit</code> 收口。</div>
     </div>
     <div class="oc">
       <h4>方式二 · 调用结构化接口</h4>
       <div class="d">模型工具和 owner REST 接收 <code>memory_changes[]</code>。内容操作是 <code>create_record</code>、<code>update_record</code>、<code>delete_record</code>，结构操作是 <code>move_records</code>。Runtime 把这些操作渲染为 Topic Markdown，然后进入与直接编辑相同的安装流程。</div>
     </div>
   </div>
+
+  <div class="grid2">
+    <div class="oc">
+      <h4>Source 身份</h4>
+      <div class="d"><code>source</code>是不可变且必须验证的归档身份。Runtime 只根据它生成链接、检查 trust state 和恢复派生视图；显示文本不能改变引用目标。</div>
+    </div>
+    <div class="oc">
+      <h4>引用关键词</h4>
+      <div class="d"><code>label</code>是本条引用的局部显示文本，由同一次 Memory 写入调用生成，不是 Source 的永久标题。Memory agent 的 prompt 与工具 schema 要求它使用简短、与上下文相关的关键词，并避免 Markdown、URL、Source ID、说话人或时间模板。除必须是非空字符串这一 Markdown 结构要求外，Runtime 不判断关键词质量，不截断或改写模型返回的 label，也不为标签增加模型调用。</div>
+    </div>
+  </div>
+
+  <div class="note"><b>规范输出：</b><code>{"content":"...","sources":[{"source":"provider/thread/message","label":"调研范围"}]}</code>。Topic 文件最终保留标准 Markdown：<code>[调研范围](../../sources/...#source-...)</code>。Parser 从链接目标恢复 Source 身份，不能再把方括号内的显示文本当成 Source ID。</div>
 
   <div class="tbl">
     <table>
@@ -1387,8 +1400,8 @@
     <table>
       <thead><tr><th>结构化操作</th><th>必要数据</th><th>Runtime 行为</th></tr></thead>
       <tbody>
-        <tr><td><code>create_record</code></td><td>最终 <code>content</code>、<code>time</code>、非空 <code>source_refs</code>，以及 <code>destination</code>：<code>topic_path</code>、<code>headings</code>、<code>position</code>；before/after 时再给 <code>anchor_memory_id</code>。模型 schema 用 <code>undated</code> 表示无日期；owner REST 也接受 <code>null</code>。</td><td>验证 Topic、位置和 Source，写入规范 Markdown，分配新的 block 与 evidence ID。</td></tr>
-        <tr><td><code>update_record</code></td><td>现有 <code>memory_id</code> 加完整的最终 <code>content/time/source_refs</code>。</td><td>只修改记录内容，保留 block ID 和位置，以最终值替换该段及其 evidence definition。</td></tr>
+        <tr><td><code>create_record</code></td><td>最终 <code>content</code>、<code>time</code>、非空 <code>sources[{source,label}]</code>，以及 <code>destination</code>：<code>topic_path</code>、<code>headings</code>、<code>position</code>；before/after 时再给 <code>anchor_memory_id</code>。模型 schema 用 <code>undated</code> 表示无日期；owner REST 也接受 <code>null</code>。</td><td>验证 Topic、位置和每个 Source，原样使用 label 作为显示文本，写入规范 Markdown，分配新的 block 与 evidence ID。</td></tr>
+        <tr><td><code>update_record</code></td><td>现有 <code>memory_id</code> 加完整的最终 <code>content/time/sources</code>。</td><td>只修改记录内容，保留 block ID 和位置，以最终值替换该段及其 evidence definition。</td></tr>
         <tr><td><code>delete_record</code></td><td>现有 <code>memory_id</code>。</td><td>删除对应记录和不再使用的 evidence definition；存在悬空 block 链接时整笔拒绝。</td></tr>
         <tr><td><code>move_records</code></td><td>有序且非空的 <code>memory_ids</code>，以及与创建相同的 <code>destination</code>。</td><td>按给定顺序批量移动记录；保留 ID、内容、时间、Source 和创建顺序。可在同一章节重排，也可跨章节或 Topic 移动。</td></tr>
       </tbody>
@@ -1397,7 +1410,8 @@
 
   <div class="note"><b>共同事务：</b>两种方式都先修改暂存副本，再执行 Topic normalization、Source 和 relation 校验、Timeline/Recent/Relations/Core 重建与原子安装，最后记录 Git。任何安装前错误都不能改变正式 Memory。Git 失败发生在安装之后时不伪装成回滚，返回值用 <code>memory_committed</code> 与 <code>git_committed</code>区分。</div>
   <div class="note"><b>兼容入口：</b><code>memory_update</code> 与 <code>POST /api/memory/changes</code>新增 <code>memory_changes</code>。现有整个 Topic 文件的 <code>changes[path/action/content]</code> 和旧 unified diff <code>patch</code>继续兼容；三种 API 表达格式每次只能选择一种，最终都调用 <code>MemoryWorkspace.update</code>。</div>
-  <div class="note"><b>Source 输入：</b><code>memory_changes.source_refs</code>可引用归档中已经存在且可验证的 Source，也可引用同一请求 <code>sources</code> 中的 <code>new-source-*</code>标签；后者先由 Runtime 转换为正式 Source ID。调用方不能提交 provenance、trust state 或 owner 身份。</div>
+  <div class="note"><b>Source 输入：</b><code>memory_changes[].sources[].source</code>可引用归档中已经存在且可验证的 Source，也可引用同一请求顶层 <code>sources</code> 中的 <code>new-source-*</code>标签；后者先由 Runtime 转换为正式 Source ID。调用方不能提交 provenance、trust state 或 owner 身份。预发布的 <code>source_refs: [string]</code>继续接受，并以原字符串作为兼容显示名；新请求只公开 <code>sources</code>。</div>
+  <div class="note"><b>兼容与迁移：</b>现有 Topic 中的显示名继续解析，Runtime 不在没有语义模型参与时猜测关键词。新写入和显式更新使用 Memory agent 提供的 label；label 在移动、派生视图重建和正文更新时原样保留。不会修改 Source archive、真实 Source ID、evidence ID 或 block ID。</div>
   <div class="note"><b>位置契约：</b><code>destination.position</code>只接受 <code>start</code>、<code>end</code>、<code>before</code>、<code>after</code>。before/after 的锚点必须位于目标 Topic 与标题链，且不能属于本次移动集合。批量移动后的顺序严格等于 <code>memory_ids</code>顺序。同一 ID 最多接受一次内容操作和一次 move；delete 与 move 不能同时指向它。</div>
   <div class="note"><b>组合操作：</b>语义合并由一次 <code>update_record</code>、若干 <code>delete_record</code> 和必要的 <code>move_records</code>表达；语义拆分由一次 update、若干 create 和必要的 move 表达。章节或文件的合并、拆分只需批量 move。Runtime 不提供 <code>merge_records</code>、<code>split_record</code>、<code>place_records</code> 或 <code>reorder_records</code>。</div>
   <div class="note"><b>结构清理：</b>移动或删除后，Runtime 自动移除没有任何 Memory 记录的标题链；Topic 文件不再包含记录时直接删除。派生 Timeline、Recent、Relations 与 Core 在同一事务重建，调用方不修改这些文件。</div>
@@ -1411,13 +1425,17 @@
     <table>
       <thead><tr><th>验收入口</th><th>可观测结果</th></tr></thead>
       <tbody>
-        <tr><td>直接文件编辑后 <code>commit_edits</code></td><td>正式 Topic、Timeline、Recent、Relations 和 Core 同时反映模型编辑；校验失败时正式文件不变。</td></tr>
-        <tr><td><code>MemoryWorkspace.update(memory_changes=...)</code></td><td>create_record/update_record/delete_record/move_records 可单独或组合执行；任一项失败时 revision 和所有 Memory 字节不变。</td></tr>
+        <tr><td>直接文件编辑后 <code>commit_edits</code></td><td><code>[调研范围](source_ref)</code>被规范化为显示相同关键词的真实归档链接；正式 Topic、Timeline、Recent、Relations 和 Core 同时反映模型编辑，且 parser 恢复完整 Source ID；校验失败时正式文件不变。</td></tr>
+        <tr><td><code>MemoryWorkspace.update(memory_changes=...)</code></td><td>create_record/update_record 接受 <code>sources[{source,label}]</code>并保留调用方提供的 label；旧 <code>source_refs</code>继续工作。四种操作可单独或组合执行；任一项失败时 revision 和所有 Memory 字节不变。</td></tr>
         <tr><td><code>memory_update</code></td><td><code>memory_changes</code>、整个文件 <code>changes</code> 和旧 unified diff 得到相同的事务与返回字段。</td></tr>
         <tr><td><code>POST /api/memory/changes</code></td><td>接收相同的 <code>memory_changes</code>，返回 revision、changed_files、block/evidence ID 与 Git 提交信息。</td></tr>
       </tbody>
     </table>
   </div>
+
+  <div class="note"><b>实施简报：</b>范围限于 Writer Prompt、Topic footnote normalization/parser、结构化 <code>memory_changes</code>、Topic 移动与 Timeline 派生显示；Source archive、检索身份、Preview renderer、数据库和模型调用次数不变。公共入口 RED 覆盖直接文件编辑与 <code>MemoryWorkspace.update(memory_changes=...)</code>，受影响验证覆盖 Topic parser、结构化修改、Writer prompt、派生视图、owner REST、HTML 与文档链接。</div>
+  <div class="legend"><b>Source label 实现状态：已实现。</b>Writer 同一次写入按 prompt 与工具 schema 生成短关键词；Runtime 保留并验证完整 Source ID，把 agent 返回的 label 原样渲染为链接文本，移动记录、重建 Timeline 和构建检索索引时继续使用真实身份。结构化接口公开 <code>sources[{source,label}]</code>，旧 <code>source_refs</code>、pre-v2 provider 归档和文件名含编码字符的 Source 仍可读取和提交；同一 Source 归档在一次 Topic tree 解析中只扫描一次。Runtime 不再对 label 做语义分类、截断或回退。</div>
+  <div class="note"><b>检索性能与信任：</b>生产 BM25 使用版本化磁盘缓存，并在进程内按 Topic/Source 文件签名复用索引；embedding 同样复用已解析事件和文档向量。Topic 或 Source 文件的时间、大小或 inode 变化会使缓存失效，因此内容修改和 Source promotion 都会重新解析信任状态。BM25、Embedding 与 Hybrid 在返回 Topic 前统一根据其全部 Source 引用解析 <code>trusted/pending</code>，pending 支撑的 Topic 不进入自动上下文。</div>
 
   <div class="legend"><b>实现状态（2026-08-15）：</b>模型工具与 owner REST 已统一提供上述四个正式操作；整个文件 <code>changes</code> 和旧 unified diff 保持兼容。直接编辑 Topic 与结构化操作共用暂存、格式校验、空结构清理、Timeline/Recent/Core 派生、原子安装和 Git 历史。批量 move、位置与共享物理段落校验、首次结构调整时的 Recent 创建顺序保留、跨 Topic evidence 冲突拒绝均有公共入口回归测试。Scheduler 的内部 Agent 生命周期写入按 Scheduler 设计文档执行；记录删除后旧 <code>memory_id</code> 的当前查询返回 <code>NOT_FOUND</code>，不保留已删除记录或旧 ID 映射。外部 token capability 仍按本节边界延期。</div>
 

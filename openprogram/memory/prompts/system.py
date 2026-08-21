@@ -8,7 +8,7 @@ Every paragraph you add to a Topic file must end with an evidence citation and b
 
     Calvin acquired a mansion in Japan.[^e1]
 
-    [^e1]: Time: `2023-03`; Sources: locomo/session_1/D1:4
+    [^e1]: Time: `2023-03`; Sources: [Japan mansion](locomo/session_1/D1:4)
 
 Bulleted lists and bare prose are not memory paragraphs and cannot carry evidence. Write full sentences in paragraphs.
 
@@ -21,9 +21,9 @@ Identifiers already in a file are the Runtime's: a trailing `^7ffb575c`, and any
 Write each new fact as a paragraph followed by an evidence footnote, and add the footnote definition in this exact form:
 <complete fact>.[^e1]
 
-[^e1]: Time: `<time>`; Sources: provider/thread_id/message_id
+[^e1]: Time: `<time>`; Sources: [plain label](source handle)
 
-Number the footnotes you add `[^e1]`, `[^e2]`, `[^e3]`, counting from one within this edit; the Runtime replaces them with stable `e-` IDs. A paragraph you append to may then cite `[^e-9bae588a38]` and `[^e1]` side by side, which is correct. Write source handles bare, exactly as they appear in the input; the Runtime expands them into links. Do not invent source handles. Multiple handles may follow `Sources:`, separated by `, `.
+Number the footnotes you add `[^e1]`, `[^e2]`, `[^e3]`, counting from one within this edit; the Runtime replaces them with stable `e-` IDs. A paragraph you append to may then cite `[^e-9bae588a38]` and `[^e1]` side by side, which is correct. Write every new Source as `[plain label](source handle)`, keeping the source handle exactly as it appears in the input; the Runtime validates it and expands only the link target. The label is a context-specific keyword phrase, not a fixed title template: Chinese at most 8 visible characters, English at most 6 words. Do not put IDs, speaker names, timestamps, URLs, or Markdown syntax in the label. Do not invent source handles. Multiple Source links may follow `Sources:`, separated by `, `.
 
 Every `[^eN]` you introduce needs its `[^eN]:` definition line in the same edit and file — write the two together, prose then definition. An existing `[^e-...]` already has its definition and needs nothing from you.
 
@@ -68,7 +68,7 @@ A new subject file. Note the paragraph has no trailing ID — the Runtime adds i
 
     Calvin acquired a mansion in Japan in March 2023, arranged by his agent.[^e1]
 
-    [^e1]: Time: `2023-03`; Sources: locomo/thread_37d993f7a9d6/msg_6c0a984c5fc6
+    [^e1]: Time: `2023-03`; Sources: [Japan mansion](locomo/thread_37d993f7a9d6/msg_6c0a984c5fc6)
 
 Adding a second fact to that file later. The Runtime has been through it since:
 the paragraph now ends in `^7ffb575c` and its footnote is `[^e-9bae588a38]`.
@@ -81,11 +81,11 @@ at `[^e1]` again:
 
     Calvin acquired a mansion in Japan in March 2023, arranged by his agent.[^e-9bae588a38] ^7ffb575c
 
-    [^e-9bae588a38]: Time: `2023-03`; Sources: locomo/thread_37d993f7a9d6/msg_6c0a984c5fc6
+    [^e-9bae588a38]: Time: `2023-03`; Sources: [Japan mansion](locomo/thread_37d993f7a9d6/msg_6c0a984c5fc6)
 
     Calvin began converting the mansion into a recording studio.[^e1]
 
-    [^e1]: Time: `2023-07`; Sources: locomo/thread_749fa3152137/msg_23dffebd3e42
+    [^e1]: Time: `2023-07`; Sources: [Studio conversion](locomo/thread_749fa3152137/msg_23dffebd3e42)
 
 The same edit written wrongly. The new paragraph is fine, but the existing
 citation was renumbered to match the new one, which strands its definition and
@@ -93,19 +93,19 @@ discards the entire edit — the good paragraph with it:
 
     Calvin acquired a mansion in Japan in March 2023, arranged by his agent.[^e1] ^7ffb575c
 
-    [^e-9bae588a38]: Time: `2023-03`; Sources: locomo/thread_37d993f7a9d6/msg_6c0a984c5fc6
+    [^e-9bae588a38]: Time: `2023-03`; Sources: [Japan mansion](locomo/thread_37d993f7a9d6/msg_6c0a984c5fc6)
 
     Calvin began converting the mansion into a recording studio.[^e2]
 
-    [^e2]: Time: `2023-07`; Sources: locomo/thread_749fa3152137/msg_23dffebd3e42
+    [^e2]: Time: `2023-07`; Sources: [Studio conversion](locomo/thread_749fa3152137/msg_23dffebd3e42)
 
 Correcting a fact already recorded. The prose changes, a footnote is appended,
 the trailing ID does not move:
 
     Calvin plans to stay in Japan for a year.[^e-9bae588a38][^e1] ^7ffb575c
 
-    [^e-9bae588a38]: Time: `2023-03`; Sources: locomo/thread_37d993f7a9d6/msg_6c0a984c5fc6
-    [^e1]: Time: `2023-06`; Sources: locomo/thread_987adb9e3384/msg_3bb059d845a8
+    [^e-9bae588a38]: Time: `2023-03`; Sources: [Japan mansion](locomo/thread_37d993f7a9d6/msg_6c0a984c5fc6)
+    [^e1]: Time: `2023-06`; Sources: [Renovation update](locomo/thread_987adb9e3384/msg_3bb059d845a8)
 
 In short: anything that reads `^7ffb575c` or `[^e-9bae588a38]` was written by the
 Runtime and is copied through verbatim. `[^e1]` and `[^e2]` are yours, and only

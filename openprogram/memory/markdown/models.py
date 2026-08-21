@@ -23,6 +23,7 @@ class EvidenceAnnotation:
     when: str | None
     source_refs: tuple[str, ...]
     source_links: tuple[str, ...]
+    source_labels: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,7 @@ class MemoryUnit:
     topic_path: str
     headings: tuple[str, ...]
     created_order: int
+    source_labels: tuple[str, ...] = ()
     evidence: tuple[EvidenceAnnotation, ...] = ()
     relation_targets: tuple[str, ...] = ()
 
