@@ -23,6 +23,7 @@ import { isWebTabOccluded, measureWebTabBounds } from "@/lib/web-tab-bounds";
 import styles from "./center-tabs.module.css";
 
 const BOUNDS_THROTTLE_MS = 100;
+const DRAG_BOUNDS_MS = 33;
 
 type PipDrag = {
   kind: "move" | "resize";
@@ -86,6 +87,7 @@ export function WebTabPip() {
   const rafRef = useRef(0);
   const throttleRef = useRef(0);
   const lastPublishRef = useRef(0);
+  const lastDragBoundsRef = useRef(0);
   const reportRef = useRef<(immediate?: boolean) => void>(() => {});
   const bridge = desktopBridge();
   const url = tab?.url || (tabId?.startsWith("w:") ? tabId.slice(2) : "");
@@ -227,6 +229,18 @@ export function WebTabPip() {
     el.style.bottom = "auto";
   };
 
+  const followNativeView = () => {
+    if (!bridge || !tabId) return;
+    const body = bodyRef.current;
+    if (!body) return;
+    const now = Date.now();
+    if (now - lastDragBoundsRef.current < DRAG_BOUNDS_MS) return;
+    lastDragBoundsRef.current = now;
+    const bounds = measureWebTabBounds(body);
+    if (bounds.width <= 0 || bounds.height <= 0) return;
+    registerVisibleWebTabBounds(bridge, tabId, bounds);
+  };
+
   const commitRect = (el: HTMLElement, next: WebTabPipRect) => {
     el.style.transform = "";
     el.style.willChange = "";
@@ -259,10 +273,7 @@ export function WebTabPip() {
     pendingRectRef.current = dragRef.current.origin;
     el.classList.add(styles.webPipDragging);
     el.style.willChange = kind === "move" ? "transform" : "left, top, width, height";
-    if (bridge && tabId) {
-      removeVisibleWebTabBounds(bridge, tabId);
-      setWebTabReady(tabId, false);
-    }
+    lastDragBoundsRef.current = 0;
   };
 
   const onDragPointerMove = (event: React.PointerEvent<HTMLElement>) => {
@@ -286,6 +297,7 @@ export function WebTabPip() {
       const node = rootRef.current;
       if (!live || !current || !node) return;
       previewRect(node, current, live);
+      followNativeView();
     });
   };
 

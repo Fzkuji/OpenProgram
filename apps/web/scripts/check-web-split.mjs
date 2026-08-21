@@ -2430,11 +2430,18 @@ const pipSource = await readFile(
 assert.match(pipSource, /onPointerDown=\{\(event\) => onDragPointerDown\("move"/);
 assert.match(pipSource, /onPointerDown=\{\(event\) => onDragPointerDown\("resize"/);
 assert.match(pipSource, /const BOUNDS_THROTTLE_MS = 100;/);
+assert.match(pipSource, /const DRAG_BOUNDS_MS = 33;/);
 assert.match(pipSource, /reportRef\.current\(true\)/);
 assert.match(pipSource, /if \(dragRef\.current\) return;/);
 assert.match(pipSource, /translate\(\$\{next\.x - drag\.origin\.x\}px/);
 assert.match(pipSource, /requestAnimationFrame/);
+assert.match(pipSource, /previewRect\(node, current, live\);\s*followNativeView\(\);/);
 assert.match(pipSource, /removeVisibleWebTabBounds\(bridge, tabId\)/);
+assert.doesNotMatch(
+  pipSource,
+  /willChange = kind === "move"[\s\S]{0,180}removeVisibleWebTabBounds/,
+  "drag/resize must keep the native view mounted",
+);
 assert.match(
   await readFile(
     new URL("../lib/state/web-tab-pip-store.ts", import.meta.url),
