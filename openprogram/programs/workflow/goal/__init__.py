@@ -7,20 +7,22 @@ launches a follow-up turn (``source="goal_continue"``). Every
 continuation turn is persisted, committed and compacted like any
 user-sent turn.
 
-Evaluation is one decision agent turn: the single ``goal`` agentic
-function in ``openprogram/programs/workflow/goal/`` (prompt in its
-docstring; the one panel-runnable entry) reads the session's compacted
-context view plus the goal text and answers strict JSON
+Evaluation is one decision agent turn: :func:`judge_goal` (prompt in
+its docstring) reads the session's compacted context view plus the
+goal text and answers strict JSON
 ``{"met", "reason", "need_user", "question"}``. Only its "met" counts
-as completion. This package keeps the deterministic control flow:
-retry accounting, stop rules, budgets, state writes — split as
+as completion. ``goal()`` is the public Workflow entry that runs
+agent work and reuses this judge. Session ``/goal`` is the same
+Workflow adapted onto the chat turn lifecycle. Deterministic control
+flow — retry accounting, stop rules, budgets, state writes — is split as
 
-* ``state``: goal meta read / write, stop-rule constants, event fan-out
-* ``judge``: :func:`evaluate_goal`
+* ``workflow``: public :func:`goal` entry
+* ``command``: ``/goal`` set / clear / status
+* ``judge``: :func:`judge_goal` and :func:`evaluate_goal`
 * ``refinement``: background spec refinement after /goal set
-* ``notices``: transcript system rows, terminal finisher
 * ``loop``: :func:`continue_goal_turns` and its stop rules
-* ``command``: the /goal command surface
+* ``state``: goal meta read / write, stop-rule constants, event fan-out
+* ``notices``: transcript system rows, terminal finisher
 
 The judge is separate from the working model on purpose: agents that
 self-report completion (Codex / Cline style) systematically declare
@@ -49,16 +51,14 @@ call site resolves against.
 from __future__ import annotations
 
 from openprogram.programs.workflow.goal.workflow import goal  # noqa: F401
-from openprogram.programs.workflow.goal.verification import (  # noqa: F401
+from openprogram.programs.workflow.goal.judge import (  # noqa: F401
+    DECISION_TOOLS,
     _parse_decision,
-    _parse_refinement,
     _run_decision_turn,
-    _run_refine_turn,
+    evaluate_goal,
     judge_goal,
-    refine_goal_spec_candidate,
     render_session_view,
 )
-
 from openprogram.programs.workflow.goal.state import (  # noqa: F401
     JUDGE_PARSE_FAILURE_LIMIT,
     QUESTION_MIN_INTERVAL_SECONDS,
@@ -70,7 +70,6 @@ from openprogram.programs.workflow.goal.state import (  # noqa: F401
     load_goal,
     save_goal,
 )
-from openprogram.programs.workflow.goal.judge import evaluate_goal  # noqa: F401
 from openprogram.programs.workflow.goal.notices import (  # noqa: F401
     _TERMINAL_LABELS,
     _emit_goal_notice,
@@ -78,10 +77,14 @@ from openprogram.programs.workflow.goal.notices import (  # noqa: F401
     _finish,
 )
 from openprogram.programs.workflow.goal.refinement import (  # noqa: F401
+    REFINE_TOOLS,
     _adopt_refinement,
     _emit_goal_spec_notice,
+    _parse_refinement,
+    _run_refine_turn,
     _start_spec_refinement,
     refine_goal_spec,
+    refine_goal_spec_candidate,
 )
 from openprogram.programs.workflow.goal.loop import (  # noqa: F401
     _inherit_parent,

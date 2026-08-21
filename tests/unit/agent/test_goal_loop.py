@@ -21,7 +21,7 @@ from unittest.mock import patch
 import pytest
 
 import openprogram.programs.workflow.goal as G
-import openprogram.programs.workflow.goal.verification as GF
+import openprogram.programs.workflow.goal.judge as GF
 
 # The autouse fixture replaces G._emit_goal_update with a collector;
 # keep a module-import-time reference so the payload-shape test can

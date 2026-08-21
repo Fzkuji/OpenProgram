@@ -1,25 +1,12 @@
-"""Reusable Goal Workflow: repeatedly run an agent and verify completion."""
+"""Public Goal Workflow: run work until the session Goal judge accepts it.
+
+Other Workflows call :func:`goal`. Session ``/goal`` uses the same
+judge, spec refinement, continuation loop, and persistence in this
+package.
+"""
 from __future__ import annotations
 
-from typing import Any
-
-from openprogram.providers.structured_output import JsonSchemaOutput
 from openprogram.agentic_programming.function import agentic_function
-
-
-_GOAL_JUDGMENT_FORMAT = JsonSchemaOutput(
-    schema={
-        "type": "object",
-        "properties": {
-            "met": {"type": "boolean"},
-            "reason": {"type": "string"},
-        },
-        "required": ["met", "reason"],
-        "additionalProperties": False,
-    },
-    name="goal_judgment",
-    max_validation_retries=1,
-)
 
 
 @agentic_function
@@ -32,62 +19,37 @@ def goal(
     max_rounds: int = 10,
     timeout_s: float | None = None,
 ) -> str:
-    """Run a goal loop: agent works, llm judges, repeat until condition is met.
+    """Run a goal loop: agent works, the Goal judge checks completion.
 
     Args:
         prompt: Task prompt for the agent
         condition: Success condition to judge
-        model: Model override for both agent and judge
+        model: Model override for the working agent
         effort: Reasoning effort override
         max_rounds: Max judgment rounds
         timeout_s: Timeout per agent round
 
     Returns:
-        Final result when condition is met (or last result if max_rounds reached)
+        Final result when the condition is met, or the last result if
+        max_rounds is reached.
     """
     from openprogram.agentic_programming.agent import agent
-    from openprogram.agentic_programming.llm import llm
+    import openprogram.programs.workflow.goal as _goal
 
     last_result = ""
-
-    for round_num in range(max_rounds):
-        # Agent works on the task
-        result = agent(
+    for _round_num in range(max_rounds):
+        last_result = agent(
             prompt=prompt,
             model=model,
             effort=effort,
             timeout_s=timeout_s,
         )
-        last_result = result
-
-        # Judge whether condition is met
-        judge_prompt = f"""Judge whether this result satisfies the condition.
-
-Condition: {condition}
-
-Result: {result}
-
-Reply with a JSON object:
-{{"met": true/false, "reason": "brief explanation"}}"""
-
-        judgment = llm(
-            prompt=judge_prompt,
-            model=model,
-            effort=effort,
-            response_format=_GOAL_JUDGMENT_FORMAT,
-        )
-
-        # Parse judgment
-        import json
         try:
-            verdict = json.loads(judgment) if isinstance(judgment, str) else judgment
-            if verdict.get("met"):
-                return result
-        except (json.JSONDecodeError, AttributeError):
-            # If judgment parsing fails, continue to next round
+            verdict = _goal.judge_goal(goal=condition)
+        except Exception:
             continue
-
-    # Max rounds reached without meeting condition
+        if verdict.get("met"):
+            return last_result
     return last_result
 
 
