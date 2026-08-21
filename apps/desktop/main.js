@@ -1835,10 +1835,12 @@ async function navigateView(ctx, id, url) {
 }
 
 const WEBTAB_ZOOM_FACTORS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
-const PIP_VIRTUAL_WIDTH = 1280;
+const PIP_VIRTUAL_WIDTH = 1920;
 const PIP_ZOOM_MIN = 0.25;
 
 function pipLayoutZoom(width) {
+  // CSS viewport = viewWidth / zoom. CDP/Playwright Input and
+  // screenshot(scale="css") already use that CSS space.
   return Math.max(PIP_ZOOM_MIN, Math.min(1, width / PIP_VIRTUAL_WIDTH));
 }
 

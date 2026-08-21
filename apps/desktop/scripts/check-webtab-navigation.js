@@ -1169,7 +1169,7 @@ async function checkSenderOwnership() {
   ]);
   assert.deepEqual(a.nativeCalls.stopFind, ["clearSelection"]);
   assert.deepEqual(a.nativeCalls.zoom, [1.1, 1, 1]);
-  ipcListeners.get("webtab:set-pip-zoom")(eventA, "owned-a", 640);
+  ipcListeners.get("webtab:set-pip-zoom")(eventA, "owned-a", 960);
   assert.equal(a.nativeCalls.zoom.at(-1), 0.5);
   assert.equal(await ipcHandlers.get("webtab:zoom")(eventA, "owned-a", "in"), 110);
   assert.equal(a.nativeCalls.zoom.at(-1), 0.5);
@@ -4352,7 +4352,7 @@ assert.doesNotMatch(source, /\bconst views = new Map\(\)/);
 assert.doesNotMatch(source, /\bvisibleViewId\b/);
 assert.match(source, /ipcMain\.on\("webtab:sync-visible"/);
 assert.match(source, /ipcMain\.on\("webtab:set-pip-zoom"/);
-assert.match(source, /const PIP_VIRTUAL_WIDTH = 1280/);
+assert.match(source, /const PIP_VIRTUAL_WIDTH = 1920/);
 assert.match(source, /if \(!record\.pipLayoutZoom\) wc\.setZoomFactor\(factor\)/);
 assert.match(source, /ipcMain\.on\("tab-transfer:prepare"/);
 // Cross-window drop cue channels + clean teardown (no stuck highlight).
