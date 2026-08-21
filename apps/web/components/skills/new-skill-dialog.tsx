@@ -63,7 +63,7 @@ export function NewSkillDialog({ open, onClose }: { open: boolean; onClose: () =
             <Label htmlFor="skill-body">{text("Body (markdown)", "正文（Markdown）")}</Label>
             <textarea id="skill-body" value={body} onChange={(e) => setBody(e.target.value)}
               rows={10}
-              className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-2 font-mono text-xs"
+              className="ui-text-input mt-1 w-full rounded-[var(--ui-button-radius)] border border-[color:var(--accent-blue)] bg-[var(--bg-input)] p-2 font-mono text-xs outline-none focus:outline-none"
               placeholder={text("# My Skill\n\nWhat this skill does...", "# 我的技能\n\n这个技能的用途...")} />
           </div>
           {err && <div className="text-xs text-destructive">{err}</div>}
