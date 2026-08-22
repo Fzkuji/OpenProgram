@@ -265,11 +265,17 @@ export function sendChatMessage({
   // the frame; marking that session busy now prevents a repeated
   // running_task_clear from draining the next queue entry before chat_ack.
   if (sessionId) {
-    useSessionStore.getState().setRunningTaskFor(sessionId, {
-      session_id: sessionId,
-      msg_id: "",
-      started_at: acceptedAt / 1000,
-    });
+    // 占位只在槽位为空时写入。run_active 竞态下旧回合还在跑，覆盖会
+    // 丢掉它的 execution_id，之后停止发不出 execution.cancel。
+    const store = useSessionStore.getState();
+    const existing = store.runningTasks[sessionId];
+    if (!existing || (!existing.msg_id && !existing.execution_id)) {
+      store.setRunningTaskFor(sessionId, {
+        session_id: sessionId,
+        msg_id: "",
+        started_at: acceptedAt / 1000,
+      });
+    }
   }
   // `setRunning` is the focused shell's global run flag (drives its send/stop
   // button). A background turn must not flip it — the focused chat isn't the

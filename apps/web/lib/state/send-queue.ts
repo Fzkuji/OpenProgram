@@ -175,7 +175,12 @@ export function reconcileAfterSessionLoad(
 ): void {
   const sessions = useSessionStore.getState();
   if (runActive) {
-    sessions.setRunningTaskFor(sessionId, { session_id: sessionId, msg_id: "" });
+    // 只在没有真实 task 时占位；已有 execution_id 的不覆盖（否则停止键
+    // 只能发无 id 的 stop，服务端可能解析不到 execution）。
+    const existing = sessions.runningTasks[sessionId];
+    if (!existing || (!existing.msg_id && !existing.execution_id)) {
+      sessions.setRunningTaskFor(sessionId, { session_id: sessionId, msg_id: "" });
+    }
     return;
   }
   const wasRunning = Boolean(sessions.runningTasks[sessionId]);

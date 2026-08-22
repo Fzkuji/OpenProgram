@@ -11,6 +11,45 @@ mechanics). Code: `use-chat-submit.ts` (`stopSession`),
 `run_control.py` (`cancel_execution`, `CANCEL_GRACE_S`),
 `providers/utils/cancelable_stream.py`.
 
+## Invariants (from Codex CLI and Claude Code)
+
+The reference implementations agree on five rules; OpenProgram follows
+them. Codex CLI: cancellation authority lives on the core session's
+running turn; UI running-state derives only from `TurnStarted` /
+`TurnCompleted` / `TurnAborted`; there is no protocol-level
+`cancelling` state. Claude Code: ESC flips a synchronous state machine
+(`QueryGuard`) to idle in the same frame, commits partial streamed
+text as a normal assistant message, then aborts; an interrupted turn
+has no intermediate status.
+
+1. **One occupancy source of truth per side.** Client: `runningTasks`
+   in the session store, mirrored to the composer. Server:
+   `_running_tasks` + active runtime. Message `status` renders bubbles;
+   it never gates the composer, and the composer state never gates
+   bubble rendering.
+2. **Terminal states are irreversible.** Once a message is `cancelled`
+   / `completed` / `failed` / `error` / `interrupted` / `done`, no
+   later frame (`execution.updated` with `cancelling`, late
+   `running_task`, late `tree_update`) may move it back to a running
+   look. `cancelling` is a server-internal grace state; the client
+   treats it as already-cancelled and never stores it on the running
+   task or renders it as "thinking".
+3. **Placeholders never overwrite identity.** An empty
+   `{ msg_id: "" }` occupancy reservation may only be written into an
+   empty slot. A slot holding `msg_id` / `execution_id` is what makes
+   stop able to send `execution.cancel`; stomping it downgrades stop
+   to the fallback `stop` action.
+4. **Only the turn's own terminal frame releases occupancy.** A
+   nested `display:"runtime"` result (inline @agentic_function, spawn
+   attach) finalizes its card, not the turn. Late `running_task`
+   frames for a turn the user already cancelled must not revive the
+   slot.
+5. **Stop never fails silently.** If the server cannot resolve an
+   execution to cancel it answers with an error frame (the HTTP
+   route's 404 equivalent), so a dead stop is visible instead of a
+   turn that keeps streaming while the client already dropped
+   occupancy.
+
 ## Queue vs interrupt (Claude Code)
 
 Claude Code: type+Enter while a turn is running = **queue**. Esc/stop

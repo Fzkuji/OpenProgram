@@ -291,7 +291,13 @@ export function useWS(): void {
             const eid = String(execution.execution_id);
             if (sid) {
               const current = store.messagesById[eid];
-              if (current) {
+              // 终态不可回退：stopSession 已乐观把消息标 cancelled，服务端
+              // 随后广播的 cancelling（宽限期中间态）不能把它拉回"运行中"，
+              // 否则气泡会重新显示思考中（turn-occupancy.md）。
+              const terminal = new Set(
+                ["cancelled", "completed", "failed", "interrupted", "error", "done"],
+              );
+              if (current && !(terminal.has(String(current.status)) && !terminal.has(String(execution.status)))) {
                 store.updateMessage(sid, eid, {
                   status: execution.status as never,
                 });
@@ -304,16 +310,9 @@ export function useWS(): void {
                 || (task.msg_id && `${task.msg_id}_reply` === eid)
               ),
             );
-            if (execution.status === "cancelling" && sid) {
-              store.setRunningTaskFor(sid, {
-                session_id: sid,
-                msg_id: task?.msg_id || "",
-                func_name: task?.func_name,
-                started_at: task?.started_at,
-                execution_id: eid,
-                cancelling: true,
-              }, "never");
-            } else if (
+            // cancelling 中间态不写回 runningTask（不许留 cancelling:true，
+            // 那会把停止/发送一起禁用并卡住队列）；只在终态收尾。
+            if (
               matches
               && (execution.status === "cancelled"
                 || execution.status === "completed"

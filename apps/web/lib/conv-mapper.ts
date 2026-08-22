@@ -67,7 +67,7 @@ interface LegacyMsg {
    *  is reachable) subscribe for live updates. Missing == ``done``
    *  for backward compat with pre-streaming-resume sessions. */
   status?: "pending" | "running" | "streaming" | "done"
-    | "completed" | "error" | "cancelled" | "interrupted";
+    | "completed" | "error" | "cancelled" | "cancelling" | "interrupted";
   /** streaming-resume: when the placeholder reply was first written.
    *  Used by sweep to detect orphaned ``running`` rows. */
   started_at?: number;
@@ -240,7 +240,9 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
           status: (() => {
             const _s = m.status;
             if (_s === "running" || _isRunningPlaceholder) return "running";
-            if (_s === "cancelled") return "cancelled";
+            // 持久化的 cancelling（取消宽限期中被 reload）等价 cancelled，
+            // 落进 done 会把"正在取消"画成已完成。
+            if (_s === "cancelled" || _s === "cancelling") return "cancelled";
             if (_s === "interrupted") return "interrupted";
             if (_s === "error") return "error";
             if (_s === "streaming") return "streaming";
@@ -320,7 +322,8 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
           // field) still render correctly.
           const _s = m.status;
           if (_s === "running" || _isRunningPlaceholder) return "running";
-          if (_s === "cancelled") return "cancelled";
+          // cancelling 在 reload 语义下就是 cancelled（见上）。
+          if (_s === "cancelled" || _s === "cancelling") return "cancelled";
           if (_s === "interrupted") return "interrupted";
           if (_s === "error") return "error";
           if (_s === "streaming") return "streaming";

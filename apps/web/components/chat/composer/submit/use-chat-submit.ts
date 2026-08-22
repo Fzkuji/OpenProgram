@@ -98,7 +98,13 @@ export function useChatSubmit({
         serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
         background: bound !== null,
       }, pendingImages.length + pendingDocs.length);
-      if (!queuedId) return;
+      if (!queuedId) {
+        // 队列只收纯文本；带附件的草稿保持原样并提示，而不是无声 no-op
+        // 让用户以为发送坏了。
+        const { showToast } = await import("@/lib/format-utils/toast");
+        showToast("Attachments can't be queued — stop the current turn or wait for it to finish.");
+        return;
+      }
       setComposerInputFor(submitOwnerKey, "");
       setHistoryIndex(-1);
       return;
@@ -253,7 +259,18 @@ export function stopSession(
   } else {
     send({ action: "stop", session_id: targetSessionId });
   }
-  // 2. Patch the last live assistant to cancelled. Keep streamed text.
+  // 2. Patch the live assistant to cancelled. Keep streamed text.
+  //    优先补丁 runningTask 指向的那条（execution_id / {msg_id}_reply）：
+  //    从后往前扫在末尾有已完成 runtime 行时会提前 break，父气泡漏标。
+  const direct = executionId ? store.messagesById[executionId] : undefined;
+  if (direct) {
+    const s = direct.status;
+    if (s !== "done" && s !== "completed" && s !== "cancelled" && s !== "error") {
+      store.updateMessage(targetSessionId, executionId, { status: "cancelled" });
+    }
+    store.setRunningTaskFor(targetSessionId, null, "always");
+    return;
+  }
   const ids = store.messageOrder[targetSessionId] || [];
   for (let i = ids.length - 1; i >= 0; i--) {
     const m = store.messagesById[ids[i]];

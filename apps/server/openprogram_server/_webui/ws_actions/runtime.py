@@ -221,11 +221,18 @@ async def handle_stop(ws, cmd: dict):
 
     session_id = cmd.get("session_id") or cmd.get("conv_id")
     execution_id = (cmd.get("execution_id") or "").strip()
-    if not execution_id:
-        if not session_id:
-            return
+    if not execution_id and session_id:
         execution_id = run_control.resolve_foreground_execution(session_id) or ""
     if not execution_id:
+        # 静默吞掉会让"点了停止没反应"无迹可查（HTTP 对应入口回 404）。
+        await ws.send_text(json.dumps({
+            "type": "error",
+            "data": {
+                "code": "ExecutionNotFound",
+                "message": "stop: no active execution for session "
+                           f"{session_id or '(none)'}",
+            },
+        }))
         return
     try:
         execution = run_control.cancel_execution(execution_id)

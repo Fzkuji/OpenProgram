@@ -43,8 +43,12 @@ export function setRunning(running: boolean): void {
   if (sid) {
     const store = useSessionStore.getState();
     if (running) {
-      const task = { session_id: sid, msg_id: "" };
-      store.setRunningTaskFor(sid, task);
+      // 已有带 msg_id/execution_id 的真实 task 时不要用空占位覆盖——
+      // 冲掉 execution_id 会让停止键发不出 execution.cancel。
+      const existing = store.runningTasks[sid];
+      if (!existing || (!existing.msg_id && !existing.execution_id)) {
+        store.setRunningTaskFor(sid, { session_id: sid, msg_id: "" });
+      }
     } else {
       store.setRunningTaskFor(sid, null);
     }

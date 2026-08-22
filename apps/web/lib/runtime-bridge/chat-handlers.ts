@@ -403,12 +403,33 @@ export function handleRunningTask(rt: unknown): void {
     execution_id?: string;
   };
 
+  // 先做 cancelled 守卫，再碰任何 occupancy。旧代码先 setRunning(true)
+  //（它会写入 {msg_id:""} 的占位 task）再检查取消，迟到的 running_task
+  // 既复活了槽位、又把已有 task 的 execution_id 冲掉——之后停止键发不出
+  // execution.cancel（turn-occupancy.md：迟到帧不得复活）。
+  const sid = t.session_id;
+  const mid = t.msg_id;
+  const store = useSessionStore.getState();
+  const replyId = mid ? mid + "_reply" : "";
+  const executionId = t.execution_id || replyId;
+  const targetId = executionId && store.messagesById[executionId]
+    ? executionId
+    : replyId && store.messagesById[replyId]
+      ? replyId
+      : mid || "";
+  const current = targetId ? store.messagesById[targetId] : undefined;
+  // Stop already marked this turn cancelled and released occupancy.
+  // A late running_task for the same msg_id must not revive the slot.
+  if (current?.status === "cancelling" || current?.status === "cancelled") {
+    return;
+  }
+
   // 1) Flip the composer's send/stop button immediately — but only
   //    if this event targets the currently-active session. Without
   //    this guard, a background session starting a turn would also
   //    flip the composer for whatever other session the user is
   //    looking at right now.
-  if (!t.session_id || t.session_id === runtimeState.currentSessionId) {
+  if (!sid || sid === runtimeState.currentSessionId) {
     setRunning(true);
   }
 
@@ -419,23 +440,7 @@ export function handleRunningTask(rt: unknown): void {
   //    the message but with status="done" (placeholder content is
   //    empty). Without this patch, the chat looked finished even
   //    though the turn was still running server-side.
-  const sid = t.session_id;
-  const mid = t.msg_id;
   if (!sid || !mid) return;
-  const store = useSessionStore.getState();
-  const replyId = mid + "_reply";
-  const executionId = t.execution_id || replyId;
-  const targetId = store.messagesById[executionId]
-    ? executionId
-    : store.messagesById[replyId]
-      ? replyId
-      : mid;
-  const current = store.messagesById[targetId];
-  // Stop already marked this turn cancelled and released occupancy.
-  // A late running_task for the same msg_id must not revive the slot.
-  if (current?.status === "cancelling" || current?.status === "cancelled") {
-    return;
-  }
   store.updateMessage(sid, targetId, { status: "running" });
   store.setRunningTaskFor(sid, {
     session_id: sid,
@@ -583,7 +588,21 @@ export function handleChatResponse(data: ChatResponseData): void {
   // (NOT runtimeState.currentSessionId — the user may have switched away
   // while the background turn was finishing). The clear helper itself
   // flips the legacy button if the cleared session is the active one.
-  handleRunningTaskClear(sid ?? undefined);
+  //
+  // 例外：聊天回合中途完成的内联 @agentic_function / spawn 结果也走
+  // display:"runtime" 的 result/error 帧（_execute/chat.py 即时转发），
+  // 它结束的是子卡片、不是回合本身——误清 occupancy 会让停止键在流式
+  // 输出中途消失（正在推理却像已停止）。frame 的 msg_id 是子块自己的
+  // id，与 runningTask 的回合 msg_id 对不上时，跳过清理。
+  const runningTask = sid
+    ? useSessionStore.getState().runningTasks[sid]
+    : undefined;
+  const nestedRuntimeResult =
+    data.display === "runtime"
+    && !!runningTask?.msg_id
+    && !!data.msg_id
+    && data.msg_id !== runningTask.msg_id;
+  if (!nestedRuntimeResult) handleRunningTaskClear(sid ?? undefined);
   if (targetsActive) {
     void loadAgentSettings();
     void refreshTokenBadge();
