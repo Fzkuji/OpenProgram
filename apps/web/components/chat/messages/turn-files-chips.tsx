@@ -425,15 +425,6 @@ export function TurnFilesChips({
           {text("Collapse", "收起")}
         </button>
       ) : null}
-      {fileCount > files.length && (showAll || files.length <= COLLAPSE_AFTER) ? (
-        <button
-          type="button"
-          className="turn-files-more"
-          onClick={() => sessionId && openReviewTab(sessionId, assistantMsgId, "turn")}
-        >
-          {text(`Review all ${fileCount} files`, `审阅全部 ${fileCount} 个文件`)}
-        </button>
-      ) : null}
       {historyState && historyState.status !== "ready" ? (
         <div className="turn-files-blocked">
           {historyState.error || text(

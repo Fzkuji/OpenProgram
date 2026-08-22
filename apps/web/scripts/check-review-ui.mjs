@@ -39,8 +39,16 @@ assert.match(review, /action: "review_scope"/);
 assert.match(review, /action: "review_file_diff"/);
 assert.match(cardCss, /\.turn-files-summary\{height:40px;min-height:40px/);
 assert.match(cardCss, /\.turn-files-logo\{width:19px;height:19px/);
+assert.match(cardCss, /\.turn-files-heading\{[^}]*align-items:center/);
+assert.match(cardCss, /\.turn-files-count\{[^}]*font-size:14px/);
+assert.match(cardCss, /\.turn-files-action,\.turn-files-review\{[^}]*font-size:13px/);
+assert.match(cardCss, /\.turn-files-list\{[^}]*background:var\(--bg-primary\)/);
+assert.match(cardCss, /\.turn-files-row\{[^}]*height:30px/);
+assert.match(cardCss, /\.turn-files-name\{[^}]*font-size:13px/);
+assert.match(cardCss, /\.turn-files-more\{[^}]*background:var\(--bg-tertiary\)[^}]*font-size:13px/);
 assert.match(cardCss, /\.turn-files-meter/);
 assert.match(cardCss, /@media\(max-width:420px\)/);
+assert.doesNotMatch(card, /Review all \$\{fileCount\} files|审阅全部 \$\{fileCount\} 个文件/);
 assert.doesNotMatch(
   cardCss,
   /@media\(max-width:420px\)[\s\S]*?turn-files-logo[^}]*?(?:width|height):17px/,
