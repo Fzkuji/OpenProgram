@@ -125,7 +125,7 @@ def _read_candidate_directory(directory: Path, metadata: dict) -> dict:
         if path.is_symlink():
             raise InvalidWorkflow("workflow project files must not be symlinks")
         files[relative] = path.read_text(encoding="utf-8")
-    candidate = validation._validate_project_candidate(
+    candidate = validation.validate_workflow_candidate(
         {
             "project_metadata": metadata,
             "readme": readme_path.read_text(encoding="utf-8"),
@@ -343,7 +343,7 @@ def _read_repository_candidate(
         else:
             source_path = validation._validate_legacy_project_path(relative)
         files[source_path] = path.read_text(encoding="utf-8")
-    return validation._validate_project_candidate(
+    return validation.validate_workflow_candidate(
         {
             "project_metadata": metadata,
             "readme": readme.read_text(encoding="utf-8"),

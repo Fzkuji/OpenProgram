@@ -38,3 +38,5 @@ openprogram programs run <name> -a key=value  # 直接运行一个 program
 ## 编写你自己的
 
 任何满足目录契约（`<package>/agentics/__init__.py` 暴露 `AGENTIC_FUNCTIONS`）的仓库都能被同一条 `programs install` 命令安装。契约、最小模板和发布流程见[安装与编写 Harness](../installing-harnesses.md)。
+
+Harness 合同与单个自编程 Workflow package 不同。如果要编写并静态校验供 `create_workflow`、`revise_workflow` 和 `auto_workflow` 使用的版本化 package，请阅读[编写 Workflow package](authoring.md)。

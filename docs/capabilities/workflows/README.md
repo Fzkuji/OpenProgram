@@ -38,3 +38,5 @@ First-party Programs are immutable product components. In a mutable extension or
 ## Writing your own
 
 Any repository that follows the directory contract (`<package>/agentics/__init__.py` exposing `AGENTIC_FUNCTIONS`) can be installed with the same `programs install` command. See [Installing and writing harnesses](../installing-harnesses.md) for the contract, a minimal template, and the publishing flow.
+
+That harness contract is different from a single self-programming Workflow package. To author and statically validate a versioned package used by `create_workflow`, `revise_workflow`, and `auto_workflow`, see [Write a Workflow package](authoring.md).

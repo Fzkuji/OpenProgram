@@ -17,6 +17,8 @@ PROJECT_RUNTIME_NAMES = {
     "validate_and_retry",
     "route",
     "conditional",
+    "agentic_function",
+    "traced",
 }
 
 
@@ -192,6 +194,8 @@ def _allowed_package_import(
     path: str,
     entrypoint: str,
 ) -> bool:
+    if any(alias.name == "*" for alias in node.names):
+        return False
     if node.level:
         package_depth = len(Path(path).parts) - 1
         return node.level <= package_depth + 1
@@ -220,6 +224,34 @@ def _decorator_name(node: ast.expr) -> str:
     return node.id if isinstance(node, ast.Name) else ""
 
 
+def _valid_dunder_all(node: ast.Assign) -> bool:
+    if not (
+        len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "__all__"
+        and isinstance(node.value, (ast.List, ast.Tuple))
+    ):
+        return False
+    return all(
+        isinstance(item, ast.Constant) and isinstance(item.value, str)
+        for item in node.value.elts
+    )
+
+
+def _name_binders(tree: ast.Module, name: str) -> list[tuple[str, str, str]]:
+    binders: list[tuple[str, str, str]] = []
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            binders.append(("function", "", node.name))
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if (alias.asname or alias.name) == name:
+                    binders.append(
+                        (f"import:{node.level}:{node.module or ''}", alias.name, name)
+                    )
+    return binders
+
+
 def _validate_project_candidate(
     value: object,
     *,
@@ -245,6 +277,7 @@ def _validate_project_candidate(
 
     clean_files: dict[str, str] = {}
     trees: dict[str, ast.Module] = {}
+    public_entries: list[tuple[str, str]] = []
     for raw_path, raw_source in files.items():
         path = _validate_package_path(raw_path)
         if path in clean_files:
@@ -275,11 +308,16 @@ def _validate_project_candidate(
                         f"workflow package import is not allowed: {path}"
                     )
                 continue
-            if isinstance(node, ast.Assign) and all(
-                isinstance(target, ast.Name) and target.id == "__all__"
-                for target in node.targets
-            ):
-                continue
+            if isinstance(node, ast.Assign):
+                if _valid_dunder_all(node):
+                    continue
+                if any(
+                    isinstance(target, ast.Name) and target.id == "__all__"
+                    for target in node.targets
+                ):
+                    raise InvalidWorkflow(
+                        "workflow package __all__ must be a string literal list or tuple"
+                    )
             if not isinstance(node, ast.FunctionDef):
                 raise InvalidWorkflow(
                     f"workflow package top level may contain only imports and functions: {path}"
@@ -301,6 +339,8 @@ def _validate_project_candidate(
                 raise InvalidWorkflow(
                     "workflow package decorators may not override function names"
                 )
+            if "agentic_function" in decorators:
+                public_entries.append((path, node.name))
         clean_files[path] = raw_source.rstrip() + "\n"
         trees[path] = tree
 
@@ -321,6 +361,25 @@ def _validate_project_candidate(
             "workflow package must contain at least one helper module"
         )
 
+    for path, tree in trees.items():
+        used_decorators = {
+            name
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            for item in node.decorator_list
+            if (name := _decorator_name(item)) in {"agentic_function", "traced"}
+        }
+        for decorator in used_decorators:
+            binders = _name_binders(tree, decorator)
+            if len(binders) != 1 or not (
+                binders[0][0].startswith("import:0:openprogram.agentic_programming")
+                and binders[0][1:] == (decorator, decorator)
+            ):
+                raise InvalidWorkflow(
+                    f"workflow package decorator {decorator} must keep its "
+                    f"OpenProgram binding: {path}"
+                )
+
     entrypoint = metadata["entrypoint"]
     entries = [
         node
@@ -332,6 +391,11 @@ def _validate_project_candidate(
     }:
         raise InvalidWorkflow(
             f"workflow.py must define one @agentic_function {entrypoint}()"
+        )
+    if public_entries != [("workflow.py", entrypoint)]:
+        raise InvalidWorkflow(
+            "workflow package must define exactly one public "
+            f"@agentic_function: workflow.py:{entrypoint}"
         )
     args = entries[0].args
     if (
@@ -345,17 +409,50 @@ def _validate_project_candidate(
         raise InvalidWorkflow(
             f"{entrypoint}() must accept exactly one positional task argument"
         )
-    exports_entry = any(
-        isinstance(node, ast.ImportFrom)
-        and node.level == 1
-        and node.module == "workflow"
-        and any(alias.name == entrypoint for alias in node.names)
-        for node in trees["__init__.py"].body
-    )
-    if not exports_entry:
-        raise InvalidWorkflow(f"__init__.py must export {entrypoint} from .workflow")
+    entrypoint_binders = _name_binders(trees["__init__.py"], entrypoint)
+    expected_binder = ("import:1:workflow", entrypoint, entrypoint)
+    if entrypoint_binders != [expected_binder]:
+        raise InvalidWorkflow(
+            f"__init__.py must export {entrypoint} from .workflow without shadowing"
+        )
     return {
         "project_metadata": metadata,
         "readme": readme.rstrip() + "\n",
         "files": clean_files,
+    }
+
+
+def validate_workflow_candidate(
+    value: object,
+    *,
+    allow_legacy_entry: bool = False,
+) -> dict:
+    """Validate one in-memory Workflow candidate without executing its code."""
+    return _validate_project_candidate(
+        value,
+        allow_legacy_entry=allow_legacy_entry,
+    )
+
+
+def validate_workflow_directory(directory: str | Path) -> dict:
+    """Validate one authored Workflow package directory without writing it."""
+    root = Path(directory).expanduser()
+    if root.is_symlink():
+        raise InvalidWorkflow("workflow project directory must not be a symlink")
+    if not root.is_dir():
+        raise InvalidWorkflow(f"workflow project directory does not exist: {root}")
+
+    from . import repository
+
+    candidate = repository._read_repository_candidate(
+        root,
+        expected_project_id=root.name,
+    )
+    metadata = candidate["project_metadata"]
+    return {
+        "ok": True,
+        "workflow_id": metadata["entrypoint"],
+        "metadata": metadata,
+        "files": sorted(candidate["files"]),
+        "executed_tests": False,
     }

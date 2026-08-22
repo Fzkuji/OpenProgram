@@ -54,6 +54,8 @@
             <tr><td><code>@agentic_function(tool_visible=)</code> 传入 Layer-2 <code>register(..., expose)</code>；默认 <code>True</code>，现有函数仍全部曝光。</td><td>需要用装饰器表达“用户可见、Agent 工具不可见”。</td><td><code>auto_workflow</code> 以 <code>tool_visible=False</code> 注册。</td></tr>
             <tr><td>执行期 repair 已删除。<code>create_workflow</code> 内保留发布前 bounded author 重试（<code>PROJECT_AUTHOR_ATTEMPTS</code>）。</td><td>普通运行失败不得自动发布新 revision。</td><td>已发布修改只走显式 <code>revise_workflow</code>。</td></tr>
             <tr><td>四个公开入口已迁入 <code>workflow/</code>，旧源码目录已删除。</td><td>分类路径与运行身份必须持续保持独立。</td><td>Programs只把分类目录用于导航，函数节点和函数级调用图来自Registry与所选入口的可达AST。</td></tr>
+            <tr><td>新项目使用多文件package合同，但产品页仍描述无参数 <code>workflow()</code>、禁止全部import和执行期自动重写。</td><td>人类作者会按旧合同编写；真实规则只能从validator报错中逐项推断。</td><td>以现行validator为唯一规则来源，提供英中作者页和共享CLI静态校验。</td></tr>
+            <tr><td><code>tests/test_workflow.py</code>当前只参加AST与import检查，不会在发布前执行。</td><td>静态合法不等于行为正确；直接执行未信任测试又会越过安全边界。</td><td>先明确静态validate；后续以强制sandbox、禁网、凭据过滤、写目录和timeout限制实现行为测试门。</td></tr>
           </tbody>
         </table>
         <p>本设计复用已有的 Workflow package、Git、snapshot、checkpoint、DAG caller 和取消状态设施；不引入第二个执行Runtime、图DSL、Workflow数据库或字符串dispatcher。</p>
@@ -203,6 +205,9 @@ Registry / Programs 展示的运行实体：
 
       <section id="authoring"><span id="author"></span>
         <h2>5. 搜索、组件复用与创建</h2>
+        <h3>唯一package合同与人类作者入口</h3>
+        <p>Agent author与人类作者使用同一静态validator。新项目只能采用 <code>pyproject.toml + README.md + __init__.py + workflow.py + tests/test_workflow.py + helper</code> 的package格式；legacy <code>entry.py</code>不属于新authoring。CLI第一阶段提供 <code>openprogram workflows validate &lt;directory&gt;</code>，只读返回结构、metadata、AST、import、入口和依赖import形状诊断；依赖缺失、循环与revision pin仍由create/revise发布阶段检查。<code>--json</code>提供稳定脚本输出。create/revise在发布前调用同一candidate validator，不维护第二套规则。</p>
+        <div class="callout warn">静态validate不执行项目代码，不能称为发布测试通过。行为测试门必须在不依赖用户profile的强制sandbox中运行，默认禁网、过滤凭据、限制写目录与时间；sandbox不可用时拒绝发布。该门作为后续独立任务实现。</div>
         <h3>搜索合同</h3>
         <p>搜索以catalog metadata和固定Git HEAD为输入，只做确定性文本召回，再把候选合同交给调用它的Agent判断。Chat路径由Chat Agent判断；手动auto路径由其内部唯一的可见selection Agent判断。搜索结果不是执行许可；权限、输入Schema和side effects必须随候选返回。</p>
         <pre><code>{
@@ -295,6 +300,8 @@ Registry / Programs 展示的运行实体：
         <div class="phase"><div class="phase-id">Phase 3</div><div><h3>建立用户级 auto_workflow</h3><p>使用前两阶段公共能力实现search → visible select → reuse/create → run。完整DAG显示每个步骤；调用表单仅含 <code>task</code> 并继承会话Project；用Phase 0机制注册为Agent不可见。</p><div class="gate">Gate：用户表单可见，Agent工具清单不可见；reuse和create两条真实App路径可区分。</div></div></div>
         <div class="phase"><div class="phase-id">Phase 4</div><div><h3>移除新 agentic_workflow 调用</h3><p>停止注册旧入口，删除只服务旧复合路径的selection/repair分支。保留显式 <code>resume_workflow(run_id)</code> 和legacy只读执行器。剩余锚定单体入口的测试删除或迁移，resume/legacy测试保留。</p><div class="gate">Gate：新catalog、新DAG和新run不出现 <code>agentic_workflow</code>；历史run仍可查看和恢复且artifact不变。</div></div></div>
         <div class="phase"><div class="phase-id">Phase 5</div><div><h3>分类目录、UI、文档和最终门禁</h3><p>先固定“目录只分类、Registry定义运行身份”的合同，再将相关源码归入 <code>workflow/</code>。Programs按实际目录生成可展开导航，按Registry生成函数节点；调用图根节点使用被选择的函数名。最后同步产品文档，并在默认App完成direct、reuse、create、cancel和legacy恢复验收。</p><div class="gate">Gate：源码树不存在旧 <code>agentic_workflow/</code>；Registry不存在旧名称；Programs中 <code>workflow</code> 只能展开，不能运行；展开后只显示四个注册函数；helper文件和内部目录不显示为Program；调用图根节点使用所选函数名；目录移动不改变注册Schema、执行、恢复和取消行为；这些约束必须有自动化回归测试，随后通过文档构建、0死链和默认App可视验收。</div></div></div>
+        <div class="phase"><div class="phase-id">Phase 6</div><div><h3>统一作者静态校验</h3><p>把现行package validator暴露为人类CLI与agent author共用的只读入口，新增英中作者规范页；create/revise在发布前通过同一函数复验candidate。legacy读取、行为测试、scaffold、publish CLI和catalog迁移不混入本阶段。</p><div class="gate">Gate：合法目录的CLI与agent candidate得到相同metadata和文件清单；无效目录返回非零退出码和确定性诊断；校验不写目录、不初始化Git、不执行测试代码。</div></div></div>
+        <div class="phase"><div class="phase-id">Phase 7</div><div><h3>强制隔离的行为测试门</h3><p>发布前运行candidate测试，但执行必须使用与用户profile无关的强制sandbox，禁网、过滤凭据、限制写目录、设置timeout；sandbox缺失、测试失败或取消均不得发布。</p><div class="gate">Gate：恶意读凭据、越界写、联网、超时和普通失败都有公共RED；create/revise的catalog与HEAD在所有失败中保持不变。</div></div></div>
         <h3>最小文件边界</h3>
         <table>
           <thead><tr><th>范围</th><th>首选改动位置</th><th>明确不做</th></tr></thead>
@@ -341,6 +348,8 @@ Registry / Programs 展示的运行实体：
             <tr><td>独立 <code>create_workflow</code> / <code>revise_workflow</code></td><td>create 只新增项目且不执行用户任务；revise 在候选与 active revision 内容相同时拒绝发布（<code>revision unchanged</code>），否则只新增一个 revision；依赖 revision 写入 <code>pyproject.toml</code> 的 <code>workflow-dependencies</code>；失败与取消不发布。</td><td><span class="tag current">Implemented</span></td></tr>
             <tr><td>用户级 <code>auto_workflow</code></td><td>源码位于 <code>openprogram/programs/workflow/auto_workflow.py</code>；用户表单与 Programs 自动入口可见；以 <code>tool_visible=False</code> 注册；编排 search → 可见 selection Agent（public <code>agent()</code>，<code>AUTO_DECISION_ATTEMPTS=3</code>）→ reuse/create → 按 pin 执行；不自动 revise。该入口是单文件完整 Workflow，当前没有独立 steps、依赖或测试包，因此不增加同名目录。</td><td><span class="tag current">Implemented</span></td></tr>
             <tr><td>近似Workflow创建抑制</td><td>search结果向selection提供已验证的name、summary和tags；selection合同优先复用能力覆盖的候选；措辞、语言、输出路径、日期范围和普通参数差异不得触发create；零词项分数只表示检索无词项重合；候选非空时，无missing_capability的create在发布前失败。</td><td><span class="tag current">Implemented</span></td></tr>
+            <tr><td>共享静态author validator与CLI</td><td>Agent candidate与本地目录使用同一package合同；<code>openprogram workflows validate</code>只读、支持文本与JSON诊断，不import或执行candidate代码；metadata身份、唯一公开入口、安全<code>__all__</code>、decorator来源和最终re-export binding均由同一validator检查。</td><td><span class="tag current">Implemented</span></td></tr>
+            <tr><td>发布前行为测试门</td><td>必须使用强制sandbox，不依赖用户profile；当前发布仍只做静态验证。</td><td><span class="tag target">Pending</span></td></tr>
             <tr><td>按 revision 执行与依赖 pin</td><td><code>_run_published_workflow</code> 通过 <code>git archive</code> 检出选定 revision；<code>workflow_dependencies</code> 随发布持久化并在执行时 pin，旧 revision 在新 HEAD 发布后仍可运行。</td><td><span class="tag current">Implemented</span></td></tr>
             <tr><td>legacy <code>code.py</code> resume</td><td><code>resume_workflow</code> 对 legacy run 只读重放 snapshot/<code>code.py</code>；失败返回 failed，不调用 planner、不改写 artifact。</td><td><span class="tag current">Implemented</span></td></tr>
             <tr><td>停止新的 <code>agentic_workflow</code> 调用</td><td>旧入口不再注册；新 catalog、新 DAG 和新 run 不出现 <code>agentic_workflow</code>；<code>resume_workflow</code> 保留为内部函数。</td><td><span class="tag current">Completed</span></td></tr>
@@ -348,7 +357,7 @@ Registry / Programs 展示的运行实体：
             <tr><td>默认App真实验收</td><td>代码与文档门禁已齐，等待默认 <code>/Applications/OpenProgram.app</code> 完成 direct / reuse / create / cancel / legacy resume 可视验收。</td><td><span class="tag target">Pending</span></td></tr>
           </tbody>
         </table>
-        <p>Phase 0–5 的源码实现、组件回归、wheel路径验证、文档构建与两类独立复审已完成；默认 App 真实验收仍待完成。</p>
+        <p>Phase 0–6 的源码实现、组件回归、CLI公共路径、文档构建与两类独立复审已完成；强制sandbox行为测试门和默认App真实验收仍待完成。</p>
       </section>
 
       <section id="exclusions">
@@ -358,6 +367,7 @@ Registry / Programs 展示的运行实体：
           <li>不自动把所有用户消息转成Workflow，也不为一次性任务默认创建项目。</li>
           <li>不自动修改已发布Workflow，不在普通执行错误后隐式发布revision。</li>
           <li>不建立Workflow数据库、后台Git轮询、远程push、Marketplace或远程依赖解析。</li>
+          <li>本阶段不实现scaffold、人工publish命令、catalog状态目录迁移或执行未信任测试；这些分别进入后续任务。</li>
           <li>不改变Agent、Program和Workflow现有Python调用语义；本设计只拆入口与生命周期。</li>
         </ul>
       </section>

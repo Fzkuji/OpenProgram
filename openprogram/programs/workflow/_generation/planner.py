@@ -216,7 +216,7 @@ def _request_project_candidate(
             label="workflow project author",
         )
         try:
-            candidate = validation._validate_project_candidate(_parse_json_reply(reply))
+            candidate = validation.validate_workflow_candidate(_parse_json_reply(reply))
             entrypoint = str(candidate["project_metadata"].get("entrypoint") or "")
             base_entrypoint = str(
                 (base or {}).get("project_metadata", {}).get("entrypoint") or ""

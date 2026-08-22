@@ -499,6 +499,13 @@ def main():
             _need_subcommand(args._cmd_parser)
         return
 
+    if args.command == "workflows":
+        verb = getattr(args, "workflows_verb", None)
+        if verb == "validate":
+            sys.exit(_cmd_workflows_validate(args.directory, as_json=args.json))
+        _need_subcommand(args._cmd_parser)
+        return
+
     if args.command == "skills":
         verb = getattr(args, "skills_verb", None)
         if verb == "list":
@@ -1088,6 +1095,7 @@ from openprogram.cli.commands.programs import (  # noqa: E402,F401
     _cmd_uninstall,
     _cmd_programs_available,
 )
+from openprogram.cli.commands.workflows import _cmd_workflows_validate  # noqa: E402,F401
 from openprogram.cli.commands.skills import (  # noqa: E402,F401
     _cmd_skills_list,
     _cmd_skills_doctor,

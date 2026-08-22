@@ -241,6 +241,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "capabilities/agentic-programming/choosing-the-next-step/next-step-decision.md"]),
         ("Agentic Workflows", "Agentic Workflows", [
             "capabilities/workflows/README.md",
+            "capabilities/workflows/authoring.md",
             "capabilities/workflows/gui-agent.md",
             "capabilities/workflows/research-agent.md",
             "capabilities/workflows/wiki-agent.md"]),

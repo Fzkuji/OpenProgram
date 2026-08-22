@@ -62,6 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
             "    agents          manage agents (model, skills, tools per persona)\n"
             "    sessions        manage chat sessions\n"
             "    programs        run / list agentic programs\n"
+            "    workflows       validate authored Workflow packages\n"
             "    skills          manage the SKILL.md registry\n"
             "    plugins         manage installed plugins\n"
             "    channels        chat-channel bots (Telegram, Discord, Slack, WeChat)\n"
@@ -207,6 +208,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Uninstall a program (gui/research/wiki/all) or a third-party "
              "harness by its clone-dir name")
     p_p_un.add_argument("name", help="Program or harness dir name to uninstall")
+
+    # ---- workflows --------------------------------------------------------
+    p_workflows = sub.add_parser(
+        "workflows",
+        help="Author and validate reusable Workflow packages",
+    )
+    workflows_sub = p_workflows.add_subparsers(
+        dest="workflows_verb", metavar="verb",
+    )
+    p_w_validate = workflows_sub.add_parser(
+        "validate",
+        help="Statically validate a Workflow package without executing it",
+    )
+    p_w_validate.add_argument(
+        "directory",
+        help="Workflow project directory containing pyproject.toml",
+    )
+    p_w_validate.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit a stable JSON report",
+    )
 
     # ---- skills -----------------------------------------------------------
     p_skills = sub.add_parser("skills", help="Manage SKILL.md registry")

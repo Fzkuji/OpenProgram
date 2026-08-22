@@ -93,18 +93,23 @@ def _read_repository_metadata(
     project_id = _safe_project_id(project.get("name"))
     if project_id != (expected_project_id or project_dir.name):
         raise InvalidWorkflow("workflow project name does not match its directory")
+    display_name = str(tool.get("display-name") or project_id).strip()
+    entrypoint_groups = project.get("entry-points", {})
+    if not isinstance(entrypoint_groups, dict):
+        raise InvalidWorkflow("workflow project entry points must be a table")
     metadata = validation._validate_project_metadata(
         {
-            "name": tool.get("display-name") or project_id,
+            "name": display_name,
             "summary": project.get("description"),
             "tags": project.get("keywords"),
         }
     )
-    entrypoint_groups = project.get("entry-points", {})
-    if not isinstance(entrypoint_groups, dict):
-        raise InvalidWorkflow("workflow project entry points must be a table")
     entrypoints = entrypoint_groups.get("openprogram.workflows", {})
     if entrypoints:
+        if display_name != project_id:
+            raise InvalidWorkflow(
+                "workflow project display-name must match its project name"
+            )
         if not isinstance(entrypoints, dict) or len(entrypoints) != 1:
             raise InvalidWorkflow("workflow project must expose one entry point")
         entrypoint, target = next(iter(entrypoints.items()))
