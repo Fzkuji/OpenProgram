@@ -58,9 +58,11 @@ assert.match(cardCss, /\.turn-files-more\{[^}]*background:var\(--bg-tertiary\)[^
 assert.match(cardCss, /\.turn-files-more:hover\{[^}]*background:var\(--bg-hover\)/);
 assert.match(cardCss, /\.turn-files-meter/);
 assert.match(cardCss, /@media\(max-width:420px\)/);
+assert.match(cardCss, /@media\(max-width:420px\)\{\.turn-files-summary\{gap:6px;padding-inline:6px\}\.turn-files-heading\{gap:5px\}/);
 assert.doesNotMatch(card, /Review all \$\{fileCount\} files|审阅全部 \$\{fileCount\} 个文件/);
 assert.match(design, /\.change-summary\{height:40px;[^}]*background:var\(--bg-tertiary\)/);
 assert.match(design, /\.change-summary\{[^}]*gap:12px[^}]*padding:4px 10px 4px 12px/);
+assert.match(design, /@media\(max-width:420px\)\{\.change-summary\{[^}]*gap:6px;padding-inline:6px\}/);
 assert.match(design, /\.change-summary-title\{[^}]*font-size:14px/);
 assert.match(design, /\.change-summary-stat\{[^}]*font:12px/);
 assert.match(design, /\.change-group\{[^}]*background:var\(--bg-primary\)/);
