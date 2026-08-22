@@ -61,15 +61,13 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`runtime/execution/agent-worktree.md`](runtime/execution/agent-worktree.md) | Agent worktree 行为 |
 | [`runtime/execution/async-job-lifecycle.md`](runtime/execution/async-job-lifecycle.md) | 异步任务生命周期 |
 | [`runtime/operations/streaming-resume.md`](runtime/operations/streaming-resume.md) | 流式 + 恢复 |
-| [`runtime/operations/file-management.md`](runtime/operations/file-management.md) | 回退层（commit / worktree） |
-| [`runtime/operations/multi-agent-revert-todo.md`](runtime/operations/multi-agent-revert-todo.md) | 多 agent 回退 TODO |
+| [`runtime/operations/file-management.html`](runtime/operations/file-management.html) | **权威设计**：文件归因、Review、Undo、历史 Revert、多轮恢复、分支/worktree 对齐和多 agent 所有权 |
 | [`runtime/dag/overview.md`](runtime/dag/overview.md) | **权威** Session DAG 数据模型（一张图 / 3 种节点 user·llm·code / caller+predecessor 边 / spawn / 渲染 / 装配 / 压缩） |
 | [`runtime/dag/rendering.md`](runtime/dag/rendering.md) | **权威渲染规范**：布局/连线/图例/默认可见性，12 场景 |
 | [`runtime/dag/branch-collaboration.md`](runtime/dag/branch-collaboration.md) | 分支协作（通信 / 派活 / 合并）设计与实现步骤 |
 | [`runtime/execution/dispatcher-split.md`](runtime/execution/dispatcher-split.md) | Dispatcher 拆分设计 |
 | [`runtime/execution/next-step-decision.md`](runtime/execution/next-step-decision.md) | 下一步决策（模型如何选择接下来执行什么） |
 | [`runtime/execution/agentic-self-recursion.md`](runtime/execution/agentic-self-recursion.md) | Agentic 自递归（[已渲染](runtime/execution/agentic-self-recursion.html)） |
-| [`runtime/operations/rewind.md`](runtime/operations/rewind.md) | Rewind 回退 |
 | [`runtime/operations/branch-naming.md`](runtime/operations/branch-naming.md) | 分支命名（[已渲染](runtime/operations/branch-naming.html)） |
 | [`runtime/session/README.md`](runtime/session/README.md) | Session 子系统：数据模型、存储、命名、列表、生命周期 |
 | [`runtime/self-update.md`](runtime/self-update.zh.md) | Source checkout 升级：Git 门禁、channel 语义、验证与手动恢复 |

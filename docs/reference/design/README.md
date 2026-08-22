@@ -66,15 +66,13 @@ Proactivity applications (built on the base):
 | [`runtime/execution/async-job-lifecycle.md`](runtime/execution/async-job-lifecycle.md) | Async task lifecycle |
 | [`runtime/agent-resource-governance.html`](runtime/agent-resource-governance.html) | Agent runtime quotas and task lifecycle governance: current implementation audit, reference comparison, admission, budgets, recovery, visibility, and implementation gates |
 | [`runtime/operations/streaming-resume.md`](runtime/operations/streaming-resume.md) | Streaming + resume |
-| [`runtime/operations/file-management.md`](runtime/operations/file-management.md) | Revert layers (commit / worktree) |
-| [`runtime/operations/multi-agent-revert-todo.md`](runtime/operations/multi-agent-revert-todo.md) | Multi-agent revert TODO |
+| [`runtime/operations/file-management.html`](runtime/operations/file-management.html) | **Authoritative** file attribution, Review, Undo, historical Revert, multi-turn Restore, branch/worktree alignment, and multi-agent ownership |
 | [`runtime/dag/overview.md`](runtime/dag/overview.md) | **authoritative** Session DAG data model (one graph / 3 node roles user·llm·code / caller+predecessor edges / spawn / rendering / assembly / compaction) |
 | [`runtime/dag/rendering.md`](runtime/dag/rendering.md) | **authoritative rendering spec**: layout / edges / legend / default visibility, 12 scenarios |
 | [`runtime/dag/branch-collaboration.md`](runtime/dag/branch-collaboration.md) | Branch collaboration (communication / dispatch / merge) design and implementation steps |
 | [`runtime/execution/dispatcher-split.md`](runtime/execution/dispatcher-split.md) | Dispatcher split design |
 | [`runtime/execution/next-step-decision.md`](runtime/execution/next-step-decision.md) | Next-step decision (how the model picks what runs next) |
 | [`runtime/execution/agentic-self-recursion.md`](runtime/execution/agentic-self-recursion.md) | Agentic self-recursion ([rendered](runtime/execution/agentic-self-recursion.html)) |
-| [`runtime/operations/rewind.md`](runtime/operations/rewind.md) | Rewind |
 | [`runtime/operations/branch-naming.md`](runtime/operations/branch-naming.md) | Branch naming ([rendered](runtime/operations/branch-naming.html)) |
 | [`runtime/session/README.md`](runtime/session/README.md) | Session subsystem: data model, storage, naming, listing, lifecycle |
 | [`runtime/self-update.md`](runtime/self-update.md) | Source-checkout upgrades: gated Git flow, channel semantics, verification, and manual recovery |

@@ -9,8 +9,7 @@ Agent execution runtime — the run loop, worktrees, async tasks, streaming/resu
 - [`execution/agent-worktree.md`](execution/agent-worktree.md)
 - [`execution/async-job-lifecycle.md`](execution/async-job-lifecycle.md)
 - [`execution/dispatcher-split.md`](execution/dispatcher-split.md) — break `agent/dispatcher.py` into a responsibility-scoped package (no-1000-line rule)
-- [`operations/multi-agent-revert-todo.md`](operations/multi-agent-revert-todo.md)
-- [`operations/file-management.md`](operations/file-management.md)
+- [`operations/file-management.html`](operations/file-management.html) — authoritative file attribution, Review, Undo, Restore, branch alignment, and multi-agent ownership
 - [`overview.md`](overview.md)
 - [`session/`](session/) — the session subsystem: data model, storage, naming, listing, lifecycle, broadcast
 - [`operations/streaming-resume.md`](operations/streaming-resume.md)

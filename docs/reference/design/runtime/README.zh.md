@@ -9,8 +9,7 @@ Agent 执行运行时 —— 运行循环、worktree、异步任务、流式传�
 - [`execution/agent-worktree.md`](execution/agent-worktree.md)
 - [`execution/async-job-lifecycle.md`](execution/async-job-lifecycle.md)
 - [`execution/dispatcher-split.md`](execution/dispatcher-split.md) — 将 `agent/dispatcher.py` 拆分为按职责划分的包(遵循「单文件不超过 1000 行」规则)
-- [`operations/multi-agent-revert-todo.md`](operations/multi-agent-revert-todo.md)
-- [`operations/file-management.md`](operations/file-management.md)
+- [`operations/file-management.html`](operations/file-management.html) — 文件归因、Review、Undo、Restore、分支对齐和多 agent 所有权的权威设计
 - [`overview.md`](overview.md)
 - [`session/`](session/) — Session 子系统：数据模型、存储、命名、列举、生命周期、广播
 - [`operations/streaming-resume.md`](operations/streaming-resume.md)

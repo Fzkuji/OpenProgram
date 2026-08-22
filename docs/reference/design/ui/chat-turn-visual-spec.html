@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<title>聊天轮次视觉规范 — 执行时间线 + 消息导航</title>
+<title>聊天轮次视觉规范 — 执行时间线 + 文件修改 + 消息导航</title>
 <style>
 :root{
   color-scheme:light dark;
@@ -206,6 +206,30 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
 .path-table th{color:var(--text-bright);font-weight:600}.path-table td{color:var(--text-secondary)}
 .path-table code{font-family:var(--font-mono);color:var(--text-primary)}
 
+/* ── 文件修改摘要与 Review ── */
+.change-target-demo{display:grid;grid-template-columns:minmax(0,.78fr) minmax(0,1.22fr);gap:1px;max-width:980px;overflow:hidden;border:1px solid var(--border-light);border-radius:12px;background:var(--border-light)}
+.change-chat-pane,.change-review-pane{min-width:0;background:var(--bg-primary)}.change-chat-pane{padding:20px}
+.change-card-demo{width:min(100%,680px);margin-top:17px;overflow:hidden;border:1px solid color-mix(in srgb,var(--border-light) 72%,transparent);border-radius:9px;background:color-mix(in srgb,var(--bg-secondary) 58%,var(--bg-primary))}
+.change-summary{display:flex;align-items:center;gap:8px;min-height:40px;padding:5px 10px 4px;border-bottom:1px solid var(--border-light);color:var(--text-secondary)}
+.change-summary-mark{flex:none;width:19px;height:19px;color:var(--text-muted)}.change-summary-mark svg{display:block;width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transform-origin:center}.change-summary-mark:hover svg{animation:changeFeatherWrite 1.6s ease-in-out}@keyframes changeFeatherWrite{0%,100%{transform:translate(0,0) rotate(0)}25%{transform:translate(2px,-4px) rotate(-8deg)}50%{transform:translate(-2px,-2px) rotate(4deg)}75%{transform:translate(1px,-1px) rotate(-3deg)}}
+.change-summary-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-primary);font-size:12.5px;font-weight:600}.change-summary-stat{flex:none;display:inline-grid;grid-template-columns:auto auto;align-items:center;column-gap:7px;row-gap:2px;font:10.5px/1.25 var(--font-mono)}
+.change-summary-stat b{font-weight:500}.add{color:var(--accent-green)}.del{color:var(--accent-red)}
+.change-summary-meter{grid-column:1/-1;width:100%;min-width:42px;height:2.5px;border-radius:999px;background:linear-gradient(90deg,var(--accent-green) 0 82%,var(--accent-red) 82% 100%);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--text-bright) 4%,transparent);opacity:.78}
+.change-summary-actions{flex:none;display:flex;align-items:center;gap:7px;margin-left:auto;white-space:nowrap}.change-summary-action{flex:none;min-height:27px;display:inline-flex;align-items:center;gap:4px;border:0;border-radius:6px;padding:0 4px;background:transparent;color:var(--text-muted);font:12.5px/1.4 var(--font-sans);cursor:pointer;white-space:nowrap}.change-summary-action.primary{border:1px solid var(--border-light);padding:0 10px;background:color-mix(in srgb,var(--bg-tertiary) 34%,transparent);color:var(--text-primary)}.change-summary-action-icon{flex:none;width:1em;height:1em;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.change-category{display:none}
+.change-group{padding:0 4px 5px}.change-row{display:grid;grid-template-columns:minmax(0,1fr) 66px;align-items:center;gap:12px;min-height:33px;padding:0 8px;border-radius:5px;color:var(--text-secondary)}.change-row:hover{background:color-mix(in srgb,var(--text-bright) 4%,transparent)}
+.change-row-name{min-width:0;display:flex;overflow:hidden;white-space:nowrap;font-size:11.5px;line-height:1.4}.change-path-dir{min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--text-muted)}.change-path-base{flex:none;color:var(--text-primary);font-weight:500}.change-row-counts{min-width:66px;display:flex;justify-content:flex-end;gap:8px;font:10.5px/1.4 var(--font-mono);font-variant-numeric:tabular-nums}
+.change-review-tab{display:flex;align-items:center;gap:8px;min-height:38px;padding:0 9px;border-bottom:1px solid var(--border-light);background:var(--bg-secondary);color:var(--text-primary);font-size:12px}.change-review-close{margin-left:auto;color:var(--text-muted)}
+.change-review-toolbar{display:flex;align-items:center;gap:9px;min-height:45px;padding:0 12px;border-bottom:1px solid var(--border-light);color:var(--text-secondary);font-size:11px}.change-review-toolbar .review-total{font:11px/1.4 var(--font-mono)}
+.change-scope-tabs,.change-review-modes{display:inline-flex;gap:2px;padding:2px;border-radius:6px;background:var(--bg-tertiary)}.change-review-modes{margin-left:auto}.change-scope-tab,.change-review-modes span{padding:3px 7px;border-radius:4px;color:var(--text-muted);font-size:9px}.change-scope-tab.active,.change-review-modes span.active{background:var(--bg-hover);color:var(--text-primary)}
+.change-review-body{display:grid;grid-template-columns:145px minmax(0,1fr);min-height:278px}.change-review-rail{padding:8px;border-right:1px solid var(--border-light);background:color-mix(in srgb,var(--bg-secondary) 72%,var(--bg-primary))}
+.change-review-rail-label{padding:6px 6px 3px;color:var(--text-muted);font:9px/1.4 var(--font-mono);text-transform:uppercase;letter-spacing:.04em}.change-review-file{min-height:34px;padding:8px 7px;color:var(--text-secondary);font:11px/1.4 var(--font-mono)}.change-review-file.selected{background:var(--bg-tertiary);color:var(--text-primary)}
+.change-review-main{min-width:0;padding:9px 0 14px}.change-review-main-title{display:flex;align-items:center;gap:8px;min-height:34px;padding:0 12px;color:var(--text-primary);font:11px/1.4 var(--font-mono)}.change-review-main-title .change-row-counts{margin-left:auto}.change-review-diff{margin:0 0 4px;padding:9px 12px;background:color-mix(in srgb,var(--accent-green) 8%,var(--bg-primary));color:var(--text-secondary);font:10px/1.55 var(--font-mono);white-space:pre;overflow:hidden}
+.change-flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;max-width:980px;margin-top:12px}.change-flow-card{min-height:116px;padding:13px;border:1px solid var(--border-light);border-radius:9px;background:var(--bg-secondary)}.change-flow-card b{display:block;margin-bottom:6px;color:var(--text-bright);font-size:12px}.change-flow-card p{color:var(--text-muted);font-size:11px;line-height:1.55}.change-flow-card code{font-family:var(--font-mono);color:var(--text-secondary)}
+.change-note{max-width:980px;margin-top:12px;padding:11px 13px;border-left:2px solid var(--accent-cyan);background:color-mix(in srgb,var(--accent-cyan) 5%,transparent);color:var(--text-secondary);font-size:12px;line-height:1.65}.change-note.danger{border-left-color:var(--accent-red);background:color-mix(in srgb,var(--accent-red) 5%,transparent)}
+.decision{display:inline-flex;padding:2px 6px;border-radius:999px;font:9px/1.4 var(--font-mono)}.decision.adopt{color:var(--accent-green);background:color-mix(in srgb,var(--accent-green) 12%,transparent)}.decision.modify{color:var(--accent-cyan);background:color-mix(in srgb,var(--accent-cyan) 12%,transparent)}.decision.reject{color:var(--accent-red);background:color-mix(in srgb,var(--accent-red) 10%,transparent)}
+.source-links{display:flex;flex-wrap:wrap;gap:8px;max-width:980px;margin-top:10px}.source-links a{color:var(--accent-cyan);font-size:11px;text-decoration:none}.source-links a:hover{text-decoration:underline}
+
 /* ── 父子分支导航样例 ── */
 .branch-nav-demo{max-width:980px}
 .branch-map{display:grid;grid-template-columns:minmax(150px,1fr) 88px minmax(150px,1fr) 88px minmax(150px,1fr);
@@ -292,7 +316,9 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
   .branch-view{padding:18px}
   .branch-context-banner{margin:-18px -18px 18px;padding:10px 12px}
   .branch-explain{grid-template-columns:1fr}
+  .change-flow{grid-template-columns:1fr 1fr}.change-target-demo{grid-template-columns:1fr}.change-review-pane{min-height:360px}.change-summary{padding-inline:9px}.change-review-toolbar{flex-wrap:wrap;padding:7px 9px}.change-review-modes{margin-left:0}
 }
+@media(max-width:420px){.change-summary{height:40px;min-height:40px;gap:6px;padding-inline:6px}.change-summary-mark{width:17px;height:17px}.change-summary-title{font-size:0;white-space:nowrap}.change-summary-title::after{content:attr(data-short);font-size:11.5px}.change-summary-stat{min-width:36px;column-gap:5px;font-size:9.5px}.change-summary-meter{min-width:36px}.change-summary-actions{gap:4px}.change-summary-action{min-height:25px;padding-inline:2px;font-size:11px}.change-summary-action.primary{padding-inline:7px}}
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}
 }
@@ -300,11 +326,12 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
 </head>
 <body>
 <h1>聊天轮次视觉规范</h1>
-<div class="desc">执行时间线（去外框、图标竖线串联、行样式统一）+ 手动函数运行 + sub-agent 父子分支导航 + 左缘消息导航。全部可交互——点开试。本文件是聊天轮次视觉的唯一权威；实现在 <code>apps/web/components/chat/messages/execution-strip.tsx</code> / <code>runtime-block.tsx</code> 与 <code>app/styles/chat/execution-strip.css</code>。</div>
+<div class="desc">执行时间线（去外框、图标竖线串联、行样式统一）+ 手动函数运行 + sub-agent 父子分支导航 + 文件修改摘要与 Review + 左缘消息导航。全部可交互。本文件是聊天轮次视觉的唯一权威；相关实现在 <code>apps/web/components/chat/messages/</code> 与 <code>app/styles/chat/</code>。</div>
 <div class="doc-meta" aria-label="文档状态">
   <span class="doc-pill current">时间线折叠与复制规范 · 已实现</span>
   <span class="doc-pill">范围：Chat / workflow / sub-agent 展示</span>
   <span class="doc-pill">圆点连续开合动画与函数列对齐 · 已实现</span>
+  <span class="doc-pill">精确文件归因、Review 与安全 Undo · 待实现</span>
 </div>
 
 <!-- ═══════ 1. 收起态 ═══════ -->
@@ -687,6 +714,108 @@ Agent 回复发起的 function 及其执行树只属于该回复的执行时间�
   </div>
 </div>
 <div class="rule">横线只数用户消息（回复不占位）；整列<b>贴左缘</b>——紧靠左侧栏分割线（left: calc((100% - 100cqw)/2 + 8px)，chat-area 是 inline-size 容器），不悬在正文中间。面板从刻度右侧展开，行内文字单行截断；点击 = 平滑滚到那条消息并闪一下。面板出现时横线隐去，二者不叠。列表滚动时高亮跟随当前可视消息。</div>
+
+<!-- ═══════ 7. 文件修改与 Review ═══════ -->
+<h2><span class="num">7</span>文件修改：精确归因、分层 Review、安全 Undo</h2>
+<div class="desc">本节只定义聊天卡与 Changes center tab 的视觉表面。文件归因、Undo、历史 Revert、多轮 Restore、Branch、checkpoint、并发和保留策略的唯一权威是 <a href="../runtime/operations/file-management.html">文件修改、Review 与历史恢复</a>。聊天卡只陈述本轮精确修改；Review 使用 This turn、Current branch 和 Workspace。</div>
+
+<div class="change-target-demo" aria-label="聊天摘要卡与独立 Review 页目标草图">
+  <div class="change-chat-pane">
+    <div class="reply">后台进程逻辑与测试已更新。</div>
+    <div class="change-card-demo">
+      <div class="change-summary"><span class="change-summary-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z"/><path d="M16 8 2 22"/><path d="M17.5 15H9"/></svg></span><span class="change-summary-title" data-short="3 files">3 files changed</span><span class="change-summary-stat"><b class="add">+27</b><b class="del">−6</b><span class="change-summary-meter" title="82% additions · 18% deletions" aria-hidden="true"></span></span><span class="change-summary-actions"><button class="change-summary-action" type="button"><span>Undo</span><svg class="change-summary-action-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 3.5 7 6 9.5"/><path d="M3.75 7H8c3 0 4.75 1.6 4.75 3.75S10.95 14.5 8.75 14.5H7"/></svg></button><button class="change-summary-action primary" type="button">Review</button></span></div>
+      <div class="change-group">
+        <div class="change-row"><span class="change-row-name"><span class="change-path-base">playbook.json</span></span><span class="change-row-counts"><span class="add">+1</span><span class="del">−1</span></span></div>
+        <div class="change-row"><span class="change-row-name"><span class="change-path-dir">src/runtime/</span><span class="change-path-base">player.py</span></span><span class="change-row-counts"><span class="add">+16</span><span class="del">−4</span></span></div>
+        <div class="change-row"><span class="change-row-name"><span class="change-path-dir">tests/</span><span class="change-path-base">test_player.py</span></span><span class="change-row-counts"><span class="add">+10</span><span class="del">−1</span></span></div>
+      </div>
+    </div>
+  </div>
+  <div class="change-review-pane">
+    <div class="change-review-tab">Changes <span class="change-review-close">×</span></div>
+    <div class="change-review-toolbar"><span class="change-scope-tabs"><span class="change-scope-tab active">This turn</span><span class="change-scope-tab">Current branch</span><span class="change-scope-tab">Workspace</span></span><span class="review-total"><b class="add">+27</b> <b class="del">−6</b></span><span class="change-review-modes"><span class="active">Unified</span><span>Side-by-side</span><span>Open file</span></span></div>
+    <div class="change-review-body">
+      <div class="change-review-rail"><div class="change-review-rail-label">Code</div><div class="change-review-file selected">player.py</div><div class="change-review-file">playbook.json</div><div class="change-review-rail-label">Tests</div><div class="change-review-file">test_player.py</div></div>
+      <div class="change-review-main"><div class="change-review-main-title"><span>src/runtime/player.py</span><span class="change-row-counts"><span class="add">+16</span><span class="del">−4</span></span></div><div class="change-review-diff">38  def start_process(config):
+39 -    process = launch(config.command)
+39 +    process = launch(config.command, cwd=config.cwd)
+40 +    process.wait_until_ready(timeout=config.timeout)
+41      return process</div></div>
+    </div>
+  </div>
+</div>
+<div class="rule"><b>视觉边界：</b>保留完整外边框、圆角、文件列表和 footer；摘要行约 40px，左侧使用用户指定的 19px FeatherIcon，并以一条横线分隔摘要与文件列表。FeatherIcon 表示本轮包含直接文件编辑，不使用网站 logo；hover 使用组件定义的 1.6 秒位移与旋转序列，reduced motion 下停用。总增删数字始终同时显示，包括 <code>+0</code> 或 <code>−0</code>；其下增加 2.5px 双色比例条，长度只编码 additions / deletions 的真实占比，不增加分类 chips 或装饰性数字。操作组、按钮和 Undo 图标禁止 flex 收缩，方向图标使用 <code>1em</code> 与按钮文字等高，标题区域负责截断；≤420px 时标题从 “3 files changed” 缩写为 “3 files”，FeatherIcon、统计和操作保持可见，header 固定 40px。成功 Undo 后显示 <b>Redo</b>；历史 Revert 的反向操作显示 <b>Reapply</b>。两者都调用同一安全 reapply transaction 并重新预检，不维护独立线性 redo 栈。Review 使用中性色描边按钮；Undo / Revert 使用文字加回退图标，不使用强调色。Code / Tests / Docs / Large 分类只在 Review 中出现。路径使用“目录弱、文件名强”的层级，行高 33px，增删统计固定列宽。header 只放当前可执行操作；Undo unavailable、blocked 与 Reverted 等状态只在 footer 解释。文件行整行导航，不放展开箭头或 hover 操作组。唯一的展开控制只属于 Show more footer。</div>
+
+<h3 style="font-size:14px;color:var(--text-bright);margin:24px 0 8px">官方参考与可确认边界</h3>
+<table class="path-table"><thead><tr><th>系统</th><th>本轮 / checkpoint</th><th>Review</th><th>Undo / rewind</th></tr></thead><tbody>
+  <tr><td>Codex</td><td>开源 <code>TurnDiffTracker</code> 只消费 committed <code>apply_patch</code> 精确 delta，不重读 workspace；delta 不精确时清空本轮 diff。</td><td><code>/diff</code> 单独使用 Git：tracked 走 <code>git diff</code>，untracked 走 <code>git ls-files --others --exclude-standard</code>。</td><td>开源 <code>thread/revert</code> 明确只回退对话历史；Codex App 文件 Undo 的客户端实现未在当前开源仓库中确认，不推断。</td></tr>
+  <tr><td>Claude Code</td><td>每个 user prompt 建 checkpoint；只跟踪 Write、Edit、NotebookEdit 等直接文件编辑工具。保留最近 100 个 checkpoint。</td><td>Desktop/Web 使用 session 级增删统计入口；打开后左侧文件列表、右侧单文件 diff，支持行级评论和再次交给 Agent 修改。</td><td>代码与对话可分别恢复；Bash、一般后台 sub-agent、外部并发修改、symlink/hardlink 不保证恢复，没有 tracked edits 时不显示代码恢复选项。</td></tr>
+  <tr><td>OpenProgram 当前实现</td><td>直接工具 checkpoint 之外，还在每次 Bash 前后递归扫描最多 20,000 个文件并预复制不超过 5 MiB 的候选内容。</td><td>聊天卡内请求完整 diff；历史消息逐条请求文件列表；shadow Git 和当前磁盘 fallback 混用。</td><td>大文件没有 baseline 时被记录为 <code>pre_existing=false</code>；Undo 可能删除原有文件，且部分失败后仍可写入 reverted 状态。</td></tr>
+</tbody></table>
+<div class="source-links" aria-label="官方参考链接"><a href="https://code.claude.com/docs/en/checkpointing">Claude Code checkpointing</a><a href="https://code.claude.com/docs/en/desktop">Claude Code Desktop diff view</a><a href="https://code.claude.com/docs/en/web-quickstart">Claude Code Web review</a><a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/turn_diff_tracker.rs">Codex turn diff tracker</a><a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/get_git_diff.rs">Codex Git diff</a><a href="https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/src/protocol/v2/thread.rs">Codex thread revert protocol</a></div>
+
+<h3 style="font-size:14px;color:var(--text-bright);margin:24px 0 8px">采用、调整与拒绝</h3>
+<table class="path-table"><thead><tr><th>结论</th><th>设计项</th><th>OpenProgram 处理</th></tr></thead><tbody>
+  <tr><td><span class="decision adopt">采用</span></td><td>Codex 的精确增量归因</td><td>本轮统计只来自 committed file mutation event；没有精确 before/after 就不进入本轮卡。</td></tr>
+  <tr><td><span class="decision adopt">采用</span></td><td>Claude/Codex 的独立审查面</td><td>聊天只保留摘要；Review 使用左侧文件导航、右侧单文件内容，并支持行级评论。</td></tr>
+  <tr><td><span class="decision modify">调整</span></td><td>Claude 的 session diff 与 Codex 的 turn/repo diff</td><td>放进同一个 Review tab 的三个 scope：This turn、Current branch、Workspace；切换 scope 不改变术语含义。</td></tr>
+  <tr><td><span class="decision modify">调整</span></td><td>Claude 的 checkpoint 恢复</td><td>保留 turn 级快速 Undo，但必须先完成全量冲突预检；恢复记录作为新的不可变 journal transaction 保存。</td></tr>
+  <tr><td><span class="decision reject">拒绝</span></td><td>Bash 目录扫描归因</td><td>删除 Bash 前后 cwd 遍历与候选文件预复制。普通 Bash、后台进程和外部修改不计入本轮，也不能由本轮 Undo。</td></tr>
+  <tr><td><span class="decision reject">拒绝</span></td><td>近似本轮 diff 与静默部分恢复</td><td>无法证明来源时只进入 Workspace Review；Undo 预检失败时不修改任何文件，并列出冲突路径。</td></tr>
+  <tr><td><span class="decision modify">调整</span></td><td>参考产品的 header 操作层级</td><td>采用“文字 Undo + 中性描边 Review”的主次关系；左侧使用 FeatherIcon 表示直接文件编辑，尺寸、间距、颜色和 Review 页面继续沿用 OpenProgram 视觉系统。</td></tr>
+</tbody></table>
+
+<h3 style="font-size:14px;color:var(--text-bright);margin:24px 0 8px">三个 Review scope</h3>
+<table class="path-table"><thead><tr><th>Scope</th><th>权威数据源</th><th>包含</th><th>Undo</th></tr></thead><tbody>
+  <tr><td><code>This turn</code></td><td>当前 turn 的精确 mutation journal</td><td>主 change set；关联 child change set 按真实 producer 保留，并通过 origin 分组，不复制 mutation。</td><td>仅当全部记录为 recoverable 且 current digest 等于记录的 after digest。</td></tr>
+  <tr><td><code>Current branch</code></td><td>当前 active lineage 的 mutation projection</td><td>所有已完成 turn 与显式 revert/restore/reapply；不包含 sibling branch、普通 Bash 和外部写入。</td><td>从具体 turn/checkpoint 发起，不提供无范围的一键 branch Undo。</td></tr>
+  <tr><td><code>Workspace</code></td><td>Git tracked diff + <code>ls-files --others --exclude-standard</code></td><td>当前未提交 tracked/untracked 文件；遵循 <code>.gitignore</code>。非 Git 工作区显示 unavailable，不使用目录扫描替代。</td><td>无。Workspace 变化可能来自用户、其他 session 或后台进程。</td></tr>
+</tbody></table>
+
+<h3 style="font-size:14px;color:var(--text-bright);margin:24px 0 8px">目标 mutation journal</h3>
+<div class="change-flow" aria-label="精确文件修改数据流">
+  <div class="change-flow-card"><b>1 · Before mutation</b><p>直接编辑工具在写入前记录规范路径、文件类型、<code>before_digest</code> 与可恢复 baseline。无法安全保存 baseline 时标记 <code>recoverability=unavailable</code>，绝不写成“原文件不存在”。</p></div>
+  <div class="change-flow-card"><b>2 · Commit mutation</b><p>写入成功后记录 <code>after_digest</code>、operation、行数、binary/large、<code>turn_id</code> 和 <code>actor_id</code>；失败不产生 committed mutation。</p></div>
+  <div class="change-flow-card"><b>3 · Persist summary</b><p>turn finalize 只归并本轮 mutation，生成净文件列表和增删统计并随 transcript 持久化。复杂度只与 changed paths 有关，不扫描 cwd。</p></div>
+  <div class="change-flow-card"><b>4 · Review on demand</b><p>Review 先读取摘要；选择文件后才请求一个有界 diff。切换文件取消旧请求；聊天 DOM 永远不挂载 diff。</p></div>
+</div>
+<div class="change-note danger"><b>必须删除的当前逻辑：</b><code>agent_loop._snapshot_cwd</code>、<code>_walk_scan</code> 与 <code>_checkpoint_changed_files</code> 不能继续参与文件归因。特别是“超过 5 MiB 未暂存 → 使用不存在路径 → <code>pre_existing=false</code>”必须消失；baseline 缺失只能表示不可恢复，不能表示新建文件。</div>
+
+<h3 style="font-size:14px;color:var(--text-bright);margin:24px 0 8px">Undo 安全合同</h3>
+<table class="path-table"><thead><tr><th>阶段 / 状态</th><th>规则</th><th>可见结果</th></tr></thead><tbody>
+  <tr><td>Eligibility</td><td>每个文件必须有精确 operation、before/after digest；普通文件才可恢复，symlink/hardlink 与缺失 baseline 标记 unavailable。</td><td>任一文件 unavailable，卡片不显示可执行 Undo；Review 解释具体原因。</td></tr>
+  <tr><td>Preflight</td><td>恢复前重新读取所有 current digest。新建文件只有仍等于 after digest 才可删除；修改/删除/rename 同样要求未被后来编辑。</td><td>任一冲突则整次 Undo 不写磁盘，状态为 <code>blocked-conflict</code>，列出冲突路径。</td></tr>
+  <tr><td>Apply</td><td>全部预检通过后，将恢复内容写入同目录临时文件并原子替换；多文件操作保留回滚 staging。</td><td>意外 I/O 失败时回滚已应用项，不能把部分成功标为 Reverted。</td></tr>
+  <tr><td>Record</td><td>成功恢复追加 <code>revert_of=&lt;turn_id&gt;</code> transaction；原 turn 状态由 journal 推导。</td><td>聊天与 Review 显示 Reverted，历史文件列表仍可审查；不修改原对话内容。</td></tr>
+</tbody></table>
+
+<h3 style="font-size:14px;color:var(--text-bright);margin:24px 0 8px">性能与内容上限</h3>
+<table class="path-table"><thead><tr><th>路径</th><th>目标上限</th><th>降级</th></tr></thead><tbody>
+  <tr><td>Turn finalize</td><td>不遍历 workspace；只归并 mutation journal 中的 changed paths。</td><td>单条 mutation 缺少精确信息就排除并记录诊断，不生成近似统计。</td></tr>
+  <tr><td>Transcript</td><td>摘要随消息返回；首屏最多 3 个文件，不再为每条历史消息发送 <code>list_turn_files</code>。</td><td>legacy 消息只在进入视口或主动 Review 时查询。</td></tr>
+  <tr><td>File list</td><td>服务端每页 100 个文件；前端只保留相邻页并支持键盘导航。</td><td>分类统计来自 summary，不要求先加载全部行。</td></tr>
+  <tr><td>Selected diff</td><td>同时只挂载一个 diff；每批最多 200 行或 256 KiB，按 hunk/page 继续加载。</td><td>binary 或超大单 hunk 显示统计、原因与 Open file，不把不完整内容冒充完整 diff。</td></tr>
+  <tr><td>Render budget</td><td>diff 计算有明确时间预算；超预算返回 metadata，Review 不阻塞聊天和 Agent 完成。</td><td>允许稍后重试或打开原文件，绝不回退到“before 与当前磁盘”的跨轮近似 diff。</td></tr>
+</tbody></table>
+
+<h3 style="font-size:14px;color:var(--text-bright);margin:24px 0 8px">Review tab 与交互合同</h3>
+<table class="path-table"><thead><tr><th>动作或状态</th><th>结果</th><th>边界</th></tr></thead><tbody>
+  <tr><td>Review / 文件行</td><td>打开同一确定性 <code>r:&lt;sessionId&gt;:&lt;assistantMsgId&gt;</code> center tab；文件行同时选择路径。</td><td>不加载聊天内 diff；重复点击只聚焦或更新 selection。</td></tr>
+  <tr><td>布局</td><td>未分屏时复用现有 group，把 Review 放到聊天右侧；满员 split 时作为普通 active tab。</td><td>不替换已有 peer，不增加第三 pane，不新增第二套 tab store。</td></tr>
+  <tr><td>Scope 切换</td><td>This turn、Current branch、Workspace 保持同一左 rail / 右 diff 构图，标题和来源标签同步变化。</td><td>Workspace 不显示 Undo；ignored 文件不出现；非 Git 明确 unavailable。</td></tr>
+  <tr><td>行级评论</td><td>点击 diff 行添加评论；多条评论在下一条 prompt 中作为结构化文件位置一起发送。</td><td>评论不直接修改文件，不假装 code review 已执行。</td></tr>
+  <tr><td>Large / binary</td><td>显示精确统计、diff unavailable 原因和 Open file。</td><td>不渲染完整大文件，不把日志自动归类为 Agent 修改。</td></tr>
+  <tr><td>Undo conflict</td><td>卡片显示 Review conflict；Review 定位冲突文件。</td><td>没有 Force undo 快捷按钮，避免覆盖用户或其他 session 的后续编辑。</td></tr>
+</tbody></table>
+
+<h3 style="font-size:14px;color:var(--text-bright);margin:24px 0 8px">实施边界与验收</h3>
+<table class="path-table"><thead><tr><th>范围</th><th>首选位置</th><th>明确排除</th></tr></thead><tbody>
+  <tr><td>精确 mutation 与恢复</td><td><code>programs/tools/files/</code>、<code>store/snapshot/checkpoint/</code>、turn context/finalize 与 <code>agent/internals/_revert.py</code>。</td><td>不再给 Bash 增加目录 watcher，不更改用户 Git，不从当前磁盘反推本轮。</td></tr>
+  <tr><td>Review 协议</td><td><code>ws_actions/turn_files.py</code>、消息 metadata、现有 Git helper；新增分页 summary/diff 请求。</td><td>不返回无界字符串，不保留 approximate fallback。</td></tr>
+  <tr><td>Review center tab</td><td><code>center-tab-ids.ts</code>、<code>center-tabs-store.ts</code>、<code>center-tab-groups.ts</code> 与最小 Review pane。</td><td>不实现新窗口、modal、第三 pane 或参考产品品牌元素。</td></tr>
+  <tr><td>聊天卡</td><td><code>turn-files-chips.tsx</code>、用户提供的 <code>FeatherIcon</code> 与现有 CSS。</td><td>FeatherIcon 只标识直接文件编辑，不放网站 logo；不保留 inline diff、文件行箭头、hover 操作组或参考产品品牌元素。</td></tr>
+</tbody></table>
+<div class="rule"><b>视觉验收条件：</b>聊天卡最多显示 3 个初始文件名，不加载 diff；最多扩展到 20 个路径，其余进入 Review；Changes 同时只挂载一个有界 diff；This turn / Current branch / Workspace 的来源标签始终可见；历史 Restore 使用独立 impact sheet，不把 Undo/Revert/Restore/Branch 堆在卡片 header。完整数据与恢复验收见<a href="../runtime/operations/file-management.html#acceptance">权威运行时设计</a>。<br><b>实现状态：</b>视觉设计和独立 draft 已更新；生产 mutation journal、Review tab、历史 impact sheet、协议和测试均为 <b>Pending</b>。</div>
 
 <script>
 document.querySelectorAll('[data-step-toggle]').forEach(step=>{
