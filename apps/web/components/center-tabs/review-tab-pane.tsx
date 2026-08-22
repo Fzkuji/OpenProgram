@@ -24,7 +24,9 @@ interface ReviewFile {
   producer_turn_id?: string;
   origin_turn_id?: string;
   actor_id?: string;
+  actor_ids?: string[];
   job_id?: string | null;
+  job_ids?: string[];
 }
 
 interface LinkedImpact {
@@ -396,8 +398,11 @@ export function ReviewTabPane({
             {selected ? (
               <small>
                 {[
-                  selected.actor_id
-                    ? text(`Actor: ${selected.actor_id}`, `执行者：${selected.actor_id}`)
+                  selected.actor_ids?.length || selected.actor_id
+                    ? text(
+                      `Actor: ${(selected.actor_ids ?? [selected.actor_id]).filter(Boolean).join(", ")}`,
+                      `执行者：${(selected.actor_ids ?? [selected.actor_id]).filter(Boolean).join("、")}`,
+                    )
                     : null,
                   selected.producer_turn_id
                     ? text(`Producer: ${selected.producer_turn_id.slice(0, 8)}`, `来源轮次：${selected.producer_turn_id.slice(0, 8)}`)

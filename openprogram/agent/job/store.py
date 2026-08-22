@@ -278,6 +278,7 @@ def update_job_status(
     path = _ensure_session(session_id)
     if path is None:
         return None
+    old_status: JobStatus | None = None
     with _session_lock(session_id):
         with _session_file_lock(path):
             jobs = _load_raw(path)
@@ -296,31 +297,31 @@ def update_job_status(
                         setattr(t, k, v)
                 jobs[job_id] = t.to_dict()
                 _write_raw(path, jobs)
-                mirror_linked_job_to_caller(t)
-                return t
-            if not can_transition(t.status, new_status):
+            elif not can_transition(t.status, new_status):
                 raise ValueError(
                     f"illegal job transition {t.status.value} → "
                     f"{new_status.value} (job {job_id})"
                 )
-            old_status = t.status
-            t.status = new_status
-            # Time-stamp the transition.
-            now = time.time()
-            if new_status == JobStatus.QUEUED and t.queued_at is None:
-                t.queued_at = now
-            elif new_status == JobStatus.RUNNING and t.started_at is None:
-                t.started_at = now
-            elif is_terminal(new_status) and t.completed_at is None:
-                t.completed_at = now
-            if new_status == JobStatus.CANCELLED and t.cancel_requested_at is None:
-                t.cancel_requested_at = now
-            for k, v in fields.items():
-                if hasattr(t, k):
-                    setattr(t, k, v)
-            jobs[job_id] = t.to_dict()
-            _write_raw(path, jobs)
-    _commit(session_id, f"job: {job_id} {old_status.value}→{new_status.value}")
+            else:
+                old_status = t.status
+                t.status = new_status
+                # Time-stamp the transition.
+                now = time.time()
+                if new_status == JobStatus.QUEUED and t.queued_at is None:
+                    t.queued_at = now
+                elif new_status == JobStatus.RUNNING and t.started_at is None:
+                    t.started_at = now
+                elif is_terminal(new_status) and t.completed_at is None:
+                    t.completed_at = now
+                if new_status == JobStatus.CANCELLED and t.cancel_requested_at is None:
+                    t.cancel_requested_at = now
+                for k, v in fields.items():
+                    if hasattr(t, k):
+                        setattr(t, k, v)
+                jobs[job_id] = t.to_dict()
+                _write_raw(path, jobs)
+    if old_status is not None:
+        _commit(session_id, f"job: {job_id} {old_status.value}→{new_status.value}")
     mirror_linked_job_to_caller(t)
     return t
 

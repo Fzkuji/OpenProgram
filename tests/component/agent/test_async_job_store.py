@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import threading
 
 import pytest
 
@@ -130,6 +131,56 @@ def test_store_update_status_legal_transition(store_fixture):
     updated = update_job_status("p1", "t_a", JobStatus.QUEUED)
     assert updated.status == JobStatus.QUEUED
     assert updated.queued_at is not None
+
+
+def test_reciprocal_linked_idempotent_updates_do_not_deadlock(
+    store_fixture, monkeypatch,
+):
+    from openprogram.agent.job import store as job_store
+    from openprogram.agent.job.store import save_job, update_job_status
+    from openprogram.agent.job.types import Job, JobStatus
+
+    store_fixture.create_session("p2", "main", title="peer")
+    save_job("p1", Job(
+        id="j-ab", parent_session_id="p1", prompt="ab", agent_id="main",
+        relation="linked", creates_agent=False, caller_session_id="p2",
+        origin_turn_id="p2-origin", status=JobStatus.RUNNING,
+    ))
+    save_job("p2", Job(
+        id="j-ba", parent_session_id="p2", prompt="ba", agent_id="main",
+        relation="linked", creates_agent=False, caller_session_id="p1",
+        origin_turn_id="p1-origin", status=JobStatus.RUNNING,
+    ))
+    original_write = job_store._write_raw
+    barrier = threading.Barrier(2)
+    local = threading.local()
+
+    def synchronized_write(path, jobs):
+        original_write(path, jobs)
+        if not getattr(local, "waited", False):
+            local.waited = True
+            barrier.wait(timeout=2)
+
+    monkeypatch.setattr(job_store, "_write_raw", synchronized_write)
+    errors = []
+
+    def update(session_id, job_id):
+        try:
+            update_job_status(session_id, job_id, JobStatus.RUNNING)
+        except Exception as exc:  # pragma: no cover - assertion reports it
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=update, args=("p1", "j-ab")),
+        threading.Thread(target=update, args=("p2", "j-ba")),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=3)
+
+    assert not errors
+    assert not any(thread.is_alive() for thread in threads)
 
 def test_store_update_status_illegal_transition_raises(store_fixture):
     from openprogram.agent.job.types import Job, JobStatus

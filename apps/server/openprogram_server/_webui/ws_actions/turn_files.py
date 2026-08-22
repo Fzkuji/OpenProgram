@@ -298,41 +298,115 @@ def _turn_scope(session_id: str, turn_id: str) -> dict:
 
     ownership = owned_change_set_closure(session_id, [turn_id])
     producer_ids = [turn_id] + ownership["owned_turn_ids"]
-    files = []
-    snapshot_basis = []
+    records = []
     for producer_id in producer_ids:
         mutations = _manifest_mutations(session_dir, producer_id)
         producer = index.nodes_by_id.get(producer_id)
         owner = (producer.metadata or {}).get("change_owner") if producer else None
-        if mutations:
-            for mutation in mutations:
-                row = _normalise_file(mutation, root)
-                row.update({
-                    "turn_ids": [producer_id],
-                    "producer_turn_id": producer_id,
-                    "origin_turn_id": turn_id,
-                    "actor_id": (owner or {}).get("actor_id", "main"),
-                    "job_id": (owner or {}).get("job_id"),
-                })
-                files.append(row)
-                snapshot_basis.append({
-                    "path": mutation.get("path"),
-                    "before": mutation.get("before"),
-                    "after": mutation.get("after"),
-                    "producer_turn_id": producer_id,
-                })
-        elif producer_id == turn_id:
-            summary = _turn_summary(index, session_dir, turn_id, root)
-            for row in summary["files"]:
-                row.update({
-                    "turn_ids": [turn_id],
-                    "producer_turn_id": turn_id,
-                    "origin_turn_id": turn_id,
-                    "actor_id": "main",
-                    "job_id": None,
-                })
-                files.append(row)
-            snapshot_basis.extend(summary["files"])
+        records.extend(
+            (
+                producer_id,
+                (owner or {}).get("actor_id", "main"),
+                (owner or {}).get("job_id"),
+                mutation,
+            )
+            for mutation in mutations
+        )
+    if records and all(
+        isinstance(mutation.get("mutation_sequence"), int)
+        for _producer, _actor, _job, mutation in records
+    ):
+        records.sort(key=lambda item: item[3]["mutation_sequence"])
+    lineages: dict[str, dict] = {}
+    for producer_id, actor_id, job_id, mutation in records:
+        path = mutation.get("path") or ""
+        if not path:
+            continue
+        current = lineages.get(path)
+        if current is None:
+            lineages[path] = {
+                "path": path,
+                "first_turn": producer_id,
+                "last_turn": producer_id,
+                "before": mutation.get("before") or {},
+                "after": mutation.get("after") or {},
+                "turn_ids": [producer_id],
+                "actor_ids": [actor_id],
+                "job_ids": [job_id] if job_id else [],
+                "recoverability": mutation.get("recoverability", "exact"),
+                "unavailable_reason": mutation.get("unavailable_reason"),
+            }
+            continue
+        if not _same_state(current["after"], mutation.get("before") or {}):
+            current["recoverability"] = "unavailable"
+            current["unavailable_reason"] = "discontinuous_journal"
+        current["last_turn"] = producer_id
+        current["after"] = mutation.get("after") or {}
+        current["turn_ids"].append(producer_id)
+        if actor_id not in current["actor_ids"]:
+            current["actor_ids"].append(actor_id)
+        if job_id and job_id not in current["job_ids"]:
+            current["job_ids"].append(job_id)
+    files = []
+    stats_budget = [8 * 1024 * 1024]
+    for lineage in lineages.values():
+        added, removed, binary, diff_state = _net_stats(
+            session_dir,
+            lineage["first_turn"],
+            lineage["before"],
+            lineage["last_turn"],
+            lineage["after"],
+            stats_budget,
+        )
+        before_kind = lineage["before"].get("kind")
+        after_kind = lineage["after"].get("kind")
+        files.append({
+            "path": lineage["path"],
+            "rel": _relative(lineage["path"], root),
+            "op": (
+                "add" if before_kind == "absent" and after_kind == "regular"
+                else "delete" if before_kind == "regular" and after_kind == "absent"
+                else "modify"
+            ),
+            "added": added,
+            "removed": removed,
+            "binary": binary,
+            "diff_state": diff_state,
+            "recoverability": lineage["recoverability"],
+            "unavailable_reason": lineage["unavailable_reason"],
+            "turn_ids": lineage["turn_ids"],
+            "producer_turn_id": lineage["last_turn"],
+            "producer_turn_ids": lineage["turn_ids"],
+            "first_turn_id": lineage["first_turn"],
+            "last_turn_id": lineage["last_turn"],
+            "origin_turn_id": turn_id,
+            "actor_id": lineage["actor_ids"][-1],
+            "actor_ids": lineage["actor_ids"],
+            "job_ids": lineage["job_ids"],
+        })
+    if not records:
+        files = _turn_summary(index, session_dir, turn_id, root)["files"]
+        for row in files:
+            row.update({
+                "turn_ids": [turn_id],
+                "producer_turn_id": turn_id,
+                "producer_turn_ids": [turn_id],
+                "first_turn_id": turn_id,
+                "last_turn_id": turn_id,
+                "origin_turn_id": turn_id,
+                "actor_id": "main",
+                "actor_ids": ["main"],
+                "job_ids": [],
+            })
+    snapshot_basis = [
+        {
+            "path": lineage["path"],
+            "before": lineage["before"],
+            "after": lineage["after"],
+            "turn_ids": lineage["turn_ids"],
+        }
+        for lineage in lineages.values()
+    ] or files
     return _scope_payload(
         "turn", "mutation_journal", files,
         assistant_msg_id=turn_id,
@@ -366,34 +440,42 @@ def _branch_scope(session_id: str) -> dict:
         if turn_id in index.nodes_by_id
     ]
     producer_nodes.sort(key=lambda node: node.seq)
-    for node in producer_nodes:
-        if node.role != "llm":
+    records = [
+        (node, mutation)
+        for node in producer_nodes
+        if node.role == "llm"
+        for mutation in _manifest_mutations(session_dir, node.id)
+    ]
+    if records and all(
+        isinstance(mutation.get("mutation_sequence"), int)
+        for _node, mutation in records
+    ):
+        records.sort(key=lambda item: item[1]["mutation_sequence"])
+    for node, mutation in records:
+        path = mutation.get("path") or ""
+        before = mutation.get("before") or {}
+        after = mutation.get("after") or {}
+        if not path:
             continue
-        for mutation in _manifest_mutations(session_dir, node.id):
-            path = mutation.get("path") or ""
-            before = mutation.get("before") or {}
-            after = mutation.get("after") or {}
-            if not path:
-                continue
-            current = lineages.get(path)
-            if current is None:
-                lineages[path] = {
-                    "path": path,
-                    "first_turn": node.id,
-                    "last_turn": node.id,
-                    "before": before,
-                    "after": after,
-                    "turn_ids": [node.id],
-                    "recoverability": mutation.get("recoverability", "exact"),
-                    "unavailable_reason": mutation.get("unavailable_reason"),
-                }
-                continue
-            if not _same_state(current["after"], before):
-                current["recoverability"] = "unavailable"
-                current["unavailable_reason"] = "discontinuous_journal"
-            current["last_turn"] = node.id
-            current["after"] = after
-            current["turn_ids"].append(node.id)
+        current = lineages.get(path)
+        if current is None:
+            lineages[path] = {
+                "path": path,
+                "first_turn": node.id,
+                "last_turn": node.id,
+                "before": before,
+                "after": after,
+                "turn_ids": [node.id],
+                "recoverability": mutation.get("recoverability", "exact"),
+                "unavailable_reason": mutation.get("unavailable_reason"),
+            }
+            continue
+        if not _same_state(current["after"], before):
+            current["recoverability"] = "unavailable"
+            current["unavailable_reason"] = "discontinuous_journal"
+        current["last_turn"] = node.id
+        current["after"] = after
+        current["turn_ids"].append(node.id)
     files = []
     stats_budget = [8 * 1024 * 1024]
     for lineage in lineages.values():
@@ -800,6 +882,43 @@ def _turn_file_diff(
     )
 
 
+def _turn_lineage_file_diff(
+    session_id: str, member: dict, path: str, cursor: int = 0,
+) -> dict:
+    first_turn = str(member.get("first_turn_id") or "")
+    last_turn = str(member.get("last_turn_id") or "")
+    if not first_turn or not last_turn:
+        return _turn_file_diff(
+            session_id,
+            str(member.get("producer_turn_id") or ""),
+            path,
+            cursor,
+        )
+    opened = _open_session(session_id)
+    if opened is None:
+        return {"diff": "", "diff_state": "unavailable", "error": "unknown session"}
+    _store, _git, _index, session_dir = opened
+    first = next(
+        (row for row in _manifest_mutations(session_dir, first_turn) if row.get("path") == path),
+        None,
+    )
+    last = next(
+        (row for row in _manifest_mutations(session_dir, last_turn) if row.get("path") == path),
+        None,
+    )
+    if first is None or last is None:
+        return {"diff": "", "diff_state": "unavailable", "error": "turn lineage is unavailable"}
+    return _render_diff(
+        session_dir,
+        first_turn,
+        first.get("before") or {},
+        last_turn,
+        last.get("after") or {},
+        path,
+        cursor,
+    )
+
+
 def _branch_file_diff(session_id: str, path: str, cursor: int = 0) -> dict:
     opened = _open_session(session_id)
     if opened is None:
@@ -821,15 +940,18 @@ def _branch_file_diff(session_id: str, path: str, cursor: int = 0) -> dict:
         if turn_id in index.nodes_by_id
     ]
     producer_nodes.sort(key=lambda node: node.seq)
-    for node in producer_nodes:
-        if node.role != "llm":
-            continue
-        mutation = next(
-            (row for row in _manifest_mutations(session_dir, node.id) if row.get("path") == path),
-            None,
-        )
-        if mutation:
-            states.append((node.id, mutation))
+    states = [
+        (node.id, mutation)
+        for node in producer_nodes
+        if node.role == "llm"
+        for mutation in _manifest_mutations(session_dir, node.id)
+        if mutation.get("path") == path
+    ]
+    if states and all(
+        isinstance(mutation.get("mutation_sequence"), int)
+        for _turn_id, mutation in states
+    ):
+        states.sort(key=lambda item: item[1]["mutation_sequence"])
     if not states:
         return {"diff": "", "diff_state": "unavailable", "error": f"{path!r} not on current branch"}
     for (_prior_turn, prior), (_next_turn, following) in zip(states, states[1:]):
@@ -1045,11 +1167,8 @@ async def handle_review_file_diff(ws, cmd: dict) -> None:
         elif member is None:
             result = {"diff": "", "diff_state": "unavailable", "error": "path is not in review scope"}
         elif scope == "turn":
-            result = await _run(lambda: _turn_file_diff(
-                session_id,
-                str(member.get("producer_turn_id") or turn_id),
-                path,
-                cursor,
+            result = await _run(lambda: _turn_lineage_file_diff(
+                session_id, member, path, cursor,
             ))
         elif scope == "branch":
             result = await _run(lambda: _branch_file_diff(

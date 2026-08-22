@@ -292,6 +292,28 @@ def test_owned_sibling_completion_order_does_not_override_mutation_order(
     save_job("s", _job(id="j-c1", head_id="c1-a"))
     save_job("s", _job(id="j-c2", head_id="c2-a"))
 
+    from openprogram.webui.ws_actions.turn_files import (
+        _branch_file_diff,
+        _branch_scope,
+        _turn_lineage_file_diff,
+        _turn_scope,
+    )
+
+    turn_scope = _turn_scope("s", "a1")
+    assert turn_scope["file_count"] == 1
+    assert turn_scope["files"][0]["turn_ids"] == ["a1", "c1-a", "c2-a"]
+    assert set(turn_scope["files"][0]["actor_ids"]) == {"main"}
+    turn_diff = _turn_lineage_file_diff(
+        "s", turn_scope["files"][0], str(target), 0,
+    )
+    assert turn_diff["diff_state"] == "available"
+    assert "-0" in turn_diff["diff"] and "+3" in turn_diff["diff"]
+    branch_scope = _branch_scope("s")
+    assert branch_scope["file_count"] == 1
+    assert branch_scope["files"][0]["turn_ids"] == ["a1", "c1-a", "c2-a"]
+    assert branch_scope["files"][0]["recoverability"] == "exact"
+    assert _branch_file_diff("s", str(target))["diff_state"] == "available"
+
     reverted = revert_turn("s", "a1", idempotency_key="siblings-revert")
 
     assert reverted["status"] == "committed"
