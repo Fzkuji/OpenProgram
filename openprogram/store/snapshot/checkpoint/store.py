@@ -533,6 +533,20 @@ class CheckpointStore:
         digest = hashlib.sha256(f"rewind\0{key}".encode()).hexdigest()[:24]
         return session_backup_root(self.session_dir) / "intents" / f"{digest}.json"
 
+    @contextmanager
+    def _rewind_intent_lock(self, key: str):
+        import fcntl
+
+        digest = hashlib.sha256(f"rewind\0{key}".encode()).hexdigest()[:24]
+        root = session_backup_root(self.session_dir) / "intent-locks"
+        root.mkdir(parents=True, exist_ok=True)
+        with (root / f"{digest}.lock").open("a+") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
     def _workspace_lock_path(self) -> Path:
         from openprogram.paths import get_state_dir
 
@@ -994,8 +1008,39 @@ class CheckpointStore:
         target_branch_id: str | None = None,
         expected_plan_hash: str | None = None,
     ) -> dict:
-        """Apply one folded file plan and move HEAD only after verification."""
         key = idempotency_key or uuid.uuid4().hex
+        with self._rewind_intent_lock(key):
+            return self._apply_rewind_operation_locked(
+                turn_ids,
+                expected_head_id=expected_head_id,
+                target_head_id=target_head_id,
+                get_head=get_head,
+                compare_and_set_head=compare_and_set_head,
+                idempotency_key=key,
+                target_msg_id=target_msg_id,
+                user_text=user_text,
+                source_branch_id=source_branch_id,
+                target_branch_id=target_branch_id,
+                expected_plan_hash=expected_plan_hash,
+            )
+
+    def _apply_rewind_operation_locked(
+        self,
+        turn_ids: list[str],
+        *,
+        expected_head_id: str | None,
+        target_head_id: str | None,
+        get_head,
+        compare_and_set_head,
+        idempotency_key: str,
+        target_msg_id: str | None,
+        user_text: str,
+        source_branch_id: str | None,
+        target_branch_id: str | None,
+        expected_plan_hash: str | None,
+    ) -> dict:
+        """Apply one folded file plan and move HEAD only after verification."""
+        key = idempotency_key
         intent_path = self._rewind_intent_path(key)
         if intent_path.exists():
             try:
