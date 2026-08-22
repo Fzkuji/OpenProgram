@@ -2199,6 +2199,8 @@ async function checkSuccessfulTransferAndDurableCommit() {
   first.record.findRequestId = 7;
   attachControlledRecord(sourceCtx, first, { x: 1, y: 2, width: 300, height: 400 });
   attachControlledRecord(sourceCtx, second, { x: 301, y: 2, width: 320, height: 400 });
+  assert.equal(hooks.setPipZoom(sourceCtx, "success-a", 480), true);
+  assert.equal(first.nativeCalls.zoom.at(-1), 0.25);
 
   const successPayload = webTransferPayload(["success-a", "success-b"]);
   successPayload.fileDrafts = [{ key: "draft:success-a", value: "source draft" }];
@@ -2237,6 +2239,13 @@ async function checkSuccessfulTransferAndDurableCommit() {
   assert.strictEqual(destinationCtx.views.get("success-b"), second.record);
   assert.equal(first.record.ownerId, destinationCtx.id);
   assert.equal(second.record.ownerId, destinationCtx.id);
+  assert.equal(hooks.setPipZoom(sourceCtx, "success-a", null), false);
+  assert.equal(hooks.setPipZoom(destinationCtx, "success-a", null), true);
+  assert.equal(
+    first.nativeCalls.zoom.at(-1),
+    0.25,
+    "transfer lock must defer rather than apply the ordinary-pane zoom reset",
+  );
   assert.equal(hooks.tabTransfers.inspect(destinationCtx, token), null);
   assert.equal(
     hooks.tabTransfers.accept(destinationCtx, token, { kind: "strip-end" }),
@@ -2360,6 +2369,9 @@ async function checkSuccessfulTransferAndDurableCommit() {
   assert.equal(second.record.ownerId, destinationCtx.id);
   assert.equal(first.record.findRequestId, null);
   assert.deepEqual(first.nativeCalls.stopFind, ["clearSelection"]);
+  assert.equal(first.record.pipLayoutZoom, null);
+  assert.equal(first.record.pendingTransferZoomRestore, false);
+  assert.equal(first.nativeCalls.zoom.at(-1), 1);
   assert.equal(hooks.tabTransfers.inspect(destinationCtx, token), null);
   assert.equal(
     hooks.tabTransfers.accept(destinationCtx, token, { kind: "strip-end" }),

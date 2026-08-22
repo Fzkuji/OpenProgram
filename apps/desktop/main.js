@@ -726,10 +726,16 @@ function makeTransferCoordinator(options = {}) {
   }
 
   function unlock(transaction) {
+    const restoreZoom = transaction.status === "committed";
     for (const id of transaction.lockedRecordIds) {
       if (lockedRecords.get(id) === transaction.token) lockedRecords.delete(id);
     }
     transaction.lockedRecordIds.clear();
+    for (const record of transaction.records) {
+      if (!record.pendingTransferZoomRestore) continue;
+      record.pendingTransferZoomRestore = false;
+      if (restoreZoom) requestPipZoomRestore(record);
+    }
   }
 
   /** Destroy a staged tear-off window (rollback / rejected commit). Takes the
@@ -1857,18 +1863,36 @@ function rememberUserZoom(record) {
 }
 
 function setPipZoom(ctx, id, width) {
-  const record = recordFor(ctx, id);
+  let record = recordFor(ctx, id);
+  if (!record && width == null && tabTransfers.isLocked(id)) {
+    const lockedRecord = ctx?.views.get(id);
+    if (lockedRecord?.ownerId === ctx.id) {
+      lockedRecord.pendingTransferZoomRestore = true;
+      return true;
+    }
+  }
   if (!record) return false;
   const wc = record.view.webContents;
   try {
     if (typeof width === "number" && width > 0) {
       rememberUserZoom(record);
       const factor = pipLayoutZoom(width);
+      record.pendingTransferZoomRestore = false;
       record.pendingPipZoomRestore = false;
       record.pipLayoutZoom = factor;
       wc.setZoomFactor(factor);
       return true;
     }
+    record.pendingTransferZoomRestore = false;
+    return requestPipZoomRestore(record);
+  } catch (_error) {
+    return false;
+  }
+}
+
+function requestPipZoomRestore(record) {
+  try {
+    const wc = record.view.webContents;
     record.pipLayoutZoom = null;
     record.pendingPipZoomRestore = !wc.getURL() || !!record.navigation;
     wc.setZoomFactor(record.userZoomFactor ?? 1);
