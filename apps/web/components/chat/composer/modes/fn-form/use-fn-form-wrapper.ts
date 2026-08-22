@@ -170,7 +170,20 @@ export function useFnFormWrapper({
     const onInput = () => apply();
     ta?.addEventListener("input", onInput);
     const mo = new MutationObserver(() => apply());
-    mo.observe(el, { subtree: true, attributes: true, attributeFilter: ["data-expanded"] });
+    // fn-form only flips `data-expanded`. Decision cards swap prompt /
+    // options / nav as the user pages (childList) and restyle options
+    // as the user picks (`class` — a picked option gains a "✓ " and may
+    // wrap to a new row), so watch both. apply() early-returns when the
+    // target height is unchanged, so the extra triggers cost a measure,
+    // not a height write. Do not ResizeObserver the body: it flex-fills
+    // the wrapper, so the height transition would retrigger apply()
+    // every frame.
+    mo.observe(el, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["data-expanded", "class"],
+    });
     const onResize = () => apply();
     window.addEventListener("resize", onResize);
     const id = requestAnimationFrame(() => {
@@ -246,9 +259,20 @@ function runOpenTransition(
   }
   const natural = measureFnFormHeight(el);
   el.style.height = `${natural}px`;
+  // Decision body scrolls (overflow:auto) and its free-text input is
+  // autofocused BEFORE this effect runs — while the wrapper is still
+  // snapped at chat height the browser scrolls the input into view,
+  // carrying the prompt off-screen. Pin the scroll back, and again
+  // when the grow transition lands (the clamp mid-transition can
+  // re-scroll on focus).
+  const decisionBody = el.querySelector("[data-decision]")
+    ? (el.querySelector("[data-fn-form-body]") as HTMLElement | null)
+    : null;
+  if (decisionBody) decisionBody.scrollTop = 0;
   const onEnd = (ev: TransitionEvent) => {
     if (ev.target !== el || ev.propertyName !== "height") return;
     el.removeEventListener("transitionend", onEnd);
+    if (decisionBody) decisionBody.scrollTop = 0;
     setTransitioning(false);
   };
   el.addEventListener("transitionend", onEnd);
@@ -274,9 +298,38 @@ function measureFnFormHeight(el: HTMLDivElement): number {
   const body = el.querySelector(
     "[data-fn-form-body]",
   ) as HTMLElement | null;
-  const padBottom = parseFloat(getComputedStyle(el).paddingBottom);
   if (!header || !body) return el.scrollHeight;
   return targetFnFormHeight(el);
+}
+
+/** Decision cards have no textarea / field labels, so the fn-form
+ *  chrome + 48px fallback under-counts. Measure the wrapper's real
+ *  content: every in-flow child (header, body, attachment strips…),
+ *  not just header + body — the wrapper is overflow:hidden, so a
+ *  missed sibling means a cropped card. Body may be `flex:1` +
+ *  overflow, so its box height reports the flex slot — release the
+ *  constraint for the read. (No `minHeight: 0` here: that is the
+ *  "allow smaller than content" signal, the opposite of what a
+ *  natural-height read wants.) */
+function measureDecisionHeight(el: HTMLDivElement): number {
+  const body = el.querySelector("[data-fn-form-body]") as HTMLElement | null;
+  const wrapPad = parseFloat(getComputedStyle(el).paddingBottom) || 0;
+  if (!body) return el.scrollHeight;
+  const prevFlex = body.style.flex;
+  const prevH = body.style.height;
+  const prevOverflow = body.style.overflow;
+  body.style.flex = "none";
+  body.style.height = "auto";
+  body.style.overflow = "visible";
+  let h = wrapPad;
+  for (const child of Array.from(el.children) as HTMLElement[]) {
+    if (getComputedStyle(child).position === "absolute") continue;
+    h += child.offsetHeight;
+  }
+  body.style.flex = prevFlex;
+  body.style.height = prevH;
+  body.style.overflow = prevOverflow;
+  return h;
 }
 
 function textareaContentHeight(el: HTMLDivElement): number {
@@ -343,6 +396,10 @@ function formChromeHeight(el: HTMLDivElement): number {
 function targetFnFormHeight(el: HTMLDivElement): number {
   const host = hostViewHeight(el);
   const avail = availableComposerHeight(el);
+  // Decision (question/approval/form): size to header + body content.
+  if (el.querySelector("[data-decision]")) {
+    return Math.min(measureDecisionHeight(el), avail);
+  }
   const expanded = !!el.querySelector("[data-expanded]");
   const chrome = formChromeHeight(el);
   if (expanded) {

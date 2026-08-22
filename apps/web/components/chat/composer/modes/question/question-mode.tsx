@@ -235,7 +235,7 @@ export function QuestionMode({ decision: q, onResolve }: QuestionModeProps) {
 
   return (
     <>
-      <div className={styles.header} data-fn-form-header onKeyDown={onKey}>
+      <div className={styles.header} data-fn-form-header data-decision onKeyDown={onKey}>
         <div className={styles.badge}>{text("Your input is needed", "需要你的输入")}</div>
         {/* 进度点 + 几分之几 —— 哪怕只有 1 步也显示（统一）。 */}
         <div className={multi.progress}>

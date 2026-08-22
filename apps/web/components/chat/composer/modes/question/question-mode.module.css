@@ -35,6 +35,12 @@
   gap: 12px;
   padding: 12px;
   box-sizing: border-box;
+  /* Wrapper height is content-sized (capped by availableComposerHeight).
+     flex + min-height:0 lets this pane take the leftover and scroll
+     when the card hits that cap. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 .prompt {
