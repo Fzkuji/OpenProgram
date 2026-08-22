@@ -311,6 +311,24 @@ CLI进程仍不进入OS沙箱，因为它需要访问Anthropic API。它自带�
 
 它挡住的威胁是具体的，不是假想的。只要挂了消息渠道，进入写入器prompt的文本就是攻击方可影响的：入站消息正文里带着发信人自己在平台上设的显示名。从那里被执行的命令本可以读`~/.openprogram/auth/*/default.json`并写进某个topic文件，而记忆库内容会回到之后会话的上下文里，这是一条不碰网络的外传路径，也正是"网络已经断了"没能覆盖的部分。
 
+### 11. 拒绝的可读性与协商
+
+执法层已经完整；本节设计的是它上面那一层。动因是实测事件而非假想：一个agent在`permission_mode="bypass"`下撞上`**/.env`的deny-read规则，收到一句裸的`Operation not permitted`，随后花了数轮把key搬进`secrets/glee.env`——绕行能成功，因为deny列表匹配的是文件名而不是内容。边界守住了，但结果是绕开owner协商出来的，而不是和owner协商出来的。栅栏另一侧也有同样形状的失败：Claude Code社区记载了要"五轮"配置才能让一条`.env`拒读在它两个互不协调的层上都生效，官方文档也警告宽泛的`allowRead`会悄悄把deny想保护的东西重新暴露。共同的教训是：一个不能解释自己的边界，要么被绕过（我们），要么被配错（他们）。我们的缺口在可读性，不在执法。
+
+五个部分，按杠杆排序：
+
+**具名拒绝。** 到达模型的沙箱拒绝作为tool result要点名命中的deny glob，并说明两条正路：申请升级（唤起owner卡片），或请owner修改`sandbox.deny_read`。文本明确排除第三条路：把受保护内容搬移或复制到glob匹配不到的路径。现在模型只能从平台错误文本反推`Operation not permitted`；改后拒绝本身就是一条可路由的指令。`sandbox.violation`事件已带结构——这里扩展的是面向模型的文本，不是事件。
+
+**协商卡片，带可持久化的结果。** escalation审批渲染成专用卡片：被拦路径、命中规则、风险说明，三个选择。*本次放行*就是现有的精确升级重试。*总是允许此路径*是新增：把具体路径写进新配置键`sandbox.allow_read`，语义遵循Claude Code为`allowRead`/`denyRead`重叠所记载的"更窄路径获胜"规则——allow条目只在更宽的deny里重新打开点名的那条路径，同等精确度的deny仍然获胜。不可配置的hard floor（`~/.openprogram/auth/**`、agentics目录）完全排除在`sandbox.allow_read`解析之外，任何卡片点击都打不开它。*拒绝*维持原状。这补上了事件暴露的闭环：正路（点一下卡片）变得比绕路（数轮搬文件）便宜。
+
+**状态可见。** 聊天顶栏的权限徽章增加沙箱指示，`bypass`的标签改成说清它的含义："跳过审批（沙箱仍生效）"。这个模式从未承诺解除OS边界，但屏幕上没有任何东西这么说过；事件里owner的困惑（"我开了bypass怎么还有沙箱"）有一半是文案bug。
+
+**预设优先于键。** Security面板在一屏内呈现两层——权限规则与沙箱策略并排——配三个具名预设：*strict*（出厂默认）、*balanced*（`**/.env`移出deny-read，凭证与网络仍关闭）、*open*（`danger-full-access`，按它应有的警示样式渲染）。改预设让两层保持一致，owner不用学glob语义——这是对Claude Code用户抱怨的跨层配置负担的直接回应。
+
+**prompt里的激励对齐。** 系统提示加一行：沙箱拦截读取时，申请升级或把拦截告知用户；绝不通过搬移或复制secrets来规避路径规则。执法层分不清"善意挪文件"和"外传前的暂存"，所以诚实路径必须是被指示的那条——而且在协商卡片之后，也是最短的那条。
+
+本设计刻意不改的：双层架构（审批做决定，沙箱做约束）、deny先于bypass的判定顺序、hard floor、出厂即加载的默认值。不新增第二个执法点；上面每一部分都只是呈现、持久化或prompt。
+
 ---
 
 ## 实现状态
@@ -323,6 +341,8 @@ CLI进程仍不进入OS沙箱，因为它需要访问Anthropic API。它自带�
 - 已配对渠道发言是可信来源，并可追加source memory。未配对群组发言不进入agent，只归档为`pending`；pending证据仍可检索，hold队列准入与读取过滤推迟到第二批。只有本地interactive owner可以提升。
 - 沙箱拒绝采用结构化结果。只有本地interactive owner可以批准一次精确重试；重试策略仍保留hard floor和凭证过滤。持久批准保存规范化后的精确操作，复杂shell只能单次批准。
 - 嵌套Claude Code内置副作用工具已禁用，改用受管MCP文件与shell工具。
+
+第11节（拒绝的可读性与协商）截至2026-08-22为已设计、未实现：拒绝尚未点名命中规则，`sandbox.allow_read`不存在，escalation卡片没有"总是允许此路径"选项，权限徽章不显示沙箱状态，也没有Security预设面板。
 
 最终验证记录（2026-08-10）：本机完整受跟踪测试集（排除integration）为2731 passed、4 skipped、1 xfailed；GitHub Actions run 31398444213的Python 3.11、3.12、3.13、Web、文档和示例job全部通过，其中Linux Python 3.11为2723 passed、12 skipped、1 xfailed。该runner先启用Ubuntu 24.04的非特权user namespace能力，再执行真实cron bubblewrap用例，因此不会把“已安装但不能工作”的二进制计入Linux覆盖。macOS Seatbelt与Linux bubblewrap真实矩阵覆盖git、Python、npm、make、conda、凭证拒读、工作区外拒写和网络拒绝。
 

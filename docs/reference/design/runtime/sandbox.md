@@ -311,6 +311,24 @@ The current boundary is therefore explicit: **the nested CLI has API access but 
 
 The threat this closes is concrete rather than hypothetical. Any text that reaches the writer's prompt is attacker-influenced whenever a message channel is attached, since the inbound message body carries a display name the sender sets themselves. A command that gets executed from there could read `~/.openprogram/auth/*/default.json` and write it into a topic file, and the memory store returns to the context of a later session — an exfiltration path that never touches the network, which is why the network being off did not cover it.
 
+### 11. Denial legibility and negotiation
+
+The enforcement layer is complete; this section designs the layer above it. The motivating incident is measured, not hypothetical: an agent hit the `**/.env` deny-read rule under `permission_mode="bypass"`, received a bare `Operation not permitted`, and spent several turns relocating the key into `secrets/glee.env` — a workaround that succeeds because the deny list matches file names, not content. The boundary held, but the outcome was negotiated around the owner instead of with the owner. The same failure shape appears on the other side of the fence: Claude Code's community documents "five rounds" of configuration to make one `.env` deny hold across its two uncoordinated layers, and its own docs warn that a broad `allowRead` silently re-exposes what a deny meant to protect. The shared lesson: a boundary that cannot explain itself either gets worked around (ours) or misconfigured (theirs). Our gap is legibility, not enforcement.
+
+Five parts, ordered by leverage:
+
+**Named denials.** A sandbox denial that reaches the model as a tool result names the matched deny glob and states the two legitimate ways forward: request escalation (which raises the owner card), or ask the owner to change `sandbox.deny_read`. The text explicitly rules out the third way: relocating or copying the protected content so a different path escapes the glob. Today the model reverse-engineers `Operation not permitted` from platform error text; after this change the denial is a routable instruction. The `sandbox.violation` event already carries the structure — this extends the model-facing text, not the event.
+
+**A negotiation card, with a persistent outcome.** The escalation approval renders as a dedicated card showing the blocked path, the matched rule, and the risk framing, with three choices. *Allow once* is the existing exact escalated retry. *Always allow this path* is new: it writes the concrete path into `sandbox.allow_read`, a new config key whose semantics follow the narrower-path-wins rule Claude Code documents for its `allowRead`/`denyRead` overlap — an allow entry re-opens only the named path inside a wider deny, and an equally-specific deny still beats it. The non-configurable floor (`~/.openprogram/auth/**`, the agentics directory) is excluded from `sandbox.allow_read` resolution entirely, so no card click can open it. *Deny* stands. This closes the loop the incident exposed: the legitimate path (one card click) becomes cheaper than the workaround (several turns of file relocation).
+
+**Visible state.** The chat top bar's permission badge gains a sandbox indicator, and the `bypass` label changes to say what it means: "Bypass approvals (sandbox still on)". The mode never promised to remove the OS boundary, but nothing on screen said so; the incident's owner confusion ("I enabled bypass, why is there a sandbox?") is a caption bug as much as anything.
+
+**Presets over keys.** A Security panel presents both layers on one screen — permission rules beside sandbox policy — with three named presets: *strict* (the shipped defaults), *balanced* (`**/.env` removed from deny-read, credentials and network still closed), *open* (`danger-full-access`, rendered as the warning it is). Editing a preset keeps the two layers coherent without the owner learning glob semantics — the direct answer to the cross-layer configuration burden Claude Code's users report.
+
+**Incentive alignment in the prompt.** One system-prompt line: when the sandbox blocks a read, request escalation or surface the block to the user; never move or copy secrets to defeat a path rule. Enforcement cannot distinguish a helpful relocation from an exfiltration staging step, so the honest path has to be the instructed one — and, after the negotiation card, also the shortest one.
+
+What this deliberately does not change: the two-layer architecture (approval decides, sandbox confines), the deny-before-bypass ordering, the hard floor, and the loaded defaults. The design adds no second enforcement point; every part above is presentation, persistence, or prompt.
+
 ---
 
 ## Implementation status
@@ -323,6 +341,8 @@ As of 2026-08-10, repair steps 1–5 and the expanded architecture steps 04–08
 - Paired channel speech is trusted and may append source memory. Unpaired group speech never enters the agent and is archived as `pending`; pending evidence remains retrievable, while hold-queue admission and read filtering are deferred. Only a local interactive owner can promote it.
 - Sandbox denials are structured. Only a local interactive owner can approve one exact retry under an escalated policy that retains the hard floor and credential filtering. Persistent approval stores the normalized exact operation; complex shell expressions are once-only.
 - Nested Claude Code built-ins are disabled and replaced by managed MCP file and shell tools.
+
+Section 11 (denial legibility and negotiation) is designed but not yet implemented as of 2026-08-22: denials do not yet name the matched rule, `sandbox.allow_read` does not exist, the escalation card has no "always allow this path" choice, the permission badge shows no sandbox state, and there is no Security presets panel.
 
 Final verification on 2026-08-10: the complete tracked local suite excluding integration reports 2731 passed, 4 skipped and 1 expected failure; GitHub Actions run 31398444213 passes Python 3.11, 3.12 and 3.13, Web, docs and examples, with the Linux 3.11 job reporting 2723 passed, 12 skipped and 1 expected failure. That runner enables Ubuntu 24.04's unprivileged-user-namespace facility before the real cron bubblewrap test, so an installed-but-inoperable binary is not counted as Linux coverage. The real macOS Seatbelt and Linux bubblewrap matrices cover git, Python, npm, make, conda, credential denial, outside-workspace denial and network denial.
 
