@@ -960,16 +960,24 @@ async def handle_set_sandbox(ws, cmd: dict):
 
     session_id = (cmd.get("session_id") or "").strip()
     override = None
+    requested = cmd.get("sandbox_enabled") if "sandbox_enabled" in cmd else None
     if session_id:
         if "sandbox_enabled" in cmd:
             save_session_run_config(
                 session_id,
                 agent_id=_db_agent_id(session_id),
-                sandbox_enabled=cmd.get("sandbox_enabled"),
+                sandbox_enabled=requested,
             )
         override = load_session_run_config(session_id).sandbox_enabled
+    # Draft chats have no session row yet, so save is a no-op. Echo the
+    # requested override anyway — otherwise ui_state(None) reports the
+    # system default (on) and the Plus-menu switch snaps back.
+    if override is None and isinstance(requested, bool):
+        override = requested
     data = {"session_id": session_id or None, **ui_state(override)}
-    _s._broadcast(json.dumps({"type": "sandbox_changed", "data": data}))
+    frame = json.dumps({"type": "sandbox_changed", "data": data})
+    await ws.send_text(frame)
+    _s._broadcast(frame)
 
 
 async def handle_search_messages(ws, cmd: dict):

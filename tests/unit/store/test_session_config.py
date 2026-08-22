@@ -132,3 +132,56 @@ def test_sandbox_enabled_round_trip(tmp_db: SessionDB) -> None:
     assert load_session_run_config("c1").sandbox_enabled is False
     cfg = save_session_run_config("c1", agent_id="main", sandbox_enabled=True)
     assert cfg.sandbox_enabled is True
+
+
+def _set_sandbox_payload(monkeypatch, tmp_db, cmd):
+    import asyncio
+    import json
+
+    from openprogram.webui import server as srv
+    from openprogram.webui.ws_actions.session import handle_set_sandbox
+
+    monkeypatch.setattr(
+        "openprogram.agent.session_db.default_db", lambda: tmp_db)
+    frames: list[dict] = []
+    monkeypatch.setattr(srv, "_broadcast", lambda msg: frames.append(json.loads(msg)))
+
+    class _WS:
+        def __init__(self):
+            self.sent: list[dict] = []
+
+        async def send_text(self, text: str) -> None:
+            self.sent.append(json.loads(text))
+
+    ws = _WS()
+    asyncio.run(handle_set_sandbox(ws, cmd))
+    return ws.sent, frames
+
+
+def test_set_sandbox_false_persists_on_existing_session(tmp_db, monkeypatch) -> None:
+    tmp_db.create_session("s1", "main")
+    sent, frames = _set_sandbox_payload(
+        monkeypatch, tmp_db, {"session_id": "s1", "sandbox_enabled": False},
+    )
+    data = sent[0]["data"]
+    assert data["sandbox"] is False
+    assert data["sandbox_enabled"] is False
+    assert frames[0]["data"]["sandbox"] is False
+    assert load_session_run_config("s1").sandbox_enabled is False
+
+
+def test_set_sandbox_false_echoes_before_session_exists(tmp_db, monkeypatch) -> None:
+    sent, _frames = _set_sandbox_payload(
+        monkeypatch, tmp_db, {"session_id": "local_draft", "sandbox_enabled": False},
+    )
+    assert tmp_db.get_session("local_draft") is None
+    assert sent[0]["data"]["sandbox"] is False
+    assert sent[0]["data"]["sandbox_enabled"] is False
+
+
+def test_set_sandbox_false_echoes_without_session_id(tmp_db, monkeypatch) -> None:
+    sent, _frames = _set_sandbox_payload(
+        monkeypatch, tmp_db, {"sandbox_enabled": False},
+    )
+    assert sent[0]["data"]["sandbox"] is False
+    assert sent[0]["data"]["sandbox_enabled"] is False

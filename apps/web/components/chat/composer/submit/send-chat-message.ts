@@ -192,9 +192,9 @@ export function sendChatMessage({
     web_search: webSearchEnabled,
     permission_mode: permissionMode,
   };
-  const sandbox = sessionId
-    ? useSessionStore.getState().composerSettingsBySession[sessionId]?.sandbox
-    : undefined;
+  const sandbox = useSessionStore.getState().composerSettingsBySession[
+    sessionId ?? "__new__"
+  ]?.sandbox;
   if (typeof sandbox === "boolean") {
     payload.sandbox_enabled = sandbox;
   }

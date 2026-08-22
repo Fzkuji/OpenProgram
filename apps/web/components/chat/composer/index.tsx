@@ -267,7 +267,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     send,
   );
   const { sandbox, sandboxAvailable, sandboxReason, toggleSandbox } =
-    useSandboxToggle(currentSessionId);
+    useSandboxToggle(activeChatKey ?? currentSessionId);
   const { toolProfiles, activeProfile, switchProfile } =
     useToolProfiles(currentSessionId);
 

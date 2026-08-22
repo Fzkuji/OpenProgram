@@ -27,13 +27,14 @@ export function useSandboxToggle(sessionId: string | null) {
   }, [patchSettings]);
 
   useEffect(() => {
+    // No session yet: a read returns inherit-ON and would overwrite a
+    // local off before the first message creates the row.
+    if (!sessionId) return;
     void wsRequest<SandboxState>(
       "set_sandbox",
-      sessionId ? { session_id: sessionId } : {},
+      { session_id: sessionId },
       "sandbox_changed",
-      sessionId
-        ? (d) => !d.session_id || d.session_id === sessionId
-        : undefined,
+      (d) => !d.session_id || d.session_id === sessionId,
     ).then(apply);
   }, [sessionId, apply]);
 
