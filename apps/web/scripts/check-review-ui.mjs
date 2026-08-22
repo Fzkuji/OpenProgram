@@ -22,6 +22,7 @@ assert.match(card, /IntersectionObserver/);
 assert.match(card, /const MAX_CARD_FILES = 20/);
 assert.match(card, /function loadMore\(\)/);
 assert.match(card, /action: "turn_history_state"/);
+assert.match(card, /operation: null,[\s\S]*?setHistoryNonce/);
 assert.match(card, /updateMessage\(sessionId, assistantMsgId/);
 assert.match(card, /turn-files-history-changed/);
 assert.match(review, /turn-files-history-changed/);

@@ -724,3 +724,26 @@ def test_branch_net_stats_declines_large_repetitive_line_sets(store):
     )
 
     assert result == (None, None, False, "timeout")
+
+
+def test_turn_diff_rejects_symlinked_session_recovery_root(store, tmp_path):
+    from openprogram.store.snapshot.checkpoint.paths import session_backup_root
+
+    session_id = "s_symlink_recovery"
+    _seed(store, session_id, "a1")
+    session_dir = store._session_dir(session_id)
+    external = tmp_path / "external-recovery"
+    turn_dir = external / "a1"
+    turn_dir.mkdir(parents=True)
+    raw = b"outside\n"
+    (turn_dir / "blob").write_bytes(raw)
+    recovery_root = session_backup_root(session_dir)
+    recovery_root.parent.mkdir(parents=True, exist_ok=True)
+    recovery_root.symlink_to(external, target_is_directory=True)
+    state = {
+        "kind": "regular", "blob_ref": "blob", "size": len(raw),
+        "digest": f"sha256:{hashlib.sha256(raw).hexdigest()}",
+    }
+
+    with pytest.raises(OSError):
+        tf._state_bytes(session_dir, "a1", state)

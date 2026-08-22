@@ -225,7 +225,14 @@ export function TurnFilesChips({
         setBusy(null);
         const errors: string[] = data.errors ?? [];
         if (errors.length) {
-          setHistoryError(errors.join("; "));
+          const message = errors.join("; ");
+          setHistoryError(message);
+          setHistoryState({
+            status: data.status ?? "blocked",
+            operation: null,
+            error: message,
+          });
+          setHistoryNonce((value) => value + 1);
           showToast(errors.join("; "));
           return;
         }

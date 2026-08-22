@@ -532,10 +532,7 @@ def _state_bytes(session_dir: Path, turn_id: str, state: dict) -> tuple[bytes, s
         return b"", "available"
     if state.get("kind") != "regular" or not state.get("blob_ref"):
         raise OSError("recorded state is unavailable")
-    from openprogram.store.snapshot.checkpoint.paths import (
-        session_backup_root,
-        turn_backup_dir,
-    )
+    from openprogram.store.snapshot.checkpoint.paths import turn_backup_dir
 
     if not _valid_turn_id(turn_id):
         raise OSError("unsafe turn id")
@@ -550,18 +547,7 @@ def _state_bytes(session_dir: Path, turn_id: str, state: dict) -> tuple[bytes, s
     ):
         raise OSError("unsafe recovery blob reference")
     directory = turn_backup_dir(session_dir, turn_id)
-    recovery_root = session_backup_root(session_dir).resolve()
-    try:
-        directory.resolve().relative_to(recovery_root)
-    except (OSError, ValueError):
-        raise OSError("recovery directory escapes session root") from None
-    directory_info = os.lstat(directory)
-    if not stat.S_ISDIR(directory_info.st_mode) or stat.S_ISLNK(directory_info.st_mode):
-        raise OSError("unsafe recovery directory")
-    directory_fd = os.open(
-        directory,
-        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
-    )
+    directory_fd = _open_directory_no_symlinks(directory)
     try:
         descriptor = os.open(
             blob_ref,
@@ -593,6 +579,28 @@ def _state_bytes(session_dir: Path, turn_id: str, state: dict) -> tuple[bytes, s
     if b"\0" in raw:
         return b"", "binary"
     return raw, "available"
+
+
+def _open_directory_no_symlinks(path: Path) -> int:
+    absolute = Path(os.path.abspath(path))
+    if not absolute.is_absolute():
+        raise OSError("recovery directory must be absolute")
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    parts = absolute.parts
+    descriptor = os.open(parts[0], flags)
+    try:
+        for component in parts[1:]:
+            child = os.open(component, flags, dir_fd=descriptor)
+            info = os.fstat(child)
+            if not stat.S_ISDIR(info.st_mode):
+                os.close(child)
+                raise OSError("unsafe recovery directory")
+            os.close(descriptor)
+            descriptor = child
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
 
 
 def _net_stats(
