@@ -111,10 +111,10 @@
   </aside>
   <main>
     <header id="question">
-      <div class="eyebrow">Visual revision · review pending</div>
+      <div class="eyebrow">Component revision · implementation pending</div>
       <h1>One management grammar for Plugins, Skills, and MCP</h1>
       <p>This document defines how an OpenProgram owner discovers, adds, configures, enables, diagnoses, and removes the three extension types in the Web UI. The audience is the Web and runtime maintainers. Programs, agent-specific allowlists, third-party marketplace governance, and new package formats are outside this task.</p>
-      <div class="status-strip"><span class="chip">Revision base <code>f6bad3ac</code></span><span class="chip">Candidate <code>f43c327a</code></span><span class="chip pending">Review pending</span><span class="chip">Default profile · port 18100</span><span class="chip">No new dependency</span></div>
+      <div class="status-strip"><span class="chip">Revision base <code>74d971ff</code></span><span class="chip pending">Implementation pending</span><span class="chip">Default profile · port 18100</span><span class="chip">No new dependency</span></div>
     </header>
 
     <section id="gaps">
@@ -144,7 +144,7 @@
 
     <section id="surface">
       <h2>Target Web surface</h2>
-      <p>The visual signature is a compact availability summary in the secondary navigation. It uses the data each subsystem already owns and gives counts a stable meaning without forcing all three backends into one schema.</p>
+      <p>The visual system is defined by shared item components, not by an outer container. Installed entries use one row anatomy; Discover entries use one catalog-card anatomy. The page background remains open, matching the rest of OpenProgram.</p>
       <div class="ui" aria-label="Static target interface example">
         <div class="ui-top"><span class="ui-title">Abilities</span><div class="tabs"><span class="tab on">Plugins</span><span class="tab">Skills</span><span class="tab">MCP</span></div><div class="ui-actions"><span class="button">Search</span><span class="button">Refresh</span></div></div>
         <div class="ui-sub"><div class="subtabs"><span class="tab on">Installed <small>8</small></span><span class="tab">Discover</span><span class="tab">Issues <small>1</small></span></div><span class="summary">6 available</span><span class="button primary">Add plugin</span></div>
@@ -169,8 +169,8 @@
       <h2>Adopted, modified, and rejected choices</h2>
       <div class="grid">
         <article class="card target"><h3>Adopt</h3><p>Reuse <code>ManagePageHeader</code>, <code>ManageSubnav</code>, <code>ManageRow</code>, existing dialogs, existing routes, and native fetch. Preserve each subsystem’s backend and security boundary.</p></article>
-        <article class="card decision"><h3>Modify</h3><p>Standardize task vocabulary, summary placement, loading/error feedback, and request error parsing. The top toolbar contains only search and refresh. Secondary tabs own the body and the single Add action. MCP Discover renders the catalog inline and becomes the active tab.</p></article>
-        <article class="card problem"><h3>Reject</h3><p>No duplicated Discover action in the top toolbar, no Discover modal, no universal extension backend, no merged persisted schema, no new state library, and no automatic remote installation from search results.</p></article>
+        <article class="card decision"><h3>Modify</h3><p>Standardize task vocabulary, summary placement, loading/error feedback, and request error parsing. The top toolbar contains only search and refresh. Secondary tabs own the body and the single Add action. Plugins, Skills, and MCP share the same Installed row and Discover catalog card. MCP details use the standard detail dialog rather than a permanent split layout.</p></article>
+        <article class="card problem"><h3>Reject</h3><p>No decorative outer body frame, no MCP-only split-page grammar, no duplicated Discover action, no Discover modal, no universal extension backend, no merged persisted schema, and no new state library.</p></article>
       </div>
       <p style="margin-top:14px">Reference comparison: Claude Code’s plugin manager supports installed/discover/error tasks but does not define OpenProgram Skills or MCP runtime readiness; opencode’s MCP and plugin surfaces do not provide one cross-type management model; Hermes groups skills but lacks the three-type availability summary. The target therefore adopts the shared task vocabulary while retaining OpenProgram-specific live MCP state and Skill hierarchy.</p>
     </section>
@@ -182,7 +182,7 @@
           <tr><td>Approved sources</td><td>This document; <a href="skills-and-plugins.html">skills-and-plugins</a>; <a href="mcp-integration.html">mcp-integration</a>; current public routes under <code>/plugins</code>, <code>/skills</code>, and <code>/mcp</code>.</td></tr>
           <tr><td>Production files</td><td><code>apps/web/components/capabilities/</code>, the three management page component folders, <code>apps/web/components/ui/manage-page*</code>, and <code>apps/web/lib/net/fetch-client.ts</code>.</td></tr>
           <tr><td>RED evidence</td><td>A focused executable Web check must fail when task vocabulary/status summaries diverge or when a non-2xx extension request has no visible error path.</td></tr>
-          <tr><td>Required behavior</td><td>Each type exposes Installed and Discover as body-owning navigation states; the top toolbar contains only search and refresh; the secondary navigation contains the only Add action; secondary tabs use a quieter visual treatment than the top capability tabs; all three bodies use the same bordered surface geometry; MCP Discover is inline rather than modal; counts state installed/available/issue meaning; mutations expose progress, success refresh, and actionable error.</td></tr>
+          <tr><td>Required behavior</td><td>Each type exposes Installed and Discover as body-owning navigation states; the top toolbar contains only search and refresh; the secondary navigation contains the only Add action; secondary tabs use a quieter visual treatment than the top capability tabs; there is no decorative outer body frame; Plugins, Skills, and MCP Installed use the same row anatomy; all three Discover views use the same catalog-card anatomy; MCP details open in the standard detail dialog rather than a permanent split layout; counts state installed/available/issue meaning; mutations expose progress, success refresh, and actionable error.</td></tr>
           <tr><td>Compatibility</td><td>Existing URLs, API payloads, store data, secret masking, catalog provenance, Skill hierarchy, plugin trust confirmation, and MCP restart/selection behavior remain unchanged.</td></tr>
           <tr><td>Security</td><td>No stored secret is retrieved or echoed. Remote catalog policy remains server-side. UI errors must not add credentials or raw secret values.</td></tr>
           <tr><td>Exclusions</td><td>Programs, agent allowlists, backend schema consolidation, Windows work, keyrings, new marketplaces, and plugin runtime isolation.</td></tr>
@@ -195,10 +195,8 @@
       <h2>Implementation evidence</h2>
       <table>
         <tbody>
-          <tr><td>Prior implementation</td><td><code>3f3baeb2</code> → <code>ab54847e</code> made MCP Discover inline and passed review, but visible comparison still showed Add in the top toolbar and inconsistent body surfaces across the three extension types.</td></tr>
-          <tr><td>Visual revision</td><td><code>f6bad3ac</code> → <code>f43c327a</code>. Add actions move into the secondary task bar; secondary tabs use text, counts, and an active underline; Plugins, Skills, MCP Installed, and MCP Discover use one surface geometry; keyboard row activation and issue-count consistency are included.</td></tr>
-          <tr><td>RED / GREEN</td><td>The focused check failed on the missing secondary action and visual surface contracts, then passed with accessibility wiring, TypeScript, 51 Web unit tests, production build, docs links, and diff checks.</td></tr>
-          <tr><td>Review status</td><td class="state">Specification repair is implemented; scoped specification re-review and quality review are pending.</td></tr>
+          <tr><td>Prior visual revision</td><td><code>f6bad3ac</code> → <code>f43c327a</code> moved Add into the secondary task bar and introduced quieter tabs, but the outer-frame treatment and MCP-specific internal components did not match the approved product language.</td></tr>
+          <tr><td>Component revision</td><td class="state">Shared Installed rows, shared Discover cards, MCP list/detail restructuring, RED/GREEN evidence, reviews, and visible acceptance are pending from base <code>74d971ff</code>.</td></tr>
         </tbody>
       </table>
     </section>
