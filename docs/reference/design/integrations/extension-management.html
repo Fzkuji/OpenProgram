@@ -178,7 +178,7 @@
       <h2>Task brief and acceptance</h2>
       <table>
         <tbody>
-          <tr><td>Approved sources</td><td>This document; <a href="skills-and-plugins.md">skills-and-plugins.md</a>; <a href="mcp-integration.md">mcp-integration.md</a>; current public routes under <code>/plugins</code>, <code>/skills</code>, and <code>/mcp</code>.</td></tr>
+          <tr><td>Approved sources</td><td>This document; <a href="skills-and-plugins.html">skills-and-plugins</a>; <a href="mcp-integration.html">mcp-integration</a>; current public routes under <code>/plugins</code>, <code>/skills</code>, and <code>/mcp</code>.</td></tr>
           <tr><td>Production files</td><td><code>apps/web/components/capabilities/</code>, the three management page component folders, <code>apps/web/components/ui/manage-page*</code>, and <code>apps/web/lib/net/fetch-client.ts</code>.</td></tr>
           <tr><td>RED evidence</td><td>A focused executable Web check must fail when task vocabulary/status summaries diverge or when a non-2xx extension request has no visible error path.</td></tr>
           <tr><td>Required behavior</td><td>Each type exposes Installed and Discover semantics; primary actions name their target; counts state installed/available/issue meaning; mutations expose progress, success refresh, and actionable error.</td></tr>
@@ -199,7 +199,8 @@
           <tr><td>GREEN</td><td>The focused extension check, owner-auth check, secret non-retrieval check, accessibility wiring check, TypeScript check, and 51 Web unit tests pass.</td></tr>
           <tr><td>Specification review</td><td>PASS after MCP Discover wiring and its controlled-state regression assertion were added in <code>102389ed</code> and <code>c2469889</code>.</td></tr>
           <tr><td>Quality review</td><td>PASS after keyboard navigation, narrow-width layout, MCP detail failure feedback, and executable non-2xx request coverage were added in <code>d7c2bda4</code>.</td></tr>
-          <tr><td>Remaining gate</td><td class="state">Final full Web gate and visible default-App acceptance are pending.</td></tr>
+          <tr><td>Visible acceptance</td><td>Default <code>/Applications/OpenProgram.app</code> on port 18100 renders the unified Plugins, Skills, and MCP navigation, summaries, actions, live MCP readiness, and an operational MCP Discover catalog.</td></tr>
+          <tr><td>Remaining gate</td><td class="state">The full Web gate stops at the unrelated <code>check:center-tabs</code> destination-cue assertion. The exact failure reproduces at base <code>7763ba70</code>; extension-focused, accessibility, TypeScript, unit, build, docs, and review gates pass.</td></tr>
         </tbody>
       </table>
     </section>
