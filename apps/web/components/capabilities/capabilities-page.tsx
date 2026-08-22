@@ -105,7 +105,7 @@ export function CapabilitiesPage() {
     }
     return [
       refresh(() => setMcpReloadNonce((n) => n + 1)),
-      { label: text("Browse catalog", "浏览目录"), onClick: () => setMcpCatalogOpen(true), icon: <LayoutGrid /> },
+      { label: text("Discover MCP servers", "发现 MCP 服务器"), onClick: () => setMcpCatalogOpen(true), icon: <LayoutGrid /> },
       { label: text("Add MCP server", "添加 MCP 服务器"), onClick: () => setMcpAddNonce((n) => n + 1), icon: PlusIcon, primary: true },
     ];
   }, [kind, t, text, refreshPlugins, fetchSkills]);
@@ -161,6 +161,7 @@ export function CapabilitiesPage() {
             embedded
             query={query}
             catalogOpen={mcpCatalogOpen}
+            onCatalogOpen={() => setMcpCatalogOpen(true)}
             onCatalogClose={() => setMcpCatalogOpen(false)}
             reloadNonce={mcpReloadNonce}
             addNonce={mcpAddNonce}

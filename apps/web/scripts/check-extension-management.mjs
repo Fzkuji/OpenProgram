@@ -16,7 +16,9 @@ const [capabilities, manage, plugins, skills, mcp, pluginStore, fetchClient] = a
 assert.match(manage, /summary\?: ReactNode/, "the shared subnav must accept an availability summary");
 assert.match(plugins, /text\("Discover", "发现"\)/, "plugins must use the shared Discover task name");
 assert.match(skills, /text\("Installed", "已安装"\)/, "skills must use the shared Installed task name");
-assert.match(mcp, /<ManageSubnav/, "MCP must expose the same installed sub-navigation level");
+assert.match(mcp, /id: "discover", label: text\("Discover", "发现"\)/, "MCP must expose the shared Discover task");
+assert.match(mcp, /id === "discover"\) openCatalog\(\)/, "MCP Discover must open its catalog");
+assert.doesNotMatch(capabilities, /Browse catalog|浏览目录/, "the hub must not restore MCP-only task wording");
 assert.match(capabilities, /text\("Add plugin", "添加插件"\)/);
 assert.match(capabilities, /text\("Add skill", "添加技能"\)/);
 assert.match(capabilities, /text\("Add MCP server", "添加 MCP 服务器"\)/);

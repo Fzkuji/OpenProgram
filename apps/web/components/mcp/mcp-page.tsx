@@ -35,6 +35,7 @@ export function McpPage({
   embedded,
   query,
   catalogOpen: catalogOpenProp,
+  onCatalogOpen,
   onCatalogClose,
   reloadNonce,
   addNonce,
@@ -42,6 +43,7 @@ export function McpPage({
   embedded?: boolean;
   query?: string;
   catalogOpen?: boolean;
+  onCatalogOpen?: () => void;
   onCatalogClose?: () => void;
   reloadNonce?: number;
   addNonce?: number;
@@ -57,6 +59,7 @@ export function McpPage({
   const [busy, setBusy] = useState<BusyAction>(null);
   const [localCatalogOpen, setLocalCatalogOpen] = useState(false);
   const catalogOpen = catalogOpenProp ?? localCatalogOpen;
+  const openCatalog = onCatalogOpen ?? (() => setLocalCatalogOpen(true));
   const closeCatalog = onCatalogClose ?? (() => setLocalCatalogOpen(false));
   const [filter, setFilter] = useState("");
   const filterValue = query !== undefined ? query : filter;
@@ -293,9 +296,12 @@ export function McpPage({
     <>
         {embedded && (
           <ManageSubnav
-            tabs={[{ id: "installed", label: text("Installed", "已安装"), count: servers.length }]}
+            tabs={[
+              { id: "installed", label: text("Installed", "已安装"), count: servers.length },
+              { id: "discover", label: text("Discover", "发现") },
+            ]}
             activeTab="installed"
-            onTabChange={() => {}}
+            onTabChange={(id) => { if (id === "discover") openCatalog(); }}
             summary={text(
               `${servers.length} installed · ${readyCount} available · ${issueCount} issues`,
               `已安装 ${servers.length} 个 · 可用 ${readyCount} 个 · ${issueCount} 个问题`,
@@ -422,7 +428,7 @@ export function McpPage({
           activeTab="servers"
           actions={[
             { label: t("sidebar.refresh"), onClick: () => { void reload(); } },
-            { label: text("Browse catalog", "浏览目录"), onClick: () => setLocalCatalogOpen(true) },
+            { label: text("Discover MCP servers", "发现 MCP 服务器"), onClick: openCatalog },
             { label: text("Add server", "添加服务器"), onClick: openAdd, primary: true },
           ]}
         />
