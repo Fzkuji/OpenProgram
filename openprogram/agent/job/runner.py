@@ -258,7 +258,31 @@ def _stamp_job_change_owner(job: Job) -> None:
         _log.warning("job change ownership stamp failed for %s", job.id, exc_info=True)
 
 
+def _mirror_linked_job_to_caller(job: Job) -> None:
+    """Keep cross-session linked impact visible from its origin turn."""
+    caller_session_id = job.caller_session_id
+    if (
+        job.relation != "linked"
+        or not caller_session_id
+        or caller_session_id == job.parent_session_id
+        or not job.origin_turn_id
+    ):
+        return
+    try:
+        from dataclasses import replace
+        from openprogram.agent.job.store import save_job
+
+        save_job(
+            caller_session_id,
+            replace(job, parent_session_id=caller_session_id),
+            commit_message=f"job link: {job.id} {job.status.value}",
+        )
+    except Exception:
+        _log.warning("linked job mirror failed for %s", job.id, exc_info=True)
+
+
 def _broadcast_job_status(job: Job, resource: dict | None = None) -> None:
+    _mirror_linked_job_to_caller(job)
     data = {
         "job_id": job.id,
         "session_id": job.parent_session_id,

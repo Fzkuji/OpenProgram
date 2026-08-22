@@ -8,6 +8,7 @@ import pytest
 from openprogram.agent.history_ownership import owned_change_set_closure
 from openprogram.agent.internals._revert import reapply_turn, revert_turn
 from openprogram.agent.job.store import save_job
+from openprogram.agent.job.runner import _mirror_linked_job_to_caller
 from openprogram.agent.job.types import Job, JobStatus
 from openprogram.store.session.session_store import SessionStore
 from openprogram.store.snapshot.checkpoint import CheckpointStore
@@ -88,6 +89,27 @@ def test_completed_owned_child_is_included_but_linked_and_worktree_are_not(store
     assert {item["job_id"] for item in closure["linked"]} == {
         "j_linked", "j_worktree",
     }
+
+
+def test_cross_session_link_is_mirrored_to_origin_for_impact_reporting(store):
+    store.create_session("peer", "main", title="peer")
+    job = _job(
+        id="j_cross",
+        parent_session_id="peer",
+        relation="linked",
+        creates_agent=False,
+        caller_session_id="s",
+        status=JobStatus.RUNNING,
+        head_id=None,
+    )
+    save_job("peer", job)
+
+    _mirror_linked_job_to_caller(job)
+    closure = owned_change_set_closure("s", ["a1"])
+
+    assert closure["status"] == "blocked"
+    assert closure["linked"][0]["job_id"] == "j_cross"
+    assert closure["blockers"][0]["job_id"] == "j_cross"
 
 
 def test_parent_revert_restores_owned_child_only(store, tmp_path):
