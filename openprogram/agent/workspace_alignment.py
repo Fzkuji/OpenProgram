@@ -79,6 +79,8 @@ def adopt_current_workspace(
     *,
     store=None,
     decision: str = "keep_current_files",
+    source_head_id: str | None = None,
+    target_head_id: str | None = None,
 ) -> dict[str, Any]:
     if store is None:
         from openprogram.store.session.session_store import default_store
@@ -86,6 +88,18 @@ def adopt_current_workspace(
         store = default_store()
     session = store.get_session(session_id) or {}
     prior = get_workspace_alignment(session_id, store=store)
+    if (
+        source_head_id is not None
+        and source_head_id != prior.get("source_head_id")
+    ) or (
+        target_head_id is not None
+        and target_head_id != prior.get("target_head_id")
+    ):
+        return {
+            **prior,
+            "status": "mismatch",
+            "resolution_error": "stale_workspace_alignment",
+        }
     value = {
         **prior,
         "status": "aligned",

@@ -274,6 +274,37 @@ def test_keep_current_files_uses_head_cas(store, srv, monkeypatch):
     assert result["workspace_alignment"]["status"] == "mismatch"
 
 
+def test_stale_keep_decision_does_not_adopt_a_new_checkout(
+    store, srv, monkeypatch,
+):
+    from openprogram.agent.workspace_alignment import mark_conversation_checkout
+    from openprogram.webui.ws_actions import branch as branch_actions
+
+    ids = _two_turns(store)
+    # Current prompt was rendered for source ids[-1] -> target ids[1].
+    stale_source, stale_target = ids[-1], ids[1]
+    store.set_head("s1", stale_target)
+    mark_conversation_checkout("s1", stale_source, stale_target, store=store)
+    # Before it arrives, conversation moves again to ids[0].
+    store.set_head("s1", ids[0])
+    mark_conversation_checkout("s1", stale_target, ids[0], store=store)
+    monkeypatch.setattr(srv, "_is_run_active", lambda _sid: False)
+    ws = FakeWS()
+
+    _run(branch_actions.handle_resolve_workspace_alignment(ws, {
+        "session_id": "s1",
+        "decision": "keep_current_files",
+        "source_head_id": stale_source,
+        "target_head_id": stale_target,
+    }))
+
+    result = ws.of_type("workspace_alignment_resolved")[0]
+    assert result["ok"] is False
+    assert result["error"] == "stale_workspace_alignment"
+    assert result["workspace_alignment"]["target_head_id"] == ids[0]
+    assert store.get_session("s1")["workspace_alignment"]["status"] == "mismatch"
+
+
 # ---- 2. attach / delete must refresh cache + mirror --------------------
 
 def test_attach_branch_invalidates_message_cache(store, srv):

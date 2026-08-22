@@ -316,7 +316,12 @@ async def handle_resolve_workspace_alignment(ws, cmd: dict):
         from openprogram.agent.session_db import default_db
         from openprogram.agent.workspace_alignment import adopt_current_workspace
 
-        alignment = adopt_current_workspace(session_id, store=default_db())
+        alignment = adopt_current_workspace(
+            session_id,
+            store=default_db(),
+            source_head_id=(cmd.get("source_head_id") or None),
+            target_head_id=(cmd.get("target_head_id") or None),
+        )
         ok = alignment.get("status") == "aligned"
         error = alignment.get("resolution_error")
     elif decision == "restore_branch_code":
