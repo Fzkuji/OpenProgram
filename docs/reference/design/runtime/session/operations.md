@@ -87,6 +87,18 @@ relocate_project {session_id, project_id, path}
 
 It changes the **project's path**, never the session→project binding, which is why it stays legal after the freeze. Every session bound to that project follows the move. The default project refuses to relocate: its path is the home directory, restored on every `get_default_project` read.
 
+### Following a move automatically
+
+The project's identity is its stable id; the path is a mutable attribute. (Claude Code and Codex CLI both key sessions on the absolute path itself and therefore lose history on a folder move; OpenProgram's model is deliberately the opposite.) Three mechanisms make a moved folder reconnect without the user knowing the word "relocate":
+
+1. **Relocation rewrites the location index.** `sessions/locations.json` snapshots each session repo's absolute path at create time. `relocate_project` rewrites the entry of every session bound to the project to `<new>/.openprogram/sessions/<id>` (`SessionStore.relocate_project_sessions`) and drops cached repo objects. Ad-hoc sessions in the home root have no entry and stay put.
+2. **Lookup heals itself.** When `_session_dir` finds no repo at the recorded location, it falls back to the bound project's **current** registry path and rewrites the index on a hit. This covers any ordering of move → relocate → restart across processes.
+3. **Opening the new location claims the moved project.** Before `resolve_project` mints a path-derived id for an unknown directory, it checks the directory's `.openprogram/sessions/<id>` footprint against every registered project whose own path is gone. Session ids matching exactly one such project are deterministic evidence of a move: the old project is relocated (id kept) instead of a duplicate being created. A folder whose registered path still exists is a copy, never claimed. No folder-name or background-scan guessing.
+
+Startup cleanup respects the same reality: a project-bound session whose recorded location is unreachable is **not** an empty shell — the repo exists elsewhere on disk — so it is never purged for missing history while the project is un-relocated.
+
+The composer's draft picker lists `path_missing` projects (clicking one opens the locate flow instead of selecting it), and the `/projects` page shows the warning with a "Locate folder…" action; neither surface silently hides a project whose folder moved.
+
 ### The relocate record node
 
 The move changes where every later turn runs, so it is recorded in the session graph rather than mutating the registry silently (`openprogram/store/project/relocate_node.py`):

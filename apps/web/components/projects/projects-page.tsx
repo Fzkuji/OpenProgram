@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AlertTriangle, FolderSearch } from "lucide-react";
 
 import fx from "@/components/functions/functions-page.module.css";
 import { SearchInput } from "@/components/ui/search-input";
@@ -25,6 +26,8 @@ interface Project {
   name: string;
   path: string;
   is_default: boolean;
+  /** Backend-computed: the folder no longer exists on disk. */
+  path_missing?: boolean;
   session_count: number;
   status: string;
 }
@@ -106,6 +109,24 @@ export function ProjectsPage({
     if (tab === "sessions" && selectedId) loadSessions(selectedId);
   }, [tab, selectedId, loadSessions]);
 
+  // 定位缺失项目的新目录：改项目 path、保留 id（relocate_project）。
+  const locateProject = useCallback(async (projectId: string) => {
+    setError(null);
+    try {
+      const r = await fetch("/api/pick-folder");
+      const j = await r.json();
+      if (!j?.path) return;
+      const d = await wsRequest<{ ok: boolean; error?: string | null }>(
+        "relocate_project", { project_id: projectId, path: j.path },
+        "project_relocated",
+      );
+      if (d && !d.ok) setError(d.error || text("Relocation failed.", "移动失败。"));
+      refresh();
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [refresh, text]);
+
   const addProject = useCallback(async () => {
     setError(null);
     try {
@@ -154,6 +175,14 @@ export function ProjectsPage({
               >
                 <span className={fx.profileIcon}><FoldersIcon size={16} /></span>
                 <span className={fx.profileName}>{p.name}</span>
+                {p.path_missing && (
+                  <AlertTriangle
+                    size={13}
+                    strokeWidth={2}
+                    style={{ color: "var(--accent-orange)", flexShrink: 0 }}
+                    aria-label={text("Folder missing", "目录缺失")}
+                  />
+                )}
                 {p.is_default && <span className={styles.badge}>{text("Default", "默认")}</span>}
               </div>
             ))}
@@ -177,6 +206,38 @@ export function ProjectsPage({
                   <span className={styles.detailTitle}>{selected.name}</span>
                   <span className={styles.detailPath}>{selected.path}</span>
                 </div>
+                {selected.path_missing && (
+                  <div
+                    role="alert"
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      margin: "8px 0", fontSize: 12,
+                      color: "var(--accent-orange)",
+                    }}
+                  >
+                    <AlertTriangle size={14} strokeWidth={2} aria-hidden="true" />
+                    <span>
+                      {text(
+                        "This folder no longer exists on disk.",
+                        "该目录已不在磁盘上。",
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => locateProject(selected.id)}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 4,
+                        cursor: "pointer", background: "none",
+                        border: "1px solid var(--accent-orange)",
+                        borderRadius: 6, padding: "2px 8px",
+                        color: "var(--accent-orange)", fontSize: 12,
+                      }}
+                    >
+                      <FolderSearch size={13} strokeWidth={2} aria-hidden="true" />
+                      {text("Locate folder…", "定位文件夹…")}
+                    </button>
+                  </div>
+                )}
 
                 <div className={styles.tabs}>
                   {(["settings", "sessions", "info"] as Tab[]).map((tk) => (

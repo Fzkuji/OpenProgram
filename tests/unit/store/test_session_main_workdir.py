@@ -248,6 +248,112 @@ def test_relocate_rejects_non_directory(env, tmp_path: Path):
 # 4. 追加目录：定格之后照样增删
 
 
+# 5. 文件夹移动后的自动适应
+#    relocate 随迁位置索引；stale 位置查找自愈；resolve 自动认领被移走的
+#    项目；启动清理不把"仓库不可达"的会话当空壳删除。
+
+
+def _git_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """独立 SessionStore（git 仓库版），并让 project_store 的
+    relocate → default_store() 拿到它。"""
+    from openprogram.store.session.session_store import SessionStore
+    store = SessionStore(tmp_path / "state" / "sessions")
+    monkeypatch.setattr(
+        "openprogram.store.session.session_store.default_store", lambda: store)
+    return store
+
+
+def test_relocate_rewrites_session_locations(env, tmp_path: Path, monkeypatch):
+    from openprogram.store.project import project_store as P
+    store = _git_store(tmp_path, monkeypatch)
+    old = tmp_path / "old"
+    old.mkdir()
+    store.create_session("s1", "main", project_path=str(old))
+    proj = P.project_for_session("s1")
+    assert Path(store._locations["s1"]) == old / ".openprogram" / "sessions" / "s1"
+
+    new = tmp_path / "new"
+    shutil.move(str(old), str(new))
+    P.relocate_project(proj.id, new)
+
+    assert Path(store._locations["s1"]) == new / ".openprogram" / "sessions" / "s1"
+    assert (store._session_dir("s1") / "history").is_dir()
+
+
+def test_stale_location_heals_from_project_registry(env, tmp_path: Path,
+                                                    monkeypatch):
+    """locations.json 指向死路径、注册表已是新路径（先搬家再定位、然后
+    换进程重启的顺序）→ 查找回退到项目当前路径并回写索引。"""
+    from openprogram.store.project import project_store as P
+    store = _git_store(tmp_path, monkeypatch)
+    old = tmp_path / "old"
+    old.mkdir()
+    store.create_session("s1", "main", project_path=str(old))
+    proj = P.project_for_session("s1")
+    new = tmp_path / "new"
+    shutil.move(str(old), str(new))
+    P.relocate_project(proj.id, new)
+    # 人为把索引改回死路径，模拟另一个进程里未随迁的快照。
+    store._record_location("s1", old / ".openprogram" / "sessions" / "s1")
+
+    healed = store._session_dir("s1")
+    assert healed == new / ".openprogram" / "sessions" / "s1"
+    assert Path(store._locations["s1"]) == healed
+
+
+def test_resolve_project_claims_moved_folder(env, tmp_path: Path, monkeypatch):
+    """打开搬走后的新位置 → 认领旧项目（保 id、更新 path），不造新项目。"""
+    from openprogram.store.project import project_store as P
+    store = _git_store(tmp_path, monkeypatch)
+    old = tmp_path / "old"
+    old.mkdir()
+    store.create_session("s1", "main", project_path=str(old))
+    proj = P.project_for_session("s1")
+    new = tmp_path / "new"
+    shutil.move(str(old), str(new))
+
+    claimed = P.resolve_project(new)
+
+    assert claimed.id == proj.id
+    assert Path(claimed.path) == new.resolve()
+    # 位置索引也随认领更新（claim 内部走 relocate_project）。
+    assert Path(store._locations["s1"]) == new / ".openprogram" / "sessions" / "s1"
+
+
+def test_resolve_project_does_not_claim_a_copy(env, tmp_path: Path, monkeypatch):
+    """旧路径还在（是拷贝不是移动）→ 不认领，正常发新 id。"""
+    from openprogram.store.project import project_store as P
+    store = _git_store(tmp_path, monkeypatch)
+    old = tmp_path / "old"
+    old.mkdir()
+    store.create_session("s1", "main", project_path=str(old))
+    proj = P.project_for_session("s1")
+    copy = tmp_path / "copy"
+    shutil.copytree(old, copy)
+
+    other = P.resolve_project(copy)
+
+    assert other.id != proj.id
+    assert Path(P.get_project(proj.id).path) == old.resolve()
+
+
+def test_startup_cleanup_keeps_unreachable_project_sessions(env, tmp_path: Path,
+                                                            monkeypatch):
+    """项目移走且未定位时重启 worker → 会话不能被当空壳清除。"""
+    from openprogram.store.session.session_store import SessionStore
+    store = _git_store(tmp_path, monkeypatch)
+    old = tmp_path / "old"
+    old.mkdir()
+    store.create_session("s1", "main", project_path=str(old),
+                         created_at=0.0, updated_at=0.0)
+    store._flush_index()
+    shutil.move(str(old), str(tmp_path / "elsewhere"))
+
+    reopened = SessionStore(tmp_path / "state" / "sessions")
+
+    assert "s1" in reopened._index
+
+
 def test_additional_dirs_still_editable_after_freeze(env, tmp_path: Path):
     """主目录定格不牵连追加目录——有轮次的会话仍能增删。"""
     db = env

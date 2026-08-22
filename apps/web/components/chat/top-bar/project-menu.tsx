@@ -298,24 +298,31 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
     <div className={`${MENU_PANEL} min-w-[230px] max-w-[340px]`}>
       <div className={GROUP_LABEL}>{text("Recent", "最近")}</div>
 
-      {/* 目录已不存在的项目不进选择列表——选中它只会立刻进入缺失警示，
-          没有意义。修复入口在活跃会话的冻结面板（定位文件夹…）。 */}
-      {list.filter((p) => !p.path_missing).map((p) => {
+      {/* 目录已不存在的项目仍然列出（静默消失会让用户以为项目丢了），
+          点击它走定位修复而不是选中——选一个死路径当主目录没有意义。 */}
+      {list.map((p) => {
         const active = p.id === activeId;
         return (
           <div
             key={p.id}
             className={itemCls(false)}
             title={
-              p.path ||
-              (p.is_default
+              p.path_missing
                 ? text(
-                    "Ad-hoc chats — stored in your home folder",
-                    "随手聊 — 保存在主目录",
+                    "Folder missing — click to locate its new place",
+                    "目录缺失 — 点击定位它的新位置",
                   )
-                : "")
+                : p.path ||
+                  (p.is_default
+                    ? text(
+                        "Ad-hoc chats — stored in your home folder",
+                        "随手聊 — 保存在主目录",
+                      )
+                    : "")
             }
-            onClick={() => !busy && switchTo(p.id)}
+            onClick={() =>
+              !busy && (p.path_missing ? locateFolder(p.id) : switchTo(p.id))
+            }
           >
             <span className="min-w-0 flex-1 truncate">{p.name}</span>
             {p.path_missing ? (

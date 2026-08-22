@@ -663,6 +663,13 @@ def resolve_project(path: str | Path | None = None, *, name: str | None = None) 
     if existing is not None:
         return existing
 
+    # Before minting a new id: this folder may be a registered project
+    # that was MOVED on disk. Its session footprint is the deterministic
+    # evidence — claim the old project instead of duplicating it.
+    claimed = _claim_moved_project(p)
+    if claimed is not None:
+        return claimed
+
     proj = Project(
         id=pid,
         name=name or p.name or pid,
@@ -670,6 +677,40 @@ def resolve_project(path: str | Path | None = None, *, name: str | None = None) 
         is_default=False,
     )
     return _upsert(proj)
+
+
+def _claim_moved_project(p: Path) -> Optional[Project]:
+    """Recognize a moved project folder by its session footprint.
+
+    A directory opened at a new path that carries
+    ``.openprogram/sessions/<id>/`` entries belonging to exactly one
+    registered project whose own path is gone was moved, not created —
+    relocate that project (keeping its id) instead of minting a
+    duplicate. A folder whose registered path still exists is a copy
+    and is never claimed. Session ids are exact-match evidence; nothing
+    is guessed from folder names.
+    """
+    footprint = p / ".openprogram" / "sessions"
+    try:
+        local_sids = {c.name for c in footprint.iterdir() if c.is_dir()}
+    except OSError:
+        return None
+    if not local_sids:
+        return None
+    with _reg_lock:
+        rows = list(_read_registry().values())
+    matches = [
+        d["id"] for d in rows
+        if d.get("id")
+        and not d.get("is_default")
+        and d.get("path")
+        and not Path(d["path"]).expanduser().is_dir()
+        and local_sids & set(d.get("session_ids") or [])
+    ]
+    if len(matches) != 1:
+        return None
+    _log.info("claiming moved project %s at %s", matches[0], p)
+    return relocate_project(matches[0], p)
 
 
 def relocate_project(project_id: str, new_path: str | Path) -> Project:
@@ -695,7 +736,18 @@ def relocate_project(project_id: str, new_path: str | Path) -> Project:
         raise ProjectStoreError("the default project cannot be relocated")
     ensure_footprint_ignored(p)
     proj.path = str(p.resolve())
-    return _upsert(proj)
+    moved = _upsert(proj)
+    # The location index (sessions/locations.json) snapshots each
+    # session repo's absolute path at create time, so every session
+    # bound to this project still points into the old directory.
+    # Rewrite those entries so history keeps opening after the move.
+    try:
+        from openprogram.store.session.session_store import default_store
+        default_store().relocate_project_sessions(moved.session_ids, p)
+    except Exception as e:  # noqa: BLE001 — healing is best-effort
+        _log.warning("session locations NOT rewritten for %s: %s",
+                     project_id, e)
+    return moved
 
 
 def bind_session(session_id: str, project_id: str) -> None:

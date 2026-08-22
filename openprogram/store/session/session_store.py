@@ -326,6 +326,28 @@ class SessionStore:
                     snapshot = dict(self._locations)
                 self._save_locations(snapshot)
 
+    def relocate_project_sessions(self, session_ids, new_project_path) -> int:
+        """Rewrite the location index after a project moved on disk.
+
+        Called by ``project_store.relocate_project`` for every session
+        bound to the moved project. Only sessions that already have a
+        location entry are rewritten — ad-hoc sessions living in the
+        home root stay put. Cached repo objects are dropped so the next
+        open reloads from the new path. Returns the rewrite count.
+        """
+        base = Path(new_project_path).expanduser()
+        moved = 0
+        for sid in session_ids or []:
+            with self._session_lock(sid):
+                with self._lock:
+                    if sid not in self._locations:
+                        continue
+                    self._sessions.pop(sid, None)
+                self._record_location(
+                    sid, base / ".openprogram" / "sessions" / sid)
+            moved += 1
+        return moved
+
     def _forget_location(self, session_id: str) -> None:
         """删会话时移除位置映射（配对 _record_location）。"""
         with self._session_lock(session_id):
@@ -416,6 +438,13 @@ class SessionStore:
             created = entry.get("created_at") or 0
             updated = entry.get("updated_at") or created
             sdir = self._session_dir(sid)
+            # A project-bound session whose recorded location is
+            # unreachable (the project folder moved and is not yet
+            # relocated) is NOT an empty shell — the repo exists
+            # somewhere else on disk. Deleting it here would purge the
+            # session the moment the worker restarts after a move.
+            if sdir != self.root_path / sid and not sdir.exists():
+                continue
             # Empty shells: no history, older than 1 hour.
             if (now - created) > self._EMPTY_SHELL_AGE:
                 has_history = (sdir / "history").is_dir() and any(
@@ -549,12 +578,32 @@ class SessionStore:
         location index). Everything else — ad-hoc chats, all
         pre-existing sessions — resolves to the home root
         ``<state>/sessions/<id>/``.
+
+        The location index is a snapshot taken at create time, so it
+        goes stale when the project folder moves on disk. When the
+        recorded path no longer holds a repo, follow the project
+        registry (which relocate / auto-claim keeps current), and heal
+        the index if the repo is found at the project's current path.
         """
         with self._lock:
             loc = self._locations.get(session_id)
-        if loc:
-            return Path(loc)
-        return self.root_path / session_id
+        if not loc:
+            return self.root_path / session_id
+        p = Path(loc)
+        if (p / "history").is_dir():
+            return p
+        try:
+            from openprogram.store.project import project_store as _projects
+            proj = _projects.project_for_session(session_id)
+            if proj and not proj.is_default and proj.path:
+                cand = (Path(proj.path).expanduser()
+                        / ".openprogram" / "sessions" / session_id)
+                if cand != p and (cand / "history").is_dir():
+                    self._record_location(session_id, cand)
+                    return cand
+        except Exception as e:  # noqa: BLE001 — healing is best-effort
+            _log.warning("stale location for %s not healed: %s", session_id, e)
+        return p
 
     def _open(self, session_id: str, *, create_if_missing: bool = False) -> Optional[tuple[GitSession, SessionMemoryIndex]]:
         """Return (git, idx). Loads from disk on first access. None if
@@ -569,9 +618,8 @@ class SessionStore:
             return None
         with self._session_lock(session_id):
             verified_git: GitSession | None = None
+            sdir = self._session_dir(session_id)
             with self._lock:
-                loc = self._locations.get(session_id)
-                sdir = Path(loc) if loc else self.root_path / session_id
                 cached = self._sessions.get(session_id)
                 if cached:
                     self._sessions.move_to_end(session_id)

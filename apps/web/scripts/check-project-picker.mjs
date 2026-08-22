@@ -90,9 +90,16 @@ assert.match(
 assert.match(fileTreeCss, /\.treeName,[\s\S]*\.treePath\s*\{[^}]*margin-left:\s*6px/);
 assert.match(
   projectMenu,
-  /\{list\.filter\(\(p\) => !p\.path_missing\)\.map\(/,
-  "missing-directory projects must not appear in the draft picker",
+  /\{list\.map\(\(p\) => \{/,
+  "missing-directory projects stay visible in the draft picker",
 );
+assert.match(
+  projectMenu,
+  /p\.path_missing \? locateFolder\(p\.id\) : switchTo\(p\.id\)/,
+  "missing draft-picker items locate the folder instead of selecting it",
+);
+assert.match(projectsPage, /const locateProject = useCallback/);
+assert.match(projectsPage, /Locate folder…/);
 assert.doesNotMatch(projectMenu, /filter\([^\n]*session_count/);
 
 // Main directory freezes on the first turn: an active session (one with a
