@@ -34,6 +34,12 @@ export function pipPairedOwnerFor(tabId: string): string | null {
   return pairedOwnerByTabId.get(tabId) ?? null;
 }
 
+/** Record session↔web pairing without showing the floating host.
+ *  Split-open uses this; PiP `show()` goes through it too. */
+export function registerPipPair(tabId: string, ownerTabId: string): void {
+  pairedOwnerByTabId.set(tabId, ownerTabId);
+}
+
 export const useWebTabPip = create<{
   tabId: string | null;
   ownerTabId: string | null;
@@ -51,7 +57,7 @@ export const useWebTabPip = create<{
   backgroundOwnerTabId: null,
   rect: null,
   show: (tabId, ownerTabId) => {
-    pairedOwnerByTabId.set(tabId, ownerTabId);
+    registerPipPair(tabId, ownerTabId);
     set({
       tabId,
       ownerTabId,
@@ -159,16 +165,18 @@ export function pipCollapseTargetFor(
     : null;
 }
 
-/** Agent attention shift: an off-screen tab paired to the ACTIVE session
- *  becomes that session's floating page so the agent can act on it. */
-export function revealPairedPipTab(tabId: string): boolean {
+/** Agent-interaction reveal: float a web tab so the active session's
+ *  agent can act on it. Unpaired pages pair to this session via `show()`.
+ *  A page already paired to another session is refused — no hijack. */
+export function revealAgentWebTab(tabId: string): boolean {
   const state = useCenterTabs.getState();
   const active = state.tabs.find((tab) => tab.id === state.activeId);
   if (active?.kind !== "session") return false;
-  if (pairedOwnerByTabId.get(tabId) !== active.id) return false;
   if (!state.tabs.some((tab) => tab.id === tabId && tab.kind === "web")) {
     return false;
   }
+  const paired = pairedOwnerByTabId.get(tabId);
+  if (paired && paired !== active.id) return false;
   useWebTabPip.getState().show(tabId, active.id);
   return true;
 }

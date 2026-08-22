@@ -2102,6 +2102,8 @@ assert.match(desktopBridgeSource, /d\.op === "close"/);
 assert.match(desktopBridgeSource, /closeAgentWebTabResult\(d\.tab_id, state\.tabs, state\.groups\)/);
 assert.match(desktopBridgeSource, /if \(closed\.ok\) state\.closeTab\(d\.tab_id!\)/);
 assert.match(desktopBridgeSource, /state\.openWebTabInSplit\(d\.url\)/);
+assert.match(desktopBridgeSource, /registerPipPair\(id, active\.id\)/);
+assert.match(desktopBridgeSource, /revealAgentWebTab\(d\.tab_id\)/);
 assert.match(desktopBridgeSource, /state\.ensureWebTab\(d\.url\)/);
 assert.match(desktopBridgeSource, /pipOpenMustFork\(d\.url, active\.id\)/);
 assert.match(desktopBridgeSource, /ensureExclusiveWebTab\(d\.url\)/);
@@ -2406,7 +2408,8 @@ const {
   pipCollapseTargetFor,
   pipCoversCenter,
   pipPairedOwnerFor,
-  revealPairedPipTab,
+  registerPipPair,
+  revealAgentWebTab,
 } = await import("../lib/state/web-tab-pip-store.ts");
 useWebTabPip.getState().show(pipOnlyId, "s:chat");
 assert.equal(peekWebTabPipId(), pipOnlyId);
@@ -2710,14 +2713,36 @@ assert.equal(pipCollapseTargetFor(pipOwnedId), pipOwnerA);
 
 useWebTabPip.getState().end();
 useCenterTabs.setState({ activeId: pipOwnerA });
-assert.equal(revealPairedPipTab(pipOwnedId), true);
+assert.equal(revealAgentWebTab(pipOwnedId), true);
 assert.equal(peekWebTabPipId(), pipOwnedId);
 assert.equal(peekWebTabPipOwnerId(), pipOwnerA);
 useWebTabPip.getState().end();
 useCenterTabs.setState({ activeId: pipOwnerB });
-assert.equal(revealPairedPipTab(pipOwnedId), false);
+assert.equal(revealAgentWebTab(pipOwnedId), false);
 useCenterTabs.setState({ activeId: pipOwnerA });
-assert.equal(revealPairedPipTab(pipReboundId), false);
+assert.equal(revealAgentWebTab(pipReboundId), false);
+
+const pipUnpairedId = "w:https://pip-unpaired.example/";
+useCenterTabs.setState({
+  tabs: [
+    ...useCenterTabs.getState().tabs,
+    { id: pipUnpairedId, kind: "web", title: "Unpaired", url: "https://pip-unpaired.example/" },
+  ],
+  activeId: pipOwnerA,
+});
+assert.equal(pipPairedOwnerFor(pipUnpairedId), null);
+assert.equal(revealAgentWebTab(pipUnpairedId), true);
+assert.equal(pipPairedOwnerFor(pipUnpairedId), pipOwnerA);
+assert.equal(peekWebTabPipId(), pipUnpairedId);
+assert.equal(peekWebTabPipOwnerId(), pipOwnerA);
+
+useWebTabPip.getState().end();
+const splitPairUrl = "https://pip-split-pair.example/";
+const splitPairId = useCenterTabs.getState().openWebTabInSplit(splitPairUrl);
+registerPipPair(splitPairId, pipOwnerA);
+useCenterTabs.setState({ groups: [], splitWebTabId: null });
+assert.equal(pipPairedOwnerFor(splitPairId), pipOwnerA);
+assert.equal(pipCollapseTargetFor(splitPairId), pipOwnerA);
 
 // A tab already floating returns to its owner instead of re-binding.
 useWebTabPip.getState().end();

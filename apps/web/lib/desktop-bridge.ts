@@ -26,7 +26,8 @@ import {
   peekWebTabPipId,
   peekWebTabPipOwnerId,
   pipOpenMustFork,
-  revealPairedPipTab,
+  registerPipPair,
+  revealAgentWebTab,
   useWebTabPip,
 } from "@/lib/state/web-tab-pip-store";
 import {
@@ -895,11 +896,12 @@ export function installDesktopMenuHandlers(): void {
         });
       }
       };
-      // Agent attention shift: a parked tab paired to the active session
-      // swaps into that session's floating slot, then the op runs once
-      // the floating web view is ready.
+      // Agent attention shift: an off-screen web tab that is unpaired or
+      // already paired to the active session becomes that session's
+      // floating page, then the op runs once the floating web view is
+      // ready. Pages paired to another session are not hijacked.
       const visible = d.tab_id ? visibleWebTabById(d.tab_id) : null;
-      if (!visible && d.tab_id && revealPairedPipTab(d.tab_id)) {
+      if (!visible && d.tab_id && revealAgentWebTab(d.tab_id)) {
         const tabId = d.tab_id;
         void waitForWebTabReady(tabId, 2000).then(() =>
           runOp(visibleWebTabById(tabId)),
@@ -931,6 +933,7 @@ export function installDesktopMenuHandlers(): void {
       let id: string | null;
       if (split) {
         id = state.openWebTabInSplit(d.url);
+        if (active?.kind === "session") registerPipPair(id, active.id);
       } else if (usePip && active) {
         id = pipOpenMustFork(d.url, active.id)
           ? state.ensureExclusiveWebTab(d.url)
