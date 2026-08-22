@@ -92,7 +92,7 @@ function ItemIcon({ item }: { item: ContextMenuItem }) {
 }
 
 function hasItemIcon(item: ContextMenuItem) {
-  return Boolean(item.checked || item.icon || item.iconUrl);
+  return Boolean(item.checked || item.icon === "folder" || item.iconUrl);
 }
 
 function NestedMenuItems({ items }: { items: ContextMenuItem[] }) {

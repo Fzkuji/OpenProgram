@@ -183,8 +183,8 @@ assert.match(contextMenu, /item\.iconUrl/);
 assert.match(contextMenu, /item\.icon === "folder"/);
 assert.match(
   contextMenu,
-  /function hasItemIcon[\s\S]*?Boolean\(item\.checked \|\| item\.icon \|\| item\.iconUrl\)/,
-  "context menus must identify rows that actually have a leading icon",
+  /function hasItemIcon[\s\S]*?Boolean\(item\.checked \|\| item\.icon === "folder" \|\| item\.iconUrl\)/,
+  "context menus must reserve a slot only for icon kinds that ItemIcon renders",
 );
 assert.equal(
   contextMenu.match(/\{hasItemIcon\(item\) \? \(/g)?.length,
