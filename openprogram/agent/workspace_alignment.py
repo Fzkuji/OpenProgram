@@ -93,7 +93,19 @@ def adopt_current_workspace(
         "decision": decision,
         "updated_at": time.time(),
     }
-    store.update_session(session_id, workspace_alignment=value)
+    head_id = session.get("head_id")
+    expected_head = prior.get("target_head_id") or head_id
+    if head_id != expected_head or not store.compare_and_set_head(
+        session_id,
+        expected_head,
+        expected_head,
+        meta_update={"workspace_alignment": value},
+    ):
+        return {
+            **prior,
+            "status": "mismatch",
+            "resolution_error": "conversation head changed during alignment",
+        }
     return value
 
 

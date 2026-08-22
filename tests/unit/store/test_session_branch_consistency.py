@@ -232,6 +232,7 @@ def test_mismatched_workspace_blocks_chat_until_explicit_adoption(
     from openprogram.webui.ws_actions import chat as chat_actions
 
     ids = _two_turns(store)
+    store.set_head("s1", ids[1])
     mark_conversation_checkout("s1", ids[-1], ids[1], store=store)
     monkeypatch.setattr(
         srv, "_get_or_create_session",
@@ -242,7 +243,7 @@ def test_mismatched_workspace_blocks_chat_until_explicit_adoption(
 
     result = ws.of_type("chat_response")[0]
     assert result["code"] == "workspace_alignment_required"
-    assert store.get_session("s1")["head_id"] == ids[-1]
+    assert store.get_session("s1")["head_id"] == ids[1]
 
     resolved = FakeWS()
     from openprogram.webui.ws_actions import branch as branch_actions
@@ -251,6 +252,26 @@ def test_mismatched_workspace_blocks_chat_until_explicit_adoption(
     }))
     assert resolved.of_type("workspace_alignment_resolved")[0]["ok"] is True
     assert store.get_session("s1")["workspace_alignment"]["status"] == "aligned"
+
+
+def test_keep_current_files_uses_head_cas(store, srv, monkeypatch):
+    from openprogram.agent.workspace_alignment import mark_conversation_checkout
+    from openprogram.webui.ws_actions import branch as branch_actions
+
+    ids = _two_turns(store)
+    store.set_head("s1", ids[1])
+    mark_conversation_checkout("s1", ids[-1], ids[1], store=store)
+    monkeypatch.setattr(srv, "_is_run_active", lambda _sid: False)
+    monkeypatch.setattr(store, "compare_and_set_head", lambda *_args, **_kwargs: False)
+    ws = FakeWS()
+
+    _run(branch_actions.handle_resolve_workspace_alignment(ws, {
+        "session_id": "s1", "decision": "keep_current_files",
+    }))
+
+    result = ws.of_type("workspace_alignment_resolved")[0]
+    assert result["ok"] is False
+    assert result["workspace_alignment"]["status"] == "mismatch"
 
 
 # ---- 2. attach / delete must refresh cache + mirror --------------------

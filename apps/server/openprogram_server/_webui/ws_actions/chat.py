@@ -690,7 +690,7 @@ async def handle_chat(ws, cmd: dict):
     if alignment.get("status") == "mismatch":
         if cmd.get("workspace_decision") == "keep_current_files":
             alignment = adopt_current_workspace(session_id)
-        else:
+        if alignment.get("status") == "mismatch":
             await ws.send_text(json.dumps({
                 "type": "chat_response",
                 "data": {
