@@ -345,7 +345,7 @@ class CheckpointStore:
         backup_dir: Path,
         transaction_id: str,
         expected_current: dict | None = None,
-    ) -> None:
+    ) -> str | None:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.parent / f".{target.name}.{transaction_id}.tmp"
@@ -366,8 +366,7 @@ class CheckpointStore:
                 moved = self._inspect_state(str(guard))
                 if not self._state_matches(moved, expected):
                     try:
-                        os.link(guard, target)
-                        guard.unlink()
+                        os.rename(guard, target)
                     except FileExistsError:
                         pass
                     raise OSError(f"stale current state for {path}")
@@ -383,12 +382,28 @@ class CheckpointStore:
             elif state.get("kind") != "absent":
                 raise OSError(f"unsupported target state for {path}")
 
-            if guard.exists():
-                guard.unlink()
             self._fsync_directory(target.parent)
+            return str(guard) if guard.exists() else None
         finally:
             if tmp.exists():
                 tmp.unlink()
+
+    def _restore_changed_guard(
+        self,
+        action: dict,
+        guard_path: str,
+        transaction_id: str,
+    ) -> None:
+        target = Path(action["path"])
+        guard = Path(guard_path)
+        applied = target.parent / f".{target.name}.{transaction_id}.applied"
+        if target.exists():
+            os.rename(target, applied)
+            action["recovery_artifact"] = str(applied)
+        if target.exists():
+            raise OSError(f"external writer recreated {target}")
+        os.rename(guard, target)
+        self._fsync_directory(target.parent)
 
     @staticmethod
     def _fsync_directory(path: Path) -> None:
@@ -494,13 +509,24 @@ class CheckpointStore:
                         action["expected_current"],
                     ):
                         raise OSError(f"stale current state for {action['path']}")
-                    self._apply_state(
+                    guard_path = self._apply_state(
                         action["path"], action["target"], backup_dir, transaction_id,
                         action["expected_current"],
                     )
+                    if guard_path:
+                        action["guard_path"] = guard_path
                     actual = self._inspect_state(action["path"])
                     if not self._state_matches(actual, action["target"]):
                         raise OSError(f"verification failed for {action['path']}")
+                    if guard_path and not self._state_matches(
+                        self._inspect_state(guard_path), action["rollback"],
+                    ):
+                        self._restore_changed_guard(
+                            action, guard_path, transaction_id,
+                        )
+                        raise OSError(
+                            f"external writer changed moved inode for {action['path']}",
+                        )
                     action["state"] = "verified"
                     manifest.save(intent_path, intent)
             except Exception as exc:
@@ -515,10 +541,12 @@ class CheckpointStore:
                             recovery_required = True
                             action["error"] = "external change prevents rollback"
                             continue
-                        self._apply_state(
+                        rollback_guard = self._apply_state(
                             action["path"], action["rollback"], backup_dir,
                             transaction_id, action["target"],
                         )
+                        if rollback_guard:
+                            action["rollback_guard_path"] = rollback_guard
                         if not self._state_matches(
                             self._inspect_state(action["path"]), action["rollback"],
                         ):

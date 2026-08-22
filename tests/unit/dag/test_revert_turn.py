@@ -6,6 +6,7 @@ DAG metadata stamping.
 """
 from __future__ import annotations
 
+import os
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -323,3 +324,34 @@ def test_external_write_at_final_mutation_point_is_preserved(
     assert result["status"] == "recovery_required"
     assert result["restored_paths"] == []
     assert target.read_text(encoding="utf-8") == "external-after-preflight\n"
+
+
+def test_external_open_fd_write_after_guard_validation_is_preserved(
+    store_with_session, tmp_path, monkeypatch,
+):
+    session_id, turn_id = "s_open_fd_toctou", "u1_reply"
+    _seed_session(store_with_session, session_id, turn_id)
+    target = tmp_path / "race-open.py"
+    target.write_text("before\n", encoding="utf-8")
+    _record_mutation(store_with_session, session_id, turn_id, target, "after\n")
+    original_link = os.link
+    injected = {"value": False}
+
+    def inject_guard_write(source, destination, *args, **kwargs):
+        if not injected["value"] and str(destination) == str(target):
+            guards = list(target.parent.glob(f".{target.name}.*.guard"))
+            assert len(guards) == 1
+            guards[0].write_text("external-open-fd\n", encoding="utf-8")
+            injected["value"] = True
+        return original_link(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(os, "link", inject_guard_write)
+
+    result = revert_turn(session_id, turn_id)
+
+    assert result["status"] == "recovery_required"
+    assert result["restored_paths"] == []
+    assert target.read_text(encoding="utf-8") == "external-open-fd\n"
+    artifacts = list(target.parent.glob(f".{target.name}.*.applied"))
+    assert len(artifacts) == 1
+    assert artifacts[0].read_text(encoding="utf-8") == "before\n"
