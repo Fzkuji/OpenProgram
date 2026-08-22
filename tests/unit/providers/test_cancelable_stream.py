@@ -60,3 +60,46 @@ def test_iter_until_cancelled_yields_until_cancel():
         return events
 
     assert asyncio.run(run()) == ["a", "b"]
+
+
+def test_iter_until_cancelled_keeps_slow_first_chunk():
+    """A first token slower than poll_s must still arrive.
+
+    wait_for would cancel __anext__ on timeout and kill the SSE
+    iterator — that is the empty completed Grok reply.
+    """
+
+    class _SlowFirst:
+        def __init__(self):
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+            self.reads_cancelled = 0
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            self.started.set()
+            try:
+                await self.release.wait()
+                return "hello"
+            except asyncio.CancelledError:
+                self.reads_cancelled += 1
+                raise
+
+    async def run():
+        stream = _SlowFirst()
+        agen = iter_until_cancelled(stream, lambda: False, poll_s=0.01)
+        pull = asyncio.create_task(agen.__anext__())
+        await stream.started.wait()
+        for _ in range(4):
+            done, _ = await asyncio.wait({pull}, timeout=0.02)
+            assert not done
+        stream.release.set()
+        event = await pull
+        return event, stream.reads_cancelled
+
+    event, cancelled = asyncio.run(run())
+    assert event == "hello"
+    assert cancelled == 0
+

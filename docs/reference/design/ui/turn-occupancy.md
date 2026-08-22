@@ -76,10 +76,12 @@ unwind.
 Anthropic and OpenAI Completions used to `async for` the SDK stream
 and only then check the cancel signal. Mid-reasoning that is seconds.
 
-`iter_until_cancelled` waits for the next iterator event with a ≤250ms
-poll of the cancel signal (Codex already does this). On cancel it
-exits so the `async with` closes the HTTP stream. Grok Subscription
-uses the Completions path and gets the same abort.
+`iter_until_cancelled` polls the cancel signal every ≤250ms while
+**one** `__anext__` stays outstanding. Do not `wait_for` the next
+chunk: a timeout cancels that read and kills httpx/OpenAI SSE
+iterators. Grok thinking often has no chunk for longer than 250ms;
+that finalized a completed assistant with empty content.
+On cancel it exits so the `async with` closes the HTTP stream.
 
 ## 4s grace is for real child processes
 

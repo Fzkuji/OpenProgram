@@ -3,11 +3,17 @@
 Mirrors openai_codex: Stop must not wait for the next SSE token
 (Vercel AI SDK / 0ms occupancy). async for event in stream only
 notices cancel between chunks; mid-reasoning that is seconds.
+
+Do NOT use asyncio.wait_for on __anext__. Timeout cancels the
+pending read, which tears down httpx/OpenAI SSE iterators. Grok
+thinking often has no chunk for >250ms; that produced a completed
+assistant with empty content (result length 0).
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import Any, AsyncIterator, Callable
 
 CANCEL_POLL_S = 0.25
@@ -21,21 +27,27 @@ async def iter_until_cancelled(
 ) -> AsyncIterator[Any]:
     """Yield events from stream until it ends or cancelled() is true.
 
-    Waits for the next iterator event with a poll_s timeout so a
-    cancel signal is observed without waiting for the next token. On
-    cancel, returns (stops iteration) so the caller async with
+    Polls the cancel signal every poll_s while a single __anext__
+    stays outstanding. On cancel, returns so the caller async with
     can close the HTTP stream.
     """
     iterator = stream.__aiter__()
-    while True:
-        if cancelled():
-            return
-        try:
-            event = await asyncio.wait_for(
-                iterator.__anext__(), timeout=poll_s,
-            )
-        except asyncio.TimeoutError:
-            continue
-        except StopAsyncIteration:
-            return
-        yield event
+    pending = asyncio.create_task(iterator.__anext__())
+    try:
+        while True:
+            if cancelled():
+                return
+            done, _ = await asyncio.wait({pending}, timeout=poll_s)
+            if not done:
+                continue
+            try:
+                event = pending.result()
+            except StopAsyncIteration:
+                return
+            yield event
+            pending = asyncio.create_task(iterator.__anext__())
+    finally:
+        if not pending.done():
+            pending.cancel()
+            with contextlib.suppress(asyncio.CancelledError, StopAsyncIteration):
+                await pending

@@ -51,7 +51,7 @@ session 槽位是 `_running_tasks` **加上** active runtime。只 pop 任务表
 
 Anthropic 和 OpenAI Completions 以前是 `async for` SDK 流，然后才看取消信号。推理中途那就是好几秒。
 
-`iter_until_cancelled` 等下一条迭代事件时，以 ≤250ms 轮询取消信号（Codex 已经这样做）。取消就退出，让 `async with` 关掉 HTTP 流。Grok Subscription 走 Completions，同一条中止路径。
+`iter_until_cancelled` 每 ≤250ms 看一次取消信号，但 **同一条** `__anext__` 不能被超时取消。`wait_for` 一超时就会 cancel 这次读，httpx/OpenAI 的 SSE 迭代器会断。Grok 思考经常超过 250ms 没有分片，于是收成一条空的 completed 回复。取消时再退出，让 `async with` 关 HTTP 流。
 
 ## 4 秒宽限只给真子进程
 
