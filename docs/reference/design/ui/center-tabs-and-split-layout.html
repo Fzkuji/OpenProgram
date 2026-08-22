@@ -335,7 +335,7 @@
       <li><strong>被绑定网页本体遮罩：</strong>直接打开被 pip 绑定的 WebTab（全屏或 split pane）时，pane 不 ensure、不注册 native bounds，渲染遮罩：<code>usePipSnapshots</code> 里的最后截图（live 卸载时 <code>capture</code> 留存，zustand 响应式）加半透明暗层，标题「正在由『owner 会话标题』控制」，两个按钮——「结束浮动」<code>end()</code> 解除 binding 恢复正常网页、「转到该会话」<code>setActive(ownerTabId)</code>。</li>
       <li><strong>同址开页守卫：</strong>非 owner 会话 <code>op=open</code> 同一 URL 且该 <code>w:url</code> 正被 pip 绑定时，<code>pipOpenMustFork</code> 判定后用 <code>nextPopupWebTabId</code> fork 独立 WebTab 实例并绑定给新会话，不复用、不抢 binding；同 owner 重复打开仍复用原 tab。</li>
       <li><strong>Agent 关页：</strong><code>op=close</code> 按 tab_id 关闭独立 web tab（不存在→<code>tab_not_found</code>；在用户分屏组内→<code>tab_in_user_layout</code> 拒绝）。服务端 <code>request_close_tab(binding_id)</code> 仅经会话自己的 binding 定向发送，成功后删 binding；<code>request_open_tab</code> 成功时登记 <code>allow_background</code> binding 并回传 binding_id。browser 工具 <code>close</code> 仅对 agent 自开页（<code>app_agent_opened</code> 且有 binding）真正关页，复用用户页仍只断开。</li>
-      <li><strong>清理：</strong>owner session tab 或 pip WebTab 从 center-tabs 消失时 store 全清（<code>end()</code>，leaf 不关）；background 恢复信息对应 tab 消失时同步清空。<code>collapseWebTabToPip</code> 的 owner 取 group partner（须为 session），否则第一个 session；无 session 时拒绝浮动。</li>
+      <li><strong>清理：</strong>owner session tab 或 pip WebTab 从 center-tabs 消失时 store 全清（<code>end()</code>，leaf 不关）；background 恢复信息对应 tab 消失时同步清空。<code>collapseWebTabToPip</code> 的 owner 由 <code>pipCollapseTargetFor</code> 决定：group partner（须为 session），否则第一个 session；无 session 时拒绝浮动。已绑定的 tab 再收起时回到原 owner，不改绑。工具栏「收起到悬浮窗」按钮的 tooltip 动态显示目标：「浮动到『某会话』」或已绑定时「返回『某会话』的悬浮窗」，无目标时禁用。</li>
     </ul>
   </section>
 

@@ -2390,6 +2390,7 @@ const {
   useWebTabPip,
   clampPipRect,
   collapseWebTabToPip,
+  pipCollapseTargetFor,
   pipCoversCenter,
 } = await import("../lib/state/web-tab-pip-store.ts");
 useWebTabPip.getState().show(pipOnlyId, "s:chat");
@@ -2608,6 +2609,37 @@ useCenterTabs.setState({
 });
 assert.equal(collapseWebTabToPip(pipOwnedId), false);
 assert.equal(peekWebTabPipId(), null);
+
+// pipCollapseTargetFor: group partner session wins, else first session tab.
+useCenterTabs.setState({
+  tabs: [
+    { id: pipOwnerA, kind: "session", title: "Alpha", sessionId: "pip-a" },
+    { id: pipOwnerB, kind: "session", title: "Beta", sessionId: "pip-b" },
+    { id: pipOwnedId, kind: "web", title: "Owned", url: "https://pip-owned.example/" },
+  ],
+  activeId: pipOwnedId,
+  groups: [{
+    id: "g:pip-owned",
+    memberIds: [pipOwnerB, pipOwnedId],
+    visibleIds: [pipOwnerB, pipOwnedId],
+    focusedId: pipOwnedId,
+  }],
+  splitWebTabId: null,
+  splitRatio: 0.45,
+});
+assert.equal(pipCollapseTargetFor(pipOwnedId), pipOwnerB);
+useCenterTabs.setState({ groups: [] });
+assert.equal(pipCollapseTargetFor(pipOwnedId), pipOwnerA);
+assert.equal(pipCollapseTargetFor(pipOwnerA), null);
+
+// A tab already floating returns to its owner instead of re-binding.
+useWebTabPip.getState().end();
+useWebTabPip.getState().show(pipOwnedId, pipOwnerB);
+useCenterTabs.setState({ activeId: pipOwnerA });
+assert.equal(collapseWebTabToPip(pipOwnedId), true);
+assert.equal(peekWebTabPipOwnerId(), pipOwnerB);
+assert.equal(useCenterTabs.getState().activeId, pipOwnerB);
+useWebTabPip.getState().end();
 
 const forkUrl = "https://pip-fork.example/";
 const forkCanonical = "w:https://pip-fork.example/";

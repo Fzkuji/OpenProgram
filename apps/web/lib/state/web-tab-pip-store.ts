@@ -115,22 +115,44 @@ export function setSnapshot(tabId: string, dataUrl: string): void {
   usePipSnapshots.getState().setSnapshot(tabId, dataUrl);
 }
 
-/** Reverse of PiP expand: keep the same WebTab leaf, move focus off it
- *  so the floating host can cover center again. Does not reload. */
-export function collapseWebTabToPip(tabId: string): boolean {
-  const store = useCenterTabs.getState();
+/** The session tab a collapse-to-PiP would bind this WebTab to:
+ *  the session sharing its group, else the first session tab. */
+export function pipCollapseTargetFor(
+  tabId: string,
+  store: {
+    tabs: readonly { id: string; kind: string }[];
+    groups: readonly { memberIds: string[] }[];
+  } = useCenterTabs.getState(),
+): string | null {
   if (!store.tabs.some((tab) => tab.id === tabId && tab.kind === "web")) {
-    return false;
+    return null;
   }
-  const group = findCenterTabGroup(store.groups, tabId);
+  const group = store.groups.find((item) => item.memberIds.includes(tabId));
   const partnerId = group?.memberIds.find((id) => id !== tabId);
   const partner = partnerId
     ? store.tabs.find((tab) => tab.id === partnerId)
     : undefined;
-  const ownerTabId = partner?.kind === "session"
+  return partner?.kind === "session"
     ? partner.id
     : store.tabs.find((tab) => tab.kind === "session")?.id ?? null;
+}
+
+/** Reverse of PiP expand: keep the same WebTab leaf, move focus off it
+ *  so the floating host can cover center again. Does not reload.
+ *  A tab already floating for a session returns to that owner instead
+ *  of being re-bound to another session. */
+export function collapseWebTabToPip(tabId: string): boolean {
+  const store = useCenterTabs.getState();
+  const pip = useWebTabPip.getState();
+  const boundOwnerId =
+    pip.tabId === tabId
+      && pip.ownerTabId
+      && store.tabs.some((tab) => tab.id === pip.ownerTabId)
+      ? pip.ownerTabId
+      : null;
+  const ownerTabId = boundOwnerId ?? pipCollapseTargetFor(tabId, store);
   if (!ownerTabId) return false;
+  const group = findCenterTabGroup(store.groups, tabId);
   if (store.splitWebTabId === tabId) {
     store.setSplitWebTab(null);
   } else if (group) {

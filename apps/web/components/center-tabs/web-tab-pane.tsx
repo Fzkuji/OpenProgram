@@ -46,6 +46,7 @@ import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   collapseWebTabToPip,
   pipBoundTabId,
+  pipCollapseTargetFor,
   usePipSnapshots,
   useWebTabPip,
 } from "@/lib/state/web-tab-pip-store";
@@ -136,12 +137,28 @@ function PipBoundMask({ tabId }: { tabId: string }) {
 
 function CollapseToPipButton({ tabId }: { tabId: string }) {
   const { text } = useTranslation();
-  const label = text("Collapse to floating window", "收起到悬浮窗");
+  const tabs = useCenterTabs((s) => s.tabs);
+  const groups = useCenterTabs((s) => s.groups);
+  const boundOwnerId = useWebTabPip((s) => (s.tabId === tabId ? s.ownerTabId : null));
+  const targetId = boundOwnerId ?? pipCollapseTargetFor(tabId, { tabs, groups });
+  const targetTitle = targetId
+    ? tabs.find((tab) => tab.id === targetId)?.title
+      || text("that session", "该会话")
+    : null;
+  const label = !targetTitle
+    ? text("Collapse to floating window", "收起到悬浮窗")
+    : boundOwnerId
+      ? text(
+        `Return to the floating window in “${targetTitle}”`,
+        `返回「${targetTitle}」的悬浮窗`,
+      )
+      : text(`Float over “${targetTitle}”`, `浮动到「${targetTitle}」`);
   return (
     <button
       type="button"
       className={styles.webToolbarBtn}
       onClick={() => collapseWebTabToPip(tabId)}
+      disabled={!targetId}
       title={label}
       aria-label={label}
     >
