@@ -142,10 +142,17 @@ export function PermissionBadge() {
               <div
                 key={o.value}
                 // 选中不铺底色（hover 是唯一底色），选中态只靠右侧勾。
-                className={itemCls(false)}
+                className={itemCls(false) + (o.description ? " items-start py-[4px]" : "")}
                 onClick={() => pick(o.value)}
               >
-                <span className="flex-1 truncate">{o.label}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{o.label}</span>
+                  {o.description ? (
+                    <span className="mt-[2px] block text-[11px] leading-[15px] text-text-muted whitespace-normal">
+                      {o.description}
+                    </span>
+                  ) : null}
+                </span>
                 {/* Claude 实测顺序：勾在前、数字快捷键在最右
                     （"Opus 4.8 ✓ 2"）。未选中留同宽占位保持数字列对齐。 */}
                 {o.value === mode ? (

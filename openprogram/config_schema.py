@@ -782,6 +782,18 @@ SETTINGS: list[SettingSpec] = [
              "rely on `**/.env` there.",
     ),
     SettingSpec(
+        key="sandbox.allow_read", path=("sandbox", "allow_read"),
+        group="Sandbox", label="Re-opened read paths", widget="json",
+        apply=APPLY_LIVE, default=[],
+        validate=lambda v: (None if isinstance(v, list)
+                            and all(isinstance(x, str) for x in v)
+                            else "must be a JSON list of paths"),
+        help="Concrete paths re-opened inside a wider sandbox.deny_read "
+             "entry. Narrower path wins; an equally-specific deny still "
+             "blocks. Cannot open ~/.openprogram/auth or the agentics "
+             "directory.",
+    ),
+    SettingSpec(
         key="sandbox.deny_write", path=("sandbox", "deny_write"),
         group="Sandbox", label="Blocked write paths", widget="json",
         apply=APPLY_LIVE, default=list(_sandbox_default_deny_write()),

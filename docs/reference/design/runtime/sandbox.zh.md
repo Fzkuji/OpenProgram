@@ -342,7 +342,7 @@ CLI进程仍不进入OS沙箱，因为它需要访问Anthropic API。它自带�
 - 沙箱拒绝采用结构化结果。只有本地interactive owner可以批准一次精确重试；重试策略仍保留hard floor和凭证过滤。持久批准保存规范化后的精确操作，复杂shell只能单次批准。
 - 嵌套Claude Code内置副作用工具已禁用，改用受管MCP文件与shell工具。
 
-第11节（拒绝的可读性与协商）截至2026-08-22为已设计、未实现：拒绝尚未点名命中规则，`sandbox.allow_read`不存在，escalation卡片没有"总是允许此路径"选项，权限徽章不显示沙箱状态，也没有Security预设面板。
+第11节（拒绝的可读性与协商）截至2026-08-22已实现，余两项未做：拒绝已点名命中规则与被拦路径；`sandbox.allow_read`已存在并在三个执法点（Seatbelt、bubblewrap、进程内读工具）按"更窄者胜"生效，hard floor不受任何allow条目影响；escalation卡片提供"总是允许此路径"（回复scope为`always_path`，持久化进`sandbox.allow_read`）；bypass标签改为"跳过审批（沙箱仍生效）"；系统提示带上了禁止搬移secrets的一行。仍未做：徽章后缀是静态文案而非实时沙箱状态驱动（web端尚无沙箱状态数据源），Security预设面板不存在。
 
 最终验证记录（2026-08-10）：本机完整受跟踪测试集（排除integration）为2731 passed、4 skipped、1 xfailed；GitHub Actions run 31398444213的Python 3.11、3.12、3.13、Web、文档和示例job全部通过，其中Linux Python 3.11为2723 passed、12 skipped、1 xfailed。该runner先启用Ubuntu 24.04的非特权user namespace能力，再执行真实cron bubblewrap用例，因此不会把“已安装但不能工作”的二进制计入Linux覆盖。macOS Seatbelt与Linux bubblewrap真实矩阵覆盖git、Python、npm、make、conda、凭证拒读、工作区外拒写和网络拒绝。
 

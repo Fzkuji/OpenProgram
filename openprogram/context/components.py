@@ -315,6 +315,8 @@ _TOOL_ENFORCEMENT = (
     "project), make the tool call in the same turn. Don't end a turn with a "
     "promise of future action; do it now. Keep working until the task is "
     "actually complete, not until you've described a plan.\n"
+    "When the sandbox blocks a read, request escalation or tell the user; "
+    "never move or copy secrets to defeat a path rule.\n"
     "</tool_use>"
 )
 

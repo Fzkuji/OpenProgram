@@ -614,7 +614,8 @@ def test_escalated_policy_preserves_only_the_hard_floor(cfg):
 def test_sandbox_settings_are_registered():
     from openprogram.config_schema import SETTINGS, _BY_KEY
     keys = {s.key for s in SETTINGS}
-    assert {"sandbox.mode", "sandbox.deny_read", "sandbox.deny_write",
+    assert {"sandbox.mode", "sandbox.deny_read", "sandbox.allow_read",
+            "sandbox.deny_write",
             "sandbox.writable_roots", "sandbox.network",
             "sandbox.unavailable_policy", "sandbox.pass_env"} <= keys
     assert _BY_KEY["sandbox.mode"].default == MODE_WORKSPACE_WRITE

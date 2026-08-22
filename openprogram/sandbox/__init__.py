@@ -38,7 +38,7 @@ import shutil
 import subprocess
 import sys
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 log = logging.getLogger(__name__)
 
@@ -120,12 +120,14 @@ class SandboxUnavailable(RuntimeError):
 @dataclass(frozen=True)
 class SandboxPolicy:
     """One resolved policy. ``writable_roots`` is *extra* — the working
-    directory is always writable."""
+    directory is always writable. ``allow_read`` re-opens a named path
+    inside a wider deny (narrower wins; equally-specific deny wins)."""
     writable_roots: tuple[str, ...] = ()
     deny_read: tuple[str, ...] = DEFAULT_DENY_READ
     deny_write: tuple[str, ...] = DEFAULT_DENY_WRITE
     network: bool = False
     pass_env: tuple[str, ...] = ()
+    allow_read: tuple[str, ...] = ()
 
 
 _NO_PROCESS_POLICY = object()
@@ -204,13 +206,7 @@ def _with_hard_floor(policy: SandboxPolicy) -> SandboxPolicy:
     applications = _applications_dir()
     if applications in policy.deny_write:
         return policy
-    return SandboxPolicy(
-        writable_roots=policy.writable_roots,
-        deny_read=policy.deny_read,
-        deny_write=policy.deny_write + (applications,),
-        network=policy.network,
-        pass_env=policy.pass_env,
-    )
+    return replace(policy, deny_write=policy.deny_write + (applications,))
 
 
 def resolve_policy(*, required: bool = False) -> SandboxPolicy | None:
@@ -235,6 +231,7 @@ def resolve_policy(*, required: bool = False) -> SandboxPolicy | None:
         return None
     deny_r = sb.get("deny_read")
     deny_w = sb.get("deny_write")
+    allow_r = sb.get("allow_read")
     return _with_hard_floor(SandboxPolicy(
         writable_roots=tuple(sb.get("writable_roots") or ()),
         deny_read=tuple(deny_r) if isinstance(deny_r, list) else DEFAULT_DENY_READ,
@@ -242,6 +239,7 @@ def resolve_policy(*, required: bool = False) -> SandboxPolicy | None:
                     else DEFAULT_DENY_WRITE),
         network=bool(sb.get("network") or False),
         pass_env=tuple(sb.get("pass_env") or ()),
+        allow_read=tuple(allow_r) if isinstance(allow_r, list) else (),
     ))
 
 
@@ -299,6 +297,7 @@ def policy_to_dict(policy: SandboxPolicy) -> dict:
         "deny_write": list(policy.deny_write),
         "network": policy.network,
         "pass_env": list(policy.pass_env),
+        "allow_read": list(policy.allow_read),
     }
 
 
@@ -323,6 +322,7 @@ def policy_from_dict(data: dict) -> SandboxPolicy:
         deny_write=_strings("deny_write"),
         network=network,
         pass_env=_strings("pass_env"),
+        allow_read=_strings("allow_read"),
     ))
 
 
@@ -444,6 +444,114 @@ def _glob_to_regex(pattern: str) -> str | None:
     return "^" + rx + "$"
 
 
+SANDBOX_DENIAL_GUIDANCE = (
+    "request sandbox escalation or ask the owner to change sandbox.deny_read; "
+    "do not relocate or copy the protected content"
+)
+
+
+def _hard_floor_read_globs() -> tuple[str, ...]:
+    from openprogram.paths import get_state_dir
+    globs = [str(get_state_dir() / "auth") + "/**", _applications_dir()]
+    documented = os.path.expanduser("~/.openprogram/auth") + "/**"
+    if documented not in globs:
+        globs.append(documented)
+    return tuple(globs)
+
+
+def is_hard_floor_read(path: str) -> bool:
+    """True for ~/.openprogram/auth/** and the agentics directory."""
+    target = os.path.realpath(os.path.expanduser(os.fspath(path)))
+    return any(re.match(rx, target) for rx in _regexes_for(_hard_floor_read_globs()))
+
+
+def _pattern_specificity(pattern: str) -> int:
+    return len(os.path.expanduser(_static_prefix(pattern.strip())).rstrip("/"))
+
+
+def _matching_patterns(target: str, patterns: tuple[str, ...]) -> list[str]:
+    hit: list[str] = []
+    for pattern in patterns:
+        if any(re.match(rx, target) for rx in _regexes_for((pattern,))):
+            hit.append(pattern)
+    return hit
+
+
+def read_is_denied(target: str, policy: SandboxPolicy) -> bool:
+    """Whether a realpath'd *target* is a denied read under *policy*.
+
+    Narrower allow_read re-opens a wider deny; equally-specific deny wins.
+    Hard-floor paths ignore allow_read.
+    """
+    denies = _matching_patterns(target, policy.deny_read)
+    if not denies:
+        return False
+    if is_hard_floor_read(target):
+        return True
+    allows = _matching_patterns(target, policy.allow_read)
+    if not allows:
+        return True
+    return max(map(_pattern_specificity, allows)) <= max(
+        map(_pattern_specificity, denies)
+    )
+
+
+def match_deny_read(
+    text: str, policy: SandboxPolicy | None = None,
+) -> tuple[str, str] | None:
+    """Best-effort (path, deny glob) from command/error text, or None."""
+    if policy is None:
+        policy = resolve_policy()
+    if policy is None or not text or not policy.deny_read:
+        return None
+    tokens: list[str] = []
+    for raw in re.findall(r"[^\s'\"`:;]+", text):
+        tok = raw.strip(".,)(")
+        if tok.startswith(("~", "/", "./", "../", ".")) or "/" in tok:
+            tokens.append(tok)
+    for tok in tokens:
+        try:
+            real = os.path.realpath(os.path.expanduser(tok))
+        except Exception:
+            real = tok
+        hits = _matching_patterns(real, policy.deny_read) or _matching_patterns(
+            tok, policy.deny_read
+        )
+        if hits:
+            return real, max(hits, key=_pattern_specificity)
+    return None
+
+
+def named_denial_text(path: str | None = None, rule: str | None = None) -> str:
+    if path and rule:
+        head = f"sandbox denied read of {path} (matched deny glob {rule})."
+    else:
+        head = "sandbox denied this read."
+    return f"{head} {SANDBOX_DENIAL_GUIDANCE}"
+
+
+def persist_allow_read(path: str | None) -> str | None:
+    """Append *path* to ``sandbox.allow_read``. None on success, else error."""
+    if not path or not isinstance(path, str) or not path.strip():
+        return "always_path requires a concrete blocked path"
+    if is_hard_floor_read(path):
+        return (
+            f"{path} is a non-configurable hard floor "
+            "(~/.openprogram/auth or the agentics directory) "
+            "and cannot be added to sandbox.allow_read"
+        )
+    from openprogram.config_schema import set_setting
+    from openprogram.setup import _read_config
+    real = os.path.realpath(os.path.expanduser(path.strip()))
+    current = list((_read_config().get("sandbox") or {}).get("allow_read") or [])
+    if real not in current:
+        current.append(real)
+    result = set_setting("sandbox.allow_read", current)
+    if result.get("error"):
+        return str(result["error"])
+    return None
+
+
 def validate_write_path(path, *, cwd: str | None = None) -> str | None:
     """Return a sandbox-policy violation for a direct file write, if any."""
     target = os.path.realpath(os.path.expanduser(os.fspath(path)))
@@ -492,9 +600,12 @@ def validate_read_path(path) -> str | None:
     if matcher is None:
         return None
     target = os.path.realpath(os.path.expanduser(os.fspath(path)))
-    if matcher(target):
-        return f"path is denied by sandbox policy: {target}"
-    return None
+    if not matcher(target):
+        return None
+    policy = resolve_policy()
+    hits = _matching_patterns(target, policy.deny_read) if policy else []
+    rule = max(hits, key=_pattern_specificity) if hits else None
+    return named_denial_text(target, rule)
 
 
 def read_denier():
@@ -507,13 +618,34 @@ def read_denier():
     policy = resolve_policy()
     if policy is None or not policy.deny_read:
         return None
-    regexes = [re.compile(rx) for rx in _regexes_for(policy.deny_read)]
-    if not regexes:
+    deny_items = [
+        (p, [re.compile(rx) for rx in _regexes_for((p,))])
+        for p in policy.deny_read
+    ]
+    if not any(rxs for _, rxs in deny_items):
         return None
+    allow_items = [
+        (p, [re.compile(rx) for rx in _regexes_for((p,))])
+        for p in policy.allow_read
+    ]
+    floor_rx = [re.compile(rx) for rx in _regexes_for(_hard_floor_read_globs())]
+
+    def _hits(items, target: str) -> list[str]:
+        return [p for p, rxs in items if any(rx.match(target) for rx in rxs)]
 
     def _denied(target: str) -> bool:
         real = os.path.realpath(target)
-        return any(rx.match(real) for rx in regexes)
+        denies = _hits(deny_items, real)
+        if not denies:
+            return False
+        if any(rx.match(real) for rx in floor_rx):
+            return True
+        allows = _hits(allow_items, real)
+        if not allows:
+            return True
+        return max(map(_pattern_specificity, allows)) <= max(
+            map(_pattern_specificity, denies)
+        )
 
     return _denied
 
@@ -628,6 +760,10 @@ def _seatbelt_profile(cwd: str, policy: SandboxPolicy) -> str:
     for rx in _regexes_for(policy.deny_write):
         lit = rx.replace('"', '\\"')
         lines.append(f'(deny file-write* (regex #"{lit}"))')
+    # SBPL last-match-wins: re-open only allow_read paths that beat deny.
+    for path in _concrete_paths(policy.allow_read):
+        if not read_is_denied(path, policy):
+            lines.append(f'(allow file-read* (subpath {_sbpl_str(path)}))')
     return "\n".join(lines) + "\n"
 
 
@@ -661,10 +797,16 @@ def _bwrap_args(command: str, cwd: str, policy: SandboxPolicy) -> list[str]:
     # DAC_OVERRIDE away, so the mode is enforced even when the child is
     # root inside a container.
     for path in _concrete_paths(policy.deny_read):
+        if not read_is_denied(path, policy):
+            continue
         if os.path.isdir(path):
             args += ["--perms", "0000", "--tmpfs", path]
         elif os.path.exists(path):
             args += ["--ro-bind", "/dev/null", path]
+    for path in _concrete_paths(policy.allow_read):
+        if read_is_denied(path, policy) or not os.path.exists(path):
+            continue
+        args += ["--ro-bind", path, path]
     for path in _concrete_paths(policy.deny_write):
         if os.path.exists(path):
             args += ["--ro-bind", path, path]

@@ -142,9 +142,18 @@ class LocalBackend(Backend):
                     sandboxed=sandboxed,
                 ) else None
             )
+            path = rule = None
+            if sandbox_error == "denied":
+                hit = _sandbox.match_deny_read(
+                    f"{command}\n{proc.stdout}\n{proc.stderr}",
+                )
+                if hit:
+                    path, rule = hit
             return RunResult(
                 proc.returncode, proc.stdout, proc.stderr,
                 sandbox_error=sandbox_error,
+                sandbox_path=path,
+                sandbox_rule=rule,
             )
         except subprocess.TimeoutExpired as e:
             return RunResult(

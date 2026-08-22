@@ -313,14 +313,16 @@ def wrap_with_approval(
                 f"[denied] hard constraint: {hard_violation}",
                 "HARD_CONSTRAINT_DENIED",
             )
-        approval_args = {
-            **args,
-            "_sandbox_escalation": {
-                "from": sandbox.get("backend", "sandbox"),
-                "to": "hard-constraints-only",
-            },
+        escalation = {
+            "from": sandbox.get("backend", "sandbox"),
+            "to": "hard-constraints-only",
         }
-        approved, reason, _scope = await await_user_approval(
+        if sandbox.get("path"):
+            escalation["path"] = sandbox["path"]
+        if sandbox.get("rule"):
+            escalation["rule"] = sandbox["rule"]
+        approval_args = {**args, "_sandbox_escalation": escalation}
+        approved, reason, scope = await await_user_approval(
             req=req,
             tool_name=f"{name}:sandbox-escalation",
             args=approval_args,
@@ -330,6 +332,11 @@ def wrap_with_approval(
             msg = (f"[denied] {reason.strip()}" if isinstance(reason, str)
                    and reason.strip() else "[denied] sandbox escalation not approved")
             return _denied(msg, "SANDBOX_ESCALATION_NOT_APPROVED")
+        if scope == "always_path":
+            from openprogram.sandbox import persist_allow_read
+            err = persist_allow_read(sandbox.get("path"))
+            if err:
+                return _denied(f"[denied] {err}", "SANDBOX_ALLOW_READ_REFUSED")
         from openprogram.sandbox import escalated_policy
         with escalated_policy():
             return await orig_execute(call_id, args, cancel, on_update)
@@ -519,8 +526,8 @@ async def await_user_approval(
 ) -> tuple[bool, "str | None", str]:
     """注册一个 kind="approval" 的问题、经事件层发 question.asked、await 用户答。
     返回 (approved, reason, scope)：approved=是否放行；reason=拒绝理由（可为 None）；
-    scope ∈ {"once","always"}——"总是允许"经 question_reply 的 scope 字段带回，
-    调用方据此把这次批准写成持久 allow 规则。
+    scope ∈ {"once","always","always_path"}——"总是允许"经 question_reply 的
+    scope 字段带回；always_path 把被拦路径写入 sandbox.allow_read。
 
     审批合流到 QuestionRegistry（docs/design/runtime/user-input-requests.md 点6
     + docs/design/ui/composer-interaction-modes.md）：不再用独立的 ApprovalRegistry
@@ -576,7 +583,7 @@ async def await_user_approval(
             if isinstance(value, dict) else (value, "once")
         ok = (answer.strip() in ("允许", "approve", "yes", "y", "true", "ok", "是")
               if isinstance(answer, str) else bool(answer))
-        return ok, None, (scope if scope in ("once", "always") else "once")
+        return ok, None, (scope if scope in ("once", "always", "always_path") else "once")
     # declined：value 可能是用户填的拒绝理由（reason）。
     reason = value if (outcome == "declined" and isinstance(value, str)) else None
     return False, reason, "once"

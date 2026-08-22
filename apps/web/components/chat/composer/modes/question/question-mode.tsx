@@ -54,17 +54,40 @@ interface QuestionModeProps {
   onResolve: (id: string) => void;
 }
 
+/** Wire pick for an approval card. ``always_path`` is sandbox-escalation only. */
+type ApprovalPick = "once" | "always" | "always_path" | "deny";
+
+type SandboxEscalation = { from: string; to: string; path?: string; rule?: string };
+
+function readSandboxEscalation(args?: Record<string, unknown>): SandboxEscalation | undefined {
+  const raw = args?._sandbox_escalation;
+  if (!raw || typeof raw !== "object") return undefined;
+  const o = raw as Record<string, unknown>;
+  return {
+    from: typeof o.from === "string" ? o.from : "",
+    to: typeof o.to === "string" ? o.to : "",
+    path: typeof o.path === "string" ? o.path : undefined,
+    rule: typeof o.rule === "string" ? o.rule : undefined,
+  };
+}
+
 /** 一步（一道题）的统一形状。kind 决定 body 怎么渲染、答案怎么收集。 */
 type Step =
   | { kind: "choice"; prompt: string; options: string[]; multi: boolean; allowCustom: boolean }
-  | { kind: "approval"; prompt: string; detail?: string; risk?: "low" | "medium" | "high" }
+  | {
+      kind: "approval";
+      prompt: string;
+      detail?: string;
+      risk?: "low" | "medium" | "high";
+      escalation?: SandboxEscalation;
+    }
   | { kind: "form"; prompt: string; detail?: string; schema: Record<string, FormFieldSchema> };
 
 /** 一步的工作答案。choice → 选中集 + 自由文本；approval → 允许一次/总是允许/拒绝；
  *  form → 字段值对象。 */
 type Answer =
   | { picked: Set<string>; custom: string }
-  | { pick: "once" | "always" | "deny" | null }
+  | { pick: ApprovalPick | null }
   | { fields: Record<string, string | number | boolean> };
 
 /** 把一个 decision 拍平成统一的 steps 数组。单题 → 1 步；ask_many → N 步。 */
@@ -73,7 +96,13 @@ function toSteps(q: PendingDecision): Step[] {
     return [{ kind: "form", prompt: q.prompt, detail: q.detail, schema: q.schema ?? {} }];
   }
   if (q.kind === "approval") {
-    return [{ kind: "approval", prompt: q.prompt, detail: q.detail, risk: q.risk_level }];
+    return [{
+      kind: "approval",
+      prompt: q.prompt,
+      detail: q.detail,
+      risk: q.risk_level,
+      escalation: readSandboxEscalation(q.args),
+    }];
   }
   if (q.kind === "ask_many") {
     const qs: AskOne[] = q.questions ?? [];
@@ -154,13 +183,14 @@ export function QuestionMode({ decision: q, onResolve }: QuestionModeProps) {
       return;
     }
     if (q.kind === "approval") {
-      const pick = (answers[0] as { pick: "once" | "always" | "deny" | null }).pick;
+      const pick = (answers[0] as { pick: ApprovalPick | null }).pick;
       // ``APPROVE_ANSWER`` is a PROTOCOL value, not UI text — it must never
       // follow the user's locale. ``_approval.await_user_approval`` accepts
       // it verbatim; a localized string would fail the comparison in every
       // language it doesn't happen to list.
       if (pick === "once") wsSend({ action: "question_reply", id: q.id, answer: APPROVE_ANSWER, scope: "once" });
       else if (pick === "always") wsSend({ action: "question_reply", id: q.id, answer: APPROVE_ANSWER, scope: "always" });
+      else if (pick === "always_path") wsSend({ action: "question_reply", id: q.id, answer: APPROVE_ANSWER, scope: "always_path" });
       else if (pick === "deny") wsSend({ action: "question_reject", id: q.id });
       else return;
       onResolve(q.id);
@@ -352,23 +382,43 @@ function StepBody({
   }
 
   if (step.kind === "approval") {
-    const pick = (answer as { pick: "once" | "always" | "deny" | null }).pick;
+    const pick = (answer as { pick: ApprovalPick | null }).pick;
     const risk = step.risk ?? "low";
-    const label = {
-      once: text("Allow once", "允许一次"),
+    const esc = step.escalation;
+    const picks: ApprovalPick[] = esc
+      ? esc.path
+        ? ["once", "always_path", "always", "deny"]
+        : ["once", "always", "deny"]
+      : ["once", "always", "deny"];
+    const label: Record<ApprovalPick, string> = {
+      once: esc ? text("Allow once", "本次放行") : text("Allow once", "允许一次"),
+      always_path: text("Always allow this path", "总是允许此路径"),
       always: text("Always allow", "总是允许"),
       deny: text("Deny", "拒绝"),
-    } as const;
+    };
+    const summary = esc
+      ? [
+          esc.path ? `${text("Blocked path", "被拦路径")}: ${esc.path}` : "",
+          esc.rule ? `${text("Matched rule", "命中规则")}: ${esc.rule}` : "",
+        ].filter(Boolean).join("\n")
+      : (step.detail ?? "");
     return (
       <>
-        <div className={styles.prompt}>{withColon(step.prompt)}</div>
-        {step.detail ? (
+        <div className={styles.prompt}>
+          {esc
+            ? text(
+                "Sandbox blocked this access. Approve an escalated retry?",
+                "沙箱拦截了这次访问。是否批准升级后重试？",
+              )
+            : withColon(step.prompt)}
+        </div>
+        {summary ? (
           <pre className={approvalStyles.summary + " " + (approvalStyles["risk_" + risk] ?? "")}>
-            {step.detail}
+            {summary}
           </pre>
         ) : null}
         <div className={styles.options}>
-          {(["once", "always", "deny"] as const).map((p) => (
+          {picks.map((p) => (
             <button
               key={p}
               type="button"

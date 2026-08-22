@@ -85,15 +85,22 @@ def bash(command: str,
         parts.append(f"--- stderr ---\n{result.stderr.rstrip()}")
     text = "\n".join(parts)
     if result.sandbox_error == "denied":
+        from openprogram.sandbox import named_denial_text
+        text = text + "\n" + named_denial_text(
+            result.sandbox_path, result.sandbox_rule,
+        )
+        sandbox = {
+            "kind": result.sandbox_error,
+            "backend": "seatbelt" if sys.platform == "darwin"
+            else "bubblewrap",
+        }
+        if result.sandbox_path:
+            sandbox["path"] = result.sandbox_path
+        if result.sandbox_rule:
+            sandbox["rule"] = result.sandbox_rule
         return AgentToolResult(
             content=[TextContent(text=text)],
-            details={
-                "sandbox": {
-                    "kind": result.sandbox_error,
-                    "backend": "seatbelt" if sys.platform == "darwin"
-                    else "bubblewrap",
-                },
-            },
+            details={"sandbox": sandbox},
             is_error=True,
         )
     if result.exit_code != 0:
