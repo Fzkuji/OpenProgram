@@ -1,16 +1,10 @@
 /**
- * MCP catalog dialog — browse a registry of pre-configured MCP
- * servers, install pick-one + bring the parent ``mcp-page`` up to
- * date when one is added. Pulled out so the page file isn't carrying
- * ~170 lines of unrelated dialog rendering.
+ * Inline MCP catalog for the Discover tab.
  */
 "use client";
 
 import { useEffect, useState } from "react";
 
-import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
@@ -31,11 +25,11 @@ export interface CatalogServer {
   [k: string]: unknown;
 }
 
-export function CatalogDialog({
-  existingNames, onClose, onInstalled,
+export function CatalogPanel({
+  existingNames, query = "", onInstalled,
 }: {
   existingNames: Set<string>;
-  onClose: () => void;
+  query?: string;
   onInstalled: (name: string) => void;
 }) {
   const { text } = useTranslation();
@@ -54,6 +48,14 @@ export function CatalogDialog({
     { label: string; url: string; description?: string }[]
   >([]);
   const [quickInstall, setQuickInstall] = useState<CatalogServer[]>([]);
+  const needle = query.trim().toLowerCase();
+  const matches = (server: CatalogServer) => {
+    if (!needle) return true;
+    return [server.name, server.description, server.type, ...(server.tags || [])]
+      .some((value) => (value || "").toLowerCase().includes(needle));
+  };
+  const shownQuickInstall = quickInstall.filter(matches);
+  const shownCatalogServers = (catalog?.servers || []).filter(matches);
 
   useEffect(() => {
     fetch("/api/mcp/catalog/suggested")
@@ -125,13 +127,16 @@ export function CatalogDialog({
   }
 
   return (
-    <Dialog open={true} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="sm:max-w-[640px]">
-        <DialogHeader>
-          <DialogTitle>{text("Browse MCP catalog", "浏览 MCP 目录")}</DialogTitle>
-        </DialogHeader>
-
-        <div className="flex flex-col gap-3">
+    <div className="mx-auto flex w-full max-w-[880px] flex-col gap-5">
+      <div>
+        <h2 className="text-base font-semibold text-[var(--text-bright)]">
+          {text("Discover MCP servers", "发现 MCP 服务器")}
+        </h2>
+        <p className="mt-1 text-xs text-[var(--text-secondary)]">
+          {text("Install a curated server or load a compatible catalog URL.", "安装精选服务器，或载入兼容的目录 URL。")}
+        </p>
+      </div>
+      <div className="flex flex-col gap-3">
           {suggested.length > 0 && (
             <div className="flex flex-col gap-1.5">
               <Label>{text("Suggested catalogs", "推荐目录")}</Label>
@@ -150,11 +155,11 @@ export function CatalogDialog({
             </div>
           )}
 
-          {quickInstall.length > 0 && (
+          {shownQuickInstall.length > 0 && (
             <div className="flex flex-col gap-1.5">
               <Label>{text("Quick install", "快速安装")}</Label>
               <div className="flex flex-col gap-1.5">
-                {quickInstall.map((s) => {
+                {shownQuickInstall.map((s) => {
                   const installed = existingNames.has(s.name);
                   return (
                     <div key={s.name}
@@ -226,8 +231,8 @@ export function CatalogDialog({
                   `，跳过 ${catalog.skipped} 个无效项`,
                 )}
               </div>
-              <div className="flex max-h-[360px] flex-col gap-1.5 overflow-y-auto">
-                {catalog.servers.map((s) => {
+              <div className="flex flex-col gap-1.5">
+                {shownCatalogServers.map((s) => {
                   const installed = existingNames.has(s.name);
                   return (
                     <div key={s.name}
@@ -269,17 +274,15 @@ export function CatalogDialog({
                     </div>
                   );
                 })}
+                {shownCatalogServers.length === 0 && (
+                  <div className="py-8 text-center text-xs text-[var(--text-tertiary)]">
+                    {text("No matching servers.", "没有匹配的服务器。")}
+                  </div>
+                )}
               </div>
             </div>
           )}
-        </div>
-
-        <DialogFooter>
-          <button className={styles.actionBtn} onClick={onClose}>
-            {text("Close", "关闭")}
-          </button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 }

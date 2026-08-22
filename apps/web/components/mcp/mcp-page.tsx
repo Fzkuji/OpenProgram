@@ -20,7 +20,7 @@ import { SearchInput } from "@/components/ui/search-input";
 import { ManagePageHeader, ManageSubnav, managePageStyles as shared } from "@/components/ui/manage-page";
 import { jsonFetch } from "@/lib/net/fetch-client";
 
-import { CatalogDialog } from "./mcp-catalog-dialog";
+import { CatalogPanel } from "./mcp-catalog-panel";
 import {
   DetailView,
   stateBadge,
@@ -34,17 +34,11 @@ import styles from "./mcp-page.module.css";
 export function McpPage({
   embedded,
   query,
-  catalogOpen: catalogOpenProp,
-  onCatalogOpen,
-  onCatalogClose,
   reloadNonce,
   addNonce,
 }: {
   embedded?: boolean;
   query?: string;
-  catalogOpen?: boolean;
-  onCatalogOpen?: () => void;
-  onCatalogClose?: () => void;
   reloadNonce?: number;
   addNonce?: number;
 } = {}) {
@@ -57,10 +51,8 @@ export function McpPage({
   const [detail, setDetail] = useState<ServerDetail | null>(null);
   const [editing, setEditing] = useState<EditTarget | null>(null);
   const [busy, setBusy] = useState<BusyAction>(null);
-  const [localCatalogOpen, setLocalCatalogOpen] = useState(false);
-  const catalogOpen = catalogOpenProp ?? localCatalogOpen;
-  const openCatalog = onCatalogOpen ?? (() => setLocalCatalogOpen(true));
-  const closeCatalog = onCatalogClose ?? (() => setLocalCatalogOpen(false));
+  type McpTab = "installed" | "discover";
+  const [tab, setTab] = useState<McpTab>("installed");
   const [filter, setFilter] = useState("");
   const filterValue = query !== undefined ? query : filter;
 
@@ -292,23 +284,34 @@ export function McpPage({
     });
   }, [servers, filterValue]);
 
-  const splitAndDialogs = (
+  const bodyAndDialogs = (
     <>
-        {embedded && (
-          <ManageSubnav
-            tabs={[
-              { id: "installed", label: text("Installed", "已安装"), count: servers.length },
-              { id: "discover", label: text("Discover", "发现") },
-            ]}
-            activeTab="installed"
-            onTabChange={(id) => { if (id === "discover") openCatalog(); }}
-            summary={text(
-              `${servers.length} installed · ${readyCount} available · ${issueCount} issues`,
-              `已安装 ${servers.length} 个 · 可用 ${readyCount} 个 · ${issueCount} 个问题`,
-            )}
-          />
-        )}
+        <ManageSubnav
+          tabs={[
+            { id: "installed", label: text("Installed", "已安装"), count: servers.length },
+            { id: "discover", label: text("Discover", "发现") },
+          ]}
+          activeTab={tab}
+          onTabChange={(id) => setTab(id as McpTab)}
+          summary={text(
+            `${servers.length} installed · ${readyCount} available · ${issueCount} issues`,
+            `已安装 ${servers.length} 个 · 可用 ${readyCount} 个 · ${issueCount} 个问题`,
+          )}
+        />
         {actionErr && <div className={shared.errorBar} role="alert">{actionErr}</div>}
+        {tab === "discover" && (
+          <div className={shared.body}>
+            <CatalogPanel
+              existingNames={new Set(servers.map((server) => server.name))}
+              query={filterValue}
+              onInstalled={async (name) => {
+                await reload();
+                setSelected(name);
+              }}
+            />
+          </div>
+        )}
+        {tab === "installed" && (
         <div className={shared.splitBody}>
           <div className={styles.serversNav}>
             {query === undefined && (
@@ -353,10 +356,6 @@ export function McpPage({
                 );
               })
             )}
-            <div className={styles.navSep} />
-            <button className={cn(styles.serverItem, styles.navAddItem)} onClick={openAdd}>
-              <span className={styles.serverName}>+ {text("Add server", "添加服务器")}</span>
-            </button>
           </div>
 
           <div className={styles.content}>
@@ -384,6 +383,7 @@ export function McpPage({
             )}
           </div>
         </div>
+        )}
 
       {editing !== null && (
         <EditDialog
@@ -397,42 +397,22 @@ export function McpPage({
         />
       )}
 
-      {catalogOpen && (
-        <CatalogDialog
-          existingNames={new Set(servers.map((s) => s.name))}
-          onClose={() => closeCatalog()}
-          onInstalled={async (name) => {
-            closeCatalog();
-            await reload();
-            setSelected(name);
-          }}
-        />
-      )}
     </>
   );
 
-  if (embedded) return splitAndDialogs;
+  if (embedded) return bodyAndDialogs;
 
   return (
     <div className="main">
       <div className={shared.view}>
         <ManagePageHeader
           title={t("nav.mcp")}
-          tabs={[
-            {
-              id: "servers",
-              label: text("Servers", "服务器"),
-              count: servers.length,
-            },
-          ]}
-          activeTab="servers"
           actions={[
             { label: t("sidebar.refresh"), onClick: () => { void reload(); } },
-            { label: text("Discover MCP servers", "发现 MCP 服务器"), onClick: openCatalog },
-            { label: text("Add server", "添加服务器"), onClick: openAdd, primary: true },
+            { label: text("Add MCP server", "添加 MCP 服务器"), onClick: openAdd, primary: true },
           ]}
         />
-        {splitAndDialogs}
+        {bodyAndDialogs}
       </div>
     </div>
   );

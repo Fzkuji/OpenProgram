@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Download, LayoutGrid } from "lucide-react";
+import { Download } from "lucide-react";
 import {
   BlocksIcon,
   GraduationCapIcon,
@@ -47,7 +47,6 @@ export function CapabilitiesPage() {
   const [query, setQueryState] = useState(persistedQuery);
   const [pluginInstallOpen, setPluginInstallOpen] = useState(false);
   const [skillNewOpen, setSkillNewOpen] = useState(false);
-  const [mcpCatalogOpen, setMcpCatalogOpen] = useState(false);
   const [mcpReloadNonce, setMcpReloadNonce] = useState(0);
   const [mcpAddNonce, setMcpAddNonce] = useState(0);
   const [programReloadNonce, setProgramReloadNonce] = useState(0);
@@ -72,7 +71,6 @@ export function CapabilitiesPage() {
   const goKind = (id: string) => {
     setPluginInstallOpen(false);
     setSkillNewOpen(false);
-    setMcpCatalogOpen(false);
     setMcpReloadNonce(0);
     setMcpAddNonce(0);
     setProgramReloadNonce(0);
@@ -105,7 +103,6 @@ export function CapabilitiesPage() {
     }
     return [
       refresh(() => setMcpReloadNonce((n) => n + 1)),
-      { label: text("Discover MCP servers", "发现 MCP 服务器"), onClick: () => setMcpCatalogOpen(true), icon: <LayoutGrid /> },
       { label: text("Add MCP server", "添加 MCP 服务器"), onClick: () => setMcpAddNonce((n) => n + 1), icon: PlusIcon, primary: true },
     ];
   }, [kind, t, text, refreshPlugins, fetchSkills]);
@@ -160,9 +157,6 @@ export function CapabilitiesPage() {
           <McpPage
             embedded
             query={query}
-            catalogOpen={mcpCatalogOpen}
-            onCatalogOpen={() => setMcpCatalogOpen(true)}
-            onCatalogClose={() => setMcpCatalogOpen(false)}
             reloadNonce={mcpReloadNonce}
             addNonce={mcpAddNonce}
           />
