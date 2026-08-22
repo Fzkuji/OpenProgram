@@ -25,6 +25,7 @@ const browserWindowOptions = [];
 let menuTemplate = null;
 let nextGeneratedWindowId = 1000;
 let generatedNativeViews = 0;
+const generatedNativeRecords = [];
 const rendererQueue = [];
 const spawnedChildren = [];
 const spawnedPtys = [];
@@ -200,7 +201,9 @@ const fakeElectron = {
   WebContentsView: class {
     constructor() {
       generatedNativeViews += 1;
-      return controlledRecord(`native-view-${generatedNativeViews}`).record.view;
+      const controlled = controlledRecord(`native-view-${generatedNativeViews}`);
+      generatedNativeRecords.push(controlled);
+      return controlled.record.view;
     }
   },
   Menu: {
@@ -300,6 +303,7 @@ vm.runInContext(
     activateView,
     resolveView,
     inspectView,
+    setPipZoom,
     runNativeNavigation,
     registerWebTabIpc,
     registerDownloads,
@@ -1179,6 +1183,26 @@ async function checkSenderOwnership() {
   assert.equal(a.nativeCalls.zoom.at(-1), 1);
   ipcListeners.get("webtab:set-pip-zoom")(eventA, "owned-a", null);
   assert.equal(a.nativeCalls.zoom.at(-1), 1.1);
+
+  const freshZoomRecord = hooks.ensureView(
+    ctxA,
+    "fresh-zoom",
+    "https://fresh-zoom.example/",
+  );
+  const freshZoom = generatedNativeRecords.at(-1);
+  freshZoom.record.view.webContents.setZoomFactor(0.25);
+  hooks.setPipZoom(ctxA, "fresh-zoom", null);
+  assert.equal(freshZoom.nativeCalls.zoom.at(-1), 1);
+  freshZoom.record.view.webContents.setZoomFactor(0.25);
+  freshZoom.controls[0].resolve();
+  freshZoom.emitWebContents("did-navigate");
+  assert.equal(
+    freshZoom.nativeCalls.zoom.at(-1),
+    1,
+    "the target host commit must reapply a pending ordinary-pane zoom reset",
+  );
+  await freshZoomRecord.navigation?.promise;
+  hooks.destroyView(ctxA, "fresh-zoom");
   assert.deepEqual(plain(a.nativeCalls.print), [{ silent: false, printBackground: true }]);
   assert.deepEqual(a.nativeCalls.printToPDF, []);
   assert.deepEqual(shownPrintSaveDialogs, []);

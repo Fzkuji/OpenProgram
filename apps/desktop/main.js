@@ -1793,6 +1793,7 @@ function ensureView(ctx, id, url) {
     ]) {
       wc.on(ev, () => sendState(record));
     }
+    wc.on("did-navigate", () => restorePendingPipZoom(record));
     // Browsing history. The store folds repeat hits on the head URL into one
     // row, so the title/favicon events that follow a navigation enrich the
     // entry instead of appending duplicates.
@@ -1863,12 +1864,25 @@ function setPipZoom(ctx, id, width) {
     if (typeof width === "number" && width > 0) {
       rememberUserZoom(record);
       const factor = pipLayoutZoom(width);
+      record.pendingPipZoomRestore = false;
       record.pipLayoutZoom = factor;
       wc.setZoomFactor(factor);
       return true;
     }
     record.pipLayoutZoom = null;
+    record.pendingPipZoomRestore = !wc.getURL() || !!record.navigation;
     wc.setZoomFactor(record.userZoomFactor ?? 1);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function restorePendingPipZoom(record) {
+  if (!record?.pendingPipZoomRestore || record.pipLayoutZoom) return false;
+  try {
+    record.view.webContents.setZoomFactor(record.userZoomFactor ?? 1);
+    record.pendingPipZoomRestore = false;
     return true;
   } catch (_error) {
     return false;
