@@ -4,13 +4,14 @@ import { jsonFetch, HttpError } from "../lib/net/fetch-client.ts";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
-const [capabilities, manage, manageCss, plugins, pluginCatalog, skills, skillCatalog, mcp, mcpCatalog, pluginStore, fetchClient] = await Promise.all([
+const [capabilities, manage, manageCss, plugins, pluginCatalog, skills, skillsList, skillCatalog, mcp, mcpCatalog, pluginStore, fetchClient] = await Promise.all([
   read("../components/capabilities/capabilities-page.tsx"),
   read("../components/ui/manage-page.tsx"),
   read("../components/ui/manage-page.module.css"),
   read("../components/plugins/plugins-page.tsx"),
   read("../components/plugins/views/marketplace-browser.tsx"),
   read("../components/skills/skills-page.tsx"),
+  read("../components/skills/skills-list.tsx"),
   read("../components/skills/discovery/catalog-list.tsx"),
   read("../components/mcp/mcp-page.tsx"),
   read("../components/mcp/mcp-catalog-panel.tsx"),
@@ -22,6 +23,7 @@ assert.match(manage, /summary\?: ReactNode/, "the shared subnav must accept an a
 assert.match(manage, /action\?: ManageAction/, "the secondary task bar must own the Add action");
 assert.match(manage, /styles\.subnavTab/, "secondary tabs must have their own visual treatment");
 assert.match(manage, /onKeyDown=\{\(event\) => moveTab\(event, index\)\}/, "shared subnav tabs must support keyboard navigation");
+assert.match(capabilities, /role="tabpanel"[\s\S]*ability-panel-tab-\$\{kind\}/, "top-level ability tabs must control a named panel");
 assert.match(manage, /<button type="button" className=\{styles\.rowOpen\} onClick=\{onClick\}>\{content\}<\/button>/, "management rows must separate the open button from row actions");
 assert.match(plugins, /text\("Discover", "发现"\)/, "plugins must use the shared Discover task name");
 assert.match(skills, /text\("Installed", "已安装"\)/, "skills must use the shared Installed task name");
@@ -49,6 +51,11 @@ assert.doesNotMatch(capabilities, /Add plugin|Add skill|Add MCP server|添加插
 assert.match(plugins, /action=\{\{[\s\S]*Add plugin/, "Plugins Add belongs to the secondary task bar");
 assert.match(plugins, /const issueNames = new Set\(/, "plugin issue counts must deduplicate loader and row errors");
 assert.match(skills, /action=\{\{[\s\S]*Add skill/, "Skills Add belongs to the secondary task bar");
+assert.match(skillCatalog, /<ManageCatalogCard/, "Skill discovery must use the shared catalog card");
+assert.match(skills, /ariaLabel=\{text\("Skill sections"/, "Skill task tabs must have an accessible name");
+assert.match(skillsList, /className=\{shared\.groupToggle\}/, "Skill folders must separate their toggle button from the switch");
+assert.match(skillsList, /aria-label=\{skill\.enabled[\s\S]*Disable \$\{skill\.name\}/, "Skill switches must name their target");
+assert.match(skillsList, /aria-label=\{allOn[\s\S]*Disable \$\{node\.segment\}/, "Skill folder switches must name their target");
 assert.match(mcp, /action=\{\{[\s\S]*Add MCP server/, "MCP Add belongs to the secondary task bar");
 assert.match(mcp, /<ManageRow[\s\S]*Open MCP server details/, "MCP Installed must use the shared management row");
 assert.match(mcp, /<Dialog open=\{selectedServer !== null\}/, "MCP details must use the standard detail dialog");

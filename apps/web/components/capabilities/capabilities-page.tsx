@@ -104,6 +104,7 @@ export function CapabilitiesPage() {
           activeTab={kind}
           onTabChange={goKind}
           tabLabel={text("Ability types", "能力类型")}
+          panelId="ability-panel"
           toolbar={(
             <SearchInput
               className="min-w-[96px] flex-1 sm:flex-none sm:min-w-[140px] sm:w-[clamp(150px,24vw,280px)]"
@@ -114,6 +115,12 @@ export function CapabilitiesPage() {
           )}
           actions={actions}
         />
+        <div
+          id="ability-panel"
+          role="tabpanel"
+          aria-labelledby={`ability-panel-tab-${kind}`}
+          className={shared.panel}
+        >
         {kind === "programs" && (
           <ProgramsPage
             embedded
@@ -140,6 +147,7 @@ export function CapabilitiesPage() {
             reloadNonce={mcpReloadNonce}
           />
         )}
+        </div>
       </div>
     </div>
   );

@@ -320,6 +320,21 @@
   color: var(--nav-color-hover);
 }
 
+.groupToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .groupName {
   font-size: 14px;
   font-weight: 600;

@@ -140,6 +140,7 @@ export function ManagePageHeader({
   onTabChange,
   toolbar,
   tabLabel,
+  panelId,
   actions = [],
 }: {
   title: string;
@@ -148,6 +149,7 @@ export function ManagePageHeader({
   onTabChange?: (id: string) => void;
   toolbar?: ReactNode;
   tabLabel?: string;
+  panelId?: string;
   actions?: ManageAction[];
 }) {
   function moveTab(event: React.KeyboardEvent<HTMLButtonElement>, index: number) {
@@ -176,6 +178,8 @@ export function ManagePageHeader({
               tabIndex={activeTab === tb.id ? 0 : -1}
               onClick={() => onTabChange?.(tb.id)}
               onKeyDown={(event) => moveTab(event, index)}
+              id={panelId ? `${panelId}-tab-${tb.id}` : undefined}
+              ariaControls={panelId}
             />
           ))}
         </div>
