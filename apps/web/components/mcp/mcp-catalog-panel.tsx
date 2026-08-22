@@ -43,7 +43,8 @@ export function CatalogPanel({
 }) {
   const { text } = useTranslation();
   const [url, setUrl] = useState("");
-  const [busy, setBusy] = useState<null | "fetch" | string>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [installing, setInstalling] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<CatalogData | null>(null);
   const catalogAbort = useRef<AbortController | null>(null);
@@ -91,7 +92,7 @@ export function CatalogPanel({
     catalogAbort.current = ac;
     setErr(null); setCatalog(null);
     if (!target) { setErr(text("paste a catalog URL first", "请先粘贴目录 URL")); return; }
-    setBusy("fetch");
+    setCatalogLoading(true);
     try {
       const data = await jsonFetch<Omit<CatalogData, "sourceUrl">>(
         `/api/mcp/catalog?url=${encodeURIComponent(target)}`,
@@ -103,7 +104,7 @@ export function CatalogPanel({
         setErr(e instanceof Error ? e.message : String(e));
       }
     } finally {
-      if (catalogAbort.current === ac) setBusy(null);
+      if (catalogAbort.current === ac) setCatalogLoading(false);
     }
   }
 
@@ -113,7 +114,7 @@ export function CatalogPanel({
       setErr(text(`already installed: ${entry.name}`, `已安装：${entry.name}`));
       return;
     }
-    setBusy(entry.name);
+    setInstalling(entry.name);
     try {
       // Carry catalog provenance into the install body so the backend
       // can stash source_catalog_url + source_entry_hash on the
@@ -132,7 +133,7 @@ export function CatalogPanel({
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(null);
+      setInstalling(null);
     }
   }
 
@@ -157,6 +158,7 @@ export function CatalogPanel({
                     title={s.description || s.url}
                     onClick={() => { void fetchCatalog(s.url); }}
                     className={styles.actionBtn}
+                    disabled={catalogLoading || installing !== null}
                   >
                     {s.label}
                   </button>
@@ -186,9 +188,9 @@ export function CatalogPanel({
                       <button
                         className={cn(styles.actionBtn, installed ? "" : styles.actionBtnPrimary, "self-end sm:self-auto")}
                         onClick={() => void install(s)}
-                        disabled={installed || busy === s.name}
+                        disabled={installed || catalogLoading || installing !== null}
                       >
-                        {installed ? text("Installed", "已安装") : busy === s.name ? text("Installing...", "安装中...") : text("Install", "安装")}
+                        {installed ? text("Installed", "已安装") : installing === s.name ? text("Installing...", "安装中...") : text("Install", "安装")}
                       </button>
                     </div>
                   );
@@ -210,9 +212,9 @@ export function CatalogPanel({
               <button
                 className={cn(styles.actionBtn, styles.actionBtnPrimary)}
                 onClick={() => void fetchCatalog()}
-                disabled={busy === "fetch"}
+                disabled={catalogLoading || installing !== null}
               >
-                {busy === "fetch" ? text("Fetching...", "获取中...") : text("Load", "加载")}
+                {catalogLoading ? text("Fetching...", "获取中...") : text("Load", "加载")}
               </button>
             </div>
             <div className="text-xs" style={{ color: "var(--text-muted)" }}>
@@ -272,12 +274,12 @@ export function CatalogPanel({
                       </div>
                       <button
                         onClick={() => void install(s, catalog.sourceUrl)}
-                        disabled={installed || busy === s.name}
+                        disabled={installed || catalogLoading || installing !== null}
                         className={cn(styles.actionBtn, styles.actionBtnPrimary, "self-end sm:self-auto")}
                       >
                         {installed
                           ? text("Installed", "已安装")
-                          : busy === s.name
+                          : installing === s.name
                             ? text("Installing...", "安装中...")
                             : text("Install", "安装")}
                       </button>

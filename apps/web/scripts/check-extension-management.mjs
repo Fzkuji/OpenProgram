@@ -31,6 +31,9 @@ assert.match(mcpCatalog, /catalogAbort\.current\?\.abort\(\)/, "a newer catalog 
 assert.match(mcpCatalog, /setCatalog\(\{ \.\.\.data, sourceUrl: target \}\)/, "catalog provenance must bind to the response URL");
 assert.match(mcpCatalog, /install\(s, catalog\.sourceUrl\)/, "catalog installs must use response-bound provenance");
 assert.match(mcpCatalog, /await onInstalled\(entry\.name\)/, "install progress must include the parent refresh");
+assert.match(mcpCatalog, /catalogLoading[\s\S]*installing/, "catalog loading and installation must use separate state");
+assert.match(mcpCatalog, /disabled=\{catalogLoading \|\| installing !== null\}/, "catalog switching must stay disabled while an install is refreshing");
+assert.doesNotMatch(mcpCatalog, /setBusy|\bbusy\b/, "catalog loading must not clear installation progress");
 assert.doesNotMatch(mcpCatalog, /await fetch\(/, "catalog requests must use the shared error-aware JSON client");
 assert.match(mcpCatalog, /min-w-0 flex-col[\s\S]*break-all[\s\S]*self-end sm:self-auto/, "catalog rows must keep actions visible at narrow widths");
 assert.match(capabilities, /text\("Add plugin", "添加插件"\)/);
