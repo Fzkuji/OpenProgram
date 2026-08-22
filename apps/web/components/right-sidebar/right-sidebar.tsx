@@ -38,12 +38,14 @@ import {
 } from "../sidebar/nav-classes";
 // Animated nav icons (pqoqubbw/icons), shared with the left sidebar.
 import {
+  ActivityIcon,
   type AnimatedNavIconHandle,
   FolderOpenIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
 } from "../animated-icons";
 import { FileTree } from "../files/file-tree";
+import { RunningPanel } from "./running-panel";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useCurrentProject } from "@/lib/state/files-shared";
 import { setRightDockApi } from "@/lib/right-dock";
@@ -59,6 +61,7 @@ import {
 // View IDs that round-trip through the `data-view` attribute — e.g.
 // "detail" picks `<div data-view="detail">`.
 const VIEW_FILES = "files";
+const VIEW_RUNNING = "running";
 
 export function RightSidebar() {
   const { t, text } = useTranslation();
@@ -77,6 +80,7 @@ export function RightSidebar() {
   // toggle button's hover.
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
   const filesIconRef = useRef<AnimatedNavIconHandle>(null);
+  const runningIconRef = useRef<AnimatedNavIconHandle>(null);
   // Files 视图的树 scope：当前中央 tab 的项目（文件 tab 自带
   // projectId；会话/新标签页回落到会话绑定的项目）。
   const activeTab = useCenterTabs((s) =>
@@ -242,6 +246,28 @@ export function RightSidebar() {
           </span>
           <span className={sidebarNavLabelClass}>{text("Files", "文件")}</span>
         </div>
+        <div
+          className={
+            sidebarNavItemClass +
+            " right-nav-item" +
+            (view === VIEW_RUNNING ? " " + sidebarNavItemActiveClass : "")
+          }
+          data-view={VIEW_RUNNING}
+          onClick={() => onNavClick(VIEW_RUNNING)}
+          onMouseEnter={() => runningIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => runningIconRef.current?.stopAnimation?.()}
+          role="button"
+          tabIndex={0}
+          onKeyDown={activateOnKey(() => onNavClick(VIEW_RUNNING))}
+          title={text("Running tasks", "正在运行的任务")}
+        >
+          <span className={sidebarNavIconClass}>
+            <ActivityIcon ref={runningIconRef} size={20} />
+          </span>
+          <span className={sidebarNavLabelClass}>
+            {text("Running", "运行中")}
+          </span>
+        </div>
       </div>
 
       <div className="right-view-host">
@@ -256,6 +282,10 @@ export function RightSidebar() {
               {text("Bind a project to browse files", "绑定项目后可浏览文件")}
             </div>
           )}
+        </div>
+        {/* Running view — global live-work list, polls /api/running. */}
+        <div className="right-view" data-view={VIEW_RUNNING}>
+          <RunningPanel active={open && view === VIEW_RUNNING} />
         </div>
         {/* Detail view: ui.js showDetail() writes innerHTML into
             #detailBody and textContent into #detailTitle. The template
