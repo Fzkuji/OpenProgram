@@ -192,15 +192,28 @@ export function ManageSubnav({
   onTabChange: (id: string) => void;
   summary?: ReactNode;
 }) {
+  function moveTab(event: React.KeyboardEvent<HTMLButtonElement>, index: number) {
+    let next = index;
+    if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
+    else if (event.key === "ArrowLeft") next = (index - 1 + tabs.length) % tabs.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = tabs.length - 1;
+    else return;
+    event.preventDefault();
+    onTabChange(tabs[next].id);
+    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("button[role=tab]")[next]?.focus();
+  }
+
   return (
     <div className={styles.subnav} role="tablist">
-      {tabs.map((tb) => (
+      {tabs.map((tb, index) => (
         <ManageTabButton
           key={tb.id}
           tab={tb}
           active={activeTab === tb.id}
           tabIndex={activeTab === tb.id ? 0 : -1}
           onClick={() => onTabChange(tb.id)}
+          onKeyDown={(event) => moveTab(event, index)}
         />
       ))}
       {summary !== undefined && (

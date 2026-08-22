@@ -125,7 +125,7 @@ export function CapabilitiesPage() {
           onTabChange={goKind}
           toolbar={(
             <SearchInput
-              className="min-w-[140px] w-[clamp(150px,24vw,280px)]"
+              className="min-w-[96px] flex-1 sm:flex-none sm:min-w-[140px] sm:w-[clamp(150px,24vw,280px)]"
               value={query}
               onChange={setQuery}
               placeholder={text("Search Programs, Plugins, Skills, MCP servers...", "搜索程序、插件、技能、MCP 服务器...")}

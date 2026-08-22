@@ -125,17 +125,17 @@ export function McpPage({
   const fetchDetail = useCallback(
     async (name: string, signal?: AbortSignal) => {
       try {
-        const r = await fetch(
+        const json = await jsonFetch<ServerDetail>(
           `/api/mcp/servers/${encodeURIComponent(name)}`,
           { signal },
         );
-        if (!r.ok) { setDetail(null); return; }
-        const json = (await r.json()) as ServerDetail;
         if (signal?.aborted) return;
         setDetail(json);
+        setActionErr(null);
       } catch (e) {
         if ((e as Error).name === "AbortError") return;
         setDetail(null);
+        setActionErr(e instanceof Error ? e.message : String(e));
       }
     },
     [],

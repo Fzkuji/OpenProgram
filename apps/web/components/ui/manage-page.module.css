@@ -85,6 +85,7 @@
   align-items: center;
   gap: 10px;
   margin-left: auto;
+  min-width: 0;
 }
 
 /* Scrollable single-column body — the shape /skills browse uses. */
@@ -274,6 +275,27 @@
 }
 
 @media (max-width: 760px) {
+  .topbar {
+    height: auto;
+    min-height: 64px;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 16px;
+  }
+  .title { width: 100%; }
+  .tabs {
+    order: 2;
+    width: 100%;
+    margin-left: 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .toolbar {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+    gap: 6px;
+  }
   .subnav { flex-wrap: wrap; }
   .subnavSummary { width: 100%; margin-left: 0; padding-left: 2px; }
 }
