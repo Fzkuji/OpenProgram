@@ -111,10 +111,10 @@
   </aside>
   <main>
     <header id="question">
-      <div class="eyebrow">Design revision · implemented and reviewed</div>
+      <div class="eyebrow">Visual revision · review pending</div>
       <h1>One management grammar for Plugins, Skills, and MCP</h1>
       <p>This document defines how an OpenProgram owner discovers, adds, configures, enables, diagnoses, and removes the three extension types in the Web UI. The audience is the Web and runtime maintainers. Programs, agent-specific allowlists, third-party marketplace governance, and new package formats are outside this task.</p>
-      <div class="status-strip"><span class="chip">Revision base <code>3f3baeb2</code></span><span class="chip">Candidate <code>ab54847e</code></span><span class="chip">Reviews passed</span><span class="chip">Default profile · port 18100</span><span class="chip">No new dependency</span></div>
+      <div class="status-strip"><span class="chip">Revision base <code>f6bad3ac</code></span><span class="chip">Candidate <code>f43c327a</code></span><span class="chip pending">Review pending</span><span class="chip">Default profile · port 18100</span><span class="chip">No new dependency</span></div>
     </header>
 
     <section id="gaps">
@@ -196,7 +196,9 @@
       <table>
         <tbody>
           <tr><td>Prior implementation</td><td><code>3f3baeb2</code> → <code>ab54847e</code> made MCP Discover inline and passed review, but visible comparison still showed Add in the top toolbar and inconsistent body surfaces across the three extension types.</td></tr>
-          <tr><td>Visual revision</td><td class="state">Implementation, RED/GREEN evidence, reviews, and visible acceptance are pending from base <code>f6bad3ac</code>.</td></tr>
+          <tr><td>Visual revision</td><td><code>f6bad3ac</code> → <code>f43c327a</code>. Add actions move into the secondary task bar; secondary tabs use text, counts, and an active underline; Plugins, Skills, MCP Installed, and MCP Discover use one surface geometry; keyboard row activation and issue-count consistency are included.</td></tr>
+          <tr><td>RED / GREEN</td><td>The focused check failed on the missing secondary action and visual surface contracts, then passed with accessibility wiring, TypeScript, 51 Web unit tests, production build, docs links, and diff checks.</td></tr>
+          <tr><td>Review status</td><td class="state">Specification repair is implemented; scoped specification re-review and quality review are pending.</td></tr>
         </tbody>
       </table>
     </section>
