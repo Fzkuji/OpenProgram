@@ -34,6 +34,71 @@ from openprogram.agent.dispatcher.titles import (
 _log = logging.getLogger(__name__)
 
 
+def persist_turn_file_summary(
+    session_id: str, assistant_msg_id: str,
+) -> Optional[dict]:
+    """Persist the committed journal summary on the assistant node."""
+    try:
+        from openprogram.store import default_store
+        from openprogram.store.snapshot.checkpoint import CheckpointStore
+
+        store = default_store()
+        mutations = CheckpointStore(
+            store._session_dir(session_id),
+        ).list_mutations(assistant_msg_id)
+        if not mutations:
+            return None
+        files = []
+        for mutation in mutations:
+            stats = mutation.get("stats") or {}
+            files.append({
+                "path": mutation.get("path", ""),
+                "op": mutation.get("operation", "modify"),
+                "added": stats.get("added"),
+                "removed": stats.get("removed"),
+                "binary": bool(stats.get("binary")),
+                "diff_state": mutation.get("diff_state", "available"),
+                "recoverability": mutation.get("recoverability", "exact"),
+                "unavailable_reason": mutation.get("unavailable_reason"),
+            })
+        known_added = [row["added"] for row in files if row["added"] is not None]
+        known_removed = [row["removed"] for row in files if row["removed"] is not None]
+        summary = {
+            "version": 2,
+            "files": files,
+            "file_count": len(files),
+            "added": sum(known_added) if len(known_added) == len(files) else None,
+            "removed": sum(known_removed) if len(known_removed) == len(files) else None,
+        }
+        pair = store._open(session_id)
+        if pair is None:
+            return summary
+        git, index = pair
+        node = index.nodes_by_id.get(assistant_msg_id)
+        if node is None:
+            return summary
+        node.metadata = {**(node.metadata or {}), "turn_files": summary}
+        import json as _json
+        role = (node.role or "x")[0]
+        path = git.path / "history" / f"{node.seq:04d}-{role}-{node.id}.json"
+        if path.exists():
+            tmp = path.with_suffix(".json.tmp")
+            tmp.write_text(
+                _json.dumps(node.to_dict(), ensure_ascii=False, default=str),
+                encoding="utf-8",
+            )
+            tmp.replace(path)
+        return summary
+    except Exception:
+        _log.warning(
+            "turn mutation summary not persisted for session %s turn %s",
+            session_id,
+            assistant_msg_id,
+            exc_info=True,
+        )
+        return None
+
+
 def _shadow_root_for(session_id: str, paths: list[str]) -> Optional[str]:
     """Which directory to treat as the project root for this turn.
 
@@ -470,7 +535,10 @@ def finalize_turn(
         _log.warning("project auto-commit failed for session %s",
                      req.session_id, exc_info=True)
 
-    # 6.93. Shadow-git commit — see commit_turn_to_shadow_git.
+    # 6.92. Persist the exact committed mutation summary with the turn.
+    persist_turn_file_summary(req.session_id, assistant_msg_id)
+
+    # 6.93. Shadow-git commit — legacy derived diff cache.
     commit_turn_to_shadow_git(
         req.session_id, assistant_msg_id, req.user_text or "")
 
@@ -542,7 +610,9 @@ def finalize_error_turn(
             req.session_id, exc_info=True,
         )
 
-    # Shadow-git commit — self-guarded.
+    persist_turn_file_summary(req.session_id, assistant_msg_id)
+
+    # Shadow-git commit — self-guarded legacy cache.
     commit_turn_to_shadow_git(req.session_id, assistant_msg_id, req.user_text or "")
 
     _evict_old_snapshots(req.session_id)

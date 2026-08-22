@@ -900,197 +900,6 @@ async def _stream_assistant_response(
     raise RuntimeError("Stream ended without a final message")
 
 
-# Bash checkpoint: snapshot cwd state before/after to catch file mutations
-
-_BASH_LIKE_TOOLS = frozenset({"bash"})
-
-
-# Directories never worth walking for agent-authored edits: VCS
-# internals, dependency trees, build output, caches. Skipping them is
-# what keeps the recursive scan cheap in a real project.
-_SCAN_SKIP_DIRS = frozenset({
-    ".git", ".hg", ".svn", "node_modules", "__pycache__", ".venv", "venv",
-    "env", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".next",
-    "dist", "build", "target", ".gradle", ".idea", ".cache", "vendor",
-    ".terraform", "site-packages", ".openprogram",
-})
-# Bounds so a bash run inside a huge tree can't stall the turn. Depth 6
-# reaches normal source layouts; the file cap is a hard stop.
-_SCAN_MAX_DEPTH = 6
-_SCAN_MAX_FILES = 20000
-
-
-def _walk_scan(root: str):
-    """Yield (path, (mtime_ns, size)) for files under ``root``.
-
-    Recursive but bounded: skips dot-entries and `_SCAN_SKIP_DIRS`, stops
-    at `_SCAN_MAX_DEPTH` and `_SCAN_MAX_FILES`. Shared by the before and
-    after passes so both see exactly the same file set — if they diverged,
-    the diff would report phantom changes.
-    """
-    import os
-
-    seen = 0
-    stack = [(root, 0)]
-    while stack:
-        path, depth = stack.pop()
-        try:
-            entries = list(os.scandir(path))
-        except OSError:
-            continue
-        for entry in entries:
-            if entry.name.startswith("."):
-                continue
-            try:
-                if entry.is_dir(follow_symlinks=False):
-                    if entry.name in _SCAN_SKIP_DIRS or depth >= _SCAN_MAX_DEPTH:
-                        continue
-                    stack.append((entry.path, depth + 1))
-                elif entry.is_file(follow_symlinks=False):
-                    st = entry.stat(follow_symlinks=False)
-                    yield entry.path, (st.st_mtime_ns, st.st_size)
-                    seen += 1
-                    if seen >= _SCAN_MAX_FILES:
-                        return
-            except OSError:
-                continue
-
-
-# Per-file cap on the pre-command content staging. A bash turn in a
-# tree full of large binaries would otherwise copy gigabytes to stage
-# files it will probably never touch.
-_STAGE_MAX_BYTES = 5 * 1024 * 1024
-
-
-class _BashPreState:
-    """Pre-command view of the tree: stat map + staged copies of contents.
-
-    The stat map alone can only say WHICH files changed; restoring them
-    needs the bytes as they were BEFORE the command ran, which is why
-    every candidate is copied to ``stage_dir`` up front. Files over
-    `_STAGE_MAX_BYTES` are still stat-tracked (so the change is noticed)
-    but not staged — see `staged` for which ones have bytes.
-    """
-
-    __slots__ = ("stats", "stage_dir", "staged")
-
-    def __init__(self, stats: dict, stage_dir: str, staged: dict[str, str]):
-        self.stats = stats
-        self.stage_dir = stage_dir
-        self.staged = staged
-
-    def cleanup(self) -> None:
-        import shutil
-        shutil.rmtree(self.stage_dir, ignore_errors=True)
-
-
-def _snapshot_cwd(tool_name: str) -> _BashPreState | None:
-    """For bash-like tools, record cwd file stats AND stage their contents.
-
-    Walks subdirectories (bounded — see `_walk_scan`), because bash can
-    write anywhere in the tree, not just the top level. Each scanned file
-    is copied into a temp staging dir so that after the command runs we
-    can checkpoint the *pre-command* bytes; checkpointing from the live
-    path at that point would archive the already-modified content and
-    make Undo a silent no-op.
-
-    Returns None for non-bash tools (they have their own per-file backup).
-    """
-    if tool_name not in _BASH_LIKE_TOOLS:
-        return None
-    try:
-        import logging
-        import os
-        import shutil
-        import tempfile
-        from openprogram.worktree.context import current_worktree_path
-
-        cwd = current_worktree_path() or os.getcwd()
-        # Attribution boundary: the home directory is shared by every
-        # session and by processes outside OpenProgram entirely, so a
-        # before/after diff there attributes OTHER actors' concurrent
-        # writes to this command (they end up in the turn's file card
-        # and shadow commit). No scan → bash changes in home-rooted
-        # sessions are recorded only via the write tools' exact
-        # checkpoints.
-        # ponytail: home-only guard; two sessions sharing one bound
-        # project dir can still cross-attribute — rare, accepted.
-        if os.path.realpath(cwd) == os.path.realpath(os.path.expanduser("~")):
-            return None
-        stats = dict(_walk_scan(cwd))
-        stage_dir = tempfile.mkdtemp(prefix="op-bash-ckpt-")
-        staged: dict[str, str] = {}
-        skipped = 0
-        for i, (path, (_mtime, size)) in enumerate(stats.items()):
-            if size > _STAGE_MAX_BYTES:
-                skipped += 1
-                continue
-            dst = os.path.join(stage_dir, f"{i:06d}")
-            try:
-                shutil.copy2(path, dst)
-                staged[path] = dst
-            except OSError:
-                continue
-        if skipped:
-            logging.getLogger(__name__).debug(
-                "bash checkpoint: %d file(s) over %d bytes not staged; "
-                "their pre-command contents are unrecoverable",
-                skipped, _STAGE_MAX_BYTES,
-            )
-        return _BashPreState(stats, stage_dir, staged)
-    except Exception:
-        return None
-
-
-def _checkpoint_changed_files(
-    tool_name: str,
-    pre: "_BashPreState | None",
-) -> None:
-    """Compare post-execution file state to *pre* and checkpoint any changes.
-
-    Backups are written from the staged pre-command copy, not from the
-    live path — by now the command has already rewritten it.
-    """
-    if pre is None or tool_name not in _BASH_LIKE_TOOLS:
-        return
-    try:
-        import os
-        from openprogram.worktree.context import current_worktree_path
-        from openprogram.store.snapshot.checkpoint.helpers import checkpoint_before_edit
-
-        cwd = current_worktree_path() or os.getcwd()
-        post = dict(_walk_scan(cwd))
-        for path, stat in post.items():
-            prev = pre.stats.get(path)
-            if prev is not None and prev == stat:
-                continue
-            # Modified file → back up the staged pre-image. Otherwise the
-            # file did not exist pre-command (or was too big to stage), so
-            # point at a path that cannot exist: the checkpoint then records
-            # pre_existing=False and Undo deletes the file, which is right
-            # for a creation and the only safe answer for an unstaged one.
-            src = pre.staged.get(path) or os.path.join(pre.stage_dir, "__absent__")
-            checkpoint_before_edit(path, src)
-        # Deletions: in pre but gone from post. Recording them is what
-        # lets the shadow commit stage the removal — without it a bash
-        # `mv` renders as a bare new-file add (no delete, no rename) and
-        # Undo can't bring the file back. Only staged files can be backed
-        # up; an unstaged (oversized) deletion records pre_existing=False,
-        # which shows as a delete but stays unrecoverable.
-        for path in pre.stats:
-            if path in post:
-                continue
-            src = pre.staged.get(path) or os.path.join(pre.stage_dir, "__absent__")
-            checkpoint_before_edit(path, src)
-    except Exception:
-        pass
-    finally:
-        try:
-            pre.cleanup()
-        except Exception:
-            pass
-
-
 class _SkipExecute(Exception):
     """Internal: repeat-fail trip already built a tool result."""
 
@@ -1189,25 +998,16 @@ async def _execute_tool_calls(
                     partial_result=partial_result,
                 ))
 
-            pre_snapshot = _snapshot_cwd(tool_call.name)
-            try:
-                _record_job_activity("operation_start")
-                timeout = _job_operation_timeout(None)
-                operation = tool.execute(
-                    tool_call.id, validated_args, cancel_event, on_update,
-                )
-                result = (
-                    await operation
-                    if timeout is None
-                    else await asyncio.wait_for(operation, timeout=timeout)
-                )
-            except BaseException:
-                # A raising / cancelled bash may still have written files,
-                # so checkpoint before re-raising — and either way this is
-                # what frees the staging dir.
-                _checkpoint_changed_files(tool_call.name, pre_snapshot)
-                raise
-            _checkpoint_changed_files(tool_call.name, pre_snapshot)
+            _record_job_activity("operation_start")
+            timeout = _job_operation_timeout(None)
+            operation = tool.execute(
+                tool_call.id, validated_args, cancel_event, on_update,
+            )
+            result = (
+                await operation
+                if timeout is None
+                else await asyncio.wait_for(operation, timeout=timeout)
+            )
         except _SkipExecute:
             pass
         except Exception as e:

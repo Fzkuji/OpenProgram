@@ -1,40 +1,90 @@
-"""CheckpointStore — per-session file checkpoint orchestrator.
-
-Two operations cover the lifecycle:
-
-  * ``backup_before_edit(turn_id, abs_path)`` — call BEFORE any
-    write/edit of ``abs_path`` in this turn. Idempotent: only the
-    first call per ``(turn, path)`` actually copies; later calls bail
-    via the manifest. The "before" semantics preserve the file's
-    state when the turn started, not after some intermediate write.
-  * ``restore_turn(turn_id)`` — undo all of this turn's file edits
-    by copying each checkpoint back to its original path. Files the
-    agent CREATED during the turn (no pre-existing version) are
-    deleted on restore.
-
-Every checkpoint is a full ``shutil.copy2`` of the original. We
-deliberately avoid hardlinking: most editor / tool write paths use
-``open(w)``, which truncates the inode in place; a hardlink would
-share that inode and lose the original contents. Disk cost is
-linear in number-of-files × turns; the GC module caps retained
-turns to keep it bounded.
-"""
+"""Per-session exact file-mutation journal and recovery snapshots."""
 from __future__ import annotations
 
+import difflib
+import hashlib
+import os
 import shutil
+import stat
 from pathlib import Path
 
 from . import manifest
 from .paths import path_basename, turn_backup_dir, turn_manifest_path
 
 
-class CheckpointStore:
-    """Per-session checkpoint store rooted under the session's git repo."""
+_STATS_MAX_BYTES = 1024 * 1024
 
+
+class MutationJournalError(RuntimeError):
+    """A trusted mutation could not be recorded safely."""
+
+
+def _digest(path: Path) -> str:
+    value = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            value.update(chunk)
+    return f"sha256:{value.hexdigest()}"
+
+
+def _file_kind(mode: int) -> str:
+    if stat.S_ISREG(mode):
+        return "regular"
+    if stat.S_ISLNK(mode):
+        return "symlink"
+    if stat.S_ISDIR(mode):
+        return "directory"
+    return "special"
+
+
+def _has_nul(path: Path) -> bool:
+    with path.open("rb") as handle:
+        return b"\0" in handle.read(8192)
+
+
+def _line_stats(before: Path | None, after: Path | None) -> tuple[dict, str]:
+    paths = [path for path in (before, after) if path is not None]
+    if any(path.stat().st_size > _STATS_MAX_BYTES for path in paths):
+        binary = any(_has_nul(path) for path in paths)
+        return {"added": None, "removed": None, "binary": binary}, (
+            "binary" if binary else "large"
+        )
+    raw_before = before.read_bytes() if before is not None else b""
+    raw_after = after.read_bytes() if after is not None else b""
+    if b"\0" in raw_before or b"\0" in raw_after:
+        return {"added": None, "removed": None, "binary": True}, "binary"
+    old = raw_before.decode("utf-8", errors="replace").splitlines()
+    new = raw_after.decode("utf-8", errors="replace").splitlines()
+    added = 0
+    removed = 0
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
+        a=old, b=new, autojunk=False,
+    ).get_opcodes():
+        if tag in {"insert", "replace"}:
+            added += j2 - j1
+        if tag in {"delete", "replace"}:
+            removed += i2 - i1
+    return {"added": added, "removed": removed, "binary": False}, "available"
+
+
+class CheckpointStore:
     def __init__(self, session_dir: Path):
         self.session_dir = Path(session_dir)
 
-    # Write side
+    def _capture_regular(self, source: Path, destination: Path) -> dict:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copy2(source, destination, follow_symlinks=False)
+            info = destination.stat()
+            return {
+                "kind": "regular",
+                "digest": _digest(destination),
+                "blob_ref": destination.name,
+                "mode": f"{stat.S_IMODE(info.st_mode):04o}",
+                "size": info.st_size,
+            }
+        except OSError as exc:
+            raise MutationJournalError(f"cannot snapshot {source}: {exc}") from exc
 
     def backup_before_edit(
         self,
@@ -43,63 +93,135 @@ class CheckpointStore:
         *,
         content_src: str | Path | None = None,
     ) -> None:
-        """Idempotent checkpoint. Captures the file's state pre-edit;
-        records ``pre_existing=False`` if the path doesn't exist yet
-        so ``restore_turn`` knows to delete-instead-of-restore.
-
-        ``content_src`` overrides where the bytes come from, for callers
-        that can only checkpoint AFTER the write happened (the bash
-        fallback in agent_loop stages copies before running the command,
-        then hands the staged copy here). ``abs_path`` still names the
-        restore target either way. ``content_src`` pointing at a missing
-        path means "this file did not exist pre-edit".
-        """
         if not turn_id or not abs_path:
             return
         backup_name = path_basename(abs_path)
-        man_path = turn_manifest_path(self.session_dir, turn_id)
-        if manifest.has(man_path, backup_name):
+        manifest_path = turn_manifest_path(self.session_dir, turn_id)
+        if manifest.has(manifest_path, backup_name):
             return
-
         backup_dir = turn_backup_dir(self.session_dir, turn_id)
         backup_dir.mkdir(parents=True, exist_ok=True)
 
-        src = Path(content_src) if content_src is not None else Path(abs_path)
-        if not src.exists():
-            manifest.record(man_path, backup_name, abs_path, pre_existing=False)
-            return
-
-        dst = backup_dir / backup_name
-        if not self._copy_file(src, dst):
-            return
-        manifest.record(man_path, backup_name, abs_path, pre_existing=True)
-
-    @staticmethod
-    def _copy_file(src: Path, dst: Path) -> bool:
+        target = Path(abs_path)
         try:
-            shutil.copy2(src, dst)
-            return True
-        except OSError:
-            return False
+            target_stat = os.lstat(target)
+        except FileNotFoundError:
+            target_stat = None
+        except OSError as exc:
+            raise MutationJournalError(f"cannot inspect {target}: {exc}") from exc
 
-    # Read / restore side
+        pre_existing = target_stat is not None
+        recoverability = "exact"
+        unavailable_reason = None
+        if not pre_existing:
+            before = {"kind": "absent"}
+        elif not stat.S_ISREG(target_stat.st_mode):
+            before = {"kind": _file_kind(target_stat.st_mode)}
+            recoverability = "unavailable"
+            unavailable_reason = "unsafe_file_type"
+        else:
+            source = Path(content_src) if content_src is not None else target
+            try:
+                source_stat = os.lstat(source)
+            except FileNotFoundError:
+                source_stat = None
+            if source_stat is None or not stat.S_ISREG(source_stat.st_mode):
+                before = {"kind": "unavailable"}
+                recoverability = "unavailable"
+                unavailable_reason = "missing_preimage"
+            else:
+                before = self._capture_regular(source, backup_dir / backup_name)
+
+        manifest.record_prepared(
+            manifest_path,
+            backup_name,
+            abs_path,
+            pre_existing=pre_existing,
+            before=before,
+            recoverability=recoverability,
+            unavailable_reason=unavailable_reason,
+        )
+
+    def commit_after_edit(
+        self, turn_id: str, abs_path: str, *, operation: str | None = None,
+    ) -> None:
+        if not turn_id or not abs_path:
+            return
+        backup_name = path_basename(abs_path)
+        manifest_path = turn_manifest_path(self.session_dir, turn_id)
+        value = manifest.load(manifest_path)
+        entry = value.get("files", {}).get(backup_name)
+        if not entry:
+            raise MutationJournalError(f"no prepared mutation for {abs_path}")
+        backup_dir = turn_backup_dir(self.session_dir, turn_id)
+        target = Path(abs_path)
+        try:
+            target_stat = os.lstat(target)
+        except FileNotFoundError:
+            target_stat = None
+        except OSError as exc:
+            raise MutationJournalError(f"cannot inspect {target}: {exc}") from exc
+
+        after_blob: Path | None = None
+        if target_stat is None:
+            after = {"kind": "absent"}
+        elif stat.S_ISREG(target_stat.st_mode):
+            after_blob = backup_dir / f"{backup_name}.after"
+            after = self._capture_regular(target, after_blob)
+        else:
+            after = {"kind": _file_kind(target_stat.st_mode)}
+
+        before = entry.get("before") or {
+            "kind": "regular" if entry.get("pre_existing") else "absent",
+        }
+        before_blob = (
+            backup_dir / str(before.get("blob_ref"))
+            if before.get("kind") == "regular" and before.get("blob_ref")
+            else None
+        )
+        if before.get("kind") == "absent" and after.get("kind") == "regular":
+            canonical_operation = "create"
+        elif before.get("kind") == "regular" and after.get("kind") == "absent":
+            canonical_operation = "delete"
+        else:
+            canonical_operation = operation or "modify"
+            if canonical_operation in {"write", "edit", "update", "add"}:
+                canonical_operation = "modify"
+        stats, diff_state = _line_stats(before_blob, after_blob)
+        manifest.commit(
+            manifest_path,
+            backup_name,
+            operation=canonical_operation,
+            after=after,
+            stats=stats,
+            diff_state=diff_state,
+        )
+
+    def abort_edit(self, turn_id: str, abs_path: str, error: str | None = None) -> None:
+        if turn_id and abs_path:
+            manifest.abort(
+                turn_manifest_path(self.session_dir, turn_id),
+                path_basename(abs_path),
+                error,
+            )
+
+    def list_mutations(self, turn_id: str) -> list[dict]:
+        rows: list[dict] = []
+        for _backup_name, entry in manifest.entries(
+            turn_manifest_path(self.session_dir, turn_id),
+        ):
+            if entry.get("status") == "committed":
+                rows.append(dict(entry))
+        return rows
 
     def restore_turn(self, turn_id: str) -> list[str]:
-        """Restore every file this turn touched to its pre-turn state.
-
-        For ``pre_existing=True`` entries: copy checkpoint back to the
-        original path (atomic-ish via tmp + rename).
-        For ``pre_existing=False`` entries (agent CREATED this file
-        during the turn): delete the file so the path is gone again.
-
-        Returns the list of paths actually restored or removed. Failure
-        on any single file is logged but doesn't abort the rest —
-        partial restore is more useful than no restore.
-        """
+        """Legacy best-effort restore; task B replaces this execution path."""
         restored: list[str] = []
-        man_path = turn_manifest_path(self.session_dir, turn_id)
+        manifest_path = turn_manifest_path(self.session_dir, turn_id)
         backup_dir = turn_backup_dir(self.session_dir, turn_id)
-        for backup_name, entry in manifest.entries(man_path):
+        for backup_name, entry in manifest.entries(manifest_path):
+            if entry.get("status") == "aborted":
+                continue
             original = entry.get("path") or ""
             pre_existing = bool(entry.get("pre_existing"))
             if not original:
@@ -110,28 +232,27 @@ class CheckpointStore:
                         Path(original).unlink()
                         restored.append(original)
                     continue
-                src = backup_dir / backup_name
-                if not src.exists():
+                source = backup_dir / backup_name
+                if not source.exists():
                     continue
-                dst = Path(original)
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                tmp = dst.with_suffix(dst.suffix + ".restore.tmp")
-                shutil.copy2(src, tmp)
-                tmp.replace(dst)
+                destination = Path(original)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                tmp = destination.with_suffix(destination.suffix + ".restore.tmp")
+                shutil.copy2(source, tmp)
+                tmp.replace(destination)
                 restored.append(original)
             except OSError:
                 continue
         return restored
 
-    # Inspection
-
     def list_backed_paths(self, turn_id: str) -> list[str]:
-        """Original paths this turn captured. Includes both
-        pre-existing files and freshly-created ones (the caller may
-        want either)."""
-        man_path = turn_manifest_path(self.session_dir, turn_id)
-        return [e.get("path", "") for _, e in manifest.entries(man_path) if e.get("path")]
+        return [
+            entry.get("path", "")
+            for _name, entry in manifest.entries(
+                turn_manifest_path(self.session_dir, turn_id),
+            )
+            if entry.get("path") and entry.get("status") != "aborted"
+        ]
 
 
-# Backward-compatible alias
 BackupStore = CheckpointStore

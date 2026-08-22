@@ -41,9 +41,8 @@ def bash(command: str,
         timeout: Optional timeout in milliseconds (default 30000, max 600000).
         description: Short active-voice description shown in UI (display only).
     """
-    # Bash file-change tracking is handled at the _execute_tool_calls
-    # level (agent_loop.py): cwd files are snapshotted before/after
-    # execution, and changed files get checkpoint backup automatically.
+    # Bash output is not attributed to the current turn's exact mutation
+    # journal. Only trusted file-mutating tools create recoverable receipts.
     timeout_ms = min(timeout or DEFAULT_TIMEOUT_MS, DEFAULT_MAX_TIMEOUT_MS)
     timeout_sec = timeout_ms / 1000.0
 

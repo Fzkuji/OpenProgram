@@ -5,10 +5,9 @@ Group ③ of ``store/`` (see ``store/README.md`` and
 keeps it trustworthy.
 
 Contents:
-  * ``checkpoint/``    — per-turn file checkpoints (the "Ctrl+Z" layer):
-                         CheckpointStore.backup_before_edit / restore_turn,
-                         plus ``evict_old`` (GC) and the
-                         ``checkpoint_before_edit`` tool hook.
+  * ``checkpoint/``    — exact per-turn mutation receipts and recovery
+                         snapshots used by trusted file mutators; Bash is
+                         deliberately excluded from turn attribution.
   * ``read_tracking``  — read-before-edit freshness gate: refuse to write
                          a file the agent never read / that changed on
                          disk since (Claude-Code-style).

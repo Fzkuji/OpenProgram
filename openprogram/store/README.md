@@ -50,20 +50,20 @@ store/
      read_tracking.py       read-before-edit freshness gate: refuse to write
                             a file the agent never read / that changed on
                             disk since (Claude-Code-style)
-     file_backup/           per-turn file snapshots — the "Ctrl+Z" layer
-       store.py               BackupStore: backup_before_edit / restore_turn
-       manifest.py            per-turn manifest (path → backup, pre_existing)
+     checkpoint/            exact per-turn mutation receipts + snapshots
+       store.py               prepare/commit/inspect + legacy restore entry
+       manifest.py            atomic prepared/committed receipt persistence
        paths.py               layout + backup-name hashing
        gc.py                  evict_old: cap retained turn-dirs (called at
                               turn end by the dispatcher)
-       helpers.py             checkpoint_before_edit — one-line tool hook
+       helpers.py             before/after/abort hooks for trusted mutators
 ```
 
 > **Import paths** after the regroup: the canonical forms are
 > `from openprogram.store.session import SessionStore`,
 > `from openprogram.store.project import ProjectGit, resolve_project`,
 > `from openprogram.store.snapshot import read_tracking` /
-> `from openprogram.store.snapshot.file_backup import BackupStore`. Every
+> `from openprogram.store.snapshot.checkpoint import CheckpointStore`. Every
 > module lives under its sub-package — there are no flat top-level module
 > aliases.
 
@@ -118,11 +118,10 @@ Registry: `~/.openprogram/projects/projects.json` (id → name/path/sessions).
 
 Two independent layers, coordinated by `agent/_revert.py::revert_turn`:
 
-- **`file_backup/`** — before each edit, the file's prior contents are
-  copied into `file_backups/<turn>/` (full copy, not hardlink). Restoring
-  a turn copies them back (and deletes files the agent created). The
-  always-available undo — works even for gitignored files and non-git
-  folders. `evict_old` caps retained turns (called at turn end).
+- **`checkpoint/`** — trusted file tools persist a prepared receipt before
+  writing, then commit exact before/after digests, recovery snapshots,
+  operation and bounded stats after success. Ordinary Bash and external
+  writes are excluded from turn attribution. `evict_old` caps retained turns.
 - **`read_tracking.py`** — the concurrency guard. `read` records a file's
   fingerprint; `edit`/`write`/`apply_patch` refuse to write if the file
   was never read (`NEVER_READ`) or changed on disk since (`STALE`). Keeps

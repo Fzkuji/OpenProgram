@@ -1,4 +1,4 @@
-"""Path hashing + directory layout for the file-backup store.
+"""Path hashing + directory layout for mutation recovery snapshots.
 
 The backup store mirrors Claude Code's fileHistory.ts in spirit: keep
 original copies of files BEFORE an agent's first edit in a given turn,
@@ -10,7 +10,8 @@ Layout::
     ~/.openprogram/sessions/<session_id>/file_backups/
     └── <turn_id>/
         ├── manifest.json     # { backup_basename → original_abs_path }
-        └── <hash>            # backup of one original file (no extension)
+        ├── <hash>            # before image
+        └── <hash>.after      # committed after image
 
 ``<hash>`` is a short content-addressed-ish basename derived from the
 original path (we want backups to be readable when humans poke around,

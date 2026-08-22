@@ -1,56 +1,123 @@
-"""Manifest read/write for one turn's backup directory.
-
-A manifest is a flat JSON file ``manifest.json`` next to the backup
-blobs. Each entry binds a backup basename to a record describing the
-original file's state at turn-start::
-
-    {
-      "backed_at": 1735000000.123,
-      "files": {
-        "<hash>_foo.py":  {"path": "/abs/path/to/foo.py",  "pre_existing": true},
-        "<hash>_bar.json": {"path": "/abs/path/to/bar.json", "pre_existing": false}
-      }
-    }
-
-``pre_existing=false`` means the path didn't exist at turn-start —
-the agent is about to create it for the first time. Restoring such
-a turn means deleting that file, not copying a backup back.
-
-JSON over a pickle so a human can inspect / hand-edit it and a future
-process in a different runtime can still read it.
-"""
+"""Atomic persistence for one turn's exact file-mutation receipts."""
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
-from typing import Optional
 
 
 def _empty() -> dict:
-    return {"backed_at": 0.0, "files": {}}
+    return {"version": 2, "backed_at": 0.0, "files": {}}
 
 
 def load(manifest_path: Path) -> dict:
-    """Read manifest from disk. Missing or corrupt file → empty."""
+    """Read a manifest. Missing or corrupt data is treated as empty."""
     if not manifest_path.exists():
         return _empty()
     try:
         data = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return _empty()
-    if not isinstance(data, dict) or "files" not in data:
+    if not isinstance(data, dict) or not isinstance(data.get("files"), dict):
         return _empty()
+    data.setdefault("version", 1)
+    data.setdefault("backed_at", 0.0)
     return data
 
 
-def save(manifest_path: Path, manifest: dict) -> None:
-    """Atomically write manifest. tmp + rename so a crash mid-write
-    never leaves a half-parsed JSON behind."""
+def save(manifest_path: Path, value: dict) -> None:
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = manifest_path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(manifest_path)
+    with tmp.open("w", encoding="utf-8") as handle:
+        json.dump(value, handle, ensure_ascii=False, indent=2)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, manifest_path)
+    try:
+        directory = os.open(manifest_path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    except OSError:
+        pass
+
+
+def record_prepared(
+    manifest_path: Path,
+    backup_basename: str,
+    original_path: str,
+    *,
+    pre_existing: bool,
+    before: dict,
+    recoverability: str = "exact",
+    unavailable_reason: str | None = None,
+) -> None:
+    """Persist the first pre-turn image before a trusted mutator writes."""
+    value = load(manifest_path)
+    files = value.setdefault("files", {})
+    existing = files.get(backup_basename)
+    if existing and existing.get("status") != "aborted":
+        return
+    if existing and existing.get("before"):
+        before = existing["before"]
+        pre_existing = bool(existing.get("pre_existing"))
+        recoverability = existing.get("recoverability", recoverability)
+        unavailable_reason = existing.get("unavailable_reason")
+    files[backup_basename] = {
+        "path": original_path,
+        "pre_existing": bool(pre_existing),
+        "status": "prepared",
+        "operation": None,
+        "before": before,
+        "after": None,
+        "stats": None,
+        "diff_state": "pending",
+        "recoverability": recoverability,
+        "unavailable_reason": unavailable_reason,
+        "prepared_at": time.time(),
+        "committed_at": None,
+    }
+    value["version"] = 2
+    if not value.get("backed_at"):
+        value["backed_at"] = time.time()
+    save(manifest_path, value)
+
+
+def commit(
+    manifest_path: Path,
+    backup_basename: str,
+    *,
+    operation: str,
+    after: dict,
+    stats: dict,
+    diff_state: str,
+) -> None:
+    value = load(manifest_path)
+    entry = value.get("files", {}).get(backup_basename)
+    if not entry:
+        raise KeyError(f"no prepared mutation for {backup_basename}")
+    entry.update({
+        "status": "committed",
+        "operation": operation,
+        "after": after,
+        "stats": stats,
+        "diff_state": diff_state,
+        "committed_at": time.time(),
+    })
+    value["version"] = 2
+    save(manifest_path, value)
+
+
+def abort(manifest_path: Path, backup_basename: str, error: str | None = None) -> None:
+    value = load(manifest_path)
+    entry = value.get("files", {}).get(backup_basename)
+    if not entry or entry.get("status") == "committed":
+        return
+    entry["status"] = "aborted"
+    entry["error"] = error
+    save(manifest_path, value)
 
 
 def record(
@@ -59,27 +126,20 @@ def record(
     original_path: str,
     pre_existing: bool,
 ) -> None:
-    """Idempotent: skip if an entry for this basename already exists.
-    The first record per (turn, file) wins — that's the "pre-turn"
-    state we want to preserve."""
-    m = load(manifest_path)
-    files = m.setdefault("files", {})
-    if backup_basename in files:
-        return
-    files[backup_basename] = {
-        "path": original_path,
-        "pre_existing": bool(pre_existing),
-    }
-    if not m.get("backed_at"):
-        m["backed_at"] = time.time()
-    save(manifest_path, m)
+    """Compatibility entry point for legacy callers and old fixtures."""
+    record_prepared(
+        manifest_path,
+        backup_basename,
+        original_path,
+        pre_existing=pre_existing,
+        before={"kind": "regular" if pre_existing else "absent"},
+    )
 
 
 def has(manifest_path: Path, backup_basename: str) -> bool:
-    return backup_basename in load(manifest_path).get("files", {})
+    entry = load(manifest_path).get("files", {}).get(backup_basename)
+    return bool(entry and entry.get("status") != "aborted")
 
 
 def entries(manifest_path: Path) -> list[tuple[str, dict]]:
-    """Pairs of (backup_basename, entry_dict). entry_dict has keys
-    ``path`` (str) and ``pre_existing`` (bool)."""
     return list(load(manifest_path).get("files", {}).items())

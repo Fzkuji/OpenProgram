@@ -33,7 +33,11 @@ import os
 from typing import Any
 
 from openprogram.programs._runtime import function
-from openprogram.store.snapshot.checkpoint.helpers import checkpoint_before_edit
+from openprogram.store.snapshot.checkpoint.helpers import (
+    checkpoint_abort_edit,
+    checkpoint_after_edit,
+    checkpoint_before_edit,
+)
 
 
 NAME = "apply_patch"
@@ -119,9 +123,15 @@ def _apply_add(path: str, body: list[str]) -> str:
         return f"Error: Add File target already exists: {path}"
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     content = _add_content(body)
-    checkpoint_before_edit(path)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
+    prepared = checkpoint_before_edit(path)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+    except Exception as exc:
+        if prepared:
+            checkpoint_abort_edit(path, str(exc))
+        raise
+    checkpoint_after_edit(path, "add")
     # Baseline the new file so a later Update in the same session doesn't
     # trip the "never read" gate (the agent just created it).
     try:
@@ -136,8 +146,14 @@ def _apply_add(path: str, body: list[str]) -> str:
 def _apply_delete(path: str) -> str:
     if not os.path.exists(path):
         return f"Error: Delete File target not found: {path}"
-    checkpoint_before_edit(path)
-    os.remove(path)
+    prepared = checkpoint_before_edit(path)
+    try:
+        os.remove(path)
+    except Exception as exc:
+        if prepared:
+            checkpoint_abort_edit(path, str(exc))
+        raise
+    checkpoint_after_edit(path, "delete")
     _emit_file_changed(path, "delete")
     return f"Deleted {path}"
 
@@ -238,9 +254,15 @@ def _apply_update(path: str, body: list[str]) -> str:
     if err:
         return err
 
-    checkpoint_before_edit(path)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(text)
+    prepared = checkpoint_before_edit(path)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+    except Exception as exc:
+        if prepared:
+            checkpoint_abort_edit(path, str(exc))
+        raise
+    checkpoint_after_edit(path, "update")
     try:
         from openprogram.store.snapshot import read_tracking as _rt
         _rt.mark_seen(path)

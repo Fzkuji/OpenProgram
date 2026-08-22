@@ -5,7 +5,11 @@ from __future__ import annotations
 import os
 
 from openprogram.programs._runtime import function
-from openprogram.store.snapshot.checkpoint.helpers import checkpoint_before_edit
+from openprogram.store.snapshot.checkpoint.helpers import (
+    checkpoint_abort_edit,
+    checkpoint_after_edit,
+    checkpoint_before_edit,
+)
 from openprogram.worktree.path_resolve import resolve_path
 
 
@@ -88,12 +92,21 @@ def edit(file_path: str,
     new_text = (text.replace(old_string, new_string) if replace_all
                 else text.replace(old_string, new_string, 1))
     # Back up pre-edit state for turn-scoped revert.
-    checkpoint_before_edit(file_path)
+    try:
+        prepared = checkpoint_before_edit(file_path)
+    except Exception as e:
+        return f"Error: mutation journal preparation failed for {file_path}: {e}"
     try:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(new_text)
     except Exception as e:
+        if prepared:
+            checkpoint_abort_edit(file_path, str(e))
         return f"Error writing {file_path}: {type(e).__name__}: {e}"
+    try:
+        checkpoint_after_edit(file_path, "edit")
+    except Exception as e:
+        return f"Error: mutation journal commit failed for {file_path}: {e}"
 
     # Refresh the baseline to what we just wrote, so the agent can edit
     # this file again without re-reading.

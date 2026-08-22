@@ -1,48 +1,48 @@
-"""Convenience helper for file-mutating tools.
-
-A tool typically only knows the absolute path it's about to write.
-Resolving "which session + which turn + where does that session live
-on disk" requires walking three ContextVars + the SessionStore. This
-helper hides that lookup so each tool's pre-write hook is a single
-line::
-
-    from openprogram.store.snapshot.checkpoint.helpers import checkpoint_before_edit
-    checkpoint_before_edit(file_path)
-
-It's a graceful no-op when there is no active session/turn (e.g. unit
-tests calling the tool function directly), so tools stay usable
-outside a dispatcher-driven turn.
-"""
+"""Turn-context helpers used by trusted file-mutating tools."""
 from __future__ import annotations
+
+import os
 
 from .store import CheckpointStore
 
 
-def checkpoint_before_edit(abs_path: str, content_src: str | None = None) -> None:
-    """Checkpoint ``abs_path`` before the current turn edits it.
+def _active_checkpoint() -> tuple[CheckpointStore, str] | None:
+    from openprogram.store import _current_turn_id, _store
 
-    ``content_src``, when given, is the path the backup bytes are read
-    from instead of ``abs_path`` — for callers that staged a pre-edit
-    copy because they can only reach this helper after the write.
+    shim = _store.get()
+    turn_id = _current_turn_id.get()
+    if shim is None or not turn_id:
+        return None
+    return CheckpointStore(shim.store._session_dir(shim.session_id)), turn_id
 
-    Silent no-op when:
-      * there is no active session (``_store`` ContextVar unset);
-      * there is no active turn (``_current_turn_id`` unset);
-      * the path is not absolute;
-      * any lookup fails — we don't want a checkpoint glitch to crash
-        the actual edit.
-    """
-    if not abs_path:
+
+def checkpoint_before_edit(abs_path: str, content_src: str | None = None) -> bool:
+    """Persist a prepared receipt before a trusted mutator writes."""
+    if not abs_path or not os.path.isabs(abs_path):
+        return False
+    active = _active_checkpoint()
+    if active is None:
+        return False
+    store, turn_id = active
+    store.backup_before_edit(turn_id, abs_path, content_src=content_src)
+    return True
+
+
+def checkpoint_after_edit(abs_path: str, operation: str | None = None) -> bool:
+    """Commit a prepared receipt after the filesystem mutation succeeds."""
+    if not abs_path or not os.path.isabs(abs_path):
+        return False
+    active = _active_checkpoint()
+    if active is None:
+        return False
+    store, turn_id = active
+    store.commit_after_edit(turn_id, abs_path, operation=operation)
+    return True
+
+
+def checkpoint_abort_edit(abs_path: str, error: str | None = None) -> None:
+    active = _active_checkpoint()
+    if active is None or not abs_path:
         return
-    try:
-        from openprogram.store import _store, _current_turn_id
-
-        shim = _store.get()
-        turn_id = _current_turn_id.get()
-        if shim is None or not turn_id:
-            return
-        session_dir = shim.store._session_dir(shim.session_id)
-        CheckpointStore(session_dir).backup_before_edit(
-            turn_id, abs_path, content_src=content_src)
-    except Exception:
-        return
+    store, turn_id = active
+    store.abort_edit(turn_id, abs_path, error)

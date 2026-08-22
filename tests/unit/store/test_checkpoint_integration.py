@@ -136,3 +136,65 @@ def test_tools_noop_without_turn_context(tmp_path):
         assert target.read_text() == "b"
     finally:
         reset_worktree(token)
+
+
+def test_large_existing_file_is_committed_as_modify(turn_ctx, tmp_path):
+    target = tmp_path / "large.log"
+    target.write_text("x" * (5 * 1024 * 1024) + "\nold-tail\n", encoding="utf-8")
+
+    _run_tool("read", {"file_path": str(target)})
+    out = _run_tool("edit", {
+        "file_path": str(target),
+        "old_string": "old-tail",
+        "new_string": "new-tail",
+    })
+
+    assert "Edited" in out
+    mutations = CheckpointStore(turn_ctx).list_mutations(TURN_ID)
+    assert len(mutations) == 1
+    mutation = mutations[0]
+    assert mutation["status"] == "committed"
+    assert mutation["operation"] == "modify"
+    assert mutation["before"]["kind"] == "regular"
+    assert mutation["after"]["kind"] == "regular"
+    assert mutation["diff_state"] == "large"
+    assert mutation["stats"] == {
+        "added": None, "removed": None, "binary": False,
+    }
+
+
+def test_failed_edit_does_not_create_mutation(turn_ctx, tmp_path):
+    target = tmp_path / "unchanged.py"
+    target.write_text("value = 1\n", encoding="utf-8")
+
+    _run_tool("read", {"file_path": str(target)})
+    out = _run_tool("edit", {
+        "file_path": str(target),
+        "old_string": "missing = 2",
+        "new_string": "value = 3",
+    })
+
+    assert out.startswith("Error:")
+    assert target.read_text(encoding="utf-8") == "value = 1\n"
+    assert CheckpointStore(turn_ctx).list_mutations(TURN_ID) == []
+
+
+def test_journal_prepare_failure_blocks_file_write(
+    turn_ctx, tmp_path, monkeypatch,
+):
+    target = tmp_path / "guarded.py"
+    target.write_text("value = 1\n", encoding="utf-8")
+    _run_tool("read", {"file_path": str(target)})
+
+    def fail_prepare(*_args, **_kwargs):
+        raise OSError("journal unavailable")
+
+    monkeypatch.setattr(CheckpointStore, "backup_before_edit", fail_prepare)
+    out = _run_tool("edit", {
+        "file_path": str(target),
+        "old_string": "value = 1",
+        "new_string": "value = 2",
+    })
+
+    assert out.startswith("Error: mutation journal preparation failed")
+    assert target.read_text(encoding="utf-8") == "value = 1\n"

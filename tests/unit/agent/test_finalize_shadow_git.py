@@ -12,7 +12,10 @@ from unittest.mock import patch
 
 import pytest
 
-from openprogram.agent.dispatcher.finalize import commit_turn_to_shadow_git
+from openprogram.agent.dispatcher.finalize import (
+    commit_turn_to_shadow_git,
+    persist_turn_file_summary,
+)
 from openprogram.store.session.session_store import SessionStore
 from openprogram.store.snapshot.checkpoint import CheckpointStore
 
@@ -46,6 +49,39 @@ def _seed(store: SessionStore, session_id: str, msg_id: str) -> None:
         "id": msg_id, "role": "assistant", "content": "ok",
         "predecessor": "u1", "timestamp": 2.0,
     })
+
+
+def test_exact_mutation_summary_is_persisted(store, tmp_path):
+    session_id, msg_id = "s_summary", "u1_reply"
+    _seed(store, session_id, msg_id)
+    target = tmp_path / "app.py"
+    target.write_text("one\n", encoding="utf-8")
+    journal = CheckpointStore(store._session_dir(session_id))
+    journal.backup_before_edit(msg_id, str(target))
+    target.write_text("one\ntwo\n", encoding="utf-8")
+    journal.commit_after_edit(msg_id, str(target), operation="edit")
+
+    summary = persist_turn_file_summary(session_id, msg_id)
+
+    assert summary == {
+        "version": 2,
+        "files": [{
+            "path": str(target),
+            "op": "modify",
+            "added": 1,
+            "removed": 0,
+            "binary": False,
+            "diff_state": "available",
+            "recoverability": "exact",
+            "unavailable_reason": None,
+        }],
+        "file_count": 1,
+        "added": 1,
+        "removed": 0,
+    }
+    fresh = SessionStore(root_path=store.root_path)
+    _git, index = fresh._open(session_id)
+    assert index.nodes_by_id[msg_id].metadata["turn_files"] == summary
 
 
 def test_commit_stamps_node_and_produces_diff(store, tmp_path):
