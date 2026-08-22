@@ -103,3 +103,5 @@ apps/desktop/dist/
 apps/desktop/build/runtime/
 
 references/codex-cli/
+openprogram/programs/workflow/llm_knowledge_research/
+openprogram/programs/workflow/weekly_report/
