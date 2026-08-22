@@ -138,6 +138,19 @@ def test_list_backed_paths(session_dir, workdir):
     assert set(paths) == {str(a), str(b)}
 
 
+def test_recovery_data_is_outside_session_git_tree(session_dir, workdir):
+    target = workdir / "outside.py"
+    target.write_text("before", encoding="utf-8")
+    store = CheckpointStore(session_dir)
+    store.backup_before_edit("turn1", str(target))
+    target.write_text("after", encoding="utf-8")
+    store.commit_after_edit("turn1", str(target), operation="edit")
+
+    assert not (session_dir / "file_backups").exists()
+    recovery = session_dir.parent / ".file-recovery" / session_dir.name / "turn1"
+    assert (recovery / "manifest.json").is_file()
+
+
 def test_restore_missing_backup_is_skipped(session_dir, workdir):
     """If a backup blob was lost (user deleted it manually), restore
     skips that entry rather than crashing the whole revert."""

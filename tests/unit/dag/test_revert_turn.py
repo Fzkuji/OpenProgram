@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.agent.internals._revert import revert_turn
+from openprogram.agent.internals._revert import reapply_turn, revert_turn
 from openprogram.store.session.session_store import SessionStore
 from openprogram.store.snapshot.checkpoint import CheckpointStore
 
@@ -47,6 +47,20 @@ def _seed_session(store: SessionStore, session_id: str, assistant_msg_id: str,
     })
 
 
+def _record_mutation(
+    store: SessionStore,
+    session_id: str,
+    turn_id: str,
+    target: Path,
+    after: str,
+) -> CheckpointStore:
+    journal = CheckpointStore(store._session_dir(session_id))
+    journal.backup_before_edit(turn_id, str(target))
+    target.write_text(after, encoding="utf-8")
+    journal.commit_after_edit(turn_id, str(target), operation="edit")
+    return journal
+
+
 def test_revert_restores_file_and_stamps_metadata(store_with_session, tmp_path):
     session_id = "s_revert_basic"
     assistant_msg_id = "u1_reply"
@@ -63,6 +77,7 @@ def test_revert_restores_file_and_stamps_metadata(store_with_session, tmp_path):
     backup = CheckpointStore(session_dir)
     backup.backup_before_edit(assistant_msg_id, str(target))
     target.write_text("agent overwrote it")
+    backup.commit_after_edit(assistant_msg_id, str(target), operation="edit")
 
     # Revert.
     result = revert_turn(session_id, assistant_msg_id)
@@ -101,6 +116,95 @@ def test_revert_with_no_backed_files_is_noop(store_with_session):
     _seed_session(store_with_session, session_id, assistant_msg_id, user_msg_id="u9")
     result = revert_turn(session_id, assistant_msg_id)
     assert result["restored_paths"] == []
-    # Metadata is still stamped — the UI may want to record "user
-    # asked to revert this turn" even when no files were affected.
-    assert result["metadata_stamped"] is True
+    assert result["metadata_stamped"] is False
+    assert "no committed mutations" in result["error"]
+
+
+def test_revert_blocks_later_file_change_without_writing(store_with_session, tmp_path):
+    session_id, turn_id = "s_conflict", "u1_reply"
+    _seed_session(store_with_session, session_id, turn_id)
+    target = tmp_path / "conflict.py"
+    target.write_text("before\n", encoding="utf-8")
+    _record_mutation(store_with_session, session_id, turn_id, target, "agent\n")
+    target.write_text("user later\n", encoding="utf-8")
+
+    result = revert_turn(session_id, turn_id)
+
+    assert result["status"] == "blocked"
+    assert result["restored_paths"] == []
+    assert result["conflicts"] == [str(target)]
+    assert target.read_text(encoding="utf-8") == "user later\n"
+    assert result["metadata_stamped"] is False
+
+
+def test_revert_does_not_delete_changed_created_file(store_with_session, tmp_path):
+    session_id, turn_id = "s_created_conflict", "u1_reply"
+    _seed_session(store_with_session, session_id, turn_id)
+    target = tmp_path / "created.py"
+    journal = CheckpointStore(store_with_session._session_dir(session_id))
+    journal.backup_before_edit(turn_id, str(target))
+    target.write_text("agent created\n", encoding="utf-8")
+    journal.commit_after_edit(turn_id, str(target), operation="add")
+    target.write_text("user replaced\n", encoding="utf-8")
+
+    result = revert_turn(session_id, turn_id)
+
+    assert result["status"] == "blocked"
+    assert result["restored_paths"] == []
+    assert target.read_text(encoding="utf-8") == "user replaced\n"
+
+
+def test_mid_apply_failure_rolls_back_every_file(
+    store_with_session, tmp_path, monkeypatch,
+):
+    session_id, turn_id = "s_rollback", "u1_reply"
+    _seed_session(store_with_session, session_id, turn_id)
+    first = tmp_path / "first.py"
+    second = tmp_path / "second.py"
+    first.write_text("first before\n", encoding="utf-8")
+    second.write_text("second before\n", encoding="utf-8")
+    _record_mutation(store_with_session, session_id, turn_id, first, "first after\n")
+    journal = _record_mutation(
+        store_with_session, session_id, turn_id, second, "second after\n",
+    )
+    original_apply = CheckpointStore._apply_state
+    failed = {"value": False}
+
+    def fail_second_once(self, path, state, backup_dir, transaction_id):
+        if Path(path) == second and not failed["value"]:
+            failed["value"] = True
+            raise OSError("injected second-file failure")
+        return original_apply(self, path, state, backup_dir, transaction_id)
+
+    monkeypatch.setattr(CheckpointStore, "_apply_state", fail_second_once)
+
+    result = revert_turn(session_id, turn_id)
+
+    assert result["status"] == "rolled_back"
+    assert result["restored_paths"] == []
+    assert first.read_text(encoding="utf-8") == "first after\n"
+    assert second.read_text(encoding="utf-8") == "second after\n"
+    assert result["metadata_stamped"] is False
+    assert journal.list_mutations(turn_id)
+
+
+def test_revert_is_idempotent_and_reapply_restores_after_image(
+    store_with_session, tmp_path,
+):
+    session_id, turn_id = "s_reapply", "u1_reply"
+    _seed_session(store_with_session, session_id, turn_id)
+    target = tmp_path / "redo.py"
+    target.write_text("before\n", encoding="utf-8")
+    _record_mutation(store_with_session, session_id, turn_id, target, "after\n")
+
+    first = revert_turn(session_id, turn_id, idempotency_key="undo-1")
+    repeated = revert_turn(session_id, turn_id, idempotency_key="undo-1")
+    redone = reapply_turn(session_id, turn_id, idempotency_key="redo-1")
+
+    assert first["status"] == "committed"
+    assert repeated["transaction_id"] == first["transaction_id"]
+    assert target.read_text(encoding="utf-8") == "after\n"
+    assert redone["status"] == "committed"
+    assert redone["restored_paths"] == [str(target)]
+    _git, index = store_with_session._open(session_id)
+    assert index.nodes_by_id[turn_id].metadata["reverted"] is False

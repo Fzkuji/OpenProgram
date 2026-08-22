@@ -116,20 +116,24 @@ Registry: `~/.openprogram/projects/projects.json` (id → name/path/sessions).
 
 ## ③ Revert / record — how "undo" works
 
-Two independent layers, coordinated by `agent/_revert.py::revert_turn`:
+Two cooperating layers feed the transactional history operation:
 
 - **`checkpoint/`** — trusted file tools persist a prepared receipt before
   writing, then commit exact before/after digests, recovery snapshots,
   operation and bounded stats after success. Ordinary Bash and external
-  writes are excluded from turn attribution. `evict_old` caps retained turns.
+  writes are excluded from turn attribution. Recovery data lives in the
+  session-root sibling `.file-recovery/`, outside session Git;
+  `evict_old` caps retained turns.
 - **`read_tracking.py`** — the concurrency guard. `read` records a file's
   fingerprint; `edit`/`write`/`apply_patch` refuse to write if the file
   was never read (`NEVER_READ`) or changed on disk since (`STALE`). Keeps
   the snapshots and commits clean — the agent never blindly overwrites a
   concurrent user edit.
 
-`revert_turn` undoes both together: git first (reset/revert), snapshot as
-the fallback when git can't (or there was no commit).
+`revert_turn` never changes the user's Git. It preflights every recorded
+after digest, persists an idempotent intent, applies recovery images under a
+workspace lock, and rolls back all already-applied paths after an I/O failure.
+`reapply_turn` uses the same path in the opposite direction.
 
 ## ContextVars (how deep code finds the session)
 

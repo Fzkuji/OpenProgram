@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import difflib
 import hashlib
+import json
 import os
 import shutil
 import stat
+import uuid
+from contextlib import contextmanager
 from pathlib import Path
 
 from . import manifest
@@ -217,6 +220,286 @@ class CheckpointStore:
             if entry.get("status") == "committed":
                 rows.append(dict(entry))
         return rows
+
+    def _inspect_state(self, path: str) -> dict:
+        target = Path(path)
+        try:
+            info = os.lstat(target)
+        except FileNotFoundError:
+            return {"kind": "absent"}
+        if not stat.S_ISREG(info.st_mode):
+            return {"kind": _file_kind(info.st_mode)}
+        if info.st_nlink != 1:
+            return {"kind": "hardlink", "links": info.st_nlink}
+        return {
+            "kind": "regular",
+            "digest": _digest(target),
+            "mode": f"{stat.S_IMODE(info.st_mode):04o}",
+            "size": info.st_size,
+        }
+
+    @staticmethod
+    def _state_matches(actual: dict, expected: dict) -> bool:
+        if actual.get("kind") != expected.get("kind"):
+            return False
+        if expected.get("kind") == "regular":
+            return actual.get("digest") == expected.get("digest")
+        return expected.get("kind") == "absent"
+
+    def plan_history_operation(self, turn_id: str, direction: str) -> dict:
+        if direction not in {"revert", "reapply"}:
+            return {"status": "error", "error": f"unknown direction {direction!r}"}
+        mutations = self.list_mutations(turn_id)
+        if not mutations:
+            return {"status": "error", "error": "no committed mutations"}
+        backup_dir = turn_backup_dir(self.session_dir, turn_id)
+        actions = []
+        conflicts = []
+        unavailable = []
+        for mutation in mutations:
+            path = mutation.get("path") or ""
+            source = mutation.get("after") if direction == "revert" else mutation.get("before")
+            target = mutation.get("before") if direction == "revert" else mutation.get("after")
+            if (
+                not path
+                or mutation.get("recoverability") != "exact"
+                or not isinstance(source, dict)
+                or not isinstance(target, dict)
+                or source.get("kind") not in {"regular", "absent"}
+                or target.get("kind") not in {"regular", "absent"}
+            ):
+                unavailable.append(path)
+                continue
+            if target.get("kind") == "regular":
+                blob = backup_dir / str(target.get("blob_ref") or "")
+                if not target.get("blob_ref") or not blob.is_file():
+                    unavailable.append(path)
+                    continue
+            current = self._inspect_state(path)
+            if not self._state_matches(current, source):
+                conflicts.append(path)
+                continue
+            actions.append({
+                "path": path,
+                "expected_current": source,
+                "target": target,
+                "rollback": source,
+                "state": "pending",
+                "error": None,
+            })
+        if unavailable:
+            return {
+                "status": "unavailable",
+                "actions": actions,
+                "conflicts": conflicts,
+                "unavailable": unavailable,
+                "error": "one or more mutations are not recoverable",
+            }
+        if conflicts:
+            return {
+                "status": "blocked",
+                "actions": actions,
+                "conflicts": conflicts,
+                "unavailable": [],
+                "error": "current file state does not match the recorded source",
+            }
+        return {
+            "status": "ready",
+            "actions": actions,
+            "conflicts": [],
+            "unavailable": [],
+        }
+
+    def _intent_path(self, turn_id: str, direction: str, key: str) -> Path:
+        digest = hashlib.sha256(f"{direction}\0{key}".encode()).hexdigest()[:24]
+        return turn_backup_dir(self.session_dir, turn_id) / "intents" / f"{digest}.json"
+
+    @contextmanager
+    def _workspace_lock(self, paths: list[str]):
+        import fcntl
+
+        parents = [str(Path(path).resolve().parent) for path in paths]
+        identity = os.path.commonpath(parents) if parents else str(self.session_dir)
+        digest = hashlib.sha256(identity.encode()).hexdigest()[:24]
+        root = self.session_dir.parent / ".mutation-locks"
+        root.mkdir(parents=True, exist_ok=True)
+        lock_path = root / f"{digest}.lock"
+        with lock_path.open("a+") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    def _apply_state(
+        self,
+        path: str,
+        state: dict,
+        backup_dir: Path,
+        transaction_id: str,
+    ) -> None:
+        target = Path(path)
+        if state.get("kind") == "absent":
+            try:
+                target.unlink()
+            except FileNotFoundError:
+                pass
+            self._fsync_directory(target.parent)
+            return
+        blob = backup_dir / str(state.get("blob_ref") or "")
+        if not blob.is_file():
+            raise OSError(f"missing recovery blob for {path}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.parent / f".{target.name}.{transaction_id}.tmp"
+        try:
+            shutil.copy2(blob, tmp)
+            with tmp.open("rb") as handle:
+                os.fsync(handle.fileno())
+            os.chmod(tmp, int(str(state.get("mode") or "0644"), 8))
+            os.replace(tmp, target)
+            self._fsync_directory(target.parent)
+        finally:
+            if tmp.exists():
+                tmp.unlink()
+
+    @staticmethod
+    def _fsync_directory(path: Path) -> None:
+        try:
+            descriptor = os.open(path, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        except OSError:
+            pass
+
+    @staticmethod
+    def _intent_result(intent: dict) -> dict:
+        committed = intent.get("status") == "committed"
+        return {
+            "status": intent.get("status", "error"),
+            "transaction_id": intent.get("transaction_id"),
+            "restored_paths": [
+                action["path"] for action in intent.get("actions", [])
+            ] if committed else [],
+            "conflicts": intent.get("conflicts", []),
+            "unavailable": intent.get("unavailable", []),
+            "error": intent.get("error"),
+        }
+
+    def apply_history_operation(
+        self,
+        turn_id: str,
+        direction: str,
+        *,
+        idempotency_key: str | None = None,
+    ) -> dict:
+        key = idempotency_key or uuid.uuid4().hex
+        transaction_id = f"{direction}_{uuid.uuid4().hex}"
+        intent_path = self._intent_path(turn_id, direction, key)
+        if intent_path.exists():
+            try:
+                existing = json.loads(intent_path.read_text(encoding="utf-8"))
+                if existing.get("status") in {
+                    "committed", "rolled_back", "recovery_required", "aborted",
+                }:
+                    return self._intent_result(existing)
+                return self._intent_result({
+                    **existing,
+                    "status": "recovery_required",
+                    "error": "incomplete durable intent requires recovery",
+                })
+            except (OSError, json.JSONDecodeError):
+                pass
+        plan = self.plan_history_operation(turn_id, direction)
+        if plan.get("status") != "ready":
+            return {
+                **plan,
+                "transaction_id": None,
+                "restored_paths": [],
+            }
+        intent = {
+            "version": 1,
+            "transaction_id": transaction_id,
+            "idempotency_key": key,
+            "turn_id": turn_id,
+            "direction": direction,
+            "plan_hash": "sha256:" + hashlib.sha256(
+                json.dumps(plan["actions"], sort_keys=True).encode(),
+            ).hexdigest(),
+            "status": "prepared",
+            "actions": plan["actions"],
+            "conflicts": [],
+            "unavailable": [],
+            "error": None,
+        }
+        manifest.save(intent_path, intent)
+        backup_dir = turn_backup_dir(self.session_dir, turn_id)
+        paths = [action["path"] for action in intent["actions"]]
+        with self._workspace_lock(paths):
+            current_plan = self.plan_history_operation(turn_id, direction)
+            if current_plan.get("status") != "ready":
+                intent.update({
+                    "status": "aborted",
+                    "conflicts": current_plan.get("conflicts", []),
+                    "unavailable": current_plan.get("unavailable", []),
+                    "error": current_plan.get("error"),
+                })
+                manifest.save(intent_path, intent)
+                return self._intent_result(intent)
+            intent["actions"] = current_plan["actions"]
+            intent["status"] = "applying"
+            manifest.save(intent_path, intent)
+            touched: list[dict] = []
+            try:
+                for action in intent["actions"]:
+                    touched.append(action)
+                    if not self._state_matches(
+                        self._inspect_state(action["path"]),
+                        action["expected_current"],
+                    ):
+                        raise OSError(f"stale current state for {action['path']}")
+                    self._apply_state(
+                        action["path"], action["target"], backup_dir, transaction_id,
+                    )
+                    actual = self._inspect_state(action["path"])
+                    if not self._state_matches(actual, action["target"]):
+                        raise OSError(f"verification failed for {action['path']}")
+                    action["state"] = "verified"
+                    manifest.save(intent_path, intent)
+            except Exception as exc:
+                recovery_required = False
+                for action in reversed(touched):
+                    try:
+                        actual = self._inspect_state(action["path"])
+                        if self._state_matches(actual, action["rollback"]):
+                            action["state"] = "rolled_back"
+                            continue
+                        if not self._state_matches(actual, action["target"]):
+                            recovery_required = True
+                            action["error"] = "external change prevents rollback"
+                            continue
+                        self._apply_state(
+                            action["path"], action["rollback"], backup_dir,
+                            transaction_id,
+                        )
+                        if not self._state_matches(
+                            self._inspect_state(action["path"]), action["rollback"],
+                        ):
+                            raise OSError("rollback verification failed")
+                        action["state"] = "rolled_back"
+                    except Exception as rollback_error:
+                        recovery_required = True
+                        action["error"] = str(rollback_error)
+                intent["status"] = (
+                    "recovery_required" if recovery_required else "rolled_back"
+                )
+                intent["error"] = str(exc)
+                manifest.save(intent_path, intent)
+                return self._intent_result(intent)
+            intent["status"] = "committed"
+            manifest.save(intent_path, intent)
+        return self._intent_result(intent)
 
     def restore_turn(self, turn_id: str) -> list[str]:
         """Legacy best-effort restore; task B replaces this execution path."""

@@ -171,6 +171,9 @@ def test_list_turn_files_reports_reverted_turn(store, tmp_path):
     CheckpointStore(store._session_dir(session_id)).backup_before_edit(
         msg_id, str(target))
     target.write_text("changed\n")
+    CheckpointStore(store._session_dir(session_id)).commit_after_edit(
+        msg_id, str(target), operation="edit",
+    )
 
     ws = FakeWS()
     _run(tf.handle_list_turn_files(ws, {
@@ -285,6 +288,9 @@ def test_revert_turn_action_restores_and_reports(store, tmp_path):
     CheckpointStore(store._session_dir(session_id)).backup_before_edit(
         msg_id, str(target))
     target.write_text("agent wrote this\n")
+    CheckpointStore(store._session_dir(session_id)).commit_after_edit(
+        msg_id, str(target), operation="edit",
+    )
 
     ws = FakeWS()
     _run(tf.handle_revert_turn(ws, {
@@ -310,5 +316,54 @@ def test_revert_turn_action_reports_error(store):
 
 def test_actions_registered():
     assert set(tf.ACTIONS) == {
-        "list_turn_files", "turn_file_diff", "revert_turn",
+        "list_turn_files", "turn_file_diff", "revert_turn", "reapply_turn",
     }
+
+
+def test_revert_turn_rejects_active_run(store, monkeypatch):
+    from openprogram.webui import server as _server
+
+    monkeypatch.setattr(_server, "_is_run_active", lambda _session_id: True)
+    ws = FakeWS()
+    _run(tf.handle_revert_turn(ws, {
+        "session_id": "busy", "msg_id": "u1_reply",
+    }))
+
+    data = ws.sent[0]["data"]
+    assert data["status"] == "blocked"
+    assert data["reverted_paths"] == []
+    assert data["errors"] == ["run_active"]
+
+
+def test_reapply_turn_restores_after_image(store, tmp_path, monkeypatch):
+    from openprogram.webui import server as _server
+
+    monkeypatch.setattr(_server, "_is_run_active", lambda _session_id: False)
+    session_id, msg_id = "s_ws_redo", "u1_reply"
+    _seed(store, session_id, msg_id)
+    target = tmp_path / "redo.py"
+    target.write_text("before\n", encoding="utf-8")
+    journal = CheckpointStore(store._session_dir(session_id))
+    journal.backup_before_edit(msg_id, str(target))
+    target.write_text("after\n", encoding="utf-8")
+    journal.commit_after_edit(msg_id, str(target), operation="edit")
+    undo_ws = FakeWS()
+    _run(tf.handle_revert_turn(undo_ws, {
+        "session_id": session_id,
+        "msg_id": msg_id,
+        "idempotency_key": "undo-ws",
+    }))
+    assert target.read_text(encoding="utf-8") == "before\n"
+
+    redo_ws = FakeWS()
+    _run(tf.handle_reapply_turn(redo_ws, {
+        "session_id": session_id,
+        "msg_id": msg_id,
+        "idempotency_key": "redo-ws",
+    }))
+
+    data = redo_ws.sent[0]["data"]
+    assert data["status"] == "committed"
+    assert data["reapplied_paths"] == [str(target)]
+    assert data["errors"] == []
+    assert target.read_text(encoding="utf-8") == "after\n"

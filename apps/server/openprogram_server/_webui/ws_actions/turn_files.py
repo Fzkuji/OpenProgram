@@ -20,6 +20,11 @@ Wire format::
           "data": {"session_id", "msg_id", "reverted_paths": [...],
                    "errors": [...]}}
 
+    in:  {"action": "reapply_turn", "session_id", "msg_id"}
+    out: {"type": "reapply_turn_result",
+          "data": {"status", "transaction_id", "reapplied_paths",
+                   "conflicts", "unavailable", "errors"}}
+
 Stats and diffs come from the shadow git repo when the turn was
 recorded there (``metadata['shadow_git'] = {repo, before, after}``,
 stamped by dispatcher/finalize step 6.93). Sessions predating that
@@ -350,17 +355,23 @@ async def handle_turn_file_diff(ws, cmd: dict) -> None:
 async def handle_revert_turn(ws, cmd: dict) -> None:
     session_id = (cmd.get("session_id") or "").strip()
     msg_id = (cmd.get("msg_id") or "").strip()
-
-    from openprogram.agent.internals._revert import revert_turn
-
-    result = await _run(lambda: revert_turn(session_id, msg_id))
+    from openprogram.webui import server as _server
+    if session_id and _server._is_run_active(session_id):
+        result = {
+            "status": "blocked", "restored_paths": [],
+            "conflicts": [], "unavailable": [],
+            "error": "run_active",
+        }
+    else:
+        from openprogram.agent.internals._revert import revert_turn
+        result = await _run(lambda: revert_turn(
+            session_id,
+            msg_id,
+            idempotency_key=(cmd.get("idempotency_key") or None),
+        ))
     errors = []
     if result.get("error"):
         errors.append(result["error"])
-    git_undo = result.get("git_undo")
-    if isinstance(git_undo, dict) and git_undo.get("ok") is False:
-        detail = git_undo.get("detail") or git_undo.get("action") or "git undo failed"
-        errors.append(str(detail))
 
     await ws.send_text(json.dumps({
         "type": "revert_turn_result",
@@ -368,7 +379,43 @@ async def handle_revert_turn(ws, cmd: dict) -> None:
             "session_id": session_id,
             "msg_id": msg_id,
             "reverted_paths": result.get("restored_paths") or [],
+            "status": result.get("status"),
+            "transaction_id": result.get("transaction_id"),
+            "conflicts": result.get("conflicts") or [],
+            "unavailable": result.get("unavailable") or [],
             "errors": errors,
+        },
+    }, default=str))
+
+
+async def handle_reapply_turn(ws, cmd: dict) -> None:
+    session_id = (cmd.get("session_id") or "").strip()
+    msg_id = (cmd.get("msg_id") or "").strip()
+    from openprogram.webui import server as _server
+    if session_id and _server._is_run_active(session_id):
+        result = {
+            "status": "blocked", "restored_paths": [],
+            "conflicts": [], "unavailable": [],
+            "error": "run_active",
+        }
+    else:
+        from openprogram.agent.internals._revert import reapply_turn
+        result = await _run(lambda: reapply_turn(
+            session_id,
+            msg_id,
+            idempotency_key=(cmd.get("idempotency_key") or None),
+        ))
+    await ws.send_text(json.dumps({
+        "type": "reapply_turn_result",
+        "data": {
+            "session_id": session_id,
+            "msg_id": msg_id,
+            "reapplied_paths": result.get("restored_paths") or [],
+            "status": result.get("status"),
+            "transaction_id": result.get("transaction_id"),
+            "conflicts": result.get("conflicts") or [],
+            "unavailable": result.get("unavailable") or [],
+            "errors": [result["error"]] if result.get("error") else [],
         },
     }, default=str))
 
@@ -377,4 +424,5 @@ ACTIONS = {
     "list_turn_files": handle_list_turn_files,
     "turn_file_diff": handle_turn_file_diff,
     "revert_turn": handle_revert_turn,
+    "reapply_turn": handle_reapply_turn,
 }

@@ -7,7 +7,7 @@ its directory and copying each backup back to its original location.
 
 Layout::
 
-    ~/.openprogram/sessions/<session_id>/file_backups/
+    ~/.openprogram/sessions/.file-recovery/<session_id>/
     └── <turn_id>/
         ├── manifest.json     # { backup_basename → original_abs_path }
         ├── <hash>            # before image
@@ -25,13 +25,16 @@ from pathlib import Path
 
 
 def session_backup_root(session_dir: Path) -> Path:
-    """Where this session's backups live. Lazily created on first write."""
-    return session_dir / "file_backups"
+    """Recovery data lives outside the session Git worktree."""
+    session_dir = Path(session_dir)
+    return session_dir.parent / ".file-recovery" / session_dir.name
 
 
 def turn_backup_dir(session_dir: Path, turn_id: str) -> Path:
     """Per-turn directory under the session backup root."""
-    return session_backup_root(session_dir) / turn_id
+    external = session_backup_root(session_dir) / turn_id
+    legacy = Path(session_dir) / "file_backups" / turn_id
+    return legacy if legacy.exists() and not external.exists() else external
 
 
 def turn_manifest_path(session_dir: Path, turn_id: str) -> Path:
