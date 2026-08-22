@@ -31,9 +31,10 @@ export function SkillsPage({
   useEffect(() => { fetchSkills(); }, [fetchSkills]);
 
   const tabs = [
-    { id: "browse", label: text("Browse", "浏览"), count: skills.length },
-    { id: "discovery", label: text("Discovery", "发现") },
+    { id: "browse", label: text("Installed", "已安装"), count: skills.length },
+    { id: "discovery", label: text("Discover", "发现") },
   ];
+  const enabledCount = skills.filter((skill) => skill.enabled).length;
 
   const body = tab === "browse" ? <SkillsList externalFilter={query} /> : <DiscoverySources query={query} />;
 
@@ -44,6 +45,10 @@ export function SkillsPage({
           tabs={tabs}
           activeTab={tab}
           onTabChange={(id) => setTab(id as Tab)}
+          summary={text(
+            `${skills.length} installed · ${enabledCount} available`,
+            `已安装 ${skills.length} 个 · 可用 ${enabledCount} 个`,
+          )}
         />
         {error && <div className={styles.errorBar}>{error}</div>}
         <div className={styles.body}>{body}</div>
@@ -62,7 +67,7 @@ export function SkillsPage({
         onTabChange={(id) => setTab(id as Tab)}
         actions={[
           { label: t("sidebar.refresh"), onClick: () => { void fetchSkills(); } },
-          { label: text("New skill", "新建技能"), onClick: () => setLocalNewOpen(true), primary: true },
+          { label: text("Add skill", "添加技能"), onClick: () => setLocalNewOpen(true), primary: true },
         ]}
       />
 

@@ -166,6 +166,7 @@ Proactivity applications (built on the base):
 | [`integrations/harness-standard.md`](integrations/harness-standard.md) | Harness standard (plug-in + auto-detect); install: [`../installing-harnesses.md`](../../capabilities/installing-harnesses.md) |
 | [`integrations/mcp-integration.md`](integrations/mcp-integration.md) | MCP integration |
 | [`integrations/skills-and-plugins.md`](integrations/skills-and-plugins.md) | Skills and plugins |
+| [`integrations/extension-management.html`](integrations/extension-management.html) | Unified Web management for Plugins, Skills, and MCP servers |
 
 ## extension-gating/
 

@@ -17,7 +17,8 @@ import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
 import { PlugZapIcon } from "@/components/animated-icons";
 import { SearchInput } from "@/components/ui/search-input";
-import { ManagePageHeader, managePageStyles as shared } from "@/components/ui/manage-page";
+import { ManagePageHeader, ManageSubnav, managePageStyles as shared } from "@/components/ui/manage-page";
+import { jsonFetch } from "@/lib/net/fetch-client";
 
 import { CatalogDialog } from "./mcp-catalog-dialog";
 import {
@@ -49,6 +50,7 @@ export function McpPage({
   const [servers, setServers] = useState<ServerStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [actionErr, setActionErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<ServerDetail | null>(null);
   const [editing, setEditing] = useState<EditTarget | null>(null);
@@ -67,9 +69,7 @@ export function McpPage({
   // beat and then snaps back when the server reappears.
   const reload = useCallback(async (signal?: AbortSignal) => {
     try {
-      const r = await fetch("/api/mcp/servers", { signal });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const data = await r.json();
+      const data = await jsonFetch<{ servers: ServerStatus[] }>("/api/mcp/servers", { signal });
       if (signal?.aborted) return;
       setServers((data.servers as ServerStatus[]) || []);
       setLoadErr(null);
@@ -148,7 +148,14 @@ export function McpPage({
 
   async function runAction(action: Exclude<BusyAction, null>, fn: () => Promise<void>) {
     setBusy(action);
-    try { await fn(); } finally { setBusy(null); }
+    setActionErr(null);
+    try {
+      await fn();
+    } catch (e) {
+      setActionErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
   }
 
   // Merge a server's fresh status (returned from a POST/PATCH) into
@@ -168,32 +175,26 @@ export function McpPage({
 
   async function doRestart(name: string) {
     await runAction("restart", async () => {
-      const r = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/restart`,
+      const server = await jsonFetch<ServerStatus>(`/api/mcp/servers/${encodeURIComponent(name)}/restart`,
         { method: "POST" });
-      if (r.ok) {
-        upsertServer(await r.json());
-        await fetchDetail(name);
-      }
+      upsertServer(server);
+      await fetchDetail(name);
     });
   }
   async function doEnable(name: string) {
     await runAction("enable", async () => {
-      const r = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/enable`,
+      const server = await jsonFetch<ServerStatus>(`/api/mcp/servers/${encodeURIComponent(name)}/enable`,
         { method: "POST" });
-      if (r.ok) {
-        upsertServer(await r.json());
-        await fetchDetail(name);
-      }
+      upsertServer(server);
+      await fetchDetail(name);
     });
   }
   async function doDisable(name: string) {
     await runAction("disable", async () => {
-      const r = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/disable`,
+      const server = await jsonFetch<ServerStatus>(`/api/mcp/servers/${encodeURIComponent(name)}/disable`,
         { method: "POST" });
-      if (r.ok) {
-        upsertServer(await r.json());
-        await fetchDetail(name);
-      }
+      upsertServer(server);
+      await fetchDetail(name);
     });
   }
   async function doDelete(name: string) {
@@ -202,12 +203,9 @@ export function McpPage({
       `移除 MCP 服务器“${name}”？配置会被删除。`,
     ))) return;
     await runAction("delete", async () => {
-      const r = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}`,
-        { method: "DELETE" });
-      if (r.ok) {
-        setServers((prev) => prev.filter((p) => p.name !== name));
-        if (selected === name) setSelected(null);
-      }
+      await jsonFetch(`/api/mcp/servers/${encodeURIComponent(name)}`, { method: "DELETE" });
+      setServers((prev) => prev.filter((p) => p.name !== name));
+      if (selected === name) setSelected(null);
     });
   }
 
@@ -275,6 +273,8 @@ export function McpPage({
   }, [addNonce]);
 
   const selectedServer = servers.find((s) => s.name === selected) || null;
+  const readyCount = servers.filter((server) => server.ready).length;
+  const issueCount = servers.filter((server) => server.enabled && !!server.error && server.error !== "disabled").length;
 
   const shownServers = useMemo(() => {
     const q = filterValue.trim().toLowerCase();
@@ -291,6 +291,18 @@ export function McpPage({
 
   const splitAndDialogs = (
     <>
+        {embedded && (
+          <ManageSubnav
+            tabs={[{ id: "installed", label: text("Installed", "已安装"), count: servers.length }]}
+            activeTab="installed"
+            onTabChange={() => {}}
+            summary={text(
+              `${servers.length} installed · ${readyCount} available · ${issueCount} issues`,
+              `已安装 ${servers.length} 个 · 可用 ${readyCount} 个 · ${issueCount} 个问题`,
+            )}
+          />
+        )}
+        {actionErr && <div className={shared.errorBar} role="alert">{actionErr}</div>}
         <div className={shared.splitBody}>
           <div className={styles.serversNav}>
             {query === undefined && (

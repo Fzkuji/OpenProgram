@@ -32,6 +32,7 @@ interface PluginsState {
   marketplaces: MarketplaceEntry[];
   tab: "installed" | "marketplace" | "errors";
   loading: boolean;
+  loadError: string | null;
   setTab: (t: PluginsState["tab"]) => void;
   refresh: () => Promise<void>;
   refreshMarketplaces: () => Promise<void>;
@@ -56,16 +57,19 @@ export const usePluginsStore = create<PluginsState>((set, get) => ({
   marketplaces: [],
   tab: "installed",
   loading: false,
+  loadError: null,
 
   setTab: (tab) => set({ tab }),
 
   refresh: async () => {
-    set({ loading: true });
+    set({ loading: true, loadError: null });
     try {
       const d = await jsonFetch<{ plugins: PluginRow[]; errors: Record<string, string> }>(
         "/api/plugins",
       );
       set({ plugins: d.plugins || [], errors: d.errors || {} });
+    } catch (e) {
+      set({ loadError: e instanceof Error ? e.message : String(e) });
     } finally {
       set({ loading: false });
     }

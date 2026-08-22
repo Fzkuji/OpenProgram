@@ -109,7 +109,7 @@ function ManageActionButton({ a }: { a: ManageAction }) {
       onMouseEnter={() => iconRef.current?.startAnimation?.()}
       onMouseLeave={() => iconRef.current?.stopAnimation?.()}
     >
-      {Icon ? <Icon ref={iconRef} size={16} /> : a.icon}
+      {Icon ? <Icon ref={iconRef} size={16} /> : a.icon as ReactNode}
       {!a.iconOnly && a.label}
     </Button>
   );
@@ -185,10 +185,12 @@ export function ManageSubnav({
   tabs,
   activeTab,
   onTabChange,
+  summary,
 }: {
   tabs: ManageTab[];
   activeTab: string;
   onTabChange: (id: string) => void;
+  summary?: ReactNode;
 }) {
   return (
     <div className={styles.subnav} role="tablist">
@@ -201,6 +203,9 @@ export function ManageSubnav({
           onClick={() => onTabChange(tb.id)}
         />
       ))}
+      {summary !== undefined && (
+        <div className={styles.subnavSummary} aria-live="polite">{summary}</div>
+      )}
     </div>
   );
 }

@@ -22,7 +22,7 @@ export function PluginsPage({
   onInstallClose?: () => void;
 } = {}) {
   const { t, text } = useTranslation();
-  const { tab, setTab, refresh, plugins, errors } = usePluginsStore();
+  const { tab, setTab, refresh, plugins, errors, loadError } = usePluginsStore();
   const [localInstallOpen, setLocalInstallOpen] = useState(false);
   const installOpen = installOpenProp ?? localInstallOpen;
   const closeInstall = onInstallClose ?? (() => setLocalInstallOpen(false));
@@ -32,11 +32,12 @@ export function PluginsPage({
   }, [refresh]);
 
   const errCount = Object.keys(errors).length + plugins.filter((p) => p.error).length;
+  const enabledCount = plugins.filter((p) => p.enabled && p.loaded && !p.error).length;
 
   const tabs = [
     { id: "installed", label: text("Installed", "已安装"), count: plugins.length },
-    { id: "marketplace", label: text("Marketplace", "市场") },
-    { id: "errors", label: text("Errors", "错误"), count: errCount },
+    { id: "marketplace", label: text("Discover", "发现") },
+    { id: "errors", label: text("Issues", "问题"), count: errCount },
   ];
 
   const body = (
@@ -54,7 +55,12 @@ export function PluginsPage({
           tabs={tabs}
           activeTab={tab}
           onTabChange={(id) => setTab(id as typeof tab)}
+          summary={text(
+            `${plugins.length} installed · ${enabledCount} available · ${errCount} issues`,
+            `已安装 ${plugins.length} 个 · 可用 ${enabledCount} 个 · ${errCount} 个问题`,
+          )}
         />
+        {loadError && <div className={shared.errorBar} role="alert">{loadError}</div>}
         <div className={shared.body}>{body}</div>
         {installOpen && <ManualInstallDialog onClose={closeInstall} />}
       </>
@@ -71,9 +77,10 @@ export function PluginsPage({
         onTabChange={(id) => setTab(id as typeof tab)}
         actions={[
           { label: t("sidebar.refresh"), onClick: () => { void refresh(); } },
-          { label: text("Install", "安装"), onClick: () => setLocalInstallOpen(true), primary: true },
+          { label: text("Add plugin", "添加插件"), onClick: () => setLocalInstallOpen(true), primary: true },
         ]}
       />
+      {loadError && <div className={shared.errorBar} role="alert">{loadError}</div>}
       <div className={shared.body}>
         {body}
       </div>
@@ -101,6 +108,8 @@ function ManualInstallDialog({ onClose }: { onClose: () => void }) {
       if (r.success) {
         // 留窗显示成功，并允许关闭
       }
+    } catch (e) {
+      setLog(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }

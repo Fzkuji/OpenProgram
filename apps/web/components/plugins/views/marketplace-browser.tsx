@@ -81,8 +81,10 @@ export function MarketplaceBrowser({ externalFilter }: { externalFilter?: string
     try {
       const r = await install(source, spec);
       if (!r.success) {
-        alert(text(`Install failed:\n${r.log.slice(0, 500)}`, `安装失败：\n${r.log.slice(0, 500)}`));
+        setErr(text(`Install failed: ${r.log.slice(0, 500)}`, `安装失败：${r.log.slice(0, 500)}`));
       }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setBusySpec("");
     }

@@ -265,3 +265,15 @@
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
+
+.subnavSummary {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .subnav { flex-wrap: wrap; }
+  .subnavSummary { width: 100%; margin-left: 0; padding-left: 2px; }
+}

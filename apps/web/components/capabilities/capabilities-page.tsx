@@ -94,19 +94,19 @@ export function CapabilitiesPage() {
     if (kind === "plugins") {
       return [
         refresh(() => { void refreshPlugins(); }),
-        { label: text("Install", "安装"), onClick: () => setPluginInstallOpen(true), icon: <Download />, primary: true },
+        { label: text("Add plugin", "添加插件"), onClick: () => setPluginInstallOpen(true), icon: <Download />, primary: true },
       ];
     }
     if (kind === "skills") {
       return [
         refresh(() => { void fetchSkills(); }),
-        { label: text("New skill", "新建技能"), onClick: () => setSkillNewOpen(true), icon: PlusIcon, primary: true },
+        { label: text("Add skill", "添加技能"), onClick: () => setSkillNewOpen(true), icon: PlusIcon, primary: true },
       ];
     }
     return [
       refresh(() => setMcpReloadNonce((n) => n + 1)),
       { label: text("Browse catalog", "浏览目录"), onClick: () => setMcpCatalogOpen(true), icon: <LayoutGrid /> },
-      { label: text("Add server", "添加服务器"), onClick: () => setMcpAddNonce((n) => n + 1), icon: PlusIcon, primary: true },
+      { label: text("Add MCP server", "添加 MCP 服务器"), onClick: () => setMcpAddNonce((n) => n + 1), icon: PlusIcon, primary: true },
     ];
   }, [kind, t, text, refreshPlugins, fetchSkills]);
 
@@ -128,7 +128,7 @@ export function CapabilitiesPage() {
               className="min-w-[140px] w-[clamp(150px,24vw,280px)]"
               value={query}
               onChange={setQuery}
-              placeholder={text("Search Programs, Plugins, Skills, MCPs...", "搜索程序、插件、技能、MCP...")}
+              placeholder={text("Search Programs, Plugins, Skills, MCP servers...", "搜索程序、插件、技能、MCP 服务器...")}
             />
           )}
           actions={actions}
