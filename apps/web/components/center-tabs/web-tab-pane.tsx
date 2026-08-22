@@ -167,6 +167,10 @@ function DesktopWebTabPane({
       useCenterTabs.getState().tabs.map((t) => t.id),
     );
     ensureWebView(bridge, tabId, viewUrlRef.current);
+    // A pane always shows the page at user zoom. Clear any leftover PiP
+    // layout zoom here instead of relying on the PiP's unmount cleanup
+    // ordering — a stale factor would render the page as a tiny replica.
+    bridge.webTab.setPipZoom?.(tabId, null);
     return () => {
       setWebTabReady(tabId, false);
     };
