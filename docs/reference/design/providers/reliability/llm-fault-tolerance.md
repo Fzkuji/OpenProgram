@@ -124,7 +124,10 @@ Retry-After forms: `retry-after-ms`, integer seconds, and HTTP-date.
 ## 4. Transport and recovery
 
 The modules under `providers/utils/` are generic and available to every HTTP
-provider; codex is wired to all of them.
+provider; codex is wired to all of them. openai-completions retries a
+pre-content `APIError` that `classify_error` marks retryable — same model,
+`PROVIDER_STREAM_MAX_ATTEMPTS` and `stream_backoff_seconds` — and re-raises
+once any content has streamed.
 
 - **Central timeout policy** (`timeouts.py`) — one source of truth at
   OpenClaw's 30-min level, with context-scaling helpers.
@@ -156,6 +159,12 @@ provider; codex is wired to all of them.
   `OPENPROGRAM_FALLBACK_MODELS="provider/model,provider2/model2"` to override
   with an explicit list, which may cross providers; set it to `off` (or `none`)
   to disable failover entirely.
+- **openai-completions pre-content retry** (`openai_completions.py`) — after
+  `EventStart` and before any content block, a retryable `APIError` (including
+  xAI's status-less `Internal error during token generation`) reopens the
+  stream on the same model. After content arrives, or when the error is not
+  retryable, the existing outer `APIError` handler records credential cooldown
+  and re-raises.
 - gemini_cli shares the same client, so it carries the same timeout semantics
   rather than its own single-float timeout.
 

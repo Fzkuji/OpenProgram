@@ -192,6 +192,14 @@ _PERMANENT_MARKERS_QUOTA = (
     "credit balance is too low",
     "exceeded your current quota",
 )
+# Provider-internal generation failures that arrive WITHOUT an HTTP
+# status (e.g. xAI's mid-stream ``APIError: Internal error during token
+# generation``). Same recovery as a 5xx: retryable provider_internal.
+_TRANSIENT_MARKERS_INTERNAL = (
+    "internal error",
+    "internal_error",
+    "internal server error",
+)
 # Transport / transient keywords for the fallback path when we don't
 # have a status code and the exception type is something opaque
 # (CLI subprocess error string, third-party SDK wrapper, etc).
@@ -305,6 +313,8 @@ def classify_error(
         return ErrorReason.CONTENT_POLICY, False
     if "rate limit" in msg or "overloaded" in msg:
         return ErrorReason.RATE_LIMIT, True
+    if any(m in msg for m in _TRANSIENT_MARKERS_INTERNAL):
+        return ErrorReason.PROVIDER_INTERNAL, True
     if any(k in msg for k in _TRANSIENT_KEYWORDS):
         return ErrorReason.TRANSPORT, True
     # Wrapped transport errors: ProviderStreamError("RemoteProtocolError: …")
