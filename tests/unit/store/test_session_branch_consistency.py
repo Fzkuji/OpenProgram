@@ -102,7 +102,8 @@ def test_rewind_syncs_mirror_so_save_session_cannot_revert_it(
         lambda sid, tid: {
             "session_id": sid, "target_msg_id": tid, "user_text": "c2",
             "turns_reverted": 1, "nodes_rewound": 2,
-            "total_restored_paths": [], "new_head_id": ids[1], "errors": [],
+            "total_restored_paths": [], "new_head_id": ids[1],
+            "head_changed": True, "status": "committed", "errors": [],
         },
     )
     ws = FakeWS()

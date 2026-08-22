@@ -1294,6 +1294,32 @@ class SessionStore:
         idx.set_head(head_id)
         self._persist_meta(git, idx)
 
+    def compare_and_set_head(
+        self,
+        session_id: str,
+        expected_head_id: Optional[str],
+        new_head_id: Optional[str],
+    ) -> bool:
+        """Move the active HEAD only when it still equals the planned source."""
+        pair = self._open(session_id)
+        if pair is None:
+            return False
+        git, idx = pair
+        node = idx.nodes_by_id.get(new_head_id) if new_head_id else None
+        if node is not None and (node.metadata or {}).get("covers_ids"):
+            raise ValueError(
+                f"compare_and_set_head: {new_head_id!r} is a compaction summary"
+            )
+        with idx._persist_lock:
+            with idx._lock:
+                if idx.head_id != expected_head_id:
+                    return False
+                idx.head_id = new_head_id
+                meta = dict(idx.meta)
+                meta["head_id"] = new_head_id
+            git.write_meta(meta)
+        return True
+
     def message_exists(self, session_id: str, msg_id: str) -> bool:
         pair = self._open(session_id)
         if pair is None:

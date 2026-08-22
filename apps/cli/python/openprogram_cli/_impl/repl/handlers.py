@@ -518,9 +518,8 @@ def _handle_rewind(args: list[str], console, session_id: str) -> bool:
                 files_str = ""
                 if p["files_affected"]:
                     files_str = f"  [dim]({len(p['files_affected'])} file(s))[/]"
-                status = " [dim strikethrough](reverted)[/]" if p["reverted"] else ""
                 console.print(
-                    f"  [cyan]{i:>2}.[/] {p['summary']}{files_str}{status}"
+                    f"  [cyan]{i:>2}.[/] {p['summary']}{files_str}"
                 )
             console.print(
                 f"\n[dim]Enter a number (1-{len(points)}) or press Enter to cancel:[/]"
@@ -541,9 +540,10 @@ def _handle_rewind(args: list[str], console, session_id: str) -> bool:
             )
 
         result = rewind_to(session_id, target["msg_id"])
-        if result["errors"]:
+        if result.get("status") != "committed":
             for err in result["errors"]:
-                console.print(f"[yellow]Warning: {err}[/]")
+                console.print(f"[red]Rewind blocked: {err}[/]")
+            return False
         restored = result.get("total_restored_paths") or []
         n = result.get("turns_reverted", 0)
         console.print(

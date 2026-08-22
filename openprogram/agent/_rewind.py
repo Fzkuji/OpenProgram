@@ -1,13 +1,4 @@
-"""Multi-turn rewind — roll back to a chosen user message.
-
-The user clicks ↩ on a user message. We:
-1. Restore files to the state before that message was sent (via checkpoints)
-2. Return the user message text so the frontend can prefill the input box
-3. Mark all rewound nodes so the current branch no longer shows them
-
-The DAG is append-only — rewound nodes stay in the graph as a historical
-branch, they just stop being on the active conversation path.
-"""
+"""Transactional multi-turn rewind to a user-message boundary."""
 from __future__ import annotations
 
 from typing import Any
@@ -83,7 +74,12 @@ def list_rewind_points(session_id: str, limit: int = 10) -> list[dict[str, Any]]
     return points
 
 
-def rewind_to(session_id: str, target_msg_id: str) -> dict[str, Any]:
+def rewind_to(
+    session_id: str,
+    target_msg_id: str,
+    *,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
     """Rewind to the state before ``target_msg_id`` was sent.
 
     ``target_msg_id`` is a **user** node ID. We revert all assistant
@@ -91,10 +87,9 @@ def rewind_to(session_id: str, target_msg_id: str) -> dict[str, Any]:
     answered this user message, then return the user message text
     so the frontend can prefill the composer.
     """
-    from openprogram.agent.internals._revert import revert_turn
-
     try:
         from openprogram.store.session.session_store import default_store
+        from openprogram.store.snapshot.checkpoint import CheckpointStore
     except Exception as e:
         return _err(session_id, target_msg_id, f"import failed: {e}")
 
@@ -103,7 +98,7 @@ def rewind_to(session_id: str, target_msg_id: str) -> dict[str, Any]:
     if pair is None:
         return _err(session_id, target_msg_id, f"unknown session {session_id!r}")
 
-    git, idx = pair
+    _git, idx = pair
 
     target_node = idx.nodes_by_id.get(target_msg_id)
     if target_node is None:
@@ -132,90 +127,44 @@ def rewind_to(session_id: str, target_msg_id: str) -> dict[str, Any]:
                     f"node {target_msg_id!r} is not on the active branch")
 
     new_head: str | None = _node_conv_predecessor(target_node) or None
-
-    # Mark the chain segment plus the sub-call trees the rewound turns
-    # spawned (caller-edge children and everything below them). Forks
-    # hanging off a rewound node via a predecessor edge are OTHER
-    # branches — they stay untouched.
-    to_mark: list[str] = []
-    seen: set[str] = set()
-    for node in chain:                       # newest → oldest
-        if node.id in seen:
-            continue
-        seen.add(node.id)
-        to_mark.append(node.id)
-        stack = list(idx.children_by_caller.get(node.id, []))
-        while stack:
-            nid = stack.pop()
-            if nid in seen:
-                continue
-            seen.add(nid)
-            to_mark.append(nid)
-            stack += idx.children_by_caller.get(nid, [])
-            stack += idx.children_by_predecessor.get(nid, [])
-
-    to_revert: list[str] = []
-    for nid in to_mark:
-        node = idx.nodes_by_id.get(nid)
-        if node is not None and node.role == "llm" \
-                and not (node.metadata or {}).get("reverted"):
-            to_revert.append(nid)
-
-    all_restored: list[str] = []
-    errors: list[str] = []
-    for msg_id in to_revert:
-        result = revert_turn(session_id, msg_id)
-        if result.get("error"):
-            errors.append(f"{msg_id}: {result['error']}")
-        all_restored.extend(result.get("restored_paths", []))
-
-    import time
-    for node_id in to_mark:
-        node = idx.nodes_by_id.get(node_id)
-        if node is not None:
-            node.metadata = {
-                **(node.metadata or {}),
-                "rewound": True,
-                "rewound_at": time.time(),
-            }
-            try:
-                git.write_history(node.seq, node.role, node.id, node.to_dict())
-            except Exception:
-                pass
-
-    # Unconditional: new_head is None only when the target had no earlier
-    # node (rewind-to-the-very-start). Head must then become None (empty
-    # session) rather than staying on a now-rewound node — a stale head on
-    # a rewound node would make the next turn anchor its predecessor to a
-    # dead node. set_head accepts None. list_rewind_points no longer
-    # offers ROOT, so this is defence-in-depth for any other caller.
-    idx.set_head(new_head)
-    store._persist_meta(git, idx)
-
-    try:
-        store.commit_turn(session_id, "rewind")
-    except Exception:
-        pass
-
+    source_head = idx.head_id
+    turn_ids = [node.id for node in chain if node.role == "llm"]
+    journal = CheckpointStore(store._session_dir(session_id))
+    result = journal.apply_rewind_operation(
+        turn_ids,
+        expected_head_id=source_head,
+        target_head_id=new_head,
+        get_head=lambda: (store.get_session(session_id) or {}).get("head_id"),
+        compare_and_set_head=lambda expected, target: store.compare_and_set_head(
+            session_id, expected, target,
+        ),
+        idempotency_key=idempotency_key,
+    )
+    committed = result.get("status") == "committed"
+    if committed:
+        try:
+            store.commit_turn(session_id, "rewind")
+        except Exception:
+            pass
+    error = result.get("error")
     return {
         "session_id": session_id,
         "target_msg_id": target_msg_id,
         "user_text": user_text,
-        "turns_reverted": len(to_revert),
-        "nodes_rewound": len(to_mark),
-        "total_restored_paths": list(set(all_restored)),
-        # The head this rewind landed on (None = rewound to empty).
-        # Callers that keep their own head mirror — the webui's
-        # ``_sessions[sid]["head_id"]`` — MUST write this back, or their
-        # stale head gets flushed over ours by the next _save_session
-        # and silently undoes the rewind.
-        "new_head_id": new_head,
-        "errors": errors,
+        "source_head_id": source_head,
+        "turns_reverted": len(turn_ids) if committed else 0,
+        "nodes_rewound": len(chain) if committed else 0,
+        "total_restored_paths": result.get("restored_paths", []),
+        "new_head_id": result.get("new_head_id"),
+        "head_changed": bool(result.get("head_changed")),
+        "errors": [error] if error else [],
+        **result,
     }
 
 
 def _err(session_id: str, target: str, msg: str) -> dict[str, Any]:
     return {
+        "status": "error",
         "session_id": session_id,
         "target_msg_id": target,
         "user_text": "",
@@ -223,5 +172,7 @@ def _err(session_id: str, target: str, msg: str) -> dict[str, Any]:
         "nodes_rewound": 0,
         "total_restored_paths": [],
         "new_head_id": None,
+        "head_changed": False,
+        "error": msg,
         "errors": [msg],
     }

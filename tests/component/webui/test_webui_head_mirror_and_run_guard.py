@@ -154,13 +154,13 @@ def _rewind_payload(**overrides):
     base = dict(
         session_id="s1", target_msg_id="u2", user_text="redo this",
         turns_reverted=1, nodes_rewound=2, total_restored_paths=[],
-        new_head_id="n1", errors=[],
+        new_head_id="n1", head_changed=True, status="committed", errors=[],
     )
     base.update(overrides)
     return base
 
 
-def test_rewind_partial_failure_still_syncs_mirror(monkeypatch, server_events):
+def test_rewind_file_failure_does_not_sync_mirror(monkeypatch, server_events):
     from openprogram.webui import server as _s
     import openprogram.agent._rewind as rewind_mod
     from openprogram.webui.ws_actions.chat import handle_rewind
@@ -168,16 +168,17 @@ def test_rewind_partial_failure_still_syncs_mirror(monkeypatch, server_events):
     monkeypatch.setattr(_s, "_is_run_active", lambda sid: False)
     monkeypatch.setattr(
         rewind_mod, "rewind_to",
-        lambda sid, target: _rewind_payload(errors=["restore failed: f.txt"]),
+        lambda sid, target: _rewind_payload(
+            status="rolled_back", new_head_id=None, head_changed=False,
+            errors=["restore failed: f.txt"],
+        ),
     )
 
     ws = _FakeWS()
     asyncio.run(handle_rewind(ws, {"session_id": "s1",
                                    "target_msg_id": "u2"}))
 
-    # Head moved in the store, so the mirror must follow even though
-    # file restore partially failed.
-    assert ("head", "s1", "n1") in server_events
+    assert not [event for event in server_events if event[0] == "head"]
     frame = ws.sent[0]
     assert frame["type"] == "rewind_result"
     assert frame["data"]["errors"] == ["restore failed: f.txt"]
@@ -193,7 +194,8 @@ def test_rewind_full_failure_leaves_mirror_alone(monkeypatch, server_events):
     monkeypatch.setattr(
         rewind_mod, "rewind_to",
         lambda sid, target: _rewind_payload(
-            new_head_id=None, errors=["node 'u2' not found"],
+            status="error", new_head_id=None, head_changed=False,
+            errors=["node 'u2' not found"],
             turns_reverted=0, nodes_rewound=0, user_text="",
         ),
     )

@@ -12,7 +12,12 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from . import manifest
-from .paths import path_basename, turn_backup_dir, turn_manifest_path
+from .paths import (
+    path_basename,
+    session_backup_root,
+    turn_backup_dir,
+    turn_manifest_path,
+)
 
 
 _STATS_MAX_BYTES = 1024 * 1024
@@ -246,6 +251,35 @@ class CheckpointStore:
             return actual.get("digest") == expected.get("digest")
         return expected.get("kind") == "absent"
 
+    @staticmethod
+    def _same_recorded_state(first: dict, second: dict) -> bool:
+        if first.get("kind") != second.get("kind"):
+            return False
+        if first.get("kind") == "regular":
+            return first.get("digest") == second.get("digest")
+        return first.get("kind") == "absent"
+
+    def _state_with_blob(self, turn_id: str, state: dict) -> dict:
+        value = dict(state)
+        if value.get("kind") == "regular":
+            value["blob_path"] = str(
+                turn_backup_dir(self.session_dir, turn_id)
+                / str(value.get("blob_ref") or "")
+            )
+        return value
+
+    @staticmethod
+    def _blob_is_exact(state: dict) -> bool:
+        if state.get("kind") != "regular":
+            return state.get("kind") == "absent"
+        blob = Path(str(state.get("blob_path") or ""))
+        if not blob.is_file():
+            return False
+        try:
+            return _digest(blob) == state.get("digest")
+        except OSError:
+            return False
+
     def plan_history_operation(self, turn_id: str, direction: str) -> dict:
         if direction not in {"revert", "reapply"}:
             return {"status": "error", "error": f"unknown direction {direction!r}"}
@@ -316,9 +350,92 @@ class CheckpointStore:
             "unavailable": [],
         }
 
+    def plan_rewind_operation(self, turn_ids: list[str]) -> dict:
+        """Fold a newest-to-oldest turn suffix into one action per path."""
+        folded: dict[str, dict] = {}
+        unavailable: list[str] = []
+        discontinuous: list[str] = []
+        for turn_id in reversed(list(dict.fromkeys(turn_ids))):
+            for mutation in self.list_mutations(turn_id):
+                path = mutation.get("path") or ""
+                before = mutation.get("before")
+                after = mutation.get("after")
+                if (
+                    not path
+                    or mutation.get("recoverability") != "exact"
+                    or not isinstance(before, dict)
+                    or not isinstance(after, dict)
+                    or before.get("kind") not in {"regular", "absent"}
+                    or after.get("kind") not in {"regular", "absent"}
+                ):
+                    unavailable.append(path)
+                    continue
+                before = self._state_with_blob(turn_id, before)
+                after = self._state_with_blob(turn_id, after)
+                if not self._blob_is_exact(before) or not self._blob_is_exact(after):
+                    unavailable.append(path)
+                    continue
+                current = folded.get(path)
+                if current is None:
+                    folded[path] = {
+                        "path": path,
+                        "expected_current": after,
+                        "target": before,
+                        "rollback": after,
+                        "turn_ids": [turn_id],
+                        "state": "pending",
+                        "error": None,
+                    }
+                    continue
+                if not self._same_recorded_state(current["expected_current"], before):
+                    discontinuous.append(path)
+                    continue
+                current["expected_current"] = after
+                current["rollback"] = after
+                current["turn_ids"].append(turn_id)
+
+        unavailable = sorted(set(filter(None, unavailable)))
+        discontinuous = sorted(set(filter(None, discontinuous)))
+        if unavailable or discontinuous:
+            return {
+                "status": "unavailable",
+                "actions": list(folded.values()),
+                "conflicts": [],
+                "unavailable": unavailable + discontinuous,
+                "error": (
+                    "one or more mutations are not recoverable"
+                    if unavailable else "mutation journal is discontinuous"
+                ),
+            }
+        actions = list(folded.values())
+        conflicts = [
+            action["path"] for action in actions
+            if not self._state_matches(
+                self._inspect_state(action["path"]), action["expected_current"],
+            )
+        ]
+        if conflicts:
+            return {
+                "status": "blocked",
+                "actions": actions,
+                "conflicts": conflicts,
+                "unavailable": [],
+                "error": "current file state does not match the folded source",
+            }
+        return {
+            "status": "ready",
+            "actions": actions,
+            "conflicts": [],
+            "unavailable": [],
+        }
+
     def _intent_path(self, turn_id: str, direction: str, key: str) -> Path:
         digest = hashlib.sha256(f"{direction}\0{key}".encode()).hexdigest()[:24]
         return turn_backup_dir(self.session_dir, turn_id) / "intents" / f"{digest}.json"
+
+    def _rewind_intent_path(self, key: str) -> Path:
+        digest = hashlib.sha256(f"rewind\0{key}".encode()).hexdigest()[:24]
+        return session_backup_root(self.session_dir) / "intents" / f"{digest}.json"
 
     def _workspace_lock_path(self) -> Path:
         from openprogram.paths import get_state_dir
@@ -353,7 +470,10 @@ class CheckpointStore:
         expected = expected_current or self._inspect_state(path)
         try:
             if state.get("kind") == "regular":
-                blob = backup_dir / str(state.get("blob_ref") or "")
+                blob = Path(str(state.get("blob_path"))) \
+                    if state.get("blob_path") else (
+                        backup_dir / str(state.get("blob_ref") or "")
+                    )
                 if not blob.is_file():
                     raise OSError(f"missing recovery blob for {path}")
                 shutil.copy2(blob, tmp)
@@ -428,6 +548,22 @@ class CheckpointStore:
             "conflicts": intent.get("conflicts", []),
             "unavailable": intent.get("unavailable", []),
             "error": intent.get("error"),
+        }
+
+    @staticmethod
+    def _rewind_intent_result(intent: dict) -> dict:
+        committed = intent.get("status") == "committed"
+        return {
+            "status": intent.get("status", "error"),
+            "transaction_id": intent.get("transaction_id"),
+            "restored_paths": [
+                action["path"] for action in intent.get("actions", [])
+            ] if committed else [],
+            "conflicts": intent.get("conflicts", []),
+            "unavailable": intent.get("unavailable", []),
+            "error": intent.get("error"),
+            "new_head_id": intent.get("target_head_id") if committed else None,
+            "head_changed": committed,
         }
 
     @staticmethod
@@ -564,6 +700,190 @@ class CheckpointStore:
             intent["status"] = "committed"
             manifest.save(intent_path, intent)
         return self._intent_result(intent)
+
+    def apply_rewind_operation(
+        self,
+        turn_ids: list[str],
+        *,
+        expected_head_id: str | None,
+        target_head_id: str | None,
+        get_head,
+        compare_and_set_head,
+        idempotency_key: str | None = None,
+    ) -> dict:
+        """Apply one folded file plan and move HEAD only after verification."""
+        key = idempotency_key or uuid.uuid4().hex
+        intent_path = self._rewind_intent_path(key)
+        if intent_path.exists():
+            try:
+                existing = json.loads(intent_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                existing = None
+            if isinstance(existing, dict):
+                if existing.get("status") in {
+                    "committed", "rolled_back", "recovery_required", "aborted",
+                }:
+                    return self._rewind_intent_result(existing)
+                actions = existing.get("actions") or []
+                files_at_target = all(
+                    self._state_matches(
+                        self._inspect_state(action["path"]), action["target"],
+                    )
+                    for action in actions
+                )
+                files_at_source = all(
+                    self._state_matches(
+                        self._inspect_state(action["path"]), action["rollback"],
+                    )
+                    for action in actions
+                )
+                if files_at_target and get_head() == existing.get("target_head_id"):
+                    existing["status"] = "committed"
+                    manifest.save(intent_path, existing)
+                    return self._rewind_intent_result(existing)
+                existing["status"] = (
+                    "rolled_back" if files_at_source
+                    and get_head() == existing.get("expected_head_id")
+                    else "recovery_required"
+                )
+                existing["error"] = "incomplete durable rewind intent recovered"
+                manifest.save(intent_path, existing)
+                return self._rewind_intent_result(existing)
+
+        plan = self.plan_rewind_operation(turn_ids)
+        if plan.get("status") != "ready":
+            return {
+                **plan,
+                "transaction_id": None,
+                "restored_paths": [],
+                "new_head_id": None,
+                "head_changed": False,
+            }
+        transaction_id = f"rewind_{uuid.uuid4().hex}"
+        plan_payload = {
+            "turn_ids": turn_ids,
+            "expected_head_id": expected_head_id,
+            "target_head_id": target_head_id,
+            "actions": plan["actions"],
+        }
+        intent = {
+            "version": 1,
+            "transaction_id": transaction_id,
+            "idempotency_key": key,
+            **plan_payload,
+            "plan_hash": "sha256:" + hashlib.sha256(
+                json.dumps(plan_payload, sort_keys=True).encode(),
+            ).hexdigest(),
+            "status": "prepared",
+            "conflicts": [],
+            "unavailable": [],
+            "error": None,
+        }
+        manifest.save(intent_path, intent)
+        paths = [action["path"] for action in intent["actions"]]
+        with self._workspace_lock(paths):
+            if get_head() != expected_head_id:
+                intent.update({"status": "aborted", "error": "stale_head"})
+                manifest.save(intent_path, intent)
+                return self._rewind_intent_result(intent)
+            current_plan = self.plan_rewind_operation(turn_ids)
+            current_payload = {
+                "turn_ids": turn_ids,
+                "expected_head_id": expected_head_id,
+                "target_head_id": target_head_id,
+                "actions": current_plan.get("actions", []),
+            }
+            current_hash = "sha256:" + hashlib.sha256(
+                json.dumps(current_payload, sort_keys=True).encode(),
+            ).hexdigest()
+            if current_plan.get("status") != "ready":
+                intent.update({
+                    "status": "aborted",
+                    "conflicts": current_plan.get("conflicts", []),
+                    "unavailable": current_plan.get("unavailable", []),
+                    "error": current_plan.get("error"),
+                })
+                manifest.save(intent_path, intent)
+                return self._rewind_intent_result(intent)
+            if current_hash != intent["plan_hash"]:
+                intent.update({"status": "aborted", "error": "stale_plan"})
+                manifest.save(intent_path, intent)
+                return self._rewind_intent_result(intent)
+            intent["status"] = "applying"
+            manifest.save(intent_path, intent)
+            touched: list[dict] = []
+            head_moved = False
+            try:
+                for action in intent["actions"]:
+                    touched.append(action)
+                    if not self._state_matches(
+                        self._inspect_state(action["path"]),
+                        action["expected_current"],
+                    ):
+                        raise OSError(f"stale current state for {action['path']}")
+                    guard_path = self._apply_state(
+                        action["path"], action["target"], self.session_dir,
+                        transaction_id, action["expected_current"],
+                    )
+                    if guard_path:
+                        action["guard_path"] = guard_path
+                    if not self._state_matches(
+                        self._inspect_state(action["path"]), action["target"],
+                    ):
+                        raise OSError(f"verification failed for {action['path']}")
+                    if guard_path and not self._state_matches(
+                        self._inspect_state(guard_path), action["rollback"],
+                    ):
+                        self._restore_changed_guard(
+                            action, guard_path, transaction_id,
+                        )
+                        raise OSError(
+                            f"external writer changed moved inode for {action['path']}",
+                        )
+                    action["state"] = "verified"
+                    manifest.save(intent_path, intent)
+                if not compare_and_set_head(expected_head_id, target_head_id):
+                    raise OSError("stale_head")
+                head_moved = True
+                intent["status"] = "committed"
+                manifest.save(intent_path, intent)
+                return self._rewind_intent_result(intent)
+            except Exception as exc:
+                recovery_required = False
+                if head_moved and not compare_and_set_head(
+                    target_head_id, expected_head_id,
+                ):
+                    recovery_required = True
+                for action in reversed(touched):
+                    try:
+                        actual = self._inspect_state(action["path"])
+                        if self._state_matches(actual, action["rollback"]):
+                            action["state"] = "rolled_back"
+                            continue
+                        if not self._state_matches(actual, action["target"]):
+                            recovery_required = True
+                            action["error"] = "external change prevents rollback"
+                            continue
+                        rollback_guard = self._apply_state(
+                            action["path"], action["rollback"], self.session_dir,
+                            transaction_id, action["target"],
+                        )
+                        if rollback_guard:
+                            action["rollback_guard_path"] = rollback_guard
+                        if not self._state_matches(
+                            self._inspect_state(action["path"]), action["rollback"],
+                        ):
+                            raise OSError("rollback verification failed")
+                        action["state"] = "rolled_back"
+                    except Exception as rollback_error:
+                        recovery_required = True
+                        action["error"] = str(rollback_error)
+                intent["status"] = (
+                    "recovery_required" if recovery_required else "rolled_back"
+                )
+                intent["error"] = str(exc)
+                manifest.save(intent_path, intent)
+                return self._rewind_intent_result(intent)
 
     def restore_turn(self, turn_id: str) -> list[str]:
         """Legacy best-effort restore; task B replaces this execution path."""

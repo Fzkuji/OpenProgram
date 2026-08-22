@@ -1376,22 +1376,19 @@ async def handle_rewind(ws, cmd: dict):
                 }))
                 return
             target_msg_id = points[idx - 1]["msg_id"]
-        result = await loop.run_in_executor(
-            None, lambda: rewind_to(session_id, target_msg_id),
-        )
-        # rewind_to moved the store's head. Route the same move through
-        # _set_active_head so the in-memory conv mirror + message cache
-        # follow — otherwise the next _save_session flushes the stale
-        # pre-rewind head back over it and silently undoes the rewind.
-        # Keyed on new_head_id, NOT on errors: rewind_to moves the head
-        # unconditionally, and a file-restore failure (errors non-empty)
-        # is a partial failure of the rewind, not a rewind that didn't
-        # happen. Gating on errors left the mirror on the old branch
-        # while the store head had already moved. A full failure (the
-        # _err path) carries new_head_id=None and is skipped. The
-        # response frame still carries errors as the partial-failure
-        # warning for the client.
-        if result.get("new_head_id") is not None:
+        idempotency_key = (cmd.get("idempotency_key") or "").strip() or None
+        def _run_rewind():
+            if idempotency_key:
+                return rewind_to(
+                    session_id, target_msg_id,
+                    idempotency_key=idempotency_key,
+                )
+            return rewind_to(session_id, target_msg_id)
+
+        result = await loop.run_in_executor(None, _run_rewind)
+        # The transaction moves HEAD only after every file action verifies.
+        # Mirror that committed CAS, including a valid move to ``None``.
+        if result.get("head_changed"):
             _s._set_active_head(session_id, result.get("new_head_id"))
             _s.refresh_context_stats(session_id)
         await ws.send_text(json.dumps({
