@@ -304,11 +304,10 @@ def wrap_with_approval(
         except Exception:
             pass
 
-        # Already ran with every configurable restriction lifted (bypass,
-        # or an approved escalation retry). What blocked it is the
-        # non-configurable hard floor — an "escalated retry" would rerun
-        # the identical policy, so asking is noise. Return the denial.
-        if already_escalated:
+        # Bypass never offers sandbox escalation. An approved escalation
+        # retry already ran with configurable restrictions lifted;
+        # asking again would rerun the same policy. Return the denial.
+        if already_escalated or req.permission_mode == "bypass":
             return result
 
         if not _approval_authorized():
@@ -428,17 +427,9 @@ def wrap_with_approval(
             if web_use_available(getattr(req, "surface_context", None)):
                 return await _run_original(call_id, args, cancel, on_update)
 
-        # ③ bypass 短路（deny/ask/force 之后）。默认对齐 Claude Code：
-        #    bypass = 彻底无沙箱——不包装、不剥环境变量、无硬约束。
-        #    sandbox.apply_in_bypass=true 可选择在 bypass 下保留沙箱。
+        # ③ bypass：跳过普通审批与 Auto，不改变 Sandbox。
         if mode == "bypass":
-            from openprogram.sandbox import apply_in_bypass, unsandboxed_execution
-            if apply_in_bypass():
-                return await _run_original(call_id, args, cancel, on_update)
-            with unsandboxed_execution():
-                return await _run_original(
-                    call_id, args, cancel, on_update, already_escalated=True,
-                )
+            return await _run_original(call_id, args, cancel, on_update)
 
         # ④ 规则层 allow —— bypass 之后
         if verdict == "allow":

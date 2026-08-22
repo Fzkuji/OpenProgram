@@ -26,7 +26,7 @@
   <div class="eyebrow">Architecture · Canonical Design</div>
   <h1>谁能做、这次准不准做、获准后能访问什么</h1>
   <p class="lead">OpenProgram 把 Agent 执行控制拆成三个独立合同：<code>Authority</code> 给出请求的能力上限，<code>Permission</code> 对一次具体操作作出允许、询问或拒绝，<code>Sandbox</code> 在操作获准后实施宿主资源边界。三者按固定顺序组合，不能互相替代。</p>
-  <div class="meta"><span class="pill good">现状：核心执行边界已有实现</span><span class="pill warn">目标差异：Auto、bypass 与 Sandbox 解耦待实现</span><span class="pill">平台：macOS Seatbelt / Linux bubblewrap</span><span class="pill">范围：Agent 工具与模型驱动执行面</span></div>
+  <div class="meta"><span class="pill good">现状：核心执行边界已有实现</span><span class="pill warn">目标差异：Claude Code 风格 Auto 待实现</span><span class="pill">平台：macOS Seatbelt / Linux bubblewrap</span><span class="pill">范围：Agent 工具与模型驱动执行面</span></div>
   <div class="mobile-nav"><label for="jump" class="brand">跳到章节</label><select id="jump"><option value="">选择章节</option><option value="decision">结论与边界</option><option value="flow">完整判定顺序</option><option value="authority">Authority</option><option value="permission">Permission</option><option value="sandbox">Sandbox</option><option value="status">实现状态</option></select></div>
 </header>
 <div class="content">
@@ -298,11 +298,11 @@ Unattended</code></pre>
     <tr><td><span class="yes">Implemented</span></td><td>Permission 规则、五种模式与审批</td><td>deny/ask 早于 bypass；精确 always allow、non-interactive deny、强制审批</td></tr>
     <tr><td><span class="yes">Implemented</span></td><td>Seatbelt / bubblewrap 本地进程边界</td><td>workspace-write、deny-read、env allowlist、网络关闭、不可用 refuse</td></tr>
     <tr><td><span class="yes">Implemented</span></td><td>Cron、execute_code 与嵌套 Agent</td><td>signed frozen policy、LocalBackend、禁用嵌套 CLI 内置副作用工具</td></tr>
-    <tr><td><span class="maybe">Confirmed defect</span></td><td>Web permission mode 端到端传递</td><td>普通发送、Goal 回答、排队与重排队都没有携带 <code>permission_mode</code>；后端字段缺失时默认 <code>bypass</code></td></tr>
+    <tr><td><span class="yes">Implemented</span></td><td>Web permission mode 端到端传递</td><td>session → project → ask 解析；inherit 语义；chat_ack 回传 effective mode</td></tr>
     <tr><td><span class="no">Target not implemented</span></td><td>Claude Code 风格 Auto</td><td>当前 auto 不是本文定义的独立后台安全分类器，也没有支持矩阵、拒绝记录和重复阻止后回到 ask 的用户流程</td></tr>
-    <tr><td><span class="no">Target not implemented</span></td><td>bypass 与 Sandbox 完全解耦</td><td>当前 bypass 默认关闭 Sandbox；<code>sandbox.apply_in_bypass</code> 是过渡配置，目标设计废弃该耦合</td></tr>
-    <tr><td><span class="no">Target not implemented</span></td><td>Plus 菜单 Sandbox 开关</td><td>当前只有 <code>/sandbox</code> 一次性命令，没有 Plus 菜单行和结构化可用性状态</td></tr>
-    <tr><td><span class="no">Target not implemented</span></td><td>会话级 Sandbox 与 turn snapshot</td><td>当前 <code>/sandbox</code> 修改全局持久配置，<code>resolve_policy()</code> 每条命令重新读取；一个会话切换可能影响其他会话后续命令</td></tr>
+    <tr><td><span class="yes">Implemented</span></td><td>bypass 与 Sandbox 完全解耦</td><td>bypass 不再调用 unsandboxed_execution；apply_in_bypass 配置已删除</td></tr>
+    <tr><td><span class="yes">Implemented</span></td><td>Plus 菜单 Sandbox 开关</td><td>SessionRunConfig.sandbox_enabled；set_sandbox WS 通道；后端不可用时禁用勾选</td></tr>
+    <tr><td><span class="yes">Implemented</span></td><td>会话级 Sandbox 与 turn snapshot</td><td>SessionRunConfig.sandbox_enabled；bind_turn_policy 在 turn 开始时冻结策略</td></tr>
     <tr><td><span class="no">Target not implemented</span></td><td>域名级网络 allowlist</td><td>当前 <code>SandboxPolicy.network</code> 只有布尔值；没有强制代理、域名/端口规则、直接 IP 拒绝和重定向逐跳校验</td></tr>
     <tr><td><span class="maybe">Partial</span></td><td>宿主进程信息兼容性</td><td>当前默认 <code>host_process_info=false</code>，升级策略可临时设为 true；尚无会话级高级例外和稳定的 <code>host_process_info_denied</code> 用户流程</td></tr>
     <tr><td><span class="no">Not implemented</span></td><td>有效执行边界状态协议与界面</td><td>现有 <code>/sandbox</code> 只能切换全局进程配置并返回一次性文本；没有 configured / effective turn / effective tool 三层结构化状态</td></tr>

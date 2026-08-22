@@ -660,8 +660,7 @@ def _denied_then_ok_exec(calls):
 
 
 def test_sandbox_denial_in_bypass_returns_error_without_asking(monkeypatch):
-    """bypass 已在 escalated_policy 下执行；剩下的拦截是硬约束，
-    再弹"升级重试"审批毫无意义——直接把拒绝结果返回给模型。"""
+    """bypass 不弹 Sandbox 升级卡；拒绝结果直接返回给模型。"""
     calls = []
     approvals = []
     events = []
@@ -737,10 +736,14 @@ def test_sandbox_denial_emits_event_and_retries_under_escalated_policy(monkeypat
     assert events[0]["type"] == "sandbox.violation"
 
 
-def test_bypass_runs_without_any_sandbox_by_default(monkeypatch):
+def test_bypass_keeps_configured_sandbox(monkeypatch):
     from openprogram.providers.types import TextContent
-    from openprogram.sandbox import resolve_policy
+    from openprogram.sandbox import MODE_WORKSPACE_WRITE, resolve_policy
 
+    monkeypatch.setattr(
+        "openprogram.setup._read_config",
+        lambda: {"sandbox": {"mode": MODE_WORKSPACE_WRITE}},
+    )
     seen = []
 
     async def _exec(call_id, args, cancel, on_update):
@@ -756,18 +759,13 @@ def test_bypass_runs_without_any_sandbox_by_default(monkeypatch):
         name="bash", description="", parameters={}, label="bash", execute=_exec,
     )
     wrapped = _approval.wrap_with_approval(tool, req, on_event=lambda _e: None)
-
-    # 默认：bypass 彻底无沙箱——resolve_policy() 为 None，命令不被包装。
-    monkeypatch.setattr("openprogram.sandbox.apply_in_bypass", lambda: False)
     asyncio.run(wrapped.execute("c", {"command": "true"}, None, None))
-    assert seen[-1] is None
 
-    # apply_in_bypass=true：保留已配置沙箱，deny_read 不放开。
-    monkeypatch.setattr("openprogram.sandbox.apply_in_bypass", lambda: True)
-    asyncio.run(wrapped.execute("c", {"command": "true"}, None, None))
-    assert seen[-1] is not None
-    assert seen[-1].deny_read != ()
-    assert seen[-1].network is False
+    policy = seen[-1]
+    assert policy is not None
+    assert policy == resolve_policy()
+    assert policy.deny_read != ()
+    assert policy.network is False
 
 
 def test_ordinary_nonzero_tool_result_does_not_trigger_sandbox_approval(monkeypatch):

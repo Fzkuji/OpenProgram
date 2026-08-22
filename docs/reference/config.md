@@ -25,7 +25,6 @@ The settings registry is defined in `openprogram/config_schema.py` (the single s
 | `sandbox.deny_write` | Sandbox | globs a sandboxed command cannot write, on top of the always-blocked function-watcher directory | [] | live |
 | `sandbox.network` | Sandbox | whether a sandboxed command has network access | false | live |
 | `sandbox.pass_env` | Sandbox | environment variable names to pass through besides the built-in allowlist | [] | live |
-| `sandbox.apply_in_bypass` | Sandbox | off (default): bypass permissions means full access — the configurable sandbox limits do not apply, matching Claude Code's `--dangerously-skip-permissions`; on: those limits stay enforced even in bypass mode | false | live |
 | `sandbox.unavailable_policy` | Sandbox | `refuse` fails the command when the platform backend is missing or cannot create its required isolation; `warn` runs it unsandboxed | refuse | live |
 | `tools.disabled.<name>` | Tools | per-tool switch; written as members of the `tools.disabled` list | all enabled | live |
 | `agent.output_style` | Agent | how replies are written; appends a block to the system prompt. See [Output styles](output-styles.md) | default | live |
@@ -43,7 +42,7 @@ The top-level keys actually written to `~/.openprogram/config.json` (do not edit
 | `search` | `{default_provider}` | `openprogram/setup.py` |
 | `memory` | `{backend, writer: {model}}`, see the table above | `openprogram/config_schema.py`, `openprogram/memory/` |
 | `tools` | `{disabled: [tool name, ...]}` | `openprogram/setup.py`, `openprogram/config_schema.py` |
-| `sandbox` | `{mode, writable_roots, deny_read, deny_write, network, pass_env, apply_in_bypass, unavailable_policy}`, see the table above | `openprogram/sandbox/__init__.py`, `openprogram/config_schema.py` |
+| `sandbox` | `{mode, writable_roots, deny_read, deny_write, network, pass_env, unavailable_policy}`, see the table above | `openprogram/sandbox/__init__.py`, `openprogram/config_schema.py` |
 | `default_provider` | Default LLM provider (written by the setup wizard) | `openprogram/setup.py` |
 | `default_model` | Default model (written by the setup wizard) | `openprogram/setup.py` |
 | `default_workdir` | Default working directory for agents | `openprogram/paths.py` |

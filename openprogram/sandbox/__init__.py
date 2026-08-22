@@ -307,22 +307,6 @@ def ui_state(session_enabled: bool | None = None) -> dict:
 
 
 @contextmanager
-def unsandboxed_execution():
-    """No sandbox at all for this execution.
-
-    The bypass permission mode uses this — matching Claude Code's
-    ``--dangerously-skip-permissions``, where bypass means bypass:
-    commands run unwrapped, with the full environment, and no hard
-    floor. ``sandbox.apply_in_bypass=true`` opts back into the sandbox.
-    """
-    token = _execution_policy_override.set(None)
-    try:
-        yield
-    finally:
-        _execution_policy_override.reset(token)
-
-
-@contextmanager
 def escalated_policy():
     """Relax configurable restrictions for one approved execution.
 
@@ -446,16 +430,6 @@ def _applications_dir() -> str:
 def _applications_root() -> str:
     from openprogram.protected_paths import applications_root
     return applications_root()
-
-
-def apply_in_bypass() -> bool:
-    """Whether the configurable sandbox limits still apply under bypass.
-
-    Default False: bypass means full access, matching Claude Code's
-    ``--dangerously-skip-permissions``. Opt in via ``sandbox.apply_in_bypass``
-    to keep deny_read/deny_write/network enforcement even in bypass mode.
-    """
-    return bool(_config_section().get("apply_in_bypass") or False)
 
 
 def unavailable_policy() -> str:
