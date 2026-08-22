@@ -36,12 +36,11 @@ const MODE_LABELS: {
   { value: "auto", en: "Auto mode", zh: "自动判定", key: "4" },
   {
     value: "bypass",
-    // no live sandbox.mode in chat UI; /sandbox is fire-and-forget WS.
-    en: "Bypass permissions (sandbox applies)",
-    zh: "跳过审批（沙箱仍生效）",
+    en: "Bypass permissions",
+    zh: "跳过审批",
     key: "5",
-    enDesc: "Skips approval prompts only. The OS sandbox still restricts files and commands.",
-    zhDesc: "只跳过审批弹窗；操作系统沙箱仍限制文件和命令。",
+    enDesc: "Full access: no approval prompts and no sandbox limits.",
+    zhDesc: "完全放开：不弹审批，沙箱限制也不生效。",
   },
 ];
 

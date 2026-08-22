@@ -25,6 +25,7 @@ openprogram config set ui.web_port 8101
 | `sandbox.deny_write` | Sandbox | 沙箱内不可写的glob，函数watcher自动导入的目录始终禁写、不在此列 | [] | live |
 | `sandbox.network` | Sandbox | 沙箱内是否有网络 | false | live |
 | `sandbox.pass_env` | Sandbox | 内置白名单之外还要透传的环境变量名 | [] | live |
+| `sandbox.apply_in_bypass` | Sandbox | 关（默认）：跳过审批即完全放开，可配置的沙箱限制不生效，对齐Claude Code的`--dangerously-skip-permissions`；开：这些限制在bypass下仍然生效 | false | live |
 | `sandbox.unavailable_policy` | Sandbox | 平台后端缺失或无法创建所需隔离时，`refuse`让命令失败，`warn`允许命令在没有沙箱的情况下执行 | refuse | live |
 | `tools.disabled.<name>` | Tools | 逐工具开关；写入的是 `tools.disabled` 列表的成员 | 全部启用 | live |
 | `agent.output_style` | Agent | 回复怎么写，往系统提示追加一段文字。见[输出风格](output-styles.zh.md) | default | live |
@@ -42,7 +43,7 @@ openprogram config set ui.web_port 8101
 | `search` | `{default_provider}` | `openprogram/setup.py` |
 | `memory` | `{backend, writer: {model}}`，见上表 | `openprogram/config_schema.py`、`openprogram/memory/` |
 | `tools` | `{disabled: [工具名, ...]}` | `openprogram/setup.py`、`openprogram/config_schema.py` |
-| `sandbox` | `{mode, writable_roots, deny_read, deny_write, network, pass_env, unavailable_policy}`，见上表 | `openprogram/sandbox/__init__.py`、`openprogram/config_schema.py` |
+| `sandbox` | `{mode, writable_roots, deny_read, deny_write, network, pass_env, apply_in_bypass, unavailable_policy}`，见上表 | `openprogram/sandbox/__init__.py`、`openprogram/config_schema.py` |
 | `default_provider` | 默认 LLM provider（setup 向导写入） | `openprogram/setup.py` |
 | `default_model` | 默认模型（setup 向导写入） | `openprogram/setup.py` |
 | `default_workdir` | agent 的默认工作目录 | `openprogram/paths.py` |

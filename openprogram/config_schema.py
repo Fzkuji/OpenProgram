@@ -832,6 +832,16 @@ SETTINGS: list[SettingSpec] = [
              "variables here.",
     ),
     SettingSpec(
+        key="sandbox.apply_in_bypass", path=("sandbox", "apply_in_bypass"),
+        group="Sandbox", label="Keep sandbox in bypass mode", widget="toggle",
+        apply=APPLY_LIVE, default=False,
+        help="Off (default): bypass permissions means full access — the "
+             "configurable sandbox limits (blocked read/write paths, "
+             "network) do not apply, matching Claude Code's "
+             "--dangerously-skip-permissions. On: those limits stay "
+             "enforced even in bypass mode.",
+    ),
+    SettingSpec(
         key="sandbox.unavailable_policy", path=("sandbox", "unavailable_policy"),
         group="Sandbox", label="When the sandbox cannot run", widget="enum",
         apply=APPLY_LIVE, default="refuse",

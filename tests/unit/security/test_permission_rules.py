@@ -682,8 +682,42 @@ def test_sandbox_denial_emits_event_and_retries_under_escalated_policy(monkeypat
         {"command": "cat /outside/file"},
     ]
     assert len(approvals) == 1
-    assert escalated == [True]
+    # bypass 分支本身包一层 escalated_policy，批准后的重试再包一层。
+    assert escalated == [True, True]
     assert events[0]["type"] == "sandbox.violation"
+
+
+def test_bypass_runs_under_escalated_policy_by_default(monkeypatch):
+    from openprogram.providers.types import TextContent
+    from openprogram.sandbox import resolve_policy
+
+    seen = []
+
+    async def _exec(call_id, args, cancel, on_update):
+        seen.append(resolve_policy(required=True))
+        return AgentToolResult(content=[TextContent(text="ok")])
+
+    req = TurnRequest(
+        session_id="s", user_text="", agent_id="main", source="web",
+        permission_mode="bypass",
+    )
+    _ensure_test_authority(req)
+    tool = AgentTool(
+        name="bash", description="", parameters={}, label="bash", execute=_exec,
+    )
+    wrapped = _approval.wrap_with_approval(tool, req, on_event=lambda _e: None)
+
+    # 默认：bypass 在 escalated_policy 作用域内执行，deny_read 放开。
+    monkeypatch.setattr("openprogram.sandbox.apply_in_bypass", lambda: False)
+    asyncio.run(wrapped.execute("c", {"command": "true"}, None, None))
+    assert seen[-1].deny_read == ()
+    assert seen[-1].network is True
+
+    # apply_in_bypass=true：保留已配置沙箱，deny_read 不放开。
+    monkeypatch.setattr("openprogram.sandbox.apply_in_bypass", lambda: True)
+    asyncio.run(wrapped.execute("c", {"command": "true"}, None, None))
+    assert seen[-1].deny_read != ()
+    assert seen[-1].network is False
 
 
 def test_ordinary_nonzero_tool_result_does_not_trigger_sandbox_approval(monkeypatch):

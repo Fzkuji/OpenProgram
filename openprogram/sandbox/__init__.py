@@ -368,6 +368,16 @@ def _applications_root() -> str:
     return applications_root()
 
 
+def apply_in_bypass() -> bool:
+    """Whether the configurable sandbox limits still apply under bypass.
+
+    Default False: bypass means full access, matching Claude Code's
+    ``--dangerously-skip-permissions``. Opt in via ``sandbox.apply_in_bypass``
+    to keep deny_read/deny_write/network enforcement even in bypass mode.
+    """
+    return bool(_config_section().get("apply_in_bypass") or False)
+
+
 def unavailable_policy() -> str:
     v = str(_config_section().get("unavailable_policy") or UNAVAILABLE_POLICY_REFUSE)
     return v if v in UNAVAILABLE_POLICY else UNAVAILABLE_POLICY_REFUSE
