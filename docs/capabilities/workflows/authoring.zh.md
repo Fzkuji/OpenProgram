@@ -83,6 +83,8 @@ openprogram workflows validate ./weekly_report --json
 
 该命令检查目录边界、metadata、必需文件、Python 语法、顶层语句、import、装饰器、入口签名、helper 和 re-export。它是只读操作：不会初始化 Git、写文件、import package 或执行测试。
 
+Python 生成的 `__pycache__` 目录会被忽略，因此 package 在 import 后仍可校验；其他文件仍遵守 package 路径合同，校验过程不会删除缓存文件。
+
 成功的 JSON 包含 `ok`、`workflow_id`、规范化 metadata、校验后的 Python 文件列表和 `executed_tests: false`。非法 package 退出码为 1，并返回 `error_type` 与 `error`。
 
 ## 当前接入边界

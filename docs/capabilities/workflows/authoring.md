@@ -83,6 +83,8 @@ openprogram workflows validate ./weekly_report --json
 
 The command checks the directory boundary, metadata, required files, Python syntax, top-level statements, imports, decorators, entry-point signature, helper presence, and re-export. It is read-only: it does not initialize Git, write files, import the package, or execute its tests.
 
+Python-generated `__pycache__` directories are ignored so a package remains valid after import. Other files still follow the package path contract; validation does not delete cache files.
+
 A successful JSON result includes `ok`, `workflow_id`, normalized metadata, the validated Python file list, and `executed_tests: false`. An invalid package exits with status 1 and reports `error_type` and `error`.
 
 ## Current integration boundary

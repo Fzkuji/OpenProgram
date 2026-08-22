@@ -1125,11 +1125,106 @@ def test_local_app_refresh_removes_stale_package_layout_before_install() -> None
 
     cleanup = refresh.index('remove_stale_package_tree "$local_python"')
     install = refresh.index('"$local_python" -m pip install')
+    local_check = refresh.index('validate_stale_package_tree "$local_python"')
+    app_check = refresh.index('validate_stale_package_tree "$app_python"')
 
-    assert cleanup < install
-    assert 'for package_name in ("openprogram", "openprogram_server")' in refresh
-    assert "package.parent != site_packages" in refresh
-    assert "shutil.rmtree(package)" in refresh
+    assert local_check < app_check < cleanup < install
+    assert "remove-stale-openprogram-packages.py" in refresh
+
+
+@pytest.mark.parametrize("outside_site_packages", [False, True])
+def test_stale_package_cleanup_rejects_symlinks_before_deleting(
+    tmp_path: Path,
+    outside_site_packages: bool,
+) -> None:
+    helper = runpy.run_path(
+        str(ROOT / "scripts/release/remove-stale-openprogram-packages.py")
+    )
+    remove = helper["remove_stale_package_trees"]
+    site_packages = tmp_path / "site-packages"
+    site_packages.mkdir()
+    for name in ("openprogram", "openprogram_server"):
+        package = site_packages / name
+        package.mkdir()
+        (package / "owned.py").write_text("owned\n", encoding="utf-8")
+    unrelated = (
+        tmp_path / "external_pkg"
+        if outside_site_packages
+        else site_packages / "unrelated_pkg"
+    )
+    unrelated.mkdir()
+    sentinel = unrelated / "keep.txt"
+    sentinel.write_text("keep\n", encoding="utf-8")
+    (site_packages / "openprogram_cli").symlink_to(
+        unrelated,
+        target_is_directory=True,
+    )
+
+    with pytest.raises(RuntimeError, match="symlinked package"):
+        remove(site_packages)
+
+    assert sentinel.read_text(encoding="utf-8") == "keep\n"
+    assert (site_packages / "openprogram" / "owned.py").is_file()
+    assert (site_packages / "openprogram_server" / "owned.py").is_file()
+
+
+def test_stale_package_cleanup_removes_only_three_owned_directories(
+    tmp_path: Path,
+) -> None:
+    helper = runpy.run_path(
+        str(ROOT / "scripts/release/remove-stale-openprogram-packages.py")
+    )
+    remove = helper["remove_stale_package_trees"]
+    site_packages = tmp_path / "site-packages"
+    site_packages.mkdir()
+    for name in ("openprogram", "openprogram_server", "openprogram_cli"):
+        package = site_packages / name
+        package.mkdir()
+        (package / "owned.py").write_text("owned\n", encoding="utf-8")
+    unrelated = site_packages / "unrelated_pkg"
+    unrelated.mkdir()
+    sentinel = unrelated / "keep.txt"
+    sentinel.write_text("keep\n", encoding="utf-8")
+
+    remove(site_packages)
+
+    assert not (site_packages / "openprogram").exists()
+    assert not (site_packages / "openprogram_server").exists()
+    assert not (site_packages / "openprogram_cli").exists()
+    assert sentinel.read_text(encoding="utf-8") == "keep\n"
+
+
+def test_stale_package_preflight_checks_both_runtimes_before_deleting(
+    tmp_path: Path,
+) -> None:
+    helper = runpy.run_path(
+        str(ROOT / "scripts/release/remove-stale-openprogram-packages.py")
+    )
+    validate = helper["validate_stale_package_trees"]
+    local_site = tmp_path / "local-site"
+    app_site = tmp_path / "app-site"
+    local_site.mkdir()
+    app_site.mkdir()
+    for name in ("openprogram", "openprogram_server", "openprogram_cli"):
+        package = local_site / name
+        package.mkdir()
+        (package / "owned.py").write_text("owned\n", encoding="utf-8")
+    for name in ("openprogram", "openprogram_server"):
+        (app_site / name).mkdir()
+    external = tmp_path / "external-cli"
+    external.mkdir()
+    sentinel = external / "keep.txt"
+    sentinel.write_text("keep\n", encoding="utf-8")
+    (app_site / "openprogram_cli").symlink_to(external, target_is_directory=True)
+
+    validate(local_site)
+    with pytest.raises(RuntimeError, match="symlinked package"):
+        validate(app_site)
+
+    assert all((local_site / name / "owned.py").is_file() for name in (
+        "openprogram", "openprogram_server", "openprogram_cli",
+    ))
+    assert sentinel.read_text(encoding="utf-8") == "keep\n"
 
 
 def test_local_app_refresh_rejects_a_different_product_version_before_build(

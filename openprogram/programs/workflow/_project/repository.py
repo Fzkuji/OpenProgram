@@ -333,6 +333,15 @@ def _read_repository_candidate(
             continue
         if path.is_symlink():
             raise InvalidWorkflow("workflow project files must not be symlinks")
+        if "__pycache__" in parts:
+            if (
+                (path.name == "__pycache__" and path.is_dir())
+                or (path.is_file() and path.suffix == ".pyc")
+            ):
+                continue
+            raise InvalidWorkflow(
+                "workflow project __pycache__ may contain only bytecode files"
+            )
         if not path.is_file():
             continue
         relative = path.relative_to(directory).as_posix()

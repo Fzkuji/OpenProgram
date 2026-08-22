@@ -98,6 +98,59 @@ def test_directory_validation_uses_the_package_contract_without_writing(
     assert not (project / ".git").exists()
 
 
+def test_directory_validation_ignores_python_bytecode_cache(tmp_path: Path) -> None:
+    project = _write_project(tmp_path)
+    cache = project / "__pycache__"
+    nested_cache = project / "steps" / "__pycache__"
+    cache.mkdir()
+    nested_cache.mkdir()
+    (cache / "workflow.cpython-312.pyc").write_bytes(b"cached bytecode")
+    (nested_cache / "work.cpython-312.pyc").write_bytes(b"cached bytecode")
+    before = _tree_bytes(project)
+
+    report = validation.validate_workflow_directory(project)
+
+    assert report["ok"] is True
+    assert report["workflow_id"] == "demo_workflow"
+    assert not any("__pycache__" in path for path in report["files"])
+    assert _tree_bytes(project) == before
+
+
+def test_directory_validation_rejects_source_hidden_in_bytecode_cache(
+    tmp_path: Path,
+) -> None:
+    project = _write_project(tmp_path)
+    cache = project / "__pycache__"
+    cache.mkdir()
+    (cache / "hidden.py").write_text("def hidden():\n    return True\n", encoding="utf-8")
+
+    with pytest.raises(validation.InvalidWorkflow, match="only bytecode"):
+        validation.validate_workflow_directory(project)
+
+
+def test_directory_validation_rejects_symlinked_bytecode_cache(
+    tmp_path: Path,
+) -> None:
+    project = _write_project(tmp_path)
+    external = tmp_path / "external-cache"
+    external.mkdir()
+    (external / "hidden.py").write_text("def hidden():\n    return True\n", encoding="utf-8")
+    (project / "__pycache__").symlink_to(external, target_is_directory=True)
+
+    with pytest.raises(validation.InvalidWorkflow, match="must not be symlinks"):
+        validation.validate_workflow_directory(project)
+
+
+def test_directory_validation_rejects_nested_bytecode_cache_directory(
+    tmp_path: Path,
+) -> None:
+    project = _write_project(tmp_path)
+    (project / "__pycache__" / "nested").mkdir(parents=True)
+
+    with pytest.raises(validation.InvalidWorkflow, match="only bytecode"):
+        validation.validate_workflow_directory(project)
+
+
 def test_workflows_validate_cli_supports_json(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
