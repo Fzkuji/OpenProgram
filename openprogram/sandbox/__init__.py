@@ -128,6 +128,9 @@ class SandboxPolicy:
     network: bool = False
     pass_env: tuple[str, ...] = ()
     allow_read: tuple[str, ...] = ()
+    # Escalated executions may inspect host processes (ps / lsof / top).
+    # Default sandboxed runs stay same-sandbox only.
+    host_process_info: bool = False
 
 
 _NO_PROCESS_POLICY = object()
@@ -257,6 +260,7 @@ def escalated_policy():
         deny_write=(),
         network=True,
         pass_env=(),
+        host_process_info=True,
     ))
     token = _execution_policy_override.set(policy)
     try:
@@ -733,7 +737,10 @@ def _seatbelt_profile(cwd: str, policy: SandboxPolicy) -> str:
         "(allow process-fork)",
         # Same-sandbox only: without these the opened-up process-exec
         # would let a child signal and inspect processes on the host.
-        "(allow process-info* (target same-sandbox))",
+        # Escalated policy re-opens host process INSPECTION (ps/lsof);
+        # signalling stays same-sandbox in every mode.
+        ("(allow process-info*)" if policy.host_process_info
+         else "(allow process-info* (target same-sandbox))"),
         "(allow signal (target same-sandbox))",
         "(allow ipc-posix-sem)",   # python multiprocessing
         "(allow ipc-posix-shm)",
@@ -782,8 +789,6 @@ def _bwrap_args(command: str, cwd: str, policy: SandboxPolicy) -> list[str]:
         "bwrap",
         "--new-session",       # bubblewrap documents this as the TIOCSTI guard
         "--die-with-parent",
-        "--unshare-pid",       # else /proc/<pid>/environ of host processes is
-                               # readable and any same-uid process is killable
         "--unshare-ipc",
         "--unshare-uts",
         "--cap-drop", "ALL",
@@ -791,6 +796,11 @@ def _bwrap_args(command: str, cwd: str, policy: SandboxPolicy) -> list[str]:
         "--proc", "/proc",
         "--dev", "/dev",
     ]
+    if not policy.host_process_info:
+        # else /proc/<pid>/environ of host processes is readable and any
+        # same-uid process is killable. Escalated policy trades that for
+        # working ps/lsof — consistent with "hard-constraints-only".
+        args.insert(3, "--unshare-pid")
     if not policy.network:
         args.append("--unshare-net")
     # tmpfs first. The other order lets `--tmpfs /tmp` cover a working

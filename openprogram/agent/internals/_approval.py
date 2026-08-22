@@ -282,7 +282,9 @@ def wrap_with_approval(
         )
         return value if isinstance(value, dict) else None
 
-    async def _run_original(call_id, args, cancel, on_update):
+    async def _run_original(
+        call_id, args, cancel, on_update, *, already_escalated=False,
+    ):
         result = await orig_execute(call_id, args, cancel, on_update)
         sandbox = _sandbox_metadata(result)
         if not sandbox or sandbox.get("kind") != "denied":
@@ -301,6 +303,13 @@ def wrap_with_approval(
             on_event(event)
         except Exception:
             pass
+
+        # Already ran with every configurable restriction lifted (bypass,
+        # or an approved escalation retry). What blocked it is the
+        # non-configurable hard floor — an "escalated retry" would rerun
+        # the identical policy, so asking is noise. Return the denial.
+        if already_escalated:
+            return result
 
         if not _approval_authorized():
             return _denied(
@@ -428,7 +437,9 @@ def wrap_with_approval(
             if apply_in_bypass():
                 return await _run_original(call_id, args, cancel, on_update)
             with escalated_policy():
-                return await _run_original(call_id, args, cancel, on_update)
+                return await _run_original(
+                    call_id, args, cancel, on_update, already_escalated=True,
+                )
 
         # ④ 规则层 allow —— bypass 之后
         if verdict == "allow":

@@ -629,14 +629,8 @@ def test_mcp_source_denies_approval_without_registering_question(
     assert events == []
 
 
-def test_sandbox_denial_emits_event_and_retries_under_escalated_policy(monkeypatch):
-    from contextlib import contextmanager
+def _denied_then_ok_exec(calls):
     from openprogram.providers.types import TextContent
-
-    calls = []
-    approvals = []
-    events = []
-    escalated = []
 
     async def _exec(call_id, args, cancel, on_update):
         calls.append(dict(args))
@@ -652,6 +646,50 @@ def test_sandbox_denial_emits_event_and_retries_under_escalated_policy(monkeypat
             content=[TextContent(text="exit_code=0")], details={"ok": True}
         )
 
+    return _exec
+
+
+def test_sandbox_denial_in_bypass_returns_error_without_asking(monkeypatch):
+    """bypass 已在 escalated_policy 下执行；剩下的拦截是硬约束，
+    再弹"升级重试"审批毫无意义——直接把拒绝结果返回给模型。"""
+    calls = []
+    approvals = []
+    events = []
+
+    async def _approve(**kwargs):
+        approvals.append(kwargs)
+        return True, None, "once"
+
+    req = TurnRequest(
+        session_id="s", user_text="", agent_id="main", source="web",
+        permission_mode="bypass",
+    )
+    _ensure_test_authority(req)
+    tool = AgentTool(
+        name="bash", description="", parameters={}, label="bash",
+        execute=_denied_then_ok_exec(calls),
+    )
+    wrapped = _approval.wrap_with_approval(tool, req, on_event=events.append)
+    monkeypatch.setattr(_approval, "await_user_approval", _approve)
+    result = asyncio.run(wrapped.execute(
+        "c", {"command": "ps -p 1"}, None, None
+    ))
+
+    assert result.is_error is True
+    assert calls == [{"command": "ps -p 1"}]
+    assert approvals == []
+    # 观测事件仍然要发，只是不再打断用户。
+    assert events[0]["type"] == "sandbox.violation"
+
+
+def test_sandbox_denial_emits_event_and_retries_under_escalated_policy(monkeypatch):
+    from contextlib import contextmanager
+
+    calls = []
+    approvals = []
+    events = []
+    escalated = []
+
     async def _approve(**kwargs):
         approvals.append(kwargs)
         return True, None, "once"
@@ -663,11 +701,13 @@ def test_sandbox_denial_emits_event_and_retries_under_escalated_policy(monkeypat
 
     req = TurnRequest(
         session_id="s", user_text="", agent_id="main", source="web",
-        permission_mode="bypass",
+        permission_mode="ask",
+        permission_rules=PermissionRules(allow=["bash"]),
     )
     _ensure_test_authority(req)
     tool = AgentTool(
-        name="bash", description="", parameters={}, label="bash", execute=_exec,
+        name="bash", description="", parameters={}, label="bash",
+        execute=_denied_then_ok_exec(calls),
     )
     wrapped = _approval.wrap_with_approval(tool, req, on_event=events.append)
     monkeypatch.setattr(_approval, "await_user_approval", _approve)
@@ -682,8 +722,8 @@ def test_sandbox_denial_emits_event_and_retries_under_escalated_policy(monkeypat
         {"command": "cat /outside/file"},
     ]
     assert len(approvals) == 1
-    # bypass 分支本身包一层 escalated_policy，批准后的重试再包一层。
-    assert escalated == [True, True]
+    # 非 bypass：首跑在配置沙箱内，批准后的重试包一层 escalated_policy。
+    assert escalated == [True]
     assert events[0]["type"] == "sandbox.violation"
 
 

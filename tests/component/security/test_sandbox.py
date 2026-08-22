@@ -701,3 +701,22 @@ class TestSeatbeltEndToEnd:
             r = self._run(f"echo pwned > {target}", evil)
             assert r.returncode != 0
             assert not os.path.exists(target)
+
+
+def test_process_info_same_sandbox_by_default_host_wide_when_escalated():
+    """默认 profile 只允许查看同沙箱进程；escalated_policy 放开主机
+    进程信息（ps/lsof 可用），signal 始终限制在同沙箱内。"""
+    default_profile = _seatbelt_profile("/w", SandboxPolicy())
+    assert "(allow process-info* (target same-sandbox))" in default_profile
+
+    with sandbox.escalated_policy():
+        escalated = sandbox.resolve_policy(required=True)
+    assert escalated.host_process_info is True
+    escalated_profile = _seatbelt_profile("/w", escalated)
+    assert "(allow process-info*)\n" in escalated_profile + "\n"
+    assert "(allow process-info* (target same-sandbox))" not in escalated_profile
+    assert "(allow signal (target same-sandbox))" in escalated_profile
+
+    # Linux 等价物：默认 --unshare-pid 隐藏主机进程，escalated 不再隐藏。
+    assert "--unshare-pid" in _bwrap_args("true", "/w", SandboxPolicy())
+    assert "--unshare-pid" not in _bwrap_args("true", "/w", escalated)
