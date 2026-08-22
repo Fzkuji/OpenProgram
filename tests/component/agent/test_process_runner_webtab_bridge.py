@@ -74,6 +74,54 @@ def test_parent_webtab_bridge_result_crosses_process_queue(monkeypatch):
         replies.join_thread()
 
 
+def test_parent_webtab_bridge_forwards_open_to_request_open_tab(monkeypatch):
+    from openprogram.agent import process_runner
+    from openprogram.webui.ws_actions import webtab
+
+    seen = []
+    monkeypatch.setattr(
+        webtab,
+        "request_open_tab",
+        lambda url, timeout=15.0: seen.append((url, timeout)) or {
+            "ok": True, "binding_id": "surface_from_open",
+        },
+    )
+    replies = Queue()
+    process_runner._bridge_webtab_to_parent({
+        "req_id": "open",
+        "command": {"op": "open", "url": "https://example.com/"},
+        "timeout": 2,
+    }, replies)
+
+    assert replies.get(timeout=1)["result"] == {
+        "ok": True, "binding_id": "surface_from_open",
+    }
+    assert seen == [("https://example.com/", 2)]
+
+
+def test_parent_webtab_bridge_forwards_close_binding(monkeypatch):
+    from openprogram.agent import process_runner
+    from openprogram.webui.ws_actions import webtab
+
+    seen = []
+    monkeypatch.setattr(
+        webtab,
+        "request_close_tab",
+        lambda binding_id, timeout=5.0: seen.append((binding_id, timeout)) or {
+            "ok": True,
+        },
+    )
+    replies = Queue()
+    process_runner._bridge_webtab_to_parent({
+        "req_id": "close",
+        "command": {"op": "close", "binding_id": "surface-1"},
+        "timeout": 1,
+    }, replies)
+
+    assert replies.get(timeout=1)["result"] == {"ok": True}
+    assert seen == [("surface-1", 1)]
+
+
 def test_parent_webtab_bridge_forwards_expected_binding_revisions(monkeypatch):
     from openprogram.agent import process_runner
     from openprogram.webui.ws_actions import webtab

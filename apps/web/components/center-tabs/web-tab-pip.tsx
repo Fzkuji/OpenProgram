@@ -14,7 +14,9 @@ import { useTranslation } from "@/lib/i18n";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   clampPipRect,
+  getSnapshot,
   pipCoversCenter,
+  setSnapshot,
   useWebTabPip,
   type WebTabPipRect,
 } from "@/lib/state/web-tab-pip-store";
@@ -23,7 +25,6 @@ import { isWebTabOccluded, measureWebTabBounds } from "@/lib/web-tab-bounds";
 import styles from "./center-tabs.module.css";
 
 const BOUNDS_THROTTLE_MS = 100;
-const pipSnapshots = new Map<string, string>();
 
 type PipDrag = {
   kind: "move" | "resize";
@@ -70,7 +71,9 @@ function measuredRect(el: HTMLElement): WebTabPipRect {
 export function WebTabPip() {
   const { text } = useTranslation();
   const tabId = useWebTabPip((s) => s.tabId);
+  const ownerTabId = useWebTabPip((s) => s.ownerTabId);
   const hide = useWebTabPip((s) => s.hide);
+  const end = useWebTabPip((s) => s.end);
   const rect = useWebTabPip((s) => s.rect);
   const setRect = useWebTabPip((s) => s.setRect);
   const tabs = useCenterTabs((s) => s.tabs);
@@ -79,7 +82,8 @@ export function WebTabPip() {
   const tab = tabId
     ? tabs.find((item) => item.id === tabId && item.kind === "web")
     : undefined;
-  const visible = !!tabId && pipCoversCenter(tabId, { tabs, activeId, groups });
+  const center = { tabs, activeId, groups };
+  const live = !!tabId && !!ownerTabId && pipCoversCenter(tabId, ownerTabId, center);
   const rootRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<PipDrag | null>(null);
@@ -93,17 +97,13 @@ export function WebTabPip() {
   const bridge = desktopBridge();
   const url = tab?.url || (tabId?.startsWith("w:") ? tabId.slice(2) : "");
 
-  useEffect(() => {
-    if (tabId && !visible) hide();
-  }, [tabId, visible, hide, activeId, groups, tabs]);
-
   useEffect(() => () => {
     if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
   }, []);
 
   useEffect(() => {
     const el = rootRef.current;
-    if (!el || !visible) return;
+    if (!el || !live) return;
     const parent = el.offsetParent;
     if (!(parent instanceof HTMLElement)) return;
     const reclamp = () => {
@@ -122,10 +122,10 @@ export function WebTabPip() {
     const chat = parent.querySelector(".center-pane-chat");
     if (chat instanceof HTMLElement) ro.observe(chat);
     return () => ro.disconnect();
-  }, [visible, setRect]);
+  }, [live, setRect]);
 
   useEffect(() => {
-    if (!bridge || !tabId || !visible || !url) return;
+    if (!bridge || !tabId || !live || !url) return;
     ensureWebView(bridge, tabId, url);
     const el = bodyRef.current;
     if (!el) return;
@@ -179,6 +179,9 @@ export function WebTabPip() {
     window.addEventListener("resize", onWindowChange);
     window.addEventListener("scroll", onWindowChange, true);
     return () => {
+      void bridge.webTab.capture?.(tabId).then((d) => {
+        if (d) setSnapshot(tabId, d);
+      });
       reportRef.current = () => {};
       window.clearTimeout(throttleRef.current);
       ro.disconnect();
@@ -189,10 +192,10 @@ export function WebTabPip() {
       bridge.webTab.setPipZoom?.(tabId, null);
       setWebTabReady(tabId, false);
     };
-  }, [bridge, tabId, url, visible]);
+  }, [bridge, tabId, url, live]);
 
   useEffect(() => {
-    if (!bridge || !tabId || !visible) return;
+    if (!bridge || !tabId || !live) return;
     return bridge.webTab.onState((state) => {
       if (state.id !== tabId) return;
       if (state.url) useCenterTabs.getState().updateWebTab(tabId, { url: state.url });
@@ -201,9 +204,19 @@ export function WebTabPip() {
         useCenterTabs.getState().updateWebTab(tabId, { faviconUrl: state.faviconUrl });
       }
     });
-  }, [bridge, tabId, visible]);
+  }, [bridge, tabId, live]);
 
-  if (!tabId || !tab || !visible) return null;
+  const placed = !!rect;
+  const pipStyle = placed ? {
+    left: rect.x,
+    top: rect.y,
+    width: rect.width,
+    height: rect.height,
+    right: "auto",
+    bottom: "auto",
+  } : undefined;
+
+  if (!tabId || !tab || !live) return null;
 
   const title = tab.title || url;
   const expandSplit = text("Split with chat", "展开为分屏");
@@ -278,12 +291,12 @@ export function WebTabPip() {
     el.style.willChange = kind === "move" ? "transform" : "left, top, width, height";
     if (bridge && tabId) {
       const gen = ++captureGenRef.current;
-      showShot(pipSnapshots.get(tabId) ?? null);
+      showShot(getSnapshot(tabId) ?? null);
       const capture = bridge.webTab.capture;
       if (typeof capture === "function") {
         void capture(tabId).then((dataUrl) => {
           if (!dataUrl) return;
-          pipSnapshots.set(tabId, dataUrl);
+          setSnapshot(tabId, dataUrl);
           if (captureGenRef.current === gen && dragRef.current) showShot(dataUrl);
         });
       }
@@ -336,22 +349,13 @@ export function WebTabPip() {
     showShot(null);
   };
 
-  const placed = !!rect;
-
   return (
     <div
       ref={rootRef}
       className={styles.webPip}
       role="complementary"
       aria-label={title}
-      style={placed ? {
-        left: rect.x,
-        top: rect.y,
-        width: rect.width,
-        height: rect.height,
-        right: "auto",
-        bottom: "auto",
-      } : undefined}
+      style={pipStyle}
     >
       <div
         className={styles.webPipChrome}
@@ -365,7 +369,10 @@ export function WebTabPip() {
           type="button"
           className={styles.webToolbarBtn}
           onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => useCenterTabs.getState().setSplitWebTab(tabId)}
+          onClick={() => {
+            end();
+            useCenterTabs.getState().setSplitWebTab(tabId);
+          }}
           title={expandSplit}
           aria-label={expandSplit}
         >
@@ -375,7 +382,10 @@ export function WebTabPip() {
           type="button"
           className={styles.webToolbarBtn}
           onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => useCenterTabs.getState().setActive(tabId)}
+          onClick={() => {
+            end();
+            useCenterTabs.getState().setActive(tabId);
+          }}
           title={takeOver}
           aria-label={takeOver}
         >

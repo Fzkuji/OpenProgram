@@ -2,7 +2,7 @@
 
 /**
  * Running panel — global "what is executing right now" view for the
- * right sidebar. Polls GET /api/running (foreground turns, background
+ * right sidebar. Polls GET /api/running (in-flight tool calls, background
  * jobs across all sessions, `process`-tool shells) and renders each
  * with a live elapsed timer. Clicking a row with a session jumps to
  * that session's tab.
@@ -14,7 +14,7 @@ import { useSessionStore } from "@/lib/session-store";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 
 type RunningItem = {
-  kind: "turn" | "job" | "process";
+  kind: "tool" | "job" | "process";
   id: string;
   session_id: string | null;
   label: string;
@@ -82,8 +82,8 @@ export function RunningPanel({ active }: { active: boolean }) {
   };
 
   const kindLabel = (kind: RunningItem["kind"]) =>
-    kind === "turn"
-      ? text("Turn", "对话")
+    kind === "tool"
+      ? text("Tool", "工具")
       : kind === "job"
         ? text("Job", "任务")
         : text("Process", "进程");

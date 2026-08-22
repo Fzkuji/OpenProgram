@@ -21,7 +21,13 @@ import {
   useCenterTabs,
   validateTransferredTabs,
 } from "@/lib/state/center-tabs-store";
-import { peekWebTabPipId, useWebTabPip } from "@/lib/state/web-tab-pip-store";
+import {
+  peekLiveWebTabPipId,
+  peekWebTabPipId,
+  peekWebTabPipOwnerId,
+  pipOpenMustFork,
+  useWebTabPip,
+} from "@/lib/state/web-tab-pip-store";
 import {
   centerTabStripEntries,
   findCenterTabGroup,
@@ -346,7 +352,7 @@ export function visibleWebTab() {
   }
   const active = state.tabs.find((tab) => tab.id === state.activeId);
   if (active?.kind === "web" && isWebTabReady(active.id)) return active;
-  const pipId = peekWebTabPipId();
+  const pipId = peekLiveWebTabPipId(state);
   if (pipId && isWebTabReady(pipId)) {
     return state.tabs.find((tab) => tab.id === pipId && tab.kind === "web") ?? null;
   }
@@ -369,7 +375,7 @@ function visibleWebTabById(tabId: string) {
   if (state.activeId && state.splitWebTabId) {
     visibleIds.add(state.splitWebTabId);
   }
-  const pipId = peekWebTabPipId();
+  const pipId = peekLiveWebTabPipId(state);
   if (pipId) visibleIds.add(pipId);
   return visibleIds.has(tabId) && isWebTabActuallyVisible(tabId)
     ? state.tabs.find((tab) => tab.id === tabId && tab.kind === "web") ?? null
@@ -662,7 +668,7 @@ export function surfaceRefForChat(
   }
   if (!web && state.activeId === chat.id) {
     const pipId = peekWebTabPipId();
-    if (pipId) {
+    if (pipId && peekWebTabPipOwnerId() === chat.id) {
       web = state.tabs.find((tab) => tab.id === pipId && tab.kind === "web");
     }
   }
@@ -694,6 +700,20 @@ export function restorePriorActiveTabAfterFailedWebOpen(
   if (priorActiveId && openedWebTabId && state.activeId === openedWebTabId) {
     state.setActive(priorActiveId);
   }
+}
+
+export function closeAgentWebTabResult(
+  tabId: string | undefined,
+  tabs: readonly { id: string; kind: string }[],
+  groups: readonly { memberIds: readonly string[] }[],
+): { ok: true } | { ok: false; reason: "tab_not_found" | "tab_in_user_layout" } {
+  if (!tabId || !tabs.some((tab) => tab.id === tabId && tab.kind === "web")) {
+    return { ok: false, reason: "tab_not_found" };
+  }
+  if (groups.some((group) => group.memberIds.includes(tabId))) {
+    return { ok: false, reason: "tab_in_user_layout" };
+  }
+  return { ok: true };
 }
 
 function sendWebTabResult(
@@ -751,9 +771,24 @@ export function installDesktopMenuHandlers(): void {
     const d = detail.data as
       | { op?: string; url?: string; window_id?: string; tab_id?: string; req_id?: string; expected_geometry_revision?: number }
       | undefined;
-    if (!d?.req_id || !["open", "active", "activate", "preview", "list", "resolve"].includes(d.op || "")) return;
+    if (!d?.req_id || !["open", "active", "activate", "preview", "list", "resolve", "close"].includes(d.op || "")) return;
     const ws = getSocket();
     if (ws?.readyState !== WebSocket.OPEN) return;
+
+    if (d.op === "close") {
+      const state = useCenterTabs.getState();
+      const closed = closeAgentWebTabResult(d.tab_id, state.tabs, state.groups);
+      if (closed.ok) state.closeTab(d.tab_id!);
+      ws.send(JSON.stringify({
+        action: "webtab_result",
+        req_id: d.req_id,
+        ok: closed.ok,
+        ...(closed.ok
+          ? { tab_id: d.tab_id }
+          : { error: closed.reason, reason_code: closed.reason }),
+      }));
+      return;
+    }
 
     if (d.op === "list") {
       if (d.window_id && d.window_id !== bridge.windowId) {
@@ -880,9 +915,11 @@ export function installDesktopMenuHandlers(): void {
       let id: string | null;
       if (split) {
         id = state.openWebTabInSplit(d.url);
-      } else if (usePip) {
-        id = state.ensureWebTab(d.url);
-        useWebTabPip.getState().show(id);
+      } else if (usePip && active) {
+        id = pipOpenMustFork(d.url, active.id)
+          ? state.ensureExclusiveWebTab(d.url)
+          : state.ensureWebTab(d.url);
+        useWebTabPip.getState().show(id, active.id);
       } else {
         state.openWebTab(d.url);
         id = useCenterTabs.getState().activeId;

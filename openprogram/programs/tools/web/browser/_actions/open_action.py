@@ -239,6 +239,8 @@ def _open_app_session(
         "is_app": True,
         "app_tab_id": reply.get("tab_id"),
         "app_target_id": target_id,
+        "app_binding_id": binding_id or reply.get("binding_id"),
+        "app_agent_opened": not binding_id and bool(url),
     }
     return (
         f"Opened browser session `{session_id}` "

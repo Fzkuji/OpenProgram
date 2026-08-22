@@ -3,535 +3,947 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Center Tabs 与复合分屏 Tab 设计</title>
+  <title>网页标签的呈现位置 — center · split · 会话 PiP</title>
   <style>
     :root {
       color-scheme: dark;
-      --bg: #151714;
-      --panel: #1d211d;
-      --panel-2: #232823;
-      --line: #3a4239;
-      --text: #e7ebe4;
-      --muted: #a8b0a5;
-      --accent: #85b882;
-      --accent-2: #d6a45e;
+      --bg: #141413;
+      --panel: #1f1f1e;
+      --lift: #252524;
+      --line: rgba(226, 225, 218, 0.18);
+      --line-strong: rgba(226, 225, 218, 0.32);
+      --text: #c3c2b7;
+      --bright: #f8f8f6;
+      --muted: #97958c;
+      --faint: #6b6a63;
+      --clay: #d97757;
+      --gold: #d19a66;
+      --ok: #4bd58a;
+      --ok-dim: rgba(75, 213, 138, 0.12);
+      --cyan: #3bc9db;
+      --bad: #e5534b;
+      --bad-dim: rgba(229, 83, 75, 0.12);
       --warn: #e0b463;
-      --bad: #df7777;
-      --code: #111410;
+      --warn-dim: rgba(224, 180, 99, 0.12);
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+      --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
     }
     * { box-sizing: border-box; }
     html { scroll-behavior: smooth; }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      * { transition: none !important; }
+    }
     body {
       margin: 0;
-      padding: 36px 24px 88px;
       background: var(--bg);
       color: var(--text);
-      font: 14px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+      font: 14.5px/1.65 var(--sans);
     }
-    .wrap { max-width: 1120px; margin: 0 auto; }
-    header { margin-bottom: 26px; }
-    h1 { margin: 0 0 7px; font-size: 27px; line-height: 1.25; }
-    h2 { margin: 40px 0 12px; color: var(--accent); font-size: 19px; }
-    h3 { margin: 24px 0 8px; color: var(--accent-2); font-size: 15px; }
-    p, li { max-width: 98ch; }
-    p { margin: 8px 0; color: var(--muted); }
-    ul, ol { margin: 8px 0; padding-left: 23px; color: var(--muted); }
-    li + li { margin-top: 5px; }
-    a { color: #72bed1; }
-    strong { color: var(--text); }
+    a { color: var(--cyan); }
+    a:focus-visible, button:focus-visible, [tabindex="0"]:focus-visible {
+      outline: 2px solid var(--gold);
+      outline-offset: 2px;
+    }
     code {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: #e6d7a8;
+      background: #111110;
       padding: 1px 5px;
       border-radius: 4px;
-      background: var(--code);
-      color: #d8d0a8;
-      font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
-    pre {
-      overflow: auto;
-      margin: 12px 0;
-      padding: 15px 17px;
-      border: 1px solid var(--line);
-      border-radius: 9px;
-      background: var(--code);
-      color: #dce4d9;
-      font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    .skip {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
     }
-    pre code { padding: 0; background: transparent; color: inherit; }
-    nav { display: flex; flex-wrap: wrap; gap: 7px; margin: 20px 0 28px; }
+    .skip:focus {
+      width: auto;
+      height: auto;
+      clip: auto;
+      left: 12px;
+      top: 8px;
+      padding: 8px 12px;
+      background: var(--clay);
+      color: #141413;
+      z-index: 9;
+    }
+    .shell {
+      display: grid;
+      grid-template-columns: 196px minmax(0, 1080px);
+      gap: 36px;
+      width: min(1320px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 40px 0 96px;
+    }
+    nav {
+      position: sticky;
+      top: 20px;
+      align-self: start;
+    }
+    nav .kicker {
+      color: var(--faint);
+      font: 600 10px/1.4 var(--mono);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
     nav a {
-      padding: 5px 9px;
-      border: 1px solid var(--line);
-      border-radius: 7px;
+      display: block;
+      padding: 6px 0 6px 12px;
+      border-left: 2px solid var(--line);
       color: var(--muted);
       text-decoration: none;
-      font-size: 12px;
+      font-size: 13px;
     }
+    nav a:hover { color: var(--bright); border-color: var(--gold); }
+    .mobile-toc-label {
+      display: none;
+      margin: 8px 0 6px;
+      color: var(--faint);
+      font: 600 10px/1.4 var(--mono);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .mobile-toc {
+      display: none;
+      width: 100%;
+      margin: 0 0 16px;
+      padding: 9px 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--bright);
+      font: inherit;
+    }
+    main { min-width: 0; }
+    header { margin-bottom: 28px; }
     .status {
-      display: inline-block;
-      padding: 4px 10px;
-      border: 1px solid var(--warn);
-      border-radius: 99px;
-      color: var(--warn);
-      font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      color: var(--ok);
+      font: 11px var(--mono);
     }
-    .card {
-      margin: 12px 0;
-      padding: 16px 18px;
+    .status i {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--ok);
+    }
+    h1 {
+      margin: 0 0 12px;
+      color: var(--bright);
+      font-size: clamp(26px, 3.4vw, 36px);
+      letter-spacing: -.03em;
+      line-height: 1.15;
+      font-weight: 650;
+    }
+    h1 small {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 15px;
+      font-weight: 500;
+      letter-spacing: 0;
+    }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 18px; }
+    .pill {
+      padding: 4px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 12px;
+      background: var(--panel);
+    }
+    .lede { max-width: 72ch; color: var(--text); }
+    .lede strong { color: var(--bright); }
+    section { margin-top: 56px; scroll-margin-top: 18px; }
+    h2 {
+      margin: 0 0 8px;
+      color: var(--bright);
+      font-size: 22px;
+      letter-spacing: -.02em;
+    }
+    h3 {
+      margin: 28px 0 8px;
+      color: var(--gold);
+      font-size: 15px;
+    }
+    p { margin: 0 0 12px; max-width: 78ch; }
+    ul, ol { margin: 0 0 12px; padding-left: 22px; max-width: 78ch; }
+    li + li { margin-top: 5px; }
+    .invariant {
+      margin: 18px 0 22px;
+      padding: 18px 20px;
+      border: 1px solid rgba(217, 119, 87, 0.45);
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(217, 119, 87, 0.12), rgba(217, 119, 87, 0.04));
+    }
+    .invariant p { color: var(--bright); margin: 0; font-size: 16px; line-height: 1.55; }
+    .invariant .why { margin-top: 10px; color: var(--text); font-size: 14px; }
+    .layers {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin: 18px 0;
+    }
+    .layer {
+      padding: 14px 14px 16px;
       border: 1px solid var(--line);
       border-radius: 10px;
       background: var(--panel);
     }
-    .decision { border-left: 4px solid var(--accent); }
-    .problem { border-left: 4px solid var(--bad); }
-    .table-wrap { overflow-x: auto; margin: 12px 0; }
-    table { width: 100%; border-collapse: collapse; background: var(--panel); font-size: 12.5px; }
-    th, td { padding: 10px 11px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
-    th { color: var(--text); background: var(--panel-2); }
-    td { color: var(--muted); }
-    .wireframe { margin: 15px 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--code); }
-    .strip { display: flex; gap: 7px; margin-bottom: 12px; overflow: hidden; }
-    .entry {
-      min-width: 112px;
-      padding: 7px 10px;
-      border: 1px solid #444b43;
-      border-radius: 8px;
-      color: var(--muted);
-      white-space: nowrap;
+    .layer b { display: block; color: var(--bright); margin-bottom: 6px; }
+    .layer span { color: var(--muted); font-size: 13px; }
+    .layer em {
+      display: block;
+      margin-top: 10px;
+      color: var(--gold);
+      font: 11px var(--mono);
+      font-style: normal;
     }
-    .entry.composite {
-      min-width: 280px;
+    figure { margin: 16px 0 8px; }
+    figcaption { margin-top: 8px; color: var(--muted); font-size: 12.5px; max-width: 86ch; }
+    .canvas {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      overflow-x: auto;
+    }
+    svg { display: block; max-width: 100%; height: auto; }
+    .scene-board {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      padding: 0;
-      overflow: hidden;
-      border-color: var(--accent);
-      background: #293027;
-      color: var(--text);
+      grid-template-columns: minmax(0, 1fr) 280px;
+      gap: 14px;
+      align-items: start;
     }
-    .member-cell { display: flex; gap: 7px; align-items: center; min-width: 0; padding: 7px 8px; }
-    .member-cell + .member-cell { border-left: 1px solid var(--line); }
-    .member-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    .panes { display: grid; grid-template-columns: 1fr 6px 1fr; min-height: 125px; }
-    .pane { padding: 20px; border: 1px solid var(--line); background: var(--panel); }
-    .pane:first-child { border-radius: 8px 0 0 8px; }
-    .pane:last-child { border-radius: 0 8px 8px 0; }
-    .divider { background: #4a5248; }
-    .flow { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; margin: 14px 0; }
-    .node { padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); }
-    .arrow { color: var(--accent); font-size: 18px; text-align: center; }
-    .warn { color: var(--warn); }
-    @media (max-width: 760px) {
-      body { padding: 24px 16px 64px; }
-      .flow { grid-template-columns: 1fr; }
-      .arrow { transform: rotate(90deg); }
-      .panes { grid-template-columns: 1fr; gap: 6px; }
-      .divider { height: 6px; }
-      .pane:first-child, .pane:last-child { border-radius: 8px; }
+    .scene-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 0 0 12px;
+    }
+    .scene-tabs button {
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--lift);
+      color: var(--muted);
+      font: 12.5px var(--sans);
+      cursor: pointer;
+    }
+    .scene-tabs button[aria-selected="true"] {
+      color: var(--bright);
+      border-color: var(--clay);
+      background: rgba(217, 119, 87, 0.16);
+    }
+    .mock-stage {
+      border: 1px solid var(--line-strong);
+      border-radius: 12px;
+      background: #111110;
+      overflow: hidden;
+    }
+    .mock-chrome {
+      display: flex;
+      gap: 6px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      background: #1a1a18;
+    }
+    .mock-tab {
+      padding: 3px 10px;
+      border: 1px solid transparent;
+      border-radius: 6px 6px 0 0;
+      color: var(--faint);
+      font-size: 12px;
+    }
+    .mock-tab.on {
+      color: var(--bright);
+      background: #111110;
+      border-color: var(--line-strong);
+    }
+    .mock-frame {
+      position: relative;
+      height: 248px;
+      overflow: hidden;
+    }
+    .chat-line {
+      height: 8px;
+      margin: 14px 16px 0;
+      border-radius: 4px;
+      background: #2a2a27;
+    }
+    .chat-line.w70 { width: 70%; }
+    .chat-line.w50 { width: 50%; }
+    .chat-line.w40 { width: 40%; }
+    .file-block {
+      margin: 18px 16px;
+      height: 160px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 8px;
+      color: var(--faint);
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+    }
+    .split-body { position: absolute; inset: 0; display: flex; }
+    .split-body > div { flex: 1; }
+    .split-body > div + div { border-left: 1px solid var(--line); }
+    .pip {
+      position: absolute;
+      right: 14px;
+      bottom: 14px;
+      width: 46%;
+      height: 48%;
+      border: 1px solid rgba(75, 213, 138, 0.7);
+      border-radius: 8px;
+      background: #1c211d;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+    }
+    .pip-bar {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 8px;
+      border-bottom: 1px solid var(--line);
+      color: var(--ok);
+      font: 11px var(--mono);
+    }
+    .pip-page { padding: 10px; color: var(--muted); font-size: 12px; }
+    .fork-pip {
+      left: 14px;
+      right: auto;
+      border-color: rgba(60, 201, 219, 0.7);
+      background: #182024;
+    }
+    .fork-pip .pip-bar { color: var(--cyan); }
+    .mask {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      background: rgba(8, 8, 7, 0.82);
+      color: var(--bright);
+      text-align: center;
+    }
+    .mask-btns { display: flex; gap: 8px; }
+    .mask-btns span, .chip {
+      padding: 3px 9px;
+      border: 1px solid var(--gold);
+      border-radius: 6px;
+      color: var(--gold);
+      font-size: 12px;
+    }
+    .chip {
+      position: absolute;
+      left: 14px;
+      bottom: 14px;
+      border-radius: 999px;
+      background: var(--lift);
+      border-color: var(--line-strong);
+      color: var(--muted);
+    }
+    .ghost { display: none; }
+    aside.review {
+      padding: 14px 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+    }
+    aside.review .hint { color: var(--faint); font-size: 12px; margin-bottom: 10px; }
+    aside.review h3 { margin: 0 0 6px; color: var(--bright); font-size: 16px; }
+    aside.review p { font-size: 13px; color: var(--text); }
+    .checks { list-style: none; padding: 0; margin: 12px 0 0; }
+    .checks li {
+      display: grid;
+      grid-template-columns: 18px 1fr;
+      gap: 8px;
+      padding: 5px 0;
+      color: var(--muted);
+      font-size: 12.5px;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      margin-top: 4px;
+      border-radius: 50%;
+      background: var(--faint);
+    }
+    .checks li.pass { color: var(--ok); }
+    .checks li.pass .dot { background: var(--ok); }
+    .checks li.fail { color: var(--bad); }
+    .checks li.fail .dot { background: var(--bad); }
+    .kv {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+      font-size: 12.5px;
+      color: var(--muted);
+    }
+    .kv b { color: var(--bright); font-weight: 600; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin: 12px 0;
+    }
+    th, td {
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: var(--lift); color: var(--bright); white-space: nowrap; }
+    td { color: var(--text); }
+    td code { white-space: nowrap; }
+    .rule {
+      display: inline-block;
+      min-width: 32px;
+      margin-right: 6px;
+      padding: 0 6px;
+      border: 1px solid var(--gold);
+      border-radius: 5px;
+      color: var(--gold);
+      font: 11px/1.7 var(--mono);
+      text-align: center;
+    }
+    .card {
+      margin: 10px 0;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+    }
+    .card.warn { border-color: rgba(224, 180, 99, 0.45); background: var(--warn-dim); }
+    .card.bad { border-color: rgba(229, 83, 75, 0.4); background: var(--bad-dim); }
+    .card.info { border-color: rgba(60, 201, 219, 0.35); }
+    .flag { color: var(--warn); font-weight: 650; }
+    .flag.bad { color: var(--bad); }
+    .flag.info { color: var(--cyan); }
+    @media (max-width: 920px) {
+      .shell { grid-template-columns: 1fr; width: calc(100% - 24px); padding-top: 20px; }
+      nav { display: none; }
+      .mobile-toc-label, .mobile-toc { display: block; }
+      .layers, .scene-board { grid-template-columns: 1fr; }
+      table { display: block; overflow-x: auto; }
     }
   </style>
 </head>
 <body>
-<main class="wrap">
-  <header>
-    <h1>Center Tabs 与复合分屏 Tab 设计</h1>
-    <p>本页定义顶部 tab 条目、复合分屏 tab、整体切换、持久化和跨窗口转移。会话内部数据所有权仍由 <a href="state-layer.html">Web state layer</a> 定义。</p>
-    <span class="status">BASELINE IMPLEMENTED · TOOLBAR PICKER REVIEWED</span>
-  </header>
-
-  <nav aria-label="文档章节">
-    <a href="#decision">设计结论</a>
-    <a href="#current">当前问题</a>
-    <a href="#terms">概念与不变量</a>
-    <a href="#references">参考比较</a>
-    <a href="#model">目标模型</a>
-    <a href="#transitions">状态转移</a>
-    <a href="#pip">Agent 画中画预览</a>
-    <a href="#visual">显示与无障碍</a>
-    <a href="#routing">操作路由</a>
-    <a href="#persistence">持久化与迁移</a>
-    <a href="#lifecycle">关闭与转移</a>
-    <a href="#acceptance">实施与验收</a>
-    <a href="#status">实现状态</a>
+<a class="skip" href="#model">跳到概念模型</a>
+<div class="shell">
+  <nav aria-label="章节">
+    <div class="kicker">目录</div>
+    <a href="#model">1 概念模型</a>
+    <a href="#scenes">2 场景图</a>
+    <a href="#fsm">3 状态与迁移</a>
+    <a href="#rules">4 各场景行为</a>
+    <a href="#agent">5 agent 交互</a>
+    <a href="#impl">6 实现映射</a>
+    <a href="#issues">7 已知不一致</a>
   </nav>
 
-  <section id="decision">
-    <h2>01 OpenProgram 的设计结论</h2>
-    <div class="card decision">
-      <p><strong>分屏是一个复合顶部 tab，不是窗口级固定布局。</strong>复合 tab 包含两个内容视图。选择另一个顶部 tab 时，左右两侧一起隐藏；再次选择该复合 tab 时，两个视图和比例一起恢复。</p>
-      <p><strong>左右两侧没有产品级“当前选中侧”。</strong>点击左侧或右侧不会改变顶部样式，不显示 active pane 边框、方向图标或成员高亮，也不持久化 <code>focusedId</code>。</p>
-      <p><strong>顶部只选择条目，但必须看得出两个成员。</strong>单 tab 是一个条目，分屏 pair 也是一个条目。复合条目内部显示两个等宽成员槽位，各自保留图标、截断标题和成员关闭按钮；它们不产生独立 <code>aria-selected</code>、active 背景或拖动对象。</p>
-      <p><strong>Web 不固定在整个窗口。</strong>用户选择的 Web 只在包含它的复合条目被选择时作为分屏 pane 显示。切换到另一个会话、文件或页面条目时，该分屏 Web 必须同时隐藏，不能跟随新的条目重新组合。Agent 在后台开页时，允许同一 WebTab 以未持久化的画中画浮窗显示在聊天角落，直到用户展开分屏、全屏接管或关闭预览。</p>
-      <p><strong>创建分屏必须显式选择两个成员。</strong>用户从某个 Web toolbar 点击 Split 时，该 Web tab 是固定 source；界面必须先列出同一窗口内可用的其他 single tabs，用户选择 target 后才调用 <code>groupTab()</code>。不得根据 route、active session、draft 或 tab 顺序自动选择另一成员。</p>
-      <p><strong>新分屏从确定状态开始。</strong>合法 target 提交后，新复合条目必须立即成为 active entry，并把当前窗口的 <code>splitRatio</code> 重置为 <code>0.5</code>。此前其他分屏或已拆分条目留下的比例不能影响新组合；用户随后拖动 divider 产生的新比例仍按 version 2 payload 持久化。</p>
-    </div>
+  <main>
+    <label class="mobile-toc-label" for="jump">跳到章节</label>
+    <select class="mobile-toc" id="jump" aria-label="跳到章节">
+      <option value="#model">1 概念模型</option>
+      <option value="#scenes">2 场景图</option>
+      <option value="#fsm">3 状态与迁移</option>
+      <option value="#rules">4 各场景行为</option>
+      <option value="#agent">5 agent 交互</option>
+      <option value="#impl">6 实现映射</option>
+      <option value="#issues">7 已知不一致</option>
+    </select>
 
-    <div class="wireframe" aria-label="复合分屏 tab 示例">
-      <div class="strip">
-        <span class="entry">New chat</span>
-        <span class="entry composite">
-          <span class="member-cell"><span aria-hidden="true">◯</span><span class="member-label">会话标题</span><span aria-hidden="true">×</span></span>
-          <span class="member-cell"><span aria-hidden="true">◎</span><span class="member-label">bilibili.com</span><span aria-hidden="true">×</span></span>
-        </span>
-        <span class="entry">文件</span>
-        <span class="entry">Programs</span>
+    <header>
+      <p class="status"><i></i>工程记录 · 与当前代码同步 · 已落地</p>
+      <h1>网页标签的呈现位置
+        <small>center tab · 复合分屏 · 会话悬浮窗 (PiP)</small>
+      </h1>
+      <div class="meta">
+        <span class="pill">读者：维护 apps/web 中心区的开发者</span>
+        <span class="pill">范围：渲染进程内的呈现与绑定</span>
+        <span class="pill">不含：跨窗口 transfer、主进程 View 几何</span>
       </div>
-      <div class="panes">
-        <div class="pane"><strong>会话</strong><br>复合 tab 的左侧成员</div>
-        <div class="divider" aria-hidden="true"></div>
-        <div class="pane"><strong>网页</strong><br>复合 tab 的右侧成员</div>
+      <p class="lede">本文回答：一个网页叶子在界面里<strong>此刻出现在哪里、被谁控制、agent 能对它做什么</strong>。散落的交互规则都从同一条不变量推出，而不是一串补丁。</p>
+    </header>
+
+    <!-- ============================================================ -->
+    <section id="model">
+      <h2>1 · 概念模型</h2>
+      <div class="invariant">
+        <p>一个 WebTab 叶子同一时刻只有一个页面宿主：center pane、split pane，或某会话的 PiP。</p>
+        <p class="why">绑定是对「PiP 宿主」的声明；覆盖函数决定这份声明此刻是否兑现。遮罩、消失、fork、收起目标，都是在维持「页面不能同时出现在两个宿主」。</p>
       </div>
-      <p>顶部只有整个复合条目处于选中状态。两个 pane 视觉权重相同，没有 pane-level active 样式。</p>
-    </div>
-  </section>
 
-  <section id="current">
-    <h2>02 原问题与实施结果</h2>
-    <div class="card problem">
-      <p><strong>原问题：</strong><code>CompoundTabItem</code> 曾把 <code>group.memberIds</code> 分别渲染为多个 <code>TabItem</code>。每个 segment 都有 click target、close button、<code>active</code> 和 <code>aria-selected</code>，顶部因此错误地表达“当前选中了左侧或右侧成员”。</p>
-      <p><strong>原问题：</strong><code>normalizeCenterTabsPayload()</code> 曾根据活动 session 与 <code>splitWebTabId</code> 自动 regroup。切换到另一个会话后，Web 会被重新挂到新会话旁边，表现为浏览器固定在窗口右侧。</p>
-      <p><strong>当前视觉缺口：</strong>桌面顶部栏应始终比内容区更深，选中条目使用内容区的 <code>--bg-primary</code>。此前桌面覆盖规则在浅色主题中又向选中面混入黑色，结果选中条目反而变灰，破坏“暗栏面、亮选中面”的单向层级。</p>
-      <p><strong>已修正的交互缺口：</strong>旧版 Web toolbar 的 <code>SplitButton.toggleSplit()</code> 会调用 <code>setSplitWebTab()</code>，并根据当前 route 激活或创建 session/draft。现在 toolbar 与顶部 tab 右键菜单复用同一个 <code>SplitViewPicker</code> 和 <code>groupTab()</code> 提交路径；选择 target 前不修改布局或会话状态。</p>
-      <p><strong>已实施：</strong>group 通过 <code>centerTabStripEntries()</code> 投影为一个顶部条目；切换普通条目只改变 <code>activeId</code>，不改变原 group 的成员和顺序。复合条目只渲染一个 <code>role="tab"</code> 和一个 group drag target，内部两个等宽成员格分别提供自己的图标、标题和关闭按钮。</p>
-      <p><strong>已修复回归：</strong>divider 的 pointer drag 原本会更新并持久化 <code>splitRatio</code>，但左侧会话 pane 同时匹配 <code>.center-split-primary</code> 与后加载的 <code>.center-pane-chat</code>；后者的 <code>flex: 1</code> 覆盖主 pane 的固定宽度，使两侧在拖动后仍被 flex 成等宽。现在使用组合选择器保持主 pane 的 <code>flex: 0 0 auto</code>，ratio 可以直接控制实际 pane bounding width；顶部复合 tab、group ownership 和拖动语义未改变。</p>
-    </div>
+      <div class="layers">
+        <article class="layer">
+          <b>叶子 identity</b>
+          <span>center-tabs store 里 <code>kind:"web"</code> 的条目。规范 id 是 <code>w:&lt;url&gt;</code>；fork 用 <code>nextPopupWebTabId</code> 写成 <code>w:&lt;url&gt;:popup:…</code>。叶子本身不因浮动而消失。</span>
+          <em>tabs[] / groups[] / splitWebTabId / activeId</em>
+        </article>
+        <article class="layer">
+          <b>绑定 binding</b>
+          <span>全局至多一份 <code>(tabId, ownerTabId)</code>。含义是「这个网页预留给会话 S 的悬浮窗」。切走会话不改绑定；<code>hide()</code> 才把绑定挪进 background 记忆。</span>
+          <em>useWebTabPip 单例，不持久化</em>
+        </article>
+        <article class="layer">
+          <b>宿主 host</b>
+          <span>真正画出页面的地方。由 <code>pipCoversCenter(tabId, ownerTabId, center)</code> 从「绑定 × 当前激活标签」纯函数推导。组件不另存「显隐」状态。</span>
+          <em>pane · pip · none（遮罩 / 消失）</em>
+        </article>
+      </div>
 
-    <div class="flow" aria-label="当前错误切换与目标切换">
-      <div class="node"><strong>当前错误</strong><br>选择 B<br><code>[A + W] → [B + W]</code></div>
-      <div class="arrow" aria-hidden="true">→</div>
-      <div class="node"><strong>目标行为</strong><br>选择 B 条目<br><code>[A + W] 隐藏，B 显示</code></div>
-    </div>
-    <p><code>scrollIntoView()</code> 只会放大可见跳动，不是状态错误的来源。只删除滚动或动画不能修复 Web 固定、成员选中和自动 regroup。</p>
-  </section>
+      <p>因此系统只有三类一等状态：布局（谁在条上、谁成组、谁激活）、绑定、background 记忆。其余可见行为都是推导。</p>
+      <p>分屏是第二种宿主，不是第二种绑定。复合组 <code>groups[]</code> 至多两个成员；条上投影为一个条目。用户建组走 <code>groupTab</code>；PiP「展开为分屏」走 <code>setSplitWebTab</code>，把当前会话与该叶子配成一对。<code>splitWebTabId</code> 是兼容指针，规范化时若叶子尚未入组且激活的是会话，才物化成 group。</p>
+    </section>
 
-  <section id="terms">
-    <h2>03 概念、所有权与不变量</h2>
-    <div class="table-wrap">
+    <!-- ============================================================ -->
+    <section id="scenes">
+      <h2>2 · 场景图</h2>
+      <p>同一份绑定——<code>ex.dev</code> 属于会话 A——在不同 <code>activeId</code> 下的呈现。点选场景查看覆盖函数哪一条挡住了宿主。</p>
+
+      <div class="scene-tabs" role="tablist" aria-label="核心场景">
+        <button type="button" role="tab" id="tab-owner" aria-controls="panel-scene" aria-selected="true" data-scene="owner">① owner 会话</button>
+        <button type="button" role="tab" id="tab-other" aria-controls="panel-scene" aria-selected="false" data-scene="other">② 其他会话</button>
+        <button type="button" role="tab" id="tab-mask" aria-controls="panel-scene" aria-selected="false" data-scene="mask">③ 直接看该 tab</button>
+        <button type="button" role="tab" id="tab-file" aria-controls="panel-scene" aria-selected="false" data-scene="file">④ 非会话页</button>
+        <button type="button" role="tab" id="tab-hide" aria-controls="panel-scene" aria-selected="false" data-scene="hide">⑤ 关闭预览</button>
+        <button type="button" role="tab" id="tab-fork" aria-controls="panel-scene" aria-selected="false" data-scene="fork">⑥ 同 URL fork</button>
+      </div>
+
+      <div class="scene-board">
+        <div class="mock-stage" id="panel-scene" role="tabpanel" aria-labelledby="tab-owner">
+          <div class="mock-chrome" id="mock-tabs"></div>
+          <div class="mock-frame" id="mock-frame" role="img" aria-label="场景示意"></div>
+        </div>
+        <aside class="review" aria-live="polite">
+          <div class="hint" id="scene-hint">覆盖函数 · pipCoversCenter</div>
+          <h3 id="scene-title">会话 A 上的悬浮窗</h3>
+          <p id="scene-lead"></p>
+          <ul class="checks" id="scene-checks"></ul>
+          <div class="kv" id="scene-kv"></div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="fsm">
+      <h2>3 · 状态与迁移</h2>
+
+      <h3>3.1 单个叶子的位置状态机</h3>
+      <figure class="canvas">
+        <svg viewBox="0 0 1080 520" role="img" aria-labelledby="fsm-title fsm-desc">
+          <title id="fsm-title">WebTab 呈现位置状态机</title>
+          <desc id="fsm-desc">center、split、PiP 绑定、background 记忆、已关闭。绿色边进入 PiP，灰色边离开 PiP，红色边清除绑定。</desc>
+          <defs>
+            <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#97958c"/>
+            </marker>
+            <marker id="arrg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#4bd58a"/>
+            </marker>
+            <marker id="arrb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#e5534b"/>
+            </marker>
+          </defs>
+
+          <rect x="36" y="58" width="232" height="70" rx="10" fill="#1f1f1e" stroke="rgba(226,225,218,.32)"/>
+          <text x="152" y="88" text-anchor="middle" fill="#f8f8f6" font-size="14" font-family="ui-monospace,Menlo,monospace">center</text>
+          <text x="152" y="108" text-anchor="middle" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">独立中心标签，pane 是宿主</text>
+
+          <rect x="36" y="350" width="232" height="70" rx="10" fill="#1f1f1e" stroke="rgba(226,225,218,.32)"/>
+          <text x="152" y="380" text-anchor="middle" fill="#f8f8f6" font-size="14" font-family="ui-monospace,Menlo,monospace">split</text>
+          <text x="152" y="400" text-anchor="middle" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">group / splitWebTabId 右窗格</text>
+
+          <rect x="430" y="186" width="280" height="92" rx="10" fill="#16241c" stroke="#4bd58a" stroke-width="1.6"/>
+          <text x="570" y="218" text-anchor="middle" fill="#4bd58a" font-size="14" font-family="ui-monospace,Menlo,monospace">绑定 PiP(owner = S)</text>
+          <text x="570" y="238" text-anchor="middle" fill="#c3c2b7" font-size="11" font-family="ui-monospace,Menlo,monospace">store: tabId + ownerTabId</text>
+          <text x="570" y="256" text-anchor="middle" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">画不画 = pipCoversCenter(activeId)</text>
+
+          <rect x="820" y="186" width="228" height="92" rx="10" fill="#1f1f1e" stroke="#d19a66" stroke-dasharray="5 4"/>
+          <text x="934" y="218" text-anchor="middle" fill="#d19a66" font-size="14" font-family="ui-monospace,Menlo,monospace">background 记忆</text>
+          <text x="934" y="238" text-anchor="middle" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">backgroundTabId</text>
+          <text x="934" y="256" text-anchor="middle" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">backgroundOwnerTabId</text>
+
+          <rect x="820" y="410" width="228" height="52" rx="10" fill="#1f1f1e" stroke="#e5534b"/>
+          <text x="934" y="441" text-anchor="middle" fill="#e5534b" font-size="13" font-family="ui-monospace,Menlo,monospace">叶子关闭 / 绑定清空</text>
+
+          <rect x="430" y="48" width="280" height="52" rx="10" fill="#1f1f1e" stroke="rgba(226,225,218,.32)"/>
+          <text x="570" y="70" text-anchor="middle" fill="#f8f8f6" font-size="12" font-family="ui-monospace,Menlo,monospace">agent op=open（会话且不走 split）</text>
+          <text x="570" y="88" text-anchor="middle" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">ensure(Exclusive)WebTab + show(id, active.id)</text>
+
+          <path d="M268 80 C 360 80, 400 170, 428 200" fill="none" stroke="#4bd58a" marker-end="url(#arrg)"/>
+          <text x="278" y="118" fill="#4bd58a" font-size="11" font-family="ui-monospace,Menlo,monospace">collapseWebTabToPip</text>
+          <path d="M430 198 C 390 130, 350 62, 268 62" fill="none" stroke="#97958c" marker-end="url(#arr)"/>
+          <text x="286" y="46" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">全屏接管 end + setActive</text>
+
+          <path d="M268 384 C 360 384, 400 300, 428 270" fill="none" stroke="#4bd58a" marker-end="url(#arrg)"/>
+          <text x="276" y="348" fill="#4bd58a" font-size="11" font-family="ui-monospace,Menlo,monospace">collapse（先解组）</text>
+          <path d="M430 268 C 390 330, 350 410, 268 404" fill="none" stroke="#97958c" marker-end="url(#arr)"/>
+          <text x="276" y="436" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">展开为分屏 end + setSplitWebTab</text>
+
+          <path d="M152 130 L152 348" fill="none" stroke="#97958c" marker-end="url(#arr)"/>
+          <path d="M120 348 L120 130" fill="none" stroke="#97958c" marker-end="url(#arr)"/>
+          <text x="160" y="246" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">groupTab /</text>
+          <text x="160" y="262" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">setSplitWebTab</text>
+
+          <path d="M710 216 L818 216" fill="none" stroke="#d19a66" marker-end="url(#arr)"/>
+          <text x="718" y="206" fill="#d19a66" font-size="11" font-family="ui-monospace,Menlo,monospace">✕ hide()</text>
+          <path d="M818 248 L710 248" fill="none" stroke="#4bd58a" marker-end="url(#arrg)"/>
+          <text x="718" y="286" fill="#4bd58a" font-size="11" font-family="ui-monospace,Menlo,monospace">WebPreviewChip → show</text>
+
+          <path d="M570 100 L570 184" fill="none" stroke="#4bd58a" marker-end="url(#arrg)"/>
+          <path d="M710 268 C 780 330, 820 390, 860 410" fill="none" stroke="#e5534b" marker-end="url(#arrb)"/>
+          <text x="628" y="340" fill="#e5534b" font-size="11" font-family="ui-monospace,Menlo,monospace">owner / 叶子关闭 → end()</text>
+          <text x="628" y="356" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">遮罩「结束浮动」也 end，叶子留在 store</text>
+        </svg>
+        <figcaption>图 1 — 位置状态机。<code>end()</code> 只清绑定；叶子仍在 center-tabs store，除非 <code>closeTab</code>。切会话不是迁移，只是覆盖函数对同一绑定取不同值。</figcaption>
+      </figure>
+
+      <h3>3.2 PiP store 字段</h3>
       <table>
-        <thead><tr><th>概念</th><th>含义</th><th>权威状态</th></tr></thead>
+        <thead><tr><th>字段 / 动作</th><th>含义</th></tr></thead>
         <tbody>
-          <tr><td><strong>Leaf tab</strong></td><td>session、file、web、builtin 或 NTP 内容对象</td><td><code>tabs[]</code></td></tr>
-          <tr><td><strong>Single entry</strong></td><td>顶部一个普通 tab，包含一个 leaf tab</td><td><code>centerTabStripEntries()</code> 生成的 <code>{kind:"tab", tabId}</code></td></tr>
-          <tr><td><strong>Split entry</strong></td><td>顶部一个复合 tab，固定包含两个 leaf tab</td><td><code>CenterTabGroup.memberIds</code>，上限为 2</td></tr>
-          <tr><td><strong>Active entry</strong></td><td>包含 <code>activeId</code> 的普通条目或 group；顶部按整个条目显示选中</td><td><code>activeId + groups[]</code> 的派生结果</td></tr>
-          <tr><td><strong>DOM focus</strong></td><td>键盘当前所在元素，只服务输入和无障碍</td><td>浏览器 DOM，不进入产品持久化状态</td></tr>
+          <tr><td><code>tabId</code> · <code>ownerTabId</code></td><td>活跃绑定。二者同时有值或同时为 null；<code>pipBoundTabId()</code> 据此判定遮罩。</td></tr>
+          <tr><td><code>backgroundTabId</code> · <code>backgroundOwnerTabId</code></td><td><code>hide()</code> 留下的恢复票据。唯一读者是 <code>WebPreviewChip</code>。</td></tr>
+          <tr><td><code>rect</code></td><td>小窗几何，仅内存。<code>clampPipRect</code> 限制在 <code>.center-pane-chat</code> 内，最小 240×160。<code>hide</code>/<code>end</code> 都不清 rect。</td></tr>
+          <tr><td><code>show(tabId, ownerTabId)</code></td><td>建立绑定并清空 background。全局单例，新绑定覆盖旧绑定。</td></tr>
+          <tr><td><code>hide()</code></td><td>清活跃绑定，写入 background。语义：用户暂时收起，可一键恢复。</td></tr>
+          <tr><td><code>end()</code></td><td>绑定与记忆全清。语义：这个网页不再是任何会话的悬浮窗。</td></tr>
         </tbody>
       </table>
-    </div>
 
-    <h3>硬性不变量</h3>
-    <ol>
-      <li>每个 leaf tab 恰好属于一个 entry；不能同时是普通 tab 和某个 split entry 的成员。</li>
-      <li>split entry 恰好有两个不同成员；本设计不支持第三个 pane。</li>
-      <li>顶部顺序由规范化后的 <code>tabs[]</code> 与 <code>groups[]</code> 投影；group 的两个成员在 leaf 顺序中保持连续。</li>
-      <li>顶部只有一个条目级选中样式。<code>activeId</code> 与 <code>focusedId</code> 仍用于路由和内部 bookkeeping，但不产生成员 segment 或 pane-level active 样式。</li>
-      <li>点击 pane 内部可以更新内部会话路由，但不能改变 entry membership、entry order 或顶部复合条目的整体选中样式。</li>
-      <li>选择另一个顶部 entry 必须整体替换 center body；旧 split 的两个 pane 同时停止显示。</li>
-      <li>打开、关闭、分屏、拆分、显式移动和 transfer 可以改变 entries；普通 activation 不得改变 entries。</li>
-    </ol>
-  </section>
+      <h3>3.3 覆盖函数 <code>pipCoversCenter</code></h3>
+      <p>小窗渲染（且 native view 摆到 PiP 位置）当且仅当 <code>pipCoverBase</code> 与 owner 校验同时成立：</p>
+      <ol>
+        <li>叶子仍在且 <code>kind === "web"</code>；</li>
+        <li><code>activeId !== tabId</code> — 用户盯着该标签时让位给 pane；</li>
+        <li>叶子不在当前激活组的 <code>visibleIds</code> — 分屏已经在画它，不再叠一层；</li>
+        <li>当前激活标签 <code>kind === "session"</code> — 小窗只浮在聊天面板上；</li>
+        <li><code>activeId === ownerTabId</code> — 只属于 owner。</li>
+      </ol>
+      <p><code>WebTabPip</code> 把 1–5 收成 <code>live</code>；不满足则返回 <code>null</code> 并撤销 bounds。store 订阅 center-tabs：owner 或叶子被删 → <code>end()</code>；background 引用失效 → 清记忆。</p>
+    </section>
 
-  <section id="references">
-    <h2>04 官方参考与取舍</h2>
-    <div class="table-wrap">
+    <!-- ============================================================ -->
+    <section id="rules">
+      <h2>4 · 各场景行为</h2>
+
+      <h3><span class="rule">R1</span>一个 PiP 绑定一个会话；切走消失，切回重现</h3>
+      <p>绑定是输入，呈现是 <code>pipCoversCenter</code> 的输出（条件 5）。切到会话 B 时 store 仍持有 <code>(ex.dev, A)</code>，组件因 <code>live === false</code> 不画；切回 A 同一函数再为真。这不是两次事件。</p>
+      <p>「切回重现」只对<strong>活跃绑定</strong>成立。用户在小窗点 ✕ 走的是 <code>hide()</code>，绑定进入 background，切回 A 出现的是 composer 里的「显示网页预览」，不是自动弹出的小窗。</p>
+
+      <h3><span class="rule">R2</span>直接打开被绑定的网页 → 暗色遮罩</h3>
+      <p><code>WebTabPane</code>（desktop / iframe 两套后端同一判定）用 <code>pipBoundTabId() === tabId</code> 得到 <code>pipBound</code>。为真时：</p>
+      <ul>
+        <li>正文渲染 <code>PipBoundMask</code>：<code>usePipSnapshots</code> 最后一帧打底 + 暗层 +「正在由『{owner 标题}』控制」+「结束浮动」(<code>end()</code>) / 「转到该会话」(<code>setActive(ownerTabId)</code>)；</li>
+        <li>desktop 跳过 <code>ensureWebView</code> 与 bounds 上报。被绑定期间 native view 的唯一合法宿主是 <code>WebTabPip</code>。看遮罩时 PiP 也不 live，页面暂时没有宿主，所以用截图占位。</li>
+      </ul>
+
+      <h3><span class="rule">R5</span>工具栏「收起到悬浮窗」：目标解析</h3>
+      <figure class="canvas">
+        <svg viewBox="0 0 1040 220" role="img" aria-labelledby="col-title col-desc">
+          <title id="col-title">收起按钮的 owner 解析</title>
+          <desc id="col-desc">已绑定回原 owner；否则同组会话；否则首个会话；都没有则禁用。</desc>
+          <defs>
+            <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#97958c"/>
+            </marker>
+          </defs>
+          <rect x="16" y="78" width="210" height="60" rx="10" fill="#1f1f1e" stroke="rgba(226,225,218,.32)"/>
+          <text x="121" y="104" text-anchor="middle" fill="#f8f8f6" font-size="12" font-family="ui-monospace,Menlo,monospace">collapseWebTabToPip</text>
+          <text x="121" y="122" text-anchor="middle" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">工具栏 / BrowserMenu</text>
+
+          <rect x="268" y="16" width="250" height="52" rx="10" fill="#16241c" stroke="#4bd58a"/>
+          <text x="393" y="38" text-anchor="middle" fill="#4bd58a" font-size="12" font-family="ui-monospace,Menlo,monospace">① 已绑定且 owner 仍在</text>
+          <text x="393" y="55" text-anchor="middle" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">回原 owner，不换绑</text>
+
+          <rect x="268" y="82" width="250" height="52" rx="10" fill="#1f1f1e" stroke="rgba(226,225,218,.32)"/>
+          <text x="393" y="104" text-anchor="middle" fill="#f8f8f6" font-size="12" font-family="ui-monospace,Menlo,monospace">② 同组伙伴是 session</text>
+          <text x="393" y="121" text-anchor="middle" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">pipCollapseTargetFor</text>
+
+          <rect x="268" y="148" width="250" height="52" rx="10" fill="#1f1f1e" stroke="rgba(226,225,218,.32)"/>
+          <text x="393" y="170" text-anchor="middle" fill="#f8f8f6" font-size="12" font-family="ui-monospace,Menlo,monospace">③ 条上第一个 session</text>
+          <text x="393" y="187" text-anchor="middle" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">都没有 → 按钮 disabled</text>
+
+          <path d="M228 98 L266 42" fill="none" stroke="#97958c" marker-end="url(#arr2)"/>
+          <path d="M228 108 L266 108" fill="none" stroke="#97958c" marker-end="url(#arr2)"/>
+          <path d="M228 118 L266 174" fill="none" stroke="#97958c" marker-end="url(#arr2)"/>
+
+          <rect x="560" y="62" width="460" height="96" rx="10" fill="#1f1f1e" stroke="rgba(226,225,218,.32)"/>
+          <text x="580" y="88" fill="#f8f8f6" font-size="12" font-family="ui-monospace,Menlo,monospace">解析到 owner 后统一执行</text>
+          <text x="580" y="108" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">1. splitWebTabId===tabId → setSplitWebTab(null)；否则在组里 → ungroupTab</text>
+          <text x="580" y="126" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">2. setActive(ownerTabId)　　3. show(tabId, ownerTabId) — 不重载页面</text>
+          <text x="580" y="144" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">无 session 时返回 false，绑定不变</text>
+          <path d="M520 108 L558 108" fill="none" stroke="#97958c" marker-end="url(#arr2)"/>
+        </svg>
+        <figcaption>图 2 — <code>CollapseToPipButton</code> 的 tooltip 用同一解析结果：已绑定 →「返回『X』的悬浮窗」；未绑定有目标 →「浮动到『X』」；无目标 → 灰置的「收起到悬浮窗」。</figcaption>
+      </figure>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="agent">
+      <h2>5 · agent 交互</h2>
+
+      <h3><span class="rule">R3</span>op=open 的布局与 fork</h3>
+      <figure class="canvas">
+        <svg viewBox="0 0 1080 360" role="img" aria-labelledby="open-title open-desc">
+          <title id="open-title">agent op=open 决策树</title>
+          <desc id="open-desc">桌面宽屏且组内已有网页则走 split；会话否则走 PiP（含 fork）；非会话前台打开。</desc>
+          <defs>
+            <marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#97958c"/>
+            </marker>
+          </defs>
+          <rect x="16" y="148" width="228" height="60" rx="10" fill="#1f1f1e" stroke="rgba(226,225,218,.32)"/>
+          <text x="130" y="174" text-anchor="middle" fill="#f8f8f6" font-size="12" font-family="ui-monospace,Menlo,monospace">webtab.command op=open</text>
+          <text x="130" y="192" text-anchor="middle" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">installDesktopMenuHandlers</text>
+
+          <rect x="286" y="136" width="250" height="84" rx="10" fill="#1f1f1e" stroke="rgba(226,225,218,.32)"/>
+          <text x="411" y="164" text-anchor="middle" fill="#f8f8f6" font-size="12" font-family="ui-monospace,Menlo,monospace">active 是 session？</text>
+          <text x="411" y="184" text-anchor="middle" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">桌面 + 宽度够 split</text>
+          <text x="411" y="202" text-anchor="middle" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">且组内已有 web 成员？</text>
+          <path d="M244 178 L284 178" fill="none" stroke="#97958c" marker-end="url(#arr3)"/>
+
+          <rect x="590" y="20" width="470" height="64" rx="10" fill="#1f1f1e" stroke="rgba(226,225,218,.32)"/>
+          <text x="610" y="46" fill="#f8f8f6" font-size="12" font-family="ui-monospace,Menlo,monospace">→ split：openWebTabInSplit(url)</text>
+          <text x="610" y="66" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">顶替本组已有网页窗格，不弹小窗，也不走 fork</text>
+          <path d="M536 150 C 560 120, 570 70, 588 52" fill="none" stroke="#97958c" marker-end="url(#arr3)"/>
+
+          <rect x="590" y="108" width="470" height="140" rx="10" fill="#16241c" stroke="#4bd58a"/>
+          <text x="610" y="134" fill="#4bd58a" font-size="12" font-family="ui-monospace,Menlo,monospace">→ PiP：绑定给当前会话</text>
+          <text x="610" y="158" fill="#f8f8f6" font-size="12" font-family="ui-monospace,Menlo,monospace">pipOpenMustFork(url, active.id)</text>
+          <text x="628" y="180" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">真 = webTabId(url) 正被另一会话绑定</text>
+          <text x="628" y="198" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">→ ensureExclusiveWebTab（popup id）不劫持</text>
+          <text x="628" y="216" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">假 → ensureWebTab 复用规范叶子；随后 show(id, active.id)</text>
+          <text x="628" y="234" fill="#d19a66" font-size="11" font-family="ui-monospace,Menlo,monospace">浏览器或窄窗：isDesktopSplitLayoutAvailable 为假，会话一律走这里</text>
+          <path d="M536 178 L588 178" fill="none" stroke="#4bd58a" marker-end="url(#arr3)"/>
+
+          <rect x="590" y="274" width="470" height="64" rx="10" fill="#1f1f1e" stroke="rgba(226,225,218,.32)"/>
+          <text x="610" y="300" fill="#f8f8f6" font-size="12" font-family="ui-monospace,Menlo,monospace">→ 前台：openWebTab(url)</text>
+          <text x="610" y="320" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">激活的是文件 / 终端 / NTP 等，不做小窗</text>
+          <path d="M536 206 C 560 240, 570 290, 588 300" fill="none" stroke="#97958c" marker-end="url(#arr3)"/>
+        </svg>
+        <figcaption>图 3 — owner 自己重复打开同 URL 复用叶子。非 owner 且规范叶子已被绑定才 fork。fork 保住的是叶子身份，不是 A 的槽位：随后的 <code>show(id, B)</code> 覆盖全局绑定。打开后等 <code>waitForWebTabReady</code>（2s）→ <code>bridge.webTab.activate</code> → <code>webtab_result</code>。失败且非 split 时 <code>restorePriorActiveTabAfterFailedWebOpen</code> 还原焦点。</figcaption>
+      </figure>
+
+      <h3><span class="rule">R4</span>op=close：结构性权限，不是打开者记账</h3>
+      <p><code>closeAgentWebTabResult(tabId, tabs, groups)</code> 是纯函数：</p>
       <table>
-        <thead><tr><th>参考</th><th>官方行为</th><th>OpenProgram 采用</th><th>OpenProgram 拒绝或修改</th></tr></thead>
+        <thead><tr><th>条件</th><th>结果</th></tr></thead>
         <tbody>
-          <tr>
-            <td><a href="https://support.google.com/chrome/answer/16971124">Chrome Split View</a></td>
-            <td>一个 opened tab 内同时显示两个网站；支持关闭单侧、交换和 Separate split view；官方同时定义 active/inactive view、粗细边框和 active 方向图标。</td>
-            <td>split 与一个顶部 tab 的生命周期关联；支持关闭单侧与显式拆分。</td>
-            <td>不采用 active/inactive view、pane 选中边框和方向图标。OpenProgram 的 pane 操作从事件来源精确路由，不需要全局 active side。</td>
-          </tr>
-          <tr>
-            <td><a href="https://support.google.com/chrome/answer/2391819">Chrome Tabs and Tab Groups</a></td>
-            <td>tab 切换与 tab reorder 分离；顺序和 group 由显式 drag/add/remove 改变。</td>
-            <td>普通 activation 只改变当前 entry；拖动才改变 entry 顺序。</td>
-            <td>不引入 group 名称、颜色、同步或收藏。split entry 不是通用 Chrome tab group。</td>
-          </tr>
-          <tr>
-            <td><a href="https://code.visualstudio.com/docs/editing/userinterface">VS Code Editor Groups</a></td>
-            <td>每个 editor group 有自己的 active editor、tab strip 和 focus。</td>
-            <td>只采用 pane 内容与布局可独立渲染的实现经验。</td>
-            <td>不采用 active group、每个 pane 独立 tab strip、任意网格或 pane-local tab history。</td>
-          </tr>
-          <tr>
-            <td><a href="https://code.visualstudio.com/docs/configure/custom-layout">VS Code Custom Layout</a></td>
-            <td>支持 Split in Group，并提供 first、second 和 other side 的显式 focus 命令。</td>
-            <td>采用同一容器内渲染两个内容视图和可调整 divider。</td>
-            <td>不采用 side focus 作为产品状态；OpenProgram 不提供 first/second side 选中命令。</td>
-          </tr>
+          <tr><td>叶子不存在或非 web</td><td><code>{ok:false, reason:"tab_not_found"}</code></td></tr>
+          <tr><td>出现在任一 group 的 <code>memberIds</code></td><td><code>{ok:false, reason:"tab_in_user_layout"}</code></td></tr>
+          <tr><td>其余（独立标签、PiP 绑定、background）</td><td><code>{ok:true}</code> → <code>closeTab</code>；若它是 PiP 叶子，订阅随之 <code>end()</code></td></tr>
         </tbody>
       </table>
-    </div>
-    <p>Chrome 官方设计中的 pane active 状态不是本设计的要求。OpenProgram 的修改点是：复合条目整体选中，pane 只保留各自局部控件和自然 DOM focus。</p>
-  </section>
+      <p>「进过用户布局（组）」即视为用户资产。agent 打开的叶子一旦被拖进组，就失去关闭权。反过来说：用户自己打开的独立网页，agent 也能关——实现不按打开者记账。</p>
 
-  <section id="model">
-    <h2>05 已实施状态模型</h2>
-    <p>本次采用兼容性最小改动，持久化格式保持 version 2。<code>groups[]</code> 是复合条目的所有权；<code>centerTabStripEntries()</code> 在显示层把 leaf tabs 和 groups 投影为一个有序顶部列表。这样不需要迁移已有窗口数据，也不改变 transfer journal 的 payload 边界。</p>
-    <pre><code>interface CenterTabsPersistedPayload {
-  version: 2;
-  tabs: CenterTab[];
-  activeId: string | null;       // 内部路由；顶部按所属 entry 整体选中
-  groups: CenterTabGroup[];      // 每组恰好两个成员
-  splitWebTabId: string | null;  // 兼容旧入口，不再触发跨 group reparent
-  splitRatio: number;            // 当前兼容格式仍为窗口级比例
-}</code></pre>
+      <h3>会话读哪个页面</h3>
+      <p><code>surfaceRefForChat(sessionId)</code> 的优先级与宿主模型一致：该会话组内可见 web 窗格 → 会话激活时的 <code>splitWebTabId</code> → 会话激活且为 owner 时的 PiP 叶子。都无、或 bounds 未上报，则不带 surface。<code>visibleWebTab</code> / <code>visibleWebTabById</code> 用 <code>peekLiveWebTabPipId</code>，停在非 owner 上的绑定不进入 agent 可见集合。<code>op=preview/activate</code> 同样要求当前可见。</p>
+    </section>
 
-    <h3>不保存的状态</h3>
-    <ul>
-      <li>不增加 pane-level selected 状态。DOM focus 与内部 <code>focusedId</code> 不映射为 pane 边框或顶部成员高亮。</li>
-      <li>不增加新的窗口级 Web pin。Web 是否可见由包含它的 active group 决定；<code>splitWebTabId</code> 只保留旧入口兼容。</li>
-      <li>不增加成员级顶部 selected 状态。两个 leaf tab 各自提供图标、标题、dirty 和成员关闭入口，但 active 状态仍只属于外层复合条目。</li>
-      <li>本次不升级 ratio schema；version 2 的 <code>splitRatio</code> 仍按原兼容行为保存。</li>
-    </ul>
-
-    <h3>复合标签结构</h3>
-    <p>复合条目使用一个外层容器和两个 <code>1fr</code> 等宽成员槽位。每个槽位显示自己的 favicon/类型图标、单独截断的标题和成员关闭按钮；标题长度不得改变两侧宽度。外层只有一个背景、一个 active 状态、一个 <code>role="tab"</code> 和一个 group drag target。不再显示额外的前置分屏图标或拖动手柄。</p>
-  </section>
-
-  <section id="transitions">
-    <h2>06 状态转移</h2>
-    <div class="table-wrap">
+    <!-- ============================================================ -->
+    <section id="impl">
+      <h2>6 · 实现映射</h2>
       <table>
-        <thead><tr><th>当前状态</th><th>动作</th><th>目标状态</th><th>顶部结果</th></tr></thead>
+        <thead><tr><th>规则 / 概念</th><th>落点</th></tr></thead>
         <tbody>
-          <tr><td>active split(A,W)</td><td>点击普通 entry B</td><td>active=B；A 与 W 一起隐藏</td><td>split(A,W) 原位保留，不 regroup</td></tr>
-          <tr><td>active=B</td><td>点击 split(A,W)</td><td>A 与 W 一起恢复，ratio 恢复</td><td>整个 split entry 选中</td></tr>
-          <tr><td>active split(A,W)</td><td>点击 A 或 W pane</td><td>只发生局部输入/DOM focus</td><td>顶部完全不变</td></tr>
-          <tr><td>single A + single W</td><td>在 W 点击 Split，并在 picker 选择 A</td><td>用 active split(W,A) 替换 W，移除 A entry；ratio=0.5</td><td>source W 保持固定；确认前不改变状态，确认后立即显示所选 pair</td></tr>
-          <tr><td>split(A,W)</td><td>Separate split</td><td>生成相邻 single A、single W，并保持 A active</td><td>A 在原 split 位置，W 紧随其后</td></tr>
-          <tr><td>split(A,W)</td><td>拖动任一非按钮区域</td><td>A/W 按原内部顺序共同移动</td><td>只能 reorder/transfer 完整复合条目，不能拖出单个成员</td></tr>
-          <tr><td>split(A,W)</td><td>点击 W 成员关闭按钮</td><td>原位折叠为 single A</td><td>不移动其他 entry</td></tr>
-          <tr><td>split(A,W)</td><td>Cmd+W / entry close</td><td>关闭 A 与 W</td><td>按 entry 邻居选择下一个 active entry</td></tr>
-          <tr><td>split(A,W)</td><td>右键 Separate / pane 内退出分屏</td><td>生成相邻 single A、single W</td><td>拆分必须来自显式命令，不是拖动结果</td></tr>
+          <tr><td>绑定、background、<code>show/hide/end</code></td><td><code>apps/web/lib/state/web-tab-pip-store.ts</code> · <code>useWebTabPip</code></td></tr>
+          <tr><td>R1 切走消失 / 切回重现</td><td>同上 · <code>pipCoverBase</code> / <code>pipCoversCenter</code> / <code>peekLiveWebTabPipId</code></td></tr>
+          <tr><td>R3 fork</td><td>同上 · <code>pipOpenMustFork</code>；创建叶子在 <code>center-tabs-store.ts</code> 的 <code>ensureWebTab</code> / <code>ensureExclusiveWebTab</code>；id 在 <code>center-tab-ids.ts</code> 的 <code>webTabId</code> / <code>nextPopupWebTabId</code></td></tr>
+          <tr><td>R5 收起目标</td><td><code>pipCollapseTargetFor</code> / <code>collapseWebTabToPip</code>；tooltip 在 <code>web-tab-pane.tsx</code> · <code>CollapseToPipButton</code></td></tr>
+          <tr><td>owner / 叶子关闭时清绑定</td><td><code>web-tab-pip-store.ts</code> 末尾 <code>useCenterTabs.subscribe</code></td></tr>
+          <tr><td>小窗：live、拖拽、bounds、截图、展开 / 全屏 / ✕</td><td><code>apps/web/components/center-tabs/web-tab-pip.tsx</code> · <code>WebTabPip</code>；挂在 <code>app-shell.tsx</code> 的聊天中心区内</td></tr>
+          <tr><td>R2 遮罩与 pane 让位</td><td><code>web-tab-pane.tsx</code> · <code>PipBoundMask</code>；<code>DesktopWebTabPane</code> / <code>IframeWebTabPane</code> 的 <code>pipBound</code> 分支</td></tr>
+          <tr><td>截图缓存</td><td><code>usePipSnapshots</code> / <code>getSnapshot</code> / <code>setSnapshot</code>；PiP 卸载与拖动时 <code>bridge.webTab.capture</code></td></tr>
+          <tr><td>agent open / close / 回执</td><td><code>apps/web/lib/desktop-bridge.ts</code> · <code>installDesktopMenuHandlers</code> 内 WS 分支；<code>closeAgentWebTabResult</code>；<code>restorePriorActiveTabAfterFailedWebOpen</code></td></tr>
+          <tr><td>会话↔网页配对、可见性</td><td>同上 · <code>surfaceRefForChat</code>（PiP 回退读 <code>peekWebTabPipId</code> / <code>peekWebTabPipOwnerId</code>）/ <code>visibleWebTab</code> / <code>visibleWebTabById</code>（用 <code>peekLiveWebTabPipId</code>）/ <code>browserPageInventory</code></td></tr>
+          <tr><td>桌面分屏是否可用</td><td><code>app-shell.tsx</code> 调 <code>setDesktopSplitLayoutAvailable(isDesktop && activeKind==="session" && isSplitLayoutAvailable(width))</code>；阈值在 <code>split-layout.ts</code>（360+480+6）</td></tr>
+          <tr><td>✕ 后的恢复入口</td><td><code>apps/web/components/chat/composer/environment-row/chips/web-preview-chip.tsx</code> · <code>WebPreviewChip</code></td></tr>
+          <tr><td>split / group 本体</td><td><code>center-tabs-store.ts</code>（<code>groupTab</code> / <code>ungroupTab</code> / <code>setSplitWebTab</code> / <code>openWebTabInSplit</code>）；<code>center-tab-groups.ts</code>（<code>MAX_CENTER_TAB_GROUP_MEMBERS = 2</code>）；<code>center-tabs-persistence.ts</code> 规范化</td></tr>
+          <tr><td>钉住行为的检查</td><td><code>apps/web/scripts/check-web-split.mjs</code>（覆盖、收起、fork、close、surface）</td></tr>
         </tbody>
       </table>
-    </div>
+    </section>
 
-    <h3>Web toolbar 与 Runtime</h3>
-    <ul>
-      <li>Web toolbar 从 single(W) 创建 split 时始终显示现有 <code>SplitViewPicker</code>。W 固定为 source，候选项来自 <code>splitCandidates(tabs, groups, W)</code>；只有用户选择 target 后才通过 <code>groupTab(target, W, 1)</code> 创建复合条目。</li>
-      <li><code>groupTab()</code> 接受一个此前未组成 pair 的 source/target 后，在同一次持久状态提交中写入新 group、把 <code>activeId</code> 设为用户刚选择的成员，并写入 <code>splitRatio=0.5</code>。选择 session 时，这个 activeId 变化还会触发现有 session route 同步，保证 composer 与所选 pane 使用同一 session；不能只激活 Web 成员而保留旧会话路由，也不能继承旧 ratio。</li>
-      <li>关闭 picker、按 Escape、点外部或没有候选项都不修改 tabs、groups、activeId、route 或 session store；不得为创建分屏自动创建 draft/session。</li>
-      <li><code>openWebTabInSplit(url)</code> 在当前复合条目已有 Web 时复用该 Web 成员并导航，不创建不可见的第三成员。</li>
-      <li>当前会话尚未与 Web 组成 pair 时，<code>webtab.command(op=open)</code> 走 <code>ensureWebTab(url)</code> 加画中画，不抢聊天焦点，也不自动建组。</li>
-      <li>相同 deterministic URL 已属于另一个非活动复合条目时，激活该 owner composite；不能把 Web 移到当前会话，也不能在不可见状态下返回成功。</li>
-      <li>session 已属于完整 split 时，不替换现有成员、不创建第三 pane。普通顶部 activation 不能重新组合成员。</li>
-    </ul>
-  </section>
+    <!-- ============================================================ -->
+    <section id="issues">
+      <h2>7 · 已知不一致</h2>
+      <p>下面是代码与产品语义之间已经存在的缝，不是待办清单里的新设计。</p>
 
-  <section id="pip">
-    <h2>06b Agent 画中画预览</h2>
-    <p>Agent 通过 <code>webtab.command(op=open)</code> 开页时，若当前 active 条目是 session 且尚未与 Web 组成 pair，前端创建或复用 leaf WebTab，保持聊天焦点，并把该 WebTab 的 native <code>WebContentsView</code> 以小尺寸 bounds 画在聊天角落。已有分屏 Web 成员时仍走 <code>openWebTabInSplit</code>，只导航不另开第三 pane。</p>
-    <ul>
-      <li><strong>展开为分屏：</strong><code>setSplitWebTab(id)</code> 与当前 session 建组，小窗卸载，Web 进入右 pane。当前 session 已与文件（或其它非该 Web）组成满员 pair 时，先把另一成员换出到条上，再建立 session+web；不禁用按钮，也不创建第三 pane。</li>
-      <li><strong>全屏接管：</strong><code>setActive(id)</code>，中间栏只显示该 WebTab。</li>
-      <li><strong>关闭预览：</strong>清除可见 pip host 并注销 visible bounds；leaf tab 与内存中的位置尺寸保留。Agent 仍可用 <code>resolve</code> 访问后台页，<code>activate</code>/<code>preview</code> 要求可见。此时若该 WebTab 仍在后台且未进入 active/split，composer 环境条出现「显示网页预览」，点一下重新打开小窗。</li>
-      <li>标题栏拖动改位置，右下角拖拽改尺寸；矩形写入 pip store，不进 version 2 payload。小窗限制在聊天 pane 内，最小 <code>240×160</code>。桌面端 native bounds 跟随 body；拖动时 <code>syncVisible</code> 按 100ms 节流，指针抬起立即发布。</li>
-      <li>pip 状态不写入 version 2 payload。Web 版没有 BrowserView，小窗 body 降级为 iframe 或「在新标签打开」。</li>
-    </ul>
-  </section>
+      <div class="card warn">
+        <p><span class="flag">fork 不管 hide 之后的记忆。</span><code>pipOpenMustFork</code> 只看活跃绑定。A 点 ✕ 后会话 B 开同 URL，走 <code>ensureWebTab</code> 复用同一叶子并 <code>show(id, B)</code>——<code>show</code> 清掉 background，A 的恢复 chip 无声消失。「不劫持」的准确范围是「正在显示的悬浮窗」，不是「某会话的悬浮窗资产」。</p>
+      </div>
+      <div class="card warn">
+        <p><span class="flag">fork 只认规范叶子。</span>判定是 <code>webTabId(url) === boundTabId</code>。已被 fork 出去的 popup id 再被第三方打开时，条件为假，<code>ensureWebTab</code> 拿到的是另一片规范叶子——结果碰巧正确，守护的却是 id 形态而不是「任何被绑定的同 URL 叶子」。每次 fork 留下一个孤儿叶子，靠 <code>op=close</code> 或用户手关。</p>
+      </div>
+      <div class="card warn">
+        <p><span class="flag">close 不按打开者记账。</span>产品说法是「agent 能关自己打开的 tab，不能关用户布局里的 tab」。实现只看「是否在 group」。用户自己打开的独立网页可以被关；agent 打开后又被拖进组的不能关。</p>
+      </div>
+      <div class="card warn">
+        <p><span class="flag">fork 不进入 split 路径。</span>桌面宽屏且组内已有 web 时，<code>openWebTabInSplit</code> 会改已有窗格的 URL，不调用 <code>pipOpenMustFork</code>。同 URL 冲突只在 PiP 分支上成立。</p>
+      </div>
+      <div class="card warn">
+        <p><span class="flag">「不劫持」只管叶子，不管槽位。</span>R3 的 fork 让 B 得到新实例，但同一句 <code>show(id, B)</code> 覆盖全局唯一绑定。A 的规范叶子还在，绑定没了；切回 A 小窗不重现。用户对另一张网页点「收起到悬浮窗」同样静默顶掉旧绑定。产品句「不劫持」若理解为「A 的悬浮窗资产不被拿走」，实现没有做到。</p>
+      </div>
+      <div class="card warn">
+        <p><span class="flag">show 不解组。</span>agent 把已在别人 group 里的规范叶子绑成自己的 PiP 时，不调用 <code>ungroupTab</code>。回到该组会看到 R2 遮罩：组成员还在，页面宿主却声明给了另一个会话。</p>
+      </div>
+      <div class="card info">
+        <p><span class="flag info">region 口径不统一。</span><code>surfaceRefForChat</code> 把未入组的配对页（含 PiP）标成 <code>region:"right"</code>；<code>browserPageInventory</code> 把未入组且可见的页标成 <code>"center"</code>。agent 看到的左右/中心与库存不一致。</p>
+      </div>
+      <div class="card info">
+        <p><span class="flag info">条件 4 被条件 5 蕴含。</span>所有 <code>show</code> 的 owner 都是 session 标签，<code>activeId === ownerTabId</code> 已保证 <code>kind === "session"</code>。<code>pipCoverBase</code> 仍保留这条，是为 <code>WebPreviewChip</code> 在恢复前单独复用 <code>pipCoversCenter</code> 做兜底。</p>
+      </div>
+      <div class="card info">
+        <p><span class="flag info">PiP 不进 version-2 payload。</span>刷新后绑定、background、小窗位置全部丢失，叶子退回普通中心标签。「切回 owner 重现」只在同一渲染进程生命周期内成立。</p>
+      </div>
+    </section>
+  </main>
+</div>
 
-  <section id="visual">
-    <h2>07 顶部显示、pane 显示与无障碍</h2>
-    <h3>顶部 tab strip</h3>
-    <ul>
-      <li>每个 entry 对应一个 <code>role="tab"</code>。split entry 仍只有一个 tab target；两个成员槽位是视觉内容，不是两个可独立选择的 tab。</li>
-      <li>只有包含 <code>activeId</code> 的 entry 使用 active 背景与 <code>aria-selected="true"</code>。</li>
-      <li>active 背景由共享 <code>--tab-active-bg</code> 控制，普通条目与复合条目必须一致，并在浏览器与桌面模式统一取 <code>--bg-primary</code>。未选中条目继续透明显示更深的 <code>--tabrow-bg</code>，不增加边框或 active 动画；主题只负责提供各自的 surface token，不再对选中 tab 做反向明暗混合。</li>
-      <li>桌面最顶部全局 tab strip 固定为 <code>40px</code>；普通 tab 与复合分屏 tab 都固定为 <code>28px</code> 并垂直居中，使上下各保留 <code>6px</code>。tab 使用固定 <code>8px</code> 圆角，不使用半高圆角或悬浮阴影形成胶囊。成员关闭按钮继续使用 <code>20px</code> 点击区域；独立的新增与主菜单按钮保持 <code>28px</code>。</li>
-      <li>条目生命周期保留可见的几何动画：普通 Tab 新建时以 <code>180ms ease-out</code> 展开，关闭时以 <code>160ms ease-in</code> 收缩；关闭 split 的单个成员时，该成员淡出，外层复合条目同步在 <code>160ms</code> 内收缩为 single 宽度。active 切换仍然即时，split 仍只有整个条目可拖动。</li>
-      <li>两个成员槽位固定等宽，各自显示图标和省略标题；长标题只在本侧截断，不能压缩另一侧。两侧使用相同背景和文字层级，不显示当前侧高亮。</li>
-      <li>可访问名称为“Split tab: {left label} and {right label}”。两个成员关闭按钮分别标记“Close {member label}”；关闭后复合条目原位降为剩余 single tab。</li>
-      <li>拖动、键盘移动、中键关闭和跨窗口 transfer 都作用于整个 entry。成员槽位不注册 drag subject；移动单个成员前必须通过右键菜单或 pane 内按钮执行 Separate split。</li>
-    </ul>
+<script>
+(function () {
+  var scenes = {
+    owner: {
+      title: "会话 A 上的悬浮窗",
+      hint: "覆盖函数 · pipCoversCenter",
+      lead: "绑定仍是 (ex.dev, A)。覆盖函数五条全过，宿主是 PiP。",
+      tabs: [["会话 A", true], ["会话 B", false], ["ex.dev", false]],
+      frame: "chat-pip",
+      checks: [1, 1, 1, 1, 1],
+      kv: "<b>绑定</b> tabId=w:https://ex.dev · owner=会话 A<br><b>宿主</b> pip(A) · <code>peekLiveWebTabPipId()</code> = 该叶子"
+    },
+    other: {
+      title: "切到会话 B，小窗消失",
+      hint: "覆盖函数 · pipCoversCenter",
+      lead: "绑定没变。条件 5 失败，组件返回 null。切回 A 即重现。",
+      tabs: [["会话 A", false], ["会话 B", true], ["ex.dev", false]],
+      frame: "chat",
+      checks: [1, 1, 1, 1, 0],
+      kv: "<b>绑定</b> 仍在 · <code>pipBoundTabId()</code> 仍是该叶子<br><b>宿主</b> none · B 的 agent 开同 URL 会 fork"
+    },
+    mask: {
+      title: "直接打开被绑定的网页",
+      hint: "覆盖函数 · pipCoversCenter",
+      lead: "条件 2 失败，PiP 不画。pane 因 pipBound 渲染遮罩，native view 两边都不上报。",
+      tabs: [["会话 A", false], ["会话 B", false], ["ex.dev", true]],
+      frame: "mask",
+      checks: [1, 0, 1, 0, 0],
+      kv: "<b>绑定</b> 仍在<br><b>宿主</b> none + 遮罩声明「内容属于会话 A」"
+    },
+    file: {
+      title: "激活文件 / 终端等",
+      hint: "覆盖函数 · pipCoversCenter",
+      lead: "小窗是聊天旁的预览，不覆盖其他中心页。绑定保留。",
+      tabs: [["会话 A", false], ["main.py", true], ["ex.dev", false]],
+      frame: "file",
+      checks: [1, 1, 1, 0, 0],
+      kv: "<b>绑定</b> 仍在<br><b>宿主</b> none · 再点 ex.dev 会走到遮罩场景"
+    },
+    hide: {
+      title: "✕ 关闭预览之后",
+      hint: "恢复预演 · pipCoversCenter(background…)",
+      lead: "hide() 清空活跃绑定。live 覆盖没有输入。chip 用 background 对预演同一函数——在 owner 上五条都会过，所以出现「显示网页预览」。",
+      tabs: [["会话 A", true], ["会话 B", false], ["ex.dev", false]],
+      frame: "chip",
+      checks: [1, 1, 1, 1, 1],
+      kv: "<b>活跃绑定</b> 空<br><b>恢复预演</b> pipCoversCenter(backgroundTabId, A) 为真 · 点 chip 才 show"
+    },
+    fork: {
+      title: "会话 B 打开同一 URL",
+      hint: "覆盖函数 · 现在的绑定是 B 的 fork 叶子",
+      lead: "不劫持的是叶子：B 拿到 popup id，不复用 A 的 w:url。全局 PiP 槽位仍是单例，show(新叶子, B) 直接覆盖 A 的绑定。",
+      tabs: [["会话 A", false], ["会话 B", true], ["ex.dev", false]],
+      frame: "fork",
+      checks: [1, 1, 1, 1, 1],
+      kv: "<b>现在的绑定</b> 新叶子 :popup: · owner=B<br><b>A 的规范叶子</b> 仍在 store，已无绑定；切回 A 不会自动重现小窗"
+    }
+  };
 
-    <h3>两个 pane</h3>
-    <ul>
-      <li>两个 pane 使用相同背景、边框宽度和视觉层级。点击后不得新增强调边框或改变 divider 方向图标。</li>
-      <li>divider 只表示可调整尺寸，不表示哪侧 active；键盘 focus outline 只满足操作可见性，不等于 pane 被产品选中。</li>
-      <li>拖动 divider 或使用其左右方向键后，第一 pane 的实际宽度必须随 <code>splitRatio</code> 改变；会话 pane 作为第一 pane 时不得被通用 <code>.center-pane-chat</code> flex 规则重新均分。比例继续限制在既有最小宽度范围内并通过 version 2 payload 持久化。</li>
-      <li>本次不新增基于宽度或 focus 隐藏、重排任一 pane 的逻辑。两个 pane 继续使用既有左右布局、最小宽度和 divider 约束。</li>
-      <li>split entry 变为 inactive 时，两个 pane 都从可见布局中移除。Electron native WebContentsView 同步隐藏并注销 visible bounds。</li>
-    </ul>
-  </section>
+  var labels = [
+    "叶子仍是 web",
+    "activeId ≠ tabId",
+    "不在当前组 visibleIds",
+    "active.kind === session",
+    "activeId === ownerTabId"
+  ];
 
-  <section id="routing">
-    <h2>08 操作路由与会话语义</h2>
-    <p>取消 pane-level active 状态不等于取消精确目标。所有操作必须从事件来源或显式 tab id 路由，不能读取“最后聚焦 pane”作为业务所有权。</p>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>操作</th><th>目标解析</th><th>禁止行为</th></tr></thead>
-        <tbody>
-          <tr><td>Web Back/Forward/Home/Reload/address</td><td>使用该 toolbar 所属 <code>WebTabPane.tabId</code></td><td>读取全局 active web 或 focusedId</td></tr>
-          <tr><td>Composer send</td><td>使用该 session pane 的 sessionId</td><td>把另一 pane 的 session 当作当前会话</td></tr>
-          <tr><td>Web Use / native target</td><td>使用调用中的 windowId、tabId 和精确 targetId</td><td>从当前可见 Web 中任意选一个</td></tr>
-          <tr><td>Cmd+W / entry close</td><td>关闭包含 <code>activeId</code> 的整个 entry</td><td>根据最后 DOM focus 猜测关闭某一 pane</td></tr>
-          <tr><td>成员关闭按钮</td><td>使用按钮绑定的 leaf tab id</td><td>关闭整个 split 或另一成员</td></tr>
-          <tr><td>Pane-local close</td><td>按钮所属 leaf tab</td><td>关闭整个 split 或另一成员</td></tr>
-        </tbody>
-      </table>
-    </div>
+  function paintFrame(kind) {
+    var chat = '<div class="chat-line w70"></div><div class="chat-line w50"></div><div class="chat-line w40"></div>';
+    var pip = '<div class="pip"><div class="pip-bar"><span>ex.dev</span><span>⧉ ⤢ ✕</span></div><div class="pip-page">页面实时内容</div></div>';
+    if (kind === "chat-pip") return chat + pip;
+    if (kind === "chat") return chat;
+    if (kind === "file") return '<div class="file-block">文件 / 终端 pane · PiP 不覆盖</div>';
+    if (kind === "mask") return '<div class="mask"><div>正在由「会话 A」控制</div><div class="mask-btns"><span aria-hidden="true">结束浮动</span><span aria-hidden="true">转到该会话</span></div></div>';
+    if (kind === "chip") return chat + '<div class="chip" aria-hidden="true">显示网页预览</div>';
+    if (kind === "fork") return chat + '<div class="pip fork-pip"><div class="pip-bar"><span>ex.dev · fork</span><span>✕</span></div><div class="pip-page">B 的独立实例</div></div>';
+    return chat;
+  }
 
-    <h3>共享 session UI</h3>
-    <ul>
-      <li>split 中只有一个 session 时，窗口级 session 摘要可绑定该唯一 session。</li>
-      <li>split 中有两个 session 时，pane 交互可以更新内部 session 路由和控件归属，但顶部仍只显示整个复合条目选中，不显示当前侧。</li>
-      <li>两个 session 各自的消息、composer、任务状态和局部控件由各自 pane 持有。</li>
-    </ul>
-  </section>
+  function selectScene(id, focusTab) {
+    var scene = scenes[id];
+    if (!scene) return;
+    var tabs = document.querySelectorAll('.scene-tabs [role="tab"]');
+    tabs.forEach(function (btn) {
+      var on = btn.getAttribute("data-scene") === id;
+      btn.setAttribute("aria-selected", on ? "true" : "false");
+      btn.tabIndex = on ? 0 : -1;
+      if (on && focusTab) btn.focus();
+    });
+    document.getElementById("panel-scene").setAttribute("aria-labelledby", "tab-" + id);
+    document.getElementById("scene-hint").textContent = scene.hint;
+    document.getElementById("scene-title").textContent = scene.title;
+    document.getElementById("scene-lead").textContent = scene.lead;
+    document.getElementById("mock-tabs").innerHTML = scene.tabs.map(function (t) {
+      return '<span class="mock-tab' + (t[1] ? " on" : "") + '">' + t[0] + "</span>";
+    }).join("");
+    document.getElementById("mock-frame").innerHTML = paintFrame(scene.frame);
+    document.getElementById("mock-frame").setAttribute("aria-label", scene.title);
+    document.getElementById("scene-checks").innerHTML = labels.map(function (label, i) {
+      var pass = scene.checks[i];
+      return '<li class="' + (pass ? "pass" : "fail") + '"><span class="dot"></span><span>' +
+        (pass ? "成立 · " : "挡住 · ") + label + "</span></li>";
+    }).join("");
+    document.getElementById("scene-kv").innerHTML = scene.kv;
+  }
 
-  <section id="persistence">
-    <h2>09 持久化、恢复与兼容</h2>
-    <h3>Version 2 normalization</h3>
-    <ul>
-      <li>按首次出现去重 tabs 和 group 成员；每个 leaf tab 最多属于一个 group。</li>
-      <li>group 只保留前两个合法成员；少于两个成员时 group 解散，剩余 leaf tab 继续作为普通顶部条目。</li>
-      <li>旧三成员 group 恢复为一个双成员复合条目和一个普通条目，不丢失第三个 leaf tab。</li>
-      <li>当 <code>splitWebTabId</code> 已属于某个合法 group 时，normalization 保留该所有权；切换 <code>activeId</code> 不得重新组合。</li>
-      <li>只有 Web 尚未属于 group 且兼容入口明确请求 split 时，才允许与当前 session 建组。</li>
-      <li><code>activeId</code> 无效时选择第一个 leaf tab；顶部再根据它所属的 group 派生整个 active entry。</li>
-    </ul>
+  var order = ["owner", "other", "mask", "file", "hide", "fork"];
+  document.querySelector(".scene-tabs").addEventListener("click", function (event) {
+    var btn = event.target.closest("[data-scene]");
+    if (btn) selectScene(btn.getAttribute("data-scene"));
+  });
+  document.querySelector(".scene-tabs").addEventListener("keydown", function (event) {
+    var btn = event.target.closest("[data-scene]");
+    if (!btn) return;
+    var i = order.indexOf(btn.getAttribute("data-scene"));
+    var next = i;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (i + 1) % order.length;
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = (i - 1 + order.length) % order.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = order.length - 1;
+    else return;
+    event.preventDefault();
+    selectScene(order[next], true);
+  });
 
-    <h3>兼容边界</h3>
-    <ol>
-      <li>不修改 storage key、payload version、tab id、group id 或 transfer journal 版本。</li>
-      <li><code>focusedId</code> 保留给会话路由、URL 和内部控件所有权；顶部不根据它渲染成员 selected 状态。</li>
-      <li><code>visibleIds</code> 在两成员上限下等于可显示成员集合，不再用于隐藏第三成员。</li>
-      <li>跨窗口 group payload 超过两个成员时返回 <code>group-full</code>，不部分插入。</li>
-    </ol>
-  </section>
+  document.getElementById("jump").addEventListener("change", function () {
+    var href = this.value;
+    if (href) location.hash = href;
+  });
 
-  <section id="lifecycle">
-    <h2>10 关闭、移动、跨窗口转移与失败</h2>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>动作</th><th>结果</th><th>原子性要求</th></tr></thead>
-        <tbody>
-          <tr><td>关闭复合顶部 tab</td><td>关闭两个成员；dirty 成员沿用现有保护</td><td>任一成员拒绝关闭时，不提交半关闭 entry</td></tr>
-          <tr><td>关闭单侧 pane</td><td>复合 entry 原位降为另一成员的 single entry</td><td>tabs 与 groups 通过同一 store commit 规范化</td></tr>
-          <tr><td>拖动复合 tab</td><td>整个 entry 改变顶部位置</td><td>成员 left/right 顺序不变</td></tr>
-          <tr><td>转移复合 tab 到新窗口</td><td>两个成员与 group 元数据一起转移</td><td>journal prepare/commit/rollback 覆盖整个 entry</td></tr>
-          <tr><td>转移单侧</td><td>先显式 Separate split，再转移生成的 single entry</td><td>不提供隐式 segment drag</td></tr>
-          <tr><td>目标窗口拒绝 transfer</td><td>源窗口完整恢复 split entry</td><td>不能只恢复一个成员</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <h3>失败与并发</h3>
-    <ul>
-      <li>native WebContentsView 未 ready、CDP target 丢失或 bounds 暂时不可用时，split entry 不自动拆分或替换成员；对应 pane 显示现有加载/错误状态。</li>
-      <li>inactive split entry 的后台 title、favicon、dirty 或任务状态更新只更新 leaf tab 数据，不激活 entry。</li>
-      <li>连续顶部 activation 同步更新 <code>activeId</code>；不增加队列或锁，且不能修改 group membership。</li>
-      <li>transfer 继续使用现有 journal；group 与 tabs 在同一 payload transaction 中提交。</li>
-    </ul>
-  </section>
-
-  <section id="acceptance">
-    <h2>11 实施边界与可执行验收</h2>
-    <div class="card">
-      <p><strong>设计权威：</strong>本页定义 center tab 与 split entry 行为；<a href="state-layer.html">state-layer.md</a> 定义 session 数据所有权；<a href="web-tab-native-bounds.html">web-tab-native-bounds.html</a> 定义 native Web bounds。</p>
-      <p><strong>生产范围：</strong><code>center-tab-groups.ts</code>、<code>center-tabs-persistence.ts</code>、<code>center-tabs-store.ts</code>、center-tabs 组件与 hooks、<code>desktop-bridge.ts</code>。既有 AppShell pane 解析、transfer journal 与 pending projection 继续复用。</p>
-      <p><strong>测试范围：</strong><code>check:center-tabs</code>、<code>check:compound-tabs</code>、<code>check:web-split</code>、desktop webtab/transfer checks、TypeScript 和 production build。</p>
-    </div>
-
-    <h3>顶部复合 tab 视觉约束</h3>
-    <div class="card">
-      <p><strong>生产范围：</strong><code>apps/web/components/center-tabs/tab-items.tsx</code> 和 <code>center-tabs.module.css</code>；回归入口为 <code>apps/web/scripts/check-center-tabs.mjs</code> 与相关 <code>check-chat-ui.mjs</code> 断言。</p>
-      <p><strong>检查契约：</strong><code>npm --prefix apps/web run check:center-tabs</code> 必须证明一个 <code>role=tab</code>、两个 <code>1fr</code> 成员槽位、两个成员关闭按钮和唯一 group drag subject，并拒绝前置 <code>Columns2</code> 图标。</p>
-      <p><strong>不改：</strong>version 2 payload、group normalization、active entry 推导、pane 渲染、Runtime Web ownership、transfer journal、pointer drag 状态机和跨窗口协议。拖动继续只做整个 entry 的 reorder/transfer；不新增依赖、动画系统或成员拖动。</p>
-      <p><strong>证据：</strong>定向 RED/GREEN、TypeScript、Web 全量检查、production build、desktop webtab/transfer、Python desktop checks、文档构建/断链、diff 检查、两个独立 review，以及默认 18100 安装版的实际相等宽度和切换行为。</p>
-    </div>
-
-    <h3>分屏宽度回归修复任务说明</h3>
-    <div class="card">
-      <p><strong>生产范围：</strong><code>apps/web/app/styles/base.css</code>；测试范围限定为现有公开入口 <code>apps/web/scripts/check-web-split.mjs</code>。不修改 pointer handler、ratio store、持久化 schema、pane 顺序或最小宽度常量。</p>
-      <p><strong>public-entry RED：</strong><code>npm --prefix apps/web run check:web-split</code> 必须先证明第一 pane 同时为 <code>center-split-primary center-pane-chat</code> 时，主 pane 的固定 flex 规则具有足够 specificity，不会被通用 chat pane flex 覆盖。GREEN 后默认安装版必须证明真实 divider pointer drag 同时改变 store ratio 与两个 pane 的 bounding width。</p>
-      <p><strong>证据：</strong>定向 RED/GREEN、Web 全量检查、TypeScript、production build、desktop webtab/transfer checks、Python desktop checks、文档构建/断链、diff 检查、两个独立 review，以及默认 18100 安装版的拖动前后 ratio、pane width 和刷新恢复数据。</p>
-    </div>
-
-    <h3>Web toolbar 显式成员选择任务说明</h3>
-    <div class="card">
-      <p><strong>生产范围：</strong><code>apps/web/components/center-tabs/web-tab-pane.tsx</code>；复用 <code>split-view-picker.tsx</code>、<code>labelOf()</code> 和现有 <code>groupTab()</code>，不新增 store 字段、持久化格式、弹窗组件或依赖。</p>
-      <p><strong>public-entry RED 证据：</strong><code>npm --prefix apps/web run check:web-split</code> 曾因 toolbar 未渲染 <code>SplitViewPicker subjectId={tabId}</code> 而失败；旧实现同时包含 <code>setSplitWebTab(tabId)</code>、<code>openDraftSessionTab()</code> 和 <code>newSession()</code> 的自动配对路径。实现后，同一检查要求 picker 存在并拒绝上述自动路径。</p>
-      <p><strong>目标行为：</strong>single Web 的 Split 点击只打开 picker；picker 列出所有合法其他 single tabs，选中后才合并。提交成功时新 pair 立即成为 active entry，两个成员立即显示且 divider 为 50/50；不能继续显示原先 active 的其他 entry，也不能继承旧 ratio。已在 split 中的 Web 点击同一按钮执行现有 Separate 行为。取消、空候选和提交拒绝都不自动选择或创建 tab。</p>
-      <p><strong>提交与焦点约束：</strong>选择候选时必须用最新 <code>tabs/groups</code> 重新执行 <code>splitCandidates()</code> 校验；候选已被其他操作加入分屏时拒绝提交，不得把它从现有 owner 移出。空候选时焦点进入 picker 的 Close；Escape、Close 与成功选择恢复 toolbar trigger，outside pointer dismissal 保留用户新点击元素的焦点。</p>
-      <p><strong>明确排除：</strong>不修改候选排序、不增加搜索/MRU、不允许第三 pane、不改变右键菜单、drag、transfer、ratio 或 Web Use target 绑定。</p>
-    </div>
-
-    <h3>当前实现约束</h3>
-    <ol>
-      <li>version 2 normalization 保持已被 group 拥有的 Web owner，不随 <code>activeId</code> 改变。</li>
-      <li>group 最多包含两个成员；恢复旧三成员状态时，第三个成员保留为普通条目。</li>
-      <li><code>CompoundTabItem</code> 只有一个 tab target 和一个 drag target；菜单、键盘、拖动和 Cmd+W 以完整条目为单位。</li>
-      <li>Runtime Web open、非活动 owner composite 激活、dirty 关闭、roving tabindex、drag root 与 post-drag synthetic click 均由现有检查覆盖。</li>
-      <li>顶部条目显示两个等宽成员格、成员图标、标题和关闭入口，不显示前置 <code>Columns2</code> 图标；成员展示层不截获 pointer focus。</li>
-      <li>成员最小宽度为 136px；关闭中的按钮使用 <code>aria-disabled</code> 并继续截获 pointer，避免下一次按压触发 group drag。</li>
-      <li>默认 18100 安装版中，两个成员宽度为 <code>131.67px / 131.67px</code>，包含一个 <code>role=tab</code>、一个 selected target 和两个关闭按钮；从任一成员正文拖动均保持成员 ID 与 group 不变。</li>
-      <li>组合选择器保证 ratio 变化会反映到两侧 pane 宽度；定向检查、Web 全量检查、TypeScript、production build、desktop checks、Python checks 与文档检查覆盖该约束。</li>
-      <li>默认 18100 安装版中，会话位于第一 pane 时从 <code>557.27px / 480.01px</code> 拖到 <code>460.26px / 577.01px</code>，反向拖动为 <code>533.25px / 504.02px</code>；交换成员顺序后两侧同样随 ratio 改变。重新选择复合条目和刷新页面后，ratio 与 bounding width 均保持一致，并已恢复原成员顺序。</li>
-    </ol>
-
-    <h3>验收标准</h3>
-    <ol>
-      <li><strong>整体选中：</strong>顶部 split(A,W) 只有一个 active 背景和一个 <code>aria-selected=true</code>，内部没有两个 tab target；同时必须清楚显示两个成员身份。</li>
-      <li><strong>顶部几何：</strong>Electron 最顶部全局 tab strip 为 <code>40px</code>；普通与复合 tab 都为 <code>28px</code>，上下间距各为 <code>6px</code>。关闭按钮保持 <code>20px</code> 点击区域，新增与主菜单按钮保持 <code>28px</code>。</li>
-      <li><strong>主题对比：</strong>桌面深色、light 与 beige-light 主题都保持选中条目明显亮于未选中栏面。普通 tab 与 split tab 使用同一个 active token，hover、focus、drag 和非选中背景不改变。</li>
-      <li><strong>等宽成员：</strong>两个成员槽位的 bounding width 相等；任一标题变长后仍相等，并且只在自己的槽位内省略。</li>
-      <li><strong>无 pane 选中：</strong>依次点击左右 pane，顶部 DOM、class、entry 状态和 pane 边框不变化；只允许自然 DOM focus 变化。</li>
-      <li><strong>整体切换：</strong>从 split(A,W) 选择 B 后，A 与 W 同时不可见，B 单独显示；Electron 中 W 的 native view 同时隐藏。</li>
-      <li><strong>整体恢复：</strong>重新选择 split(A,W) 后，两侧内容、滚动/会话状态和 ratio 恢复。</li>
-      <li><strong>宽度调整：</strong>从 divider 向左或向右拖动后，两侧 bounding width 按受约束的 <code>splitRatio</code> 改变；刷新或重新选择该 split entry 后恢复相同比例。会话位于第一 pane 与第二 pane 两种顺序都成立。</li>
-      <li><strong>不固定 Web：</strong>连续选择 session、file、builtin、NTP 和另一个 web entry，W 都不跟随、不 regroup、不改变 entry order。</li>
-      <li><strong>局部路由：</strong>左右 toolbar、composer、close 与 Web Use 都作用于事件来源的精确 tab/session/target。</li>
-      <li><strong>创建与拆分：</strong>两个 single entries 合成一个 split entry；Separate 后恢复为相邻 singles，顺序确定。</li>
-      <li><strong>显式成员选择：</strong>从 Web toolbar 点击 Split 后，当前 Web 固定为 source，必须选择另一个可用 tab 才创建分屏；取消前后 tabs、groups、activeId 和 session 数量完全不变。</li>
-      <li><strong>新组合初始状态：</strong>在 ratio=0.35、0.5、0.65 三种旧状态下分别提交新 pair，成功后都必须得到 <code>splitRatio=0.5</code>，<code>activeId</code> 等于用户刚选择的成员，center body 立即只显示这两个成员；若该成员是 session，pathname、<code>runtimeState.currentSessionId</code>、composer 和 Page binding 必须全部指向它。同一次 store mutation 只写一个持久 payload。</li>
-      <li><strong>并发与焦点：</strong>picker 打开后 target 若被其他操作分组，旧选择提交必须拒绝且原 group 不变；空候选时 Close 获得焦点；outside click 关闭后焦点停留在实际点击目标。</li>
-      <li><strong>关闭：</strong>两个成员关闭按钮分别关闭对应 leaf 并原位折叠为 single；Cmd+W/entry close 关闭整个 split；dirty 拒绝不产生半状态。</li>
-      <li><strong>移动与 transfer：</strong>从任一成员的非按钮区域拖动都只产生 group drag，复合 tab 作为一个单位 reorder 和跨窗口转移；不存在成员 drag 或拖动拆分，rollback 同时恢复两个成员。</li>
-      <li><strong>显式拆分：</strong>Separate split 只由右键菜单或 pane 内现有退出分屏按钮触发；拖动不能调用 <code>ungroupTab</code>。</li>
-      <li><strong>恢复：</strong>version 2 payload 不新增错误 pair；三成员 group 规范化为一个双成员 split 加一个 single。</li>
-      <li><strong>窄窗口：</strong>两个 pane 仍属于同一 active entry，保持既有左右布局与最小宽度约束，不根据 focus 隐藏或重排一侧。</li>
-      <li><strong>回归：</strong>single tab、Home/NTP 原位替换、bookmark、file draft、session composer、browser iframe 和 native WebContentsView 不退化。</li>
-    </ol>
-
-    <h3>明确排除</h3>
-    <ul>
-      <li>窗口级 Web pin、pane active/inactive 状态、active pane 视觉、pane-local tab strip。</li>
-      <li>三个以上 pane、三成员复合 tab、任意二维网格。</li>
-      <li>tab group 名称、颜色、云同步、收藏或自动分类。</li>
-      <li>新的 MRU、动画系统、拖动算法重写或新增依赖。</li>
-      <li>外部浏览器 profile、隐藏浏览器、sidecar 或 headless fallback。</li>
-      <li>Windows 专用实现、测试、打包、兼容，以及 OS Keychain/keyring/Credential Manager。</li>
-    </ul>
-
-    <h3>Full gate manifest</h3>
-    <pre><code>npm --prefix apps/web run check:center-tabs
-npm --prefix apps/web run check:compound-tabs
-npm --prefix apps/web run check:web-split
-npm --prefix apps/web run check
-npm exec --workspace apps/web -- tsc --noEmit
-npm --prefix apps/web run build
-npm --prefix apps/desktop run check:webtabs
-npm --prefix apps/desktop run check:tab-transfer-store
-python -m pytest -q tests/component/webui/test_desktop_checks.py
-python -m scripts.docs_site.checklinks
-git diff --check</code></pre>
-  </section>
-
-  <section id="status">
-    <h2>12 实现与验证状态</h2>
-    <div class="card">
-      <p><strong>顶部复合 tab、分屏宽度调整、Web toolbar 显式成员选择与 Agent 画中画预览均已实现。</strong>小窗可拖动与调尺寸；session 已与文件成对时展开分屏会换出文件成员；关闭预览后可从环境条重新打开后台页。</p>
-      <p>toolbar picker 的 focused checks、TypeScript、production build、Desktop WebTab/transfer checks 与文档链接检查通过。默认安装版验证了：选择前不创建 group；选择指定 target 后只生成该精确 pair；Escape 不改持久化状态；非空候选首项获得焦点；空候选 Close 获得焦点；outside dismissal 保留实际点击目标焦点。验收结束后恢复原 tabs、groups、activeId、URL 与 split ratio。</p>
-      <p><strong>主题化 active 对比度：</strong>选中 tab 统一使用内容 surface，未选中 tab 保持透明并显示更深的 tab 栏 surface；浅色和深色主题均遵循“栏面更暗、选中面更亮”，不再使用浅色主题下的反向灰色 active 面。</p>
-      <p><strong>桌面顶部几何：</strong>最顶部全局 tab strip 固定为 <code>40px</code>，普通与复合 tab 固定为 <code>28px</code> 并垂直居中，上下各保留 <code>6px</code>；关闭按钮为 <code>20px</code>，新增与主菜单按钮为 <code>28px</code>。默认 18100 安装版实测 strip 为 <code>39.995px</code>、普通 tab 为 <code>27.999px</code>、tab 顶部位置为 <code>5.998px</code>；独立 specification 与 quality review 均为 PASS。</p>
-      <p>顶部 split entry 有两个等宽成员格、两套图标、标题和关闭入口，以及一个外层 active、tab 和 drag target；不存在成员拖动拆分或成员级 selected 状态。</p>
-      <p>默认安装版保留显式 Separate 入口；拖动左右任一成员正文只移动整个 group。切换普通 entry 后原 group 不改 owner、不 regroup，重新选择后恢复原两侧内容和 ratio。divider 可在两个方向调整 pane 宽度，会话位于任一侧时均遵守同一 ratio 和最小宽度约束。</p>
-    </div>
-  </section>
-</main>
+  selectScene("owner");
+})();
+</script>
 </body>
 </html>

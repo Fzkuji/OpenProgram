@@ -2,7 +2,7 @@
 
 Aggregates the three in-flight populations the worker already tracks:
 
-  turn     — foreground chat turns (server._running_tasks)
+  tool     — tool calls executing right now (bash, execute_code, …)
   job      — background jobs across ALL sessions (JobRunner.list_jobs)
   process  — background shells started by the `process` tool
 
@@ -18,18 +18,25 @@ from fastapi.responses import JSONResponse
 def _collect() -> list[dict]:
     items: list[dict] = []
 
-    from openprogram.webui import server as _s
-    with _s._running_tasks_lock:
-        tasks = {sid: dict(t) for sid, t in _s._running_tasks.items()}
-    for sid, task in tasks.items():
-        items.append({
-            "kind": "turn",
-            "id": task.get("execution_id") or f"{task.get('msg_id')}_reply",
-            "session_id": sid,
-            "label": task.get("func_name") or "chat",
-            "status": "cancelling" if task.get("cancelling") else "running",
-            "started_at": task.get("started_at"),
-        })
+    try:
+        # openprogram.agent re-exports the agent_loop *function* under the
+        # same name, shadowing the module — import the module explicitly.
+        import importlib
+        _loop = importlib.import_module("openprogram.agent.agent_loop")
+        with _loop.RUNNING_TOOL_CALLS_LOCK:
+            calls = {cid: dict(c) for cid, c in _loop.RUNNING_TOOL_CALLS.items()}
+        for cid, call in calls.items():
+            items.append({
+                "kind": "tool",
+                "id": cid,
+                "session_id": None,
+                "label": call.get("label") or call.get("tool_name") or "tool",
+                "tool_name": call.get("tool_name"),
+                "status": "running",
+                "started_at": call.get("started_at"),
+            })
+    except Exception:
+        pass
 
     try:
         from openprogram.agent.job.runner import get_runner

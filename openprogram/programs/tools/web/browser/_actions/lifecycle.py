@@ -34,7 +34,23 @@ def _close(session_id: str) -> str:
     is_cdp = sess.get("is_cdp", False)
     if is_cdp:
         # Just close our own page — never tear down the user's real Chrome.
-        # app 模式更进一步：页面是桌面应用里用户可见的 tab，只断开、不关页。
+        # app 模式：仅关闭 agent 自己 open 出来的页；复用的用户页只断开。
+        page_closed = False
+        if (
+            sess.get("is_app")
+            and sess.get("app_agent_opened")
+            and sess.get("app_tab_id")
+        ):
+            binding_id = sess.get("app_binding_id") or sess.get("binding_id")
+            if isinstance(binding_id, str) and binding_id:
+                try:
+                    from openprogram.webui.ws_actions.webtab import request_close_tab
+                    reply = request_close_tab(binding_id)
+                    page_closed = bool(reply.get("ok"))
+                    if not page_closed and reply.get("error"):
+                        errors.append(str(reply["error"]))
+                except Exception as e:
+                    errors.append(f"close: {e}")
         page = None if sess.get("is_app") else sess.get("page")
         if page is not None:
             try:
@@ -47,6 +63,13 @@ def _close(session_id: str) -> str:
                 pw.stop()
             except Exception as e:
                 errors.append(f"playwright: {e}")
+        if page_closed:
+            if errors:
+                return (
+                    f"Closed the desktop page for session {session_id} "
+                    f"with warnings: {'; '.join(errors)}"
+                )
+            return f"Closed the desktop page for session {session_id}."
         target = "the desktop app" if sess.get("is_app") else "Chrome"
         if errors:
             return f"Detached from {target} (session {session_id}) with warnings: {'; '.join(errors)}"

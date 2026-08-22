@@ -350,9 +350,68 @@ def request_page_inventory(binding_id: str, timeout: float = 5.0) -> dict:
     return result
 
 
+def request_close_tab(binding_id: str, timeout: float = 5.0) -> dict:
+    """Close the desktop tab owned by one live surface binding."""
+    import os
+    if os.environ.get("OPENPROGRAM_IN_AGENTIC_SUBPROCESS") == "1":
+        return _request({"op": "close", "binding_id": binding_id}, timeout)
+    with _lock:
+        entry = _bindings.get(binding_id)
+    if entry is None:
+        return {
+            "ok": False,
+            "error": "surface binding is unavailable",
+            "reason_code": "page_context_stale",
+        }
+    ws, _window_id, tab_id, _target_id, expires_at, *_rest = entry
+    if time.monotonic() >= expires_at:
+        release_binding(binding_id)
+        return {
+            "ok": False,
+            "error": "surface binding expired",
+            "reason_code": "page_context_stale",
+        }
+    result = request_on_ws(ws, {"op": "close", "tab_id": tab_id}, timeout)
+    if result.get("ok"):
+        release_binding(binding_id)
+    return result
+
+
+def _ws_for_window(window_id: str):
+    with _lock:
+        for ws, wid in _desktop_windows.items():
+            if wid == window_id:
+                return ws
+    return None
+
+
+def _bind_opened_tab(result: dict) -> dict:
+    if not result.get("ok"):
+        return result
+    window_id = result.get("window_id")
+    tab_id = result.get("tab_id")
+    target_id = result.get("target_id")
+    if not (
+        isinstance(window_id, str) and window_id
+        and isinstance(tab_id, str) and tab_id
+        and isinstance(target_id, str) and target_id
+    ):
+        return result
+    ws = _ws_for_window(window_id)
+    if ws is None:
+        return result
+    result["binding_id"] = register_binding(
+        ws, window_id, tab_id, target_id, allow_background=True,
+    )
+    return result
+
+
 def request_open_tab(url: str, timeout: float = 15.0) -> dict:
     """Open/focus ``url`` and return the active desktop tab identity."""
-    return _request({"op": "open", "url": url}, timeout)
+    import os
+    if os.environ.get("OPENPROGRAM_IN_AGENTIC_SUBPROCESS") == "1":
+        return _request({"op": "open", "url": url}, timeout)
+    return _bind_opened_tab(_request({"op": "open", "url": url}, timeout))
 
 
 def request_active_tab(timeout: float = 5.0) -> dict:
@@ -433,6 +492,9 @@ async def handle_webtab_result(ws, cmd: dict):
                     "panes": panes,
                 }
             tab_entries.append(entry)
+        window_id = cmd.get("window_id")
+        if ws is not None and isinstance(window_id, str) and window_id:
+            _desktop_windows[ws] = window_id
         holder["result"] = {
             "ok": bool(cmd.get("ok")),
             "error": cmd.get("error"),

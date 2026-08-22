@@ -99,8 +99,15 @@ def _bridge_webtab_to_parent(data: dict, answer_queue) -> None:
         and command.get("op") == "activate"
         and isinstance(command.get("binding_id"), str)
     )
+    bound_close = (
+        isinstance(command, dict)
+        and command.get("op") == "close"
+        and isinstance(command.get("binding_id"), str)
+    )
     if not isinstance(command, dict) or (
-        command.get("op") not in {"open", "active"} and not bound_activate
+        command.get("op") not in {"open", "active"}
+        and not bound_activate
+        and not bound_close
     ):
         result = {"ok": False, "error": "unsupported webtab bridge operation"}
     else:
@@ -123,6 +130,12 @@ def _bridge_webtab_to_parent(data: dict, answer_queue) -> None:
                     expected_geometry_revision=int(
                         command.get("expected_geometry_revision") or 0
                     ),
+                )
+            elif bound_close:
+                result = webtab.request_close_tab(binding_id, timeout=timeout)
+            elif command.get("op") == "open":
+                result = webtab.request_open_tab(
+                    command.get("url") or "", timeout=timeout,
                 )
             else:
                 result = webtab._request(command, timeout)

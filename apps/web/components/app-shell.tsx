@@ -16,7 +16,6 @@ import { NewTabPage } from "./center-tabs/new-tab-page";
 import { TerminalPage } from "./center-tabs/terminal-page";
 import { WebTabPane } from "./center-tabs/web-tab-pane";
 import { WebTabPip } from "./center-tabs/web-tab-pip";
-import { useWebTabPip } from "@/lib/state/web-tab-pip-store";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   findCenterTabGroup,
@@ -231,15 +230,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // It must survive leaving the chat route entirely (the store's
     // currentSessionId is nulled then), hence its own module.
     if (isChatRoute(pathname)) setLastChatPath(pathname);
-
-    // The web-preview PiP is bound to the chat view. Leaving the chat
-    // route must collapse it (tabId → backgroundTabId) instead of only
-    // unmounting the component: otherwise the stale store state makes it
-    // pop back up on return, and on desktop the native WebContentsView
-    // can linger over the new page.
-    if (!isChatRoute(pathname) && useWebTabPip.getState().tabId) {
-      useWebTabPip.getState().hide();
-    }
 
     // Keep `runtimeState.currentSessionId` in lockstep with the Next.js
     // client route. It seeds itself from the URL once at module load;
