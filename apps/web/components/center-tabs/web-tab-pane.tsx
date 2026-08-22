@@ -135,30 +135,32 @@ function PipBoundMask({ tabId }: { tabId: string }) {
   );
 }
 
-function CollapseToPipButton({ tabId }: { tabId: string }) {
-  const { text } = useTranslation();
+function usePipCollapseTarget(tabId: string) {
   const tabs = useCenterTabs((s) => s.tabs);
   const groups = useCenterTabs((s) => s.groups);
   const boundOwnerId = useWebTabPip((s) => (s.tabId === tabId ? s.ownerTabId : null));
-  const targetId = boundOwnerId ?? pipCollapseTargetFor(tabId, { tabs, groups });
-  const targetTitle = targetId
-    ? tabs.find((tab) => tab.id === targetId)?.title
-      || text("that session", "该会话")
-    : null;
-  const label = !targetTitle
-    ? text("Collapse to floating window", "收起到悬浮窗")
-    : boundOwnerId
-      ? text(
-        `Return to the floating window in “${targetTitle}”`,
-        `返回「${targetTitle}」的悬浮窗`,
-      )
-      : text(`Float over “${targetTitle}”`, `浮动到「${targetTitle}」`);
+  return boundOwnerId ?? pipCollapseTargetFor(tabId, { tabs, groups });
+}
+
+function CollapseToPipButton({ tabId }: { tabId: string }) {
+  const { text } = useTranslation();
+  const tabs = useCenterTabs((s) => s.tabs);
+  const boundOwnerId = useWebTabPip((s) => (s.tabId === tabId ? s.ownerTabId : null));
+  const targetId = usePipCollapseTarget(tabId);
+  if (!targetId) return null;
+  const targetTitle = tabs.find((tab) => tab.id === targetId)?.title
+    || text("that session", "该会话");
+  const label = boundOwnerId
+    ? text(
+      `Return to the floating window in “${targetTitle}”`,
+      `返回「${targetTitle}」的悬浮窗`,
+    )
+    : text(`Float over “${targetTitle}”`, `浮动到「${targetTitle}」`);
   return (
     <button
       type="button"
       className={styles.webToolbarBtn}
       onClick={() => collapseWebTabToPip(tabId)}
-      disabled={!targetId}
       title={label}
       aria-label={label}
     >
@@ -216,6 +218,7 @@ function DesktopWebTabPane({
     && typeof bridge.webTab.stopFind === "function";
   const canZoom = typeof bridge.webTab.zoom === "function";
   const canPrint = typeof bridge.webTab.print === "function";
+  const collapseTarget = usePipCollapseTarget(tabId);
   const bodyRef = useRef<HTMLDivElement>(null);
   const addressRef = useRef<HTMLInputElement>(null);
   const findRef = useRef<HTMLInputElement>(null);
@@ -479,7 +482,9 @@ function DesktopWebTabPane({
             zoomOut: canZoom ? () => { void bridge.webTab.zoom?.(tabId, "out"); } : undefined,
             resetZoom: canZoom ? () => { void bridge.webTab.zoom?.(tabId, "reset"); } : undefined,
             print: canPrint ? () => { void bridge.webTab.print?.(tabId); } : undefined,
-            collapseToPip: () => { collapseWebTabToPip(tabId); },
+            collapseToPip: collapseTarget
+              ? () => { collapseWebTabToPip(tabId); }
+              : undefined,
           }}
           canGoForward={canGoForward}
         />
@@ -533,6 +538,7 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
   const [address, setAddress] = useState(url);
   // Bumping remounts the iframe — that's the reload button.
   const [frameEpoch, setFrameEpoch] = useState(0);
+  const collapseTarget = usePipCollapseTarget(tabId);
 
   // Store url changed elsewhere (restore, future agent navigation) →
   // resync the address bar.
@@ -602,7 +608,9 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
           actions={{
             home: () => useCenterTabs.getState().replaceWebTabWithNewTabPage(tabId),
             openExternal,
-            collapseToPip: () => { collapseWebTabToPip(tabId); },
+            collapseToPip: collapseTarget
+              ? () => { collapseWebTabToPip(tabId); }
+              : undefined,
           }}
         />
       </div>

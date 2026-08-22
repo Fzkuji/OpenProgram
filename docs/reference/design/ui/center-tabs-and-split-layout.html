@@ -297,8 +297,8 @@
     .split-body > div + div { border-left: 1px solid var(--line); }
     .pip {
       position: absolute;
+      top: 36px;
       right: 14px;
-      bottom: 14px;
       width: 46%;
       height: 48%;
       border: 1px solid rgba(75, 213, 138, 0.7);
@@ -480,8 +480,8 @@
     <section id="model">
       <h2>1 · 概念模型</h2>
       <div class="invariant">
-        <p>一个 WebTab 叶子同一时刻只有一个页面宿主：center pane、split pane，或某会话的 PiP。</p>
-        <p class="why">绑定是对「PiP 宿主」的声明；覆盖函数决定这份声明此刻是否兑现。遮罩、消失、fork、收起目标，都是在维持「页面不能同时出现在两个宿主」。</p>
+        <p>会话 S 与网页 W 的<strong>配对</strong>是唯一一等关系。分屏与悬浮窗是同一配对的两种呈现。一个 WebTab 叶子同一时刻只有一个页面宿主：center pane、split pane，或某会话的 PiP。</p>
+        <p class="why">配对来自 agent 在 S 打开 W、用户把 W 拖进 S 的分屏/组、或收起时建立。<code>show()</code> 写入配对表；覆盖函数只决定这份配对此刻画在哪个宿主。独立网页没有配对，也就没有「收起到悬浮窗」。</p>
       </div>
 
       <div class="layers">
@@ -491,8 +491,13 @@
           <em>tabs[] / groups[] / splitWebTabId / activeId</em>
         </article>
         <article class="layer">
+          <b>配对 pairing</b>
+          <span>会话↔网页的持久关系，记在 <code>pairedOwnerByTabId</code>。一个会话可配对多张网页；任一侧关闭才清掉。悬浮窗槽位每会话只有一个，显示 agent 当前工作页，其余配对页驻留标签条。</span>
+          <em>模块级 Map，随 show() 登记</em>
+        </article>
+        <article class="layer">
           <b>绑定 binding</b>
-          <span>全局至多一份 <code>(tabId, ownerTabId)</code>。含义是「这个网页预留给会话 S 的悬浮窗」。切走会话不改绑定；<code>hide()</code> 才把绑定挪进 background 记忆。</span>
+          <span>全局至多一份活跃 <code>(tabId, ownerTabId)</code>：此刻哪张配对页占据悬浮槽。切走会话不改绑定；<code>hide()</code> 才把绑定挪进 background 记忆。换绑另一张页不会抹掉旧页的配对。</span>
           <em>useWebTabPip 单例，不持久化</em>
         </article>
         <article class="layer">
@@ -502,8 +507,9 @@
         </article>
       </div>
 
-      <p>因此系统只有三类一等状态：布局（谁在条上、谁成组、谁激活）、绑定、background 记忆。其余可见行为都是推导。</p>
-      <p>分屏是第二种宿主，不是第二种绑定。复合组 <code>groups[]</code> 至多两个成员；条上投影为一个条目。用户建组走 <code>groupTab</code>；PiP「展开为分屏」走 <code>setSplitWebTab</code>，把当前会话与该叶子配成一对。<code>splitWebTabId</code> 是兼容指针，规范化时若叶子尚未入组且激活的是会话，才物化成 group。</p>
+      <p>因此系统的一等状态是配对，加上布局（谁在条上、谁成组、谁激活）、活跃绑定和 background 记忆。分屏与悬浮是配对的两种呈现，不是两套关系。</p>
+      <p>复合组 <code>groups[]</code> 至多两个成员；条上投影为一个条目。用户建组走 <code>groupTab</code>；PiP「展开为分屏」走 <code>setSplitWebTab</code>，把当前会话与该叶子配成一对。<code>splitWebTabId</code> 是兼容指针，规范化时若叶子尚未入组且激活的是会话，才物化成 group。</p>
+      <p>agent 在同一会话连续 <code>open</code> / <code>activate</code> 多张页时，悬浮槽跟随注意力：新工作页 <code>show</code> 进槽位（或 <code>revealPairedPipTab</code> 把已配对但不可见的页装进去），先前那张回到标签条。独立网页不进入这条路径。</p>
     </section>
 
     <!-- ============================================================ -->
@@ -615,8 +621,8 @@
         <tbody>
           <tr><td><code>tabId</code> · <code>ownerTabId</code></td><td>活跃绑定。二者同时有值或同时为 null；<code>pipBoundTabId()</code> 据此判定遮罩。</td></tr>
           <tr><td><code>backgroundTabId</code> · <code>backgroundOwnerTabId</code></td><td><code>hide()</code> 留下的恢复票据。唯一读者是 <code>WebPreviewChip</code>。</td></tr>
-          <tr><td><code>rect</code></td><td>小窗几何，仅内存。<code>clampPipRect</code> 限制在 <code>.center-pane-chat</code> 内，最小 240×160。<code>hide</code>/<code>end</code> 都不清 rect。</td></tr>
-          <tr><td><code>show(tabId, ownerTabId)</code></td><td>建立绑定并清空 background。全局单例，新绑定覆盖旧绑定。</td></tr>
+          <tr><td><code>rect</code></td><td>小窗几何，仅内存。<code>clampPipRect</code> 限制在 <code>.center-pane-chat</code> 内，最小 240×160。<code>hide</code>/<code>end</code> 都不清 rect。未拖动时默认落在会话页头部（<code>.chat-view-controls</code>：视角切换 + ⋯）下方右上角；拖动后以 inline rect 为准。</td></tr>
+          <tr><td><code>show(tabId, ownerTabId)</code></td><td>登记 <code>pairedOwnerByTabId</code>，建立活跃绑定并清空 background。全局单例槽位，新绑定覆盖旧绑定；旧页的配对仍在。</td></tr>
           <tr><td><code>hide()</code></td><td>清活跃绑定，写入 background。语义：用户暂时收起，可一键恢复。</td></tr>
           <tr><td><code>end()</code></td><td>绑定与记忆全清。语义：这个网页不再是任何会话的悬浮窗。</td></tr>
         </tbody>
@@ -638,8 +644,8 @@
     <section id="rules">
       <h2>4 · 各场景行为</h2>
 
-      <h3><span class="rule">R1</span>一个 PiP 绑定一个会话；切走消失，切回重现</h3>
-      <p>绑定是输入，呈现是 <code>pipCoversCenter</code> 的输出（条件 5）。切到会话 B 时 store 仍持有 <code>(ex.dev, A)</code>，组件因 <code>live === false</code> 不画；切回 A 同一函数再为真。这不是两次事件。</p>
+      <h3><span class="rule">R1</span>每会话一个悬浮槽；切走消失，切回重现当前工作页</h3>
+      <p>配对表可以记下多张页，活跃绑定只有一份。呈现是 <code>pipCoversCenter</code> 的输出（条件 5）。切到会话 B 时 store 仍持有 <code>(ex.dev, A)</code>，组件因 <code>live === false</code> 不画；切回 A 同一函数再为真。这不是两次事件。</p>
       <p>「切回重现」只对<strong>活跃绑定</strong>成立。用户在小窗点 ✕ 走的是 <code>hide()</code>，绑定进入 background，切回 A 出现的是 composer 里的「显示网页预览」，不是自动弹出的小窗。</p>
 
       <h3><span class="rule">R2</span>直接打开被绑定的网页 → 暗色遮罩</h3>
@@ -653,7 +659,7 @@
       <figure class="canvas">
         <svg viewBox="0 0 1040 220" role="img" aria-labelledby="col-title col-desc">
           <title id="col-title">收起按钮的 owner 解析</title>
-          <desc id="col-desc">已绑定回原 owner；否则同组会话；否则首个会话；都没有则禁用。</desc>
+          <desc id="col-desc">已绑定回原 owner；否则同组会话；否则配对表；都没有则不显示按钮。</desc>
           <defs>
             <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
               <path d="M0 0 L10 5 L0 10 z" fill="#97958c"/>
@@ -672,8 +678,8 @@
           <text x="393" y="121" text-anchor="middle" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">pipCollapseTargetFor</text>
 
           <rect x="268" y="148" width="250" height="52" rx="10" fill="#1f1f1e" stroke="rgba(226,225,218,.32)"/>
-          <text x="393" y="170" text-anchor="middle" fill="#f8f8f6" font-size="12" font-family="ui-monospace,Menlo,monospace">③ 条上第一个 session</text>
-          <text x="393" y="187" text-anchor="middle" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">都没有 → 按钮 disabled</text>
+          <text x="393" y="170" text-anchor="middle" fill="#f8f8f6" font-size="12" font-family="ui-monospace,Menlo,monospace">③ 配对表里的 owner</text>
+          <text x="393" y="187" text-anchor="middle" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">都没有 → 不渲染按钮</text>
 
           <path d="M228 98 L266 42" fill="none" stroke="#97958c" marker-end="url(#arr2)"/>
           <path d="M228 108 L266 108" fill="none" stroke="#97958c" marker-end="url(#arr2)"/>
@@ -686,7 +692,7 @@
           <text x="580" y="144" fill="#97958c" font-size="11" font-family="ui-monospace,Menlo,monospace">无 session 时返回 false，绑定不变</text>
           <path d="M520 108 L558 108" fill="none" stroke="#97958c" marker-end="url(#arr2)"/>
         </svg>
-        <figcaption>图 2 — <code>CollapseToPipButton</code> 的 tooltip 用同一解析结果：已绑定 →「返回『X』的悬浮窗」；未绑定有目标 →「浮动到『X』」；无目标 → 灰置的「收起到悬浮窗」。</figcaption>
+        <figcaption>图 2 — <code>CollapseToPipButton</code> 与 BrowserMenu 的 <code>collapseToPip</code> 用同一解析：已绑定 →「返回『X』的悬浮窗」；未绑定有目标 →「浮动到『X』」；无目标 → 不渲染按钮、不传菜单项。独立网页没有这条操作。</figcaption>
       </figure>
     </section>
 
@@ -749,7 +755,7 @@
       <p>「进过用户布局（组）」即视为用户资产。agent 打开的叶子一旦被拖进组，就失去关闭权。反过来说：用户自己打开的独立网页，agent 也能关——实现不按打开者记账。</p>
 
       <h3>会话读哪个页面</h3>
-      <p><code>surfaceRefForChat(sessionId)</code> 的优先级与宿主模型一致：该会话组内可见 web 窗格 → 会话激活时的 <code>splitWebTabId</code> → 会话激活且为 owner 时的 PiP 叶子。都无、或 bounds 未上报，则不带 surface。<code>visibleWebTab</code> / <code>visibleWebTabById</code> 用 <code>peekLiveWebTabPipId</code>，停在非 owner 上的绑定不进入 agent 可见集合。<code>op=preview/activate</code> 同样要求当前可见。</p>
+      <p><code>surfaceRefForChat(sessionId)</code> 的优先级与宿主模型一致：该会话组内可见 web 窗格 → 会话激活时的 <code>splitWebTabId</code> → 会话激活且为 owner 时的 PiP 叶子。都无、或 bounds 未上报，则不带 surface。<code>visibleWebTab</code> / <code>visibleWebTabById</code> 用 <code>peekLiveWebTabPipId</code>，停在非 owner 上的绑定不进入 agent 可见集合。<code>op=preview/activate</code> 的目标若不可见，但活跃会话是该页的配对 owner，<code>revealPairedPipTab</code> 把它装进悬浮槽，等 webview ready 再执行；非 owner、非配对页返回 false，操作不跑。</p>
     </section>
 
     <!-- ============================================================ -->
@@ -758,12 +764,13 @@
       <table>
         <thead><tr><th>规则 / 概念</th><th>落点</th></tr></thead>
         <tbody>
-          <tr><td>绑定、background、<code>show/hide/end</code></td><td><code>apps/web/lib/state/web-tab-pip-store.ts</code> · <code>useWebTabPip</code></td></tr>
+          <tr><td>配对表、活跃绑定、background、<code>show/hide/end</code></td><td><code>apps/web/lib/state/web-tab-pip-store.ts</code> · <code>pairedOwnerByTabId</code> / <code>pipPairedOwnerFor</code> / <code>useWebTabPip</code></td></tr>
           <tr><td>R1 切走消失 / 切回重现</td><td>同上 · <code>pipCoverBase</code> / <code>pipCoversCenter</code> / <code>peekLiveWebTabPipId</code></td></tr>
           <tr><td>R3 fork</td><td>同上 · <code>pipOpenMustFork</code>；创建叶子在 <code>center-tabs-store.ts</code> 的 <code>ensureWebTab</code> / <code>ensureExclusiveWebTab</code>；id 在 <code>center-tab-ids.ts</code> 的 <code>webTabId</code> / <code>nextPopupWebTabId</code></td></tr>
-          <tr><td>R5 收起目标</td><td><code>pipCollapseTargetFor</code> / <code>collapseWebTabToPip</code>；tooltip 在 <code>web-tab-pane.tsx</code> · <code>CollapseToPipButton</code></td></tr>
-          <tr><td>owner / 叶子关闭时清绑定</td><td><code>web-tab-pip-store.ts</code> 末尾 <code>useCenterTabs.subscribe</code></td></tr>
-          <tr><td>小窗：live、拖拽、bounds、截图、展开 / 全屏 / ✕</td><td><code>apps/web/components/center-tabs/web-tab-pip.tsx</code> · <code>WebTabPip</code>；挂在 <code>app-shell.tsx</code> 的聊天中心区内</td></tr>
+          <tr><td>R5 收起目标</td><td><code>pipCollapseTargetFor</code>（同组会话 → 配对表 → null）/ <code>collapseWebTabToPip</code>；无目标时 <code>CollapseToPipButton</code> 返回 null，BrowserMenu 不传 <code>collapseToPip</code></td></tr>
+          <tr><td>注意力切到已配对但不可见的页</td><td>同上 · <code>revealPairedPipTab</code>；<code>desktop-bridge.ts</code> 的 <code>op=preview/activate</code> 在 reveal 成功后 <code>waitForWebTabReady</code> 再跑</td></tr>
+          <tr><td>owner / 叶子关闭时清绑定与配对</td><td><code>web-tab-pip-store.ts</code> 末尾 <code>useCenterTabs.subscribe</code></td></tr>
+          <tr><td>小窗：live、拖拽、bounds、截图、展开 / 全屏 / ✕</td><td><code>apps/web/components/center-tabs/web-tab-pip.tsx</code> · <code>WebTabPip</code>；挂在 <code>app-shell.tsx</code> 的 <code>.center-body</code> 内，默认 <code>.webPip</code> 右上、<code>top:78px</code>（头部按钮下方）</td></tr>
           <tr><td>R2 遮罩与 pane 让位</td><td><code>web-tab-pane.tsx</code> · <code>PipBoundMask</code>；<code>DesktopWebTabPane</code> / <code>IframeWebTabPane</code> 的 <code>pipBound</code> 分支</td></tr>
           <tr><td>截图缓存</td><td><code>usePipSnapshots</code> / <code>getSnapshot</code> / <code>setSnapshot</code>；PiP 卸载与拖动时 <code>bridge.webTab.capture</code></td></tr>
           <tr><td>agent open / close / 回执</td><td><code>apps/web/lib/desktop-bridge.ts</code> · <code>installDesktopMenuHandlers</code> 内 WS 分支；<code>closeAgentWebTabResult</code>；<code>restorePriorActiveTabAfterFailedWebOpen</code></td></tr>

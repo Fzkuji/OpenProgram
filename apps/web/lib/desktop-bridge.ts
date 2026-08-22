@@ -26,6 +26,7 @@ import {
   peekWebTabPipId,
   peekWebTabPipOwnerId,
   pipOpenMustFork,
+  revealPairedPipTab,
   useWebTabPip,
 } from "@/lib/state/web-tab-pip-store";
 import {
@@ -836,7 +837,7 @@ export function installDesktopMenuHandlers(): void {
         }));
         return;
       }
-      const tab = d.tab_id ? visibleWebTabById(d.tab_id) : null;
+      const runOp = (tab: { id: string; kind: string } | null) => {
       if (!tab || tab.kind !== "web") {
         ws.send(JSON.stringify({
           action: "webtab_result",
@@ -891,6 +892,19 @@ export function installDesktopMenuHandlers(): void {
           }));
         });
       }
+      };
+      // Agent attention shift: a parked tab paired to the active session
+      // swaps into that session's floating slot, then the op runs once
+      // the floating web view is ready.
+      const visible = d.tab_id ? visibleWebTabById(d.tab_id) : null;
+      if (!visible && d.tab_id && revealPairedPipTab(d.tab_id)) {
+        const tabId = d.tab_id;
+        void waitForWebTabReady(tabId, 2000).then(() =>
+          runOp(visibleWebTabById(tabId)),
+        );
+        return;
+      }
+      runOp(visible);
       return;
     }
 

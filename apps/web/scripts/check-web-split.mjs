@@ -2067,8 +2067,15 @@ assert.equal(
   2,
   "desktop and iframe browser toolbars must both collapse back to PiP",
 );
-assert.match(webTabPaneSource, /text\("Collapse to floating window",\s*"收起到悬浮窗"\)/);
-assert.match(webTabPaneSource, /collapseToPip: \(\) => \{ collapseWebTabToPip\(tabId\); \}/);
+assert.match(
+  webTabPaneSource,
+  /function CollapseToPipButton[\s\S]*?if \(!targetId\) return null/,
+  "CollapseToPipButton must hide itself when there is no session target",
+);
+assert.match(
+  webTabPaneSource,
+  /collapseToPip: collapseTarget\s*\n\s*\? \(\) => \{ collapseWebTabToPip\(tabId\); \}\s*\n\s*: undefined/,
+);
 assert.match(
   webTabPaneSource,
   /Open in browser[\s\S]*?<CollapseToPipButton tabId=\{tabId\} \/>\s*<BrowserMenu/,
@@ -2392,6 +2399,8 @@ const {
   collapseWebTabToPip,
   pipCollapseTargetFor,
   pipCoversCenter,
+  pipPairedOwnerFor,
+  revealPairedPipTab,
 } = await import("../lib/state/web-tab-pip-store.ts");
 useWebTabPip.getState().show(pipOnlyId, "s:chat");
 assert.equal(peekWebTabPipId(), pipOnlyId);
@@ -2610,8 +2619,8 @@ useCenterTabs.setState({
 assert.equal(collapseWebTabToPip(pipOwnedId), false);
 assert.equal(peekWebTabPipId(), null);
 
-// pipCollapseTargetFor: group partner session wins, else the most
-// recently focused session, else the first session tab.
+// pipCollapseTargetFor: group partner session wins, else remembered
+// pairing, else none. Independent pages do not float.
 useCenterTabs.setState({
   tabs: [
     { id: pipOwnerA, kind: "session", title: "Alpha", sessionId: "pip-a" },
@@ -2630,13 +2639,32 @@ useCenterTabs.setState({
 });
 assert.equal(pipCollapseTargetFor(pipOwnedId), pipOwnerB);
 useCenterTabs.setState({ groups: [] });
-// pipOwnerB was the last focused session (collapse above activated it).
-assert.equal(pipCollapseTargetFor(pipOwnedId), pipOwnerB);
-// Focusing another session moves the fallback target with it.
-useCenterTabs.setState({ activeId: pipOwnerA });
-useCenterTabs.setState({ activeId: pipOwnedId });
-assert.equal(pipCollapseTargetFor(pipOwnedId), pipOwnerA);
+assert.equal(pipCollapseTargetFor(pipOwnedId), null);
+assert.equal(collapseWebTabToPip(pipOwnedId), false);
 assert.equal(pipCollapseTargetFor(pipOwnerA), null);
+
+useWebTabPip.getState().show(pipOwnedId, pipOwnerA);
+const pipReboundId = "w:https://pip-rebind.example/";
+useCenterTabs.setState({
+  tabs: [
+    ...useCenterTabs.getState().tabs,
+    { id: pipReboundId, kind: "web", title: "Rebound", url: "https://pip-rebind.example/" },
+  ],
+});
+useWebTabPip.getState().show(pipReboundId, pipOwnerB);
+assert.equal(pipPairedOwnerFor(pipOwnedId), pipOwnerA);
+assert.equal(pipCollapseTargetFor(pipOwnedId), pipOwnerA);
+
+useWebTabPip.getState().end();
+useCenterTabs.setState({ activeId: pipOwnerA });
+assert.equal(revealPairedPipTab(pipOwnedId), true);
+assert.equal(peekWebTabPipId(), pipOwnedId);
+assert.equal(peekWebTabPipOwnerId(), pipOwnerA);
+useWebTabPip.getState().end();
+useCenterTabs.setState({ activeId: pipOwnerB });
+assert.equal(revealPairedPipTab(pipOwnedId), false);
+useCenterTabs.setState({ activeId: pipOwnerA });
+assert.equal(revealPairedPipTab(pipReboundId), false);
 
 // A tab already floating returns to its owner instead of re-binding.
 useWebTabPip.getState().end();

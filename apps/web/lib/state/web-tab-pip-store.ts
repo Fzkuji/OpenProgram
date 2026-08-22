@@ -24,6 +24,16 @@ type PipCenterState = {
   groups: readonly { memberIds: string[]; visibleIds: string[] }[];
 };
 
+/** Session↔web pairing survives PiP rebinds: every tab that has floated
+ *  for a session stays paired with it until either side closes. This is
+ *  what lets a session keep several agent-opened pages while the single
+ *  floating slot shows only the current working page. */
+const pairedOwnerByTabId = new Map<string, string>();
+
+export function pipPairedOwnerFor(tabId: string): string | null {
+  return pairedOwnerByTabId.get(tabId) ?? null;
+}
+
 export const useWebTabPip = create<{
   tabId: string | null;
   ownerTabId: string | null;
@@ -40,12 +50,15 @@ export const useWebTabPip = create<{
   backgroundTabId: null,
   backgroundOwnerTabId: null,
   rect: null,
-  show: (tabId, ownerTabId) => set({
-    tabId,
-    ownerTabId,
-    backgroundTabId: null,
-    backgroundOwnerTabId: null,
-  }),
+  show: (tabId, ownerTabId) => {
+    pairedOwnerByTabId.set(tabId, ownerTabId);
+    set({
+      tabId,
+      ownerTabId,
+      backgroundTabId: null,
+      backgroundOwnerTabId: null,
+    });
+  },
   hide: () => set((s) => ({
     tabId: null,
     ownerTabId: null,
@@ -115,22 +128,10 @@ export function setSnapshot(tabId: string, dataUrl: string): void {
   usePipSnapshots.getState().setSnapshot(tabId, dataUrl);
 }
 
-/** Most recently focused session tab — the collapse-to-PiP fallback
- *  target for ungrouped web tabs ("float back to where I just was"). */
-let recentSessionTabId: string | null = null;
-function trackRecentSession(s: {
-  tabs: readonly { id: string; kind: string }[];
-  activeId: string | null;
-}): void {
-  const active = s.tabs.find((tab) => tab.id === s.activeId);
-  if (active?.kind === "session") recentSessionTabId = active.id;
-}
-trackRecentSession(useCenterTabs.getState());
-useCenterTabs.subscribe(trackRecentSession);
-
-/** The session tab a collapse-to-PiP would bind this WebTab to:
- *  the session sharing its group, else the most recently focused
- *  session, else the first session tab. */
+/** The session tab a collapse-to-PiP would bind this WebTab to: the
+ *  session sharing its group, else the remembered pairing, else none.
+ *  A web tab with no session relationship has nothing to float over —
+ *  no guessing. */
 export function pipCollapseTargetFor(
   tabId: string,
   store: {
@@ -147,12 +148,25 @@ export function pipCollapseTargetFor(
     ? store.tabs.find((tab) => tab.id === partnerId)
     : undefined;
   if (partner?.kind === "session") return partner.id;
-  const recent = store.tabs.find(
-    (tab) => tab.id === recentSessionTabId && tab.kind === "session",
-  );
-  return recent?.id
-    ?? store.tabs.find((tab) => tab.kind === "session")?.id
-    ?? null;
+  const paired = pairedOwnerByTabId.get(tabId);
+  return paired
+      && store.tabs.some((tab) => tab.id === paired && tab.kind === "session")
+    ? paired
+    : null;
+}
+
+/** Agent attention shift: an off-screen tab paired to the ACTIVE session
+ *  becomes that session's floating page so the agent can act on it. */
+export function revealPairedPipTab(tabId: string): boolean {
+  const state = useCenterTabs.getState();
+  const active = state.tabs.find((tab) => tab.id === state.activeId);
+  if (active?.kind !== "session") return false;
+  if (pairedOwnerByTabId.get(tabId) !== active.id) return false;
+  if (!state.tabs.some((tab) => tab.id === tabId && tab.kind === "web")) {
+    return false;
+  }
+  useWebTabPip.getState().show(tabId, active.id);
+  return true;
 }
 
 /** Reverse of PiP expand: keep the same WebTab leaf, move focus off it
@@ -231,6 +245,9 @@ export function clampPipRect(
 useCenterTabs.subscribe((state) => {
   const pip = useWebTabPip.getState();
   const ids = new Set(state.tabs.map((tab) => tab.id));
+  for (const [tabId, ownerId] of pairedOwnerByTabId) {
+    if (!ids.has(tabId) || !ids.has(ownerId)) pairedOwnerByTabId.delete(tabId);
+  }
   if (
     (pip.ownerTabId && !ids.has(pip.ownerTabId))
     || (pip.tabId && !ids.has(pip.tabId))
