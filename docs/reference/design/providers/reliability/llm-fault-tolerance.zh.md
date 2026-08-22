@@ -117,6 +117,9 @@ SSE 调控器是两个预算加一个兜底：
 ## 4. 传输与恢复
 
 `providers/utils/` 下的模块是通用的，对每个 HTTP provider 都可用；codex 全部接入。
+openai-completions 在产出内容之前，对 `classify_error` 判定可重试的 `APIError`
+用同一模型、`PROVIDER_STREAM_MAX_ATTEMPTS` 与 `stream_backoff_seconds` 重试；
+一旦已经流出内容则直接上抛。
 
 - **集中式超时策略**（`timeouts.py`）—— 单一事实来源，处在 OpenClaw 的 30 分钟
   级别，带上下文缩放辅助方法。
@@ -144,6 +147,10 @@ SSE 调控器是两个预算加一个兜底：
   因此故障转移复用本来就要用的那份凭据，绝不会去联系用户没有配置过的 provider。
   设置 `OPENPROGRAM_FALLBACK_MODELS="provider/model,provider2/model2"` 可用显式
   名单覆盖它，显式名单允许跨 provider；设成 `off`（或 `none`）则完全关闭故障转移。
+- **openai-completions 内容前重试**（`openai_completions.py`）—— `EventStart`
+  之后、任何 content block 之前，可重试的 `APIError`（包括 xAI 无 HTTP status 的
+  `Internal error during token generation`）会在同一模型上重新打开流。内容已经
+  到达、或错误不可重试时，外层原有的 `APIError` 处理记录凭据冷却并重新抛出。
 - gemini_cli 共用同一个 client，因此具有相同的超时语义，而不是自带一个单一浮点
   超时值。
 

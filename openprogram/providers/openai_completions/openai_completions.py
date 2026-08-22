@@ -3,6 +3,7 @@ OpenAI Chat Completions API provider — mirrors packages/ai/src/providers/opena
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from typing import Any, AsyncGenerator
@@ -46,7 +47,9 @@ from ..types import (
     UserMessage,
 )
 from ..utils.cancelable_stream import iter_until_cancelled
+from ..utils.errors import classify_error
 from ..utils.json_parse import parse_partial_json
+from ..utils.stream_retry import PROVIDER_STREAM_MAX_ATTEMPTS, stream_backoff_seconds
 from .._shared.transform_messages import transform_messages as _transform_messages
 from .._shared.validate_modalities import validate_input_modalities
 
@@ -460,145 +463,169 @@ async def stream_simple(
     yield EventStart(type="start", partial=partial)
 
     try:
-        async with await client.chat.completions.create(**params) as stream:
-            # <=250ms cancel poll — do not wait for the next token.
-            async for chunk in iter_until_cancelled(stream, _stop):
-                # Process usage from chunks
-                if chunk.usage:
-                    usage = _usage_from_chunk(chunk.usage)
+        for _attempt in range(PROVIDER_STREAM_MAX_ATTEMPTS):
+            try:
+                async with await client.chat.completions.create(**params) as stream:
+                    # <=250ms cancel poll — do not wait for the next token.
+                    async for chunk in iter_until_cancelled(stream, _stop):
+                        # Process usage from chunks
+                        if chunk.usage:
+                            usage = _usage_from_chunk(chunk.usage)
 
-                if not chunk.choices:
-                    if finished_at is not None:
-                        break
-                    continue
+                        if not chunk.choices:
+                            if finished_at is not None:
+                                break
+                            continue
 
-                delta = chunk.choices[0].delta
-                finish_reason = chunk.choices[0].finish_reason
+                        delta = chunk.choices[0].delta
+                        finish_reason = chunk.choices[0].finish_reason
 
-                # Reasoning / thinking content (for o1/o3 models)
-                reasoning_content = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
-                if reasoning_content:
-                    if thinking_index == -1:
-                        thinking_index = len(content_blocks)
-                        content_blocks.append(ThinkingContent(type="thinking", thinking=""))
-                        partial = partial.model_copy(update={"content": list(content_blocks)})
-                        yield EventThinkingStart(type="thinking_start", content_index=thinking_index, partial=partial)
+                        # Reasoning / thinking content (for o1/o3 models)
+                        reasoning_content = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+                        if reasoning_content:
+                            if thinking_index == -1:
+                                thinking_index = len(content_blocks)
+                                content_blocks.append(ThinkingContent(type="thinking", thinking=""))
+                                partial = partial.model_copy(update={"content": list(content_blocks)})
+                                yield EventThinkingStart(type="thinking_start", content_index=thinking_index, partial=partial)
 
-                    content_blocks[thinking_index] = ThinkingContent(
-                        type="thinking",
-                        thinking=content_blocks[thinking_index].thinking + reasoning_content,
-                    )
-                    partial = partial.model_copy(update={"content": list(content_blocks)})
-                    yield EventThinkingDelta(
-                        type="thinking_delta",
-                        content_index=thinking_index,
-                        delta=reasoning_content,
-                        partial=partial,
-                    )
-
-                # Text delta
-                if delta.content:
-                    # Close thinking block if transitioning to text
-                    if thinking_index >= 0 and text_index == -1:
-                        yield EventThinkingEnd(
-                            type="thinking_end",
-                            content_index=thinking_index,
-                            content=content_blocks[thinking_index].thinking,
-                            partial=partial,
-                        )
-
-                    if text_index == -1:
-                        text_index = len(content_blocks)
-                        content_blocks.append(TextContent(type="text", text=""))
-                        partial = partial.model_copy(update={"content": list(content_blocks)})
-                        yield EventTextStart(type="text_start", content_index=text_index, partial=partial)
-
-                    content_blocks[text_index] = TextContent(
-                        type="text",
-                        text=content_blocks[text_index].text + delta.content,
-                    )
-                    partial = partial.model_copy(update={"content": list(content_blocks)})
-                    yield EventTextDelta(
-                        type="text_delta",
-                        content_index=text_index,
-                        delta=delta.content,
-                        partial=partial,
-                    )
-
-                # Tool call deltas
-                if delta.tool_calls:
-                    for tc_delta in delta.tool_calls:
-                        tc_id = tc_delta.id or ""
-                        idx_key = str(tc_delta.index)
-
-                        if idx_key not in tool_indices:
-                            idx = len(content_blocks)
-                            tool_indices[idx_key] = idx
-                            tool_arg_buffers[idx_key] = ""
-                            content_blocks.append(ToolCall(
-                                type="toolCall",
-                                id=tc_id or f"call_{idx}",
-                                name=tc_delta.function.name or "",
-                                arguments={},
-                            ))
+                            content_blocks[thinking_index] = ThinkingContent(
+                                type="thinking",
+                                thinking=content_blocks[thinking_index].thinking + reasoning_content,
+                            )
                             partial = partial.model_copy(update={"content": list(content_blocks)})
-                            yield EventToolCallStart(type="toolcall_start", content_index=idx, partial=partial)
-
-                        if tc_delta.function and tc_delta.function.arguments:
-                            tool_arg_buffers[idx_key] += tc_delta.function.arguments
-                            partial = partial.model_copy(update={"content": list(content_blocks)})
-                            yield EventToolCallDelta(
-                                type="toolcall_delta",
-                                content_index=tool_indices[idx_key],
-                                delta=tc_delta.function.arguments,
+                            yield EventThinkingDelta(
+                                type="thinking_delta",
+                                content_index=thinking_index,
+                                delta=reasoning_content,
                                 partial=partial,
                             )
 
-                if finish_reason:
-                    # Finalize thinking
-                    if thinking_index >= 0 and text_index == -1:
-                        yield EventThinkingEnd(
-                            type="thinking_end",
-                            content_index=thinking_index,
-                            content=content_blocks[thinking_index].thinking,
-                            partial=partial,
-                        )
+                        # Text delta
+                        if delta.content:
+                            # Close thinking block if transitioning to text
+                            if thinking_index >= 0 and text_index == -1:
+                                yield EventThinkingEnd(
+                                    type="thinking_end",
+                                    content_index=thinking_index,
+                                    content=content_blocks[thinking_index].thinking,
+                                    partial=partial,
+                                )
 
-                    # Finalize text block
-                    if text_index >= 0:
-                        yield EventTextEnd(
-                            type="text_end",
-                            content_index=text_index,
-                            content=content_blocks[text_index].text,
-                            partial=partial,
-                        )
+                            if text_index == -1:
+                                text_index = len(content_blocks)
+                                content_blocks.append(TextContent(type="text", text=""))
+                                partial = partial.model_copy(update={"content": list(content_blocks)})
+                                yield EventTextStart(type="text_start", content_index=text_index, partial=partial)
 
-                    # Finalize tool calls
-                    for idx_key, idx in tool_indices.items():
-                        raw = tool_arg_buffers.get(idx_key, "{}")
-                        parsed = parse_partial_json(raw) or {}
-                        tc = content_blocks[idx]
-                        content_blocks[idx] = ToolCall(
-                            type="toolCall",
-                            id=tc.id,
-                            name=tc.name,
-                            arguments=parsed,
-                        )
-                        partial = partial.model_copy(update={"content": list(content_blocks)})
-                        yield EventToolCallEnd(
-                            type="toolcall_end",
-                            content_index=idx,
-                            tool_call=content_blocks[idx],
-                            partial=partial,
-                        )
+                            content_blocks[text_index] = TextContent(
+                                type="text",
+                                text=content_blocks[text_index].text + delta.content,
+                            )
+                            partial = partial.model_copy(update={"content": list(content_blocks)})
+                            yield EventTextDelta(
+                                type="text_delta",
+                                content_index=text_index,
+                                delta=delta.content,
+                                partial=partial,
+                            )
 
-                    # finish_reason is the end of choices. Do not wait
-                    # forever for [DONE] — that left Grok turns running
-                    # after the last token. Keep a short drain for the
-                    # trailing include_usage chunk.
-                    if chunk.usage:
-                        break
-                    finished_at = time.monotonic()
+                        # Tool call deltas
+                        if delta.tool_calls:
+                            for tc_delta in delta.tool_calls:
+                                tc_id = tc_delta.id or ""
+                                idx_key = str(tc_delta.index)
+
+                                if idx_key not in tool_indices:
+                                    idx = len(content_blocks)
+                                    tool_indices[idx_key] = idx
+                                    tool_arg_buffers[idx_key] = ""
+                                    content_blocks.append(ToolCall(
+                                        type="toolCall",
+                                        id=tc_id or f"call_{idx}",
+                                        name=tc_delta.function.name or "",
+                                        arguments={},
+                                    ))
+                                    partial = partial.model_copy(update={"content": list(content_blocks)})
+                                    yield EventToolCallStart(type="toolcall_start", content_index=idx, partial=partial)
+
+                                if tc_delta.function and tc_delta.function.arguments:
+                                    tool_arg_buffers[idx_key] += tc_delta.function.arguments
+                                    partial = partial.model_copy(update={"content": list(content_blocks)})
+                                    yield EventToolCallDelta(
+                                        type="toolcall_delta",
+                                        content_index=tool_indices[idx_key],
+                                        delta=tc_delta.function.arguments,
+                                        partial=partial,
+                                    )
+
+                        if finish_reason:
+                            # Finalize thinking
+                            if thinking_index >= 0 and text_index == -1:
+                                yield EventThinkingEnd(
+                                    type="thinking_end",
+                                    content_index=thinking_index,
+                                    content=content_blocks[thinking_index].thinking,
+                                    partial=partial,
+                                )
+
+                            # Finalize text block
+                            if text_index >= 0:
+                                yield EventTextEnd(
+                                    type="text_end",
+                                    content_index=text_index,
+                                    content=content_blocks[text_index].text,
+                                    partial=partial,
+                                )
+
+                            # Finalize tool calls
+                            for idx_key, idx in tool_indices.items():
+                                raw = tool_arg_buffers.get(idx_key, "{}")
+                                parsed = parse_partial_json(raw) or {}
+                                tc = content_blocks[idx]
+                                content_blocks[idx] = ToolCall(
+                                    type="toolCall",
+                                    id=tc.id,
+                                    name=tc.name,
+                                    arguments=parsed,
+                                )
+                                partial = partial.model_copy(update={"content": list(content_blocks)})
+                                yield EventToolCallEnd(
+                                    type="toolcall_end",
+                                    content_index=idx,
+                                    tool_call=content_blocks[idx],
+                                    partial=partial,
+                                )
+
+                            # finish_reason is the end of choices. Do not wait
+                            # forever for [DONE] — that left Grok turns running
+                            # after the last token. Keep a short drain for the
+                            # trailing include_usage chunk.
+                            if chunk.usage:
+                                break
+                            finished_at = time.monotonic()
+
+                break
+            except _openai.APIError as e:
+                _, retryable = classify_error(
+                    e, http_status=getattr(e, "status_code", None),
+                )
+                if (
+                    content_blocks
+                    or not retryable
+                    or _attempt >= PROVIDER_STREAM_MAX_ATTEMPTS - 1
+                    or _user_cancelled()
+                ):
+                    raise
+                sleep_s = stream_backoff_seconds(
+                    _attempt, getattr(e, "retry_after_s", None) or None,
+                )
+                print(
+                    f"[openai-completions stream retry] attempt {_attempt + 1}/"
+                    f"{PROVIDER_STREAM_MAX_ATTEMPTS} after {sleep_s:.1f}s — {e}",
+                    flush=True,
+                )
+                await asyncio.sleep(sleep_s)
 
         # Build final message
         stop_reason_map = {"stop": "stop", "length": "length", "tool_calls": "toolUse"}
