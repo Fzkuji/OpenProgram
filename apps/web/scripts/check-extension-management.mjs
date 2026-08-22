@@ -18,6 +18,7 @@ assert.match(plugins, /text\("Discover", "发现"\)/, "plugins must use the shar
 assert.match(skills, /text\("Installed", "已安装"\)/, "skills must use the shared Installed task name");
 assert.match(mcp, /id: "discover", label: text\("Discover", "发现"\)/, "MCP must expose the shared Discover task");
 assert.match(mcp, /id === "discover"\) openCatalog\(\)/, "MCP Discover must open its catalog");
+assert.match(capabilities, /onCatalogOpen=\{\(\) => setMcpCatalogOpen\(true\)\}/, "the controlled MCP page must wire Discover to the hub catalog state");
 assert.doesNotMatch(capabilities, /Browse catalog|浏览目录/, "the hub must not restore MCP-only task wording");
 assert.match(capabilities, /text\("Add plugin", "添加插件"\)/);
 assert.match(capabilities, /text\("Add skill", "添加技能"\)/);
