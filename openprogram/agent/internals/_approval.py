@@ -429,14 +429,13 @@ def wrap_with_approval(
                 return await _run_original(call_id, args, cancel, on_update)
 
         # ③ bypass 短路（deny/ask/force 之后）。默认对齐 Claude Code：
-        #    bypass = 完全放开，可配置的沙箱限制（deny_read/deny_write/网络）
-        #    也不生效，与单次批准升级走同一条 escalated_policy 路径。
+        #    bypass = 彻底无沙箱——不包装、不剥环境变量、无硬约束。
         #    sandbox.apply_in_bypass=true 可选择在 bypass 下保留沙箱。
         if mode == "bypass":
-            from openprogram.sandbox import apply_in_bypass, escalated_policy
+            from openprogram.sandbox import apply_in_bypass, unsandboxed_execution
             if apply_in_bypass():
                 return await _run_original(call_id, args, cancel, on_update)
-            with escalated_policy():
+            with unsandboxed_execution():
                 return await _run_original(
                     call_id, args, cancel, on_update, already_escalated=True,
                 )

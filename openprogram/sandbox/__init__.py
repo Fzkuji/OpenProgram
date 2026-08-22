@@ -247,6 +247,22 @@ def resolve_policy(*, required: bool = False) -> SandboxPolicy | None:
 
 
 @contextmanager
+def unsandboxed_execution():
+    """No sandbox at all for this execution.
+
+    The bypass permission mode uses this — matching Claude Code's
+    ``--dangerously-skip-permissions``, where bypass means bypass:
+    commands run unwrapped, with the full environment, and no hard
+    floor. ``sandbox.apply_in_bypass=true`` opts back into the sandbox.
+    """
+    token = _execution_policy_override.set(None)
+    try:
+        yield
+    finally:
+        _execution_policy_override.reset(token)
+
+
+@contextmanager
 def escalated_policy():
     """Relax configurable restrictions for one approved execution.
 
