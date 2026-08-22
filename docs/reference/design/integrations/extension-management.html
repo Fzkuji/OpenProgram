@@ -111,10 +111,10 @@
   </aside>
   <main>
     <header id="question">
-      <div class="eyebrow">Design · implementation pending</div>
+      <div class="eyebrow">Design · implemented and reviewed</div>
       <h1>One management grammar for Plugins, Skills, and MCP</h1>
       <p>This document defines how an OpenProgram owner discovers, adds, configures, enables, diagnoses, and removes the three extension types in the Web UI. The audience is the Web and runtime maintainers. Programs, agent-specific allowlists, third-party marketplace governance, and new package formats are outside this task.</p>
-      <div class="status-strip"><span class="chip">Base <code>7763ba70</code></span><span class="chip pending">Code pending</span><span class="chip">Default profile · port 18100</span><span class="chip">No new dependency</span></div>
+      <div class="status-strip"><span class="chip">Base <code>7763ba70</code></span><span class="chip">Candidate <code>d7c2bda4</code></span><span class="chip">Reviews passed</span><span class="chip">Default profile · port 18100</span><span class="chip">No new dependency</span></div>
     </header>
 
     <section id="gaps">
@@ -192,7 +192,16 @@
 
     <section id="implementation" class="implementation">
       <h2>Implementation evidence</h2>
-      <p class="state">Pending. Code, RED/GREEN commands, reviewed commit, specification verdict, quality verdict, and visible acceptance evidence are recorded here only after they exist.</p>
+      <table>
+        <tbody>
+          <tr><td>Base and candidate</td><td><code>7763ba70</code> → <code>d7c2bda4</code></td></tr>
+          <tr><td>RED</td><td><code>npm run check:extension-management</code> failed on the missing shared subnav summary contract.</td></tr>
+          <tr><td>GREEN</td><td>The focused extension check, owner-auth check, secret non-retrieval check, accessibility wiring check, TypeScript check, and 51 Web unit tests pass.</td></tr>
+          <tr><td>Specification review</td><td>PASS after MCP Discover wiring and its controlled-state regression assertion were added in <code>102389ed</code> and <code>c2469889</code>.</td></tr>
+          <tr><td>Quality review</td><td>PASS after keyboard navigation, narrow-width layout, MCP detail failure feedback, and executable non-2xx request coverage were added in <code>d7c2bda4</code>.</td></tr>
+          <tr><td>Remaining gate</td><td class="state">Final full Web gate and visible default-App acceptance are pending.</td></tr>
+        </tbody>
+      </table>
     </section>
   </main>
 </div>
