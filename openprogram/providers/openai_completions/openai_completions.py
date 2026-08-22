@@ -435,6 +435,7 @@ async def stream_simple(
     tool_indices: dict[str, int] = {}
     tool_arg_buffers: dict[str, str] = {}
     usage = Usage()
+    finish_reason = None
 
     _signal = getattr(opts, "signal", None)
 
