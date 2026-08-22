@@ -199,7 +199,8 @@
           <tr><td>Revision</td><td><code>3f3baeb2</code> → <code>ab54847e</code>. MCP Discover is now inline; duplicate Discover and Add controls are removed; catalog search, provenance, cancellation, progress, errors, and narrow-width rows use the shared contracts.</td></tr>
           <tr><td>RED / GREEN</td><td>The focused check failed on the modal-backed MCP tab contract, then passed with accessibility wiring, owner-auth, secret non-retrieval, TypeScript, 51 Web unit tests, production build, docs links, and diff checks.</td></tr>
           <tr><td>Reviews</td><td>Specification PASS at <code>19b10afd</code>. Quality PASS after catalog concurrency, provenance, progress, error, and responsive repairs in <code>974c4d0d</code> and <code>ab54847e</code>.</td></tr>
-          <tr><td>Remaining gate</td><td class="state">Default-App visible acceptance and the final full gate are pending. The previously reproduced baseline <code>check:center-tabs</code> failure remains outside this subsystem.</td></tr>
+          <tr><td>Visible acceptance</td><td>The default App on port 18100 shows only Refresh and Add MCP server in the top toolbar; Installed and Discover switch the body inline; the installed rail has no duplicate Add row; the catalog rows and custom URL control remain inside the content width.</td></tr>
+          <tr><td>Remaining gate</td><td class="state">The full Web gate stops at the previously reproduced baseline <code>check:center-tabs</code> destination-cue assertion, outside this subsystem.</td></tr>
         </tbody>
       </table>
     </section>
