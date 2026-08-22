@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
-import { PlugZapIcon } from "@/components/animated-icons";
+import { PlugZapIcon, PlusIcon } from "@/components/animated-icons";
 import { SearchInput } from "@/components/ui/search-input";
 import { ManagePageHeader, ManageSubnav, managePageStyles as shared } from "@/components/ui/manage-page";
 import { jsonFetch } from "@/lib/net/fetch-client";
@@ -35,12 +35,10 @@ export function McpPage({
   embedded,
   query,
   reloadNonce,
-  addNonce,
 }: {
   embedded?: boolean;
   query?: string;
   reloadNonce?: number;
-  addNonce?: number;
 } = {}) {
   const { t, text } = useTranslation();
   const [servers, setServers] = useState<ServerStatus[]>([]);
@@ -262,11 +260,6 @@ export function McpPage({
     });
   }
 
-  useEffect(() => {
-    if (!addNonce) return;
-    openAdd();
-  }, [addNonce]);
-
   const selectedServer = servers.find((s) => s.name === selected) || null;
   const readyCount = servers.filter((server) => server.ready).length;
   const issueCount = servers.filter((server) => server.enabled && !!server.error && server.error !== "disabled").length;
@@ -294,21 +287,27 @@ export function McpPage({
           activeTab={tab}
           onTabChange={(id) => setTab(id as McpTab)}
           summary={text(
-            `${servers.length} installed · ${readyCount} available · ${issueCount} issues`,
-            `已安装 ${servers.length} 个 · 可用 ${readyCount} 个 · ${issueCount} 个问题`,
+            `${readyCount} available · ${issueCount} issues`,
+            `可用 ${readyCount} 个 · ${issueCount} 个问题`,
           )}
+          action={{
+            label: text("Add MCP server", "添加 MCP 服务器"),
+            onClick: openAdd,
+            icon: PlusIcon,
+            primary: true,
+          }}
         />
         {actionErr && <div className={shared.errorBar} role="alert">{actionErr}</div>}
         {tab === "discover" && (
           <div className={shared.body}>
-            <CatalogPanel
+            <div className={shared.surface}><CatalogPanel
               existingNames={new Set(servers.map((server) => server.name))}
               query={filterValue}
               onInstalled={async (name) => {
                 await reload();
                 setSelected(name);
               }}
-            />
+            /></div>
           </div>
         )}
         {tab === "installed" && (
@@ -409,7 +408,6 @@ export function McpPage({
           title={t("nav.mcp")}
           actions={[
             { label: t("sidebar.refresh"), onClick: () => { void reload(); } },
-            { label: text("Add MCP server", "添加 MCP 服务器"), onClick: openAdd, primary: true },
           ]}
         />
         {bodyAndDialogs}

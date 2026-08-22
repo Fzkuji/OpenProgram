@@ -7,6 +7,7 @@ import { NewSkillDialog } from "./new-skill-dialog";
 import { DiscoverySources } from "./discovery";
 import { ManagePageHeader, ManageSubnav, managePageStyles as styles } from "@/components/ui/manage-page";
 import { useTranslation } from "@/lib/i18n";
+import { PlusIcon } from "@/components/animated-icons";
 
 type Tab = "browse" | "discovery";
 
@@ -38,46 +39,38 @@ export function SkillsPage({
 
   const body = tab === "browse" ? <SkillsList externalFilter={query} /> : <DiscoverySources query={query} />;
 
-  if (embedded) {
-    return (
-      <>
-        <ManageSubnav
-          tabs={tabs}
-          activeTab={tab}
-          onTabChange={(id) => setTab(id as Tab)}
-          summary={text(
-            `${skills.length} installed · ${enabledCount} available`,
-            `已安装 ${skills.length} 个 · 可用 ${enabledCount} 个`,
-          )}
-        />
-        {error && <div className={styles.errorBar}>{error}</div>}
-        <div className={styles.body}>{body}</div>
-        <NewSkillDialog open={newOpen} onClose={closeNew} />
-      </>
-    );
-  }
+  const content = (
+    <>
+      <ManageSubnav
+        tabs={tabs}
+        activeTab={tab}
+        onTabChange={(id) => setTab(id as Tab)}
+        summary={text(`${enabledCount} available`, `可用 ${enabledCount} 个`)}
+        action={{
+          label: text("Add skill", "添加技能"),
+          onClick: () => setLocalNewOpen(true),
+          icon: PlusIcon,
+          primary: true,
+        }}
+      />
+      {error && <div className={styles.errorBar}>{error}</div>}
+      <div className={styles.body}><div className={styles.surface}>{body}</div></div>
+      <NewSkillDialog open={newOpen} onClose={closeNew} />
+    </>
+  );
+
+  if (embedded) return content;
 
   return (
     <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
     <div className={styles.view}>
       <ManagePageHeader
         title={t("nav.skills")}
-        tabs={tabs}
-        activeTab={tab}
-        onTabChange={(id) => setTab(id as Tab)}
         actions={[
           { label: t("sidebar.refresh"), onClick: () => { void fetchSkills(); } },
-          { label: text("Add skill", "添加技能"), onClick: () => setLocalNewOpen(true), primary: true },
         ]}
       />
-
-      {error && <div className={styles.errorBar}>{error}</div>}
-
-      <div className={styles.body}>
-        {body}
-      </div>
-
-      <NewSkillDialog open={newOpen} onClose={closeNew} />
+      {content}
     </div>
     </div>
   );

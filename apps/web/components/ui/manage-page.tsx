@@ -50,12 +50,14 @@ function ManageTabButton({
   tabIndex,
   onClick,
   onKeyDown,
+  secondary = false,
 }: {
   tab: ManageTab;
   active: boolean;
   tabIndex: number;
   onClick: () => void;
   onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void;
+  secondary?: boolean;
 }) {
   const iconRef = useRef<AnimatedNavIconHandle>(null);
   const Icon = tab.icon;
@@ -70,14 +72,19 @@ function ManageTabButton({
       onKeyDown={onKeyDown}
       onMouseEnter={() => iconRef.current?.startAnimation?.()}
       onMouseLeave={() => iconRef.current?.stopAnimation?.()}
-      className={cn(styles.tabBtn, active && styles.active)}
+      className={cn(styles.tabBtn, secondary && styles.subnavTab, active && styles.active)}
     >
       {Icon ? (
         <span className={styles.tabIcon} aria-hidden>
           <Icon ref={iconRef} size={16} />
         </span>
       ) : null}
-      {label}
+      {secondary ? (
+        <>
+          <span>{tab.label}</span>
+          {tab.count !== undefined && <span className={styles.tabCount}>{tab.count}</span>}
+        </>
+      ) : label}
     </button>
   );
 }
@@ -186,11 +193,13 @@ export function ManageSubnav({
   activeTab,
   onTabChange,
   summary,
+  action,
 }: {
   tabs: ManageTab[];
   activeTab: string;
   onTabChange: (id: string) => void;
   summary?: ReactNode;
+  action?: ManageAction;
 }) {
   function moveTab(event: React.KeyboardEvent<HTMLButtonElement>, index: number) {
     let next = index;
@@ -205,20 +214,26 @@ export function ManageSubnav({
   }
 
   return (
-    <div className={styles.subnav} role="tablist">
-      {tabs.map((tb, index) => (
-        <ManageTabButton
-          key={tb.id}
-          tab={tb}
-          active={activeTab === tb.id}
-          tabIndex={activeTab === tb.id ? 0 : -1}
-          onClick={() => onTabChange(tb.id)}
-          onKeyDown={(event) => moveTab(event, index)}
-        />
-      ))}
-      {summary !== undefined && (
-        <div className={styles.subnavSummary} aria-live="polite">{summary}</div>
-      )}
+    <div className={styles.subnav}>
+      <div className={styles.subnavTabs} role="tablist">
+        {tabs.map((tb, index) => (
+          <ManageTabButton
+            key={tb.id}
+            tab={tb}
+            active={activeTab === tb.id}
+            tabIndex={activeTab === tb.id ? 0 : -1}
+            onClick={() => onTabChange(tb.id)}
+            onKeyDown={(event) => moveTab(event, index)}
+            secondary
+          />
+        ))}
+      </div>
+      <div className={styles.subnavEnd}>
+        {summary !== undefined && (
+          <div className={styles.subnavSummary} aria-live="polite">{summary}</div>
+        )}
+        {action && <ManageActionButton a={action} />}
+      </div>
     </div>
   );
 }

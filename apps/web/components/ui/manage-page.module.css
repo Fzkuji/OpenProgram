@@ -93,7 +93,15 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px 24px 24px;
+  padding: 18px 24px 24px;
+}
+
+.surface {
+  min-height: 100%;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-secondary) 38%, transparent);
 }
 
 /* Master-detail body (used by /mcp only, kept here so the grid
@@ -102,9 +110,12 @@
   flex: 1;
   display: grid;
   grid-template-columns: calc(var(--sidebar-width) - 1px) 1fr;
-  padding: 0;
+  margin: 18px 24px 24px;
   min-height: 0;
   overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-secondary) 38%, transparent);
 }
 
 .errorBar {
@@ -131,8 +142,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 12px 6px 8px;
-  min-height: 44px;
+  padding: 8px 12px;
+  min-height: 48px;
   border: 1px solid transparent;
   border-radius: var(--ui-list-radius);
   cursor: pointer;
@@ -207,7 +218,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px 8px 8px;
+  padding: 9px 12px;
   border: 1px solid transparent;
   border-radius: var(--ui-list-radius);
   background: color-mix(in srgb, var(--bg-secondary) 50%, transparent);
@@ -257,18 +268,74 @@
   background: color-mix(in srgb, var(--accent-red) 7%, transparent);
 }
 
-/* Slim inner tabs when a manage page is embedded in a hub header. */
+/* Secondary task bar. It is deliberately quieter than the capability pills
+   above it: text tabs, compact counts, and one task-local primary action. */
 .subnav {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 24px;
+  min-height: 52px;
+  gap: 18px;
+  padding: 0 24px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
-.subnavSummary {
+.subnavTabs {
+  display: flex;
+  align-items: stretch;
+  align-self: stretch;
+  gap: 24px;
+}
+
+.tabBtn.subnavTab {
+  position: relative;
+  height: 100%;
+  padding: 0;
+  gap: 7px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+}
+.tabBtn.subnavTab:hover {
+  color: var(--text-primary);
+  background: transparent;
+}
+.tabBtn.subnavTab.active {
+  color: var(--text-bright);
+  border: 0;
+  background: transparent;
+}
+.tabBtn.subnavTab.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent-blue);
+}
+
+.tabCount {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.subnavEnd {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-left: auto;
+}
+
+.subnavSummary {
   color: var(--text-tertiary);
   font-size: 12px;
   white-space: nowrap;
@@ -297,5 +364,12 @@
     gap: 6px;
   }
   .subnav { flex-wrap: wrap; }
-  .subnavSummary { width: 100%; margin-left: 0; padding-left: 2px; }
+  .subnavTabs { min-height: 48px; overflow-x: auto; }
+  .subnavEnd { width: 100%; margin-left: 0; padding-bottom: 10px; }
+  .subnavSummary { margin-right: auto; white-space: normal; }
+  .body { padding: 14px 16px 16px; }
+  .splitBody {
+    margin: 14px 16px 16px;
+    grid-template-columns: minmax(150px, 38%) 1fr;
+  }
 }

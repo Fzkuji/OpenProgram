@@ -4,9 +4,10 @@ import { jsonFetch, HttpError } from "../lib/net/fetch-client.ts";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
-const [capabilities, manage, plugins, skills, mcp, mcpCatalog, pluginStore, fetchClient] = await Promise.all([
+const [capabilities, manage, manageCss, plugins, skills, mcp, mcpCatalog, pluginStore, fetchClient] = await Promise.all([
   read("../components/capabilities/capabilities-page.tsx"),
   read("../components/ui/manage-page.tsx"),
+  read("../components/ui/manage-page.module.css"),
   read("../components/plugins/plugins-page.tsx"),
   read("../components/skills/skills-page.tsx"),
   read("../components/mcp/mcp-page.tsx"),
@@ -16,6 +17,8 @@ const [capabilities, manage, plugins, skills, mcp, mcpCatalog, pluginStore, fetc
 ]);
 
 assert.match(manage, /summary\?: ReactNode/, "the shared subnav must accept an availability summary");
+assert.match(manage, /action\?: ManageAction/, "the secondary task bar must own the Add action");
+assert.match(manage, /styles\.subnavTab/, "secondary tabs must have their own visual treatment");
 assert.match(manage, /onKeyDown=\{\(event\) => moveTab\(event, index\)\}/, "shared subnav tabs must support keyboard navigation");
 assert.match(plugins, /text\("Discover", "发现"\)/, "plugins must use the shared Discover task name");
 assert.match(skills, /text\("Installed", "已安装"\)/, "skills must use the shared Installed task name");
@@ -36,9 +39,13 @@ assert.match(mcpCatalog, /disabled=\{catalogLoading \|\| installing !== null\}/,
 assert.doesNotMatch(mcpCatalog, /setBusy|\bbusy\b/, "catalog loading must not clear installation progress");
 assert.doesNotMatch(mcpCatalog, /await fetch\(/, "catalog requests must use the shared error-aware JSON client");
 assert.match(mcpCatalog, /min-w-0 flex-col[\s\S]*break-all[\s\S]*self-end sm:self-auto/, "catalog rows must keep actions visible at narrow widths");
-assert.match(capabilities, /text\("Add plugin", "添加插件"\)/);
-assert.match(capabilities, /text\("Add skill", "添加技能"\)/);
-assert.match(capabilities, /text\("Add MCP server", "添加 MCP 服务器"\)/);
+assert.doesNotMatch(capabilities, /Add plugin|Add skill|Add MCP server|添加插件|添加技能|添加 MCP 服务器/, "the top toolbar must contain no Add action");
+assert.match(plugins, /action=\{\{[\s\S]*Add plugin/, "Plugins Add belongs to the secondary task bar");
+assert.match(skills, /action=\{\{[\s\S]*Add skill/, "Skills Add belongs to the secondary task bar");
+assert.match(mcp, /action=\{\{[\s\S]*Add MCP server/, "MCP Add belongs to the secondary task bar");
+assert.match(manageCss, /\.subnavTab/, "secondary tabs must have a dedicated visual treatment");
+assert.match(manageCss, /\.surface/, "single-column extension bodies must share one surface");
+assert.match(manageCss, /\.splitBody[\s\S]*border-radius: 12px/, "MCP split view must use the same surface geometry");
 assert.match(pluginStore, /loadError: string \| null/, "plugin list failures must be visible state");
 assert.match(fetchClient, /d\.detail/, "shared request errors must parse FastAPI detail responses");
 assert.match(mcp, /\{actionErr && <div className=\{shared\.errorBar\} role="alert">\{actionErr\}<\/div>\}/, "failed MCP requests must render an alert instead of doing nothing");

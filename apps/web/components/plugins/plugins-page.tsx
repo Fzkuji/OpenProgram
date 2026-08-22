@@ -6,6 +6,7 @@ import { ManagePageHeader, ManageSubnav, managePageStyles as shared } from "@/co
 import { usePluginsStore } from "@/lib/state/plugins-store";
 import { useTranslation } from "@/lib/i18n";
 import { useModalA11y } from "@/lib/use-modal-a11y";
+import { Download } from "lucide-react";
 import { InstalledList } from "./views/installed-list";
 import { MarketplaceBrowser } from "./views/marketplace-browser";
 import { PluginErrors } from "./views/plugin-errors";
@@ -48,43 +49,41 @@ export function PluginsPage({
     </>
   );
 
-  if (embedded) {
-    return (
-      <>
-        <ManageSubnav
-          tabs={tabs}
-          activeTab={tab}
-          onTabChange={(id) => setTab(id as typeof tab)}
-          summary={text(
-            `${plugins.length} installed · ${enabledCount} available · ${errCount} issues`,
-            `已安装 ${plugins.length} 个 · 可用 ${enabledCount} 个 · ${errCount} 个问题`,
-          )}
-        />
-        {loadError && <div className={shared.errorBar} role="alert">{loadError}</div>}
-        <div className={shared.body}>{body}</div>
-        {installOpen && <ManualInstallDialog onClose={closeInstall} />}
-      </>
-    );
-  }
+  const content = (
+    <>
+      <ManageSubnav
+        tabs={tabs}
+        activeTab={tab}
+        onTabChange={(id) => setTab(id as typeof tab)}
+        summary={text(
+          `${enabledCount} available · ${errCount} issues`,
+          `可用 ${enabledCount} 个 · ${errCount} 个问题`,
+        )}
+        action={{
+          label: text("Add plugin", "添加插件"),
+          onClick: () => setLocalInstallOpen(true),
+          icon: <Download />,
+          primary: true,
+        }}
+      />
+      {loadError && <div className={shared.errorBar} role="alert">{loadError}</div>}
+      <div className={shared.body}><div className={shared.surface}>{body}</div></div>
+      {installOpen && <ManualInstallDialog onClose={closeInstall} />}
+    </>
+  );
+
+  if (embedded) return content;
 
   return (
     <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
     <div className={shared.view}>
       <ManagePageHeader
         title={t("nav.plugins")}
-        tabs={tabs}
-        activeTab={tab}
-        onTabChange={(id) => setTab(id as typeof tab)}
         actions={[
           { label: t("sidebar.refresh"), onClick: () => { void refresh(); } },
-          { label: text("Add plugin", "添加插件"), onClick: () => setLocalInstallOpen(true), primary: true },
         ]}
       />
-      {loadError && <div className={shared.errorBar} role="alert">{loadError}</div>}
-      <div className={shared.body}>
-        {body}
-      </div>
-      {installOpen && <ManualInstallDialog onClose={closeInstall} />}
+      {content}
     </div>
     </div>
   );

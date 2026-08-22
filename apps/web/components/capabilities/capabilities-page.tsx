@@ -2,12 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Download } from "lucide-react";
 import {
   BlocksIcon,
   GraduationCapIcon,
   PlugZapIcon,
-  PlusIcon,
   RefreshCwIcon,
   WorkflowIcon,
 } from "@/components/animated-icons";
@@ -45,10 +43,7 @@ export function CapabilitiesPage() {
   const { t, text } = useTranslation();
   const [kind, setKind] = useState(() => kindFromPath(pathname));
   const [query, setQueryState] = useState(persistedQuery);
-  const [pluginInstallOpen, setPluginInstallOpen] = useState(false);
-  const [skillNewOpen, setSkillNewOpen] = useState(false);
   const [mcpReloadNonce, setMcpReloadNonce] = useState(0);
-  const [mcpAddNonce, setMcpAddNonce] = useState(0);
   const [programReloadNonce, setProgramReloadNonce] = useState(0);
   if (typeof window !== "undefined") {
     try { sessionStorage.setItem("op.ability.kind", kind); } catch { /* ignore */ }
@@ -69,10 +64,7 @@ export function CapabilitiesPage() {
   };
 
   const goKind = (id: string) => {
-    setPluginInstallOpen(false);
-    setSkillNewOpen(false);
     setMcpReloadNonce(0);
-    setMcpAddNonce(0);
     setProgramReloadNonce(0);
     const href = kindHref(id);
     setKind(kindFromPath(href));
@@ -90,21 +82,12 @@ export function CapabilitiesPage() {
       return [refresh(() => setProgramReloadNonce((n) => n + 1))];
     }
     if (kind === "plugins") {
-      return [
-        refresh(() => { void refreshPlugins(); }),
-        { label: text("Add plugin", "添加插件"), onClick: () => setPluginInstallOpen(true), icon: <Download />, primary: true },
-      ];
+      return [refresh(() => { void refreshPlugins(); })];
     }
     if (kind === "skills") {
-      return [
-        refresh(() => { void fetchSkills(); }),
-        { label: text("Add skill", "添加技能"), onClick: () => setSkillNewOpen(true), icon: PlusIcon, primary: true },
-      ];
+      return [refresh(() => { void fetchSkills(); })];
     }
-    return [
-      refresh(() => setMcpReloadNonce((n) => n + 1)),
-      { label: text("Add MCP server", "添加 MCP 服务器"), onClick: () => setMcpAddNonce((n) => n + 1), icon: PlusIcon, primary: true },
-    ];
+    return [refresh(() => setMcpReloadNonce((n) => n + 1))];
   }, [kind, t, text, refreshPlugins, fetchSkills]);
 
   return (
@@ -141,16 +124,12 @@ export function CapabilitiesPage() {
           <PluginsPage
             embedded
             query={query}
-            installOpen={pluginInstallOpen}
-            onInstallClose={() => setPluginInstallOpen(false)}
           />
         )}
         {kind === "skills" && (
           <SkillsPage
             embedded
             query={query}
-            newOpen={skillNewOpen}
-            onNewClose={() => setSkillNewOpen(false)}
           />
         )}
         {kind === "mcp" && (
@@ -158,7 +137,6 @@ export function CapabilitiesPage() {
             embedded
             query={query}
             reloadNonce={mcpReloadNonce}
-            addNonce={mcpAddNonce}
           />
         )}
       </div>
