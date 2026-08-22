@@ -93,6 +93,7 @@ def commit(
     after: dict,
     stats: dict,
     diff_state: str,
+    mutation_sequence: int,
 ) -> None:
     value = load(manifest_path)
     entry = value.get("files", {}).get(backup_basename)
@@ -104,6 +105,7 @@ def commit(
         "after": after,
         "stats": stats,
         "diff_state": diff_state,
+        "mutation_sequence": mutation_sequence,
         "committed_at": time.time(),
     })
     value["version"] = 2

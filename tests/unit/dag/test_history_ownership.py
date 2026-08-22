@@ -7,7 +7,7 @@ import pytest
 
 from openprogram.agent.history_ownership import owned_change_set_closure
 from openprogram.agent.internals._revert import reapply_turn, revert_turn
-from openprogram.agent.job.store import save_job
+from openprogram.agent.job.store import save_job, update_job_status
 from openprogram.agent.job.runner import _mirror_linked_job_to_caller
 from openprogram.agent.job.types import Job, JobStatus
 from openprogram.store.session.session_store import SessionStore
@@ -21,6 +21,7 @@ def store(tmp_path: Path, monkeypatch):
         "openprogram.store.session.session_store._default_store", value,
         raising=False,
     )
+    monkeypatch.setattr("openprogram.store.default_store", lambda: value)
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
     value.create_session("s", "main", title="ownership")
     value.append_message("s", {"id": "u1", "role": "user", "content": "edit"})
@@ -82,6 +83,27 @@ def test_running_owned_child_blocks_revert_without_file_writes(store, tmp_path):
     assert target.read_text(encoding="utf-8") == "after\n"
 
 
+@pytest.mark.parametrize("status", [JobStatus.CANCELLED, JobStatus.ERRORED])
+def test_terminal_owned_child_with_receipts_is_included(store, tmp_path, status):
+    target = tmp_path / f"{status.value}.py"
+    target.write_text("before\n", encoding="utf-8")
+    journal = CheckpointStore(store._session_dir("s"))
+    journal.backup_before_edit("a1", str(target))
+    target.write_text("parent\n", encoding="utf-8")
+    journal.commit_after_edit("a1", str(target), operation="edit")
+    child = tmp_path / f"child-{status.value}.py"
+    child.write_text("before\n", encoding="utf-8")
+    journal.backup_before_edit("child-a", str(child))
+    child.write_text("after\n", encoding="utf-8")
+    journal.commit_after_edit("child-a", str(child), operation="edit")
+    save_job("s", _job(status=status, head_id="child-a"))
+
+    result = revert_turn("s", "a1", idempotency_key=f"terminal-{status.value}")
+
+    assert result["status"] == "committed"
+    assert child.read_text(encoding="utf-8") == "before\n"
+
+
 def test_completed_owned_child_is_included_but_linked_and_worktree_are_not(store):
     save_job("s", _job())
     save_job("s", _job(
@@ -119,6 +141,12 @@ def test_cross_session_link_is_mirrored_to_origin_for_impact_reporting(store):
     assert closure["status"] == "blocked"
     assert closure["linked"][0]["job_id"] == "j_cross"
     assert closure["blockers"][0]["job_id"] == "j_cross"
+
+    update_job_status("peer", "j_cross", JobStatus.ERRORED, error="restart")
+    terminal = owned_change_set_closure("s", ["a1"])
+
+    assert terminal["status"] == "ready"
+    assert terminal["linked"][0]["status"] == "errored"
 
 
 def test_parent_revert_restores_owned_child_only(store, tmp_path):
@@ -235,6 +263,41 @@ def test_nested_owned_same_path_revert_and_reapply_follow_workspace_order(
     assert target.read_text(encoding="utf-8") == "0\n"
 
     reapplied = reapply_turn("s", "a1", idempotency_key="nested-reapply")
+
+    assert reapplied["status"] == "committed"
+    assert target.read_text(encoding="utf-8") == "3\n"
+
+
+def test_owned_sibling_completion_order_does_not_override_mutation_order(
+    store, tmp_path,
+):
+    # c2 gets the earlier assistant seq, but c1 mutates first. Restoration
+    # must follow the durable mutation sequence rather than completion seq.
+    for prefix in ("c2", "c1"):
+        store.spawn_branch(
+            "s", "a1", source="agent_spawn", node_id=f"{prefix}-u",
+            prompt=prefix, register_head=False,
+        )
+        store.append_message("s", {
+            "id": f"{prefix}-a", "role": "assistant", "content": "done",
+            "predecessor": f"{prefix}-u",
+        })
+    target = tmp_path / "siblings.py"
+    target.write_text("0\n", encoding="utf-8")
+    journal = CheckpointStore(store._session_dir("s"))
+    for turn_id, value in (("a1", "1\n"), ("c1-a", "2\n"), ("c2-a", "3\n")):
+        journal.backup_before_edit(turn_id, str(target))
+        target.write_text(value, encoding="utf-8")
+        journal.commit_after_edit(turn_id, str(target), operation="edit")
+    save_job("s", _job(id="j-c1", head_id="c1-a"))
+    save_job("s", _job(id="j-c2", head_id="c2-a"))
+
+    reverted = revert_turn("s", "a1", idempotency_key="siblings-revert")
+
+    assert reverted["status"] == "committed"
+    assert target.read_text(encoding="utf-8") == "0\n"
+
+    reapplied = reapply_turn("s", "a1", idempotency_key="siblings-reapply")
 
     assert reapplied["status"] == "committed"
     assert target.read_text(encoding="utf-8") == "3\n"

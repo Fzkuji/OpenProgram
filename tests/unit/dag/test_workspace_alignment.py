@@ -24,6 +24,7 @@ def branch_workspace(tmp_path: Path, monkeypatch):
         "openprogram.store.session.session_store._default_store", store,
         raising=False,
     )
+    monkeypatch.setattr("openprogram.store.default_store", lambda: store)
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
     store.create_session("s", "main", title="alignment")
     store.append_message("s", {"id": "u0", "role": "user", "content": "base"})
@@ -144,6 +145,39 @@ def test_restore_branch_projection_includes_owned_child_changes(branch_workspace
     assert path.read_text(encoding="utf-8") == "target\n"
 
 
+def test_branch_projection_uses_mutation_order_for_owned_siblings(branch_workspace):
+    store, path = branch_workspace
+    # Completion/node order is c2 then c1; actual writes are c1 then c2.
+    for prefix in ("c2", "c1"):
+        store.spawn_branch(
+            "s", "a1", source="agent_spawn", node_id=f"{prefix}-u",
+            prompt=prefix, register_head=False,
+        )
+        store.append_message("s", {
+            "id": f"{prefix}-a", "role": "assistant", "content": "done",
+            "predecessor": f"{prefix}-u",
+        })
+    journal = CheckpointStore(store._session_dir("s"))
+    for turn_id, value in (("c1-a", "source-1\n"), ("c2-a", "source-2\n")):
+        journal.backup_before_edit(turn_id, str(path))
+        path.write_text(value, encoding="utf-8")
+        journal.commit_after_edit(turn_id, str(path), operation="edit")
+    for prefix in ("c1", "c2"):
+        save_job("s", Job(
+            id=f"j-{prefix}", parent_session_id="s", prompt=prefix,
+            agent_id=prefix, parent_msg_id="a1", caller_msg_id="a1",
+            origin_turn_id="a1", creates_agent=True, relation="owned",
+            status=JobStatus.COMPLETED, head_id=f"{prefix}-a",
+        ))
+
+    result = restore_branch_workspace(
+        "s", store=store, idempotency_key="restore-owned-siblings",
+    )
+
+    assert result["status"] == "committed"
+    assert path.read_text(encoding="utf-8") == "target\n"
+
+
 def test_concurrent_head_move_rolls_back_branch_workspace_restore(
     branch_workspace, monkeypatch,
 ):
@@ -170,3 +204,53 @@ def test_concurrent_head_move_rolls_back_branch_workspace_restore(
     assert path.read_text(encoding="utf-8") == "source\n"
     assert store.get_session("s")["head_id"] == "a0"
     assert store.get_session("s")["workspace_alignment"]["status"] == "mismatch"
+
+
+def test_external_write_during_final_cas_is_not_reported_committed(
+    branch_workspace, monkeypatch,
+):
+    store, path = branch_workspace
+    original = store.compare_and_set_head
+    injected = False
+
+    def write_before_cas(*args, **kwargs):
+        nonlocal injected
+        if not injected:
+            injected = True
+            path.write_text("external\n", encoding="utf-8")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(store, "compare_and_set_head", write_before_cas)
+
+    result = restore_branch_workspace(
+        "s", store=store, idempotency_key="restore-external-race",
+    )
+
+    assert result["status"] == "recovery_required"
+    assert path.read_text(encoding="utf-8") == "external\n"
+    assert store.get_session("s")["workspace_alignment"]["status"] == "mismatch"
+
+
+def test_branch_restore_exact_idempotency_replay_survives_aligned_state(
+    branch_workspace,
+):
+    store, path = branch_workspace
+
+    first = restore_branch_workspace(
+        "s", store=store, idempotency_key="stable-replay",
+        source_head_id="a1", target_head_id="fa",
+    )
+    replay = restore_branch_workspace(
+        "s", store=store, idempotency_key="stable-replay",
+        source_head_id="a1", target_head_id="fa",
+    )
+    conflict = restore_branch_workspace(
+        "s", store=store, idempotency_key="stable-replay",
+        source_head_id="a1", target_head_id="a0",
+    )
+
+    assert first["status"] == "committed"
+    assert replay["status"] == "committed"
+    assert replay["replayed"] is True
+    assert conflict["status"] == "idempotency_conflict"
+    assert path.read_text(encoding="utf-8") == "target\n"

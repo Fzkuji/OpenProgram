@@ -208,6 +208,7 @@ class CheckpointStore:
             if canonical_operation in {"write", "edit", "update", "add"}:
                 canonical_operation = "modify"
         stats, diff_state = _line_stats(before_blob, after_blob)
+        mutation_sequence = self._next_mutation_sequence()
         manifest.commit(
             manifest_path,
             backup_name,
@@ -215,7 +216,41 @@ class CheckpointStore:
             after=after,
             stats=stats,
             diff_state=diff_state,
+            mutation_sequence=mutation_sequence,
         )
+
+    @staticmethod
+    def _next_mutation_sequence() -> int:
+        """Allocate one durable workspace-wide mutation order value."""
+        import fcntl
+
+        from openprogram.paths import get_state_dir
+
+        root = get_state_dir() / "mutation-locks"
+        root.mkdir(parents=True, exist_ok=True)
+        counter_path = root / "workspace-sequence"
+        with (root / "workspace-sequence.lock").open("a+") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            try:
+                try:
+                    current = int(counter_path.read_text(encoding="ascii").strip())
+                except (FileNotFoundError, OSError, ValueError):
+                    current = 0
+                value = current + 1
+                tmp = root / ".workspace-sequence.tmp"
+                with tmp.open("w", encoding="ascii") as handle:
+                    handle.write(str(value))
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(tmp, counter_path)
+                self_descriptor = os.open(root, os.O_RDONLY)
+                try:
+                    os.fsync(self_descriptor)
+                finally:
+                    os.close(self_descriptor)
+                return value
+            finally:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
     def abort_edit(self, turn_id: str, abs_path: str, error: str | None = None) -> None:
         if turn_id and abs_path:
@@ -450,51 +485,61 @@ class CheckpointStore:
         folded: dict[str, dict] = {}
         unavailable: list[str] = []
         discontinuous: list[str] = []
-        for turn_id in reversed(list(dict.fromkeys(turn_ids))):
-            for mutation in self.list_mutations(turn_id):
-                path = mutation.get("path") or ""
-                before = mutation.get("before")
-                after = mutation.get("after")
-                if (
-                    not path
-                    or mutation.get("recoverability") != "exact"
-                    or not isinstance(before, dict)
-                    or not isinstance(after, dict)
-                    or before.get("kind") not in {"regular", "absent"}
-                    or after.get("kind") not in {"regular", "absent"}
-                ):
-                    unavailable.append(path)
-                    continue
-                before = self._state_with_blob(turn_id, before)
-                after = self._state_with_blob(turn_id, after)
-                try:
-                    parent_chain = self._capture_parent_chain(path)
-                except OSError:
-                    unavailable.append(path)
-                    continue
-                before["parent_chain"] = parent_chain
-                after["parent_chain"] = parent_chain
-                if not self._blob_is_exact(before) or not self._blob_is_exact(after):
-                    unavailable.append(path)
-                    continue
-                current = folded.get(path)
-                if current is None:
-                    folded[path] = {
-                        "path": path,
-                        "expected_current": after,
-                        "target": before,
-                        "rollback": after,
-                        "turn_ids": [turn_id],
-                        "state": "pending",
-                        "error": None,
-                    }
-                    continue
-                if not self._same_recorded_state(current["expected_current"], before):
-                    discontinuous.append(path)
-                    continue
-                current["expected_current"] = after
-                current["rollback"] = after
-                current["turn_ids"].append(turn_id)
+        ordered_turn_ids = list(dict.fromkeys(turn_ids))
+        records = [
+            (turn_id, mutation)
+            for turn_id in reversed(ordered_turn_ids)
+            for mutation in self.list_mutations(turn_id)
+        ]
+        if records and all(
+            isinstance(mutation.get("mutation_sequence"), int)
+            for _turn_id, mutation in records
+        ):
+            records.sort(key=lambda item: item[1]["mutation_sequence"])
+        for turn_id, mutation in records:
+            path = mutation.get("path") or ""
+            before = mutation.get("before")
+            after = mutation.get("after")
+            if (
+                not path
+                or mutation.get("recoverability") != "exact"
+                or not isinstance(before, dict)
+                or not isinstance(after, dict)
+                or before.get("kind") not in {"regular", "absent"}
+                or after.get("kind") not in {"regular", "absent"}
+            ):
+                unavailable.append(path)
+                continue
+            before = self._state_with_blob(turn_id, before)
+            after = self._state_with_blob(turn_id, after)
+            try:
+                parent_chain = self._capture_parent_chain(path)
+            except OSError:
+                unavailable.append(path)
+                continue
+            before["parent_chain"] = parent_chain
+            after["parent_chain"] = parent_chain
+            if not self._blob_is_exact(before) or not self._blob_is_exact(after):
+                unavailable.append(path)
+                continue
+            current = folded.get(path)
+            if current is None:
+                folded[path] = {
+                    "path": path,
+                    "expected_current": after,
+                    "target": before,
+                    "rollback": after,
+                    "turn_ids": [turn_id],
+                    "state": "pending",
+                    "error": None,
+                }
+                continue
+            if not self._same_recorded_state(current["expected_current"], before):
+                discontinuous.append(path)
+                continue
+            current["expected_current"] = after
+            current["rollback"] = after
+            current["turn_ids"].append(turn_id)
 
         unavailable = sorted(set(filter(None, unavailable)))
         discontinuous = sorted(set(filter(None, discontinuous)))
@@ -791,6 +836,13 @@ class CheckpointStore:
                 else:
                     states.append("external")
             if all(state == "target" for state in states) and head == target_head:
+                if expected_head == target_head and not compare_and_set_head(
+                    intent, expected_head, target_head,
+                ):
+                    intent["status"] = "recovery_required"
+                    intent["error"] = "same-head transaction finalization failed"
+                    manifest.save(intent_path, intent)
+                    return self._rewind_intent_result(intent, replayed=True)
                 intent["status"] = "committed"
                 intent["error"] = None
                 manifest.save(intent_path, intent)
@@ -1055,6 +1107,8 @@ class CheckpointStore:
         target_branch_id: str | None = None,
         expected_plan_hash: str | None = None,
         custom_actions: list[dict] | None = None,
+        forward_meta_update: dict | None = None,
+        rollback_meta_update: dict | None = None,
     ) -> dict:
         key = idempotency_key or uuid.uuid4().hex
         with self._rewind_intent_lock(key):
@@ -1071,6 +1125,8 @@ class CheckpointStore:
                 target_branch_id=target_branch_id,
                 expected_plan_hash=expected_plan_hash,
                 custom_actions=custom_actions,
+                forward_meta_update=forward_meta_update,
+                rollback_meta_update=rollback_meta_update,
             )
 
     def _apply_rewind_operation_locked(
@@ -1088,6 +1144,8 @@ class CheckpointStore:
         target_branch_id: str | None,
         expected_plan_hash: str | None,
         custom_actions: list[dict] | None,
+        forward_meta_update: dict | None,
+        rollback_meta_update: dict | None,
     ) -> dict:
         """Apply one folded file plan and move HEAD only after verification."""
         key = idempotency_key
@@ -1176,6 +1234,8 @@ class CheckpointStore:
                 json.dumps(plan_payload, sort_keys=True).encode(),
             ).hexdigest(),
             "status": "prepared",
+            "forward_meta_update": forward_meta_update,
+            "rollback_meta_update": rollback_meta_update,
             "conflicts": [],
             "unavailable": [],
             "error": None,
@@ -1255,6 +1315,13 @@ class CheckpointStore:
                 if not compare_and_set_head(expected_head_id, target_head_id):
                     raise OSError("stale_head")
                 head_moved = True
+                for action in intent["actions"]:
+                    if not self._state_matches(
+                        self._inspect_state(action["path"]), action["target"],
+                    ):
+                        raise OSError(
+                            f"external change after apply for {action['path']}",
+                        )
                 intent["status"] = "committed"
                 manifest.save(intent_path, intent)
                 return self._rewind_intent_result(intent)

@@ -419,9 +419,18 @@ function TranscriptSkeleton() {
 
 function WorkspaceAlignmentBanner({ sessionId }: { sessionId: string | null }) {
   const { text } = useTranslation();
+  const restoreRequest = useRef<string | null>(null);
   const alignment = useSessionStore((state) =>
     sessionId ? state.conversations[sessionId]?.workspace_alignment : undefined,
   );
+  useEffect(() => {
+    const clear = (event: Event) => {
+      const detail = (event as CustomEvent).detail ?? {};
+      if (detail.session_id === sessionId) restoreRequest.current = null;
+    };
+    window.addEventListener("workspace-alignment-response", clear);
+    return () => window.removeEventListener("workspace-alignment-response", clear);
+  }, [sessionId]);
   if (!sessionId || alignment?.status !== "mismatch") return null;
   const resolve = (decision: "keep_current_files" | "restore_branch_code") => {
     const socket = getSocket();
@@ -429,10 +438,18 @@ function WorkspaceAlignmentBanner({ sessionId }: { sessionId: string | null }) {
       showToast(text("Not connected", "连接已断开"));
       return;
     }
+    if (decision === "restore_branch_code" && !restoreRequest.current) {
+      restoreRequest.current = crypto.randomUUID();
+    }
     socket.send(JSON.stringify({
       action: "resolve_workspace_alignment",
       session_id: sessionId,
       decision,
+      idempotency_key: decision === "restore_branch_code"
+        ? restoreRequest.current
+        : undefined,
+      source_head_id: alignment.source_head_id,
+      target_head_id: alignment.target_head_id,
     }));
   };
   return (

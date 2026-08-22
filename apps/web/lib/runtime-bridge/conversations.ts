@@ -374,6 +374,11 @@ export function onWorkspaceAlignmentResolved(payload: {
   error?: string;
   workspace_alignment?: import("@/lib/session-store/types").ConvSummary["workspace_alignment"];
 }): void {
+  try {
+    window.dispatchEvent(new CustomEvent("workspace-alignment-response", {
+      detail: payload,
+    }));
+  } catch { /* defensive */ }
   if (!payload?.ok) {
     showToast(payload?.error || "Workspace alignment failed");
     return;

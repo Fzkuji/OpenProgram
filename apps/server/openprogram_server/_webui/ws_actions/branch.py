@@ -327,6 +327,8 @@ async def handle_resolve_workspace_alignment(ws, cmd: dict):
             session_id,
             store=default_db(),
             idempotency_key=(cmd.get("idempotency_key") or None),
+            source_head_id=(cmd.get("source_head_id") or None),
+            target_head_id=(cmd.get("target_head_id") or None),
         )
         ok = result.get("status") == "committed"
         error = result.get("error")

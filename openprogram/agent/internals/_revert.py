@@ -96,14 +96,17 @@ def _apply(
                 "head_changed": False,
             }
         else:
-            sentinel = f"history-closure:{index.head_id or 'ROOT'}"
+            head_id = index.head_id
             result = journal.apply_rewind_operation(
                 owned_turn_ids + [assistant_msg_id],
-                expected_head_id=sentinel,
-                target_head_id=sentinel,
-                get_head=lambda: sentinel,
-                compare_and_set_head=(
-                    lambda expected, target: expected == target == sentinel
+                expected_head_id=head_id,
+                target_head_id=head_id,
+                get_head=lambda: (
+                    (store.get_session(session_id) or {}).get("head_id")
+                ),
+                compare_and_set_head=lambda expected, target: (
+                    expected == target == head_id
+                    and store.compare_and_set_head(session_id, expected, target)
                 ),
                 idempotency_key=(
                     f"turn-closure:{direction}:"

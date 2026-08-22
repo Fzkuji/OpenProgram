@@ -133,40 +133,49 @@ def _branch_turn_ids(
 def _branch_projection(journal, turn_ids: list[str]) -> tuple[dict, list[str]]:
     projection: dict[str, dict] = {}
     unavailable: list[str] = []
-    for turn_id in turn_ids:
-        for mutation in journal.list_mutations(turn_id):
-            path = mutation.get("path") or ""
-            before = mutation.get("before") or {}
-            after = mutation.get("after") or {}
-            if (
-                not path
-                or mutation.get("recoverability") != "exact"
-                or before.get("kind") not in {"regular", "absent"}
-                or after.get("kind") not in {"regular", "absent"}
-            ):
-                unavailable.append(path)
-                continue
-            before = journal._state_with_blob(turn_id, before)
-            after = journal._state_with_blob(turn_id, after)
-            try:
-                chain = journal._capture_parent_chain(path)
-            except OSError:
-                unavailable.append(path)
-                continue
-            before["parent_chain"] = chain
-            after["parent_chain"] = chain
-            current = projection.get(path)
-            if current is None:
-                projection[path] = {
-                    "initial": before,
-                    "current": after,
-                    "turn_ids": [turn_id],
-                }
-                continue
-            if not journal._same_recorded_state(current["current"], before):
-                unavailable.append(path)
-            current["current"] = after
-            current["turn_ids"].append(turn_id)
+    records = [
+        (turn_id, mutation)
+        for turn_id in turn_ids
+        for mutation in journal.list_mutations(turn_id)
+    ]
+    if records and all(
+        isinstance(mutation.get("mutation_sequence"), int)
+        for _turn_id, mutation in records
+    ):
+        records.sort(key=lambda item: item[1]["mutation_sequence"])
+    for turn_id, mutation in records:
+        path = mutation.get("path") or ""
+        before = mutation.get("before") or {}
+        after = mutation.get("after") or {}
+        if (
+            not path
+            or mutation.get("recoverability") != "exact"
+            or before.get("kind") not in {"regular", "absent"}
+            or after.get("kind") not in {"regular", "absent"}
+        ):
+            unavailable.append(path)
+            continue
+        before = journal._state_with_blob(turn_id, before)
+        after = journal._state_with_blob(turn_id, after)
+        try:
+            chain = journal._capture_parent_chain(path)
+        except OSError:
+            unavailable.append(path)
+            continue
+        before["parent_chain"] = chain
+        after["parent_chain"] = chain
+        current = projection.get(path)
+        if current is None:
+            projection[path] = {
+                "initial": before,
+                "current": after,
+                "turn_ids": [turn_id],
+            }
+            continue
+        if not journal._same_recorded_state(current["current"], before):
+            unavailable.append(path)
+        current["current"] = after
+        current["turn_ids"].append(turn_id)
     return projection, sorted(set(filter(None, unavailable)))
 
 
@@ -239,23 +248,17 @@ def plan_branch_workspace_restore(session_id: str, *, store=None) -> dict[str, A
     }
 
 
-def restore_branch_workspace(
+def _apply_branch_workspace_intent(
     session_id: str,
     *,
-    store=None,
-    idempotency_key: str | None = None,
+    store,
+    journal,
+    turn_ids: list[str],
+    actions: list[dict],
+    head_id: str | None,
+    idempotency_key: str,
+    target_msg_id: str,
 ) -> dict[str, Any]:
-    if store is None:
-        from openprogram.store.session.session_store import default_store
-
-        store = default_store()
-    plan = plan_branch_workspace_restore(session_id, store=store)
-    if plan.get("status") != "ready":
-        return plan
-    from openprogram.store.snapshot.checkpoint import CheckpointStore
-
-    journal = CheckpointStore(store._session_dir(session_id))
-    head_id = (store.get_session(session_id) or {}).get("head_id")
     prior = get_workspace_alignment(session_id, store=store)
     committed_alignment = {
         **prior,
@@ -264,23 +267,34 @@ def restore_branch_workspace(
         "decision": "restore_branch_code",
         "updated_at": time.time(),
     }
+    cas_committed = False
+
+    def compare_alignment_head(expected, target) -> bool:
+        nonlocal cas_committed
+        if expected != target or expected != head_id:
+            return False
+        meta_alignment = committed_alignment if not cas_committed else prior
+        ok = store.compare_and_set_head(
+            session_id,
+            expected,
+            target,
+            meta_update={"workspace_alignment": meta_alignment},
+        )
+        if ok:
+            cas_committed = not cas_committed
+        return ok
+
     result = journal.apply_rewind_operation(
-        [f"branch-switch:{plan.get('source_head_id')}:{plan.get('target_head_id')}"],
+        turn_ids,
         expected_head_id=head_id,
         target_head_id=head_id,
         get_head=lambda: (store.get_session(session_id) or {}).get("head_id"),
-        compare_and_set_head=lambda expected, target: (
-            expected == target == head_id
-            and store.compare_and_set_head(
-                session_id,
-                expected,
-                target,
-                meta_update={"workspace_alignment": committed_alignment},
-            )
-        ),
-        idempotency_key=(idempotency_key or f"branch-switch:{uuid.uuid4().hex}"),
-        target_msg_id=f"branch-switch:{plan.get('target_head_id')}",
-        custom_actions=plan["actions"],
+        compare_and_set_head=compare_alignment_head,
+        idempotency_key=idempotency_key,
+        target_msg_id=target_msg_id,
+        custom_actions=actions,
+        forward_meta_update={"workspace_alignment": committed_alignment},
+        rollback_meta_update={"workspace_alignment": prior},
     )
     result["head_changed"] = False
     result["new_head_id"] = None
@@ -289,3 +303,66 @@ def restore_branch_workspace(
             session_id, store=store,
         )
     return result
+
+
+def restore_branch_workspace(
+    session_id: str,
+    *,
+    store=None,
+    idempotency_key: str | None = None,
+    source_head_id: str | None = None,
+    target_head_id: str | None = None,
+) -> dict[str, Any]:
+    if store is None:
+        from openprogram.store.session.session_store import default_store
+
+        store = default_store()
+    from openprogram.store.snapshot.checkpoint import CheckpointStore
+
+    journal = CheckpointStore(store._session_dir(session_id))
+    key = idempotency_key or f"branch-switch:{uuid.uuid4().hex}"
+    requested_msg_id = (
+        f"branch-switch:{source_head_id}:{target_head_id}"
+        if source_head_id is not None and target_head_id is not None
+        else None
+    )
+    existing = journal.read_rewind_intent(key) if idempotency_key else None
+    if existing is not None:
+        return _apply_branch_workspace_intent(
+            session_id,
+            store=store,
+            journal=journal,
+            turn_ids=existing.get("turn_ids") or [],
+            actions=existing.get("actions") or [],
+            head_id=existing.get("expected_head_id"),
+            idempotency_key=key,
+            target_msg_id=requested_msg_id or existing.get("target_msg_id") or "",
+        )
+    plan = plan_branch_workspace_restore(session_id, store=store)
+    if plan.get("status") != "ready":
+        return plan
+    if (
+        source_head_id is not None
+        and source_head_id != plan.get("source_head_id")
+    ) or (
+        target_head_id is not None
+        and target_head_id != plan.get("target_head_id")
+    ):
+        return {
+            "status": "aborted",
+            "error": "stale_workspace_alignment",
+            "actions": [],
+        }
+    source = str(plan.get("source_head_id") or "")
+    target = str(plan.get("target_head_id") or "")
+    head_id = (store.get_session(session_id) or {}).get("head_id")
+    return _apply_branch_workspace_intent(
+        session_id,
+        store=store,
+        journal=journal,
+        turn_ids=[f"branch-switch:{source}:{target}"],
+        actions=plan["actions"],
+        head_id=head_id,
+        idempotency_key=key,
+        target_msg_id=f"branch-switch:{source}:{target}",
+    )

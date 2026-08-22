@@ -46,7 +46,14 @@ def _cas_for_intent(store, session_id: str, intent: dict, expected, target) -> b
             "preserve_target": not forward,
         }
     return store.compare_and_set_head(
-        session_id, expected, target, branch_update=update,
+        session_id,
+        expected,
+        target,
+        branch_update=update,
+        meta_update=(
+            intent.get("forward_meta_update")
+            if forward else intent.get("rollback_meta_update")
+        ),
     )
 
 

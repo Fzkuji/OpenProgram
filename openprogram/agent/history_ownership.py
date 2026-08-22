@@ -52,12 +52,20 @@ def owned_change_set_closure(
                 if impact not in blockers:
                     blockers.append(impact)
                 continue
-            if job.status != JobStatus.COMPLETED or not job.head_id:
+            if job.head_id:
+                if job.head_id not in origins:
+                    origins.add(job.head_id)
+                    included.append(job.head_id)
+                    changed = True
                 continue
-            if job.head_id not in origins:
-                origins.add(job.head_id)
-                included.append(job.head_id)
-                changed = True
+            if job.status != JobStatus.COMPLETED and job.started_at:
+                # A terminal job that started but has no durable result head
+                # may still have committed trusted mutations. Without the
+                # producer id the causal closure cannot prove its file set.
+                if impact not in blockers:
+                    blockers.append({**impact, "error": "terminal_actor_has_no_head"})
+            elif impact not in linked:
+                linked.append(impact)
     try:
         from openprogram.store.session.session_store import default_store
 

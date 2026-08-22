@@ -173,7 +173,13 @@ def _ensure_session(session_id: str) -> Optional[Path]:
     return path
 
 
-def save_job(session_id: str, job: Job, *, commit_message: Optional[str] = None) -> None:
+def save_job(
+    session_id: str,
+    job: Job,
+    *,
+    commit_message: Optional[str] = None,
+    _mirror: bool = True,
+) -> None:
     """Idempotent write — overwrites the entry for ``job.id``."""
     path = _ensure_session(session_id)
     if path is None:
@@ -185,6 +191,28 @@ def save_job(session_id: str, job: Job, *, commit_message: Optional[str] = None)
             _write_raw(path, jobs)
     msg = commit_message or f"job: {job.id} {job.status.value}"
     _commit(session_id, msg)
+    if _mirror:
+        mirror_linked_job_to_caller(job)
+
+
+def mirror_linked_job_to_caller(job: Job) -> None:
+    """Durably mirror cross-session linked status at its origin turn."""
+    caller_session_id = job.caller_session_id
+    if (
+        job.relation != "linked"
+        or not caller_session_id
+        or caller_session_id == job.parent_session_id
+        or not job.origin_turn_id
+    ):
+        return
+    from dataclasses import replace
+
+    save_job(
+        caller_session_id,
+        replace(job, parent_session_id=caller_session_id),
+        commit_message=f"job link: {job.id} {job.status.value}",
+        _mirror=False,
+    )
 
 
 def load_job(session_id: str, job_id: str) -> Optional[Job]:
@@ -268,6 +296,7 @@ def update_job_status(
                         setattr(t, k, v)
                 jobs[job_id] = t.to_dict()
                 _write_raw(path, jobs)
+                mirror_linked_job_to_caller(t)
                 return t
             if not can_transition(t.status, new_status):
                 raise ValueError(
@@ -292,6 +321,7 @@ def update_job_status(
             jobs[job_id] = t.to_dict()
             _write_raw(path, jobs)
     _commit(session_id, f"job: {job_id} {old_status.value}→{new_status.value}")
+    mirror_linked_job_to_caller(t)
     return t
 
 
@@ -308,6 +338,7 @@ def reconcile_orphans(*, legacy_only: bool = False) -> int:
     if not store.root_path.exists():
         return 0
     count = 0
+    linked_updates: list[Job] = []
     for sdir in sorted(store.root_path.iterdir()):
         if not sdir.is_dir():
             continue
@@ -337,6 +368,7 @@ def reconcile_orphans(*, legacy_only: bool = False) -> int:
                     t.completed_at = time.time()
                     t.error = "worker died before completion"
                     rows[tid] = t.to_dict()
+                    linked_updates.append(t)
                     mutated = True
                     count += 1
                     # Per-job git commit would be noisy on startup with
@@ -346,6 +378,8 @@ def reconcile_orphans(*, legacy_only: bool = False) -> int:
                     _write_raw(path, rows)
         if path.exists():
             _commit(sid, f"job: reconcile orphans (startup)")
+    for job in linked_updates:
+        mirror_linked_job_to_caller(job)
     return count
 
 
@@ -355,4 +389,5 @@ __all__ = [
     "list_jobs",
     "update_job_status",
     "reconcile_orphans",
+    "mirror_linked_job_to_caller",
 ]
