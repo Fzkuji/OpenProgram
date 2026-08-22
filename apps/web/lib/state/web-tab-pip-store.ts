@@ -71,10 +71,16 @@ export function collapseWebTabToPip(tabId: string): boolean {
     return false;
   }
   const group = findCenterTabGroup(store.groups, tabId);
+  const pip = useWebTabPip.getState();
+  const rememberedOwnerTabId = pip.tabId === tabId
+    ? pip.ownerTabId
+    : pip.backgroundTabId === tabId ? pip.backgroundOwnerTabId : null;
+  const isSessionTab = (id: string | null): id is string => !!id && store.tabs.some(
+    (tab) => tab.id === id && tab.kind === "session",
+  );
   const ownerTabId =
-    group?.memberIds.find((id) =>
-      store.tabs.some((tab) => tab.id === id && tab.kind === "session"),
-    )
+    (isSessionTab(rememberedOwnerTabId) ? rememberedOwnerTabId : null)
+    ?? group?.memberIds.find((id) => isSessionTab(id))
     ?? store.tabs.find((tab) => tab.kind === "session")?.id
     ?? null;
   if (!ownerTabId) return false;
@@ -84,7 +90,7 @@ export function collapseWebTabToPip(tabId: string): boolean {
     store.ungroupTab(tabId);
   }
   store.setActive(ownerTabId);
-  useWebTabPip.getState().show(tabId, ownerTabId);
+  pip.show(tabId, ownerTabId);
   return true;
 }
 
