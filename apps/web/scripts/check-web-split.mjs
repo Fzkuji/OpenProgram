@@ -2491,6 +2491,11 @@ assert.match(
   /pip\.tabId !== tabId[\s\S]*?pipCoversCenter\([\s\S]*?pip\.ownerTabId[\s\S]*?setPipZoom\?\.\(tabId, null\)/,
   "a delayed PiP bounds callback must restore zoom after its owner chat loses focus",
 );
+assert.match(
+  pipSource,
+  /useEffect\(\(\) => \{\s*if \(visible\) return;\s*dragRef\.current = null;\s*pendingRectRef\.current = null;\s*captureGenRef\.current \+= 1;[\s\S]*?cancelAnimationFrame\(rafRef\.current\);\s*rafRef\.current = 0;[\s\S]*?\}, \[visible\]\);/,
+  "owner loss during drag must cancel interaction state before PiP can remount",
+);
 assert.match(pipSource, /reportRef\.current\(true\)/);
 assert.match(pipSource, /if \(dragRef\.current\) return;/);
 assert.match(pipSource, /translate\(\$\{next\.x - drag\.origin\.x\}px/);

@@ -113,6 +113,17 @@ export function WebTabPip() {
   }, []);
 
   useEffect(() => {
+    if (visible) return;
+    dragRef.current = null;
+    pendingRectRef.current = null;
+    captureGenRef.current += 1;
+    if (rafRef.current) {
+      window.cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    }
+  }, [visible]);
+
+  useEffect(() => {
     const el = rootRef.current;
     if (!el || !visible) return;
     const parent = el.offsetParent;
