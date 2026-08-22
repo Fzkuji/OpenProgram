@@ -167,6 +167,7 @@ function DesktopWebTabPane({
       useCenterTabs.getState().tabs.map((t) => t.id),
     );
     ensureWebView(bridge, tabId, viewUrlRef.current);
+    bridge.webTab.setPipZoom?.(tabId, null);
     return () => {
       setWebTabReady(tabId, false);
     };

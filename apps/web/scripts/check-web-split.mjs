@@ -2072,6 +2072,11 @@ assert.match(
   /Open in browser[\s\S]*?<CollapseToPipButton tabId=\{tabId\} \/>\s*<BrowserMenu/,
   "collapse-to-PiP belongs on the trailing toolbar cluster",
 );
+assert.match(
+  webTabPaneSource,
+  /ensureWebView\(bridge, tabId, viewUrlRef\.current\);\s*bridge\.webTab\.setPipZoom\?\.\(tabId, null\);/,
+  "an ordinary desktop WebTab must clear persisted PiP layout zoom on mount",
+);
 
 assert.match(desktopBridgeSource, /function visibleWebTab\(\)/);
 assert.match(
