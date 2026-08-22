@@ -1360,7 +1360,11 @@ async def handle_rewind(ws, cmd: dict):
         }))
         return
     try:
-        from openprogram.agent._rewind import list_rewind_points, rewind_to
+        from openprogram.agent._rewind import (
+            list_rewind_points,
+            plan_rewind,
+            rewind_to,
+        )
         import asyncio
         loop = asyncio.get_event_loop()
         if target_msg_id.startswith("__by_index__"):
@@ -1376,16 +1380,44 @@ async def handle_rewind(ws, cmd: dict):
                 }))
                 return
             target_msg_id = points[idx - 1]["msg_id"]
-        idempotency_key = (cmd.get("idempotency_key") or "").strip() or None
-        def _run_rewind():
-            if idempotency_key:
-                return rewind_to(
-                    session_id, target_msg_id,
+        phase = (cmd.get("phase") or "plan").strip().lower()
+        mode = (cmd.get("mode") or "code_and_conversation").strip()
+        if phase == "plan":
+            result = await loop.run_in_executor(
+                None, lambda: plan_rewind(session_id, target_msg_id, mode=mode),
+            )
+        elif phase == "apply":
+            idempotency_key = (cmd.get("idempotency_key") or "").strip()
+            plan_hash = (cmd.get("plan_hash") or "").strip()
+            if not idempotency_key or not plan_hash:
+                await ws.send_text(json.dumps({
+                    "type": "rewind_result",
+                    "data": {
+                        "session_id": session_id,
+                        "status": "error",
+                        "error": "apply requires idempotency_key and plan_hash",
+                    },
+                }))
+                return
+            result = await loop.run_in_executor(
+                None, lambda: rewind_to(
+                    session_id,
+                    target_msg_id,
                     idempotency_key=idempotency_key,
-                )
-            return rewind_to(session_id, target_msg_id)
-
-        result = await loop.run_in_executor(None, _run_rewind)
+                    expected_plan_hash=plan_hash,
+                    mode=mode,
+                ),
+            )
+        else:
+            await ws.send_text(json.dumps({
+                "type": "rewind_result",
+                "data": {
+                    "session_id": session_id,
+                    "status": "error",
+                    "error": f"unknown rewind phase {phase!r}",
+                },
+            }))
+            return
         # The transaction moves HEAD only after every file action verifies.
         # Mirror that committed CAS, including a valid move to ``None``.
         if result.get("head_changed"):

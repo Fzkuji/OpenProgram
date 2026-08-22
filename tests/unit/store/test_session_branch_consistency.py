@@ -99,7 +99,7 @@ def test_rewind_syncs_mirror_so_save_session_cannot_revert_it(
     # rewind to the second user turn (m2) -> head lands on m1
     monkeypatch.setattr(
         "openprogram.agent._rewind.rewind_to",
-        lambda sid, tid: {
+        lambda sid, tid, **_kwargs: {
             "session_id": sid, "target_msg_id": tid, "user_text": "c2",
             "turns_reverted": 1, "nodes_rewound": 2,
             "total_restored_paths": [], "new_head_id": ids[1],
@@ -108,7 +108,11 @@ def test_rewind_syncs_mirror_so_save_session_cannot_revert_it(
     )
     ws = FakeWS()
     _run(chat_actions.handle_rewind(
-        ws, {"session_id": "s1", "target_msg_id": ids[2]}))
+        ws, {
+            "session_id": "s1", "target_msg_id": ids[2],
+            "phase": "apply", "idempotency_key": "rewind-test",
+            "plan_hash": "sha256:test",
+        }))
 
     assert ws.of_type("rewind_result")[0]["errors"] == []
     # The mirror followed the rewind...
@@ -126,6 +130,48 @@ def test_rewind_to_returns_new_head_for_mirror_sync(store):
     out = rewind_to("s1", ids[2])
     assert "new_head_id" in out
     assert out["new_head_id"] == store.get_session("s1")["head_id"]
+
+
+def test_rewind_ws_defaults_to_read_only_plan(srv, monkeypatch):
+    from openprogram.webui.ws_actions import chat as chat_actions
+
+    monkeypatch.setattr(srv, "_is_run_active", lambda _sid: False)
+    monkeypatch.setattr(
+        "openprogram.agent._rewind.plan_rewind",
+        lambda sid, target, **_kwargs: {
+            "status": "ready", "phase": "plan", "session_id": sid,
+            "target_msg_id": target, "plan_hash": "sha256:plan",
+            "idempotency_key": "request-key", "head_changed": False,
+        },
+    )
+    monkeypatch.setattr(
+        "openprogram.agent._rewind.rewind_to",
+        lambda *_args, **_kwargs: pytest.fail("plan request applied files"),
+    )
+
+    ws = FakeWS()
+    _run(chat_actions.handle_rewind(
+        ws, {"session_id": "s1", "target_msg_id": "u2"},
+    ))
+
+    result = ws.of_type("rewind_result")[0]
+    assert result["status"] == "ready"
+    assert result["phase"] == "plan"
+    assert result["plan_hash"] == "sha256:plan"
+
+
+def test_rewind_ws_apply_requires_plan_identity(srv, monkeypatch):
+    from openprogram.webui.ws_actions import chat as chat_actions
+
+    monkeypatch.setattr(srv, "_is_run_active", lambda _sid: False)
+    ws = FakeWS()
+    _run(chat_actions.handle_rewind(ws, {
+        "session_id": "s1", "target_msg_id": "u2", "phase": "apply",
+    }))
+
+    result = ws.of_type("rewind_result")[0]
+    assert result["status"] == "error"
+    assert "idempotency_key and plan_hash" in result["error"]
 
 
 def test_set_active_head_refreshes_messages_mirror(store, srv):

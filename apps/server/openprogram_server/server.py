@@ -1566,6 +1566,17 @@ def create_app(*, owner_auth=None, port: int = 18100):
         except Exception as e:  # noqa: BLE001
             _log(f"[startup] reconcile_interrupted_runs failed: {e}")
 
+    async def _recover_interrupted_rewinds():
+        """Resolve durable rewind intents before sessions are served."""
+        try:
+            from openprogram.agent._rewind import recover_all_rewinds
+
+            n = await asyncio.to_thread(recover_all_rewinds)
+            if n:
+                _log(f"[startup] recovered {n} interrupted rewind intent(s)")
+        except Exception as e:  # noqa: BLE001
+            _log(f"[startup] recover_interrupted_rewinds failed: {e}")
+
     async def _start_mcp_servers():
         """Spawn every enabled MCP server from ``mcp_servers.json``.
 
@@ -1641,6 +1652,7 @@ def create_app(*, owner_auth=None, port: int = 18100):
         _capture_loop,
         _subscribe_event_bus,
         _reconcile_interrupted_runs,
+        _recover_interrupted_rewinds,
         _start_mcp_servers,
         _start_skills_watcher,
         _start_plugin_autoupdate,

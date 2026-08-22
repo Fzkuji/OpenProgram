@@ -96,14 +96,13 @@ def test_rewind_to_first_turn_lands_on_root(store):
     assert not _head_is_rewound(store, "s1")
 
 
-def test_rewind_to_root_leaves_no_stale_head(store):
-    """Even if some caller targets ROOT directly (list_rewind_points no
-    longer offers it), head must not stay on the rewound ROOT."""
+def test_rewind_to_root_is_rejected_and_keeps_head(store):
+    """Synthetic ROOT is a boundary, not a public rewind target."""
     from openprogram.agent._rewind import rewind_to
     _build_two_turns(store, "s1")
-    rewind_to("s1", "ROOT")
-    # new_head found no earlier node → head becomes None (empty session),
-    # NOT a stale pointer at the now-rewound ROOT.
+    result = rewind_to("s1", "ROOT")
+    assert result["status"] == "error"
+    assert "non-root user turn" in result["error"]
     assert not _head_is_rewound(store, "s1")
     _git, idx = store._open("s1")
-    assert idx.head_id is None
+    assert idx.head_id == "u2_reply"

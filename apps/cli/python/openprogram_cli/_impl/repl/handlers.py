@@ -500,7 +500,11 @@ def _handle_rewind(args: list[str], console, session_id: str) -> bool:
         console.print("[yellow]No active session.[/]")
         return False
     try:
-        from openprogram.agent._rewind import list_rewind_points, rewind_to
+        from openprogram.agent._rewind import (
+            list_rewind_points,
+            plan_rewind,
+            rewind_to,
+        )
         points = list_rewind_points(session_id)
         if not points:
             console.print("[dim]No rewind points available.[/]")
@@ -531,15 +535,26 @@ def _handle_rewind(args: list[str], console, session_id: str) -> bool:
             return False
 
         target = points[pick - 1]
+        plan = plan_rewind(session_id, target["msg_id"])
+        if plan.get("status") != "ready":
+            console.print(f"[red]Rewind blocked: {plan.get('error')}[/]")
+            return False
+        console.print(f"[bold]Rewind plan:[/] {target['summary']}")
         console.print(
-            f"[bold]Rewinding to:[/] {target['summary']}"
+            f"[dim]{plan['turns_reverted']} turn(s), "
+            f"{len(plan['files'])} file(s)[/]"
         )
-        if target["files_affected"]:
-            console.print(
-                f"[dim]Will restore {len(target['files_affected'])} file(s)[/]"
-            )
+        confirmed = len(args) > 1 and args[1].lower() == "confirm"
+        if not confirmed:
+            console.print(f"[dim]Run /rewind {pick} confirm to apply this plan.[/]")
+            return False
 
-        result = rewind_to(session_id, target["msg_id"])
+        result = rewind_to(
+            session_id,
+            target["msg_id"],
+            idempotency_key=plan["idempotency_key"],
+            expected_plan_hash=plan["plan_hash"],
+        )
         if result.get("status") != "committed":
             for err in result["errors"]:
                 console.print(f"[red]Rewind blocked: {err}[/]")

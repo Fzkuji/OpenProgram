@@ -35,6 +35,14 @@ def _digest(path: Path) -> str:
     return f"sha256:{value.hexdigest()}"
 
 
+def _digest_fd(descriptor: int) -> str:
+    value = hashlib.sha256()
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    for chunk in iter(lambda: os.read(descriptor, 1024 * 1024), b""):
+        value.update(chunk)
+    return f"sha256:{value.hexdigest()}"
+
+
 def _file_kind(mode: int) -> str:
     if stat.S_ISREG(mode):
         return "regular"
@@ -227,21 +235,95 @@ class CheckpointStore:
         return rows
 
     def _inspect_state(self, path: str) -> dict:
-        target = Path(path)
         try:
-            info = os.lstat(target)
+            chain = self._capture_parent_chain(path)
+            descriptor = self._open_verified_parent(path, chain)
+        except (FileNotFoundError, NotADirectoryError):
+            return {"kind": "absent"}
+        except OSError:
+            return {"kind": "unsafe_parent"}
+        try:
+            return self._inspect_state_at(descriptor, Path(path).name)
+        finally:
+            os.close(descriptor)
+
+    @staticmethod
+    def _capture_parent_chain(path: str) -> dict:
+        target = Path(path)
+        if not target.is_absolute() or not target.name:
+            raise OSError(f"history path must be an absolute file path: {path}")
+        parts = target.parent.parts
+        if not parts:
+            raise OSError(f"history path has no parent: {path}")
+        current = Path(parts[0])
+        root_info = os.lstat(current)
+        if not stat.S_ISDIR(root_info.st_mode) or stat.S_ISLNK(root_info.st_mode):
+            raise OSError(f"unsafe root for history path: {path}")
+        components = []
+        for name in parts[1:]:
+            current = current / name
+            info = os.lstat(current)
+            if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode):
+                raise OSError(f"unsafe parent for history path: {current}")
+            components.append({"name": name, "dev": info.st_dev, "ino": info.st_ino})
+        return {
+            "root": parts[0],
+            "root_dev": root_info.st_dev,
+            "root_ino": root_info.st_ino,
+            "components": components,
+        }
+
+    @staticmethod
+    def _open_verified_parent(path: str, chain: dict) -> int:
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        nofollow = getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(str(chain["root"]), flags | nofollow)
+        try:
+            info = os.fstat(descriptor)
+            if (info.st_dev, info.st_ino) != (
+                chain.get("root_dev"), chain.get("root_ino"),
+            ):
+                raise OSError(f"history root changed before apply: {path}")
+            for component in chain.get("components", []):
+                child = os.open(
+                    component["name"], flags | nofollow, dir_fd=descriptor,
+                )
+                child_info = os.fstat(child)
+                if (child_info.st_dev, child_info.st_ino) != (
+                    component.get("dev"), component.get("ino"),
+                ):
+                    os.close(child)
+                    raise OSError(f"history parent changed before apply: {path}")
+                os.close(descriptor)
+                descriptor = child
+            return descriptor
+        except Exception:
+            os.close(descriptor)
+            raise
+
+    @staticmethod
+    def _inspect_state_at(descriptor: int, name: str) -> dict:
+        try:
+            info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
         except FileNotFoundError:
             return {"kind": "absent"}
         if not stat.S_ISREG(info.st_mode):
             return {"kind": _file_kind(info.st_mode)}
         if info.st_nlink != 1:
             return {"kind": "hardlink", "links": info.st_nlink}
-        return {
-            "kind": "regular",
-            "digest": _digest(target),
-            "mode": f"{stat.S_IMODE(info.st_mode):04o}",
-            "size": info.st_size,
-        }
+        file_descriptor = os.open(
+            name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=descriptor,
+        )
+        try:
+            return {
+                "kind": "regular",
+                "digest": _digest_fd(file_descriptor),
+                "mode": f"{stat.S_IMODE(info.st_mode):04o}",
+                "size": info.st_size,
+            }
+        finally:
+            os.close(file_descriptor)
 
     @staticmethod
     def _state_matches(actual: dict, expected: dict) -> bool:
@@ -304,6 +386,13 @@ class CheckpointStore:
             ):
                 unavailable.append(path)
                 continue
+            try:
+                parent_chain = self._capture_parent_chain(path)
+            except OSError:
+                unavailable.append(path)
+                continue
+            source = {**source, "parent_chain": parent_chain}
+            target = {**target, "parent_chain": parent_chain}
             missing_blob = False
             for state in (source, target):
                 if state.get("kind") != "regular":
@@ -372,6 +461,13 @@ class CheckpointStore:
                     continue
                 before = self._state_with_blob(turn_id, before)
                 after = self._state_with_blob(turn_id, after)
+                try:
+                    parent_chain = self._capture_parent_chain(path)
+                except OSError:
+                    unavailable.append(path)
+                    continue
+                before["parent_chain"] = parent_chain
+                after["parent_chain"] = parent_chain
                 if not self._blob_is_exact(before) or not self._blob_is_exact(after):
                     unavailable.append(path)
                     continue
@@ -464,10 +560,11 @@ class CheckpointStore:
         expected_current: dict | None = None,
     ) -> str | None:
         target = Path(path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        tmp = target.parent / f".{target.name}.{transaction_id}.tmp"
-        guard = target.parent / f".{target.name}.{transaction_id}.guard"
+        tmp_name = f".{target.name}.{transaction_id}.tmp"
+        guard_name = f".{target.name}.{transaction_id}.guard"
         expected = expected_current or self._inspect_state(path)
+        chain = expected.get("parent_chain") or self._capture_parent_chain(path)
+        parent_descriptor = self._open_verified_parent(path, chain)
         try:
             if state.get("kind") == "regular":
                 blob = Path(str(state.get("blob_path"))) \
@@ -476,17 +573,43 @@ class CheckpointStore:
                     )
                 if not blob.is_file():
                     raise OSError(f"missing recovery blob for {path}")
-                shutil.copy2(blob, tmp)
-                with tmp.open("rb") as handle:
-                    os.fsync(handle.fileno())
-                os.chmod(tmp, int(str(state.get("mode") or "0644"), 8))
+                if state.get("digest") and _digest(blob) != state.get("digest"):
+                    raise OSError(f"recovery blob digest mismatch for {path}")
+                tmp_descriptor = os.open(
+                    tmp_name,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                    | getattr(os, "O_NOFOLLOW", 0),
+                    0o600,
+                    dir_fd=parent_descriptor,
+                )
+                try:
+                    with blob.open("rb") as source:
+                        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                            view = memoryview(chunk)
+                            while view:
+                                written = os.write(tmp_descriptor, view)
+                                view = view[written:]
+                    os.fchmod(
+                        tmp_descriptor,
+                        int(str(state.get("mode") or "0644"), 8),
+                    )
+                    os.fsync(tmp_descriptor)
+                finally:
+                    os.close(tmp_descriptor)
 
             if expected.get("kind") == "regular":
-                os.rename(target, guard)
-                moved = self._inspect_state(str(guard))
+                os.rename(
+                    target.name, guard_name,
+                    src_dir_fd=parent_descriptor, dst_dir_fd=parent_descriptor,
+                )
+                moved = self._inspect_state_at(parent_descriptor, guard_name)
                 if not self._state_matches(moved, expected):
                     try:
-                        os.rename(guard, target)
+                        os.rename(
+                            guard_name, target.name,
+                            src_dir_fd=parent_descriptor,
+                            dst_dir_fd=parent_descriptor,
+                        )
                     except FileExistsError:
                         pass
                     raise OSError(f"stale current state for {path}")
@@ -495,18 +618,29 @@ class CheckpointStore:
 
             if state.get("kind") == "regular":
                 try:
-                    os.link(tmp, target)
+                    os.link(
+                        tmp_name, target.name,
+                        src_dir_fd=parent_descriptor,
+                        dst_dir_fd=parent_descriptor,
+                        follow_symlinks=False,
+                    )
                 except FileExistsError as exc:
                     raise OSError(f"external writer created {path}") from exc
-                tmp.unlink()
+                os.unlink(tmp_name, dir_fd=parent_descriptor)
             elif state.get("kind") != "absent":
                 raise OSError(f"unsupported target state for {path}")
 
-            self._fsync_directory(target.parent)
-            return str(guard) if guard.exists() else None
+            os.fsync(parent_descriptor)
+            guard_exists = self._inspect_state_at(
+                parent_descriptor, guard_name,
+            ).get("kind") != "absent"
+            return str(target.parent / guard_name) if guard_exists else None
         finally:
-            if tmp.exists():
-                tmp.unlink()
+            try:
+                os.unlink(tmp_name, dir_fd=parent_descriptor)
+            except FileNotFoundError:
+                pass
+            os.close(parent_descriptor)
 
     def _restore_changed_guard(
         self,
@@ -516,14 +650,26 @@ class CheckpointStore:
     ) -> None:
         target = Path(action["path"])
         guard = Path(guard_path)
-        applied = target.parent / f".{target.name}.{transaction_id}.applied"
-        if target.exists():
-            os.rename(target, applied)
-            action["recovery_artifact"] = str(applied)
-        if target.exists():
-            raise OSError(f"external writer recreated {target}")
-        os.rename(guard, target)
-        self._fsync_directory(target.parent)
+        applied_name = f".{target.name}.{transaction_id}.applied"
+        chain = action["expected_current"].get("parent_chain") \
+            or self._capture_parent_chain(action["path"])
+        descriptor = self._open_verified_parent(action["path"], chain)
+        try:
+            if self._inspect_state_at(descriptor, target.name).get("kind") != "absent":
+                os.rename(
+                    target.name, applied_name,
+                    src_dir_fd=descriptor, dst_dir_fd=descriptor,
+                )
+                action["recovery_artifact"] = str(target.parent / applied_name)
+            if self._inspect_state_at(descriptor, target.name).get("kind") != "absent":
+                raise OSError(f"external writer recreated {target}")
+            os.rename(
+                guard.name, target.name,
+                src_dir_fd=descriptor, dst_dir_fd=descriptor,
+            )
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
 
     @staticmethod
     def _fsync_directory(path: Path) -> None:
@@ -542,6 +688,7 @@ class CheckpointStore:
         return {
             "status": intent.get("status", "error"),
             "transaction_id": intent.get("transaction_id"),
+            "idempotency_key": intent.get("idempotency_key"),
             "restored_paths": [
                 action["path"] for action in intent.get("actions", [])
             ] if committed else [],
@@ -551,11 +698,12 @@ class CheckpointStore:
         }
 
     @staticmethod
-    def _rewind_intent_result(intent: dict) -> dict:
+    def _rewind_intent_result(intent: dict, *, replayed: bool = False) -> dict:
         committed = intent.get("status") == "committed"
         return {
             "status": intent.get("status", "error"),
             "transaction_id": intent.get("transaction_id"),
+            "idempotency_key": intent.get("idempotency_key"),
             "restored_paths": [
                 action["path"] for action in intent.get("actions", [])
             ] if committed else [],
@@ -563,13 +711,143 @@ class CheckpointStore:
             "unavailable": intent.get("unavailable", []),
             "error": intent.get("error"),
             "new_head_id": intent.get("target_head_id") if committed else None,
-            "head_changed": committed,
+            "source_head_id": intent.get("expected_head_id"),
+            "source_branch_id": intent.get("source_branch_id"),
+            "target_branch_id": intent.get("target_branch_id"),
+            "target_msg_id": intent.get("target_msg_id"),
+            "user_text": intent.get("user_text", ""),
+            "turn_ids": intent.get("turn_ids", []),
+            "head_changed": committed and not replayed,
+            "replayed": replayed,
         }
+
+    def read_rewind_intent(self, key: str) -> dict | None:
+        path = self._rewind_intent_path(key)
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            return None
+        return value if isinstance(value, dict) else None
+
+    def _recover_rewind_intent(
+        self,
+        intent_path: Path,
+        *,
+        get_head,
+        compare_and_set_head,
+    ) -> dict:
+        try:
+            initial = json.loads(intent_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {"status": "error", "error": "invalid rewind intent"}
+        paths = [action["path"] for action in initial.get("actions", [])]
+        with self._workspace_lock(paths):
+            try:
+                intent = json.loads(intent_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return {"status": "error", "error": "invalid rewind intent"}
+            if intent.get("status") in {
+                "committed", "rolled_back", "recovery_required", "aborted",
+            }:
+                return self._rewind_intent_result(intent, replayed=True)
+            actions = intent.get("actions") or []
+            head = get_head()
+            expected_head = intent.get("expected_head_id")
+            target_head = intent.get("target_head_id")
+            states = []
+            for action in actions:
+                actual = self._inspect_state(action["path"])
+                if self._state_matches(actual, action["rollback"]):
+                    states.append("source")
+                elif self._state_matches(actual, action["target"]):
+                    states.append("target")
+                else:
+                    states.append("external")
+            if all(state == "target" for state in states) and head == target_head:
+                intent["status"] = "committed"
+                intent["error"] = None
+                manifest.save(intent_path, intent)
+                return self._rewind_intent_result(intent, replayed=True)
+            if head not in {expected_head, target_head} or "external" in states:
+                intent["status"] = "recovery_required"
+                intent["error"] = "external state prevents deterministic recovery"
+                manifest.save(intent_path, intent)
+                return self._rewind_intent_result(intent, replayed=True)
+            recovery_required = False
+            for action, state_name in reversed(list(zip(actions, states))):
+                if state_name == "source":
+                    action["state"] = "rolled_back"
+                    continue
+                try:
+                    action["state"] = "rolling_back"
+                    manifest.save(intent_path, intent)
+                    rollback_guard = self._apply_state(
+                        action["path"], action["rollback"], self.session_dir,
+                        str(intent.get("transaction_id") or "recovery"),
+                        action["target"],
+                    )
+                    if rollback_guard:
+                        action["rollback_guard_path"] = rollback_guard
+                    if not self._state_matches(
+                        self._inspect_state(action["path"]), action["rollback"],
+                    ):
+                        raise OSError("rollback verification failed")
+                    action["state"] = "rolled_back"
+                    manifest.save(intent_path, intent)
+                except Exception as exc:
+                    recovery_required = True
+                    action["error"] = str(exc)
+            if not recovery_required and head == target_head:
+                if not compare_and_set_head(intent, target_head, expected_head):
+                    recovery_required = True
+            intent["status"] = (
+                "recovery_required" if recovery_required else "rolled_back"
+            )
+            intent["error"] = (
+                "automatic rollback could not complete"
+                if recovery_required else "interrupted rewind rolled back"
+            )
+            manifest.save(intent_path, intent)
+            return self._rewind_intent_result(intent, replayed=True)
+
+    def recover_rewind_intents(self, *, get_head, compare_and_set_head) -> list[dict]:
+        root = session_backup_root(self.session_dir) / "intents"
+        if not root.is_dir():
+            return []
+        results = []
+        for path in sorted(root.glob("*.json")):
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if value.get("status") in {"prepared", "applying"}:
+                results.append(self._recover_rewind_intent(
+                    path,
+                    get_head=get_head,
+                    compare_and_set_head=compare_and_set_head,
+                ))
+        return results
 
     @staticmethod
     def _plan_hash(actions: list[dict]) -> str:
         return "sha256:" + hashlib.sha256(
             json.dumps(actions, sort_keys=True).encode(),
+        ).hexdigest()
+
+    @staticmethod
+    def rewind_plan_hash(
+        turn_ids: list[str],
+        expected_head_id: str | None,
+        target_head_id: str | None,
+        actions: list[dict],
+    ) -> str:
+        return "sha256:" + hashlib.sha256(
+            json.dumps({
+                "turn_ids": turn_ids,
+                "expected_head_id": expected_head_id,
+                "target_head_id": target_head_id,
+                "actions": actions,
+            }, sort_keys=True).encode(),
         ).hexdigest()
 
     def apply_history_operation(
@@ -710,6 +988,11 @@ class CheckpointStore:
         get_head,
         compare_and_set_head,
         idempotency_key: str | None = None,
+        target_msg_id: str | None = None,
+        user_text: str = "",
+        source_branch_id: str | None = None,
+        target_branch_id: str | None = None,
+        expected_plan_hash: str | None = None,
     ) -> dict:
         """Apply one folded file plan and move HEAD only after verification."""
         key = idempotency_key or uuid.uuid4().hex
@@ -720,35 +1003,35 @@ class CheckpointStore:
             except (OSError, json.JSONDecodeError):
                 existing = None
             if isinstance(existing, dict):
+                if (
+                    target_msg_id != existing.get("target_msg_id")
+                    or (
+                        expected_plan_hash
+                        and expected_plan_hash != existing.get("preview_plan_hash")
+                    )
+                ):
+                    return {
+                        "status": "idempotency_conflict",
+                        "transaction_id": existing.get("transaction_id"),
+                        "restored_paths": [],
+                        "conflicts": [],
+                        "unavailable": [],
+                        "error": "idempotency key is bound to another rewind request",
+                        "new_head_id": None,
+                        "head_changed": False,
+                    }
                 if existing.get("status") in {
                     "committed", "rolled_back", "recovery_required", "aborted",
                 }:
-                    return self._rewind_intent_result(existing)
-                actions = existing.get("actions") or []
-                files_at_target = all(
-                    self._state_matches(
-                        self._inspect_state(action["path"]), action["target"],
-                    )
-                    for action in actions
+                    return self._rewind_intent_result(existing, replayed=True)
+                return self._recover_rewind_intent(
+                    intent_path,
+                    get_head=get_head,
+                    compare_and_set_head=(
+                        lambda _intent, expected, target:
+                        compare_and_set_head(expected, target)
+                    ),
                 )
-                files_at_source = all(
-                    self._state_matches(
-                        self._inspect_state(action["path"]), action["rollback"],
-                    )
-                    for action in actions
-                )
-                if files_at_target and get_head() == existing.get("target_head_id"):
-                    existing["status"] = "committed"
-                    manifest.save(intent_path, existing)
-                    return self._rewind_intent_result(existing)
-                existing["status"] = (
-                    "rolled_back" if files_at_source
-                    and get_head() == existing.get("expected_head_id")
-                    else "recovery_required"
-                )
-                existing["error"] = "incomplete durable rewind intent recovered"
-                manifest.save(intent_path, existing)
-                return self._rewind_intent_result(existing)
 
         plan = self.plan_rewind_operation(turn_ids)
         if plan.get("status") != "ready":
@@ -766,11 +1049,30 @@ class CheckpointStore:
             "target_head_id": target_head_id,
             "actions": plan["actions"],
         }
+        preview_plan_hash = self.rewind_plan_hash(
+            turn_ids, expected_head_id, target_head_id, plan["actions"],
+        )
+        if expected_plan_hash and expected_plan_hash != preview_plan_hash:
+            return {
+                "status": "aborted",
+                "transaction_id": None,
+                "restored_paths": [],
+                "conflicts": [],
+                "unavailable": [],
+                "error": "stale_plan",
+                "new_head_id": None,
+                "head_changed": False,
+            }
         intent = {
             "version": 1,
             "transaction_id": transaction_id,
             "idempotency_key": key,
             **plan_payload,
+            "target_msg_id": target_msg_id,
+            "user_text": user_text,
+            "source_branch_id": source_branch_id,
+            "target_branch_id": target_branch_id,
+            "preview_plan_hash": preview_plan_hash,
             "plan_hash": "sha256:" + hashlib.sha256(
                 json.dumps(plan_payload, sort_keys=True).encode(),
             ).hexdigest(),
@@ -821,12 +1123,17 @@ class CheckpointStore:
                         action["expected_current"],
                     ):
                         raise OSError(f"stale current state for {action['path']}")
+                    action["state"] = "applying"
+                    manifest.save(intent_path, intent)
                     guard_path = self._apply_state(
                         action["path"], action["target"], self.session_dir,
                         transaction_id, action["expected_current"],
                     )
                     if guard_path:
                         action["guard_path"] = guard_path
+                    action["state"] = "applied"
+                    action["applied_digest"] = action["target"].get("digest")
+                    manifest.save(intent_path, intent)
                     if not self._state_matches(
                         self._inspect_state(action["path"]), action["target"],
                     ):

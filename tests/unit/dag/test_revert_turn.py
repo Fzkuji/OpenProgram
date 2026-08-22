@@ -338,7 +338,7 @@ def test_external_open_fd_write_after_guard_validation_is_preserved(
     injected = {"value": False}
 
     def inject_guard_write(source, destination, *args, **kwargs):
-        if not injected["value"] and str(destination) == str(target):
+        if not injected["value"] and str(destination) in {str(target), target.name}:
             guards = list(target.parent.glob(f".{target.name}.*.guard"))
             assert len(guards) == 1
             guards[0].write_text("external-open-fd\n", encoding="utf-8")

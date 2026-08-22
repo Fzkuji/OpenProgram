@@ -168,15 +168,17 @@ def test_rewind_file_failure_does_not_sync_mirror(monkeypatch, server_events):
     monkeypatch.setattr(_s, "_is_run_active", lambda sid: False)
     monkeypatch.setattr(
         rewind_mod, "rewind_to",
-        lambda sid, target: _rewind_payload(
+        lambda sid, target, **_kwargs: _rewind_payload(
             status="rolled_back", new_head_id=None, head_changed=False,
             errors=["restore failed: f.txt"],
         ),
     )
 
     ws = _FakeWS()
-    asyncio.run(handle_rewind(ws, {"session_id": "s1",
-                                   "target_msg_id": "u2"}))
+    asyncio.run(handle_rewind(ws, {
+        "session_id": "s1", "target_msg_id": "u2", "phase": "apply",
+        "idempotency_key": "failure", "plan_hash": "sha256:test",
+    }))
 
     assert not [event for event in server_events if event[0] == "head"]
     frame = ws.sent[0]
@@ -193,7 +195,7 @@ def test_rewind_full_failure_leaves_mirror_alone(monkeypatch, server_events):
     # The _err path: nothing was rewound, head never moved.
     monkeypatch.setattr(
         rewind_mod, "rewind_to",
-        lambda sid, target: _rewind_payload(
+        lambda sid, target, **_kwargs: _rewind_payload(
             status="error", new_head_id=None, head_changed=False,
             errors=["node 'u2' not found"],
             turns_reverted=0, nodes_rewound=0, user_text="",
@@ -201,8 +203,10 @@ def test_rewind_full_failure_leaves_mirror_alone(monkeypatch, server_events):
     )
 
     ws = _FakeWS()
-    asyncio.run(handle_rewind(ws, {"session_id": "s1",
-                                   "target_msg_id": "u2"}))
+    asyncio.run(handle_rewind(ws, {
+        "session_id": "s1", "target_msg_id": "u2", "phase": "apply",
+        "idempotency_key": "full-failure", "plan_hash": "sha256:test",
+    }))
 
     assert not [e for e in server_events if e[0] == "head"]
 

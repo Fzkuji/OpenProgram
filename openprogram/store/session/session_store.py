@@ -1299,26 +1299,85 @@ class SessionStore:
         session_id: str,
         expected_head_id: Optional[str],
         new_head_id: Optional[str],
+        *,
+        branch_update: Optional[dict[str, Any]] = None,
     ) -> bool:
-        """Move the active HEAD only when it still equals the planned source."""
-        pair = self._open(session_id)
-        if pair is None:
-            return False
-        git, idx = pair
-        node = idx.nodes_by_id.get(new_head_id) if new_head_id else None
-        if node is not None and (node.metadata or {}).get("covers_ids"):
-            raise ValueError(
-                f"compare_and_set_head: {new_head_id!r} is a compaction summary"
-            )
-        with idx._persist_lock:
-            with idx._lock:
-                if idx.head_id != expected_head_id:
-                    return False
-                idx.head_id = new_head_id
-                meta = dict(idx.meta)
-                meta["head_id"] = new_head_id
-            git.write_meta(meta)
-        return True
+        """Durable cross-process HEAD CAS, optionally activating a branch ref."""
+        import fcntl
+        import hashlib
+
+        with self._session_lock(session_id):
+            pair = self._open(session_id)
+            if pair is None:
+                return False
+            git, idx = pair
+            node = idx.nodes_by_id.get(new_head_id) if new_head_id else None
+            if node is not None and (node.metadata or {}).get("covers_ids"):
+                raise ValueError(
+                    f"compare_and_set_head: {new_head_id!r} is a compaction summary"
+                )
+            lock_root = git.path.parent / ".session-locks"
+            lock_root.mkdir(parents=True, exist_ok=True)
+            lock_name = hashlib.sha256(session_id.encode()).hexdigest()[:24]
+            with (lock_root / f"{lock_name}.head.lock").open("a+") as handle:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                try:
+                    durable = git.read_meta()
+                    if durable.get("head_id") != expected_head_id:
+                        return False
+                    updated = dict(durable)
+                    updated["head_id"] = new_head_id
+                    updated["head_version"] = int(
+                        durable.get("head_version") or 0
+                    ) + 1
+                    if branch_update:
+                        refs = dict(durable.get("branch_refs") or {})
+                        source_id = branch_update.get("source_branch_id")
+                        target_id = branch_update.get("target_branch_id")
+                        if source_id:
+                            source = dict(refs.get(source_id) or {})
+                            source.setdefault("branch_id", source_id)
+                            source.setdefault("head_id", expected_head_id)
+                            source.setdefault("head_version", int(
+                                durable.get("head_version") or 0
+                            ))
+                            source.setdefault("writer_epoch", int(
+                                durable.get("writer_epoch") or 0
+                            ))
+                            refs[source_id] = source
+                        if target_id and not branch_update.get("preserve_target"):
+                            target = dict(refs.get(target_id) or {})
+                            target.update({
+                                "branch_id": target_id,
+                                "head_id": new_head_id,
+                                "parent_branch_id": source_id,
+                                "head_version": updated["head_version"],
+                                "writer_epoch": int(
+                                    durable.get("writer_epoch") or 0
+                                ) + 1,
+                                "status": branch_update.get("target_status", "active"),
+                            })
+                            refs[target_id] = target
+                        elif target_id and target_id in refs \
+                                and branch_update.get("target_status"):
+                            target = dict(refs[target_id])
+                            target["status"] = branch_update["target_status"]
+                            refs[target_id] = target
+                        updated["branch_refs"] = refs
+                        active_id = branch_update.get("active_branch_id")
+                        if active_id:
+                            updated["active_branch_id"] = active_id
+                        updated["writer_epoch"] = int(
+                            durable.get("writer_epoch") or 0
+                        ) + 1
+                    git.write_meta(updated)
+                    with idx._persist_lock:
+                        with idx._lock:
+                            idx.head_id = new_head_id
+                            idx.meta = updated
+                    return True
+                finally:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def message_exists(self, session_id: str, msg_id: str) -> bool:
         pair = self._open(session_id)

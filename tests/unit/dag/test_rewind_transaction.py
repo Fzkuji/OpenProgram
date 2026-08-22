@@ -76,6 +76,12 @@ def test_rewind_folds_three_turns_into_one_target_state(store, tmp_path):
     assert result["total_restored_paths"] == [str(target)]
     assert target.read_text(encoding="utf-8") == "v0\n"
     assert store.get_session("s-fold")["head_id"] == "ROOT"
+    _git, index = store._open("s-fold")
+    refs = index.meta["branch_refs"]
+    assert refs[result["source_branch_id"]]["head_id"] == "a3"
+    assert refs[result["target_branch_id"]]["head_id"] == "ROOT"
+    assert index.meta["active_branch_id"] == result["target_branch_id"]
+    assert not any((node.metadata or {}).get("rewound") for node in index.all_nodes())
 
 
 def test_file_apply_failure_rolls_back_and_does_not_move_head(
@@ -196,3 +202,164 @@ def test_head_compare_and_set_rejects_stale_source(store, tmp_path):
 
     assert not store.compare_and_set_head("s-head-cas", "a2", "ROOT")
     assert store.get_session("s-head-cas")["head_id"] == assistants[-1]
+
+
+def test_rewind_keeps_sibling_nodes_and_points_out_of_active_plan(store, tmp_path):
+    from openprogram.agent._rewind import list_rewind_points, rewind_to
+
+    target = tmp_path / "work" / "same.py"
+    _seed_three_turns(store, "s-sibling", target)
+    _append(store, "s-sibling", "fork-u", "user", "a1")
+    _append(store, "s-sibling", "fork-a", "assistant", "fork-u")
+    store.set_head("s-sibling", "a3")
+
+    assert "fork-u" not in {
+        point["msg_id"] for point in list_rewind_points("s-sibling")
+    }
+    result = rewind_to("s-sibling", "u2", idempotency_key="sibling-rewind")
+
+    assert result["status"] == "committed"
+    _git, index = store._open("s-sibling")
+    assert "fork-u" in index.nodes_by_id and "fork-a" in index.nodes_by_id
+    assert not (index.nodes_by_id["fork-u"].metadata or {}).get("rewound")
+    store.set_head("s-sibling", "fork-a")
+    assert [
+        message["id"] for message in store.get_branch("s-sibling", "fork-a")
+    ] == ["ROOT", "u1", "a1", "fork-u", "fork-a"]
+
+
+def test_parent_symlink_swap_cannot_redirect_rewind(store, tmp_path, monkeypatch):
+    from openprogram.agent._rewind import plan_rewind, rewind_to
+
+    parent = tmp_path / "work" / "safe"
+    target = parent / "same.py"
+    assistants, _journal = _seed_three_turns(store, "s-parent-swap", target)
+    plan = plan_rewind("s-parent-swap", "u1")
+    detached = tmp_path / "work" / "detached"
+    outside = tmp_path / "outside"
+    original_apply = CheckpointStore._apply_state
+    swapped = {"done": False}
+
+    def swap_parent(self, path, state, backup_dir, transaction_id,
+                    expected_current=None):
+        if not swapped["done"]:
+            swapped["done"] = True
+            parent.rename(detached)
+            outside.mkdir()
+            (outside / target.name).write_text("v3\n", encoding="utf-8")
+            parent.symlink_to(outside, target_is_directory=True)
+        return original_apply(
+            self, path, state, backup_dir, transaction_id, expected_current,
+        )
+
+    monkeypatch.setattr(CheckpointStore, "_apply_state", swap_parent)
+    result = rewind_to(
+        "s-parent-swap", "u1",
+        idempotency_key=plan["idempotency_key"],
+        expected_plan_hash=plan["plan_hash"],
+    )
+
+    assert result["status"] != "committed"
+    assert store.get_session("s-parent-swap")["head_id"] == assistants[-1]
+    assert (outside / target.name).read_text(encoding="utf-8") == "v3\n"
+    assert (detached / target.name).read_text(encoding="utf-8") == "v3\n"
+
+
+def test_head_meta_write_failure_keeps_memory_and_files_at_source(
+    store, tmp_path, monkeypatch,
+):
+    from openprogram.agent._rewind import rewind_to
+
+    target = tmp_path / "work" / "same.py"
+    assistants, _journal = _seed_three_turns(store, "s-meta-fail", target)
+    git, _index = store._open("s-meta-fail")
+    monkeypatch.setattr(
+        git, "write_meta", lambda _meta: (_ for _ in ()).throw(OSError("disk full")),
+    )
+
+    result = rewind_to("s-meta-fail", "u1", idempotency_key="meta-fail")
+
+    assert result["status"] == "rolled_back"
+    assert store.get_session("s-meta-fail")["head_id"] == assistants[-1]
+    assert target.read_text(encoding="utf-8") == "v3\n"
+
+
+def test_head_cas_reads_durable_head_across_store_instances(store, tmp_path):
+    target = tmp_path / "work" / "same.py"
+    assistants, _journal = _seed_three_turns(store, "s-durable-cas", target)
+    other = SessionStore(store.root_path)
+    other.set_head("s-durable-cas", "a2")
+
+    assert not store.compare_and_set_head(
+        "s-durable-cas", assistants[-1], "ROOT",
+    )
+    assert other.get_session("s-durable-cas")["head_id"] == "a2"
+
+
+def test_mixed_interrupted_intent_is_automatically_rolled_back(store, tmp_path):
+    from openprogram.agent._rewind import recover_session_rewinds
+
+    first = tmp_path / "work" / "first.py"
+    assistants, journal = _seed_three_turns(store, "s-mixed-recovery", first)
+    second = tmp_path / "work" / "second.py"
+    second.write_text("before\n", encoding="utf-8")
+    journal.backup_before_edit(assistants[-1], str(second))
+    second.write_text("after\n", encoding="utf-8")
+    journal.commit_after_edit(assistants[-1], str(second), operation="edit")
+    turn_ids = list(reversed(assistants))
+    plan = journal.plan_rewind_operation(turn_ids)
+    first.write_text("v0\n", encoding="utf-8")
+    key = "mixed-recovery"
+    intent_path = journal._rewind_intent_path(key)
+    manifest.save(intent_path, {
+        "version": 1,
+        "transaction_id": "rewind_partial",
+        "idempotency_key": key,
+        "turn_ids": turn_ids,
+        "expected_head_id": assistants[-1],
+        "target_head_id": "ROOT",
+        "target_msg_id": "u1",
+        "status": "applying",
+        "actions": plan["actions"],
+        "conflicts": [],
+        "unavailable": [],
+        "error": None,
+    })
+
+    results = recover_session_rewinds("s-mixed-recovery", store=store)
+
+    assert results[0]["status"] == "rolled_back"
+    assert first.read_text(encoding="utf-8") == "v3\n"
+    assert second.read_text(encoding="utf-8") == "after\n"
+    assert store.get_session("s-mixed-recovery")["head_id"] == assistants[-1]
+
+
+def test_idempotent_replay_is_bound_to_original_target(store, tmp_path):
+    from openprogram.agent._rewind import plan_rewind, rewind_to
+
+    target = tmp_path / "work" / "same.py"
+    _seed_three_turns(store, "s-idempotent", target)
+    plan = plan_rewind("s-idempotent", "u2")
+    first = rewind_to(
+        "s-idempotent", "u2",
+        idempotency_key=plan["idempotency_key"],
+        expected_plan_hash=plan["plan_hash"],
+    )
+    replay = rewind_to(
+        "s-idempotent", "u2",
+        idempotency_key=plan["idempotency_key"],
+        expected_plan_hash=plan["plan_hash"],
+    )
+    conflict = rewind_to(
+        "s-idempotent", "u1",
+        idempotency_key=plan["idempotency_key"],
+        expected_plan_hash=plan["plan_hash"],
+    )
+
+    assert first["status"] == "committed"
+    assert replay["status"] == "committed"
+    assert replay["replayed"] is True
+    assert replay["head_changed"] is False
+    assert conflict["status"] == "idempotency_conflict"
+    assert store.get_session("s-idempotent")["head_id"] == "a1"
+    assert target.read_text(encoding="utf-8") == "v1\n"
