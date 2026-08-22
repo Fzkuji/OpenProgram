@@ -14,8 +14,9 @@
  * filled row). The danger-tier colour lives on the topbar chip, not in
  * the menu rows.
  * Picking a tier switches to it and closes the menu. Picking `bypass`
- * (when not already bypass) opens a confirmation dialog instead — the
- * switch only lands after the user confirms.
+ * (when not already bypass) opens a confirmation overlay inside
+ * `#chatView` / `.peer-session-pane` — the switch only lands after
+ * the user confirms.
  *
  * State comes from usePermissionMode() (the same per-session store the
  * old composer plus-menu item read/wrote), so switching here is picked
@@ -70,6 +71,12 @@ export function PermissionBadge() {
   const [open, setOpen] = useState(false);
   const [bypassConfirm, setBypassConfirm] = useState(false);
   const iconRef = useRef<AnimatedNavIconHandle>(null);
+  const hostRef = useRef<HTMLSpanElement>(null);
+  // #chatView (main shell) and .peer-session-pane (split) already
+  // position:relative — overlay is absolute inside that box, not body.
+  const chatPanel = hostRef.current?.closest<HTMLElement>(
+    "#chatView, .peer-session-pane",
+  ) ?? null;
 
   // A `topbar-close-menus` event (fired by another top-bar dropdown)
   // closes this menu, so only one is ever open.
@@ -94,6 +101,7 @@ export function PermissionBadge() {
     // bypass 高危档：不直接切，先弹确认框。其余档直接切、关菜单。
     if (value === "bypass" && mode !== "bypass") {
       setBypassConfirm(true);
+      setOpen(false);
       return;
     }
     set(value);
@@ -106,6 +114,7 @@ export function PermissionBadge() {
         <HoverTip label={text("Permission mode", "权限模式")}>
           <PopoverTrigger asChild>
             <span
+              ref={hostRef}
               id="permissionBadge"
               className="runtime-badge permission-badge"
               // 芯片文字/图标/边框跟着当前档的柔和色（图标用 currentColor
@@ -167,13 +176,13 @@ export function PermissionBadge() {
         </PopoverContent>
       </Popover>
 
-      {bypassConfirm && typeof document !== "undefined"
+      {bypassConfirm && chatPanel
         ? createPortal(
             <div
               data-native-view-occluder="true"
               onClick={() => setBypassConfirm(false)}
               style={{
-                position: "fixed",
+                position: "absolute",
                 inset: 0,
                 zIndex: 300,
                 background: "rgba(0,0,0,0.45)",
@@ -185,7 +194,7 @@ export function PermissionBadge() {
               <div
                 onClick={(e) => e.stopPropagation()}
                 style={{
-                  width: "min(440px, 92vw)",
+                  width: "min(440px, 92%)",
                   background: "var(--bg-secondary)",
                   border: "1px solid var(--border)",
                   borderRadius: 14,
@@ -253,7 +262,7 @@ export function PermissionBadge() {
                 </div>
               </div>
             </div>,
-            document.body,
+            chatPanel,
           )
         : null}
     </>
