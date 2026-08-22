@@ -90,6 +90,7 @@ openprogram/providers/_catalog/fetched/
 # local agent working notes
 .superpowers/
 docs/_site/
+docs/_site.tmp/
 merge-x/
 
 # Generated reference pages (rebuilt by scripts/docs_site/generate_reference.py)
