@@ -101,6 +101,9 @@ export function useTabLifecycle({
       openSessionTab(currentSessionId, title);
     } else if (activeTab?.kind === "session" && activeTab.draft && activeTab.sessionId) {
       useSessionStore.getState().setCurrentDraft(activeTab.sessionId);
+    } else if (centerTabs.tabs.length > 0) {
+      // 桌面端每次启动都落在 /chat：已有恢复出来的标签时，这只是默认
+      // 启动 URL，不是用户要新建草稿——否则每次重启都会多出一枚标签。
     } else {
       const draftId = openDraftSessionTab();
       useSessionStore.getState().setCurrentDraft(draftId);
