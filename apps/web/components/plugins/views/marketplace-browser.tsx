@@ -7,6 +7,7 @@ import { useTranslation } from "@/lib/i18n";
 import { SearchInput } from "@/components/ui/search-input";
 import { Button } from "@/components/ui/button";
 import { AddMarketplaceDialog } from "../dialogs/add-marketplace-dialog";
+import { ManageCatalogCard, managePageStyles as shared } from "@/components/ui/manage-page";
 
 interface IndexItem {
   name?: string;
@@ -240,36 +241,19 @@ function PluginCard({
   const title = item.displayName || item.name || "(unnamed)";
   const slug = item.name || item.spec || "";
   return (
-    <div className="flex flex-col gap-2 rounded-md border border-[var(--border)] bg-[var(--bg-secondary)]/40 p-3 hover:border-[var(--text-dim)] transition-colors">
-      <div className="flex items-start gap-2 min-w-0">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap min-w-0">
-            <span className="text-sm font-medium text-nav-color-hover truncate">{title}</span>
-            {item.version && (
-              <span className="text-[10px] text-[var(--text-tertiary)]">v{item.version}</span>
-            )}
-            {item.official && (
-              <span className="rounded border border-blue-500/40 bg-blue-500/15 px-1.5 py-[1px] text-[10px] uppercase tracking-wide text-blue-400">{text("official", "官方")}</span>
-            )}
-            {installed && (
-              <span className="rounded border border-emerald-500/40 bg-emerald-500/15 px-1.5 py-[1px] text-[10px] uppercase tracking-wide text-emerald-400">{text("installed", "已安装")}</span>
-            )}
-          </div>
-          {slug && slug !== title && (
-            <div className="text-[10px] font-mono text-[var(--text-tertiary)] truncate">{slug}</div>
-          )}
-        </div>
-      </div>
-      {item.description && (
-        <p className="text-xs text-[var(--text-secondary)] line-clamp-3">{item.description}</p>
-      )}
-      <div className="flex items-center justify-between gap-2 mt-auto">
-        <div className="flex items-center gap-1 text-[10px] text-[var(--text-tertiary)]">
-          {item.source && <span className="rounded border border-[var(--border)] px-1.5 py-[1px] uppercase">{item.source}</span>}
-          {(item.tags || []).slice(0, 2).map((t) => (
-            <span key={t} className="rounded bg-[var(--bg-tertiary)] px-1.5 py-[1px]">{t}</span>
-          ))}
-        </div>
+    <ManageCatalogCard
+      title={title}
+      subtitle={slug && slug !== title ? slug : item.version ? `v${item.version}` : undefined}
+      description={item.description}
+      status={<>
+        {item.official && <span className={shared.badge}>{text("official", "官方")}</span>}
+        {installed && <span className={`${shared.badge} ${shared.badgeGreen}`}>{text("installed", "已安装")}</span>}
+      </>}
+      meta={<>
+        {item.source && <span>{item.source.toUpperCase()}</span>}
+        {(item.tags || []).slice(0, 2).map((tag) => <span key={tag}>{tag}</span>)}
+      </>}
+      actions={
         <Button
           size="sm"
           variant={installed ? "outline" : "default"}
@@ -278,7 +262,7 @@ function PluginCard({
         >
           {installing ? text("Installing...", "安装中...") : installed ? text("Reinstall", "重新安装") : text("Install", "安装")}
         </Button>
-      </div>
-    </div>
+      }
+    />
   );
 }

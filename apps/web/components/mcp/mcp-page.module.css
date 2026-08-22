@@ -4,68 +4,6 @@
    /plugins; what's left here is the server rail and the action
    buttons used inside the detail pane. */
 
-.content {
-  min-width: 0;
-  overflow-y: auto;
-  padding: 16px 24px 24px;
-}
-
-/* Servers nav — pixel-for-pixel match for programs-page.foldersNav */
-.serversNav {
-  width: 100%;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  align-self: stretch;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 8px;
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border);
-}
-
-/* Search box above the server list — same SearchInput the other two
-   management pages put at the top of their list. */
-.navSearch {
-  padding: 0 0 8px;
-}
-
-.navSep {
-  height: 1px;
-  background: var(--border);
-  margin: 6px 0;
-}
-
-.serverItem {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  box-sizing: border-box;
-  height: var(--ui-list-h);
-  padding: 6px 8px;
-  flex-shrink: 0;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 400;
-  color: var(--nav-color);
-  border: 1px solid transparent;
-  background: transparent;
-  text-align: left;
-  border-radius: var(--ui-list-radius);
-  transition: background 150ms ease-out, color 150ms ease-out;
-  white-space: nowrap;
-}
-.serverItem:hover {
-  background: var(--bg-hover);
-  color: var(--nav-color-hover);
-}
-.serverItem.active {
-  background: var(--bg-hover);
-  color: var(--nav-color-hover);
-}
-
 .serverDot {
   width: 8px;
   height: 8px;
@@ -77,33 +15,6 @@
 .dotDisabled { background: var(--text-muted); }
 .dotStarting { background: var(--accent-yellow); }
 
-.serverName {
-  flex: 1;
-  /* UI font, not mono — matches the skill / plugin row label so all
-     three lists read at the same weight. */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.serverCount {
-  font-size: 12px;
-  color: var(--text-muted);
-  background: var(--bg-tertiary);
-  padding: 1px 6px;
-  border-radius: var(--ui-list-radius);
-  flex-shrink: 0;
-}
-
-.navAddItem {
-  color: var(--text-muted);
-  margin-top: 4px;
-  background: transparent;
-  text-align: left;
-  font-family: inherit;
-}
-.navAddItem:hover {
-  color: var(--text-primary);
-}
 
 /* Action button — mirrors welcome-screen.module.css .example so
    action rows on /mcp read with the same weight as the welcome
@@ -145,19 +56,4 @@
 .actionBtnPrimary:hover:not(:disabled) {
   color: var(--accent-blue);
   background: var(--bg-hover);
-}
-
-/* Empty state in the content pane (no server selected, etc.) */
-.empty {
-  text-align: center;
-  padding: 60px 20px;
-  color: var(--text-muted);
-}
-.emptyIcon {
-  font-size: 40px;
-  margin-bottom: 12px;
-  opacity: 0.6;
-}
-.emptyText {
-  font-size: 14px;
 }

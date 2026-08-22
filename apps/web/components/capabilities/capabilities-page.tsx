@@ -103,6 +103,7 @@ export function CapabilitiesPage() {
           ]}
           activeTab={kind}
           onTabChange={goKind}
+          tabLabel={text("Ability types", "能力类型")}
           toolbar={(
             <SearchInput
               className="min-w-[96px] flex-1 sm:flex-none sm:min-w-[140px] sm:w-[clamp(150px,24vw,280px)]"

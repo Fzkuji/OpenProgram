@@ -24,7 +24,7 @@ import type {
   AnimatedNavIconProps,
 } from "@/components/animated-icons";
 
-import { activateOnKey, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { isManageActionIcon } from "./manage-action-icon";
 import styles from "./manage-page.module.css";
@@ -51,6 +51,8 @@ function ManageTabButton({
   onClick,
   onKeyDown,
   secondary = false,
+  id,
+  ariaControls,
 }: {
   tab: ManageTab;
   active: boolean;
@@ -58,6 +60,8 @@ function ManageTabButton({
   onClick: () => void;
   onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void;
   secondary?: boolean;
+  id?: string;
+  ariaControls?: string;
 }) {
   const iconRef = useRef<AnimatedNavIconHandle>(null);
   const Icon = tab.icon;
@@ -65,8 +69,10 @@ function ManageTabButton({
   return (
     <button
       type="button"
+      id={id}
       role="tab"
       aria-selected={active}
+      aria-controls={ariaControls}
       tabIndex={tabIndex}
       onClick={onClick}
       onKeyDown={onKeyDown}
@@ -133,6 +139,7 @@ export function ManagePageHeader({
   activeTab,
   onTabChange,
   toolbar,
+  tabLabel,
   actions = [],
 }: {
   title: string;
@@ -140,6 +147,7 @@ export function ManagePageHeader({
   activeTab?: string;
   onTabChange?: (id: string) => void;
   toolbar?: ReactNode;
+  tabLabel?: string;
   actions?: ManageAction[];
 }) {
   function moveTab(event: React.KeyboardEvent<HTMLButtonElement>, index: number) {
@@ -159,7 +167,7 @@ export function ManagePageHeader({
     <div className={styles.topbar}>
       <span className={styles.title}>{title}</span>
       {tabs && tabs.length > 0 && (
-        <div className={styles.tabs} role="tablist">
+        <div className={styles.tabs} role="tablist" aria-label={tabLabel}>
           {tabs.map((tb, index) => (
             <ManageTabButton
               key={tb.id}
@@ -194,12 +202,16 @@ export function ManageSubnav({
   onTabChange,
   summary,
   action,
+  ariaLabel,
+  panelId,
 }: {
   tabs: ManageTab[];
   activeTab: string;
   onTabChange: (id: string) => void;
   summary?: ReactNode;
   action?: ManageAction;
+  ariaLabel: string;
+  panelId: string;
 }) {
   function moveTab(event: React.KeyboardEvent<HTMLButtonElement>, index: number) {
     let next = index;
@@ -215,7 +227,7 @@ export function ManageSubnav({
 
   return (
     <div className={styles.subnav}>
-      <div className={styles.subnavTabs} role="tablist">
+      <div className={styles.subnavTabs} role="tablist" aria-label={ariaLabel}>
         {tabs.map((tb, index) => (
           <ManageTabButton
             key={tb.id}
@@ -225,6 +237,8 @@ export function ManageSubnav({
             onClick={() => onTabChange(tb.id)}
             onKeyDown={(event) => moveTab(event, index)}
             secondary
+            id={`${panelId}-tab-${tb.id}`}
+            ariaControls={panelId}
           />
         ))}
       </div>
@@ -264,17 +278,8 @@ export function ManageRow({
   title?: string;
   className?: string;
 }) {
-  return (
-    <div
-      role={onClick ? "button" : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      onClick={onClick}
-      onKeyDown={onClick ? (event) => {
-        if (event.target === event.currentTarget) activateOnKey(onClick)(event);
-      } : undefined}
-      title={title}
-      className={cn(styles.row, !onClick && styles.rowStatic, className)}
-    >
+  const content = (
+    <>
       {icon !== undefined && <span className={styles.rowIcon} aria-hidden>{icon}</span>}
       <div className={styles.rowMain}>
         <div className={styles.rowName}>
@@ -284,11 +289,55 @@ export function ManageRow({
         {description && <div className={styles.rowDesc}>{description}</div>}
       </div>
       {count !== undefined && <span className={styles.rowCount}>{count}</span>}
+    </>
+  );
+  return (
+    <div
+      title={title}
+      className={cn(styles.row, !onClick && styles.rowStatic, className)}
+    >
+      {onClick ? (
+        <button type="button" className={styles.rowOpen} onClick={onClick}>{content}</button>
+      ) : content}
       {actions && (
-        <div className={styles.rowActions} onClick={(e) => e.stopPropagation()}>
+        <div className={styles.rowActions}>
           {actions}
         </div>
       )}
     </div>
+  );
+}
+
+/** Shared card anatomy for Plugin, Skill, and MCP discovery catalogs. */
+export function ManageCatalogCard({
+  title,
+  subtitle,
+  description,
+  meta,
+  status,
+  actions,
+}: {
+  title: ReactNode;
+  subtitle?: ReactNode;
+  description?: ReactNode;
+  meta?: ReactNode;
+  status?: ReactNode;
+  actions: ReactNode;
+}) {
+  return (
+    <article className={styles.catalogCard}>
+      <div className={styles.catalogHeader}>
+        <div className={styles.catalogTitles}>
+          <div className={styles.catalogTitle}>{title}</div>
+          {subtitle && <div className={styles.catalogSubtitle}>{subtitle}</div>}
+        </div>
+        {status && <div className={styles.catalogStatus}>{status}</div>}
+      </div>
+      {description && <div className={styles.catalogDescription}>{description}</div>}
+      <div className={styles.catalogFooter}>
+        <div className={styles.catalogMeta}>{meta}</div>
+        <div className={styles.catalogActions}>{actions}</div>
+      </div>
+    </article>
   );
 }

@@ -69,9 +69,16 @@ export function PluginsPage({
           icon: <Download />,
           primary: true,
         }}
+        ariaLabel={text("Plugin sections", "插件分区")}
+        panelId="plugins-panel"
       />
       {loadError && <div className={shared.errorBar} role="alert">{loadError}</div>}
-      <div className={shared.body}><div className={shared.surface}>{body}</div></div>
+      <div
+        id="plugins-panel"
+        role="tabpanel"
+        aria-labelledby={`plugins-panel-tab-${tab}`}
+        className={shared.body}
+      >{body}</div>
       {installOpen && <ManualInstallDialog onClose={closeInstall} />}
     </>
   );

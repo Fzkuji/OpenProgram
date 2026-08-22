@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
 import { jsonFetch } from "@/lib/net/fetch-client";
+import { Button } from "@/components/ui/button";
+import { ManageCatalogCard, managePageStyles as shared } from "@/components/ui/manage-page";
 
 import styles from "./mcp-page.module.css";
 
@@ -138,7 +140,7 @@ export function CatalogPanel({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[880px] flex-col gap-5">
+    <div className="flex w-full flex-col gap-5">
       <div>
         <h2 className="text-base font-semibold text-[var(--text-bright)]">
           {text("Discover MCP servers", "发现 MCP 服务器")}
@@ -170,29 +172,26 @@ export function CatalogPanel({
           {shownQuickInstall.length > 0 && (
             <div className="flex flex-col gap-1.5">
               <Label>{text("Quick install", "快速安装")}</Label>
-              <div className="flex flex-col gap-1.5">
+              <div className={shared.catalogGrid}>
                 {shownQuickInstall.map((s) => {
                   const installed = existingNames.has(s.name);
                   return (
-                    <div key={s.name}
-                         className="flex min-w-0 flex-col gap-3 rounded-md border px-3 py-2 sm:flex-row sm:items-center"
-                         style={{ borderColor: "var(--border)" }}>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-mono text-sm font-semibold">{s.name}</div>
-                        {s.description && (
-                          <div className="mt-0.5 text-xs" style={{ color: "var(--text-muted)" }}>
-                            {s.description}
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        className={cn(styles.actionBtn, installed ? "" : styles.actionBtnPrimary, "self-end sm:self-auto")}
+                    <ManageCatalogCard
+                      key={s.name}
+                      title={s.name}
+                      subtitle={s.type}
+                      description={s.description}
+                      status={installed ? <span className={`${shared.badge} ${shared.badgeGreen}`}>{text("installed", "已安装")}</span> : undefined}
+                      meta={(s.tags || []).slice(0, 3).map((tag) => <span key={tag}>{tag}</span>)}
+                      actions={<Button
+                        size="sm"
+                        variant={installed ? "outline" : "default"}
                         onClick={() => void install(s)}
                         disabled={installed || catalogLoading || installing !== null}
                       >
                         {installed ? text("Installed", "已安装") : installing === s.name ? text("Installing...", "安装中...") : text("Install", "安装")}
-                      </button>
-                    </div>
+                      </Button>}
+                    />
                   );
                 })}
               </div>
@@ -243,47 +242,30 @@ export function CatalogPanel({
                   `，跳过 ${catalog.skipped} 个无效项`,
                 )}
               </div>
-              <div className="flex flex-col gap-1.5">
+              <div className={shared.catalogGrid}>
                 {shownCatalogServers.map((s) => {
                   const installed = existingNames.has(s.name);
                   return (
-                    <div key={s.name}
-                         className="flex min-w-0 flex-col gap-3 rounded-md border px-3 py-2 sm:flex-row sm:items-center"
-                         style={{ borderColor: "var(--border)" }}>
-                      <div className="min-w-0 flex-1">
-                        <div className="font-mono text-sm font-semibold">
-                          {s.name}
-                          <span className="ml-2 text-xs font-normal"
-                                style={{ color: "var(--text-muted)" }}>
-                            {s.type}{s.auth?.kind && s.auth.kind !== "none"
-                              ? ` · ${s.auth.kind}` : ""}
-                          </span>
-                        </div>
-                        {s.description && (
-                          <div className="mt-0.5 text-xs"
-                               style={{ color: "var(--text-muted)" }}>
-                            {s.description}
-                          </div>
-                        )}
-                        <div className="mt-1 break-all text-xs font-mono"
-                             style={{ color: "var(--text-muted)" }}>
-                          {s.type === "local"
-                            ? <code>{(s.command || []).join(" ")}</code>
-                            : <code>{s.url}</code>}
-                        </div>
-                      </div>
-                      <button
+                    <ManageCatalogCard
+                      key={s.name}
+                      title={s.name}
+                      subtitle={`${s.type}${s.auth?.kind && s.auth.kind !== "none" ? ` · ${s.auth.kind}` : ""}`}
+                      description={s.description}
+                      status={installed ? <span className={`${shared.badge} ${shared.badgeGreen}`}>{text("installed", "已安装")}</span> : undefined}
+                      meta={<span className="truncate font-mono">{s.type === "local" ? (s.command || []).join(" ") : s.url}</span>}
+                      actions={<Button
+                        size="sm"
+                        variant={installed ? "outline" : "default"}
                         onClick={() => void install(s, catalog.sourceUrl)}
                         disabled={installed || catalogLoading || installing !== null}
-                        className={cn(styles.actionBtn, styles.actionBtnPrimary, "self-end sm:self-auto")}
                       >
                         {installed
                           ? text("Installed", "已安装")
                           : installing === s.name
                             ? text("Installing...", "安装中...")
                             : text("Install", "安装")}
-                      </button>
-                    </div>
+                      </Button>}
+                    />
                   );
                 })}
                 {shownCatalogServers.length === 0 && (

@@ -52,9 +52,16 @@ export function SkillsPage({
           icon: PlusIcon,
           primary: true,
         }}
+        ariaLabel={text("Skill sections", "技能分区")}
+        panelId="skills-panel"
       />
-      {error && <div className={styles.errorBar}>{error}</div>}
-      <div className={styles.body}><div className={styles.surface}>{body}</div></div>
+      {error && <div className={styles.errorBar} role="alert">{error}</div>}
+      <div
+        id="skills-panel"
+        role="tabpanel"
+        aria-labelledby={`skills-panel-tab-${tab}`}
+        className={styles.body}
+      >{body}</div>
       <NewSkillDialog open={newOpen} onClose={closeNew} />
     </>
   );

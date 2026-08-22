@@ -13,11 +13,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
 import { PlugZapIcon, PlusIcon } from "@/components/animated-icons";
 import { SearchInput } from "@/components/ui/search-input";
-import { ManagePageHeader, ManageSubnav, managePageStyles as shared } from "@/components/ui/manage-page";
+import { ManagePageHeader, ManageRow, ManageSubnav, managePageStyles as shared } from "@/components/ui/manage-page";
+import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { jsonFetch } from "@/lib/net/fetch-client";
 
 import { CatalogPanel } from "./mcp-catalog-panel";
@@ -102,15 +103,6 @@ export function McpPage({
       clearInterval(t);
     };
   }, [reload]);
-
-  // Selection bookkeeping — only auto-select on initial load
-  // (selected is null and we have servers). Don't auto-reset when
-  // a server temporarily disappears.
-  useEffect(() => {
-    if (selected === null && servers.length > 0) {
-      setSelected(servers[0].name);
-    }
-  }, [servers, selected]);
 
   const fetchDetail = useCallback(
     async (name: string, signal?: AbortSignal) => {
@@ -296,25 +288,32 @@ export function McpPage({
             icon: PlusIcon,
             primary: true,
           }}
+          ariaLabel={text("MCP sections", "MCP 分区")}
+          panelId="mcp-panel"
         />
+        <div
+          id="mcp-panel"
+          role="tabpanel"
+          aria-labelledby={`mcp-panel-tab-${tab}`}
+          className={shared.panel}
+        >
         {actionErr && <div className={shared.errorBar} role="alert">{actionErr}</div>}
         {tab === "discover" && (
           <div className={shared.body}>
-            <div className={shared.surface}><CatalogPanel
+            <CatalogPanel
               existingNames={new Set(servers.map((server) => server.name))}
               query={filterValue}
               onInstalled={async (name) => {
                 await reload();
                 setSelected(name);
               }}
-            /></div>
+            />
           </div>
         )}
         {tab === "installed" && (
-        <div className={shared.splitBody}>
-          <div className={styles.serversNav}>
+        <div className={shared.body}>
             {query === undefined && (
-            <div className={styles.navSearch}>
+            <div className="mb-3">
               <SearchInput
                 value={filter}
                 onChange={setFilter}
@@ -322,68 +321,67 @@ export function McpPage({
               />
             </div>
             )}
+            {loadErr && <div className={shared.errorBar} role="alert">{loadErr}</div>}
+            <div className="space-y-1">
             {loading && servers.length === 0 ? (
-              <div className={styles.serverItem} style={{ cursor: "default" }}>
-                <span className={styles.serverName} style={{ color: "var(--text-muted)" }}>
-                  {text("Loading...", "加载中...")}
-                </span>
-              </div>
+              <div className={shared.empty}>{text("Loading...", "加载中...")}</div>
             ) : shownServers.length === 0 ? (
-              <div className={styles.serverItem} style={{ cursor: "default" }}>
-                <span className={styles.serverName} style={{ color: "var(--text-muted)" }}>
-                  {filterValue.trim()
-                    ? text("No matches", "没有匹配结果")
-                    : text("No servers", "没有服务器")}
-                </span>
-              </div>
+              <div className={shared.empty}>{filterValue.trim()
+                ? text("No matches", "没有匹配结果")
+                : text("No servers yet. Add one to make its tools available.", "还没有服务器。添加后即可使用其工具。")}</div>
             ) : (
               shownServers.map((s) => {
-                const { dotCls } = stateBadge(s);
+                const state = stateBadge(s);
+                const stateLabel = text(state.label, {
+                  ready: "就绪",
+                  disabled: "已禁用",
+                  error: "错误",
+                  starting: "启动中",
+                }[state.label] || state.label);
+                const description = s.type === "local" ? (s.command || []).join(" ") : s.url;
                 return (
-                  <button
-                    type="button"
+                  <ManageRow
                     key={s.name}
-                    className={cn(
-                      styles.serverItem,
-                      selected === s.name && styles.active,
-                    )}
+                    icon={<PlugZapIcon size={16} />}
+                    name={s.name}
+                    description={description || s.error || text("No endpoint details", "没有端点信息")}
+                    meta={<>
+                      <span className={shared.badge}>{s.type}</span>
+                      <span className={`${shared.badge} ${s.ready ? shared.badgeGreen : s.error && s.error !== "disabled" ? shared.badgeRed : ""}`}>{stateLabel}</span>
+                    </>}
+                    count={text(`${s.tool_count} tools`, `${s.tool_count} 个工具`)}
                     onClick={() => setSelected(s.name)}
-                  >
-                    <span className={cn(styles.serverDot, dotCls)} />
-                    <span className={styles.serverName}>{s.name}</span>
-                    <span className={styles.serverCount}>{s.tool_count}</span>
-                  </button>
+                    title={text("Open MCP server details", "打开 MCP 服务器详情")}
+                    actions={<Switch
+                      checked={s.enabled}
+                      disabled={busy !== null}
+                      onCheckedChange={(enabled) => { void (enabled ? doEnable(s.name) : doDisable(s.name)); }}
+                      aria-label={s.enabled ? text(`Disable ${s.name}`, `禁用 ${s.name}`) : text(`Enable ${s.name}`, `启用 ${s.name}`)}
+                    />}
+                  />
                 );
               })
             )}
-          </div>
-
-          <div className={styles.content}>
-            {loadErr && <div className={shared.errorBar} role="alert">{loadErr}</div>}
-            {selectedServer === null ? (
-              <div className={styles.empty}>
-                <div className={styles.emptyIcon}>
-                  <PlugZapIcon size={40} />
-                </div>
-                <div className={styles.emptyText}>
-                  {text("Select a server on the left to view tools and settings.", "选择左侧服务器查看工具和设置。")}
-                </div>
-              </div>
-            ) : (
-              <DetailView
-                server={selectedServer}
-                detail={detail}
-                busy={busy}
-                onRestart={() => void doRestart(selectedServer.name)}
-                onEnable={() => void doEnable(selectedServer.name)}
-                onDisable={() => void doDisable(selectedServer.name)}
-                onDelete={() => void doDelete(selectedServer.name)}
-                onEdit={() => openEdit(selectedServer)}
-              />
-            )}
-          </div>
+            </div>
         </div>
         )}
+        </div>
+
+      <Dialog open={selectedServer !== null} onOpenChange={(open) => { if (!open) setSelected(null); }}>
+        <DialogContent className="max-h-[86vh] overflow-y-auto sm:max-w-[920px]">
+          <DialogHeader><DialogTitle className="sr-only">{selectedServer?.name || text("MCP server details", "MCP 服务器详情")}</DialogTitle></DialogHeader>
+          {selectedServer && <DetailView
+            server={selectedServer}
+            detail={detail}
+            busy={busy}
+            onRestart={() => void doRestart(selectedServer.name)}
+            onEnable={() => void doEnable(selectedServer.name)}
+            onDisable={() => void doDisable(selectedServer.name)}
+            onDelete={() => void doDelete(selectedServer.name)}
+            onEdit={() => { const target = selectedServer; setSelected(null); openEdit(target); }}
+          />}
+        </DialogContent>
+      </Dialog>
 
       {editing !== null && (
         <EditDialog
