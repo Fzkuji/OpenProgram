@@ -111,10 +111,10 @@
   </aside>
   <main>
     <header id="question">
-      <div class="eyebrow">Design revision · implementation pending</div>
+      <div class="eyebrow">Design revision · implemented and reviewed</div>
       <h1>One management grammar for Plugins, Skills, and MCP</h1>
       <p>This document defines how an OpenProgram owner discovers, adds, configures, enables, diagnoses, and removes the three extension types in the Web UI. The audience is the Web and runtime maintainers. Programs, agent-specific allowlists, third-party marketplace governance, and new package formats are outside this task.</p>
-      <div class="status-strip"><span class="chip">Revision base <code>3f3baeb2</code></span><span class="chip pending">Implementation pending</span><span class="chip">Default profile · port 18100</span><span class="chip">No new dependency</span></div>
+      <div class="status-strip"><span class="chip">Revision base <code>3f3baeb2</code></span><span class="chip">Candidate <code>ab54847e</code></span><span class="chip">Reviews passed</span><span class="chip">Default profile · port 18100</span><span class="chip">No new dependency</span></div>
     </header>
 
     <section id="gaps">
@@ -196,7 +196,10 @@
       <table>
         <tbody>
           <tr><td>Prior implementation</td><td><code>7763ba70</code> → <code>d7c2bda4</code> passed focused checks and reviews, but visible acceptance exposed the duplicated MCP Discover control and modal-backed tab compromise.</td></tr>
-          <tr><td>Revision</td><td class="state">Implementation, RED/GREEN evidence, reviews, and visible acceptance are pending from base <code>3f3baeb2</code>.</td></tr>
+          <tr><td>Revision</td><td><code>3f3baeb2</code> → <code>ab54847e</code>. MCP Discover is now inline; duplicate Discover and Add controls are removed; catalog search, provenance, cancellation, progress, errors, and narrow-width rows use the shared contracts.</td></tr>
+          <tr><td>RED / GREEN</td><td>The focused check failed on the modal-backed MCP tab contract, then passed with accessibility wiring, owner-auth, secret non-retrieval, TypeScript, 51 Web unit tests, production build, docs links, and diff checks.</td></tr>
+          <tr><td>Reviews</td><td>Specification PASS at <code>19b10afd</code>. Quality PASS after catalog concurrency, provenance, progress, error, and responsive repairs in <code>974c4d0d</code> and <code>ab54847e</code>.</td></tr>
+          <tr><td>Remaining gate</td><td class="state">Default-App visible acceptance and the final full gate are pending. The previously reproduced baseline <code>check:center-tabs</code> failure remains outside this subsystem.</td></tr>
         </tbody>
       </table>
     </section>
