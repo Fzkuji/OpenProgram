@@ -78,8 +78,8 @@ Proactivity applications (built on the base):
 | [`runtime/operations/branch-naming.md`](runtime/operations/branch-naming.md) | Branch naming ([rendered](runtime/operations/branch-naming.html)) |
 | [`runtime/session/README.md`](runtime/session/README.md) | Session subsystem: data model, storage, naming, listing, lifecycle |
 | [`runtime/self-update.md`](runtime/self-update.md) | Source-checkout upgrades: gated Git flow, channel semantics, verification, and manual recovery |
-| [`runtime/permission-model.md`](runtime/permission-model.md) | Permission system design |
-| [`runtime/sandbox.md`](runtime/sandbox.md) | Sandbox: the boundary on both platforms, where the switch is lost, coverage, how eight reference harnesses compare, repair order ([rendered](runtime/sandbox-architecture.html)) |
+| [`runtime/sandbox-architecture.html`](runtime/sandbox-architecture.html) | Canonical execution-security design: authority tiers, permission modes and approval, host sandbox boundaries, framework comparison, and implementation evidence |
+| [`runtime/permission-model.md`](runtime/permission-model.md) / [`runtime/sandbox.md`](runtime/sandbox.md) | Stable link targets that point to the canonical execution-security design |
 | [`runtime/ssrf-protection.html`](runtime/ssrf-protection.html) | Outbound URL and SSRF design: current gaps, Hermes/OpenClaw/OWASP comparison, scoped trust policy, transport requirements, and full acceptance gates |
 | [`runtime/agent-collaboration.md`](runtime/agent-collaboration.md) | Agent collaboration: cross-branch communication primitives ([tool surface](runtime/agent-collab-architecture.html), [eight reference implementations compared](runtime/agent-collab-comparison.html)) |
 | [`runtime/agent-resource-governance.html`](runtime/agent-resource-governance.html) | Agent resource governance: current implementation, framework comparison, durable scheduling and enforceable budget plan |

@@ -433,8 +433,9 @@ PAGE_ORDER: dict[str, int] = {
     # Within the design archive everything defaults to 999 (alphabetical).
     # >999 pins a page to the end of its section; the sandbox note and its
     # rendered companion stay adjacent, doc first.
-    "reference/design/runtime/sandbox.md": 1000,
-    "reference/design/runtime/sandbox-architecture.html": 1001,
+    "reference/design/runtime/sandbox-architecture.html": 1000,
+    "reference/design/runtime/permission-model.md": 1001,
+    "reference/design/runtime/sandbox.md": 1002,
     # Same treatment for agent collaboration: the design note first, then its
     # two rendered companions (our tool surface, then the eight reference
     # implementations compared).

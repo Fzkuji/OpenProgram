@@ -73,8 +73,8 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`runtime/operations/branch-naming.md`](runtime/operations/branch-naming.md) | 分支命名（[已渲染](runtime/operations/branch-naming.html)） |
 | [`runtime/session/README.md`](runtime/session/README.md) | Session 子系统：数据模型、存储、命名、列表、生命周期 |
 | [`runtime/self-update.md`](runtime/self-update.zh.md) | Source checkout 升级：Git 门禁、channel 语义、验证与手动恢复 |
-| [`runtime/permission-model.md`](runtime/permission-model.md) | 权限系统设计 |
-| [`runtime/sandbox.md`](runtime/sandbox.md) | 沙箱：两个平台的边界、开关在哪里丢掉、覆盖面、八个参考框架的对标、修复顺序（[图示](runtime/sandbox-architecture.html)） |
+| [`runtime/sandbox-architecture.html`](runtime/sandbox-architecture.html) | 唯一权威执行安全设计：Authority 权限档、Permission 模式与审批、宿主沙箱边界、框架对照和实现证据 |
+| [`runtime/permission-model.md`](runtime/permission-model.md) / [`runtime/sandbox.md`](runtime/sandbox.md) | 指向权威执行安全设计的稳定旧链接入口 |
 | [`runtime/ssrf-protection.html`](runtime/ssrf-protection.html) | 出站 URL 与 SSRF：当前缺口、Hermes/OpenClaw/OWASP 对照、分 scope 信任策略、transport 要求与完整验收门槛 |
 | [`runtime/agent-collaboration.md`](runtime/agent-collaboration.md) | Agent 协作：分支间通信原语（[工具面](runtime/agent-collab-architecture.html)、[八家参考实现对照](runtime/agent-collab-comparison.html)） |
 | [`runtime/tool-toggle-management.md`](runtime/tool-toggle-management.md) | 工具开关 / 工具集管理设计 |

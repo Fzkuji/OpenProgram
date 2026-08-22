@@ -1,1308 +1,346 @@
-<!DOCTYPE html>
-<html lang="zh">
+<!doctype html>
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>沙箱：现状、八家对标与完整修复顺序</title>
+<title>OpenProgram 执行权限与沙箱设计</title>
 <style>
-  :root{
-    --bg:#16150f; --pan:#1d1c14; --bd:#2e2c20; --tx:#bdb9a6; --acc:#d4843a;
-    --cb:#12110b; --dim:#8a8675;
-    --c0:#4f8ef7; --c1:#5aad4e; --c2:#d4843a; --c3:#9d6fe0; --c4:#2db3d5;
-    --no:#e0445a;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--tx);
-    font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:40px 24px 96px;
-    overflow-x:hidden}
-  .wrap{max-width:1180px;margin:0 auto}
-  h1{font-size:23px;color:#f0eee6;margin:0 0 6px}
-  .sub{color:var(--tx);margin:0 0 20px;max-width:80ch}
-  h2{font-size:16px;color:var(--acc);margin:34px 0 8px;scroll-margin-top:20px}
-  h2 .num{color:var(--dim);font-size:12px;margin-right:8px;letter-spacing:.16em}
-  .lead{color:var(--dim);font-size:13px;margin:0 0 12px;max-width:82ch}
-  .card{background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:8px;margin-bottom:16px}
-  svg{display:block;width:100%;height:auto;background:var(--cb);border-radius:8px}
-  .legend{font-size:12.5px;color:var(--dim);padding:8px 10px;line-height:1.8}
-  .legend b{color:#f0eee6}
-  code{background:var(--cb);color:var(--acc);padding:1px 5px;border-radius:4px;font:12px Menlo,monospace}
-  text{font-family:-apple-system,"Segoe UI",sans-serif}
-
-  /* 三层分层带 */
-  .band{margin:46px 0 6px;padding:12px 16px;border-radius:11px;border:1px solid var(--bd);
-    background:var(--pan);border-left-width:4px;scroll-margin-top:20px}
-  .band .lv{display:inline-block;font:10px Menlo,monospace;letter-spacing:.22em;
-    color:var(--cb);padding:3px 10px;border-radius:99px;margin-bottom:7px}
-  .band h2{margin:0 0 3px;font-size:18px;color:#f0eee6}
-  .band .w{color:var(--dim);font-size:12.5px;line-height:1.7;max-width:86ch}
-  .band.L1{border-left-color:var(--c0)} .band.L1 .lv{background:var(--c0)}
-  .band.L2{border-left-color:var(--c3)} .band.L2 .lv{background:var(--c3)}
-  .band.L3{border-left-color:var(--c1)} .band.L3 .lv{background:var(--c1)}
-
-  /* 目录 */
-  .tocg{margin:0 0 12px}
-  .tocg .gl{font:10px Menlo,monospace;letter-spacing:.2em;color:var(--dim);margin-bottom:6px}
-  .toc{display:flex;flex-wrap:wrap;gap:7px;margin:0}
-  .toc a{font-size:12px;color:var(--tx);text-decoration:none;border:1px solid var(--bd);
-    background:var(--pan);border-radius:99px;padding:4px 12px}
-  .toc a:hover{border-color:var(--acc);color:#f0eee6}
-
-  /* 平台双卡 */
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
-  .plat{background:var(--pan);border:1px solid var(--bd);border-top-width:3px;border-radius:12px;padding:14px 16px}
-  .plat .k{font-size:10.5px;letter-spacing:.2em;color:var(--dim);margin-bottom:3px}
-  .plat h3{margin:0 0 3px;font-size:17px;font-weight:700}
-  .plat .noun{font:11.5px Menlo,monospace;color:var(--dim);margin-bottom:10px;word-break:break-all;line-height:1.7}
-  .plat .row{display:flex;gap:10px;padding:7px 0;border-top:1px solid #26241a;font-size:12.5px;line-height:1.65}
-  .plat .row .t{flex:0 0 78px;color:var(--dim);font-size:11.5px;padding-top:1px}
-  .plat .row .v{color:#a5a190}
-  .plat .row .v b{color:#f0eee6;font-weight:600}
-  .plat .row.bad .v b{color:var(--no)}
-  @media(max-width:900px){.grid2{grid-template-columns:1fr}}
-
-  /* 表格 */
-  .tbl{overflow-x:auto;background:var(--pan);border:1px solid var(--bd);border-radius:12px;margin-bottom:16px}
-  table{width:100%;border-collapse:collapse;font-size:13px;min-width:700px}
-  table.wide{min-width:1240px}
-  th{text-align:left;padding:10px 14px;color:var(--dim);font-weight:600;font-size:11px;
-    letter-spacing:.14em;border-bottom:1px solid var(--bd);white-space:nowrap}
-  td{padding:10px 14px;border-bottom:1px solid #26241a;vertical-align:top;line-height:1.65}
-  tr:last-child td{border-bottom:none}
-  td.y{color:var(--c1)} td.n{color:var(--no)} td.m{color:var(--c2)} td.g{color:#6f6b5c}
-  td b{color:#f0eee6;font-weight:600}
-  td.us{color:var(--no)}
-  th.us{color:var(--acc)}
-
-  .note{border-left:3px solid var(--bd);padding:2px 0 2px 13px;color:var(--dim);
-    font-size:12.5px;margin:0 0 16px;max-width:86ch;line-height:1.8}
-  .note b{color:#f0eee6}
-  .note.warn{border-left-color:var(--no)}
-  .note.warn b{color:var(--no)}
-
-  /* 修复路线 */
-  .steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px}
-  .step{min-width:0;background:var(--pan);
-    border:1px solid var(--bd);border-radius:11px;padding:12px 14px;display:flex;flex-direction:column}
-  .step .n{font:10px Menlo,monospace;letter-spacing:.18em;color:var(--dim)}
-  .step h4{margin:5px 0 6px;font-size:14.5px;color:#f0eee6}
-  .step .d{font-size:12.5px;color:#a5a190;line-height:1.65;flex:1}
-  .step .x{margin-top:10px;padding-top:9px;border-top:1px dashed #34311f;font-size:12px;color:var(--dim);line-height:1.6}
-  .step .x b{color:var(--no);font-weight:600}
-  .step .src{margin-top:8px;font-size:11.5px;color:var(--c3);line-height:1.55}
-  .step.s1{border-top:3px solid var(--c2)}
-  .step.s2{border-top:3px solid var(--no)}
-  .step.s3{border-top:3px solid var(--c3)}
-  .step.s4{border-top:3px solid var(--c4)}
-  .step.s5{border-top:3px solid var(--c1)}
-  .step.s6{border-top:3px solid var(--c0)}
-  .step.s7{border-top:3px solid var(--c2)}
-  .step.s8{border-top:3px solid var(--c1)}
-  @media(max-width:900px){.steps{grid-template-columns:repeat(2,minmax(0,1fr))}}
-  @media(max-width:560px){.steps{grid-template-columns:1fr}}
+:root{color-scheme:dark;--bg:#111214;--panel:#17191c;--panel2:#1d2024;--line:#30343a;--text:#e8e9eb;--muted:#a3a7ae;--faint:#747981;--orange:#ee7d55;--cyan:#4bc6d8;--green:#67c78a;--yellow:#d8b35d;--red:#ef6b62;--purple:#ad8bea;--side:250px}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;overflow-x:hidden;background:var(--bg);color:var(--text);font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}a{color:var(--cyan);text-underline-offset:3px}code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}code{color:#f0b29d}.sidebar{position:fixed;inset:0 auto 0 0;width:var(--side);padding:26px 18px;border-right:1px solid var(--line);background:#131518;overflow:auto}.brand{color:var(--faint);font-size:11px;letter-spacing:.1em;text-transform:uppercase}.docname{margin:8px 0 22px;font-size:18px;font-weight:680;line-height:1.35}.navlabel{margin:19px 10px 7px;color:var(--faint);font-size:10px;letter-spacing:.09em;text-transform:uppercase}nav a{display:block;padding:7px 10px;border-radius:7px;color:var(--muted);text-decoration:none;font-size:13px}nav a:hover,nav a:focus-visible{color:var(--text);background:var(--panel2);outline:none}.main{margin-left:var(--side)}.hero{padding:64px clamp(28px,6vw,86px) 48px;border-bottom:1px solid var(--line);background:radial-gradient(circle at 82% 15%,rgba(75,198,216,.10),transparent 31%),radial-gradient(circle at 55% 0,rgba(238,125,85,.08),transparent 32%)}.eyebrow{color:var(--orange);font-size:12px;font-weight:750;letter-spacing:.11em;text-transform:uppercase}h1{max-width:1000px;margin:12px 0 18px;font-size:clamp(34px,5vw,58px);line-height:1.08;letter-spacing:-.035em}.lead{max-width:940px;margin:0;color:var(--muted);font-size:18px}.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:26px}.pill{padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:rgba(17,18,20,.55);color:var(--muted);font-size:12px}.pill.good{color:var(--green);border-color:rgba(103,199,138,.38)}.pill.warn{color:var(--yellow);border-color:rgba(216,179,93,.38)}.content{max-width:1260px;padding:28px clamp(28px,6vw,86px) 90px}section{padding-top:38px;scroll-margin-top:20px}h2{margin:0 0 11px;font-size:26px;letter-spacing:-.02em}h3{margin:25px 0 8px;font-size:17px}p{margin:8px 0 14px;color:var(--muted)}strong{color:var(--text)}.card{border:1px solid var(--line);border-radius:13px;background:var(--panel);padding:18px 20px}.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px}.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}.concept{border-top-width:3px}.concept.auth{border-top-color:var(--purple)}.concept.perm{border-top-color:var(--orange)}.concept.sandbox{border-top-color:var(--cyan)}.tag{display:inline-block;margin-bottom:8px;font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}.tag.auth{color:var(--purple)}.tag.perm{color:var(--orange)}.tag.sandbox{color:var(--cyan)}.tag.ok{color:var(--green)}.tag.partial{color:var(--yellow)}.tag.missing{color:var(--red)}.big{margin:0 0 8px;color:var(--text);font-size:19px;font-weight:680}.card p:last-child{margin-bottom:0}.diagram{max-width:100%;margin-top:18px;padding:20px;border:1px solid var(--line);border-radius:14px;background:#141619;overflow:auto}.diagram svg{display:block;width:100%;min-width:820px;height:auto}.caption{margin:9px 2px 0;color:var(--faint);font-size:12px}.callout{margin:16px 0;padding:14px 16px;border-left:3px solid var(--cyan);background:rgba(75,198,216,.09);color:var(--muted)}.callout.warn{border-left-color:var(--yellow);background:rgba(216,179,93,.08)}.callout.danger{border-left-color:var(--red);background:rgba(239,107,98,.08)}table{width:100%;border-collapse:separate;border-spacing:0;margin-top:16px;border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:13px}th,td{padding:11px 13px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{background:var(--panel2);color:var(--text);font-weight:680}td{background:var(--panel);color:var(--muted)}tr:last-child td{border-bottom:0}.yes{color:var(--green)}.no{color:var(--red)}.maybe{color:var(--yellow)}pre{margin:15px 0;padding:17px 19px;border:1px solid var(--line);border-radius:12px;background:#0e1012;color:#d6d9de;overflow:auto;font-size:13px;line-height:1.6}.statusgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px}.status{min-height:130px}.status strong{display:block;margin:2px 0 5px}.files{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px}.file{padding:13px 15px;border:1px solid var(--line);border-radius:9px;background:var(--panel)}.file code{display:block;margin-bottom:4px;color:var(--text);word-break:break-all}.file span{color:var(--muted);font-size:12px}.footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);color:var(--faint);font-size:12px}.mobile-nav{display:none;margin-top:18px}.mobile-nav select{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text)}@media(max-width:920px){:root{--side:0}.sidebar{display:none}.main{margin-left:0}.hero{padding-top:42px}.grid3,.grid2,.statusgrid,.files{grid-template-columns:1fr}.mobile-nav{display:block}}@media(max-width:640px){body{font-size:14px}.hero,.content{padding-left:20px;padding-right:20px}.lead{font-size:16px}h1{font-size:34px}th,td{padding:9px 10px}.diagram{padding:12px}table{display:block;max-width:100%;overflow-x:auto}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 </style>
 </head>
 <body>
-<div class="wrap">
+<aside class="sidebar">
+  <div class="brand">OpenProgram Design</div><div class="docname">执行权限与沙箱</div>
+  <nav aria-label="文档目录">
+    <div class="navlabel">Contract</div>
+    <a href="#decision">结论与边界</a><a href="#model">三个独立问题</a><a href="#flow">完整判定顺序</a>
+    <div class="navlabel">Mechanisms</div>
+    <a href="#authority">Authority</a><a href="#permission">Permission</a><a href="#sandbox">Sandbox</a><a href="#sandbox-ui">界面入口</a><a href="#escalation">审批与升级</a>
+    <div class="navlabel">Evidence</div>
+    <a href="#sources">请求来源</a><a href="#comparison">框架对照</a><a href="#failures">失败语义</a><a href="#status">实现状态</a><a href="#files">代码地图</a>
+  </nav>
+</aside>
+<main class="main">
+<header class="hero">
+  <div class="eyebrow">Architecture · Canonical Design</div>
+  <h1>谁能做、这次准不准做、获准后能访问什么</h1>
+  <p class="lead">OpenProgram 把 Agent 执行控制拆成三个独立合同：<code>Authority</code> 给出请求的能力上限，<code>Permission</code> 对一次具体操作作出允许、询问或拒绝，<code>Sandbox</code> 在操作获准后实施宿主资源边界。三者按固定顺序组合，不能互相替代。</p>
+  <div class="meta"><span class="pill good">现状：核心执行边界已有实现</span><span class="pill warn">目标差异：Auto、bypass 与 Sandbox 解耦待实现</span><span class="pill">平台：macOS Seatbelt / Linux bubblewrap</span><span class="pill">范围：Agent 工具与模型驱动执行面</span></div>
+  <div class="mobile-nav"><label for="jump" class="brand">跳到章节</label><select id="jump"><option value="">选择章节</option><option value="decision">结论与边界</option><option value="flow">完整判定顺序</option><option value="authority">Authority</option><option value="permission">Permission</option><option value="sandbox">Sandbox</option><option value="status">实现状态</option></select></div>
+</header>
+<div class="content">
 
-  <h1>沙箱：当前实现、八家对标与实施记录</h1>
-  <p class="sub">这页分三层：<b>我们现在怎么做</b>（宿主原生边界、两个平台、持久开关、authority与25个执行面的当前分类）、
-    <b>别人怎么做</b>（<code>references/</code>下八个框架逐一，包括四个明确不做沙箱的）、
-    <b>我们采用了什么</b>（设计取舍、实施顺序、验收结果与已知限制）。
-    设计文档：<code>docs/reference/design/runtime/sandbox.md</code></p>
+<section id="decision">
+  <h2>1. 结论与边界</h2>
+  <p>本文是 Agent 执行安全的唯一设计正文。它不讨论 provider 登录凭证管理；<code>openprogram/auth/</code> 解决“如何获得模型服务凭证”，本文解决“一个已经进入 Runtime 的请求如何被约束”。Authority、Permission、Sandbox 保持独立数据结构和独立判定点，任何一个机制都不承担另外两个机制的职责。</p>
+  <p><strong>固定顺序：</strong>越靠前的约束越不能被后续放宽。<code>tool_gate</code>、hard constraints 和 tier capability 在规则、审批、bypass 与执行之前完成；缺失身份或未知能力一律拒绝。</p>
+  <div class="callout danger"><strong><code>bypass</code> 的目标合同：</strong>只跳过 Permission 的普通审批与 Auto 后台判断，不改变 Sandbox。Authority、hard constraints 和显式 deny 仍然有效；显式 ask 不在 bypass 中产生确认。只有用户单独关闭 Sandbox，本地命令才使用宿主权限直接执行。</div>
+  <p><strong>不在本文范围：</strong>Windows 宿主沙箱实现、CPU/内存/进程数配额、OS Keychain/keyring/Credential Manager、把第三方 plugin 宣称为进程隔离、把远端 SSH/Docker 说成宿主原生沙箱。</p>
+</section>
 
-  <div class="tocg">
-    <div class="gl">层一 · 我们现在怎么做</div>
-    <div class="toc">
-      <a href="#L1">总览</a>
-      <a href="#edge">01 一张边界图</a>
-      <a href="#plat">02 两个平台</a>
-      <a href="#switch">03 开关为什么失效</a>
-      <a href="#cover">04 授权与覆盖面</a>
-    </div>
+<section id="model">
+  <h2>2. 三个独立问题</h2>
+  <table><thead><tr><th>合同</th><th>输入</th><th>回答的问题</th><th>输出</th></tr></thead><tbody>
+    <tr><td><strong>Authority</strong></td><td>入口构造的 principal、tier、interaction</td><td>这个请求最多具备哪些 capability？</td><td>继续，或带 reason code 拒绝</td></tr>
+    <tr><td><strong>Permission</strong></td><td>tool、args、规则、会话模式、审批能力</td><td>这次具体操作是否获准？</td><td>allow、ask 或 deny</td></tr>
+    <tr><td><strong>Execution boundary</strong></td><td>获准操作及其执行面</td><td>该执行面实际能访问哪些资源？</td><td>结果，或该边界的结构化拒绝</td></tr>
+  </tbody></table>
+  <div class="diagram">
+    <svg viewBox="0 0 1120 430" role="img" aria-labelledby="trust-title trust-desc">
+      <title id="trust-title">请求来源与信任边界</title><desc id="trust-desc">本地 owner、配对渠道、MCP、cron 和 subagent 分别构造或继承 authority，进入统一 TurnRequest。模型只能看到序列化身份描述，不能修改运行时 authority。随后进入 tool gate 和 approval wrapper。</desc>
+      <defs><marker id="ta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#747981"/></marker></defs>
+      <text x="30" y="34" fill="#747981" font-size="11" letter-spacing="1.4">REQUEST ENTRY</text>
+      <rect x="30" y="58" width="190" height="62" rx="8" fill="#17191c" stroke="#ad8bea"/><text x="125" y="84" text-anchor="middle" fill="#e8e9eb" font-size="13">Web / CLI / TUI</text><text x="125" y="104" text-anchor="middle" fill="#a3a7ae" font-size="10">local owner · interactive</text>
+      <rect x="30" y="136" width="190" height="62" rx="8" fill="#17191c" stroke="#ad8bea"/><text x="125" y="162" text-anchor="middle" fill="#e8e9eb" font-size="13">Paired channel / MCP</text><text x="125" y="182" text-anchor="middle" fill="#a3a7ae" font-size="10">paired · non-interactive</text>
+      <rect x="30" y="214" width="190" height="62" rx="8" fill="#17191c" stroke="#ad8bea"/><text x="125" y="240" text-anchor="middle" fill="#e8e9eb" font-size="13">Cron / subagent</text><text x="125" y="260" text-anchor="middle" fill="#a3a7ae" font-size="10">frozen or inherited authority</text>
+      <path d="M220 89H330M220 167H330M220 245H330" stroke="#747981" stroke-width="1.6" marker-end="url(#ta)"/>
+      <rect x="330" y="105" width="280" height="128" rx="10" fill="#201a29" stroke="#ad8bea"/><text x="470" y="136" text-anchor="middle" fill="#ad8bea" font-size="15">TurnRequest authority</text><text x="470" y="164" text-anchor="middle" fill="#a3a7ae" font-size="11">principal_id · authority_tier</text><text x="470" y="184" text-anchor="middle" fill="#a3a7ae" font-size="11">speaker_kind · interaction · source</text><text x="470" y="211" text-anchor="middle" fill="#ef6b62" font-size="10">missing / unknown → fail closed</text>
+      <path d="M610 169H705" stroke="#747981" stroke-width="1.8" marker-end="url(#ta)"/>
+      <rect x="705" y="80" width="180" height="76" rx="10" fill="#25191a" stroke="#ef6b62"/><text x="795" y="108" text-anchor="middle" fill="#ef6b62" font-size="14">tool_gate</text><text x="795" y="132" text-anchor="middle" fill="#a3a7ae" font-size="10">approval wrapper 外部</text>
+      <path d="M795 156V208" stroke="#747981" stroke-width="1.8" marker-end="url(#ta)"/>
+      <rect x="705" y="208" width="180" height="76" rx="10" fill="#241d1b" stroke="#ee7d55"/><text x="795" y="236" text-anchor="middle" fill="#ee7d55" font-size="14">approval wrapper</text><text x="795" y="260" text-anchor="middle" fill="#a3a7ae" font-size="10">hard · authority · rules · mode</text>
+      <path d="M885 246H1010" stroke="#747981" stroke-width="1.8" marker-end="url(#ta)"/>
+      <rect x="1010" y="208" width="80" height="76" rx="10" fill="#18241d" stroke="#67c78a"/><text x="1050" y="250" text-anchor="middle" fill="#67c78a" font-size="12">tool</text>
+      <path d="M330 320H610" stroke="#4bc6d8" stroke-width="1.5" stroke-dasharray="5 5"/><text x="470" y="346" text-anchor="middle" fill="#4bc6d8" font-size="11">模型输入可描述 speaker，但不能回写或扩大 authority</text>
+    </svg>
   </div>
-  <div class="tocg">
-    <div class="gl">层二 · 别人怎么做</div>
-    <div class="toc">
-      <a href="#L2">总览</a>
-      <a href="#spec">05 八家的隔离立场</a>
-      <a href="#mtx">06 四个方向逐家对照</a>
-      <a href="#best">07 独有机制与逐维度比较</a>
-      <a href="#cred">08 凭证这条为什么反过来</a>
-    </div>
+  <div class="callout"><strong>“用户批准”不等于“取消沙箱”。</strong>普通批准只满足 Permission；进程仍按 SandboxPolicy 执行。只有单独的 sandbox escalation 才会使用放宽后的策略重试，而且仍保留不可取消的 hard floor 与凭证过滤。</div>
+</section>
+
+<section id="flow">
+  <h2>3. 完整判定顺序</h2>
+  <p>这张图描述目标 Permission 判定。Sandbox 不参与这张图；工具获准后才按照独立 Sandbox 开关选择执行边界。</p>
+  <div class="diagram">
+    <svg viewBox="0 0 1120 900" role="img" aria-labelledby="flow-title flow-desc">
+      <title id="flow-title">目标 Permission 判定顺序</title><desc id="flow-desc">请求先通过 tool gate、hard constraints、authority capability 和显式 deny。之后 bypass 可以不询问直接执行。非 bypass 请求继续检查 Web Use 精确授权、显式 ask、普通允许条件和 Auto 安全分类器，最后进入执行、审批或拒绝。</desc>
+      <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#747981"/></marker><marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#67c78a"/></marker><marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#ef6b62"/></marker></defs>
+      <rect x="34" y="26" width="200" height="54" rx="8" fill="#17191c" stroke="#747981"/><text x="134" y="58" text-anchor="middle" fill="#e8e9eb" font-size="13">tool.before</text><path d="M234 53H286" stroke="#747981" stroke-width="1.6" marker-end="url(#a)"/>
+      <rect x="286" y="26" width="190" height="54" rx="8" fill="#25191a" stroke="#ef6b62"/><text x="381" y="58" text-anchor="middle" fill="#ef6b62" font-size="13">tool_gate</text><path d="M476 53H528" stroke="#747981" stroke-width="1.6" marker-end="url(#a)"/>
+      <rect x="528" y="18" width="326" height="70" rx="8" fill="#211719" stroke="#ef6b62"/><text x="691" y="45" text-anchor="middle" fill="#e8e9eb" font-size="13">不可绕过的前置约束</text><text x="691" y="67" text-anchor="middle" fill="#a3a7ae" font-size="10">hard constraints · Authority capability · explicit deny</text><path d="M854 53H958" stroke="#ef6b62" stroke-width="1.5" marker-end="url(#r)"/><text x="888" y="44" fill="#ef6b62" font-size="10">violation</text>
+      <rect x="958" y="18" width="132" height="70" rx="8" fill="#211719" stroke="#ef6b62"/><text x="1024" y="58" text-anchor="middle" fill="#ef6b62" font-size="13">DENY</text>
+      <path d="M691 88V130" stroke="#747981" stroke-width="1.6" marker-end="url(#a)"/>
+      <rect x="528" y="130" width="326" height="62" rx="8" fill="#25191a" stroke="#ef6b62"/><text x="691" y="156" text-anchor="middle" fill="#e8e9eb" font-size="13">bypass?</text><text x="691" y="177" text-anchor="middle" fill="#a3a7ae" font-size="10">skip prompts and Auto classifier; do not change Sandbox</text><path d="M854 161H958" stroke="#67c78a" stroke-width="1.5" marker-end="url(#g)"/><text x="892" y="152" fill="#67c78a" font-size="10">yes</text>
+      <rect x="958" y="130" width="132" height="70" rx="8" fill="#18241d" stroke="#67c78a"/><text x="1024" y="159" text-anchor="middle" fill="#67c78a" font-size="13">EXECUTE</text><text x="1024" y="181" text-anchor="middle" fill="#a3a7ae" font-size="10">tool chooses boundary</text>
+      <path d="M691 192V234" stroke="#747981" stroke-width="1.6" marker-end="url(#a)"/><text x="702" y="216" fill="#a3a7ae" font-size="10">no</text>
+      <rect x="528" y="234" width="326" height="62" rx="8" fill="#172326" stroke="#4bc6d8"/><text x="691" y="260" text-anchor="middle" fill="#e8e9eb" font-size="13">exact Web Use grant?</text><text x="691" y="281" text-anchor="middle" fill="#a3a7ae" font-size="10">bound surface only</text><path d="M854 265H930V165H958" fill="none" stroke="#67c78a" stroke-width="1.5" marker-end="url(#g)"/>
+      <path d="M691 296V338" stroke="#747981" stroke-width="1.6" marker-end="url(#a)"/>
+      <rect x="528" y="338" width="326" height="62" rx="8" fill="#241d1b" stroke="#ee7d55"/><text x="691" y="364" text-anchor="middle" fill="#e8e9eb" font-size="13">explicit ask or forced approval?</text><text x="691" y="385" text-anchor="middle" fill="#a3a7ae" font-size="10">interactive owner only</text><path d="M854 369H958" stroke="#ee7d55" stroke-width="1.5" marker-end="url(#a)"/>
+      <rect x="958" y="326" width="132" height="86" rx="8" fill="#241d1b" stroke="#ee7d55"/><text x="1024" y="354" text-anchor="middle" fill="#ee7d55" font-size="12">APPROVAL</text><text x="1024" y="376" text-anchor="middle" fill="#a3a7ae" font-size="10">approve → execute</text><text x="1024" y="396" text-anchor="middle" fill="#a3a7ae" font-size="10">deny → stop</text><path d="M1024 326V220H930V165H958" fill="none" stroke="#67c78a" stroke-width="1.3" marker-end="url(#g)"/>
+      <path d="M691 400V442" stroke="#747981" stroke-width="1.6" marker-end="url(#a)"/>
+      <rect x="528" y="442" width="326" height="62" rx="8" fill="#18241d" stroke="#67c78a"/><text x="691" y="468" text-anchor="middle" fill="#e8e9eb" font-size="13">allow · safe read · acceptEdits?</text><text x="691" y="489" text-anchor="middle" fill="#a3a7ae" font-size="10">scheduled exceptions remain explicit</text><path d="M854 473H930V165H958" fill="none" stroke="#67c78a" stroke-width="1.5" marker-end="url(#g)"/>
+      <path d="M691 504V546" stroke="#747981" stroke-width="1.6" marker-end="url(#a)"/>
+      <rect x="528" y="546" width="326" height="62" rx="8" fill="#201a29" stroke="#ad8bea"/><text x="691" y="572" text-anchor="middle" fill="#e8e9eb" font-size="13">auto?</text><text x="691" y="593" text-anchor="middle" fill="#a3a7ae" font-size="10">supported classifier required</text>
+      <path d="M691 608V650" stroke="#747981" stroke-width="1.6" marker-end="url(#a)"/>
+      <rect x="528" y="650" width="326" height="84" rx="8" fill="#201a29" stroke="#ad8bea"/><text x="691" y="677" text-anchor="middle" fill="#ad8bea" font-size="13">Auto safety classifier</text><text x="691" y="699" text-anchor="middle" fill="#a3a7ae" font-size="10">allow → execute · block → deny</text><text x="691" y="718" text-anchor="middle" fill="#a3a7ae" font-size="10">unavailable / uncertain → ask</text><path d="M854 692H930V165H958" fill="none" stroke="#67c78a" stroke-width="1.5" marker-end="url(#g)"/>
+      <path d="M528 577H408V789H958" fill="none" stroke="#ee7d55" stroke-width="1.5" marker-end="url(#a)"/><text x="418" y="568" fill="#ee7d55" font-size="10">no: ask/default</text>
+      <rect x="958" y="754" width="132" height="70" rx="8" fill="#241d1b" stroke="#ee7d55"/><text x="1024" y="783" text-anchor="middle" fill="#ee7d55" font-size="12">APPROVAL</text><text x="1024" y="805" text-anchor="middle" fill="#a3a7ae" font-size="10">or deny if unavailable</text><path d="M1090 789H1104V165H1090" fill="none" stroke="#67c78a" stroke-width="1.3" marker-end="url(#g)"/>
+      <path d="M528 692H488V53H958" fill="none" stroke="#ef6b62" stroke-width="1.2" stroke-dasharray="5 5" marker-end="url(#r)"/><text x="496" y="682" fill="#ef6b62" font-size="10">blocked</text>
+    </svg>
   </div>
-  <div class="tocg">
-    <div class="gl">层三 · 实施决策与记录</div>
-    <div class="toc">
-      <a href="#L3">总览</a>
-      <a href="#bridge">09 缺口、参考与采用结果</a>
-      <a href="#fix">10 修复路线</a>
-      <a href="#status">11 实现状态</a>
-    </div>
+  <p class="caption">关键区别：图的终点只是调用工具的 <code>execute</code>；该工具随后进入哪一种执行边界，由工具实现决定。</p>
+</section>
+
+<section id="authority">
+  <h2>4. Authority：能力上限</h2>
+  <p>入口只携带一个固定 tier 枚举，capability 集合只存在于进程内常量表。模型正文、speaker display、工具参数和项目设置都不能创建或扩展 capability。</p>
+  <table><thead><tr><th>Tier</th><th>允许能力</th><th>明确禁止</th><th>交互</th></tr></thead><tbody>
+    <tr><td><code>owner</code></td><td>reply、memory、schedule、fs、process、network、approval、runtime、browser</td><td>仍受 hard constraints、规则和 sandbox 约束</td><td>本地认证入口为 interactive</td></tr>
+    <tr><td><code>paired</code></td><td><code>reply</code>、<code>memory.read</code>、<code>memory.source.append</code></td><td>文件、进程、网络、cron、审批升级、runtime control</td><td>non-interactive</td></tr>
+    <tr><td><code>mcp_browser</code></td><td><code>browser.control</code></td><td>其余全部</td><td>限定 first-class Web Use 路径</td></tr>
+  </tbody></table>
+  <div class="callout warn"><strong>恢复也不使用环境兜底：</strong>continuation、subagent、inbox 和 cron 必须显式携带或从签名记录恢复 authority。字段缺失或 tier 未知时拒绝，不把旧状态自动提升为 owner。</div>
+</section>
+
+<section id="permission">
+  <h2>5. Permission：一次操作的决策</h2>
+  <table><thead><tr><th>模式</th><th>默认行为</th><th>不能绕过</th></tr></thead><tbody>
+    <tr><td><code>ask</code></td><td>安全只读自动执行；修改性操作询问</td><td rowspan="5">hard constraints、tier capability、显式 deny/ask 规则</td></tr>
+    <tr><td><code>acceptEdits</code></td><td>安全工作目录内的读写编辑自动执行；命令仍询问</td></tr>
+    <tr><td><code>plan</code></td><td>隐藏写工具；这是工具可见性控制，不是独立安全边界</td></tr>
+    <tr><td><code>auto</code></td><td>默认不询问；独立安全分类器在后台阻止明显危险、不可逆、越出用户任务或面向未知外部基础设施的操作</td></tr>
+    <tr><td><code>bypass</code></td><td>不询问并跳过 Auto 安全分类器；不改变 Sandbox 开关</td></tr>
+  </tbody></table>
+  <h3>规则作用域与优先级</h3>
+  <pre><code>deny  &gt; ask &gt; allow
+
+global config
+  &lt; project .openprogram/settings.json
+  &lt; session override</code></pre>
+  <p>“总是允许”持久化到项目规则，并保存规范化后的精确 operation；复杂 shell 只允许单次批准，不能把一次 bash 批准扩大成永久允许所有 bash。</p>
+  <h3>Auto 安全判断</h3>
+  <table><thead><tr><th>默认直接执行</th><th>默认阻止</th><th>阻止后的用户体验</th></tr></thead><tbody>
+    <tr><td>工作目录内的普通文件操作、测试、构建、当前分支的常规 Git 操作、只读网络请求</td><td>下载后直接执行未知代码、敏感数据外发、生产部署、数据库迁移、共享基础设施或权限变更、大量或不可逆删除、force push 或直接推送主分支</td><td>先让 Agent 改用安全替代方案；记录拒绝原因并允许用户手动重试。重复阻止后退出 Auto，回到 <code>ask</code></td></tr>
+  </tbody></table>
+  <p>Auto 分类器不可用、无法给出可靠判断或当前模型不受支持时，Auto 不得退化成 bypass；界面将模式标为不可用，正在运行的会话回到 <code>ask</code>。对话中“不要 push”“部署前等我确认”等限制参与后台判断，但需要强保证时仍使用正式 deny rule。</p>
+  <h3>Web 档位传递合同</h3>
+  <p>权限徽章显示会话的有效模式。未显式选择时继承项目默认值；项目也没有默认值时使用 <code>ask</code>。后端必须回传本次 turn 实际采用的模式，不能由前端自行推断。</p>
+  <table><thead><tr><th>阶段</th><th>必须携带或产生的值</th><th>失败处理</th></tr></thead><tbody>
+    <tr><td>Composer 选择</td><td><code>inherit | ask | acceptEdits | plan | auto | bypass</code></td><td>未知值不进入发送路径</td></tr>
+    <tr><td>普通发送、Goal 回答</td><td>发送当前会话的显式 override；没有 override 时发送 <code>inherit</code></td><td>发送失败保留草稿和会话选择</td></tr>
+    <tr><td>运行中排队、拒绝后重排队</td><td>真正开始执行时读取该会话的最新模式</td><td>用户从 bypass 切回 ask 后，未开始的消息不得继续使用旧 bypass</td></tr>
+    <tr><td>后端接收</td><td>计算 session override → project default → system <code>ask</code>，并回传 effective mode</td><td>字段缺失或非法时 fail-safe 到 <code>ask</code>，不得默认 <code>bypass</code></td></tr>
+  </tbody></table>
+</section>
+
+<section id="sandbox">
+  <h2>6. Sandbox：获准执行后的宿主边界</h2>
+  <p>“获准执行”之后没有一个覆盖所有工具的通用沙箱。OpenProgram 按执行面选择边界：进程内文件工具执行路径约束，本地命令进入宿主原生沙箱，Docker/SSH 使用自己的外部边界，Browser 与 MCP 使用各自的受管接口。</p>
+  <h3>Permission 与 Sandbox 的组合结果</h3>
+  <table><thead><tr><th>Permission</th><th>Sandbox</th><th>用户看到的效果</th></tr></thead><tbody>
+    <tr><td><code>ask</code></td><td>开启</td><td>需要确认；批准后在 Sandbox 内执行</td></tr>
+    <tr><td><code>auto</code></td><td>开启</td><td>默认不询问；通过后台安全判断后在 Sandbox 内执行，危险操作被阻止</td></tr>
+    <tr><td><code>bypass</code></td><td>开启</td><td>不询问、不经过 Auto 安全判断，直接在 Sandbox 内执行</td></tr>
+    <tr><td><code>bypass</code></td><td>关闭</td><td>不询问、不经过 Auto 安全判断，直接使用宿主权限执行</td></tr>
+  </tbody></table>
+  <p><strong>固定原则：</strong>Permission 只决定是否询问以及是否运行 Auto 安全判断；Sandbox 只决定本地命令的资源边界。开启 Sandbox 不增加审批，选择 bypass 不关闭 Sandbox。</p>
+  <div class="diagram">
+    <svg viewBox="0 0 1120 610" role="img" aria-labelledby="exec-title exec-desc">
+      <title id="exec-title">不同工具调用进入不同执行边界</title><desc id="exec-desc">Permission 允许操作后，文件工具进入进程内路径检查，本地进程进入 Seatbelt 或 bubblewrap，Docker 和 SSH 进入外部执行边界，浏览器进入绑定 surface，MCP 进入已配置 server。只有本地子进程使用 SandboxPolicy 包装。</desc>
+      <defs><marker id="ea" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#747981"/></marker></defs>
+      <rect x="410" y="20" width="300" height="62" rx="10" fill="#18241d" stroke="#67c78a"/><text x="560" y="47" text-anchor="middle" fill="#67c78a" font-size="15">Permission allowed</text><text x="560" y="67" text-anchor="middle" fill="#a3a7ae" font-size="10">call AgentTool.execute()</text>
+      <path d="M560 82V130M560 130H112M560 130H336M560 130H560M560 130H784M560 130H1008" fill="none" stroke="#747981" stroke-width="1.5"/>
+      <path d="M112 130V170M336 130V170M560 130V170M784 130V170M1008 130V170" stroke="#747981" stroke-width="1.5" marker-end="url(#ea)"/>
+      <rect x="24" y="170" width="176" height="76" rx="9" fill="#17191c" stroke="#ee7d55"/><text x="112" y="197" text-anchor="middle" fill="#e8e9eb" font-size="13">File tools</text><text x="112" y="219" text-anchor="middle" fill="#a3a7ae" font-size="10">read / write / edit</text><text x="112" y="235" text-anchor="middle" fill="#a3a7ae" font-size="10">apply_patch</text>
+      <rect x="248" y="170" width="176" height="76" rx="9" fill="#172326" stroke="#4bc6d8"/><text x="336" y="197" text-anchor="middle" fill="#e8e9eb" font-size="13">Local process</text><text x="336" y="219" text-anchor="middle" fill="#a3a7ae" font-size="10">bash / execute_code</text><text x="336" y="235" text-anchor="middle" fill="#a3a7ae" font-size="10">agentic subprocess</text>
+      <rect x="472" y="170" width="176" height="76" rx="9" fill="#17191c" stroke="#ad8bea"/><text x="560" y="197" text-anchor="middle" fill="#e8e9eb" font-size="13">Docker / SSH</text><text x="560" y="219" text-anchor="middle" fill="#a3a7ae" font-size="10">configured backend</text><text x="560" y="235" text-anchor="middle" fill="#a3a7ae" font-size="10">remote execution target</text>
+      <rect x="696" y="170" width="176" height="76" rx="9" fill="#17191c" stroke="#d8b35d"/><text x="784" y="197" text-anchor="middle" fill="#e8e9eb" font-size="13">Browser / Web Use</text><text x="784" y="219" text-anchor="middle" fill="#a3a7ae" font-size="10">bound surface</text><text x="784" y="235" text-anchor="middle" fill="#a3a7ae" font-size="10">browser-specific boundary</text>
+      <rect x="920" y="170" width="176" height="76" rx="9" fill="#17191c" stroke="#d8b35d"/><text x="1008" y="197" text-anchor="middle" fill="#e8e9eb" font-size="13">MCP / trusted hooks</text><text x="1008" y="219" text-anchor="middle" fill="#a3a7ae" font-size="10">owner configuration</text><text x="1008" y="235" text-anchor="middle" fill="#a3a7ae" font-size="10">declared trust boundary</text>
+      <path d="M112 246V310M336 246V310M560 246V310M784 246V310M1008 246V310" stroke="#747981" stroke-width="1.5" marker-end="url(#ea)"/>
+      <rect x="24" y="310" width="176" height="106" rx="9" fill="#21191a" stroke="#ee7d55"/><text x="112" y="339" text-anchor="middle" fill="#ee7d55" font-size="12">IN-PROCESS GUARDS</text><text x="112" y="366" text-anchor="middle" fill="#a3a7ae" font-size="10">working roots</text><text x="112" y="384" text-anchor="middle" fill="#a3a7ae" font-size="10">read-before-edit</text><text x="112" y="402" text-anchor="middle" fill="#a3a7ae" font-size="10">hard-floor paths</text>
+      <rect x="248" y="310" width="176" height="106" rx="9" fill="#142126" stroke="#4bc6d8"/><text x="336" y="339" text-anchor="middle" fill="#4bc6d8" font-size="12">SandboxPolicy</text><text x="336" y="366" text-anchor="middle" fill="#a3a7ae" font-size="10">macOS Seatbelt</text><text x="336" y="384" text-anchor="middle" fill="#a3a7ae" font-size="10">Linux bubblewrap</text><text x="336" y="402" text-anchor="middle" fill="#a3a7ae" font-size="10">env / net / fs / process</text>
+      <rect x="472" y="310" width="176" height="106" rx="9" fill="#201a29" stroke="#ad8bea"/><text x="560" y="339" text-anchor="middle" fill="#ad8bea" font-size="12">EXTERNAL BOUNDARY</text><text x="560" y="366" text-anchor="middle" fill="#a3a7ae" font-size="10">container or remote host</text><text x="560" y="384" text-anchor="middle" fill="#a3a7ae" font-size="10">not host Seatbelt/bwrap</text><text x="560" y="402" text-anchor="middle" fill="#a3a7ae" font-size="10">target selected by owner</text>
+      <rect x="696" y="310" width="176" height="106" rx="9" fill="#242117" stroke="#d8b35d"/><text x="784" y="339" text-anchor="middle" fill="#d8b35d" font-size="12">SURFACE BOUNDARY</text><text x="784" y="366" text-anchor="middle" fill="#a3a7ae" font-size="10">turn-scoped binding</text><text x="784" y="384" text-anchor="middle" fill="#a3a7ae" font-size="10">DOM / CDP backend</text><text x="784" y="402" text-anchor="middle" fill="#a3a7ae" font-size="10">download policy separate</text>
+      <rect x="920" y="310" width="176" height="106" rx="9" fill="#242117" stroke="#d8b35d"/><text x="1008" y="339" text-anchor="middle" fill="#d8b35d" font-size="12">CONFIGURED TRUST</text><text x="1008" y="366" text-anchor="middle" fill="#a3a7ae" font-size="10">stdio argv / env</text><text x="1008" y="384" text-anchor="middle" fill="#a3a7ae" font-size="10">plugin or hook source</text><text x="1008" y="402" text-anchor="middle" fill="#a3a7ae" font-size="10">must not claim isolation</text>
+      <rect x="24" y="472" width="1072" height="90" rx="9" fill="#141619" stroke="#30343a"/><text x="46" y="501" fill="#e8e9eb" font-size="13">共同部分</text><text x="46" y="526" fill="#a3a7ae" font-size="11">所有执行面在进入这里之前已经通过 tool_gate、hard constraints、tier capability、permission rules 与 mode。</text><text x="46" y="549" fill="#a3a7ae" font-size="11">不同之处是“实际执行边界”；只有 Local process 一列由 openprogram/sandbox 的 SandboxPolicy 包装。</text>
+    </svg>
   </div>
-
-  <!-- ══════════════════ 层一 ══════════════════ -->
-  <div class="band L1" id="L1">
-    <span class="lv">LAYER 1</span>
-    <h2>我们现在怎么做</h2>
-    <p class="w">系统调用级实现位于<code>openprogram/sandbox/__init__.py</code>，统一入口是<code>backend/local.py::_invocation</code>。
-      bash、process、execute_code、cron direct、memory写入器的MCP shell和one-shot MCP均复用该入口；文件工具使用同一份写入根与hard-floor校验。
-      下面四节记录四个方向的边界、两个平台各自的机制、开关为什么现在传得到，以及固定权限档常量表如何参与25个执行面的判定。
-      执行面计数是审计清单，不代表U01—U23都应采用同一种隔离策略。</p>
-  </div>
-
-  <div class="note"><b>已经确定的产品方向</b>：本地沙箱保持宿主原生实现，macOS使用Seatbelt，Linux使用bubblewrap，新安装默认<code>workspace-write</code>。
-    authority与pairing决定外部请求是否具有执行能力，沙箱限制已获准agent对宿主产生的副作用，并保留宿主真实开发环境。
-    Docker不是当前沙箱实现，也不是后端不可用时的自动回退；以后只有出现明确的独立Linux环境需求时，才设计为用户显式选择的第二后端。</div>
-
-  <h2 id="edge"><span class="num">01</span>一张边界图</h2>
-  <p class="lead">四个方向不对称：读允许访问大部分宿主文件但拒绝凭证清单，写限制到工作目录，执行不限制可执行文件但子进程继承沙箱，网络在两个平台都禁用。
-    凭证清单与环境变量白名单已经预置，但Linux不能实现中段glob匹配。</p>
-
-  <div class="card">
-  <svg viewBox="0 0 1160 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="沙箱四个方向的边界">
-    <defs>
-      <marker id="e-gn" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5aad4e"/></marker>
-      <marker id="e-or" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#d4843a"/></marker>
-      <marker id="e-rd" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#e0445a"/></marker>
-    </defs>
-
-    <text x="24" y="32" fill="#d4843a" font-size="16" font-weight="700">沙箱边界：四个方向</text>
-    <text x="24" y="55" fill="#8a8675" font-size="12.5">左边是受限子进程，中间竖线是沙箱边界，右边是宿主资源；图标表示每类访问的实际策略状态。</text>
-
-    <!-- 子进程 -->
-    <rect x="40" y="288" width="290" height="130" rx="12" fill="#131b2a" stroke="#4f8ef7" stroke-width="1.7"/>
-    <text x="185" y="322" fill="#4f8ef7" font-size="15.5" font-weight="700" text-anchor="middle">沙箱内的子进程</text>
-    <text x="185" y="348" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace" text-anchor="middle">bash -c &lt;模型给的命令&gt;</text>
-    <text x="185" y="374" fill="#8a8675" font-size="11.5" text-anchor="middle">macOS由sandbox-exec包住</text>
-    <text x="185" y="394" fill="#8a8675" font-size="11.5" text-anchor="middle">Linux由bwrap包住</text>
-
-    <!-- 边界竖线 -->
-    <line x1="430" y1="96" x2="430" y2="646" stroke="#d4843a" stroke-width="1.5" stroke-dasharray="7 7" opacity=".8"/>
-    <text x="430" y="86" fill="#d4843a" font-size="12.5" text-anchor="middle" font-weight="700">沙箱边界</text>
-
-    <!-- 访问方向连线 -->
-    <path d="M330,340 C 372,340 384,168 424,168" fill="none" stroke="#d4843a" stroke-width="1.6"/>
-    <path d="M330,348 C 372,348 386,300 424,300" fill="none" stroke="#d4843a" stroke-width="1.6"/>
-    <path d="M330,358 C 372,358 386,420 424,420" fill="none" stroke="#5aad4e" stroke-width="1.6"/>
-    <path d="M330,366 C 372,366 384,556 424,556" fill="none" stroke="#e0445a" stroke-width="1.6"/>
-
-    <!-- 访问策略 01：读路径部分允许 -->
-    <circle cx="430" cy="168" r="19" fill="#241f10" stroke="#d4843a" stroke-width="1.8"/>
-    <path d="M422,159 L431,168 L422,177" fill="none" stroke="#d4843a" stroke-width="2"/>
-    <line x1="437" y1="156" x2="437" y2="180" stroke="#d4843a" stroke-width="2.2"/>
-    <line x1="452" y1="168" x2="530" y2="168" stroke="#d4843a" stroke-width="1.6" marker-end="url(#e-or)"/>
-
-    <!-- 访问策略 02：写路径部分允许 -->
-    <circle cx="430" cy="300" r="19" fill="#241f10" stroke="#d4843a" stroke-width="1.8"/>
-    <path d="M422,291 L431,300 L422,309" fill="none" stroke="#d4843a" stroke-width="2"/>
-    <line x1="437" y1="288" x2="437" y2="312" stroke="#d4843a" stroke-width="2.2"/>
-    <line x1="452" y1="300" x2="530" y2="300" stroke="#d4843a" stroke-width="1.6" marker-end="url(#e-or)"/>
-
-    <!-- 访问策略 03：执行允许 -->
-    <circle cx="430" cy="420" r="19" fill="#101a10" stroke="#5aad4e" stroke-width="1.8"/>
-    <path d="M422,411 L431,420 L422,429 M431,411 L440,420 L431,429" fill="none" stroke="#5aad4e" stroke-width="2"/>
-    <line x1="452" y1="420" x2="530" y2="420" stroke="#5aad4e" stroke-width="1.6" marker-end="url(#e-gn)"/>
-
-    <!-- 访问策略 04：网络拒绝 -->
-    <circle cx="430" cy="556" r="19" fill="#2a1215" stroke="#e0445a" stroke-width="1.8"/>
-    <path d="M422,548 L438,564 M438,548 L422,564" fill="none" stroke="#e0445a" stroke-width="2.2"/>
-    <line x1="452" y1="556" x2="512" y2="556" stroke="#e0445a" stroke-width="1.6" stroke-dasharray="5 5" marker-end="url(#e-rd)"/>
-
-    <!-- 目标 01 读 -->
-    <rect x="532" y="106" width="596" height="126" rx="10" fill="#241f10" stroke="#d4843a" stroke-width="1.5"/>
-    <text x="552" y="133" fill="#d4843a" font-size="14.5" font-weight="700">文件读 · 大部分宿主路径可读，凭证清单被拒绝</text>
-    <text x="552" y="156" fill="#8a8675" font-size="11.5" font-family="Menlo,monospace">macOS: allow file-read* 之后逐条deny正则　Linux: --perms 0000 --tmpfs / --ro-bind /dev/null</text>
-    <rect x="550" y="168" width="560" height="50" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.3"/>
-    <text x="566" y="188" fill="#5aad4e" font-size="12" font-weight="700">已验证的具体凭证路径不可读；macOS额外支持中段glob：</text>
-    <text x="566" y="208" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">~/.ssh/**　~/.aws/**　~/.openprogram/auth/**　~/.claude.json　keychain　macOS:**/.env</text>
-
-    <!-- 目标 02 写 -->
-    <rect x="532" y="252" width="596" height="96" rx="10" fill="#241f10" stroke="#d4843a" stroke-width="1.5"/>
-    <text x="552" y="279" fill="#d4843a" font-size="14.5" font-weight="700">文件写 · 工作目录和临时目录，另有固定拒写路径</text>
-    <text x="552" y="302" fill="#a5a190" font-size="12">命令和文件工具都不能写入自动导入目录；已登记的owner安装来源只允许通过安装流程变更</text>
-    <text x="552" y="326" fill="#a5a190" font-size="12">macOS只允许当前进程<tspan font-family="Menlo,monospace" fill="#bdb9a6">TMPDIR</tspan>；Linux的<tspan font-family="Menlo,monospace" fill="#bdb9a6">/tmp</tspan>是隔离tmpfs，位于其下的工作目录由后续bind恢复</text>
-
-    <!-- 目标 03 执行 -->
-    <rect x="532" y="368" width="596" height="120" rx="10" fill="#101a10" stroke="#5aad4e" stroke-width="1.5"/>
-    <text x="552" y="395" fill="#5aad4e" font-size="14.5" font-weight="700">进程执行 · 两个平台都不限制，子进程继承沙箱</text>
-    <text x="552" y="419" fill="#a5a190" font-size="12">实测<tspan font-family="Menlo,monospace" fill="#bdb9a6">git</tspan>、<tspan font-family="Menlo,monospace" fill="#bdb9a6">python3</tspan>、<tspan font-family="Menlo,monospace" fill="#bdb9a6">make</tspan>、<tspan font-family="Menlo,monospace" fill="#bdb9a6">clang</tspan>、conda python、<tspan font-family="Menlo,monospace" fill="#bdb9a6">/usr/sbin</tspan>全部可跑</text>
-    <text x="552" y="441" fill="#a5a190" font-size="12">按路径限制exec挡不住执行：<tspan font-family="Menlo,monospace" fill="#bdb9a6">/bin/bash -c</tspan>自己就在里面，脚本可以从任何地方读进来</text>
-    <text x="552" y="466" fill="#8a8675" font-size="11.5">仍然不能执行<tspan font-family="Menlo,monospace" fill="#bdb9a6">ps</tspan>和<tspan font-family="Menlo,monospace" fill="#bdb9a6">top</tspan>：Seatbelt不允许在profile内exec setuid二进制</text>
-
-    <!-- 目标 04 网络 -->
-    <rect x="514" y="508" width="614" height="96" rx="10" fill="#2a1215" stroke="#e0445a" stroke-width="1.5" stroke-dasharray="6 5"/>
-    <text x="534" y="535" fill="#e0445a" font-size="14.5" font-weight="700">网络 · 出站入站全断，两个平台一致</text>
-    <text x="534" y="558" fill="#a5a190" font-size="12">macOS由<tspan font-family="Menlo,monospace" fill="#bdb9a6">(deny default)</tspan>拒绝网络；Linux使用<tspan font-family="Menlo,monospace" fill="#bdb9a6">--unshare-net</tspan></text>
-    <text x="534" y="582" fill="#8a8675" font-size="11.5">DNS、回环、Docker socket实测都不可访问；与openclaw启用容器后的默认网络状态相同</text>
-
-    <!-- 底部结论 -->
-    <rect x="40" y="628" width="1088" height="52" rx="9" fill="#1d1c14" stroke="#2e2c20"/>
-    <text x="60" y="652" fill="#f0eee6" font-size="13" font-weight="700">当前边界：</text>
-    <text x="144" y="652" fill="#bdb9a6" font-size="12.5">网络访问被拒绝；凭证清单阻止无网条件下把已知凭证复制到记忆库。</text>
-    <text x="144" y="672" fill="#8a8675" font-size="12">清单之外仍然允许读取宿主文件；该范围是当前产品选择，不是最小文件视图。</text>
-  </svg>
-  <div class="legend">
-    <b>图标说明</b>：双箭头=不限制，单箭头加竖线=部分允许，叉=拒绝。
-    连线颜色与策略状态一致，虚线表示请求被拒绝。
-  </div>
-  </div>
-
-  <!-- ══════════ 02 两个平台 ══════════ -->
-  <h2 id="plat"><span class="num">02</span>两个平台</h2>
-  <p class="lead">同一个<code>wrap_command</code>在两个平台走完全不同的机制，各自额外放行了一些东西，也各自有一处只在实跑里才会暴露的细节。</p>
-
-  <div class="grid2">
-    <div class="plat" style="border-top-color:#4f8ef7">
-      <div class="k">MACOS</div>
-      <h3 style="color:#4f8ef7">Seatbelt</h3>
-      <div class="noun">/usr/bin/sandbox-exec -p &lt;profile&gt; /bin/bash -c &lt;命令&gt;</div>
-      <div class="row"><div class="t">机制</div><div class="v">profile内联生成，以<b>(deny default)</b>为默认策略，再增加具名允许规则。嵌套Seatbelt会被系统拒绝，内层不能放宽外层限制。</div></div>
-      <div class="row"><div class="t">额外放行</div><div class="v"><code>/dev/null</code>等五个字符设备用<b>require-all加vnode-type CHARACTER-DEVICE</b>放行读写。<b>sysctl-read</b>只允许<code>hw.*</code>和四个uname所需的<code>kern.*</code>名字；不再允许通用<b>mach-lookup</b>，剪贴板和Apple Events服务不可达。写范围只包含当前<b>TMPDIR</b>。</div></div>
-      <div class="row"><div class="t">屏蔽写法</div><div class="v">每条deny glob编译成锚定正则，<b>deny file-read*</b>和<b>deny file-write-unlink</b>成对发，被禁读的路径不能用删除反推存在性。工作目录拼进profile前先转义。</div></div>
-      <div class="row bad"><div class="t">正则限制</div><div class="v">Seatbelt的正则引擎<b>不支持</b><code>(?:…)</code>，使用非捕获分组会导致deny规则不生效且没有错误；引擎匹配解析符号链接后的真实路径，所以静态前缀是符号链接时要同时生成原路径和真实路径规则。</div></div>
-    </div>
-
-    <div class="plat" style="border-top-color:#5aad4e">
-      <div class="k">LINUX</div>
-      <h3 style="color:#5aad4e">bubblewrap</h3>
-      <div class="noun">bwrap --new-session --die-with-parent --unshare-pid --unshare-ipc --unshare-uts --cap-drop ALL --ro-bind / / --proc /proc --dev /dev --unshare-net --tmpfs /tmp --bind &lt;cwd&gt; &lt;cwd&gt;</div>
-      <div class="row"><div class="t">机制</div><div class="v">挂载视图重建：根只读，工作目录单独bind成可写，net / pid / ipc / uts四个命名空间隔离，capability全丢。</div></div>
-      <div class="row"><div class="t">屏蔽写法</div><div class="v">目录用<code>--perms 0000 --tmpfs</code>遮蔽，文件用<code>--ro-bind /dev/null</code>替代。<code>--cap-drop ALL</code>移除<b>DAC_OVERRIDE</b>，所以容器内子进程是root时权限位仍然生效，实测返回<code>Permission denied</code>。</div></div>
-      <div class="row"><div class="t">进程隔离</div><div class="v"><code>--unshare-pid</code>之后实测：沙箱内只看得到4个PID，读宿主进程的<code>/proc/&lt;pid&gt;/environ</code>报文件不存在，<code>kill -9</code>报进程不存在，宿主进程照常活着。没有它的话，洗干净子进程环境也没用。</div></div>
-      <div class="row"><div class="t">可用性探测</div><div class="v">不只检查PATH。每个<code>bwrap</code>可执行文件首次使用前，以正式策略所需的mount、PID、IPC、UTS、network和capability限制执行<code>/bin/true</code>；已安装但被宿主禁止创建非特权user namespace时，按后端不可用处理。</div></div>
-      <div class="row bad"><div class="t">挂载顺序</div><div class="v"><code>--tmpfs /tmp</code>必须位于cwd bind<b>之前</b>，否则<code>/tmp</code>下的工作目录会被tmpfs遮蔽。拒绝访问的挂载还必须跳过宿主上不存在的路径：根是只读绑定，bubblewrap无法创建挂载点，强制挂载会使调用失败。两项均由运行测试确认。</div></div>
-    </div>
-  </div>
-
-  <div class="tbl">
-  <table>
-    <tr><th>维度</th><th>macOS</th><th>Linux</th></tr>
-    <tr><td><b>网络</b></td><td class="y">断（deny default兜住）</td><td class="y">断（--unshare-net）</td></tr>
-    <tr><td><b>整盘可读</b></td><td class="m">是，减去屏蔽清单</td><td class="m">是，减去屏蔽清单</td></tr>
-    <tr><td><b>屏蔽清单表达力</b></td><td class="y">正则，中间带通配符的glob也能表达</td><td class="m">只能盖路径，<code>**/.env</code>这类无对应实现，被丢弃</td></tr>
-    <tr><td><b>写范围</b></td><td class="y">cwd + 当前TMPDIR + /tmp + /private/tmp</td><td class="y">cwd + 隔离tmpfs /tmp</td></tr>
-    <tr><td><b>/tmp语义</b></td><td>真实/tmp，与宿主共享、可持久</td><td>空tmpfs，用完即弃</td></tr>
-    <tr><td><b>exec限制</b></td><td class="y">不限制，子进程继承profile</td><td class="y">不限制</td></tr>
-    <tr><td><b>/dev/null可写</b></td><td class="y">是</td><td class="y">是</td></tr>
-    <tr><td><b>看得到宿主进程</b></td><td class="y">否</td><td class="y">否，PID命名空间已隔离</td></tr>
-    <tr><td><b>环境变量</b></td><td class="y">白名单</td><td class="y">白名单</td></tr>
-    <tr><td><b>工作目录被遮蔽</b></td><td class="y">不会</td><td class="y">不会，tmpfs先挂</td></tr>
-    <tr><td><b>ps / top</b></td><td class="n">不能执行，setuid平台限制</td><td class="y">正常</td></tr>
-    <tr><td><b>用的shell</b></td><td>/bin/bash（不开沙箱时是/bin/sh）</td><td>/bin/bash</td></tr>
-  </table>
-  </div>
-
-  <!-- ══════════ 03 开关 ══════════ -->
-  <h2 id="switch"><span class="num">03</span>开关：载体从ContextVar换成配置</h2>
-  <p class="lead">开关原来是一个<code>ContextVar</code>：设它的地方和真正执行命令的地方不在同一个上下文里，值就丢了，三条路径里两条在丢，其中一条是用户最常用的Web。
-    下图是改之前的传递，留在这里是因为它说明了为什么载体必须换。</p>
-
-  <div class="card">
-  <svg viewBox="0 0 1160 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="开关在三条路径上的传递">
-    <defs>
-      <marker id="s-gy" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#8a8675"/></marker>
-      <marker id="s-gn" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5aad4e"/></marker>
-      <marker id="s-rd" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#e0445a"/></marker>
-    </defs>
-
-    <text x="24" y="30" fill="#d4843a" font-size="16" font-weight="700">改之前：开关从设置点到执行点</text>
-    <text x="24" y="52" fill="#8a8675" font-size="12.5">红色竖线是上下文断掉的地方。跨过它，新的执行环境拿到的是空Context，读回默认值false。</text>
-
-    <text x="46" y="80" fill="#8a8675" font-size="11" letter-spacing="1.5">① 在哪里设开关</text>
-    <text x="336" y="80" fill="#8a8675" font-size="11" letter-spacing="1.5">② 轮次实际在哪里跑</text>
-    <text x="626" y="80" fill="#8a8675" font-size="11" letter-spacing="1.5">③ 执行点读回什么</text>
-    <text x="916" y="80" fill="#8a8675" font-size="11" letter-spacing="1.5">④ 命令的实际状态</text>
-
-    <!-- Row 1 Web -->
-    <text x="24" y="140" fill="#e0445a" font-size="12.5" font-weight="700" transform="rotate(-90 24 140)" text-anchor="middle">WEB</text>
-    <rect x="40" y="110" width="252" height="86" rx="9" fill="#12110b" stroke="#2e2c20" stroke-width="1.3"/>
-    <text x="58" y="136" fill="#f0eee6" font-size="13" font-weight="700">websocket的asyncio任务</text>
-    <text x="58" y="158" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">sandbox_enabled.set(True)</text>
-    <text x="58" y="180" fill="#5aad4e" font-size="11.5">界面立刻显示 Sandbox: ON</text>
-
-    <line x1="292" y1="153" x2="322" y2="153" stroke="#8a8675" stroke-width="1.5" marker-end="url(#s-gy)"/>
-    <line x1="312" y1="106" x2="312" y2="200" stroke="#e0445a" stroke-width="1.6" stroke-dasharray="5 5"/>
-    <text x="312" y="98" fill="#e0445a" font-size="11" text-anchor="middle">线程边界</text>
-
-    <rect x="330" y="110" width="252" height="86" rx="9" fill="#12110b" stroke="#e0445a" stroke-width="1.4"/>
-    <text x="348" y="136" fill="#f0eee6" font-size="13" font-weight="700">裸threading.Thread</text>
-    <text x="348" y="158" fill="#bdb9a6" font-size="11.5">新线程拿到的是空Context</text>
-    <text x="348" y="180" fill="#8a8675" font-size="11.5">整个webui目录没有copy_context</text>
-
-    <line x1="582" y1="153" x2="612" y2="153" stroke="#e0445a" stroke-width="1.5" marker-end="url(#s-rd)"/>
-    <rect x="620" y="110" width="252" height="86" rx="9" fill="#2a1215" stroke="#e0445a" stroke-width="1.4"/>
-    <text x="638" y="144" fill="#e0445a" font-size="15" font-weight="700">读回 false</text>
-    <text x="638" y="170" fill="#a5a190" font-size="11.5">和开关的显示状态相反</text>
-
-    <line x1="872" y1="153" x2="902" y2="153" stroke="#e0445a" stroke-width="1.5" marker-end="url(#s-rd)"/>
-    <rect x="910" y="110" width="216" height="86" rx="9" fill="#2a1215" stroke="#e0445a" stroke-width="1.4"/>
-    <text x="928" y="144" fill="#e0445a" font-size="14" font-weight="700">命令无沙箱执行</text>
-    <text x="928" y="170" fill="#a5a190" font-size="11.5">开关是个no-op</text>
-
-    <!-- Row 2 CLI -->
-    <text x="24" y="280" fill="#5aad4e" font-size="12.5" font-weight="700" transform="rotate(-90 24 280)" text-anchor="middle">CLI</text>
-    <rect x="40" y="250" width="252" height="86" rx="9" fill="#12110b" stroke="#2e2c20" stroke-width="1.3"/>
-    <text x="58" y="276" fill="#f0eee6" font-size="13" font-weight="700">REPL线程里的 /sandbox</text>
-    <text x="58" y="298" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">sandbox_enabled.set(True)</text>
-    <text x="58" y="320" fill="#8a8675" font-size="11.5">同一个线程继续往下走</text>
-
-    <line x1="292" y1="293" x2="322" y2="293" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#s-gn)"/>
-    <rect x="330" y="250" width="252" height="86" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
-    <text x="348" y="284" fill="#f0eee6" font-size="13" font-weight="700">同一线程、同一Context</text>
-    <text x="348" y="310" fill="#8a8675" font-size="11.5">没有任何边界要跨</text>
-
-    <line x1="582" y1="293" x2="612" y2="293" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#s-gn)"/>
-    <rect x="620" y="250" width="252" height="86" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
-    <text x="638" y="284" fill="#5aad4e" font-size="15" font-weight="700">读回 true</text>
-    <text x="638" y="310" fill="#a5a190" font-size="11.5">开关在这条路径上有效</text>
-
-    <line x1="872" y1="293" x2="902" y2="293" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#s-gn)"/>
-    <rect x="910" y="250" width="216" height="86" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
-    <text x="928" y="284" fill="#5aad4e" font-size="14" font-weight="700">命令被包住</text>
-    <text x="928" y="310" fill="#a5a190" font-size="11.5">仅限同线程的bash</text>
-
-    <!-- Row 3 spawn -->
-    <text x="24" y="404" fill="#e0445a" font-size="12.5" font-weight="700" transform="rotate(-90 24 404)" text-anchor="middle">FUNC</text>
-    <rect x="40" y="374" width="252" height="80" rx="9" fill="#12110b" stroke="#2e2c20" stroke-width="1.3"/>
-    <text x="58" y="400" fill="#f0eee6" font-size="13" font-weight="700">父进程里开关为true</text>
-    <text x="58" y="424" fill="#8a8675" font-size="11.5">CLI或Web都可能是这个起点</text>
-
-    <line x1="292" y1="414" x2="322" y2="414" stroke="#8a8675" stroke-width="1.5" marker-end="url(#s-gy)"/>
-    <line x1="312" y1="370" x2="312" y2="458" stroke="#e0445a" stroke-width="1.6" stroke-dasharray="5 5"/>
-    <text x="312" y="362" fill="#e0445a" font-size="11" text-anchor="middle">进程边界</text>
-
-    <rect x="330" y="374" width="252" height="80" rx="9" fill="#12110b" stroke="#e0445a" stroke-width="1.4"/>
-    <text x="348" y="400" fill="#f0eee6" font-size="13" font-weight="700">mp spawn 出的新解释器</text>
-    <text x="348" y="424" fill="#8a8675" font-size="11.5">spawn不复制contextvars</text>
-
-    <line x1="582" y1="414" x2="612" y2="414" stroke="#e0445a" stroke-width="1.5" marker-end="url(#s-rd)"/>
-    <rect x="620" y="374" width="252" height="80" rx="9" fill="#2a1215" stroke="#e0445a" stroke-width="1.4"/>
-    <text x="638" y="404" fill="#e0445a" font-size="15" font-weight="700">读回 false</text>
-    <text x="638" y="430" fill="#a5a190" font-size="11.5">只有usage上下文被显式恢复了</text>
-
-    <line x1="872" y1="414" x2="902" y2="414" stroke="#e0445a" stroke-width="1.5" marker-end="url(#s-rd)"/>
-    <rect x="910" y="374" width="216" height="80" rx="9" fill="#2a1215" stroke="#e0445a" stroke-width="1.4"/>
-    <text x="928" y="404" fill="#e0445a" font-size="14" font-weight="700">全部无沙箱执行</text>
-    <text x="928" y="430" fill="#a5a190" font-size="11.5">每个agentic function里的bash</text>
-  </svg>
-  <div class="legend">
-    <b>三个边界的共同点</b>：每一个都在起一份新的执行环境。逐个补<code>copy_context()</code>并不等价：
-    spawn出来的子agent确实能靠它把开关带进worker线程，<b>但在followup线程上照样掉回默认值</b>，这是实测的；嵌套CLI根本不是线程，补不了。
-    一个要跨进程存活的用户级设置，本来就不该挂在上下文变量上。
-  </div>
-  </div>
-
-  <p class="lead">现在的载体是文件：策略在包装命令的那一刻从<code>~/.openprogram/config.json</code>的<code>sandbox.*</code>读出来。
-    文件不属于任何上下文，所以三个边界都跨得过去。</p>
-
-  <div class="card">
-  <div class="tbl">
-  <table>
-    <tr><th>路径</th><th>改之前</th><th>改之后（实测）</th></tr>
-    <tr><td><b>Web</b>：asyncio任务里设，普通线程里执行</td><td class="n">读回false，命令无沙箱执行</td><td class="y">线程内写工作目录之外被拒，<code>$OPENAI_API_KEY</code>长度为0</td></tr>
-    <tr><td><b>CLI</b>：REPL同线程</td><td class="y">有效</td><td class="y">有效，且跨会话保持</td></tr>
-    <tr><td><b>spawn</b>：<code>@agentic_function</code>的子解释器</td><td class="n">读回false，全部无沙箱执行</td><td class="y">子进程内写工作目录之外被拒，<code>$OPENAI_API_KEY</code>长度为0</td></tr>
-    <tr><td><b>审批bypass</b>：<code>permission_mode="bypass"</code></td><td class="n">短路到工具自己的execute</td><td class="y">照样被包住：策略在权限层之下解析，实测写越界和读SSH私钥都失败</td></tr>
-    <tr><td><b>平台后端不可用</b></td><td class="n">静默改为普通执行</td><td class="y">工具缺失或隔离机制探测失败时默认<code>refuse</code>并说明原因；<code>warn</code>可选</td></tr>
-  </table>
-  </div>
-  <div class="legend">
-    <b>七个配置键</b>：<code>sandbox.mode</code>、<code>writable_roots</code>、<code>deny_read</code>、<code>deny_write</code>、<code>network</code>、<code>pass_env</code>、<code>unavailable_policy</code>，
-    都在<code>config_schema.py</code>的<code>SETTINGS</code>里，所以<code>openprogram config</code>、setup向导、TUI设置页和Web设置页一起有。
-    新安装默认<code>mode=workspace-write</code>；已有用户的显式<code>danger-full-access</code>保持不变。平台工具不可用时默认拒绝，不退回宿主执行。
-  </div>
-  </div>
-
-  <!-- ══════════ 04 覆盖面 ══════════ -->
-  <h2 id="cover"><span class="num">04</span>authority tier与覆盖面</h2>
-  <p class="lead"><code>authority_tier</code>是请求边界上的<code>owner</code>/<code>paired</code>枚举；检查点用该枚举查询进程内写死的capability常量表。请求不能携带、创建或扩展capability列表。<code>principal</code>标识请求使用谁的授权以及谁能作出owner审批，不等于权限档。
-    permission rule或精确owner approval表达对本次操作的同意，<code>SandboxPolicy</code>限制操作实际可访问的宿主资源，不可取消的hard constraints独立于以上输入始终执行。字段定义与传播规则同时记录在<a href="../memory/speaker-identity.html#repair">speaker identity设计</a>中。</p>
-
-  <div class="card">
-  <svg viewBox="0 0 1160 236" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="authority tier、审批、沙箱和强制约束共同决定执行">
-    <defs>
-      <marker id="a-gy" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#6f6b5c"/></marker>
-    </defs>
-    <text x="24" y="30" fill="#d4843a" font-size="16" font-weight="700">一次宿主操作必须同时通过四项判定</text>
-
-    <rect x="24" y="58" width="244" height="88" rx="9" fill="#12110b" stroke="#4f8ef7" stroke-width="1.4"/>
-    <text x="42" y="82" fill="#4f8ef7" font-size="12.5" font-weight="700">TurnRequest运行时字段</text>
-    <text x="42" y="106" fill="#bdb9a6" font-size="11" font-family="Menlo,monospace">principal_id = owner</text>
-    <text x="42" y="126" fill="#bdb9a6" font-size="11" font-family="Menlo,monospace">authority_tier = owner | paired</text>
-
-    <line x1="270" y1="102" x2="302" y2="102" stroke="#6f6b5c" stroke-width="1.5" marker-end="url(#a-gy)"/>
-    <rect x="306" y="58" width="224" height="88" rx="9" fill="#12110b" stroke="#d4843a" stroke-width="1.4"/>
-    <text x="324" y="82" fill="#d4843a" font-size="12.5" font-weight="700">01 固定档位判定</text>
-    <text x="324" y="106" fill="#bdb9a6" font-size="11">operation映射到能力名</text>
-    <text x="324" y="126" fill="#e0445a" font-size="11">档位常量表不包含 → deny</text>
-
-    <line x1="532" y1="102" x2="564" y2="102" stroke="#6f6b5c" stroke-width="1.5" marker-end="url(#a-gy)"/>
-    <rect x="568" y="58" width="250" height="88" rx="9" fill="#12110b" stroke="#9d6fe0" stroke-width="1.4"/>
-    <text x="586" y="82" fill="#9d6fe0" font-size="12.5" font-weight="700">02 规则或精确owner审批</text>
-    <text x="586" y="106" fill="#bdb9a6" font-size="11">只有认证本地interactive可申请</text>
-    <text x="586" y="126" fill="#bdb9a6" font-size="11">cron / subagent / paired渠道不升级</text>
-
-    <line x1="820" y1="102" x2="852" y2="102" stroke="#6f6b5c" stroke-width="1.5" marker-end="url(#a-gy)"/>
-    <rect x="856" y="58" width="280" height="88" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
-    <text x="874" y="82" fill="#5aad4e" font-size="12.5" font-weight="700">03 执行边界</text>
-    <text x="874" y="106" fill="#bdb9a6" font-size="11">SandboxPolicy / 外部容器 / 固定argv</text>
-    <text x="874" y="126" fill="#bdb9a6" font-size="11">所选边界必须能实施声明的限制</text>
-
-    <rect x="24" y="168" width="1112" height="44" rx="8" fill="#2a1418" stroke="#e0445a" stroke-width="1.4"/>
-    <text x="580" y="195" fill="#e0445a" font-size="12.5" font-weight="700" text-anchor="middle">04 hard constraints始终执行：任何权限档、审批、bypass、job authority或用户设置都不能取消</text>
-  </svg>
-  </div>
-
-  <div class="legend"><b>执行判定</b>：每次执行以及其他模型可影响的宿主副作用都必须计算
-    <code>allow = hard_constraints ∧ tier_capabilities[authority_tier].contains(capability) ∧ permission_or_exact_owner_approval ∧ enforcement_boundary</code>。
-    请求只携带权限档枚举；capability集合只存在于进程内常量表。模型正文、speaker和工具参数都不能创建或扩展它。</div>
-
-  <div class="tbl">
-  <table>
-    <tr><th>能力</th><th>允许的操作</th><th>默认归属</th></tr>
-    <tr><td><code>reply</code></td><td>向当前会话返回文本，不产生其他宿主副作用</td><td><code>owner</code>与<code>paired</code></td></tr>
-    <tr><td><code>memory.source.append</code></td><td>追加带speaker、<code>authority_tier</code>和信任状态的来源记录</td><td><code>owner</code>与<code>paired</code>；未配对消息不进入agent</td></tr>
-    <tr><td><code>memory.trusted.promote</code></td><td>把已审阅记录提升为owner轮次可自动召回的可信记忆</td><td>仅认证本地owner interactive</td></tr>
-    <tr><td><code>schedule.create</code><br><code>schedule.manage</code></td><td>创建映射到<code>schedule.create</code>；修改、重排或删除映射到<code>schedule.manage</code>。创建或修改获批后保存新的不可变job capability</td><td>仅认证本地owner interactive；属于宿主副作用</td></tr>
-    <tr><td><code>fs.read</code> / <code>fs.write</code><br><code>process.exec</code> / <code>network.send</code></td><td>读取或修改文件、启动进程、向外部系统发送</td><td>仅<code>owner</code>；仍需规则、审批和执行边界</td></tr>
-  </table>
-  </div>
-
-  <div class="tbl">
-  <table>
-    <tr><th>请求来源</th><th>principal</th><th>authority tier</th><th>缺失字段处理</th></tr>
-    <tr><td><b>认证本地Web / CLI / TUI</b></td><td><code>principal_id=owner</code><br><code>interaction=interactive</code></td><td><code>owner</code></td><td>入口必须主动构造；认证或owner配置无效时拒绝请求</td></tr>
-    <tr><td><b>已配对渠道</b></td><td>实例owner；稳定账号ID另存为speaker identity</td><td><code>paired</code></td><td>只按稳定账号ID匹配；显示名不参与身份判断</td></tr>
-    <tr><td><b>continuation / subagent</b></td><td>显式继承caller principal</td><td>显式继承同一档位；没有交互升级</td><td>序列化或恢复缺字段即状态错误并deny，不能依赖unknown fallback</td></tr>
-    <tr><td><b>cron触发</b></td><td>创建时批准的owner</td><td>不可变job authority中的<code>owner</code></td><td>触发时不得重算为interactive；字段或hash不完整即deny</td></tr>
-    <tr><td><b>未配对或无稳定ID的渠道消息</b></td><td>无agent principal</td><td>无</td><td>不进入agent；返回配对码。群组消息另存为pending证据，私聊不归档</td></tr>
-  </table>
-  </div>
-
-  <div class="note warn"><b>渠道记忆保留来源信任状态</b>：已配对渠道发言是可信来源，并可调用<code>memory.source.append</code>；<code>paired</code>档没有文件、进程、网络、调度、审批或runtime control能力。
-    未配对群组发言不进入agent，只归档为pending证据。pending证据当前仍可显式检索；hold队列准入和记忆读取过滤属于第二批，不能写成已实现。
-    只有认证本地owner能把已审阅记录执行<code>memory.trusted.promote</code>。由记忆内容引出的操作仍须通过当前轮次的权限档、权限规则、审批与沙箱检查，Writer和模型输出不能改变权限档或信任状态。</div>
-
-  <p class="lead">实施前审计把范围固定为25个执行面：当时2个已受管、23个未统一受管。当前U01—U23已经逐项采用强制策略或记录受信边界与保留理由；一个执行面按共同的命令来源与安全边界计数，不按每次<code>subprocess</code>调用计数。</p>
-
-  <div class="card">
-  <svg viewBox="0 0 1160 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="实施前25个执行面审计基线">
-    <text x="24" y="32" fill="#d4843a" font-size="16" font-weight="700">实施前基线：25个执行点，2个走沙箱</text>
-    <text x="24" y="55" fill="#8a8675" font-size="12.5">每个方块是一处会把内容变成进程的代码位置。</text>
-
-    <rect x="40" y="84" width="46" height="46" rx="7" fill="#101a10" stroke="#5aad4e" stroke-width="2"/>
-    <text x="63" y="113" fill="#5aad4e" font-size="18" font-weight="700" text-anchor="middle">✓</text>
-    <rect x="96" y="84" width="46" height="46" rx="7" fill="#101a10" stroke="#5aad4e" stroke-width="2"/>
-    <text x="119" y="113" fill="#5aad4e" font-size="18" font-weight="700" text-anchor="middle">✓</text>
-    <rect x="152" y="84" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="208" y="84" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="264" y="84" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="40" y="140" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="96" y="140" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="152" y="140" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="208" y="140" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="264" y="140" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="40" y="196" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="96" y="196" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="152" y="196" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="208" y="196" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="264" y="196" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="40" y="252" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="96" y="252" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="152" y="252" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="208" y="252" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="264" y="252" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="40" y="308" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="96" y="308" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="152" y="308" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="208" y="308" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <rect x="264" y="308" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <text x="175" y="374" fill="#8a8675" font-size="11.5" text-anchor="middle">固定审计口径：25个执行面</text>
-
-    <rect x="356" y="84" width="772" height="60" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
-    <text x="376" y="110" fill="#5aad4e" font-size="13.5" font-weight="700">实施前2处：bash / process → backend/local.py::_invocation，以及memory写入器MCP shell</text>
-    <text x="376" y="132" fill="#a5a190" font-size="12">前者还要满足：sandbox.mode打开、用local backend（docker和ssh后端不走）、平台工具在</text>
-
-    <rect x="356" y="156" width="772" height="198" rx="9" fill="#16150f" stroke="#3a3729" stroke-width="1.3"/>
-    <text x="376" y="182" fill="#f0eee6" font-size="13.5" font-weight="700">实施前其余23个执行面未统一受管；当前均已按下表分类和收口</text>
-    <text x="376" y="206" fill="#e0445a" font-size="12">P0模型来源：execute_code、cron direct/prompt、文件工具、watcher自动导入、嵌套CLI内置工具</text>
-    <text x="376" y="228" fill="#d4843a" font-size="12">受信配置：MCP stdio、shell hooks、plugins；需要安装与来源边界，不应按模型命令处理</text>
-    <text x="376" y="250" fill="#8a8675" font-size="12">第一方确定性执行与管理员CLI：逐项保留宿主权限并审计，不强制经过命令沙箱</text>
-    <text x="376" y="268" fill="#8a8675" font-size="11.5">修复目标是覆盖所有模型可影响的副作用，不是把每个subprocess调用统一包装</text>
-    <text x="376" y="300" fill="#f0eee6" font-size="12" font-weight="700">完成判据：下面U01—U23逐项标记信任类、强制策略与测试，不允许用“其他执行点”代替。</text>
-    <text x="376" y="324" fill="#8a8675" font-size="11.5">新增模型可影响的执行面必须先更新清单；没有归类或没有验证的条目阻止默认开启。</text>
-  </svg>
-  </div>
-
-  <div class="note"><b>实施前已受管的2个执行面</b>：M01是<code>bash</code>/<code>process</code>经local backend进入<code>backend/local.py::_invocation</code>；M02是memory写入器的MCP <code>shell</code>使用同一份<code>SandboxPolicy</code>。下面记录U01—U23的闭合方式。</div>
-
-  <div class="tbl">
-  <table>
-    <tr><th>编号</th><th>实施前未统一受管的执行面</th><th>来源类</th><th>已实施边界 / 明确保留理由</th></tr>
-    <tr><td><b>U01</b></td><td><code>backend/docker.py</code></td><td>模型命令 / 外部容器</td><td>声明容器是执行边界；命令仍经过工具规则、审批与审计，不宣称使用宿主sandbox</td></tr>
-    <tr><td><b>U02</b></td><td><code>backend/ssh.py</code></td><td>模型命令 / 远端主机</td><td>声明远端主机是执行边界；目标由owner配置，命令仍经过工具规则、审批与审计</td></tr>
-    <tr><td><b>U03</b></td><td><code>programs/tools/execute_code</code></td><td class="n">模型代码</td><td>local路径通过<code>LocalBackend.run</code>复用<code>_invocation</code>；解释器、cwd与临时脚本均进入同一策略测试</td></tr>
-    <tr><td><b>U04</b></td><td><code>cron/worker.py</code> direct command</td><td class="n">模型请求保存 / 无人值守</td><td>创建先检查<code>schedule.create</code>，修改、重排或删除先检查<code>schedule.manage</code>；<code>paired</code>档必须在任何job持久化变更前deny。认证本地owner批准创建或修改后保存新的不可变job authority，固化principal、<code>authority_tier=owner</code>、command、cwd、policy与hash；触发时强制沙箱，ask与升级均deny</td></tr>
-    <tr><td><b>U05</b></td><td><code>cron/worker.py</code> prompt job</td><td class="n">模型prompt / 无人值守</td><td>同样要求owner批准创建；重建请求时显式<code>source=cron</code>并加载不可变job authority，内部所有副作用继续按<code>owner</code>档常量表检查</td></tr>
-    <tr><td><b>U06</b></td><td><code>memory/agent_runtime/claude_code.py</code></td><td class="n">模型驱动的嵌套agent</td><td>协议层关闭内置命令与文件工具，注入OpenProgram受管MCP工具</td></tr>
-    <tr><td><b>U07</b></td><td><code>functions/watcher.py → _registry.exec_module</code></td><td class="n">模型可写Python</td><td>任何模型可写目录禁止自动导入；导入目录改为owner控制并记录来源</td></tr>
-    <tr><td><b>U08</b></td><td><code>webui/_functions.py</code>动态重载</td><td class="n">模型可写Python</td><td>与U07共享同一条目录所有权约束；不能在宿主进程重载模型写入的模块</td></tr>
-    <tr><td><b>U09</b></td><td><code>agent/process_runner.py</code></td><td>已注册agentic function</td><td>spawn请求显式序列化SandboxPolicy；子进程内的命令、文件与嵌套工具保持同一策略</td></tr>
-    <tr><td><b>U10</b></td><td><code>plugins/loader.py</code></td><td>owner安装的plugin</td><td>plugin清单与代码目录不可由模型修改；加载事件记录来源。trust默认<code>untrusted</code>且拒绝加载，只有owner显式提升信任的plugin才加载，并在宿主进程内执行（<code>plugins/sandbox.py</code>的subprocess隔离未实现，不宣称已进程隔离）</td></tr>
-    <tr><td><b>U11</b></td><td><code>mcp/client.py</code> stdio server</td><td>owner配置的server</td><td>MCP配置不可由模型静默改写；启动argv与环境显式保存并审计</td></tr>
-    <tr><td><b>U12</b></td><td><code>webui/routes/mcp.py</code> one-shot</td><td class="n">HTTP请求体</td><td>要求已认证owner请求并进入与MCP stdio一致的启动策略；删除“已沙箱”但实现未隔离的声明</td></tr>
-    <tr><td><b>U13</b></td><td><code>events/shell_hooks.py</code> gate command</td><td>owner配置；模型事件作stdin</td><td>命令本身按受信配置处理；配置目录受保护，超时或启动失败不能成为安全强制规则</td></tr>
-    <tr><td><b>U14</b></td><td><code>events/shell_hooks.py</code> notifier command</td><td>owner配置；模型事件作stdin</td><td>保持通知用途并审计；不得把notifier结果用于允许高风险操作</td></tr>
-    <tr><td><b>U15</b></td><td><code>providers/_shared/cli_backend/runner.py</code></td><td>模型prompt / 外部CLI</td><td>若接入生产，先声明CLI内置工具策略；保持未引用时不得计为现有保护</td></tr>
-    <tr><td><b>U16</b></td><td><code>programs/tools/grep</code></td><td>模型参数 / 固定argv</td><td>保持<code>shell=False</code>与<code>--</code>分隔；增加路径范围测试，不需要命令sandbox</td></tr>
-    <tr><td><b>U17</b></td><td><code>programs/tools/worktree</code></td><td>模型参数 / 固定git argv</td><td>仅允许受管仓库与固定子命令；保持argv调用并测试路径规范化</td></tr>
-    <tr><td><b>U18</b></td><td><code>programs/tools/agent_browser</code></td><td>模型参数 / 浏览器进程</td><td>浏览器profile与下载路径使用独立策略；启动参数保持argv并进入工具审批</td></tr>
-    <tr><td><b>U19</b></td><td>session/project/shadow store的git plumbing</td><td>第一方确定性argv</td><td>保留宿主执行；不接受模型shell字符串，测试参数分隔和仓库范围</td></tr>
-    <tr><td><b>U20</b></td><td><code>cli/commands/programs.py</code></td><td>owner主动安装 / 更新</td><td>保留管理员CLI权限；与agent工具不可互调，记录安装来源</td></tr>
-    <tr><td><b>U21</b></td><td><code>cli/commands/browser.py</code></td><td>owner主动安装</td><td>保留管理员CLI权限；安装命令不暴露给模型</td></tr>
-    <tr><td><b>U22</b></td><td><code>cli/commands/upgrade.py</code>与updater</td><td>owner主动升级</td><td>保留管理员CLI权限；下载、替换和重启必须来自显式升级操作</td></tr>
-    <tr><td><b>U23</b></td><td><code>plugins/installer.py</code></td><td>owner主动安装</td><td>保留管理员CLI权限；安装入口不暴露给模型，安装后由U10约束加载</td></tr>
-  </table>
-  </div>
-
-  <div class="legend"><b>清单结果</b>：U03—U09与U12的模型影响面已处理；U04/U05的测试证明paired渠道不能创建、修改、重排或删除job，owner批准生成的job capability在触发时不能扩大。
-    U01—U02明确使用外部边界并保留审批；U10—U11、U13—U15固定owner配置边界；U16—U23通过固定argv或管理员入口及回归测试保留宿主权限。任何新增或重新接入的执行面必须先加入此表，再决定是否使用OS沙箱。</div>
-
-  <p class="lead">下面保留修复前的自动导入流程。它说明为什么只修改<code>wrap_command</code>不够：直接文件工具和进程内导入需要各自的强制边界。当前实现已经在文件工具写入检查和owner登记来源两处阻止该流程。</p>
-
-  <div class="card">
-  <svg viewBox="0 0 1160 232" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="修复前模型输出到宿主代码的未受限执行路径">
-    <defs>
-      <marker id="p-rd" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#e0445a"/></marker>
-    </defs>
-    <text x="24" y="32" fill="#e0445a" font-size="15.5" font-weight="700">实施前路径：模型输出 → 宿主进程内代码</text>
-
-    <rect x="24" y="58" width="248" height="92" rx="10" fill="#12110b" stroke="#e0445a" stroke-width="1.4"/>
-    <text x="42" y="84" fill="#f0eee6" font-size="13" font-weight="700">01 模型调 write</text>
-    <text x="42" y="107" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">programs/workflow/x.py</text>
-    <text x="42" y="130" fill="#8a8675" font-size="11.5">写文件这个动作本身不可疑</text>
-    <line x1="272" y1="104" x2="300" y2="104" stroke="#e0445a" stroke-width="1.6" marker-end="url(#p-rd)"/>
-
-    <rect x="308" y="58" width="248" height="92" rx="10" fill="#12110b" stroke="#e0445a" stroke-width="1.4"/>
-    <text x="326" y="84" fill="#f0eee6" font-size="13" font-weight="700">02 watcher 轮询</text>
-    <text x="326" y="107" fill="#bdb9a6" font-size="11.5">每2秒扫一次该目录</text>
-    <text x="326" y="130" fill="#8a8675" font-size="11.5">变化触发 _registry.rescan()</text>
-    <line x1="556" y1="104" x2="584" y2="104" stroke="#e0445a" stroke-width="1.6" marker-end="url(#p-rd)"/>
-
-    <rect x="592" y="58" width="248" height="92" rx="10" fill="#12110b" stroke="#e0445a" stroke-width="1.4"/>
-    <text x="610" y="84" fill="#f0eee6" font-size="13" font-weight="700">03 exec_module</text>
-    <text x="610" y="107" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">spec.loader.exec_module()</text>
-    <text x="610" y="130" fill="#8a8675" font-size="11.5">导入即执行模块级代码</text>
-    <line x1="840" y1="104" x2="868" y2="104" stroke="#e0445a" stroke-width="1.6" marker-end="url(#p-rd)"/>
-
-    <rect x="876" y="58" width="252" height="92" rx="10" fill="#2a1215" stroke="#e0445a" stroke-width="1.6"/>
-    <text x="894" y="84" fill="#e0445a" font-size="13" font-weight="700">04 在agent进程内运行</text>
-    <text x="894" y="107" fill="#a5a190" font-size="11.5">拿到宿主进程的全部权限</text>
-    <text x="894" y="130" fill="#a5a190" font-size="11.5">包括进程内存里的凭证</text>
-
-    <rect x="24" y="164" width="1104" height="46" rx="8" fill="#16150f" stroke="#3a3729"/>
-    <text x="44" y="192" fill="#8a8675" font-size="12.5">实施前不经工具审批或shell。当前<tspan font-family="Menlo,monospace">write/edit/apply_patch</tspan>先执行写入根和hard-floor检查，watcher只导入owner登记来源；任一条件不满足都不能进入<tspan font-family="Menlo,monospace">exec_module</tspan>。</text>
-  </svg>
-  </div>
-
-  <div class="note warn"><b>实施前的subagent bypass缺口已经关闭</b>：旧实现让<code>permission_mode="bypass"</code>在自动危险工具检查之前返回，影响
-  <code>bash</code>、<code>execute_code</code>、<code>process</code>以及<code>write</code>/<code>edit</code>/<code>apply_patch</code>。
-  当前hard constraints与capability检查位于bypass之前；命令使用宿主原生沙箱，文件工具执行统一路径检查，subagent没有交互升级能力。</div>
-
-  <div class="tbl">
-  <table>
-    <tr><th>实施前P0缺口</th><th>实施前源码行为</th><th>影响</th><th>当前闭合方式</th></tr>
-    <tr><td><b>“Always allow”过宽</b></td><td>审批持久化时只保存工具名；一次bash批准会得到<code>allow bash</code></td><td class="n">后续任意bash都可跳过审批，范围大于原命令</td><td class="y">已完成：只保存规范化后的精确操作；复杂shell只允许单次批准</td></tr>
-    <tr><td><b>文件工具与watcher组合</b></td><td>文件工具可写工作区外；watcher对<code>programs/workflow/</code>变化调用<code>exec_module</code></td><td class="n">模型可写Python并由宿主进程自动导入</td><td class="y">已完成：文件工具统一写入根检查；自动导入只接受owner登记来源</td></tr>
-    <tr><td><b>cron无人值守执行</b></td><td>direct job使用<code>Popen(..., shell=True)</code>；prompt job启动分离CLI</td><td class="n">触发时没有交互审批路径，也没有统一沙箱</td><td class="y">已完成：签名执行spec、固化owner档、强制沙箱、ask与升级均deny</td></tr>
-    <tr><td><b>execute_code本地执行</b></td><td>模型给代码和解释器路径，随后<code>subprocess.run</code></td><td class="n">不经过<code>Backend._invocation</code></td><td class="y">已完成：复用local backend及同一份SandboxPolicy</td></tr>
-    <tr><td><b>命令规则按原字符串前缀匹配</b></td><td>未先处理ANSI、NUL、Unicode NFKC或<code>env X=1</code>包装</td><td class="n">保存规则与实际argv不一致；复杂shell文本也不能靠前缀安全解析</td><td class="y">已完成：规范化、shell解析、透明env包装与精确规则</td></tr>
-    <tr><td><b>runtime sandbox参数被忽略</b></td><td><code>create_runtime(sandbox="read-only")</code>的provider参数接受但不执行</td><td class="n">调用方看到的配置不构成隔离</td><td class="y">已完成：进程边界显式序列化并安装SandboxPolicy snapshot</td></tr>
-  </table>
-  </div>
-
-  <!-- ══════════════════ 层二 ══════════════════ -->
-  <div class="band L2" id="L2">
-    <span class="lv">LAYER 2</span>
-    <h2>别人怎么做</h2>
-    <p class="w"><code>references/</code>下八个框架逐一：<code>claude-code</code>、<code>codex-cli</code>、<code>openclaw</code>、<code>opencode</code>、
-      <code>hermes-agent</code>、<code>pi-mono</code>、<code>pi-ai</code>、<code>weclaw</code>。
-      其中四个完全不做系统级沙箱，这本身是一种设计立场，下面写清它们各自靠什么替代。
-      计数上有两点：<code>pi-ai</code>是<code>pi-mono</code>同上游的只读子集、没有执行面；
-      <code>claude-code</code>和<code>pi-mono</code>的扩展调的是同一个外部包，所以这一组里独立的系统调用级实现只有两份。</p>
-  </div>
-
-  <h2 id="spec"><span class="num">05</span>八家的隔离立场</h2>
-  <p class="lead">按隔离强度分四档。左边是主动移除隔离的，右边是把执行推到另一个内核视图或另一台机器的。
-    同一个框架出现两次，表示它跨档：左边是默认路径，右边是可选配置。</p>
-
-  <div class="card">
-  <svg viewBox="0 0 1160 580" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="八个框架按隔离强度分档">
-    <defs>
-      <linearGradient id="grad-str" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0%" stop-color="#e0445a"/><stop offset="38%" stop-color="#d4843a"/>
-        <stop offset="72%" stop-color="#5aad4e"/><stop offset="100%" stop-color="#2db3d5"/>
-      </linearGradient>
-    </defs>
-
-    <text x="24" y="30" fill="#d4843a" font-size="16" font-weight="700">隔离强度四档</text>
-    <text x="24" y="52" fill="#8a8675" font-size="12.5">档位说的是"模型给的命令最终在什么边界里执行"，不是框架的成熟度。</text>
-
-    <rect x="24" y="66" width="1112" height="6" rx="3" fill="url(#grad-str)" opacity=".75"/>
-    <text x="24" y="88" fill="#8a8675" font-size="11">弱</text>
-    <text x="1136" y="88" fill="#8a8675" font-size="11" text-anchor="end">强</text>
-
-    <!-- Zone 0 -->
-    <rect x="24" y="100" width="266" height="392" rx="11" fill="#1c1116" stroke="#e0445a" stroke-width="1.4"/>
-    <text x="40" y="126" fill="#e0445a" font-size="11" font-family="Menlo,monospace" letter-spacing="2">档 00</text>
-    <text x="40" y="148" fill="#f0eee6" font-size="14.5" font-weight="700">移除隔离</text>
-    <text x="40" y="168" fill="#8a8675" font-size="11.5">把被包的agent的沙箱关掉</text>
-
-    <rect x="36" y="182" width="242" height="70" rx="8" fill="#12110b" stroke="#e0445a" stroke-width="1.3"/>
-    <text x="50" y="204" fill="#e0445a" font-size="13.5" font-weight="700">weclaw</text>
-    <text x="50" y="224" fill="#bdb9a6" font-size="11" font-family="Menlo,monospace">sandbox: danger-full-access</text>
-    <text x="50" y="242" fill="#8a8675" font-size="11.5">审批请求一律自动答allow</text>
-
-    <!-- Zone 1 -->
-    <rect x="306" y="100" width="266" height="392" rx="11" fill="#1e1a12" stroke="#d4843a" stroke-width="1.4"/>
-    <text x="322" y="126" fill="#d4843a" font-size="11" font-family="Menlo,monospace" letter-spacing="2">档 01</text>
-    <text x="322" y="148" fill="#f0eee6" font-size="14.5" font-weight="700">只有应用层策略</text>
-    <text x="322" y="168" fill="#8a8675" font-size="11.5">规则、审批、命令模式匹配</text>
-
-    <rect x="318" y="182" width="242" height="70" rx="8" fill="#12110b" stroke="#3a3729" stroke-width="1.3"/>
-    <text x="332" y="204" fill="#f0eee6" font-size="13.5" font-weight="700">opencode</text>
-    <text x="332" y="224" fill="#a5a190" font-size="11.5">SECURITY.md明确列为非目标</text>
-    <text x="332" y="242" fill="#8a8675" font-size="11.5">allow / ask / deny 三效果规则表</text>
-
-    <rect x="318" y="264" width="242" height="70" rx="8" fill="#12110b" stroke="#3a3729" stroke-width="1.3"/>
-    <text x="332" y="286" fill="#f0eee6" font-size="13.5" font-weight="700">pi-mono 核心</text>
-    <text x="332" y="306" fill="#bdb9a6" font-size="11" font-family="Menlo,monospace">spawn(bash, -c, cmd) 带全环境</text>
-    <text x="332" y="324" fill="#8a8675" font-size="11.5">没有审批，也没有 --yolo 可绕</text>
-
-    <rect x="318" y="346" width="242" height="70" rx="8" fill="#12110b" stroke="#3a3729" stroke-width="1.3"/>
-    <text x="332" y="368" fill="#f0eee6" font-size="13.5" font-weight="700">hermes-agent 默认</text>
-    <text x="332" y="388" fill="#bdb9a6" font-size="11" font-family="Menlo,monospace">TERMINAL_ENV=local，宿主bash</text>
-    <text x="332" y="406" fill="#8a8675" font-size="11.5">三层命令守卫顶上，见第07节</text>
-
-    <!-- Zone 2 -->
-    <rect x="588" y="100" width="266" height="392" rx="11" fill="#131b13" stroke="#5aad4e" stroke-width="1.4"/>
-    <text x="604" y="126" fill="#5aad4e" font-size="11" font-family="Menlo,monospace" letter-spacing="2">档 02</text>
-    <text x="604" y="148" fill="#f0eee6" font-size="14.5" font-weight="700">系统调用级沙箱</text>
-    <text x="604" y="168" fill="#8a8675" font-size="11.5">Seatbelt / bubblewrap / seccomp</text>
-
-    <rect x="600" y="182" width="242" height="70" rx="8" fill="#12110b" stroke="#3a3729" stroke-width="1.3"/>
-    <text x="614" y="204" fill="#f0eee6" font-size="13.5" font-weight="700">claude-code</text>
-    <text x="614" y="224" fill="#a5a190" font-size="11.5">实现在外部包 sandbox-runtime</text>
-    <text x="614" y="242" fill="#8a8675" font-size="11.5">网络走逐域名弹窗的代理</text>
-
-    <rect x="600" y="264" width="242" height="70" rx="8" fill="#12110b" stroke="#3a3729" stroke-width="1.3"/>
-    <text x="614" y="286" fill="#f0eee6" font-size="13.5" font-weight="700">codex-cli</text>
-    <text x="614" y="306" fill="#a5a190" font-size="11.5">仓库内自研，四档沙箱模式</text>
-    <text x="614" y="324" fill="#5aad4e" font-size="11.5">这一组里唯一的in-tree实现</text>
-
-    <rect x="600" y="346" width="242" height="70" rx="8" fill="#12110b" stroke="#3a3729" stroke-width="1.3"/>
-    <text x="614" y="368" fill="#f0eee6" font-size="13.5" font-weight="700">pi-mono 加扩展</text>
-    <text x="614" y="388" fill="#a5a190" font-size="11.5">调的是同一个外部包</text>
-    <text x="614" y="406" fill="#8a8675" font-size="11.5">通过整个换掉bash工具接进来</text>
-
-    <rect x="600" y="428" width="242" height="52" rx="8" fill="#241f10" stroke="#d4843a" stroke-width="1.8"/>
-    <text x="614" y="450" fill="#d4843a" font-size="13.5" font-weight="700">OpenProgram</text>
-    <text x="614" y="470" fill="#a5a190" font-size="11.5">Seatbelt / bubblewrap，默认workspace-write</text>
-
-    <!-- Zone 3 -->
-    <rect x="870" y="100" width="266" height="392" rx="11" fill="#111d21" stroke="#2db3d5" stroke-width="1.4"/>
-    <text x="886" y="126" fill="#2db3d5" font-size="11" font-family="Menlo,monospace" letter-spacing="2">档 03</text>
-    <text x="886" y="148" fill="#f0eee6" font-size="14.5" font-weight="700">容器或远端</text>
-    <text x="886" y="168" fill="#8a8675" font-size="11.5">换一个内核视图或换一台机器</text>
-
-    <rect x="882" y="182" width="242" height="70" rx="8" fill="#12110b" stroke="#3a3729" stroke-width="1.3"/>
-    <text x="896" y="204" fill="#f0eee6" font-size="13.5" font-weight="700">openclaw</text>
-    <text x="896" y="224" fill="#a5a190" font-size="11.5">默认off；Docker为默认sandbox backend</text>
-    <text x="896" y="242" fill="#8a8675" font-size="11.5">无网、只读根、cap-drop ALL</text>
-
-    <rect x="882" y="264" width="242" height="70" rx="8" fill="#12110b" stroke="#3a3729" stroke-width="1.3"/>
-    <text x="896" y="286" fill="#f0eee6" font-size="13.5" font-weight="700">hermes-agent 可选后端</text>
-    <text x="896" y="306" fill="#a5a190" font-size="11.5">docker / modal / daytona 等五种</text>
-    <text x="896" y="324" fill="#8a8675" font-size="11.5">容器内整个跳过守卫层</text>
-
-    <!-- 注 -->
-    <rect x="24" y="508" width="1112" height="58" rx="9" fill="#16150f" stroke="#3a3729"/>
-    <text x="44" y="532" fill="#8a8675" font-size="12"><tspan fill="#f0eee6" font-weight="700">pi-ai不在图上</tspan>：14个文件、没有工具层、没有spawn，没有可隔离的东西，列在文字里只为把八家覆盖完整。</text>
-    <text x="44" y="554" fill="#8a8675" font-size="12">四个不做系统级沙箱的是<tspan fill="#bdb9a6">opencode</tspan>、<tspan fill="#bdb9a6">pi-mono核心</tspan>、<tspan fill="#bdb9a6">hermes-agent默认路径</tspan>、<tspan fill="#bdb9a6">weclaw</tspan>。隔离强度跟着执行地点走，不跟着框架成熟度走。</text>
-  </svg>
-  </div>
-
-  <div class="note"><b>openclaw需要按配置状态与后端分别读取</b>：出厂<code>sandbox.mode=off</code>，关闭时审批默认放行；
-    启用且选择<code>backend=docker</code>时创建Docker容器，默认<code>network=none</code>、root filesystem只读、<code>cap-drop ALL</code>并设置<code>no-new-privileges</code>。
-    它也支持SSH与插件提供的OpenShell后端，因此Docker配置不能用于描述所有后端，更不能用于描述其出厂执行状态。</div>
-
-  <h2 id="mtx"><span class="num">06</span>四个方向逐家对照</h2>
-  <p class="lead">同样四个方向，加上一列子进程环境变量，因为凭证从环境里漏出去和从磁盘上漏出去是两条独立的路。
-    绿=收住，橙=部分，红=敞开，灰=不适用。</p>
-
-  <div class="card">
-  <svg viewBox="0 0 1160 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="八个框架在四个方向加环境变量上的对照矩阵">
-    <text x="12" y="30" fill="#d4843a" font-size="16" font-weight="700">读 / 写 / 执行 / 网络 / 子进程环境变量</text>
-    <text x="12" y="52" fill="#8a8675" font-size="12.5">每格是这一家在这个方向上的实际状态，取自实现而不是文档描述。</text>
-
-    <text x="20" y="90" fill="#8a8675" font-size="11" letter-spacing="1.4">框架</text>
-    <text x="294" y="90" fill="#8a8675" font-size="11" letter-spacing="1.4" text-anchor="middle">读</text>
-    <text x="482" y="90" fill="#8a8675" font-size="11" letter-spacing="1.4" text-anchor="middle">写</text>
-    <text x="670" y="90" fill="#8a8675" font-size="11" letter-spacing="1.4" text-anchor="middle">执行</text>
-    <text x="858" y="90" fill="#8a8675" font-size="11" letter-spacing="1.4" text-anchor="middle">网络</text>
-    <text x="1046" y="90" fill="#8a8675" font-size="11" letter-spacing="1.4" text-anchor="middle">子进程环境变量</text>
-    <line x1="12" y1="98" x2="1148" y2="98" stroke="#2e2c20" stroke-width="1"/>
-
-    <!-- row 1 claude-code -->
-    <text x="20" y="127" fill="#f0eee6" font-size="12.5" font-weight="600">claude-code</text>
-    <rect x="203" y="106" width="182" height="32" rx="6" fill="#241f10" stroke="#d4843a"/><text x="213" y="127" fill="#d4843a" font-size="11">整盘，deny列表为空</text>
-    <rect x="391" y="106" width="182" height="32" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="401" y="127" fill="#5aad4e" font-size="11">默认拒加白名单</text>
-    <rect x="579" y="106" width="182" height="32" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="589" y="127" fill="#5aad4e" font-size="11">不限，子进程继承</text>
-    <rect x="767" y="106" width="182" height="32" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="777" y="127" fill="#5aad4e" font-size="11">代理，逐域名弹窗</text>
-    <rect x="955" y="106" width="182" height="32" rx="6" fill="#241f10" stroke="#d4843a"/><text x="965" y="127" fill="#d4843a" font-size="11">由runtime处理</text>
-
-    <!-- row 2 codex-cli -->
-    <text x="20" y="171" fill="#f0eee6" font-size="12.5" font-weight="600">codex-cli</text>
-    <rect x="203" y="150" width="182" height="32" rx="6" fill="#241f10" stroke="#d4843a"/><text x="213" y="171" fill="#d4843a" font-size="11">整盘，引擎有但清单为空</text>
-    <rect x="391" y="150" width="182" height="32" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="401" y="171" fill="#5aad4e" font-size="11">默认拒，护住 .git</text>
-    <rect x="579" y="150" width="182" height="32" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="589" y="171" fill="#5aad4e" font-size="11">不限</text>
-    <rect x="767" y="150" width="182" height="32" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="777" y="171" fill="#5aad4e" font-size="11">默认断，可配白名单</text>
-    <rect x="955" y="150" width="182" height="32" rx="6" fill="#241f10" stroke="#d4843a"/><text x="965" y="171" fill="#d4843a" font-size="11">可配，默认不过滤</text>
-
-    <!-- row 3 openclaw -->
-    <text x="20" y="215" fill="#f0eee6" font-size="12.5" font-weight="600">openclaw（启用时）</text>
-    <rect x="203" y="194" width="182" height="32" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="213" y="215" fill="#5aad4e" font-size="11">容器内只有两个挂载</text>
-    <rect x="391" y="194" width="182" height="32" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="401" y="215" fill="#5aad4e" font-size="11">工作区挂载默认只读</text>
-    <rect x="579" y="194" width="182" height="32" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="589" y="215" fill="#5aad4e" font-size="11">不限，argv先解包</text>
-    <rect x="767" y="194" width="182" height="32" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="777" y="215" fill="#5aad4e" font-size="11">network none，host被拦</text>
-    <rect x="955" y="194" width="182" height="32" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="965" y="215" fill="#5aad4e" font-size="11">名字正则加取值启发式</text>
-
-    <!-- row 4 pi-mono core -->
-    <text x="20" y="259" fill="#f0eee6" font-size="12.5" font-weight="600">pi-mono 核心</text>
-    <rect x="203" y="238" width="182" height="32" rx="6" fill="#2a1215" stroke="#e0445a"/><text x="213" y="259" fill="#e0445a" font-size="11">不限，无工作区约束</text>
-    <rect x="391" y="238" width="182" height="32" rx="6" fill="#2a1215" stroke="#e0445a"/><text x="401" y="259" fill="#e0445a" font-size="11">不限</text>
-    <rect x="579" y="238" width="182" height="32" rx="6" fill="#2a1215" stroke="#e0445a"/><text x="589" y="259" fill="#e0445a" font-size="11">不限，没有审批</text>
-    <rect x="767" y="238" width="182" height="32" rx="6" fill="#2a1215" stroke="#e0445a"/><text x="777" y="259" fill="#e0445a" font-size="11">不限</text>
-    <rect x="955" y="238" width="182" height="32" rx="6" fill="#2a1215" stroke="#e0445a"/><text x="965" y="259" fill="#e0445a" font-size="11">全量继承</text>
-
-    <!-- row 5 pi-mono ext -->
-    <text x="20" y="303" fill="#f0eee6" font-size="12.5" font-weight="600">pi-mono 加扩展</text>
-    <rect x="203" y="282" width="182" height="32" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="213" y="303" fill="#5aad4e" font-size="11">denyRead 已预置</text>
-    <rect x="391" y="282" width="182" height="32" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="401" y="303" fill="#5aad4e" font-size="11">只准 cwd 和 /tmp</text>
-    <rect x="579" y="282" width="182" height="32" rx="6" fill="#241f10" stroke="#d4843a"/><text x="589" y="303" fill="#d4843a" font-size="11">不限</text>
-    <rect x="767" y="282" width="182" height="32" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="777" y="303" fill="#5aad4e" font-size="11">10个域名的白名单</text>
-    <rect x="955" y="282" width="182" height="32" rx="6" fill="#2a1215" stroke="#e0445a"/><text x="965" y="303" fill="#e0445a" font-size="11">全量继承，扩展没传env</text>
-
-    <!-- row 6 hermes -->
-    <text x="20" y="347" fill="#f0eee6" font-size="12.5" font-weight="600">hermes-agent</text>
-    <rect x="203" y="326" width="182" height="32" rx="6" fill="#241f10" stroke="#d4843a"/><text x="213" y="347" fill="#d4843a" font-size="11">不限，deny自称非边界</text>
-    <rect x="391" y="326" width="182" height="32" rx="6" fill="#241f10" stroke="#d4843a"/><text x="401" y="347" fill="#d4843a" font-size="11">敏感系统路径拒写</text>
-    <rect x="579" y="326" width="182" height="32" rx="6" fill="#241f10" stroke="#d4843a"/><text x="589" y="347" fill="#d4843a" font-size="11">47条正则加hardline</text>
-    <rect x="767" y="326" width="182" height="32" rx="6" fill="#2a1215" stroke="#e0445a"/><text x="777" y="347" fill="#e0445a" font-size="11">有开关但传不进去</text>
-    <rect x="955" y="326" width="182" height="32" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="965" y="347" fill="#5aad4e" font-size="11">注册表推导后剥离</text>
-
-    <!-- row 7 opencode -->
-    <text x="20" y="391" fill="#f0eee6" font-size="12.5" font-weight="600">opencode</text>
-    <rect x="203" y="370" width="182" height="32" rx="6" fill="#241f10" stroke="#d4843a"/><text x="213" y="391" fill="#d4843a" font-size="11">*.env 走 ask</text>
-    <rect x="391" y="370" width="182" height="32" rx="6" fill="#241f10" stroke="#d4843a"/><text x="401" y="391" fill="#d4843a" font-size="11">只有规则，无隔离</text>
-    <rect x="579" y="370" width="182" height="32" rx="6" fill="#241f10" stroke="#d4843a"/><text x="589" y="391" fill="#d4843a" font-size="11">只有规则，无隔离</text>
-    <rect x="767" y="370" width="182" height="32" rx="6" fill="#2a1215" stroke="#e0445a"/><text x="777" y="391" fill="#e0445a" font-size="11">不限</text>
-    <rect x="955" y="370" width="182" height="32" rx="6" fill="#2a1215" stroke="#e0445a"/><text x="965" y="391" fill="#e0445a" font-size="11">不过滤</text>
-
-    <!-- row 8 weclaw -->
-    <text x="20" y="435" fill="#f0eee6" font-size="12.5" font-weight="600">weclaw</text>
-    <rect x="203" y="414" width="182" height="32" rx="6" fill="#2a1215" stroke="#e0445a"/><text x="213" y="435" fill="#e0445a" font-size="11">不限</text>
-    <rect x="391" y="414" width="182" height="32" rx="6" fill="#2a1215" stroke="#e0445a"/><text x="401" y="435" fill="#e0445a" font-size="11">不限</text>
-    <rect x="579" y="414" width="182" height="32" rx="6" fill="#2a1215" stroke="#e0445a"/><text x="589" y="435" fill="#e0445a" font-size="11">不限，审批自动答allow</text>
-    <rect x="767" y="414" width="182" height="32" rx="6" fill="#2a1215" stroke="#e0445a"/><text x="777" y="435" fill="#e0445a" font-size="11">不限</text>
-    <rect x="955" y="414" width="182" height="32" rx="6" fill="#2a1215" stroke="#e0445a"/><text x="965" y="435" fill="#e0445a" font-size="11">全量继承</text>
-
-    <!-- row 9 pi-ai -->
-    <text x="20" y="479" fill="#6f6b5c" font-size="12.5" font-weight="600">pi-ai</text>
-    <rect x="203" y="458" width="934" height="32" rx="6" fill="#191811" stroke="#3a3729"/>
-    <text x="213" y="479" fill="#6f6b5c" font-size="11">没有执行面：14个文件，只有provider和协议层，全仓库零个 spawn / child_process。没有可隔离的东西，不参与横向比较。</text>
-
-    <!-- row 10 us -->
-    <line x1="12" y1="500" x2="1148" y2="500" stroke="#2e2c20" stroke-width="1"/>
-    <text x="20" y="531" fill="#d4843a" font-size="12.5" font-weight="700">OpenProgram</text>
-    <rect x="203" y="510" width="182" height="32" rx="6" fill="#241f10" stroke="#d4843a" stroke-width="1.6"/><text x="213" y="531" fill="#d4843a" font-size="11">整盘减凭证deny清单</text>
-    <rect x="391" y="510" width="182" height="32" rx="6" fill="#101a10" stroke="#5aad4e" stroke-width="1.6"/><text x="401" y="531" fill="#5aad4e" font-size="11">cwd 加临时目录</text>
-    <rect x="579" y="510" width="182" height="32" rx="6" fill="#101a10" stroke="#5aad4e" stroke-width="1.6"/><text x="589" y="531" fill="#5aad4e" font-size="11">exec不限，子进程继承</text>
-    <rect x="767" y="510" width="182" height="32" rx="6" fill="#101a10" stroke="#5aad4e" stroke-width="1.6"/><text x="777" y="531" fill="#5aad4e" font-size="11">两个平台都断</text>
-    <rect x="955" y="510" width="182" height="32" rx="6" fill="#101a10" stroke="#5aad4e" stroke-width="1.6"/><text x="965" y="531" fill="#5aad4e" font-size="11">白名单传入</text>
-
-    <rect x="12" y="558" width="1136" height="48" rx="9" fill="#16150f" stroke="#3a3729"/>
-    <text x="32" y="580" fill="#8a8675" font-size="12"><tspan fill="#f0eee6" font-weight="700">当前差异</tspan>：网络断开与环境白名单已实现；读仍采用“整盘可读减凭证deny”，不是容器的最小挂载视图。</text>
-    <text x="32" y="598" fill="#8a8675" font-size="12">openclaw这一行只描述启用后的容器；它的出厂状态仍是off，关闭时审批默认放行，因此不能用启用后能力代替默认风险。</text>
-  </svg>
-  </div>
-
-  <div class="tbl">
-  <table class="wide">
-    <tr><th>维度</th><th>claude-code</th><th>codex-cli</th><th>openclaw</th><th>pi-mono</th><th>hermes-agent</th><th>opencode</th><th>weclaw</th><th class="us">OpenProgram</th></tr>
-    <tr><td><b>系统级隔离</b></td><td>外部runtime包</td><td>仓库内自研</td><td>Docker默认；SSH/OpenShell可选</td><td class="m">只有示例扩展</td><td class="m">默认无，后端可选</td><td class="n">明确不做</td><td class="n">主动移除</td><td class="us">Seatbelt / bubblewrap，模型影响面已分类</td></tr>
-    <tr><td><b>默认开</b></td><td>否</td><td class="y">是，read-only</td><td>否，mode=off</td><td>核心无此概念</td><td>否，默认local</td><td>—</td><td>—</td><td class="us y">是，workspace-write</td></tr>
-    <tr><td><b>粒度</b></td><td>全局×单命令opt-out</td><td>per-command，工具可覆盖</td><td class="y">全局×agent×tool×session</td><td>整工具级allowlist</td><td>per-pattern加按上下文</td><td>per-tool×per-resource</td><td class="n">无</td><td class="us">全局配置，尚无per-tool覆盖</td></tr>
-    <tr><td><b>配置入口</b></td><td>分层settings.json</td><td>config.toml加CLI flag</td><td class="y">zod schema生成JSON schema</td><td>settings.json，项目覆盖全局</td><td>cli-config.yaml加环境变量</td><td>opencode.json加frontmatter</td><td class="n">没有安全相关的键</td><td class="us">七个<code>sandbox.*</code>设置键</td></tr>
-    <tr><td><b>沙箱与审批</b></td><td class="y">沙箱内bash免审批</td><td class="y">里面被拒→问→不带沙箱重跑</td><td class="m">off时审批默认放行；启用后由容器与tool policy处理</td><td>核心没有审批</td><td>守卫就是审批系统</td><td>只有审批</td><td class="n">审批自动答allow</td><td class="us y">scope先判定；仅本地owner可精确单次升级</td></tr>
-    <tr><td><b>凭证屏蔽出厂状态</b></td><td class="m">引擎有，为空</td><td class="m">引擎有，为空</td><td class="y">启用时挂载源加环境变量过滤</td><td class="y">扩展预置denyRead</td><td class="y">环境变量从注册表推导</td><td>*.env→ask</td><td class="n">无</td><td class="us y">deny-read清单加环境白名单</td></tr>
-    <tr><td><b>后端不可用</b></td><td>继续执行但明确告警</td><td>静默none，Windows降级</td><td class="y">强制拒绝加doctor预警</td><td class="n">四条路径都静默继续</td><td class="m">非交互fail-open</td><td>—</td><td>—</td><td class="us y">默认refuse，可显式warn</td></tr>
-    <tr><td><b>审计</b></td><td class="y">内核deny行归因后返回模型</td><td class="y">结构化违规事件加OTel</td><td class="y">专用tool-policy logger</td><td>无</td><td class="y">审批生命周期钩子</td><td>权限事件总线</td><td class="n">只有log.Printf</td><td class="us y">结构化sandbox.violation及审批事件</td></tr>
-    <tr><td><b>资源限额</b></td><td class="n">无</td><td class="n">仅RLIMIT_CORE=0</td><td class="y">pids/memory/cpus/ulimits，默认不设</td><td class="n">无</td><td class="y">pids 256、tmpfs限额、600秒</td><td class="n">无</td><td class="n">无超时</td><td class="us">CPU/内存/进程数配额不在范围内</td></tr>
-    <tr><td><b>受管范围</b></td><td>只有Bash和PowerShell</td><td>只有子进程</td><td>启用容器内的一切</td><td>只有bash工具</td><td>terminal和code_execution</td><td>—</td><td>—</td><td class="us y">模型可影响的进程、文件、cron、MCP与嵌套工具面</td></tr>
-  </table>
-  </div>
-
-  <div class="note"><b>参考实现的边界声明</b>：openclaw面向受信任的单用户operator，审批属于操作防误触机制，不被定义为对抗同一operator的安全边界；
-    hermes-agent的SECURITY文档同样把模式扫描与审批定义为应用层策略，只有OS级隔离才是执行不可信输入的安全边界。
-    OpenProgram因此不能把“默认也是off”或“有审批”当成继续延后覆盖面的理由。</div>
-
-  <h2 id="best"><span class="num">07</span>独有机制与逐维度比较</h2>
-  <p class="lead">这一轮新看的五家里，有十一种机制在<code>claude-code</code>和<code>codex-cli</code>里都不存在。
-    下面八张卡记录逐维度可采用的机制，并标出OpenProgram的采用状态和对应步骤。</p>
-
-  <div class="card">
-  <svg viewBox="0 0 1160 560" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="八个维度的参考机制与OpenProgram采用状态">
-    <text x="24" y="30" fill="#d4843a" font-size="16" font-weight="700">八个维度的参考机制与采用结果</text>
-    <text x="24" y="52" fill="#8a8675" font-size="12.5">每张卡依次记录维度、参考实现、具体机制和OpenProgram采用状态。</text>
-
-    <!-- Card 1 -->
-    <rect x="24" y="72" width="267" height="172" rx="10" fill="#12110b" stroke="#5aad4e" stroke-width="1.4"/>
-    <text x="40" y="94" fill="#8a8675" font-size="10.5" letter-spacing="1.6">凭证不进子进程环境</text>
-    <text x="40" y="118" fill="#5aad4e" font-size="15" font-weight="700">hermes-agent + openclaw</text>
-    <text x="40" y="140" fill="#a5a190" font-size="11.5">前者从provider注册表推导敏感变量，</text>
-    <text x="40" y="158" fill="#a5a190" font-size="11.5">后者增加敏感名称正则。OpenProgram</text>
-    <text x="40" y="176" fill="#8a8675" font-size="11.5">采用更严格的传入白名单并保留名称限制。</text>
-    <rect x="40" y="192" width="235" height="34" rx="7" fill="#101a10" stroke="#5aad4e"/>
-    <text x="52" y="214" fill="#5aad4e" font-size="12" font-weight="700">已采用 · 第02步</text>
-    <text x="130" y="214" fill="#8a8675" font-size="11">对应17个凭证目录</text>
-
-    <!-- Card 2 -->
-    <rect x="305" y="72" width="267" height="172" rx="10" fill="#12110b" stroke="#5aad4e" stroke-width="1.4"/>
-    <text x="321" y="94" fill="#8a8675" font-size="10.5" letter-spacing="1.6">命令规则匹配之前</text>
-    <text x="321" y="118" fill="#5aad4e" font-size="15" font-weight="700">hermes-agent 加 openclaw</text>
-    <text x="321" y="140" fill="#a5a190" font-size="11.5">前者剥ANSI、剥空字节、NFKC归一；</text>
-    <text x="321" y="158" fill="#a5a190" font-size="11.5">后者按表解包18种启动器，无法证明</text>
-    <text x="321" y="176" fill="#a5a190" font-size="11.5">无法证明wrapper透明时拒绝，且不保存永久允许。</text>
-    <rect x="321" y="192" width="235" height="34" rx="7" fill="#101a10" stroke="#5aad4e"/>
-    <text x="333" y="214" fill="#5aad4e" font-size="12" font-weight="700">采用 · 第07步</text>
-    <text x="431" y="214" fill="#8a8675" font-size="11">规则规范化</text>
-
-    <!-- Card 3 -->
-    <rect x="586" y="72" width="267" height="172" rx="10" fill="#12110b" stroke="#5aad4e" stroke-width="1.4"/>
-    <text x="602" y="94" fill="#8a8675" font-size="10.5" letter-spacing="1.6">bypass不能跳过的强制规则</text>
-    <text x="602" y="118" fill="#5aad4e" font-size="15" font-weight="700">hermes-agent</text>
-    <text x="602" y="140" fill="#a5a190" font-size="11.5">删根、mkfs、写裸设备、关机这一类，</text>
-    <text x="602" y="158" fill="#a5a190" font-size="11.5">在读取yolo和mode=off之前即拒绝，</text>
-    <text x="602" y="176" fill="#a5a190" font-size="11.5">拒绝信息明确说明任何设置均不能覆盖。</text>
-    <rect x="602" y="192" width="235" height="34" rx="7" fill="#101a10" stroke="#5aad4e"/>
-    <text x="614" y="214" fill="#5aad4e" font-size="12" font-weight="700">采用 · 第04步</text>
-    <text x="692" y="214" fill="#8a8675" font-size="11">对应bypass短路</text>
-
-    <!-- Card 4 -->
-    <rect x="867" y="72" width="267" height="172" rx="10" fill="#12110b" stroke="#5aad4e" stroke-width="1.4"/>
-    <text x="883" y="94" fill="#8a8675" font-size="10.5" letter-spacing="1.6">按上下文的审批默认值</text>
-    <text x="883" y="118" fill="#5aad4e" font-size="15" font-weight="700">hermes-agent</text>
-    <text x="883" y="140" fill="#a5a190" font-size="11.5">五种上下文五种策略：cron默认deny，</text>
-    <text x="883" y="158" fill="#a5a190" font-size="11.5">subagent自动deny并留审计行，理由是</text>
-    <text x="883" y="176" fill="#a5a190" font-size="11.5">工作线程无法提供交互，等待会阻塞父进程。</text>
-    <rect x="883" y="192" width="235" height="34" rx="7" fill="#101a10" stroke="#5aad4e"/>
-    <text x="895" y="214" fill="#5aad4e" font-size="12" font-weight="700">采用 · 第04/05步</text>
-    <text x="1020" y="214" fill="#8a8675" font-size="11">ask→deny</text>
-
-    <!-- Card 5 -->
-    <rect x="24" y="256" width="267" height="172" rx="10" fill="#12110b" stroke="#9d6fe0" stroke-width="1.4"/>
-    <text x="40" y="278" fill="#8a8675" font-size="10.5" letter-spacing="1.6">嵌套agent自带的执行面</text>
-    <text x="40" y="302" fill="#9d6fe0" font-size="15" font-weight="700">openclaw</text>
-    <text x="40" y="324" fill="#a5a190" font-size="11.5">不限制整个嵌套进程，在协议层对每个</text>
-    <text x="40" y="342" fill="#a5a190" font-size="11.5">方法分类，拒绝command/和fs/，</text>
-    <text x="40" y="360" fill="#a5a190" font-size="11.5">注入由宿主沙箱执行的替代工具。</text>
-    <rect x="40" y="376" width="235" height="34" rx="7" fill="#1a1424" stroke="#9d6fe0"/>
-    <text x="52" y="398" fill="#9d6fe0" font-size="12" font-weight="700">采用 · 第06步</text>
-    <text x="152" y="398" fill="#8a8675" font-size="11">协议级受管工具</text>
-
-    <!-- Card 6 -->
-    <rect x="305" y="256" width="267" height="172" rx="10" fill="#12110b" stroke="#5aad4e" stroke-width="1.4"/>
-    <text x="321" y="278" fill="#8a8675" font-size="10.5" letter-spacing="1.6">机制不可用时怎么办</text>
-    <text x="321" y="302" fill="#5aad4e" font-size="15" font-weight="700">openclaw</text>
-    <text x="321" y="324" fill="#a5a190" font-size="11.5">Docker缺失时拒绝并说明缺失依赖；</text>
-    <text x="321" y="342" fill="#a5a190" font-size="11.5">镜像缺失时不使用通用镜像替代；</text>
-    <text x="321" y="360" fill="#a5a190" font-size="11.5">另有doctor在执行前检查。</text>
-    <rect x="321" y="376" width="235" height="34" rx="7" fill="#101a10" stroke="#5aad4e"/>
-    <text x="333" y="398" fill="#5aad4e" font-size="12" font-weight="700">已采用 · 第03步</text>
-    <text x="438" y="398" fill="#8a8675" font-size="11">默认refuse</text>
-
-    <!-- Card 7 -->
-    <rect x="586" y="256" width="267" height="172" rx="10" fill="#12110b" stroke="#5aad4e" stroke-width="1.4"/>
-    <text x="602" y="278" fill="#8a8675" font-size="10.5" letter-spacing="1.6">隔离后端不可用时的行为</text>
-    <text x="602" y="302" fill="#5aad4e" font-size="15" font-weight="700">pi-mono</text>
-    <text x="602" y="324" fill="#a5a190" font-size="11.5">拦截器抛非Error异常时转成"扩展失败，</text>
-    <text x="602" y="342" fill="#a5a190" font-size="11.5">阻止执行"；随包的示例在没有UI时直接</text>
-    <text x="602" y="360" fill="#a5a190" font-size="11.5">拒绝；非交互环境默认deny。</text>
-    <rect x="602" y="376" width="235" height="34" rx="7" fill="#101a10" stroke="#5aad4e"/>
-    <text x="614" y="398" fill="#5aad4e" font-size="12" font-weight="700">已采用 · 第03步</text>
-    <text x="719" y="398" fill="#8a8675" font-size="11">后端不可用</text>
-
-    <!-- Card 8 -->
-    <rect x="867" y="256" width="267" height="172" rx="10" fill="#12110b" stroke="#2db3d5" stroke-width="1.4"/>
-    <text x="883" y="278" fill="#8a8675" font-size="10.5" letter-spacing="1.6">对自己的安全配置做检查</text>
-    <text x="883" y="302" fill="#2db3d5" font-size="15" font-weight="700">openclaw</text>
-    <text x="883" y="324" fill="#a5a190" font-size="11.5">一批具名检查项跑在用户配置上，其中一条</text>
-    <text x="883" y="342" fill="#a5a190" font-size="11.5">专门覆盖"设置里写着sandbox而有效模式</text>
-    <text x="883" y="360" fill="#a5a190" font-size="11.5">是off"，正是我们已经有的那类缺陷。</text>
-    <rect x="883" y="376" width="235" height="34" rx="7" fill="#111d21" stroke="#2db3d5"/>
-    <text x="895" y="398" fill="#2db3d5" font-size="12" font-weight="700">采用 · 第08步</text>
-    <text x="994" y="398" fill="#8a8675" font-size="11">默认前预检</text>
-
-    <!-- 反面案例 -->
-    <rect x="24" y="444" width="1110" height="100" rx="10" fill="#1c1116" stroke="#e0445a" stroke-width="1.3"/>
-    <text x="44" y="468" fill="#e0445a" font-size="13.5" font-weight="700">三条不采用的机制及其对应风险</text>
-    <text x="44" y="494" fill="#f0eee6" font-size="12" font-weight="600">pi-mono：项目配置覆盖全局</text>
-    <text x="44" y="514" fill="#a5a190" font-size="11.5">clone下来的仓库带一个配置文件就能</text>
-    <text x="44" y="532" fill="#a5a190" font-size="11.5">关闭全局沙箱，项目级扩展也没有信任验证。</text>
-    <text x="404" y="494" fill="#f0eee6" font-size="12" font-weight="600">pi-mono：截断后把全文路径给模型</text>
-    <text x="404" y="514" fill="#a5a190" font-size="11.5">输出按2000行截断，全文写进临时文件</text>
-    <text x="404" y="532" fill="#a5a190" font-size="11.5">并把路径返回，模型可再次读取未截断内容。</text>
-    <text x="764" y="494" fill="#f0eee6" font-size="12" font-weight="600">weclaw：聊天适配器自动批准审批</text>
-    <text x="764" y="514" fill="#a5a190" font-size="11.5">同一个ACP协议，hermes转发给客户端，</text>
-    <text x="764" y="532" fill="#a5a190" font-size="11.5">weclaw自己替客户端答了，还没有发送者名单。</text>
-  </svg>
-  </div>
-
-  <h2 id="cred"><span class="num">08</span>凭证读取不能由网络隔离替代</h2>
-  <p class="lead">子进程无网不表示读取到的凭证不会离开子进程：工具输出会返回agent runtime，并由宿主网络进入下一次模型请求。
-    因此凭证读取限制、环境过滤和执行面覆盖都必须独立存在。</p>
-
-  <div class="card">
-  <svg viewBox="0 0 1160 402" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="凭证读取经过工具输出与宿主模型请求离开子进程">
-    <defs>
-      <marker id="c-gy" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#8a8675"/></marker>
-      <marker id="c-rd" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#e0445a"/></marker>
-      <marker id="c-gn" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5aad4e"/></marker>
-    </defs>
-
-    <text x="24" y="30" fill="#d4843a" font-size="15.5" font-weight="700">子进程网络被拒绝后，凭证仍可经工具结果进入模型请求</text>
-
-    <!-- Row A -->
-    <text x="24" y="66" fill="#8a8675" font-size="11.5" letter-spacing="1.5">空deny列表不能依赖网络沙箱证明安全</text>
-    <rect x="24" y="76" width="196" height="66" rx="9" fill="#12110b" stroke="#3a3729"/>
-    <text x="122" y="104" fill="#f0eee6" font-size="12.5" font-weight="700" text-anchor="middle">整盘可读</text>
-    <text x="122" y="126" fill="#8a8675" font-size="11.5" text-anchor="middle">凭证都读得到</text>
-    <line x1="220" y1="109" x2="246" y2="109" stroke="#8a8675" stroke-width="1.5" marker-end="url(#c-gy)"/>
-
-    <rect x="254" y="76" width="196" height="66" rx="9" fill="#12110b" stroke="#3a3729"/>
-    <text x="352" y="104" fill="#f0eee6" font-size="12.5" font-weight="700" text-anchor="middle">工具输出返回runtime</text>
-    <text x="352" y="126" fill="#8a8675" font-size="11.5" text-anchor="middle">不需要子进程发起网络请求</text>
-    <line x1="450" y1="109" x2="476" y2="109" stroke="#8a8675" stroke-width="1.5" marker-end="url(#c-gy)"/>
-
-    <rect x="484" y="76" width="196" height="66" rx="9" fill="#12110b" stroke="#3a3729"/>
-    <text x="582" y="104" fill="#f0eee6" font-size="12.5" font-weight="700" text-anchor="middle">宿主构造模型请求</text>
-    <text x="582" y="126" fill="#8a8675" font-size="11.5" text-anchor="middle">宿主网络不在子进程命名空间内</text>
-    <line x1="680" y1="109" x2="706" y2="109" stroke="#8a8675" stroke-width="1.5" marker-end="url(#c-gy)"/>
-
-    <rect x="714" y="76" width="234" height="66" rx="9" fill="#2a1215" stroke="#e0445a" stroke-width="1.4"/>
-    <text x="831" y="104" fill="#e0445a" font-size="12.5" font-weight="700" text-anchor="middle">凭证进入模型上下文</text>
-    <text x="831" y="126" fill="#a5a190" font-size="11.5" text-anchor="middle">网络沙箱没有阻止该数据流</text>
-
-    <!-- 三家预置 -->
-    <rect x="24" y="156" width="1112" height="66" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.3"/>
-    <text x="44" y="178" fill="#5aad4e" font-size="12.5" font-weight="700">另外三家预置了凭证保护，但分别覆盖不同执行层：</text>
-    <text x="44" y="200" fill="#a5a190" font-size="11.5"><tspan fill="#f0eee6" font-weight="600">openclaw</tspan> 拦挂载源加环境变量名正则　　<tspan fill="#f0eee6" font-weight="600">hermes-agent</tspan> 从provider注册表推导环境变量剥离　　<tspan fill="#f0eee6" font-weight="600">pi-mono的扩展</tspan> denyRead三条加denyWrite四条</text>
-    <text x="44" y="218" fill="#8a8675" font-size="11.5">这些机制只能保护经过对应层的调用。OpenProgram必须记录未受管执行面，不能用某一个调用点的deny清单代表全局覆盖。</text>
-
-    <line x1="24" y1="240" x2="1136" y2="240" stroke="#2e2c20" stroke-width="1"/>
-
-    <!-- Row B -->
-    <text x="24" y="268" fill="#d4843a" font-size="11.5" letter-spacing="1.5">OpenProgram当前状态</text>
-    <rect x="24" y="278" width="196" height="72" rx="9" fill="#101a10" stroke="#5aad4e"/>
-    <text x="122" y="306" fill="#5aad4e" font-size="12.5" font-weight="700" text-anchor="middle">已知凭证路径被拒绝</text>
-    <text x="122" y="328" fill="#8a8675" font-size="11.5" text-anchor="middle">受管shell已验证</text>
-    <line x1="220" y1="314" x2="240" y2="314" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#c-gn)"/>
-
-    <rect x="248" y="278" width="196" height="72" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.3"/>
-    <text x="346" y="306" fill="#5aad4e" font-size="12.5" font-weight="700" text-anchor="middle">环境变量白名单</text>
-    <text x="346" y="328" fill="#a5a190" font-size="11.5" text-anchor="middle">未知变量不进入子进程</text>
-    <line x1="444" y1="314" x2="464" y2="314" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#c-gn)"/>
-
-    <rect x="472" y="278" width="204" height="72" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
-    <text x="574" y="306" fill="#5aad4e" font-size="12.5" font-weight="700" text-anchor="middle">文件工具路径受管</text>
-    <text x="574" y="328" fill="#a5a190" font-size="11.5" text-anchor="middle">写入根与hard floor</text>
-    <line x1="676" y1="314" x2="696" y2="314" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#c-gn)"/>
-
-    <rect x="704" y="278" width="204" height="72" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
-    <text x="806" y="306" fill="#5aad4e" font-size="12.5" font-weight="700" text-anchor="middle">嵌套CLI工具受管</text>
-    <text x="806" y="328" fill="#a5a190" font-size="11.5" text-anchor="middle">内置副作用工具已禁用</text>
-    <line x1="908" y1="314" x2="928" y2="314" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#c-gn)"/>
-
-    <rect x="936" y="278" width="200" height="72" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.8"/>
-    <text x="1036" y="306" fill="#5aad4e" font-size="12.5" font-weight="700" text-anchor="middle">执行面台账已分类</text>
-    <text x="1036" y="328" fill="#a5a190" font-size="11.5" text-anchor="middle">U01—U23有边界与测试</text>
-
-    <rect x="24" y="364" width="1112" height="26" rx="7" fill="#16150f" stroke="#3a3729"/>
-    <text x="44" y="382" fill="#8a8675" font-size="12">当前受管shell拒绝读取<tspan font-family="Menlo,monospace" fill="#bdb9a6">~/.openprogram/auth/*/default.json</tspan>；文件工具与嵌套CLI分别执行路径和协议层约束。Linux中段glob限制单独记录。</text>
-  </svg>
-  </div>
-
-  <!-- ══════════════════ 层三 ══════════════════ -->
-  <div class="band L3" id="L3">
-    <span class="lv">LAYER 3</span>
-    <h2>实施决策与记录</h2>
-    <p class="w">沙箱批次S先完成第04步subagent bypass与第05A步cron触发隔离和U01—U23分类；随后完成身份批次I、第05B步cron创建授权、第06步嵌套agent、第07步审批联动与共享记忆pending/trusted跨scope约束；第08步将新安装默认值改为workspace-write。下面保留各步的参考来源、依赖和验收条件。</p>
-  </div>
-
-  <h2 id="bridge"><span class="num">09</span>缺口对应到谁解决了</h2>
-  <p class="lead">左列取自层一的实测结果，中列是层二里已有的做法，右列是它落在修复路线的哪一步。</p>
-
-  <div class="card">
-  <svg viewBox="0 0 1160 566" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="缺口对应到参考实现再对应到修复步骤">
-    <defs>
-      <marker id="b-gy" markerWidth="8" markerHeight="8" refX="6.5" refY="2.8" orient="auto"><path d="M0,0 L6.5,2.8 L0,5.6 Z" fill="#6f6b5c"/></marker>
-    </defs>
-
-    <text x="24" y="30" fill="#d4843a" font-size="16" font-weight="700">缺口 → 谁解决了 → 我们哪一步补</text>
-    <text x="24" y="52" fill="#8a8675" font-size="12.5">图中保留七条参考机制；OpenProgram特有的执行面缺口列在图后。</text>
-
-    <text x="30" y="80" fill="#e0445a" font-size="11" letter-spacing="1.6">层一：我们的缺口</text>
-    <text x="398" y="80" fill="#9d6fe0" font-size="11" letter-spacing="1.6">层二：谁解决了，怎么解决</text>
-    <text x="950" y="80" fill="#5aad4e" font-size="11" letter-spacing="1.6">层三：我们的步骤</text>
-
-    <!-- r1 -->
-    <rect x="24" y="92" width="336" height="56" rx="8" fill="#1c1116" stroke="#e0445a" stroke-width="1.2"/>
-    <text x="38" y="115" fill="#f0eee6" font-size="12.5" font-weight="600">整盘可读，连deny引擎都没有</text>
-    <text x="38" y="135" fill="#8a8675" font-size="11">SSH私钥和auth目录实测可读</text>
-    <line x1="362" y1="120" x2="386" y2="120" stroke="#6f6b5c" stroke-width="1.4" marker-end="url(#b-gy)"/>
-    <rect x="392" y="92" width="520" height="56" rx="8" fill="#12110b" stroke="#9d6fe0" stroke-width="1.2"/>
-    <text x="406" y="115" fill="#9d6fe0" font-size="12" font-weight="600">openclaw 挂载源deny　hermes-agent 环境剥离　pi-mono扩展 denyRead</text>
-    <text x="406" y="135" fill="#8a8675" font-size="11">八家里三家预置拒绝清单；最先调研的两家默认清单为空</text>
-    <line x1="914" y1="120" x2="938" y2="120" stroke="#6f6b5c" stroke-width="1.4" marker-end="url(#b-gy)"/>
-    <rect x="944" y="92" width="192" height="56" rx="8" fill="#2a1215" stroke="#e0445a" stroke-width="1.4"/>
-    <text x="1040" y="126" fill="#e0445a" font-size="14" font-weight="700" text-anchor="middle">STEP 02</text>
-
-    <!-- r2 -->
-    <rect x="24" y="156" width="336" height="56" rx="8" fill="#1c1116" stroke="#e0445a" stroke-width="1.2"/>
-    <text x="38" y="179" fill="#f0eee6" font-size="12.5" font-weight="600">环境变量全量继承</text>
-    <text x="38" y="199" fill="#8a8675" font-size="11">子进程看到164字符完整的API key</text>
-    <line x1="362" y1="184" x2="386" y2="184" stroke="#6f6b5c" stroke-width="1.4" marker-end="url(#b-gy)"/>
-    <rect x="392" y="156" width="520" height="56" rx="8" fill="#12110b" stroke="#9d6fe0" stroke-width="1.2"/>
-    <text x="406" y="179" fill="#9d6fe0" font-size="12" font-weight="600">hermes-agent 从provider注册表推导屏蔽名单</text>
-    <text x="406" y="199" fill="#8a8675" font-size="11">增加openclaw的敏感变量名正则；Linux还需要 --unshare-pid</text>
-    <line x1="914" y1="184" x2="938" y2="184" stroke="#6f6b5c" stroke-width="1.4" marker-end="url(#b-gy)"/>
-    <rect x="944" y="156" width="192" height="56" rx="8" fill="#2a1215" stroke="#e0445a" stroke-width="1.4"/>
-    <text x="1040" y="190" fill="#e0445a" font-size="14" font-weight="700" text-anchor="middle">STEP 02</text>
-
-    <!-- r3 -->
-    <rect x="24" y="220" width="336" height="56" rx="8" fill="#1c1116" stroke="#e0445a" stroke-width="1.2"/>
-    <text x="38" y="243" fill="#f0eee6" font-size="12.5" font-weight="600">开关在三个边界上丢失</text>
-    <text x="38" y="263" fill="#8a8675" font-size="11">Web路径和agentic function里都是关的</text>
-    <line x1="362" y1="248" x2="386" y2="248" stroke="#6f6b5c" stroke-width="1.4" marker-end="url(#b-gy)"/>
-    <rect x="392" y="220" width="520" height="56" rx="8" fill="#12110b" stroke="#9d6fe0" stroke-width="1.2"/>
-    <text x="406" y="243" fill="#9d6fe0" font-size="12" font-weight="600">codex-cli 每次exec重建argv　openclaw 每个调用点解析策略</text>
-    <text x="406" y="263" fill="#8a8675" font-size="11">两家都不依赖隐式上下文继承，策略是显式参数</text>
-    <line x1="914" y1="248" x2="938" y2="248" stroke="#6f6b5c" stroke-width="1.4" marker-end="url(#b-gy)"/>
-    <rect x="944" y="220" width="192" height="56" rx="8" fill="#1a1424" stroke="#9d6fe0" stroke-width="1.4"/>
-    <text x="1040" y="254" fill="#9d6fe0" font-size="14" font-weight="700" text-anchor="middle">STEP 03</text>
-
-    <!-- r4 -->
-    <rect x="24" y="284" width="336" height="56" rx="8" fill="#1c1116" stroke="#e0445a" stroke-width="1.2"/>
-    <text x="38" y="307" fill="#f0eee6" font-size="12.5" font-weight="600">不可用时静默放行</text>
-    <text x="38" y="327" fill="#8a8675" font-size="11">用户以为已启用，命令仍无沙箱执行</text>
-    <line x1="362" y1="312" x2="386" y2="312" stroke="#6f6b5c" stroke-width="1.4" marker-end="url(#b-gy)"/>
-    <rect x="392" y="284" width="520" height="56" rx="8" fill="#12110b" stroke="#9d6fe0" stroke-width="1.2"/>
-    <text x="406" y="307" fill="#9d6fe0" font-size="12" font-weight="600">openclaw 强制拒绝并提供处理提示，另有doctor预检</text>
-    <text x="406" y="327" fill="#8a8675" font-size="11">claude-code的源码把静默那一版直接称为security footgun</text>
-    <line x1="914" y1="312" x2="938" y2="312" stroke="#6f6b5c" stroke-width="1.4" marker-end="url(#b-gy)"/>
-    <rect x="944" y="284" width="192" height="56" rx="8" fill="#1a1424" stroke="#9d6fe0" stroke-width="1.4"/>
-    <text x="1040" y="318" fill="#9d6fe0" font-size="14" font-weight="700" text-anchor="middle">STEP 03</text>
-
-    <!-- r5 -->
-    <rect x="24" y="348" width="336" height="56" rx="8" fill="#1c1116" stroke="#e0445a" stroke-width="1.2"/>
-    <text x="38" y="371" fill="#f0eee6" font-size="12.5" font-weight="600">bypass在自动危险检查之前短路</text>
-    <text x="38" y="391" fill="#8a8675" font-size="11">子agent的命令与文件工具都受影响</text>
-    <line x1="362" y1="376" x2="386" y2="376" stroke="#6f6b5c" stroke-width="1.4" marker-end="url(#b-gy)"/>
-    <rect x="392" y="348" width="520" height="56" rx="8" fill="#12110b" stroke="#9d6fe0" stroke-width="1.2"/>
-    <text x="406" y="371" fill="#9d6fe0" font-size="12" font-weight="600">hermes-agent 把hardline列表放在所有bypass之下</text>
-    <text x="406" y="391" fill="#8a8675" font-size="11">配套还有按上下文的默认值：cron默认deny，subagent自动deny</text>
-    <line x1="914" y1="376" x2="938" y2="376" stroke="#6f6b5c" stroke-width="1.4" marker-end="url(#b-gy)"/>
-    <rect x="944" y="348" width="192" height="56" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
-    <text x="1040" y="382" fill="#5aad4e" font-size="14" font-weight="700" text-anchor="middle">STEP 04</text>
-
-    <!-- r6 -->
-    <rect x="24" y="412" width="336" height="56" rx="8" fill="#1c1116" stroke="#e0445a" stroke-width="1.2"/>
-    <text x="38" y="435" fill="#f0eee6" font-size="12.5" font-weight="600">持久allow过宽，命令规则又按原文前缀匹配</text>
-    <text x="38" y="455" fill="#8a8675" font-size="11">一次批准放开整类工具；wrapper与Unicode未规范化</text>
-    <line x1="362" y1="440" x2="386" y2="440" stroke="#6f6b5c" stroke-width="1.4" marker-end="url(#b-gy)"/>
-    <rect x="392" y="412" width="520" height="56" rx="8" fill="#12110b" stroke="#9d6fe0" stroke-width="1.2"/>
-    <text x="406" y="435" fill="#9d6fe0" font-size="12" font-weight="600">openclaw argv解包加透明性判定　hermes-agent NFKC加剥ANSI</text>
-    <text x="406" y="455" fill="#8a8675" font-size="11">只让透明的简单argv生成持久规则，复杂shell文本不保存</text>
-    <line x1="914" y1="440" x2="938" y2="440" stroke="#6f6b5c" stroke-width="1.4" marker-end="url(#b-gy)"/>
-    <rect x="944" y="412" width="192" height="56" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
-    <text x="1040" y="446" fill="#5aad4e" font-size="14" font-weight="700" text-anchor="middle">STEP 07</text>
-
-    <!-- r7 -->
-    <rect x="24" y="476" width="336" height="56" rx="8" fill="#1c1116" stroke="#e0445a" stroke-width="1.2"/>
-    <text x="38" y="499" fill="#f0eee6" font-size="12.5" font-weight="600">嵌套CLI文件工具不经过wrap_command</text>
-    <text x="38" y="519" fill="#8a8675" font-size="11">Read / Write / Edit 在CLI进程内执行</text>
-    <line x1="362" y1="504" x2="386" y2="504" stroke="#6f6b5c" stroke-width="1.4" marker-end="url(#b-gy)"/>
-    <rect x="392" y="476" width="520" height="56" rx="8" fill="#12110b" stroke="#9d6fe0" stroke-width="1.2"/>
-    <text x="406" y="499" fill="#9d6fe0" font-size="12" font-weight="600">openclaw 拦掉嵌套agent的 command/ 和 fs/ 方法并注入替代工具</text>
-    <text x="406" y="519" fill="#8a8675" font-size="11">替代工具把文件与命令请求交给宿主策略执行</text>
-    <line x1="914" y1="504" x2="938" y2="504" stroke="#6f6b5c" stroke-width="1.4" marker-end="url(#b-gy)"/>
-    <rect x="944" y="476" width="192" height="56" rx="8" fill="#111d21" stroke="#2db3d5" stroke-width="1.4"/>
-    <text x="1040" y="502" fill="#2db3d5" font-size="13" font-weight="700" text-anchor="middle">STEP 06</text>
-    <text x="1040" y="520" fill="#8a8675" font-size="11" text-anchor="middle">嵌套agent受管工具</text>
-  </svg>
-  </div>
-
-  <div class="tbl">
-  <table>
-    <tr><th>图外的OpenProgram执行面</th><th>不能直接采用的处理</th><th>采用的处理</th><th>步骤</th></tr>
-    <tr><td><b>write/edit/apply_patch</b></td><td>把所有文件操作改写成shell</td><td>共享路径规范化与写入根检查；禁止模型可写目录被自动导入</td><td>04</td></tr>
-    <tr><td><b>execute_code</b></td><td>继续直接<code>subprocess.run</code></td><td>本地路径复用<code>LocalBackend.run</code>及其<code>_invocation</code>和SandboxPolicy</td><td>05A</td></tr>
-    <tr><td><b>cron direct / prompt</b></td><td>让paired渠道直接保存job，或触发时尝试弹交互审批</td><td>05A先完成触发隔离、固定执行spec与ask→deny；身份批次I完成后，05B再让创建检查<code>schedule.create</code>，修改、重排或删除检查<code>schedule.manage</code>，paired渠道在持久化变更前deny</td><td>05A / 05B</td></tr>
-    <tr><td><b>U01—U23执行面清单</b></td><td>用“其他执行点”概括或全部机械包装</td><td>逐项记录来源类、强制策略、保留理由与测试；模型可影响项全部是默认开启阻断项</td><td>05A</td></tr>
-    <tr><td><b>嵌套Claude Code CLI</b></td><td>把需要API网络的整个CLI放入无网沙箱</td><td>协议层拒绝内置文件/命令工具，注入OpenProgram受管替代工具</td><td>06</td></tr>
-  </table>
-  </div>
-
-  <h2 id="fix"><span class="num">10</span>修复路线</h2>
-  <p class="lead">下列路线已经按依赖顺序实施：第04步先修复subagent bypass；第05A步完成cron触发隔离和U01—U23执行面；authority批次显式传播<code>owner</code>/<code>paired</code>档位；第05B、06、07步分别完成cron授权、嵌套agent受管工具和审批联动；第08步完成默认值切换。保留各步的设计与验收文字，作为实现记录。</p>
-
-  <div class="steps">
-    <div class="step s1">
-      <div class="n">STEP 01 · 已完成</div>
-      <h4>可用性</h4>
-      <div class="d">macOS放行五个字符设备的读写；exec改成不限制，由子进程继承同一profile；Linux把<code>--tmpfs /tmp</code>放在cwd bind之前。</div>
-      <div class="x"><b>实测结果</b>：git、python3、make、clang、conda python、<code>/usr/sbin</code>、<code>2&gt;/dev/null</code>全部正常；<code>/tmp</code>下的工作目录保持可见。<code>ps</code>和<code>top</code>因setuid平台限制不能执行。</div>
-      <div class="src">参考：codex-cli的字符设备规则；两个系统调用级实现都允许exec</div>
-    </div>
-    <div class="step s2">
-      <div class="n">STEP 02 · 已完成</div>
-      <h4>凭证屏蔽</h4>
-      <div class="d">两个平台预置deny-read清单，macOS上deny读和deny删除成对设置。子进程环境变量采用<b>白名单</b>，未列出的变量不传入；名称正则作为<code>pass_env</code>的强制限制。Linux增加<code>--unshare-pid</code>。文件工具对agentics目录和agentic源注册表的禁写在策略之前判定，无条件成立；沙箱内命令的同一禁写由策略提供，<code>danger-full-access</code>下的shell面按该模式定义不设防。</div>
-      <div class="x"><b>实测结果</b>：SSH私钥、<code>~/.openprogram/auth/**</code>、keychain等具体路径不可读且不可删除；macOS的<code>**/.env</code>规则有效，Linux不具备同等glob表达力。164字符的<code>OPENAI_API_KEY</code>在子进程里是空串；Linux上宿主进程的<code>/proc/&lt;pid&gt;/environ</code>不可读，且不能向宿主PID发送信号。git hook和git config保持opt-in，因为禁止后会导致<code>git init</code>和<code>git clone</code>失败。</div>
-      <div class="src">参考：hermes-agent的provider注册表；openclaw的敏感变量名正则；claude-code的写保护范围</div>
-    </div>
-    <div class="step s3">
-      <div class="n">STEP 03 · 已完成</div>
-      <h4>开关语义</h4>
-      <div class="d">移除ContextVar。策略在包装命令时从配置中的<code>sandbox.*</code>解析，不依赖执行线程或调用链。<code>SETTINGS</code>增加七个键。后端可用性按实际隔离能力探测；工具缺失或所需namespace无法创建时默认拒绝并给出明确原因。</div>
-      <div class="x"><b>实测结果</b>：Web那条形状里裸线程被包住、spawn子进程被包住、审批bypass也照样被包住。<code>wrap_command</code>接收显式策略，但目前还没有按工具或按调用点给出不同策略的地方。</div>
-      <div class="src">参考：codex-cli的per-command策略；openclaw的拒绝信息与doctor预检</div>
-    </div>
-    <div class="step s4">
-      <div class="n">STEP 04 · 已完成</div>
-      <h4>subagent bypass之前执行强制约束</h4>
-      <div class="d">把共享强制约束放在<code>permission_mode="bypass"</code>判断之前，或在已经位于审批包装器外的<code>tool.before</code>层安装不可卸载的生产策略。该步骤不等待principal或scope字段；字段完成后，subagent只能继承caller scope的子集。subagent没有交互审批通道，命中危险命令、工作区外写入或ask规则时直接deny。</div>
-      <div class="x"><b>验收</b>：构造真实<code>source=agent_spawn</code>与<code>permission_mode=bypass</code>轮次，分别调用bash、execute_code、process、write、edit和apply_patch；危险命令与越界写入在工具执行前被拒绝，安全只读调用仍可执行。测试必须证明默认生产安装点存在，不能只测试可选gate API。</div>
-      <div class="src">参考：hermes-agent的强制规则和非交互默认值；opencode的per-resource规则</div>
-    </div>
-    <div class="step s5">
-      <div class="n">STEP 05A · 已完成</div>
-      <h4>cron触发隔离与U01—U23执行面</h4>
-      <div class="d">先处理U04/U05的执行端：现有direct job把command、cwd、SandboxPolicy与hash固化为不可变执行spec，触发时强制沙箱；prompt job显式使用<code>source=cron</code>和固定非交互策略，内部ask与升级均deny。该部分不判断创建者身份。随后按第04节清单逐项处理U03—U09与U12；<code>execute_code</code>本地路径复用<code>LocalBackend.run</code>及其<code>_invocation</code>，模型可写目录不允许watcher或Web重载器自动导入。</div>
-      <div class="x"><b>验收</b>：U01—U23每项都有已实现策略或明确保留理由与回归测试；U03—U09、U12没有“未分类”或“仅记录”状态。cron direct与prompt均由真实worker触发，验证固定执行spec、强制沙箱、非交互deny和日志中的policy hash；测试不依赖principal或authority scope字段。</div>
-      <div class="src">复用：现有LocalBackend与SandboxPolicy；参考hermes-agent的cron默认deny</div>
-    </div>
-    <div class="step s6">
-      <div class="n">STEP 06 · 已完成</div>
-      <h4>嵌套agent受管工具</h4>
-      <div class="d">Claude Code CLI继续保留API网络，但通过<code>allowed_tools</code>/<code>can_use_tool</code>拒绝内置Read、Write、Edit、Grep、Glob与命令工具；注入OpenProgram MCP替代工具，由宿主执行文件与命令策略。</div>
-      <div class="x"><b>验收</b>：嵌套agent不能直接调用未受管的文件或命令方法；替代工具产生与主agent一致的路径检查、沙箱事件和审计记录。</div>
-      <div class="src">参考：openclaw对嵌套app-server方法分类并注入受管替代工具</div>
-    </div>
-    <div class="step s5">
-      <div class="n">STEP 05B · 已完成</div>
-      <h4>cron创建与管理授权</h4>
-      <div class="d">把cron创建、修改、重排和删除定义为宿主副作用；创建映射到<code>schedule.create</code>，修改、重排和删除映射到<code>schedule.manage</code>。<code>paired</code>档的固定常量表不含这两项，必须在任何job持久化变更前deny。只有认证本地owner的精确批准可以生成新的不可变job authority；其中固化<code>principal_id</code>、creator speaker审计值、<code>authority_tier=owner</code>、command或prompt、cwd、SandboxPolicy与hash。触发时只能读取该记录，不能重算为interactive或改变权限档。</div>
-      <div class="x"><b>验收</b>：用paired渠道成员B验证创建、修改、重排和删除均在持久化状态改变前deny；用认证本地owner批准一个精确job，证明未批准字段不能改变，direct与prompt触发时均无审批升级。</div>
-      <div class="src">依赖：owner principal、渠道配对状态和显式序列化的权限档字段</div>
-    </div>
-    <div class="step s7">
-      <div class="n">STEP 07 · 已完成</div>
-      <h4>authority tier、审批与精确升级</h4>
-      <div class="d">认证本地Web/CLI/TUI构造<code>owner</code>+interactive；只有通过稳定账号ID配对的渠道请求才能构造<code>paired</code>，陌生账号不进入agent。continuation、Task、inbox、subagent和cron显式序列化同一权限档。每个工具操作先映射到capability并查询写死的档位常量表；该档不含能力时先deny。只有带<code>approval.request</code>的认证本地owner轮次可申请一次性、精确到operation/cwd/env/policy的能力，paired channel、cron和subagent不得升级。审批表达owner同意，SandboxPolicy表达执行约束，hard constraints不可批准取消。workspace-write仍可能修改或删除仓库文件，不能因为命令在沙箱内就统一免审批。沙箱违规必须产生结构化事件；“Always allow”保存规范化后的精确操作或受限pattern，不能只保存工具名。</div>
-      <div class="x"><b>验收</b>：同一操作分别从本地owner、已配对渠道、subagent和cron发起，证明权限档判定发生在permission rule与执行之前；Web、CLI、TUI构造owner档，陌生账号收到配对码且不进入agent，内部恢复缺字段直接deny。普通非零退出不会被误判为沙箱拒绝；cron/subagent的ask与升级均为deny。命令匹配前移除ANSI/NUL并做NFKC，解析<code>env</code>包装；只有简单argv可保存pattern，复杂shell文本只允许单次批准。一次bash批准不能授权后续任意bash。任何设置或批准都不能取消hard constraints。</div>
-      <div class="src">参考：codex-cli的违规事件；openclaw的argv透明性；hermes-agent的规范化</div>
-    </div>
-    <div class="step s8">
-      <div class="n">STEP 08 · 已完成</div>
-      <h4>新安装默认开启</h4>
-      <div class="d">第04步、05A、身份批次I、05B、第06和第07步，以及记忆跨scope约束与U01—U23清单全部通过后，macOS与Linux新安装在后端可用时默认<code>workspace-write</code>。保留现有用户明确设置；迁移只提示，不覆盖<code>danger-full-access</code>。Windows没有宿主原生后端，沙箱启用时默认拒绝，不能显示为已启用后直接在宿主执行。</div>
-      <div class="x"><b>验收</b>：不能只依赖单元测试。用全新profile和真实子进程，在macOS与Linux分别执行下面的命令矩阵，并验证退出码、产物位置、网络结果、凭证拒读和工作区外拒写；main、subagent、cron、execute_code、文件工具和嵌套agent还要分别执行端到端策略用例。另用“共享成员写入pending记忆→owner说按之前定的执行”验证该记录不会进入owner自动上下文；显式召回后scope取交集，只有owner提升或精确审批才能增加能力。</div>
-      <div class="src">参考：codex-cli的新会话默认；openclaw默认off只记录其产品选择，不作为OpenProgram默认值依据</div>
-    </div>
-  </div>
-
-  <div class="tbl">
-  <table>
-    <tr><th>默认开启真实命令矩阵</th><th>必须实际执行的代表命令</th><th>通过条件</th></tr>
-    <tr><td><b>Git</b></td><td><code>git init</code>、本地<code>git clone</code>、<code>status</code>、<code>diff</code>、<code>add</code>、<code>commit</code></td><td>仓库内产物正确；hook与config行为符合显式策略；无工作区外写入</td></tr>
-    <tr><td><b>Python</b></td><td><code>python -m venv .venv</code>、<code>python -m pytest</code>、脚本读写<code>/tmp</code>与cwd</td><td>常规项目可运行；凭证路径、宿主进程环境和工作区外目标仍被拒绝</td></tr>
-    <tr><td><b>npm</b></td><td><code>npm ci --offline</code>、<code>npm test</code>、<code>npm run build</code></td><td>本地依赖和构建正常；需要公网的安装产生明确网络拒绝或精确审批，不允许静默宿主执行</td></tr>
-    <tr><td><b>make</b></td><td><code>make</code>及包含编译器、子shell和临时文件的fixture</td><td>构建成功，子进程继续受同一profile约束</td></tr>
-    <tr><td><b>conda</b></td><td>macOS执行<code>conda info --json</code>；Linux使用只读base cache执行<code>conda create --clone ... --offline -p ./env</code>和<code>conda run</code></td><td>工作区内环境可创建和使用；HOME、env和可写cache显式位于工作区，全局位置保持只读</td></tr>
-    <tr><td><b>路径与平台</b></td><td>普通cwd、带空格cwd、<code>/tmp</code> cwd；macOS Seatbelt与Linux bubblewrap各一轮</td><td>结果一致；已知<code>ps/top</code>与Linux中段glob限制单独报告，不以跳过表示通过</td></tr>
-  </table>
-  </div>
-
-  <div class="legend"><b>默认开启的两个准入条件已满足</b>：安全准入中的第04步、05A、身份批次I、05B、第06和第07步、共享记忆pending/trusted边界及U01—U23清单均已实现；可用性准入已在macOS Seatbelt和Linux bubblewrap真实子进程上执行上述矩阵。平台固有限制仍按第11节单独报告。</div>
-
-  <div class="note"><b>配套的profile修补清单已完成</b>：工作目录拼进profile前先转义；放开exec之前补上限定在同沙箱内的<code>signal</code>和<code>process-info*</code>；
-  Linux加<code>--new-session --die-with-parent --unshare-pid --unshare-ipc --unshare-uts --cap-drop ALL</code>；<code>programs/workflow/</code>禁写；两条沙箱路径统一用<code>/bin/bash</code>；
-  macOS的<code>sysctl-read</code>已收窄到硬件前缀和四个uname名字，通用<code>mach-lookup</code>已删除，<code>/private/var/folders</code>已限制到本进程<code>TMPDIR</code>。
-  <code>--unshare-user</code>不在清单里：非setuid的bubblewrap构建自己就会建用户命名空间，setuid的构建不接受这个参数。</div>
-
-  <div class="note"><b>memory写入器有两个执行面</b>：OpenProgram进程内的MCP <code>shell</code>使用暂存目录和同一份SandboxPolicy；
-    Claude Code CLI继续在外部进程访问Anthropic API，但其内置<code>Read</code>/<code>Write</code>/<code>Edit</code>/<code>Grep</code>/<code>Glob</code>与命令工具已由协议配置禁用。
-    文件和命令操作改用OpenProgram提供的受管MCP工具，因此副作用回到宿主的路径、scope、审批和沙箱判定。</div>
-
-  <h2 id="status"><span class="num">11</span>实现状态</h2>
-  <p class="lead">记录日期：2026-08-10。第01—08步与身份批次I均已实现；新安装默认<code>workspace-write</code>，已有显式<code>danger-full-access</code>不被迁移覆盖。状态以当前代码、完整单元测试和双平台真实子进程矩阵为准。</p>
-
-  <div class="tbl">
-  <table>
-    <tr><th>步骤</th><th>状态</th><th>实现与验证结果</th><th>剩余限制 / 记录</th></tr>
-    <tr><td><b>01 可用性</b></td><td class="y">已完成</td><td>常用编译、Git、Python与<code>/tmp</code>工作区已验证；Linux会执行namespace能力探测</td><td>macOS <code>ps</code>/<code>top</code>限制保留</td></tr>
-    <tr><td><b>02 凭证屏蔽</b></td><td class="y">已完成</td><td>默认deny-read、环境白名单、Linux pid隔离已验证</td><td>Linux中段glob不能声明为已强制</td></tr>
-    <tr><td><b>03 开关语义</b></td><td class="y">已完成</td><td>Web线程、spawn与bypass bash都能读取有效配置；不可用默认refuse</td><td>当前仍为全局策略，没有per-tool覆盖</td></tr>
-    <tr><td><b>04 subagent强制约束</b></td><td class="y">已完成</td><td>hard constraint和capability检查位于<code>bypass</code>之前；bash/process/execute_code及文件工具的越界操作在执行前拒绝</td><td>subagent始终非交互，不能申请升级</td></tr>
-    <tr><td><b>05A cron触发与执行面</b></td><td class="y">已完成</td><td>cron保存签名不可变执行spec，worker强制sandbox并记录policy hash；execute_code、U03—U09和U12均已处理</td><td>U01/U02使用配置的Docker或SSH执行后端自身边界，不计为宿主原生沙箱</td></tr>
-    <tr><td><b>06 嵌套agent</b></td><td class="y">已完成</td><td>Claude Code内置副作用工具被禁用，文件与命令改用OpenProgram受管MCP工具</td><td>CLI的API网络仍保留在外部进程</td></tr>
-    <tr><td><b>I authority scope依赖</b></td><td class="y">已完成</td><td>owner principal、speaker、interaction和capability集合显式进入TurnRequest、Task、inbox、continuation、subagent与spawn snapshot</td><td>恢复缺字段时对宿主副作用deny，不使用ContextVar补值</td></tr>
-    <tr><td><b>05B cron创建与管理</b></td><td class="y">已完成</td><td>创建消费<code>schedule.create</code>，修改/重排/删除消费<code>schedule.manage</code>；job capability固化owner、scope、policy与内容hash</td><td>paired渠道在持久化改变前deny</td></tr>
-    <tr><td><b>07 审批联动</b></td><td class="y">已完成</td><td>scope先判定；违规结构化；只有本地interactive owner可精确单次升级；Always allow精确到规范化operation</td><td>hard floor与凭证环境过滤不能被批准取消</td></tr>
-    <tr><td><b>08 默认开启</b></td><td class="y">已完成</td><td><code>sandbox.mode</code>默认<code>workspace-write</code>；macOS与Linux的git/python/npm/make/conda及拒绝矩阵通过</td><td>保留显式<code>danger-full-access</code>；未知平台默认refuse</td></tr>
-  </table>
-  </div>
-
-  <div class="grid2">
-    <div class="plat" style="border-top-color:#4f8ef7">
-      <div class="k">PLATFORM LIMIT · macOS</div>
-      <h3 style="color:#4f8ef7">setuid可执行文件</h3>
-      <div class="row"><div class="t">现状</div><div class="v"><code>ps</code>和<code>top</code>不能在Seatbelt profile内执行。</div></div>
-      <div class="row"><div class="t">处理</div><div class="v">记录为平台能力限制，不为它放宽整个profile；需要时由受管宿主工具提供最小进程信息。</div></div>
-    </div>
-    <div class="plat" style="border-top-color:#9d6fe0">
-      <div class="k">PLATFORM LIMIT · Linux</div>
-      <h3 style="color:#9d6fe0">中段glob禁读</h3>
-      <div class="row"><div class="t">现状</div><div class="v">bubblewrap按具体路径遮蔽，<code>**/.env</code>这类中段glob不能直接强制；该规则只在macOS正则profile中有效。</div></div>
-      <div class="row"><div class="t">处理</div><div class="v">敏感内容使用精确路径，或<code>/absolute/path/to/secrets/**</code>这类具有确定前缀的目录级deny。不能依赖<code>**/.env</code>声明Linux已覆盖。</div></div>
-    </div>
-  </div>
-
-  <div class="tbl">
-  <table>
-    <tr><th>其他已知限制</th><th>当前行为</th><th>范围决定</th></tr>
-    <tr><td><b>Windows</b></td><td>没有宿主原生沙箱后端；沙箱开启时默认拒绝执行。只有owner显式关闭沙箱或选择不安全的<code>unavailable_policy=warn</code>才会改变该行为</td><td>不自动选择Docker，不把普通宿主执行显示为已启用沙箱</td></tr>
-    <tr><td><b>per-tool覆盖</b></td><td>沙箱策略当前以安装为粒度；工具仍分别执行authority、权限规则、审批与hard constraints</td><td>本批次不增加per-tool SandboxPolicy覆盖</td></tr>
-    <tr><td><b>CPU / 内存 / 进程数</b></td><td>有命令timeout和Linux namespace，但没有资源配额</td><td>明确不在范围内；PID namespace不能描述为进程数限制</td></tr>
-  </table>
-  </div>
-
-  <div class="note"><b>最终验证记录 · 2026-08-10</b>：本机完整受跟踪测试集（排除integration）为2731 passed、4 skipped、1 xfailed；<a href="https://github.com/Fzkuji/OpenProgram/actions/runs/31398444213">GitHub Actions run 31398444213</a>的Python 3.11、3.12、3.13、Web、文档和示例job全部通过，其中Linux Python 3.11为2723 passed、12 skipped、1 xfailed。Linux runner先启用Ubuntu 24.04的非特权user namespace能力，再执行真实cron bubblewrap用例；安装但无法工作的二进制不会被计入覆盖。
-    macOS在真实<code>LocalBackend + sandbox-exec</code>下通过git clone/status/diff/add/commit、Python venv、npm ci offline/test/build、make/clang、conda info和uname；<code>.env</code>、工作区外写入、网络与剪贴板访问均被拒绝。
-    Linux在一次性Docker Linux内核环境中执行真实bubblewrap，通过git、Python venv、npm、make、使用只读base cache的工作区conda clone/run，以及凭证拒读、工作区外拒写和网络拒绝；容器随后删除。Docker只用于Linux分支验证，不是OpenProgram沙箱实现。</div>
-
+  <p class="caption">这张图纠正了旧图的核心错误：SandboxPolicy 不是所有 AgentTool 的统一终点。</p>
+  <h3>本地子进程的两个平台后端</h3>
+  <table><thead><tr><th>平台</th><th>实现</th><th>边界</th><th>已知限制</th></tr></thead><tbody>
+    <tr><td>macOS</td><td>Seatbelt deny-default profile</td><td>正则读路径、写根、网络、环境和同沙箱进程视图</td><td>setuid 可执行文件限制导致 <code>ps</code>/<code>top</code>不可用</td></tr>
+    <tr><td>Linux</td><td>bubblewrap mounts + namespaces + capability drop</td><td>路径遮蔽、隔离 tmp、network/PID/IPC/UTS namespace</td><td>中段 glob 无法直接表达，必须使用具体路径或确定前缀</td></tr>
+  </tbody></table>
+  <table><thead><tr><th>资源</th><th><code>workspace-write</code></th><th><code>danger-full-access</code></th></tr></thead><tbody>
+    <tr><td>写入</td><td>cwd + explicit writable roots；agentic applications hard floor 禁写</td><td>宿主用户权限</td></tr>
+    <tr><td>读取</td><td>大部分宿主可读，减去 <code>deny_read</code>；更窄 <code>allow_read</code> 可重开，hard floor 除外</td><td>宿主用户权限</td></tr>
+    <tr><td>网络</td><td>默认关闭，可配置开启</td><td>不限制</td></tr>
+    <tr><td>环境变量</td><td>白名单；API key 默认不进入子进程</td><td>完整环境</td></tr>
+    <tr><td>后端不可用</td><td>默认 <code>refuse</code>；显式 <code>warn</code> 才无沙箱执行</td><td>不需要沙箱后端</td></tr>
+  </tbody></table>
+  <div class="callout"><strong>网络隔离不能替代凭证拒读。</strong>子进程读取的内容可以通过 tool result 回到宿主 Runtime，再进入下一次模型请求；因此 deny-read、环境过滤和网络限制必须分别存在。</div>
+  <h3>状态可观测性合同</h3>
+  <p>界面不能用一个“Sandbox ON/OFF”值描述整个 Agent。必须分开显示配置状态、turn 的有效权限和具体工具实际采用的执行边界。</p>
+  <table><thead><tr><th>状态层</th><th>数据来源</th><th>界面表达</th><th>不得表达成</th></tr></thead><tbody>
+    <tr><td>Configured process policy</td><td>后端读取 <code>sandbox.mode</code>、backend availability 和 network</td><td>Plus 菜单显示开关和可用性；高级设置页显示具体策略</td><td>所有工具均已隔离</td></tr>
+    <tr><td>Effective turn permission</td><td>后端解析 session/project default 后的 <code>effective_permission</code></td><td>聊天 turn 状态显示实际采用的权限模式</td><td>仅回显前端本地选择</td></tr>
+    <tr><td>Effective tool boundary</td><td>工具分派和执行结果：in-process guard、Seatbelt/bwrap、external、surface、configured trust</td><td>执行详情按工具显示边界类型；本地进程额外显示 sandboxed / bypassed / unavailable</td><td>统一的全局 Sandbox 徽章</td></tr>
+  </tbody></table>
+  <p>本文不定义 strict/balanced/open 组合预设，也不提供“沙盒内自动批准/沙盒内仍然询问”的第二套模式。Permission 已经负责审批策略；Sandbox 只有开启或关闭。高级配置只处理路径、网络、环境变量和后端不可用策略。</p>
+
+  <h3 id="sandbox-ui">Plus 菜单中的 Sandbox 入口</h3>
+  <p>Sandbox 的日常入口位于 Composer Plus 菜单，放在 <code>Web Search</code> 下方、<code>Unattended</code> 上方。普通用户只操作一个开关，不需要配置路径、网络或环境变量。由于入口位于会话 Composer，这个开关定义为<strong>会话级 override</strong>，不是进程全局开关。</p>
+  <pre><code>Add files or photos
+
+Tools                         ⚙  ✓
+Web Search
+Sandbox                          ✓
+──────────────────────────────────
+Unattended</code></pre>
+  <table><thead><tr><th>状态</th><th>菜单表现</th><th>点击行为</th></tr></thead><tbody>
+    <tr><td>开启</td><td><code>Sandbox ✓</code></td><td>只关闭当前会话后续 turn 的 Sandbox；不改变当前 Permission、其他会话或正在执行的 turn</td></tr>
+    <tr><td>关闭</td><td><code>Sandbox</code></td><td>只开启当前会话后续 turn 的 Sandbox；不改变当前 Permission、其他会话或正在执行的 turn</td></tr>
+    <tr><td>后端不可用</td><td><code>Sandbox · Unavailable</code>，禁用勾选</td><td>显示不可用原因和安装要求</td></tr>
+  </tbody></table>
+  <h3>作用域与并发</h3>
+  <table><thead><tr><th>层级</th><th>含义</th><th>生效时机</th></tr></thead><tbody>
+    <tr><td>系统默认</td><td>新会话没有项目或会话设置时采用的 SandboxPolicy</td><td>创建或恢复会话时解析</td></tr>
+    <tr><td>项目默认</td><td>该项目新会话的默认策略；不覆盖已有会话的显式选择</td><td>会话没有 override 时解析</td></tr>
+    <tr><td>会话 override</td><td>Plus 菜单开关及高级例外，只影响该 session</td><td>下一个尚未开始的 turn</td></tr>
+    <tr><td>turn snapshot</td><td>turn 开始时冻结的有效策略</td><td>整个 turn 及其子进程保持不变；中途切换不改写正在运行的任务</td></tr>
+  </tbody></table>
+  <p>并行会话分别持有自己的有效策略。一个会话关闭 Sandbox，不能让另一个会话、cron 或 subagent 改成宿主直执行；cron 使用创建时签名冻结的 SandboxPolicy，subagent 继承父 turn snapshot 且不能放宽。</p>
+  <p>菜单不增加常驻 Sandbox logo，不增加齿轮，也不在开关后引入额外审批。合法操作被 Sandbox 拒绝时，拒绝提示提供“仅本次放开”或“打开高级设置”；高级设置位于 Settings，不进入 Plus 菜单。</p>
+
+  <h3>兼容性例外</h3>
+  <p>默认 Sandbox 不开放宿主进程信息，因此 <code>ps</code>、<code>top</code> 和 <code>lsof</code> 可能失败；Docker socket 也不自动暴露。这些限制不能通过模型重复尝试解决。</p>
+  <table><thead><tr><th>场景</th><th>目标行为</th><th>不采用</th></tr></thead><tbody>
+    <tr><td><code>ps/top/lsof</code></td><td>返回结构化 <code>host_process_info_denied</code>，同一 turn 不重复尝试；高级设置可为当前会话显式开启宿主进程可见性</td><td>默认向所有沙盒命令暴露宿主进程列表</td></tr>
+    <tr><td>Docker socket</td><td>提示改用显式 Docker backend，或由 owner 为当前会话配置精确例外</td><td>自动把 <code>/var/run/docker.sock</code> 暴露给本地 Sandbox</td></tr>
+    <tr><td>bypass + Sandbox</td><td>不弹升级确认；显示拒绝原因和手动修改入口</td><td>自动关闭 Sandbox、自动重试宿主命令</td></tr>
+  </tbody></table>
+
+  <h3>域名级网络控制</h3>
+  <p>目标网络策略不再使用单一布尔值，而是 <code>off | allowlist | unrestricted</code>。默认 <code>off</code>；普通用户无需预先配置，命令需要联网时再按域名添加一次性或会话级例外。</p>
+  <table><thead><tr><th>模式</th><th>行为</th><th>界面</th></tr></thead><tbody>
+    <tr><td><code>off</code></td><td>阻止本地命令的全部网络访问</td><td>Sandbox 高级设置显示“Network off”</td></tr>
+    <tr><td><code>allowlist</code></td><td>只允许配置的域名和端口；重定向逐跳重新校验；直接 IP、未授权 DNS 路径、UDP 和 Unix socket 默认拒绝</td><td>拒绝时显示目标域名，并提供仅本次或当前会话允许</td></tr>
+    <tr><td><code>unrestricted</code></td><td>允许本地命令使用宿主网络，界面持续显示风险状态</td><td>只在高级设置中开启</td></tr>
+  </tbody></table>
+  <p>实现要求本地命令的出站连接只能到宿主侧受管代理，由代理执行域名、端口、解析结果和重定向校验；沙盒进程不能直接连接外网 IP。代理不做 TLS 内容检查，因此允许宽泛域名仍可能产生数据外发风险。Browser/Web Use、内置 HTTP 客户端和远程 backend 继续使用各自的网络边界，不继承这份 Bash 域名表。</p>
+</section>
+
+<section id="escalation">
+  <h2>7. 审批与 Sandbox escalation</h2>
+  <p>普通审批只改变 Permission 结果。Sandbox 执行返回结构化 denial 后，系统才进入独立升级流程。</p>
+  <table><thead><tr><th>条件</th><th>行为</th></tr></thead><tbody>
+    <tr><td>本地 interactive owner，且有 <code>approval.request</code></td><td>可批准一次精确重试；策略放开可配置限制，但保留 applications hard floor 和凭证环境过滤</td></tr>
+    <tr><td>paired、MCP 普通客户端、cron、subagent</td><td>不能发起或回答升级审批，直接拒绝</td></tr>
+    <tr><td>选择“总是允许此路径”</td><td>只把具体路径写入 <code>sandbox.allow_read</code>；不能重开 hard-floor 路径</td></tr>
+    <tr><td>Permission 为 bypass</td><td>不弹 Sandbox 升级确认；返回 denial 并显示手动关闭 Sandbox 或修改设置的入口</td></tr>
+    <tr><td>已经升级重试</td><td>不再弹第二次升级卡；返回原始 denial，避免重复执行同一策略</td></tr>
+  </tbody></table>
+</section>
+
+<section id="sources">
+  <h2>8. 请求来源如何进入同一合同</h2>
+  <table><thead><tr><th>来源</th><th>Authority</th><th>Permission/审批</th><th>执行边界</th></tr></thead><tbody>
+    <tr><td>Web / CLI / TUI</td><td>认证本地 owner</td><td>会话模式 + 项目规则；可交互审批</td><td>配置 SandboxPolicy；Permission 模式不改变 Sandbox</td></tr>
+    <tr><td>已配对渠道</td><td>paired</td><td>无本地审批能力</td><td>通常在 capability 层即拒绝宿主副作用</td></tr>
+    <tr><td>subagent / continuation</td><td>显式继承 caller，不得扩大</td><td>non-interactive；ask 转 deny</td><td>受管工具与进程继续安装策略</td></tr>
+    <tr><td>cron</td><td>创建时固化 owner authority</td><td>触发时禁止交互与升级</td><td>签名 frozen execution spec 强制 sandbox</td></tr>
+    <tr><td>MCP client</td><td>默认 paired；Web Use 可缩窄为 mcp_browser</td><td>不能代替本地 owner 审批</td><td>调用公开工具边界，不直接获得宿主权限</td></tr>
+    <tr><td>Docker / SSH backend</td><td>仍先检查当前请求 authority</td><td>仍检查规则与审批</td><td>容器或远端主机是执行边界，不宣称宿主 Seatbelt/bwrap</td></tr>
+  </tbody></table>
+</section>
+
+<section id="comparison">
+  <h2>9. 参考框架与取舍</h2>
+  <p>参考语料用于确定正式概念和已验证机制，不用于复制其默认值。OpenProgram 保留自己的三层合同。</p>
+  <table><thead><tr><th>参考</th><th>相关机制</th><th>OpenProgram 取舍</th></tr></thead><tbody>
+    <tr><td>Claude Code</td><td>Auto 后台安全分类器、permission modes、Sandbox 与 Permission 分层、受管代理域名白名单、<code>--dangerously-skip-permissions</code></td><td><span class="yes">采用并修改：</span>Auto 保留后台危险操作判断；bypass 跳过审批和分类器但不关闭 Sandbox；Bash 网络采用强制代理与域名/端口规则；Authority、hard constraints 和显式 deny 仍独立在前</td></tr>
+    <tr><td>Codex CLI</td><td>结构化 sandbox violation、per-command policy、批准后重试</td><td><span class="yes">采用：</span>结构化违规和精确升级；<span class="maybe">暂缺：</span>per-tool sandbox override</td></tr>
+    <tr><td>OpenClaw</td><td>容器隔离、凭证环境过滤、后端 doctor/refuse、嵌套工具分类</td><td><span class="yes">采用：</span>不可用默认拒绝和受管替代工具；不自动选择 Docker 作为宿主后端</td></tr>
+    <tr><td>Hermes Agent</td><td>bypass 前 hard rules、命令规范化、cron/subagent 非交互默认 deny</td><td><span class="yes">采用：</span>强制约束前置、NFKC/ANSI/NUL/env wrapper 规范化、ask→deny</td></tr>
+    <tr><td>OpenCode</td><td>per-tool/per-resource permission policy</td><td><span class="yes">采用：</span>operation 级规则；不把 Permission 当作 OS 隔离</td></tr>
+    <tr><td>pi-mono</td><td>扩展拦截器与示例 denyRead/denyWrite</td><td><span class="no">拒绝：</span>项目配置静默覆盖全局安全设置；保留非交互 fail-closed 思路</td></tr>
+    <tr><td>Aider</td><td>无系统级隔离，依赖 Git 与用户确认</td><td><span class="no">不采用：</span>Git 可恢复性不能替代凭证、网络与进程边界</td></tr>
+    <tr><td>Goose / WeClaw 类适配</td><td>部分适配器自动回答审批或仅提供可选 backend</td><td><span class="no">拒绝：</span>外部渠道不能替 owner 回答审批；可选 backend 不得显示为默认安全边界</td></tr>
+  </tbody></table>
+</section>
+
+<section id="failures">
+  <h2>10. 失败语义</h2>
+  <table><thead><tr><th>失败</th><th>必须返回</th><th>禁止行为</th></tr></thead><tbody>
+    <tr><td>Authority 缺失或未知</td><td>稳定 reason code 与 capability</td><td>回退到 owner、interactive 或环境 ContextVar</td></tr>
+    <tr><td>non-interactive 命中 ask</td><td>明确的 approval unavailable denial</td><td>等待超时、自动批准或重算为 interactive</td></tr>
+    <tr><td>Auto 分类器不可用或无法可靠判断</td><td>Auto 不可用或回到 <code>ask</code></td><td>静默允许、退化成 bypass</td></tr>
+    <tr><td>Sandbox 后端不可用</td><td>默认 refuse 和后端原因</td><td>静默执行普通宿主命令</td></tr>
+    <tr><td>Sandbox 拒绝</td><td><code>sandbox.violation</code>，包含 backend、path/rule（可得时）</td><td>把普通非零退出误报为 sandbox denial</td></tr>
+    <tr><td>升级仍被 hard floor 拒绝</td><td>原始结构化 denial</td><td>再次弹相同审批并重复执行</td></tr>
+  </tbody></table>
+</section>
+
+<section id="status">
+  <h2>11. 实现状态与当前缺口</h2>
+  <table><thead><tr><th>状态</th><th>能力或缺口</th><th>当前证据</th></tr></thead><tbody>
+    <tr><td><span class="yes">Implemented</span></td><td>固定 Authority tier 与 capability 表</td><td>owner、paired、mcp_browser；缺失/未知 tier 在工具执行前 fail closed</td></tr>
+    <tr><td><span class="yes">Implemented</span></td><td>Permission 规则、五种模式与审批</td><td>deny/ask 早于 bypass；精确 always allow、non-interactive deny、强制审批</td></tr>
+    <tr><td><span class="yes">Implemented</span></td><td>Seatbelt / bubblewrap 本地进程边界</td><td>workspace-write、deny-read、env allowlist、网络关闭、不可用 refuse</td></tr>
+    <tr><td><span class="yes">Implemented</span></td><td>Cron、execute_code 与嵌套 Agent</td><td>signed frozen policy、LocalBackend、禁用嵌套 CLI 内置副作用工具</td></tr>
+    <tr><td><span class="maybe">Confirmed defect</span></td><td>Web permission mode 端到端传递</td><td>普通发送、Goal 回答、排队与重排队都没有携带 <code>permission_mode</code>；后端字段缺失时默认 <code>bypass</code></td></tr>
+    <tr><td><span class="no">Target not implemented</span></td><td>Claude Code 风格 Auto</td><td>当前 auto 不是本文定义的独立后台安全分类器，也没有支持矩阵、拒绝记录和重复阻止后回到 ask 的用户流程</td></tr>
+    <tr><td><span class="no">Target not implemented</span></td><td>bypass 与 Sandbox 完全解耦</td><td>当前 bypass 默认关闭 Sandbox；<code>sandbox.apply_in_bypass</code> 是过渡配置，目标设计废弃该耦合</td></tr>
+    <tr><td><span class="no">Target not implemented</span></td><td>Plus 菜单 Sandbox 开关</td><td>当前只有 <code>/sandbox</code> 一次性命令，没有 Plus 菜单行和结构化可用性状态</td></tr>
+    <tr><td><span class="no">Target not implemented</span></td><td>会话级 Sandbox 与 turn snapshot</td><td>当前 <code>/sandbox</code> 修改全局持久配置，<code>resolve_policy()</code> 每条命令重新读取；一个会话切换可能影响其他会话后续命令</td></tr>
+    <tr><td><span class="no">Target not implemented</span></td><td>域名级网络 allowlist</td><td>当前 <code>SandboxPolicy.network</code> 只有布尔值；没有强制代理、域名/端口规则、直接 IP 拒绝和重定向逐跳校验</td></tr>
+    <tr><td><span class="maybe">Partial</span></td><td>宿主进程信息兼容性</td><td>当前默认 <code>host_process_info=false</code>，升级策略可临时设为 true；尚无会话级高级例外和稳定的 <code>host_process_info_denied</code> 用户流程</td></tr>
+    <tr><td><span class="no">Not implemented</span></td><td>有效执行边界状态协议与界面</td><td>现有 <code>/sandbox</code> 只能切换全局进程配置并返回一次性文本；没有 configured / effective turn / effective tool 三层结构化状态</td></tr>
+    <tr><td><span class="maybe">Platform limit</span></td><td>Linux 中段 glob</td><td><code>**/.env</code> 无法由 bubblewrap 遮蔽模型表达</td></tr>
+    <tr><td><span class="no">Out of scope</span></td><td>资源配额与 Windows 后端</td><td>没有 CPU、内存、进程数配额；Windows 启用沙箱时默认拒绝</td></tr>
+  </tbody></table>
+  <div class="callout warn"><strong>实现证据边界：</strong>当前定向 Authority/Permission/Sandbox 测试为 148 passed。历史完整矩阵与双平台真实子进程证据记录在此前实施验收中；本次文档重构没有重新运行完整 Linux bubblewrap 或 App 可视化验收，因此不把历史结果写成当前重新验证。</div>
+</section>
+
+<section id="files">
+  <h2>12. 代码地图与验收入口</h2>
+  <table><thead><tr><th>位置</th><th>职责</th></tr></thead><tbody>
+    <tr><td><code>openprogram/agent/authority.py</code></td><td>tier、principal、capability table、tool → capability 映射</td></tr>
+    <tr><td><code>openprogram/agent/internals/_approval.py</code></td><td>完整判定顺序、审批、sandbox escalation</td></tr>
+    <tr><td><code>openprogram/agent/session_config.py</code></td><td>permission mode 与 session rules</td></tr>
+    <tr><td><code>openprogram/programs/permission_rule.py</code></td><td>规则解析、规范化、项目/全局/session 合并</td></tr>
+    <tr><td><code>openprogram/sandbox/__init__.py</code></td><td>SandboxPolicy、Seatbelt/bwrap profile、bypass 与 escalation policy</td></tr>
+    <tr><td><code>openprogram/config_schema.py</code></td><td><code>sandbox.*</code> 配置、默认值和帮助文本</td></tr>
+    <tr><td><code>apps/server/openprogram_server/_webui/_execute/</code></td><td>Web TurnRequest、owner authority、effective permission</td></tr>
+    <tr><td><code>apps/web/components/chat/</code></td><td>permission menu、approval card、chat payload</td></tr>
+  </tbody></table>
+  <h3>最低验收集合</h3>
+  <pre><code>python -m pytest -q \
+  tests/unit/security/test_permission_rules.py \
+  tests/unit/security/test_sandbox_allow_read.py \
+  tests/unit/providers/test_authority_scope.py \
+  tests/unit/agent/test_spawn_hard_constraints.py \
+  tests/unit/programs/test_dispatch_sandbox_enforcement.py \
+  tests/unit/programs/test_cron_command.py
+
+python -m scripts.docs_site.checklinks</code></pre>
+</section>
+
+<div class="footer">Canonical engineering design · Conceptual contract is separated from implementation evidence · No migration timeline is embedded in this document.</div>
 </div>
+</main>
+<script>
+document.getElementById('jump').addEventListener('change',function(){if(this.value)document.getElementById(this.value)?.scrollIntoView()});
+</script>
 </body>
 </html>
