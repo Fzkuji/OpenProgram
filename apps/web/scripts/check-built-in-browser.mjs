@@ -181,6 +181,16 @@ assert.match(browserSettingsRoute, /<BrowserSettings/);
 assert.match(contextMenu, /item\.checked/);
 assert.match(contextMenu, /item\.iconUrl/);
 assert.match(contextMenu, /item\.icon === "folder"/);
+assert.match(
+  contextMenu,
+  /function hasItemIcon[\s\S]*?Boolean\(item\.checked \|\| item\.icon === "folder" \|\| item\.iconUrl\)/,
+  "context menus must reserve a slot only for icon kinds that ItemIcon renders",
+);
+assert.equal(
+  contextMenu.match(/\{hasItemIcon\(item\) \? \(/g)?.length,
+  3,
+  "flat and nested context-menu rows must omit the icon slot when no icon exists",
+);
 assert.match(contextMenu, /params\.get\("cascade"\) === "1"/);
 assert.match(contextMenu, /mainMenuBridge\(\)\?\.onUpdate\?\./);
 assert.match(contextMenu, /onError=.*setBroken/);

@@ -91,6 +91,10 @@ function ItemIcon({ item }: { item: ContextMenuItem }) {
   );
 }
 
+function hasItemIcon(item: ContextMenuItem) {
+  return Boolean(item.checked || item.icon === "folder" || item.iconUrl);
+}
+
 function NestedMenuItems({ items }: { items: ContextMenuItem[] }) {
   const choose = (item: ContextMenuItem) => {
     if (!item.disabled) mainMenuBridge()?.choose(item.id);
@@ -105,9 +109,11 @@ function NestedMenuItems({ items }: { items: ContextMenuItem[] }) {
             className={`${itemCls(false)} w-full min-w-0 outline-none data-[highlighted]:bg-bg-hover data-[highlighted]:text-text-bright data-[state=open]:bg-bg-hover data-[state=open]:text-text-bright`}
             title={item.label}
           >
-            <span className="inline-flex w-[14px] shrink-0 items-center justify-center">
-              <ItemIcon item={item} />
-            </span>
+            {hasItemIcon(item) ? (
+              <span className="inline-flex w-[14px] shrink-0 items-center justify-center">
+                <ItemIcon item={item} />
+              </span>
+            ) : null}
             <span className="min-w-0 flex-1 truncate text-left">{item.label}</span>
             <ChevronRight size={13} className="ml-auto shrink-0" aria-hidden="true" />
           </DropdownMenuPrimitive.SubTrigger>
@@ -131,9 +137,11 @@ function NestedMenuItems({ items }: { items: ContextMenuItem[] }) {
           title={item.label}
           onSelect={() => choose(item)}
         >
-          <span className="inline-flex w-[14px] shrink-0 items-center justify-center">
-            <ItemIcon item={item} />
-          </span>
+          {hasItemIcon(item) ? (
+            <span className="inline-flex w-[14px] shrink-0 items-center justify-center">
+              <ItemIcon item={item} />
+            </span>
+          ) : null}
           <span className="min-w-0 flex-1 truncate">{item.label}</span>
         </DropdownMenuPrimitive.Item>
       )}
@@ -365,9 +373,11 @@ function ContextMenuOverlayPage() {
               }}
               onClick={() => choose(item)}
             >
-              <span className="inline-flex w-[14px] shrink-0 items-center justify-center">
-                <ItemIcon item={item} />
-              </span>
+              {hasItemIcon(item) ? (
+                <span className="inline-flex w-[14px] shrink-0 items-center justify-center">
+                  <ItemIcon item={item} />
+                </span>
+              ) : null}
               <span
                 className={requestedWidth
                   ? "min-w-0 flex-1 truncate"
