@@ -11,6 +11,8 @@ from openprogram.agent.workspace_alignment import (
     plan_branch_workspace_restore,
     restore_branch_workspace,
 )
+from openprogram.agent.job.store import save_job
+from openprogram.agent.job.types import Job, JobStatus
 from openprogram.store.session.session_store import SessionStore
 from openprogram.store.snapshot.checkpoint import CheckpointStore
 
@@ -104,3 +106,39 @@ def test_checkout_back_to_materialized_branch_clears_mismatch(branch_workspace):
 
     assert alignment["status"] == "aligned"
     assert alignment["decision"] == "return_to_workspace_branch"
+
+
+def test_restore_branch_projection_includes_owned_child_changes(branch_workspace):
+    store, path = branch_workspace
+    store.spawn_branch(
+        "s", "a1", source="agent_spawn", node_id="child-u",
+        prompt="child", register_head=False,
+    )
+    store.append_message("s", {
+        "id": "child-a", "role": "assistant", "content": "child done",
+        "predecessor": "child-u",
+    })
+    journal = CheckpointStore(store._session_dir("s"))
+    journal.backup_before_edit("child-a", str(path))
+    path.write_text("source-child\n", encoding="utf-8")
+    journal.commit_after_edit("child-a", str(path), operation="edit")
+    save_job("s", Job(
+        id="j-child",
+        parent_session_id="s",
+        prompt="child",
+        agent_id="child",
+        parent_msg_id="a1",
+        caller_msg_id="a1",
+        origin_turn_id="a1",
+        creates_agent=True,
+        relation="owned",
+        status=JobStatus.COMPLETED,
+        head_id="child-a",
+    ))
+
+    result = restore_branch_workspace(
+        "s", store=store, idempotency_key="restore-owned-source",
+    )
+
+    assert result["status"] == "committed"
+    assert path.read_text(encoding="utf-8") == "target\n"

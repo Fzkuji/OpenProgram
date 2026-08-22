@@ -79,14 +79,33 @@ def adopt_current_workspace(
     return value
 
 
-def _branch_turn_ids(store, session_id: str, head_id: str | None) -> list[str]:
+def _branch_turn_ids(
+    store,
+    session_id: str,
+    head_id: str | None,
+) -> tuple[list[str], dict[str, Any]]:
     if not head_id:
-        return []
-    return [
+        return [], {"status": "ready", "blockers": [], "linked": []}
+    branch_ids = [
         message["id"]
         for message in (store.get_branch(session_id, head_id) or [])
         if message.get("role") == "assistant" and message.get("id")
     ]
+    from openprogram.agent.history_ownership import owned_change_set_closure
+
+    ownership = owned_change_set_closure(session_id, branch_ids)
+    producer_ids = set(branch_ids + ownership["owned_turn_ids"])
+    pair = store._open(session_id)
+    index = pair[1] if pair else None
+    ordered = sorted(
+        producer_ids,
+        key=lambda turn_id: (
+            index.nodes_by_id[turn_id].seq
+            if index and turn_id in index.nodes_by_id
+            else 2**63
+        ),
+    )
+    return ordered, ownership
 
 
 def _branch_projection(journal, turn_ids: list[str]) -> tuple[dict, list[str]]:
@@ -142,12 +161,24 @@ def plan_branch_workspace_restore(session_id: str, *, store=None) -> dict[str, A
     from openprogram.store.snapshot.checkpoint import CheckpointStore
 
     journal = CheckpointStore(store._session_dir(session_id))
-    source, source_unavailable = _branch_projection(
-        journal, _branch_turn_ids(store, session_id, source_head),
+    source_turns, source_ownership = _branch_turn_ids(
+        store, session_id, source_head,
     )
-    target, target_unavailable = _branch_projection(
-        journal, _branch_turn_ids(store, session_id, target_head),
+    target_turns, target_ownership = _branch_turn_ids(
+        store, session_id, target_head,
     )
+    blockers = source_ownership["blockers"] + target_ownership["blockers"]
+    linked_impacts = source_ownership["linked"] + target_ownership["linked"]
+    if blockers:
+        return {
+            "status": "blocked",
+            "actions": [],
+            "blockers": blockers,
+            "linked_impacts": linked_impacts,
+            "error": "branch has a same-workspace actor that is still running",
+        }
+    source, source_unavailable = _branch_projection(journal, source_turns)
+    target, target_unavailable = _branch_projection(journal, target_turns)
     unavailable = sorted(set(source_unavailable + target_unavailable))
     actions = []
     for path in sorted(set(source) | set(target)):
@@ -182,6 +213,7 @@ def plan_branch_workspace_restore(session_id: str, *, store=None) -> dict[str, A
         **validated,
         "source_head_id": source_head,
         "target_head_id": target_head,
+        "linked_impacts": linked_impacts,
     }
 
 
