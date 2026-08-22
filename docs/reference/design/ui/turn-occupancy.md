@@ -83,6 +83,12 @@ iterators. Grok thinking often has no chunk for longer than 250ms;
 that finalized a completed assistant with empty content.
 On cancel it exits so the `async with` closes the HTTP stream.
 
+`finish_reason` is the end of the turn. Do not wait forever for
+`[DONE]` or a trailing `include_usage` chunk — Grok/xAI often leave
+the SSE open after the last token, which looks like "still answering"
+with the text already on screen. Drain usage for a short window
+(`USAGE_DRAIN_S`), then emit `EventDone`.
+
 ## 4s grace is for real child processes
 
 `CANCEL_GRACE_S = 4.0` stays. It applies when the owner has a

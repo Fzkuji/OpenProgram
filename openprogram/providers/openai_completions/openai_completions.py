@@ -7,6 +7,9 @@ import json
 import time
 from typing import Any, AsyncGenerator
 
+# Seconds to keep reading after finish_reason for a usage-only chunk.
+USAGE_DRAIN_S = 1.5
+
 # The ``openai`` SDK is a base dependency (installed by default). This
 # guarded import only stays defensive so importing this module succeeds
 # even in a stripped env and the provider *catalog* stays usable.
@@ -436,24 +439,37 @@ async def stream_simple(
     tool_arg_buffers: dict[str, str] = {}
     usage = Usage()
     finish_reason = None
+    # After finish_reason, Grok/xAI often keep SSE open for a usage
+    # chunk or [DONE] that never arrives. Hang here = text done, UI
+    # still running. Drain usage briefly, then stop.
+    finished_at = None
 
     _signal = getattr(opts, "signal", None)
 
-    def _cancelled() -> bool:
+    def _user_cancelled() -> bool:
         f = getattr(_signal, "is_set", None)
         return bool(_signal is not None and callable(f) and f())
+
+    def _stop() -> bool:
+        if _user_cancelled():
+            return True
+        if finished_at is not None and (time.monotonic() - finished_at) >= USAGE_DRAIN_S:
+            return True
+        return False
 
     yield EventStart(type="start", partial=partial)
 
     try:
         async with await client.chat.completions.create(**params) as stream:
             # <=250ms cancel poll — do not wait for the next token.
-            async for chunk in iter_until_cancelled(stream, _cancelled):
+            async for chunk in iter_until_cancelled(stream, _stop):
                 # Process usage from chunks
                 if chunk.usage:
                     usage = _usage_from_chunk(chunk.usage)
 
                 if not chunk.choices:
+                    if finished_at is not None:
+                        break
                     continue
 
                 delta = chunk.choices[0].delta
@@ -576,13 +592,21 @@ async def stream_simple(
                             partial=partial,
                         )
 
+                    # finish_reason is the end of choices. Do not wait
+                    # forever for [DONE] — that left Grok turns running
+                    # after the last token. Keep a short drain for the
+                    # trailing include_usage chunk.
+                    if chunk.usage:
+                        break
+                    finished_at = time.monotonic()
+
         # Build final message
         stop_reason_map = {"stop": "stop", "length": "length", "tool_calls": "toolUse"}
         stop_reason = stop_reason_map.get(finish_reason or "", "stop")
         if tool_indices and stop_reason == "stop":
             stop_reason = "toolUse"
 
-        if _cancelled():
+        if _user_cancelled():
             stop_reason = "aborted"
 
         final = AssistantMessage(
@@ -624,7 +648,7 @@ async def stream_simple(
         # key/endpoint rotates rather than being hammered.
         if _cred_id:
             _auth_usage.record_call_failure(model.provider, _cred_profile, _cred_id, None, str(e))
-        if not _cancelled():
+        if not _user_cancelled():
             raise  # same rationale as the APIError branch above
         # User cancel that surfaced as an exception — finalize as
         # "aborted", not an error, preserving streamed content.

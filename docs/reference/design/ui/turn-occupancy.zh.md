@@ -53,6 +53,9 @@ Anthropic 和 OpenAI Completions 以前是 `async for` SDK 流，然后才看取
 
 `iter_until_cancelled` 每 ≤250ms 看一次取消信号，但 **同一条** `__anext__` 不能被超时取消。`wait_for` 一超时就会 cancel 这次读，httpx/OpenAI 的 SSE 迭代器会断。Grok 思考经常超过 250ms 没有分片，于是收成一条空的 completed 回复。取消时再退出，让 `async with` 关 HTTP 流。
 
+`finish_reason` 就是这一轮的结束。不要死等 `[DONE]` 或后面的
+`include_usage`：Grok/xAI 经常在最后一个 token 之后不关 SSE，界面就会一直显示还在回答。usage 只再短等一下（`USAGE_DRAIN_S`），然后发 `EventDone`。
+
 ## 4 秒宽限只给真子进程
 
 `CANCEL_GRACE_S = 4.0` 保留。只在 owner 有子进程、或有会杀掉子进程的 terminate 钩子时生效（工具、process runner）。只有 token、没有进程、没有杀子进程钩子的聊天 owner，取消意图之后不得再等 4 秒。协作取消 + HTTP 中止就够了；占用已经释放。
