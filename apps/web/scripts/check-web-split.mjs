@@ -1473,6 +1473,7 @@ const {
   restorePriorActiveTabAfterFailedWebOpen,
   setDesktopSplitLayoutAvailable,
   setWebTabReady,
+  surfaceRefForChat,
   visibleWebTab,
   waitForWebTabReady,
 } = await import("../lib/desktop-bridge.ts");
@@ -2086,7 +2087,7 @@ assert.match(desktopBridgeSource, /const visibleWebBounds = new Map/);
 assert.match(desktopBridgeSource, /targetBridge\.webTab\.syncVisible/);
 assert.match(desktopBridgeSource, /state\.openWebTabInSplit\(d\.url\)/);
 assert.match(desktopBridgeSource, /state\.ensureWebTab\(d\.url\)/);
-assert.match(desktopBridgeSource, /useWebTabPip\.getState\(\)\.show\(id\)/);
+assert.match(desktopBridgeSource, /useWebTabPip\.getState\(\)\.show\(id, active\.id\)/);
 assert.match(desktopBridgeSource, /waitForWebTabReady\(id, 2000\)/);
 assert.match(desktopBridgeSource, /subscribeWebTabPopups\(bridge\)/);
 assert.match(desktopBridgeSource, /state\.openPopupWebTab\(popup\.url, popup\.openerId\)/);
@@ -2370,14 +2371,18 @@ assert.equal(
 );
 const {
   peekWebTabPipId,
+  peekWebTabPipOwnerId,
   peekWebTabPipBackgroundId,
+  peekLiveWebTabPipId,
   useWebTabPip,
   clampPipRect,
   collapseWebTabToPip,
   pipCoversCenter,
+  pipParkedOver,
 } = await import("../lib/state/web-tab-pip-store.ts");
-useWebTabPip.getState().show(pipOnlyId);
+useWebTabPip.getState().show(pipOnlyId, "s:chat");
 assert.equal(peekWebTabPipId(), pipOnlyId);
+assert.equal(peekWebTabPipOwnerId(), "s:chat");
 registerVisibleWebTabBounds(
   { webTab: { syncVisible() {} } },
   pipOnlyId,
@@ -2386,29 +2391,31 @@ registerVisibleWebTabBounds(
 setWebTabReady(pipOnlyId, true);
 assert.equal(visibleWebTab()?.id, pipOnlyId);
 assert.equal(
-  pipCoversCenter(pipOnlyId, useCenterTabs.getState()),
+  pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()),
   true,
 );
 useCenterTabs.getState().setActive(pipOnlyId);
 assert.equal(useCenterTabs.getState().activeId, pipOnlyId);
-assert.equal(pipCoversCenter(pipOnlyId, useCenterTabs.getState()), false);
+assert.equal(pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()), false);
 assert.equal(collapseWebTabToPip(pipOnlyId), true);
 assert.equal(peekWebTabPipId(), pipOnlyId);
+assert.equal(peekWebTabPipOwnerId(), "s:chat");
 assert.equal(useCenterTabs.getState().activeId, "s:chat");
 assert.equal(
   useCenterTabs.getState().tabs.find((tab) => tab.id === pipOnlyId)?.url,
   "https://pip.example/",
 );
 assert.equal(useCenterTabs.getState().splitWebTabId, null);
-assert.equal(pipCoversCenter(pipOnlyId, useCenterTabs.getState()), true);
+assert.equal(pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()), true);
 useCenterTabs.getState().setSplitWebTab(pipOnlyId);
 assert.equal(useCenterTabs.getState().splitWebTabId, pipOnlyId);
-assert.equal(pipCoversCenter(pipOnlyId, useCenterTabs.getState()), false);
+assert.equal(pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()), false);
 assert.equal(collapseWebTabToPip(pipOnlyId), true);
 assert.equal(useCenterTabs.getState().splitWebTabId, null);
 assert.equal(useCenterTabs.getState().activeId, "s:chat");
 assert.equal(peekWebTabPipId(), pipOnlyId);
-assert.equal(pipCoversCenter(pipOnlyId, useCenterTabs.getState()), true);
+assert.equal(peekWebTabPipOwnerId(), "s:chat");
+assert.equal(pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()), true);
 useWebTabPip.getState().hide();
 removeVisibleWebTabBounds({ webTab: { syncVisible() {} } }, pipOnlyId);
 setWebTabReady(pipOnlyId, false);
@@ -2428,6 +2435,153 @@ assert.deepEqual(
   ),
   { x: 50, y: 100, width: 360, height: 220 },
 );
+
+const pipOwnerA = "s:pip-a";
+const pipOwnerB = "s:pip-b";
+const pipOwnedId = "w:https://pip-owned.example/";
+useCenterTabs.setState({
+  tabs: [
+    { id: pipOwnerA, kind: "session", title: "Alpha", sessionId: "pip-a" },
+    { id: pipOwnerB, kind: "session", title: "Beta", sessionId: "pip-b" },
+    { id: "f:pip-files", kind: "file", title: "notes", projectId: "p", path: "notes.md" },
+    { id: pipOwnedId, kind: "web", title: "Owned", url: "https://pip-owned.example/" },
+  ],
+  activeId: pipOwnerA,
+  groups: [],
+  splitWebTabId: null,
+  splitRatio: 0.45,
+});
+useWebTabPip.getState().show(pipOwnedId, pipOwnerA);
+assert.equal(
+  pipCoversCenter(pipOwnedId, pipOwnerA, useCenterTabs.getState()),
+  true,
+);
+assert.equal(
+  pipParkedOver(pipOwnedId, pipOwnerA, useCenterTabs.getState()),
+  false,
+);
+useCenterTabs.getState().setActive(pipOwnerB);
+assert.equal(
+  pipCoversCenter(pipOwnedId, pipOwnerA, useCenterTabs.getState()),
+  false,
+);
+assert.equal(
+  pipParkedOver(pipOwnedId, pipOwnerA, useCenterTabs.getState()),
+  true,
+);
+useCenterTabs.getState().setActive("f:pip-files");
+assert.equal(
+  pipCoversCenter(pipOwnedId, pipOwnerA, useCenterTabs.getState()),
+  false,
+);
+assert.equal(
+  pipParkedOver(pipOwnedId, pipOwnerA, useCenterTabs.getState()),
+  false,
+);
+
+globalThis.window.openprogramDesktop = { isDesktop: true, windowId: "main" };
+useCenterTabs.getState().setActive(pipOwnerA);
+registerVisibleWebTabBounds(
+  { webTab: { syncVisible() {} } },
+  pipOwnedId,
+  { x: 40, y: 40, width: 360, height: 188 },
+);
+setWebTabReady(pipOwnedId, true);
+assert.equal(visibleWebTab()?.id, pipOwnedId);
+assert.equal(peekLiveWebTabPipId(), pipOwnedId);
+assert.equal(surfaceRefForChat("pip-a", true)?.tab_id, pipOwnedId);
+useCenterTabs.getState().setActive(pipOwnerB);
+assert.equal(
+  visibleWebTab()?.id,
+  undefined,
+  "a parked PiP must not enter the agent-visible web set",
+);
+assert.equal(peekLiveWebTabPipId(), null);
+assert.equal(
+  surfaceRefForChat("pip-b", true),
+  null,
+  "a non-owner session must not bind the floating page as its turn surface",
+);
+delete globalThis.window.openprogramDesktop;
+removeVisibleWebTabBounds({ webTab: { syncVisible() {} } }, pipOwnedId);
+setWebTabReady(pipOwnedId, false);
+
+useCenterTabs.getState().setActive(pipOwnerA);
+useCenterTabs.getState().closeTab(pipOwnerA);
+assert.equal(useWebTabPip.getState().tabId, null);
+assert.equal(useWebTabPip.getState().ownerTabId, null);
+assert.equal(useWebTabPip.getState().backgroundTabId, null);
+assert.equal(useWebTabPip.getState().backgroundOwnerTabId, null);
+assert.ok(
+  useCenterTabs.getState().tabs.some((tab) => tab.id === pipOwnedId),
+  "ending the float must keep the web leaf",
+);
+
+useCenterTabs.setState({
+  tabs: [
+    { id: pipOwnerA, kind: "session", title: "Alpha", sessionId: "pip-a" },
+    { id: pipOwnedId, kind: "web", title: "Owned", url: "https://pip-owned.example/" },
+  ],
+  activeId: pipOwnerA,
+  groups: [],
+  splitWebTabId: null,
+  splitRatio: 0.45,
+});
+useWebTabPip.getState().show(pipOwnedId, pipOwnerA);
+useCenterTabs.getState().closeTab(pipOwnedId);
+assert.equal(useWebTabPip.getState().tabId, null);
+assert.equal(useWebTabPip.getState().ownerTabId, null);
+assert.equal(useWebTabPip.getState().backgroundTabId, null);
+assert.equal(useWebTabPip.getState().backgroundOwnerTabId, null);
+
+useCenterTabs.setState({
+  tabs: [
+    { id: pipOwnerA, kind: "session", title: "Alpha", sessionId: "pip-a" },
+    { id: pipOwnerB, kind: "session", title: "Beta", sessionId: "pip-b" },
+    { id: pipOwnedId, kind: "web", title: "Owned", url: "https://pip-owned.example/" },
+  ],
+  activeId: pipOwnedId,
+  groups: [{
+    id: "g:pip-owned",
+    memberIds: [pipOwnerB, pipOwnedId],
+    visibleIds: [pipOwnerB, pipOwnedId],
+    focusedId: pipOwnedId,
+  }],
+  splitWebTabId: null,
+  splitRatio: 0.45,
+});
+useWebTabPip.getState().end();
+assert.equal(collapseWebTabToPip(pipOwnedId), true);
+assert.equal(peekWebTabPipId(), pipOwnedId);
+assert.equal(peekWebTabPipOwnerId(), pipOwnerB);
+assert.equal(useCenterTabs.getState().activeId, pipOwnerB);
+useWebTabPip.getState().end();
+useCenterTabs.setState({
+  tabs: [{
+    id: pipOwnedId, kind: "web", title: "Owned", url: "https://pip-owned.example/",
+  }],
+  activeId: pipOwnedId,
+  groups: [],
+  splitWebTabId: null,
+  splitRatio: 0.45,
+});
+assert.equal(collapseWebTabToPip(pipOwnedId), false);
+assert.equal(peekWebTabPipId(), null);
+
+useCenterTabs.setState({
+  tabs: [
+    { id: "s:chat", kind: "session", title: "Chat", sessionId: "chat" },
+    { id: pipOnlyId, kind: "web", title: "pip.example", url: "https://pip.example/" },
+  ],
+  activeId: "s:chat",
+  groups: [],
+  splitWebTabId: null,
+  splitRatio: 0.45,
+});
+useWebTabPip.getState().end();
+useWebTabPip.getState().show(pipOnlyId, "s:chat");
+useWebTabPip.getState().hide();
+
 const pipSource = await readFile(
   new URL("../components/center-tabs/web-tab-pip.tsx", import.meta.url),
   "utf8",
@@ -2474,7 +2628,9 @@ const previewChipSource = await readFile(
   "utf8",
 );
 assert.match(previewChipSource, /Show page preview/);
-assert.match(previewChipSource, /peekWebTabPipBackgroundId|backgroundTabId/);
+assert.match(previewChipSource, /backgroundOwnerTabId/);
+assert.match(previewChipSource, /activeId === backgroundOwnerTabId/);
+assert.match(previewChipSource, /show\(restoreId, backgroundOwnerTabId\)/);
 assert.match(
   await readFile(
     new URL("../components/chat/composer/environment-row/environment-row.tsx", import.meta.url),

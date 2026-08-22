@@ -21,7 +21,12 @@ import {
   useCenterTabs,
   validateTransferredTabs,
 } from "@/lib/state/center-tabs-store";
-import { peekWebTabPipId, useWebTabPip } from "@/lib/state/web-tab-pip-store";
+import {
+  peekLiveWebTabPipId,
+  peekWebTabPipId,
+  peekWebTabPipOwnerId,
+  useWebTabPip,
+} from "@/lib/state/web-tab-pip-store";
 import {
   centerTabStripEntries,
   findCenterTabGroup,
@@ -346,7 +351,7 @@ export function visibleWebTab() {
   }
   const active = state.tabs.find((tab) => tab.id === state.activeId);
   if (active?.kind === "web" && isWebTabReady(active.id)) return active;
-  const pipId = peekWebTabPipId();
+  const pipId = peekLiveWebTabPipId(state);
   if (pipId && isWebTabReady(pipId)) {
     return state.tabs.find((tab) => tab.id === pipId && tab.kind === "web") ?? null;
   }
@@ -369,7 +374,7 @@ function visibleWebTabById(tabId: string) {
   if (state.activeId && state.splitWebTabId) {
     visibleIds.add(state.splitWebTabId);
   }
-  const pipId = peekWebTabPipId();
+  const pipId = peekLiveWebTabPipId(state);
   if (pipId) visibleIds.add(pipId);
   return visibleIds.has(tabId) && isWebTabActuallyVisible(tabId)
     ? state.tabs.find((tab) => tab.id === tabId && tab.kind === "web") ?? null
@@ -662,7 +667,7 @@ export function surfaceRefForChat(
   }
   if (!web && state.activeId === chat.id) {
     const pipId = peekWebTabPipId();
-    if (pipId) {
+    if (pipId && peekWebTabPipOwnerId() === chat.id) {
       web = state.tabs.find((tab) => tab.id === pipId && tab.kind === "web");
     }
   }
@@ -880,9 +885,9 @@ export function installDesktopMenuHandlers(): void {
       let id: string | null;
       if (split) {
         id = state.openWebTabInSplit(d.url);
-      } else if (usePip) {
+      } else if (usePip && active) {
         id = state.ensureWebTab(d.url);
-        useWebTabPip.getState().show(id);
+        useWebTabPip.getState().show(id, active.id);
       } else {
         state.openWebTab(d.url);
         id = useCenterTabs.getState().activeId;

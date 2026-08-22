@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Columns2, ExternalLink, Maximize2, X } from "lucide-react";
 
 import {
@@ -15,6 +15,7 @@ import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   clampPipRect,
   pipCoversCenter,
+  pipParkedOver,
   useWebTabPip,
   type WebTabPipRect,
 } from "@/lib/state/web-tab-pip-store";
@@ -70,7 +71,9 @@ function measuredRect(el: HTMLElement): WebTabPipRect {
 export function WebTabPip() {
   const { text } = useTranslation();
   const tabId = useWebTabPip((s) => s.tabId);
+  const ownerTabId = useWebTabPip((s) => s.ownerTabId);
   const hide = useWebTabPip((s) => s.hide);
+  const end = useWebTabPip((s) => s.end);
   const rect = useWebTabPip((s) => s.rect);
   const setRect = useWebTabPip((s) => s.setRect);
   const tabs = useCenterTabs((s) => s.tabs);
@@ -79,7 +82,9 @@ export function WebTabPip() {
   const tab = tabId
     ? tabs.find((item) => item.id === tabId && item.kind === "web")
     : undefined;
-  const visible = !!tabId && pipCoversCenter(tabId, { tabs, activeId, groups });
+  const center = { tabs, activeId, groups };
+  const live = !!tabId && !!ownerTabId && pipCoversCenter(tabId, ownerTabId, center);
+  const parked = !!tabId && !!ownerTabId && pipParkedOver(tabId, ownerTabId, center);
   const rootRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<PipDrag | null>(null);
@@ -89,13 +94,22 @@ export function WebTabPip() {
   const lastPublishRef = useRef(0);
   const shotRef = useRef<HTMLImageElement>(null);
   const captureGenRef = useRef(0);
+  const parkedShotGenRef = useRef(0);
+  const [parkedShot, setParkedShot] = useState<string | null>(null);
   const reportRef = useRef<(immediate?: boolean) => void>(() => {});
   const bridge = desktopBridge();
   const url = tab?.url || (tabId?.startsWith("w:") ? tabId.slice(2) : "");
 
   useEffect(() => {
-    if (tabId && !visible) hide();
-  }, [tabId, visible, hide, activeId, groups, tabs]);
+    parkedShotGenRef.current += 1;
+    setParkedShot(tabId ? pipSnapshots.get(tabId) ?? null : null);
+  }, [tabId]);
+
+  useEffect(() => {
+    if (!tabId) return;
+    if (!tabs.some((item) => item.id === tabId)) return;
+    if (!live && !parked) hide();
+  }, [tabId, live, parked, hide, activeId, groups, tabs]);
 
   useEffect(() => () => {
     if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
@@ -103,7 +117,7 @@ export function WebTabPip() {
 
   useEffect(() => {
     const el = rootRef.current;
-    if (!el || !visible) return;
+    if (!el || !live) return;
     const parent = el.offsetParent;
     if (!(parent instanceof HTMLElement)) return;
     const reclamp = () => {
@@ -122,10 +136,10 @@ export function WebTabPip() {
     const chat = parent.querySelector(".center-pane-chat");
     if (chat instanceof HTMLElement) ro.observe(chat);
     return () => ro.disconnect();
-  }, [visible, setRect]);
+  }, [live, setRect]);
 
   useEffect(() => {
-    if (!bridge || !tabId || !visible || !url) return;
+    if (!bridge || !tabId || !live || !url) return;
     ensureWebView(bridge, tabId, url);
     const el = bodyRef.current;
     if (!el) return;
@@ -179,6 +193,14 @@ export function WebTabPip() {
     window.addEventListener("resize", onWindowChange);
     window.addEventListener("scroll", onWindowChange, true);
     return () => {
+      const shotTabId = tabId;
+      const gen = ++parkedShotGenRef.current;
+      void bridge.webTab.capture?.(shotTabId).then((d) => {
+        if (!d || parkedShotGenRef.current !== gen) return;
+        pipSnapshots.set(shotTabId, d);
+        if (useWebTabPip.getState().tabId !== shotTabId) return;
+        setParkedShot(d);
+      });
       reportRef.current = () => {};
       window.clearTimeout(throttleRef.current);
       ro.disconnect();
@@ -189,10 +211,10 @@ export function WebTabPip() {
       bridge.webTab.setPipZoom?.(tabId, null);
       setWebTabReady(tabId, false);
     };
-  }, [bridge, tabId, url, visible]);
+  }, [bridge, tabId, url, live]);
 
   useEffect(() => {
-    if (!bridge || !tabId || !visible) return;
+    if (!bridge || !tabId || !live) return;
     return bridge.webTab.onState((state) => {
       if (state.id !== tabId) return;
       if (state.url) useCenterTabs.getState().updateWebTab(tabId, { url: state.url });
@@ -201,9 +223,67 @@ export function WebTabPip() {
         useCenterTabs.getState().updateWebTab(tabId, { faviconUrl: state.faviconUrl });
       }
     });
-  }, [bridge, tabId, visible]);
+  }, [bridge, tabId, live]);
 
-  if (!tabId || !tab || !visible) return null;
+  const placed = !!rect;
+  const pipStyle = placed ? {
+    left: rect.x,
+    top: rect.y,
+    width: rect.width,
+    height: rect.height,
+    right: "auto",
+    bottom: "auto",
+  } : undefined;
+
+  if (parked && tabId && ownerTabId) {
+    const ownerTab = tabs.find((item) => item.id === ownerTabId);
+    const ownerTitle = ownerTab?.title
+      || text("another session", "另一个会话");
+    const parkedLabel = text(
+      `Controlled by “${ownerTitle}”`,
+      `正在由「${ownerTitle}」控制`,
+    );
+    const endLabel = text("End floating window", "结束浮动");
+    const goLabel = text("Go to that session", "转到该会话");
+    const shot = parkedShot ?? pipSnapshots.get(tabId);
+    return (
+      <div
+        className={styles.webPip}
+        role="complementary"
+        aria-label={parkedLabel}
+        style={pipStyle}
+      >
+        <div className={styles.webPipParked}>
+          {shot ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img className={styles.webPipParkedShot} src={shot} alt="" />
+          ) : null}
+          <div className={styles.webPipParkedDim} />
+          <div className={styles.webPipParkedBody}>
+            <div className={styles.webPipParkedTitle}>{parkedLabel}</div>
+            <div className={styles.webPipParkedActions}>
+              <button
+                type="button"
+                className={styles.webPipParkedBtn}
+                onClick={() => end()}
+              >
+                {endLabel}
+              </button>
+              <button
+                type="button"
+                className={styles.webPipParkedBtn}
+                onClick={() => useCenterTabs.getState().setActive(ownerTabId)}
+              >
+                {goLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!tabId || !tab || !live) return null;
 
   const title = tab.title || url;
   const expandSplit = text("Split with chat", "展开为分屏");
@@ -336,22 +416,13 @@ export function WebTabPip() {
     showShot(null);
   };
 
-  const placed = !!rect;
-
   return (
     <div
       ref={rootRef}
       className={styles.webPip}
       role="complementary"
       aria-label={title}
-      style={placed ? {
-        left: rect.x,
-        top: rect.y,
-        width: rect.width,
-        height: rect.height,
-        right: "auto",
-        bottom: "auto",
-      } : undefined}
+      style={pipStyle}
     >
       <div
         className={styles.webPipChrome}
