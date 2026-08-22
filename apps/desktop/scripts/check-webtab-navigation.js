@@ -25,6 +25,7 @@ const browserWindowOptions = [];
 let menuTemplate = null;
 let nextGeneratedWindowId = 1000;
 let generatedNativeViews = 0;
+const generatedNativeRecords = [];
 const rendererQueue = [];
 const spawnedChildren = [];
 const spawnedPtys = [];
@@ -200,7 +201,9 @@ const fakeElectron = {
   WebContentsView: class {
     constructor() {
       generatedNativeViews += 1;
-      return controlledRecord(`native-view-${generatedNativeViews}`).record.view;
+      const controlled = controlledRecord(`native-view-${generatedNativeViews}`);
+      generatedNativeRecords.push(controlled);
+      return controlled.record.view;
     }
   },
   Menu: {
@@ -300,6 +303,7 @@ vm.runInContext(
     activateView,
     resolveView,
     inspectView,
+    setPipZoom,
     runNativeNavigation,
     registerWebTabIpc,
     registerDownloads,
@@ -1179,6 +1183,26 @@ async function checkSenderOwnership() {
   assert.equal(a.nativeCalls.zoom.at(-1), 1);
   ipcListeners.get("webtab:set-pip-zoom")(eventA, "owned-a", null);
   assert.equal(a.nativeCalls.zoom.at(-1), 1.1);
+
+  const freshZoomRecord = hooks.ensureView(
+    ctxA,
+    "fresh-zoom",
+    "https://fresh-zoom.example/",
+  );
+  const freshZoom = generatedNativeRecords.at(-1);
+  freshZoom.record.view.webContents.setZoomFactor(0.25);
+  hooks.setPipZoom(ctxA, "fresh-zoom", null);
+  assert.equal(freshZoom.nativeCalls.zoom.at(-1), 1);
+  freshZoom.record.view.webContents.setZoomFactor(0.25);
+  freshZoom.controls[0].resolve();
+  freshZoom.emitWebContents("did-navigate");
+  assert.equal(
+    freshZoom.nativeCalls.zoom.at(-1),
+    1,
+    "the target host commit must reapply a pending ordinary-pane zoom reset",
+  );
+  await freshZoomRecord.navigation?.promise;
+  hooks.destroyView(ctxA, "fresh-zoom");
   assert.deepEqual(plain(a.nativeCalls.print), [{ silent: false, printBackground: true }]);
   assert.deepEqual(a.nativeCalls.printToPDF, []);
   assert.deepEqual(shownPrintSaveDialogs, []);
@@ -2175,6 +2199,8 @@ async function checkSuccessfulTransferAndDurableCommit() {
   first.record.findRequestId = 7;
   attachControlledRecord(sourceCtx, first, { x: 1, y: 2, width: 300, height: 400 });
   attachControlledRecord(sourceCtx, second, { x: 301, y: 2, width: 320, height: 400 });
+  assert.equal(hooks.setPipZoom(sourceCtx, "success-a", 480), true);
+  assert.equal(first.nativeCalls.zoom.at(-1), 0.25);
 
   const successPayload = webTransferPayload(["success-a", "success-b"]);
   successPayload.fileDrafts = [{ key: "draft:success-a", value: "source draft" }];
@@ -2213,6 +2239,13 @@ async function checkSuccessfulTransferAndDurableCommit() {
   assert.strictEqual(destinationCtx.views.get("success-b"), second.record);
   assert.equal(first.record.ownerId, destinationCtx.id);
   assert.equal(second.record.ownerId, destinationCtx.id);
+  assert.equal(hooks.setPipZoom(sourceCtx, "success-a", null), false);
+  assert.equal(hooks.setPipZoom(destinationCtx, "success-a", null), true);
+  assert.equal(
+    first.nativeCalls.zoom.at(-1),
+    0.25,
+    "transfer lock must defer rather than apply the ordinary-pane zoom reset",
+  );
   assert.equal(hooks.tabTransfers.inspect(destinationCtx, token), null);
   assert.equal(
     hooks.tabTransfers.accept(destinationCtx, token, { kind: "strip-end" }),
@@ -2336,6 +2369,9 @@ async function checkSuccessfulTransferAndDurableCommit() {
   assert.equal(second.record.ownerId, destinationCtx.id);
   assert.equal(first.record.findRequestId, null);
   assert.deepEqual(first.nativeCalls.stopFind, ["clearSelection"]);
+  assert.equal(first.record.pipLayoutZoom, null);
+  assert.equal(first.record.pendingTransferZoomRestore, false);
+  assert.equal(first.nativeCalls.zoom.at(-1), 1);
   assert.equal(hooks.tabTransfers.inspect(destinationCtx, token), null);
   assert.equal(
     hooks.tabTransfers.accept(destinationCtx, token, { kind: "strip-end" }),

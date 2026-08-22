@@ -2081,6 +2081,11 @@ assert.match(
   /Open in browser[\s\S]*?<CollapseToPipButton tabId=\{tabId\} \/>\s*<BrowserMenu/,
   "collapse-to-PiP belongs on the trailing toolbar cluster",
 );
+assert.match(
+  webTabPaneSource,
+  /ensureWebView\(bridge, tabId, viewUrlRef\.current\);[\s\S]*?bridge\.webTab\.setPipZoom\?\.\(tabId, null\);/,
+  "an ordinary desktop WebTab must clear persisted PiP layout zoom on mount",
+);
 
 assert.match(desktopBridgeSource, /function visibleWebTab\(\)/);
 assert.match(
@@ -2392,6 +2397,7 @@ const {
   peekWebTabPipOwnerId,
   peekWebTabPipBackgroundId,
   peekLiveWebTabPipId,
+  peekWebTabPipBackgroundOwnerId,
   pipBoundTabId,
   pipOpenMustFork,
   useWebTabPip,
@@ -2416,6 +2422,30 @@ assert.equal(
   pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()),
   true,
 );
+useCenterTabs.setState((state) => ({
+  tabs: [
+    ...state.tabs,
+    { id: "s:pip-other", kind: "session", title: "Other", sessionId: "pip-other" },
+  ],
+}));
+useCenterTabs.getState().setActive("s:pip-other");
+assert.equal(
+  pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()),
+  false,
+  "PiP must not follow a different chat",
+);
+assert.equal(peekWebTabPipId(), pipOnlyId, "chat switch keeps the owner preview restorable");
+assert.equal(
+  visibleWebTab(),
+  null,
+  "a hidden owner-scoped PiP must leave the synchronous agent surface inventory",
+);
+useCenterTabs.getState().setActive("s:chat");
+useCenterTabs.setState((state) => ({
+  tabs: state.tabs.filter((tab) => tab.id !== "s:pip-other"),
+}));
+assert.equal(pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()), true);
+assert.equal(visibleWebTab()?.id, pipOnlyId);
 useCenterTabs.getState().setActive(pipOnlyId);
 assert.equal(useCenterTabs.getState().activeId, pipOnlyId);
 assert.equal(pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()), false);
@@ -2439,10 +2469,33 @@ assert.equal(peekWebTabPipId(), pipOnlyId);
 assert.equal(peekWebTabPipOwnerId(), "s:chat");
 assert.equal(pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()), true);
 useWebTabPip.getState().hide();
+useCenterTabs.setState((state) => ({
+  tabs: [
+    { id: "s:first", kind: "session", title: "First", sessionId: "first" },
+    ...state.tabs,
+  ],
+  activeId: pipOnlyId,
+}));
+assert.equal(collapseWebTabToPip(pipOnlyId), true);
+assert.equal(
+  useCenterTabs.getState().activeId,
+  "s:chat",
+  "collapse must restore the remembered owner instead of the first session tab",
+);
+assert.equal(peekWebTabPipOwnerId(), "s:chat");
+useCenterTabs.getState().setActive("s:first");
+assert.equal(pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()), false);
+useCenterTabs.getState().setActive("s:chat");
+useWebTabPip.getState().hide();
+useCenterTabs.setState((state) => ({
+  tabs: state.tabs.filter((tab) => tab.id !== "s:first"),
+}));
 removeVisibleWebTabBounds({ webTab: { syncVisible() {} } }, pipOnlyId);
 setWebTabReady(pipOnlyId, false);
 assert.equal(peekWebTabPipId(), null);
+assert.equal(peekWebTabPipOwnerId(), null);
 assert.equal(peekWebTabPipBackgroundId(), pipOnlyId);
+assert.equal(peekWebTabPipBackgroundOwnerId(), "s:chat");
 assert.deepEqual(
   clampPipRect(
     { x: -20, y: -10, width: 100, height: 80 },
@@ -2739,6 +2792,16 @@ assert.match(pipSource, /onPointerDown=\{\(event\) => onDragPointerDown\("move"/
 assert.match(pipSource, /onPointerDown=\{\(event\) => onDragPointerDown\("resize"/);
 assert.match(pipSource, /const BOUNDS_THROTTLE_MS = 100;/);
 assert.match(pipSource, /setSnapshot\(tabId,/);
+assert.match(
+  pipSource,
+  /pip\.tabId !== tabId[\s\S]*?pipCoversCenter\([\s\S]*?pip\.ownerTabId[\s\S]*?setPipZoom\?\.\(tabId, null\)/,
+  "a delayed PiP bounds callback must restore zoom after its owner chat loses focus",
+);
+assert.match(
+  pipSource,
+  /useEffect\(\(\) => \{\s*if \(live\) return;\s*dragRef\.current = null;\s*pendingRectRef\.current = null;\s*captureGenRef\.current \+= 1;[\s\S]*?cancelAnimationFrame\(rafRef\.current\);\s*rafRef\.current = 0;[\s\S]*?\}, \[live\]\);/,
+  "owner loss during drag must cancel interaction state before PiP can remount",
+);
 assert.match(pipSource, /reportRef\.current\(true\)/);
 assert.match(pipSource, /if \(dragRef\.current\) return;/);
 assert.match(pipSource, /translate\(\$\{next\.x - drag\.origin\.x\}px/);
@@ -2829,6 +2892,7 @@ const previewChipSource = await readFile(
   "utf8",
 );
 assert.match(previewChipSource, /Show page preview/);
+assert.match(previewChipSource, /backgroundTabId/);
 assert.match(previewChipSource, /backgroundOwnerTabId/);
 assert.match(previewChipSource, /activeId === backgroundOwnerTabId/);
 assert.match(previewChipSource, /show\(restoreId, backgroundOwnerTabId\)/);
@@ -3131,6 +3195,76 @@ assert.equal(
 );
 unsubscribePopup();
 assert.equal(popupCallback, null);
+
+const scopedPipTabs = [
+  { id: "s:pip-owner", kind: "session", title: "Owner", sessionId: "pip-owner" },
+  { id: "s:pip-other", kind: "session", title: "Other", sessionId: "pip-other" },
+  { id: "w:pip-owner-page", kind: "web", title: "Owner page", url: "https://pip-owner.test/" },
+];
+plainTabs.setState({
+  tabs: scopedPipTabs,
+  activeId: "s:pip-owner",
+  groups: [],
+  splitWebTabId: null,
+  splitRatio: 0.45,
+});
+useWebTabPip.getState().show("w:pip-owner-page", "s:pip-owner");
+const scopedPipBridge = {
+  windowId: "pip-scope-window",
+  webTab: {
+    inspect: async () => ({
+      target_id: "target:pip-owner-page",
+      url: "https://pip-owner.test/",
+      title: "Owner page",
+    }),
+    syncVisible() {},
+  },
+};
+bridgeModule.registerVisibleWebTabBounds(
+  scopedPipBridge,
+  "w:pip-owner-page",
+  { x: 40, y: 40, width: 360, height: 188 },
+);
+bridgeModule.setWebTabReady("w:pip-owner-page", true);
+assert.equal(
+  bridgeModule.surfaceRefForChat("pip-owner", true)?.tab_id,
+  "w:pip-owner-page",
+);
+plainTabs.getState().setActive("s:pip-other");
+assert.equal(
+  bridgeModule.surfaceRefForChat("pip-other", true),
+  null,
+  "the next chat must reject stale owner PiP bounds before React cleanup",
+);
+assert.equal(
+  bridgeModule.surfaceRefForChat("pip-owner", true),
+  null,
+  "an inactive owner chat must not retain a visible turn surface",
+);
+const hiddenPipInventory = await bridgeModule.browserPageInventory(scopedPipBridge);
+assert.deepEqual(
+  hiddenPipInventory.pages.map((page) => [page.tab_id, page.visible, page.region]),
+  [["w:pip-owner-page", false, "background"]],
+);
+assert.equal(
+  bridgeModule.finalizeWebTabPreview(
+    "w:pip-owner-page",
+    0,
+    { preview: { title: "stale" }, target_id: "target:pip-owner-page" },
+  ).reason_code,
+  "page_context_stale",
+);
+assert.equal(
+  bridgeModule.finalizeBoundWebTabActivation(
+    "w:pip-owner-page",
+    0,
+    "target:pip-owner-page",
+  ).reason_code,
+  "page_context_stale",
+);
+useWebTabPip.getState().hide();
+bridgeModule.removeVisibleWebTabBounds(scopedPipBridge, "w:pip-owner-page");
+bridgeModule.setWebTabReady("w:pip-owner-page", false);
 
 const surfaceTabs = [
   { id: "s:surface-chat", kind: "session", title: "Chat", sessionId: "surface-chat" },

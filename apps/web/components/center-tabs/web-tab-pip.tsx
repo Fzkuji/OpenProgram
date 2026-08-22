@@ -102,6 +102,17 @@ export function WebTabPip() {
   }, []);
 
   useEffect(() => {
+    if (live) return;
+    dragRef.current = null;
+    pendingRectRef.current = null;
+    captureGenRef.current += 1;
+    if (rafRef.current) {
+      window.cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    }
+  }, [live]);
+
+  useEffect(() => {
     const el = rootRef.current;
     if (!el || !live) return;
     const parent = el.offsetParent;
@@ -131,6 +142,20 @@ export function WebTabPip() {
     if (!el) return;
     const publish = () => {
       lastPublishRef.current = Date.now();
+      const pip = useWebTabPip.getState();
+      if (
+        pip.tabId !== tabId
+        || !pipCoversCenter(
+          tabId,
+          pip.ownerTabId,
+          useCenterTabs.getState(),
+        )
+      ) {
+        removeVisibleWebTabBounds(bridge, tabId);
+        bridge.webTab.setPipZoom?.(tabId, null);
+        setWebTabReady(tabId, false);
+        return;
+      }
       const bounds = measureWebTabBounds(el);
       const occluded = isWebTabOccluded(
         bounds,

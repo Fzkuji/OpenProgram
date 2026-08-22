@@ -536,7 +536,7 @@ export async function browserPageInventory(
   const webState = new Map(tabs
     .filter((tab) => tab.kind === "web")
     .map((tab) => [tab.id, {
-      visible: isWebTabActuallyVisible(tab.id),
+      visible: visibleWebTabById(tab.id) !== null,
       geometryRevision: webTabGeometryRevisions.get(tab.id) ?? 0,
     }]));
   const layoutFingerprint = JSON.stringify({
@@ -674,7 +674,9 @@ export function surfaceRefForChat(
     }
   }
   if (!web || web.kind !== "web") return null;
-  if (!isWebTabActuallyVisible(web.id)) return null;
+  const scopedWeb = visibleWebTabById(web.id);
+  if (!scopedWeb) return null;
+  web = scopedWeb;
   const region = !group
     ? "right"
     : group.visibleIds.length === 1
