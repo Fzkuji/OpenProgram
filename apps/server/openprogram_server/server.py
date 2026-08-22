@@ -770,11 +770,16 @@ def _is_run_active(session_id: str) -> bool:
         # before its runtime thread exists. Treat that short state as active;
         # otherwise a second handler would delete the reservation as a
         # "zombie" and both turns could pass the guard.
+        stale_reservation = False
         if task and task.get("_reserved"):
             if time.time() - task.get("started_at", 0) > 300:
                 _running_tasks.pop(session_id, None)
-                return False
-            return True
+                stale_reservation = True
+            else:
+                return True
+    if stale_reservation:
+        _emit_running_task_event(session_id)
+        return False
     if task is None:
         # Runtime registration precedes reservation handoff. If another
         # observer arrives in that interval, the runtime itself still blocks
@@ -785,6 +790,7 @@ def _is_run_active(session_id: str) -> bool:
     if not _has_active_runtime(session_id):
         with _running_tasks_lock:
             _running_tasks.pop(session_id, None)
+        _emit_running_task_event(session_id)
         return False
     return True
 

@@ -1091,6 +1091,25 @@ def _checkpoint_changed_files(
             pass
 
 
+# In-flight tool executions, keyed by tool_call_id. Read by the worker's
+# GET /api/running so the Running panel can show what the agent is
+# executing right now (bash commands, code runs, sub-agents, …).
+import threading as _threading
+
+RUNNING_TOOL_CALLS: dict[str, dict] = {}
+RUNNING_TOOL_CALLS_LOCK = _threading.Lock()
+
+
+def _tool_call_label(name: str, args: Any) -> str:
+    """Human-readable one-liner for a tool call (UI display only)."""
+    if isinstance(args, dict):
+        for key in ("description", "command", "prompt", "query", "path"):
+            val = args.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()[:200]
+    return name
+
+
 class _SkipExecute(Exception):
     """Internal: repeat-fail trip already built a tool result."""
 
@@ -1146,6 +1165,13 @@ async def _execute_tool_calls(
         except Exception:
             pass
         gate_denial = decide_tool_gate(before_ev)
+
+        with RUNNING_TOOL_CALLS_LOCK:
+            RUNNING_TOOL_CALLS[tool_call.id] = {
+                "tool_name": tool_call.name,
+                "label": _tool_call_label(tool_call.name, tool_call.arguments),
+                "started_at": time.time(),
+            }
 
         result: AgentToolResult
         skipped_repeat = streak >= 2
@@ -1237,6 +1263,9 @@ async def _execute_tool_calls(
                 is_error=True,
             ))
             raise
+        finally:
+            with RUNNING_TOOL_CALLS_LOCK:
+                RUNNING_TOOL_CALLS.pop(tool_call.id, None)
 
         if not skipped_repeat:
             if result.is_error:
