@@ -808,6 +808,13 @@
   outline: none;
   cursor: pointer;
 }
+.plusMenuRow[data-disabled] {
+  cursor: not-allowed;
+}
+.plusMenuRow[data-disabled] .plusMenuItem {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .plusMenuRow[data-highlighted] .plusMenuItem,
 .plusMenuRow[data-popup-open] .plusMenuItem {
   background: var(--bg-hover);

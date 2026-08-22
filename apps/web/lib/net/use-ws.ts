@@ -480,6 +480,15 @@ export function useWS(): void {
               );
           });
           return true;
+        case "sandbox_changed":
+          import("@/lib/session-store").then(({ useSessionStore }) => {
+            const dd = (d || {}) as { session_id?: string; sandbox?: unknown };
+            if (!dd.session_id || typeof dd.sandbox !== "boolean") return;
+            useSessionStore
+              .getState()
+              .setComposerSettings({ sandbox: dd.sandbox }, dd.session_id);
+          });
+          return true;
         case "session_loaded":
           // A fresh transcript invalidates the per-run hydrate dedup —
           // see clearHydratedTreePaths for why this is the drain point.
@@ -506,11 +515,25 @@ export function useWS(): void {
               | Record<string, unknown>
               | undefined;
             const dirs = settings?.additional_working_dirs;
-            if (typeof sid === "string" && sid && Array.isArray(dirs)) {
+            const permissionMode = settings?.permission_mode;
+            if (typeof sid === "string" && sid) {
               import("@/lib/session-store").then(({ useSessionStore }) => {
-                useSessionStore
-                  .getState()
-                  .setAdditionalWorkingDirs(sid, dirs as string[]);
+                const store = useSessionStore.getState();
+                if (Array.isArray(dirs)) {
+                  store.setAdditionalWorkingDirs(sid, dirs as string[]);
+                }
+                if (typeof permissionMode === "string" && permissionMode) {
+                  store.setComposerSettings(
+                    { effective_permission: permissionMode },
+                    sid,
+                  );
+                }
+                if (typeof settings?.sandbox === "boolean") {
+                  store.setComposerSettings(
+                    { sandbox: settings.sandbox as boolean },
+                    sid,
+                  );
+                }
               });
             }
           }

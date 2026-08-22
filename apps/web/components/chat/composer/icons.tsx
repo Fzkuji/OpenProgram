@@ -23,6 +23,7 @@ import {
   type AnimatedNavIconHandle,
   ChromeIcon,
   EyeIcon,
+  ShieldCheckIcon,
   SlidersHorizontalIcon,
   WrenchIcon,
   ZapIcon,
@@ -59,6 +60,12 @@ export const FastIcon = forwardRef<AnimatedNavIconHandle, { size?: number }>(
 export const UnattendedIcon = forwardRef<AnimatedNavIconHandle, { size?: number }>(
   function UnattendedIcon({ size = 20 }, ref) {
     return <EyeIcon ref={ref} size={size} />;
+  },
+);
+
+export const SandboxIcon = forwardRef<AnimatedNavIconHandle, { size?: number }>(
+  function SandboxIcon({ size = 20 }, ref) {
+    return <ShieldCheckIcon ref={ref} size={size} />;
   },
 );
 

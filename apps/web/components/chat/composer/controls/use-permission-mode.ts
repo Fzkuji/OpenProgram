@@ -56,11 +56,15 @@ export interface PermissionModeHook {
 
 export function usePermissionMode(): PermissionModeHook {
   // Bound to this composer subtree's session scope.
-  const stored = useBoundComposerSettings().permission_mode;
+  const settings = useBoundComposerSettings();
   const setComposerSettings = useBoundSetComposerSettings();
   const { text } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
-  const mode = (stored as PermissionMode) || DEFAULT_MODE;
+  const mode = (
+    settings.effective_permission
+    || settings.permission_mode
+    || DEFAULT_MODE
+  ) as PermissionMode;
   const options: PermissionModeOption[] = MODE_LABELS.map((m) => ({
     value: m.value,
     label: text(m.en, m.zh),
@@ -68,7 +72,10 @@ export function usePermissionMode(): PermissionModeHook {
     description: m.enDesc ? text(m.enDesc, m.zhDesc ?? m.enDesc) : undefined,
   }));
   const set = useCallback(
-    (m: PermissionMode) => setComposerSettings({ permission_mode: m }),
+    (m: PermissionMode) => setComposerSettings({
+      permission_mode: m,
+      effective_permission: m,
+    }),
     [setComposerSettings],
   );
   return { mode, options, menuOpen, setMenuOpen, set };

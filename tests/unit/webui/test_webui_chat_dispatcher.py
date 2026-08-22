@@ -522,3 +522,75 @@ def test_shadow_git_commits_on_webui_turn(
     _git, idx = db._open("c1")
     meta = (idx.nodes_by_id[assistant_msg_id].metadata or {}).get("shadow_git")
     assert meta and meta.get("after"), "no shadow_git stamp from the webui turn"
+
+
+def _capture_permission_mode(monkeypatch, stream_text="ok"):
+    seen: dict[str, str] = {}
+    orig = D._run_loop_blocking
+    fake = make_text_stream(stream_text)
+
+    def _w(*, req, history, on_event, cancel_event, **_):
+        seen["mode"] = req.permission_mode
+        return orig(req=req, history=history, on_event=on_event,
+                    cancel_event=cancel_event, stream_fn=fake)
+
+    monkeypatch.setattr(D, "_run_loop_blocking", _w)
+    return seen
+
+
+def test_missing_permission_mode_defaults_to_ask(env, monkeypatch) -> None:
+    srv, db, _captured = env
+    conv = srv._get_or_create_session("c1", agent_id="main")
+    srv._append_msg(conv, {
+        "id": "u-perm", "role": "user", "content": "hi",
+        "timestamp": time.time(), "source": "web",
+    })
+    seen = _capture_permission_mode(monkeypatch)
+    srv._execute_in_context("c1", "u-perm", "query", query="hi")
+    assert seen["mode"] == "ask"
+
+
+def test_invalid_permission_mode_fails_safe_to_ask(env, monkeypatch) -> None:
+    srv, _db, _captured = env
+    conv = srv._get_or_create_session("c1", agent_id="main")
+    srv._append_msg(conv, {
+        "id": "u-bad", "role": "user", "content": "hi",
+        "timestamp": time.time(), "source": "web",
+    })
+    seen = _capture_permission_mode(monkeypatch)
+    srv._execute_in_context(
+        "c1", "u-bad", "query", query="hi", permission_mode="not-a-mode",
+    )
+    assert seen["mode"] == "ask"
+
+
+def test_inherit_uses_project_default(env, monkeypatch) -> None:
+    srv, _db, _captured = env
+    conv = srv._get_or_create_session("c1", agent_id="main")
+    srv._append_msg(conv, {
+        "id": "u-inh", "role": "user", "content": "hi",
+        "timestamp": time.time(), "source": "web",
+    })
+    monkeypatch.setattr(
+        "openprogram.agent.session_config.project_defaults",
+        lambda sid: {"permission_mode": "acceptEdits"},
+    )
+    seen = _capture_permission_mode(monkeypatch)
+    srv._execute_in_context(
+        "c1", "u-inh", "query", query="hi", permission_mode="inherit",
+    )
+    assert seen["mode"] == "acceptEdits"
+
+
+def test_explicit_bypass_is_kept(env, monkeypatch) -> None:
+    srv, _db, _captured = env
+    conv = srv._get_or_create_session("c1", agent_id="main")
+    srv._append_msg(conv, {
+        "id": "u-byp", "role": "user", "content": "hi",
+        "timestamp": time.time(), "source": "web",
+    })
+    seen = _capture_permission_mode(monkeypatch)
+    srv._execute_in_context(
+        "c1", "u-byp", "query", query="hi", permission_mode="bypass",
+    )
+    assert seen["mode"] == "bypass"

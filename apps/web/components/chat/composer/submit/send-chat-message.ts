@@ -168,6 +168,20 @@ export function sendChatMessage({
     ? useSessionStore.getState().pendingProjectsByChat[sessionId]
     : null;
 
+  const storedMode =
+    sessionId
+      ? useSessionStore.getState().composerSettingsBySession[sessionId]
+        ?.permission_mode
+      : "";
+  const permissionMode =
+    storedMode === "ask"
+    || storedMode === "acceptEdits"
+    || storedMode === "plan"
+    || storedMode === "auto"
+    || storedMode === "bypass"
+      ? storedMode
+      : "inherit";
+
   const payload: Record<string, unknown> = {
     action: "chat",
     text,
@@ -176,7 +190,14 @@ export function sendChatMessage({
     exec_thinking_effort: runtimeState._execThinkingEffort ?? undefined,
     tools: toolsEnabled,
     web_search: webSearchEnabled,
+    permission_mode: permissionMode,
   };
+  const sandbox = sessionId
+    ? useSessionStore.getState().composerSettingsBySession[sessionId]?.sandbox
+    : undefined;
+  if (typeof sandbox === "boolean") {
+    payload.sandbox_enabled = sandbox;
+  }
   if (toolsProfile && toolsProfile !== "__agent__") {
     payload.tools_profile = toolsProfile;
   }

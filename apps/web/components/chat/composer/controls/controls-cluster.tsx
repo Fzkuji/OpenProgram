@@ -27,6 +27,7 @@ import {
   FastIcon,
   OptionsIcon,
   ToolsIcon,
+  SandboxIcon,
   UnattendedIcon,
   WebSearchIcon,
 } from "../icons";
@@ -70,6 +71,10 @@ export interface ControlsClusterProps {
   toggleFast(): void;
   unattended: boolean;
   toggleUnattended(): void;
+  sandboxEnabled: boolean;
+  sandboxAvailable: boolean;
+  sandboxReason: string | null;
+  toggleSandbox(): void;
   toolProfiles: Record<string, string[]>;
   activeProfile: string;
   switchProfile(name: string): void;
@@ -101,6 +106,10 @@ export function ControlsCluster({
   toggleFast,
   unattended,
   toggleUnattended,
+  sandboxEnabled,
+  sandboxAvailable,
+  sandboxReason,
+  toggleSandbox,
   toolProfiles,
   activeProfile,
   switchProfile,
@@ -298,6 +307,25 @@ export function ControlsCluster({
                         />
                       </Menu.Item>
                     ) : null}
+
+                    <Menu.Item
+                      className={styles.plusMenuRow}
+                      closeOnClick={false}
+                      disabled={!sandboxAvailable}
+                      title={sandboxReason || undefined}
+                      onClick={() => toggleSandbox()}
+                    >
+                      <PlusMenuItem
+                        active={sandboxEnabled && sandboxAvailable}
+                        onClick={noop}
+                        icon={<SandboxIcon size={16} />}
+                        label={
+                          sandboxAvailable
+                            ? text("Sandbox", "沙箱")
+                            : text("Sandbox · Unavailable", "Sandbox · Unavailable")
+                        }
+                      />
+                    </Menu.Item>
 
                     <Menu.Separator className={styles.plusMenuDivider} />
 

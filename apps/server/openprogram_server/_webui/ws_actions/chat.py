@@ -432,7 +432,15 @@ async def handle_chat(ws, cmd: dict):
     tools_flag = cmd.get("tools")
     tools_profile = cmd.get("tools_profile") or None
     web_search_flag = bool(cmd.get("web_search"))
-    permission_mode = cmd.get("permission_mode") or None
+    from openprogram.agent.session_config import _normalize_permission
+    _raw_perm = cmd.get("permission_mode")
+    if _raw_perm is None or (
+        isinstance(_raw_perm, str) and _raw_perm.strip().lower() in ("", "inherit")
+    ):
+        permission_mode = None
+    else:
+        permission_mode = _normalize_permission(_raw_perm) or "ask"
+    sandbox_flag = cmd.get("sandbox_enabled") if "sandbox_enabled" in cmd else None
     surface_ref = cmd.get("surface") if isinstance(cmd.get("surface"), dict) else None
     # Per-turn speed / priority tier from the composer's speed pill
     # ("priority" = Fast, "flex" = cheaper-slower). Rides the message
@@ -701,7 +709,11 @@ async def handle_chat(ws, cmd: dict):
         return
 
     try:
-        from openprogram.agent.session_config import save_session_run_config
+        from openprogram.agent.session_config import (
+            permission_from_config,
+            project_defaults,
+            save_session_run_config,
+        )
         run_cfg = save_session_run_config(
             session_id,
             agent_id=_db_agent_id(session_id),
@@ -714,16 +726,23 @@ async def handle_chat(ws, cmd: dict):
             # 草稿会话（尚无 session_id）在首条消息落地额外工作目录的唯一通道
             # （additional-working-directories.md §3.3）。None = 不动既有配置。
             additional_working_dirs=cmd.get("additional_working_dirs"),
+            sandbox_enabled=sandbox_flag,
         )
     except BaseException:
         _s._release_run_reservation(session_id, msg_id)
         raise
+    effective_permission = permission_from_config(
+        run_cfg, default=project_defaults(session_id).get("permission_mode"))
     conv["tools_enabled"] = run_cfg.tools_enabled
     conv["tools_override"] = run_cfg.tools_override
     conv["web_search"] = run_cfg.web_search
     conv["toolset"] = run_cfg.toolset
     conv["thinking_effort"] = run_cfg.thinking_effort
     conv["permission_mode"] = run_cfg.permission_mode
+    conv["sandbox_enabled"] = (
+        run_cfg.sandbox_enabled if run_cfg.sandbox_enabled is not None
+        else sandbox_flag
+    )
     # Persist EVERY attachment to the session workdir so the agent's file
     # tools can read them and the chat can render them back, and embed the
     # saved ABSOLUTE PATH into the message text (every file is referenced
@@ -864,6 +883,7 @@ async def handle_chat(ws, cmd: dict):
                 "msg_id": msg_id,
                 "text": text,
                 "execution_id": execution_id,
+                "permission_mode": effective_permission,
             },
         }))
     except Exception:

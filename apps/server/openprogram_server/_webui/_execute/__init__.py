@@ -564,7 +564,13 @@ def execute_in_context(
             permission_from_config,
             save_session_run_config,
             project_defaults,
+            _normalize_permission,
         )
+        if permission_mode is not None:
+            if str(permission_mode).strip().lower() == "inherit":
+                permission_mode = None
+            else:
+                permission_mode = _normalize_permission(permission_mode) or "ask"
         if tools_flag is not None or thinking_effort is not None \
                 or permission_mode is not None:
             run_cfg = save_session_run_config(
@@ -580,7 +586,7 @@ def execute_in_context(
         _pdef = project_defaults(session_id)
         effective_thinking = run_cfg.thinking_effort or _pdef.get("thinking_effort")
         effective_permission = permission_from_config(
-            run_cfg, default=_pdef.get("permission_mode") or "bypass")
+            run_cfg, default=_pdef.get("permission_mode"))
         # permission_mode == "plan" 桥接到 plan_mode 会话旗标：选了 Plan mode
         # 档就等价于 enter_plan_mode（dispatcher 藏写工具 + plan 系统提示）；
         # 档位离开 plan 只收回由档位设置的旗标，LLM 自己 enter 的不受影响。

@@ -52,6 +52,7 @@ import { useToolsToggles } from "./controls/use-tools-toggles";
 import { useModelAvailability } from "./controls/use-model-availability";
 import { useToolProfiles } from "./controls/use-tool-profiles";
 import { useUnattendedMode } from "./controls/use-unattended-mode";
+import { useSandboxToggle } from "./controls/use-sandbox-toggle";
 import { ControlsCluster } from "./controls/controls-cluster";
 import { usePasteTokens } from "./paste/use-paste-tokens";
 import { useHistoryRecall } from "./input/use-history-recall";
@@ -265,6 +266,8 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     currentSessionId,
     send,
   );
+  const { sandbox, sandboxAvailable, sandboxReason, toggleSandbox } =
+    useSandboxToggle(currentSessionId);
   const { toolProfiles, activeProfile, switchProfile } =
     useToolProfiles(currentSessionId);
 
@@ -639,6 +642,10 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       toggleFast={toggleFast}
       unattended={unattended}
       toggleUnattended={toggleUnattended}
+      sandboxEnabled={sandbox}
+      sandboxAvailable={sandboxAvailable}
+      sandboxReason={sandboxReason}
+      toggleSandbox={toggleSandbox}
       toolProfiles={toolProfiles}
       activeProfile={activeProfile}
       switchProfile={switchProfile}

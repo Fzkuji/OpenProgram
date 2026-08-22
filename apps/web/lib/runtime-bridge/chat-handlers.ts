@@ -77,6 +77,8 @@ interface ChatAckData {
   session_id?: string;
   msg_id?: string;
   execution_id?: string;
+  /** Effective permission mode the backend adopted for this turn. */
+  permission_mode?: string;
   /** Set by a function dispatch (retry_function) whose top-level code node
    *  was pre-created on disk at dispatch time — lets us hydrate the
    *  transcript immediately instead of waiting for the first tree_update. */
@@ -118,6 +120,12 @@ export function wsHandleChatAck(data: ChatAckData): void {
       if (window.location.pathname !== "/s/" + sid) {
         history.pushState(null, "", "/s/" + sid);
       }
+    }
+    if (typeof data.permission_mode === "string" && data.permission_mode) {
+      useSessionStore.getState().setComposerSettings(
+        { effective_permission: data.permission_mode },
+        sid,
+      );
     }
     const convs = runtimeState.conversations;
     if (!convs[sid]) {

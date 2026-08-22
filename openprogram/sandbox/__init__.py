@@ -212,26 +212,11 @@ def _with_hard_floor(policy: SandboxPolicy) -> SandboxPolicy:
     return replace(policy, deny_write=policy.deny_write + (applications,))
 
 
-def resolve_policy(*, required: bool = False) -> SandboxPolicy | None:
-    """The policy configured right now, or None when the sandbox is off.
+def _config_mode_on(sb: dict) -> bool:
+    return str(sb.get("mode") or MODE_WORKSPACE_WRITE).strip().lower() == MODE_WORKSPACE_WRITE
 
-    Read per command, so a toggle takes effect on the next command in
-    every process rather than only in the context that flipped it.
-    """
-    execution_override = _execution_policy_override.get()
-    if execution_override is not _NO_PROCESS_POLICY:
-        if execution_override is None:
-            return _with_hard_floor(SandboxPolicy()) if required else None
-        return execution_override  # type: ignore[return-value]
-    if _process_policy_override is not _NO_PROCESS_POLICY:
-        if _process_policy_override is None:
-            return _with_hard_floor(SandboxPolicy()) if required else None
-        return _process_policy_override  # type: ignore[return-value]
-    sb = _config_section()
-    if (str(sb.get("mode") or MODE_WORKSPACE_WRITE).strip().lower()
-            != MODE_WORKSPACE_WRITE
-            and not required):
-        return None
+
+def _policy_from_section(sb: dict) -> SandboxPolicy:
     deny_r = sb.get("deny_read")
     deny_w = sb.get("deny_write")
     allow_r = sb.get("allow_read")
@@ -244,6 +229,81 @@ def resolve_policy(*, required: bool = False) -> SandboxPolicy | None:
         pass_env=tuple(sb.get("pass_env") or ()),
         allow_read=tuple(allow_r) if isinstance(allow_r, list) else (),
     ))
+
+
+def _resolve_configured_policy(
+    session_enabled: bool | None, *, required: bool,
+) -> SandboxPolicy | None:
+    """Session override → project/global ``sandbox.mode`` → system default.
+
+    ``session_enabled`` is the explicit session switch (None = inherit).
+    This path ignores turn/process snapshots so a UI read during a turn
+    still describes the next turn, not the frozen one.
+    """
+    if session_enabled is False and not required:
+        return None
+    sb = _config_section()
+    if session_enabled is not True and not _config_mode_on(sb) and not required:
+        return None
+    return _policy_from_section(sb)
+
+
+def resolve_policy(
+    *, required: bool = False, session_enabled: bool | None = None,
+) -> SandboxPolicy | None:
+    """The policy in force right now, or None when the sandbox is off.
+
+    A turn snapshot (``_execution_policy_override``) or a subprocess pin
+    (``_process_policy_override``) wins. Otherwise session override, then
+    configured ``sandbox.mode``, then the system default.
+    """
+    execution_override = _execution_policy_override.get()
+    if execution_override is not _NO_PROCESS_POLICY:
+        if execution_override is None:
+            return _with_hard_floor(SandboxPolicy()) if required else None
+        return execution_override  # type: ignore[return-value]
+    if _process_policy_override is not _NO_PROCESS_POLICY:
+        if _process_policy_override is None:
+            return _with_hard_floor(SandboxPolicy()) if required else None
+        return _process_policy_override  # type: ignore[return-value]
+    return _resolve_configured_policy(session_enabled, required=required)
+
+
+def bind_turn_policy(session_enabled: bool | None = None):
+    """Freeze the effective policy for this turn. Nested calls inherit."""
+    if _execution_policy_override.get() is not _NO_PROCESS_POLICY:
+        return None
+    return _execution_policy_override.set(
+        resolve_policy(session_enabled=session_enabled),
+    )
+
+
+def reset_turn_policy(token) -> None:
+    if token is not None:
+        _execution_policy_override.reset(token)
+
+
+@contextmanager
+def turn_policy(session_enabled: bool | None = None):
+    """Bind :func:`bind_turn_policy` for a block. Nested calls inherit."""
+    token = bind_turn_policy(session_enabled)
+    try:
+        yield
+    finally:
+        reset_turn_policy(token)
+
+
+def ui_state(session_enabled: bool | None = None) -> dict:
+    """Session switch + backend availability for the Plus menu."""
+    reason = unavailable_reason()
+    return {
+        "sandbox_enabled": session_enabled,
+        "sandbox": _resolve_configured_policy(
+            session_enabled, required=False,
+        ) is not None,
+        "sandbox_available": reason is None,
+        "sandbox_unavailable_reason": reason,
+    }
 
 
 @contextmanager

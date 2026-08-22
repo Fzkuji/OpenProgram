@@ -395,6 +395,7 @@ def test_handle_chat_starts_turn_when_ack_socket_is_gone(monkeypatch):
             toolset=None,
             thinking_effort="medium",
             permission_mode="default",
+            sandbox_enabled=None,
         ),
     )
     monkeypatch.setattr(
@@ -472,6 +473,7 @@ def test_chat_ack_exposes_only_a_durable_cancellable_execution(
             toolset=None,
             thinking_effort="medium",
             permission_mode="default",
+            sandbox_enabled=None,
         ),
     )
 
@@ -508,3 +510,55 @@ def test_chat_ack_exposes_only_a_durable_cancellable_execution(
     assert observed["execution_id"]
     assert observed["record_exists"] is True
     assert observed["cancel"]["status"] == "cancelled"
+
+
+def test_chat_ack_echoes_ask_when_permission_mode_missing_or_invalid(
+    monkeypatch, tmp_path,
+):
+    from openprogram.store.session.session_store import SessionStore
+    from openprogram.webui import server as _s
+    from openprogram.webui.ws_actions import chat as chat_actions
+    from openprogram.webui.ws_actions.chat import handle_chat
+    import openprogram.agent.session_db as session_db
+    import openprogram.store.session.session_store as store_module
+    import openprogram.webui.ws_actions.session as session_actions
+    import threading
+
+    session_id = "perm-ack"
+    store = SessionStore(tmp_path / "sessions-git")
+    store.create_session(session_id, "main")
+    conv = {"id": session_id, "messages": []}
+    monkeypatch.setattr(session_db, "default_db", lambda: store)
+    monkeypatch.setattr(store_module, "_default_store", store)
+    monkeypatch.setattr(_s, "_get_or_create_session", lambda sid, **kw: conv)
+    monkeypatch.setattr(chat_actions, "_db_agent_id", lambda sid: "main")
+    monkeypatch.setattr(_s, "_emit_running_task_event", lambda sid: None)
+    monkeypatch.setattr(session_actions, "broadcast_sessions_list", lambda: None)
+    monkeypatch.setattr(threading, "Thread", lambda **kwargs: types.SimpleNamespace(start=lambda: None))
+
+    def _ack_mode(cmd):
+        observed: dict = {}
+
+        class _WS:
+            async def send_text(self, text: str) -> None:
+                frame = json.loads(text)
+                if frame.get("type") == "chat_ack":
+                    observed["permission_mode"] = frame["data"].get("permission_mode")
+
+        try:
+            asyncio.run(handle_chat(_WS(), cmd))
+        finally:
+            with _s._running_tasks_lock:
+                _s._running_tasks.pop(session_id, None)
+        return observed.get("permission_mode")
+
+    assert _ack_mode({"text": "hi", "session_id": session_id}) == "ask"
+    assert _ack_mode({
+        "text": "hi", "session_id": session_id, "permission_mode": "nope",
+    }) == "ask"
+    assert _ack_mode({
+        "text": "hi", "session_id": session_id, "permission_mode": "inherit",
+    }) == "ask"
+    assert _ack_mode({
+        "text": "hi", "session_id": session_id, "permission_mode": "bypass",
+    }) == "bypass"

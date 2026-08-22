@@ -129,6 +129,16 @@ def test_invalid_mode():
     assert _normalize_permission("bogus") is None
 
 
+def test_permission_from_config_never_defaults_to_bypass():
+    from openprogram.agent.session_config import (
+        SessionRunConfig, permission_from_config,
+    )
+    empty = SessionRunConfig()
+    assert permission_from_config(empty) == "ask"
+    assert permission_from_config(empty, default="not-a-mode") == "ask"
+    assert permission_from_config(empty, default="bypass") == "bypass"
+
+
 # ── _gated_execute decision branches (end-to-end via wrap_with_approval) ──
 
 import asyncio

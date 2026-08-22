@@ -675,8 +675,15 @@ async def handle_load_session(ws, cmd: dict):
             sf = _spawn_by_id.get(m.get("id"))
             if sf:
                 m["spawned_from"] = sf
-        from openprogram.agent.session_config import load_session_run_config
+        from openprogram.agent.session_config import (
+            load_session_run_config,
+            permission_from_config,
+            project_defaults,
+        )
+        from openprogram.sandbox import ui_state as _sandbox_ui
         run_cfg = load_session_run_config(conv["id"])
+        _effective_permission = permission_from_config(
+            run_cfg, default=project_defaults(conv["id"]).get("permission_mode"))
         _db_sess = _ddb().get_session(session_id) or {}
         await ws.send_text(json.dumps({
             "type": "session_loaded",
@@ -701,8 +708,9 @@ async def handle_load_session(ws, cmd: dict):
                     "tools_enabled": run_cfg.tools_enabled,
                     "tools_override": run_cfg.tools_override,
                     "thinking_effort": run_cfg.thinking_effort,
-                    "permission_mode": run_cfg.permission_mode,
+                    "permission_mode": _effective_permission,
                     "additional_working_dirs": run_cfg.additional_working_dirs,
+                    **_sandbox_ui(run_cfg.sandbox_enabled),
                 },
                 "run_active": _s._is_run_active(conv["id"]),
                 "status": (_ddb().get_session(session_id) or {}).get("status", "idle"),
@@ -938,6 +946,32 @@ async def handle_set_working_dirs(ws, cmd: dict):
     }}))
 
 
+async def handle_set_sandbox(ws, cmd: dict):
+    """Read or set the session Sandbox override. Missing sandbox_enabled
+    is a read. Response includes backend availability so the Plus menu
+    can disable itself when sandbox-exec / bwrap is missing."""
+    from openprogram.agent.session_config import (
+        load_session_run_config,
+        save_session_run_config,
+    )
+    from openprogram.sandbox import ui_state
+    from openprogram.webui import server as _s
+    from openprogram.webui.ws_actions.chat import _db_agent_id
+
+    session_id = (cmd.get("session_id") or "").strip()
+    override = None
+    if session_id:
+        if "sandbox_enabled" in cmd:
+            save_session_run_config(
+                session_id,
+                agent_id=_db_agent_id(session_id),
+                sandbox_enabled=cmd.get("sandbox_enabled"),
+            )
+        override = load_session_run_config(session_id).sandbox_enabled
+    data = {"session_id": session_id or None, **ui_state(override)}
+    _s._broadcast(json.dumps({"type": "sandbox_changed", "data": data}))
+
+
 async def handle_search_messages(ws, cmd: dict):
     """FTS-backed search across past sessions."""
     from openprogram.webui import server as _s
@@ -1103,6 +1137,7 @@ ACTIONS = {
     "question_reply": handle_question_reply,
     "question_reject": handle_question_reject,
     "set_working_dirs": handle_set_working_dirs,
+    "set_sandbox": handle_set_sandbox,
     "search_messages": handle_search_messages,
     "list_sessions": handle_list_sessions,
     "list_permission_rules": handle_list_permission_rules,

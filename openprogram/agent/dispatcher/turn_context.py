@@ -42,6 +42,7 @@ class TurnBindings:
         self._render_range_token = None
         self._surface_token = None
         self._web_use_owner_id = None
+        self._sandbox_token = None
         self._req_session_id: Optional[str] = None
 
     @classmethod
@@ -162,6 +163,20 @@ class TurnBindings:
         self._surface_token = _bind_surface(req.surface_context)
         from openprogram.agent.surface_context import web_use_owner_id
         self._web_use_owner_id = web_use_owner_id(req.surface_context)
+        # Freeze the effective SandboxPolicy for this turn. Nested
+        # (subagent) binds inherit and cannot relax the parent snapshot.
+        try:
+            from openprogram.agent.session_config import (
+                load_session_run_config,
+                sandbox_override_from_config,
+            )
+            from openprogram.sandbox import bind_turn_policy
+            _cfg = load_session_run_config(req.session_id)
+            self._sandbox_token = bind_turn_policy(
+                sandbox_override_from_config(_cfg, req.session_id),
+            )
+        except Exception:
+            self._sandbox_token = None
         return self
 
     def release(self) -> None:
@@ -212,6 +227,9 @@ class TurnBindings:
             if self._worktree_token is not None:
                 from openprogram.worktree.context import reset_worktree
                 reset_worktree(self._worktree_token)
+            if self._sandbox_token is not None:
+                from openprogram.sandbox import reset_turn_policy
+                reset_turn_policy(self._sandbox_token)
         except ValueError:
             _log.debug(
                 "context var teardown ran in a foreign context for session %s",

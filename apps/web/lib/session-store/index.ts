@@ -414,7 +414,9 @@ const DEFAULT_COMPOSER_SETTINGS: ComposerSettings = {
   webSearch: false,
   fast: false,
   unattended: false,  // web default: attended (a human is watching, may be asked)
-  permission_mode: "",  // "" → backend default (web = bypass)
+  permission_mode: "",  // "" → send inherit; backend uses session/project/ask
+  effective_permission: "",
+  sandbox: true,  // system default is workspace-write
 };
 const initialSessionDraftState = readSessionDraftState();
 

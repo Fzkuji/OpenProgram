@@ -991,7 +991,10 @@ def _append_msg(conv: dict, msg: dict) -> None:
             # even when the user never sent a real message. Now folded
             # into the same create_session call as the first message so
             # SessionDB only ever holds rows for sessions with content.
-            for fld in ("tools_enabled", "tools_override", "thinking_effort", "permission_mode"):
+            for fld in (
+                "tools_enabled", "tools_override", "thinking_effort",
+                "permission_mode", "sandbox_enabled",
+            ):
                 v = conv.get(fld)
                 if v is not None:
                     create_kwargs[fld] = v

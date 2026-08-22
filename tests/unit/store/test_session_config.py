@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from openprogram.agent.session_config import (
+    SessionRunConfig,
     load_session_run_config,
     permission_from_config,
     reasoning_from_config,
@@ -69,6 +70,17 @@ def test_tools_enabled_yields_live_intent_not_snapshot(
     assert permission_from_config(cfg, default="bypass") == "acceptEdits"
 
 
+def test_permission_from_config_fails_safe_to_ask() -> None:
+    empty = SessionRunConfig()
+    assert permission_from_config(empty) == "ask"
+    assert permission_from_config(empty, default=None) == "ask"
+    assert permission_from_config(empty, default="bogus") == "ask"
+    assert permission_from_config(empty, default="bypass") == "bypass"
+    assert permission_from_config(
+        SessionRunConfig(permission_mode="acceptEdits"), default="ask",
+    ) == "acceptEdits"
+
+
 def test_thinking_aliases_normalize(tmp_db: SessionDB) -> None:
     tmp_db.create_session("c1", "main")
     cfg = save_session_run_config(
@@ -110,3 +122,13 @@ def test_additional_working_dirs_round_trip(tmp_db: SessionDB) -> None:
     assert cfg.additional_working_dirs == ["/tmp/c"]
     cfg = save_session_run_config("c1", agent_id="main", additional_working_dirs=[])
     assert cfg.additional_working_dirs == []
+
+
+def test_sandbox_enabled_round_trip(tmp_db: SessionDB) -> None:
+    tmp_db.create_session("c1", "main")
+    assert load_session_run_config("c1").sandbox_enabled is None
+    cfg = save_session_run_config("c1", agent_id="main", sandbox_enabled=False)
+    assert cfg.sandbox_enabled is False
+    assert load_session_run_config("c1").sandbox_enabled is False
+    cfg = save_session_run_config("c1", agent_id="main", sandbox_enabled=True)
+    assert cfg.sandbox_enabled is True

@@ -38,6 +38,8 @@ export const DEFAULT_SCOPE_SETTINGS: ComposerSettings = {
   fast: false,
   unattended: false,
   permission_mode: "",
+  effective_permission: "",
+  sandbox: true,
 };
 
 /**

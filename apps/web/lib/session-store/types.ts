@@ -95,15 +95,20 @@ export interface ComposerSettings {
   tools: boolean;
   webSearch: boolean;
   fast: boolean;
-  /** Permission mode for this session's tool calls: ask/auto/acceptEdits/
-   *  plan/dontAsk/bypass. "" means fall through to the backend default.
-   *  See docs/design/runtime/permission-model.md. */
+  /** Permission mode for this session's tool calls: ask/acceptEdits/
+   *  plan/auto/bypass. "" means inherit (backend resolves session →
+   *  project → ask). */
   permission_mode: string;
+  /** Last effective mode echoed by the backend (chat_ack / session_loaded). */
+  effective_permission?: string;
   /** Unattended: nobody watching → the agent's user-question tool is
    *  withheld so it never blocks on a prompt no one can answer. Web default
    *  is attended (false); toggled from the composer "+" menu, mirrored to
    *  the backend via the set_attended WS action. */
   unattended: boolean;
+  /** Session Sandbox override. true/false is explicit; omitted inherits
+   *  the project/global default (system default is on). */
+  sandbox?: boolean;
 }
 
 /** One field in a runtime.form schema (MCP-elicitation flat object). */

@@ -59,6 +59,8 @@ class SessionRunConfig:
     permission_rules: Optional[PermissionRules] = None
     # 路径安全的额外工作目录集（§3.5）。
     additional_working_dirs: list[str] = field(default_factory=list)
+    # Plus-menu Sandbox switch. None = inherit project/global sandbox.mode.
+    sandbox_enabled: Optional[bool] = None
 
 
 def load_session_run_config(session_id: str) -> SessionRunConfig:
@@ -77,6 +79,7 @@ def load_session_run_config(session_id: str) -> SessionRunConfig:
         permission_mode=_normalize_permission(row.get("permission_mode")),
         permission_rules=_as_permission_rules(row.get("permission_rules")),
         additional_working_dirs=_as_str_list(row.get("additional_working_dirs")),
+        sandbox_enabled=_as_bool_or_none(row.get("sandbox_enabled")),
     )
 
 
@@ -91,6 +94,7 @@ def save_session_run_config(
     permission_mode: Any = None,
     permission_rules: Any = None,
     additional_working_dirs: Any = None,
+    sandbox_enabled: Any = None,
 ) -> SessionRunConfig:
     fields: dict[str, Any] = {}
 
@@ -126,6 +130,10 @@ def save_session_run_config(
 
     if additional_working_dirs is not None:
         fields["additional_working_dirs"] = _as_str_list(additional_working_dirs)
+
+    sandbox = _as_bool_or_none(sandbox_enabled)
+    if sandbox is not None:
+        fields["sandbox_enabled"] = sandbox
 
     if fields:
         try:
@@ -189,8 +197,17 @@ def reasoning_from_config(cfg: SessionRunConfig) -> Optional[str]:
     return effort
 
 
-def permission_from_config(cfg: SessionRunConfig, *, default: str) -> str:
-    return _normalize_permission(cfg.permission_mode) or default
+def permission_from_config(cfg: SessionRunConfig, *, default: str | None = "ask") -> str:
+    """session override → caller default (usually project) → system ``ask``.
+
+    Invalid values are dropped, so a missing or illegal mode cannot become
+    ``bypass``.
+    """
+    return (
+        _normalize_permission(cfg.permission_mode)
+        or _normalize_permission(default)
+        or "ask"
+    )
 
 
 def project_defaults(session_id: str) -> dict:
@@ -202,11 +219,28 @@ def project_defaults(session_id: str) -> dict:
         proj = _projects.project_for_session(session_id) or _projects.get_default_project()
         s = _projects.load_project_settings(proj.id)
         return {
-            k: s[k] for k in ("permission_mode", "toolset", "thinking_effort")
+            k: s[k] for k in (
+                "permission_mode", "toolset", "thinking_effort", "sandbox_mode",
+            )
             if s.get(k)
         }
     except Exception:
         return {}
+
+
+def sandbox_override_from_config(
+    cfg: SessionRunConfig, session_id: str = "",
+) -> Optional[bool]:
+    """Session switch, else project ``sandbox_mode``, else None (inherit)."""
+    if cfg.sandbox_enabled is not None:
+        return cfg.sandbox_enabled
+    if not session_id:
+        return None
+    mode = project_defaults(session_id).get("sandbox_mode")
+    if not mode:
+        return None
+    from openprogram.sandbox import MODE_WORKSPACE_WRITE
+    return str(mode).strip().lower() == MODE_WORKSPACE_WRITE
 
 
 # ── intent helpers ──
