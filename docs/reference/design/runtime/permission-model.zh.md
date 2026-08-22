@@ -45,7 +45,7 @@ LLM 发起工具调用
 │     _match_rule → "deny" → 返回 [denied]（任何模式含 bypass）    │
 │     _match_rule → "ask"  → 强制 await_user_approval（含 bypass） │
 │  ② force_ask 工具（exit_plan_mode）→ 强制审批                    │
-│  ③ permission_mode == "bypass" → 直接执行                       │
+│  ③ permission_mode == "bypass" → unsandboxed_execution          │
 │  ④ 规则层 allow（bypass 之后）                                   │
 │     _match_rule → "allow" → 直接执行                            │
 │  ⑤ 只读安全工具（SAFE_AUTO_ALLOWLIST）→ 全模式直接执行            │
@@ -97,7 +97,7 @@ _PERMISSION_BY_LOWER = {m.lower(): m for m in VALID_PERMISSION}  # 大小写不�
 | `ask` | Ask permissions / 逐次确认 | 每个工具调用都弹审批卡片阻塞等答（除非规则 allow、只读安全工具、或 per-tool 声明不需审批）。逐次问。 |
 | `acceptEdits` | Accept edits / 接受编辑 | 对**写类且路径安全**的工具（read/write/edit/glob/grep/list，且目标在工作目录内、非危险文件）自动放行；bash/exec/shell 等命令类**仍走完整审批**。 |
 | `auto` | Auto mode / 自动判定 | LLM 分类器档。危险工具（`RISKY_AUTO_DENYLIST`：bash/exec/shell/execute_code/process）直接 `[denied]`；其余拿不准的调一次 haiku 判定安全与否（`internals/_auto_classifier.py`）。 |
-| `bypass` | Bypass permissions / 绕过权限 | 全部直接放行，不弹审批；执行默认在沙箱的 `escalated_policy` 下进行（可配置限制关、hard floor 开），`sandbox.apply_in_bypass=true` 时保留已配置沙箱——见 [sandbox.zh.md](sandbox.zh.md)。**例外**：`exit_plan_mode` 强制审批（`_FORCE_APPROVAL_TOOLS`，`internals/_approval.py:34`）；规则层 deny/ask 仍生效。 |
+| `bypass` | Bypass permissions / 绕过权限 | 全部直接放行，不弹审批；执行默认走 `unsandboxed_execution`（不包装、不剥环境、无 hard floor），`sandbox.apply_in_bypass=true` 时保留已配置沙箱——见 [sandbox.zh.md](sandbox.zh.md)。**例外**：`exit_plan_mode` 强制审批（`_FORCE_APPROVAL_TOOLS`，`internals/_approval.py:34`）；规则层 deny/ask 仍生效。 |
 | `plan` | Plan mode / 计划模式 | 计划态。写类工具在此模式对模型不可见（`apply_tool_policy(source="plan")`）——纯**可见性**控制，与批准强度正交（见 §3.7）。 |
 
 > 大小写规范化：`acceptEdits` 是驼峰。`VALID_PERMISSION` 存的是驼峰规范值，`_PERMISSION_BY_LOWER` 建一张 `小写 → 规范值` 表；`_normalize_permission`（`session_config.py:289-293`）用 `_PERMISSION_BY_LOWER.get(value.lower())` 做大小写不敏感匹配，所以前端传 `"acceptedits"` 也能规回 `"acceptEdits"`，非法值返回 `None`。
@@ -221,13 +221,15 @@ async def _gated_execute(call_id, args, cancel, on_update):
     if force_ask:
         return await _approve_then_run(call_id, args, cancel, on_update)
 
-    # ③ bypass 短路（deny/ask/force 之后）；默认完全放开，
+    # ③ bypass 短路（deny/ask/force 之后）；默认彻底无沙箱。
     #    sandbox.apply_in_bypass=true 时保留已配置沙箱
     if mode == "bypass":
         if apply_in_bypass():
-            return await orig_execute(call_id, args, cancel, on_update)
-        with escalated_policy():
-            return await orig_execute(call_id, args, cancel, on_update)
+            return await _run_original(call_id, args, cancel, on_update)
+        with unsandboxed_execution():
+            return await _run_original(
+                call_id, args, cancel, on_update, already_escalated=True,
+            )
 
     # ④ 规则层 allow —— bypass 之后
     if verdict == "allow":
@@ -276,7 +278,7 @@ async def _approve_then_run(call_id, args, cancel, on_update):
 - **plan（可见性控制）**：`apply_tool_policy(tools, source="plan")`（`dispatcher/__init__.py:798`）滤掉写类工具，根本不进模型工具列表。plan 状态存布尔集（`agent/plan_mode.py` 的 `_active`），**不切批准强度**——与批准档正交（详见 §3.7）。`_gated_execute` 无 plan 专属分支（写类已被滤掉，只读工具按当前档常规走）。
 - **auto（⑦）**：LLM 分类器档，三级过滤省调用（`internals/_auto_classifier.py`）：明显安全的只读工具在 ⑤ 已放行；`RISKY_AUTO_DENYLIST`（bash/exec/shell/execute_code/process）直接 `[denied]`；其余拿不准的调一次 `auto_classify_tool` 问 haiku。规则层 deny/ask（①）仍在其前生效，allow（④）不受影响。
 - **ask**：不命中 allow、不在只读白名单、per-tool 不免审的工具全部落 ⑧。
-- **bypass（③）**：deny/ask/force 之后全部免审批执行，默认在 `escalated_policy` 下运行（`sandbox.apply_in_bypass=true` 可保留已配置沙箱；见 [sandbox.zh.md](sandbox.zh.md)）。
+- **bypass（③）**：deny/ask/force 之后全部免审批执行，默认在 `unsandboxed_execution` 下运行（`sandbox.apply_in_bypass=true` 可保留已配置沙箱；见 [sandbox.zh.md](sandbox.zh.md)）。`_run_original` 在结构化沙箱拒绝时发出 `sandbox.violation`。若该次执行已标记 `already_escalated`（默认 bypass），直接返回拒绝，不再弹出升级重试卡片。非 bypass 的获批重试仍走 `escalated_policy`（hard floor 与凭证过滤保留）。
 
 ### 3.4 规则匹配 `_match_rule`
 

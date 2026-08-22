@@ -47,7 +47,7 @@ LLM issues a tool call
 │     _match_rule → "ask"  → force await_user_approval (incl.    │
 │       bypass)                                                  │
 │  ② force_ask tools (exit_plan_mode) → forced approval          │
-│  ③ permission_mode == "bypass" → execute directly              │
+│  ③ permission_mode == "bypass" → unsandboxed_execution          │
 │  ④ Rule layer allow (after bypass)                             │
 │     _match_rule → "allow" → execute directly                   │
 │  ⑤ Read-only safe tools (SAFE_AUTO_ALLOWLIST) → execute in all │
@@ -102,7 +102,7 @@ Internal tier values use the official English names, and frontend labels follow 
 | `ask` | Ask permissions | Every tool call shows an approval card and blocks waiting for an answer (unless a rule allows it, it is a read-only safe tool, or the per-tool declaration says no approval is needed). One prompt per call. |
 | `acceptEdits` | Accept edits | Tools that are **write-class and path-safe** (read/write/edit/glob/grep/list, targeting a path inside the working directories and not a dangerous file) are auto-allowed; command-class tools such as bash/exec/shell **still go through full approval**. |
 | `auto` | Auto mode | The LLM classifier tier. Risky tools (`RISKY_AUTO_DENYLIST`: bash/exec/shell/execute_code/process) return `[denied]` outright; anything else that is uncertain gets one haiku call to judge safety (`internals/_auto_classifier.py`). |
-| `bypass` | Bypass permissions | Everything is allowed through, no approval card; execution runs under the sandbox's `escalated_policy` (configurable limits off, hard floor on) unless `sandbox.apply_in_bypass=true` — see [sandbox.md](sandbox.md). **Exception**: `exit_plan_mode` forces approval (`_FORCE_APPROVAL_TOOLS`, `internals/_approval.py:34`); rule-layer deny/ask still applies. |
+| `bypass` | Bypass permissions | Everything is allowed through, no approval card; execution runs under `unsandboxed_execution` (no wrap, no environment strip, no hard floor) unless `sandbox.apply_in_bypass=true` — see [sandbox.md](sandbox.md). **Exception**: `exit_plan_mode` forces approval (`_FORCE_APPROVAL_TOOLS`, `internals/_approval.py:34`); rule-layer deny/ask still applies. |
 | `plan` | Plan mode | Planning state. Write-class tools are invisible to the model in this mode (`apply_tool_policy(source="plan")`) — pure **visibility** control, orthogonal to approval strength (see §3.7). |
 
 > Case normalization: `acceptEdits` is camel case. `VALID_PERMISSION` stores the camel-case canonical values, and `_PERMISSION_BY_LOWER` builds a `lowercase → canonical` table; `_normalize_permission` (`session_config.py:289-293`) uses `_PERMISSION_BY_LOWER.get(value.lower())` for case-insensitive matching, so a frontend sending `"acceptedits"` still normalizes back to `"acceptEdits"`, and illegal values return `None`.
@@ -226,13 +226,15 @@ async def _gated_execute(call_id, args, cancel, on_update):
     if force_ask:
         return await _approve_then_run(call_id, args, cancel, on_update)
 
-    # (3) bypass short circuit (after deny/ask/force); full access by default,
-    #     sandbox.apply_in_bypass=true keeps the configured sandbox
+    # (3) bypass short circuit (after deny/ask/force); default is fully
+    #     unsandboxed. sandbox.apply_in_bypass=true keeps the configured sandbox
     if mode == "bypass":
         if apply_in_bypass():
-            return await orig_execute(call_id, args, cancel, on_update)
-        with escalated_policy():
-            return await orig_execute(call_id, args, cancel, on_update)
+            return await _run_original(call_id, args, cancel, on_update)
+        with unsandboxed_execution():
+            return await _run_original(
+                call_id, args, cancel, on_update, already_escalated=True,
+            )
 
     # (4) Rule layer allow -- after bypass
     if verdict == "allow":
@@ -281,7 +283,7 @@ Numbering matches the pseudocode in 3.2:
 - **plan (visibility control)**: `apply_tool_policy(tools, source="plan")` (`dispatcher/__init__.py:798`) filters out write-class tools so they never enter the model's tool list. Plan state lives in a boolean set (`_active` in `agent/plan_mode.py`) and **does not switch approval strength** — it is orthogonal to the approval tier (details in §3.7). `_gated_execute` has no plan-specific branch (write-class tools are already filtered, read-only tools follow the current tier as usual).
 - **auto (⑦)**: the LLM classifier tier, with three levels of filtering to save calls (`internals/_auto_classifier.py`): obviously safe read-only tools already passed at ⑤; `RISKY_AUTO_DENYLIST` (bash/exec/shell/execute_code/process) returns `[denied]` outright; anything else uncertain gets one `auto_classify_tool` call to haiku. Rule-layer deny/ask (①) still applies ahead of it, and allow (④) is unaffected.
 - **ask**: every tool that misses allow, is not on the read-only allowlist, and is not per-tool exempt lands at ⑧.
-- **bypass (③)**: everything after deny/ask/force executes without approval, under `escalated_policy` by default (`sandbox.apply_in_bypass=true` keeps the configured sandbox; see [sandbox.md](sandbox.md)).
+- **bypass (③)**: everything after deny/ask/force executes without approval, under `unsandboxed_execution` by default (`sandbox.apply_in_bypass=true` keeps the configured sandbox; see [sandbox.md](sandbox.md)). `_run_original` emits `sandbox.violation` on a structured denial. If that execution was already marked `already_escalated` (default bypass), the denial is returned without an upgrade-retry card. A non-bypass approved retry still uses `escalated_policy` (hard floor and credential filtering stay on).
 
 ### 3.4 Rule matching in `_match_rule`
 

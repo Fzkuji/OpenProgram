@@ -1,6 +1,6 @@
 # 沙箱（Sandbox）
 
-沙箱是**宿主原生进程隔离层**：macOS使用Seatbelt，Linux使用bubblewrap，限制子进程的文件系统、进程视图、环境变量和网络。写死的`owner`/`paired`权限档常量表、权限规则与owner精确审批决定一项操作是否可以尝试；`SandboxPolicy`决定获准进程实际可以访问什么；hard constraints先于两者执行（见[`permission-model.md`](permission-model.md) §1.1）。获批重试与`permission_mode="bypass"`都在`escalated_policy`下执行：放开可配置限制，但仍在OS沙箱内，不能取消凭证过滤或hard floor。
+沙箱是**宿主原生进程隔离层**：macOS使用Seatbelt，Linux使用bubblewrap，限制子进程的文件系统、进程视图、环境变量和网络。写死的`owner`/`paired`权限档常量表、权限规则与owner精确审批决定一项操作是否可以尝试；`SandboxPolicy`决定获准进程实际可以访问什么；hard constraints先于两者执行（见[`permission-model.md`](permission-model.md) §1.1）。获批重试在`escalated_policy`下执行：放开可配置限制，但仍在OS沙箱内，不能取消凭证过滤或hard floor。默认的`permission_mode="bypass"`使用`unsandboxed_execution`：`_execution_policy_override`为`None`，命令不包装、环境变量不剥、不施加hard floor——对齐Claude Code的`--dangerously-skip-permissions`。`sandbox.apply_in_bypass=true`才在bypass下保留已配置沙箱。
 
 同一份内容的图示版在[`sandbox-architecture.html`](sandbox-architecture.html)。
 
@@ -10,7 +10,7 @@
 
 ## 第一部分：我们现在怎么做
 
-策略实现位于`openprogram/sandbox/__init__.py`。公开接口包括`SandboxPolicy`（冻结dataclass）、`resolve_policy()`、`is_available()` / `unavailable_reason()`、`child_env(policy)`、`validate_write_path()`和`wrap_command(command, cwd, policy) -> (args, shell)`。`openprogram/backend/local.py::_invocation`是共用命令边界，bash、process、本地`execute_code`、cron direct、memory写入器MCP `shell`和one-shot MCP启动都使用它。spawn的agentic子进程显式接收策略快照。`write`、`edit`和`apply_patch`不需要转成shell命令，而是直接执行相同的可写根与hard-floor检查。
+策略实现位于`openprogram/sandbox/__init__.py`。公开接口包括`SandboxPolicy`（冻结dataclass）、`resolve_policy()`、`is_available()` / `unavailable_reason()`、`child_env(policy)`、`validate_write_path()`、`wrap_command(command, cwd, policy) -> (args, shell)`、`escalated_policy()`和`unsandboxed_execution()`。`openprogram/backend/local.py::_invocation`是共用命令边界，bash、process、本地`execute_code`、cron direct、memory写入器MCP `shell`和one-shot MCP启动都使用它。spawn的agentic子进程显式接收策略快照。`write`、`edit`和`apply_patch`不需要转成shell命令，而是直接执行相同的可写根与hard-floor检查。
 
 本地后端确定使用宿主原生沙箱，使命令使用宿主实际安装的Git、Python、Conda、npm、编译器和项目环境。Docker不是本地沙箱实现，也不是自动回退。现有Docker与SSH执行后端分别声明容器或远端主机为边界；只有出现需要用户显式选择独立Linux环境的明确需求后，才另行设计Docker沙箱后端。
 
@@ -30,7 +30,7 @@
 | 删除被禁路径 | 每条deny-read glob同时发`deny file-write-unlink`，被禁读的路径不能用删除操作反推存在性 |
 | 进程执行 | `(allow process-exec)`，不限制，子进程继承profile |
 | fork | 允许 |
-| 信号、进程信息 | 只限`(target same-sandbox)` |
+| 信号、进程信息 | 信号在任何策略下都是`(allow signal (target same-sandbox))`。进程信息默认`(allow process-info* (target same-sandbox))`；`escalated_policy`设置`host_process_info=True`并发`(allow process-info*)`，获批重试可以检查宿主进程 |
 | POSIX信号量与共享内存 | 允许，给Python multiprocessing用 |
 | 字符设备 | `/dev/null`、`/dev/zero`、`/dev/random`、`/dev/urandom`、`/dev/tty`的读写和ioctl，每条都用`require-all`加`vnode-type CHARACTER-DEVICE` |
 | sysctl | 硬件名字前缀，以及`kern.hostname`、`kern.osrelease`、`kern.ostype`、`kern.version` |
@@ -42,7 +42,7 @@
 #### 1.2 Linux：bubblewrap
 
 ```
-bwrap --new-session --die-with-parent --unshare-pid --unshare-ipc --unshare-uts
+bwrap --new-session --die-with-parent [--unshare-pid] --unshare-ipc --unshare-uts
       --cap-drop ALL --ro-bind / / --proc /proc --dev /dev [--unshare-net]
       --tmpfs /tmp --bind <cwd> <cwd> [屏蔽挂载] -- /bin/bash -c <command>
 ```
@@ -55,7 +55,7 @@ bwrap --new-session --die-with-parent --unshare-pid --unshare-ipc --unshare-uts
 | deny-read文件 | `--ro-bind /dev/null <file>` |
 | 进程执行 | 不限制，任何位置的任何二进制 |
 | 网络 | 除非`sandbox.network`打开，否则`--unshare-net` |
-| PID命名空间 | 已隔离 |
+| PID命名空间 | 默认隔离（`--unshare-pid`）；`host_process_info=True`时不加该参数 |
 | IPC、UTS命名空间 | 已隔离 |
 | capability | 全部丢弃 |
 | 终端 | `--new-session`，bubblewrap文档把它列为TIOCSTI注入防护 |
@@ -81,7 +81,7 @@ bwrap --new-session --die-with-parent --unshare-pid --unshare-ipc --unshare-uts
 
 选白名单而不是从provider注册表推导的黑名单，理由只有一条：明天新增的provider会被自动丢掉，没人需要更新任何东西，而推导出来的名单要跟着注册表一起长。凭证名字pattern留作`sandbox.pass_env`的底线，避免这个逃生口顺手把key发给每一条命令。
 
-Linux上光洗环境变量不够。没有`--unshare-pid`时，`/proc/<agent_pid>/environ`会把刚从子进程里去掉的key还回来。加上之后，沙箱内的进程只看得到4个PID，`cat /proc/<宿主pid>/environ`报"No such file or directory"，`kill -9 <宿主pid>`报"No such process"，宿主进程照常活着。
+Linux上光洗环境变量不够。默认策略因此传入`--unshare-pid`：没有它时，`/proc/<agent_pid>/environ`会把刚从子进程里去掉的key还回来；加上之后，沙箱内的进程只看得到4个PID，`cat /proc/<宿主pid>/environ`报"No such file or directory"，`kill -9 <宿主pid>`报"No such process"，宿主进程照常活着。`escalated_policy`设置`host_process_info=True`并省略`--unshare-pid`，获批重试可以检查宿主进程；凭证名仍然不会进入子进程环境。
 
 #### 1.5 已知行为与平台限制
 
@@ -101,14 +101,16 @@ Linux上光洗环境变量不够。没有`--unshare-pid`时，`/proc/<agent_pid>
 | `sandbox.deny_write` | 沙箱内不可写的glob | `[]`，外加常开的agentics目录 |
 | `sandbox.network` | 沙箱内是否有网络 | `false` |
 | `sandbox.pass_env` | 额外透传的环境变量名 | `[]` |
-| `sandbox.apply_in_bypass` | `permission_mode="bypass"`下是否仍保留可配置的沙箱限制 | `false` |
+| `sandbox.apply_in_bypass` | `permission_mode="bypass"`下是否保留已配置沙箱（默认bypass无沙箱） | `false` |
 | `sandbox.unavailable_policy` | 平台后端缺失或无法创建所需隔离时`refuse`还是`warn` | `refuse` |
 
 CLI REPL和Web UI的`/sandbox`都通过`set_setting`写`sandbox.mode`，所以这个开关是持久的，不是单次会话的。
 
 **开关使用持久化配置。**开关原来使用`ContextVar`，每一个新上下文边界都会丢失该值。其中三个边界位于实际调用路径：Web UI在websocket的asyncio任务里设置，agent轮次运行于普通`threading.Thread`；`openprogram/agent/process_runner.py`使用`mp.get_context("spawn")`，spawn不携带上下文变量；嵌套CLI是独立进程。在每个交接点增加`copy_context()`也不等价：spawn子agent可以把开关传入worker线程，但实测followup线程仍会恢复默认值。按调用链计数的执行状态继续使用上下文变量，并在每个线程入口重新绑定；安装级策略不使用上下文变量。修改后实测，Web worker线程在沙箱内执行并看到空的`OPENAI_API_KEY`，spawn子进程也得到相同结果。
 
-**只有本地interactive owner可以申请一次精确重试并放宽可配置限制。**重试仍使用OS沙箱，凭证环境过滤和不可配置的agentics禁写保持生效；cron、subagent和paired渠道不能使用该路径。`permission_mode="bypass"`走同一条路径：对齐Claude Code的`--dangerously-skip-permissions`，bypass意味着完全放开——bypass分支的每次工具调用都在`escalated_policy`下执行，可配置限制（`deny_read`、`deny_write`、网络）不生效，hard floor与凭证过滤保留。设置`sandbox.apply_in_bypass=true`可让bypass下仍保留已配置的沙箱。
+**只有本地interactive owner可以申请一次精确重试并放宽可配置限制。**重试使用`escalated_policy`：OS沙箱仍在，凭证环境过滤和不可配置的agentics禁写保持生效；cron、subagent和paired渠道不能使用该路径。`escalated_policy`同时设置`host_process_info=True`，获批重试可以检查宿主进程。若被拦截的那次执行已经在升级或无沙箱策略下跑过（`already_escalated`），直接返回拒绝结果，不再弹出升级重试卡片；`sandbox.violation`观测事件照发。
+
+**`permission_mode="bypass"`是另一条路径。**对齐Claude Code的`--dangerously-skip-permissions`，默认bypass就是无沙箱：`_gated_execute`用`unsandboxed_execution`包住调用，`resolve_policy()`返回`None`，`_invocation`不包装命令、不剥环境变量，也不施加hard floor。该调用标记`already_escalated=True`，之后若仍出现沙箱拒绝（例如`force_sandbox`调用方），不再弹出升级重试。设置`sandbox.apply_in_bypass=true`可让bypass下仍保留已配置沙箱；该路径不是already-escalated，结构化拒绝仍可申请一次`escalated_policy`重试。
 
 **平台后端不可用时默认拒绝执行。**`sandbox.mode`开着、平台后端缺失或所需隔离探测失败、`sandbox.unavailable_policy`是`refuse`时，`_invocation`抛`SandboxUnavailable`，`LocalBackend.run`把它变成失败的`RunResult`，文案给出原因和显式的不安全替代设置。`warn`恢复原来不受保护的执行行为，附一行日志。
 
@@ -131,7 +133,7 @@ CLI REPL和Web UI的`/sandbox`都通过`set_setting`写`sandbox.mode`，所以�
 | Docker与SSH后端 | 配置的容器或远端主机是执行边界；工具规则、authority、审批和审计继续生效，但不声明使用宿主原生沙箱 |
 | 固定argv与owner管理员路径 | 确定性的Git/store操作、已配置plugin/MCP/hook、显式安装或升级命令保留各自声明的边界，不计为模型shell命令 |
 
-`permission_mode="bypass"`不再先于安全检查。hard constraints、规则层deny/ask与capability检查先执行；bypass分支本身在`escalated_policy`下运行（可配置沙箱限制关、hard floor开），除非`sandbox.apply_in_bypass=true`。subagent保持非交互，scope不能超过caller，也不能申请升级。被忽略的provider参数`sandbox="read-only"`不计为保护；进程隔离由显式策略快照和上表边界提供。
+`permission_mode="bypass"`不再先于安全检查。hard constraints、规则层deny/ask与capability检查先执行。bypass分支本身在`unsandboxed_execution`下运行（不包装、不剥环境、无hard floor），除非`sandbox.apply_in_bypass=true`保留已配置沙箱。subagent保持非交互，scope不能超过caller，也不能申请升级。被忽略的provider参数`sandbox="read-only"`不计为保护；进程隔离由显式策略快照和上表边界提供。
 
 ---
 
@@ -280,7 +282,7 @@ CLI REPL和Web UI的`/sandbox`都通过`set_setting`写`sandbox.mode`，所以�
 
 **2. 凭证屏蔽，已完成。**deny-read清单出厂装弹（§1.3）。macOS上每条glob同时发`deny file-read*`和`deny file-write-unlink`，被禁读的路径不能用删除操作反推存在性；Linux上目录用`--perms 0000 --tmpfs`、文件用`--ro-bind /dev/null`屏蔽，宿主上不存在的路径跳过，因为只读的根让bubblewrap没地方创建挂载点。子进程环境变量用白名单而不是从provider注册表推导的黑名单：推导出来的名单要跟着注册表一起重建，白名单会自己丢掉没见过的名字，`openclaw`那条兜底名字pattern留作`sandbox.pass_env`的底线。Linux加上`--unshare-pid`，否则刚从子进程里去掉的key又能从`/proc/<agent_pid>/environ`读回来。deny-write覆盖agentics目录，这层保护按操作面分成两半。文件工具面（`write`、`edit`、`apply_patch`）上它无条件成立：`validate_write_path()`在解析任何策略之前就拒绝写入agentics目录和agentic源注册表，任何配置都够不到这道检查。命令面（`bash`、`execute_code`）上这层保护存在于沙箱策略里，因此在`workspace-write`和`read-only`下成立，在`sandbox.mode=danger-full-access`下不成立——该模式下shell面本就不设防，这正是这个模式的含义。git hook和git config是同一形状的逃逸，但保持opt-in，因为禁掉`.git/hooks/**`会让`git init`和`git clone`失败，而在第5步之前没有升级路径。
 
-**3. 开关语义，已完成。**`ContextVar`已经删掉。策略在包装命令的那一刻从配置里的`sandbox.*`解析，asyncio任务到线程、spawn子进程、嵌套CLI三个边界都扛得住，因为文件不属于任何上下文。它同时坐在权限层之下，`permission_mode="bypass"`短路掉审批卡，并默认在`escalated_policy`下执行——bypass下可配置的沙箱限制不生效（hard floor仍生效）；`sandbox.apply_in_bypass=true`可在bypass下恢复已配置的沙箱。`wrap_command`接收显式策略供手上有策略的调用方使用；目前还没有按工具或按调用点给出不同策略的地方，那正是"调用点可覆盖"原本要买到的东西。平台工具不可用时默认拒绝执行，并给出两条出路。
+**3. 开关语义，已完成。**`ContextVar`已经删掉。策略在包装命令的那一刻从配置里的`sandbox.*`解析，asyncio任务到线程、spawn子进程、嵌套CLI三个边界都扛得住，因为文件不属于任何上下文。它同时坐在权限层之下，`permission_mode="bypass"`短路掉审批卡，并默认在`unsandboxed_execution`下执行（不包装、完整环境、无hard floor）；`sandbox.apply_in_bypass=true`可在bypass下恢复已配置沙箱。`wrap_command`接收显式策略供手上有策略的调用方使用；目前还没有按工具或按调用点给出不同策略的地方，那正是"调用点可覆盖"原本要买到的东西。平台工具不可用时默认拒绝执行，并给出两条出路。
 
 **4. 默认开，已完成。**新安装使用`workspace-write`；已有配置中显式的`danger-full-access`保持不变。
 
@@ -288,13 +290,13 @@ CLI REPL和Web UI的`/sandbox`都通过`set_setting`写`sandbox.mode`，所以�
 
 *正向*：只读工具、显式allow规则和安全编辑路径继续免审批。不能仅因bash位于沙箱内就统一免审批，因为`workspace-write`仍可修改或删除仓库文件。
 
-*反向*：结构化沙箱拒绝可以申请一次本地owner精确批准。重试使用放宽后的OS沙箱策略，不直接在宿主执行；agentics hard floor和凭证过滤继续生效。
+*反向*：结构化沙箱拒绝可以申请一次本地owner精确批准，除非被拦截的那次执行已经在升级或无沙箱策略下跑过（`already_escalated`）。重试使用`escalated_policy`，不直接在宿主执行；agentics hard floor和凭证过滤继续生效，`host_process_info=True`让重试可以检查宿主进程。
 
 *向下*：`_hard_constraint_violation`和capability检查位于规则、审批与bypass之前。cron和subagent不能建立交互审批路径。命令匹配会移除ANSI和NUL、执行NFKC、解析透明`env`包装，并拒绝持久化复杂shell表达式。
 
 权限规则和`SandboxPolicy`保持为两个输入：前者表达owner同意，后者表达进程实际可访问的资源。
 
-配套profile修补清单已经完成：工作目录插入profile前先转义，信号和进程信息只允许同沙箱目标，Linux传入上述命名空间与capability参数，两条路径统一使用`/bin/bash`，macOS收窄sysctl访问、删除通用`mach-lookup`，临时写入只允许当前`TMPDIR`。`--unshare-user`仍不加入：非setuid bubblewrap会自行创建用户命名空间，setuid构建不接受该参数。
+配套profile修补清单已经完成：工作目录插入profile前先转义，信号在任何策略下都只允许同沙箱目标，进程信息默认同沙箱、在`escalated_policy`下对宿主开放（`host_process_info=True`），Linux传入上述命名空间与capability参数（`host_process_info`为真时省略`--unshare-pid`），两条路径统一使用`/bin/bash`，macOS收窄sysctl访问、删除通用`mach-lookup`，临时写入只允许当前`TMPDIR`。`--unshare-user`仍不加入：非setuid bubblewrap会自行创建用户命名空间，setuid构建不接受该参数。
 
 CPU、内存和进程数配额明确不属于本沙箱项目。Linux PID namespace隐藏宿主进程，但不限制进程数量。通用配置静态检查属于独立配置安全工作；provider忽略的`sandbox="read-only"`参数已标明不提供强制能力，也不计入运行时边界。
 
@@ -322,13 +324,13 @@ CLI进程仍不进入OS沙箱，因为它需要访问Anthropic API。它自带�
 
 **协商卡片，带可持久化的结果。** escalation审批渲染成专用卡片：被拦路径、命中规则、风险说明，三个选择。*本次放行*就是现有的精确升级重试。*总是允许此路径*是新增：把具体路径写进新配置键`sandbox.allow_read`，语义遵循Claude Code为`allowRead`/`denyRead`重叠所记载的"更窄路径获胜"规则——allow条目只在更宽的deny里重新打开点名的那条路径，同等精确度的deny仍然获胜。不可配置的hard floor（`~/.openprogram/auth/**`、agentics目录）完全排除在`sandbox.allow_read`解析之外，任何卡片点击都打不开它。*拒绝*维持原状。这补上了事件暴露的闭环：正路（点一下卡片）变得比绕路（数轮搬文件）便宜。
 
-**状态可见。** 聊天顶栏的权限徽章增加沙箱指示，`bypass`的标签说清它的含义："跳过审批"，描述为完全放开——不弹审批，沙箱限制也不生效，与运行时语义一致：bypass在`escalated_policy`下执行，除非`sandbox.apply_in_bypass=true`。事件里owner的困惑（"我开了bypass怎么还有沙箱"）在语义层面解决，而不只是文案层面。
+**状态可见。** 聊天顶栏的权限徽章增加沙箱指示，`bypass`的标签说清它的含义："跳过审批"，描述为完全放开——不弹审批，也没有沙箱，与运行时语义一致：默认bypass使用`unsandboxed_execution`，除非`sandbox.apply_in_bypass=true`。事件里owner的困惑（"我开了bypass怎么还有沙箱"）在语义层面解决，而不只是文案层面。
 
 **预设优先于键。** Security面板在一屏内呈现两层——权限规则与沙箱策略并排——配三个具名预设：*strict*（出厂默认）、*balanced*（`**/.env`移出deny-read，凭证与网络仍关闭）、*open*（`danger-full-access`，按它应有的警示样式渲染）。改预设让两层保持一致，owner不用学glob语义——这是对Claude Code用户抱怨的跨层配置负担的直接回应。
 
 **prompt里的激励对齐。** 系统提示加一行：沙箱拦截读取时，申请升级或把拦截告知用户；绝不通过搬移或复制secrets来规避路径规则。执法层分不清"善意挪文件"和"外传前的暂存"，所以诚实路径必须是被指示的那条——而且在协商卡片之后，也是最短的那条。
 
-本设计刻意不改的：双层架构（审批做决定，沙箱做约束）、deny先于bypass的判定顺序、hard floor、出厂即加载的默认值。不新增第二个执法点；上面每一部分都只是呈现、持久化或prompt。
+本设计刻意不改的：双层架构（审批做决定，沙箱做约束）、deny先于bypass的判定顺序、获批`escalated_policy`重试上的hard floor、出厂即加载的默认值。默认bypass无沙箱，不落在该hard floor之内。不新增第二个执法点；上面每一部分都只是呈现、持久化或prompt。
 
 ---
 
@@ -336,14 +338,14 @@ CLI进程仍不进入OS沙箱，因为它需要访问Anthropic API。它自带�
 
 截至2026-08-10，修复顺序第1—5步和扩展架构第04—08步均已实现。新安装默认`workspace-write`；已有配置中显式的`danger-full-access`保持不变。
 
-- hard constraint和固定权限档能力检查在权限规则、审批及`permission_mode="bypass"`之前判定。bypass分支本身在`escalated_policy`下运行——可配置面完全放开、hard floor保留——除非`sandbox.apply_in_bypass=true`保留已配置的沙箱。
+- hard constraint和固定权限档能力检查在权限规则、审批及`permission_mode="bypass"`之前判定。bypass分支本身在`unsandboxed_execution`下运行——不包装、完整环境、无hard floor——除非`sandbox.apply_in_bypass=true`保留已配置沙箱。
 - cron保存带签名且固化owner权限档的不可变执行spec，以强制沙箱和禁止审批升级的方式无人值守执行。`execute_code`、agentic子进程和one-shot MCP使用同一策略边界。
 - `write`、`edit`和`apply_patch`执行写入根检查。自动导入只接受owner登记来源，并为已有官方clone提供校验后迁移。
 - 已配对渠道发言是可信来源，并可追加source memory。未配对群组发言不进入agent，只归档为`pending`；pending证据仍可检索，hold队列准入与读取过滤推迟到第二批。只有本地interactive owner可以提升。
-- 沙箱拒绝采用结构化结果。只有本地interactive owner可以批准一次精确重试；重试策略仍保留hard floor和凭证过滤。持久批准保存规范化后的精确操作，复杂shell只能单次批准。
+- 沙箱拒绝采用结构化结果。只有本地interactive owner可以批准一次精确重试；重试走`escalated_policy`，保留hard floor和凭证过滤，并设置`host_process_info=True`。已经在升级或无沙箱策略下跑过的拒绝（`already_escalated`）直接返回，不再弹出升级重试卡片；`sandbox.violation`事件照发。持久批准保存规范化后的精确操作，复杂shell只能单次批准。
 - 嵌套Claude Code内置副作用工具已禁用，改用受管MCP文件与shell工具。
 
-第11节（拒绝的可读性与协商）截至2026-08-22已实现，余两项未做：拒绝已点名命中规则与被拦路径；`sandbox.allow_read`已存在并在三个执法点（Seatbelt、bubblewrap、进程内读工具）按"更窄者胜"生效，hard floor不受任何allow条目影响；escalation卡片提供"总是允许此路径"（回复scope为`always_path`，持久化进`sandbox.allow_read`）；bypass标签为"跳过审批"并配完全放开的描述；系统提示带上了禁止搬移secrets的一行。bypass语义对齐Claude Code的`--dangerously-skip-permissions`：bypass分支默认在`escalated_policy`下执行，`sandbox.apply_in_bypass`（默认false）可选择在bypass下保留已配置的沙箱。仍未做：徽章后缀是静态文案而非实时沙箱状态驱动（web端尚无沙箱状态数据源），Security预设面板不存在。
+第11节（拒绝的可读性与协商）截至2026-08-22已实现，余两项未做：拒绝已点名命中规则与被拦路径；`sandbox.allow_read`已存在并在三个执法点（Seatbelt、bubblewrap、进程内读工具）按"更窄者胜"生效，hard floor不受任何allow条目影响；escalation卡片提供"总是允许此路径"（回复scope为`always_path`，持久化进`sandbox.allow_read`）；bypass标签为"跳过审批"并配完全放开的描述；系统提示带上了禁止搬移secrets的一行。bypass语义对齐Claude Code的`--dangerously-skip-permissions`：bypass分支默认在`unsandboxed_execution`下执行，`sandbox.apply_in_bypass`（默认false）可选择在bypass下保留已配置沙箱。仍未做：徽章后缀是静态文案而非实时沙箱状态驱动（web端尚无沙箱状态数据源），Security预设面板不存在。
 
 最终验证记录（2026-08-10）：本机完整受跟踪测试集（排除integration）为2731 passed、4 skipped、1 xfailed；GitHub Actions run 31398444213的Python 3.11、3.12、3.13、Web、文档和示例job全部通过，其中Linux Python 3.11为2723 passed、12 skipped、1 xfailed。该runner先启用Ubuntu 24.04的非特权user namespace能力，再执行真实cron bubblewrap用例，因此不会把“已安装但不能工作”的二进制计入Linux覆盖。macOS Seatbelt与Linux bubblewrap真实矩阵覆盖git、Python、npm、make、conda、凭证拒读、工作区外拒写和网络拒绝。
 
