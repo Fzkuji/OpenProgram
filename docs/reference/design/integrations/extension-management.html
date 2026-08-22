@@ -111,10 +111,10 @@
   </aside>
   <main>
     <header id="question">
-      <div class="eyebrow">Design · implemented and reviewed</div>
+      <div class="eyebrow">Design revision · implementation pending</div>
       <h1>One management grammar for Plugins, Skills, and MCP</h1>
       <p>This document defines how an OpenProgram owner discovers, adds, configures, enables, diagnoses, and removes the three extension types in the Web UI. The audience is the Web and runtime maintainers. Programs, agent-specific allowlists, third-party marketplace governance, and new package formats are outside this task.</p>
-      <div class="status-strip"><span class="chip">Base <code>7763ba70</code></span><span class="chip">Candidate <code>d7c2bda4</code></span><span class="chip">Reviews passed</span><span class="chip">Default profile · port 18100</span><span class="chip">No new dependency</span></div>
+      <div class="status-strip"><span class="chip">Revision base <code>3f3baeb2</code></span><span class="chip pending">Implementation pending</span><span class="chip">Default profile · port 18100</span><span class="chip">No new dependency</span></div>
     </header>
 
     <section id="gaps">
@@ -123,6 +123,7 @@
         <article class="card problem"><h3>Different task words</h3><p>Plugins use Installed / Marketplace / Errors and “Install”; Skills use Browse / Discovery and “New skill”; MCP uses a server rail, “Browse catalog,” and “Add server.” The same user intent changes name and location.</p></article>
         <article class="card problem"><h3>Different failure behavior</h3><p>Skills have a page error bar. Plugin initial load can reject without a page-level error. Several MCP mutations ignore non-2xx responses, leaving the visible state unchanged with no explanation.</p></article>
         <article class="card problem"><h3>Different status density</h3><p>Plugins expose trust and load errors, Skills expose enabled state, and MCP exposes live readiness and tool count. The page chrome does not state which count means installed, enabled, ready, or failed.</p></article>
+        <article class="card problem"><h3>Duplicated MCP discovery</h3><p>MCP exposes Discover as both a secondary tab and a top-level action. The tab only opens a modal while Installed remains active, so navigation state and visible content disagree.</p></article>
       </div>
     </section>
 
@@ -168,8 +169,8 @@
       <h2>Adopted, modified, and rejected choices</h2>
       <div class="grid">
         <article class="card target"><h3>Adopt</h3><p>Reuse <code>ManagePageHeader</code>, <code>ManageSubnav</code>, <code>ManageRow</code>, existing dialogs, existing routes, and native fetch. Preserve each subsystem’s backend and security boundary.</p></article>
-        <article class="card decision"><h3>Modify</h3><p>Standardize task vocabulary, summary placement, loading/error feedback, and request error parsing. Keep type-specific status badges and detail fields because they carry real differences.</p></article>
-        <article class="card problem"><h3>Reject</h3><p>No universal extension backend, no merged persisted schema, no new state library, no single “install anything” parser, and no automatic remote installation from search results.</p></article>
+        <article class="card decision"><h3>Modify</h3><p>Standardize task vocabulary, summary placement, loading/error feedback, and request error parsing. Secondary tabs own the body: MCP Discover renders the catalog inline and becomes the active tab.</p></article>
+        <article class="card problem"><h3>Reject</h3><p>No duplicated Discover action in the top toolbar, no Discover modal, no universal extension backend, no merged persisted schema, no new state library, and no automatic remote installation from search results.</p></article>
       </div>
       <p style="margin-top:14px">Reference comparison: Claude Code’s plugin manager supports installed/discover/error tasks but does not define OpenProgram Skills or MCP runtime readiness; opencode’s MCP and plugin surfaces do not provide one cross-type management model; Hermes groups skills but lacks the three-type availability summary. The target therefore adopts the shared task vocabulary while retaining OpenProgram-specific live MCP state and Skill hierarchy.</p>
     </section>
@@ -181,7 +182,7 @@
           <tr><td>Approved sources</td><td>This document; <a href="skills-and-plugins.html">skills-and-plugins</a>; <a href="mcp-integration.html">mcp-integration</a>; current public routes under <code>/plugins</code>, <code>/skills</code>, and <code>/mcp</code>.</td></tr>
           <tr><td>Production files</td><td><code>apps/web/components/capabilities/</code>, the three management page component folders, <code>apps/web/components/ui/manage-page*</code>, and <code>apps/web/lib/net/fetch-client.ts</code>.</td></tr>
           <tr><td>RED evidence</td><td>A focused executable Web check must fail when task vocabulary/status summaries diverge or when a non-2xx extension request has no visible error path.</td></tr>
-          <tr><td>Required behavior</td><td>Each type exposes Installed and Discover semantics; primary actions name their target; counts state installed/available/issue meaning; mutations expose progress, success refresh, and actionable error.</td></tr>
+          <tr><td>Required behavior</td><td>Each type exposes Installed and Discover as body-owning navigation states; the top toolbar contains search, refresh, and one Add action only; MCP Discover is inline rather than modal; counts state installed/available/issue meaning; mutations expose progress, success refresh, and actionable error.</td></tr>
           <tr><td>Compatibility</td><td>Existing URLs, API payloads, store data, secret masking, catalog provenance, Skill hierarchy, plugin trust confirmation, and MCP restart/selection behavior remain unchanged.</td></tr>
           <tr><td>Security</td><td>No stored secret is retrieved or echoed. Remote catalog policy remains server-side. UI errors must not add credentials or raw secret values.</td></tr>
           <tr><td>Exclusions</td><td>Programs, agent allowlists, backend schema consolidation, Windows work, keyrings, new marketplaces, and plugin runtime isolation.</td></tr>
@@ -194,13 +195,8 @@
       <h2>Implementation evidence</h2>
       <table>
         <tbody>
-          <tr><td>Base and candidate</td><td><code>7763ba70</code> → <code>d7c2bda4</code></td></tr>
-          <tr><td>RED</td><td><code>npm run check:extension-management</code> failed on the missing shared subnav summary contract.</td></tr>
-          <tr><td>GREEN</td><td>The focused extension check, owner-auth check, secret non-retrieval check, accessibility wiring check, TypeScript check, and 51 Web unit tests pass.</td></tr>
-          <tr><td>Specification review</td><td>PASS after MCP Discover wiring and its controlled-state regression assertion were added in <code>102389ed</code> and <code>c2469889</code>.</td></tr>
-          <tr><td>Quality review</td><td>PASS after keyboard navigation, narrow-width layout, MCP detail failure feedback, and executable non-2xx request coverage were added in <code>d7c2bda4</code>.</td></tr>
-          <tr><td>Visible acceptance</td><td>Default <code>/Applications/OpenProgram.app</code> on port 18100 renders the unified Plugins, Skills, and MCP navigation, summaries, actions, live MCP readiness, and an operational MCP Discover catalog.</td></tr>
-          <tr><td>Remaining gate</td><td class="state">The full Web gate stops at the unrelated <code>check:center-tabs</code> destination-cue assertion. The exact failure reproduces at base <code>7763ba70</code>; extension-focused, accessibility, TypeScript, unit, build, docs, and review gates pass.</td></tr>
+          <tr><td>Prior implementation</td><td><code>7763ba70</code> → <code>d7c2bda4</code> passed focused checks and reviews, but visible acceptance exposed the duplicated MCP Discover control and modal-backed tab compromise.</td></tr>
+          <tr><td>Revision</td><td class="state">Implementation, RED/GREEN evidence, reviews, and visible acceptance are pending from base <code>3f3baeb2</code>.</td></tr>
         </tbody>
       </table>
     </section>
