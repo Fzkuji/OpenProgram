@@ -6,6 +6,7 @@ DAG metadata stamping.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -208,3 +209,82 @@ def test_revert_is_idempotent_and_reapply_restores_after_image(
     assert redone["restored_paths"] == [str(target)]
     _git, index = store_with_session._open(session_id)
     assert index.nodes_by_id[turn_id].metadata["reverted"] is False
+
+
+def test_missing_rollback_blob_is_unavailable_before_any_write(
+    store_with_session, tmp_path,
+):
+    session_id, turn_id = "s_missing_rollback", "u1_reply"
+    _seed_session(store_with_session, session_id, turn_id)
+    first = tmp_path / "first.py"
+    second = tmp_path / "second.py"
+    first.write_text("first before\n", encoding="utf-8")
+    second.write_text("second before\n", encoding="utf-8")
+    journal = _record_mutation(
+        store_with_session, session_id, turn_id, first, "first after\n",
+    )
+    _record_mutation(
+        store_with_session, session_id, turn_id, second, "second after\n",
+    )
+    first_mutation = journal.list_mutations(turn_id)[0]
+    from openprogram.store.snapshot.checkpoint.paths import turn_backup_dir
+    missing = turn_backup_dir(
+        store_with_session._session_dir(session_id), turn_id,
+    ) / first_mutation["after"]["blob_ref"]
+    missing.unlink()
+
+    result = revert_turn(session_id, turn_id)
+
+    assert result["status"] == "unavailable"
+    assert result["restored_paths"] == []
+    assert first.read_text(encoding="utf-8") == "first after\n"
+    assert second.read_text(encoding="utf-8") == "second after\n"
+
+
+def test_history_lock_is_stable_for_overlapping_action_sets(tmp_path):
+    first_store = CheckpointStore(tmp_path / "sessions" / "one")
+    second_store = CheckpointStore(tmp_path / "sessions" / "two")
+    path = str(tmp_path / "workspace" / "a" / "x.py")
+    other = str(tmp_path / "workspace" / "b" / "y.py")
+    assert first_store._workspace_lock_path() == second_store._workspace_lock_path()
+    assert first_store._workspace_lock_path().name == "history.lock"
+    assert path != other  # action-set shape does not enter lock identity
+
+
+def test_plan_change_after_prepare_aborts_without_writing(
+    store_with_session, tmp_path, monkeypatch,
+):
+    session_id, turn_id = "s_stale_plan", "u1_reply"
+    _seed_session(store_with_session, session_id, turn_id)
+    first = tmp_path / "first.py"
+    second = tmp_path / "second.py"
+    first.write_text("first before\n", encoding="utf-8")
+    second.write_text("second before\n", encoding="utf-8")
+    journal = _record_mutation(
+        store_with_session, session_id, turn_id, first, "first after\n",
+    )
+    original_lock = journal._workspace_lock
+
+    @contextmanager
+    def add_mutation_before_replan(paths):
+        with original_lock(paths):
+            _record_mutation(
+                store_with_session,
+                session_id,
+                turn_id,
+                second,
+                "second after\n",
+            )
+            yield
+
+    monkeypatch.setattr(journal, "_workspace_lock", add_mutation_before_replan)
+
+    result = journal.apply_history_operation(
+        turn_id, "revert", idempotency_key="stale-plan",
+    )
+
+    assert result["status"] == "aborted"
+    assert result["error"] == "stale_plan"
+    assert result["restored_paths"] == []
+    assert first.read_text(encoding="utf-8") == "first after\n"
+    assert second.read_text(encoding="utf-8") == "second after\n"

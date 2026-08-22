@@ -270,11 +270,17 @@ class CheckpointStore:
             ):
                 unavailable.append(path)
                 continue
-            if target.get("kind") == "regular":
-                blob = backup_dir / str(target.get("blob_ref") or "")
-                if not target.get("blob_ref") or not blob.is_file():
-                    unavailable.append(path)
+            missing_blob = False
+            for state in (source, target):
+                if state.get("kind") != "regular":
                     continue
+                blob = backup_dir / str(state.get("blob_ref") or "")
+                if not state.get("blob_ref") or not blob.is_file():
+                    missing_blob = True
+                    break
+            if missing_blob:
+                unavailable.append(path)
+                continue
             current = self._inspect_state(path)
             if not self._state_matches(current, source):
                 conflicts.append(path)
@@ -314,17 +320,16 @@ class CheckpointStore:
         digest = hashlib.sha256(f"{direction}\0{key}".encode()).hexdigest()[:24]
         return turn_backup_dir(self.session_dir, turn_id) / "intents" / f"{digest}.json"
 
-    @contextmanager
-    def _workspace_lock(self, paths: list[str]):
-        import fcntl
-
-        parents = [str(Path(path).resolve().parent) for path in paths]
-        identity = os.path.commonpath(parents) if parents else str(self.session_dir)
-        digest = hashlib.sha256(identity.encode()).hexdigest()[:24]
+    def _workspace_lock_path(self) -> Path:
         root = self.session_dir.parent / ".mutation-locks"
         root.mkdir(parents=True, exist_ok=True)
-        lock_path = root / f"{digest}.lock"
-        with lock_path.open("a+") as handle:
+        return root / "history.lock"
+
+    @contextmanager
+    def _workspace_lock(self, _paths: list[str]):
+        import fcntl
+
+        with self._workspace_lock_path().open("a+") as handle:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
             try:
                 yield
@@ -387,6 +392,12 @@ class CheckpointStore:
             "error": intent.get("error"),
         }
 
+    @staticmethod
+    def _plan_hash(actions: list[dict]) -> str:
+        return "sha256:" + hashlib.sha256(
+            json.dumps(actions, sort_keys=True).encode(),
+        ).hexdigest()
+
     def apply_history_operation(
         self,
         turn_id: str,
@@ -424,9 +435,7 @@ class CheckpointStore:
             "idempotency_key": key,
             "turn_id": turn_id,
             "direction": direction,
-            "plan_hash": "sha256:" + hashlib.sha256(
-                json.dumps(plan["actions"], sort_keys=True).encode(),
-            ).hexdigest(),
+            "plan_hash": self._plan_hash(plan["actions"]),
             "status": "prepared",
             "actions": plan["actions"],
             "conflicts": [],
@@ -447,7 +456,10 @@ class CheckpointStore:
                 })
                 manifest.save(intent_path, intent)
                 return self._intent_result(intent)
-            intent["actions"] = current_plan["actions"]
+            if self._plan_hash(current_plan["actions"]) != intent["plan_hash"]:
+                intent.update({"status": "aborted", "error": "stale_plan"})
+                manifest.save(intent_path, intent)
+                return self._intent_result(intent)
             intent["status"] = "applying"
             manifest.save(intent_path, intent)
             touched: list[dict] = []
