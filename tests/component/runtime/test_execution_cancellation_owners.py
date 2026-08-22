@@ -568,3 +568,19 @@ def test_forced_tool_passes_canonical_execution_id(monkeypatch):
         tool_input={},
     )
     assert terminal[-1] == ("requested", "cancelled")
+
+
+def test_register_on_cancelled_execution_does_not_retrip(store):
+    """A retry that reuses a cancelled execution id must start clean."""
+    session_id = "retry-cancelled"
+    execution_id = "user-1_reply"
+    _append_execution(store, session_id, execution_id, status="cancelled")
+    ev = threading.Event()
+    token = run_control.CancellationToken(session_id, execution_id)
+    token._event = ev
+    run_control.register_execution_owner(
+        execution_id, session_id, token=token,
+    )
+    assert ev.is_set() is False
+    assert token.is_cancelled() is False
+

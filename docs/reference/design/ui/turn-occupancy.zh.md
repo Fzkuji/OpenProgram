@@ -35,6 +35,8 @@ session 槽位是 `_running_tasks` **加上** active runtime。只 pop 任务表
 
 `msg_id` 对不上时 `_finish_owned_run` 是空操作 — 更新的预占不会被抢走。被取消的 turn 的 `finally` 也会再调一次，第二次是空操作。
 
+同时退役这次 execution 的取消 token。占用是槽位，token 是停止旗标。cancelled 的 token 留在 `_current_tokens` 里，下一轮 `claim_cancel_event` 会失败，或者复用的 `{msg_id}_reply` 一上来就是已取消。旧流仍看着自己的 Event（`opts.signal`），那个已经被 set。
+
 **不要**等 `process_user_turn` 返回才允许下一次 `_try_reserve_run`。
 
 ## 0ms UI

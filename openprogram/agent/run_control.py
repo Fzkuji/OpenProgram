@@ -776,7 +776,19 @@ def register_execution_owner(
             found = _find_execution(default_db(), execution_id)
             if found is not None:
                 _found_session, record = found
-                cancel_pending = _node_status(record) in _CANCEL_INTENT_STATUSES
+                status = _node_status(record)
+                # In-flight cancel: reconnect must keep stopping.
+                # Terminal cancelled + a late process/terminate hook:
+                # the owner showed up after cancel was written — stop it.
+                # Terminal cancelled + token-only (chat retry on the
+                # same {msg}_reply): a new attempt, do not re-trip.
+                cancel_pending = status == "cancelling"
+                if status == "cancelled" and (
+                    is_alive is not None
+                    or terminate is not None
+                    or process is not None
+                ):
+                    cancel_pending = True
         except Exception:
             cancel_pending = False
         _generation_seq += 1

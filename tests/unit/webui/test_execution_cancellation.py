@@ -242,6 +242,10 @@ def test_cancel_releases_session_occupancy_for_next_turn(tmp_path, monkeypatch):
         metadata={"status": "running", "execution_kind": "chat"},
     ))
 
+    ev = threading.Event()
+    assert server._claim_cancel_event(
+        session_id, ev, execution_id=execution_id, foreground=True,
+    )
     assert server._try_reserve_run(session_id, msg_id)
     assert server._activate_run_reservation(session_id, msg_id, object())
     assert server._is_run_active(session_id)
@@ -259,6 +263,12 @@ def test_cancel_releases_session_occupancy_for_next_turn(tmp_path, monkeypatch):
             "execution_id": execution_id,
         }))
         assert server._is_run_active(session_id) is False
+        assert ev.is_set() is True
+        nxt = threading.Event()
+        assert server._claim_cancel_event(
+            session_id, nxt, execution_id="user-2_reply", foreground=True,
+        ), "next turn must claim after occupancy+token release"
+        assert nxt.is_set() is False
         assert server._try_reserve_run(session_id, "user-2") is True
         assert server._is_run_active(session_id) is True
         clears = [

@@ -764,6 +764,16 @@ function finalize(sid: string, rid: string, d: ChatResponseData): void {
     console.error("[chat-stream] late error frame for a settled reply:", d);
     return;
   }
+  // Stop already patched this reply to cancelled. A later result from
+  // the aborted stream has empty content and would flip it to "done",
+  // which looks like a finished blank reply. Leave cancelled as-is.
+  if (
+    (cur.status === "cancelled" || cur.status === "cancelling")
+    && d.type === "result"
+    && !d.cancelled
+  ) {
+    return;
+  }
 
   const status: ChatMsg["status"] =
     d.type === "error"

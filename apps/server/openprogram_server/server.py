@@ -38,6 +38,7 @@ from openprogram.agent.run_control import (
     kill_active_runtime as _kill_active_runtime,
     claim_cancel_event as _claim_cancel_event,
     unregister_cancel_event as _unregister_cancel_event,
+    current_token as _current_token,
     has_active_runtime as _has_active_runtime,
     set_current_session_id as _set_current_session_id,
     reset_current_session_id as _reset_current_session_id,
@@ -888,7 +889,25 @@ def _release_session_occupancy_for_execution(execution: dict) -> bool:
                 released = True
     if released:
         _emit_running_task_event(session_id)
+    # Occupancy without retiring the token leaves (session, None) cancelled.
+    # The next claim_cancel_event fails, or a reused {msg}_reply is
+    # immediately re-stopped. The old stream still sees its own Event.
+    _retire_execution_cancel_token(session_id, execution_id)
     return released
+
+
+def _retire_execution_cancel_token(session_id: str, execution_id: str) -> None:
+    """Drop this execution's cancel token so a successor can claim."""
+    token = _current_token(session_id, execution_id=execution_id)
+    if token is None:
+        fg = _current_token(session_id)
+        if fg is not None and fg.execution_id == execution_id:
+            token = fg
+    if token is None:
+        return
+    _unregister_cancel_event(
+        session_id, token.event, execution_id=execution_id,
+    )
 
 
 # One wording for every "you can't move HEAD right now" rejection, so

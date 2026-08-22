@@ -49,6 +49,12 @@ When `cancel_execution` succeeds:
 reservation is safe. The cancelled turn's `finally` also calls
 `_finish_owned_run`; the second call is a no-op.
 
+Also retire that execution's cancel token. Occupancy is the slot;
+the token is the stop flag. Leaving a cancelled token in
+`_current_tokens` makes the next `claim_cancel_event` fail, or a
+reused `{msg_id}_reply` start already cancelled. The old stream
+still sees its own Event (`opts.signal`), which is already set.
+
 Do **not** wait for `process_user_turn` to return before the next
 `_try_reserve_run`.
 
