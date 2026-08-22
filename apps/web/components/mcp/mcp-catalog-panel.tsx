@@ -3,12 +3,13 @@
  */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
+import { jsonFetch } from "@/lib/net/fetch-client";
 
 import styles from "./mcp-page.module.css";
 
@@ -25,23 +26,27 @@ export interface CatalogServer {
   [k: string]: unknown;
 }
 
+interface CatalogData {
+  name: string;
+  description?: string;
+  servers: CatalogServer[];
+  skipped: number;
+  sourceUrl: string;
+}
+
 export function CatalogPanel({
   existingNames, query = "", onInstalled,
 }: {
   existingNames: Set<string>;
   query?: string;
-  onInstalled: (name: string) => void;
+  onInstalled: (name: string) => Promise<void>;
 }) {
   const { text } = useTranslation();
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState<null | "fetch" | string>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [catalog, setCatalog] = useState<{
-    name: string;
-    description?: string;
-    servers: CatalogServer[];
-    skipped: number;
-  } | null>(null);
+  const [catalog, setCatalog] = useState<CatalogData | null>(null);
+  const catalogAbort = useRef<AbortController | null>(null);
   // Curated suggestions surfaced above the URL input — one-click to
   // pull in a known catalog or install a single quick-install entry.
   const [suggested, setSuggested] = useState<
@@ -58,40 +63,51 @@ export function CatalogPanel({
   const shownCatalogServers = (catalog?.servers || []).filter(matches);
 
   useEffect(() => {
-    fetch("/api/mcp/catalog/suggested")
-      .then((r) => (r.ok ? r.json() : null))
+    const ac = new AbortController();
+    jsonFetch<{
+      suggested?: { label: string; url: string; description?: string }[];
+      quick_install?: CatalogServer[];
+    }>("/api/mcp/catalog/suggested", { signal: ac.signal })
       .then((d) => {
-        if (!d) return;
         setSuggested(Array.isArray(d.suggested) ? d.suggested : []);
         setQuickInstall(Array.isArray(d.quick_install) ? d.quick_install : []);
       })
-      .catch(() => { /* offline / fresh install — leave empty */ });
+      .catch((error) => {
+        if ((error as Error).name !== "AbortError") {
+          /* offline / fresh install — leave empty */
+        }
+      });
+    return () => {
+      ac.abort();
+      catalogAbort.current?.abort();
+    };
   }, []);
 
   async function fetchCatalog(nextUrl?: string) {
     const target = (nextUrl ?? url).trim();
     if (nextUrl) setUrl(nextUrl);
+    catalogAbort.current?.abort();
+    const ac = new AbortController();
+    catalogAbort.current = ac;
     setErr(null); setCatalog(null);
     if (!target) { setErr(text("paste a catalog URL first", "请先粘贴目录 URL")); return; }
     setBusy("fetch");
     try {
-      const r = await fetch(
+      const data = await jsonFetch<Omit<CatalogData, "sourceUrl">>(
         `/api/mcp/catalog?url=${encodeURIComponent(target)}`,
+        { signal: ac.signal },
       );
-      const data = await r.json();
-      if (!r.ok) {
-        setErr(data.detail || `HTTP ${r.status}`);
-        return;
-      }
-      setCatalog(data);
+      setCatalog({ ...data, sourceUrl: target });
     } catch (e) {
-      setErr(String(e));
+      if ((e as Error).name !== "AbortError") {
+        setErr(e instanceof Error ? e.message : String(e));
+      }
     } finally {
-      setBusy(null);
+      if (catalogAbort.current === ac) setBusy(null);
     }
   }
 
-  async function install(entry: CatalogServer) {
+  async function install(entry: CatalogServer, sourceUrl = "") {
     setErr(null);
     if (existingNames.has(entry.name)) {
       setErr(text(`already installed: ${entry.name}`, `已安装：${entry.name}`));
@@ -106,21 +122,15 @@ export function CatalogPanel({
       // server is outdated.
       const body = {
         ...entry,
-        source_catalog_url: url.trim(),
+        ...(sourceUrl ? { source_catalog_url: sourceUrl } : {}),
       };
-      const r = await fetch("/api/mcp/servers", {
+      await jsonFetch("/api/mcp/servers", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await r.json();
-      if (!r.ok) {
-        setErr(data.detail || `HTTP ${r.status}`);
-        return;
-      }
-      onInstalled(entry.name);
+      await onInstalled(entry.name);
     } catch (e) {
-      setErr(String(e));
+      setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
     }
@@ -163,7 +173,7 @@ export function CatalogPanel({
                   const installed = existingNames.has(s.name);
                   return (
                     <div key={s.name}
-                         className="flex items-center gap-3 rounded-md border px-3 py-2"
+                         className="flex min-w-0 flex-col gap-3 rounded-md border px-3 py-2 sm:flex-row sm:items-center"
                          style={{ borderColor: "var(--border)" }}>
                       <div className="flex-1 min-w-0">
                         <div className="font-mono text-sm font-semibold">{s.name}</div>
@@ -174,7 +184,7 @@ export function CatalogPanel({
                         )}
                       </div>
                       <button
-                        className={cn(styles.actionBtn, installed ? "" : styles.actionBtnPrimary)}
+                        className={cn(styles.actionBtn, installed ? "" : styles.actionBtnPrimary, "self-end sm:self-auto")}
                         onClick={() => void install(s)}
                         disabled={installed || busy === s.name}
                       >
@@ -189,13 +199,13 @@ export function CatalogPanel({
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="cat-url">{text("Custom catalog URL", "自定义目录 URL")}</Label>
-            <div className="flex gap-2">
+            <div className="flex min-w-0 gap-2">
               <Input
                 id="cat-url"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://example.com/mcp-catalog.json"
-                className="font-mono"
+                className="min-w-0 flex-1 font-mono"
               />
               <button
                 className={cn(styles.actionBtn, styles.actionBtnPrimary)}
@@ -236,9 +246,9 @@ export function CatalogPanel({
                   const installed = existingNames.has(s.name);
                   return (
                     <div key={s.name}
-                         className="flex items-center gap-3 rounded-md border px-3 py-2"
+                         className="flex min-w-0 flex-col gap-3 rounded-md border px-3 py-2 sm:flex-row sm:items-center"
                          style={{ borderColor: "var(--border)" }}>
-                      <div className="flex-1">
+                      <div className="min-w-0 flex-1">
                         <div className="font-mono text-sm font-semibold">
                           {s.name}
                           <span className="ml-2 text-xs font-normal"
@@ -253,7 +263,7 @@ export function CatalogPanel({
                             {s.description}
                           </div>
                         )}
-                        <div className="mt-1 text-xs font-mono"
+                        <div className="mt-1 break-all text-xs font-mono"
                              style={{ color: "var(--text-muted)" }}>
                           {s.type === "local"
                             ? <code>{(s.command || []).join(" ")}</code>
@@ -261,9 +271,9 @@ export function CatalogPanel({
                         </div>
                       </div>
                       <button
-                        className={cn(styles.actionBtn, styles.actionBtnPrimary)}
-                        onClick={() => void install(s)}
+                        onClick={() => void install(s, catalog.sourceUrl)}
                         disabled={installed || busy === s.name}
+                        className={cn(styles.actionBtn, styles.actionBtnPrimary, "self-end sm:self-auto")}
                       >
                         {installed
                           ? text("Installed", "已安装")

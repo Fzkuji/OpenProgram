@@ -4,12 +4,13 @@ import { jsonFetch, HttpError } from "../lib/net/fetch-client.ts";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
-const [capabilities, manage, plugins, skills, mcp, pluginStore, fetchClient] = await Promise.all([
+const [capabilities, manage, plugins, skills, mcp, mcpCatalog, pluginStore, fetchClient] = await Promise.all([
   read("../components/capabilities/capabilities-page.tsx"),
   read("../components/ui/manage-page.tsx"),
   read("../components/plugins/plugins-page.tsx"),
   read("../components/skills/skills-page.tsx"),
   read("../components/mcp/mcp-page.tsx"),
+  read("../components/mcp/mcp-catalog-panel.tsx"),
   read("../lib/state/plugins-store.ts"),
   read("../lib/net/fetch-client.ts"),
 ]);
@@ -26,6 +27,12 @@ assert.doesNotMatch(mcp, /navAddItem/, "MCP must not duplicate the top-level Add
 assert.match(mcp, /<CatalogPanel[\s\S]*query=\{filterValue\}/, "the shared search query must reach MCP Discover");
 assert.doesNotMatch(capabilities, /Browse catalog|浏览目录|Discover MCP servers|发现 MCP 服务器/, "the top toolbar must not duplicate Discover");
 assert.doesNotMatch(capabilities, /mcpCatalogOpen|onCatalogOpen|onCatalogClose/, "the hub must not control MCP catalog modal state");
+assert.match(mcpCatalog, /catalogAbort\.current\?\.abort\(\)/, "a newer catalog request must cancel the previous request");
+assert.match(mcpCatalog, /setCatalog\(\{ \.\.\.data, sourceUrl: target \}\)/, "catalog provenance must bind to the response URL");
+assert.match(mcpCatalog, /install\(s, catalog\.sourceUrl\)/, "catalog installs must use response-bound provenance");
+assert.match(mcpCatalog, /await onInstalled\(entry\.name\)/, "install progress must include the parent refresh");
+assert.doesNotMatch(mcpCatalog, /await fetch\(/, "catalog requests must use the shared error-aware JSON client");
+assert.match(mcpCatalog, /min-w-0 flex-col[\s\S]*break-all[\s\S]*self-end sm:self-auto/, "catalog rows must keep actions visible at narrow widths");
 assert.match(capabilities, /text\("Add plugin", "添加插件"\)/);
 assert.match(capabilities, /text\("Add skill", "添加技能"\)/);
 assert.match(capabilities, /text\("Add MCP server", "添加 MCP 服务器"\)/);
