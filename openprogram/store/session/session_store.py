@@ -29,6 +29,7 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Optional
 
@@ -697,14 +698,31 @@ class SessionStore:
                     self._sessions.popitem(last=False)
             return git, idx
 
+    @contextmanager
+    def _head_file_lock(self, git: GitSession):
+        """Serialize every durable meta/HEAD writer across processes."""
+        import fcntl
+        import hashlib
+
+        lock_root = git.path.parent / ".session-locks"
+        lock_root.mkdir(parents=True, exist_ok=True)
+        lock_name = hashlib.sha256(str(git.path).encode()).hexdigest()[:24]
+        with (lock_root / f"{lock_name}.head.lock").open("a+") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
     def _persist_meta(self, git: GitSession, idx: SessionMemoryIndex) -> None:
         """Sync the in-memory meta back to ``meta.json``. Called whenever
         title / head_id / extra / branches change."""
-        with idx._persist_lock:
-            with idx._lock:
-                meta = dict(idx.meta)
-                meta["head_id"] = idx.head_id
-            git.write_meta(meta)
+        with self._head_file_lock(git):
+            with idx._persist_lock:
+                with idx._lock:
+                    meta = dict(idx.meta)
+                    meta["head_id"] = idx.head_id
+                git.write_meta(meta)
 
     def session_workdir(self, session_id: str) -> Optional[Path]:
         """Path of the per-session scratch workdir, materialized on first
@@ -1303,9 +1321,6 @@ class SessionStore:
         branch_update: Optional[dict[str, Any]] = None,
     ) -> bool:
         """Durable cross-process HEAD CAS, optionally activating a branch ref."""
-        import fcntl
-        import hashlib
-
         with self._session_lock(session_id):
             pair = self._open(session_id)
             if pair is None:
@@ -1316,11 +1331,7 @@ class SessionStore:
                 raise ValueError(
                     f"compare_and_set_head: {new_head_id!r} is a compaction summary"
                 )
-            lock_root = git.path.parent / ".session-locks"
-            lock_root.mkdir(parents=True, exist_ok=True)
-            lock_name = hashlib.sha256(session_id.encode()).hexdigest()[:24]
-            with (lock_root / f"{lock_name}.head.lock").open("a+") as handle:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            with self._head_file_lock(git):
                 try:
                     durable = git.read_meta()
                     if durable.get("head_id") != expected_head_id:
@@ -1377,7 +1388,7 @@ class SessionStore:
                             idx.meta = updated
                     return True
                 finally:
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                    pass
 
     def message_exists(self, session_id: str, msg_id: str) -> bool:
         pair = self._open(session_id)

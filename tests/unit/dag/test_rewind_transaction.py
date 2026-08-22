@@ -211,6 +211,13 @@ def test_rewind_keeps_sibling_nodes_and_points_out_of_active_plan(store, tmp_pat
     _seed_three_turns(store, "s-sibling", target)
     _append(store, "s-sibling", "fork-u", "user", "a1")
     _append(store, "s-sibling", "fork-a", "assistant", "fork-u")
+    sibling_file = tmp_path / "work" / "sibling.py"
+    sibling_file.write_text("sibling-before\n", encoding="utf-8")
+    sibling_journal = CheckpointStore(store._session_dir("s-sibling"))
+    sibling_journal.backup_before_edit("fork-a", str(sibling_file))
+    sibling_file.write_text("sibling-after\n", encoding="utf-8")
+    sibling_journal.commit_after_edit("fork-a", str(sibling_file), operation="edit")
+    sibling_receipt = sibling_journal.list_mutations("fork-a")
     store.set_head("s-sibling", "a3")
 
     assert "fork-u" not in {
@@ -222,6 +229,8 @@ def test_rewind_keeps_sibling_nodes_and_points_out_of_active_plan(store, tmp_pat
     _git, index = store._open("s-sibling")
     assert "fork-u" in index.nodes_by_id and "fork-a" in index.nodes_by_id
     assert not (index.nodes_by_id["fork-u"].metadata or {}).get("rewound")
+    assert sibling_file.read_text(encoding="utf-8") == "sibling-after\n"
+    assert sibling_journal.list_mutations("fork-a") == sibling_receipt
     store.set_head("s-sibling", "fork-a")
     assert [
         message["id"] for message in store.get_branch("s-sibling", "fork-a")

@@ -546,14 +546,27 @@ def _handle_rewind(args: list[str], console, session_id: str) -> bool:
         )
         confirmed = len(args) > 1 and args[1].lower() == "confirm"
         if not confirmed:
-            console.print(f"[dim]Run /rewind {pick} confirm to apply this plan.[/]")
+            console.print(
+                f"[dim]Run /rewind {pick} confirm {plan['plan_hash']} "
+                f"{plan['idempotency_key']} to apply this exact plan.[/]"
+            )
+            return False
+        if len(args) < 4:
+            console.print(
+                "[red]Confirm requires the plan_hash and idempotency_key "
+                "printed by the preview.[/]"
+            )
+            return False
+        confirmed_hash, confirmed_key = args[2], args[3]
+        if confirmed_hash != plan["plan_hash"]:
+            console.print("[red]Rewind blocked: stale_plan[/]")
             return False
 
         result = rewind_to(
             session_id,
             target["msg_id"],
-            idempotency_key=plan["idempotency_key"],
-            expected_plan_hash=plan["plan_hash"],
+            idempotency_key=confirmed_key,
+            expected_plan_hash=confirmed_hash,
         )
         if result.get("status") != "committed":
             for err in result["errors"]:

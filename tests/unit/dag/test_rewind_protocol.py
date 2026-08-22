@@ -38,10 +38,40 @@ def test_cli_rewind_previews_before_confirming(monkeypatch):
 
     _handle_rewind(["1"], console, "session")
     assert applied == []
-    assert any("/rewind 1 confirm" in line for line in console.lines)
+    assert any(
+        "/rewind 1 confirm sha256:plan request-key" in line
+        for line in console.lines
+    )
 
-    _handle_rewind(["1", "confirm"], console, "session")
+    _handle_rewind(
+        ["1", "confirm", "sha256:plan", "request-key"], console, "session",
+    )
     assert applied == [{
         "idempotency_key": "request-key",
         "expected_plan_hash": "sha256:plan",
     }]
+
+
+def test_cli_confirm_rejects_changed_plan(monkeypatch):
+    from openprogram.agent import _rewind
+    from openprogram_cli._impl.repl.handlers import _handle_rewind
+
+    monkeypatch.setattr(_rewind, "list_rewind_points", lambda _sid: [{
+        "msg_id": "u2", "summary": "change two", "files_affected": [],
+    }])
+    monkeypatch.setattr(_rewind, "plan_rewind", lambda *_args: {
+        "status": "ready", "turns_reverted": 3, "files": [],
+        "idempotency_key": "new-key", "plan_hash": "sha256:changed",
+    })
+    applied = []
+    monkeypatch.setattr(
+        _rewind, "rewind_to", lambda *_args, **kwargs: applied.append(kwargs),
+    )
+    console = _Console()
+
+    _handle_rewind(
+        ["1", "confirm", "sha256:old", "old-key"], console, "session",
+    )
+
+    assert applied == []
+    assert any("stale_plan" in line for line in console.lines)
