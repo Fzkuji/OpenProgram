@@ -226,6 +226,7 @@
       <div class="decision"><strong>New pane 只做选择</strong><p>空白 Pane 只显示 Files、New chat、Browser、Terminal。地址栏、快捷网站、Bookmarks 和 History 不出现在这里。</p></div>
       <div class="decision"><strong>四个入口使用同级彩色识别</strong><p>Files、New chat、Browser、Terminal 都使用相同尺寸的圆角图标容器和 Lucide 线性图标；Files 使用蓝色、New chat 使用绿色、Browser 保留橙紫色、Terminal 使用紫色。颜色只帮助识别内容类型，不改变卡片层级、交互状态或可访问名称，也不引入品牌 Logo、外部素材和额外动画。</p></div>
       <div class="decision"><strong>Browser home 复用完整 Browser chrome</strong><p>选择 Browser 后原位进入浏览器主页；主页与实际网页使用同一套地址栏和书签栏结构。主页中无当前网页语义的 Back、Forward、Reload、Home、Bookmark 和外部打开保持可见但禁用，地址输入、Bookmarks、Import 和 Browser <code>⋯</code> 可用。</p></div>
+      <div class="decision"><strong>悬浮网页预览属于发起会话</strong><p>Agent 在聊天中打开的悬浮网页预览记录创建时的 session tab。它只在该会话作为当前中心内容时显示；切换到其他聊天、普通 Browser tab 或非聊天页面时，renderer 必须从原生可见集合移除该 WebTab 并恢复用户网页缩放。返回原会话时复用同一 WebTab、URL、滚动和表单状态，不重新加载。用户关闭预览后，恢复入口也只出现在所属会话。</p></div>
       <div class="decision"><strong>书签分为保存与管理</strong><p>地址栏右侧的星标只保存或移除当前页；相邻的 Bookmarks 按钮打开完整书签页。Browser home 只显示用户维护的快捷网站，不展开全部书签。</p></div>
       <div class="decision"><strong>Bookmarks manager 采用 Chrome 式两栏结构</strong><p>完整书签页顶部固定页面标题、搜索框和页级菜单；左栏只显示可折叠的文件夹树并高亮当前目录，右栏只显示当前目录的直接子项。书签行使用 favicon、标题和单一 <code>⋮</code> 菜单，文件夹行进入对应目录；不再把整棵树、URL 和编辑/删除按钮同时铺在一个列表里。左右列表行统一为 <code>36px</code>，搜索框沿用全局 <code>30px</code> 控件高度，行内图标按钮为 <code>28px</code>，页头为 <code>52px</code>；右侧列表的首屏内边距为 <code>16px</code>。Pane 变窄时目录树移到内容列表上方，不能直接消失。</p></div>
       <div class="decision"><strong>书签栏默认显示</strong><p>Browser home 和实际网页默认在地址栏下方显示同一行书签。用户可以从 Browser <code>⋯</code> 或 Settings 关闭；窄分屏临时隐藏该行，仍可通过 Browser <code>⋯</code> 中的 Bookmarks 访问全部内容。</p></div>
@@ -288,6 +289,18 @@
         <article class="scope-card"><h3>Browser toolbar</h3><p>只放与当前网页直接相关且频繁使用的动作：导航、地址、保存当前页、打开书签、外部打开和 Browser <code>⋯</code>。</p></article>
         <article class="scope-card"><h3>Browser <code>⋯</code></h3><p>New browser tab、Find in page、Zoom、Print、Bookmarks、History、Downloads、Show bookmarks bar、Import browser data、Clear browsing data、Browser settings。</p></article>
         <article class="scope-card"><h3>Window menu</h3><p>New pane/window、Pane 布局、OpenProgram Settings、Help 与 About。它不再直接放 Bookmarks、History 或网页级设置。</p></article>
+      </div>
+      <h3>聊天悬浮预览作用域</h3>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="聊天悬浮网页预览的会话作用域，可横向滚动">
+        <table class="acceptance-table">
+          <thead><tr><th>活动内容</th><th>悬浮预览</th><th>原生 WebTab 约束</th></tr></thead>
+          <tbody>
+            <tr><td>创建预览的聊天</td><td>显示；返回该聊天时恢复原位置和尺寸。</td><td>使用 PiP bounds 和布局缩放；保持同一 WebContentsView。</td></tr>
+            <tr><td>其他聊天</td><td>隐藏；不显示恢复入口。</td><td>从 <code>syncVisible</code> 集合移除并恢复用户 zoom factor。</td></tr>
+            <tr><td>普通 Browser tab、分屏中的同一网页</td><td>隐藏。</td><td>普通 pane 独占该 WebTab 的可见 bounds，不保留 PiP 布局缩放。</td></tr>
+            <tr><td>用户在所属聊天关闭预览</td><td>隐藏；所属聊天显示恢复入口。</td><td>保留后台 WebTab，不暴露为其他会话的 turn surface。</td></tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
@@ -436,8 +449,9 @@
           <tr><td>内置网页下载进入系统 Downloads 目录；Downloads 页面显示实时进度和最终状态，并支持打开文件、在 Finder 中显示、取消进行中任务和清除记录。</td><td><span class="status ok">已实现，安装版通过</span></td><td><code>apps/desktop/main.js</code> 的 <code>will-download</code> 与 <code>downloads:*</code> IPC；<code>builtin-tab-pane.tsx</code>；<code>check-webtab-navigation.js</code>。安装版 App 实际完成 42 B 附件下载，并取消一个 32 MB 进行中任务；页面分别显示 <code>Completed</code>、<code>Cancelled</code>，取消后 <code>active=false</code>，测试记录可清除。另一次安装版下载验证中，Open 使用系统关联应用打开 58 B 文本文件，Show in Finder 定位并选中同一文件；随后已清除测试记录并将文件移到废纸篓。</td></tr>
           <tr><td>当前网页支持 Find in page、Zoom in/out/reset 和 Print；命令只作用于请求窗口拥有的精确 WebTab。Print 首先调用系统打印；系统打印失败或没有可用 destination 时，由同一动作打开所属窗口的原生 Save PDF 对话框。用户取消系统打印或保存均返回未完成，不写入文件；系统打印成功时不得额外生成 PDF。PDF 先写入目标目录中的唯一临时文件，完成后再替换用户选择的路径，失败时保留既有目标。Find 提供上一处、下一处、匹配数与关闭，关闭时清除页面选择；<code>⌘/Ctrl+F</code>、<code>⌘/Ctrl++/-/0</code>、<code>⌘/Ctrl+P</code> 与菜单动作一致。Web 前端与桌面壳版本暂时不一致时，前端按 preload 实际暴露的能力启用动作；缺少新 IPC 的旧壳必须禁用对应动作且不能导致页面异常。</td><td><span class="status ok">已实现，安装版通过</span></td><td><code>apps/desktop/main.js</code> 的 <code>webtab:find/zoom/print</code> IPC；<code>web-tab-pane.tsx</code>；<code>check-webtab-navigation.js</code>；<code>check-built-in-browser.mjs</code>。安装版在本地文档页找到 35 处匹配并可前进到第 2 处；Zoom 返回 <code>100 → 110 → 100 → 100</code>。验收机没有打印 destination，系统 Print 失败后实际出现所属窗口的原生 Save PDF 对话框，并从当前文档 WebTab 生成 1 页、8455 B 的 PDF，IPC 返回 <code>true</code>；测试文件已移到废纸篓。自动检查覆盖系统打印取消、保存取消、写入失败保留既有文件，以及 PDF 渲染期间失去 exact ownership 时不写文件。常驻 toolbar 与 tab 栏样式未改变。</td></tr>
           <tr><td>Bookmarks 保留来源根目录、最多 64 层文件夹和同级顺序；无效 URL 被过滤，重复导入不产生重复 URL 或空文件夹。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/bookmarks.ts"><code>apps/web/lib/bookmarks.ts</code></a>；<code>check-bookmarks.mjs</code></td></tr>
-          <tr><td>窗口主菜单在桌面 App 和 Web 中都与触发按钮右对齐，按钮底部到菜单顶部的间距为 4px。桌面主菜单、Browser 菜单、书签菜单和 tab 右键菜单从 renderer 传入的 CSS 像素坐标必须按发送页面的 zoom factor 转换为 Electron DIP；在 80%、100%、125% 缩放下都保持贴近原触发按钮。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/center-tabs/main-menu.tsx"><code>main-menu.tsx</code></a>；<code>check-center-tabs.mjs</code>；<code>check-webtab-zoom-bounds.js</code></td></tr>
+          <tr><td>窗口主菜单在桌面 App 和 Web 中都与触发按钮右对齐，按钮底部到菜单顶部的间距为 4px。桌面主菜单、Browser 菜单、书签菜单和 tab 右键菜单从 renderer 传入的 CSS 像素坐标必须按发送页面的 zoom factor 转换为 Electron DIP；在 80%、100%、125% 缩放下都保持贴近原触发按钮。由 renderer 动态提供的 Browser、书签和 tab 右键菜单只在该行实际有勾选、文件夹或 favicon 时渲染左侧图标槽；无图标项不保留空槽，文字从菜单行默认的 <code>10px</code> 内边距开始。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/center-tabs/main-menu.tsx"><code>main-menu.tsx</code></a>；<code>menu-overlay/context-menu/page.tsx</code>；<code>check-built-in-browser.mjs</code>；<code>check-center-tabs.mjs</code>；<code>check-webtab-zoom-bounds.js</code></td></tr>
           <tr><td>聊天输入框、模型、上下文等弹层未覆盖内置网页区域时，不得隐藏或重置原生 Web Page；只有可见弹层的矩形实际与网页矩形相交时，才暂停显示对应 WebContentsView。</td><td><span class="status">已实现</span></td><td><code>web-tab-bounds.ts</code> 的矩形相交判断；<code>web-tab-pane.tsx</code>；<code>check-web-split.mjs</code></td></tr>
+          <tr><td>聊天内创建的悬浮网页预览只在所属会话显示；切到其他聊天、普通 Browser tab 或非聊天页面时必须隐藏并恢复用户网页缩放。返回所属会话时复用原 WebTab 状态；关闭后的恢复入口也只属于该会话。</td><td><span class="status">已实现，自动检查与运行时复核通过</span></td><td><code>web-tab-pip-store.ts</code>；<code>web-tab-pip.tsx</code>；<code>web-tab-pane.tsx</code>；<code>desktop-bridge.ts</code>；<code>apps/desktop/main.js</code>；<code>check-web-split.mjs</code> 覆盖 owner chat、inventory 和无 pointer-up 切换；<code>check-webtab-navigation.js</code> 覆盖首次导航提交与 transfer commit 后的 zoom restore。安装版 production build 与默认 worker 健康检查通过。</td></tr>
           <tr><td>Cookies 只进入 <code>persist:webtabs</code>；IPC、日志、History 和 renderer 不出现 Cookie 值。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/desktop/browser-profile-import.js"><code>browser-profile-import.js</code></a> self-check；<code>apps/desktop/main.js</code></td></tr>
           <tr><td>来源损坏、浏览器缺失、临时进程超时和 Cookie 部分失败返回稳定错误码并保留原数据。</td><td><span class="status">已实现</span></td><td><code>browser-profile-import.js</code> 与 <code>browsing-history-store.js</code> self-check</td></tr>
           <tr><td>依赖 PTY 的全屏终端程序。</td><td><span class="status limit">当前限制</span></td><td>产品边界，不作为当前验收缺口。</td></tr>

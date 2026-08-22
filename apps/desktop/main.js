@@ -726,10 +726,16 @@ function makeTransferCoordinator(options = {}) {
   }
 
   function unlock(transaction) {
+    const restoreZoom = transaction.status === "committed";
     for (const id of transaction.lockedRecordIds) {
       if (lockedRecords.get(id) === transaction.token) lockedRecords.delete(id);
     }
     transaction.lockedRecordIds.clear();
+    for (const record of transaction.records) {
+      if (!record.pendingTransferZoomRestore) continue;
+      record.pendingTransferZoomRestore = false;
+      if (restoreZoom) requestPipZoomRestore(record);
+    }
   }
 
   /** Destroy a staged tear-off window (rollback / rejected commit). Takes the
@@ -1793,6 +1799,7 @@ function ensureView(ctx, id, url) {
     ]) {
       wc.on(ev, () => sendState(record));
     }
+    wc.on("did-navigate", () => restorePendingPipZoom(record));
     // Browsing history. The store folds repeat hits on the head URL into one
     // row, so the title/favicon events that follow a navigation enrich the
     // entry instead of appending duplicates.
@@ -1856,19 +1863,50 @@ function rememberUserZoom(record) {
 }
 
 function setPipZoom(ctx, id, width) {
-  const record = recordFor(ctx, id);
+  let record = recordFor(ctx, id);
+  if (!record && width == null && tabTransfers.isLocked(id)) {
+    const lockedRecord = ctx?.views.get(id);
+    if (lockedRecord?.ownerId === ctx.id) {
+      lockedRecord.pendingTransferZoomRestore = true;
+      return true;
+    }
+  }
   if (!record) return false;
   const wc = record.view.webContents;
   try {
     if (typeof width === "number" && width > 0) {
       rememberUserZoom(record);
       const factor = pipLayoutZoom(width);
+      record.pendingTransferZoomRestore = false;
+      record.pendingPipZoomRestore = false;
       record.pipLayoutZoom = factor;
       wc.setZoomFactor(factor);
       return true;
     }
+    record.pendingTransferZoomRestore = false;
+    return requestPipZoomRestore(record);
+  } catch (_error) {
+    return false;
+  }
+}
+
+function requestPipZoomRestore(record) {
+  try {
+    const wc = record.view.webContents;
     record.pipLayoutZoom = null;
+    record.pendingPipZoomRestore = !wc.getURL() || !!record.navigation;
     wc.setZoomFactor(record.userZoomFactor ?? 1);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function restorePendingPipZoom(record) {
+  if (!record?.pendingPipZoomRestore || record.pipLayoutZoom) return false;
+  try {
+    record.view.webContents.setZoomFactor(record.userZoomFactor ?? 1);
+    record.pendingPipZoomRestore = false;
     return true;
   } catch (_error) {
     return false;
@@ -2072,10 +2110,15 @@ function syncVisibleViews(ctx, items) {
   for (const item of items) {
     // Skip unknown/invalid entries instead of aborting the whole sync:
     // aborting would leave previously shown views visible over pages
-    // that no longer expect them (e.g. after a route change).
+    // that no longer expect them (e.g. after a route change). A view
+    // that exists but is owned elsewhere (or transfer-locked) still
+    // aborts — that is a stale cross-window command, not a missing tab.
     if (!item || typeof item.id !== "string") continue;
     const record = recordFor(ctx, item.id);
-    if (!record) continue;
+    if (!record) {
+      if (ctx.views.has(item.id) || tabTransfers.isLocked(item.id)) return false;
+      continue;
+    }
     desired.set(item.id, {
       record,
       bounds: normalizedBounds(item.bounds),

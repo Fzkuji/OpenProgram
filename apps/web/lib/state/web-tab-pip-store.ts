@@ -86,6 +86,10 @@ export function peekWebTabPipBackgroundId(): string | null {
   return useWebTabPip.getState().backgroundTabId;
 }
 
+export function peekWebTabPipBackgroundOwnerId(): string | null {
+  return useWebTabPip.getState().backgroundOwnerTabId;
+}
+
 export function peekLiveWebTabPipId(
   state: PipCenterState = useCenterTabs.getState(),
 ): string | null {
@@ -172,15 +176,18 @@ export function revealPairedPipTab(tabId: string): boolean {
 /** Reverse of PiP expand: keep the same WebTab leaf, move focus off it
  *  so the floating host can cover center again. Does not reload.
  *  A tab already floating for a session returns to that owner instead
- *  of being re-bound to another session. */
+ *  of being re-bound to another session. Hidden previews keep the
+ *  background owner across the hide/show transition. */
 export function collapseWebTabToPip(tabId: string): boolean {
   const store = useCenterTabs.getState();
   const pip = useWebTabPip.getState();
+  const rememberedOwnerId = pip.tabId === tabId
+    ? pip.ownerTabId
+    : pip.backgroundTabId === tabId ? pip.backgroundOwnerTabId : null;
   const boundOwnerId =
-    pip.tabId === tabId
-      && pip.ownerTabId
-      && store.tabs.some((tab) => tab.id === pip.ownerTabId)
-      ? pip.ownerTabId
+    rememberedOwnerId
+      && store.tabs.some((tab) => tab.id === rememberedOwnerId)
+      ? rememberedOwnerId
       : null;
   const ownerTabId = boundOwnerId ?? pipCollapseTargetFor(tabId, store);
   if (!ownerTabId) return false;
