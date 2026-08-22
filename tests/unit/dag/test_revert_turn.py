@@ -171,11 +171,15 @@ def test_mid_apply_failure_rolls_back_every_file(
     original_apply = CheckpointStore._apply_state
     failed = {"value": False}
 
-    def fail_second_once(self, path, state, backup_dir, transaction_id):
+    def fail_second_once(
+        self, path, state, backup_dir, transaction_id, expected_current=None,
+    ):
         if Path(path) == second and not failed["value"]:
             failed["value"] = True
             raise OSError("injected second-file failure")
-        return original_apply(self, path, state, backup_dir, transaction_id)
+        return original_apply(
+            self, path, state, backup_dir, transaction_id, expected_current,
+        )
 
     monkeypatch.setattr(CheckpointStore, "_apply_state", fail_second_once)
 
@@ -289,3 +293,33 @@ def test_plan_change_after_prepare_aborts_without_writing(
     assert result["restored_paths"] == []
     assert first.read_text(encoding="utf-8") == "first after\n"
     assert second.read_text(encoding="utf-8") == "second after\n"
+
+
+def test_external_write_at_final_mutation_point_is_preserved(
+    store_with_session, tmp_path, monkeypatch,
+):
+    session_id, turn_id = "s_final_toctou", "u1_reply"
+    _seed_session(store_with_session, session_id, turn_id)
+    target = tmp_path / "race.py"
+    target.write_text("before\n", encoding="utf-8")
+    _record_mutation(store_with_session, session_id, turn_id, target, "after\n")
+    original_apply = CheckpointStore._apply_state
+    injected = {"value": False}
+
+    def inject_external_write(
+        self, path, state, backup_dir, transaction_id, expected_current=None,
+    ):
+        if not injected["value"]:
+            injected["value"] = True
+            Path(path).write_text("external-after-preflight\n", encoding="utf-8")
+        return original_apply(
+            self, path, state, backup_dir, transaction_id, expected_current,
+        )
+
+    monkeypatch.setattr(CheckpointStore, "_apply_state", inject_external_write)
+
+    result = revert_turn(session_id, turn_id)
+
+    assert result["status"] == "recovery_required"
+    assert result["restored_paths"] == []
+    assert target.read_text(encoding="utf-8") == "external-after-preflight\n"

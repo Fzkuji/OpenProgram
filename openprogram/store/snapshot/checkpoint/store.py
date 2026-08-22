@@ -344,26 +344,47 @@ class CheckpointStore:
         state: dict,
         backup_dir: Path,
         transaction_id: str,
+        expected_current: dict | None = None,
     ) -> None:
         target = Path(path)
-        if state.get("kind") == "absent":
-            try:
-                target.unlink()
-            except FileNotFoundError:
-                pass
-            self._fsync_directory(target.parent)
-            return
-        blob = backup_dir / str(state.get("blob_ref") or "")
-        if not blob.is_file():
-            raise OSError(f"missing recovery blob for {path}")
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.parent / f".{target.name}.{transaction_id}.tmp"
+        guard = target.parent / f".{target.name}.{transaction_id}.guard"
+        expected = expected_current or self._inspect_state(path)
         try:
-            shutil.copy2(blob, tmp)
-            with tmp.open("rb") as handle:
-                os.fsync(handle.fileno())
-            os.chmod(tmp, int(str(state.get("mode") or "0644"), 8))
-            os.replace(tmp, target)
+            if state.get("kind") == "regular":
+                blob = backup_dir / str(state.get("blob_ref") or "")
+                if not blob.is_file():
+                    raise OSError(f"missing recovery blob for {path}")
+                shutil.copy2(blob, tmp)
+                with tmp.open("rb") as handle:
+                    os.fsync(handle.fileno())
+                os.chmod(tmp, int(str(state.get("mode") or "0644"), 8))
+
+            if expected.get("kind") == "regular":
+                os.rename(target, guard)
+                moved = self._inspect_state(str(guard))
+                if not self._state_matches(moved, expected):
+                    try:
+                        os.link(guard, target)
+                        guard.unlink()
+                    except FileExistsError:
+                        pass
+                    raise OSError(f"stale current state for {path}")
+            elif expected.get("kind") != "absent":
+                raise OSError(f"unsafe current state for {path}")
+
+            if state.get("kind") == "regular":
+                try:
+                    os.link(tmp, target)
+                except FileExistsError as exc:
+                    raise OSError(f"external writer created {path}") from exc
+                tmp.unlink()
+            elif state.get("kind") != "absent":
+                raise OSError(f"unsupported target state for {path}")
+
+            if guard.exists():
+                guard.unlink()
             self._fsync_directory(target.parent)
         finally:
             if tmp.exists():
@@ -475,6 +496,7 @@ class CheckpointStore:
                         raise OSError(f"stale current state for {action['path']}")
                     self._apply_state(
                         action["path"], action["target"], backup_dir, transaction_id,
+                        action["expected_current"],
                     )
                     actual = self._inspect_state(action["path"])
                     if not self._state_matches(actual, action["target"]):
@@ -495,7 +517,7 @@ class CheckpointStore:
                             continue
                         self._apply_state(
                             action["path"], action["rollback"], backup_dir,
-                            transaction_id,
+                            transaction_id, action["target"],
                         )
                         if not self._state_matches(
                             self._inspect_state(action["path"]), action["rollback"],
