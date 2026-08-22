@@ -281,6 +281,7 @@ Registry / Programs 展示的运行实体：
             <tr><td>manager式完整入口</td><td>修改采用</td><td>仅用户手动 <code>auto_workflow</code>；Agent不递归调用它。</td></tr>
             <tr><td>运行失败自动重写已发布流程</td><td>拒绝</td><td>修改必须显式进入 <code>revise_workflow</code>。</td></tr>
             <tr><td>所有一次性任务自动持久化</td><td>拒绝</td><td>没有复用或恢复价值时由Agent直接完成。</td></tr>
+            <tr><td>按任务措辞创建近似Workflow</td><td>拒绝</td><td>selection按候选合同判断能力；语言、输出路径、日期范围和普通参数差异不构成新执行结构。</td></tr>
           </tbody>
         </table>
       </section>
@@ -316,6 +317,7 @@ Registry / Programs 展示的运行实体：
             <tr><td>只有部分组件</td><td><code>create_workflow</code></td><td>新package以import引用组件；没有复制依赖源码；不执行用户任务。</td></tr>
             <tr><td>显式修改</td><td><code>revise_workflow</code></td><td>旧revision可继续执行；新revision通过全部发布门后成为active。</td></tr>
             <tr><td>用户完整自动运行</td><td><code>auto_workflow</code></td><td>DAG显示search、唯一selection Agent、可选create和最终Workflow；结果含action和ref。</td></tr>
+            <tr><td>同类任务改写措辞或语言</td><td><code>auto_workflow</code></td><td>搜索候选携带已验证的name、summary和tags能力摘要；已有Workflow能力覆盖时复用固定revision；零词项分数本身不得作为create依据。有候选时，create必须返回具体且非空的missing_capability，否则在authoring前拒绝。</td></tr>
             <tr><td>Agent工具发现</td><td>Chat Agent tool inventory</td><td>包含search/create/revise和具体Workflow，不包含auto或旧agentic入口。</td></tr>
             <tr><td>Programs分类浏览</td><td><code>functions / agentic / workflow</code></td><td><code>workflow</code> 是不可运行的分类节点；其子项只含四个注册函数；源码helper与内部目录不成为Program。</td></tr>
             <tr><td>Programs调用图</td><td>选择任一Workflow管理函数</td><td>标题和根节点使用所选函数名；不出现旧 <code>agentic_workflow</code> 或目录名替代运行身份。</td></tr>
@@ -338,6 +340,7 @@ Registry / Programs 展示的运行实体：
             <tr><td>独立 <code>search_workflows</code></td><td>公共只读入口返回固定 revision、Schema、权限和命中依据；排除 <code>auto_workflow</code> 与无入口 legacy 项目；不调用模型、不写文件、不执行、不发布。</td><td><span class="tag current">Implemented</span></td></tr>
             <tr><td>独立 <code>create_workflow</code> / <code>revise_workflow</code></td><td>create 只新增项目且不执行用户任务；revise 在候选与 active revision 内容相同时拒绝发布（<code>revision unchanged</code>），否则只新增一个 revision；依赖 revision 写入 <code>pyproject.toml</code> 的 <code>workflow-dependencies</code>；失败与取消不发布。</td><td><span class="tag current">Implemented</span></td></tr>
             <tr><td>用户级 <code>auto_workflow</code></td><td>源码位于 <code>openprogram/programs/workflow/auto_workflow.py</code>；用户表单与 Programs 自动入口可见；以 <code>tool_visible=False</code> 注册；编排 search → 可见 selection Agent（public <code>agent()</code>，<code>AUTO_DECISION_ATTEMPTS=3</code>）→ reuse/create → 按 pin 执行；不自动 revise。该入口是单文件完整 Workflow，当前没有独立 steps、依赖或测试包，因此不增加同名目录。</td><td><span class="tag current">Implemented</span></td></tr>
+            <tr><td>近似Workflow创建抑制</td><td>search结果向selection提供已验证的name、summary和tags；selection合同优先复用能力覆盖的候选；措辞、语言、输出路径、日期范围和普通参数差异不得触发create；零词项分数只表示检索无词项重合；候选非空时，无missing_capability的create在发布前失败。</td><td><span class="tag current">Implemented</span></td></tr>
             <tr><td>按 revision 执行与依赖 pin</td><td><code>_run_published_workflow</code> 通过 <code>git archive</code> 检出选定 revision；<code>workflow_dependencies</code> 随发布持久化并在执行时 pin，旧 revision 在新 HEAD 发布后仍可运行。</td><td><span class="tag current">Implemented</span></td></tr>
             <tr><td>legacy <code>code.py</code> resume</td><td><code>resume_workflow</code> 对 legacy run 只读重放 snapshot/<code>code.py</code>；失败返回 failed，不调用 planner、不改写 artifact。</td><td><span class="tag current">Implemented</span></td></tr>
             <tr><td>停止新的 <code>agentic_workflow</code> 调用</td><td>旧入口不再注册；新 catalog、新 DAG 和新 run 不出现 <code>agentic_workflow</code>；<code>resume_workflow</code> 保留为内部函数。</td><td><span class="tag current">Completed</span></td></tr>

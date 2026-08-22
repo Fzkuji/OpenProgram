@@ -147,9 +147,23 @@ def _request_auto_decision(
             if action not in {"reuse", "create"}:
                 raise InvalidWorkflow("auto workflow action must be reuse or create")
             if action == "create":
-                if set(decision) != {"action"}:
-                    raise InvalidWorkflow("create decision must contain only action")
-                return {"action": action}
+                if not candidates:
+                    if set(decision) not in (
+                        {"action"},
+                        {"action", "missing_capability"},
+                    ):
+                        raise InvalidWorkflow(
+                            "empty-catalog create decision has unsupported fields"
+                        )
+                    return {"action": action}
+                if set(decision) != {"action", "missing_capability"}:
+                    raise InvalidWorkflow(
+                        "create decision with candidates must name missing_capability"
+                    )
+                missing = str(decision.get("missing_capability") or "").strip()
+                if not missing:
+                    raise InvalidWorkflow("missing_capability must be non-empty")
+                return {"action": action, "missing_capability": missing}
             if set(decision) != {"action", "workflow_id"}:
                 raise InvalidWorkflow(
                     "reuse decision must contain only action and workflow_id"

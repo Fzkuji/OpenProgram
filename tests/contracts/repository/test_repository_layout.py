@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import runpy
 import subprocess
 
@@ -136,6 +137,69 @@ def test_developer_scripts_do_not_live_at_the_repository_root() -> None:
     )
 
     assert misplaced == []
+
+
+def _finder_numbered_duplicates(root: Path) -> list[str]:
+    numbered_copy = re.compile(r".* [2-9][0-9]*(?:\..*)?$")
+    source_roots = ("openprogram", "apps", "scripts", "tests", "docs/reference")
+    generated_roots = (
+        "openprogram/programs/applications/gui_harness/",
+        "apps/server/openprogram_server/_webui/_frontend/",
+    )
+
+    def belongs_to_nested_git(path: Path) -> bool:
+        for parent in path.parents:
+            if parent == root:
+                return False
+            if (parent / ".git").exists():
+                return True
+        return False
+
+    duplicates = sorted(
+        path.relative_to(root).as_posix()
+        for source_root in source_roots
+        for path in (root / source_root).rglob("*")
+        if not belongs_to_nested_git(path)
+        and "__pycache__" not in path.parts
+        and "node_modules" not in path.parts
+        and not path.relative_to(root).as_posix().startswith(generated_roots)
+        and numbered_copy.fullmatch(path.name)
+    )
+
+    return duplicates
+
+
+def test_source_tree_has_no_finder_numbered_duplicates() -> None:
+    duplicates = _finder_numbered_duplicates(ROOT)
+
+    assert duplicates == []
+
+
+def test_finder_duplicate_check_covers_files_and_directories_but_skips_nested_git(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "Makefile 2").touch()
+    (tmp_path / "tests" / "fixtures 3").mkdir(parents=True)
+    runtime = tmp_path / "openprogram/programs/workflow/user_workflow"
+    runtime.mkdir(parents=True)
+    (runtime / ".git").write_text("gitdir: /tmp/user-workflow.git\n")
+    (runtime / "workflow 2.py").touch()
+
+    assert _finder_numbered_duplicates(tmp_path) == [
+        "scripts/Makefile 2",
+        "tests/fixtures 3",
+    ]
+
+
+def test_finder_duplicate_check_does_not_escape_repository_root(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    checkout = tmp_path / "checkout"
+    (checkout / "scripts/helpers 2").mkdir(parents=True)
+
+    assert _finder_numbered_duplicates(checkout) == ["scripts/helpers 2"]
 
 
 def test_current_structure_guides_do_not_reference_removed_roots() -> None:

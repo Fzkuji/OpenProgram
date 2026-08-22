@@ -55,6 +55,9 @@ def search_workflows(task: str) -> dict:
                     {
                         "workflow_id": row["project_id"],
                         "revision": row["active_revision"],
+                        "name": metadata["name"],
+                        "summary": metadata["summary"],
+                        "tags": metadata["tags"],
                         "retrieval_score": len(matched),
                         "matched_terms": matched,
                         "input_schema": catalog.WORKFLOW_INPUT_SCHEMA,

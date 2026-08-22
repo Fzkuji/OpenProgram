@@ -91,10 +91,17 @@ AUTO_DECISION_INSTRUCTIONS = """Decide whether to reuse one catalog candidate
 or create a new workflow. Reply with one JSON object and no prose.
 
 - reuse: {"action":"reuse","workflow_id":"one candidate id"}
-- create: {"action":"create"}
+- create: {"action":"create","missing_capability":"specific capability absent from every candidate"}
 
 Use reuse only when an existing candidate can perform this task without
-source changes. Use create when no candidate is an appropriate base.
+source changes. Prefer reuse when a candidate already covers the requested
+task class; differences in wording, language, output path, date range, or
+ordinary input parameters do not justify a new workflow. Use create only when
+the task requires a materially different execution structure or capability
+that every candidate lacks. A zero retrieval score is not evidence of a
+capability mismatch; inspect each candidate contract before deciding.
+When candidates exist, create must name the concrete missing capability;
+an unsupported create decision is rejected before authoring or publication.
 reuse may name only an id in the supplied candidate list. Never revise a
 published project from this entry. Never provide a revision or source
 files in this decision.

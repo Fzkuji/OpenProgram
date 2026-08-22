@@ -434,6 +434,9 @@ def test_search_workflows_returns_ranked_readonly_candidates(
     ]
     top = rows[0]
     assert top["revision"] == revision
+    assert top["name"] == "research_workflow"
+    assert top["summary"] == "Research and synthesize a topic"
+    assert top["tags"] == ["research"]
     assert top["retrieval_score"] >= 1
     assert "research" in top["matched_terms"]
     assert top["input_schema"] == {
@@ -582,6 +585,70 @@ def test_auto_workflow_is_callable_but_not_an_agent_tool() -> None:
     assert set(TL.auto_workflow.spec["parameters"]["properties"]) == {"task"}
 
 
+def test_auto_workflow_selection_prefers_reuse_for_semantic_matches() -> None:
+    prompt = TL.prompts._auto_decision_prompt(
+        "填写本周周报",
+        [{
+            "workflow_id": "weekly_report",
+            "summary": "Inspect a Project and prepare an evidence-based weekly report",
+            "tags": ["weekly report", "status update"],
+            "retrieval_score": 0,
+        }],
+    )
+
+    assert "Prefer reuse" in prompt
+    assert "wording, language, output path" in prompt
+    assert "materially different execution structure" in prompt
+    assert "evidence-based weekly report" in prompt
+
+
+def test_auto_workflow_rejects_unjustified_create_when_candidates_exist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        TL,
+        "_run_planner_turn",
+        lambda *_args, **_kwargs: json.dumps({"action": "create"}),
+    )
+
+    with pytest.raises(
+        TL.InvalidWorkflow,
+        match="must name missing_capability",
+    ):
+        TL._request_auto_decision(
+            "填写本周周报",
+            [{
+                "workflow_id": "weekly_report",
+                "summary": "Prepare an evidence-based weekly report",
+                "tags": ["weekly report"],
+            }],
+            session_id="session",
+            agent_id="main",
+            spawn_caller=None,
+        )
+
+
+def test_auto_workflow_accepts_prompt_schema_when_catalog_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        TL,
+        "_run_planner_turn",
+        lambda *_args, **_kwargs: json.dumps({
+            "action": "create",
+            "missing_capability": "No workflow projects exist",
+        }),
+    )
+
+    assert TL._request_auto_decision(
+        "create the first workflow",
+        [],
+        session_id="session",
+        agent_id="main",
+        spawn_caller=None,
+    ) == {"action": "create"}
+
+
 def test_search_workflows_candidates_exclude_auto_workflow(
     session_repo: Path,
 ) -> None:
@@ -623,6 +690,34 @@ def test_auto_workflow_reuses_matching_project_without_catalog_change(
     assert _git_output(project, "rev-parse", "HEAD") == revision
     assert _git_output(project, "rev-list", "--count", "HEAD") == "1"
     assert '- revise:' not in prompts[0]
+
+
+def test_auto_workflow_reuses_zero_score_cross_language_candidate(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    _candidate, revision = _install_workflow_project(
+        session_repo,
+        _project(
+            name="weekly_report",
+            summary="Inspect a Project and prepare an evidence-based weekly report",
+            tags=["weekly report", "status update"],
+        ),
+    )
+    prompts = _planner(
+        monkeypatch,
+        json.dumps({"action": "reuse", "workflow_id": "weekly_report"}),
+    )
+    _executor(monkeypatch)
+    _summarizer(monkeypatch, "Completed reused weekly report.")
+    catalog_before = _dir_bytes(session_repo / "catalog")
+
+    result = TL.auto_workflow("填写本周周报")
+
+    assert result["action"] == "reuse"
+    assert result["workflow_revision"] == revision
+    assert _dir_bytes(session_repo / "catalog") == catalog_before
+    assert '"retrieval_score": 0' in prompts[0]
+    assert "evidence-based weekly report" in prompts[0]
 
 
 def test_auto_workflow_creates_and_executes_when_catalog_is_empty(

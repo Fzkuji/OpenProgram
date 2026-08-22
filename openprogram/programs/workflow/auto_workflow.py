@@ -80,6 +80,11 @@ def auto_workflow(task: str) -> dict:
         raise
     return {
         "action": decision["action"],
+        **(
+            {"missing_capability": decision["missing_capability"]}
+            if decision["action"] == "create" and "missing_capability" in decision
+            else {}
+        ),
         "workflow_id": workflow_id,
         "workflow_revision": revision,
         "result": executed,
