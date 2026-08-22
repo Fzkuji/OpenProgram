@@ -9,6 +9,7 @@ const review = read("components/center-tabs/review-tab-pane.tsx");
 const store = read("lib/state/center-tabs-store.ts");
 const reviewLayout = read("lib/state/review-tab-layout.ts");
 const cardCss = read("app/styles/chat/turn-files-card.css");
+const design = read("../../docs/reference/design/ui/chat-turn-visual-spec.html");
 
 assert.match(card, /if \(embedded\) \{\s*setFiles\(embedded\);\s*return;/);
 assert.match(bubble, /summary=\{msg\.turnFiles\}/);
@@ -45,6 +46,8 @@ assert.match(cardCss, /\.turn-files-count\{[^}]*font-size:14px/);
 assert.match(cardCss, /\.turn-files-action,\.turn-files-review\{[^}]*font-size:13px/);
 assert.match(cardCss, /\.turn-files-list\{[^}]*background:var\(--bg-primary\)/);
 assert.match(cardCss, /\.turn-files-row\{[^}]*height:30px/);
+assert.match(cardCss, /grid-template-columns:minmax\(0,1fr\) 6ch 6ch/);
+assert.match(cardCss, /\.turn-files-row>\.turn-files-stat\{text-align:right/);
 assert.match(cardCss, /\.turn-files-row\{[^}]*background:transparent/);
 assert.match(cardCss, /\.turn-files-row:hover\{[^}]*background:var\(--bg-hover\)/);
 assert.match(cardCss, /\.turn-files-name\{[^}]*font-size:13px/);
@@ -54,6 +57,16 @@ assert.match(cardCss, /\.turn-files-more:hover\{[^}]*background:var\(--bg-hover\
 assert.match(cardCss, /\.turn-files-meter/);
 assert.match(cardCss, /@media\(max-width:420px\)/);
 assert.doesNotMatch(card, /Review all \$\{fileCount\} files|审阅全部 \$\{fileCount\} 个文件/);
+assert.match(design, /\.change-summary\{height:40px;[^}]*background:var\(--bg-tertiary\)/);
+assert.match(design, /\.change-summary-title\{[^}]*font-size:14px/);
+assert.match(design, /\.change-summary-stat\{[^}]*font:12px/);
+assert.match(design, /\.change-group\{[^}]*background:var\(--bg-primary\)/);
+assert.match(design, /\.change-row\{height:30px/);
+assert.match(design, /\.change-row-name\{[^}]*font:13px/);
+assert.match(design, /\.change-row-counts\{[^}]*grid-template-columns:6ch 6ch[^}]*font:12px/);
+assert.match(design, /<button class="change-collapse" type="button">Collapse<\/button>/);
+assert.match(design, /\.change-collapse\{[^}]*background:var\(--bg-tertiary\)[^}]*font:13px/);
+assert.match(design, /\.change-collapse:hover\{[^}]*background:var\(--bg-hover\)/);
 assert.doesNotMatch(
   cardCss,
   /@media\(max-width:420px\)[\s\S]*?turn-files-logo[^}]*?(?:width|height):17px/,
