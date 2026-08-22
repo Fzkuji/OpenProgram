@@ -115,7 +115,7 @@ export interface CenterTab {
   /** Popup web tabs only — exact opener tab in this renderer window. */
   openerTabId?: string;
   /** Web tabs only — favicon URL reported by the desktop shell; the
-   *  strip falls back to the Globe icon when absent or unloadable. */
+   *  strip falls back to the Chrome icon when absent or unloadable. */
   faviconUrl?: string;
   /** Builtin tabs only — which built-in page this tab shows. */
   page?: BuiltinPage;

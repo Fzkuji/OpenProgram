@@ -13,8 +13,9 @@
  * move a tab that another operation has already grouped.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bookmark, Download, FileText, Globe, History, MessageCircle, CirclePlus, TerminalSquare, X } from "lucide-react";
+import { Bookmark, Download, FileText, History, MessageCircle, CirclePlus, TerminalSquare, X } from "lucide-react";
 
+import { ChromeIcon } from "@/components/animated-icons";
 import { useTranslation } from "@/lib/i18n";
 import { builtinPageLabel } from "./builtin-page-label";
 import {
@@ -44,14 +45,14 @@ function subtitleOf(
 }
 
 function IconFor({ tab }: { tab: CenterTab }) {
-  if (tab.kind === "web") return <Globe size={15} aria-hidden="true" />;
+  if (tab.kind === "web") return <ChromeIcon size={15} aria-hidden="true" />;
   if (tab.kind === "file") return <FileText size={15} aria-hidden="true" />;
   if (tab.kind === "ntp") return <CirclePlus size={15} aria-hidden="true" />;
   if (tab.kind === "builtin") {
     if (tab.page === "files") return <FileText size={15} aria-hidden="true" />;
     if (tab.page === "history") return <History size={15} aria-hidden="true" />;
     if (tab.page === "downloads") return <Download size={15} aria-hidden="true" />;
-    if (tab.page === "browser") return <Globe size={15} aria-hidden="true" />;
+    if (tab.page === "browser") return <ChromeIcon size={15} aria-hidden="true" />;
     if (tab.page === "terminal" || tab.page === "claude") return <TerminalSquare size={15} aria-hidden="true" />;
     return <Bookmark size={15} aria-hidden="true" />;
   }

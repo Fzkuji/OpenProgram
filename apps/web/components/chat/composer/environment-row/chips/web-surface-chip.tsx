@@ -1,7 +1,6 @@
 "use client";
 
-import { Globe2 } from "lucide-react";
-
+import { ChromeIcon } from "@/components/animated-icons";
 import { HoverTip } from "@/components/ui/tooltip";
 import { surfaceRefForChat } from "@/lib/desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
@@ -44,7 +43,7 @@ export function WebSurfaceChip({
         aria-pressed={toolsEnabled}
         onClick={onToggleAccess}
       >
-        <Globe2 size={14} aria-hidden="true" />
+        <ChromeIcon size={14} aria-hidden="true" />
         <span className={styles.surfaceChipLabel}>
           {regionLabel} · {title}
         </span>

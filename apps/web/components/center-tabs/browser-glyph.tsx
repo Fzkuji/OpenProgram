@@ -1,4 +1,6 @@
-import { Globe2 } from "lucide-react";
+"use client";
+
+import { ChromeIcon } from "@/components/animated-icons";
 
 import styles from "./center-tabs.module.css";
 
@@ -9,7 +11,7 @@ export function BrowserGlyph({ size = 24 }: { size?: number }) {
       style={{ width: size, height: size }}
       aria-hidden="true"
     >
-      <Globe2 size={Math.round(size * 0.62)} strokeWidth={2.1} />
+      <ChromeIcon size={Math.round(size * 0.62)} />
     </span>
   );
 }

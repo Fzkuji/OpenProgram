@@ -8,9 +8,10 @@
  * not independently selectable from the strip.
  */
 import { useEffect, useRef, useState } from "react";
-import { Bookmark, CirclePlus, Download, FileText, Globe, History, TerminalSquare, X } from "lucide-react";
+import { Bookmark, CirclePlus, Download, FileText, History, TerminalSquare, X } from "lucide-react";
 
 import {
+  ChromeIcon,
   MessageCircleIcon,
   type AnimatedNavIconHandle,
 } from "@/components/animated-icons";
@@ -78,7 +79,7 @@ function CompoundMemberIcon({ tab, animate }: { tab: CenterTab; animate: boolean
             onError={() => setBrokenFavicon(tab.faviconUrl ?? "")}
           />
         ) : (
-          <Globe size={13} />
+          <ChromeIcon size={13} />
         )
       ) : tab.kind === "builtin" ? (
         tab.page === "files"
@@ -88,7 +89,7 @@ function CompoundMemberIcon({ tab, animate }: { tab: CenterTab; animate: boolean
           : tab.page === "downloads"
             ? <Download size={13} />
           : tab.page === "browser"
-            ? <Globe size={13} />
+            ? <ChromeIcon size={13} />
             : tab.page === "terminal" || tab.page === "claude"
               ? <TerminalSquare size={13} />
               : <Bookmark size={13} />
@@ -346,7 +347,7 @@ export function TabItem({
                 onError={() => setBrokenFavicon(tab.faviconUrl ?? "")}
               />
             ) : (
-              <Globe size={13} />
+              <ChromeIcon size={13} />
             )
           ) : tab.kind === "builtin" ? (
             tab.page === "files"
@@ -356,7 +357,7 @@ export function TabItem({
               : tab.page === "downloads"
                 ? <Download size={13} />
               : tab.page === "browser"
-                ? <Globe size={13} />
+                ? <ChromeIcon size={13} />
                 : tab.page === "terminal" || tab.page === "claude"
                   ? <TerminalSquare size={13} />
                   : <Bookmark size={13} />

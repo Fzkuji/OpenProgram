@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import {
   Bot,
   ChartNoAxesColumn,
-  Globe2,
   Brain,
   MonitorCog,
   RadioTower,
@@ -15,7 +14,7 @@ import {
 import { useLayoutEffect, useState, type ReactNode } from "react";
 import styles from "./settings-page.module.css";
 import { useTranslation } from "@/lib/i18n";
-import { PanelLeftCloseIcon, PanelLeftOpenIcon } from "../animated-icons";
+import { ChromeIcon, PanelLeftCloseIcon, PanelLeftOpenIcon } from "../animated-icons";
 import { sidebarToggleClass } from "../sidebar/nav-classes";
 
 export type SettingsTab = "providers" | "usage" | "search" | "channels" | "browser" | "memory" | "general" | "system";
@@ -79,7 +78,7 @@ export function SettingsTabsLayout({
     { id: "providers" as const, href: "/settings/providers", label: t("settings.tab.providers"), Icon: Bot },
     { id: "memory" as const, href: "/settings/memory", label: t("settings.tab.memory"), Icon: Brain },
     { id: "search" as const, href: "/settings/search", label: t("settings.tab.search"), Icon: Search },
-    { id: "browser" as const, href: "/settings/browser", label: text("Browser", "浏览器"), Icon: Globe2 },
+    { id: "browser" as const, href: "/settings/browser", label: text("Browser", "浏览器"), Icon: ChromeIcon },
     { id: "channels" as const, href: "/settings/channels", label: t("settings.tab.channels"), Icon: RadioTower },
     { id: "usage" as const, href: "/settings/usage", label: t("settings.tab.usage"), Icon: ChartNoAxesColumn },
     { id: "system" as const, href: "/settings/system", label: t("settings.tab.system"), Icon: MonitorCog },

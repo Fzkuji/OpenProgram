@@ -20,13 +20,13 @@ import {
   ChevronRight,
   Download,
   Folder,
-  Globe,
   History,
   MoreVertical,
   Trash2,
   X,
 } from "lucide-react";
 
+import { ChromeIcon } from "@/components/animated-icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -137,7 +137,7 @@ function BookmarkFavicon({ node }: { node: BookmarkNode }) {
     return <Folder size={17} aria-hidden="true" />;
   }
   if (!node.faviconUrl || broken) {
-    return <Globe size={16} aria-hidden="true" />;
+    return <ChromeIcon size={16} aria-hidden="true" />;
   }
   return <img src={node.faviconUrl} alt="" onError={() => setBroken(true)} />;
 }
@@ -515,10 +515,10 @@ function historyHost(url: string): string {
   }
 }
 
-/** 历史行的站点图标：加载失败或没有 favicon 时退回 Globe（同 tab 条）。 */
+/** 历史行的站点图标：加载失败或没有 favicon 时退回 ChromeIcon（同 tab 条）。 */
 function HistoryFavicon({ url }: { url: string }) {
   const [broken, setBroken] = useState(false);
-  if (!url || broken) return <Globe size={16} aria-hidden="true" />;
+  if (!url || broken) return <ChromeIcon size={16} aria-hidden="true" />;
   return (
     <img
       className="browsing-history-favicon"
