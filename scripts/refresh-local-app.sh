@@ -116,6 +116,27 @@ test -f "$asar_cli" || {
   exit 1
 }
 
+# Copy every top-level file named in apps/desktop/package.json build.files.
+# Do not duplicate that list by hand — that is how window-lifecycle.js
+# was omitted from the packaged asar.
+desktop_files="$(
+  "$local_python" - "$repo_root/apps/desktop/package.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    files = json.load(stream)["build"]["files"]
+for name in files:
+    if not isinstance(name, str) or "/" in name or "!" in name:
+        continue
+    print(name)
+PY
+)"
+test -n "$desktop_files" || {
+  printf 'apps/desktop/package.json build.files listed no top-level modules\n' >&2
+  exit 1
+}
+
 attempt=0
 while true; do
   attempt=$((attempt + 1))
@@ -137,11 +158,15 @@ while true; do
   desktop_stage="$attempt_dir/desktop"
   desktop_asar="$attempt_dir/app.asar"
   node "$asar_cli" extract "$installed_asar" "$desktop_stage"
-  for desktop_file in \
-    main.js menu-geometry.js worker-recovery-state.js tab-transfer-validation.js preload.js update-service.js packaged-runtime.js worker-start-url.js \
-    tab-transfer-store.js window-state.js theme-chrome.js browsing-history-store.js browser-profile-import.js; do
-    cp "$repo_root/apps/desktop/$desktop_file" "$desktop_stage/$desktop_file"
-  done
+  while IFS= read -r desktop_file; do
+    source_file="$repo_root/apps/desktop/$desktop_file"
+    test -f "$source_file" || {
+      printf 'desktop module listed in build.files is missing: %s\n' \
+        "$desktop_file" >&2
+      exit 1
+    }
+    cp "$source_file" "$desktop_stage/$desktop_file"
+  done <<<"$desktop_files"
   rm -f "$desktop_stage/browser-extension-manager.js"
   for obsolete_extension_module in \
     extract-zip debug ms get-stream pump end-of-stream once wrappy \

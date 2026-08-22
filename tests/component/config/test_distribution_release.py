@@ -1110,7 +1110,7 @@ def test_local_app_refresh_restarts_worker_after_runtime_install() -> None:
     )
     assert any(install < stop < health for stop in stops)
     final_window = refresh[install:health]
-    assert "update-service.js" in refresh
+    assert "build.files" in refresh
     assert (
         '"$local_python" -m openprogram worker stop >/dev/null 2>&1\n'
         in final_window
@@ -1235,9 +1235,6 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         '[project]\nname = "openprogram"\nversion = "0.6.6"\n',
         encoding="utf-8",
     )
-    (desktop / "package.json").write_text(
-        json.dumps({"version": "0.6.6"}), encoding="utf-8"
-    )
     desktop_files = [
         "main.js",
         "menu-geometry.js",
@@ -1249,10 +1246,15 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         "worker-start-url.js",
         "tab-transfer-store.js",
         "window-state.js",
+        "window-lifecycle.js",
         "theme-chrome.js",
         "browsing-history-store.js",
         "browser-profile-import.js",
     ]
+    (desktop / "package.json").write_text(
+        json.dumps({"version": "0.6.6", "build": {"files": desktop_files}}),
+        encoding="utf-8",
+    )
     for desktop_file in desktop_files:
         (desktop / desktop_file).write_text("module.exports = {};\n", encoding="utf-8")
     asar_cli = repo / "node_modules" / "@electron" / "asar" / "bin" / "asar.js"
@@ -1304,7 +1306,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         '  if [ "$1" = "--out-dir" ]; then out="$2"; shift 2; else shift; fi\n'
         "done\n"
         'printf \'[project]\\nname = "openprogram"\\nversion = "0.6.1"\\n\' > "$REPO_ROOT/pyproject.toml"\n'
-        'printf \'{"version":"0.6.1"}\\n\' > "$REPO_ROOT/apps/desktop/package.json"\n'
+        'printf \'{"version":"0.6.1","build":{"files":["main.js","menu-geometry.js","worker-recovery-state.js","tab-transfer-validation.js","preload.js","update-service.js","packaged-runtime.js","worker-start-url.js","tab-transfer-store.js","window-state.js","window-lifecycle.js","theme-chrome.js","browsing-history-store.js","browser-profile-import.js"]}}\\n\' > "$REPO_ROOT/apps/desktop/package.json"\n'
         'mkdir -p "$out"\n'
         'exec "$REAL_PYTHON" - "$out/openprogram-0.6.1-py3-none-any.whl" <<\'PY\'\n'
         "import sys, zipfile\n"
@@ -1348,7 +1350,8 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         encoding="utf-8",
     )
     (desktop / "package.json").write_text(
-        json.dumps({"version": "0.6.6"}), encoding="utf-8"
+        json.dumps({"version": "0.6.6", "build": {"files": desktop_files}}),
+        encoding="utf-8",
     )
     fake_uv.write_text(
         fake_uv.read_text(encoding="utf-8").replace("0.6.1", "0.6.6"),

@@ -56,3 +56,14 @@ def test_every_required_module_is_packaged():
 def test_whitelist_has_no_dead_entries():
     dead = sorted(name for name in _whitelist() if not (DESKTOP / name).exists())
     assert not dead, f"apps/desktop/package.json build.files lists missing files: {dead}"
+
+
+def test_refresh_script_reads_build_files_instead_of_a_hand_list():
+    """refresh-local-app.sh must copy build.files, not a duplicated name list."""
+    refresh = (DESKTOP.parents[1] / "scripts" / "refresh-local-app.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "apps/desktop/package.json" in refresh
+    assert "build.files" in refresh
+    assert "main.js menu-geometry.js" not in refresh
+    assert "window-lifecycle.js" in _whitelist()
