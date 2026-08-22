@@ -267,22 +267,25 @@ def _apply_branch_workspace_intent(
         "decision": "restore_branch_code",
         "updated_at": time.time(),
     }
-    cas_committed = False
-
     def compare_alignment_head(expected, target) -> bool:
-        nonlocal cas_committed
         if expected != target or expected != head_id:
             return False
-        meta_alignment = committed_alignment if not cas_committed else prior
-        ok = store.compare_and_set_head(
+        files_are_target = all(
+            journal._state_matches(
+                journal._inspect_state(action["path"]), action["target"],
+            )
+            for action in actions
+        )
+        return store.compare_and_set_head(
             session_id,
             expected,
             target,
-            meta_update={"workspace_alignment": meta_alignment},
+            meta_update={
+                "workspace_alignment": (
+                    committed_alignment if files_are_target else prior
+                ),
+            },
         )
-        if ok:
-            cas_committed = not cas_committed
-        return ok
 
     result = journal.apply_rewind_operation(
         turn_ids,
