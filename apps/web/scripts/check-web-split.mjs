@@ -2345,7 +2345,10 @@ assert.match(
 );
 
 useCenterTabs.setState({
-  tabs: [{ id: "s:chat", kind: "session", title: "Chat", sessionId: "chat" }],
+  tabs: [
+    { id: "s:chat", kind: "session", title: "Chat", sessionId: "chat" },
+    { id: "s:other", kind: "session", title: "Other", sessionId: "other" },
+  ],
   activeId: "s:chat",
   groups: [],
   splitWebTabId: null,
@@ -2370,14 +2373,17 @@ assert.equal(
 );
 const {
   peekWebTabPipId,
+  peekWebTabPipOwnerId,
   peekWebTabPipBackgroundId,
+  peekWebTabPipBackgroundOwnerId,
   useWebTabPip,
   clampPipRect,
   collapseWebTabToPip,
   pipCoversCenter,
 } = await import("../lib/state/web-tab-pip-store.ts");
-useWebTabPip.getState().show(pipOnlyId);
+useWebTabPip.getState().show(pipOnlyId, "s:chat");
 assert.equal(peekWebTabPipId(), pipOnlyId);
+assert.equal(peekWebTabPipOwnerId(), "s:chat");
 registerVisibleWebTabBounds(
   { webTab: { syncVisible() {} } },
   pipOnlyId,
@@ -2389,6 +2395,15 @@ assert.equal(
   pipCoversCenter(pipOnlyId, useCenterTabs.getState()),
   true,
 );
+useCenterTabs.getState().setActive("s:other");
+assert.equal(
+  pipCoversCenter(pipOnlyId, useCenterTabs.getState()),
+  false,
+  "PiP must not follow a different chat",
+);
+assert.equal(peekWebTabPipId(), pipOnlyId, "chat switch keeps the owner preview restorable");
+useCenterTabs.getState().setActive("s:chat");
+assert.equal(pipCoversCenter(pipOnlyId, useCenterTabs.getState()), true);
 useCenterTabs.getState().setActive(pipOnlyId);
 assert.equal(useCenterTabs.getState().activeId, pipOnlyId);
 assert.equal(pipCoversCenter(pipOnlyId, useCenterTabs.getState()), false);
@@ -2413,7 +2428,9 @@ useWebTabPip.getState().hide();
 removeVisibleWebTabBounds({ webTab: { syncVisible() {} } }, pipOnlyId);
 setWebTabReady(pipOnlyId, false);
 assert.equal(peekWebTabPipId(), null);
+assert.equal(peekWebTabPipOwnerId(), null);
 assert.equal(peekWebTabPipBackgroundId(), pipOnlyId);
+assert.equal(peekWebTabPipBackgroundOwnerId(), "s:chat");
 assert.deepEqual(
   clampPipRect(
     { x: -20, y: -10, width: 100, height: 80 },
@@ -2475,6 +2492,7 @@ const previewChipSource = await readFile(
 );
 assert.match(previewChipSource, /Show page preview/);
 assert.match(previewChipSource, /peekWebTabPipBackgroundId|backgroundTabId/);
+assert.match(previewChipSource, /backgroundOwnerTabId/);
 assert.match(
   await readFile(
     new URL("../components/chat/composer/environment-row/environment-row.tsx", import.meta.url),
