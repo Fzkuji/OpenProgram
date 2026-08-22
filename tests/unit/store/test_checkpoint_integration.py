@@ -263,3 +263,24 @@ def test_apply_patch_preflights_all_aliases_before_writing(turn_ctx, tmp_path):
     assert safe.read_text(encoding="utf-8") == "safe = 1\n"
     assert target.read_text(encoding="utf-8") == "target = 1\n"
     assert CheckpointStore(turn_ctx).list_mutations(TURN_ID) == []
+
+
+def test_repeated_write_rechecks_new_hardlink(turn_ctx, tmp_path):
+    target = tmp_path / "created.txt"
+    first = _run_tool("write", {
+        "file_path": str(target), "content": "first\n",
+    })
+    assert "Wrote" in first
+    journal = CheckpointStore(turn_ctx)
+    first_receipt = journal.list_mutations(TURN_ID)
+    alias = tmp_path / "external-alias.txt"
+    os.link(target, alias)
+
+    second = _run_tool("write", {
+        "file_path": str(target), "content": "second\n",
+    })
+
+    assert second.startswith("Error: mutation journal preparation failed")
+    assert target.read_text(encoding="utf-8") == "first\n"
+    assert alias.read_text(encoding="utf-8") == "first\n"
+    assert journal.list_mutations(TURN_ID) == first_receipt

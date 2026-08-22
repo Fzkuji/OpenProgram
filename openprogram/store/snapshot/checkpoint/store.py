@@ -97,11 +97,6 @@ class CheckpointStore:
             return
         backup_name = path_basename(abs_path)
         manifest_path = turn_manifest_path(self.session_dir, turn_id)
-        if manifest.has(manifest_path, backup_name):
-            return
-        backup_dir = turn_backup_dir(self.session_dir, turn_id)
-        backup_dir.mkdir(parents=True, exist_ok=True)
-
         target = Path(abs_path)
         try:
             target_stat = os.lstat(target)
@@ -110,19 +105,24 @@ class CheckpointStore:
         except OSError as exc:
             raise MutationJournalError(f"cannot inspect {target}: {exc}") from exc
 
+        if target_stat is not None and not stat.S_ISREG(target_stat.st_mode):
+            raise MutationJournalError(
+                f"unsafe file type for exact mutation: {_file_kind(target_stat.st_mode)}",
+            )
+        if target_stat is not None and target_stat.st_nlink != 1:
+            raise MutationJournalError(
+                f"hardlinked file has {target_stat.st_nlink} links",
+            )
+        if manifest.has(manifest_path, backup_name):
+            return
+        backup_dir = turn_backup_dir(self.session_dir, turn_id)
+        backup_dir.mkdir(parents=True, exist_ok=True)
+
         pre_existing = target_stat is not None
         recoverability = "exact"
         unavailable_reason = None
         if not pre_existing:
             before = {"kind": "absent"}
-        elif not stat.S_ISREG(target_stat.st_mode):
-            raise MutationJournalError(
-                f"unsafe file type for exact mutation: {_file_kind(target_stat.st_mode)}",
-            )
-        elif target_stat.st_nlink != 1:
-            raise MutationJournalError(
-                f"hardlinked file has {target_stat.st_nlink} links",
-            )
         else:
             source = Path(content_src) if content_src is not None else target
             try:
