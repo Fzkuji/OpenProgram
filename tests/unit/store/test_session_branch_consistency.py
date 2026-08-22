@@ -186,6 +186,52 @@ def test_set_active_head_refreshes_messages_mirror(store, srv):
     assert got == ids[:2], "messages must follow the new head"
 
 
+def test_conversation_checkout_marks_workspace_mismatch(store, srv, monkeypatch):
+    from openprogram.webui.ws_actions import branch as branch_actions
+
+    ids = _two_turns(store)
+    monkeypatch.setattr(srv, "_is_run_active", lambda _sid: False)
+    ws = FakeWS()
+    _run(branch_actions.handle_checkout_branch(ws, {
+        "session_id": "s1", "head_msg_id": ids[1],
+    }))
+
+    result = ws.of_type("branch_checked_out")[0]
+    alignment = store.get_session("s1")["workspace_alignment"]
+    assert result["ok"] is True
+    assert alignment["status"] == "mismatch"
+    assert alignment["source_head_id"] == ids[-1]
+    assert alignment["target_head_id"] == ids[1]
+
+
+def test_mismatched_workspace_blocks_chat_until_explicit_adoption(
+    store, srv, monkeypatch,
+):
+    from openprogram.agent.workspace_alignment import mark_conversation_checkout
+    from openprogram.webui.ws_actions import chat as chat_actions
+
+    ids = _two_turns(store)
+    mark_conversation_checkout("s1", ids[-1], ids[1], store=store)
+    monkeypatch.setattr(
+        srv, "_get_or_create_session",
+        lambda sid, **_kwargs: {"id": sid},
+    )
+    ws = FakeWS()
+    _run(chat_actions.handle_chat(ws, {"session_id": "s1", "text": "edit file"}))
+
+    result = ws.of_type("chat_response")[0]
+    assert result["code"] == "workspace_alignment_required"
+    assert store.get_session("s1")["head_id"] == ids[-1]
+
+    resolved = FakeWS()
+    from openprogram.webui.ws_actions import branch as branch_actions
+    _run(branch_actions.handle_resolve_workspace_alignment(resolved, {
+        "session_id": "s1", "decision": "keep_current_files",
+    }))
+    assert resolved.of_type("workspace_alignment_resolved")[0]["ok"] is True
+    assert store.get_session("s1")["workspace_alignment"]["status"] == "aligned"
+
+
 # ---- 2. attach / delete must refresh cache + mirror --------------------
 
 def test_attach_branch_invalidates_message_cache(store, srv):

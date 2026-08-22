@@ -19,6 +19,7 @@ import type { PendingDecision } from "@/lib/session-store";
 import {
   loadSessionData,
   onBranchCheckedOut,
+  onWorkspaceAlignmentResolved,
   onBranchesListMessage,
   onChannelAccountsMessage,
 } from "@/lib/runtime-bridge/conversations";
@@ -464,6 +465,9 @@ export function useWS(): void {
           return true;
         case "branch_checked_out":
           onBranchCheckedOut(d as never);
+          return true;
+        case "workspace_alignment_resolved":
+          onWorkspaceAlignmentResolved(d as never);
           return true;
         // Broadcast after set_working_dirs succeeds — the backend is the
         // source of truth, so it overwrites any optimistic UI update.

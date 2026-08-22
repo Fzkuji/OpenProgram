@@ -162,6 +162,12 @@ class Job:
     # as default cwd. Cancel hook (D15 in agent-worktree.md) may
     # auto-discard the worktree when the job is cancelled.
     worktree_id: Optional[str] = None
+    # File-history ownership. Only same-session agent creation without a
+    # worktree is owned by the origin turn; deliveries to existing peers,
+    # cross-session work and isolated worktrees are never folded into it.
+    creates_agent: bool = True
+    relation: Literal["owned", "linked", "worktree"] = "owned"
+    origin_turn_id: Optional[str] = None
 
     # True ⇒ the caller is blocking on this job (sync /task) — the
     # runner doesn't need to nudge anyone when it finishes, the

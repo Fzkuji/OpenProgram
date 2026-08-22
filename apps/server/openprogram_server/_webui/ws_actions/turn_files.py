@@ -236,7 +236,28 @@ def _history_eligibility(session_id: str, turn_id: str) -> dict:
     direction = "reapply" if reverted else "revert"
     from openprogram.store.snapshot.checkpoint import CheckpointStore
 
-    plan = CheckpointStore(session_dir).plan_history_operation(turn_id, direction)
+    journal = CheckpointStore(session_dir)
+    ownership = {"status": "ready", "owned_turn_ids": [], "blockers": [], "linked": []}
+    from openprogram.agent.history_ownership import owned_change_set_closure
+
+    ownership = owned_change_set_closure(session_id, [turn_id])
+    if ownership["status"] != "ready":
+        return {
+            "status": "blocked",
+            "action": None,
+            "reverted": reverted,
+            "latest_file_turn_id": latest_file_turn,
+            "blockers": ownership["blockers"],
+            "linked_impacts": ownership["linked"],
+            "error": "owned_actor_running",
+        }
+    plan = (
+        journal.plan_rewind_operation(
+            ownership["owned_turn_ids"] + [turn_id], direction=direction,
+        )
+        if ownership["owned_turn_ids"]
+        else journal.plan_history_operation(turn_id, direction)
+    )
     if plan.get("status") != "ready":
         return {
             "status": plan.get("status", "unavailable"),
@@ -246,6 +267,7 @@ def _history_eligibility(session_id: str, turn_id: str) -> dict:
             "conflicts": plan.get("conflicts", []),
             "unavailable": plan.get("unavailable", []),
             "error": plan.get("error"),
+            "linked_impacts": ownership["linked"],
         }
     return {
         "status": "ready",
@@ -259,6 +281,8 @@ def _history_eligibility(session_id: str, turn_id: str) -> dict:
         "latest_file_turn_id": latest_file_turn,
         "conflicts": [],
         "unavailable": [],
+        "owned_turn_ids": ownership["owned_turn_ids"],
+        "linked_impacts": ownership["linked"],
     }
 
 
@@ -270,26 +294,53 @@ def _turn_scope(session_id: str, turn_id: str) -> dict:
     if turn_id not in index.nodes_by_id:
         return {"status": "error", "error": f"unknown turn {turn_id!r}"}
     root = _project_root(session_id)
-    mutations = _manifest_mutations(session_dir, turn_id)
-    summary = (
-        {
-            "files": [_normalise_file(row, root) for row in mutations],
-            "reverted": bool((index.nodes_by_id[turn_id].metadata or {}).get("reverted")),
-        }
-        if mutations
-        else _turn_summary(index, session_dir, turn_id, root)
-    )
-    for row in summary["files"]:
-        row["turn_ids"] = [turn_id]
+    from openprogram.agent.history_ownership import owned_change_set_closure
+
+    ownership = owned_change_set_closure(session_id, [turn_id])
+    producer_ids = [turn_id] + ownership["owned_turn_ids"]
+    files = []
+    snapshot_basis = []
+    for producer_id in producer_ids:
+        mutations = _manifest_mutations(session_dir, producer_id)
+        producer = index.nodes_by_id.get(producer_id)
+        owner = (producer.metadata or {}).get("change_owner") if producer else None
+        if mutations:
+            for mutation in mutations:
+                row = _normalise_file(mutation, root)
+                row.update({
+                    "turn_ids": [producer_id],
+                    "producer_turn_id": producer_id,
+                    "origin_turn_id": turn_id,
+                    "actor_id": (owner or {}).get("actor_id", "main"),
+                    "job_id": (owner or {}).get("job_id"),
+                })
+                files.append(row)
+                snapshot_basis.append({
+                    "path": mutation.get("path"),
+                    "before": mutation.get("before"),
+                    "after": mutation.get("after"),
+                    "producer_turn_id": producer_id,
+                })
+        elif producer_id == turn_id:
+            summary = _turn_summary(index, session_dir, turn_id, root)
+            for row in summary["files"]:
+                row.update({
+                    "turn_ids": [turn_id],
+                    "producer_turn_id": turn_id,
+                    "origin_turn_id": turn_id,
+                    "actor_id": "main",
+                    "job_id": None,
+                })
+                files.append(row)
+            snapshot_basis.extend(summary["files"])
     return _scope_payload(
-        "turn", "mutation_journal", summary["files"],
+        "turn", "mutation_journal", files,
         assistant_msg_id=turn_id,
-        reverted=summary["reverted"],
-        _snapshot_basis=[{
-            "path": mutation.get("path"),
-            "before": mutation.get("before"),
-            "after": mutation.get("after"),
-        } for mutation in mutations] if mutations else summary["files"],
+        reverted=bool((index.nodes_by_id[turn_id].metadata or {}).get("reverted")),
+        owned_turn_ids=ownership["owned_turn_ids"],
+        blockers=ownership["blockers"],
+        linked_impacts=ownership["linked"],
+        _snapshot_basis=snapshot_basis,
     )
 
 
@@ -300,7 +351,21 @@ def _branch_scope(session_id: str) -> dict:
     _store, _git, index, session_dir = opened
     root = _project_root(session_id)
     lineages: dict[str, dict] = {}
-    for node in reversed(_active_nodes(index)):
+    active_llm = [
+        node for node in reversed(_active_nodes(index)) if node.role == "llm"
+    ]
+    from openprogram.agent.history_ownership import owned_change_set_closure
+
+    ownership = owned_change_set_closure(
+        session_id, [node.id for node in active_llm],
+    )
+    producer_nodes = active_llm + [
+        index.nodes_by_id[turn_id]
+        for turn_id in ownership["owned_turn_ids"]
+        if turn_id in index.nodes_by_id
+    ]
+    producer_nodes.sort(key=lambda node: node.seq)
+    for node in producer_nodes:
         if node.role != "llm" or (node.metadata or {}).get("reverted"):
             continue
         for mutation in _manifest_mutations(session_dir, node.id):
@@ -363,6 +428,8 @@ def _branch_scope(session_id: str) -> dict:
     return _scope_payload(
         "branch", "mutation_journal", files,
         head_id=index.head_id,
+        blockers=ownership["blockers"],
+        linked_impacts=ownership["linked"],
         _snapshot_basis=[{
             "path": lineage["path"],
             "before": lineage["before"],
@@ -738,7 +805,21 @@ def _branch_file_diff(session_id: str, path: str, cursor: int = 0) -> dict:
         return {"diff": "", "diff_state": "unavailable", "error": "unknown session"}
     _store, _git, index, session_dir = opened
     states = []
-    for node in reversed(_active_nodes(index)):
+    active_llm = [
+        node for node in reversed(_active_nodes(index)) if node.role == "llm"
+    ]
+    from openprogram.agent.history_ownership import owned_change_set_closure
+
+    ownership = owned_change_set_closure(
+        session_id, [node.id for node in active_llm],
+    )
+    producer_nodes = active_llm + [
+        index.nodes_by_id[turn_id]
+        for turn_id in ownership["owned_turn_ids"]
+        if turn_id in index.nodes_by_id
+    ]
+    producer_nodes.sort(key=lambda node: node.seq)
+    for node in producer_nodes:
         if node.role != "llm" or (node.metadata or {}).get("reverted"):
             continue
         mutation = next(
@@ -963,7 +1044,10 @@ async def handle_review_file_diff(ws, cmd: dict) -> None:
             result = {"diff": "", "diff_state": "unavailable", "error": "path is not in review scope"}
         elif scope == "turn":
             result = await _run(lambda: _turn_file_diff(
-                session_id, turn_id, path, cursor,
+                session_id,
+                str(member.get("producer_turn_id") or turn_id),
+                path,
+                cursor,
             ))
         elif scope == "branch":
             result = await _run(lambda: _branch_file_diff(

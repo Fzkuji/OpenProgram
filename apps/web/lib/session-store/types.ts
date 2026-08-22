@@ -301,6 +301,13 @@ export interface ConvSummary {
   status?: string;
   unread?: boolean;
   project?: string;
+  workspace_alignment?: {
+    status?: "aligned" | "mismatch";
+    reason?: string;
+    source_head_id?: string | null;
+    target_head_id?: string | null;
+    decision?: string | null;
+  };
 }
 
 export interface RunningTask {

@@ -165,6 +165,17 @@ def plan_rewind(
         )
     suffix = chain[:target_position + 1]
     turn_ids = [node.id for node in suffix if node.role == "llm"]
+    from openprogram.agent.history_ownership import owned_change_set_closure
+
+    ownership = owned_change_set_closure(session_id, turn_ids)
+    if ownership["status"] != "ready":
+        return {
+            **_err(session_id, target_msg_id, "owned actor is still running"),
+            "status": "blocked",
+            "blockers": ownership["blockers"],
+            "linked_impacts": ownership["linked"],
+        }
+    turn_ids = ownership["owned_turn_ids"] + turn_ids
     source_head = index.head_id
     target_head = _node_conv_predecessor(target)
     if target_head is None:
@@ -197,6 +208,8 @@ def plan_rewind(
         "target_head_id": target_head,
         "source_branch_id": source_branch_id,
         "turn_ids": turn_ids,
+        "owned_turn_ids": ownership["owned_turn_ids"],
+        "linked_impacts": ownership["linked"],
         "turns_reverted": len(turn_ids),
         "nodes_rewound": len(suffix),
         "user_text": user_text,

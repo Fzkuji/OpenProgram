@@ -41,6 +41,7 @@ import {
   writeChatScroll,
 } from "@/lib/state/chat-scroll";
 import { Avatar } from "@/components/avatar";
+import { showToast } from "@/lib/format-utils/toast";
 
 import { AssistantBubble } from "./assistant-bubble";
 import { AttachCard } from "./attach-card";
@@ -416,6 +417,47 @@ function TranscriptSkeleton() {
   );
 }
 
+function WorkspaceAlignmentBanner({ sessionId }: { sessionId: string | null }) {
+  const { text } = useTranslation();
+  const alignment = useSessionStore((state) =>
+    sessionId ? state.conversations[sessionId]?.workspace_alignment : undefined,
+  );
+  if (!sessionId || alignment?.status !== "mismatch") return null;
+  const resolve = (decision: "keep_current_files" | "restore_branch_code") => {
+    const socket = getSocket();
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      showToast(text("Not connected", "连接已断开"));
+      return;
+    }
+    socket.send(JSON.stringify({
+      action: "resolve_workspace_alignment",
+      session_id: sessionId,
+      decision,
+    }));
+  };
+  return (
+    <div className="workspace-alignment-banner" role="status">
+      <b>{text(
+        "Conversation and workspace are not aligned",
+        "对话与工作区未对齐",
+      )}</b>
+      <span>{text(
+        "Choose which file state the next editing turn should use.",
+        "请选择下一次文件修改要使用的文件状态。",
+      )}</span>
+      <div>
+        <button type="button" onClick={() => resolve("keep_current_files")}>
+          {text("Keep current files", "保留当前文件")}
+        </button>
+        <button type="button" onClick={() => resolve("restore_branch_code")}>
+          {text("Restore branch code", "恢复分支代码")}
+        </button>
+        <small>{text("File edits paused", "文件修改已暂停")}</small>
+      </div>
+    </div>
+  );
+}
+
 export function MessageList() {
   const { text } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
@@ -542,6 +584,7 @@ export function MessageList() {
   return (
     <>
       <AgentBranchBanner />
+      <WorkspaceAlignmentBanner sessionId={sessionId} />
       <MessageRail />
       {ids.map((id) => (
         <MessageRow key={id} id={id} />

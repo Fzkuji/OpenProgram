@@ -349,12 +349,39 @@ function renderBranchesPanel(): void {
 export function onBranchCheckedOut(payload: {
   ok?: boolean;
   session_id?: string;
+  workspace_alignment?: import("@/lib/session-store/types").ConvSummary["workspace_alignment"];
 }): void {
   if (!payload || !payload.ok || !payload.session_id) return;
+  const sessionStore = useSessionStore.getState();
+  const existing = sessionStore.conversations[payload.session_id] ?? {
+    id: payload.session_id,
+    title: "",
+  };
+  sessionStore.upsertConversation({
+    ...existing,
+    workspace_alignment: payload.workspace_alignment,
+  });
   delete branchesByConv[payload.session_id];
   if (payload.session_id === runtimeState.currentSessionId) {
     fetchBranches(payload.session_id).then(() => refreshBranchBadge());
   }
+}
+
+export function onWorkspaceAlignmentResolved(payload: {
+  ok?: boolean;
+  session_id?: string;
+  workspace_alignment?: import("@/lib/session-store/types").ConvSummary["workspace_alignment"];
+}): void {
+  if (!payload?.ok || !payload.session_id) return;
+  const store = useSessionStore.getState();
+  const existing = store.conversations[payload.session_id] ?? {
+    id: payload.session_id,
+    title: "",
+  };
+  store.upsertConversation({
+    ...existing,
+    workspace_alignment: payload.workspace_alignment,
+  });
 }
 
 export function refreshBranchBadge(): void {

@@ -1,6 +1,7 @@
 """Branch (git-style) WS actions: list / checkout / rename / auto_name / delete."""
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Optional
 
@@ -253,6 +254,7 @@ async def handle_checkout_branch(ws, cmd: dict):
     head_msg_id = cmd.get("head_msg_id")
     ok = False
     err = None
+    alignment = None
     if not session_id or not head_msg_id:
         err = "session_id and head_msg_id required"
     elif _s._is_run_active(session_id):
@@ -267,7 +269,15 @@ async def handle_checkout_branch(ws, cmd: dict):
             if not db.message_exists(session_id, head_msg_id):
                 err = f"unknown message {head_msg_id!r}"
             else:
+                source_head_id = (db.get_session(session_id) or {}).get("head_id")
                 _s._set_active_head(session_id, head_msg_id)
+                from openprogram.agent.workspace_alignment import (
+                    mark_conversation_checkout,
+                )
+
+                alignment = mark_conversation_checkout(
+                    session_id, source_head_id, head_msg_id, store=db,
+                )
                 # A different branch is a different context. The last
                 # measurement belonged to the branch we just left, so
                 # re-estimate against the new one.
@@ -278,7 +288,52 @@ async def handle_checkout_branch(ws, cmd: dict):
     await ws.send_text(json.dumps({
         "type": "branch_checked_out",
         "data": {"session_id": session_id, "head_msg_id": head_msg_id,
-                  "ok": ok, "error": err},
+                  "ok": ok, "error": err, "workspace_alignment": alignment},
+    }, default=str))
+
+
+async def handle_resolve_workspace_alignment(ws, cmd: dict):
+    from openprogram.webui import server as _s
+
+    session_id = (cmd.get("session_id") or "").strip()
+    decision = (cmd.get("decision") or "").strip()
+    ok = False
+    error = None
+    alignment = None
+    if not session_id:
+        error = "session_id is required"
+    elif _s._is_run_active(session_id):
+        error = _s.RUN_ACTIVE_ERROR
+    elif decision == "keep_current_files":
+        from openprogram.agent.session_db import default_db
+        from openprogram.agent.workspace_alignment import adopt_current_workspace
+
+        alignment = adopt_current_workspace(session_id, store=default_db())
+        ok = True
+    elif decision == "restore_branch_code":
+        from openprogram.agent.session_db import default_db
+        from openprogram.agent.workspace_alignment import restore_branch_workspace
+
+        result = await asyncio.to_thread(
+            restore_branch_workspace,
+            session_id,
+            store=default_db(),
+            idempotency_key=(cmd.get("idempotency_key") or None),
+        )
+        ok = result.get("status") == "committed"
+        error = result.get("error")
+        alignment = result.get("workspace_alignment")
+    else:
+        error = "unknown workspace alignment decision"
+    await ws.send_text(json.dumps({
+        "type": "workspace_alignment_resolved",
+        "data": {
+            "session_id": session_id,
+            "decision": decision,
+            "ok": ok,
+            "error": error,
+            "workspace_alignment": alignment,
+        },
     }, default=str))
 
 
@@ -732,6 +787,7 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
 ACTIONS = {
     "list_branches": handle_list_branches,
     "checkout_branch": handle_checkout_branch,
+    "resolve_workspace_alignment": handle_resolve_workspace_alignment,
     "rename_branch": handle_rename_branch,
     "auto_name_branch": handle_auto_name_branch,
     "delete_branch_name": handle_delete_branch_name,

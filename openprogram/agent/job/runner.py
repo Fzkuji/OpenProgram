@@ -233,6 +233,31 @@ def _refresh_context_stats(session_id: str) -> None:
         pass
 
 
+def _stamp_job_change_owner(job: Job) -> None:
+    """Persist actor/ownership facts on the child assistant change set."""
+    if not job.head_id:
+        return
+    try:
+        from openprogram.store.session.session_store import default_store
+
+        store = default_store()
+        store.merge_node_metadata(
+            job.parent_session_id,
+            job.head_id,
+            {"change_owner": {
+                "relation": job.relation,
+                "origin_turn_id": job.origin_turn_id,
+                "actor_id": job.agent_id,
+                "job_id": job.id,
+                "worktree_id": job.worktree_id,
+                "session_id": job.parent_session_id,
+                "status": job.status.value,
+            }},
+        )
+    except Exception:
+        _log.warning("job change ownership stamp failed for %s", job.id, exc_info=True)
+
+
 def _broadcast_job_status(job: Job, resource: dict | None = None) -> None:
     data = {
         "job_id": job.id,
@@ -492,6 +517,18 @@ class JobRunner:
                 parent_job_id = _current_job_id.get()
         from openprogram.agent.authority import normalize_authority
         job_authority = normalize_authority(authority or existing or {})
+        origin_turn_id = (
+            existing.origin_turn_id if existing is not None else None
+        ) or caller_msg_id or parent_msg_id
+        relation = (
+            existing.relation if existing is not None and existing.origin_turn_id
+            else "worktree" if worktree_id
+            else "linked" if (
+                not creates_agent
+                or bool(caller_session_id and caller_session_id != session_id)
+            )
+            else "owned"
+        )
         job = Job(
             id=job_id or mint_job_id(),
             parent_session_id=session_id,
@@ -507,6 +544,9 @@ class JobRunner:
             attach_pointer_id=attach_pointer_id,
             target_branch_head_id=target_branch_head_id,
             worktree_id=worktree_id,
+            creates_agent=creates_agent,
+            relation=relation,
+            origin_turn_id=origin_turn_id,
             wait=wait,
             caller_msg_id=caller_msg_id,
             caller_session_id=caller_session_id,
@@ -836,6 +876,7 @@ class JobRunner:
                 )
             updated = terminal.get("job")
             if updated is not None:
+                _stamp_job_change_owner(updated)
                 self._broadcast_job_status(updated)
                 _broadcast_session_reload(
                     session_id, reason=f"job_{status.value}",

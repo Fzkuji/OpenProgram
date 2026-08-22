@@ -439,8 +439,14 @@ class CheckpointStore:
             "unavailable": [],
         }
 
-    def plan_rewind_operation(self, turn_ids: list[str]) -> dict:
-        """Fold a newest-to-oldest turn suffix into one action per path."""
+    def plan_rewind_operation(
+        self,
+        turn_ids: list[str],
+        direction: str = "revert",
+    ) -> dict:
+        """Fold a related turn set into one reversible action per path."""
+        if direction not in {"revert", "reapply"}:
+            return {"status": "error", "error": f"unknown direction {direction!r}"}
         folded: dict[str, dict] = {}
         unavailable: list[str] = []
         discontinuous: list[str] = []
@@ -504,6 +510,13 @@ class CheckpointStore:
                 ),
             }
         actions = list(folded.values())
+        if direction == "reapply":
+            for action in actions:
+                source = action["target"]
+                target = action["expected_current"]
+                action["expected_current"] = source
+                action["target"] = target
+                action["rollback"] = source
         conflicts = [
             action["path"] for action in actions
             if not self._state_matches(
@@ -842,6 +855,40 @@ class CheckpointStore:
                 ))
         return results
 
+    def _validate_custom_history_actions(self, actions: list[dict]) -> dict:
+        conflicts = []
+        unavailable = []
+        for action in actions:
+            path = action.get("path") or ""
+            if not path:
+                unavailable.append(path)
+                continue
+            if not self._state_matches(
+                self._inspect_state(path), action.get("expected_current") or {},
+            ):
+                conflicts.append(path)
+                continue
+            for state in (action.get("target") or {}, action.get("rollback") or {}):
+                if not self._blob_is_exact(state):
+                    unavailable.append(path)
+                    break
+        if unavailable:
+            return {
+                "status": "unavailable", "actions": actions,
+                "conflicts": conflicts, "unavailable": sorted(set(unavailable)),
+                "error": "custom history target is unavailable",
+            }
+        if conflicts:
+            return {
+                "status": "blocked", "actions": actions,
+                "conflicts": sorted(set(conflicts)), "unavailable": [],
+                "error": "current workspace does not match the source branch",
+            }
+        return {
+            "status": "ready", "actions": actions,
+            "conflicts": [], "unavailable": [],
+        }
+
     @staticmethod
     def _plan_hash(actions: list[dict]) -> str:
         return "sha256:" + hashlib.sha256(
@@ -1007,6 +1054,7 @@ class CheckpointStore:
         source_branch_id: str | None = None,
         target_branch_id: str | None = None,
         expected_plan_hash: str | None = None,
+        custom_actions: list[dict] | None = None,
     ) -> dict:
         key = idempotency_key or uuid.uuid4().hex
         with self._rewind_intent_lock(key):
@@ -1022,6 +1070,7 @@ class CheckpointStore:
                 source_branch_id=source_branch_id,
                 target_branch_id=target_branch_id,
                 expected_plan_hash=expected_plan_hash,
+                custom_actions=custom_actions,
             )
 
     def _apply_rewind_operation_locked(
@@ -1038,6 +1087,7 @@ class CheckpointStore:
         source_branch_id: str | None,
         target_branch_id: str | None,
         expected_plan_hash: str | None,
+        custom_actions: list[dict] | None,
     ) -> dict:
         """Apply one folded file plan and move HEAD only after verification."""
         key = idempotency_key
@@ -1078,7 +1128,11 @@ class CheckpointStore:
                     ),
                 )
 
-        plan = self.plan_rewind_operation(turn_ids)
+        plan = (
+            self._validate_custom_history_actions(custom_actions)
+            if custom_actions is not None
+            else self.plan_rewind_operation(turn_ids)
+        )
         if plan.get("status") != "ready":
             return {
                 **plan,
@@ -1133,7 +1187,11 @@ class CheckpointStore:
                 intent.update({"status": "aborted", "error": "stale_head"})
                 manifest.save(intent_path, intent)
                 return self._rewind_intent_result(intent)
-            current_plan = self.plan_rewind_operation(turn_ids)
+            current_plan = (
+                self._validate_custom_history_actions(custom_actions)
+                if custom_actions is not None
+                else self.plan_rewind_operation(turn_ids)
+            )
             current_payload = {
                 "turn_ids": turn_ids,
                 "expected_head_id": expected_head_id,

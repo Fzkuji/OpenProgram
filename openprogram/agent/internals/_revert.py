@@ -69,11 +69,59 @@ def _apply(
             f"unknown assistant turn {assistant_msg_id!r}"
         )}
     journal = CheckpointStore(store._session_dir(session_id))
-    result = journal.apply_history_operation(
-        assistant_msg_id,
-        direction,
-        idempotency_key=idempotency_key,
-    )
+    owned_turn_ids: list[str] = []
+    ownership = {"status": "ready", "blockers": [], "linked": []}
+    from openprogram.agent.history_ownership import owned_change_set_closure
+
+    ownership = owned_change_set_closure(session_id, [assistant_msg_id])
+    if ownership["status"] != "ready":
+        return {
+            **base,
+            "status": "blocked",
+            "error": "owned_actor_running",
+            "blockers": ownership["blockers"],
+            "linked_impacts": ownership["linked"],
+        }
+    owned_turn_ids = ownership["owned_turn_ids"]
+    if owned_turn_ids:
+        plan = journal.plan_rewind_operation(
+            owned_turn_ids + [assistant_msg_id], direction=direction,
+        )
+        if plan.get("status") != "ready":
+            result = {
+                **plan,
+                "transaction_id": None,
+                "restored_paths": [],
+                "new_head_id": None,
+                "head_changed": False,
+            }
+        else:
+            sentinel = f"history-closure:{index.head_id or 'ROOT'}"
+            result = journal.apply_rewind_operation(
+                owned_turn_ids + [assistant_msg_id],
+                expected_head_id=sentinel,
+                target_head_id=sentinel,
+                get_head=lambda: sentinel,
+                compare_and_set_head=(
+                    lambda expected, target: expected == target == sentinel
+                ),
+                idempotency_key=(
+                    f"turn-closure:{direction}:"
+                    f"{idempotency_key or assistant_msg_id}"
+                ),
+                target_msg_id=f"{direction}:{assistant_msg_id}",
+                custom_actions=plan["actions"],
+            )
+            result["head_changed"] = False
+            result["new_head_id"] = None
+    else:
+        result = journal.apply_history_operation(
+            assistant_msg_id,
+            direction,
+            idempotency_key=idempotency_key,
+        )
+    result["owned_turn_ids"] = owned_turn_ids
+    result["linked_impacts"] = ownership["linked"]
     payload = {**base, **result}
     if result.get("status") != "committed":
         return payload

@@ -679,6 +679,37 @@ async def handle_chat(ws, cmd: dict):
                 return
             text = str(_send_text)
 
+    # A conversation-only checkout deliberately leaves files untouched.
+    # The next mutating turn must adopt that workspace explicitly; otherwise
+    # the model would edit one branch while reading another branch's history.
+    from openprogram.agent.workspace_alignment import (
+        adopt_current_workspace,
+        get_workspace_alignment,
+    )
+    alignment = get_workspace_alignment(session_id)
+    if alignment.get("status") == "mismatch":
+        if cmd.get("workspace_decision") == "keep_current_files":
+            alignment = adopt_current_workspace(session_id)
+        else:
+            await ws.send_text(json.dumps({
+                "type": "chat_response",
+                "data": {
+                    "type": "error",
+                    "session_id": session_id,
+                    "msg_id": str(uuid.uuid4())[:8],
+                    "code": "workspace_alignment_required",
+                    "content": (
+                        "Conversation and workspace are not aligned. "
+                        "Choose Keep current files or Restore branch code first."
+                    ),
+                    "workspace_alignment": alignment,
+                    "display": "chat",
+                    "retry_query": text,
+                    "timestamp": time.time(),
+                },
+            }, default=str))
+            return
+
     # Run-active guard — the last unguarded HEAD-moving entry point
     # (fn-form dispatch, retry/edit, checkout, merge, rewind all check
     # _is_run_active already). Without it, two clients racing on one

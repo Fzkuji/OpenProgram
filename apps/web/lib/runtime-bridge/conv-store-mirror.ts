@@ -37,6 +37,9 @@ function toSummary(c: Record<string, unknown>): ConvSummary {
     status: (c.status as string | undefined) ?? undefined,
     unread: !!c.unread,
     project: (c.project as string | undefined) ?? "",
+    workspace_alignment: (
+      c.workspace_alignment as ConvSummary["workspace_alignment"]
+    ) ?? undefined,
   };
 }
 
