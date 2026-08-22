@@ -4,9 +4,9 @@ from __future__ import annotations
 import asyncio
 import difflib
 import hashlib
-import itertools
 import json
 import os
+import re
 import stat
 import subprocess
 import tempfile
@@ -62,7 +62,19 @@ def _relative(path: str, root: Path | None) -> str:
 def _manifest_mutations(session_dir: Path, turn_id: str) -> list[dict]:
     from openprogram.store.snapshot.checkpoint import CheckpointStore
 
+    if not _valid_turn_id(turn_id):
+        return []
     return CheckpointStore(session_dir).list_mutations(turn_id)
+
+
+def _valid_turn_id(turn_id: str) -> bool:
+    return bool(
+        turn_id
+        and turn_id not in {".", ".."}
+        and Path(turn_id).name == turn_id
+        and "/" not in turn_id
+        and "\\" not in turn_id
+    )
 
 
 def _normalise_file(row: dict, root: Path | None) -> dict:
@@ -180,8 +192,17 @@ def _list_files(session_id: str, assistant_msg_id: str) -> dict:
     if opened is None:
         return {"files": [], "paths": [], "error": f"unknown session {session_id!r}"}
     _store, _git, index, session_dir = opened
-    result = _turn_summary(
-        index, session_dir, assistant_msg_id, _project_root(session_id),
+    root = _project_root(session_id)
+    mutations = _manifest_mutations(session_dir, assistant_msg_id)
+    result = (
+        {
+            "files": [_normalise_file(row, root) for row in mutations],
+            "file_count": len(mutations),
+            "reverted": bool((index.nodes_by_id.get(assistant_msg_id).metadata or {}).get("reverted"))
+                if index.nodes_by_id.get(assistant_msg_id) else False,
+        }
+        if mutations
+        else _turn_summary(index, session_dir, assistant_msg_id, root)
     )
     return {
         **result,
@@ -189,6 +210,55 @@ def _list_files(session_id: str, assistant_msg_id: str) -> dict:
         "paths": [row["path"] for row in result["files"][:20]],
         "file_count": result.get("file_count", len(result["files"])),
         "truncated": result.get("file_count", len(result["files"])) > 20,
+    }
+
+
+def _history_eligibility(session_id: str, turn_id: str) -> dict:
+    opened = _open_session(session_id)
+    if opened is None:
+        return {"status": "error", "action": None, "error": "unknown session"}
+    _store, _git, index, session_dir = opened
+    node = index.nodes_by_id.get(turn_id)
+    if node is None:
+        return {"status": "error", "action": None, "error": "unknown turn"}
+    active = _active_nodes(index)
+    if not any(candidate.id == turn_id for candidate in active):
+        return {"status": "blocked", "action": None, "error": "turn is not on active branch"}
+    file_turn_ids = []
+    for candidate in active:
+        if candidate.role != "llm":
+            continue
+        summary = (candidate.metadata or {}).get("turn_files") or {}
+        if summary.get("file_count") or _manifest_mutations(session_dir, candidate.id):
+            file_turn_ids.append(candidate.id)
+    latest_file_turn = file_turn_ids[0] if file_turn_ids else None
+    reverted = bool((node.metadata or {}).get("reverted"))
+    direction = "reapply" if reverted else "revert"
+    from openprogram.store.snapshot.checkpoint import CheckpointStore
+
+    plan = CheckpointStore(session_dir).plan_history_operation(turn_id, direction)
+    if plan.get("status") != "ready":
+        return {
+            "status": plan.get("status", "unavailable"),
+            "action": None,
+            "reverted": reverted,
+            "latest_file_turn_id": latest_file_turn,
+            "conflicts": plan.get("conflicts", []),
+            "unavailable": plan.get("unavailable", []),
+            "error": plan.get("error"),
+        }
+    return {
+        "status": "ready",
+        "action": (
+            "redo" if reverted and turn_id == latest_file_turn
+            else "reapply" if reverted
+            else "undo" if turn_id == latest_file_turn
+            else "revert"
+        ),
+        "reverted": reverted,
+        "latest_file_turn_id": latest_file_turn,
+        "conflicts": [],
+        "unavailable": [],
     }
 
 
@@ -336,7 +406,9 @@ def _git_output(
 
 def _untracked_stats(path: Path) -> tuple[int | None, int | None, bool, str]:
     try:
-        info = path.stat()
+        info = os.lstat(path)
+        if stat.S_ISLNK(info.st_mode):
+            return None, None, False, "symlink"
         if not stat.S_ISREG(info.st_mode) or info.st_size > _MAX_DIFF_BYTES:
             return None, 0, False, "large"
         raw = path.read_bytes()
@@ -350,8 +422,13 @@ def _untracked_stats(path: Path) -> tuple[int | None, int | None, bool, str]:
 def _workspace_identity(path: Path) -> dict:
     try:
         info = os.lstat(path)
+        kind = (
+            "regular" if stat.S_ISREG(info.st_mode)
+            else "symlink" if stat.S_ISLNK(info.st_mode)
+            else "other"
+        )
         return {
-            "kind": "regular" if stat.S_ISREG(info.st_mode) else "other",
+            "kind": kind,
             "dev": info.st_dev,
             "ino": info.st_ino,
             "size": info.st_size,
@@ -455,7 +532,13 @@ def _state_bytes(session_dir: Path, turn_id: str, state: dict) -> tuple[bytes, s
         return b"", "available"
     if state.get("kind") != "regular" or not state.get("blob_ref"):
         raise OSError("recorded state is unavailable")
-    from openprogram.store.snapshot.checkpoint.paths import turn_backup_dir
+    from openprogram.store.snapshot.checkpoint.paths import (
+        session_backup_root,
+        turn_backup_dir,
+    )
+
+    if not _valid_turn_id(turn_id):
+        raise OSError("unsafe turn id")
 
     blob_ref = str(state["blob_ref"])
     if (
@@ -467,6 +550,11 @@ def _state_bytes(session_dir: Path, turn_id: str, state: dict) -> tuple[bytes, s
     ):
         raise OSError("unsafe recovery blob reference")
     directory = turn_backup_dir(session_dir, turn_id)
+    recovery_root = session_backup_root(session_dir).resolve()
+    try:
+        directory.resolve().relative_to(recovery_root)
+    except (OSError, ValueError):
+        raise OSError("recovery directory escapes session root") from None
     directory_info = os.lstat(directory)
     if not stat.S_ISDIR(directory_info.st_mode) or stat.S_ISLNK(directory_info.st_mode):
         raise OSError("unsafe recovery directory")
@@ -529,9 +617,11 @@ def _net_stats(
     budget[0] -= cost
     before_lines = before_raw.decode("utf-8", errors="replace").splitlines()
     after_lines = after_raw.decode("utf-8", errors="replace").splitlines()
+    if len(before_lines) + len(after_lines) > 5_000:
+        return None, None, False, "timeout"
     added = removed = 0
     for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
-        a=before_lines, b=after_lines, autojunk=False,
+        a=before_lines, b=after_lines, autojunk=True,
     ).get_opcodes():
         if tag in {"insert", "replace"}:
             added += j2 - j1
@@ -568,11 +658,32 @@ def _render_diff(
 
 def _page_diff_lines(lines, cursor: int = 0) -> dict:
     start = max(0, cursor)
-    iterator = itertools.islice(lines, start, None)
     page: list[str] = []
     byte_count = 0
     has_more = False
-    for line in iterator:
+    consumed = 0
+    old_line: int | None = None
+    new_line: int | None = None
+    hunk_pattern = re.compile(r"^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@")
+    for index, line in enumerate(lines):
+        if index < start:
+            match = hunk_pattern.match(line)
+            if match:
+                old_line, new_line = int(match.group(1)), int(match.group(2))
+            elif old_line is not None and new_line is not None:
+                if line.startswith("-") and not line.startswith("---"):
+                    old_line += 1
+                elif line.startswith("+") and not line.startswith("+++"):
+                    new_line += 1
+                elif line.startswith(" "):
+                    old_line += 1
+                    new_line += 1
+            continue
+        if not page and start > 0 and old_line is not None and new_line is not None \
+                and not line.startswith("@@"):
+            synthetic = f"@@ -{old_line} +{new_line} @@\n"
+            page.append(synthetic)
+            byte_count += len(synthetic)
         encoded_size = len(line.encode("utf-8", errors="replace"))
         if encoded_size > _MAX_DIFF_LINE_BYTES:
             return {"diff": "", "diff_state": "large_line", "cursor": start}
@@ -581,12 +692,13 @@ def _page_diff_lines(lines, cursor: int = 0) -> dict:
             break
         page.append(line)
         byte_count += encoded_size
+        consumed += 1
     return {
         "diff": "".join(page),
         "diff_state": "available",
         "cursor": start,
-        "next_cursor": start + len(page) if has_more else None,
-        "prev_cursor": max(0, start - _MAX_DIFF_LINES) if start > 0 else None,
+        "next_cursor": start + consumed if has_more else None,
+        "prev_cursor": None,
         "line_count": len(page),
     }
 
@@ -597,7 +709,9 @@ def _turn_file_diff(
     opened = _open_session(session_id)
     if opened is None:
         return {"diff": "", "diff_state": "unavailable", "error": "unknown session"}
-    _store, _git, _index, session_dir = opened
+    _store, _git, index, session_dir = opened
+    if not _valid_turn_id(turn_id) or turn_id not in index.nodes_by_id:
+        return {"diff": "", "diff_state": "unavailable", "error": "unknown or unsafe turn"}
     mutation = next(
         (row for row in _manifest_mutations(session_dir, turn_id) if row.get("path") == path),
         None,
@@ -647,15 +761,17 @@ def _workspace_file_diff(
     root = _project_root(session_id)
     if root is None:
         return {"diff": "", "diff_state": "unavailable", "error": "workspace unavailable"}
+    root = Path(os.path.abspath(root))
+    candidate = Path(os.path.abspath(path))
     try:
-        rel = str(Path(path).resolve().relative_to(root))
+        rel = str(candidate.relative_to(root))
     except (OSError, ValueError):
         return {"diff": "", "diff_state": "unavailable", "error": "path is outside workspace"}
     scope = _workspace_scope(session_id)
     if scope.get("status") != "ready" or scope.get("snapshot_id") != snapshot_id:
         return {"diff": "", "diff_state": "unavailable", "error": "stale workspace snapshot"}
     member = next(
-        (row for row in scope.get("files", []) if Path(row["path"]).resolve() == Path(path).resolve()),
+        (row for row in scope.get("files", []) if Path(os.path.abspath(row["path"])) == candidate),
         None,
     )
     if member is None:
@@ -677,9 +793,8 @@ def _workspace_file_diff(
             raw.decode("utf-8", errors="replace").splitlines(keepends=True),
             cursor,
         )
-    file_path = root / rel
     try:
-        raw = file_path.read_bytes()
+        raw = _read_workspace_file(root, rel, member.get("workspace_identity") or {})
     except OSError as exc:
         return {"diff": "", "diff_state": "unavailable", "error": str(exc)}
     if len(raw) > _MAX_DIFF_BYTES:
@@ -691,6 +806,54 @@ def _workspace_file_diff(
         fromfile="/dev/null", tofile=f"b/{rel}", n=3,
     )
     return _page_diff_lines(lines, cursor)
+
+
+def _read_workspace_file(root: Path, rel: str, identity: dict) -> bytes:
+    relative = Path(rel)
+    if relative.is_absolute() or ".." in relative.parts or not relative.name:
+        raise OSError("unsafe workspace path")
+    if identity.get("kind") != "regular":
+        raise OSError("workspace path is not a regular file")
+    descriptor = os.open(
+        root,
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+    )
+    try:
+        for component in relative.parts[:-1]:
+            child = os.open(
+                component,
+                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=descriptor,
+            )
+            os.close(descriptor)
+            descriptor = child
+        file_descriptor = os.open(
+            relative.name,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=descriptor,
+        )
+        try:
+            info = os.fstat(file_descriptor)
+            if not stat.S_ISREG(info.st_mode) or (
+                info.st_dev,
+                info.st_ino,
+                info.st_size,
+                info.st_mtime_ns,
+            ) != (
+                identity.get("dev"),
+                identity.get("ino"),
+                identity.get("size"),
+                identity.get("mtime_ns"),
+            ):
+                raise OSError("stale workspace snapshot")
+            if info.st_size > _MAX_DIFF_BYTES:
+                raise _OutputLimitError("workspace file exceeds review limit")
+            return os.read(file_descriptor, _MAX_DIFF_BYTES + 1)
+        finally:
+            os.close(file_descriptor)
+    finally:
+        os.close(descriptor)
 
 
 async def _run(fn) -> Any:
@@ -812,6 +975,27 @@ async def handle_review_file_diff(ws, cmd: dict) -> None:
     }, default=str))
 
 
+async def handle_turn_history_state(ws, cmd: dict) -> None:
+    session_id = (cmd.get("session_id") or "").strip()
+    turn_id = (cmd.get("assistant_msg_id") or "").strip()
+    from openprogram.webui import server as server
+    if not session_id or not turn_id:
+        result = {"status": "error", "action": None, "error": "session_id and assistant_msg_id are required"}
+    elif server._is_run_active(session_id):
+        result = {"status": "blocked", "action": None, "error": "run_active"}
+    else:
+        result = await _run(lambda: _history_eligibility(session_id, turn_id))
+    await ws.send_text(json.dumps({
+        "type": "turn_history_state_result",
+        "data": {
+            "session_id": session_id,
+            "assistant_msg_id": turn_id,
+            "request_id": cmd.get("request_id"),
+            **result,
+        },
+    }, default=str))
+
+
 async def handle_revert_turn(ws, cmd: dict) -> None:
     session_id = (cmd.get("session_id") or "").strip()
     msg_id = (cmd.get("msg_id") or "").strip()
@@ -869,6 +1053,7 @@ ACTIONS = {
     "turn_file_diff": handle_turn_file_diff,
     "review_scope": handle_review_scope,
     "review_file_diff": handle_review_file_diff,
+    "turn_history_state": handle_turn_history_state,
     "revert_turn": handle_revert_turn,
     "reapply_turn": handle_reapply_turn,
 }

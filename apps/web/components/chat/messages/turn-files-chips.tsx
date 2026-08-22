@@ -73,16 +73,17 @@ export function TurnFilesChips({
   blocks,
   summary,
   initiallyReverted = false,
-  isLatest = false,
+  sessionIdOverride,
 }: {
   assistantMsgId: string;
   blocks?: AssistantBlock[];
   summary?: TurnFileSummary;
   initiallyReverted?: boolean;
-  isLatest?: boolean;
+  sessionIdOverride?: string;
 }) {
   const { text } = useTranslation();
-  const sessionId = useSessionStore((state) => state.currentSessionId);
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const sessionId = sessionIdOverride ?? currentSessionId;
   const updateMessage = useSessionStore((state) => state.updateMessage);
   const project = useCurrentProject();
   const embedded = useMemo(
@@ -95,7 +96,14 @@ export function TurnFilesChips({
   const [busy, setBusy] = useState<"undo" | "redo" | null>(null);
   const [reverted, setReverted] = useState(initiallyReverted);
   const [historyError, setHistoryError] = useState("");
-  const [visible, setVisible] = useState(Boolean(embedded));
+  const [visible, setVisible] = useState(false);
+  const [historyNonce, setHistoryNonce] = useState(0);
+  const [historyState, setHistoryState] = useState<{
+    status: string;
+    operation: "undo" | "revert" | "redo" | "reapply" | null;
+    error?: string;
+  } | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const probeRef = useRef<HTMLDivElement>(null);
   const openReviewTab = useCenterTabs((state) => state.openReviewTab);
 
@@ -104,11 +112,7 @@ export function TurnFilesChips({
   }, [initiallyReverted]);
 
   useEffect(() => {
-    if (embedded) {
-      setVisible(true);
-      setFileCount(summary?.file_count ?? embedded.length);
-      return;
-    }
+    if (embedded) setFileCount(summary?.file_count ?? embedded.length);
     const target = probeRef.current;
     if (!target || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(
@@ -123,6 +127,40 @@ export function TurnFilesChips({
     observer.observe(target);
     return () => observer.disconnect();
   }, [embedded, summary?.file_count]);
+
+  useEffect(() => {
+    if (!visible || !sessionId) return;
+    const socket = getSocket();
+    if (!socket) return;
+    const requestId = crypto.randomUUID();
+    const onMessage = (event: MessageEvent) => {
+      try {
+        const frame = JSON.parse(event.data);
+        const data = frame?.data ?? {};
+        if (
+          frame?.type !== "turn_history_state_result"
+          || data.request_id !== requestId
+          || data.assistant_msg_id !== assistantMsgId
+        ) return;
+        socket.removeEventListener("message", onMessage);
+        setHistoryState({
+          status: data.status ?? "error",
+          operation: data.action ?? null,
+          error: data.error,
+        });
+      } catch {
+        /* ignore unrelated frames */
+      }
+    };
+    socket.addEventListener("message", onMessage);
+    if (!send({
+      action: "turn_history_state",
+      session_id: sessionId,
+      assistant_msg_id: assistantMsgId,
+      request_id: requestId,
+    })) socket.removeEventListener("message", onMessage);
+    return () => socket.removeEventListener("message", onMessage);
+  }, [assistantMsgId, historyNonce, sessionId, visible]);
 
   useEffect(() => {
     if (embedded) {
@@ -199,6 +237,7 @@ export function TurnFilesChips({
         window.dispatchEvent(new CustomEvent("turn-files-history-changed", {
           detail: { sessionId, assistantMsgId },
         }));
+        setHistoryNonce((value) => value + 1);
         showToast(direction === "undo"
           ? text("Changes reverted", "修改已撤回")
           : text("Changes reapplied", "修改已重做"));
@@ -207,6 +246,39 @@ export function TurnFilesChips({
       }
     };
     socket.addEventListener("message", onMessage);
+  }
+
+  function loadMore() {
+    if (!sessionId || loadingMore) return;
+    const socket = getSocket();
+    if (!socket) return;
+    setLoadingMore(true);
+    const onMessage = (event: MessageEvent) => {
+      try {
+        const frame = JSON.parse(event.data);
+        const data = frame?.data ?? {};
+        if (
+          frame?.type !== "list_turn_files_result"
+          || data.assistant_msg_id !== assistantMsgId
+        ) return;
+        socket.removeEventListener("message", onMessage);
+        setLoadingMore(false);
+        setFiles((data.files ?? []).slice(0, MAX_CARD_FILES));
+        setFileCount(data.file_count ?? data.files?.length ?? 0);
+        setShowAll(true);
+      } catch {
+        /* ignore unrelated frames */
+      }
+    };
+    socket.addEventListener("message", onMessage);
+    if (!send({
+      action: "list_turn_files",
+      session_id: sessionId,
+      assistant_msg_id: assistantMsgId,
+    })) {
+      socket.removeEventListener("message", onMessage);
+      setLoadingMore(false);
+    }
   }
 
   if (!files) {
@@ -232,17 +304,22 @@ export function TurnFilesChips({
   const shown = showAll
     ? files.slice(0, MAX_CARD_FILES)
     : files.slice(0, COLLAPSE_AFTER);
-  const restorable = summary?.recoverability
-    ? summary.recoverability === "exact"
-    : files.every((file) => file.recoverability === "exact");
-  const actionLabel = reverted
-    ? isLatest ? text("Redo", "重做") : text("Reapply", "重新应用")
-    : isLatest ? text("Undo", "撤回") : text("Revert", "还原本轮");
+  const currentAction = historyState?.operation ?? null;
+  const actionLabel = currentAction === "undo"
+    ? text("Undo", "撤回")
+    : currentAction === "revert"
+      ? text("Revert", "还原本轮")
+      : currentAction === "redo"
+        ? text("Redo", "重做")
+        : currentAction === "reapply"
+          ? text("Reapply", "重新应用")
+          : "";
   const totalLines = (totalAdded ?? 0) + (totalRemoved ?? 0);
   const addRatio = totalLines ? Math.round(((totalAdded ?? 0) / totalLines) * 100) : 50;
 
   return (
     <div
+      ref={probeRef}
       className="turn-files-card"
       data-reverted={reverted ? "1" : "0"}
       data-reverting={busy ? "1" : "0"}
@@ -267,15 +344,19 @@ export function TurnFilesChips({
           </span>
         </span>
         <span className="turn-files-summary-actions">
-          {restorable ? (
+          {currentAction ? (
             <button
               type="button"
               className="turn-files-action"
               disabled={Boolean(busy)}
-              onClick={() => historyAction(reverted ? "redo" : "undo")}
+              onClick={() => historyAction(
+                currentAction === "redo" || currentAction === "reapply"
+                  ? "redo"
+                  : "undo",
+              )}
             >
               <span>{busy ? text("Working…", "处理中…") : actionLabel}</span>
-              <span className={`turn-files-action-icon${reverted ? " turn-files-redo-icon" : ""}`}>
+              <span className={`turn-files-action-icon${currentAction === "redo" || currentAction === "reapply" ? " turn-files-redo-icon" : ""}`}>
                 <UndoIcon size={14} />
               </span>
             </button>
@@ -316,11 +397,20 @@ export function TurnFilesChips({
         ))}
       </div>
 
-      {!showAll && files.length > COLLAPSE_AFTER ? (
-        <button type="button" className="turn-files-more" onClick={() => setShowAll((value) => !value)}>
+      {!showAll && (files.length > COLLAPSE_AFTER || fileCount > files.length) ? (
+        <button
+          type="button"
+          className="turn-files-more"
+          disabled={loadingMore}
+          onClick={() => fileCount > files.length ? loadMore() : setShowAll(true)}
+        >
           {text(
-            `Show ${Math.min(MAX_CARD_FILES - COLLAPSE_AFTER, files.length - COLLAPSE_AFTER)} more files`,
-            `再显示 ${Math.min(MAX_CARD_FILES - COLLAPSE_AFTER, files.length - COLLAPSE_AFTER)} 个文件`,
+            loadingMore
+              ? "Loading more files…"
+              : `Show ${Math.min(MAX_CARD_FILES - COLLAPSE_AFTER, fileCount - COLLAPSE_AFTER)} more files`,
+            loadingMore
+              ? "正在加载更多文件…"
+              : `再显示 ${Math.min(MAX_CARD_FILES - COLLAPSE_AFTER, fileCount - COLLAPSE_AFTER)} 个文件`,
           )}
         </button>
       ) : showAll ? (
@@ -337,11 +427,11 @@ export function TurnFilesChips({
           {text(`Review all ${fileCount} files`, `审阅全部 ${fileCount} 个文件`)}
         </button>
       ) : null}
-      {!restorable ? (
+      {historyState && historyState.status !== "ready" ? (
         <div className="turn-files-blocked">
-          {text(
-            "One or more files have no exact recovery baseline. Review remains available.",
-            "一个或多个文件缺少精确恢复基线，仍可审阅。",
+          {historyState.error || text(
+            "The current file state does not pass history preflight. Review remains available.",
+            "当前文件状态未通过历史操作预检，仍可审阅。",
           )}
         </div>
       ) : null}

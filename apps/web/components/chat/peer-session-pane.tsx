@@ -223,7 +223,9 @@ export function PeerSessionPane({
               {text("Loading conversation…", "加载会话中…")}
             </div>
           ) : (
-            ids.map((id) => <MessageRow key={id} id={id} isLatest={false} />)
+            ids.map((id) => (
+              <MessageRow key={id} id={id} sessionIdOverride={sessionId ?? undefined} />
+            ))
           )}
         </div>
       </div>

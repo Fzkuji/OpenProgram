@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -286,7 +287,7 @@ def test_revert_turn_action_reports_error(store):
 def test_actions_registered():
     assert set(tf.ACTIONS) == {
         "list_turn_files", "turn_file_diff", "review_scope", "review_file_diff",
-        "revert_turn", "reapply_turn",
+        "turn_history_state", "revert_turn", "reapply_turn",
     }
 
 
@@ -481,6 +482,19 @@ def test_workspace_diff_rejects_ignored_path_not_in_scope(store, tmp_path, monke
     assert data["request_id"] == "ignored-probe"
     assert data["diff"] == ""
     assert "SECRET=hidden" not in json.dumps(data)
+    visible_link = root / "visible-link"
+    visible_link.symlink_to(secret)
+    linked_scope = tf._workspace_scope("session")
+    link_result = tf._workspace_file_diff(
+        "session", str(visible_link), linked_scope["snapshot_id"],
+    )
+    direct_secret = tf._workspace_file_diff(
+        "session", str(secret), linked_scope["snapshot_id"],
+    )
+    assert link_result["diff"] == ""
+    assert "not a regular file" in link_result["error"]
+    assert direct_secret["diff"] == ""
+    assert "SECRET=hidden" not in json.dumps([link_result, direct_secret])
 
 
 def test_turn_diff_rejects_escaping_or_corrupt_blob(store, tmp_path):
@@ -518,6 +532,11 @@ def test_turn_diff_rejects_escaping_or_corrupt_blob(store, tmp_path):
     corrupt = tf._turn_file_diff(session_id, msg_id, str(target))
     assert corrupt["diff_state"] == "unavailable"
     assert "mismatch" in corrupt["error"]
+    unsafe_turn = tf._turn_file_diff(
+        session_id, "../../../outside", str(target),
+    )
+    assert unsafe_turn["diff_state"] == "unavailable"
+    assert "unsafe turn" in unsafe_turn["error"]
 
 
 def test_branch_scope_reports_net_zero_as_no_change(store, tmp_path):
@@ -616,3 +635,92 @@ def test_diff_page_mounts_at_most_two_hundred_lines(store, tmp_path):
     assert first["line_count"] <= 200
     assert first["next_cursor"] is not None
     assert second["line_count"] <= 200
+    assert second["diff"].startswith("@@")
+    assert second["prev_cursor"] is None
+
+
+def test_latest_file_turn_remains_undo_after_later_chat_only_reply(store, tmp_path):
+    session_id = "s_latest_file"
+    _seed(store, session_id, "a1")
+    target = tmp_path / "latest.py"
+    target.write_text("before\n", encoding="utf-8")
+    journal = CheckpointStore(store._session_dir(session_id))
+    journal.backup_before_edit("a1", str(target))
+    target.write_text("after\n", encoding="utf-8")
+    journal.commit_after_edit("a1", str(target), operation="edit")
+    store.append_message(session_id, {
+        "id": "u2", "role": "user", "content": "explain", "predecessor": "a1",
+    })
+    store.append_message(session_id, {
+        "id": "a2", "role": "assistant", "content": "text only", "predecessor": "u2",
+    })
+
+    result = tf._history_eligibility(session_id, "a1")
+
+    assert result["status"] == "ready"
+    assert result["action"] == "undo"
+    assert result["latest_file_turn_id"] == "a1"
+
+
+def test_history_action_hidden_when_current_digest_changed(store, tmp_path):
+    session_id, msg_id = "s_history_conflict", "u1_reply"
+    _seed(store, session_id, msg_id)
+    target = tmp_path / "conflict.py"
+    target.write_text("before\n", encoding="utf-8")
+    journal = CheckpointStore(store._session_dir(session_id))
+    journal.backup_before_edit(msg_id, str(target))
+    target.write_text("after\n", encoding="utf-8")
+    journal.commit_after_edit(msg_id, str(target), operation="edit")
+    target.write_text("external\n", encoding="utf-8")
+
+    result = tf._history_eligibility(session_id, msg_id)
+
+    assert result["status"] == "blocked"
+    assert result["action"] is None
+    assert result["conflicts"] == [str(target)]
+
+
+def test_card_file_expansion_is_capped_at_twenty(store, tmp_path):
+    session_id, msg_id = "s_card_cap", "u1_reply"
+    _seed(store, session_id, msg_id)
+    journal = CheckpointStore(store._session_dir(session_id))
+    for number in range(21):
+        target = tmp_path / f"card-{number}.py"
+        target.write_text("before\n", encoding="utf-8")
+        journal.backup_before_edit(msg_id, str(target))
+        target.write_text("after\n", encoding="utf-8")
+        journal.commit_after_edit(msg_id, str(target), operation="edit")
+
+    result = tf._list_files(session_id, msg_id)
+
+    assert result["file_count"] == 21
+    assert len(result["files"]) == 20
+    assert result["truncated"] is True
+
+
+def test_branch_net_stats_declines_large_repetitive_line_sets(store):
+    from openprogram.store.snapshot.checkpoint.paths import turn_backup_dir
+
+    session_id = "s_stats_budget"
+    _seed(store, session_id, "a1")
+    session_dir = store._session_dir(session_id)
+    before_raw = b"x\n" * 5_000
+    after_raw = b"y\n" * 5_000
+    states = []
+    for turn_id, name, raw in (
+        ("a1", "before", before_raw),
+        ("a2", "after", after_raw),
+    ):
+        directory = turn_backup_dir(session_dir, turn_id)
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / name).write_bytes(raw)
+        states.append({
+            "kind": "regular", "blob_ref": name, "size": len(raw),
+            "digest": f"sha256:{hashlib.sha256(raw).hexdigest()}",
+        })
+
+    result = tf._net_stats(
+        session_dir, "a1", states[0], "a2", states[1], [8 * 1024 * 1024],
+    )
+
+    assert result == (None, None, False, "timeout")

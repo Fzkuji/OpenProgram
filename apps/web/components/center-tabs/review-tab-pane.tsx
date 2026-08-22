@@ -80,6 +80,7 @@ export function ReviewTabPane({
   const [selectedPath, setSelectedPath] = useState(initialPath ?? "");
   const [fileCursor, setFileCursor] = useState(0);
   const [diffCursor, setDiffCursor] = useState(0);
+  const [diffHistory, setDiffHistory] = useState<number[]>([]);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [category, setCategory] = useState<ReviewCategory>("All");
   const [scopeState, setScopeState] = useState<ScopeState>({
@@ -97,6 +98,7 @@ export function ReviewTabPane({
     setSelectedPath(initialPath ?? "");
     setFileCursor(0);
     setDiffCursor(0);
+    setDiffHistory([]);
   }, [initialScope, initialPath, sessionId, assistantMsgId]);
 
   useEffect(() => {
@@ -280,6 +282,7 @@ export function ReviewTabPane({
                 setScope(value);
                 setFileCursor(0);
                 setDiffCursor(0);
+                setDiffHistory([]);
               }}
               disabled={value === "turn" && !assistantMsgId}
             >
@@ -323,6 +326,7 @@ export function ReviewTabPane({
               onClick={() => {
                 setSelectedPath(file.path);
                 setDiffCursor(0);
+                setDiffHistory([]);
               }}
               title={file.path}
             >
@@ -367,15 +371,22 @@ export function ReviewTabPane({
               <div className={styles.diffPagination}>
                 <button
                   type="button"
-                  disabled={diffState.prev_cursor == null || diffState.loading}
-                  onClick={() => setDiffCursor(diffState.prev_cursor ?? 0)}
+                  disabled={diffHistory.length === 0 || diffState.loading}
+                  onClick={() => {
+                    const prior = diffHistory[diffHistory.length - 1] ?? 0;
+                    setDiffHistory((history) => history.slice(0, -1));
+                    setDiffCursor(prior);
+                  }}
                 >
                   {text("Previous", "上一页")}
                 </button>
                 <button
                   type="button"
                   disabled={diffState.next_cursor == null || diffState.loading}
-                  onClick={() => setDiffCursor(diffState.next_cursor ?? 0)}
+                  onClick={() => {
+                    setDiffHistory((history) => [...history, diffCursor]);
+                    setDiffCursor(diffState.next_cursor ?? 0);
+                  }}
                 >
                   {text("Next", "下一页")}
                 </button>

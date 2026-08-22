@@ -19,6 +19,9 @@ assert.match(card, /text\("Undo"/);
 assert.match(card, /text\("Redo"/);
 assert.match(card, /openReviewTab/);
 assert.match(card, /IntersectionObserver/);
+assert.match(card, /const MAX_CARD_FILES = 20/);
+assert.match(card, /function loadMore\(\)/);
+assert.match(card, /action: "turn_history_state"/);
 assert.match(card, /updateMessage\(sessionId, assistantMsgId/);
 assert.match(card, /turn-files-history-changed/);
 assert.match(review, /turn-files-history-changed/);
@@ -37,5 +40,9 @@ assert.match(cardCss, /\.turn-files-summary\{height:40px;min-height:40px/);
 assert.match(cardCss, /\.turn-files-logo\{width:19px;height:19px/);
 assert.match(cardCss, /\.turn-files-meter/);
 assert.match(cardCss, /@media\(max-width:420px\)/);
+assert.doesNotMatch(
+  cardCss,
+  /@media\(max-width:420px\)[\s\S]*?turn-files-logo[^}]*?(?:width|height):17px/,
+);
 
 console.log("check-review-ui: ok");

@@ -102,9 +102,9 @@ function TypingIndicator() {
   );
 }
 
-export function AssistantBubble({ msg, verdict, isLatest = false }: {
+export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
   msg: ChatMsg;
-  isLatest?: boolean;
+  sessionIdOverride?: string;
   /** goal 判定/完善内部轮：正文里剥出来的 JSON 尾巴 —— 折成一条
    *  <details>（summary = 裁决摘要，展开 = 原始 JSON，调试用）。
    *  由 message-list 的 AssistantMessage 包装层识别并传入；持久化
@@ -552,7 +552,7 @@ export function AssistantBubble({ msg, verdict, isLatest = false }: {
               blocks={msg.blocks}
               summary={msg.turnFiles}
               initiallyReverted={msg.reverted}
-              isLatest={isLatest}
+              sessionIdOverride={sessionIdOverride}
             />
           ) : null}
         </div>
