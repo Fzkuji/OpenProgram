@@ -31,6 +31,7 @@ import { convToChatMsgs } from "@/lib/conv-mapper";
 import { navigate } from "@/lib/navigate";
 import { useSessionStore } from "@/lib/session-store";
 import { pushBranchInfo } from "@/lib/top-bar-sync";
+import { showToast } from "@/lib/format-utils/toast";
 import {
   readChatScroll,
   restoreChatScrollIfCurrent,
@@ -370,9 +371,14 @@ export function onBranchCheckedOut(payload: {
 export function onWorkspaceAlignmentResolved(payload: {
   ok?: boolean;
   session_id?: string;
+  error?: string;
   workspace_alignment?: import("@/lib/session-store/types").ConvSummary["workspace_alignment"];
 }): void {
-  if (!payload?.ok || !payload.session_id) return;
+  if (!payload?.ok) {
+    showToast(payload?.error || "Workspace alignment failed");
+    return;
+  }
+  if (!payload.session_id) return;
   const store = useSessionStore.getState();
   const existing = store.conversations[payload.session_id] ?? {
     id: payload.session_id,
