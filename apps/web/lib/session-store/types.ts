@@ -267,6 +267,7 @@ export interface TurnFileSummary {
   file_count: number;
   added: number | null;
   removed: number | null;
+  recoverability?: "exact" | "unavailable";
 }
 
 export interface AssistantBlock {

@@ -46,6 +46,7 @@ import {
   nextBrowserHomeId,
   nextNtpId,
   nextPopupWebTabId,
+  reviewTabId,
   sessionTabId,
   webTabId,
 } from "@/lib/state/center-tab-ids";
@@ -54,11 +55,13 @@ export {
   builtinTabId,
   fileTabId,
   normalizeWebUrl,
+  reviewTabId,
   sessionTabId,
   webTabId,
 } from "@/lib/state/center-tab-ids";
 export type { BuiltinPage } from "@/lib/state/center-tab-ids";
 import type { BuiltinPage } from "@/lib/state/center-tab-ids";
+import { openReviewTabLayout } from "@/lib/state/review-tab-layout";
 import {
   clampSplitRatio,
   desktopWindowId,
@@ -599,20 +602,12 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
 
     openReviewTab: (sessionId, assistantMsgId, scope = "turn", path) =>
       set((s) => {
-        const id = builtinTabId("review");
-        const context = {
-          reviewSessionId: sessionId,
-          reviewMsgId: assistantMsgId,
-          reviewScope: scope,
-          reviewPath: path,
-        };
-        return focusOrCreate(
-          s,
-          id,
-          () => ({ id, kind: "builtin", title: "", page: "review", ...context }),
-          [],
-          (tab) => ({ ...tab, ...context }),
+        const next = openReviewTabLayout(
+          s.tabs, s.groups, sessionId, assistantMsgId, scope, path,
         );
+        return commitCenterTabsState(s, {
+          tabs: next.tabs, groups: next.groups, activeId: next.id,
+        });
       }),
 
     openWebTab: (url) =>

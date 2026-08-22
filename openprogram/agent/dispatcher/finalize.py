@@ -65,10 +65,17 @@ def persist_turn_file_summary(
         known_removed = [row["removed"] for row in files if row["removed"] is not None]
         summary = {
             "version": 2,
-            "files": files,
+            # Transcript payload stays bounded: the chat card needs only the
+            # first three rows. Review pages the complete journal separately.
+            "files": files[:3],
             "file_count": len(files),
             "added": sum(known_added) if len(known_added) == len(files) else None,
             "removed": sum(known_removed) if len(known_removed) == len(files) else None,
+            "recoverability": (
+                "exact"
+                if all(row["recoverability"] == "exact" for row in files)
+                else "unavailable"
+            ),
         }
         pair = store._open(session_id)
         if pair is None:

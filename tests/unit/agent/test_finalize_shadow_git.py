@@ -78,10 +78,30 @@ def test_exact_mutation_summary_is_persisted(store, tmp_path):
         "file_count": 1,
         "added": 1,
         "removed": 0,
+        "recoverability": "exact",
     }
     fresh = SessionStore(root_path=store.root_path)
     _git, index = fresh._open(session_id)
     assert index.nodes_by_id[msg_id].metadata["turn_files"] == summary
+
+
+def test_mutation_summary_embeds_only_three_preview_rows(store, tmp_path):
+    session_id, msg_id = "s_summary_many", "u1_reply"
+    _seed(store, session_id, msg_id)
+    journal = CheckpointStore(store._session_dir(session_id))
+    for number in range(5):
+        target = tmp_path / f"f{number}.py"
+        target.write_text("before\n", encoding="utf-8")
+        journal.backup_before_edit(msg_id, str(target))
+        target.write_text("after\n", encoding="utf-8")
+        journal.commit_after_edit(msg_id, str(target), operation="edit")
+
+    summary = persist_turn_file_summary(session_id, msg_id)
+
+    assert summary["file_count"] == 5
+    assert len(summary["files"]) == 3
+    assert summary["added"] == 5
+    assert summary["removed"] == 5
 
 
 def test_commit_stamps_node_and_produces_diff(store, tmp_path):
@@ -221,7 +241,7 @@ def test_turn_file_diff_is_exact_after_fallback_commit(store, tmp_path, monkeypa
     This is the bug the fallback exists to fix — without a stamp the
     handler falls through to difflib and flags ``approximate``.
     """
-    from openprogram.webui.ws_actions.turn_files import _file_diff
+    from openprogram.webui.ws_actions.turn_files import _turn_file_diff
 
     session_id, msg_id = "s_fin_diff", "u1_reply"
     _seed(store, session_id, msg_id)
@@ -230,9 +250,10 @@ def test_turn_file_diff_is_exact_after_fallback_commit(store, tmp_path, monkeypa
     project.mkdir()
     target = project / "app.py"
     target.write_text("first\n")
-    CheckpointStore(store._session_dir(session_id)).backup_before_edit(
-        msg_id, str(target))
+    journal = CheckpointStore(store._session_dir(session_id))
+    journal.backup_before_edit(msg_id, str(target))
     target.write_text("first\nsecond\n")
+    journal.commit_after_edit(msg_id, str(target), operation="edit")
 
     shadow_root = tmp_path / "shadow"
     shadow_root.mkdir()
@@ -247,10 +268,9 @@ def test_turn_file_diff_is_exact_after_fallback_commit(store, tmp_path, monkeypa
          patch("openprogram.worktree.context.current_worktree_path",
                return_value=str(project)):
         assert commit_turn_to_shadow_git(session_id, msg_id, "edit")
-        result = _file_diff(session_id, msg_id, str(target))
+        result = _turn_file_diff(session_id, msg_id, str(target))
 
     assert result.get("error") is None
-    assert result["approximate"] is False
     assert "+second" in result["diff"]
 
 

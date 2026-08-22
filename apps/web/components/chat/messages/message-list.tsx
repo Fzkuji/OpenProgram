@@ -18,6 +18,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -103,7 +104,7 @@ function isVerdictShape(d: Record<string, unknown>): boolean {
  *  2) 主 lane 回复尾部被模型依样画出的判定 JSON —— 精确五键
  *     verdict schema（见 isVerdictShape）。
  *  展开后仍是原始 JSON（调试）。其余消息原样走 AssistantBubble。 */
-function AssistantMessage({ msg }: { msg: ChatMsg }) {
+function AssistantMessage({ msg, isLatest }: { msg: ChatMsg; isLatest: boolean }) {
   const { text } = useTranslation();
   const spawnLabel = useSessionStore((s) =>
     msg.calledBy ? s.messagesById[msg.calledBy]?.spawnedFrom?.label : undefined,
@@ -114,7 +115,7 @@ function AssistantMessage({ msg }: { msg: ChatMsg }) {
     && msg.status !== "pending";
   const split = settled ? splitJsonTail(msg.content || "") : null;
   if (!split || (!isGoalSpawn && !isVerdictShape(split.data))) {
-    return <AssistantBubble msg={msg} />;
+    return <AssistantBubble msg={msg} isLatest={isLatest} />;
   }
   // blocks 路径渲染的是 text 块不是 content —— 同步剥掉最后一个 text
   // 块的 JSON 尾巴，两条渲染路径一致。
@@ -148,11 +149,12 @@ function AssistantMessage({ msg }: { msg: ChatMsg }) {
     <AssistantBubble
       msg={{ ...msg, content: split.prose, blocks }}
       verdict={{ summary, json: JSON.stringify(split.data, null, 2) }}
+      isLatest={isLatest}
     />
   );
 }
 
-function dispatch(msg: ChatMsg) {
+function dispatch(msg: ChatMsg, isLatest: boolean) {
   if (msg.role === "system") {
     return (
       <div className="message system" data-msg-id={msg.id}>
@@ -195,13 +197,19 @@ function dispatch(msg: ChatMsg) {
   if (msg.role === "user") {
     return <UserBubble msg={msg} />;
   }
-  return <AssistantMessage msg={msg} />;
+  return <AssistantMessage msg={msg} isLatest={isLatest} />;
 }
 
-export const MessageRow = memo(function MessageRow({ id }: { id: string }) {
+export const MessageRow = memo(function MessageRow({
+  id,
+  isLatest,
+}: {
+  id: string;
+  isLatest: boolean;
+}) {
   const msg = useMessageById(id);
   if (!msg) return null;
-  return dispatch(msg);
+  return dispatch(msg, isLatest);
 });
 
 /** Pin `#chatArea` to the bottom as `#chatMessages` grows, unless the
@@ -408,6 +416,16 @@ export function MessageList() {
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const chatKey = useSessionStore((s) => s.activeChatKey);
   const ids = useMessageIds(sessionId);
+  const latestAssistantId = useMemo(() => {
+    const messages = useSessionStore.getState().messagesById;
+    for (let index = ids.length - 1; index >= 0; index--) {
+      const message = messages[ids[index]];
+      if (message?.role === "assistant" && message.display !== "runtime") {
+        return message.id;
+      }
+    }
+    return null;
+  }, [ids]);
   const runningTask = useSessionStore((s) =>
     sessionId ? s.runningTasks[sessionId] ?? null : null,
   );
@@ -531,7 +549,7 @@ export function MessageList() {
       <AgentBranchBanner />
       <MessageRail />
       {ids.map((id) => (
-        <MessageRow key={id} id={id} />
+        <MessageRow key={id} id={id} isLatest={id === latestAssistantId} />
       ))}
       {showPending ? (
         <PendingReplyIndicator timestamp={runningTask?.started_at} />

@@ -10,6 +10,7 @@ import { UnifiedDiff } from "@/components/chat/messages/unified-diff";
 import styles from "./review-tab-pane.module.css";
 
 type ReviewScope = "turn" | "branch" | "workspace";
+type ReviewCategory = "All" | "Code" | "Tests" | "Docs" | "Large";
 
 interface ReviewFile {
   path: string;
@@ -30,6 +31,10 @@ interface ScopeState {
   file_count: number;
   added: number | null;
   removed: number | null;
+  snapshot_id?: string;
+  cursor?: number;
+  next_cursor?: number | null;
+  prev_cursor?: number | null;
   error?: string;
 }
 
@@ -38,6 +43,10 @@ interface DiffState {
   path?: string;
   diff?: string;
   diff_state?: string;
+  cursor?: number;
+  next_cursor?: number | null;
+  prev_cursor?: number | null;
+  line_count?: number;
   error?: string;
 }
 
@@ -46,6 +55,13 @@ function send(payload: unknown): boolean {
   if (!socket || socket.readyState !== WebSocket.OPEN) return false;
   socket.send(JSON.stringify(payload));
   return true;
+}
+
+function categoryOf(file: ReviewFile): ReviewCategory {
+  if (file.diff_state && file.diff_state !== "available") return "Large";
+  if (/(^|\/)(tests?|specs?)(\/|_|-)/i.test(file.rel)) return "Tests";
+  if (/\.(md|mdx|rst|txt)$/i.test(file.rel)) return "Docs";
+  return "Code";
 }
 
 export function ReviewTabPane({
@@ -62,6 +78,10 @@ export function ReviewTabPane({
   const { text } = useTranslation();
   const [scope, setScope] = useState<ReviewScope>(initialScope);
   const [selectedPath, setSelectedPath] = useState(initialPath ?? "");
+  const [fileCursor, setFileCursor] = useState(0);
+  const [diffCursor, setDiffCursor] = useState(0);
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const [category, setCategory] = useState<ReviewCategory>("All");
   const [scopeState, setScopeState] = useState<ScopeState>({
     loading: true,
     status: "loading",
@@ -75,7 +95,18 @@ export function ReviewTabPane({
   useEffect(() => {
     setScope(initialScope);
     setSelectedPath(initialPath ?? "");
+    setFileCursor(0);
+    setDiffCursor(0);
   }, [initialScope, initialPath, sessionId, assistantMsgId]);
+
+  useEffect(() => {
+    const refresh = (event: Event) => {
+      const detail = (event as CustomEvent).detail ?? {};
+      if (detail.sessionId === sessionId) setRefreshNonce((value) => value + 1);
+    };
+    window.addEventListener("turn-files-history-changed", refresh);
+    return () => window.removeEventListener("turn-files-history-changed", refresh);
+  }, [sessionId]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -92,11 +123,13 @@ export function ReviewTabPane({
       return;
     }
     setScopeState((current) => ({ ...current, loading: true, error: undefined }));
+    const requestId = crypto.randomUUID();
     const onMessage = (event: MessageEvent) => {
       try {
         const frame = JSON.parse(event.data);
         const data = frame?.data ?? {};
         if (frame?.type !== "review_scope_result") return;
+        if (data.request_id !== requestId) return;
         if (data.session_id !== sessionId || data.scope !== scope) return;
         if (scope === "turn" && data.assistant_msg_id !== assistantMsgId) return;
         socket.removeEventListener("message", onMessage);
@@ -109,6 +142,10 @@ export function ReviewTabPane({
           file_count: data.file_count ?? files.length,
           added: data.added ?? null,
           removed: data.removed ?? null,
+          snapshot_id: data.snapshot_id,
+          cursor: data.cursor ?? 0,
+          next_cursor: data.next_cursor,
+          prev_cursor: data.prev_cursor,
           error: data.error,
         });
         setSelectedPath((current) => {
@@ -125,6 +162,9 @@ export function ReviewTabPane({
       session_id: sessionId,
       assistant_msg_id: assistantMsgId,
       scope,
+      cursor: fileCursor,
+      limit: 100,
+      request_id: requestId,
     });
     if (!sent) {
       socket.removeEventListener("message", onMessage);
@@ -136,20 +176,22 @@ export function ReviewTabPane({
       }));
     }
     return () => socket.removeEventListener("message", onMessage);
-  }, [assistantMsgId, scope, sessionId, text]);
+  }, [assistantMsgId, fileCursor, refreshNonce, scope, sessionId, text]);
 
   useEffect(() => {
     const socket = getSocket();
-    if (!socket || !selectedPath) {
+    if (!socket || !selectedPath || !scopeState.snapshot_id) {
       setDiffState({ loading: false });
       return;
     }
     setDiffState({ loading: true, path: selectedPath });
+    const requestId = crypto.randomUUID();
     const onMessage = (event: MessageEvent) => {
       try {
         const frame = JSON.parse(event.data);
         const data = frame?.data ?? {};
         if (frame?.type !== "review_file_diff_result") return;
+        if (data.request_id !== requestId) return;
         if (
           data.session_id !== sessionId
           || data.scope !== scope
@@ -161,6 +203,10 @@ export function ReviewTabPane({
           path: selectedPath,
           diff: data.diff ?? "",
           diff_state: data.diff_state ?? "unavailable",
+          cursor: data.cursor ?? 0,
+          next_cursor: data.next_cursor,
+          prev_cursor: data.prev_cursor,
+          line_count: data.line_count,
           error: data.error,
         });
       } catch {
@@ -174,6 +220,9 @@ export function ReviewTabPane({
       assistant_msg_id: assistantMsgId,
       scope,
       path: selectedPath,
+      cursor: diffCursor,
+      snapshot_id: scopeState.snapshot_id,
+      request_id: requestId,
     })) {
       socket.removeEventListener("message", onMessage);
       setDiffState({
@@ -183,11 +232,25 @@ export function ReviewTabPane({
       });
     }
     return () => socket.removeEventListener("message", onMessage);
-  }, [assistantMsgId, scope, selectedPath, sessionId, text]);
+  }, [
+    assistantMsgId,
+    diffCursor,
+    scope,
+    scopeState.snapshot_id,
+    selectedPath,
+    sessionId,
+    text,
+  ]);
 
   const selected = useMemo(
     () => scopeState.files.find((file) => file.path === selectedPath),
     [scopeState.files, selectedPath],
+  );
+  const visibleFiles = useMemo(
+    () => category === "All"
+      ? scopeState.files
+      : scopeState.files.filter((file) => categoryOf(file) === category),
+    [category, scopeState.files],
   );
   const sourceLabel = scopeState.source === "git"
     ? "Git workspace"
@@ -213,7 +276,11 @@ export function ReviewTabPane({
               role="tab"
               aria-selected={scope === value}
               className={scope === value ? styles.scopeActive : styles.scope}
-              onClick={() => setScope(value)}
+              onClick={() => {
+                setScope(value);
+                setFileCursor(0);
+                setDiffCursor(0);
+              }}
               disabled={value === "turn" && !assistantMsgId}
             >
               {label}
@@ -230,18 +297,33 @@ export function ReviewTabPane({
 
       <div className={styles.body}>
         <aside className={styles.files} aria-label={text("Changed files", "修改的文件")}>
+          <div className={styles.categories} aria-label={text("File category", "文件分类")}>
+            {(["All", "Code", "Tests", "Docs", "Large"] as const).map((value) => (
+              <button
+                type="button"
+                key={value}
+                aria-pressed={category === value}
+                onClick={() => setCategory(value)}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
           {scopeState.loading ? (
             <div className={styles.empty}>{text("Loading files…", "正在加载文件…")}</div>
           ) : scopeState.error ? (
             <div className={styles.empty}>{scopeState.error}</div>
-          ) : scopeState.files.length === 0 ? (
+          ) : visibleFiles.length === 0 ? (
             <div className={styles.empty}>{text("No changes in this scope", "此范围没有修改")}</div>
-          ) : scopeState.files.map((file) => (
+          ) : visibleFiles.map((file) => (
             <button
               type="button"
               key={file.path}
               className={file.path === selectedPath ? styles.fileActive : styles.file}
-              onClick={() => setSelectedPath(file.path)}
+              onClick={() => {
+                setSelectedPath(file.path);
+                setDiffCursor(0);
+              }}
               title={file.path}
             >
               <FileText size={14} aria-hidden="true" />
@@ -250,13 +332,54 @@ export function ReviewTabPane({
               <em>−{file.removed ?? "—"}</em>
             </button>
           ))}
+          {!scopeState.loading && scopeState.files.length ? (
+            <div className={styles.pagination}>
+              <button
+                type="button"
+                disabled={scopeState.prev_cursor == null}
+                onClick={() => setFileCursor(scopeState.prev_cursor ?? 0)}
+              >
+                {text("Previous", "上一页")}
+              </button>
+              <span>{Math.floor((scopeState.cursor ?? 0) / 100) + 1}</span>
+              <button
+                type="button"
+                disabled={scopeState.next_cursor == null}
+                onClick={() => setFileCursor(scopeState.next_cursor ?? 0)}
+              >
+                {text("Next", "下一页")}
+              </button>
+            </div>
+          ) : null}
         </aside>
 
-        <main className={styles.diff} data-mounted-diff-count={selectedPath ? "1" : "0"}>
+        <main
+          className={styles.diff}
+          data-mounted-diff-count={selectedPath ? "1" : "0"}
+          data-mounted-diff-lines={diffState.line_count ?? 0}
+        >
           <div className={styles.diffHeader}>
             <span>{selected?.rel ?? text("Select a file", "选择一个文件")}</span>
             {selected?.turn_ids?.length ? (
               <small>{text(`${selected.turn_ids.length} turn(s)`, `${selected.turn_ids.length} 轮`)}</small>
+            ) : null}
+            {selectedPath ? (
+              <div className={styles.diffPagination}>
+                <button
+                  type="button"
+                  disabled={diffState.prev_cursor == null || diffState.loading}
+                  onClick={() => setDiffCursor(diffState.prev_cursor ?? 0)}
+                >
+                  {text("Previous", "上一页")}
+                </button>
+                <button
+                  type="button"
+                  disabled={diffState.next_cursor == null || diffState.loading}
+                  onClick={() => setDiffCursor(diffState.next_cursor ?? 0)}
+                >
+                  {text("Next", "下一页")}
+                </button>
+              </div>
             ) : null}
           </div>
           <div className={styles.diffBody}>
@@ -266,7 +389,7 @@ export function ReviewTabPane({
               <div className={styles.empty}>{text("Loading diff…", "正在加载差异…")}</div>
             ) : diffState.error ? (
               <div className={styles.empty}>{diffState.error}</div>
-            ) : diffState.diff_state === "large" ? (
+            ) : diffState.diff_state === "large" || diffState.diff_state === "large_line" ? (
               <div className={styles.empty}>{text("Diff exceeds the bounded preview size", "差异超过预览大小限制")}</div>
             ) : diffState.diff_state === "binary" ? (
               <div className={styles.empty}>{text("Binary file", "二进制文件")}</div>

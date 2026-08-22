@@ -42,6 +42,9 @@ export function webTabId(url: string): string {
 export function builtinTabId(page: BuiltinPage): string {
   return `b:${page}`;
 }
+export function reviewTabId(sessionId: string, assistantMsgId?: string): string {
+  return `r:${sessionId}:${assistantMsgId || "branch"}`;
+}
 
 /** Normalize user input into a browsable http(s) URL: trims, prefixes
  *  bare domains with https://, and rejects every other scheme

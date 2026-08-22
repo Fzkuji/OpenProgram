@@ -33,6 +33,7 @@ type RailMsg = {
   assistantSummary?: string;
   assistantTurnFiles?: TurnFileSummary;
   assistantReverted?: boolean;
+  assistantLatest?: boolean;
 };
 
 /** Delimiter for the packed form below. Message text can contain any
@@ -53,12 +54,13 @@ function packRow(r: RailMsg): string {
     r.assistantSummary ?? "",
     r.assistantTurnFiles ? JSON.stringify(r.assistantTurnFiles) : "",
     r.assistantReverted ? "1" : "",
+    r.assistantLatest ? "1" : "",
   ]
     .join(RAIL_SEP);
 }
 
 function unpackRow(packed: string): RailMsg {
-  const [id, content, preview, assistantId, assistantSummary, turnFiles, reverted] =
+  const [id, content, preview, assistantId, assistantSummary, turnFiles, reverted, latest] =
     packed.split(RAIL_SEP);
   return {
     id,
@@ -70,6 +72,7 @@ function unpackRow(packed: string): RailMsg {
       ? JSON.parse(turnFiles) as TurnFileSummary
       : undefined,
     assistantReverted: reverted === "1",
+    assistantLatest: latest === "1",
   };
 }
 
@@ -86,6 +89,14 @@ function useUserMessages(): RailMsg[] {
       const sid = s.currentSessionId;
       const order = (sid ? s.messageOrder[sid] : undefined) || EMPTY_ORDER;
       const out: string[] = [];
+      let latestAssistantId = "";
+      for (let index = order.length - 1; index >= 0; index--) {
+        const candidate = s.messagesById[order[index]];
+        if (candidate?.role === "assistant" && candidate.display !== "runtime") {
+          latestAssistantId = candidate.id;
+          break;
+        }
+      }
       for (let i = 0; i < order.length; i++) {
         const m = s.messagesById[order[i]];
         if (!m || m.role !== "user") continue;
@@ -119,6 +130,7 @@ function useUserMessages(): RailMsg[] {
             assistantSummary: assistantSummary || undefined,
             assistantTurnFiles,
             assistantReverted,
+            assistantLatest: assistantId === latestAssistantId,
           }),
         );
       }
@@ -170,6 +182,7 @@ function PreviewCard({
   assistantId,
   assistantTurnFiles,
   assistantReverted,
+  assistantLatest,
 }: {
   content: string;
   top: number;
@@ -178,6 +191,7 @@ function PreviewCard({
   assistantId?: string;
   assistantTurnFiles?: TurnFileSummary;
   assistantReverted?: boolean;
+  assistantLatest?: boolean;
 }) {
   const { attachments, text } = useMemo(
     () => parseAttachments(content),
@@ -201,6 +215,7 @@ function PreviewCard({
           assistantMsgId={assistantId}
           summary={assistantTurnFiles}
           initiallyReverted={assistantReverted}
+          isLatest={assistantLatest}
         />
       ) : null}
     </div>
@@ -389,6 +404,7 @@ export function MessageRail() {
               assistantId={msgs[hoverIdx].assistantId}
               assistantTurnFiles={msgs[hoverIdx].assistantTurnFiles}
               assistantReverted={msgs[hoverIdx].assistantReverted}
+              assistantLatest={msgs[hoverIdx].assistantLatest}
             />
           );
         })()

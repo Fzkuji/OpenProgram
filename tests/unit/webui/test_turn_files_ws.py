@@ -448,3 +448,171 @@ def test_exact_diff_payload_is_bounded(store, tmp_path):
 
     assert result["diff"] == ""
     assert result["diff_state"] == "large"
+
+
+def test_workspace_diff_rejects_ignored_path_not_in_scope(store, tmp_path, monkeypatch):
+    root = tmp_path / "repo-secret"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "t@example.com"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "T"], check=True)
+    (root / ".gitignore").write_text("*.env\n", encoding="utf-8")
+    (root / "base.txt").write_text("base\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-qm", "base"], check=True)
+    secret = root / "secret.env"
+    secret.write_text("SECRET=hidden\n", encoding="utf-8")
+    monkeypatch.setattr(tf, "_project_root", lambda _session_id: root)
+    scope = tf._workspace_scope("session")
+
+    result = tf._workspace_file_diff(
+        "session", str(secret), scope["snapshot_id"],
+    )
+
+    assert result["diff"] == ""
+    assert "not in workspace scope" in result["error"]
+    ws = FakeWS()
+    _run(tf.handle_review_file_diff(ws, {
+        "session_id": "session", "scope": "workspace",
+        "path": str(secret), "snapshot_id": scope["snapshot_id"],
+        "request_id": "ignored-probe",
+    }))
+    data = ws.sent[0]["data"]
+    assert data["request_id"] == "ignored-probe"
+    assert data["diff"] == ""
+    assert "SECRET=hidden" not in json.dumps(data)
+
+
+def test_turn_diff_rejects_escaping_or_corrupt_blob(store, tmp_path):
+    from openprogram.store.snapshot.checkpoint import manifest
+    from openprogram.store.snapshot.checkpoint.paths import (
+        turn_backup_dir,
+        turn_manifest_path,
+    )
+
+    session_id, msg_id = "s_bad_blob", "u1_reply"
+    _seed(store, session_id, msg_id)
+    target = tmp_path / "safe.py"
+    target.write_text("before\n", encoding="utf-8")
+    journal = CheckpointStore(store._session_dir(session_id))
+    journal.backup_before_edit(msg_id, str(target))
+    target.write_text("after\n", encoding="utf-8")
+    journal.commit_after_edit(msg_id, str(target), operation="edit")
+    manifest_path = turn_manifest_path(store._session_dir(session_id), msg_id)
+    value = manifest.load(manifest_path)
+    entry = next(iter(value["files"].values()))
+    original_ref = entry["after"]["blob_ref"]
+    entry["after"]["blob_ref"] = "../../outside.txt"
+    manifest.save(manifest_path, value)
+    escaped = tf._turn_file_diff(session_id, msg_id, str(target))
+    assert escaped["diff_state"] == "unavailable"
+    assert "unsafe recovery blob" in escaped["error"]
+
+    value = manifest.load(manifest_path)
+    entry = next(iter(value["files"].values()))
+    entry["after"]["blob_ref"] = original_ref
+    manifest.save(manifest_path, value)
+    (turn_backup_dir(store._session_dir(session_id), msg_id) / original_ref).write_text(
+        "tampered\n", encoding="utf-8",
+    )
+    corrupt = tf._turn_file_diff(session_id, msg_id, str(target))
+    assert corrupt["diff_state"] == "unavailable"
+    assert "mismatch" in corrupt["error"]
+
+
+def test_branch_scope_reports_net_zero_as_no_change(store, tmp_path):
+    session_id = "s_net_zero"
+    _seed(store, session_id, "a1")
+    target = tmp_path / "cycle.py"
+    target.write_text("a\n", encoding="utf-8")
+    journal = CheckpointStore(store._session_dir(session_id))
+    journal.backup_before_edit("a1", str(target))
+    target.write_text("b\n", encoding="utf-8")
+    journal.commit_after_edit("a1", str(target), operation="edit")
+    store.append_message(session_id, {
+        "id": "u2", "role": "user", "content": "restore", "predecessor": "a1",
+    })
+    store.append_message(session_id, {
+        "id": "a2", "role": "assistant", "content": "done", "predecessor": "u2",
+    })
+    journal.backup_before_edit("a2", str(target))
+    target.write_text("a\n", encoding="utf-8")
+    journal.commit_after_edit("a2", str(target), operation="edit")
+
+    result = tf._branch_scope(session_id)
+
+    assert result["files"] == []
+    assert result["added"] == 0
+    assert result["removed"] == 0
+
+
+def test_workspace_scope_preserves_rename_identity(store, tmp_path, monkeypatch):
+    root = tmp_path / "repo-rename"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "t@example.com"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "T"], check=True)
+    (root / "old.txt").write_text("same\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-qm", "base"], check=True)
+    subprocess.run(["git", "-C", str(root), "mv", "old.txt", "new.txt"], check=True)
+    monkeypatch.setattr(tf, "_project_root", lambda _session_id: root)
+
+    result = tf._workspace_scope("session")
+
+    assert result["files"][0]["op"] == "rename"
+    assert result["files"][0]["old_rel"] == "old.txt"
+    assert result["files"][0]["rel"] == "new.txt"
+    assert result["files"][0]["added"] == 0
+    assert result["files"][0]["removed"] == 0
+
+
+def test_review_scope_pages_file_rows_and_echoes_request_id(store, tmp_path):
+    session_id, msg_id = "s_scope_page", "u1_reply"
+    _seed(store, session_id, msg_id)
+    _git, index = store._open(session_id)
+    rows = [{
+        "path": str(tmp_path / f"f{number}.py"), "op": "modify",
+        "added": 1, "removed": 0, "binary": False,
+        "diff_state": "available", "recoverability": "exact",
+    } for number in range(10_000)]
+    index.nodes_by_id[msg_id].metadata = {
+        **(index.nodes_by_id[msg_id].metadata or {}),
+        "turn_files": {
+            "version": 2, "files": rows, "file_count": 10_000,
+            "added": 10_000, "removed": 0,
+        },
+    }
+    ws = FakeWS()
+    _run(tf.handle_review_scope(ws, {
+        "session_id": session_id, "assistant_msg_id": msg_id,
+        "scope": "turn", "cursor": 0, "limit": 100,
+        "request_id": "scope-request",
+    }))
+
+    data = ws.sent[0]["data"]
+    assert data["request_id"] == "scope-request"
+    assert len(data["files"]) == 100
+    assert data["next_cursor"] == 100
+    assert data["file_count"] == 10_000
+    assert len(json.dumps(data)) < 100_000
+
+
+def test_diff_page_mounts_at_most_two_hundred_lines(store, tmp_path):
+    session_id, msg_id = "s_line_page", "u1_reply"
+    _seed(store, session_id, msg_id)
+    target = tmp_path / "many-lines.txt"
+    target.write_text("", encoding="utf-8")
+    journal = CheckpointStore(store._session_dir(session_id))
+    journal.backup_before_edit(msg_id, str(target))
+    target.write_text("x\n" * 100_000, encoding="utf-8")
+    journal.commit_after_edit(msg_id, str(target), operation="edit")
+
+    first = tf._turn_file_diff(session_id, msg_id, str(target))
+    second = tf._turn_file_diff(
+        session_id, msg_id, str(target), first["next_cursor"],
+    )
+
+    assert first["line_count"] <= 200
+    assert first["next_cursor"] is not None
+    assert second["line_count"] <= 200

@@ -3,17 +3,28 @@ from __future__ import annotations
 
 import asyncio
 import difflib
+import hashlib
+import itertools
 import json
 import os
 import stat
 import subprocess
+import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
 
-_MAX_SCOPE_FILES = 5_000
+_MAX_SCOPE_FILES = 10_000
+_SCOPE_PAGE_SIZE = 100
 _MAX_DIFF_BYTES = 512 * 1024
-_MAX_DIFF_CHARS = 1_000_000
+_MAX_DIFF_PAGE_BYTES = 256 * 1024
+_MAX_DIFF_LINES = 200
+_MAX_DIFF_LINE_BYTES = 64 * 1024
+
+
+class _OutputLimitError(OSError):
+    pass
 
 
 def _open_session(session_id: str):
@@ -89,6 +100,11 @@ def _turn_summary(index, session_dir: Path, turn_id: str, root: Path | None) -> 
         row["turn_ids"] = [turn_id]
     return {
         "files": files,
+        "file_count": (
+            int(summary.get("file_count") or len(files))
+            if isinstance(summary, dict)
+            else len(files)
+        ),
         "reverted": bool(metadata.get("reverted")),
     }
 
@@ -117,9 +133,10 @@ def _totals(files: list[dict]) -> tuple[int | None, int | None]:
 
 
 def _scope_payload(scope: str, source: str, files: list[dict], **extra) -> dict:
+    snapshot_basis = extra.pop("_snapshot_basis", files)
     bounded = files[:_MAX_SCOPE_FILES]
     added, removed = _totals(bounded)
-    return {
+    payload = {
         "status": "ready",
         "scope": scope,
         "source": source,
@@ -129,6 +146,32 @@ def _scope_payload(scope: str, source: str, files: list[dict], **extra) -> dict:
         "removed": removed,
         "truncated": len(files) > _MAX_SCOPE_FILES,
         **extra,
+    }
+    payload["snapshot_id"] = "sha256:" + hashlib.sha256(
+        json.dumps({
+            "scope": scope,
+            "source": source,
+            "files": snapshot_basis,
+            "head_id": extra.get("head_id"),
+        }, sort_keys=True, default=str).encode(),
+    ).hexdigest()
+    return payload
+
+
+def _page_scope(result: dict, cursor: int, limit: int) -> dict:
+    if result.get("status") != "ready":
+        return result
+    files = result.get("files") or []
+    start = max(0, cursor)
+    size = max(1, min(limit, _SCOPE_PAGE_SIZE))
+    page = files[start:start + size]
+    return {
+        **result,
+        "files": page,
+        "cursor": start,
+        "next_cursor": start + size if start + size < len(files) else None,
+        "prev_cursor": max(0, start - size) if start > 0 else None,
+        "page_size": size,
     }
 
 
@@ -142,7 +185,10 @@ def _list_files(session_id: str, assistant_msg_id: str) -> dict:
     )
     return {
         **result,
-        "paths": [row["path"] for row in result["files"]],
+        "files": result["files"][:20],
+        "paths": [row["path"] for row in result["files"][:20]],
+        "file_count": result.get("file_count", len(result["files"])),
+        "truncated": result.get("file_count", len(result["files"])) > 20,
     }
 
 
@@ -153,10 +199,27 @@ def _turn_scope(session_id: str, turn_id: str) -> dict:
     _store, _git, index, session_dir = opened
     if turn_id not in index.nodes_by_id:
         return {"status": "error", "error": f"unknown turn {turn_id!r}"}
-    summary = _turn_summary(index, session_dir, turn_id, _project_root(session_id))
+    root = _project_root(session_id)
+    mutations = _manifest_mutations(session_dir, turn_id)
+    summary = (
+        {
+            "files": [_normalise_file(row, root) for row in mutations],
+            "reverted": bool((index.nodes_by_id[turn_id].metadata or {}).get("reverted")),
+        }
+        if mutations
+        else _turn_summary(index, session_dir, turn_id, root)
+    )
+    for row in summary["files"]:
+        row["turn_ids"] = [turn_id]
     return _scope_payload(
         "turn", "mutation_journal", summary["files"],
-        assistant_msg_id=turn_id, reverted=summary["reverted"],
+        assistant_msg_id=turn_id,
+        reverted=summary["reverted"],
+        _snapshot_basis=[{
+            "path": mutation.get("path"),
+            "before": mutation.get("before"),
+            "after": mutation.get("after"),
+        } for mutation in mutations] if mutations else summary["files"],
     )
 
 
@@ -166,52 +229,109 @@ def _branch_scope(session_id: str) -> dict:
         return {"status": "error", "error": f"unknown session {session_id!r}"}
     _store, _git, index, session_dir = opened
     root = _project_root(session_id)
-    merged: dict[str, dict] = {}
+    lineages: dict[str, dict] = {}
     for node in reversed(_active_nodes(index)):
-        if node.role != "llm":
+        if node.role != "llm" or (node.metadata or {}).get("reverted"):
             continue
-        summary = _turn_summary(index, session_dir, node.id, root)
-        if summary["reverted"]:
-            continue
-        for row in summary["files"]:
-            path = row["path"]
-            current = merged.get(path)
-            if current is None:
-                merged[path] = {**row, "turn_ids": [node.id]}
+        for mutation in _manifest_mutations(session_dir, node.id):
+            path = mutation.get("path") or ""
+            before = mutation.get("before") or {}
+            after = mutation.get("after") or {}
+            if not path:
                 continue
+            current = lineages.get(path)
+            if current is None:
+                lineages[path] = {
+                    "path": path,
+                    "first_turn": node.id,
+                    "last_turn": node.id,
+                    "before": before,
+                    "after": after,
+                    "turn_ids": [node.id],
+                    "recoverability": mutation.get("recoverability", "exact"),
+                    "unavailable_reason": mutation.get("unavailable_reason"),
+                }
+                continue
+            if not _same_state(current["after"], before):
+                current["recoverability"] = "unavailable"
+                current["unavailable_reason"] = "discontinuous_journal"
+            current["last_turn"] = node.id
+            current["after"] = after
             current["turn_ids"].append(node.id)
-            for field in ("added", "removed"):
-                first, second = current.get(field), row.get(field)
-                current[field] = (
-                    first + second
-                    if isinstance(first, int) and isinstance(second, int)
-                    else None
-                )
-            current["op"] = row["op"]
-            current["binary"] = current["binary"] or row["binary"]
-            if row["diff_state"] != "available":
-                current["diff_state"] = row["diff_state"]
+    files = []
+    stats_budget = [8 * 1024 * 1024]
+    for lineage in lineages.values():
+        if _same_state(lineage["before"], lineage["after"]):
+            continue
+        added, removed, binary, diff_state = _net_stats(
+            session_dir,
+            lineage["first_turn"],
+            lineage["before"],
+            lineage["last_turn"],
+            lineage["after"],
+            stats_budget,
+        )
+        before_kind = lineage["before"].get("kind")
+        after_kind = lineage["after"].get("kind")
+        operation = (
+            "add" if before_kind == "absent" and after_kind == "regular"
+            else "delete" if before_kind == "regular" and after_kind == "absent"
+            else "modify"
+        )
+        files.append({
+            "path": lineage["path"],
+            "rel": _relative(lineage["path"], root),
+            "op": operation,
+            "added": added,
+            "removed": removed,
+            "binary": binary,
+            "diff_state": diff_state,
+            "recoverability": lineage["recoverability"],
+            "unavailable_reason": lineage["unavailable_reason"],
+            "turn_ids": lineage["turn_ids"],
+        })
     return _scope_payload(
-        "branch", "mutation_journal", list(merged.values()),
+        "branch", "mutation_journal", files,
         head_id=index.head_id,
+        _snapshot_basis=[{
+            "path": lineage["path"],
+            "before": lineage["before"],
+            "after": lineage["after"],
+            "turn_ids": lineage["turn_ids"],
+        } for lineage in lineages.values()],
     )
 
 
-def _git_output(root: Path, *args: str, timeout: float = 8.0) -> bytes:
-    process = subprocess.Popen(
-        ["git", "-C", str(root), *args],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    try:
-        stdout, stderr = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.communicate()
-        raise OSError("git command timed out")
-    if process.returncode != 0:
-        raise OSError(stderr.decode("utf-8", errors="replace").strip())
-    return stdout
+def _git_output(
+    root: Path,
+    *args: str,
+    timeout: float = 8.0,
+    max_bytes: int = 8 * 1024 * 1024,
+) -> bytes:
+    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+        process = subprocess.Popen(
+            ["git", "-C", str(root), *args],
+            stdout=stdout,
+            stderr=stderr,
+        )
+        deadline = time.monotonic() + timeout
+        while process.poll() is None:
+            if stdout.tell() > max_bytes:
+                process.kill()
+                process.wait()
+                raise _OutputLimitError("git output exceeds review limit")
+            if time.monotonic() >= deadline:
+                process.kill()
+                process.wait()
+                raise OSError("git command timed out")
+            time.sleep(0.01)
+        if process.returncode != 0:
+            stderr.seek(0)
+            raise OSError(stderr.read().decode("utf-8", errors="replace").strip())
+        if stdout.tell() > max_bytes:
+            raise _OutputLimitError("git output exceeds review limit")
+        stdout.seek(0)
+        return stdout.read(max_bytes + 1)
 
 
 def _untracked_stats(path: Path) -> tuple[int | None, int | None, bool, str]:
@@ -227,6 +347,22 @@ def _untracked_stats(path: Path) -> tuple[int | None, int | None, bool, str]:
         return None, None, False, "unavailable"
 
 
+def _workspace_identity(path: Path) -> dict:
+    try:
+        info = os.lstat(path)
+        return {
+            "kind": "regular" if stat.S_ISREG(info.st_mode) else "other",
+            "dev": info.st_dev,
+            "ino": info.st_ino,
+            "size": info.st_size,
+            "mtime_ns": info.st_mtime_ns,
+        }
+    except FileNotFoundError:
+        return {"kind": "absent"}
+    except OSError:
+        return {"kind": "unavailable"}
+
+
 def _workspace_scope(session_id: str) -> dict:
     root = _project_root(session_id)
     if root is None or not (root / ".git").exists():
@@ -238,21 +374,34 @@ def _workspace_scope(session_id: str) -> dict:
         raw_status = _git_output(
             root, "status", "--porcelain=v1", "-z", "--untracked-files=all",
         )
-        raw_stats = _git_output(root, "diff", "--numstat", "HEAD", "--")
+        raw_stats = _git_output(root, "diff", "--numstat", "-z", "HEAD", "--")
     except OSError as exc:
         return {
             "status": "unavailable", "scope": "workspace", "source": "git",
             "files": [], "file_count": 0, "error": str(exc),
         }
-    stats: dict[str, tuple[int | None, int | None]] = {}
-    for line in raw_stats.decode("utf-8", errors="replace").splitlines():
-        parts = line.split("\t", 2)
+    stats: dict[str, tuple[int | None, int | None, str | None]] = {}
+    stat_chunks = raw_stats.decode("utf-8", errors="replace").split("\0")
+    stat_position = 0
+    while stat_position < len(stat_chunks):
+        header = stat_chunks[stat_position]
+        stat_position += 1
+        if not header:
+            continue
+        parts = header.split("\t", 2)
         if len(parts) != 3:
             continue
-        stats[parts[2]] = (
-            int(parts[0]) if parts[0].isdigit() else None,
-            int(parts[1]) if parts[1].isdigit() else None,
-        )
+        added = int(parts[0]) if parts[0].isdigit() else None
+        removed = int(parts[1]) if parts[1].isdigit() else None
+        if parts[2]:
+            stats[parts[2]] = (added, removed, None)
+            continue
+        if stat_position + 1 >= len(stat_chunks):
+            break
+        old_rel = stat_chunks[stat_position]
+        new_rel = stat_chunks[stat_position + 1]
+        stat_position += 2
+        stats[new_rel] = (added, removed, old_rel)
     chunks = raw_status.decode("utf-8", errors="replace").split("\0")
     files = []
     position = 0
@@ -262,20 +411,30 @@ def _workspace_scope(session_id: str) -> dict:
         if len(chunk) < 4:
             continue
         code, rel = chunk[:2], chunk[3:]
+        old_rel = None
         if "R" in code or "C" in code:
+            old_rel = chunks[position] if position < len(chunks) else None
             position += 1
-        added, removed = stats.get(rel, (0, 0))
+        added, removed, stat_old_rel = stats.get(rel, (0, 0, old_rel))
+        old_rel = stat_old_rel or old_rel
         binary = added is None or removed is None
         diff_state = "binary" if binary else "available"
         if code == "??":
             added, removed, binary, diff_state = _untracked_stats(root / rel)
-        op = "add" if code == "??" or "A" in code else "delete" if "D" in code else "modify"
+        op = (
+            "rename" if "R" in code
+            else "add" if code == "??" or "A" in code
+            else "delete" if "D" in code
+            else "modify"
+        )
         files.append({
             "path": str(root / rel), "rel": rel, "op": op,
             "added": added, "removed": removed, "binary": binary,
             "diff_state": diff_state, "recoverability": "unavailable",
             "unavailable_reason": "workspace_scope", "turn_ids": [],
             "status_code": code,
+            "old_rel": old_rel,
+            "workspace_identity": _workspace_identity(root / rel),
         })
     return _scope_payload(
         "workspace", "git", files,
@@ -298,15 +457,87 @@ def _state_bytes(session_dir: Path, turn_id: str, state: dict) -> tuple[bytes, s
         raise OSError("recorded state is unavailable")
     from openprogram.store.snapshot.checkpoint.paths import turn_backup_dir
 
-    path = turn_backup_dir(session_dir, turn_id) / str(state["blob_ref"])
-    if not path.is_file():
-        raise OSError("recovery blob is missing")
-    if path.stat().st_size > _MAX_DIFF_BYTES:
-        return b"", "large"
-    raw = path.read_bytes()
+    blob_ref = str(state["blob_ref"])
+    if (
+        not blob_ref
+        or Path(blob_ref).is_absolute()
+        or Path(blob_ref).name != blob_ref
+        or "/" in blob_ref
+        or "\\" in blob_ref
+    ):
+        raise OSError("unsafe recovery blob reference")
+    directory = turn_backup_dir(session_dir, turn_id)
+    directory_info = os.lstat(directory)
+    if not stat.S_ISDIR(directory_info.st_mode) or stat.S_ISLNK(directory_info.st_mode):
+        raise OSError("unsafe recovery directory")
+    directory_fd = os.open(
+        directory,
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+    )
+    try:
+        descriptor = os.open(
+            blob_ref,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=directory_fd,
+        )
+        try:
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise OSError("unsafe recovery blob")
+            if state.get("size") is not None and info.st_size != state.get("size"):
+                raise OSError("recovery blob size mismatch")
+            if info.st_size > _MAX_DIFF_BYTES:
+                return b"", "large"
+            raw = b""
+            digest = hashlib.sha256()
+            while True:
+                chunk = os.read(descriptor, 64 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                raw += chunk
+            if f"sha256:{digest.hexdigest()}" != state.get("digest"):
+                raise OSError("recovery blob digest mismatch")
+        finally:
+            os.close(descriptor)
+    finally:
+        os.close(directory_fd)
     if b"\0" in raw:
         return b"", "binary"
     return raw, "available"
+
+
+def _net_stats(
+    session_dir: Path,
+    before_turn: str,
+    before: dict,
+    after_turn: str,
+    after: dict,
+    budget: list[int],
+) -> tuple[int | None, int | None, bool, str]:
+    try:
+        before_raw, before_state = _state_bytes(session_dir, before_turn, before)
+        after_raw, after_state = _state_bytes(session_dir, after_turn, after)
+    except OSError:
+        return None, None, False, "unavailable"
+    state = before_state if before_state != "available" else after_state
+    if state != "available":
+        return None, None, state == "binary", state
+    cost = len(before_raw) + len(after_raw)
+    if cost > budget[0]:
+        return None, None, False, "timeout"
+    budget[0] -= cost
+    before_lines = before_raw.decode("utf-8", errors="replace").splitlines()
+    after_lines = after_raw.decode("utf-8", errors="replace").splitlines()
+    added = removed = 0
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
+        a=before_lines, b=after_lines, autojunk=False,
+    ).get_opcodes():
+        if tag in {"insert", "replace"}:
+            added += j2 - j1
+        if tag in {"delete", "replace"}:
+            removed += i2 - i1
+    return added, removed, False, "available"
 
 
 def _render_diff(
@@ -316,6 +547,7 @@ def _render_diff(
     after_turn: str,
     after: dict,
     path: str,
+    cursor: int = 0,
 ) -> dict:
     try:
         before_raw, before_state = _state_bytes(session_dir, before_turn, before)
@@ -326,20 +558,42 @@ def _render_diff(
     if state != "available":
         return {"diff": "", "diff_state": state}
     name = os.path.basename(path)
-    text = "".join(difflib.unified_diff(
+    lines = difflib.unified_diff(
         before_raw.decode("utf-8", errors="replace").splitlines(keepends=True),
         after_raw.decode("utf-8", errors="replace").splitlines(keepends=True),
         fromfile=f"a/{name}", tofile=f"b/{name}", n=3,
-    ))
-    truncated = len(text) > _MAX_DIFF_CHARS
+    )
+    return _page_diff_lines(lines, cursor)
+
+
+def _page_diff_lines(lines, cursor: int = 0) -> dict:
+    start = max(0, cursor)
+    iterator = itertools.islice(lines, start, None)
+    page: list[str] = []
+    byte_count = 0
+    has_more = False
+    for line in iterator:
+        encoded_size = len(line.encode("utf-8", errors="replace"))
+        if encoded_size > _MAX_DIFF_LINE_BYTES:
+            return {"diff": "", "diff_state": "large_line", "cursor": start}
+        if len(page) >= _MAX_DIFF_LINES or byte_count + encoded_size > _MAX_DIFF_PAGE_BYTES:
+            has_more = True
+            break
+        page.append(line)
+        byte_count += encoded_size
     return {
-        "diff": text[:_MAX_DIFF_CHARS],
-        "diff_state": "truncated" if truncated else "available",
-        "truncated": truncated,
+        "diff": "".join(page),
+        "diff_state": "available",
+        "cursor": start,
+        "next_cursor": start + len(page) if has_more else None,
+        "prev_cursor": max(0, start - _MAX_DIFF_LINES) if start > 0 else None,
+        "line_count": len(page),
     }
 
 
-def _turn_file_diff(session_id: str, turn_id: str, path: str) -> dict:
+def _turn_file_diff(
+    session_id: str, turn_id: str, path: str, cursor: int = 0,
+) -> dict:
     opened = _open_session(session_id)
     if opened is None:
         return {"diff": "", "diff_state": "unavailable", "error": "unknown session"}
@@ -352,11 +606,11 @@ def _turn_file_diff(session_id: str, turn_id: str, path: str) -> dict:
         return {"diff": "", "diff_state": "unavailable", "error": f"{path!r} not recorded for this turn"}
     return _render_diff(
         session_dir, turn_id, mutation.get("before") or {},
-        turn_id, mutation.get("after") or {}, path,
+        turn_id, mutation.get("after") or {}, path, cursor,
     )
 
 
-def _branch_file_diff(session_id: str, path: str) -> dict:
+def _branch_file_diff(session_id: str, path: str, cursor: int = 0) -> dict:
     opened = _open_session(session_id)
     if opened is None:
         return {"diff": "", "diff_state": "unavailable", "error": "unknown session"}
@@ -380,11 +634,16 @@ def _branch_file_diff(session_id: str, path: str) -> dict:
     last_turn, last = states[-1]
     return _render_diff(
         session_dir, first_turn, first.get("before") or {},
-        last_turn, last.get("after") or {}, path,
+        last_turn, last.get("after") or {}, path, cursor,
     )
 
 
-def _workspace_file_diff(session_id: str, path: str) -> dict:
+def _workspace_file_diff(
+    session_id: str,
+    path: str,
+    snapshot_id: str,
+    cursor: int = 0,
+) -> dict:
     root = _project_root(session_id)
     if root is None:
         return {"diff": "", "diff_state": "unavailable", "error": "workspace unavailable"}
@@ -392,18 +651,32 @@ def _workspace_file_diff(session_id: str, path: str) -> dict:
         rel = str(Path(path).resolve().relative_to(root))
     except (OSError, ValueError):
         return {"diff": "", "diff_state": "unavailable", "error": "path is outside workspace"}
-    try:
-        tracked = bool(_git_output(root, "ls-files", "--error-unmatch", "--", rel))
-    except OSError:
-        tracked = False
+    scope = _workspace_scope(session_id)
+    if scope.get("status") != "ready" or scope.get("snapshot_id") != snapshot_id:
+        return {"diff": "", "diff_state": "unavailable", "error": "stale workspace snapshot"}
+    member = next(
+        (row for row in scope.get("files", []) if Path(row["path"]).resolve() == Path(path).resolve()),
+        None,
+    )
+    if member is None:
+        return {"diff": "", "diff_state": "unavailable", "error": "path is not in workspace scope"}
+    tracked = member.get("status_code") != "??"
     if tracked:
         try:
-            raw = _git_output(root, "diff", "--no-ext-diff", "HEAD", "--", rel)
+            raw = _git_output(
+                root, "diff", "--no-ext-diff", "HEAD", "--", rel,
+                max_bytes=_MAX_DIFF_BYTES,
+            )
+        except _OutputLimitError:
+            return {"diff": "", "diff_state": "large"}
         except OSError as exc:
             return {"diff": "", "diff_state": "unavailable", "error": str(exc)}
         if len(raw) > _MAX_DIFF_BYTES:
             return {"diff": "", "diff_state": "large"}
-        return {"diff": raw.decode("utf-8", errors="replace"), "diff_state": "available"}
+        return _page_diff_lines(
+            raw.decode("utf-8", errors="replace").splitlines(keepends=True),
+            cursor,
+        )
     file_path = root / rel
     try:
         raw = file_path.read_bytes()
@@ -413,11 +686,11 @@ def _workspace_file_diff(session_id: str, path: str) -> dict:
         return {"diff": "", "diff_state": "large"}
     if b"\0" in raw:
         return {"diff": "", "diff_state": "binary"}
-    text = "".join(difflib.unified_diff(
+    lines = difflib.unified_diff(
         [], raw.decode("utf-8", errors="replace").splitlines(keepends=True),
         fromfile="/dev/null", tofile=f"b/{rel}", n=3,
-    ))
-    return {"diff": text[:_MAX_DIFF_CHARS], "diff_state": "available", "truncated": len(text) > _MAX_DIFF_CHARS}
+    )
+    return _page_diff_lines(lines, cursor)
 
 
 async def _run(fn) -> Any:
@@ -443,8 +716,9 @@ async def handle_turn_file_diff(ws, cmd: dict) -> None:
     session_id = (cmd.get("session_id") or "").strip()
     turn_id = (cmd.get("assistant_msg_id") or "").strip()
     path = (cmd.get("path") or "").strip()
+    cursor = int(cmd.get("cursor") or 0)
     result = (
-        await _run(lambda: _turn_file_diff(session_id, turn_id, path))
+        await _run(lambda: _turn_file_diff(session_id, turn_id, path, cursor))
         if session_id and turn_id and path
         else {"diff": "", "diff_state": "unavailable", "error": "session_id, assistant_msg_id and path are required"}
     )
@@ -452,7 +726,7 @@ async def handle_turn_file_diff(ws, cmd: dict) -> None:
         "type": "turn_file_diff_result",
         "data": {
             "session_id": session_id, "assistant_msg_id": turn_id, "path": path,
-            "approximate": False, **result,
+            "request_id": cmd.get("request_id"), "approximate": False, **result,
         },
     }, default=str))
 
@@ -461,6 +735,8 @@ async def handle_review_scope(ws, cmd: dict) -> None:
     session_id = (cmd.get("session_id") or "").strip()
     scope = (cmd.get("scope") or "turn").strip()
     turn_id = (cmd.get("assistant_msg_id") or "").strip()
+    cursor = int(cmd.get("cursor") or 0)
+    limit = int(cmd.get("limit") or _SCOPE_PAGE_SIZE)
     if not session_id:
         result = {"status": "error", "error": "session_id is required"}
     elif scope == "turn":
@@ -471,9 +747,15 @@ async def handle_review_scope(ws, cmd: dict) -> None:
         result = await _run(lambda: _workspace_scope(session_id))
     else:
         result = {"status": "error", "error": f"unknown review scope {scope!r}"}
+    result = _page_scope(result, cursor, limit)
     await ws.send_text(json.dumps({
         "type": "review_scope_result",
-        "data": {"session_id": session_id, "assistant_msg_id": turn_id, **result},
+        "data": {
+            "session_id": session_id,
+            "assistant_msg_id": turn_id,
+            "request_id": cmd.get("request_id"),
+            **result,
+        },
     }, default=str))
 
 
@@ -482,21 +764,50 @@ async def handle_review_file_diff(ws, cmd: dict) -> None:
     scope = (cmd.get("scope") or "turn").strip()
     turn_id = (cmd.get("assistant_msg_id") or "").strip()
     path = (cmd.get("path") or "").strip()
+    snapshot_id = (cmd.get("snapshot_id") or "").strip()
+    cursor = int(cmd.get("cursor") or 0)
     if not session_id or not path:
         result = {"diff": "", "diff_state": "unavailable", "error": "session_id and path are required"}
-    elif scope == "turn":
-        result = await _run(lambda: _turn_file_diff(session_id, turn_id, path))
-    elif scope == "branch":
-        result = await _run(lambda: _branch_file_diff(session_id, path))
-    elif scope == "workspace":
-        result = await _run(lambda: _workspace_file_diff(session_id, path))
     else:
-        result = {"diff": "", "diff_state": "unavailable", "error": f"unknown review scope {scope!r}"}
+        current_scope = (
+            await _run(lambda: _turn_scope(session_id, turn_id))
+            if scope == "turn"
+            else await _run(lambda: _branch_scope(session_id))
+            if scope == "branch"
+            else await _run(lambda: _workspace_scope(session_id))
+            if scope == "workspace"
+            else {"status": "error", "error": f"unknown review scope {scope!r}"}
+        )
+        member = next(
+            (row for row in current_scope.get("files", []) if row.get("path") == path),
+            None,
+        )
+        if (
+            current_scope.get("status") != "ready"
+            or not snapshot_id
+            or current_scope.get("snapshot_id") != snapshot_id
+        ):
+            result = {"diff": "", "diff_state": "unavailable", "error": "stale review snapshot"}
+        elif member is None:
+            result = {"diff": "", "diff_state": "unavailable", "error": "path is not in review scope"}
+        elif scope == "turn":
+            result = await _run(lambda: _turn_file_diff(
+                session_id, turn_id, path, cursor,
+            ))
+        elif scope == "branch":
+            result = await _run(lambda: _branch_file_diff(
+                session_id, path, cursor,
+            ))
+        else:
+            result = await _run(lambda: _workspace_file_diff(
+                session_id, path, snapshot_id, cursor,
+            ))
     await ws.send_text(json.dumps({
         "type": "review_file_diff_result",
         "data": {
             "session_id": session_id, "assistant_msg_id": turn_id,
-            "scope": scope, "path": path, **result,
+            "request_id": cmd.get("request_id"),
+            "scope": scope, "path": path, "snapshot_id": snapshot_id, **result,
         },
     }, default=str))
 
