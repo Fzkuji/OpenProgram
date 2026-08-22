@@ -52,7 +52,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
 <main class="page">
   <header class="top">
     <div><div class="eyebrow">OpenProgram / Runtime operations / Canonical design</div><h1>文件修改、Review 与历史恢复</h1><p class="lead">本页统一定义文件归因、单轮 Undo、历史 Revert、多轮 Rewind、对话 Branch、Review scope、冲突处理和恢复存储。聊天视觉规范只负责外观；任何实现、测试和宣传口径均以本页语义为准。</p></div>
-    <div class="meta"><span class="pill pending">目标设计 · 部分实现</span><span class="pill">当前实现 · Task A review-passed</span><span class="pill">范围 · App / Web / TUI / runtime</span></div>
+    <div class="meta"><span class="pill pending">目标设计 · 部分实现</span><span class="pill">当前实现 · Task A–B review-passed</span><span class="pill">范围 · App / Web / TUI / runtime</span></div>
   </header>
 
   <nav class="nav" aria-label="文档目录"><a href="#model">操作模型</a><a href="#current">当前实现</a><a href="#references">参考</a><a href="#architecture">架构</a><a href="#journal">数据合同</a><a href="#rewind">多轮恢复</a><a href="#branches">分支与子代理</a><a href="#failures">失败状态</a><a href="#ui">界面</a><a href="#performance">性能</a><a href="#acceptance">验收</a></nav>
@@ -79,11 +79,11 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
     <div class="table-wrap"><table><thead><tr><th>当前路径</th><th>现状</th><th>风险</th><th>目标</th></tr></thead><tbody>
       <tr><td><code>agent_loop._snapshot_cwd</code></td><td>Task A 已删除 Bash 前后 cwd 扫描、候选预复制和执行器调用。</td><td>普通 Bash、后台日志和外部写入不再进入 turn mutation。</td><td><span class="tag yes">完成</span> 仅 trusted file mutator 生成 receipt。</td></tr>
       <tr><td><code>_checkpoint_changed_files</code></td><td>Task A 已删除该路径；prepared receipt 明确区分 regular before image 与 absent。</td><td>超过统计预算的既有文件保持 <code>modify</code>，stats 为 unknown，不再按新文件整量新增。</td><td><span class="tag yes">完成</span> baseline 缺失不编码成 absent。</td></tr>
-      <tr><td><code>CheckpointStore.restore_turn</code></td><td>逐文件恢复，单个失败继续；不检查当前 after digest。</td><td>覆盖用户后续修改，或产生部分恢复。</td><td>全量预检、workspace lock、事务式 apply；冲突时零文件改变。</td></tr>
+      <tr><td><code>CheckpointStore.restore_turn</code></td><td>Task B 的单轮入口已改用全量 plan、profile-stable lock、durable intent、条件式 leaf mutation、verify 与 rollback；legacy 方法只保留给迁移测试，生产 <code>revert_turn</code> 不再调用。</td><td>冲突、缺 blob、stale plan 均零写入；外部 pathname/open-fd race 保留外部内容并进入 recovery_required。</td><td><span class="tag yes">单轮完成</span> 多轮 coordinated apply 属于 Task C。</td></tr>
       <tr><td><code>rewind_to</code></td><td>依次调用单轮 revert；即使有文件错误仍标记节点并移动 HEAD。</td><td>对话已回退而代码只恢复一部分，状态无法解释。</td><td>先生成整体 plan；代码+对话作为一个持久化 intent 提交或回滚。</td></tr>
       <tr><td><code>rewind_to</code> + caller subtree</td><td>父 turn 与 caller child 按 DAG 遍历分别 restore，而不是按 workspace mutation sequence 投影。</td><td>父子修改同一文件时可能停在 child 的中间 baseline；inherit/fork child 又可能完全不在范围内。</td><td>每个 mutation 记录 actor/owner/job/worktree，并按 workspace sequence 计算每个 file lineage 的单一目标状态。</td></tr>
       <tr><td><code>/api/chat/checkout</code></td><td>只移动对话 HEAD，不检查工作区是否对应目标分支。</td><td>用户看到历史分支，但模型继续在另一分支的文件状态上编辑；Retry/Edit sibling 同样从当前文件而非目标 checkpoint 开始。</td><td>显示 branch/workspace alignment；Retry/Edit/Fork 都绑定显式 checkpoint；开始修改前必须明确保持或恢复文件。</td></tr>
-      <tr><td><code>ProjectGit.revert_agent_commit</code></td><td>dirty-tree revert 冲突路径存在硬重置行为。</td><td>可能清除用户未提交修改；project Git 成功后还会让 ignored/outside-repo snapshot restore 整体跳过。</td><td>历史恢复不执行 <code>reset --hard</code>；Git commit undo、journal restore 与 ignored/outside-repo actions 分别预检和报告。</td></tr>
+      <tr><td><code>ProjectGit.revert_agent_commit</code></td><td>Task B 已从单轮 Undo/Revert 生产路径移除 ProjectGit 调用。</td><td>单轮历史恢复不再 reset/revert 用户 Git，不读取或修改 index/commit。</td><td><span class="tag yes">完成</span> Workspace Git 操作保留独立入口。</td></tr>
       <tr><td><code>ShadowGitStore</code></td><td>可生成历史 diff，但 baseline 与共享锁不足以证明真实 per-turn preimage。</td><td>两轮间用户修改可能被归入第二轮 Agent diff；同项目多实例可竞争 head-to-commit。</td><td>降级为 mutation journal 派生的 diff cache，不能再作为归因或恢复权威。</td></tr>
       <tr><td>Checkpoint GC / unknown turn</td><td>旧 blob 被 GC 或 assistant id 不存在时，单轮 revert 可能返回零文件但仍盖 Reverted。</td><td>产生假成功；旧 shadow metadata 仍显示可 Review，看不出 restore 已过期。</td><td>plan 必须证明目标、blob 和全部 actions 存在；Expired 只允许 Review 或 conversation-only。</td></tr>
       <tr><td>Branch metadata</td><td>分支名称等状态以会移动的 head id 为键；rewind 还会覆写共享节点 <code>metadata.rewound</code>。</td><td>追加 turn 后名称丢失；共享祖先被过滤后 sibling transcript 不完整。</td><td>引入稳定 branch id/head version；对话历史 append-only，只追加 navigation/restore operation。</td></tr>
@@ -299,7 +299,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
     <p class="intro">生产实现已获批准，并按下列边界拆成连续、可独立评审的任务；每个任务通过 specification review 和 quality review 后才进入下一项。任何尚未通过对应 gate 的能力继续标记 Pending。</p>
     <div class="table-wrap"><table><thead><tr><th>任务</th><th>生产边界</th><th>必须先失败的 public-entry 场景</th><th>排除</th><th>状态与证据</th></tr></thead><tbody>
       <tr><td>A · Exact mutation journal</td><td><code>programs/tools/files/</code>、turn context/finalize、checkpoint manifest/store。</td><td>已有 &gt;5 MiB 文件首轮修改不算全新增；Bash ignored log 不进入 turn；失败 edit 无 receipt。</td><td>不实现 Review UI，不改用户 Git。</td><td><span class="tag yes">review-passed</span> <code>188fba55</code>；RED 3 failed / 4 passed；最终 215 + 54 passed；ruff 通过。</td></tr>
-      <tr><td>B · Safe single-turn Undo/Revert</td><td><code>agent/internals/_revert.py</code>、workspace lock、durable intent。</td><td>后续同文件修改时零写入；创建文件 digest 不符时不删除；中途 I/O 失败不部分标记。</td><td>不实现 multi-turn HEAD move。</td><td><span class="tag unknown">Pending</span></td></tr>
+      <tr><td>B · Safe single-turn Undo/Revert</td><td><code>agent/internals/_revert.py</code>、workspace lock、durable intent。</td><td>后续同文件修改时零写入；创建文件 digest 不符时不删除；中途 I/O 失败不部分标记。</td><td>不实现 multi-turn HEAD move。</td><td><span class="tag yes">review-passed</span> <code>2385f45d</code>；RED import failure，spec/quality repair 后最终 321 + 41 passed；ruff 通过。</td></tr>
       <tr><td>C · Multi-turn planner/apply</td><td><code>agent/_rewind.py</code>、session head API、intent recovery、WS/CLI protocol。</td><td>同文件跨三轮恢复到目标；file failure 不移动 HEAD；sibling branch 不受影响；stale plan 零写入。</td><td>不重写 compaction 或 DAG schema。</td><td><span class="tag unknown">Pending</span></td></tr>
       <tr><td>D · Review scopes and UI</td><td><code>ws_actions/turn_files.py</code>、message metadata、center tab/store、chat card。</td><td>历史 transcript 不逐条请求；Workspace ignored 排除；一次只挂载一个有界 diff；三 scope 来源一致。</td><td>不加第三 pane、新窗口或参考产品品牌。</td><td><span class="tag unknown">Pending</span></td></tr>
       <tr><td>E · Branch alignment and multi-agent ownership</td><td>checkout/branch UI、active-lineage fold、owned/linked/worktree ownership。</td><td>conversation-only checkout 后 mutating turn 不静默开始；owned background child 运行时阻止父 restore、完成后按 origin 进入 causal closure；linked peer/cross-session 不被父 restore；worktree child 不改父 workspace。</td><td>不实现通用 workspace cloning。</td><td><span class="tag unknown">Pending</span></td></tr>
@@ -319,7 +319,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
       <div class="scenario"><b>Crash recovery</b><p>在每个 intent phase 强制终止并重启，最终必须是 COMMITTED、ROLLED_BACK 或持久化到具体路径的 RECOVERY_REQUIRED；永不假报 committed，也不覆盖外部新写入。</p><div class="result">PASS: every path explainable</div></div>
       <div class="scenario"><b>Unsupported side effects</b><p>文件 Restore 不修改 Git index/commit、无 receipt 的 ignored/external 文件、数据库、网络、进程或部署；trusted mutator 明确记录的允许路径仍按 journal 恢复。</p><div class="result">PASS: scope literal</div></div>
     </div>
-    <div class="decision-line" style="margin-top:12px"><b>实现状态：</b>Task A 的 exact mutation journal、Bash 归因删除、turn summary persistence 已 review-passed。单轮 restore 仍是逐文件 best-effort，<code>rewind_to</code> 仍与 HEAD 移动耦合，Review 仍依赖旧 shadow/inline 路径，因此 B–E 保持 Pending，不能宣传为完整能力。</div>
+    <div class="decision-line" style="margin-top:12px"><b>实现状态：</b>Task A 的 exact mutation journal、Bash 归因删除、turn summary persistence，以及 Task B 的事务式单轮 Undo/Revert/Redo/Reapply 已 review-passed。<code>rewind_to</code> 仍逐轮调用且与 HEAD 移动耦合，Review 仍依赖旧 shadow/inline 路径，因此 C–E 保持 Pending，不能宣传为完整能力。</div>
   </section>
 </main>
 <script>
