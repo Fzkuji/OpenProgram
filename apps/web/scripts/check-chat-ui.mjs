@@ -1249,7 +1249,7 @@ const subagentCurrentState = chatVisualSpec.slice(subagentCurrentStart, subagent
 for (const state of ["T0 · 父级 RUNNING", "T1 · 子代理开始", "T2 · 子代理结束", "T3 · 父级 TERMINAL", "T4 · 用户重新展开"]) {
   assert.match(subagentCurrentState, new RegExp(state));
 }
-assert.match(subagentCurrentState, /open = userSet \?\? !!streaming/);
+assert.match(subagentCurrentState, /const \[open, setOpen\] = useState\(false\)/);
 assert.match(subagentCurrentState, /id="replay-subagent"[\s\S]*id="demo-subagent-row"/);
 assert.match(
   subagentCurrentState,
@@ -1259,7 +1259,7 @@ assert.match(
 assert.match(
   chatVisualSpec,
   /subagentLabel\.textContent='auto_workflow · 已完成';\s*setSubagentOpen\(false\)/,
-  "the slow replay must demonstrate the current parent-terminal auto-collapse",
+  "the slow replay must demonstrate the execution trace remaining collapsed at terminal state",
 );
 assert.match(
   chatVisualSpec,

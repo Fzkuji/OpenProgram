@@ -99,13 +99,8 @@ function Collapse({ open, children }: {
 
 /** 时间线外壳：一行淡文字摘要 ›，点击展开竖线时间线。
  *
- *  流式进行中默认**展开**：助手干活时用户要能直接看到步骤在往下长，
- *  而不是盯着一条什么都不说的摘要条。小字摘要仍加 shimmer 扫光，新步骤
- *  在底部拼接，运行中的行用呼吸点。
- *
- *  落定后不强制收起——用户在流式期间的手动折叠/展开一律保留（收起后
- *  又冒出新步骤也不会被强行掀开）。只有"从没手动点过 + 流已结束"这一种
- *  情况回到折叠态，也就是历史消息的默认样子。 */
+ *  流式与历史消息都默认收起。流式摘要仍以 shimmer 表示进行中；用户手动
+ *  展开或收起后，本轮后续步骤和终态更新不覆盖该选择。 */
 export function ExecutionStrip({
   label,
   streaming,
@@ -121,9 +116,7 @@ export function ExecutionStrip({
   /** Branch heads owned by this strip, used to reopen the exact row on return. */
   subagentHeads?: Array<string | undefined>;
 }) {
-  const [userSet, setUserSet] = useState<boolean | null>(null);
-  const open = userSet ?? !!streaming;
-  const setOpen = (next: (o: boolean) => boolean) => setUserSet(next(open));
+  const [open, setOpen] = useState(false);
   const { text } = useTranslation();
   return (
     <div

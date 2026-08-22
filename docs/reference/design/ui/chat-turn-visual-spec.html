@@ -391,7 +391,7 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
 </div>
 <div class="rule">规则：外层无框无底色；收起行 = 纯文字摘要 + ›（无按钮底色，与正文列左对齐）；所有收起行固定高 28px，第一行文字、箭头与同轮 28px 头像严格上下居中，不使用 top、transform 或 translate 做垂直偏移；回复文本永远直接可见，底部发送时间和复制、重试等操作只在消息 hover 或 footer 键盘 focus 时一起显示。<b>时间契约：</b>用户消息在发送成功时记录本地时间，Agent 回复与独立 function/runtime 在首个可见状态创建时记录开始时间；Agent 内的 thinking 和普通 tool step 共享所属 Agent 消息的开始时间，独立 runtime/sub-agent 消息保留自身开始时间。所有后续流式更新、终态更新和层级迁移均保留该时间，刷新后优先使用持久化的权威时间。发送或重试后、首个回复内容到达前的临时 thinking 状态只占一行，开始时间紧跟状态文字显示，不创建正常消息 footer；首个回复内容到达后再切换为正式消息布局。执行摘要、正文和时间戳采用不同字号与行高，因此正文到 footer 使用 14px 视觉间距，使两段可见文字之间的留白一致；不改变折叠行高度或头像位置。<br>
 Agent 回复发起的 function 及其执行树只属于该回复的执行时间线，不得再生成顶层 runtime 卡片；只有用户直接运行的 function 才作为独立 runtime 消息显示。<br>
-<b>展开只向下</b>：高度过渡用 grid 0fr↔1fr（0.18s），展开把下方内容推开、收起平滑抽走；<b>视口不许跳</b>——聊天区关掉原生 scroll anchoring（overflow-anchor:none），且用户点击后的 600ms 内暂停贴底吸附，展开/收起时开关行在屏幕上纹丝不动。收起动画结束后卸载子树，折叠状态不付渲染成本。<b>流式进行中默认展开</b>：摘要小字加 shimmer 扫光表示进行中，用户可手动折叠；展开后的列表向下拼接新步骤（淡入下滑 0.22s），当前运行中的行图标位用呼吸点，思考行的 note 显示最新一行。落定后保留用户手动选择；未手动操作时回到折叠态——流式与落定共用同一条时间线渲染路径（伪 blocks 由实时字段合成，finalize 后由真 blocks 接管）。</div>
+<b>展开只向下</b>：高度过渡用 grid 0fr↔1fr（0.18s），展开把下方内容推开、收起平滑抽走；<b>视口不许跳</b>——聊天区关掉原生 scroll anchoring（overflow-anchor:none），且用户点击后的 600ms 内暂停贴底吸附，展开/收起时开关行在屏幕上纹丝不动。收起动画结束后卸载子树，折叠状态不付渲染成本。<b>执行过程始终默认收起</b>：流式与历史消息都只显示摘要行，摘要小字以 shimmer 表示进行中；用户点击后可展开，列表继续向下拼接新步骤（淡入下滑 0.22s），当前运行中的行图标位用呼吸点，思考行的 note 显示最新一行。用户手动选择在本轮后续流式更新和落定时保持不变——流式与落定共用同一条时间线渲染路径（伪 blocks 由实时字段合成，finalize 后由真 blocks 接管）。</div>
 
 <!-- ═══════ 2. 时间线细节 ═══════ -->
 <h2><span class="num">2</span>时间线行：圆圈同时表示可展开与开合状态</h2>
@@ -529,19 +529,19 @@ Agent 回复发起的 function 及其执行树只属于该回复的执行时间�
 <b>实现状态：</b>生产函数 footer 已移除额外左内边距，时间行、折叠标题和 Conclusion 严格共享同一左缘。</div>
 
 <!-- ═══════ 4. Sub-agent 当前行为 ═══════ -->
-<h2><span class="num">4</span>Sub-agent 实时显示现状：记录保留，父级结束时自动收起</h2>
-<div class="desc">本节记录当前实现，不表示已经批准新的交互方案。用户看到的“小窗口短暂出现后消失”，实际由两件事连续发生：sub-agent 行先被加入执行树；随后父级 workflow 进入终态，外层执行区根据 <code>streaming=false</code> 自动收起。sub-agent 数据仍保留在消息的 <code>attachCards</code> 或 <code>contextTree</code> 中。</div>
+<h2><span class="num">4</span>Sub-agent 实时显示现状：记录保留，执行区默认收起</h2>
+<div class="desc">Sub-agent 行会实时写入执行树，但外层执行区在流式和终态都默认收起。数据保留在消息的 <code>attachCards</code> 或 <code>contextTree</code> 中；用户展开后可查看同一条持续更新的时间线记录。</div>
 
 <div class="state-flow" aria-label="当前 sub-agent 显示状态序列">
   <div class="state-card">
     <div class="state-kicker">T0 · 父级 RUNNING</div>
-    <div class="state-title">执行区默认展开</div>
-    <div class="state-copy"><code>userSet === null</code> 时，展开状态直接取 <code>streaming</code>。</div>
+    <div class="state-title">执行区默认收起</div>
+    <div class="state-copy"><code>const [open, setOpen] = useState(false)</code>，流式状态不参与初始展开值。</div>
   </div>
   <div class="state-card">
     <div class="state-kicker">T1 · 子代理开始</div>
-    <div class="state-title">新增一行“Sub-agent · 运行中”</div>
-    <div class="state-copy">新行用约 220ms 的淡入与 3px 下移动画出现。</div>
+    <div class="state-title">记录“Sub-agent · 运行中”</div>
+    <div class="state-copy">时间线数据更新，摘要保持收起；用户已展开时新行按正常动画出现。</div>
   </div>
   <div class="state-card">
     <div class="state-kicker">T2 · 子代理结束</div>
@@ -550,8 +550,8 @@ Agent 回复发起的 function 及其执行树只属于该回复的执行时间�
   </div>
   <div class="state-card">
     <div class="state-kicker">T3 · 父级 TERMINAL</div>
-    <div class="state-title">整个执行区自动收起</div>
-    <div class="state-copy">高度在约 180ms 内变为 0；约 220ms 后内部 DOM 卸载。</div>
+    <div class="state-title">执行区保持收起</div>
+    <div class="state-copy">终态更新不改变默认状态，也不覆盖用户的手动展开选择。</div>
   </div>
   <div class="state-card">
     <div class="state-kicker">T4 · 用户重新展开</div>
@@ -561,7 +561,7 @@ Agent 回复发起的 function 及其执行树只属于该回复的执行时间�
 </div>
 
 <h3 style="font-size:14px;color:var(--text-bright);margin:24px 0 8px">慢速重放当前行为</h3>
-<div class="desc">演示刻意放慢，便于看清状态变化；文字标注的 180ms/220ms 才是当前产品时序。T4 是模拟用户手动重新展开，不是产品自动展开，用于确认收起前后的记录始终是同一条时间线行。</div>
+<div class="desc">演示刻意放慢，便于确认运行状态变化不会自动展开执行区。T4 模拟用户手动展开，用于确认收起期间持续更新的记录仍是同一条时间线行。</div>
 <div class="current-demo">
   <div class="demo-toolbar">
     <button class="demo-btn" type="button" id="replay-subagent">慢速重放</button>
@@ -590,16 +590,16 @@ Agent 回复发起的 function 及其执行树只属于该回复的执行时间�
   </div>
 </div>
 
-<div class="diagnostic-note"><b>当前问题边界：</b>如果只是子代理结束，而父级 workflow 仍是 <code>running</code>，执行区按设计应继续展开，只更新子代理行的状态。如果此时已经收起，则不是本节描述的正常自动收起，而是父级 <code>tree_update</code> 根状态被提前写成终态，或父级消息被提前 finalize，需要记录连续事件确认。收起不会删除记录；用户重新展开后，原记录仍按时间线行显示。</div>
+<div class="diagnostic-note"><b>状态边界：</b>父级 workflow 是否仍为 <code>running</code> 只影响摘要 shimmer 和步骤状态，不决定外层展开状态。收起不会删除记录；用户展开后，原记录仍按时间线行显示。</div>
 
 <table class="path-table">
   <thead><tr><th>调用路径</th><th>实时数据</th><th>页面节点</th><th>共同的可见性控制</th></tr></thead>
   <tbody>
-    <tr><td>聊天中的 <code>agent()</code></td><td><code>sub_agent</code> 事件按稳定 <code>card_id</code> 更新 <code>attachCards</code></td><td><code>SubAgentStep</code></td><td rowspan="2"><code>ExecutionStrip</code><br><code>open = userSet ?? !!streaming</code></td></tr>
+    <tr><td>聊天中的 <code>agent()</code></td><td><code>sub_agent</code> 事件按稳定 <code>card_id</code> 更新 <code>attachCards</code></td><td><code>SubAgentStep</code></td><td rowspan="2"><code>ExecutionStrip</code><br><code>const [open, setOpen] = useState(false)</code></td></tr>
     <tr><td><code>auto_workflow</code> 内部 selection agent</td><td><code>tree_update</code> 更新 <code>contextTree</code></td><td><code>TreeStep</code> 子节点</td></tr>
   </tbody>
 </table>
-<div class="rule"><b>已验证的原因：</b>完成事件只更新同一条子代理记录；产生短暂显示的是“新行进入动画”紧接“父级自动收起”。当前回归检查还明确要求 <code>const open = userSet ?? !!streaming</code>，所以它是现行交互合同，不是偶发渲染丢失。相关入口：<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/messages/execution-strip.tsx" style="color:var(--accent-cyan)">execution-strip.tsx</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/net/chat-stream.ts" style="color:var(--accent-cyan)">chat-stream.ts</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/messages/runtime-block.tsx" style="color:var(--accent-cyan)">runtime-block.tsx</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/scripts/check-spawn-cards.mjs" style="color:var(--accent-cyan)">check-spawn-cards.mjs</a>。</div>
+<div class="rule"><b>实现合同：</b>完成事件只更新同一条子代理记录；<code>ExecutionStrip</code> 以 <code>false</code> 作为流式和历史消息的共同默认状态，手动切换优先。相关入口：<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/messages/execution-strip.tsx" style="color:var(--accent-cyan)">execution-strip.tsx</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/net/chat-stream.ts" style="color:var(--accent-cyan)">chat-stream.ts</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/messages/runtime-block.tsx" style="color:var(--accent-cyan)">runtime-block.tsx</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/scripts/check-spawn-cards.mjs" style="color:var(--accent-cyan)">check-spawn-cards.mjs</a>。</div>
 
 <!-- ═══════ 5. 父子分支导航 ═══════ -->
 <h2><span class="num">5</span>Sub-agent 父子分支导航：一个进入口，两个返回落点</h2>
@@ -905,9 +905,8 @@ function resetSubagentDemo(){
 }
 function replaySubagentDemo(){
   resetSubagentDemo();
-  setSubagentOpen(true);
   subagentLabel.textContent='auto_workflow · 运行中';
-  subagentStatus.textContent='T0：父级运行，执行区展开';
+  subagentStatus.textContent='T0：父级运行，执行区保持收起';
   subagentTimers.push(setTimeout(()=>{
     subagentRow.className='step demo-subagent is-mounted is-arriving is-running';
     subagentStatus.textContent='T1：子代理行出现';
@@ -920,7 +919,7 @@ function replaySubagentDemo(){
   subagentTimers.push(setTimeout(()=>{
     subagentLabel.textContent='auto_workflow · 已完成';
     setSubagentOpen(false);
-    subagentStatus.textContent='T3：父级结束，执行区自动收起';
+    subagentStatus.textContent='T3：父级结束，执行区保持收起';
   },4800));
   subagentTimers.push(setTimeout(()=>{
     setSubagentOpen(true);
