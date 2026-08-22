@@ -115,8 +115,22 @@ export function setSnapshot(tabId: string, dataUrl: string): void {
   usePipSnapshots.getState().setSnapshot(tabId, dataUrl);
 }
 
+/** Most recently focused session tab — the collapse-to-PiP fallback
+ *  target for ungrouped web tabs ("float back to where I just was"). */
+let recentSessionTabId: string | null = null;
+function trackRecentSession(s: {
+  tabs: readonly { id: string; kind: string }[];
+  activeId: string | null;
+}): void {
+  const active = s.tabs.find((tab) => tab.id === s.activeId);
+  if (active?.kind === "session") recentSessionTabId = active.id;
+}
+trackRecentSession(useCenterTabs.getState());
+useCenterTabs.subscribe(trackRecentSession);
+
 /** The session tab a collapse-to-PiP would bind this WebTab to:
- *  the session sharing its group, else the first session tab. */
+ *  the session sharing its group, else the most recently focused
+ *  session, else the first session tab. */
 export function pipCollapseTargetFor(
   tabId: string,
   store: {
@@ -132,9 +146,13 @@ export function pipCollapseTargetFor(
   const partner = partnerId
     ? store.tabs.find((tab) => tab.id === partnerId)
     : undefined;
-  return partner?.kind === "session"
-    ? partner.id
-    : store.tabs.find((tab) => tab.kind === "session")?.id ?? null;
+  if (partner?.kind === "session") return partner.id;
+  const recent = store.tabs.find(
+    (tab) => tab.id === recentSessionTabId && tab.kind === "session",
+  );
+  return recent?.id
+    ?? store.tabs.find((tab) => tab.kind === "session")?.id
+    ?? null;
 }
 
 /** Reverse of PiP expand: keep the same WebTab leaf, move focus off it

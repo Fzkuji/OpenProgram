@@ -2610,7 +2610,8 @@ useCenterTabs.setState({
 assert.equal(collapseWebTabToPip(pipOwnedId), false);
 assert.equal(peekWebTabPipId(), null);
 
-// pipCollapseTargetFor: group partner session wins, else first session tab.
+// pipCollapseTargetFor: group partner session wins, else the most
+// recently focused session, else the first session tab.
 useCenterTabs.setState({
   tabs: [
     { id: pipOwnerA, kind: "session", title: "Alpha", sessionId: "pip-a" },
@@ -2629,6 +2630,11 @@ useCenterTabs.setState({
 });
 assert.equal(pipCollapseTargetFor(pipOwnedId), pipOwnerB);
 useCenterTabs.setState({ groups: [] });
+// pipOwnerB was the last focused session (collapse above activated it).
+assert.equal(pipCollapseTargetFor(pipOwnedId), pipOwnerB);
+// Focusing another session moves the fallback target with it.
+useCenterTabs.setState({ activeId: pipOwnerA });
+useCenterTabs.setState({ activeId: pipOwnedId });
 assert.equal(pipCollapseTargetFor(pipOwnedId), pipOwnerA);
 assert.equal(pipCollapseTargetFor(pipOwnerA), null);
 
