@@ -23,7 +23,6 @@ import {
   type AnimatedNavIconHandle,
   ChromeIcon,
   EyeIcon,
-  ShieldCheckIcon,
   SlidersHorizontalIcon,
   WrenchIcon,
   ZapIcon,
@@ -63,9 +62,26 @@ export const UnattendedIcon = forwardRef<AnimatedNavIconHandle, { size?: number 
   },
 );
 
+// Lucide archive — not the permission-badge shield.
 export const SandboxIcon = forwardRef<AnimatedNavIconHandle, { size?: number }>(
-  function SandboxIcon({ size = 20 }, ref) {
-    return <ShieldCheckIcon ref={ref} size={size} />;
+  function SandboxIcon({ size = 20 }, _ref) {
+    return (
+      <svg
+        fill="none"
+        height={size}
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+        viewBox="0 0 24 24"
+        width={size}
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <rect width="20" height="5" x="2" y="3" rx="1" />
+        <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+        <path d="M10 12h4" />
+      </svg>
+    );
   },
 );
 
