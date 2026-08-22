@@ -546,7 +546,12 @@ export function AssistantBubble({ msg, verdict }: {
             <AttachmentChips items={outboundFiles} />
           ) : null}
           {!streaming && msg.id ? (
-            <TurnFilesChips assistantMsgId={msg.id} blocks={msg.blocks} />
+            <TurnFilesChips
+              assistantMsgId={msg.id}
+              blocks={msg.blocks}
+              summary={msg.turnFiles}
+              initiallyReverted={msg.reverted}
+            />
           ) : null}
         </div>
       )}

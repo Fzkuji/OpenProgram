@@ -10,6 +10,7 @@ import { CenterTabStrip } from "./center-tabs/center-tab-strip";
 import { BuiltinTabPane } from "./center-tabs/builtin-tab-pane";
 import { BrowserHomePage } from "./center-tabs/browser-home-page";
 import { FileTabPane } from "./center-tabs/file-tab-pane";
+import { ReviewTabPane } from "./center-tabs/review-tab-pane";
 import { FilesPage } from "./center-tabs/files-page";
 import { NewTabPage } from "./center-tabs/new-tab-page";
 import { TerminalPage } from "./center-tabs/terminal-page";
@@ -458,6 +459,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
     if (tab.kind === "ntp") return <NewTabPage />;
     if (tab.kind === "builtin" && tab.page) {
+      if (tab.page === "review") {
+        return (
+          <ReviewTabPane
+            sessionId={tab.reviewSessionId ?? ""}
+            assistantMsgId={tab.reviewMsgId}
+            initialScope={tab.reviewScope}
+            initialPath={tab.reviewPath}
+          />
+        );
+      }
       if (tab.page === "browser") return <BrowserHomePage />;
       if (tab.page === "files") return <FilesPage />;
       if (tab.page === "terminal") return <TerminalPage preset="shell" />;

@@ -7,7 +7,7 @@
 
 /** Built-in pages that live in the center as their own tab. Files, bookmarks,
  *  history, and terminal are singletons; Browser home is pane-local. */
-export type BuiltinPage = "files" | "browser" | "bookmarks" | "history" | "downloads" | "terminal" | "claude";
+export type BuiltinPage = "files" | "browser" | "bookmarks" | "history" | "downloads" | "terminal" | "claude" | "review";
 
 /** New-tab 页不再是单例（Chrome 行为：＋ 想开几个开几个），每个实例一个
  *  唯一 id。时间戳 + 自增序号，避免与持久化恢复的旧 id 撞车。 */

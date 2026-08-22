@@ -119,6 +119,11 @@ export interface CenterTab {
   faviconUrl?: string;
   /** Builtin tabs only — which built-in page this tab shows. */
   page?: BuiltinPage;
+  /** Review tab only — current scope and source turn. */
+  reviewSessionId?: string;
+  reviewMsgId?: string;
+  reviewScope?: "turn" | "branch" | "workspace";
+  reviewPath?: string;
   /** Unsaved-changes marker — strip shows ● instead of ✕. Set via
    *  setTabDirty by whoever owns the tab's content (file editor). */
   dirty?: boolean;
@@ -224,6 +229,12 @@ export interface CenterTabsState {
   retargetFileTab: (oldId: string, newProjectId: string, newPath: string) => void;
   /** Focus-or-create the singleton tab for a built-in page. */
   openBuiltinTab: (page: BuiltinPage) => void;
+  openReviewTab: (
+    sessionId: string,
+    assistantMsgId?: string,
+    scope?: "turn" | "branch" | "workspace",
+    path?: string,
+  ) => void;
   /** Single-instance new-tab page — reused if already open. */
   openNewTabPage: () => void;
   /** Close a tab; closing the active one activates the right
@@ -279,14 +290,18 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
     id: string,
     make: () => CenterTab,
     replaceable: string[],
+    updateExisting?: (tab: CenterTab) => CenterTab,
   ): Partial<CenterTabsState> {
     const active = s.tabs.find((t) => t.id === s.activeId);
     const existing = s.tabs.find((t) => t.id === id);
     if (existing) {
-      const tabs =
+      const retained =
         active && active.kind === "ntp" && active.id !== id
           ? s.tabs.filter((t) => t.id !== active.id)
           : s.tabs;
+      const tabs = updateExisting
+        ? retained.map((tab) => tab.id === id ? updateExisting(tab) : tab)
+        : retained;
       return commitCenterTabsState(s, { tabs, activeId: id });
     }
     const activeIdx = s.tabs.findIndex((t) => t.id === s.activeId);
@@ -579,6 +594,24 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
           id,
           () => ({ id, kind: "builtin", title: "", page }),
           [],
+        );
+      }),
+
+    openReviewTab: (sessionId, assistantMsgId, scope = "turn", path) =>
+      set((s) => {
+        const id = builtinTabId("review");
+        const context = {
+          reviewSessionId: sessionId,
+          reviewMsgId: assistantMsgId,
+          reviewScope: scope,
+          reviewPath: path,
+        };
+        return focusOrCreate(
+          s,
+          id,
+          () => ({ id, kind: "builtin", title: "", page: "review", ...context }),
+          [],
+          (tab) => ({ ...tab, ...context }),
         );
       }),
 

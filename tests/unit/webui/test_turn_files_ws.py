@@ -1,23 +1,14 @@
-"""Per-turn file review WS actions: list_turn_files, turn_file_diff,
-revert_turn (openprogram.webui.ws_actions.turn_files).
-
-Exercises both paths the module supports:
-  * shadow-git backed — the assistant node carries a ``shadow_git``
-    stamp, so stats/diffs come from real ``git diff`` output;
-  * legacy fallback — no stamp, so counts and diff come from difflib
-    over the checkpoint copy vs current disk, flagged ``approximate``.
-"""
+"""Exact journal Review scopes, bounded diffs, Undo and Reapply."""
 from __future__ import annotations
 
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import patch
+import subprocess
 
 import pytest
 
 from openprogram.store.session.session_store import SessionStore
-from openprogram.store.shadow_git.store import ShadowGitStore
 from openprogram.store.snapshot.checkpoint import CheckpointStore
 from openprogram.webui.ws_actions import turn_files as tf
 
@@ -61,21 +52,13 @@ def _seed(store: SessionStore, session_id: str, assistant_msg_id: str) -> None:
     })
 
 
-def _stamp_shadow(store: SessionStore, session_id: str, msg_id: str,
-                  meta: dict) -> None:
-    _git, idx = store._open(session_id)
-    node = idx.nodes_by_id[msg_id]
-    node.metadata = {**(node.metadata or {}), "shadow_git": meta}
-
-
 def _run(coro):
     return asyncio.run(coro)
 
 
 # ---------------------------------------------------------------- list
 
-def test_list_turn_files_shape_with_shadow(store, tmp_path, monkeypatch):
-    """Shadow-backed turn: every file row carries real +/- counts."""
+def test_list_turn_files_uses_committed_journal_not_shadow(store, tmp_path):
     session_id, msg_id = "s_list", "u1_reply"
     _seed(store, session_id, msg_id)
 
@@ -84,51 +67,44 @@ def test_list_turn_files_shape_with_shadow(store, tmp_path, monkeypatch):
     target = project / "foo.py"
     target.write_text("a\nb\n")
 
-    session_dir = store._session_dir(session_id)
-    CheckpointStore(session_dir).backup_before_edit(msg_id, str(target))
+    journal = CheckpointStore(store._session_dir(session_id))
+    journal.backup_before_edit(msg_id, str(target))
+    target.write_text("a\nb\nc\nd\n")
+    journal.commit_after_edit(msg_id, str(target), operation="edit")
+    _git, index = store._open(session_id)
+    index.nodes_by_id[msg_id].metadata = {
+        **(index.nodes_by_id[msg_id].metadata or {}),
+        "shadow_git": {"repo": str(project), "before": "bad", "after": "bad"},
+    }
 
-    shadow_root = tmp_path / "shadow"
-    shadow_root.mkdir()
-    with patch("openprogram.store.shadow_git.store._shadow_root",
-               return_value=shadow_root):
-        shadow = ShadowGitStore(str(project))
-        before = shadow.head_sha()
-        target.write_text("a\nb\nc\nd\n")
-        after = shadow.commit_turn(msg_id, [str(target)], "turn")
-        assert after
-        _stamp_shadow(store, session_id, msg_id, {
-            "repo": str(project), "before": before, "after": after,
-        })
-
-        ws = FakeWS()
-        _run(tf.handle_list_turn_files(ws, {
-            "action": "list_turn_files",
-            "session_id": session_id,
-            "assistant_msg_id": msg_id,
-        }))
+    ws = FakeWS()
+    _run(tf.handle_list_turn_files(ws, {
+        "action": "list_turn_files",
+        "session_id": session_id,
+        "assistant_msg_id": msg_id,
+    }))
 
     assert ws.sent[0]["type"] == "list_turn_files_result"
     data = ws.sent[0]["data"]
     assert data["paths"] == [str(target)]
     row = data["files"][0]
-    assert set(row) == {"path", "rel", "op", "added", "removed"}
+    assert {"path", "rel", "op", "added", "removed"} <= set(row)
     assert row["rel"] == "foo.py"
     assert row["op"] == "modify"
-    # Empty-tree baseline: the first shadow commit adds all 4 lines.
-    assert row["added"] == 4
+    assert row["added"] == 2
     assert row["removed"] == 0
 
 
-def test_list_turn_files_fallback_counts_without_shadow(store, tmp_path):
-    """No shadow stamp: counts still come back, via difflib."""
+def test_list_turn_files_reads_exact_journal_stats(store, tmp_path):
     session_id, msg_id = "s_fallback", "u1_reply"
     _seed(store, session_id, msg_id)
 
     target = tmp_path / "bar.py"
     target.write_text("one\ntwo\n")
-    CheckpointStore(store._session_dir(session_id)).backup_before_edit(
-        msg_id, str(target))
+    journal = CheckpointStore(store._session_dir(session_id))
+    journal.backup_before_edit(msg_id, str(target))
     target.write_text("one\ntwo\nthree\n")
+    journal.commit_after_edit(msg_id, str(target), operation="edit")
 
     ws = FakeWS()
     _run(tf.handle_list_turn_files(ws, {
@@ -146,9 +122,10 @@ def test_list_turn_files_marks_created_file_as_add(store, tmp_path):
     _seed(store, session_id, msg_id)
 
     target = tmp_path / "new.py"  # does not exist at turn start
-    CheckpointStore(store._session_dir(session_id)).backup_before_edit(
-        msg_id, str(target))
+    journal = CheckpointStore(store._session_dir(session_id))
+    journal.backup_before_edit(msg_id, str(target))
     target.write_text("fresh\n")
+    journal.commit_after_edit(msg_id, str(target), operation="add")
 
     ws = FakeWS()
     _run(tf.handle_list_turn_files(ws, {
@@ -202,7 +179,7 @@ def test_list_turn_files_requires_args(store):
 
 # ---------------------------------------------------------------- diff
 
-def test_turn_file_diff_uses_shadow(store, tmp_path):
+def test_turn_file_diff_uses_exact_before_and_after_blobs(store, tmp_path):
     session_id, msg_id = "s_diff", "u1_reply"
     _seed(store, session_id, msg_id)
 
@@ -210,42 +187,11 @@ def test_turn_file_diff_uses_shadow(store, tmp_path):
     project.mkdir()
     target = project / "foo.py"
     target.write_text("keep\n")
-    CheckpointStore(store._session_dir(session_id)).backup_before_edit(
-        msg_id, str(target))
-
-    shadow_root = tmp_path / "shadow"
-    shadow_root.mkdir()
-    with patch("openprogram.store.shadow_git.store._shadow_root",
-               return_value=shadow_root):
-        shadow = ShadowGitStore(str(project))
-        before = shadow.head_sha()
-        target.write_text("keep\nadded line\n")
-        after = shadow.commit_turn(msg_id, [str(target)], "turn")
-        _stamp_shadow(store, session_id, msg_id, {
-            "repo": str(project), "before": before, "after": after,
-        })
-
-        ws = FakeWS()
-        _run(tf.handle_turn_file_diff(ws, {
-            "session_id": session_id, "assistant_msg_id": msg_id,
-            "path": str(target),
-        }))
-
-    data = ws.sent[0]["data"]
-    assert ws.sent[0]["type"] == "turn_file_diff_result"
-    assert data["approximate"] is False
-    assert "+added line" in data["diff"]
-
-
-def test_turn_file_diff_fallback_is_approximate(store, tmp_path):
-    session_id, msg_id = "s_diff_fb", "u1_reply"
-    _seed(store, session_id, msg_id)
-
-    target = tmp_path / "baz.py"
-    target.write_text("old\n")
-    CheckpointStore(store._session_dir(session_id)).backup_before_edit(
-        msg_id, str(target))
-    target.write_text("new\n")
+    journal = CheckpointStore(store._session_dir(session_id))
+    journal.backup_before_edit(msg_id, str(target))
+    target.write_text("keep\nadded line\n")
+    journal.commit_after_edit(msg_id, str(target), operation="edit")
+    target.write_text("later external edit\n")
 
     ws = FakeWS()
     _run(tf.handle_turn_file_diff(ws, {
@@ -254,7 +200,30 @@ def test_turn_file_diff_fallback_is_approximate(store, tmp_path):
     }))
 
     data = ws.sent[0]["data"]
-    assert data["approximate"] is True
+    assert ws.sent[0]["type"] == "turn_file_diff_result"
+    assert data["approximate"] is False
+    assert "+added line" in data["diff"]
+
+
+def test_turn_file_diff_without_shadow_is_still_exact(store, tmp_path):
+    session_id, msg_id = "s_diff_fb", "u1_reply"
+    _seed(store, session_id, msg_id)
+
+    target = tmp_path / "baz.py"
+    target.write_text("old\n")
+    journal = CheckpointStore(store._session_dir(session_id))
+    journal.backup_before_edit(msg_id, str(target))
+    target.write_text("new\n")
+    journal.commit_after_edit(msg_id, str(target), operation="edit")
+
+    ws = FakeWS()
+    _run(tf.handle_turn_file_diff(ws, {
+        "session_id": session_id, "assistant_msg_id": msg_id,
+        "path": str(target),
+    }))
+
+    data = ws.sent[0]["data"]
+    assert data["approximate"] is False
     assert "-old" in data["diff"]
     assert "+new" in data["diff"]
 
@@ -316,7 +285,8 @@ def test_revert_turn_action_reports_error(store):
 
 def test_actions_registered():
     assert set(tf.ACTIONS) == {
-        "list_turn_files", "turn_file_diff", "revert_turn", "reapply_turn",
+        "list_turn_files", "turn_file_diff", "review_scope", "review_file_diff",
+        "revert_turn", "reapply_turn",
     }
 
 
@@ -367,3 +337,114 @@ def test_reapply_turn_restores_after_image(store, tmp_path, monkeypatch):
     assert data["reapplied_paths"] == [str(target)]
     assert data["errors"] == []
     assert target.read_text(encoding="utf-8") == "after\n"
+
+
+def test_turn_scope_uses_summary_embedded_on_history_node(store, tmp_path):
+    session_id, msg_id = "s_embedded", "u1_reply"
+    _seed(store, session_id, msg_id)
+    target = tmp_path / "embedded.py"
+    _git, index = store._open(session_id)
+    index.nodes_by_id[msg_id].metadata = {
+        **(index.nodes_by_id[msg_id].metadata or {}),
+        "turn_files": {
+            "version": 2,
+            "file_count": 1,
+            "added": 3,
+            "removed": 1,
+            "files": [{
+                "path": str(target), "op": "modify", "added": 3,
+                "removed": 1, "binary": False, "diff_state": "available",
+                "recoverability": "exact", "unavailable_reason": None,
+            }],
+        },
+    }
+
+    ws = FakeWS()
+    _run(tf.handle_review_scope(ws, {
+        "session_id": session_id, "scope": "turn", "assistant_msg_id": msg_id,
+    }))
+
+    data = ws.sent[0]["data"]
+    assert data["status"] == "ready"
+    assert data["source"] == "mutation_journal"
+    assert data["file_count"] == 1
+    assert data["files"][0]["added"] == 3
+
+
+def test_branch_scope_excludes_sibling_turn_receipt(store, tmp_path):
+    session_id = "s_branch_scope"
+    _seed(store, session_id, "a1")
+    active = tmp_path / "active.py"
+    active.write_text("v0\n", encoding="utf-8")
+    journal = CheckpointStore(store._session_dir(session_id))
+    journal.backup_before_edit("a1", str(active))
+    active.write_text("v1\n", encoding="utf-8")
+    journal.commit_after_edit("a1", str(active), operation="edit")
+    store.append_message(session_id, {
+        "id": "u2", "role": "user", "content": "again", "predecessor": "a1",
+    })
+    store.append_message(session_id, {
+        "id": "a2", "role": "assistant", "content": "done", "predecessor": "u2",
+    })
+    journal.backup_before_edit("a2", str(active))
+    active.write_text("v2\n", encoding="utf-8")
+    journal.commit_after_edit("a2", str(active), operation="edit")
+    sibling = tmp_path / "sibling.py"
+    sibling.write_text("before\n", encoding="utf-8")
+    store.append_message(session_id, {
+        "id": "fork-u", "role": "user", "content": "fork", "predecessor": "a1",
+    })
+    store.append_message(session_id, {
+        "id": "fork-a", "role": "assistant", "content": "forked",
+        "predecessor": "fork-u",
+    })
+    journal.backup_before_edit("fork-a", str(sibling))
+    sibling.write_text("after\n", encoding="utf-8")
+    journal.commit_after_edit("fork-a", str(sibling), operation="edit")
+    store.set_head(session_id, "a2")
+
+    result = tf._branch_scope(session_id)
+
+    assert result["source"] == "mutation_journal"
+    assert [row["path"] for row in result["files"]] == [str(active)]
+    assert result["files"][0]["turn_ids"] == ["a1", "a2"]
+
+
+def test_workspace_scope_excludes_gitignored_files(store, tmp_path, monkeypatch):
+    root = tmp_path / "repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "t@example.com"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "T"], check=True)
+    (root / ".gitignore").write_text("ignored.log\n", encoding="utf-8")
+    tracked = root / "tracked.py"
+    tracked.write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-qm", "base"], check=True)
+    tracked.write_text("after\n", encoding="utf-8")
+    (root / "visible.tmp").write_text("visible\n", encoding="utf-8")
+    (root / "ignored.log").write_text("ignore me\n", encoding="utf-8")
+    monkeypatch.setattr(tf, "_project_root", lambda _session_id: root)
+
+    result = tf._workspace_scope("session")
+
+    rels = {row["rel"] for row in result["files"]}
+    assert rels == {"tracked.py", "visible.tmp"}
+    assert result["source"] == "git"
+    assert result["ignored_policy"] == "exclude_standard"
+
+
+def test_exact_diff_payload_is_bounded(store, tmp_path):
+    session_id, msg_id = "s_large_diff", "u1_reply"
+    _seed(store, session_id, msg_id)
+    target = tmp_path / "large.txt"
+    target.write_text("before\n", encoding="utf-8")
+    journal = CheckpointStore(store._session_dir(session_id))
+    journal.backup_before_edit(msg_id, str(target))
+    target.write_text("x" * (tf._MAX_DIFF_BYTES + 1), encoding="utf-8")
+    journal.commit_after_edit(msg_id, str(target), operation="edit")
+
+    result = tf._turn_file_diff(session_id, msg_id, str(target))
+
+    assert result["diff"] == ""
+    assert result["diff_state"] == "large"

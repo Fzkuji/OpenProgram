@@ -12,6 +12,7 @@ import { Bookmark, CirclePlus, Download, FileText, History, TerminalSquare, X } 
 
 import {
   ChromeIcon,
+  FeatherIcon,
   MessageCircleIcon,
   type AnimatedNavIconHandle,
 } from "@/components/animated-icons";
@@ -84,6 +85,8 @@ function CompoundMemberIcon({ tab, animate }: { tab: CenterTab; animate: boolean
       ) : tab.kind === "builtin" ? (
         tab.page === "files"
           ? <FileText size={13} />
+          : tab.page === "review"
+          ? <FeatherIcon size={13} />
           : tab.page === "history"
           ? <History size={13} />
           : tab.page === "downloads"
@@ -352,6 +355,8 @@ export function TabItem({
           ) : tab.kind === "builtin" ? (
             tab.page === "files"
               ? <FileText size={13} />
+              : tab.page === "review"
+              ? <FeatherIcon size={13} />
               : tab.page === "history"
               ? <History size={13} />
               : tab.page === "downloads"

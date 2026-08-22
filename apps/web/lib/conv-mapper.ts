@@ -6,7 +6,12 @@
  * `renderSessionMessages` in `runtime-bridge/conversations.ts` feeds the
  * result into the store so it mirrors the loaded conversation.
  */
-import type { AssistantBlock, ChatMsg, ChatToolCall } from "./session-store";
+import type {
+  AssistantBlock,
+  ChatMsg,
+  ChatToolCall,
+} from "./session-store";
+import type { TurnFileSummary } from "./session-store/types";
 
 /** Same allowlist as the one in ``chat-stream.ts``. Hides any persisted
  *  agentic tool block on history reload so we don't show both the
@@ -78,6 +83,8 @@ interface LegacyMsg {
   /** Conversation-order edge only; it must not decide runtime ownership. */
   predecessor?: string;
   source?: string;
+  turn_files?: TurnFileSummary;
+  reverted?: boolean;
 }
 
 export interface AttachMeta {
@@ -333,6 +340,8 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
         timestamp: ts,
         contextTree: (m.context_tree as never) || undefined,
         usage: m.usage,
+        turnFiles: m.turn_files,
+        reverted: Boolean(m.reverted),
         attempts: m.attempts as never[] | undefined,
         current_attempt: m.current_attempt,
         attach: _readAttach(m),

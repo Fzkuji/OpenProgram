@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bookmark, Download, FileText, History, MessageCircle, CirclePlus, TerminalSquare, X } from "lucide-react";
 
-import { ChromeIcon } from "@/components/animated-icons";
+import { ChromeIcon, FeatherIcon } from "@/components/animated-icons";
 import { useTranslation } from "@/lib/i18n";
 import { builtinPageLabel } from "./builtin-page-label";
 import {
@@ -50,6 +50,7 @@ function IconFor({ tab }: { tab: CenterTab }) {
   if (tab.kind === "ntp") return <CirclePlus size={15} aria-hidden="true" />;
   if (tab.kind === "builtin") {
     if (tab.page === "files") return <FileText size={15} aria-hidden="true" />;
+    if (tab.page === "review") return <FeatherIcon size={15} aria-hidden="true" />;
     if (tab.page === "history") return <History size={15} aria-hidden="true" />;
     if (tab.page === "downloads") return <Download size={15} aria-hidden="true" />;
     if (tab.page === "browser") return <ChromeIcon size={15} aria-hidden="true" />;

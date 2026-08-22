@@ -15,5 +15,6 @@ export function builtinPageLabel(
   if (page === "bookmarks") return text("Bookmarks", "书签");
   if (page === "terminal") return text("Terminal", "终端");
   if (page === "claude") return "Claude Code";
+  if (page === "review") return text("Review", "审阅");
   return text("Browser", "浏览器");
 }

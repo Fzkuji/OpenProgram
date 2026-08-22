@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { useSessionStore } from "@/lib/session-store";
+import type { TurnFileSummary } from "@/lib/session-store/types";
 import { Markdown } from "@/lib/format-utils/markdown";
 import { parseAttachments, AttachmentChips } from "./user-attachments";
 import { TurnFilesChips } from "./turn-files-chips";
@@ -30,6 +31,8 @@ type RailMsg = {
   preview: string;
   assistantId?: string;
   assistantSummary?: string;
+  assistantTurnFiles?: TurnFileSummary;
+  assistantReverted?: boolean;
 };
 
 /** Delimiter for the packed form below. Message text can contain any
@@ -42,12 +45,20 @@ const RAIL_SEP = "\u241f";
  *  shallowly — `useShallow` only looks one level deep, and fresh row
  *  OBJECTS would defeat it on every read. */
 function packRow(r: RailMsg): string {
-  return [r.id, r.content, r.preview, r.assistantId ?? "", r.assistantSummary ?? ""]
+  return [
+    r.id,
+    r.content,
+    r.preview,
+    r.assistantId ?? "",
+    r.assistantSummary ?? "",
+    r.assistantTurnFiles ? JSON.stringify(r.assistantTurnFiles) : "",
+    r.assistantReverted ? "1" : "",
+  ]
     .join(RAIL_SEP);
 }
 
 function unpackRow(packed: string): RailMsg {
-  const [id, content, preview, assistantId, assistantSummary] =
+  const [id, content, preview, assistantId, assistantSummary, turnFiles, reverted] =
     packed.split(RAIL_SEP);
   return {
     id,
@@ -55,6 +66,10 @@ function unpackRow(packed: string): RailMsg {
     preview,
     assistantId: assistantId || undefined,
     assistantSummary: assistantSummary || undefined,
+    assistantTurnFiles: turnFiles
+      ? JSON.parse(turnFiles) as TurnFileSummary
+      : undefined,
+    assistantReverted: reverted === "1",
   };
 }
 
@@ -80,6 +95,8 @@ function useUserMessages(): RailMsg[] {
         // 紧随其后的第一条非-runtime 助手回复：取它的 id + 开头摘要。
         let assistantId: string | undefined;
         let assistantSummary: string | undefined;
+        let assistantTurnFiles: TurnFileSummary | undefined;
+        let assistantReverted = false;
         for (let j = i + 1; j < order.length; j++) {
           const a = s.messagesById[order[j]];
           if (!a) continue;
@@ -89,6 +106,8 @@ function useUserMessages(): RailMsg[] {
           const t = a.blocks?.find((b) => b.type === "text")?.text ?? a.content ?? "";
           // 保留原始空白/换行，让预览卡按 markdown 渲染；只按长度截断。
           assistantSummary = t.trim().slice(0, 200);
+          assistantTurnFiles = a.turnFiles;
+          assistantReverted = Boolean(a.reverted);
           break;
         }
         out.push(
@@ -98,6 +117,8 @@ function useUserMessages(): RailMsg[] {
             preview: preview.slice(0, 60),
             assistantId,
             assistantSummary: assistantSummary || undefined,
+            assistantTurnFiles,
+            assistantReverted,
           }),
         );
       }
@@ -147,12 +168,16 @@ function PreviewCard({
   left,
   assistantSummary,
   assistantId,
+  assistantTurnFiles,
+  assistantReverted,
 }: {
   content: string;
   top: number;
   left: number;
   assistantSummary?: string;
   assistantId?: string;
+  assistantTurnFiles?: TurnFileSummary;
+  assistantReverted?: boolean;
 }) {
   const { attachments, text } = useMemo(
     () => parseAttachments(content),
@@ -171,7 +196,13 @@ function PreviewCard({
           <Markdown source={assistantSummary} />
         </div>
       ) : null}
-      {assistantId ? <TurnFilesChips assistantMsgId={assistantId} /> : null}
+      {assistantId ? (
+        <TurnFilesChips
+          assistantMsgId={assistantId}
+          summary={assistantTurnFiles}
+          initiallyReverted={assistantReverted}
+        />
+      ) : null}
     </div>
   );
 }
@@ -356,6 +387,8 @@ export function MessageRail() {
               left={left}
               assistantSummary={msgs[hoverIdx].assistantSummary}
               assistantId={msgs[hoverIdx].assistantId}
+              assistantTurnFiles={msgs[hoverIdx].assistantTurnFiles}
+              assistantReverted={msgs[hoverIdx].assistantReverted}
             />
           );
         })()

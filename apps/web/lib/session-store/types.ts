@@ -168,6 +168,12 @@ export interface ChatMsg {
   /** Provider usage for the runtime block footer. Opaque — passed
    *  straight to the legacy `formatUsageFooterLabel`. */
   usage?: unknown;
+  /** Exact committed file-mutation summary embedded on the assistant node.
+   *  Historical transcripts render the file card from this field without
+   *  issuing one WS request per message. */
+  turnFiles?: TurnFileSummary;
+  /** Persisted single-turn history state; enables Redo after reload. */
+  reverted?: boolean;
   /** Sibling-version navigator state (the `< N/M >` strip). Populated
    *  from a loaded conversation when the turn has been retried/edited;
    *  the prev/next ids are what `/api/chat/checkout` targets. */
@@ -242,6 +248,25 @@ export interface ChatMsg {
    *  ``runtimeChildren`` in order — the runtime rows carry no
    *  ``tool_call_id`` back-reference. */
   blocks?: AssistantBlock[];
+}
+
+export interface TurnFileSummaryFile {
+  path: string;
+  op: string;
+  added: number | null;
+  removed: number | null;
+  binary?: boolean;
+  diff_state?: string;
+  recoverability?: string;
+  unavailable_reason?: string | null;
+}
+
+export interface TurnFileSummary {
+  version: number;
+  files: TurnFileSummaryFile[];
+  file_count: number;
+  added: number | null;
+  removed: number | null;
 }
 
 export interface AssistantBlock {
