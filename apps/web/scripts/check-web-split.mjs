@@ -2086,7 +2086,7 @@ assert.match(desktopBridgeSource, /const visibleWebBounds = new Map/);
 assert.match(desktopBridgeSource, /targetBridge\.webTab\.syncVisible/);
 assert.match(desktopBridgeSource, /state\.openWebTabInSplit\(d\.url\)/);
 assert.match(desktopBridgeSource, /state\.ensureWebTab\(d\.url\)/);
-assert.match(desktopBridgeSource, /useWebTabPip\.getState\(\)\.show\(id\)/);
+assert.match(desktopBridgeSource, /useWebTabPip\.getState\(\)\.show\(id, active\.id\)/);
 assert.match(desktopBridgeSource, /waitForWebTabReady\(id, 2000\)/);
 assert.match(desktopBridgeSource, /subscribeWebTabPopups\(bridge\)/);
 assert.match(desktopBridgeSource, /state\.openPopupWebTab\(popup\.url, popup\.openerId\)/);
@@ -2345,10 +2345,7 @@ assert.match(
 );
 
 useCenterTabs.setState({
-  tabs: [
-    { id: "s:chat", kind: "session", title: "Chat", sessionId: "chat" },
-    { id: "s:other", kind: "session", title: "Other", sessionId: "other" },
-  ],
+  tabs: [{ id: "s:chat", kind: "session", title: "Chat", sessionId: "chat" }],
   activeId: "s:chat",
   groups: [],
   splitWebTabId: null,
@@ -2395,15 +2392,30 @@ assert.equal(
   pipCoversCenter(pipOnlyId, useCenterTabs.getState()),
   true,
 );
-useCenterTabs.getState().setActive("s:other");
+useCenterTabs.setState((state) => ({
+  tabs: [
+    ...state.tabs,
+    { id: "s:pip-other", kind: "session", title: "Other", sessionId: "pip-other" },
+  ],
+}));
+useCenterTabs.getState().setActive("s:pip-other");
 assert.equal(
   pipCoversCenter(pipOnlyId, useCenterTabs.getState()),
   false,
   "PiP must not follow a different chat",
 );
 assert.equal(peekWebTabPipId(), pipOnlyId, "chat switch keeps the owner preview restorable");
+assert.equal(
+  visibleWebTab(),
+  null,
+  "a hidden owner-scoped PiP must leave the synchronous agent surface inventory",
+);
 useCenterTabs.getState().setActive("s:chat");
+useCenterTabs.setState((state) => ({
+  tabs: state.tabs.filter((tab) => tab.id !== "s:pip-other"),
+}));
 assert.equal(pipCoversCenter(pipOnlyId, useCenterTabs.getState()), true);
+assert.equal(visibleWebTab()?.id, pipOnlyId);
 useCenterTabs.getState().setActive(pipOnlyId);
 assert.equal(useCenterTabs.getState().activeId, pipOnlyId);
 assert.equal(pipCoversCenter(pipOnlyId, useCenterTabs.getState()), false);
@@ -2453,6 +2465,11 @@ assert.match(pipSource, /onPointerDown=\{\(event\) => onDragPointerDown\("move"/
 assert.match(pipSource, /onPointerDown=\{\(event\) => onDragPointerDown\("resize"/);
 assert.match(pipSource, /const BOUNDS_THROTTLE_MS = 100;/);
 assert.match(pipSource, /const pipSnapshots = new Map/);
+assert.match(
+  pipSource,
+  /pip\.tabId !== tabId[\s\S]*?pipCoversCenter\([\s\S]*?pip\.ownerTabId[\s\S]*?setPipZoom\?\.\(tabId, null\)/,
+  "a delayed PiP bounds callback must restore zoom after its owner chat loses focus",
+);
 assert.match(pipSource, /reportRef\.current\(true\)/);
 assert.match(pipSource, /if \(dragRef\.current\) return;/);
 assert.match(pipSource, /translate\(\$\{next\.x - drag\.origin\.x\}px/);

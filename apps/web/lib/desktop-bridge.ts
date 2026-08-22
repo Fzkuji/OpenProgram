@@ -21,7 +21,11 @@ import {
   useCenterTabs,
   validateTransferredTabs,
 } from "@/lib/state/center-tabs-store";
-import { peekWebTabPipId, useWebTabPip } from "@/lib/state/web-tab-pip-store";
+import {
+  peekWebTabPipId,
+  pipCoversCenter,
+  useWebTabPip,
+} from "@/lib/state/web-tab-pip-store";
 import {
   centerTabStripEntries,
   findCenterTabGroup,
@@ -347,7 +351,7 @@ export function visibleWebTab() {
   const active = state.tabs.find((tab) => tab.id === state.activeId);
   if (active?.kind === "web" && isWebTabReady(active.id)) return active;
   const pipId = peekWebTabPipId();
-  if (pipId && isWebTabReady(pipId)) {
+  if (pipId && pipCoversCenter(pipId, state) && isWebTabReady(pipId)) {
     return state.tabs.find((tab) => tab.id === pipId && tab.kind === "web") ?? null;
   }
   return null;
@@ -370,7 +374,7 @@ function visibleWebTabById(tabId: string) {
     visibleIds.add(state.splitWebTabId);
   }
   const pipId = peekWebTabPipId();
-  if (pipId) visibleIds.add(pipId);
+  if (pipId && pipCoversCenter(pipId, state)) visibleIds.add(pipId);
   return visibleIds.has(tabId) && isWebTabActuallyVisible(tabId)
     ? state.tabs.find((tab) => tab.id === tabId && tab.kind === "web") ?? null
     : null;
@@ -882,7 +886,7 @@ export function installDesktopMenuHandlers(): void {
         id = state.openWebTabInSplit(d.url);
       } else if (usePip) {
         id = state.ensureWebTab(d.url);
-        useWebTabPip.getState().show(id);
+        useWebTabPip.getState().show(id, active.id);
       } else {
         state.openWebTab(d.url);
         id = useCenterTabs.getState().activeId;

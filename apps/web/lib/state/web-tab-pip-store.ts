@@ -19,19 +19,30 @@ export type WebTabPipRect = {
 
 export const useWebTabPip = create<{
   tabId: string | null;
+  ownerTabId: string | null;
   backgroundTabId: string | null;
+  backgroundOwnerTabId: string | null;
   rect: WebTabPipRect | null;
-  show: (tabId: string) => void;
+  show: (tabId: string, ownerTabId: string) => void;
   hide: () => void;
   setRect: (rect: WebTabPipRect) => void;
 }>((set) => ({
   tabId: null,
+  ownerTabId: null,
   backgroundTabId: null,
+  backgroundOwnerTabId: null,
   rect: null,
-  show: (tabId) => set({ tabId, backgroundTabId: null }),
+  show: (tabId, ownerTabId) => set({
+    tabId,
+    ownerTabId,
+    backgroundTabId: null,
+    backgroundOwnerTabId: null,
+  }),
   hide: () => set((s) => ({
     tabId: null,
+    ownerTabId: null,
     backgroundTabId: s.tabId ?? s.backgroundTabId,
+    backgroundOwnerTabId: s.ownerTabId ?? s.backgroundOwnerTabId,
   })),
   setRect: (rect) => set({ rect }),
 }));
@@ -40,8 +51,16 @@ export function peekWebTabPipId(): string | null {
   return useWebTabPip.getState().tabId;
 }
 
+export function peekWebTabPipOwnerId(): string | null {
+  return useWebTabPip.getState().ownerTabId;
+}
+
 export function peekWebTabPipBackgroundId(): string | null {
   return useWebTabPip.getState().backgroundTabId;
+}
+
+export function peekWebTabPipBackgroundOwnerId(): string | null {
+  return useWebTabPip.getState().backgroundOwnerTabId;
 }
 
 /** Reverse of PiP expand: keep the same WebTab leaf, move focus off it
@@ -52,18 +71,20 @@ export function collapseWebTabToPip(tabId: string): boolean {
     return false;
   }
   const group = findCenterTabGroup(store.groups, tabId);
-  const partnerId =
-    group?.memberIds.find((id) => id !== tabId)
+  const ownerTabId =
+    group?.memberIds.find((id) =>
+      store.tabs.some((tab) => tab.id === id && tab.kind === "session"),
+    )
     ?? store.tabs.find((tab) => tab.kind === "session")?.id
-    ?? store.tabs.find((tab) => tab.id !== tabId)?.id
     ?? null;
+  if (!ownerTabId) return false;
   if (store.splitWebTabId === tabId) {
     store.setSplitWebTab(null);
   } else if (group) {
     store.ungroupTab(tabId);
   }
-  if (partnerId) store.setActive(partnerId);
-  useWebTabPip.getState().show(tabId);
+  store.setActive(ownerTabId);
+  useWebTabPip.getState().show(tabId, ownerTabId);
   return true;
 }
 
@@ -74,10 +95,17 @@ export function pipCoversCenter(
     activeId: string | null;
     groups: readonly { memberIds: string[]; visibleIds: string[] }[];
   } = useCenterTabs.getState(),
+  ownerTabId = (() => {
+    const pip = useWebTabPip.getState();
+    return pip.tabId === tabId
+      ? pip.ownerTabId
+      : pip.backgroundTabId === tabId ? pip.backgroundOwnerTabId : null;
+  })(),
 ): boolean {
   if (!state.tabs.some((tab) => tab.id === tabId && tab.kind === "web")) {
     return false;
   }
+  if (!ownerTabId || state.activeId !== ownerTabId) return false;
   if (state.activeId === tabId) return false;
   const group = state.activeId
     ? state.groups.find((item) => item.memberIds.includes(state.activeId!))

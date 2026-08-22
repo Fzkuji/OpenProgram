@@ -70,6 +70,7 @@ function measuredRect(el: HTMLElement): WebTabPipRect {
 export function WebTabPip() {
   const { text } = useTranslation();
   const tabId = useWebTabPip((s) => s.tabId);
+  const ownerTabId = useWebTabPip((s) => s.ownerTabId);
   const hide = useWebTabPip((s) => s.hide);
   const rect = useWebTabPip((s) => s.rect);
   const setRect = useWebTabPip((s) => s.setRect);
@@ -79,7 +80,17 @@ export function WebTabPip() {
   const tab = tabId
     ? tabs.find((item) => item.id === tabId && item.kind === "web")
     : undefined;
-  const visible = !!tabId && pipCoversCenter(tabId, { tabs, activeId, groups });
+  const visible = !!tabId && pipCoversCenter(
+    tabId,
+    { tabs, activeId, groups },
+    ownerTabId,
+  );
+  const hostedInCenter = !!tabId && (
+    activeId === tabId
+    || !!(activeId && groups.find((group) =>
+      group.memberIds.includes(activeId) && group.visibleIds.includes(tabId),
+    ))
+  );
   const rootRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<PipDrag | null>(null);
@@ -94,8 +105,8 @@ export function WebTabPip() {
   const url = tab?.url || (tabId?.startsWith("w:") ? tabId.slice(2) : "");
 
   useEffect(() => {
-    if (tabId && !visible) hide();
-  }, [tabId, visible, hide, activeId, groups, tabs]);
+    if (tabId && hostedInCenter) hide();
+  }, [tabId, hostedInCenter, hide]);
 
   useEffect(() => () => {
     if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
@@ -131,6 +142,20 @@ export function WebTabPip() {
     if (!el) return;
     const publish = () => {
       lastPublishRef.current = Date.now();
+      const pip = useWebTabPip.getState();
+      if (
+        pip.tabId !== tabId
+        || !pipCoversCenter(
+          tabId,
+          useCenterTabs.getState(),
+          pip.ownerTabId,
+        )
+      ) {
+        removeVisibleWebTabBounds(bridge, tabId);
+        bridge.webTab.setPipZoom?.(tabId, null);
+        setWebTabReady(tabId, false);
+        return;
+      }
       const bounds = measureWebTabBounds(el);
       const occluded = isWebTabOccluded(
         bounds,
