@@ -20,6 +20,7 @@ assert.match(manage, /summary\?: ReactNode/, "the shared subnav must accept an a
 assert.match(manage, /action\?: ManageAction/, "the secondary task bar must own the Add action");
 assert.match(manage, /styles\.subnavTab/, "secondary tabs must have their own visual treatment");
 assert.match(manage, /onKeyDown=\{\(event\) => moveTab\(event, index\)\}/, "shared subnav tabs must support keyboard navigation");
+assert.match(manage, /tabIndex=\{onClick \? 0 : undefined\}[\s\S]*activateOnKey\(onClick\)/, "clickable management rows must support keyboard activation");
 assert.match(plugins, /text\("Discover", "发现"\)/, "plugins must use the shared Discover task name");
 assert.match(skills, /text\("Installed", "已安装"\)/, "skills must use the shared Installed task name");
 assert.match(mcp, /id: "discover", label: text\("Discover", "发现"\)/, "MCP must expose the shared Discover task");
@@ -41,8 +42,10 @@ assert.doesNotMatch(mcpCatalog, /await fetch\(/, "catalog requests must use the 
 assert.match(mcpCatalog, /min-w-0 flex-col[\s\S]*break-all[\s\S]*self-end sm:self-auto/, "catalog rows must keep actions visible at narrow widths");
 assert.doesNotMatch(capabilities, /Add plugin|Add skill|Add MCP server|添加插件|添加技能|添加 MCP 服务器/, "the top toolbar must contain no Add action");
 assert.match(plugins, /action=\{\{[\s\S]*Add plugin/, "Plugins Add belongs to the secondary task bar");
+assert.match(plugins, /const issueNames = new Set\(/, "plugin issue counts must deduplicate loader and row errors");
 assert.match(skills, /action=\{\{[\s\S]*Add skill/, "Skills Add belongs to the secondary task bar");
 assert.match(mcp, /action=\{\{[\s\S]*Add MCP server/, "MCP Add belongs to the secondary task bar");
+assert.match(mcp, /<button[\s\S]*type="button"[\s\S]*styles\.serverItem/, "MCP server selection must use a keyboard-accessible button");
 assert.match(manageCss, /\.subnavTab/, "secondary tabs must have a dedicated visual treatment");
 assert.match(manageCss, /\.surface/, "single-column extension bodies must share one surface");
 assert.match(manageCss, /\.splitBody[\s\S]*border-radius: 12px/, "MCP split view must use the same surface geometry");

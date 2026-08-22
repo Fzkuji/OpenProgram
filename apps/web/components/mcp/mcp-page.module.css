@@ -51,6 +51,8 @@
   font-weight: 400;
   color: var(--nav-color);
   border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
   border-radius: var(--ui-list-radius);
   transition: background 150ms ease-out, color 150ms ease-out;
   white-space: nowrap;

@@ -32,7 +32,11 @@ export function PluginsPage({
     refresh();
   }, [refresh]);
 
-  const errCount = Object.keys(errors).length + plugins.filter((p) => p.error).length;
+  const issueNames = new Set([
+    ...Object.keys(errors),
+    ...plugins.filter((plugin) => plugin.error).map((plugin) => plugin.name),
+  ]);
+  const errCount = issueNames.size;
   const enabledCount = plugins.filter((p) => p.enabled && p.loaded && !p.error).length;
 
   const tabs = [

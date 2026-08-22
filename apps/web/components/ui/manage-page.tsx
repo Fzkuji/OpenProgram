@@ -24,7 +24,7 @@ import type {
   AnimatedNavIconProps,
 } from "@/components/animated-icons";
 
-import { cn } from "@/lib/utils";
+import { activateOnKey, cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { isManageActionIcon } from "./manage-action-icon";
 import styles from "./manage-page.module.css";
@@ -267,7 +267,9 @@ export function ManageRow({
   return (
     <div
       role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
+      onKeyDown={onClick ? activateOnKey(onClick) : undefined}
       title={title}
       className={cn(styles.row, !onClick && styles.rowStatic, className)}
     >

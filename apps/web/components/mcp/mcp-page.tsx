@@ -340,7 +340,8 @@ export function McpPage({
               shownServers.map((s) => {
                 const { dotCls } = stateBadge(s);
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={s.name}
                     className={cn(
                       styles.serverItem,
@@ -351,7 +352,7 @@ export function McpPage({
                     <span className={cn(styles.serverDot, dotCls)} />
                     <span className={styles.serverName}>{s.name}</span>
                     <span className={styles.serverCount}>{s.tool_count}</span>
-                  </div>
+                  </button>
                 );
               })
             )}
