@@ -23,7 +23,7 @@ export function SkillsPage({
   onNewClose?: () => void;
 } = {}) {
   const { t, text } = useTranslation();
-  const { skills, fetchSkills, error } = useSkills();
+  const { skills, fetchSkills, error, loading } = useSkills();
   const [tab, setTab] = useState<Tab>("browse");
   const [localNewOpen, setLocalNewOpen] = useState(false);
   const newOpen = newOpenProp ?? localNewOpen;
@@ -37,7 +37,11 @@ export function SkillsPage({
   ];
   const enabledCount = skills.filter((skill) => skill.enabled).length;
 
-  const body = tab === "browse" ? <SkillsList externalFilter={query} /> : <DiscoverySources query={query} />;
+  const body = tab === "browse"
+    ? loading && skills.length === 0
+      ? <div className={styles.empty}>{text("Loading skills...", "正在加载技能...")}</div>
+      : <SkillsList externalFilter={query} />
+    : <DiscoverySources query={query} />;
 
   const content = (
     <>

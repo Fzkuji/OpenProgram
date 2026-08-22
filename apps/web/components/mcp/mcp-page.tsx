@@ -48,6 +48,7 @@ export function McpPage({
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<ServerDetail | null>(null);
+  const [detailErr, setDetailErr] = useState<string | null>(null);
   const [editing, setEditing] = useState<EditTarget | null>(null);
   const [busy, setBusy] = useState<BusyAction>(null);
   type McpTab = "installed" | "discover";
@@ -113,11 +114,12 @@ export function McpPage({
         );
         if (signal?.aborted) return;
         setDetail(json);
+        setDetailErr(null);
         setActionErr(null);
       } catch (e) {
         if ((e as Error).name === "AbortError") return;
         setDetail(null);
-        setActionErr(e instanceof Error ? e.message : String(e));
+        setDetailErr(e instanceof Error ? e.message : String(e));
       }
     },
     [],
@@ -127,6 +129,7 @@ export function McpPage({
     if (!selected) return;
     const ac = new AbortController();
     setDetail(null);
+    setDetailErr(null);
     void fetchDetail(selected, ac.signal);
     return () => ac.abort();
   }, [selected, fetchDetail]);
@@ -370,6 +373,7 @@ export function McpPage({
       <Dialog open={selectedServer !== null} onOpenChange={(open) => { if (!open) setSelected(null); }}>
         <DialogContent className="max-h-[86vh] overflow-y-auto sm:max-w-[920px]">
           <DialogHeader><DialogTitle className="sr-only">{selectedServer?.name || text("MCP server details", "MCP 服务器详情")}</DialogTitle></DialogHeader>
+          {detailErr && <div className={shared.errorBar} role="alert">{detailErr}</div>}
           {selectedServer && <DetailView
             server={selectedServer}
             detail={detail}

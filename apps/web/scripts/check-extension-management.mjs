@@ -59,11 +59,14 @@ assert.match(skillsList, /aria-label=\{allOn[\s\S]*Disable \$\{node\.segment\}/,
 assert.match(mcp, /action=\{\{[\s\S]*Add MCP server/, "MCP Add belongs to the secondary task bar");
 assert.match(mcp, /<ManageRow[\s\S]*Open MCP server details/, "MCP Installed must use the shared management row");
 assert.match(mcp, /<Dialog open=\{selectedServer !== null\}/, "MCP details must use the standard detail dialog");
+assert.match(mcp, /detailErr && <div className=\{shared\.errorBar\} role="alert">/, "MCP detail failures must be visible inside the dialog");
 assert.doesNotMatch(mcp, /shared\.splitBody|styles\.serverItem/, "MCP must not retain its old split-list grammar");
 assert.match(manageCss, /\.subnavTab/, "secondary tabs must have a dedicated visual treatment");
 assert.match(manageCss, /\.catalogGrid[\s\S]*\.catalogCard/, "discovery cards must share one visual system");
 assert.doesNotMatch(manageCss, /\.surface\s*\{/, "extension bodies must not add a decorative outer frame");
 assert.match(pluginStore, /loadError: string \| null/, "plugin list failures must be visible state");
+assert.match(plugins, /loading && plugins\.length === 0[\s\S]*Loading plugins/, "Plugins must distinguish loading from an empty collection");
+assert.match(skills, /loading && skills\.length === 0[\s\S]*Loading skills/, "Skills must distinguish loading from an empty collection");
 assert.match(fetchClient, /d\.detail/, "shared request errors must parse FastAPI detail responses");
 assert.match(mcp, /\{actionErr && <div className=\{shared\.errorBar\} role="alert">\{actionErr\}<\/div>\}/, "failed MCP requests must render an alert instead of doing nothing");
 assert.match(plugins, /catch \(e\)[\s\S]*setLog/, "manual plugin install failures must stay visible in the dialog");

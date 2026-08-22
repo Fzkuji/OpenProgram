@@ -23,7 +23,7 @@ export function PluginsPage({
   onInstallClose?: () => void;
 } = {}) {
   const { t, text } = useTranslation();
-  const { tab, setTab, refresh, plugins, errors, loadError } = usePluginsStore();
+  const { tab, setTab, refresh, plugins, errors, loadError, loading } = usePluginsStore();
   const [localInstallOpen, setLocalInstallOpen] = useState(false);
   const installOpen = installOpenProp ?? localInstallOpen;
   const closeInstall = onInstallClose ?? (() => setLocalInstallOpen(false));
@@ -47,7 +47,9 @@ export function PluginsPage({
 
   const body = (
     <>
-      {tab === "installed" && <InstalledList externalFilter={query} />}
+      {tab === "installed" && (loading && plugins.length === 0
+        ? <div className={shared.empty}>{text("Loading plugins...", "正在加载插件...")}</div>
+        : <InstalledList externalFilter={query} />)}
       {tab === "marketplace" && <MarketplaceBrowser externalFilter={query} />}
       {tab === "errors" && <PluginErrors filter={query} />}
     </>
