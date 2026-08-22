@@ -7,9 +7,12 @@ import time
 from openprogram.store.snapshot.checkpoint import CheckpointStore
 
 
-def test_overlapping_history_operations_serialize(tmp_path):
-    first = CheckpointStore(tmp_path / "sessions" / "one")
-    second = CheckpointStore(tmp_path / "sessions" / "two")
+def test_overlapping_history_operations_serialize(tmp_path, monkeypatch):
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
+    first = CheckpointStore(tmp_path / "state" / "sessions" / "adhoc")
+    second = CheckpointStore(
+        tmp_path / "project" / ".openprogram" / "sessions" / "bound",
+    )
     path = str(tmp_path / "workspace" / "a" / "x.py")
     other = str(tmp_path / "workspace" / "b" / "y.py")
     waiting = threading.Event()

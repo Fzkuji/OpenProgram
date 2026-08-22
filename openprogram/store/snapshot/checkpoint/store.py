@@ -321,7 +321,9 @@ class CheckpointStore:
         return turn_backup_dir(self.session_dir, turn_id) / "intents" / f"{digest}.json"
 
     def _workspace_lock_path(self) -> Path:
-        root = self.session_dir.parent / ".mutation-locks"
+        from openprogram.paths import get_state_dir
+
+        root = get_state_dir() / "mutation-locks"
         root.mkdir(parents=True, exist_ok=True)
         return root / "history.lock"
 

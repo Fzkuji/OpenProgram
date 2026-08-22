@@ -241,7 +241,8 @@ def test_missing_rollback_blob_is_unavailable_before_any_write(
     assert second.read_text(encoding="utf-8") == "second after\n"
 
 
-def test_history_lock_is_stable_for_overlapping_action_sets(tmp_path):
+def test_history_lock_is_stable_for_overlapping_action_sets(tmp_path, monkeypatch):
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")
     first_store = CheckpointStore(tmp_path / "sessions" / "one")
     second_store = CheckpointStore(tmp_path / "sessions" / "two")
     path = str(tmp_path / "workspace" / "a" / "x.py")
