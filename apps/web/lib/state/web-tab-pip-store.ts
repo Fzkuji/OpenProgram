@@ -83,6 +83,13 @@ export function pipCoversCenter(
     ? state.groups.find((item) => item.memberIds.includes(state.activeId!))
     : undefined;
   if (group?.visibleIds.includes(tabId)) return false;
+  // The PiP is a chat-side preview: it only floats over the session pane.
+  // When the user focuses any other center page (files, terminal, another
+  // web tab, ...) it must not cover that page.
+  if (state.activeId) {
+    const active = state.tabs.find((tab) => tab.id === state.activeId);
+    if (active && active.kind !== "session") return false;
+  }
   return true;
 }
 

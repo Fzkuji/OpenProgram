@@ -2070,9 +2070,12 @@ function syncVisibleViews(ctx, items) {
   if (!ctx || ctx.win.isDestroyed() || !Array.isArray(items)) return false;
   const desired = new Map();
   for (const item of items) {
-    if (!item || typeof item.id !== "string") return false;
+    // Skip unknown/invalid entries instead of aborting the whole sync:
+    // aborting would leave previously shown views visible over pages
+    // that no longer expect them (e.g. after a route change).
+    if (!item || typeof item.id !== "string") continue;
     const record = recordFor(ctx, item.id);
-    if (!record) return false;
+    if (!record) continue;
     desired.set(item.id, {
       record,
       bounds: normalizedBounds(item.bounds),
