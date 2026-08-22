@@ -270,19 +270,27 @@ async def handle_checkout_branch(ws, cmd: dict):
                 err = f"unknown message {head_msg_id!r}"
             else:
                 source_head_id = (db.get_session(session_id) or {}).get("head_id")
-                _s._set_active_head(session_id, head_msg_id)
                 from openprogram.agent.workspace_alignment import (
-                    mark_conversation_checkout,
+                    conversation_checkout_alignment,
                 )
 
-                alignment = mark_conversation_checkout(
+                alignment = conversation_checkout_alignment(
                     session_id, source_head_id, head_msg_id, store=db,
                 )
-                # A different branch is a different context. The last
-                # measurement belonged to the branch we just left, so
-                # re-estimate against the new one.
-                _s.refresh_context_stats(session_id)
-                ok = True
+                ok = _s._set_active_head(
+                    session_id,
+                    head_msg_id,
+                    expected_head_id=source_head_id,
+                    meta_update={"workspace_alignment": alignment},
+                )
+                if ok:
+                    # A different branch is a different context. The last
+                    # measurement belonged to the branch we just left, so
+                    # re-estimate against the new one.
+                    _s.refresh_context_stats(session_id)
+                else:
+                    alignment = None
+                    err = "conversation head changed during checkout"
         except Exception as e:
             err = f"{type(e).__name__}: {e}"
     await ws.send_text(json.dumps({

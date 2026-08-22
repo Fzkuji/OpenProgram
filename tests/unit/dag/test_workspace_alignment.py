@@ -142,3 +142,31 @@ def test_restore_branch_projection_includes_owned_child_changes(branch_workspace
 
     assert result["status"] == "committed"
     assert path.read_text(encoding="utf-8") == "target\n"
+
+
+def test_concurrent_head_move_rolls_back_branch_workspace_restore(
+    branch_workspace, monkeypatch,
+):
+    store, path = branch_workspace
+    original = CheckpointStore._apply_state
+    moved = False
+
+    def apply_then_move_head(self, *args, **kwargs):
+        nonlocal moved
+        result = original(self, *args, **kwargs)
+        if not moved:
+            moved = True
+            store.set_head("s", "a0")
+        return result
+
+    monkeypatch.setattr(CheckpointStore, "_apply_state", apply_then_move_head)
+
+    result = restore_branch_workspace(
+        "s", store=store, idempotency_key="restore-head-race",
+    )
+
+    assert result["status"] == "rolled_back"
+    assert result["error"] == "stale_head"
+    assert path.read_text(encoding="utf-8") == "source\n"
+    assert store.get_session("s")["head_id"] == "a0"
+    assert store.get_session("s")["workspace_alignment"]["status"] == "mismatch"

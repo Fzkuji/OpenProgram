@@ -162,6 +162,7 @@ def test_existing_branch_delivers_async_onto_head(parent_turn):
     # The reply routes back to the sender via the runner's followup.
     assert kw["caller_session_id"] == "p1"
     assert kw["caller_msg_id"] == "a1"
+    assert kw["creates_agent"] is False
 
 
 def test_existing_delivery_carries_receipt_header(parent_turn):

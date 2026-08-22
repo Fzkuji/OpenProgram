@@ -352,7 +352,8 @@ def _branch_scope(session_id: str) -> dict:
     root = _project_root(session_id)
     lineages: dict[str, dict] = {}
     active_llm = [
-        node for node in reversed(_active_nodes(index)) if node.role == "llm"
+        node for node in reversed(_active_nodes(index))
+        if node.role == "llm" and not (node.metadata or {}).get("reverted")
     ]
     from openprogram.agent.history_ownership import owned_change_set_closure
 
@@ -366,7 +367,7 @@ def _branch_scope(session_id: str) -> dict:
     ]
     producer_nodes.sort(key=lambda node: node.seq)
     for node in producer_nodes:
-        if node.role != "llm" or (node.metadata or {}).get("reverted"):
+        if node.role != "llm":
             continue
         for mutation in _manifest_mutations(session_dir, node.id):
             path = mutation.get("path") or ""
@@ -806,7 +807,8 @@ def _branch_file_diff(session_id: str, path: str, cursor: int = 0) -> dict:
     _store, _git, index, session_dir = opened
     states = []
     active_llm = [
-        node for node in reversed(_active_nodes(index)) if node.role == "llm"
+        node for node in reversed(_active_nodes(index))
+        if node.role == "llm" and not (node.metadata or {}).get("reverted")
     ]
     from openprogram.agent.history_ownership import owned_change_set_closure
 
@@ -820,7 +822,7 @@ def _branch_file_diff(session_id: str, path: str, cursor: int = 0) -> dict:
     ]
     producer_nodes.sort(key=lambda node: node.seq)
     for node in producer_nodes:
-        if node.role != "llm" or (node.metadata or {}).get("reverted"):
+        if node.role != "llm":
             continue
         mutation = next(
             (row for row in _manifest_mutations(session_dir, node.id) if row.get("path") == path),

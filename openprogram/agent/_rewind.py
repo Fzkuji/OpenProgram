@@ -176,6 +176,13 @@ def plan_rewind(
             "linked_impacts": ownership["linked"],
         }
     turn_ids = ownership["owned_turn_ids"] + turn_ids
+    turn_ids.sort(
+        key=lambda turn_id: (
+            index.nodes_by_id[turn_id].seq
+            if turn_id in index.nodes_by_id else -1
+        ),
+        reverse=True,
+    )
     source_head = index.head_id
     target_head = _node_conv_predecessor(target)
     if target_head is None:

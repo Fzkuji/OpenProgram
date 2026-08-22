@@ -1866,6 +1866,7 @@ class JobRunner:
                 error=result.error,
             )
             if updated is not None:
+                _stamp_job_change_owner(updated)
                 self._broadcast_job_status(updated)
                 self._update_attach_card(updated)
                 # Auto-followup: when an async job completes (or

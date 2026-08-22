@@ -142,7 +142,16 @@ def _hydrate_messages_from_db(session_id: str) -> list[dict]:
     return _get_messages(session_id)
 
 
-def _set_active_head(session_id: str, head_id: Optional[str]) -> None:
+_HEAD_UNSET = object()
+
+
+def _set_active_head(
+    session_id: str,
+    head_id: Optional[str],
+    *,
+    expected_head_id: object = _HEAD_UNSET,
+    meta_update: Optional[dict] = None,
+) -> bool:
     """Switch the conversation's active branch leaf.
 
     Used by retry / edit / sibling-checkout / deepest-leaf jump /
@@ -162,10 +171,18 @@ def _set_active_head(session_id: str, head_id: Optional[str]) -> None:
     try:
         from openprogram.agent.session_db import default_db
         db = default_db()
-        db.set_head(session_id, head_id)
+        if expected_head_id is _HEAD_UNSET:
+            db.set_head(session_id, head_id)
+        elif not db.compare_and_set_head(
+            session_id,
+            expected_head_id,  # type: ignore[arg-type]
+            head_id,
+            meta_update=meta_update,
+        ):
+            return False
     except Exception as e:
         _log(f"_set_active_head: SessionDB write failed for {session_id}: {e}")
-        db = None
+        return False
     branch = None
     if db is not None:
         try:
@@ -179,6 +196,7 @@ def _set_active_head(session_id: str, head_id: Optional[str]) -> None:
             if branch is not None:
                 conv["messages"] = branch
     _invalidate_messages(session_id)
+    return True
 
 
 def _deepest_leaf_db(session_id: str, root_id: str) -> Optional[str]:

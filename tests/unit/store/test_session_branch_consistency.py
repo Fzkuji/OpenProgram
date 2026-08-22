@@ -204,6 +204,27 @@ def test_conversation_checkout_marks_workspace_mismatch(store, srv, monkeypatch)
     assert alignment["target_head_id"] == ids[1]
 
 
+def test_checkout_head_race_keeps_head_and_alignment_unchanged(
+    store, srv, monkeypatch,
+):
+    from openprogram.webui.ws_actions import branch as branch_actions
+
+    ids = _two_turns(store)
+    monkeypatch.setattr(srv, "_is_run_active", lambda _sid: False)
+    monkeypatch.setattr(store, "compare_and_set_head", lambda *_args, **_kwargs: False)
+    ws = FakeWS()
+
+    _run(branch_actions.handle_checkout_branch(ws, {
+        "session_id": "s1", "head_msg_id": ids[1],
+    }))
+
+    result = ws.of_type("branch_checked_out")[0]
+    assert result["ok"] is False
+    assert result["error"] == "conversation head changed during checkout"
+    assert store.get_session("s1")["head_id"] == ids[-1]
+    assert "workspace_alignment" not in store.get_session("s1")
+
+
 def test_mismatched_workspace_blocks_chat_until_explicit_adoption(
     store, srv, monkeypatch,
 ):

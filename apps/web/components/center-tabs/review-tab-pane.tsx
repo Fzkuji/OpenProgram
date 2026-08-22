@@ -21,6 +21,18 @@ interface ReviewFile {
   binary?: boolean;
   diff_state?: string;
   turn_ids?: string[];
+  producer_turn_id?: string;
+  origin_turn_id?: string;
+  actor_id?: string;
+  job_id?: string | null;
+}
+
+interface LinkedImpact {
+  job_id?: string;
+  relation?: string;
+  status?: string;
+  origin_turn_id?: string;
+  worktree_id?: string | null;
 }
 
 interface ScopeState {
@@ -36,6 +48,7 @@ interface ScopeState {
   next_cursor?: number | null;
   prev_cursor?: number | null;
   error?: string;
+  linked_impacts: LinkedImpact[];
 }
 
 interface DiffState {
@@ -90,6 +103,7 @@ export function ReviewTabPane({
     file_count: 0,
     added: null,
     removed: null,
+    linked_impacts: [],
   });
   const [diffState, setDiffState] = useState<DiffState>({ loading: false });
 
@@ -120,6 +134,7 @@ export function ReviewTabPane({
         file_count: 0,
         added: null,
         removed: null,
+        linked_impacts: [],
         error: text("Review source is unavailable", "审阅来源不可用"),
       });
       return;
@@ -149,6 +164,7 @@ export function ReviewTabPane({
           next_cursor: data.next_cursor,
           prev_cursor: data.prev_cursor,
           error: data.error,
+          linked_impacts: data.linked_impacts ?? [],
         });
         setSelectedPath((current) => {
           if (current && files.some((file) => file.path === current)) return current;
@@ -266,6 +282,19 @@ export function ReviewTabPane({
           <h1>{text("Review", "审阅")}</h1>
           <span>{sourceLabel}</span>
         </div>
+        {scopeState.linked_impacts.length ? (
+          <span
+            className={styles.linkedImpacts}
+            title={scopeState.linked_impacts
+              .map((impact) => `${impact.job_id ?? "actor"} · ${impact.status ?? impact.relation ?? "linked"}`)
+              .join("\n")}
+          >
+            {text(
+              `${scopeState.linked_impacts.length} linked`,
+              `${scopeState.linked_impacts.length} 个关联任务`,
+            )}
+          </span>
+        ) : null}
         <div className={styles.scopeTabs} role="tablist" aria-label={text("Review scope", "审阅范围")}>
           {([
             ["turn", text("This turn", "本轮")],
@@ -364,8 +393,20 @@ export function ReviewTabPane({
         >
           <div className={styles.diffHeader}>
             <span>{selected?.rel ?? text("Select a file", "选择一个文件")}</span>
-            {selected?.turn_ids?.length ? (
-              <small>{text(`${selected.turn_ids.length} turn(s)`, `${selected.turn_ids.length} 轮`)}</small>
+            {selected ? (
+              <small>
+                {[
+                  selected.actor_id
+                    ? text(`Actor: ${selected.actor_id}`, `执行者：${selected.actor_id}`)
+                    : null,
+                  selected.producer_turn_id
+                    ? text(`Producer: ${selected.producer_turn_id.slice(0, 8)}`, `来源轮次：${selected.producer_turn_id.slice(0, 8)}`)
+                    : null,
+                  selected.turn_ids?.length
+                    ? text(`${selected.turn_ids.length} turn(s)`, `${selected.turn_ids.length} 轮`)
+                    : null,
+                ].filter(Boolean).join(" · ")}
+              </small>
             ) : null}
             {selectedPath ? (
               <div className={styles.diffPagination}>

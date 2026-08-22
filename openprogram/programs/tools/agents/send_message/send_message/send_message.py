@@ -202,6 +202,7 @@ def _send_message_impl(
             description=delivery_message,
             caller_msg_id=aid,
             caller_session_id=sid,  # reply returns to the sender
+            creates_agent=False,
             chain_messages=messages + 1,  # target runs at count+1 (loop guard)
             # No agent is created, so the target and the reply turn both
             # run at the generation count this send was made at.

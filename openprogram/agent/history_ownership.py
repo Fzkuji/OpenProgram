@@ -23,18 +23,15 @@ def owned_change_set_closure(
             origin = job.origin_turn_id or job.caller_msg_id or job.parent_msg_id
             if not origin or origin not in origins:
                 continue
+            # Ownership is an authority grant for destructive history
+            # operations. Legacy jobs without the explicit origin field are
+            # ambiguous and must never inherit the old `creates_agent=True`
+            # default as permission to restore their files.
             relation = (
                 job.relation
-                if getattr(job, "origin_turn_id", None)
+                if job.origin_turn_id
                 else "worktree" if job.worktree_id
-                else "linked" if (
-                    not getattr(job, "creates_agent", True)
-                    or bool(
-                        job.caller_session_id
-                        and job.caller_session_id != job.parent_session_id
-                    )
-                )
-                else "owned"
+                else "linked"
             )
             impact = {
                 "job_id": job.id,
@@ -61,6 +58,23 @@ def owned_change_set_closure(
                 origins.add(job.head_id)
                 included.append(job.head_id)
                 changed = True
+    try:
+        from openprogram.store.session.session_store import default_store
+
+        pair = default_store()._open(session_id)
+        index = pair[1] if pair else None
+        included.sort(
+            key=lambda turn_id: (
+                index.nodes_by_id[turn_id].seq
+                if index and turn_id in index.nodes_by_id
+                else -1
+            ),
+            reverse=True,
+        )
+    except Exception:
+        # Unknown legacy nodes stay included but keep their discovery order;
+        # preflight will reject a discontinuous journal before any write.
+        pass
     return {
         "status": "blocked" if blockers else "ready",
         "owned_turn_ids": included,

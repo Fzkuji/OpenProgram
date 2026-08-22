@@ -1319,6 +1319,7 @@ class SessionStore:
         new_head_id: Optional[str],
         *,
         branch_update: Optional[dict[str, Any]] = None,
+        meta_update: Optional[dict[str, Any]] = None,
     ) -> bool:
         """Durable cross-process HEAD CAS, optionally activating a branch ref."""
         with self._session_lock(session_id):
@@ -1381,6 +1382,8 @@ class SessionStore:
                         updated["writer_epoch"] = int(
                             durable.get("writer_epoch") or 0
                         ) + 1
+                    if meta_update:
+                        updated.update(meta_update)
                     git.write_meta(updated)
                     with idx._persist_lock:
                         with idx._lock:

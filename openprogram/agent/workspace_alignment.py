@@ -33,6 +33,25 @@ def mark_conversation_checkout(
         from openprogram.store.session.session_store import default_store
 
         store = default_store()
+    value = conversation_checkout_alignment(
+        session_id, source_head_id, target_head_id, store=store,
+    )
+    store.update_session(session_id, workspace_alignment=value)
+    return value
+
+
+def conversation_checkout_alignment(
+    session_id: str,
+    source_head_id: str | None,
+    target_head_id: str,
+    *,
+    store=None,
+) -> dict[str, Any]:
+    """Build checkout alignment metadata without mutating session state."""
+    if store is None:
+        from openprogram.store.session.session_store import default_store
+
+        store = default_store()
     prior = get_workspace_alignment(session_id, store=store)
     workspace_head_id = (
         prior.get("source_head_id")
@@ -52,7 +71,6 @@ def mark_conversation_checkout(
         "decision": "return_to_workspace_branch" if aligned else None,
         "updated_at": time.time(),
     }
-    store.update_session(session_id, workspace_alignment=value)
     return value
 
 
@@ -89,7 +107,11 @@ def _branch_turn_ids(
     branch_ids = [
         message["id"]
         for message in (store.get_branch(session_id, head_id) or [])
-        if message.get("role") == "assistant" and message.get("id")
+        if (
+            message.get("role") == "assistant"
+            and message.get("id")
+            and not message.get("reverted")
+        )
     ]
     from openprogram.agent.history_ownership import owned_change_set_closure
 
@@ -234,12 +256,28 @@ def restore_branch_workspace(
 
     journal = CheckpointStore(store._session_dir(session_id))
     head_id = (store.get_session(session_id) or {}).get("head_id")
+    prior = get_workspace_alignment(session_id, store=store)
+    committed_alignment = {
+        **prior,
+        "status": "aligned",
+        "head_id": head_id,
+        "decision": "restore_branch_code",
+        "updated_at": time.time(),
+    }
     result = journal.apply_rewind_operation(
         [f"branch-switch:{plan.get('source_head_id')}:{plan.get('target_head_id')}"],
         expected_head_id=head_id,
         target_head_id=head_id,
         get_head=lambda: (store.get_session(session_id) or {}).get("head_id"),
-        compare_and_set_head=lambda expected, target: expected == target == head_id,
+        compare_and_set_head=lambda expected, target: (
+            expected == target == head_id
+            and store.compare_and_set_head(
+                session_id,
+                expected,
+                target,
+                meta_update={"workspace_alignment": committed_alignment},
+            )
+        ),
         idempotency_key=(idempotency_key or f"branch-switch:{uuid.uuid4().hex}"),
         target_msg_id=f"branch-switch:{plan.get('target_head_id')}",
         custom_actions=plan["actions"],
@@ -247,7 +285,7 @@ def restore_branch_workspace(
     result["head_changed"] = False
     result["new_head_id"] = None
     if result.get("status") == "committed":
-        result["workspace_alignment"] = adopt_current_workspace(
-            session_id, store=store, decision="restore_branch_code",
+        result["workspace_alignment"] = get_workspace_alignment(
+            session_id, store=store,
         )
     return result

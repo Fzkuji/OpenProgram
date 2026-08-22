@@ -2,6 +2,7 @@
 .header{min-height:54px;display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg-secondary)}
 .logo{width:30px;height:30px;border:1px solid var(--border);border-radius:8px;display:grid;place-items:center;color:var(--text-secondary);background:var(--bg-tertiary)}
 .heading{display:flex;flex-direction:column;min-width:92px}.heading h1{font-size:14px;line-height:1.15;font-weight:600;margin:0}.heading span{font-size:10px;color:var(--text-muted);margin-top:3px}
+.linkedImpacts{flex:0 0 auto;border:1px solid var(--border);border-radius:999px;padding:3px 6px;color:var(--text-muted);font:9px/1.2 var(--font-mono)}
 .scopeTabs{display:flex;align-items:center;gap:2px;padding:2px;border:1px solid color-mix(in srgb,var(--border) 75%,transparent);border-radius:8px;background:var(--bg-tertiary)}
 .scope,.scopeActive{border:0;border-radius:6px;padding:5px 9px;font-size:11px;line-height:1;color:var(--text-muted);background:transparent;cursor:pointer}.scope:hover{color:var(--text-primary);background:var(--bg-hover)}.scopeActive{color:var(--text-primary);background:var(--bg-secondary);box-shadow:0 0 0 1px color-mix(in srgb,var(--border) 70%,transparent)}
 .totals{margin-left:auto;display:flex;align-items:baseline;gap:5px;font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums}.totals b{color:var(--text-primary)}.totals i{font-style:normal;color:var(--accent-green);margin-left:6px}.totals em{font-style:normal;color:var(--accent-red)}
