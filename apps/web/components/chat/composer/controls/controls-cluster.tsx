@@ -129,7 +129,8 @@ export function ControlsCluster({
   const effortIconRef = useRef<AnimatedNavIconHandle>(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const anyToolActive =
-    toolsEnabled || webSearchEnabled || (fastEnabled && fastSupported) || unattended;
+    toolsEnabled || webSearchEnabled || (fastEnabled && fastSupported) || unattended
+    || (sandboxEnabled && sandboxAvailable);
   const effortColor = effortLevelColor(thinkingOptions, thinking);
 
   return (
@@ -382,6 +383,16 @@ export function ControlsCluster({
                     label={text("Fast", "高速")}
                     on
                     onToggle={toggleFast}
+                  />
+                </HoverTip>
+              )}
+              {sandboxEnabled && sandboxAvailable && (
+                <HoverTip label={text("Sandbox", "沙箱")}>
+                  <ToolChip
+                    icon={<SandboxIcon size={16} />}
+                    label={text("Sandbox", "沙箱")}
+                    on
+                    onToggle={toggleSandbox}
                   />
                 </HoverTip>
               )}

@@ -62,9 +62,28 @@ export const UnattendedIcon = forwardRef<AnimatedNavIconHandle, { size?: number 
   },
 );
 
-// Lucide archive — not the permission-badge shield.
+// Lucide archive — lid lifts, box and handle drop. Same
+// framer-motion + AnimatedNavIconHandle drive as SendIcon.
+const SANDBOX_LID_VARIANTS: Variants = {
+  normal: { translateY: 0 },
+  animate: { translateY: -1.5 },
+};
+const SANDBOX_BOX_VARIANTS: Variants = {
+  normal: { d: "M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" },
+  animate: { d: "M4 11v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V11" },
+};
+const SANDBOX_HANDLE_VARIANTS: Variants = {
+  normal: { d: "M10 12h4" },
+  animate: { d: "M10 15h4" },
+};
+
 export const SandboxIcon = forwardRef<AnimatedNavIconHandle, { size?: number }>(
-  function SandboxIcon({ size = 20 }, _ref) {
+  function SandboxIcon({ size = 20 }, ref) {
+    const controls = useAnimation();
+    useImperativeHandle(ref, () => ({
+      startAnimation: () => controls.start("animate"),
+      stopAnimation: () => controls.start("normal"),
+    }));
     return (
       <svg
         fill="none"
@@ -77,9 +96,28 @@ export const SandboxIcon = forwardRef<AnimatedNavIconHandle, { size?: number }>(
         width={size}
         xmlns="http://www.w3.org/2000/svg"
       >
-        <rect width="20" height="5" x="2" y="3" rx="1" />
-        <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
-        <path d="M10 12h4" />
+        <motion.rect
+          animate={controls}
+          height="5"
+          initial="normal"
+          rx="1"
+          variants={SANDBOX_LID_VARIANTS}
+          width="20"
+          x="2"
+          y="3"
+        />
+        <motion.path
+          animate={controls}
+          d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"
+          initial="normal"
+          variants={SANDBOX_BOX_VARIANTS}
+        />
+        <motion.path
+          animate={controls}
+          d="M10 12h4"
+          initial="normal"
+          variants={SANDBOX_HANDLE_VARIANTS}
+        />
       </svg>
     );
   },
