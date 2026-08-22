@@ -325,14 +325,17 @@
     <h2>06b Agent 画中画预览</h2>
     <p>Agent 通过 <code>webtab.command(op=open)</code> 开页时，若当前 active 条目是 session 且尚未与 Web 组成 pair，前端创建或复用 leaf WebTab，保持聊天焦点，并把该 WebTab 的 native <code>WebContentsView</code> 以小尺寸 bounds 画在聊天角落。已有分屏 Web 成员时仍走 <code>openWebTabInSplit</code>，只导航不另开第三 pane。</p>
     <ul>
-      <li><strong>展开为分屏：</strong><code>setSplitWebTab(id)</code> 与当前 session 建组，小窗卸载，Web 进入右 pane。当前 session 已与文件（或其它非该 Web）组成满员 pair 时，先把另一成员换出到条上，再建立 session+web；不禁用按钮，也不创建第三 pane。</li>
-      <li><strong>全屏接管：</strong><code>setActive(id)</code>，中间栏只显示该 WebTab。</li>
+      <li><strong>展开为分屏：</strong>先 <code>end()</code> 结束浮动 binding，再 <code>setSplitWebTab(id)</code> 与当前 session 建组，Web 进入右 pane。当前 session 已与文件（或其它非该 Web）组成满员 pair 时，先把另一成员换出到条上，再建立 session+web；不禁用按钮，也不创建第三 pane。</li>
+      <li><strong>全屏接管：</strong>先 <code>end()</code> 结束浮动 binding，再 <code>setActive(id)</code>，中间栏只显示该 WebTab。</li>
       <li><strong>关闭预览：</strong>清除可见 pip host 并注销 visible bounds；leaf tab 与内存中的位置尺寸保留。Agent 仍可用 <code>resolve</code> 访问后台页，<code>activate</code>/<code>preview</code> 要求可见。此时若该 WebTab 仍在后台且未进入 active/split，composer 环境条出现「显示网页预览」，点一下重新打开小窗。</li>
       <li>标题栏拖动改位置，右下角拖拽改尺寸；矩形写入 pip store，不进 version 2 payload。小窗限制在聊天 pane 内，最小 <code>240×160</code>。桌面端 native bounds 跟随 body；拖动时 <code>syncVisible</code> 按 100ms 节流，指针抬起立即发布。</li>
       <li>pip 状态不写入 version 2 payload。Web 版没有 BrowserView，小窗 body 降级为 iframe 或「在新标签打开」。</li>
       <li><strong>会话独占 owner binding：</strong>pip store 记录 <code>ownerTabId</code>（开启小窗时的 session center-tab id）。只有 owner 会话 active 时小窗是 live（<code>pipCoversCenter</code> 要求 <code>activeId === ownerTabId</code>）；此时它才进入 <code>visibleWebTab*</code> 的 agent 可见集合，<code>surfaceRefForChat</code> 的 pip 回退也校验 owner，其它会话发消息不会把该页当作自己的 surface。</li>
-      <li><strong>parked 占位符：</strong>切到其它 session 时小窗不消失，在原矩形位置显示占位符：最后一次截图（live 卸载时 <code>capture</code> 留存）加半透明暗层，标题「正在由『owner 会话标题』控制」，两个按钮——「结束浮动」调 <code>end()</code> 清空 binding（leaf tab 保留在条上）、「转到该会话」<code>setActive(ownerTabId)</code> 恢复 live。占位符不注册 native bounds、不进 page inventory。切到非 session 页仍走 <code>hide()</code>。</li>
-      <li><strong>清理：</strong>owner session tab 或 pip WebTab 从 center-tabs 消失时 store 全清（<code>end()</code>，leaf 不关）；background 恢复信息对应 tab 消失时同步清空。「显示网页预览」chip 仅在 owner 会话 active 时出现，恢复时携带原 owner。<code>collapseWebTabToPip</code> 的 owner 取 group partner（须为 session），否则第一个 session；无 session 时拒绝浮动。</li>
+      <li><strong>binding 跨切换持久：</strong>切到任何非 owner 页面（其它 session、files、terminal、web tab）或离开 chat 路由时，小窗整体不渲染但 binding（tabId/ownerTabId/rect）保留，切回 owner 自动恢复原位。<code>hide()</code>（收进 background + chip 恢复）只剩 X 按钮一个入口；chip 仅在 owner 会话出现，恢复时携带原 owner。</li>
+      <li><strong>被绑定网页本体遮罩：</strong>直接打开被 pip 绑定的 WebTab（全屏或 split pane）时，pane 不 ensure、不注册 native bounds，渲染遮罩：<code>usePipSnapshots</code> 里的最后截图（live 卸载时 <code>capture</code> 留存，zustand 响应式）加半透明暗层，标题「正在由『owner 会话标题』控制」，两个按钮——「结束浮动」<code>end()</code> 解除 binding 恢复正常网页、「转到该会话」<code>setActive(ownerTabId)</code>。</li>
+      <li><strong>同址开页守卫：</strong>非 owner 会话 <code>op=open</code> 同一 URL 且该 <code>w:url</code> 正被 pip 绑定时，<code>pipOpenMustFork</code> 判定后用 <code>nextPopupWebTabId</code> fork 独立 WebTab 实例并绑定给新会话，不复用、不抢 binding；同 owner 重复打开仍复用原 tab。</li>
+      <li><strong>Agent 关页：</strong><code>op=close</code> 按 tab_id 关闭独立 web tab（不存在→<code>tab_not_found</code>；在用户分屏组内→<code>tab_in_user_layout</code> 拒绝）。服务端 <code>request_close_tab(binding_id)</code> 仅经会话自己的 binding 定向发送，成功后删 binding；<code>request_open_tab</code> 成功时登记 <code>allow_background</code> binding 并回传 binding_id。browser 工具 <code>close</code> 仅对 agent 自开页（<code>app_agent_opened</code> 且有 binding）真正关页，复用用户页仍只断开。</li>
+      <li><strong>清理：</strong>owner session tab 或 pip WebTab 从 center-tabs 消失时 store 全清（<code>end()</code>，leaf 不关）；background 恢复信息对应 tab 消失时同步清空。<code>collapseWebTabToPip</code> 的 owner 取 group partner（须为 session），否则第一个 session；无 session 时拒绝浮动。</li>
     </ul>
   </section>
 

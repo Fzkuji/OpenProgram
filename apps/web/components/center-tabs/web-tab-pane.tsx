@@ -43,7 +43,12 @@ import {
   toggleBookmark,
 } from "@/lib/bookmarks";
 import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
-import { collapseWebTabToPip } from "@/lib/state/web-tab-pip-store";
+import {
+  collapseWebTabToPip,
+  pipBoundTabId,
+  usePipSnapshots,
+  useWebTabPip,
+} from "@/lib/state/web-tab-pip-store";
 import { isWebTabOccluded, measureWebTabBounds } from "@/lib/web-tab-bounds";
 import styles from "./center-tabs.module.css";
 import { BookmarkBar, BookmarksLibraryButton, BrowserMenu } from "./browser-controls";
@@ -80,6 +85,52 @@ function BookmarkButton({ url, title }: { url: string; title: string }) {
     >
       <Star size={14} fill={bookmarked ? "currentColor" : "none"} />
     </button>
+  );
+}
+
+function PipBoundMask({ tabId }: { tabId: string }) {
+  const { text } = useTranslation();
+  const ownerTabId = useWebTabPip((s) => s.ownerTabId);
+  const ownerTitle = useCenterTabs((s) => {
+    const owner = s.tabs.find((tab) => tab.id === ownerTabId);
+    return owner?.title;
+  }) || text("another session", "另一个会话");
+  const label = text(
+    `Controlled by “${ownerTitle}”`,
+    `正在由「${ownerTitle}」控制`,
+  );
+  const endLabel = text("End floating window", "结束浮动");
+  const goLabel = text("Go to that session", "转到该会话");
+  const shot = usePipSnapshots((s) => s.shots[tabId]);
+  return (
+    <div className={styles.webBoundMask}>
+      {shot ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img className={styles.webBoundMaskShot} src={shot} alt="" />
+      ) : null}
+      <div className={styles.webBoundMaskDim} />
+      <div className={styles.webBoundMaskBody}>
+        <div className={styles.webBoundMaskTitle}>{label}</div>
+        <div className={styles.webBoundMaskActions}>
+          <button
+            type="button"
+            className={styles.webBoundMaskBtn}
+            onClick={() => useWebTabPip.getState().end()}
+          >
+            {endLabel}
+          </button>
+          <button
+            type="button"
+            className={styles.webBoundMaskBtn}
+            onClick={() => {
+              if (ownerTabId) useCenterTabs.getState().setActive(ownerTabId);
+            }}
+          >
+            {goLabel}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -132,6 +183,7 @@ function DesktopWebTabPane({
   const { text } = useTranslation();
   const updateWebTab = useCenterTabs((s) => s.updateWebTab);
   const title = useCenterTabs((s) => s.tabs.find((tab) => tab.id === tabId)?.title || url);
+  const pipBound = useWebTabPip(() => pipBoundTabId() === tabId);
   // 历史遗留的白屏竞态可能把 store 里的 url 冲成空串；tab id 本身带着
   // 原始 URL（"w:<url>"），空 url 时从 id 找回，老 tab 自愈。
   const effectiveUrl =
@@ -166,6 +218,11 @@ function DesktopWebTabPane({
       bridge,
       useCenterTabs.getState().tabs.map((t) => t.id),
     );
+    if (pipBound) {
+      removeVisibleWebTabBounds(bridge, tabId);
+      setWebTabReady(tabId, false);
+      return;
+    }
     ensureWebView(bridge, tabId, viewUrlRef.current);
     // A pane always shows the page at user zoom. Clear any leftover PiP
     // layout zoom here instead of relying on the PiP's unmount cleanup
@@ -174,13 +231,18 @@ function DesktopWebTabPane({
     return () => {
       setWebTabReady(tabId, false);
     };
-  }, [bridge, tabId]);
+  }, [bridge, tabId, pipBound]);
 
   // Bounds: renderer reports the body's viewport-relative CSS px and
   // main converts them to native DIP using the sender's current zoom.
   // Preserve fractional values until main performs the final rounding.
   // Report on mount, resize, and any ancestor scroll.
   useEffect(() => {
+    if (pipBound) {
+      removeVisibleWebTabBounds(bridge, tabId);
+      setWebTabReady(tabId, false);
+      return;
+    }
     const el = bodyRef.current;
     if (!el) return;
     const report = () => {
@@ -213,7 +275,7 @@ function DesktopWebTabPane({
       window.removeEventListener("scroll", report, true);
       removeVisibleWebTabBounds(bridge, tabId);
     };
-  }, [bridge, tabId]);
+  }, [bridge, tabId, pipBound]);
 
   // Main → renderer state: address bar (unless the user is typing in
   // it), tab title, loading spinner, history-button enablement. URL
@@ -435,9 +497,11 @@ function DesktopWebTabPane({
           </button>
         </div>
       ) : null}
-      {/* Empty body — the native view is drawn here by the main
-          process at the bounds reported above. */}
-      <div ref={bodyRef} className={styles.webFrame} />
+      {pipBound ? (
+        <PipBoundMask tabId={tabId} />
+      ) : (
+        <div ref={bodyRef} className={styles.webFrame} />
+      )}
     </div>
   );
 }
@@ -448,6 +512,7 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
   const { text } = useTranslation();
   const updateWebTab = useCenterTabs((s) => s.updateWebTab);
   const title = useCenterTabs((s) => s.tabs.find((tab) => tab.id === tabId)?.title || url);
+  const pipBound = useWebTabPip(() => pipBoundTabId() === tabId);
   const [address, setAddress] = useState(url);
   // Bumping remounts the iframe — that's the reload button.
   const [frameEpoch, setFrameEpoch] = useState(0);
@@ -525,7 +590,9 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
         />
       </div>
       <BookmarkBar ownerId={menuOwnerId} onNavigate={navigateTo} />
-      {url.startsWith("file:") ? (
+      {pipBound ? (
+        <PipBoundMask tabId={tabId} />
+      ) : url.startsWith("file:") ? (
         /* Browsers silently block file:// in iframes — say so instead of
            showing a blank frame. */
         <div

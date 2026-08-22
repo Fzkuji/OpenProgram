@@ -200,6 +200,8 @@ export interface CenterTabsState {
   openPopupWebTab: (url: string, openerTabId: string) => string;
   /** Create or reuse a web tab without focusing it or opening a split. */
   ensureWebTab: (url: string) => string;
+  /** Create a unique same-URL leaf without focusing it. */
+  ensureExclusiveWebTab: (url: string) => string;
   /** Appends or reuses a split web tab; an existing owner composite becomes active. */
   openWebTabInSplit: (url: string) => string;
   setSplitWebTab: (id: string | null) => void;
@@ -642,6 +644,14 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
           ),
         });
       });
+      return id;
+    },
+
+    ensureExclusiveWebTab: (url) => {
+      const id = nextPopupWebTabId(url);
+      set((s) => commitCenterTabsState(s, {
+        tabs: [...s.tabs, { id, kind: "web", title: hostnameOf(url), url }],
+      }));
       return id;
     },
 

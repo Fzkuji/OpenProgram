@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { Columns2, ExternalLink, Maximize2, X } from "lucide-react";
 
 import {
@@ -14,8 +14,9 @@ import { useTranslation } from "@/lib/i18n";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   clampPipRect,
+  getSnapshot,
   pipCoversCenter,
-  pipParkedOver,
+  setSnapshot,
   useWebTabPip,
   type WebTabPipRect,
 } from "@/lib/state/web-tab-pip-store";
@@ -24,7 +25,6 @@ import { isWebTabOccluded, measureWebTabBounds } from "@/lib/web-tab-bounds";
 import styles from "./center-tabs.module.css";
 
 const BOUNDS_THROTTLE_MS = 100;
-const pipSnapshots = new Map<string, string>();
 
 type PipDrag = {
   kind: "move" | "resize";
@@ -84,7 +84,6 @@ export function WebTabPip() {
     : undefined;
   const center = { tabs, activeId, groups };
   const live = !!tabId && !!ownerTabId && pipCoversCenter(tabId, ownerTabId, center);
-  const parked = !!tabId && !!ownerTabId && pipParkedOver(tabId, ownerTabId, center);
   const rootRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<PipDrag | null>(null);
@@ -94,22 +93,9 @@ export function WebTabPip() {
   const lastPublishRef = useRef(0);
   const shotRef = useRef<HTMLImageElement>(null);
   const captureGenRef = useRef(0);
-  const parkedShotGenRef = useRef(0);
-  const [parkedShot, setParkedShot] = useState<string | null>(null);
   const reportRef = useRef<(immediate?: boolean) => void>(() => {});
   const bridge = desktopBridge();
   const url = tab?.url || (tabId?.startsWith("w:") ? tabId.slice(2) : "");
-
-  useEffect(() => {
-    parkedShotGenRef.current += 1;
-    setParkedShot(tabId ? pipSnapshots.get(tabId) ?? null : null);
-  }, [tabId]);
-
-  useEffect(() => {
-    if (!tabId) return;
-    if (!tabs.some((item) => item.id === tabId)) return;
-    if (!live && !parked) hide();
-  }, [tabId, live, parked, hide, activeId, groups, tabs]);
 
   useEffect(() => () => {
     if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
@@ -193,13 +179,8 @@ export function WebTabPip() {
     window.addEventListener("resize", onWindowChange);
     window.addEventListener("scroll", onWindowChange, true);
     return () => {
-      const shotTabId = tabId;
-      const gen = ++parkedShotGenRef.current;
-      void bridge.webTab.capture?.(shotTabId).then((d) => {
-        if (!d || parkedShotGenRef.current !== gen) return;
-        pipSnapshots.set(shotTabId, d);
-        if (useWebTabPip.getState().tabId !== shotTabId) return;
-        setParkedShot(d);
+      void bridge.webTab.capture?.(tabId).then((d) => {
+        if (d) setSnapshot(tabId, d);
       });
       reportRef.current = () => {};
       window.clearTimeout(throttleRef.current);
@@ -234,54 +215,6 @@ export function WebTabPip() {
     right: "auto",
     bottom: "auto",
   } : undefined;
-
-  if (parked && tabId && ownerTabId) {
-    const ownerTab = tabs.find((item) => item.id === ownerTabId);
-    const ownerTitle = ownerTab?.title
-      || text("another session", "另一个会话");
-    const parkedLabel = text(
-      `Controlled by “${ownerTitle}”`,
-      `正在由「${ownerTitle}」控制`,
-    );
-    const endLabel = text("End floating window", "结束浮动");
-    const goLabel = text("Go to that session", "转到该会话");
-    const shot = parkedShot ?? pipSnapshots.get(tabId);
-    return (
-      <div
-        className={styles.webPip}
-        role="complementary"
-        aria-label={parkedLabel}
-        style={pipStyle}
-      >
-        <div className={styles.webPipParked}>
-          {shot ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img className={styles.webPipParkedShot} src={shot} alt="" />
-          ) : null}
-          <div className={styles.webPipParkedDim} />
-          <div className={styles.webPipParkedBody}>
-            <div className={styles.webPipParkedTitle}>{parkedLabel}</div>
-            <div className={styles.webPipParkedActions}>
-              <button
-                type="button"
-                className={styles.webPipParkedBtn}
-                onClick={() => end()}
-              >
-                {endLabel}
-              </button>
-              <button
-                type="button"
-                className={styles.webPipParkedBtn}
-                onClick={() => useCenterTabs.getState().setActive(ownerTabId)}
-              >
-                {goLabel}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   if (!tabId || !tab || !live) return null;
 
@@ -358,12 +291,12 @@ export function WebTabPip() {
     el.style.willChange = kind === "move" ? "transform" : "left, top, width, height";
     if (bridge && tabId) {
       const gen = ++captureGenRef.current;
-      showShot(pipSnapshots.get(tabId) ?? null);
+      showShot(getSnapshot(tabId) ?? null);
       const capture = bridge.webTab.capture;
       if (typeof capture === "function") {
         void capture(tabId).then((dataUrl) => {
           if (!dataUrl) return;
-          pipSnapshots.set(tabId, dataUrl);
+          setSnapshot(tabId, dataUrl);
           if (captureGenRef.current === gen && dragRef.current) showShot(dataUrl);
         });
       }
@@ -436,7 +369,10 @@ export function WebTabPip() {
           type="button"
           className={styles.webToolbarBtn}
           onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => useCenterTabs.getState().setSplitWebTab(tabId)}
+          onClick={() => {
+            end();
+            useCenterTabs.getState().setSplitWebTab(tabId);
+          }}
           title={expandSplit}
           aria-label={expandSplit}
         >
@@ -446,7 +382,10 @@ export function WebTabPip() {
           type="button"
           className={styles.webToolbarBtn}
           onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => useCenterTabs.getState().setActive(tabId)}
+          onClick={() => {
+            end();
+            useCenterTabs.getState().setActive(tabId);
+          }}
           title={takeOver}
           aria-label={takeOver}
         >

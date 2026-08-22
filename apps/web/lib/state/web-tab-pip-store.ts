@@ -1,5 +1,6 @@
 import { create } from "zustand";
 
+import { webTabId } from "@/lib/state/center-tab-ids";
 import { findCenterTabGroup } from "@/lib/state/center-tab-groups";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 
@@ -80,6 +81,40 @@ export function peekLiveWebTabPipId(
   return tabId;
 }
 
+export function pipBoundTabId(): string | null {
+  const { tabId, ownerTabId } = useWebTabPip.getState();
+  return tabId && ownerTabId ? tabId : null;
+}
+
+/** Same-URL open must not steal another session's bound PiP leaf. */
+export function pipOpenMustFork(
+  url: string,
+  activeOwnerId: string,
+  boundTabId: string | null = peekWebTabPipId(),
+  boundOwnerId: string | null = peekWebTabPipOwnerId(),
+): boolean {
+  return webTabId(url) === boundTabId
+    && !!boundOwnerId
+    && boundOwnerId !== activeOwnerId;
+}
+
+export const usePipSnapshots = create<{
+  shots: Record<string, string>;
+  setSnapshot: (tabId: string, dataUrl: string) => void;
+}>((set) => ({
+  shots: {},
+  setSnapshot: (tabId, dataUrl) =>
+    set((s) => ({ shots: { ...s.shots, [tabId]: dataUrl } })),
+}));
+
+export function getSnapshot(tabId: string): string | undefined {
+  return usePipSnapshots.getState().shots[tabId];
+}
+
+export function setSnapshot(tabId: string, dataUrl: string): void {
+  usePipSnapshots.getState().setSnapshot(tabId, dataUrl);
+}
+
 /** Reverse of PiP expand: keep the same WebTab leaf, move focus off it
  *  so the floating host can cover center again. Does not reload. */
 export function collapseWebTabToPip(tabId: string): boolean {
@@ -131,17 +166,6 @@ export function pipCoversCenter(
   state: PipCenterState = useCenterTabs.getState(),
 ): boolean {
   return pipCoverBase(tabId, state) && !!ownerTabId && state.activeId === ownerTabId;
-}
-
-export function pipParkedOver(
-  tabId: string,
-  ownerTabId: string,
-  state: PipCenterState = useCenterTabs.getState(),
-): boolean {
-  if (!pipCoverBase(tabId, state)) return false;
-  if (!state.activeId || state.activeId === ownerTabId) return false;
-  const active = state.tabs.find((tab) => tab.id === state.activeId);
-  return !!active && active.kind === "session";
 }
 
 export function clampPipRect(
