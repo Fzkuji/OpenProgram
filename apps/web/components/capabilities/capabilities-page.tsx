@@ -2,12 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Download, LayoutGrid } from "lucide-react";
 import {
   BlocksIcon,
   GraduationCapIcon,
   PlugZapIcon,
-  PlusIcon,
   RefreshCwIcon,
   WorkflowIcon,
 } from "@/components/animated-icons";
@@ -45,11 +43,7 @@ export function CapabilitiesPage() {
   const { t, text } = useTranslation();
   const [kind, setKind] = useState(() => kindFromPath(pathname));
   const [query, setQueryState] = useState(persistedQuery);
-  const [pluginInstallOpen, setPluginInstallOpen] = useState(false);
-  const [skillNewOpen, setSkillNewOpen] = useState(false);
-  const [mcpCatalogOpen, setMcpCatalogOpen] = useState(false);
   const [mcpReloadNonce, setMcpReloadNonce] = useState(0);
-  const [mcpAddNonce, setMcpAddNonce] = useState(0);
   const [programReloadNonce, setProgramReloadNonce] = useState(0);
   if (typeof window !== "undefined") {
     try { sessionStorage.setItem("op.ability.kind", kind); } catch { /* ignore */ }
@@ -70,11 +64,7 @@ export function CapabilitiesPage() {
   };
 
   const goKind = (id: string) => {
-    setPluginInstallOpen(false);
-    setSkillNewOpen(false);
-    setMcpCatalogOpen(false);
     setMcpReloadNonce(0);
-    setMcpAddNonce(0);
     setProgramReloadNonce(0);
     const href = kindHref(id);
     setKind(kindFromPath(href));
@@ -92,22 +82,12 @@ export function CapabilitiesPage() {
       return [refresh(() => setProgramReloadNonce((n) => n + 1))];
     }
     if (kind === "plugins") {
-      return [
-        refresh(() => { void refreshPlugins(); }),
-        { label: text("Install", "安装"), onClick: () => setPluginInstallOpen(true), icon: <Download />, primary: true },
-      ];
+      return [refresh(() => { void refreshPlugins(); })];
     }
     if (kind === "skills") {
-      return [
-        refresh(() => { void fetchSkills(); }),
-        { label: text("New skill", "新建技能"), onClick: () => setSkillNewOpen(true), icon: PlusIcon, primary: true },
-      ];
+      return [refresh(() => { void fetchSkills(); })];
     }
-    return [
-      refresh(() => setMcpReloadNonce((n) => n + 1)),
-      { label: text("Browse catalog", "浏览目录"), onClick: () => setMcpCatalogOpen(true), icon: <LayoutGrid /> },
-      { label: text("Add server", "添加服务器"), onClick: () => setMcpAddNonce((n) => n + 1), icon: PlusIcon, primary: true },
-    ];
+    return [refresh(() => setMcpReloadNonce((n) => n + 1))];
   }, [kind, t, text, refreshPlugins, fetchSkills]);
 
   return (
@@ -123,16 +103,24 @@ export function CapabilitiesPage() {
           ]}
           activeTab={kind}
           onTabChange={goKind}
+          tabLabel={text("Ability types", "能力类型")}
+          panelId="ability-panel"
           toolbar={(
             <SearchInput
-              className="min-w-[140px] w-[clamp(150px,24vw,280px)]"
+              className="min-w-[96px] flex-1 sm:flex-none sm:min-w-[140px] sm:w-[clamp(150px,24vw,280px)]"
               value={query}
               onChange={setQuery}
-              placeholder={text("Search Programs, Plugins, Skills, MCPs...", "搜索程序、插件、技能、MCP...")}
+              placeholder={text("Search Programs, Plugins, Skills, MCP servers...", "搜索程序、插件、技能、MCP 服务器...")}
             />
           )}
           actions={actions}
         />
+        <div
+          id="ability-panel"
+          role="tabpanel"
+          aria-labelledby={`ability-panel-tab-${kind}`}
+          className={shared.panel}
+        >
         {kind === "programs" && (
           <ProgramsPage
             embedded
@@ -144,28 +132,22 @@ export function CapabilitiesPage() {
           <PluginsPage
             embedded
             query={query}
-            installOpen={pluginInstallOpen}
-            onInstallClose={() => setPluginInstallOpen(false)}
           />
         )}
         {kind === "skills" && (
           <SkillsPage
             embedded
             query={query}
-            newOpen={skillNewOpen}
-            onNewClose={() => setSkillNewOpen(false)}
           />
         )}
         {kind === "mcp" && (
           <McpPage
             embedded
             query={query}
-            catalogOpen={mcpCatalogOpen}
-            onCatalogClose={() => setMcpCatalogOpen(false)}
             reloadNonce={mcpReloadNonce}
-            addNonce={mcpAddNonce}
           />
         )}
+        </div>
       </div>
     </div>
   );

@@ -6,6 +6,7 @@ import { ManagePageHeader, ManageSubnav, managePageStyles as shared } from "@/co
 import { usePluginsStore } from "@/lib/state/plugins-store";
 import { useTranslation } from "@/lib/i18n";
 import { useModalA11y } from "@/lib/use-modal-a11y";
+import { Download } from "lucide-react";
 import { InstalledList } from "./views/installed-list";
 import { MarketplaceBrowser } from "./views/marketplace-browser";
 import { PluginErrors } from "./views/plugin-errors";
@@ -22,7 +23,7 @@ export function PluginsPage({
   onInstallClose?: () => void;
 } = {}) {
   const { t, text } = useTranslation();
-  const { tab, setTab, refresh, plugins, errors } = usePluginsStore();
+  const { tab, setTab, refresh, plugins, errors, loadError, loading } = usePluginsStore();
   const [localInstallOpen, setLocalInstallOpen] = useState(false);
   const installOpen = installOpenProp ?? localInstallOpen;
   const closeInstall = onInstallClose ?? (() => setLocalInstallOpen(false));
@@ -31,53 +32,71 @@ export function PluginsPage({
     refresh();
   }, [refresh]);
 
-  const errCount = Object.keys(errors).length + plugins.filter((p) => p.error).length;
+  const issueNames = new Set([
+    ...Object.keys(errors),
+    ...plugins.filter((plugin) => plugin.error).map((plugin) => plugin.name),
+  ]);
+  const errCount = issueNames.size;
+  const enabledCount = plugins.filter((p) => p.enabled && p.loaded && !p.error).length;
 
   const tabs = [
     { id: "installed", label: text("Installed", "已安装"), count: plugins.length },
-    { id: "marketplace", label: text("Marketplace", "市场") },
-    { id: "errors", label: text("Errors", "错误"), count: errCount },
+    { id: "marketplace", label: text("Discover", "发现") },
+    { id: "errors", label: text("Issues", "问题"), count: errCount },
   ];
 
   const body = (
     <>
-      {tab === "installed" && <InstalledList externalFilter={query} />}
+      {tab === "installed" && (loading && plugins.length === 0
+        ? <div className={shared.empty}>{text("Loading plugins...", "正在加载插件...")}</div>
+        : <InstalledList externalFilter={query} />)}
       {tab === "marketplace" && <MarketplaceBrowser externalFilter={query} />}
       {tab === "errors" && <PluginErrors filter={query} />}
     </>
   );
 
-  if (embedded) {
-    return (
-      <>
-        <ManageSubnav
-          tabs={tabs}
-          activeTab={tab}
-          onTabChange={(id) => setTab(id as typeof tab)}
-        />
-        <div className={shared.body}>{body}</div>
-        {installOpen && <ManualInstallDialog onClose={closeInstall} />}
-      </>
-    );
-  }
+  const content = (
+    <>
+      <ManageSubnav
+        tabs={tabs}
+        activeTab={tab}
+        onTabChange={(id) => setTab(id as typeof tab)}
+        summary={text(
+          `${enabledCount} available · ${errCount} issues`,
+          `可用 ${enabledCount} 个 · ${errCount} 个问题`,
+        )}
+        action={{
+          label: text("Add plugin", "添加插件"),
+          onClick: () => setLocalInstallOpen(true),
+          icon: <Download />,
+          primary: true,
+        }}
+        ariaLabel={text("Plugin sections", "插件分区")}
+        panelId="plugins-panel"
+      />
+      {loadError && <div className={shared.errorBar} role="alert">{loadError}</div>}
+      <div
+        id="plugins-panel"
+        role="tabpanel"
+        aria-labelledby={`plugins-panel-tab-${tab}`}
+        className={shared.body}
+      >{body}</div>
+      {installOpen && <ManualInstallDialog onClose={closeInstall} />}
+    </>
+  );
+
+  if (embedded) return content;
 
   return (
     <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
     <div className={shared.view}>
       <ManagePageHeader
         title={t("nav.plugins")}
-        tabs={tabs}
-        activeTab={tab}
-        onTabChange={(id) => setTab(id as typeof tab)}
         actions={[
           { label: t("sidebar.refresh"), onClick: () => { void refresh(); } },
-          { label: text("Install", "安装"), onClick: () => setLocalInstallOpen(true), primary: true },
         ]}
       />
-      <div className={shared.body}>
-        {body}
-      </div>
-      {installOpen && <ManualInstallDialog onClose={closeInstall} />}
+      {content}
     </div>
     </div>
   );
@@ -101,6 +120,8 @@ function ManualInstallDialog({ onClose }: { onClose: () => void }) {
       if (r.success) {
         // 留窗显示成功，并允许关闭
       }
+    } catch (e) {
+      setLog(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }

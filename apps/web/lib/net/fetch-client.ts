@@ -39,9 +39,9 @@ export async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> 
     data = { error: text };
   }
   if (!r.ok) {
-    const d = data as { error?: string; code?: string };
+    const d = data as { error?: string; detail?: string; code?: string };
     const message =
-      d.error || (text ? `HTTP ${r.status}: ${text.slice(0, 300)}` : `HTTP ${r.status}`);
+      d.error || d.detail || (text ? `HTTP ${r.status}: ${text.slice(0, 300)}` : `HTTP ${r.status}`);
     throw new HttpError(message, r.status, d.code, text);
   }
   return data as T;

@@ -13,7 +13,6 @@ import {
   FolderCodeIcon,
   FolderOpenIcon,
 } from "@/components/animated-icons";
-import { activateOnKey } from "@/lib/utils";
 
 // --- tree node model -----------------------------------------------------
 
@@ -64,6 +63,7 @@ function sortedChildren(node: TreeNode): TreeNode[] {
 
 function SkillLeaf({ skill, depth }: { skill: Skill; depth: number }) {
   const { toggleSkill } = useSkills();
+  const { text } = useTranslation();
   return (
     <div style={{ paddingLeft: depth * 16 }}>
       <ManageRow
@@ -78,6 +78,9 @@ function SkillLeaf({ skill, depth }: { skill: Skill; depth: number }) {
           <Switch
             checked={skill.enabled}
             onCheckedChange={(v) => toggleSkill(skill.name, v)}
+            aria-label={skill.enabled
+              ? text(`Disable ${skill.name}`, `禁用 ${skill.name}`)
+              : text(`Enable ${skill.name}`, `启用 ${skill.name}`)}
           />
         }
       />
@@ -109,20 +112,22 @@ function TreeBranch({
   const enabledCount = subSkills.filter((s) => s.enabled).length;
   const allOn = enabledCount === subSkills.length && subSkills.length > 0;
   const folderIconRef = useRef<AnimatedNavIconHandle>(null);
+  const { text } = useTranslation();
 
   return (
     <div>
       <div
-        role="button"
-        tabIndex={0}
-        aria-expanded={isOpen}
-        onKeyDown={activateOnKey(() => toggleExpanded(node.path))}
-        onClick={() => toggleExpanded(node.path)}
         onMouseEnter={() => folderIconRef.current?.startAnimation?.()}
         onMouseLeave={() => folderIconRef.current?.stopAnimation?.()}
         style={{ marginLeft: depth * 16 }}
         className={shared.groupRow}
       >
+        <button
+          type="button"
+          className={shared.groupToggle}
+          aria-expanded={isOpen}
+          onClick={() => toggleExpanded(node.path)}
+        >
         {/* Two states, both real pqoqubbw icons: collapsed = `folder-code`,
             expanded = `folder-open`. Each animates on row hover via the
             shared ref (only one is mounted at a time). */}
@@ -143,10 +148,14 @@ function TreeBranch({
         )}
         <span className={shared.groupName}>{node.segment}</span>
         <span className={shared.rowCount}>{enabledCount}/{subSkills.length}</span>
-        <div className="ml-auto" onClick={(e) => e.stopPropagation()}>
+        </button>
+        <div className="ml-auto">
           <Switch
             checked={allOn}
             onCheckedChange={(v) => toggleBranch(subSkills.map((s) => s.name), v)}
+            aria-label={allOn
+              ? text(`Disable ${node.segment}`, `禁用 ${node.segment}`)
+              : text(`Enable ${node.segment}`, `启用 ${node.segment}`)}
           />
         </div>
       </div>

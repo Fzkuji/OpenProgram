@@ -13,13 +13,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
-import { PlugZapIcon } from "@/components/animated-icons";
+import { PlugZapIcon, PlusIcon } from "@/components/animated-icons";
 import { SearchInput } from "@/components/ui/search-input";
-import { ManagePageHeader, managePageStyles as shared } from "@/components/ui/manage-page";
+import { ManagePageHeader, ManageRow, ManageSubnav, managePageStyles as shared } from "@/components/ui/manage-page";
+import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { jsonFetch } from "@/lib/net/fetch-client";
 
-import { CatalogDialog } from "./mcp-catalog-dialog";
+import { CatalogPanel } from "./mcp-catalog-panel";
 import {
   DetailView,
   stateBadge,
@@ -33,29 +35,24 @@ import styles from "./mcp-page.module.css";
 export function McpPage({
   embedded,
   query,
-  catalogOpen: catalogOpenProp,
-  onCatalogClose,
   reloadNonce,
-  addNonce,
 }: {
   embedded?: boolean;
   query?: string;
-  catalogOpen?: boolean;
-  onCatalogClose?: () => void;
   reloadNonce?: number;
-  addNonce?: number;
 } = {}) {
   const { t, text } = useTranslation();
   const [servers, setServers] = useState<ServerStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [actionErr, setActionErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<ServerDetail | null>(null);
+  const [detailErr, setDetailErr] = useState<string | null>(null);
   const [editing, setEditing] = useState<EditTarget | null>(null);
   const [busy, setBusy] = useState<BusyAction>(null);
-  const [localCatalogOpen, setLocalCatalogOpen] = useState(false);
-  const catalogOpen = catalogOpenProp ?? localCatalogOpen;
-  const closeCatalog = onCatalogClose ?? (() => setLocalCatalogOpen(false));
+  type McpTab = "installed" | "discover";
+  const [tab, setTab] = useState<McpTab>("installed");
   const [filter, setFilter] = useState("");
   const filterValue = query !== undefined ? query : filter;
 
@@ -67,9 +64,7 @@ export function McpPage({
   // beat and then snaps back when the server reappears.
   const reload = useCallback(async (signal?: AbortSignal) => {
     try {
-      const r = await fetch("/api/mcp/servers", { signal });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const data = await r.json();
+      const data = await jsonFetch<{ servers: ServerStatus[] }>("/api/mcp/servers", { signal });
       if (signal?.aborted) return;
       setServers((data.servers as ServerStatus[]) || []);
       setLoadErr(null);
@@ -110,29 +105,21 @@ export function McpPage({
     };
   }, [reload]);
 
-  // Selection bookkeeping — only auto-select on initial load
-  // (selected is null and we have servers). Don't auto-reset when
-  // a server temporarily disappears.
-  useEffect(() => {
-    if (selected === null && servers.length > 0) {
-      setSelected(servers[0].name);
-    }
-  }, [servers, selected]);
-
   const fetchDetail = useCallback(
     async (name: string, signal?: AbortSignal) => {
       try {
-        const r = await fetch(
+        const json = await jsonFetch<ServerDetail>(
           `/api/mcp/servers/${encodeURIComponent(name)}`,
           { signal },
         );
-        if (!r.ok) { setDetail(null); return; }
-        const json = (await r.json()) as ServerDetail;
         if (signal?.aborted) return;
         setDetail(json);
+        setDetailErr(null);
+        setActionErr(null);
       } catch (e) {
         if ((e as Error).name === "AbortError") return;
         setDetail(null);
+        setDetailErr(e instanceof Error ? e.message : String(e));
       }
     },
     [],
@@ -142,13 +129,21 @@ export function McpPage({
     if (!selected) return;
     const ac = new AbortController();
     setDetail(null);
+    setDetailErr(null);
     void fetchDetail(selected, ac.signal);
     return () => ac.abort();
   }, [selected, fetchDetail]);
 
   async function runAction(action: Exclude<BusyAction, null>, fn: () => Promise<void>) {
     setBusy(action);
-    try { await fn(); } finally { setBusy(null); }
+    setActionErr(null);
+    try {
+      await fn();
+    } catch (e) {
+      setActionErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
   }
 
   // Merge a server's fresh status (returned from a POST/PATCH) into
@@ -168,32 +163,26 @@ export function McpPage({
 
   async function doRestart(name: string) {
     await runAction("restart", async () => {
-      const r = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/restart`,
+      const server = await jsonFetch<ServerStatus>(`/api/mcp/servers/${encodeURIComponent(name)}/restart`,
         { method: "POST" });
-      if (r.ok) {
-        upsertServer(await r.json());
-        await fetchDetail(name);
-      }
+      upsertServer(server);
+      await fetchDetail(name);
     });
   }
   async function doEnable(name: string) {
     await runAction("enable", async () => {
-      const r = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/enable`,
+      const server = await jsonFetch<ServerStatus>(`/api/mcp/servers/${encodeURIComponent(name)}/enable`,
         { method: "POST" });
-      if (r.ok) {
-        upsertServer(await r.json());
-        await fetchDetail(name);
-      }
+      upsertServer(server);
+      await fetchDetail(name);
     });
   }
   async function doDisable(name: string) {
     await runAction("disable", async () => {
-      const r = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/disable`,
+      const server = await jsonFetch<ServerStatus>(`/api/mcp/servers/${encodeURIComponent(name)}/disable`,
         { method: "POST" });
-      if (r.ok) {
-        upsertServer(await r.json());
-        await fetchDetail(name);
-      }
+      upsertServer(server);
+      await fetchDetail(name);
     });
   }
   async function doDelete(name: string) {
@@ -202,12 +191,9 @@ export function McpPage({
       `移除 MCP 服务器“${name}”？配置会被删除。`,
     ))) return;
     await runAction("delete", async () => {
-      const r = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}`,
-        { method: "DELETE" });
-      if (r.ok) {
-        setServers((prev) => prev.filter((p) => p.name !== name));
-        if (selected === name) setSelected(null);
-      }
+      await jsonFetch(`/api/mcp/servers/${encodeURIComponent(name)}`, { method: "DELETE" });
+      setServers((prev) => prev.filter((p) => p.name !== name));
+      if (selected === name) setSelected(null);
     });
   }
 
@@ -269,12 +255,9 @@ export function McpPage({
     });
   }
 
-  useEffect(() => {
-    if (!addNonce) return;
-    openAdd();
-  }, [addNonce]);
-
   const selectedServer = servers.find((s) => s.name === selected) || null;
+  const readyCount = servers.filter((server) => server.ready).length;
+  const issueCount = servers.filter((server) => server.enabled && !!server.error && server.error !== "disabled").length;
 
   const shownServers = useMemo(() => {
     const q = filterValue.trim().toLowerCase();
@@ -289,12 +272,51 @@ export function McpPage({
     });
   }, [servers, filterValue]);
 
-  const splitAndDialogs = (
+  const bodyAndDialogs = (
     <>
-        <div className={shared.splitBody}>
-          <div className={styles.serversNav}>
+        <ManageSubnav
+          tabs={[
+            { id: "installed", label: text("Installed", "已安装"), count: servers.length },
+            { id: "discover", label: text("Discover", "发现") },
+          ]}
+          activeTab={tab}
+          onTabChange={(id) => setTab(id as McpTab)}
+          summary={text(
+            `${readyCount} available · ${issueCount} issues`,
+            `可用 ${readyCount} 个 · ${issueCount} 个问题`,
+          )}
+          action={{
+            label: text("Add MCP server", "添加 MCP 服务器"),
+            onClick: openAdd,
+            icon: PlusIcon,
+            primary: true,
+          }}
+          ariaLabel={text("MCP sections", "MCP 分区")}
+          panelId="mcp-panel"
+        />
+        <div
+          id="mcp-panel"
+          role="tabpanel"
+          aria-labelledby={`mcp-panel-tab-${tab}`}
+          className={shared.panel}
+        >
+        {actionErr && <div className={shared.errorBar} role="alert">{actionErr}</div>}
+        {tab === "discover" && (
+          <div className={shared.body}>
+            <CatalogPanel
+              existingNames={new Set(servers.map((server) => server.name))}
+              query={filterValue}
+              onInstalled={async (name) => {
+                await reload();
+                setSelected(name);
+              }}
+            />
+          </div>
+        )}
+        {tab === "installed" && (
+        <div className={shared.body}>
             {query === undefined && (
-            <div className={styles.navSearch}>
+            <div className="mb-3">
               <SearchInput
                 value={filter}
                 onChange={setFilter}
@@ -302,70 +324,68 @@ export function McpPage({
               />
             </div>
             )}
+            {loadErr && <div className={shared.errorBar} role="alert">{loadErr}</div>}
+            <div className="space-y-1">
             {loading && servers.length === 0 ? (
-              <div className={styles.serverItem} style={{ cursor: "default" }}>
-                <span className={styles.serverName} style={{ color: "var(--text-muted)" }}>
-                  {text("Loading...", "加载中...")}
-                </span>
-              </div>
+              <div className={shared.empty}>{text("Loading...", "加载中...")}</div>
             ) : shownServers.length === 0 ? (
-              <div className={styles.serverItem} style={{ cursor: "default" }}>
-                <span className={styles.serverName} style={{ color: "var(--text-muted)" }}>
-                  {filterValue.trim()
-                    ? text("No matches", "没有匹配结果")
-                    : text("No servers", "没有服务器")}
-                </span>
-              </div>
+              <div className={shared.empty}>{filterValue.trim()
+                ? text("No matches", "没有匹配结果")
+                : text("No servers yet. Add one to make its tools available.", "还没有服务器。添加后即可使用其工具。")}</div>
             ) : (
               shownServers.map((s) => {
-                const { dotCls } = stateBadge(s);
+                const state = stateBadge(s);
+                const stateLabel = text(state.label, {
+                  ready: "就绪",
+                  disabled: "已禁用",
+                  error: "错误",
+                  starting: "启动中",
+                }[state.label] || state.label);
+                const description = s.type === "local" ? (s.command || []).join(" ") : s.url;
                 return (
-                  <div
+                  <ManageRow
                     key={s.name}
-                    className={cn(
-                      styles.serverItem,
-                      selected === s.name && styles.active,
-                    )}
+                    icon={<PlugZapIcon size={16} />}
+                    name={s.name}
+                    description={description || s.error || text("No endpoint details", "没有端点信息")}
+                    meta={<>
+                      <span className={shared.badge}>{s.type}</span>
+                      <span className={`${shared.badge} ${s.ready ? shared.badgeGreen : s.error && s.error !== "disabled" ? shared.badgeRed : ""}`}>{stateLabel}</span>
+                    </>}
+                    count={text(`${s.tool_count} tools`, `${s.tool_count} 个工具`)}
                     onClick={() => setSelected(s.name)}
-                  >
-                    <span className={cn(styles.serverDot, dotCls)} />
-                    <span className={styles.serverName}>{s.name}</span>
-                    <span className={styles.serverCount}>{s.tool_count}</span>
-                  </div>
+                    title={text("Open MCP server details", "打开 MCP 服务器详情")}
+                    actions={<Switch
+                      checked={s.enabled}
+                      disabled={busy !== null}
+                      onCheckedChange={(enabled) => { void (enabled ? doEnable(s.name) : doDisable(s.name)); }}
+                      aria-label={s.enabled ? text(`Disable ${s.name}`, `禁用 ${s.name}`) : text(`Enable ${s.name}`, `启用 ${s.name}`)}
+                    />}
+                  />
                 );
               })
             )}
-            <div className={styles.navSep} />
-            <button className={cn(styles.serverItem, styles.navAddItem)} onClick={openAdd}>
-              <span className={styles.serverName}>+ {text("Add server", "添加服务器")}</span>
-            </button>
-          </div>
-
-          <div className={styles.content}>
-            {loadErr && <div className={shared.errorBar} role="alert">{loadErr}</div>}
-            {selectedServer === null ? (
-              <div className={styles.empty}>
-                <div className={styles.emptyIcon}>
-                  <PlugZapIcon size={40} />
-                </div>
-                <div className={styles.emptyText}>
-                  {text("Select a server on the left to view tools and settings.", "选择左侧服务器查看工具和设置。")}
-                </div>
-              </div>
-            ) : (
-              <DetailView
-                server={selectedServer}
-                detail={detail}
-                busy={busy}
-                onRestart={() => void doRestart(selectedServer.name)}
-                onEnable={() => void doEnable(selectedServer.name)}
-                onDisable={() => void doDisable(selectedServer.name)}
-                onDelete={() => void doDelete(selectedServer.name)}
-                onEdit={() => openEdit(selectedServer)}
-              />
-            )}
-          </div>
+            </div>
         </div>
+        )}
+        </div>
+
+      <Dialog open={selectedServer !== null} onOpenChange={(open) => { if (!open) setSelected(null); }}>
+        <DialogContent className="max-h-[86vh] overflow-y-auto sm:max-w-[920px]">
+          <DialogHeader><DialogTitle className="sr-only">{selectedServer?.name || text("MCP server details", "MCP 服务器详情")}</DialogTitle></DialogHeader>
+          {detailErr && <div className={shared.errorBar} role="alert">{detailErr}</div>}
+          {selectedServer && <DetailView
+            server={selectedServer}
+            detail={detail}
+            busy={busy}
+            onRestart={() => void doRestart(selectedServer.name)}
+            onEnable={() => void doEnable(selectedServer.name)}
+            onDisable={() => void doDisable(selectedServer.name)}
+            onDelete={() => void doDelete(selectedServer.name)}
+            onEdit={() => { const target = selectedServer; setSelected(null); openEdit(target); }}
+          />}
+        </DialogContent>
+      </Dialog>
 
       {editing !== null && (
         <EditDialog
@@ -379,42 +399,21 @@ export function McpPage({
         />
       )}
 
-      {catalogOpen && (
-        <CatalogDialog
-          existingNames={new Set(servers.map((s) => s.name))}
-          onClose={() => closeCatalog()}
-          onInstalled={async (name) => {
-            closeCatalog();
-            await reload();
-            setSelected(name);
-          }}
-        />
-      )}
     </>
   );
 
-  if (embedded) return splitAndDialogs;
+  if (embedded) return bodyAndDialogs;
 
   return (
     <div className="main">
       <div className={shared.view}>
         <ManagePageHeader
           title={t("nav.mcp")}
-          tabs={[
-            {
-              id: "servers",
-              label: text("Servers", "服务器"),
-              count: servers.length,
-            },
-          ]}
-          activeTab="servers"
           actions={[
             { label: t("sidebar.refresh"), onClick: () => { void reload(); } },
-            { label: text("Browse catalog", "浏览目录"), onClick: () => setLocalCatalogOpen(true) },
-            { label: text("Add server", "添加服务器"), onClick: openAdd, primary: true },
           ]}
         />
-        {splitAndDialogs}
+        {bodyAndDialogs}
       </div>
     </div>
   );
