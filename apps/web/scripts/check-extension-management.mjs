@@ -20,7 +20,7 @@ assert.match(manage, /summary\?: ReactNode/, "the shared subnav must accept an a
 assert.match(manage, /action\?: ManageAction/, "the secondary task bar must own the Add action");
 assert.match(manage, /styles\.subnavTab/, "secondary tabs must have their own visual treatment");
 assert.match(manage, /onKeyDown=\{\(event\) => moveTab\(event, index\)\}/, "shared subnav tabs must support keyboard navigation");
-assert.match(manage, /tabIndex=\{onClick \? 0 : undefined\}[\s\S]*activateOnKey\(onClick\)/, "clickable management rows must support keyboard activation");
+assert.match(manage, /tabIndex=\{onClick \? 0 : undefined\}[\s\S]*event\.target === event\.currentTarget[\s\S]*activateOnKey\(onClick\)/, "management rows must activate from their own keyboard target only");
 assert.match(plugins, /text\("Discover", "发现"\)/, "plugins must use the shared Discover task name");
 assert.match(skills, /text\("Installed", "已安装"\)/, "skills must use the shared Installed task name");
 assert.match(mcp, /id: "discover", label: text\("Discover", "发现"\)/, "MCP must expose the shared Discover task");

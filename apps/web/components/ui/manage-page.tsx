@@ -269,7 +269,9 @@ export function ManageRow({
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
-      onKeyDown={onClick ? activateOnKey(onClick) : undefined}
+      onKeyDown={onClick ? (event) => {
+        if (event.target === event.currentTarget) activateOnKey(onClick)(event);
+      } : undefined}
       title={title}
       className={cn(styles.row, !onClick && styles.rowStatic, className)}
     >
