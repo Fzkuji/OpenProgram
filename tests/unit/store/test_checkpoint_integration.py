@@ -9,6 +9,7 @@ asserts that ``CheckpointStore.restore_turn`` reverts the file changes.
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 
 import pytest
@@ -198,3 +199,67 @@ def test_journal_prepare_failure_blocks_file_write(
 
     assert out.startswith("Error: mutation journal preparation failed")
     assert target.read_text(encoding="utf-8") == "value = 1\n"
+
+
+def test_write_rejects_symlink_without_changing_target(turn_ctx, tmp_path):
+    target = tmp_path / "target.txt"
+    target.write_text("original\n", encoding="utf-8")
+    alias = tmp_path / "alias.txt"
+    alias.symlink_to(target)
+    _run_tool("read", {"file_path": str(alias)})
+
+    out = _run_tool("write", {"file_path": str(alias), "content": "changed\n"})
+
+    assert out.startswith("Error: mutation journal preparation failed")
+    assert target.read_text(encoding="utf-8") == "original\n"
+    assert alias.is_symlink()
+    assert CheckpointStore(turn_ctx).list_mutations(TURN_ID) == []
+
+
+def test_edit_rejects_hardlink_without_changing_aliases(turn_ctx, tmp_path):
+    target = tmp_path / "target.py"
+    target.write_text("value = 1\n", encoding="utf-8")
+    alias = tmp_path / "alias.py"
+    os.link(target, alias)
+    _run_tool("read", {"file_path": str(alias)})
+
+    out = _run_tool("edit", {
+        "file_path": str(alias),
+        "old_string": "value = 1",
+        "new_string": "value = 2",
+    })
+
+    assert out.startswith("Error: mutation journal preparation failed")
+    assert target.read_text(encoding="utf-8") == "value = 1\n"
+    assert alias.read_text(encoding="utf-8") == "value = 1\n"
+    assert CheckpointStore(turn_ctx).list_mutations(TURN_ID) == []
+
+
+def test_apply_patch_preflights_all_aliases_before_writing(turn_ctx, tmp_path):
+    safe = tmp_path / "safe.py"
+    safe.write_text("safe = 1\n", encoding="utf-8")
+    target = tmp_path / "target.py"
+    target.write_text("target = 1\n", encoding="utf-8")
+    alias = tmp_path / "alias.py"
+    alias.symlink_to(target)
+    _run_tool("read", {"file_path": str(safe)})
+    _run_tool("read", {"file_path": str(alias)})
+    patch = (
+        "*** Begin Patch\n"
+        f"*** Update File: {safe}\n"
+        "@@\n"
+        "-safe = 1\n"
+        "+safe = 2\n"
+        f"*** Update File: {alias}\n"
+        "@@\n"
+        "-target = 1\n"
+        "+target = 2\n"
+        "*** End Patch\n"
+    )
+
+    out = _run_tool("apply_patch", {"patch": patch})
+
+    assert out.startswith("Error: mutation journal preparation failed")
+    assert safe.read_text(encoding="utf-8") == "safe = 1\n"
+    assert target.read_text(encoding="utf-8") == "target = 1\n"
+    assert CheckpointStore(turn_ctx).list_mutations(TURN_ID) == []

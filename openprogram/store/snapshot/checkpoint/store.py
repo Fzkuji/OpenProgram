@@ -116,9 +116,13 @@ class CheckpointStore:
         if not pre_existing:
             before = {"kind": "absent"}
         elif not stat.S_ISREG(target_stat.st_mode):
-            before = {"kind": _file_kind(target_stat.st_mode)}
-            recoverability = "unavailable"
-            unavailable_reason = "unsafe_file_type"
+            raise MutationJournalError(
+                f"unsafe file type for exact mutation: {_file_kind(target_stat.st_mode)}",
+            )
+        elif target_stat.st_nlink != 1:
+            raise MutationJournalError(
+                f"hardlinked file has {target_stat.st_nlink} links",
+            )
         else:
             source = Path(content_src) if content_src is not None else target
             try:

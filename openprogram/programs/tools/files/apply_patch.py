@@ -352,6 +352,18 @@ def execute(patch: str, **_: Any) -> str:
     if errors:
         return "\n".join(errors)
 
+    prepared_paths: list[str] = []
+    try:
+        for _op, path, _body in sections:
+            if path in prepared_paths:
+                continue
+            checkpoint_before_edit(path)
+            prepared_paths.append(path)
+    except Exception as exc:
+        for prepared_path in prepared_paths:
+            checkpoint_abort_edit(prepared_path, str(exc))
+        return f"Error: mutation journal preparation failed: {exc}"
+
     results: list[str] = []
     for op, path, body in sections:
         if op == "add":
