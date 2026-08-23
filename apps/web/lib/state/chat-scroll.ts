@@ -151,19 +151,25 @@ export function readComposerHeight(): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** Slow-fast-slow, like an elevator or a train pulling in. */
+/** Mild cubic — kept for contrast tests. Jump uses the steeper quint. */
 export function easeInOutCubic(t: number): number {
   const x = Math.min(1, Math.max(0, t));
   return x < 0.5 ? 4 * x * x * x : 1 - ((-2 * x + 2) ** 3) / 2;
 }
 
+/** Steeper slow-fast-slow so the ride is obvious. */
+export function easeInOutQuint(t: number): number {
+  const x = Math.min(1, Math.max(0, t));
+  return x < 0.5 ? 16 * x ** 5 : 1 - ((-2 * x + 2) ** 5) / 2;
+}
+
 export function jumpScrollDuration(distance: number): number {
   const d = Math.abs(distance);
-  return Math.round(Math.min(720, Math.max(360, 300 + d * 0.32)));
+  return Math.round(Math.min(980, Math.max(620, 520 + d * 0.42)));
 }
 
 export function jumpScrollTopAt(from: number, to: number, t: number): number {
-  return from + (to - from) * easeInOutCubic(t);
+  return from + (to - from) * easeInOutQuint(t);
 }
 
 /** Animate a scroller to the latest message. Returns a cancel function. */

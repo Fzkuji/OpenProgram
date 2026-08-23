@@ -6,7 +6,9 @@ import {
   CHAT_AT_BOTTOM_EPSILON,
   chatAtBottomSlack,
   easeInOutCubic,
+  easeInOutQuint,
   isChatAtBottom,
+  jumpScrollDuration,
   jumpScrollTopAt,
   remainingScroll,
 } from "../lib/state/chat-scroll.ts";
@@ -69,13 +71,14 @@ test("jump button fades out instead of unmounting immediately", () => {
 });
 
 test("jump scroll eases in, then out", () => {
-  assert.equal(easeInOutCubic(0), 0);
-  assert.equal(easeInOutCubic(1), 1);
-  assert.equal(easeInOutCubic(0.5), 0.5);
-  assert.ok(easeInOutCubic(0.25) < 0.25);
-  assert.ok(easeInOutCubic(0.75) > 0.75);
+  assert.equal(easeInOutQuint(0), 0);
+  assert.equal(easeInOutQuint(1), 1);
+  assert.equal(easeInOutQuint(0.5), 0.5);
+  assert.ok(easeInOutQuint(0.25) < easeInOutCubic(0.25));
+  assert.ok(easeInOutQuint(0.75) > easeInOutCubic(0.75));
   assert.equal(jumpScrollTopAt(0, 100, 0), 0);
   assert.equal(jumpScrollTopAt(0, 100, 1), 100);
+  assert.ok(jumpScrollDuration(80) >= 620);
 });
 
 test("jump keeps the button until the ride finishes", () => {
