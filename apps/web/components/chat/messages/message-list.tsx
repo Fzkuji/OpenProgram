@@ -188,53 +188,42 @@ function prefersReducedMotion(): boolean {
     && matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-let pendingOrigScroll: { cardId: string; opening: boolean } | null = null;
+let pinOriginals: { id: string; top: number } | null = null;
+let pendingOrigNudge: { opening: boolean } | null = null;
 
-function scrollChatTo(el: Element | null, pad: number, smooth: boolean): void {
-  const area = document.getElementById("chatArea");
-  if (!el || !area) return;
-  const top = Math.max(
-    0,
-    el.getBoundingClientRect().top - area.getBoundingClientRect().top + area.scrollTop - pad,
-  );
-  // A 40k-px smooth jump is dropped; hop to the last viewport, then ease in.
-  if (smooth && Math.abs(top - area.scrollTop) > area.clientHeight * 2) {
-    area.scrollTo({ top: Math.max(0, top - area.clientHeight), behavior: "auto" });
-    requestAnimationFrame(() => {
-      area.scrollTo({ top, behavior: "smooth" });
-    });
+function easeScrollBy(area: HTMLElement, delta: number, ms: number): void {
+  const start = area.scrollTop;
+  const end = Math.max(0, start + delta);
+  if (prefersReducedMotion() || end === start) {
+    area.scrollTop = end;
     return;
   }
-  area.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
-}
-
-function finishOrigScroll(cardId: string, opening: boolean): void {
-  const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v);
-  const smooth = !prefersReducedMotion();
-  const run = () => {
-    if (opening) {
-      const covered = document.querySelectorAll(".covered-turn");
-      scrollChatTo(covered[Math.max(0, covered.length - 3)] ?? null, 12, smooth);
-    } else {
-      scrollChatTo(document.querySelector(`[data-msg-id="${esc(cardId)}"]`), 48, smooth);
-    }
+  const t0 = performance.now();
+  const step = (now: number) => {
+    const t = Math.min(1, (now - t0) / ms);
+    const e = t < 0.5 ? 2 * t * t : 1 - ((-2 * t + 2) ** 2) / 2;
+    area.scrollTop = start + (end - start) * e;
+    if (t < 1) requestAnimationFrame(step);
   };
-  // Collapse finishes a frame after 0fr applies; wait so the card's rect is real.
-  requestAnimationFrame(() => requestAnimationFrame(run));
+  requestAnimationFrame(step);
 }
 
 function toggleOriginals(cardId: string): void {
   const opening = !originalsOpen.has(cardId);
+  const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v);
+  const el = document.querySelector(`[data-orig-for="${esc(cardId)}"]`);
+  if (el) pinOriginals = { id: cardId, top: el.getBoundingClientRect().top };
   if (opening) originalsOpen.add(cardId);
   else originalsOpen.delete(cardId);
-  pendingOrigScroll = { cardId, opening };
+  pendingOrigNudge = { opening };
   originalsSubs.forEach((fn) => fn());
   const delay = prefersReducedMotion() ? 0 : FOLD_MS + 20;
   window.setTimeout(() => {
-    const pend = pendingOrigScroll;
-    if (!pend || pend.cardId !== cardId) return;
-    pendingOrigScroll = null;
-    finishOrigScroll(pend.cardId, pend.opening);
+    const area = document.getElementById("chatArea");
+    const nudge = pendingOrigNudge;
+    pendingOrigNudge = null;
+    if (!area || !nudge?.opening) return;
+    easeScrollBy(area, -Math.round(area.clientHeight / 3), 500);
   }, delay);
 }
 
@@ -288,34 +277,34 @@ function CompactionCard({ msg }: { msg: ChatMsg }) {
     ? text(`Compacted ${n} earlier messages`, `已压缩 ${n} 条更早的消息`)
     : text("Compacted earlier messages", "已压缩更早的消息");
   const origLabel = showingOrig
-    ? text("▾ Hide original messages", "▾ 隐藏原始消息")
-    : (typeof n === "number"
-      ? text(`▸ Show ${n} original messages`, `▸ 显示 ${n} 条原始消息`)
-      : text("▸ Show original messages", "▸ 显示原始消息"));
-  const toggleFull = () => setFull((v) => !v);
+    ? text("▾ Hide originals", "▾ 隐藏原文")
+    : text("▸ Show originals", "▸ 显示原文");
   return (
     <>
-      <button
-        type="button"
-        className="compaction-orig-toggle"
+      <div
+        className="compaction-card-bar"
         data-orig-for={msg.id}
         data-slot="orig"
         data-open={showingOrig ? "1" : "0"}
-        onClick={() => toggleOriginals(msg.id)}
       >
-        {origLabel}
-      </button>
+        <span className="compaction-card-info">
+          {title}{hm ? ` · ${hm}` : ""}
+        </span>
+        <button
+          type="button"
+          className="text-hit compaction-orig-toggle"
+          onClick={() => toggleOriginals(msg.id)}
+        >
+          {origLabel}
+        </button>
+      </div>
       <div
         className="message compaction-card"
         data-msg-id={msg.id}
         data-kind="compaction"
         data-slot="card"
         data-full={full ? "1" : "0"}
-        onClick={toggleFull}
       >
-        <div className="compaction-card-head">
-          {title}{hm ? ` · ${hm}` : ""}
-        </div>
         <div className="compaction-card-body">
           <div className="compaction-card-md-clip" data-full={full ? "1" : "0"}>
             <div
@@ -324,11 +313,8 @@ function CompactionCard({ msg }: { msg: ChatMsg }) {
             />
             <button
               type="button"
-              className="compaction-card-more"
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleFull();
-              }}
+              className="text-hit compaction-card-more"
+              onClick={() => setFull((v) => !v)}
             >
               {full
                 ? text("Collapse", "收起")
@@ -709,12 +695,22 @@ export function MessageList() {
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const chatKey = useSessionStore((s) => s.activeChatKey);
   const ids = useMessageIds(sessionId);
-  const [, setOrigTick] = useState(0);
+  const [origTick, setOrigTick] = useState(0);
   useEffect(() => {
     const fn = () => setOrigTick((n) => n + 1);
     originalsSubs.add(fn);
     return () => { originalsSubs.delete(fn); };
   }, []);
+  useLayoutEffect(() => {
+    const pin = pinOriginals;
+    if (!pin) return;
+    pinOriginals = null;
+    const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v);
+    const el = document.querySelector(`[data-orig-for="${esc(pin.id)}"]`);
+    const area = document.getElementById("chatArea");
+    if (!el || !area) return;
+    area.scrollTop += el.getBoundingClientRect().top - pin.top;
+  }, [origTick]);
   const hiddenCovered = new Set<string>();
   const coveredSet = new Set<string>();
   for (const id of ids) {

@@ -1020,8 +1020,13 @@ assert.match(
 );
 assert.match(
   messageList,
-  /compaction-orig-toggle/,
-  "originals toggle sits above the card, not inside it",
+  /compaction-card-bar/,
+  "info and originals toggle share one row above the card",
+);
+assert.match(
+  messageList,
+  /className="text-hit/,
+  "compaction text controls share the text-hit hover class",
 );
 assert.doesNotMatch(
   messageList,

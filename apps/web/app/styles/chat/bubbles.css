@@ -102,20 +102,23 @@
 
 .message.compaction-card {
   background: transparent;
-  padding: 6px 16px;
+  padding: 0 16px 6px;
   animation: none;
   opacity: 1;
   overflow-anchor: auto;
-  cursor: pointer;
 }
-.compaction-card-head {
-  display: block;
-  width: 100%;
-  padding: 4px 0;
+.compaction-card-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0 10px;
+  padding: 4px 16px 2px;
   font-size: 11px;
   line-height: 1.4;
+}
+.compaction-card-info {
   color: var(--text-faint, var(--text-muted));
-  text-align: center;
 }
 .compaction-card-body {
   margin-top: 6px;
@@ -162,14 +165,23 @@
   -webkit-line-clamp: 7;
   overflow: hidden;
 }
+.text-hit {
+  cursor: pointer;
+  color: var(--text-faint, var(--text-muted));
+  transition: color 120ms ease, opacity 120ms ease;
+}
+.text-hit:hover {
+  color: var(--text-primary, var(--text));
+}
+.text-hit:active {
+  opacity: 0.7;
+}
 .compaction-card-more {
   border: 0;
   background: transparent;
   padding: 0;
   font-size: 11px;
   line-height: var(--comp-md-lh, 20px);
-  color: var(--text-faint, var(--text-muted));
-  cursor: pointer;
 }
 .compaction-card-md-clip:not([data-full="1"]) .compaction-card-more {
   position: absolute;
@@ -184,16 +196,10 @@
   margin-top: 8px;
 }
 .compaction-orig-toggle {
-  display: block;
-  width: 100%;
   border: 0;
   background: transparent;
-  padding: 2px 16px 4px;
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--text-faint, var(--text-muted));
-  text-align: center;
-  cursor: pointer;
+  padding: 0;
+  font: inherit;
 }
 .compaction-orig-fold {
   display: grid;
