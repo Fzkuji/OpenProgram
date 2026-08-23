@@ -79,13 +79,13 @@ test("short hops never reach cruise speed", () => {
 });
 
 test("long hops cruise at the speed cap", () => {
-  const long = jumpMotionPlan(12000);
+  const long = jumpMotionPlan(40000);
   assert.equal(long.kind, "trapezoid");
   assert.equal(long.vPeak, JUMP_V_MAX);
   assert.ok(long.tCruise > 0);
   assert.ok(long.duration > jumpMotionPlan(400).duration);
-  assert.equal(jumpScrollTopAt(0, 12000, 0), 0);
-  assert.ok(Math.abs(jumpScrollTopAt(0, 12000, long.duration) - 12000) < 1);
+  assert.equal(jumpScrollTopAt(0, 40000, 0), 0);
+  assert.ok(Math.abs(jumpScrollTopAt(0, 40000, long.duration) - 40000) < 1);
 });
 
 test("jump keeps the button until the ride finishes", () => {
