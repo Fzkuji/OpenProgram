@@ -277,4 +277,5 @@ export interface DesktopMainMenuApi {
     width?: number;
   }) => void): () => void;
   onAction(cb: (id: string) => void): () => void;
+  onClosed?(cb: () => void): () => void;
 }

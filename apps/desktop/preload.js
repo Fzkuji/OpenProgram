@@ -86,6 +86,11 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
       ipcRenderer.on("main-menu:action", listener);
       return () => ipcRenderer.removeListener("main-menu:action", listener);
     },
+    onClosed: (cb) => {
+      const listener = () => cb();
+      ipcRenderer.on("main-menu:closed", listener);
+      return () => ipcRenderer.removeListener("main-menu:closed", listener);
+    },
   },
   history: {
     list: (options) => ipcRenderer.invoke("history:list", options),

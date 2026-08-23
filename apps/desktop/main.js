@@ -2467,6 +2467,9 @@ function closeMainMenu(ctx) {
   } catch (_e) {
     /* already closed */
   }
+  if (ctx.win && !ctx.win.isDestroyed()) {
+    ctx.win.webContents.send("main-menu:closed");
+  }
 }
 
 function cancelMainMenuClose(ctx) {

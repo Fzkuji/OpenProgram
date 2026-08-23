@@ -402,6 +402,11 @@ function BookmarkFolderButton({
   appearance = "folder",
   label,
   hidden = false,
+  open,
+  armed,
+  wasJustClosed,
+  onArm,
+  onDisarm,
 }: {
   folder: BookmarkFolder;
   ownerId: string;
@@ -409,6 +414,11 @@ function BookmarkFolderButton({
   appearance?: "folder" | "overflow";
   label?: string;
   hidden?: boolean;
+  open: boolean;
+  armed: boolean;
+  wasJustClosed(): boolean;
+  onArm(): void;
+  onDisarm(): void;
 }) {
   const mainMenu = desktopBridge()?.mainMenu;
   const buttonLabel = label || folder.title;
@@ -449,9 +459,20 @@ function BookmarkFolderButton({
       <button
         type="button"
         className={buttonClass}
-        onClick={(event) => openFolderMenu(event.currentTarget)}
+        aria-expanded={open}
+        onClick={(event) => {
+          if (open || wasJustClosed()) {
+            mainMenu.close();
+            onDisarm();
+            return;
+          }
+          onArm();
+          openFolderMenu(event.currentTarget);
+        }}
         onMouseEnter={(event) => {
           mainMenu.cancelClose?.();
+          if (!armed || open) return;
+          onArm();
           openFolderMenu(event.currentTarget);
         }}
         onMouseLeave={() => mainMenu.scheduleClose?.(120)}
@@ -466,11 +487,21 @@ function BookmarkFolderButton({
   }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu
+      open={open}
+      onOpenChange={(next) => {
+        if (next) onArm();
+        else onDisarm();
+      }}
+    >
       <DropdownMenuTrigger asChild>
         <button
           type="button"
           className={buttonClass}
+          aria-expanded={open}
+          onMouseEnter={() => {
+            if (armed && !open) onArm();
+          }}
           title={buttonLabel}
           aria-label={buttonLabel}
           aria-hidden={hidden || undefined}
@@ -520,6 +551,26 @@ export function BookmarkBar({ ownerId, onNavigate }: { ownerId: string; onNaviga
   const { items, trailingFolders } = bookmarkBarLayout(tree);
   const itemsRef = useRef<HTMLDivElement>(null);
   const [overflowStart, setOverflowStart] = useState(items.length);
+  const [openFolderId, setOpenFolderId] = useState<string | null>(null);
+  const openFolderIdRef = useRef<string | null>(null);
+  const closedAtRef = useRef(0);
+  const closedKeyRef = useRef<string | null>(null);
+  const armFolder = (id: string) => {
+    openFolderIdRef.current = id;
+    setOpenFolderId(id);
+  };
+  const disarmFolder = () => {
+    closedKeyRef.current = openFolderIdRef.current;
+    closedAtRef.current = performance.now();
+    openFolderIdRef.current = null;
+    setOpenFolderId(null);
+  };
+  useEffect(() => desktopBridge()?.mainMenu?.onClosed?.(() => {
+    closedKeyRef.current = openFolderIdRef.current;
+    closedAtRef.current = performance.now();
+    openFolderIdRef.current = null;
+    setOpenFolderId(null);
+  }), []);
   const bookmarkOverflowFolder: BookmarkFolder = {
     kind: "folder",
     id: "bookmark-bar-overflow",
@@ -564,6 +615,14 @@ export function BookmarkBar({ ownerId, onNavigate }: { ownerId: string; onNaviga
             ownerId={ownerId}
             onNavigate={onNavigate}
             hidden={index >= overflowStart}
+            open={openFolderId === node.id}
+            armed={openFolderId !== null}
+            wasJustClosed={() =>
+              performance.now() - closedAtRef.current < 120
+              && closedKeyRef.current === node.id
+            }
+            onArm={() => armFolder(node.id)}
+            onDisarm={disarmFolder}
           />
         ) : (
           <BookmarkLeafButton
@@ -575,7 +634,20 @@ export function BookmarkBar({ ownerId, onNavigate }: { ownerId: string; onNaviga
         ))}
       </div>
       {trailingFolders.map((folder) => (
-        <BookmarkFolderButton key={folder.id} folder={folder} ownerId={ownerId} onNavigate={onNavigate} />
+        <BookmarkFolderButton
+          key={folder.id}
+          folder={folder}
+          ownerId={ownerId}
+          onNavigate={onNavigate}
+          open={openFolderId === folder.id}
+          armed={openFolderId !== null}
+          wasJustClosed={() =>
+            performance.now() - closedAtRef.current < 120
+            && closedKeyRef.current === folder.id
+          }
+          onArm={() => armFolder(folder.id)}
+          onDisarm={disarmFolder}
+        />
       ))}
       <span className={styles.bookmarkBarMoreSlot}>
         {overflowStart < items.length ? (
@@ -585,6 +657,14 @@ export function BookmarkBar({ ownerId, onNavigate }: { ownerId: string; onNaviga
             onNavigate={onNavigate}
             appearance="overflow"
             label={text("Show hidden bookmarks", "显示隐藏的书签")}
+            open={openFolderId === bookmarkOverflowFolder.id}
+            armed={openFolderId !== null}
+            wasJustClosed={() =>
+              performance.now() - closedAtRef.current < 120
+              && closedKeyRef.current === bookmarkOverflowFolder.id
+            }
+            onArm={() => armFolder(bookmarkOverflowFolder.id)}
+            onDisarm={disarmFolder}
           />
         ) : null}
       </span>
