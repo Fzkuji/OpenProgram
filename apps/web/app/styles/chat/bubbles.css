@@ -139,17 +139,19 @@
 .compaction-card-md-clip:not([data-full="1"])::after {
   content: "";
   position: absolute;
-  inset: auto 0 0;
+  right: 0;
+  bottom: 0;
+  width: 9em;
   height: var(--comp-md-lh);
   pointer-events: none;
-  background: linear-gradient(90deg, transparent 10%, var(--bg-subtle, var(--bg)) 55%);
+  background: linear-gradient(90deg, transparent, var(--bg-subtle, var(--bg)) 40%);
 }
 .compaction-card-md,
-.compaction-card-md * {
-  font-size: 13px;
-  line-height: var(--comp-md-lh, 20px);
-  margin: 0;
-  padding: 0;
+.compaction-card-md :is(p, h1, h2, h3, h4, h5, li, ul, ol, code, pre, strong, em, a, blockquote) {
+  font-size: 13px !important;
+  line-height: var(--comp-md-lh, 20px) !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 .compaction-card-md {
   color: var(--text-muted);
