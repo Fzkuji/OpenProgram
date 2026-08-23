@@ -211,12 +211,16 @@ function scrollChatTo(el: Element | null, pad: number, smooth: boolean): void {
 function finishOrigScroll(cardId: string, opening: boolean): void {
   const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v);
   const smooth = !prefersReducedMotion();
-  if (opening) {
-    const covered = document.querySelectorAll(".covered-turn");
-    scrollChatTo(covered[Math.max(0, covered.length - 3)] ?? null, 12, smooth);
-  } else {
-    scrollChatTo(document.querySelector(`[data-msg-id="${esc(cardId)}"]`), 48, smooth);
-  }
+  const run = () => {
+    if (opening) {
+      const covered = document.querySelectorAll(".covered-turn");
+      scrollChatTo(covered[Math.max(0, covered.length - 3)] ?? null, 12, smooth);
+    } else {
+      scrollChatTo(document.querySelector(`[data-msg-id="${esc(cardId)}"]`), 48, smooth);
+    }
+  };
+  // Collapse finishes a frame after 0fr applies; wait so the card's rect is real.
+  requestAnimationFrame(() => requestAnimationFrame(run));
 }
 
 function toggleOriginals(cardId: string): void {
@@ -891,13 +895,6 @@ export function MessageList() {
                 key={`${run[0]}_fold`}
                 className="compaction-orig-fold"
                 data-open={hiddenCovered.has(run[0]) ? "0" : "1"}
-                onTransitionEnd={(e) => {
-                  if (e.propertyName !== "grid-template-rows") return;
-                  const pend = pendingOrigScroll;
-                  if (!pend) return;
-                  pendingOrigScroll = null;
-                  finishOrigScroll(pend.cardId, pend.opening);
-                }}
               >
                 <div className="compaction-orig-fold-inner">
                   {run.map((cid) => (
