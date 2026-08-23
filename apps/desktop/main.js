@@ -3450,10 +3450,14 @@ async function createWindow(options = {}) {
   // modest, movable size. They stay ephemeral: closing one must not overwrite
   // the main window's persisted chrome / normal bounds.
   const detached = options.detached === true;
+  const revealOnReady = !detached && options.show !== false;
   const restored = browserWindowOptionsForPlan(state, { detached });
   const win = new BrowserWindow({
     ...restored,
-    show: options.show !== false,
+    // Main stays hidden until chrome is applied and the first frame is
+    // painted. Instant show + maximize() is the macOS grow-from-frame
+    // animation. Tear-offs still pass show:false and fade in themselves.
+    show: detached ? options.show !== false : false,
     backgroundColor: currentChrome.bg,
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : undefined,
     // macOS only: center the traffic lights vertically in the 40px tab row.
@@ -3485,12 +3489,14 @@ async function createWindow(options = {}) {
     tabTransfers.windowClosing(ctx, event);
   });
   win.on("closed", () => cleanupWindowContext(ctx));
-  // A tear-off window may be revealed mid-drag, long before the
-  // commit path would have shown it. Record when the renderer has actually
-  // painted so that reveal can wait for it instead of flashing an empty
-  // frame. (Windows created shown are unaffected — nothing reads this.)
+  // Tear-offs may be revealed mid-drag before the commit path would
+  // have shown them. Main also waits here so the first visible frame
+  // is already maximized, not a small rect zooming from the top-left.
   ctx.readyToShow = false;
-  win.once("ready-to-show", () => { ctx.readyToShow = true; });
+  win.once("ready-to-show", () => {
+    ctx.readyToShow = true;
+    if (revealOnReady && !win.isDestroyed()) win.show();
+  });
   // External links from the app itself (not web tabs) open in the system browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
     try {

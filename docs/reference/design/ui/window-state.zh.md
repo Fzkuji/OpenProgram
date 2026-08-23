@@ -57,7 +57,7 @@ version 1 就是旧的 `{x,y,width,height}` 对象，加载时迁移。
    再走旧的「尺寸仍与某块工作区重叠」检查。都不匹配——外接屏拔掉——就用主屏工作区上的居中默认，并丢掉最大化 / 全屏标记，保证窗口可用。
 3. 若保存的矩形铺满了仍连接的工作区（旧文件），按最大化处理，普通尺寸改成内缩默认。`BrowserWindow` 从不会按工作区大小去构造。
 4. 把普通矩形钳到所选工作区里。
-5. 按普通尺寸创建窗口，并设置 `minWidth` / `minHeight`。若当时存了对应标记，再调用 `maximize()` / `setFullScreen(true)`。
+5. **先隐藏**按普通尺寸创建窗口，并设置 `minWidth` / `minHeight`。若要最大化，先 `setBounds` 到工作区，再在隐藏时调用 `maximize()` / `setFullScreen(true)`。等 `ready-to-show` 再显示，避免 macOS 从小框（经常在左上角）做放大动画。
 
 因此绿灯 Zoom 会回到记住的普通尺寸，而不是贴边矩形。
 

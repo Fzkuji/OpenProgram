@@ -356,7 +356,14 @@ function browserWindowOptionsForPlan(plan, { detached = false } = {}) {
 
 function applyRestoredChrome(win, plan, { detached = false } = {}) {
   if (detached || !win || win.isDestroyed?.()) return;
-  if (plan.isMaximized && typeof win.maximize === "function") win.maximize();
+  // Size to the work area before maximize so the first visible frame is
+  // already full. Showing a normal rect then maximize() is the macOS
+  // zoom-from-current-frame animation (often from the top-left).
+  if (plan.isMaximized && typeof win.maximize === "function") {
+    const area = normalizeRect(plan.displayWorkArea);
+    if (area && typeof win.setBounds === "function") win.setBounds(area);
+    win.maximize();
+  }
   if (plan.isFullScreen && typeof win.setFullScreen === "function") win.setFullScreen(true);
 }
 

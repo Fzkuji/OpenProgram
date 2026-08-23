@@ -291,12 +291,29 @@ function checkApplyChromeSkipsDetached() {
   const win = {
     maximize() { calls.push("maximize"); },
     setFullScreen() { calls.push("fullscreen"); },
+    setBounds(rect) { calls.push(["bounds", rect]); },
     isDestroyed() { return false; },
   };
   applyRestoredChrome(win, { isMaximized: true, isFullScreen: true }, { detached: true });
   assert.deepEqual(calls, []);
   applyRestoredChrome(win, { isMaximized: true, isFullScreen: true });
   assert.deepEqual(calls, ["maximize", "fullscreen"]);
+}
+
+function checkApplyChromeSizesToWorkAreaBeforeMaximize() {
+  const calls = [];
+  const win = {
+    maximize() { calls.push("maximize"); },
+    setFullScreen() { calls.push("fullscreen"); },
+    setBounds(rect) { calls.push(["bounds", rect]); },
+    isDestroyed() { return false; },
+  };
+  applyRestoredChrome(win, {
+    isMaximized: true,
+    isFullScreen: false,
+    displayWorkArea: MACBOOK_WORK_AREA,
+  });
+  assert.deepEqual(calls, [["bounds", MACBOOK_WORK_AREA], "maximize"]);
 }
 
 function checkLoadRoundTripAndMinSizeOnOptions() {
@@ -363,6 +380,7 @@ checkCaptureTreatsFilledWorkAreaAsMaximized();
 checkCaptureFilledWithoutHistoryUsesDefaultNormal();
 checkDetachedOptionsStayModestAndUnpositioned();
 checkApplyChromeSkipsDetached();
+checkApplyChromeSizesToWorkAreaBeforeMaximize();
 checkLoadRoundTripAndMinSizeOnOptions();
 checkBrowserWindowNeverOpensAtWorkAreaSize();
 

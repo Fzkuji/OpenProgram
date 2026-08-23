@@ -73,9 +73,11 @@ inset if that default would itself fill the work area.
    treat it as maximized and replace the normal size with the inset
    default. The `BrowserWindow` is never constructed at work-area size.
 4. Clamp the normal rectangle onto the chosen work area.
-5. Create the window at that normal size with `minWidth` / `minHeight`
-   set. Then call `maximize()` and/or `setFullScreen(true)` when those
-   flags were saved.
+5. Create the window **hidden** at that normal size with `minWidth` /
+   `minHeight` set. If maximized, `setBounds` to the work area first,
+   then `maximize()` / `setFullScreen(true)` while still hidden. Show
+   on `ready-to-show` so macOS never animates from the small first
+   frame (often the top-left).
 
 Green Zoom therefore restores to the remembered normal size, not to a
 flush rectangle.
