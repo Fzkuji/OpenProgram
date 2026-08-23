@@ -206,7 +206,8 @@
 }
 .compaction-card-md-clip[data-full="1"] .compaction-card-more {
   display: block;
-  margin-top: 8px;
+  margin: 8px 0 0 auto;
+  width: max-content;
 }
 .compaction-orig-toggle {
   border: 0;
