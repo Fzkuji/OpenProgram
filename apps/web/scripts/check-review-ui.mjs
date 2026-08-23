@@ -61,6 +61,7 @@ assert.doesNotMatch(cardCss, /\.turn-files-stat\{[^}]*var\(--font-mono\)/);
 assert.doesNotMatch(cardCss, /\.turn-files-op\{[^}]*var\(--font-mono\)/);
 assert.match(cardCss, /\.turn-files-more\{[^}]*background:var\(--bg-tertiary\)[^}]*font-size:13px/);
 assert.match(cardCss, /\.turn-files-more:hover\{[^}]*background:var\(--bg-hover\)/);
+assert.match(cardCss, /:where\(\[data-theme-mode="light"\]\) \.turn-files-card,:where\(\[data-theme-mode="light"\]\) \.turn-files-summary,:where\(\[data-theme-mode="light"\]\) \.turn-files-review,:where\(\[data-theme-mode="light"\]\) \.turn-files-more\{background:var\(--bg-primary\);box-shadow:none\}/);
 assert.match(cardCss, /\.turn-files-meter/);
 assert.match(cardCss, /@media\(max-width:420px\)/);
 assert.match(cardCss, /@media\(max-width:420px\)\{\.turn-files-summary\{gap:6px;padding-inline:6px\}\.turn-files-heading\{gap:5px\}/);
@@ -83,6 +84,8 @@ assert.match(design, /\.change-row-counts\{[^}]*grid-template-columns:8ch 8ch[^}
 assert.match(design, /<button class="change-collapse" type="button">Collapse<\/button>/);
 assert.match(design, /\.change-collapse\{[^}]*background:var\(--bg-tertiary\)[^}]*font:13px/);
 assert.match(design, /\.change-collapse:hover\{[^}]*background:var\(--bg-hover\)/);
+assert.match(design, /@media\(prefers-color-scheme:light\)\{\.change-card-demo,\.change-summary,\.change-summary-action\.primary,\.change-collapse\{background:var\(--bg-primary\);box-shadow:none\}\}/);
+assert.doesNotMatch(design, /data-theme-mode="light"[^}]*\.change-card-demo/);
 assert.doesNotMatch(
   cardCss,
   /@media\(max-width:420px\)[\s\S]*?turn-files-logo[^}]*?(?:width|height):17px/,
