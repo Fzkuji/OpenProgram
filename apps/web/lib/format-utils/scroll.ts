@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, type RefObject } from "react";
+import { isChatAtBottom, readBottomPadding } from "@/lib/state/chat-scroll";
 import { renderMathIn } from "./markdown";
 
 // "Stick to bottom" follows the last message's tail through streaming
@@ -40,10 +41,11 @@ export function useStickToBottom(
     if (!area) return;
 
     const onScroll = () => {
-      const distFromBottom =
-        area.scrollHeight - area.scrollTop - area.clientHeight;
-      // Within 60px of the bottom = stick. Anything further = detach.
-      stickRef.current = distFromBottom < 60;
+      const padEl = area.querySelector(".chat-messages, [data-chat-messages]");
+      stickRef.current = isChatAtBottom(
+        area,
+        readBottomPadding(padEl instanceof Element ? padEl : area),
+      );
     };
     area.addEventListener("scroll", onScroll, { passive: true });
     return () => area.removeEventListener("scroll", onScroll);

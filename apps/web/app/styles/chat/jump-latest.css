@@ -1,13 +1,13 @@
 /* "跳到最新" 悬浮按钮。
    对应组件：components/chat/messages/message-list.tsx */
 
-/* ═══ 跳到最新 ═══
-   往回翻时新消息不再把视图拽走，这颗按钮是回到底部的路。锚点用
-   sticky 贴在滚动容器底缘（与 .msg-rail-anchor 同一手法），按钮
-   absolute 挂上去，因此不占消息流的位置、也不随内容滚动。 */
+/* 钉在 #chatArea 视口上，不要当消息流最后一个 sticky 子元素。
+   那会在滚过底部 padding 时跟着最后一条一起被抬上去。 */
 .jump-latest-anchor {
-  position: sticky;
-  bottom: 0;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--main-composer-height, 0px) + 12px);
   height: 0;
   z-index: 7;
   pointer-events: none;
@@ -15,9 +15,8 @@
   justify-content: center;
 }
 .jump-latest {
-  position: absolute;
-  /* 抬到浮动输入区上方，免得刚出现就被挡住。 */
-  bottom: 168px;
+  position: relative;
+  bottom: 0;
   pointer-events: auto;
   display: inline-flex;
   align-items: center;
@@ -41,10 +40,39 @@
   width: 14px;
   height: 14px;
 }
+.jump-latest-live {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+  width: 14px;
+}
+.jump-latest-live i {
+  display: block;
+  width: 2.5px;
+  height: 4px;
+  border-radius: 1px;
+  background: var(--accent, var(--text-primary));
+  transform-origin: center bottom;
+  animation: jumpLatestBar 0.9s ease-in-out infinite;
+}
+.jump-latest-live i:nth-child(2) { animation-delay: 0.15s; height: 7px; }
+.jump-latest-live i:nth-child(3) { animation-delay: 0.3s; }
+.jump-latest-anchor.is-live .jump-latest {
+  border-color: color-mix(in srgb, var(--accent, #5b8def) 45%, var(--border));
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.16),
+    0 0 0 3px color-mix(in srgb, var(--accent, #5b8def) 18%, transparent);
+}
 @keyframes jumpLatestIn {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
+@keyframes jumpLatestBar {
+  0%, 100% { transform: scaleY(0.45); opacity: 0.55; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
 @media (prefers-reduced-motion: reduce) {
   .jump-latest { animation: none; }
+  .jump-latest-live i { animation: none; opacity: 0.8; }
 }

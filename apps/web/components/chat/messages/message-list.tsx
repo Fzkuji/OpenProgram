@@ -21,6 +21,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { ArrowDown } from "lucide-react";
 
 import {
@@ -36,6 +37,8 @@ import { promoteToHead } from "@/lib/state/send-queue";
 import { stopSession } from "@/components/chat/composer/submit/use-chat-submit";
 import { useAgentProfile } from "@/lib/format-utils/agent-style";
 import {
+  isChatAtBottom,
+  readBottomPadding,
   readChatScroll,
   resolveChatScrollTop,
   writeChatScroll,
@@ -263,6 +266,18 @@ function useChatAreaStick(
     // row) resizes the container; pinning then yanks the clicked element
     // upward. Suppress the pin briefly after any pointer interaction so
     // user-initiated growth expands downward in place.
+    const syncDetached = () => {
+      const atBottom = isChatAtBottom(area, readBottomPadding(msgs));
+      stuckRef.current = atBottom;
+      setDetached((was) => (was === !atBottom ? was : !atBottom));
+      return atBottom;
+    };
+    const onScroll = () => {
+      syncDetached();
+      scrollTopRef.current = area.scrollTop;
+      const key = activeKeyRef.current;
+      if (key) writeChatScroll(window.sessionStorage, key, area.scrollTop);
+    };
     const pin = () => {
       // `window.renderMathInChat` was defined by the legacy public/js
       // bundle, which no longer exists — the read was permanently
@@ -273,15 +288,10 @@ function useChatAreaStick(
         const key = activeKeyRef.current;
         if (key) writeChatScroll(window.sessionStorage, key, area.scrollTop);
       }
-    };
-    const onScroll = () => {
-      const atBottom =
-        area.scrollHeight - area.scrollTop - area.clientHeight < 80;
-      stuckRef.current = atBottom;
-      setDetached((was) => (was === !atBottom ? was : !atBottom));
-      scrollTopRef.current = area.scrollTop;
-      const key = activeKeyRef.current;
-      if (key) writeChatScroll(window.sessionStorage, key, area.scrollTop);
+      // Composer / pad growth must re-evaluate "at latest" even when
+      // we do not pin — otherwise the button stays up after the last
+      // bubble is already above the input.
+      syncDetached();
     };
     const onPointer = () => { lastPointerRef.current = performance.now(); };
     area.addEventListener("scroll", onScroll, { passive: true });
@@ -331,8 +341,10 @@ function useChatAreaStick(
     // Recompute rather than assume: after a follow we are at the bottom,
     // and after a deliberate stay-put we are not — and it is this flag
     // that decides whether the streaming deltas keep pinning.
-    stuckRef.current =
-      area.scrollHeight - area.scrollTop - area.clientHeight < 80;
+    stuckRef.current = isChatAtBottom(
+      area,
+      readBottomPadding(document.getElementById("chatMessages")),
+    );
     setDetached(!stuckRef.current);
   }, [chatKey, newTurnSeed, ownTurn]);
 
@@ -483,6 +495,9 @@ export function MessageList() {
   const runningTask = useSessionStore((s) =>
     sessionId ? s.runningTasks[sessionId] ?? null : null,
   );
+  const areaHost = typeof document !== "undefined"
+    ? document.getElementById("chatArea")
+    : null;
   // Only the LAST row's role matters here (see ``showPending`` below).
   // Subscribing to the whole ``messagesById`` map would re-render this
   // component — and re-map every id — on every single streaming delta,
@@ -612,19 +627,30 @@ export function MessageList() {
       {/* Messages typed during the run — dimmed rows under the live
           turn, drained one at a time when it ends. */}
       <QueuedMessages sessionId={sessionId} onStopAndSend={stopAndSend} />
-      {detached && ids.length > 0 ? (
-        <div className="jump-latest-anchor">
-          <button
-            type="button"
-            className="jump-latest"
-            onClick={jumpToLatest}
-            title={text("Jump to latest", "跳到最新")}
-          >
-            <ArrowDown aria-hidden />
-            {text("Jump to latest", "跳到最新")}
-          </button>
-        </div>
-      ) : null}
+      {detached && ids.length > 0 && areaHost
+        ? createPortal(
+            <div className={runningTask ? "jump-latest-anchor is-live" : "jump-latest-anchor"}>
+              <button
+                type="button"
+                className="jump-latest"
+                onClick={jumpToLatest}
+                title={text("Jump to latest", "跳到最新")}
+              >
+                {runningTask ? (
+                  <span className="jump-latest-live" aria-hidden>
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                ) : (
+                  <ArrowDown aria-hidden />
+                )}
+                {text("Jump to latest", "跳到最新")}
+              </button>
+            </div>,
+            areaHost,
+          )
+        : null}
     </>
   );
 }

@@ -95,3 +95,42 @@ export function restoreChatScrollIfCurrent(
   area.scrollTop = scrollTop;
   return true;
 }
+
+
+export interface ScrollMetrics {
+  scrollHeight: number;
+  scrollTop: number;
+  clientHeight: number;
+}
+
+export function remainingScroll(area: ScrollMetrics): number {
+  return area.scrollHeight - area.scrollTop - area.clientHeight;
+}
+
+/** Extra pixels on top of the transcript pad. Subpixel / rubber-band. */
+export const CHAT_AT_BOTTOM_EPSILON = 8;
+
+/** Slack that still counts as "at the latest".
+ *
+ *  The transcript reserves bottom padding so the last bubble sits above
+ *  the floating composer (`max(25vh, composer + 24)`). A fixed 80px
+ *  threshold treated that pad as "scrolled up", so Jump to latest
+ *  stayed on after the last message was already in view.
+ */
+export function chatAtBottomSlack(paddingBottom: number): number {
+  const pad = Number.isFinite(paddingBottom) ? Math.max(0, paddingBottom) : 0;
+  return pad + CHAT_AT_BOTTOM_EPSILON;
+}
+
+export function isChatAtBottom(
+  area: ScrollMetrics,
+  paddingBottom: number,
+): boolean {
+  return remainingScroll(area) <= chatAtBottomSlack(paddingBottom);
+}
+
+export function readBottomPadding(el: Element | null): number {
+  if (!el || typeof getComputedStyle !== "function") return 0;
+  const n = parseFloat(getComputedStyle(el).paddingBottom);
+  return Number.isFinite(n) ? n : 0;
+}
