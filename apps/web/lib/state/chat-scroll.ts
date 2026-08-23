@@ -151,13 +151,17 @@ export function readComposerHeight(): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** Fixed subway-style motion: accel and brake are constant.
+/** Time-boxed subway hop.
 
-A short hop never reaches cruise — you start braking first.
-A long hop accelerates to ``JUMP_V_MAX``, holds, then brakes.
+Ease in and out last a fixed time. Cruise speed is whatever the
+remaining distance needs. Duration grows with distance, then hard-caps
+so a jump always finishes in ``JUMP_MAX_S`` — never a ten-second crawl.
 */
-export const JUMP_ACCEL = 42000;
-export const JUMP_V_MAX = 24000;
+export const JUMP_EASE_S = 0.4;
+export const JUMP_MIN_S = 0.55;
+export const JUMP_MAX_S = 3.5;
+/** Comfortable cruise used only to pick duration before the cap. */
+export const JUMP_COMFORT_PX_S = 10000;
 
 export type JumpMotionPlan = {
   distance: number;
@@ -171,15 +175,25 @@ export type JumpMotionPlan = {
 
 export function jumpMotionPlan(distance: number): JumpMotionPlan {
   const s = Math.abs(distance);
-  const a = JUMP_ACCEL;
-  const vmax = JUMP_V_MAX;
-  const minCruise = (vmax * vmax) / a;
-  if (s <= minCruise + 1e-6) {
-    const vPeak = Math.sqrt(Math.max(0, a * s));
-    const tAccel = vPeak / a;
+  if (s < 1) {
+    return {
+      distance: 0,
+      duration: 0,
+      kind: "triangle",
+      vPeak: 0,
+      tAccel: 0,
+      tCruise: 0,
+      tDecel: 0,
+    };
+  }
+  let duration = 2 * JUMP_EASE_S + s / JUMP_COMFORT_PX_S;
+  duration = Math.min(JUMP_MAX_S, Math.max(JUMP_MIN_S, duration));
+  if (duration <= 2 * JUMP_EASE_S + 1e-6) {
+    const tAccel = duration / 2;
+    const vPeak = s / tAccel;
     return {
       distance: s,
-      duration: 2 * tAccel,
+      duration,
       kind: "triangle",
       vPeak,
       tAccel,
@@ -187,14 +201,14 @@ export function jumpMotionPlan(distance: number): JumpMotionPlan {
       tDecel: tAccel,
     };
   }
-  const tAccel = vmax / a;
-  const sAccel = (vmax * vmax) / (2 * a);
-  const tCruise = (s - 2 * sAccel) / vmax;
+  const tAccel = JUMP_EASE_S;
+  const tCruise = duration - 2 * tAccel;
+  const vPeak = s / (duration - tAccel);
   return {
     distance: s,
-    duration: 2 * tAccel + tCruise,
+    duration,
     kind: "trapezoid",
-    vPeak: vmax,
+    vPeak,
     tAccel,
     tCruise,
     tDecel: tAccel,
@@ -202,10 +216,11 @@ export function jumpMotionPlan(distance: number): JumpMotionPlan {
 }
 
 export function jumpTraveled(plan: JumpMotionPlan, elapsed: number): number {
+  if (plan.duration <= 0 || plan.tAccel <= 0) return plan.distance;
   const t = Math.min(plan.duration, Math.max(0, elapsed));
-  const a = JUMP_ACCEL;
+  const a = plan.vPeak / plan.tAccel;
   if (t <= plan.tAccel) return 0.5 * a * t * t;
-  const sAccel = 0.5 * a * plan.tAccel * plan.tAccel;
+  const sAccel = 0.5 * plan.vPeak * plan.tAccel;
   if (t <= plan.tAccel + plan.tCruise) {
     return sAccel + plan.vPeak * (t - plan.tAccel);
   }
