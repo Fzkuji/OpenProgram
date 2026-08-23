@@ -1030,6 +1030,9 @@
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
+.webToolbar:has(+ .bookmarkBar) {
+  border-bottom: none;
+}
 
 .webAddress {
   flex: 1;
@@ -1116,14 +1119,13 @@
 .webFindBar button:disabled { opacity: .35; cursor: default; }
 
 .bookmarkBar {
-  height: 30px;
+  height: 40px;
   box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 0 8px;
+  padding: 0 10px;
   border-bottom: 1px solid var(--border);
-  background: var(--bg-secondary);
   flex-shrink: 0;
 }
 .bookmarkBarItems {
@@ -1142,17 +1144,17 @@
 }
 .bookmarkBarItem,
 .bookmarkBarMore {
-  height: 24px;
+  height: 28px;
   min-width: 0;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 0 7px;
+  gap: 6px;
+  padding: 0 8px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 11.5px;
+  font-size: 12.5px;
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -1172,15 +1174,15 @@
   white-space: nowrap;
 }
 .bookmarkBarMore {
-  width: 24px;
+  width: 28px;
   padding: 0;
   justify-content: center;
 }
 .bookmarkBarMoreSlot {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   display: inline-flex;
-  flex: 0 0 24px;
+  flex: 0 0 28px;
 }
 
 @container (max-width: 719px) {

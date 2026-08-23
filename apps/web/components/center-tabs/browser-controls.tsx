@@ -391,8 +391,8 @@ function BookmarkFavicon({ node }: { node: Extract<BookmarkNode, { kind: "bookma
   const icon = node.faviconUrl || faviconUrl(node.url);
   return !broken && icon ? (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={icon} alt="" width={13} height={13} className="shrink-0" onError={() => setBroken(true)} />
-  ) : <Bookmark size={13} className="shrink-0" />;
+    <img src={icon} alt="" width={14} height={14} className="shrink-0" onError={() => setBroken(true)} />
+  ) : <Bookmark size={14} className="shrink-0" />;
 }
 
 function BookmarkFolderButton({
@@ -426,7 +426,7 @@ function BookmarkFolderButton({
   const buttonContent = appearance === "overflow" ? (
     <ChevronRight size={14} />
   ) : (
-    <><Folder size={13} fill="currentColor" /><span>{folder.title}</span></>
+    <><Folder size={14} fill="currentColor" /><span>{folder.title}</span></>
   );
 
   useEffect(() => {
