@@ -1191,6 +1191,7 @@ def _broadcast_context_stats(session_id: str, msg_id: str, chat_runtime=None, ex
         "model": chat_model,
         "context_window": occupancy["window"] or context_window,
         **occupancy,
+        "_context_rev": int(conv.get("_context_rev") or 0),
     }
     breakdown = conv.get("_last_context_breakdown")
     if breakdown:
@@ -1248,6 +1249,7 @@ def _build_context_occupancy(session_id, conv, *, measured_total=None,
             }
             finalized = _cs.finalize_breakdown(snapshot, occ)
             finalized["head_id"] = conv.get("head_id")
+            finalized["_context_rev"] = int(conv.get("_context_rev") or 0)
             conv["_last_context_breakdown"] = finalized
         return occupancy
     except Exception:
@@ -1294,11 +1296,15 @@ def session_context_stats(
     """
     conv = _sessions.get(session_id) or {}
     prev = conv.get("_last_context_stats") or {}
+    same_rev = int(prev.get("_context_rev") or 0) == int(
+        conv.get("_context_rev") or 0
+    )
     if prev.get("basis") == "measured" and (
         head_id is None or head_id == conv.get("head_id")
-    ):
+    ) and same_rev:
         out = {k: prev[k] for k in
-                ("window", "total_used", "basis", "estimated", "calibration")
+                ("window", "total_used", "basis", "estimated",
+                 "calibration", "_context_rev")
                 if k in prev}
         if estimated_total is not None:
             out["estimated"] = int(estimated_total)
@@ -1328,6 +1334,7 @@ def refresh_context_stats(session_id: str, msg_id: str = "") -> None:
     conv = _sessions.get(session_id)
     if conv is None:
         return
+    conv["_context_rev"] = int(conv.get("_context_rev") or 0) + 1
     occupancy = _build_context_occupancy(
         session_id, conv, window=_conv_context_window(conv),
     )
@@ -1338,6 +1345,7 @@ def refresh_context_stats(session_id: str, msg_id: str = "") -> None:
         "session_id": session_id,
         "context_window": occupancy["window"] or prev.get("context_window"),
         **occupancy,
+        "_context_rev": conv["_context_rev"],
     }
     breakdown = conv.get("_last_context_breakdown")
     if breakdown:

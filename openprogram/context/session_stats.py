@@ -17,9 +17,14 @@ Two bases produce that number:
 ``estimated``
     The graph changed since the last request (compaction landed, model
     switched, a branch was checked out or deleted). ``total_used`` is
-    recomputed from the current branch with the local tokenizer, so the
-    ring moves the moment the graph moves instead of lagging a request
-    behind.
+    recomputed from the current *rendered* view with the local
+    tokenizer, so the ring moves the moment the graph moves instead of
+    lagging a request behind.
+
+The history this module counts is always ``rendered_history`` (active
+summary + uncovered tail) — the view the next model call actually
+reads. Occupancy must not walk the raw ``get_branch`` / ``_get_messages``
+cache; those keep covered turns for the transcript.
 
 A measured reading also calibrates the estimator: ``calibration`` records
 measured/estimated for the same graph, which tells a reader how far the

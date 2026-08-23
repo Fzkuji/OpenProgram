@@ -407,7 +407,10 @@ def register(app):
                     )
                 )
             )
-            if same_head:
+            same_rev = bool(stored) and int(stored.get("_context_rev") or 0) == int(
+                conv.get("_context_rev") or 0
+            )
+            if same_head and same_rev:
                 occupancy = _s.session_context_stats(
                     session_id,
                     head_id=head_id,

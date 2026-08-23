@@ -311,15 +311,41 @@ class DefaultContextEngine(ContextEngine):
         # "previous summary + more turns" instead of re-summarising raw
         # turns the previous summary already covers.
         history = rendered_history(db, session_id)
-        tokens_before = self._estimate(history)
+        tokens_before = self._occupancy_tokens(session_id, history)
+        reason = "auto" if not user_initiated else "manual"
 
-        if len(history) < 4:
+        def _no_op(extra: str | None = None) -> CompactResult:
             return CompactResult(
                 ok=True,
+                no_op=True,
                 tokens_before=tokens_before,
                 tokens_after=tokens_before,
-                reason="auto" if not user_initiated else "manual",
+                duration_ms=int((time.time() - started) * 1000),
+                reason=reason,
+                error=extra,
             )
+
+        if len(history) < 4:
+            result = _no_op()
+            self._emit_compaction_finished(
+                on_event, session_id=session_id,
+                user_initiated=user_initiated, result=result,
+            )
+            return result
+
+        window = real_context_window(model) or 0
+        cut = self.summarizer.find_cut_index(
+            history,
+            keep_recent_tokens=keep_recent_tokens,
+            context_window=window,
+        )
+        if cut <= self.summarizer.protect_first_n:
+            result = _no_op()
+            self._emit_compaction_finished(
+                on_event, session_id=session_id,
+                user_initiated=user_initiated, result=result,
+            )
+            return result
 
         # Chain on previous summary if not supplied.
         if previous_summary is None:
@@ -340,42 +366,53 @@ class DefaultContextEngine(ContextEngine):
             previous_summary=previous_summary,
             cancel_event=cancel_event,
             keep_recent_tokens=keep_recent_tokens,
-            context_window=real_context_window(model),
+            context_window=window,
         )
 
-        # Persist + re-parent.
-        summary_id: Optional[str] = None
-        if summary.summary_text:
-            summary_id = self.persister.insert_summary_node(
-                session_id,
-                summary_text=summary.summary_text,
-                cut_idx=summary.cut_idx,
-                history=history,
+        if (summary.cut_idx <= 0 or summary.summarised_count == 0
+                or not summary.summary_text):
+            result = _no_op(summary.error)
+            self._emit_compaction_finished(
+                on_event, session_id=session_id,
+                user_initiated=user_initiated, result=result,
             )
+            return result
 
-        # Update session meta for incremental chain + usage counters.
-        if summary_id:
-            try:
-                db.update_session(
-                    session_id,
-                    _last_summary_id=summary_id,
-                    _last_summary_text=summary.summary_text,
-                    _last_compacted_at=time.time(),
-                )
-            except Exception:
-                # Losing this silently makes the next turn recompact the
-                # same range, so it is worth a log line.
-                _log.warning(
-                    "failed to persist compaction summary state for session %s",
-                    session_id, exc_info=True,
-                )
-            self.usage.record_compaction(session_id)
+        summary_id = self.persister.insert_summary_node(
+            session_id,
+            summary_text=summary.summary_text,
+            cut_idx=summary.cut_idx,
+            history=history,
+        )
+        if not summary_id:
+            result = _no_op("insert_summary_node returned None")
+            self._emit_compaction_finished(
+                on_event, session_id=session_id,
+                user_initiated=user_initiated, result=result,
+            )
+            return result
+
+        try:
+            db.update_session(
+                session_id,
+                _last_summary_id=summary_id,
+                _last_summary_text=summary.summary_text,
+                _last_compacted_at=time.time(),
+            )
+        except Exception:
+            # Losing this silently makes the next turn recompact the
+            # same range, so it is worth a log line.
+            _log.warning(
+                "failed to persist compaction summary state for session %s",
+                session_id, exc_info=True,
+            )
+        self.usage.record_compaction(session_id)
 
         new_history = rendered_history(db, session_id) or history
-        tokens_after = self._estimate(new_history)
+        tokens_after = self._occupancy_tokens(session_id, new_history)
 
         result = CompactResult(
-            ok=bool(summary_id),
+            ok=True,
             summary_text=summary.summary_text,
             summary_id=summary_id,
             summarised_count=summary.summarised_count,
@@ -390,21 +427,10 @@ class DefaultContextEngine(ContextEngine):
             error=summary.error,
             fell_back_to_structural=summary.fell_back_to_structural,
         )
-
-        if on_event:
-            on_event({"type": "chat_response", "data": {
-                "type": "compaction_finished",
-                "session_id": session_id,
-                "user_initiated": user_initiated,
-                "summary_id": summary_id,
-                "summarised_count": result.summarised_count,
-                "summarised_tokens": result.summarised_tokens,
-                "tokens_before": result.tokens_before,
-                "tokens_after": result.tokens_after,
-                "duration_ms": result.duration_ms,
-                "fell_back_to_structural": result.fell_back_to_structural,
-                "used_previous_summary": result.used_previous_summary,
-            }})
+        self._emit_compaction_finished(
+            on_event, session_id=session_id,
+            user_initiated=user_initiated, result=result,
+        )
 
         # 事件层 tap（懒 import 防循环）。emit_safe 自己吞异常，无需再包一层。
         from openprogram.events import emit_safe
@@ -556,6 +582,45 @@ class DefaultContextEngine(ContextEngine):
     def _estimate(self, history: list[dict]) -> int:
         from openprogram.context.tokens import estimate_history_tokens
         return estimate_history_tokens(history)
+
+    def _occupancy_tokens(self, session_id: str, history: list[dict]) -> int:
+        """Same total the ring and /context panel use (rendered view)."""
+        try:
+            from openprogram.context.session_stats import estimate_total_used
+            total, _ = estimate_total_used(session_id)
+            if total > 0:
+                return int(total)
+        except Exception:
+            _log.debug(
+                "occupancy estimate fell back to history tokens",
+                exc_info=True,
+            )
+        return self._estimate(history)
+
+    def _emit_compaction_finished(
+        self,
+        on_event: Optional[EventCallback],
+        *,
+        session_id: str,
+        user_initiated: bool,
+        result: CompactResult,
+    ) -> None:
+        if not on_event:
+            return
+        on_event({"type": "chat_response", "data": {
+            "type": "compaction_finished",
+            "session_id": session_id,
+            "user_initiated": user_initiated,
+            "no_op": result.no_op,
+            "summary_id": result.summary_id,
+            "summarised_count": result.summarised_count,
+            "summarised_tokens": result.summarised_tokens,
+            "tokens_before": result.tokens_before,
+            "tokens_after": result.tokens_after,
+            "duration_ms": result.duration_ms,
+            "fell_back_to_structural": result.fell_back_to_structural,
+            "used_previous_summary": result.used_previous_summary,
+        }})
 
 
 # ---------------------------------------------------------------------------

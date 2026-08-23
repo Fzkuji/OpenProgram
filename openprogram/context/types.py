@@ -153,6 +153,7 @@ class CompactResult:
     reason: str = ""  # auto | manual | overflow | forced | recovered
     error: Optional[str] = None
     fell_back_to_structural: bool = False  # LLM failed → kept tail only
+    no_op: bool = False  # already folded / nothing to cover — not a success compact
 
 
 # ---------------------------------------------------------------------------

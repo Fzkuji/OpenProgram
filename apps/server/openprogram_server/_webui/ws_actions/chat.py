@@ -1351,6 +1351,7 @@ async def handle_compact(ws, cmd: dict):
                 keep_recent_tokens=keep_recent_tokens,
             ),
         )
+        _s.refresh_context_stats(session_id, "compact")
     except Exception as e:  # noqa: BLE001
         _s._broadcast_chat_response(session_id, "compact", {
             "type": "error",

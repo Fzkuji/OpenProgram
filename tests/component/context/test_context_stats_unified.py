@@ -114,6 +114,33 @@ def test_panel_reuses_the_measurement_while_the_graph_holds(session):
     assert stats["total_used"] == 77_777
 
 
+def test_panel_drops_stale_breakdown_after_refresh_without_head_move(session):
+    """Compact does not move HEAD. Refresh must still replace the
+    pre-compact stored categories so /context does not keep 125k
+    Messages next to a 40k rendered report."""
+    conv, _sent = session
+    conv["_last_context_stats"] = {
+        "window": 200_000, "total_used": 137_000,
+        "basis": "measured", "estimated": 60_000, "_context_rev": 0,
+    }
+    conv["_last_context_breakdown"] = {
+        "messages": 125_400, "input_used": 137_000, "head_id": None,
+        "system_prompt": 0, "tools_schema": 0, "tools_deferred_catalog": 0,
+        "mcp_tools": 0, "mcp_tools_deferred": 0, "memory": 0, "skills": 0,
+        "unclassified": 0, "window": 200_000, "_context_rev": 0,
+    }
+    srv.refresh_context_stats("ctx-test")
+
+    app = FastAPI()
+    from openprogram.webui.routes import tree as _tree
+    _tree.register(app)
+    panel = TestClient(app).get("/api/sessions/ctx-test/context").json()
+
+    assert panel["basis"] == "estimated"
+    assert panel["total_used"] != 137_000
+    assert panel.get("messages", 0) != 125_400
+
+
 def test_panel_re_estimates_for_a_different_branch(session):
     """A measurement belongs to the branch it was taken on, not to another."""
     conv, _sent = session
@@ -204,6 +231,7 @@ def test_every_graph_change_calls_refresh(monkeypatch):
     )
     wired = {
         "_execute/chat.py": "compaction",
+        "ws_actions/chat.py": "manual /compact",
         "routes/runtime.py": "model switch (REST)",
         "ws_actions/runtime.py": "model switch (WS)",
         "ws_actions/branch.py": "branch checkout / delete",
