@@ -610,13 +610,34 @@ async def stream_simple(
                 _, retryable = classify_error(
                     e, http_status=getattr(e, "status_code", None),
                 )
+                # "Committed" means user-visible output (text / tool calls).
+                # Thinking-only content is safe to discard and regenerate —
+                # xAI reasoning models routinely die mid-thinking with a
+                # retryable "Internal error during token generation", and
+                # treating that half-thinking as committed turned every such
+                # blip into a dead turn. The UI reconciles on turn_end with
+                # the provider's final content list, so the retried stream's
+                # thinking replaces the discarded prefix.
+                committed = any(
+                    not isinstance(b, ThinkingContent) for b in content_blocks
+                )
                 if (
-                    content_blocks
+                    committed
                     or not retryable
                     or _attempt >= PROVIDER_STREAM_MAX_ATTEMPTS - 1
                     or _user_cancelled()
                 ):
                     raise
+                # Reset per-attempt stream state so the retry starts clean.
+                content_blocks = []
+                text_index = -1
+                thinking_index = -1
+                tool_indices = {}
+                tool_arg_buffers = {}
+                usage = Usage()
+                finish_reason = None
+                finished_at = None
+                partial = _make_empty_assistant(model)
                 sleep_s = stream_backoff_seconds(
                     _attempt, getattr(e, "retry_after_s", None) or None,
                 )
