@@ -71,8 +71,21 @@ export function _foldSummaries(
     chain.add(cur.id);
     cur = cur.predecessor ? fullById[cur.predecessor] : undefined;
   }
-  const applies = (sid: string): boolean =>
-    chain.size > 0 && coversOf[sid].every((id) => chain.has(id));
+  // Apply over the conversation spine only. ``covers_ids`` on the wire
+  // also names caller subtrees (tools, spawn roots) so the fold can
+  // hide them with the turn; those ids are not on the predecessor
+  // walk, and treating them as part of the branch test made every
+  // real compact look inert.
+  const spineOf = (sid: string): string[] =>
+    coversOf[sid].filter((id) => {
+      const n = fullById[id];
+      return !!n && isChainNode(n);
+    });
+  const applies = (sid: string): boolean => {
+    if (!chain.size) return false;
+    const spine = spineOf(sid);
+    return spine.length > 0 && spine.every((id) => chain.has(id));
+  };
 
   const hidden: Record<string, boolean> = Object.create(null);
   // ``hidden id → the capsule standing in for it``: the node after a

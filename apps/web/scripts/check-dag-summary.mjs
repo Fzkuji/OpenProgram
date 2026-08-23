@@ -124,6 +124,30 @@ assert.equal(globals._summaryExpanded.sum1, undefined, "toggling again folds it 
   assert.deepEqual(Object.keys(out.coversOf), [], "no summary: nothing covered");
 }
 
+{
+  // The wire list adds caller subtrees so the fold hides a turn's
+  // tools with it. Those ids are not on the predecessor chain; the
+  // apply test must still see the carrying branch.
+  setSummaryExpanded(Object.create(null));
+  const withTools = [
+    { id: "sum1", role: "assistant", predecessor: null, covers_ids: ["u0", "a0", "tool1"] },
+    { id: "u0", role: "user", predecessor: null },
+    { id: "a0", role: "assistant", predecessor: "u0" },
+    { id: "tool1", role: "tool", caller: "a0", predecessor: "a0" },
+    { id: "u1", role: "user", predecessor: "a0" },
+    { id: "a1", role: "assistant", predecessor: "u1" },
+  ];
+  const { visible } = _foldSummaries(withTools, "a1");
+  const ids = visible.map((n) => n.id);
+  assert.deepEqual(
+    ids, ["sum1", "u1", "a1"],
+    "caller subtrees in covers_ids must not make the carrying branch inert",
+  );
+  assert.ok(!ids.includes("tool1"), "the covered tool folds with its turn");
+  assert.ok(!visible.find((n) => n.id === "sum1")?._summaryInert,
+    "the capsule on the carrying branch is not inert");
+}
+
 assert.equal(coversIds({ id: "x" }), null, "a plain node covers nothing");
 assert.equal(coversIds({ id: "x", covers_ids: [] }), null, "an empty range is no range");
 assert.deepEqual(coversIds({ id: "x", covers_ids: ["a"] }), ["a"]);
