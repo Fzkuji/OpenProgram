@@ -1019,6 +1019,16 @@ assert.match(
   "the covered-segment boundary is a summary card, not only a divider",
 );
 assert.match(
+  messageList,
+  /compaction-orig-toggle/,
+  "originals toggle sits above the card, not inside it",
+);
+assert.doesNotMatch(
+  messageList,
+  /compaction-card-orig/,
+  "the card must not host the originals toggle",
+);
+assert.match(
   readChatCss(),
   /\.message\.system-event[\s\S]*animation:\s*none[\s\S]*opacity:\s*1/,
   "event dividers must not stay stuck at the msgAppear from-opacity",

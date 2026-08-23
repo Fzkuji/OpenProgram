@@ -183,7 +183,7 @@ const originalsSubs = new Set<() => void>();
 let pinOriginals: { id: string; top: number } | null = null;
 function toggleOriginals(cardId: string): void {
   const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v);
-  const el = document.querySelector(`[data-msg-id="${esc(cardId)}"]`);
+  const el = document.querySelector(`[data-orig-for="${esc(cardId)}"]`);
   if (el) pinOriginals = { id: cardId, top: el.getBoundingClientRect().top };
   if (originalsOpen.has(cardId)) originalsOpen.delete(cardId);
   else originalsOpen.add(cardId);
@@ -239,39 +239,44 @@ function CompactionCard({ msg }: { msg: ChatMsg }) {
   const title = typeof n === "number"
     ? text(`Compacted ${n} earlier messages`, `已压缩 ${n} 条更早的消息`)
     : text("Compacted earlier messages", "已压缩更早的消息");
+  const origLabel = showingOrig
+    ? text("▾ Hide original messages", "▾ 隐藏原始消息")
+    : (typeof n === "number"
+      ? text(`▸ Show ${n} original messages`, `▸ 显示 ${n} 条原始消息`)
+      : text("▸ Show original messages", "▸ 显示原始消息"));
   return (
-    <div
-      className="message compaction-card"
-      data-msg-id={msg.id}
-      data-kind="compaction"
-      data-slot="card"
-      data-open={open ? "1" : "0"}
-    >
+    <>
       <button
         type="button"
-        className="compaction-card-head"
+        className="compaction-orig-toggle"
+        data-orig-for={msg.id}
+        data-slot="orig"
+        data-open={showingOrig ? "1" : "0"}
+        onClick={() => toggleOriginals(msg.id)}
+      >
+        {origLabel}
+      </button>
+      <div
+        className="message compaction-card"
+        data-msg-id={msg.id}
+        data-kind="compaction"
+        data-slot="card"
+        data-open={open ? "1" : "0"}
         onClick={() => setOpen((v) => !v)}
       >
-        {title}{hm ? ` · ${hm}` : ""}
-      </button>
-      {open ? (
-        <div className="compaction-card-body">
-          <div
-            className="compaction-card-md"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content || "") }}
-          />
-          <button
-            type="button"
-            className="compaction-card-orig"
-            onClick={() => toggleOriginals(msg.id)}
-          >
-            {showingOrig
-              ? text("Hide original messages", "收起原始消息")
-              : text("Show original messages", "查看原始消息")}
-          </button>
+        <div className="compaction-card-head">
+          {title}{hm ? ` · ${hm}` : ""}
         </div>
-      ) : null}
-    </div>
+        {open ? (
+          <div className="compaction-card-body">
+            <div
+              className="compaction-card-md"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content || "") }}
+            />
+          </div>
+        ) : null}
+      </div>
+    </>
   );
 }
 
@@ -654,7 +659,7 @@ export function MessageList() {
     if (!pin) return;
     pinOriginals = null;
     const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v);
-    const el = document.querySelector(`[data-msg-id="${esc(pin.id)}"]`);
+    const el = document.querySelector(`[data-orig-for="${esc(pin.id)}"]`);
     const area = document.getElementById("chatArea");
     if (!el || !area) return;
     area.scrollTop += el.getBoundingClientRect().top - pin.top;
