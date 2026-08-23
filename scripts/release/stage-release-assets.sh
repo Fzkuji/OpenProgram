@@ -34,7 +34,8 @@ test -n "$uv_bin" || {
 }
 (
   cd "$repo_root"
-  "$uv_bin" run --isolated --locked \
+  # torch 2.2.2 Intel wheels are cp311/cp312 only; hosted runners default to 3.13+.
+  "$uv_bin" run --isolated --locked --python 3.12 \
     --with markdown-it-py --with mdit-py-plugins --with pygments \
     python -m scripts.docs_site.build
 )
