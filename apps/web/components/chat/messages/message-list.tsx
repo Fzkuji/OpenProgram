@@ -37,6 +37,7 @@ import { promoteToHead } from "@/lib/state/send-queue";
 import { stopSession } from "@/components/chat/composer/submit/use-chat-submit";
 import { useAgentProfile } from "@/lib/format-utils/agent-style";
 import {
+  animateJumpToLatest,
   isChatAtBottom,
   readBottomPadding,
   readComposerHeight,
@@ -46,6 +47,8 @@ import {
 } from "@/lib/state/chat-scroll";
 import { Avatar } from "@/components/avatar";
 import { showToast } from "@/lib/format-utils/toast";
+
+const JUMP_LATEST_FADE_MS = 280;
 
 import { AssistantBubble } from "./assistant-bubble";
 import { AttachCard } from "./attach-card";
@@ -252,6 +255,8 @@ function useChatAreaStick(
   const previousKeyRef = useRef<string | null>(null);
   const previousSeedRef = useRef(newTurnSeed);
   const stuckRef = useRef(true);
+  const jumpingRef = useRef(false);
+  const cancelJumpRef = useRef<(() => void) | null>(null);
   const lastPointerRef = useRef(0);
   const scrollTopRef = useRef(0);
   // The ref drives the scroll math on every event; this mirrors it into
@@ -273,6 +278,11 @@ function useChatAreaStick(
         readBottomPadding(msgs),
         readComposerHeight(),
       );
+      if (jumpingRef.current) {
+        // Stay visible until the ease-in-out ride finishes.
+        stuckRef.current = true;
+        return atBottom;
+      }
       stuckRef.current = atBottom;
       setDetached((was) => (was === !atBottom ? was : !atBottom));
       return atBottom;
@@ -287,7 +297,13 @@ function useChatAreaStick(
       // `window.renderMathInChat` was defined by the legacy public/js
       // bundle, which no longer exists — the read was permanently
       // undefined. Math rendering now lives in the markdown pipeline.
-      if (stuckRef.current && performance.now() - lastPointerRef.current > 600) {
+      // A Jump-to-latest click is already smoothing down; snapping
+      // scrollTop here fights that and flashes the transcript.
+      if (
+        stuckRef.current
+        && !jumpingRef.current
+        && performance.now() - lastPointerRef.current > 600
+      ) {
         area.scrollTop = area.scrollHeight;
         scrollTopRef.current = area.scrollTop;
         const key = activeKeyRef.current;
@@ -298,12 +314,22 @@ function useChatAreaStick(
       // bubble is already above the input.
       syncDetached();
     };
-    const onPointer = () => { lastPointerRef.current = performance.now(); };
+    const onPointer = () => {
+      lastPointerRef.current = performance.now();
+      if (jumpingRef.current) {
+        cancelJumpRef.current?.();
+        cancelJumpRef.current = null;
+        jumpingRef.current = false;
+      }
+    };
     area.addEventListener("scroll", onScroll, { passive: true });
     area.addEventListener("pointerdown", onPointer, { passive: true });
     const ro = new ResizeObserver(pin);
     ro.observe(msgs);
     return () => {
+      cancelJumpRef.current?.();
+      cancelJumpRef.current = null;
+      jumpingRef.current = false;
       area.removeEventListener("scroll", onScroll);
       area.removeEventListener("pointerdown", onPointer);
       ro.disconnect();
@@ -346,23 +372,28 @@ function useChatAreaStick(
     // Recompute rather than assume: after a follow we are at the bottom,
     // and after a deliberate stay-put we are not — and it is this flag
     // that decides whether the streaming deltas keep pinning.
-    stuckRef.current = isChatAtBottom(
-      area,
-      readBottomPadding(document.getElementById("chatMessages")),
-      readComposerHeight(),
-    );
-    setDetached(!stuckRef.current);
+    if (!jumpingRef.current) {
+      stuckRef.current = isChatAtBottom(
+        area,
+        readBottomPadding(document.getElementById("chatMessages")),
+        readComposerHeight(),
+      );
+      setDetached(!stuckRef.current);
+    }
   }, [chatKey, newTurnSeed, ownTurn]);
 
   const jumpToLatest = useCallback(() => {
     const area = document.getElementById("chatArea");
     if (!area) return;
-    area.scrollTo({ top: area.scrollHeight, behavior: "smooth" });
-    // Re-attach immediately rather than waiting for the smooth scroll to
-    // finish: a delta landing mid-animation should already be followed,
-    // and the button should not linger over a view that is on its way down.
+    cancelJumpRef.current?.();
+    jumpingRef.current = true;
     stuckRef.current = true;
-    setDetached(false);
+    cancelJumpRef.current = animateJumpToLatest(area, () => {
+      cancelJumpRef.current = null;
+      jumpingRef.current = false;
+      stuckRef.current = true;
+      setDetached(false);
+    });
   }, []);
 
   return { detached, jumpToLatest };
@@ -507,6 +538,23 @@ export function MessageList() {
   const jumpHost = typeof document !== "undefined"
     ? document.getElementById("chatView")
     : null;
+  const [jumpShown, setJumpShown] = useState(false);
+  const [jumpLeaving, setJumpLeaving] = useState(false);
+  useEffect(() => {
+    const want = detached && ids.length > 0;
+    if (want) {
+      setJumpLeaving(false);
+      setJumpShown(true);
+      return;
+    }
+    if (!jumpShown) return;
+    setJumpLeaving(true);
+    const t = window.setTimeout(() => {
+      setJumpShown(false);
+      setJumpLeaving(false);
+    }, JUMP_LATEST_FADE_MS);
+    return () => window.clearTimeout(t);
+  }, [detached, ids.length, jumpShown]);
   // Only the LAST row's role matters here (see ``showPending`` below).
   // Subscribing to the whole ``messagesById`` map would re-render this
   // component — and re-map every id — on every single streaming delta,
@@ -636,9 +684,13 @@ export function MessageList() {
       {/* Messages typed during the run — dimmed rows under the live
           turn, drained one at a time when it ends. */}
       <QueuedMessages sessionId={sessionId} onStopAndSend={stopAndSend} />
-      {detached && ids.length > 0 && jumpHost
+      {jumpShown && jumpHost
         ? createPortal(
-            <div className={runningTask ? "jump-latest-anchor is-live" : "jump-latest-anchor"}>
+            <div className={[
+              "jump-latest-anchor",
+              runningTask ? "is-live" : "",
+              jumpLeaving ? "is-leaving" : "",
+            ].filter(Boolean).join(" ")}>
               <button
                 type="button"
                 className="jump-latest"

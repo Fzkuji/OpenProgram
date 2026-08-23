@@ -5,7 +5,9 @@ import test from "node:test";
 import {
   CHAT_AT_BOTTOM_EPSILON,
   chatAtBottomSlack,
+  easeInOutCubic,
   isChatAtBottom,
+  jumpScrollTopAt,
   remainingScroll,
 } from "../lib/state/chat-scroll.ts";
 
@@ -56,4 +58,30 @@ test("jump button is portaled onto #chatView, not the scroller", () => {
 test("live turn shows the in-progress bars on the jump button", () => {
   assert.match(messageList, /jump-latest-live/);
   assert.match(messageList, /runningTask \? \(/);
+});
+
+test("jump button fades out instead of unmounting immediately", () => {
+  assert.match(messageList, /JUMP_LATEST_FADE_MS = 280/);
+  assert.match(messageList, /jumpingRef/);
+  assert.match(messageList, /is-leaving/);
+  assert.match(jumpCss, /is-leaving/);
+  assert.match(jumpCss, /280ms/);
+});
+
+test("jump scroll eases in, then out", () => {
+  assert.equal(easeInOutCubic(0), 0);
+  assert.equal(easeInOutCubic(1), 1);
+  assert.equal(easeInOutCubic(0.5), 0.5);
+  assert.ok(easeInOutCubic(0.25) < 0.25);
+  assert.ok(easeInOutCubic(0.75) > 0.75);
+  assert.equal(jumpScrollTopAt(0, 100, 0), 0);
+  assert.equal(jumpScrollTopAt(0, 100, 1), 100);
+});
+
+test("jump keeps the button until the ride finishes", () => {
+  const start = messageList.indexOf("const jumpToLatest");
+  const jump = messageList.slice(start, messageList.indexOf("return { detached, jumpToLatest }"));
+  assert.match(jump, /animateJumpToLatest/);
+  assert.doesNotMatch(jump, /behavior: "smooth"/);
+  assert.match(messageList, /Stay visible until the ease-in-out ride finishes/);
 });

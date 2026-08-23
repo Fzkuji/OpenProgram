@@ -32,7 +32,14 @@
   line-height: 1;
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
-  animation: jumpLatestIn 160ms ease-out;
+  animation: jumpLatestIn 180ms ease-out;
+  transition: opacity 280ms ease, transform 280ms ease;
+}
+.jump-latest-anchor.is-leaving .jump-latest {
+  opacity: 0;
+  transform: translateY(6px);
+  animation: none;
+  pointer-events: none;
 }
 .jump-latest:hover {
   color: var(--text-primary);
@@ -75,6 +82,7 @@
   50% { transform: scaleY(1); opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .jump-latest { animation: none; }
+  .jump-latest { animation: none; transition: none; }
+  .jump-latest-anchor.is-leaving .jump-latest { opacity: 0; }
   .jump-latest-live i { animation: none; opacity: 0.8; }
 }

@@ -150,3 +150,52 @@ export function readComposerHeight(): number {
   );
   return Number.isFinite(n) ? n : 0;
 }
+
+/** Slow-fast-slow, like an elevator or a train pulling in. */
+export function easeInOutCubic(t: number): number {
+  const x = Math.min(1, Math.max(0, t));
+  return x < 0.5 ? 4 * x * x * x : 1 - ((-2 * x + 2) ** 3) / 2;
+}
+
+export function jumpScrollDuration(distance: number): number {
+  const d = Math.abs(distance);
+  return Math.round(Math.min(720, Math.max(360, 300 + d * 0.32)));
+}
+
+export function jumpScrollTopAt(from: number, to: number, t: number): number {
+  return from + (to - from) * easeInOutCubic(t);
+}
+
+/** Animate a scroller to the latest message. Returns a cancel function. */
+export function animateJumpToLatest(
+  area: { scrollTop: number; scrollHeight: number; clientHeight: number },
+  onDone?: () => void,
+): () => void {
+  const from = area.scrollTop;
+  const to = Math.max(0, area.scrollHeight - area.clientHeight);
+  const dist = to - from;
+  if (Math.abs(dist) < 2) {
+    area.scrollTop = to;
+    onDone?.();
+    return () => {};
+  }
+  const dur = jumpScrollDuration(dist);
+  const t0 = performance.now();
+  let raf = 0;
+  let cancelled = false;
+  const step = (now: number) => {
+    if (cancelled) return;
+    const t = Math.min(1, (now - t0) / dur);
+    area.scrollTop = jumpScrollTopAt(from, to, t);
+    if (t < 1) {
+      raf = requestAnimationFrame(step);
+      return;
+    }
+    onDone?.();
+  };
+  raf = requestAnimationFrame(step);
+  return () => {
+    cancelled = true;
+    if (raf) cancelAnimationFrame(raf);
+  };
+}
