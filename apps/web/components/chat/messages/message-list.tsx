@@ -188,27 +188,45 @@ function prefersReducedMotion(): boolean {
     && matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+let pendingOrigScroll: { cardId: string; opening: boolean } | null = null;
+
 function scrollChatTo(el: Element | null, pad: number, smooth: boolean): void {
   const area = document.getElementById("chatArea");
   if (!el || !area) return;
-  const top = el.getBoundingClientRect().top - area.getBoundingClientRect().top + area.scrollTop;
-  area.scrollTo({ top: Math.max(0, top - pad), behavior: smooth ? "smooth" : "auto" });
+  const top = Math.max(
+    0,
+    el.getBoundingClientRect().top - area.getBoundingClientRect().top + area.scrollTop - pad,
+  );
+  // A 40k-px smooth jump is dropped; hop to the last viewport, then ease in.
+  if (smooth && Math.abs(top - area.scrollTop) > area.clientHeight * 2) {
+    area.scrollTo({ top: Math.max(0, top - area.clientHeight), behavior: "auto" });
+  }
+  area.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
+}
+
+function finishOrigScroll(cardId: string, opening: boolean): void {
+  const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v);
+  const smooth = !prefersReducedMotion();
+  if (opening) {
+    const covered = document.querySelectorAll(".covered-turn");
+    scrollChatTo(covered[Math.max(0, covered.length - 3)] ?? null, 12, smooth);
+  } else {
+    scrollChatTo(document.querySelector(`[data-msg-id="${esc(cardId)}"]`), 48, smooth);
+  }
 }
 
 function toggleOriginals(cardId: string): void {
   const opening = !originalsOpen.has(cardId);
   if (opening) originalsOpen.add(cardId);
   else originalsOpen.delete(cardId);
+  pendingOrigScroll = { cardId, opening };
   originalsSubs.forEach((fn) => fn());
-  const delay = prefersReducedMotion() ? 0 : FOLD_MS;
+  const delay = prefersReducedMotion() ? 0 : FOLD_MS + 20;
   window.setTimeout(() => {
-    const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v);
-    if (opening) {
-      const covered = document.querySelectorAll(".covered-turn");
-      scrollChatTo(covered[Math.max(0, covered.length - 3)] ?? null, 12, delay > 0);
-    } else {
-      scrollChatTo(document.querySelector(`[data-msg-id="${esc(cardId)}"]`), 48, delay > 0);
-    }
+    const pend = pendingOrigScroll;
+    if (!pend || pend.cardId !== cardId) return;
+    pendingOrigScroll = null;
+    finishOrigScroll(pend.cardId, pend.opening);
   }, delay);
 }
 
@@ -869,6 +887,13 @@ export function MessageList() {
                 key={`${run[0]}_fold`}
                 className="compaction-orig-fold"
                 data-open={hiddenCovered.has(run[0]) ? "0" : "1"}
+                onTransitionEnd={(e) => {
+                  if (e.propertyName !== "grid-template-rows") return;
+                  const pend = pendingOrigScroll;
+                  if (!pend) return;
+                  pendingOrigScroll = null;
+                  finishOrigScroll(pend.cardId, pend.opening);
+                }}
               >
                 <div className="compaction-orig-fold-inner">
                   {run.map((cid) => (
