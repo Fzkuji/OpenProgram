@@ -128,8 +128,13 @@ export interface ChatMsg {
   content: string;             // final assistant text / user text
   /** Event-divider rows (compaction / snip). Other system rows omit this. */
   kind?: "compaction" | "snip" | "event";
+  /** ``card`` = fold summary at the covered segment; ``event`` = execution marker. */
+  slot?: "card" | "event";
   /** Covered-message count on reconstructed compaction rows. */
   summarisedCount?: number;
+  coversIds?: string[];
+  tokensBefore?: number;
+  tokensAfter?: number;
   /** Reasoning tokens streamed under a collapsible "Thinking" block. */
   thinking?: string;
   /** Tool calls made during this assistant turn, in emit order. */

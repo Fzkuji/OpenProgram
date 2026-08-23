@@ -21,15 +21,20 @@ def _history(n: int) -> list[dict]:
 
 @pytest.fixture
 def engine(monkeypatch):
+    stamped = {}
     eng = DefaultContextEngine()
     monkeypatch.setattr(
         "openprogram.agent.session_db.default_db",
         lambda: type("DB", (), {
             "get_session": staticmethod(lambda _sid: {}),
             "update_session": staticmethod(lambda *_a, **_k: None),
+            "merge_node_metadata": staticmethod(
+                lambda sid, nid, patch: stamped.update(patch)
+            ),
         })(),
     )
     monkeypatch.setattr(eng, "_occupancy_tokens", lambda sid, hist: 40_737)
+    eng._stamped = stamped
     return eng
 
 
@@ -93,3 +98,32 @@ def test_empty_summary_is_no_op_not_success(engine, monkeypatch):
     finished = [e["data"] for e in events if e["data"]["type"] == "compaction_finished"]
     assert finished and finished[0]["no_op"] is True
     assert finished[0].get("summarised_count", 0) == 0
+
+
+def test_success_stamps_token_metadata_on_summary(engine, monkeypatch):
+    hist = _history(20)
+    monkeypatch.setattr(
+        "openprogram.context.persistence.rendered_history",
+        lambda *_a, **_k: hist,
+    )
+    monkeypatch.setattr(engine.summarizer, "find_cut_index", lambda *a, **k: 8)
+
+    async def _ok(**_k):
+        return Summary(
+            summary_text="recap", cut_idx=8, summarised_count=8,
+            summarised_tokens=100, previous_summary_used=False, duration_ms=1,
+        )
+
+    monkeypatch.setattr(engine.summarizer, "summarise", _ok)
+    monkeypatch.setattr(
+        engine.persister, "insert_summary_node",
+        lambda *a, **k: "summary_abc",
+    )
+    result = asyncio.run(engine.compact(
+        agent=None, session_id="s1", model=None, user_initiated=True,
+    ))
+    assert result.no_op is False
+    assert engine._stamped["tokens_before"] == 40_737
+    assert engine._stamped["tokens_after"] == 40_737
+    assert engine._stamped["summarised_count"] == 8
+    assert engine._stamped["compacted_at"] > 0

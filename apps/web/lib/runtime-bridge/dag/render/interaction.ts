@@ -196,6 +196,7 @@ export function _installInteractionHandlers(rerender: () => void): void {
         setLastSignature(null);
         rerender();
       }
+      _scrollChatTo(id + "_card");
       return;
     }
     // A node with a call thread folds and unfolds it (dag/rendering.md

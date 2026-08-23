@@ -410,6 +410,18 @@ class DefaultContextEngine(ContextEngine):
 
         new_history = rendered_history(db, session_id) or history
         tokens_after = self._occupancy_tokens(session_id, new_history)
+        try:
+            db.merge_node_metadata(session_id, summary_id, {
+                "tokens_before": tokens_before,
+                "tokens_after": tokens_after,
+                "summarised_count": summary.summarised_count,
+                "compacted_at": time.time(),
+            })
+        except Exception:
+            _log.warning(
+                "failed to stamp compaction stats on %s",
+                summary_id, exc_info=True,
+            )
 
         result = CompactResult(
             ok=True,

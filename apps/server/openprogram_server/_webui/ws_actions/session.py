@@ -59,71 +59,177 @@ def _annotate_spawn_origin(graph: list[dict]) -> None:
         }
 
 
+def _compaction_msg_ts(m: dict) -> float:
+    for key in ("timestamp", "created_at", "compacted_at"):
+        v = m.get(key)
+        if isinstance(v, (int, float)) and v > 0:
+            return float(v)
+    return 0.0
+
+
+def _compaction_exec_at(
+    shown: list[dict],
+    summary_id: str,
+    exec_ts: float,
+    all_msgs: list[dict],
+) -> int:
+    """Insert the execution event after the last message that existed
+    when the compact ran (then-HEAD). ``compacted_at`` is that clock;
+    without it, walk ``all_msgs`` up to the summary row."""
+    timed = [
+        (i, _compaction_msg_ts(m))
+        for i, m in enumerate(shown)
+        if _compaction_msg_ts(m)
+    ]
+    if exec_ts and timed:
+        at = 0
+        for i, t in timed:
+            if t <= exec_ts:
+                at = i + 1
+        return at
+    before: set[str] = set()
+    for m in all_msgs:
+        mid = m.get("id")
+        if mid == summary_id:
+            break
+        if mid:
+            before.add(str(mid))
+    if not before:
+        return len(shown)
+    at = 0
+    for i, m in enumerate(shown):
+        if m.get("id") in before:
+            at = i + 1
+    return at
+
+
 def splice_compaction_event_rows(
     shown: list[dict],
     graph: list[dict],
     all_msgs: list[dict] | None = None,
 ) -> list[dict]:
-    """Rebuild UI-only compaction records from active summary nodes.
+    """Rebuild UI-only compaction rows from summary nodes.
 
-    Summary nodes sit off the active branch, so they never appear in
-    ``shown``. Insert a system event row after the last covered message
-    still on the list. Do not write these rows onto ``conv['messages']``
-    — they must not enter LLM context.
+    Two placements, both off ``conv['messages']`` so they never enter
+    LLM context:
+
+    * ``slot=card`` — one row for the *active* summary, at the covered
+      segment's start (the fold).
+    * ``slot=event`` — one row per summary (including superseded), at
+      the compact's execution time.
     """
-    records = [
-        n for n in graph
-        if isinstance(n.get("covers_ids"), (list, tuple)) and n["covers_ids"]
-        and not n.get("superseded_summary")
-    ]
-    if not records:
-        return shown
-    index = {m.get("id"): i for i, m in enumerate(shown)}
     by_id = {m.get("id"): m for m in (all_msgs or [])}
+    index = {m.get("id"): i for i, m in enumerate(shown)}
     inserts: list[tuple[int, dict]] = []
-    for n in records:
-        covers = [str(c) for c in n["covers_ids"] if c]
-        last_i = -1
-        for cid in covers:
-            i = index.get(cid)
-            if i is not None:
-                last_i = max(last_i, i)
-        if last_i >= 0:
-            at = last_i + 1
-            anchor = shown[last_i]
-        else:
-            # Covered turns are often absent from the rendered list
-            # (folded by the summary). Land before the first kept-tail
-            # row, or at the top if the whole list is tail.
-            cover_set = set(covers)
-            at = next(
-                (i for i, m in enumerate(shown)
-                 if m.get("id") and m.get("id") not in cover_set),
-                0,
-            )
-            anchor = shown[at] if shown else {}
+
+    def _stats(n: dict) -> tuple[int, float, dict]:
         src = by_id.get(n.get("id")) or {}
-        raw_covers = src.get("covers_ids")
-        n_cov = (
-            len(raw_covers)
-            if isinstance(raw_covers, (list, tuple)) and raw_covers
-            else len(covers)
+        raw = src.get("covers_ids")
+        covers = (
+            [str(c) for c in raw if c]
+            if isinstance(raw, (list, tuple)) and raw
+            else [str(c) for c in (n.get("covers_ids") or []) if c]
         )
+        n_cov = src.get("summarised_count")
+        if not isinstance(n_cov, int):
+            n_cov = n.get("summarised_count")
+        if not isinstance(n_cov, int):
+            n_cov = len(covers)
+        exec_ts = (
+            src.get("compacted_at")
+            or n.get("compacted_at")
+            or 0
+        )
+        try:
+            exec_ts = float(exec_ts or 0)
+        except (TypeError, ValueError):
+            exec_ts = 0.0
         ts = (
-            n.get("created_at")
+            exec_ts
+            or n.get("created_at")
             or src.get("created_at")
             or src.get("timestamp")
-            or anchor.get("timestamp")
-            or anchor.get("created_at")
         )
-        inserts.append((at, {
+        extra = {
+            "summarised_count": n_cov,
+            "timestamp": ts,
+            "covers_ids": covers,
+        }
+        for key in ("tokens_before", "tokens_after"):
+            v = src.get(key)
+            if v is None:
+                v = n.get(key)
+            if isinstance(v, (int, float)):
+                extra[key] = int(v)
+        extra["_src"] = src
+        extra["_exec_ts"] = exec_ts
+        return n_cov, exec_ts, extra
+
+    def _event_row(n: dict, extra: dict) -> dict:
+        n_cov = extra["summarised_count"]
+        tb, ta = extra.get("tokens_before"), extra.get("tokens_after")
+        if tb is not None and ta is not None:
+            content = (
+                f"Context compacted here: covered {n_cov} messages, "
+                f"{tb} → {ta} tokens"
+            )
+        else:
+            content = f"Context compacted here: covered {n_cov} messages"
+        return {
             "id": f"{n['id']}_ui",
             "role": "system",
             "kind": "compaction",
+            "slot": "event",
             "summarised_count": n_cov,
-            "content": f"Context compacted: covered {n_cov} older messages",
-            "timestamp": ts,
+            "content": content,
+            "timestamp": extra["timestamp"],
+            **({
+                "tokens_before": extra["tokens_before"],
+                "tokens_after": extra["tokens_after"],
+            } if "tokens_before" in extra else {}),
+        }
+
+    for n in graph:
+        if not n.get("id"):
+            continue
+        active = (
+            isinstance(n.get("covers_ids"), (list, tuple))
+            and n["covers_ids"]
+            and not n.get("superseded_summary")
+        )
+        relic = bool(n.get("superseded_summary"))
+        if not active and not relic:
+            continue
+        n_cov, exec_ts, extra = _stats(n)
+        src = extra.pop("_src")
+        extra.pop("_exec_ts", None)
+        inserts.append((
+            _compaction_exec_at(shown, str(n["id"]), exec_ts, all_msgs or []),
+            _event_row(n, extra),
+        ))
+        if not active:
+            continue
+        covers = extra["covers_ids"]
+        cover_set = set(covers)
+        first = next(
+            (index[cid] for cid in covers if cid in index),
+            next(
+                (i for i, m in enumerate(shown)
+                 if m.get("id") and m.get("id") not in cover_set),
+                0,
+            ),
+        )
+        inserts.append((first, {
+            "id": f"{n['id']}_card",
+            "role": "system",
+            "kind": "compaction",
+            "slot": "card",
+            "summarised_count": n_cov,
+            "covers_ids": covers,
+            "content": src.get("content") or n.get("preview") or "",
+            "timestamp": extra["timestamp"],
         }))
+
     if not inserts:
         return shown
     inserts.sort(key=lambda x: x[0], reverse=True)

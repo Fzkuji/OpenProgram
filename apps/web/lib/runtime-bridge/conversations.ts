@@ -108,80 +108,84 @@ function feedStoreFromConv(conv: LegacyConv): void {
     .setMessages(conv.id, convToChatMsgs((conv.messages as never[]) || []));
 }
 
-/** Rebuild a compaction event row from DAG summary nodes when the
- *  wire list omitted it (covered ids folded out of ``shown``, or an
- *  older worker). No-op if a ``kind=compaction`` row is already there. */
+/** Rebuild card + event rows when the wire list omitted them. */
 function spliceCompactionFromGraph(
   messages: LegacyMessage[],
   graph: unknown,
 ): LegacyMessage[] {
-  if (messages.some((m) => m.kind === "compaction")) return messages;
+  if (messages.some((m) => m.kind === "compaction" && (m.slot === "card" || m.slot === "event"))) {
+    return messages;
+  }
   if (!Array.isArray(graph)) return messages;
-  const records = graph.filter((n): n is Record<string, unknown> => (
-    !!n && typeof n === "object"
-    && Array.isArray((n as { covers_ids?: unknown }).covers_ids)
-    && (n as { covers_ids: unknown[] }).covers_ids.length > 0
-    && !(n as { superseded_summary?: unknown }).superseded_summary
-  ));
-  if (!records.length) return messages;
+  const inserts: { at: number; row: LegacyMessage }[] = [];
   const index = new Map<string, number>();
   messages.forEach((m, i) => {
     if (typeof m.id === "string" && m.id) index.set(m.id, i);
   });
-  const inserts: { at: number; row: LegacyMessage }[] = [];
-  for (const n of records) {
-    const covers = (n.covers_ids as unknown[]).map(String).filter(Boolean);
-    let last = -1;
-    for (const id of covers) {
-      const i = index.get(id);
-      if (i !== undefined) last = Math.max(last, i);
+  for (const raw of graph) {
+    if (!raw || typeof raw !== "object") continue;
+    const n = raw as Record<string, unknown>;
+    const id = typeof n.id === "string" ? n.id : "";
+    if (!id) continue;
+    const covers = Array.isArray(n.covers_ids)
+      ? (n.covers_ids as unknown[]).map(String).filter(Boolean)
+      : [];
+    const active = covers.length > 0 && !n.superseded_summary;
+    const relic = !!n.superseded_summary;
+    if (!active && !relic) continue;
+    const nCov = typeof n.summarised_count === "number" ? n.summarised_count : covers.length;
+    const execTs = typeof n.compacted_at === "number" ? n.compacted_at : 0;
+    let execAt = messages.length;
+    if (execTs) {
+      let at = 0;
+      messages.forEach((m, i) => {
+        const t = typeof m.timestamp === "number" ? m.timestamp
+          : typeof m.created_at === "number" ? m.created_at : 0;
+        if (t && t <= execTs) at = i + 1;
+      });
+      execAt = at;
     }
-    let at: number;
-    if (last >= 0) {
-      at = last + 1;
-    } else {
-      const coverSet = new Set(covers);
-      at = messages.findIndex((m) => typeof m.id === "string" && m.id && !coverSet.has(m.id));
-      if (at < 0) at = 0;
-    }
-    const id = typeof n.id === "string" ? n.id : "summary";
+    const tb = typeof n.tokens_before === "number" ? n.tokens_before : undefined;
+    const ta = typeof n.tokens_after === "number" ? n.tokens_after : undefined;
     inserts.push({
-      at,
+      at: execAt,
       row: {
         id: `${id}_ui`,
         role: "system",
         kind: "compaction",
-        summarised_count: covers.length,
-        content: `Context compacted: covered ${covers.length} older messages`,
-        timestamp: n.created_at,
+        slot: "event",
+        summarised_count: nCov,
+        tokens_before: tb,
+        tokens_after: ta,
+        content: tb != null && ta != null
+          ? `Context compacted here: covered ${nCov} messages, ${tb} → ${ta} tokens`
+          : `Context compacted here: covered ${nCov} messages`,
+        timestamp: execTs || n.created_at,
+      },
+    });
+    if (!active) continue;
+    const coverSet = new Set(covers);
+    const first = covers.map((c) => index.get(c)).find((i) => i !== undefined)
+      ?? messages.findIndex((m) => typeof m.id === "string" && m.id && !coverSet.has(m.id));
+    inserts.push({
+      at: first >= 0 ? first : 0,
+      row: {
+        id: `${id}_card`,
+        role: "system",
+        kind: "compaction",
+        slot: "card",
+        summarised_count: nCov,
+        covers_ids: covers,
+        content: typeof n.preview === "string" ? n.preview : "",
+        timestamp: execTs || n.created_at,
       },
     });
   }
+  if (!inserts.length) return messages;
   inserts.sort((a, b) => b.at - a.at);
   const out = messages.slice();
   for (const { at, row } of inserts) out.splice(at, 0, row);
   return out;
-}
-
-/** Drop turns a live summary already covers so the event row sits at
- *  the fold, not as a hairline between 80 still-visible old bubbles. */
-function omitCoveredTurns(
-  messages: LegacyMessage[],
-  graph: unknown,
-): LegacyMessage[] {
-  if (!Array.isArray(graph)) return messages;
-  const covered = new Set<string>();
-  for (const n of graph) {
-    if (!n || typeof n !== "object") continue;
-    if ((n as { superseded_summary?: unknown }).superseded_summary) continue;
-    const ids = (n as { covers_ids?: unknown }).covers_ids;
-    if (!Array.isArray(ids)) continue;
-    for (const id of ids) {
-      if (id) covered.add(String(id));
-    }
-  }
-  if (!covered.size) return messages;
-  return messages.filter((m) => typeof m.id !== "string" || !covered.has(m.id));
 }
 
 /* ===== Channel icons ============================================= */
@@ -571,10 +575,7 @@ export function newSession(draftId?: string): void {
 
 export function loadSessionData(data: LegacyConv): void {
   if (!data.messages) data.messages = [];
-  data.messages = omitCoveredTurns(
-    spliceCompactionFromGraph(data.messages, data.graph),
-    data.graph,
-  );
+  data.messages = spliceCompactionFromGraph(data.messages, data.graph);
   const id = data.id as string;
   const map = convs();
   // Merge data into existing conv. data 里没有的字段 (例如 created_at)

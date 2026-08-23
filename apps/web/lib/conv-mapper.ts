@@ -50,7 +50,11 @@ interface LegacyMsg {
   timestamp?: number;
   created_at?: number;
   kind?: string;
+  slot?: string;
   summarised_count?: number;
+  covers_ids?: string[];
+  tokens_before?: number;
+  tokens_after?: number;
   context_tree?: unknown;
   usage?: unknown;
   attempts?: LegacyAttempt[];
@@ -398,9 +402,13 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
       status: "done",
       timestamp: ts,
       kind,
+      slot: m.slot === "card" || m.slot === "event" ? m.slot : undefined,
       summarisedCount: typeof m.summarised_count === "number"
         ? m.summarised_count
         : undefined,
+      coversIds: Array.isArray(m.covers_ids) ? m.covers_ids.map(String) : undefined,
+      tokensBefore: typeof m.tokens_before === "number" ? m.tokens_before : undefined,
+      tokensAfter: typeof m.tokens_after === "number" ? m.tokens_after : undefined,
     });
   });
   // 顶层剩余的 attach 卡（锚在用户消息上的 /task 斜杠路径等）：搬到

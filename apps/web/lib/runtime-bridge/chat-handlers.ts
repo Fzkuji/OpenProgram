@@ -592,30 +592,23 @@ export function handleChatResponse(data: ChatResponseData): void {
         running: false, recommended: false,
       });
       const noOp = Boolean(data.no_op);
-      const before = data.tokens_before;
-      const after = data.tokens_after;
-      const n = Number(data.summarised_count);
-      const content = noOp
-        ? translateText(
+      if (noOp) {
+        useSessionStore.getState().appendMessage(sid, {
+          id: "compaction_finished_" + Date.now().toString(36),
+          role: "system",
+          kind: "compaction",
+          content: translateText(
             "Context is already compacted; no older messages to fold.",
             "当前上下文已是压缩后状态，没有可压缩的旧消息",
-          )
-        : data.summarised_count != null && Number.isFinite(n)
-          ? translateText(
-              `Context compacted: covered ${n} older messages, ${before} → ${after} tokens`,
-              `上下文已压缩：盖住 ${n} 条旧消息，${before} → ${after} tokens`,
-            )
-          : translateText(
-              `Context compacted: ${before} → ${after} tokens`,
-              `上下文已压缩：${before} → ${after} tokens`,
-            );
-      useSessionStore.getState().appendMessage(sid, {
-        id: "compaction_finished_" + Date.now().toString(36),
-        role: "system",
-        kind: "compaction",
-        content,
-        status: "done",
-      });
+          ),
+          status: "done",
+        });
+      } else {
+        const sock = getSocket();
+        if (sock && sock.readyState === WebSocket.OPEN) {
+          sock.send(JSON.stringify({ action: "load_session", session_id: sid }));
+        }
+      }
       if (targetsActive) scrollToBottom();
     }
     return;

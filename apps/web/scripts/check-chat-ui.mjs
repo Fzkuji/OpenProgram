@@ -1010,8 +1010,13 @@ assert.doesNotMatch(
 );
 assert.match(
   conversations,
-  /function omitCoveredTurns/,
-  "session load must fold covered turns so the compaction row is not buried",
+  /slot: "card"/,
+  "session load must rebuild a fold card from the active summary",
+);
+assert.match(
+  messageList,
+  /function CompactionCard/,
+  "the covered-segment boundary is a summary card, not only a divider",
 );
 assert.match(
   readChatCss(),

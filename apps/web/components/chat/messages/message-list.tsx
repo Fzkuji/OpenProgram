@@ -47,6 +47,7 @@ import {
 } from "@/lib/state/chat-scroll";
 import { Avatar } from "@/components/avatar";
 import { showToast } from "@/lib/format-utils/toast";
+import { renderMarkdown, useMarkdownReady } from "./markdown";
 
 const JUMP_LATEST_FADE_MS = 280;
 
@@ -177,18 +178,38 @@ function formatEventTime(timestamp?: number): string {
   return value.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+const originalsOpen = new Set<string>();
+const originalsSubs = new Set<() => void>();
+function toggleOriginals(cardId: string): void {
+  if (originalsOpen.has(cardId)) originalsOpen.delete(cardId);
+  else originalsOpen.add(cardId);
+  originalsSubs.forEach((fn) => fn());
+}
+
 function SystemEventRow({ msg }: { msg: ChatMsg }) {
   const { text } = useTranslation();
   const n = msg.summarisedCount;
-  const label = msg.kind === "compaction" && typeof n === "number"
-    ? text(
-        `Context compacted: covered ${n} older messages`,
-        `上下文已压缩：盖住 ${n} 条旧消息`,
-      )
-    : msg.content;
+  const tb = msg.tokensBefore;
+  const ta = msg.tokensAfter;
+  const label = msg.kind === "compaction" && msg.slot === "event" && typeof n === "number"
+    ? (tb != null && ta != null
+      ? text(
+          `Context compacted here: covered ${n} messages, ${tb} → ${ta} tokens`,
+          `此处压缩了上下文：盖住 ${n} 条，${tb} → ${ta} tokens`,
+        )
+      : text(
+          `Context compacted here: covered ${n} messages`,
+          `此处压缩了上下文：盖住 ${n} 条`,
+        ))
+    : msg.kind === "compaction" && typeof n === "number"
+      ? text(
+          `Context compacted: covered ${n} older messages`,
+          `上下文已压缩：盖住 ${n} 条旧消息`,
+        )
+      : msg.content;
   const hm = formatEventTime(msg.timestamp);
   return (
-    <div className="message system-event" data-msg-id={msg.id} data-kind={msg.kind}>
+    <div className="message system-event" data-msg-id={msg.id} data-kind={msg.kind} data-slot={msg.slot || ""}>
       <span className="system-event-rule" aria-hidden />
       <span className="system-event-text">
         {label}{hm ? ` · ${hm}` : ""}
@@ -198,8 +219,63 @@ function SystemEventRow({ msg }: { msg: ChatMsg }) {
   );
 }
 
+function CompactionCard({ msg }: { msg: ChatMsg }) {
+  const { text } = useTranslation();
+  useMarkdownReady();
+  const [open, setOpen] = useState(false);
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const fn = () => bump((n) => n + 1);
+    originalsSubs.add(fn);
+    return () => { originalsSubs.delete(fn); };
+  }, []);
+  const n = msg.summarisedCount;
+  const hm = formatEventTime(msg.timestamp);
+  const showingOrig = originalsOpen.has(msg.id);
+  const title = typeof n === "number"
+    ? text(`Compacted ${n} earlier messages`, `已压缩 ${n} 条更早的消息`)
+    : text("Compacted earlier messages", "已压缩更早的消息");
+  return (
+    <div
+      className="message compaction-card"
+      data-msg-id={msg.id}
+      data-kind="compaction"
+      data-slot="card"
+      data-open={open ? "1" : "0"}
+    >
+      <button
+        type="button"
+        className="compaction-card-head"
+        onClick={() => setOpen((v) => !v)}
+      >
+        {title}{hm ? ` · ${hm}` : ""}
+      </button>
+      {open ? (
+        <div className="compaction-card-body">
+          <div
+            className="compaction-card-md"
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content || "") }}
+          />
+          <button
+            type="button"
+            className="compaction-card-orig"
+            onClick={() => toggleOriginals(msg.id)}
+          >
+            {showingOrig
+              ? text("Hide original messages", "收起原始消息")
+              : text("Show original messages", "查看原始消息")}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function dispatch(msg: ChatMsg, sessionIdOverride?: string) {
   if (msg.role === "system") {
+    if (msg.kind === "compaction" && msg.slot === "card") {
+      return <CompactionCard msg={msg} />;
+    }
     if (msg.kind && SYSTEM_EVENT_KINDS.has(msg.kind)) {
       return <SystemEventRow msg={msg} />;
     }
@@ -563,6 +639,22 @@ export function MessageList() {
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const chatKey = useSessionStore((s) => s.activeChatKey);
   const ids = useMessageIds(sessionId);
+  const [, origTick] = useState(0);
+  useEffect(() => {
+    const fn = () => origTick((n) => n + 1);
+    originalsSubs.add(fn);
+    return () => { originalsSubs.delete(fn); };
+  }, []);
+  const hiddenCovered = new Set<string>();
+  const coveredSet = new Set<string>();
+  for (const id of ids) {
+    const m = useSessionStore.getState().messagesById[id];
+    if (m?.kind !== "compaction" || m.slot !== "card" || !m.coversIds?.length) continue;
+    for (const cid of m.coversIds) {
+      coveredSet.add(cid);
+      if (!originalsOpen.has(m.id)) hiddenCovered.add(cid);
+    }
+  }
   const runningTask = useSessionStore((s) =>
     sessionId ? s.runningTasks[sessionId] ?? null : null,
   );
@@ -709,9 +801,18 @@ export function MessageList() {
       <AgentBranchBanner />
       <WorkspaceAlignmentBanner sessionId={sessionId} />
       <MessageRail />
-      {ids.map((id) => (
-        <MessageRow key={id} id={id} />
-      ))}
+      {ids.map((id) => {
+        if (hiddenCovered.has(id)) return null;
+        return (
+          <div
+            key={id}
+            className={coveredSet.has(id) ? "covered-turn" : undefined}
+            style={coveredSet.has(id) ? undefined : { display: "contents" }}
+          >
+            <MessageRow id={id} />
+          </div>
+        );
+      })}
       {showPending ? (
         <PendingReplyIndicator timestamp={runningTask?.started_at} />
       ) : null}

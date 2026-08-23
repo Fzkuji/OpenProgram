@@ -323,6 +323,23 @@ function _rows(node: GNode, el: Element | null, detail: boolean): Row[] {
     if (out) rows.push(_block("output", out));
   }
 
+  if (Array.isArray((node as Record<string, unknown>).covers_ids)) {
+    const rec = node as Record<string, unknown>;
+    const tb = rec.tokens_before;
+    const ta = rec.tokens_after;
+    if (typeof tb === "number" && typeof ta === "number") {
+      rows.push(_kv("tokens", `${tb} → ${ta}`));
+    }
+    const at = rec.compacted_at;
+    if (typeof at === "number" && at > 0) {
+      const d = new Date(at > 1e12 ? at : at * 1000);
+      rows.push(_kv(
+        translateText("compacted", "压缩于"),
+        d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      ));
+    }
+  }
+
   // The picture's own facts (§11/§12). The fold count identifies the
   // node and stays on the brief cut; coverage / context / id are
   // standing detail.

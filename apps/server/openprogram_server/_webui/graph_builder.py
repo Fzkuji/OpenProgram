@@ -191,6 +191,12 @@ def build_session_graph(
             row["covers_ids"] = covers_ids[mid]
         if mid in superseded:
             row["superseded_summary"] = True
+        for key in (
+            "tokens_before", "tokens_after",
+            "summarised_count", "compacted_at",
+        ):
+            if m.get(key) is not None:
+                row[key] = m[key]
         if mid in branch_names:
             row["branch_name"] = branch_names[mid]
         graph.append(row)
