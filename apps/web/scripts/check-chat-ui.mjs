@@ -1035,6 +1035,16 @@ assert.match(
 );
 assert.match(
   messageList,
+  /… Show all/,
+  "the recap expander reads as a continuation of the truncated line",
+);
+assert.doesNotMatch(
+  messageList,
+  /setOpen/,
+  "the summary card has no hide-the-body state",
+);
+assert.match(
+  messageList,
   /compaction-orig-fold/,
   "covered originals animate inside a height fold",
 );

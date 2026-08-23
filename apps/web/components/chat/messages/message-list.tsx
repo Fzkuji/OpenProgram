@@ -274,7 +274,6 @@ function SystemEventRow({ msg }: { msg: ChatMsg }) {
 function CompactionCard({ msg }: { msg: ChatMsg }) {
   const { text } = useTranslation();
   useMarkdownReady();
-  const [open, setOpen] = useState(false);
   const [full, setFull] = useState(false);
   const [, bump] = useState(0);
   useEffect(() => {
@@ -293,6 +292,7 @@ function CompactionCard({ msg }: { msg: ChatMsg }) {
     : (typeof n === "number"
       ? text(`▸ Show ${n} original messages`, `▸ 显示 ${n} 条原始消息`)
       : text("▸ Show original messages", "▸ 显示原始消息"));
+  const toggleFull = () => setFull((v) => !v);
   return (
     <>
       <button
@@ -310,38 +310,30 @@ function CompactionCard({ msg }: { msg: ChatMsg }) {
         data-msg-id={msg.id}
         data-kind="compaction"
         data-slot="card"
-        data-open={open ? "1" : "0"}
         data-full={full ? "1" : "0"}
-        onClick={() => setOpen((v) => {
-          if (v) setFull(false);
-          return !v;
-        })}
+        onClick={toggleFull}
       >
         <div className="compaction-card-head">
           {title}{hm ? ` · ${hm}` : ""}
         </div>
-        <div className="compaction-card-fold">
-          <div className="compaction-card-fold-inner">
-            <div className="compaction-card-body">
-              <div className="compaction-card-md-clip" data-full={full ? "1" : "0"}>
-                <div
-                  className="compaction-card-md"
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content || "") }}
-                />
-              </div>
-              <button
-                type="button"
-                className="compaction-card-more"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setFull((v) => !v);
-                }}
-              >
-                {full
-                  ? text("Show less", "收起")
-                  : text("Show all", "展开全部")}
-              </button>
-            </div>
+        <div className="compaction-card-body">
+          <div className="compaction-card-md-clip" data-full={full ? "1" : "0"}>
+            <div
+              className="compaction-card-md"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content || "") }}
+            />
+            <button
+              type="button"
+              className="compaction-card-more"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleFull();
+              }}
+            >
+              {full
+                ? text("Collapse", "收起")
+                : text("… Show all", "… 展开全部")}
+            </button>
           </div>
         </div>
       </div>

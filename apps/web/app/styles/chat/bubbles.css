@@ -117,18 +117,6 @@
   color: var(--text-faint, var(--text-muted));
   text-align: center;
 }
-.compaction-card-fold {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 240ms ease;
-}
-.message.compaction-card[data-open="1"] .compaction-card-fold {
-  grid-template-rows: 1fr;
-}
-.compaction-card-fold-inner {
-  overflow: hidden;
-  min-height: 0;
-}
 .compaction-card-body {
   margin-top: 6px;
   padding: 8px 12px;
@@ -137,8 +125,11 @@
   background: var(--bg-subtle, transparent);
 }
 .compaction-card-md-clip {
+  --comp-md-lh: 20px;
   position: relative;
-  max-height: 10.5em;
+  font-size: 13px;
+  line-height: var(--comp-md-lh);
+  max-height: calc(var(--comp-md-lh) * 7);
   overflow: hidden;
   transition: max-height 240ms ease;
 }
@@ -149,24 +140,50 @@
   content: "";
   position: absolute;
   inset: auto 0 0;
-  height: 2.2em;
+  height: var(--comp-md-lh);
   pointer-events: none;
-  background: linear-gradient(transparent, var(--bg-subtle, var(--bg)));
+  background: linear-gradient(90deg, transparent 10%, var(--bg-subtle, var(--bg)) 55%);
 }
 .compaction-card-md {
   font-size: 13px;
-  line-height: 1.5;
+  line-height: var(--comp-md-lh, 20px);
   color: var(--text-muted);
 }
+.compaction-card-md-clip:not([data-full="1"]) .compaction-card-md {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 7;
+  overflow: hidden;
+}
+.compaction-card-md * {
+  line-height: inherit;
+}
+.compaction-card-md > :first-child {
+  margin-top: 0;
+}
+.compaction-card-md > :last-child {
+  margin-bottom: 0;
+}
 .compaction-card-more {
-  display: block;
-  margin-top: 6px;
   border: 0;
   background: transparent;
   padding: 0;
   font-size: 11px;
+  line-height: var(--comp-md-lh, 20px);
   color: var(--text-faint, var(--text-muted));
   cursor: pointer;
+}
+.compaction-card-md-clip:not([data-full="1"]) .compaction-card-more {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  padding-left: 1.5em;
+  background: linear-gradient(90deg, transparent, var(--bg-subtle, var(--bg)) 28%);
+}
+.compaction-card-md-clip[data-full="1"] .compaction-card-more {
+  display: block;
+  margin-top: 8px;
 }
 .compaction-orig-toggle {
   display: block;
@@ -198,7 +215,6 @@
   overflow-anchor: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  .compaction-card-fold,
   .compaction-card-md-clip,
   .compaction-orig-fold {
     transition: none;
