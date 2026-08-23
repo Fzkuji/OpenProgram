@@ -26,6 +26,11 @@ export type RuntimeConclusion = {
 };
 
 const RUNNING = new Set(["pending", "running", "streaming", "cancelling"]);
+const WORKFLOW_FNS = new Set(["auto_workflow", "agentic_workflow"]);
+
+function isWorkflowName(fnName: string): boolean {
+  return WORKFLOW_FNS.has(fnName);
+}
 
 function epochMs(value: number): number {
   return value > 1e12 ? value : value * 1000;
@@ -85,7 +90,7 @@ function workflowPayload(output: unknown): Record<string, unknown> | null {
 
 function resolvedStatus(input: RuntimeSummaryInput): string {
   const outer = (input.status || input.tree?.status || "").toLowerCase();
-  if (RUNNING.has(outer) || input.fnName !== "agentic_workflow") return outer;
+  if (RUNNING.has(outer) || !isWorkflowName(input.fnName)) return outer;
 
   const payload = workflowPayload(input.tree?.output);
   const inner = String(payload?.status || "").toLowerCase();
@@ -104,7 +109,7 @@ function counted(noun: string, count: number): string {
 
 /** Render the persisted backend handoff; this layer never starts a model call. */
 export function runtimeConclusion(input: RuntimeSummaryInput): RuntimeConclusion | null {
-  if (input.fnName !== "agentic_workflow") return null;
+  if (!isWorkflowName(input.fnName)) return null;
   const text = input.text ?? ((en: string) => en);
   const rawStatus = resolvedStatus(input);
   if (RUNNING.has(rawStatus)) return null;
@@ -225,7 +230,7 @@ export function runtimeSummaryLabel(input: RuntimeSummaryInput): string {
             ? text("Error", "出错")
             : text("Completed", "已完成");
   const steps = countRuntimeSteps(input.tree);
-  const payload = input.fnName === "agentic_workflow"
+  const payload = isWorkflowName(input.fnName)
     ? workflowPayload(input.tree?.output)
     : null;
   const handoffPreview = payload?.summary_kind === "workflow_handoff_v1"
