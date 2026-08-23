@@ -643,9 +643,9 @@ export function MessageList() {
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const chatKey = useSessionStore((s) => s.activeChatKey);
   const ids = useMessageIds(sessionId);
-  const [, origTick] = useState(0);
+  const [origTick, setOrigTick] = useState(0);
   useEffect(() => {
-    const fn = () => origTick((n) => n + 1);
+    const fn = () => setOrigTick((n) => n + 1);
     originalsSubs.add(fn);
     return () => { originalsSubs.delete(fn); };
   }, []);
