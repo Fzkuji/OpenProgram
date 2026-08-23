@@ -6,10 +6,7 @@ import {
   CHAT_AT_BOTTOM_EPSILON,
   chatAtBottomSlack,
   isChatAtBottom,
-  JUMP_MAX_S,
-  jumpMotionPlan,
-  jumpScrollTopAt,
-  jumpTraveled,
+  CHAT_SMOOTH_SCROLL_FALLBACK_MS,
   remainingScroll,
 } from "../lib/state/chat-scroll.ts";
 
@@ -70,21 +67,20 @@ test("jump button fades out instead of unmounting immediately", () => {
   assert.match(jumpCss, /280ms/);
 });
 
-test("short hops finish quickly and stay below the time cap", () => {
-  const short = jumpMotionPlan(400);
-  assert.ok(short.duration < JUMP_MAX_S);
-  assert.ok(short.duration >= 0.5);
-  assert.ok(Math.abs(jumpTraveled(short, short.duration) - 400) < 1);
-});
-
-test("long hops raise cruise speed and still finish in JUMP_MAX_S", () => {
-  const mid = jumpMotionPlan(8000);
-  const long = jumpMotionPlan(200000);
-  assert.equal(long.duration, JUMP_MAX_S);
-  assert.ok(long.vPeak > mid.vPeak);
-  assert.ok(long.tCruise > 0);
-  assert.equal(jumpScrollTopAt(0, 200000, 0), 0);
-  assert.ok(Math.abs(jumpScrollTopAt(0, 200000, long.duration) - 200000) < 2);
+test("jump uses the same native smooth scroll as the left rail", () => {
+  const scroll = readFileSync(
+    new URL("../lib/state/chat-scroll.ts", import.meta.url),
+    "utf8",
+  );
+  const rail = readFileSync(
+    new URL("../components/chat/messages/message-rail.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(scroll, /behavior: "smooth"/);
+  assert.match(scroll, /whenAreaScrollSettles/);
+  assert.equal(CHAT_SMOOTH_SCROLL_FALLBACK_MS, 700);
+  assert.match(rail, /whenAreaScrollSettles/);
+  assert.match(rail, /behavior: "smooth"/);
 });
 
 test("jump keeps the button until the ride finishes", () => {

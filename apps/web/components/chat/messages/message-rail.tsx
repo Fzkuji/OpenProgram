@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { useSessionStore } from "@/lib/session-store";
+import { whenAreaScrollSettles } from "@/lib/state/chat-scroll";
 import type { TurnFileSummary } from "@/lib/session-store/types";
 import { Markdown } from "@/lib/format-utils/markdown";
 import { parseAttachments, AttachmentChips } from "./user-attachments";
@@ -145,20 +146,9 @@ function scrollToMsg(id: string): void {
 
   const area = document.getElementById("chatArea");
   el.scrollIntoView({ behavior: "smooth", block: "start" });
-  // 等平滑滚动停下再闪：优先 scrollend，兜底 700ms 超时。
-  if (area) {
-    let done = false;
-    const fire = () => {
-      if (done) return;
-      done = true;
-      area.removeEventListener("scrollend", fire);
-      flash();
-    };
-    area.addEventListener("scrollend", fire, { once: true });
-    window.setTimeout(fire, 700);
-  } else {
-    window.setTimeout(flash, 400);
-  }
+  // 等平滑滚动停下再闪：和 Jump to latest 同一条 scrollend / 700ms。
+  if (area) whenAreaScrollSettles(area, flash);
+  else window.setTimeout(flash, 400);
 }
 
 /** 单条消息的预览卡 — 只有悬停/聚焦那条才渲染（惰性解析附件）。 */

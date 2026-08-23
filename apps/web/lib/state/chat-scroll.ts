@@ -151,128 +151,43 @@ export function readComposerHeight(): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** Time-boxed subway hop.
+/** Same settle window as the left message rail. */
+export const CHAT_SMOOTH_SCROLL_FALLBACK_MS = 700;
 
-Ease in and out last a fixed time. Cruise speed is whatever the
-remaining distance needs. Duration grows with distance, then hard-caps
-so a jump always finishes in ``JUMP_MAX_S`` — never a ten-second crawl.
-*/
-export const JUMP_EASE_S = 0.4;
-export const JUMP_MIN_S = 0.55;
-export const JUMP_MAX_S = 3.5;
-/** Comfortable cruise used only to pick duration before the cap. */
-export const JUMP_COMFORT_PX_S = 10000;
-
-export type JumpMotionPlan = {
-  distance: number;
-  duration: number;
-  kind: "triangle" | "trapezoid";
-  vPeak: number;
-  tAccel: number;
-  tCruise: number;
-  tDecel: number;
-};
-
-export function jumpMotionPlan(distance: number): JumpMotionPlan {
-  const s = Math.abs(distance);
-  if (s < 1) {
-    return {
-      distance: 0,
-      duration: 0,
-      kind: "triangle",
-      vPeak: 0,
-      tAccel: 0,
-      tCruise: 0,
-      tDecel: 0,
-    };
-  }
-  let duration = 2 * JUMP_EASE_S + s / JUMP_COMFORT_PX_S;
-  duration = Math.min(JUMP_MAX_S, Math.max(JUMP_MIN_S, duration));
-  if (duration <= 2 * JUMP_EASE_S + 1e-6) {
-    const tAccel = duration / 2;
-    const vPeak = s / tAccel;
-    return {
-      distance: s,
-      duration,
-      kind: "triangle",
-      vPeak,
-      tAccel,
-      tCruise: 0,
-      tDecel: tAccel,
-    };
-  }
-  const tAccel = JUMP_EASE_S;
-  const tCruise = duration - 2 * tAccel;
-  const vPeak = s / (duration - tAccel);
-  return {
-    distance: s,
-    duration,
-    kind: "trapezoid",
-    vPeak,
-    tAccel,
-    tCruise,
-    tDecel: tAccel,
+/** Fire once the area's native smooth scroll has stopped. */
+export function whenAreaScrollSettles(
+  area: HTMLElement,
+  onDone: () => void,
+  fallbackMs = CHAT_SMOOTH_SCROLL_FALLBACK_MS,
+): () => void {
+  let done = false;
+  const fire = () => {
+    if (done) return;
+    done = true;
+    area.removeEventListener("scrollend", fire);
+    window.clearTimeout(tid);
+    onDone();
+  };
+  area.addEventListener("scrollend", fire, { once: true });
+  const tid = window.setTimeout(fire, fallbackMs);
+  return () => {
+    done = true;
+    area.removeEventListener("scrollend", fire);
+    window.clearTimeout(tid);
   };
 }
 
-export function jumpTraveled(plan: JumpMotionPlan, elapsed: number): number {
-  if (plan.duration <= 0 || plan.tAccel <= 0) return plan.distance;
-  const t = Math.min(plan.duration, Math.max(0, elapsed));
-  const a = plan.vPeak / plan.tAccel;
-  if (t <= plan.tAccel) return 0.5 * a * t * t;
-  const sAccel = 0.5 * plan.vPeak * plan.tAccel;
-  if (t <= plan.tAccel + plan.tCruise) {
-    return sAccel + plan.vPeak * (t - plan.tAccel);
-  }
-  const td = t - plan.tAccel - plan.tCruise;
-  const sCruise = plan.vPeak * plan.tCruise;
-  return sAccel + sCruise + plan.vPeak * td - 0.5 * a * td * td;
-}
-
-export function jumpScrollDuration(distance: number): number {
-  return jumpMotionPlan(distance).duration * 1000;
-}
-
-export function jumpScrollTopAt(from: number, to: number, elapsedSec: number): number {
-  const dist = to - from;
-  if (dist === 0) return to;
-  const plan = jumpMotionPlan(dist);
-  const traveled = jumpTraveled(plan, elapsedSec);
-  const sign = dist < 0 ? -1 : 1;
-  return from + sign * Math.min(Math.abs(dist), traveled);
-}
-
-/** Animate a scroller to the latest message. Returns a cancel function. */
+/** Native smooth scroll — same curve as the left rail ticks. */
 export function animateJumpToLatest(
-  area: { scrollTop: number; scrollHeight: number; clientHeight: number },
+  area: HTMLElement,
   onDone?: () => void,
 ): () => void {
-  const from = area.scrollTop;
   const to = Math.max(0, area.scrollHeight - area.clientHeight);
-  const dist = to - from;
-  if (Math.abs(dist) < 2) {
-    area.scrollTop = to;
+  if (Math.abs(area.scrollTop - to) < 2) {
     onDone?.();
     return () => {};
   }
-  const plan = jumpMotionPlan(dist);
-  const t0 = performance.now();
-  let raf = 0;
-  let cancelled = false;
-  const step = (now: number) => {
-    if (cancelled) return;
-    const elapsed = (now - t0) / 1000;
-    area.scrollTop = jumpScrollTopAt(from, to, elapsed);
-    if (elapsed < plan.duration) {
-      raf = requestAnimationFrame(step);
-      return;
-    }
-    area.scrollTop = to;
-    onDone?.();
-  };
-  raf = requestAnimationFrame(step);
-  return () => {
-    cancelled = true;
-    if (raf) cancelAnimationFrame(raf);
-  };
+  const cancel = whenAreaScrollSettles(area, () => onDone?.());
+  area.scrollTo({ top: to, behavior: "smooth" });
+  return cancel;
 }
