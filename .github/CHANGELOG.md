@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 No unreleased changes.
 
+## [0.7.2] - 2026-08-24
+
+### Changed
+
+- Rebuilt the compaction summary card and originals fold: centered meta row, unified Show all / Collapse, 900ms height and opacity, scroll-first hide, half-viewport peek, and collapse without a first-frame flash.
+- Bookmarks bar folders now open on click like Chrome, then switch on hover while armed; the bar height and background match the address toolbar.
+
+### Fixed
+
+- Compact now triggers from the rendered occupancy and reports compacted tokens from the rendered branch instead of a fake compact path.
+- The message rail stays in sync with hidden compacted turns and fades only the overflowing edge.
+
 ## [0.7.1] - 2026-08-19
 
 ### Changed
