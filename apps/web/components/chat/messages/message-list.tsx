@@ -224,6 +224,18 @@ function pinWhile(el: Element, top: number, ms: number): void {
   requestAnimationFrame(tick);
 }
 
+function pinBottomWhile(el: Element, ms: number): void {
+  const area = document.getElementById("chatArea");
+  if (!area) return;
+  const y = el.getBoundingClientRect().bottom;
+  const t0 = performance.now();
+  const tick = () => {
+    area.scrollTop += el.getBoundingClientRect().bottom - y;
+    if (performance.now() - t0 < ms) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
 function toggleOriginals(cardId: string): void {
   const opening = !originalsOpen.has(cardId);
   const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v);
@@ -312,8 +324,51 @@ function CompactionCard({ msg }: { msg: ChatMsg }) {
     ? text("Hide original messages", "隐藏原始消息")
     : text("Show original messages", "显示原始消息");
   const setCardFull = (next: boolean) => {
-    if (full && !next && cardRef.current) easeElTopIntoView(cardRef.current);
-    setFull(next);
+    const card = cardRef.current;
+    const clip = card?.querySelector(".compaction-card-md-clip") as HTMLElement | null;
+    if (!clip || prefersReducedMotion()) {
+      setFull(next);
+      if (!next && card) easeElTopIntoView(card);
+      return;
+    }
+    if (clip.dataset.anim === "1" || next === full) return;
+    const ms = 900;
+    const start = clip.getBoundingClientRect().height;
+    clip.dataset.anim = "1";
+    clip.style.transition = "none";
+    clip.style.maxHeight = `${start}px`;
+    let end = start;
+    if (next) {
+      clip.style.maxHeight = "none";
+      end = clip.scrollHeight;
+      clip.style.maxHeight = `${start}px`;
+    } else {
+      const lh = parseFloat(getComputedStyle(clip).getPropertyValue("--comp-md-lh")) || 25.5;
+      end = lh * 7;
+    }
+    if (Math.abs(end - start) < 1) {
+      delete clip.dataset.anim;
+      clip.style.maxHeight = "";
+      clip.style.transition = "";
+      setFull(next);
+      if (!next && card) easeElTopIntoView(card);
+      return;
+    }
+    const area = document.getElementById("chatArea");
+    if (!next && card && area && card.getBoundingClientRect().top < area.getBoundingClientRect().top) {
+      pinBottomWhile(clip, ms);
+    }
+    clip.getBoundingClientRect();
+    clip.style.transition = `max-height ${ms}ms ease`;
+    clip.style.maxHeight = `${end}px`;
+    window.setTimeout(() => {
+      clip.style.transition = "none";
+      clip.style.maxHeight = "";
+      delete clip.dataset.anim;
+      setFull(next);
+      if (!next && card) easeElTopIntoView(card);
+      requestAnimationFrame(() => { clip.style.transition = ""; });
+    }, ms);
   };
   return (
     <>

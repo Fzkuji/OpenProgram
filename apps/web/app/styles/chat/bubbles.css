@@ -143,12 +143,11 @@
   line-height: var(--comp-md-lh);
   max-height: calc(var(--comp-md-lh) * 7);
   overflow: hidden;
-  transition: max-height 240ms ease;
 }
 .compaction-card-md-clip[data-full="1"] {
   max-height: 200rem;
 }
-.compaction-card-md-clip:not([data-full="1"])::after {
+.compaction-card-md-clip:not([data-full="1"]):not([data-anim="1"])::after {
   content: "";
   position: absolute;
   right: 0;
@@ -168,7 +167,7 @@
 .compaction-card-md {
   color: var(--text-muted);
 }
-.compaction-card-md-clip:not([data-full="1"]) .compaction-card-md {
+.compaction-card-md-clip:not([data-full="1"]):not([data-anim="1"]) .compaction-card-md {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 7;
