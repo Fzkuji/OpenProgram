@@ -651,8 +651,24 @@ async function checkPopupCreatesIndependentRendererTab() {
     { openerId: "popup-opener", url: "https://popup.example/path" },
   ]);
 
+  opener.view.webContents.windowOpen?.({ url: "http://popup.example/plain-http" });
+  assert.deepEqual(plain(win.sent.at(-1)), [
+    "webtab:popup",
+    { openerId: "popup-opener", url: "http://popup.example/plain-http" },
+  ]);
   const sentBeforeRejectedPopup = win.sent.length;
-  opener.view.webContents.windowOpen?.({ url: "file:///Users/test/private.txt" });
+  for (const url of [
+    "file:///Users/test/private.txt",
+    "javascript:alert(1)",
+    "data:text/html,private",
+    "blob:https://popup.example/private",
+    "mailto:test@example.com",
+    "ftp://popup.example/private",
+    "about:blank",
+    "not a url",
+  ]) {
+    opener.view.webContents.windowOpen?.({ url });
+  }
   assert.equal(
     win.sent.length,
     sentBeforeRejectedPopup,
@@ -679,6 +695,8 @@ async function checkPopupCreatesIndependentRendererTab() {
   const reload = menuTemplate.find((item) => item.label === "Reload");
   assert.ok(openLink && copyLink && back && forward && reload,
     "link context menu must expose link and page navigation actions");
+  assert.equal(back.enabled, true);
+  assert.equal(forward.enabled, true);
   openLink.click();
   assert.deepEqual(plain(win.sent.at(-1)), [
     "webtab:popup",
@@ -713,24 +731,74 @@ async function checkPopupCreatesIndependentRendererTab() {
       canSelectAll: true,
     },
   });
-  for (const label of ["Undo", "Redo", "Cut", "Copy", "Paste", "Select All"]) {
-    assert.ok(menuTemplate.some((item) => item.label === label),
+  const editActions = [
+    ["Undo", "undo"],
+    ["Redo", "redo"],
+    ["Cut", "cut"],
+    ["Copy", "copy"],
+    ["Paste", "paste"],
+    ["Select All", "selectAll"],
+  ];
+  for (const [label] of editActions) {
+    const item = menuTemplate.find((candidate) => candidate.label === label);
+    assert.ok(item,
       `editable context menu must include ${label}`);
+    assert.equal(item.enabled, true, `${label} must follow its true edit flag`);
+    item.click();
   }
-  menuTemplate.find((item) => item.label === "Copy").click();
-  assert.equal(controlled.editCalls.copy, 1);
-
-  controlled.emitWebContents("context-menu", {}, {
-    linkURL: "javascript:alert(1)",
-    selectionText: "",
-    isEditable: false,
-    editFlags: {},
+  assert.deepEqual(plain(controlled.editCalls), {
+    undo: 1,
+    redo: 1,
+    cut: 1,
+    copy: 1,
+    paste: 1,
+    selectAll: 1,
   });
-  assert.equal(
-    menuTemplate.some((item) => item.label === "Open Link in New Tab"),
-    false,
-    "non-http(s) links must not receive a new-tab action",
-  );
+
+  const mixedEditFlags = {
+    canUndo: false,
+    canRedo: true,
+    canCut: false,
+    canCopy: true,
+    canPaste: false,
+    canSelectAll: true,
+  };
+  controlled.emitWebContents("context-menu", {}, {
+    linkURL: "",
+    selectionText: "selected",
+    isEditable: true,
+    editFlags: mixedEditFlags,
+  });
+  for (const [label, method] of editActions) {
+    assert.equal(
+      menuTemplate.find((item) => item.label === label)?.enabled,
+      mixedEditFlags[`can${method[0].toUpperCase()}${method.slice(1)}`],
+      `${label} must follow its false/mixed edit flag`,
+    );
+  }
+
+  for (const linkURL of [
+    "file:///Users/test/private.txt",
+    "javascript:alert(1)",
+    "data:text/html,private",
+    "blob:https://popup.example/private",
+    "mailto:test@example.com",
+    "ftp://popup.example/private",
+    "about:blank",
+    "not a url",
+  ]) {
+    controlled.emitWebContents("context-menu", {}, {
+      linkURL,
+      selectionText: "",
+      isEditable: false,
+      editFlags: {},
+    });
+    assert.equal(
+      menuTemplate.some((item) => item.label === "Open Link in New Tab"),
+      false,
+      `${linkURL} must not receive a new-tab action`,
+    );
+  }
 
   controlled.emitWebContents("context-menu", {}, {
     linkURL: "https://popup.example/stale",
@@ -739,21 +807,72 @@ async function checkPopupCreatesIndependentRendererTab() {
     editFlags: {},
   });
   const staleOpenLink = menuTemplate.find((item) => item.label === "Open Link in New Tab");
+  const staleCopyLink = menuTemplate.find((item) => item.label === "Copy Link Address");
+  const staleReload = menuTemplate.find((item) => item.label === "Reload");
+  const destinationWin = fakeWindow(42);
+  const destinationCtx = registerContext("popup-destination", destinationWin);
+  ctx.views.delete("popup-opener");
+  opener.ownerId = destinationCtx.id;
+  destinationCtx.views.set("popup-opener", opener);
+  const beforeTransferredMenu = {
+    sent: win.sent.length,
+    clipboard: clipboardWrites.length,
+    reload: controlled.nativeCalls.reload,
+  };
+  staleOpenLink.click();
+  staleCopyLink.click();
+  staleReload.click();
+  assert.deepEqual(
+    plain({
+      sent: win.sent.length,
+      clipboard: clipboardWrites.length,
+      reload: controlled.nativeCalls.reload,
+    }),
+    beforeTransferredMenu,
+    "a menu opened before owner transfer must be inert after the record moves",
+  );
+
+  destinationCtx.views.delete("popup-opener");
+  opener.ownerId = ctx.id;
+  ctx.views.set("popup-opener", opener);
+  controlled.emitWebContents("context-menu", {}, {
+    linkURL: "https://popup.example/destroyed",
+    selectionText: "",
+    isEditable: false,
+    editFlags: {},
+  });
+  const destroyedActions = [
+    menuTemplate.find((item) => item.label === "Open Link in New Tab"),
+    menuTemplate.find((item) => item.label === "Copy Link Address"),
+    menuTemplate.find((item) => item.label === "Reload"),
+  ];
+  const beforeDestroyedMenu = {
+    sent: win.sent.length,
+    clipboard: clipboardWrites.length,
+    reload: controlled.nativeCalls.reload,
+  };
+  controlled.emitWebContents("destroyed");
+  for (const action of destroyedActions) action.click();
+  assert.deepEqual(
+    plain({
+      sent: win.sent.length,
+      clipboard: clipboardWrites.length,
+      reload: controlled.nativeCalls.reload,
+    }),
+    beforeDestroyedMenu,
+    "menu actions must be inert after the exact WebContents is destroyed",
+  );
 
   ctx.views.delete("popup-opener");
   const sentBeforeDetachedOpener = win.sent.length;
-  staleOpenLink.click();
-  assert.equal(
-    win.sent.length,
-    sentBeforeDetachedOpener,
-    "a context menu from a record no longer owned by this window must be inert",
-  );
   opener.view.webContents.windowOpen?.({ url: "https://detached.example/" });
   assert.equal(
     win.sent.length,
     sentBeforeDetachedOpener,
     "a record no longer owned by this window must not emit popup IPC",
   );
+  hooks.windows.delete(destinationCtx.id);
+  hooks.contextsByBrowserWindowId.delete(destinationWin.id);
 }
 
 function registerContext(id, win) {
