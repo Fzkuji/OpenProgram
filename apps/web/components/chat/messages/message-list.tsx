@@ -200,6 +200,10 @@ function scrollChatTo(el: Element | null, pad: number, smooth: boolean): void {
   // A 40k-px smooth jump is dropped; hop to the last viewport, then ease in.
   if (smooth && Math.abs(top - area.scrollTop) > area.clientHeight * 2) {
     area.scrollTo({ top: Math.max(0, top - area.clientHeight), behavior: "auto" });
+    requestAnimationFrame(() => {
+      area.scrollTo({ top, behavior: "smooth" });
+    });
+    return;
   }
   area.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
 }
