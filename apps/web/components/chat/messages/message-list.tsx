@@ -538,23 +538,6 @@ export function MessageList() {
   const jumpHost = typeof document !== "undefined"
     ? document.getElementById("chatView")
     : null;
-  const [jumpShown, setJumpShown] = useState(false);
-  const [jumpLeaving, setJumpLeaving] = useState(false);
-  useEffect(() => {
-    const want = detached && ids.length > 0;
-    if (want) {
-      setJumpLeaving(false);
-      setJumpShown(true);
-      return;
-    }
-    if (!jumpShown) return;
-    setJumpLeaving(true);
-    const t = window.setTimeout(() => {
-      setJumpShown(false);
-      setJumpLeaving(false);
-    }, JUMP_LATEST_FADE_MS);
-    return () => window.clearTimeout(t);
-  }, [detached, ids.length, jumpShown]);
   // Only the LAST row's role matters here (see ``showPending`` below).
   // Subscribing to the whole ``messagesById`` map would re-render this
   // component — and re-map every id — on every single streaming delta,
@@ -572,6 +555,23 @@ export function MessageList() {
     ids.length,
     lastRole === "user",
   );
+  const [jumpShown, setJumpShown] = useState(false);
+  const [jumpLeaving, setJumpLeaving] = useState(false);
+  useEffect(() => {
+    const want = detached && ids.length > 0;
+    if (want) {
+      setJumpLeaving(false);
+      setJumpShown(true);
+      return;
+    }
+    if (!jumpShown) return;
+    setJumpLeaving(true);
+    const t = window.setTimeout(() => {
+      setJumpShown(false);
+      setJumpLeaving(false);
+    }, JUMP_LATEST_FADE_MS);
+    return () => window.clearTimeout(t);
+  }, [detached, ids.length, jumpShown]);
 
   // Parent-return actions: once the reload has rows on screen, reveal the
   // original sub-agent timeline row. Collapsed strips unmount their children,

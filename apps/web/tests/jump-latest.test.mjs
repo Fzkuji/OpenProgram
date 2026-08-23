@@ -85,3 +85,10 @@ test("jump keeps the button until the ride finishes", () => {
   assert.doesNotMatch(jump, /behavior: "smooth"/);
   assert.match(messageList, /Stay visible until the ease-in-out ride finishes/);
 });
+
+test("MessageList reads detached only after useChatAreaStick", () => {
+  const list = messageList.slice(messageList.indexOf("export function MessageList"));
+  const stick = list.indexOf("useChatAreaStick(");
+  const fade = list.indexOf("const want = detached");
+  assert.ok(stick >= 0 && fade > stick, "detached fade must follow useChatAreaStick");
+});
