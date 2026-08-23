@@ -1,11 +1,11 @@
 """turn.stop gate — hook-driven continuation after a finished turn.
 
-``process_user_turn`` calls :func:`continue_stop_hook_turns` after the
-goal loop has released the turn. The gate receives a ``turn.stop`` event;
+``process_user_turn`` calls :func:`continue_stop_hook_turns` after a normal
+turn. The gate receives a ``turn.stop`` event;
 a deny reason launches one more continuation turn (built like a goal
 continuation: ``dataclasses.replace`` with ``source="hook_continue"`` and
-``INHERIT_PARENT``), then the goal judgment and the gate run again on the
-new result. Head movement stays with the normal TurnWriter path inside
+``INHERIT_PARENT``), then the gate runs again on the new result. Head
+movement stays with the normal TurnWriter path inside
 ``run_turn`` — this module never touches session heads.
 
 Runaway protection is the ``stop_hook_active`` flag protocol (same as
@@ -14,18 +14,14 @@ Claude Code / Codex stop hooks — no numeric cap): the payload carries
 it already forced a continuation and is expected to allow the stop
 instead of looping forever. Failed or cancelled turns return without
 asking the gate, and the user's interrupt reaches every continuation.
-Sessions with a session goal never enter this gate — the goal loop is
-their sole stop decider (see ``process_user_turn``).
+Goal Workflow rounds do not enter this top-level gate.
 """
 from __future__ import annotations
 
-import logging
 from dataclasses import replace
 from typing import Any, Callable, Optional
 
 from openprogram.agent.dispatcher.types import INHERIT_PARENT
-
-_log = logging.getLogger(__name__)
 
 LAST_TEXT_MAX_CHARS = 4000
 
@@ -46,13 +42,12 @@ def continue_stop_hook_turns(
     result: Any,
     *,
     run_turn: Callable,
-    goal_continue: Optional[Callable] = None,
     on_event: Optional[Callable] = None,
     cancel_event: Any = None,
 ) -> Any:
     """Ask the ``turn.stop`` gate; while denied, run one more turn via
-    ``run_turn`` (the dispatcher's single-turn primitive), re-judge the
-    goal via ``goal_continue``, and ask again. No numeric cap — the
+    ``run_turn`` (the dispatcher's single-turn primitive) and ask again.
+    No numeric cap — the
     ``stop_hook_active`` flag tells the hook it already forced a
     continuation. Returns the LAST turn's result."""
     from openprogram.events import get_event_bus, make_event
@@ -97,11 +92,3 @@ def continue_stop_hook_turns(
                           cancel_event=cancel_event)
         used += 1
         prev_req = next_req
-        if goal_continue is not None and not getattr(result, "failed", False):
-            try:
-                result = goal_continue(next_req, result, run_turn=run_turn,
-                                       on_event=on_event,
-                                       cancel_event=cancel_event)
-            except Exception:
-                _log.warning("goal continuation after hook turn failed for "
-                             "session %s", next_req.session_id, exc_info=True)

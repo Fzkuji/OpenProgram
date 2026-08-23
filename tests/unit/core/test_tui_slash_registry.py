@@ -66,6 +66,37 @@ def test_invoke_local_carries_marker_and_raw_args(clean_registry):
     assert res.raw_args == "glm-4.7"
 
 
+def test_rich_repl_goal_invokes_the_public_workflow(clean_registry, monkeypatch):
+    import openprogram.programs.workflow.goal as goal_pkg
+
+    calls = []
+    runtime = object()
+    monkeypatch.setattr(
+        goal_pkg,
+        "goal",
+        lambda **kwargs: calls.append(kwargs) or "finished",
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.run_control.set_current_session_id",
+        lambda _sid: "token",
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.run_control.reset_current_session_id",
+        lambda _token: None,
+    )
+
+    console = _console()
+    handlers._handle_goal(["tests", "pass"], console, runtime, "s1")
+
+    assert calls == [{
+        "prompt": "tests pass",
+        "condition": "tests pass",
+        "context_mode": "session",
+        "runtime": runtime,
+    }]
+    assert "finished" in console.export_text()
+
+
 def test_local_action_dispatch(clean_registry):
     console = _console()
     out = handlers._handle_slash("/session", console, None,

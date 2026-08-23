@@ -1,26 +1,21 @@
-"""Reusable Goal Workflow and the persistent ``/goal`` session integration.
+"""The single Goal Workflow and its ``/goal`` command adapter.
 
-``/goal <condition>`` stores a goal in the session meta. After every
-completed turn the dispatcher asks :func:`continue_goal_turns` whether
-the goal is met; while it is not (and no stop rule fires) the loop
-launches a follow-up turn (``source="goal_continue"``). Every
-continuation turn is persisted, committed and compacted like any
-user-sent turn.
+Programs and Python call :func:`goal` with isolated pre-call context.
+``/goal <condition>`` invokes the same function with the current session
+view as initial evidence. The function owns refinement, work rounds,
+judgment, user questions, state writes and terminal behavior.
 
 Evaluation is one decision agent turn: :func:`judge_goal` (prompt in
 its docstring) reads the session's compacted context view plus the
 goal text and answers strict JSON
 ``{"met", "reason", "need_user", "question"}``. Only its "met" counts
-as completion. ``goal()`` is the public Workflow entry that runs
-agent work and reuses this judge. Session ``/goal`` is the same
-Workflow adapted onto the chat turn lifecycle. Deterministic control
-flow — retry accounting, stop rules, budgets, state writes — is split as
+as completion. Deterministic responsibilities are split as
 
 * ``goal``: public :func:`goal` entry
-* ``command``: ``/goal`` set / clear / status
+* ``command``: ``/goal`` parsing plus clear / status
 * ``judge``: :func:`judge_goal` and :func:`evaluate_goal`
-* ``refinement``: background spec refinement after /goal set
-* ``loop``: :func:`continue_goal_turns` and its stop rules
+* ``refinement``: the one refinement operation used by :func:`goal`
+* ``loop``: deterministic transitions and next-round instructions
 * ``state``: goal meta read / write, stop-rule constants, event fan-out
 * ``notices``: transcript system rows, terminal finisher
 
@@ -61,7 +56,6 @@ from openprogram.programs.workflow.goal.judge import (  # noqa: F401
 )
 from openprogram.programs.workflow.goal.state import (  # noqa: F401
     JUDGE_PARSE_FAILURE_LIMIT,
-    QUESTION_MIN_INTERVAL_SECONDS,
     STALL_ROUND_LIMIT,
     _CLEAR_VERBS,
     _db,
@@ -73,24 +67,18 @@ from openprogram.programs.workflow.goal.state import (  # noqa: F401
 from openprogram.programs.workflow.goal.notices import (  # noqa: F401
     _TERMINAL_LABELS,
     _emit_goal_notice,
-    _emit_goal_question,
     _finish,
 )
 from openprogram.programs.workflow.goal.refinement import (  # noqa: F401
     REFINE_TOOLS,
-    _adopt_refinement,
-    _emit_goal_spec_notice,
     _parse_refinement,
     _run_refine_turn,
-    _start_spec_refinement,
-    refine_goal_spec,
     refine_goal_spec_candidate,
 )
 from openprogram.programs.workflow.goal.loop import (  # noqa: F401
-    _inherit_parent,
-    _tools_with_forced_web_search,
-    apply_callable_verdict,
-    continue_goal_turns,
+    apply_checklist_stall,
+    apply_goal_verdict,
+    next_work_prompt,
 )
 from openprogram.programs.workflow.goal.command import (  # noqa: F401
     _status_text,

@@ -42,10 +42,9 @@ EVENTS: dict[str, EventSpec] = {
         kind="gate",
         payload_doc="{session_id, user_msg_id, assistant_msg_id, "
                     "last_text: str (≤4000 chars), stop_hook_active: bool} — "
-                    "asked after a completed turn on sessions WITHOUT a "
-                    "session goal (goal sessions stop only via their own "
-                    "goal loop / /goal clear); a deny reason launches one "
-                    "more continuation turn",
+                    "asked after a completed top-level chat turn; Goal "
+                    "Workflow rounds use their own completion judge instead; "
+                    "a deny reason launches one more continuation turn",
     ),
     "turn.start": EventSpec(
         kind="notify",

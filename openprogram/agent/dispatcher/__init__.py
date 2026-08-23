@@ -180,74 +180,26 @@ def process_user_turn(
     on_event: Optional[EventCallback] = None,
     cancel_event: Optional[threading.Event] = None,
 ) -> TurnResult:
-    """One full agent turn, then the session-goal continuation loop.
+    """Run one full agent turn, then the ordinary ``turn.stop`` gate.
 
-    Every caller (webui / channels / CLI / job runner) enters here, so
-    an active session goal (``/goal``) is honoured no matter who
-    triggered the turn: after the turn — finalize (phase 6/7) included —
-    :func:`openprogram.programs.workflow.goal.continue_goal_turns` judges the goal
-    and, while unmet and under budget, keeps running follow-up turns
-    (``source="goal_continue"``). Each continuation runs through
-    :func:`_process_turn_once` like any other turn — its own
-    persistence, commits and compaction — never a nested
-    ``process_user_turn``, so the loop cannot recurse into itself.
-    Returns the LAST turn's result.
-
-    Sessions without an active goal pay one meta read and return the
-    single turn's result unchanged.
+    Goal is no longer a dispatcher-owned continuation mode. ``/goal`` and
+    Programs both invoke the single public Goal Workflow, whose own loop
+    owns every Goal round and completion decision.
     """
-    # Same-session spawned turns (goal decisions, task agents,
-    # send_message) are components inside someone else's turn, not the
-    # session's main line: they enter neither the goal loop nor the
-    # turn.stop gate. Without this, the goal decision turn itself got
-    # judged, which spawned another decision turn — recursion until the
-    # agentic-function nesting cap broke the chain.
+    # Same-session spawned turns are components inside another execution,
+    # so they do not enter the top-level turn.stop gate.
     if req.source == "agent_spawn":
         return _process_turn_once(
             req, on_event=on_event, cancel_event=cancel_event)
-    # Goal sessions never enter the turn.stop gate: the goal loop is the
-    # session's sole stop decider (the only external intervention is
-    # /goal clear), and the gate is the extension point for sessions
-    # WITHOUT a goal. Snapshot participation before the turn — a goal
-    # that ends (achieved/capped/error) during this round still counts
-    # as a goal session.
-    goal_session = False
-    try:
-        from openprogram.programs.workflow.goal import load_goal
-        _g = load_goal(req.session_id)
-        goal_session = bool(_g and _g.get("status") in ("active",
-                                                        "waiting_user"))
-    except Exception:
-        # No readable goal means this turn is treated as a plain session,
-        # which is the correct default for one that never had a goal.
-        _log.debug("goal state unreadable for session %s", req.session_id,
-                   exc_info=True)
     result = _process_turn_once(
         req, on_event=on_event, cancel_event=cancel_event)
-    continue_goal_turns = None
-    try:
-        from openprogram.programs.workflow.goal import continue_goal_turns
-        result = continue_goal_turns(
-            req, result, run_turn=_process_turn_once,
-            on_event=on_event, cancel_event=cancel_event)
-    except Exception:
-        # The goal loop must never lose a finished turn's result. A
-        # crash below still returns what the user's own turn produced.
-        _log.warning("goal continuation failed for session %s",
-                     req.session_id, exc_info=True)
-        return result
-    if goal_session:
-        return result
-    # turn.stop gate: hooks may deny the stop and force continuation
-    # turns (stop_hook.py) — sessions without a goal only. Runs after
-    # the turn finished; a crash below still returns the result.
+    # Hooks may deny the stop and force ordinary continuation turns.
     try:
         from openprogram.agent.dispatcher.stop_hook import (
             continue_stop_hook_turns,
         )
         return continue_stop_hook_turns(
             req, result, run_turn=_process_turn_once,
-            goal_continue=continue_goal_turns,
             on_event=on_event, cancel_event=cancel_event)
     except Exception:
         _log.warning("turn.stop hook continuation failed for session %s",

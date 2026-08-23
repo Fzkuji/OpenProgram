@@ -638,14 +638,12 @@ async def handle_chat(ws, cmd: dict):
         except Exception:
             pass
 
-    # Local builtin commands (kind="local" with a CALLABLE handler in the
-    # unified registry — /goal today): execute backend-side. A result
-    # with no ``send_text`` (status / clear) replies into the chat flow
-    # and skips the turn entirely; ``send_text`` (goal set) REPLACES the
-    # message text with the goal directive and falls through into the
-    # normal turn flow — the dispatcher's goal loop takes over after the
-    # turn. REPL marker-string builtins are never callable, and
-    # kind="prompt" commands keep their composer-side expansion path.
+    # Local builtin commands execute backend-side. Status/clear return a
+    # local reply and stop. A command may instead return one ``invoke``
+    # descriptor: dispatch that registered @agentic_function through the
+    # same forced-call boundary as Programs. /goal uses this path, so the
+    # command and form execute the same Goal Workflow rather than separate
+    # chat-turn and function loops.
     if text.startswith("/"):
         _local_res = None
         try:
@@ -674,6 +672,50 @@ async def handle_chat(ws, cmd: dict):
                              "command": _local_res.command_name,
                              "content": _reply_text},
                 }))
+            _invoke = _out.get("invoke")
+            if isinstance(_invoke, dict):
+                _name = str(_invoke.get("name") or "")
+                _kwargs = _invoke.get("kwargs")
+                if not _name or not isinstance(_kwargs, dict):
+                    await ws.send_text(json.dumps({
+                        "type": "chat_response",
+                        "data": {
+                            "type": "error",
+                            "session_id": session_id,
+                            "code": "invalid_local_invocation",
+                            "content": "Local command returned an invalid invocation.",
+                        },
+                    }))
+                    return
+                from openprogram.webui.routes.chat import (
+                    run_agentic_function_call,
+                )
+                _run = run_agentic_function_call(
+                    _name, _kwargs, session_id,
+                )
+                if "error" in _run:
+                    await ws.send_text(json.dumps({
+                        "type": "chat_response",
+                        "data": {
+                            "type": "error",
+                            "session_id": session_id,
+                            "code": _run.get("code") or "function_call_failed",
+                            "content": str(_run.get("error") or "Function call failed."),
+                        },
+                    }))
+                    return
+                await ws.send_text(json.dumps({
+                    "type": "chat_ack",
+                    "data": {
+                        "session_id": _run.get("session_id", session_id),
+                        "msg_id": _run.get("msg_id", ""),
+                        "execution_id": (
+                            _run.get("execution_id") or _run.get("msg_id", "")
+                        ),
+                        "function_run": True,
+                    },
+                }))
+                return
             _send_text = _out.get("send_text")
             if not _send_text:
                 return

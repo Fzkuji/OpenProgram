@@ -353,29 +353,3 @@ def test_stop_hook_failed_turn_skips_gate(_singleton_gates_clean):
     out = continue_stop_hook_turns(
         _stop_req(), result, run_turn=lambda req, **kw: _Result())
     assert out is result and asked == []
-
-
-def test_stop_hook_reruns_goal_judgment_after_continuation(_singleton_gates_clean):
-    from openprogram.agent.dispatcher.stop_hook import continue_stop_hook_turns
-
-    bus = _singleton_gates_clean
-    state = {"asked": 0}
-
-    def gate(ev):
-        state["asked"] += 1
-        return "继续" if state["asked"] == 1 else None
-
-    bus.subscribe_gate("turn.stop", gate)
-    goal_calls = []
-
-    def goal_continue(req, result, *, run_turn, on_event=None,
-                      cancel_event=None):
-        goal_calls.append(req)
-        return result
-
-    continue_stop_hook_turns(
-        _stop_req(), _Result(),
-        run_turn=lambda req, **kw: _Result(),
-        goal_continue=goal_continue)
-    assert len(goal_calls) == 1
-    assert goal_calls[0].source == "hook_continue"

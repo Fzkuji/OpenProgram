@@ -29,7 +29,7 @@ below and:
         web_search=False, timeout_s=None) -> str | dict
     agent(prompt, description="", agent_id="", start_from="clean",
           run_in_background=False, to="", archive_when_done=False) -> str
-    goal(prompt, condition, model="", effort="", max_rounds=10,
+    goal(prompt, condition, model="", effort="", max_rounds=None,
          timeout_s=None) -> str
     validate_and_retry(action: Callable, check: str, retry: Callable,
                        max_retries=2) -> str

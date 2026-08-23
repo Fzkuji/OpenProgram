@@ -18,9 +18,6 @@ _log = logging.getLogger(__name__)
 JUDGE_PARSE_FAILURE_LIMIT = 3
 # 连续 N 个续轮判定打勾数不涨 → 无进展停机(只读磨洋工守卫)。
 STALL_ROUND_LIMIT = 3
-# 提问限频：1 小时内最多问用户 1 次；超出的 needs_user 裁决降级为续轮。
-QUESTION_MIN_INTERVAL_SECONDS = 3600.0
-
 _CLEAR_VERBS = {"clear", "stop", "off", "cancel"}
 
 
@@ -33,7 +30,11 @@ def load_goal(session_id: str) -> Optional[dict]:
     """The session's goal dict, or ``None``. Re-read fresh each time so a
     ``/goal clear`` from another surface takes effect on the next check."""
     try:
-        sess = _goal._db().get_session(session_id) or {}
+        db = _goal._db()
+        invalidate = getattr(db, "invalidate_cache", None)
+        if callable(invalidate):
+            invalidate(session_id)
+        sess = db.get_session(session_id) or {}
         goal = (sess.get("extra_meta") or {}).get("goal")
         return dict(goal) if isinstance(goal, dict) else None
     except Exception:

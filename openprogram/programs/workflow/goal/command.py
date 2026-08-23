@@ -2,7 +2,6 @@
 the commands registry: set / status / clear against a session."""
 from __future__ import annotations
 
-import time
 from typing import Optional
 
 # Cross-function calls go through the package object so monkeypatches on
@@ -15,9 +14,8 @@ import openprogram.programs.workflow.goal as _goal
 def handle_goal_command(session_id: str, raw_args: str) -> dict:
     """Execute ``/goal <args>`` against a session.
 
-    Returns ``{"text": <display text>, "send_text": <directive or None>}``.
-    ``send_text`` is set only by the "set" form — the caller launches it
-    as a normal turn so the goal work starts immediately.
+    Set returns one invocation descriptor for the public ``goal()`` Workflow.
+    Status and clear remain local operations against that Workflow's state.
     """
     if not session_id:
         return {"text": "No active session.", "send_text": None}
@@ -35,27 +33,28 @@ def handle_goal_command(session_id: str, raw_args: str) -> dict:
         goal["status"] = "cleared"
         _goal.save_goal(session_id, goal)
         _goal._emit_goal_update(None, session_id, goal)
+        try:
+            from openprogram.agent.run_control import mark_cancelled
+
+            mark_cancelled(
+                session_id,
+                execution_id=str(goal.get("execution_id") or "") or None,
+            )
+        except Exception:
+            pass
         return {"text": "Goal cleared.", "send_text": None}
 
-    goal = {
-        "text": args,
-        "status": "active",
-        "created_at": time.time(),
-        "turns_used": 0,
-        "max_turns": _goal.default_max_turns(),
-        "last_reason": "",
-        "judge_parse_failures": 0,
-    }
-    _goal.save_goal(session_id, goal)
-    _goal._emit_goal_update(None, session_id, goal)
-    # Refine the one-liner into a full spec in the background — never
-    # blocks the set, fail-open (no spec = judge uses the raw text).
-    _goal._start_spec_refinement(session_id)
-    cap = goal["max_turns"]
-    cap_note = f"up to {cap} turns" if cap else "no turn cap"
     return {
-        "text": f"Goal set (LLM judge, {cap_note}): {goal['text']}",
-        "send_text": goal["text"],
+        "text": f"Starting Goal Workflow with session context: {args}",
+        "send_text": None,
+        "invoke": {
+            "name": "goal",
+            "kwargs": {
+                "prompt": args,
+                "condition": args,
+                "context_mode": "session",
+            },
+        },
     }
 
 

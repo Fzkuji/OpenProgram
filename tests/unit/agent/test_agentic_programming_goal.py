@@ -22,16 +22,16 @@ def test_goal_workflow_reuses_the_session_judge(monkeypatch) -> None:
 
 
 def test_callable_goal_stop_rules_match_session_limits() -> None:
-    from openprogram.programs.workflow.goal.loop import apply_callable_verdict
+    from openprogram.programs.workflow.goal.loop import apply_goal_verdict
 
     achieved = {"turns_used": 1, "max_turns": 10, "judge_parse_failures": 2}
-    assert apply_callable_verdict(achieved, "met", "ok") == "achieved"
+    assert apply_goal_verdict(achieved, "met", "ok") == "achieved"
     assert achieved["status"] == "achieved"
     assert achieved["judge_parse_failures"] == 0
 
     failing = {"turns_used": 1, "max_turns": 10, "judge_parse_failures": 2}
-    assert apply_callable_verdict(failing, "judge_failure", "bad json") == "error"
+    assert apply_goal_verdict(failing, "judge_failure", "bad json") == "error"
     assert failing["status"] == "error"
 
     capped = {"turns_used": 2, "max_turns": 2, "judge_parse_failures": 0}
-    assert apply_callable_verdict(capped, "unmet", "not yet") == "capped"
+    assert apply_goal_verdict(capped, "unmet", "not yet") == "capped"

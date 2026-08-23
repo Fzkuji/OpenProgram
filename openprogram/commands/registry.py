@@ -228,8 +228,8 @@ def register_shared_builtins() -> None:
         "goal",
         handler=goal_builtin_handler,
         description=(
-            "set a persistent session goal — the agent auto-continues "
-            "turns until the goal is met (or /goal clear)"),
+            "run the Goal Workflow with current session context "
+            "(or inspect/clear its state)"),
         argument_hint="[condition | clear]",
     )
 

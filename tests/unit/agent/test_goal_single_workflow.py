@@ -12,15 +12,9 @@ def test_goal_set_builds_the_single_workflow_call_without_writing_state(
     db = SessionDB(tmp_path / "sessions-git")
     db.create_session("s1", "main")
     monkeypatch.setattr(goal_pkg, "_db", lambda: db)
-    refinement_starts: list[str] = []
-    monkeypatch.setattr(
-        goal_pkg, "_start_spec_refinement", refinement_starts.append,
-    )
-
     result = goal_pkg.handle_goal_command("s1", "tests pass")
 
     assert goal_pkg.load_goal("s1") is None
-    assert refinement_starts == []
     assert result["invoke"] == {
         "name": "goal",
         "kwargs": {
@@ -45,11 +39,13 @@ def test_one_goal_function_selects_only_the_initial_context(
     )
 
     monkeypatch.setattr(function_module, "current_session_id", lambda: "s1")
-    monkeypatch.setattr(
-        goal_pkg,
-        "refine_goal_spec_candidate",
-        lambda *_args, **_kwargs: ("SPEC", []),
-    )
+    refine_contexts: list[str] = []
+
+    def fake_refine(*_args, **kwargs):
+        refine_contexts.append(kwargs.get("context", ""))
+        return "SPEC", []
+
+    monkeypatch.setattr(goal_pkg, "refine_goal_spec_candidate", fake_refine)
     monkeypatch.setattr(goal_pkg, "save_goal", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(goal_pkg, "_emit_goal_update", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(goal_pkg, "_emit_goal_notice", lambda *_args, **_kwargs: None)
@@ -75,12 +71,14 @@ def test_one_goal_function_selects_only_the_initial_context(
     ) == "finished"
     assert "SESSION VIEW" not in work_prompts[-1]
     assert judge_views[-1] == "[goal work round 1]\nfinished"
+    assert refine_contexts[-1] == ""
 
     assert goal_module.goal(
         "do work", "done", context_mode="session", max_rounds=1,
     ) == "finished"
     assert "SESSION VIEW" in work_prompts[-1]
     assert judge_views[-1].startswith("SESSION VIEW\n")
+    assert refine_contexts[-1] == "SESSION VIEW"
 
 
 def test_goal_program_isolated_history_is_part_of_its_registered_contract() -> None:
@@ -90,4 +88,3 @@ def test_goal_program_isolated_history_is_part_of_its_registered_contract() -> N
 
     assert goal_module.goal.render_range == {"callers": 0}
     assert goal_module.goal.input_meta["context_mode"]["hidden"] is True
-

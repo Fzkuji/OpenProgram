@@ -46,7 +46,7 @@ _BUILTIN_SPECS: list[tuple[str, tuple[str, ...], str, str]] = [
     ("connections", ("conns",), "",
      "list every channel peer currently aliased to this session"),
     ("goal", (), "[condition | clear]",
-     "set a persistent session goal — auto-continues turns until met "
+     "run the Goal Workflow with current session context "
      "(bare /goal shows status; clear/stop/off/cancel removes it)"),
     ("compact", (), "[hint]",
      "compress conversation history (optional hint guides what to keep)"),
@@ -320,7 +320,9 @@ _LOCAL_ACTIONS = {
     "detach": lambda args, console, rt, agent, sid: _handle_detach(args, console),
     "connections": lambda args, console, rt, agent, sid: _handle_connections(console, sid),
     "profile": lambda args, console, rt, agent, sid: _handle_profile(args, console),
-    "goal": lambda args, console, rt, agent, sid: _handle_goal(args, console, agent, sid),
+    "goal": lambda args, console, rt, agent, sid: _handle_goal(
+        args, console, rt, sid,
+    ),
     "compact": lambda args, console, rt, agent, sid: _handle_compact(args, console, sid),
     "context": lambda args, console, rt, agent, sid: _handle_context(console, agent, sid),
     "rewind": lambda args, console, rt, agent, sid: _handle_rewind(args, console, sid),
@@ -330,14 +332,8 @@ _LOCAL_ACTIONS = {
 
 
 
-def _handle_goal(args: list[str], console, agent, session_id: str) -> bool:
-    """``/goal`` in the Rich REPL — set / status / clear a session goal.
-
-    The set form launches the first turn through the DISPATCHER (not the
-    REPL's bare ``rt.exec`` turn runner) because the goal continuation
-    loop lives inside ``process_user_turn``; the REPL's own runner would
-    finish the turn and never judge the goal.
-    """
+def _handle_goal(args: list[str], console, rt, session_id: str) -> bool:
+    """Run the same public Goal Workflow used by Programs and Web chat."""
     if not session_id:
         console.print("[yellow]No active session.[/]")
         return False
@@ -345,48 +341,28 @@ def _handle_goal(args: list[str], console, agent, session_id: str) -> bool:
     out = handle_goal_command(session_id, " ".join(args))
     if out.get("text"):
         console.print(out["text"], markup=False)
-    send_text = out.get("send_text")
-    if not send_text:
+    invocation = out.get("invoke")
+    if not isinstance(invocation, dict):
         return False
-    if agent is None:
-        console.print("[yellow]No active agent — goal saved, but the "
-                      "first turn was not started.[/]")
+    if rt is None:
+        console.print("[yellow]No active Runtime — Goal was not started.[/]")
         return False
-
-    from openprogram.agent.dispatcher import TurnRequest, process_user_turn
-
-    def _print_event(env: dict) -> None:
-        data = env.get("data") or {}
-        dtype = data.get("type")
-        if dtype == "stream_event":
-            ev = data.get("event") or {}
-            if ev.get("type") == "text":
-                console.print(ev.get("text") or "", end="",
-                              markup=False, highlight=False)
-            elif ev.get("type") == "tool_use":
-                console.print(f"\n[dim][tool] {ev.get('tool')}[/]")
-        elif dtype == "goal_update":
-            g = data.get("goal") or {}
-            cap = g.get("max_turns")
-            turns = (f"{g.get('turns_used')}/{cap}" if cap
-                     else f"{g.get('turns_used')}")
-            console.print(
-                f"\n[cyan]goal {g.get('status')} · {turns}[/] "
-                f"[dim]{g.get('last_reason') or ''}[/]")
-        elif dtype == "error":
-            console.print(f"\n[red]{data.get('content')}[/]")
-
     try:
-        from openprogram.agent.authority import local_owner_authority
-        process_user_turn(
-            TurnRequest(session_id=session_id, user_text=send_text,
-                        agent_id=agent.id, source="cli",
-                        **local_owner_authority()),
-            on_event=_print_event,
+        from openprogram.agent.run_control import (
+            reset_current_session_id,
+            set_current_session_id,
         )
-        console.print()
+        from openprogram.programs.workflow.goal import goal
+
+        token = set_current_session_id(session_id)
+        try:
+            result = goal(**dict(invocation.get("kwargs") or {}), runtime=rt)
+        finally:
+            reset_current_session_id(token)
+        if result:
+            console.print(result, markup=False)
     except Exception as e:  # noqa: BLE001 — surface, don't kill the REPL
-        console.print(f"\n[red]Goal turn failed: {type(e).__name__}: {e}[/]")
+        console.print(f"\n[red]Goal failed: {type(e).__name__}: {e}[/]")
     return False
 
 

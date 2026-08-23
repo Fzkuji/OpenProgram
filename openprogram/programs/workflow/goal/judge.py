@@ -145,7 +145,8 @@ def _decision_prompt(goal_text: str, session_view: str, attended: bool,
 def judge_goal(goal: str, session_id: str = "", attended: bool = True,
                checklist: Optional[list[str]] = None,
                spawn_caller: Optional[str] = None,
-               agent_id: str = "main") -> dict:
+               agent_id: str = "main",
+               session_view: Optional[str] = None) -> dict:
     """You are the completion judge for an agent session goal. Read the
     session context below and decide whether the goal is ALREADY
     satisfied. The judgment is yours: you have inspection tools (bash,
@@ -227,7 +228,8 @@ def judge_goal(goal: str, session_id: str = "", attended: bool = True,
      "checklist": [true|false, …]}
     """
     sid = session_id or current_session_id()
-    prompt = _decision_prompt(goal, render_session_view(sid), attended,
+    view = render_session_view(sid) if session_view is None else session_view
+    prompt = _decision_prompt(goal, view, attended,
                               checklist=checklist)
     raw = _run_decision_turn(sid, prompt, agent_id=agent_id,
                              spawn_caller=spawn_caller)
@@ -237,6 +239,7 @@ def judge_goal(goal: str, session_id: str = "", attended: bool = True,
 def evaluate_goal(
     session_id: str, goal: dict, *, agent_id: str,
     spawn_caller: Optional[str] = None,
+    session_view: Optional[str] = None,
 ) -> tuple[str, str, str, list[dict]]:
     """``("met"|"unmet"|"needs_user"|"judge_failure", reason, question,
     options)`` for one session-goal evaluation.
@@ -253,14 +256,17 @@ def evaluate_goal(
     last_error = "goal decision reply was not valid JSON"
     for _attempt in range(2):
         try:
-            data = _goal.judge_goal(
-                goal=goal.get("spec") or goal.get("text") or "",
-                session_id=session_id,
-                attended=is_attended(session_id),
-                checklist=[str(it.get("text") or "") for it in items] or None,
-                spawn_caller=spawn_caller,
-                agent_id=agent_id,
-            )
+            kwargs = {
+                "goal": goal.get("spec") or goal.get("text") or "",
+                "session_id": session_id,
+                "attended": is_attended(session_id),
+                "checklist": [str(it.get("text") or "") for it in items] or None,
+                "spawn_caller": spawn_caller,
+                "agent_id": agent_id,
+            }
+            if session_view is not None:
+                kwargs["session_view"] = session_view
+            data = _goal.judge_goal(**kwargs)
         except Exception as e:  # noqa: BLE001
             last_error = f"goal decision failed: {type(e).__name__}: {e}"
             continue

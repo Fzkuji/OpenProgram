@@ -78,9 +78,12 @@ export function useFnFormSubmit({
     // of round-tripping through the chat WS as `run name k=v ...` text.
     const kwargs: Record<string, unknown> = {};
     for (const p of visibleParams(fn)) {
-      const isBool = p.type === "bool" || p.type === "boolean";
-      const isInt = p.type === "int";
-      const isFloat = p.type === "float" || p.type === "number";
+      const typeParts = String(p.type || "")
+        .split("|")
+        .map((part) => part.trim());
+      const isBool = typeParts.includes("bool") || typeParts.includes("boolean");
+      const isInt = typeParts.includes("int");
+      const isFloat = typeParts.includes("float") || typeParts.includes("number");
       let v = String(fnForm.values[p.name] ?? "").trim();
       if (!v && isBool) v = "False";
       if (!v && !p.required) continue;

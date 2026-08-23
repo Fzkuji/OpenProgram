@@ -51,6 +51,7 @@ interface UnifiedCommand {
   argument_hint: string;
   user_invocable: boolean;
   hidden: boolean;
+  type?: string;           // "prompt" | "local" | "mcp_prompt"
 }
 
 const ANIM_MS = 380;
@@ -209,8 +210,19 @@ export function useSlashMenu({ input, textareaRef, send, openContextPanel, bound
         description:
           c.description || `${c.source_label || c.source} command`,
         args: c.argument_hint || undefined,
-        run(rest, { setInput, sessionId }) {
+        run(rest, { setInput, sessionId, send }) {
           const text = "/" + c.name + (rest ? " " + rest : "");
+          // Local builtins are stateful host actions. Send the original
+          // command through the chat WS, whose backend owns the handler;
+          // /api/commands/invoke is render-only and deliberately does not
+          // execute local handlers.
+          if (c.type === "local") {
+            return send({
+              action: "chat",
+              ...(sessionId ? { session_id: sessionId } : {}),
+              text,
+            });
+          }
           void fetch("/api/commands/invoke", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -344,8 +356,7 @@ export function useSlashMenu({ input, textareaRef, send, openContextPanel, bound
     (text: string): boolean => {
       const hit = resolve(text);
       if (!hit) return false;
-      hit.cmd.run(hit.rest, slashContext);
-      return true;
+      return hit.cmd.run(hit.rest, slashContext);
     },
     [slashContext, resolve],
   );

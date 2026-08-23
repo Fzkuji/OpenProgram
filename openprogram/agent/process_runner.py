@@ -422,6 +422,24 @@ def _child_entry(
             except Exception:
                 pass
 
+        # Agentic functions run in a spawned process whose EventBus has no
+        # Web subscriber. Forward the existing typed goal.update event through
+        # the same parent event queue used by stream updates; this keeps Goal
+        # state live without adding a Goal-specific transport.
+        try:
+            from openprogram.events import get_event_bus
+
+            def _forward_goal_update(event) -> None:
+                payload = dict(getattr(event, "payload", None) or {})
+                _on_event({"type": "goal_update", "data": payload})
+
+            get_event_bus().subscribe(
+                _forward_goal_update,
+                types={"goal.update"},
+            )
+        except Exception:
+            pass
+
         wrapped = _wrap_agentic_runtime_block(tool, req, _on_event, anchor_msg_id)
 
         import asyncio
@@ -697,6 +715,14 @@ def run_agentic_in_subprocess(
                 pending_qids, pending_qids_lock,
             )
             return
+        if isinstance(env, dict) and env.get("type") == "goal_update":
+            try:
+                sid = str((env.get("data") or {}).get("session_id") or "")
+                if sid:
+                    from openprogram.agent.session_db import default_db
+                    default_db().invalidate_cache(sid)
+            except Exception:
+                pass
         try:
             if on_event:
                 on_event(env)

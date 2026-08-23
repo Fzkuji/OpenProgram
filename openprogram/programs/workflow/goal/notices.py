@@ -40,14 +40,6 @@ def _emit_goal_notice(session_id: str, content: str,
         pass
 
 
-def _emit_goal_question(on_event: Optional[Callable], session_id: str,
-                        question: str) -> None:
-    """Surface the pause question. The next user message is the answer."""
-    _goal._emit_goal_notice(session_id,
-                            f"[goal] 需要你的确认才能继续：{question}",
-                            on_event)
-
-
 # Terminal statuses, and how each reads in the transcript.
 _TERMINAL_LABELS = {
     "achieved": "已达成",

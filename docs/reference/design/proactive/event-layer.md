@@ -60,7 +60,7 @@ The registered events:
 |---|---|---|---|
 | `tool.before` | gate | `{tool, tool_call_id, args}` | `agent_loop._execute_tool_calls`, before every `tool.execute()` |
 | `tool.after` | notify | `{tool, tool_call_id, is_error, result_text}` | `agent_loop._execute_tool_calls`, after every tool call finishes |
-| `turn.stop` | gate | `{session_id, user_msg_id, assistant_msg_id, last_text (≤4000 chars), stop_hook_active}` | `dispatcher.process_user_turn`, sessions without a session goal only |
+| `turn.stop` | gate | `{session_id, user_msg_id, assistant_msg_id, last_text (≤4000 chars), stop_hook_active}` | `dispatcher.process_user_turn`, after a completed top-level chat turn |
 | `turn.start` | notify | `{session_id, user_msg_id, assistant_msg_id}` | dispatcher, after the user message is persisted |
 | `turn.end` | notify | `{session_id, user_msg_id, assistant_msg_id, usage}` | dispatcher, after finalize |
 | `session.start` | notify | `{session_id, agent_id, channel}` | webui session creation (`server.py`) |
@@ -144,11 +144,10 @@ Config edits apply on the next worker restart.
 
 ### The `turn.stop` continuation loop
 
-`dispatcher/stop_hook.continue_stop_hook_turns` asks the `turn.stop` gate after every completed turn on
-sessions **without a session goal**. Division of labor: a session with a goal has exactly one stop decider —
-its goal loop — and the only external intervention there is `/goal clear`; the `turn.stop` gate is the
-extension point for goal-less sessions. A denial launches one more turn, built exactly like a goal
-continuation (`dataclasses.replace`, `source="hook_continue"`, `INHERIT_PARENT`), then the gate runs again on
+`dispatcher/stop_hook.continue_stop_hook_turns` asks the `turn.stop` gate after every completed top-level
+chat turn. Goal Workflow rounds do not enter this dispatcher path: the single `goal()` function owns their
+completion judge, and `/goal clear` can stop the Goal state. A denial launches one more ordinary turn with
+`dataclasses.replace`, `source="hook_continue"`, and `INHERIT_PARENT`, then the gate runs again on
 the new result. Runaway protection is the `stop_hook_active` flag protocol (as in Claude Code / Codex stop
 hooks — no numeric cap): `payload["stop_hook_active"]` is True on every ask after the first, so a hook knows
 it already forced a continuation and is expected to allow the stop. Failed or cancelled turns return without

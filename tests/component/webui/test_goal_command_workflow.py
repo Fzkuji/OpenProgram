@@ -29,7 +29,6 @@ def test_web_goal_set_dispatches_the_registered_goal_workflow(
         "openprogram.store.session.session_store.default_store", lambda: db,
     )
     monkeypatch.setattr(goal_pkg, "_db", lambda: db)
-    monkeypatch.setattr(goal_pkg, "_start_spec_refinement", lambda _sid: None)
     server._sessions.clear()
     server._msg_cache.clear()
     server._get_or_create_session("web-goal", agent_id="main")

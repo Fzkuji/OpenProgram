@@ -154,7 +154,7 @@
         <table><thead><tr><th>原语</th><th>公开语义</th><th>是否持久 session</th><th>DAG 记录</th></tr></thead><tbody>
           <tr><td><code>llm()</code></td><td>恰好一次逻辑模型请求；允许结构化输出</td><td>否，继承当前 Runtime</td><td>一个 LLM Call</td></tr>
           <tr><td><code>agent()</code></td><td>同一任务内的模型—工具循环；返回最终文本或结构化结果</td><td>否，继承当前 Runtime</td><td>一个 Agent Call，内部含 LLM 与 Function Calls</td></tr>
-          <tr><td><code>goal()</code></td><td>用 Agent 尝试，再用 LLM 判断是否满足目标；可重复</td><td>否，继承当前 Runtime</td><td>Goal → Agent → LLM judge</td></tr>
+          <tr><td><code>goal()</code></td><td>用 Agent 尝试，再用独立 judge 判断是否满足目标；Programs 默认隔离调用前历史，<code>/goal</code> 显式传入当前 session 视图</td><td>是，写入所属 session 的同一 GoalState</td><td>Goal → Agent → Goal judge</td></tr>
           <tr><td><code>run_agent_turn()</code></td><td>内部会话生命周期适配，不是 Program 原语</td><td>是</td><td>session/branch 关联的独立 Agent Call</td></tr>
         </tbody></table>
         <h3>目标公开签名</h3>
