@@ -262,20 +262,31 @@ export function MessageRail({ hiddenKey = "" }: { hiddenKey?: string }) {
     const area = document.getElementById("chatArea");
     const ia = document.querySelector('[class*="inputArea"]');
     if (!rail || !area || !ia) return;
+    const syncFade = () => {
+      rail.classList.toggle("fade-top", rail.scrollTop > 1);
+      rail.classList.toggle(
+        "fade-bottom",
+        rail.scrollTop + rail.clientHeight < rail.scrollHeight - 1,
+      );
+    };
     const fit = () => {
       const ar = area.getBoundingClientRect();
       const iaTop = ia.getBoundingClientRect().top;
       const center = ar.top + ar.height * 0.45; // .msg-rail-anchor 的 sticky 位置
       const half = Math.min(center - ar.top - 16, iaTop - 12 - center);
       rail.style.maxHeight = `${Math.max(120, Math.round(half * 2))}px`;
-      rail.classList.toggle("is-overflowing", rail.scrollHeight > rail.clientHeight);
+      syncFade();
     };
     fit();
     const ro = new ResizeObserver(fit);
     ro.observe(area);
     ro.observe(ia);
     ro.observe(rail);
-    return () => ro.disconnect();
+    rail.addEventListener("scroll", syncFade, { passive: true });
+    return () => {
+      ro.disconnect();
+      rail.removeEventListener("scroll", syncFade);
+    };
   }, [msgs.length]);
 
   // 条带区域整块吞掉滚轮：条自己能滚就滚自己（0.5×，原生增量太冲），

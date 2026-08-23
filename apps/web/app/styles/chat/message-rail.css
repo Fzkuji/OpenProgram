@@ -34,8 +34,14 @@
   /* 自己能滚，但不画滚动条——刻度即位置指示，再叠一根滚动条是噪声。 */
   scrollbar-width: none;
 }
-/* 上下缘渐隐：只在刻度溢出可视高度时淡出，装得下时不加 mask。 */
-.msg-rail.is-overflowing {
+/* 哪头还有没露出的刻度，哪头才淡。 */
+.msg-rail.fade-top {
+  mask-image: linear-gradient(to bottom, transparent, black 28px, black 100%);
+}
+.msg-rail.fade-bottom {
+  mask-image: linear-gradient(to bottom, black, black calc(100% - 28px), transparent);
+}
+.msg-rail.fade-top.fade-bottom {
   mask-image: linear-gradient(
     to bottom,
     transparent,
