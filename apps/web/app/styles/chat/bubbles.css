@@ -144,9 +144,14 @@
   pointer-events: none;
   background: linear-gradient(90deg, transparent 10%, var(--bg-subtle, var(--bg)) 55%);
 }
-.compaction-card-md {
+.compaction-card-md,
+.compaction-card-md * {
   font-size: 13px;
   line-height: var(--comp-md-lh, 20px);
+  margin: 0;
+  padding: 0;
+}
+.compaction-card-md {
   color: var(--text-muted);
 }
 .compaction-card-md-clip:not([data-full="1"]) .compaction-card-md {
@@ -154,15 +159,6 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 7;
   overflow: hidden;
-}
-.compaction-card-md * {
-  line-height: inherit;
-}
-.compaction-card-md > :first-child {
-  margin-top: 0;
-}
-.compaction-card-md > :last-child {
-  margin-bottom: 0;
 }
 .compaction-card-more {
   border: 0;
