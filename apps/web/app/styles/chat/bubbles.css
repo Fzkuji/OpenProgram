@@ -114,8 +114,9 @@
   flex-wrap: nowrap;
   gap: 10px;
   padding: 4px 16px 2px;
-  font-size: 11px;
-  line-height: 1.4;
+  /* One step below .message-content (15px); matches secondary/meta copy. */
+  font-size: 13px;
+  line-height: 1.5;
 }
 .compaction-card-info {
   color: var(--text-faint, var(--text-muted));
@@ -134,9 +135,11 @@
   background: var(--bg-subtle, transparent);
 }
 .compaction-card-md-clip {
-  --comp-md-lh: 20px;
+  /* Match .message-content: 15px / 1.7. Pixel lh keeps the 7-line clip
+     and the “… Show all” overlay on a whole last line (15 × 1.7 = 25.5). */
+  --comp-md-lh: 25.5px;
   position: relative;
-  font-size: 13px;
+  font-size: 15px;
   line-height: var(--comp-md-lh);
   max-height: calc(var(--comp-md-lh) * 7);
   overflow: hidden;
@@ -157,8 +160,8 @@
 }
 .compaction-card-md,
 .compaction-card-md :is(p, h1, h2, h3, h4, h5, li, ul, ol, code, pre, strong, em, a, blockquote) {
-  font-size: 13px !important;
-  line-height: var(--comp-md-lh, 20px) !important;
+  font-size: 15px !important;
+  line-height: var(--comp-md-lh, 25.5px) !important;
   margin: 0 !important;
   padding: 0 !important;
 }
@@ -190,8 +193,8 @@
   border: 0;
   background: transparent;
   padding: 0;
-  font-size: 11px;
-  line-height: var(--comp-md-lh, 20px);
+  font-size: 13px;
+  line-height: var(--comp-md-lh, 25.5px);
 }
 .compaction-card-md-clip:not([data-full="1"]) .compaction-card-more {
   position: absolute;
