@@ -23,7 +23,7 @@ import { useCallback, useEffect, useRef } from "react";
 
 import { useMessageIds, useSessionStore } from "@/lib/session-store";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
-import { isChatAtBottom, readBottomPadding, readChatScroll, writeChatScroll } from "@/lib/state/chat-scroll";
+import { isChatAtBottom, readBottomPadding, readComposerHeight, readChatScroll, writeChatScroll } from "@/lib/state/chat-scroll";
 import { getSocket } from "@/lib/runtime-bridge/state";
 import { wsSend } from "@/components/sidebar/sessions-list/helpers";
 import { Composer } from "./composer";
@@ -141,9 +141,9 @@ export function PeerSessionPane({
     const saved = readChatScroll(window.sessionStorage, scrollKey);
     area.scrollTop = saved ?? area.scrollHeight;
     const padEl = columnRef.current;
-    stuckRef.current = isChatAtBottom(area, readBottomPadding(padEl));
+    stuckRef.current = isChatAtBottom(area, readBottomPadding(padEl), readComposerHeight());
     const onScroll = () => {
-      stuckRef.current = isChatAtBottom(area, readBottomPadding(padEl));
+      stuckRef.current = isChatAtBottom(area, readBottomPadding(padEl), readComposerHeight());
       writeChatScroll(window.sessionStorage, scrollKey, area.scrollTop);
     };
     area.addEventListener("scroll", onScroll, { passive: true });

@@ -6,7 +6,7 @@
  */
 
 import { useSessionStore } from "@/lib/session-store";
-import { isChatAtBottom, readBottomPadding } from "@/lib/state/chat-scroll";
+import { isChatAtBottom, readBottomPadding, readComposerHeight } from "@/lib/state/chat-scroll";
 import { escHtml, renderMathInChat } from "./markdown-render";
 
 export { escHtml, renderMathInChat, renderMd, sanitizeHtml } from "./markdown-render";
@@ -39,7 +39,7 @@ function setupStickToBottomListener(): void {
     "scroll",
     () => {
       const msgs = document.getElementById("chatMessages");
-      stickToBottom = isChatAtBottom(area, readBottomPadding(msgs));
+      stickToBottom = isChatAtBottom(area, readBottomPadding(msgs), readComposerHeight());
     },
     { passive: true },
   );

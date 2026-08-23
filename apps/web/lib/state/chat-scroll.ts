@@ -112,25 +112,41 @@ export const CHAT_AT_BOTTOM_EPSILON = 8;
 
 /** Slack that still counts as "at the latest".
  *
- *  The transcript reserves bottom padding so the last bubble sits above
- *  the floating composer (`max(25vh, composer + 24)`). A fixed 80px
- *  threshold treated that pad as "scrolled up", so Jump to latest
- *  stayed on after the last message was already in view.
+ *  The transcript pad (`max(25vh, composer + 24)`) is larger than the
+ *  composer. At remaining=0 the last bubble sits well above the input.
+ *  It tucks under the composer after you scroll `pad - composer`
+ *  pixels. Using the full pad as slack hid Jump to latest until you
+ *  had scrolled an extra ~25vh past that.
  */
-export function chatAtBottomSlack(paddingBottom: number): number {
+export function chatAtBottomSlack(
+  paddingBottom: number,
+  composerHeight = 0,
+): number {
   const pad = Number.isFinite(paddingBottom) ? Math.max(0, paddingBottom) : 0;
-  return pad + CHAT_AT_BOTTOM_EPSILON;
+  const cover = Number.isFinite(composerHeight) ? Math.max(0, composerHeight) : 0;
+  return Math.max(0, pad - cover) + CHAT_AT_BOTTOM_EPSILON;
 }
 
 export function isChatAtBottom(
   area: ScrollMetrics,
   paddingBottom: number,
+  composerHeight = 0,
 ): boolean {
-  return remainingScroll(area) <= chatAtBottomSlack(paddingBottom);
+  return remainingScroll(area) <= chatAtBottomSlack(paddingBottom, composerHeight);
 }
 
 export function readBottomPadding(el: Element | null): number {
   if (!el || typeof getComputedStyle !== "function") return 0;
   const n = parseFloat(getComputedStyle(el).paddingBottom);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export function readComposerHeight(): number {
+  if (typeof getComputedStyle !== "function") return 0;
+  const n = parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue(
+      "--main-composer-height",
+    ),
+  );
   return Number.isFinite(n) ? n : 0;
 }

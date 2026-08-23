@@ -39,6 +39,7 @@ import { useAgentProfile } from "@/lib/format-utils/agent-style";
 import {
   isChatAtBottom,
   readBottomPadding,
+  readComposerHeight,
   readChatScroll,
   resolveChatScrollTop,
   writeChatScroll,
@@ -267,7 +268,11 @@ function useChatAreaStick(
     // upward. Suppress the pin briefly after any pointer interaction so
     // user-initiated growth expands downward in place.
     const syncDetached = () => {
-      const atBottom = isChatAtBottom(area, readBottomPadding(msgs));
+      const atBottom = isChatAtBottom(
+        area,
+        readBottomPadding(msgs),
+        readComposerHeight(),
+      );
       stuckRef.current = atBottom;
       setDetached((was) => (was === !atBottom ? was : !atBottom));
       return atBottom;
@@ -344,6 +349,7 @@ function useChatAreaStick(
     stuckRef.current = isChatAtBottom(
       area,
       readBottomPadding(document.getElementById("chatMessages")),
+      readComposerHeight(),
     );
     setDetached(!stuckRef.current);
   }, [chatKey, newTurnSeed, ownTurn]);
@@ -495,8 +501,11 @@ export function MessageList() {
   const runningTask = useSessionStore((s) =>
     sessionId ? s.runningTasks[sessionId] ?? null : null,
   );
-  const areaHost = typeof document !== "undefined"
-    ? document.getElementById("chatArea")
+  // Pin to #chatView (column, not the scroller). Portal into #chatArea
+  // puts absolute-bottom on the scroll content, so the button is off
+  // screen exactly when we want it visible.
+  const jumpHost = typeof document !== "undefined"
+    ? document.getElementById("chatView")
     : null;
   // Only the LAST row's role matters here (see ``showPending`` below).
   // Subscribing to the whole ``messagesById`` map would re-render this
@@ -627,7 +636,7 @@ export function MessageList() {
       {/* Messages typed during the run — dimmed rows under the live
           turn, drained one at a time when it ends. */}
       <QueuedMessages sessionId={sessionId} onStopAndSend={stopAndSend} />
-      {detached && ids.length > 0 && areaHost
+      {detached && ids.length > 0 && jumpHost
         ? createPortal(
             <div className={runningTask ? "jump-latest-anchor is-live" : "jump-latest-anchor"}>
               <button
@@ -648,7 +657,7 @@ export function MessageList() {
                 {text("Jump to latest", "跳到最新")}
               </button>
             </div>,
-            areaHost,
+            jumpHost,
           )
         : null}
     </>

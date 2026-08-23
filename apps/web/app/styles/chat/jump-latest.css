@@ -1,8 +1,9 @@
 /* "跳到最新" 悬浮按钮。
    对应组件：components/chat/messages/message-list.tsx */
 
-/* 钉在 #chatArea 视口上，不要当消息流最后一个 sticky 子元素。
-   那会在滚过底部 padding 时跟着最后一条一起被抬上去。 */
+/* 钉在 #chatView（列，不滚）上，贴着输入框上方。
+   不要 portal 进 #chatArea：那是滚动层，absolute bottom 会落到
+   整篇内容底，往上翻时按钮正好出屏。 */
 .jump-latest-anchor {
   position: absolute;
   left: 0;
@@ -13,6 +14,7 @@
   pointer-events: none;
   display: flex;
   justify-content: center;
+  align-items: flex-end;
 }
 .jump-latest {
   position: relative;
