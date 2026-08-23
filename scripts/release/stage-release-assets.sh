@@ -34,7 +34,7 @@ test -n "$uv_bin" || {
 }
 (
   cd "$repo_root"
-  "$uv_bin" run --isolated --locked \
+  "$uv_bin" run --isolated --no-project \
     --with markdown-it-py --with mdit-py-plugins --with pygments \
     python -m scripts.docs_site.build
 )
