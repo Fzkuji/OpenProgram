@@ -205,6 +205,14 @@ function easeScrollBy(area: HTMLElement, delta: number, ms: number): void {
   requestAnimationFrame(step);
 }
 
+/** Keep a collapsing card on screen: only if its top is already above the viewport. */
+function easeElTopIntoView(el: Element, ms = 900): void {
+  const area = document.getElementById("chatArea");
+  if (!area) return;
+  const y = el.getBoundingClientRect().top - area.getBoundingClientRect().top;
+  if (y < 0) easeScrollBy(area, y - 24, ms);
+}
+
 function pinWhile(el: Element, top: number, ms: number): void {
   const area = document.getElementById("chatArea");
   if (!area) return;
@@ -286,6 +294,7 @@ function SystemEventRow({ msg }: { msg: ChatMsg }) {
 function CompactionCard({ msg }: { msg: ChatMsg }) {
   const { text } = useTranslation();
   useMarkdownReady();
+  const cardRef = useRef<HTMLDivElement>(null);
   const [full, setFull] = useState(false);
   const [, bump] = useState(0);
   useEffect(() => {
@@ -302,6 +311,10 @@ function CompactionCard({ msg }: { msg: ChatMsg }) {
   const origLabel = showingOrig
     ? text("Hide original messages", "隐藏原始消息")
     : text("Show original messages", "显示原始消息");
+  const setCardFull = (next: boolean) => {
+    if (full && !next && cardRef.current) easeElTopIntoView(cardRef.current);
+    setFull(next);
+  };
   return (
     <>
       <div
@@ -322,11 +335,16 @@ function CompactionCard({ msg }: { msg: ChatMsg }) {
         </button>
       </div>
       <div
+        ref={cardRef}
         className="message compaction-card"
         data-msg-id={msg.id}
         data-kind="compaction"
         data-slot="card"
         data-full={full ? "1" : "0"}
+        onClick={(e) => {
+          if (!full || (e.target as HTMLElement).closest("a")) return;
+          setCardFull(false);
+        }}
       >
         <div className="compaction-card-body">
           <div className="compaction-card-md-clip" data-full={full ? "1" : "0"}>
@@ -337,7 +355,10 @@ function CompactionCard({ msg }: { msg: ChatMsg }) {
             <button
               type="button"
               className="text-hit compaction-card-more"
-              onClick={() => setFull((v) => !v)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setCardFull(!full);
+              }}
             >
               {full
                 ? text("Collapse", "收起")
