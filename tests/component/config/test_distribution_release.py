@@ -1750,8 +1750,8 @@ def test_missing_bundled_pdf_dependency_requires_complete_reinstall(
 ) -> None:
     import sys
 
-    from openprogram.programs.tools.pdf.pdf import execute as pdf_extract
-    from openprogram.programs.tools.read.read import _read_pdf
+    from openprogram.programs.tools.web.pdf import execute as pdf_extract
+    from openprogram.programs.tools.files.read import _read_pdf
 
     pdf_path = tmp_path / "probe.pdf"
     pdf_path.write_bytes(b"%PDF-1.4\n%%EOF\n")

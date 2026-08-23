@@ -316,7 +316,11 @@ assert.doesNotMatch(strip, /transferHoverOverlay/,
   "the full-window overlay must be removed (it read as a split affordance)");
 assert.doesNotMatch(css, /transferHoverOverlay/,
   "the full-window overlay CSS must be removed");
-assert.doesNotMatch(css, /\.transferHoverPill[\s\S]*?inset: 0/,
+const transferHoverPillRule = css.slice(
+  css.indexOf(".transferHoverPill {"),
+  css.indexOf(" transferHoverIn"),
+);
+assert.doesNotMatch(transferHoverPillRule, /inset:\s*0/,
   "the destination cue must not span the content area");
 assert.match(css, /\.strip\[data-transfer-hover\]/,
   "the strip band gets the hover highlight");

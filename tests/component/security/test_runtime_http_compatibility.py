@@ -739,6 +739,7 @@ FIXED_ORIGIN_FIXTURES = {
         "https://api.z.ai",
         "https://bedrock-runtime.us-east-1.amazonaws.com",
         "https://chatgpt.com",
+        "https://cli-chat-proxy.grok.com",
         "https://cloudcode-pa.googleapis.com",
         "https://generativelanguage.googleapis.com",
         "https://opencode.ai",
@@ -748,8 +749,10 @@ FIXED_ORIGIN_FIXTURES = {
     ),
     "provider.oauth.fixed": (
         "https://accounts.google.com",
+        "https://accounts.x.ai",
         "https://api.github.com",
         "https://auth.openai.com",
+        "https://auth.x.ai",
         "https://claude.ai",
         "https://console.anthropic.com",
         "https://github.com",

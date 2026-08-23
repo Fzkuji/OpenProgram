@@ -307,6 +307,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "reference/design/ui/theme-system.html",
             "reference/design/ui/unification-work.md",
             "reference/design/ui/window-state.md",
+            "reference/design/ui/window-lifecycle.md",
             "reference/design/ui/web-styles.md",
             "reference/design/ui/interaction-feedback.md",
             "reference/design/ui/indicator-dots.md",
@@ -324,6 +325,8 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "reference/design/ui/fn-form-compact-mock.html",
             "reference/design/ui/gui-agent-context.md",
             "reference/design/ui/send-queue-reliability.html",
+            "reference/design/ui/slash-and-compact.html",
+            "reference/design/ui/turn-occupancy.md",
             "reference/design/ui/websocket-command-lifecycle.html",
         ]),
         ("UI · Browser and tabs", "界面 · 浏览器与标签页", [

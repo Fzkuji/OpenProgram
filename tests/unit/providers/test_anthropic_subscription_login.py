@@ -153,7 +153,7 @@ def test_pkce_manual_paste_flow(monkeypatch):
 
     captured = {}
 
-    async def _fake_exchange(*, cfg, code, verifier, redirect_uri, state=""):
+    async def _fake_exchange(*, cfg, code, verifier, redirect_uri, state="", challenge=""):
         captured["code"] = code
         captured["state"] = state
         captured["redirect_uri"] = redirect_uri

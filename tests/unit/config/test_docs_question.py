@@ -226,7 +226,7 @@ def test_sources_are_deduplicated_in_order(fake_docs) -> None:
 
 def test_module_is_registered() -> None:
     from openprogram.programs._registry import AGENTIC_MODULES
-    assert "workflow.docs_question" in AGENTIC_MODULES
+    assert "docs_question" in AGENTIC_MODULES
 
 
 def test_docs_root_points_at_the_repository_docs_tree() -> None:

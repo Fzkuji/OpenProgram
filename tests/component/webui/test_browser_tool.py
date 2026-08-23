@@ -155,7 +155,8 @@ def test_extract_with_selector(fake_playwright):
     assert "match-0" in out and "match-1" in out
 
 
-def test_screenshot_writes_file(tmp_path, fake_playwright):
+def test_screenshot_writes_file(tmp_path, fake_playwright, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     sid = tool.execute(action="open", engine="chromium").split("`")[1]
     target = tmp_path / "shot.png"
     out = tool.execute(action="screenshot", session_id=sid, path=str(target))

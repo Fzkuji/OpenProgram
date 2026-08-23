@@ -471,7 +471,7 @@ def test_send_file_is_idempotent_within_a_turn(in_session):
 
 def test_send_file_refuses_an_oversize_file(in_session, monkeypatch):
     from openprogram.programs.tools.interaction import send_file as sf
-    monkeypatch.setattr(sf.send_file_mod, "MAX_SEND_BYTES", 4)
+    monkeypatch.setattr(sf, "MAX_SEND_BYTES", 4)
     f = in_session / "big.bin"
     f.write_bytes(b"12345")
     assert "over the" in _send(f)
