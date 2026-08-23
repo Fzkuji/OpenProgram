@@ -57,6 +57,10 @@ import {
   getPendingUserText,
 } from "@/lib/pending-user-text";
 import { shouldHydrateTranscriptForTreeUpdate } from "./transcript-hydration";
+import {
+  shouldHonorRunningTaskClear,
+  type ClearedTaskIdentity,
+} from "@/lib/state/running-task-clear";
 
 /** The app's single draft-channel-choice host (module-level, backed by
  *  `runtimeState._pendingChannelChoice`). */
@@ -211,7 +215,11 @@ export function wsHandleChatResponse(data: ChatResponseData): void {
   // Cancelled envelope without a msg_id is the force-stop signal.
   if (data && data.type === "cancelled") {
     const sid = responseSessionId(data, runtimeState.currentSessionId);
-    handleRunningTaskClear(sid ?? undefined);
+    const honored = handleRunningTaskClear(sid ?? undefined, {
+      execution_id: typeof data.execution_id === "string" ? data.execution_id : undefined,
+      msg_id: typeof data.msg_id === "string" ? data.msg_id : undefined,
+    });
+    if (!honored) return;
     if (!responseTargetsActiveChat(data, runtimeState.currentSessionId)) return;
     try {
       const rp = document.getElementById("runtime_pending");
@@ -503,9 +511,16 @@ function hydrateTranscriptForTreeUpdate(data: ChatResponseData): void {
   }
 }
 
-export function handleRunningTaskClear(sessionId: string | undefined): void {
-  if (!sessionId) return;
+export function handleRunningTaskClear(
+  sessionId: string | undefined,
+  cleared?: ClearedTaskIdentity & { force?: boolean },
+): boolean {
+  if (!sessionId) return false;
   const store = useSessionStore.getState();
+  const current = store.runningTasks[sessionId];
+  if (!cleared?.force && !shouldHonorRunningTaskClear(current, cleared)) {
+    return false;
+  }
   store.setRunningTaskFor(sessionId, null, "always");
   // If the clear is for the currently-active session, also drop the
   // legacy single-task / button state so the composer un-locks.
@@ -523,6 +538,7 @@ export function handleRunningTaskClear(sessionId: string | undefined): void {
       sock.send(JSON.stringify({ action: "load_session", session_id: sessionId }));
     }
   }
+  return true;
 }
 
 /* ===== handleChatResponse (bookkeeping) ========================== */
@@ -560,7 +576,7 @@ export function handleChatResponse(data: ChatResponseData): void {
     if (sid) {
       clearPendingUserText(sid);
       clearPendingFirstAck(sid);
-      handleRunningTaskClear(sid);
+      handleRunningTaskClear(sid, { force: true });
       if (targetsActiveLocal) setRunActive(false);
     }
     if (sid && content) {
@@ -602,7 +618,12 @@ export function handleChatResponse(data: ChatResponseData): void {
     && !!runningTask?.msg_id
     && !!data.msg_id
     && data.msg_id !== runningTask.msg_id;
-  if (!nestedRuntimeResult) handleRunningTaskClear(sid ?? undefined);
+  if (!nestedRuntimeResult) {
+    handleRunningTaskClear(sid ?? undefined, {
+      execution_id: typeof data.execution_id === "string" ? data.execution_id : undefined,
+      msg_id: typeof data.msg_id === "string" ? data.msg_id : undefined,
+    });
+  }
   if (targetsActive) {
     void loadAgentSettings();
     void refreshTokenBadge();

@@ -225,15 +225,20 @@ _running_tasks: dict = {}  # session_id → {msg_id, func_name, started_at, ...}
 _running_tasks_lock = threading.Lock()
 
 
-def _emit_running_task_event(session_id: str) -> None:
+def _emit_running_task_event(
+    session_id: str,
+    *,
+    cleared_execution_id: str | None = None,
+    cleared_msg_id: str | None = None,
+) -> None:
     """Broadcast the current running-task state for ``session_id``.
 
     Emits a ``running_task`` envelope if a task is active, or a
-    ``running_task_clear`` envelope otherwise. The frontend uses these
-    to drive the per-session composer state and the sidebar breathing
-    indicator. Callers should invoke this immediately after mutating
-    ``_running_tasks`` (still under the lock is fine — the actual
-    socket send is queued).
+    ``running_task_clear`` envelope otherwise. A clear names the
+    finished turn so a newer reservation (or a just-sent placeholder)
+    is not idled by a late frame. Callers should invoke this
+    immediately after mutating ``_running_tasks`` (still under the
+    lock is fine — the actual socket send is queued).
     """
     try:
         with _running_tasks_lock:
@@ -251,9 +256,14 @@ def _emit_running_task_event(session_id: str) -> None:
                 },
             }
         else:
+            data = {"session_id": session_id}
+            if cleared_execution_id:
+                data["execution_id"] = cleared_execution_id
+            if cleared_msg_id:
+                data["msg_id"] = cleared_msg_id
             payload = {
                 "type": "running_task_clear",
-                "data": {"session_id": session_id},
+                "data": data,
             }
         _broadcast(json.dumps(payload, default=str))
     except Exception:
@@ -789,14 +799,19 @@ def _is_run_active(session_id: str) -> bool:
         # otherwise a second handler would delete the reservation as a
         # "zombie" and both turns could pass the guard.
         stale_reservation = False
+        stale_task = None
         if task and task.get("_reserved"):
             if time.time() - task.get("started_at", 0) > 300:
-                _running_tasks.pop(session_id, None)
+                stale_task = _running_tasks.pop(session_id, None)
                 stale_reservation = True
             else:
                 return True
     if stale_reservation:
-        _emit_running_task_event(session_id)
+        _emit_running_task_event(
+            session_id,
+            cleared_msg_id=(stale_task or {}).get("msg_id"),
+            cleared_execution_id=(stale_task or {}).get("execution_id"),
+        )
         return False
     if task is None:
         # Runtime registration precedes reservation handoff. If another
@@ -807,8 +822,12 @@ def _is_run_active(session_id: str) -> bool:
     # Drop it so subsequent calls don't keep blocking Edit/Retry/etc.
     if not _has_active_runtime(session_id):
         with _running_tasks_lock:
-            _running_tasks.pop(session_id, None)
-        _emit_running_task_event(session_id)
+            zombie = _running_tasks.pop(session_id, None)
+        _emit_running_task_event(
+            session_id,
+            cleared_msg_id=(zombie or {}).get("msg_id"),
+            cleared_execution_id=(zombie or {}).get("execution_id"),
+        )
         return False
     return True
 
@@ -912,7 +931,11 @@ def _release_session_occupancy_for_execution(execution: dict) -> bool:
                     _running_tasks.pop(session_id, None)
                 released = True
     if released:
-        _emit_running_task_event(session_id)
+        _emit_running_task_event(
+            session_id,
+            cleared_execution_id=execution_id,
+            cleared_msg_id=msg_id,
+        )
     # Occupancy without retiring the token leaves (session, None) cancelled.
     # The next claim_cancel_event fails, or a reused {msg}_reply is
     # immediately re-stopped. The old stream still sees its own Event.

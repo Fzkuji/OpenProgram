@@ -272,12 +272,24 @@ assert.deepEqual(
   "stopSession must send the promoted queued message at 0ms",
 );
 const sentOnce = sent.length;
+const afterStop = useSessionStore.getState().runningTasks[A];
+assert.ok(afterStop, "stop-and-send must leave occupancy for the new turn");
 handleRunningTaskClear(A);
 await settle();
 assert.equal(
   sent.length,
   sentOnce,
   "handleRunningTaskClear after stop must not send the queued message a second time",
+);
+assert.ok(
+  useSessionStore.getState().runningTasks[A],
+  "unscoped clear for the old turn must not idle the new turn",
+);
+handleRunningTaskClear(A, { execution_id: "m_reply", msg_id: "m" });
+await settle();
+assert.ok(
+  useSessionStore.getState().runningTasks[A],
+  "clear naming the interrupted turn must not idle the new turn",
 );
 
 console.log("check-send-queue: ok");

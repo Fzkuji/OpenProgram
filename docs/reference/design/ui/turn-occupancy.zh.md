@@ -31,7 +31,9 @@ session 槽位是 `_running_tasks` **加上** active runtime。只 pop 任务表
 
 - 把 `execution_id` 映射到 `session_id` + `msg_id`（聊天执行是 `{msg_id}_reply`）。
 - 调用 `_finish_owned_run(session_id, msg_id)`，任务条目和 runtime 一起注销。
-- 广播 `running_task_clear`，让其他客户端对齐。
+- 广播 `running_task_clear`，让其他客户端对齐。clear 必须带上结束那一轮的 `msg_id` / `execution_id`。
+
+迟到的、属于旧 turn 的 clear / cancelled / result **不得**把新预占清成空闲，包括刚发出去、还没有 `msg_id` 的占位 `{ msg_id: "" }`。只有对上当前槽位的 execution 才认。stop-and-send 之后的无 id clear 一律当过期。
 
 `msg_id` 对不上时 `_finish_owned_run` 是空操作 — 更新的预占不会被抢走。被取消的 turn 的 `finally` 也会再调一次，第二次是空操作。
 

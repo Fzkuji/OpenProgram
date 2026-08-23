@@ -82,7 +82,14 @@ When `cancel_execution` succeeds:
   `{msg_id}_reply`).
 - Call `_finish_owned_run(session_id, msg_id)` so both the task entry
   and the runtime unregister.
-- Broadcast `running_task_clear` so every client matches.
+- Broadcast `running_task_clear` so every client matches. The
+  clear names the finished turn (`msg_id` / `execution_id`).
+
+A late clear or cancelled/result frame for the old turn must
+**not** idle a newer reservation, including the just-sent
+placeholder `{ msg_id: "" }`. Honor the clear only when it
+matches the slot's execution. An unscoped clear is stale after
+stop-and-send.
 
 `_finish_owned_run` no-ops if `msg_id` does not match — a newer
 reservation is safe. The cancelled turn's `finally` also calls

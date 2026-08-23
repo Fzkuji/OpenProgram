@@ -129,7 +129,11 @@ def run_query(
         mark_execution_terminal(_chat_execution_id, "interrupted")
         with _s._running_tasks_lock:
             _s._running_tasks.pop(session_id, None)
-        _s._emit_running_task_event(session_id)
+        _s._emit_running_task_event(
+            session_id,
+            cleared_msg_id=msg_id,
+            cleared_execution_id=_chat_execution_id,
+        )
         _s._broadcast_chat_response(session_id, msg_id, {
             "type": "error",
             "content": "A prompt turn is already active for this session.",
@@ -328,7 +332,11 @@ def run_query(
     finally:
         _release_surface_bindings(surface_context)
         if _s._finish_owned_run(session_id, msg_id):
-            _s._emit_running_task_event(session_id)
+            _s._emit_running_task_event(
+                session_id,
+                cleared_msg_id=msg_id,
+                cleared_execution_id=_chat_execution_id,
+            )
         # Pass our Event so a newer turn's registration (if any) is
         # left intact — see unregister_cancel_event.
         _s._unregister_cancel_event(

@@ -331,6 +331,10 @@ export function useWS(): void {
         case "running_task_clear":
           handleRunningTaskClear(
             (d as { session_id?: string } | undefined)?.session_id,
+            {
+              execution_id: (d as { execution_id?: string } | undefined)?.execution_id,
+              msg_id: (d as { msg_id?: string } | undefined)?.msg_id,
+            },
           );
           return true;
         case "job_status": {

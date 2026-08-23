@@ -506,8 +506,12 @@ def run_agentic_function_call(
             # _execute/chat.py:277-278.
             try:
                 with _s._running_tasks_lock:
-                    _s._running_tasks.pop(session_id, None)
-                _s._emit_running_task_event(session_id)
+                    gone = _s._running_tasks.pop(session_id, None)
+                _s._emit_running_task_event(
+                    session_id,
+                    cleared_msg_id=(gone or {}).get("msg_id"),
+                    cleared_execution_id=(gone or {}).get("execution_id"),
+                )
             except Exception:
                 pass
 

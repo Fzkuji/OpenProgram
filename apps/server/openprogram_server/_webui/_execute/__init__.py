@@ -665,7 +665,11 @@ def execute_in_context(
 
     except (Exception, _s._CancelledError) as e:
         if _s._finish_owned_run(session_id, msg_id):
-            _s._emit_running_task_event(session_id)
+            _s._emit_running_task_event(
+                session_id,
+                cleared_msg_id=msg_id,
+                cleared_execution_id=f"{msg_id}_reply",
+            )
 
         # Cancellation path — either the exception came from /api/stop killing
         # the subprocess, or a CancelledError was raised by the cancel hook
@@ -757,7 +761,11 @@ def execute_in_context(
         # out. spawn / merge success previously never popped at all,
         # leaving the session stuck "running" until server restart.
         if _s._finish_owned_run(session_id, msg_id):
-            _s._emit_running_task_event(session_id)
+            _s._emit_running_task_event(
+                session_id,
+                cleared_msg_id=msg_id,
+                cleared_execution_id=f"{msg_id}_reply",
+            )
         _s._reset_current_session_id(_conv_token)
 
 
