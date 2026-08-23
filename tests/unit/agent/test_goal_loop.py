@@ -236,6 +236,22 @@ def test_unanswered_goal_question_finishes_as_error(
     assert stored["last_reason"] == "Goal requires a user answer."
 
 
+def test_answer_on_last_round_finishes_as_capped(
+    db: SessionDB, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result, prompts = _run_goal(
+        monkeypatch,
+        db,
+        agent_outputs=["need input"],
+        verdicts=[("needs_user", "choose", "A or B?", [])],
+        max_rounds=1,
+        runtime=_Runtime(["A"]),
+    )
+    assert result == "need input"
+    assert len(prompts) == 1
+    assert G.load_goal("s1")["status"] == "capped"
+
+
 def test_goal_clear_during_work_does_not_get_overwritten(
     db: SessionDB, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -357,6 +373,58 @@ def test_goal_cancellation_finishes_shared_state(
     stored = G.load_goal("s1")
     assert stored["status"] == "error"
     assert stored["last_reason"] == "Goal cancelled."
+
+
+def test_refinement_cancellation_finishes_shared_state(
+    db: SessionDB, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module("openprogram.programs.workflow.goal.goal")
+    function_module = importlib.import_module(
+        "openprogram.agentic_programming.function"
+    )
+    monkeypatch.setattr(function_module, "current_session_id", lambda: "s1")
+    monkeypatch.setattr(function_module, "current_call_id", lambda: "goal-call")
+    monkeypatch.setattr(G, "_emit_goal_update", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(G, "_emit_goal_notice", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        G,
+        "refine_goal_spec_candidate",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            function_module.CancelledError("stop")
+        ),
+    )
+
+    with pytest.raises(function_module.CancelledError):
+        module.goal("do work", "done", runtime=_Runtime())
+    assert G.load_goal("s1")["status"] == "error"
+
+
+def test_work_agent_failure_finishes_shared_state(
+    db: SessionDB, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module("openprogram.programs.workflow.goal.goal")
+    agent_module = importlib.import_module("openprogram.agentic_programming.agent")
+    function_module = importlib.import_module(
+        "openprogram.agentic_programming.function"
+    )
+    monkeypatch.setattr(function_module, "current_session_id", lambda: "s1")
+    monkeypatch.setattr(function_module, "current_call_id", lambda: "goal-call")
+    monkeypatch.setattr(
+        G, "refine_goal_spec_candidate", lambda *_args, **_kwargs: ("SPEC", []),
+    )
+    monkeypatch.setattr(G, "_emit_goal_update", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(G, "_emit_goal_notice", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        agent_module,
+        "agent",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("provider down")),
+    )
+
+    with pytest.raises(RuntimeError, match="provider down"):
+        module.goal("do work", "done", runtime=_Runtime())
+    stored = G.load_goal("s1")
+    assert stored["status"] == "error"
+    assert "provider down" in stored["last_reason"]
 
 
 def test_checklist_stall_is_shared_goal_state(

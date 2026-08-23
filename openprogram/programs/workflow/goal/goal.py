@@ -97,6 +97,18 @@ def goal(
         if sid:
             _goal._finish(sid, goal_state, None)
 
+    def fail(exc: Exception) -> None:
+        if sid:
+            stored = _goal.load_goal(sid)
+            if stored and stored.get("status") == "cleared":
+                return
+        goal_state["status"] = "error"
+        goal_state["last_reason"] = (
+            f"Goal work failed: {type(exc).__name__}: {exc}"
+        )
+        if sid:
+            _goal._finish(sid, goal_state, None)
+
     # The run is controllable before refinement starts: /goal status and
     # /goal clear must observe the same active GoalState during every phase.
     persist()
@@ -107,6 +119,9 @@ def goal(
             spawn_caller=caller,
             context=session_view,
         )
+    except CancelledError:
+        cancel()
+        raise
     except Exception:
         spec, items = "", []
     if sid:
@@ -150,6 +165,9 @@ def goal(
             )
         except CancelledError:
             cancel()
+            raise
+        except Exception as exc:
+            fail(exc)
             raise
         if sid:
             stored = _goal.load_goal(sid)
@@ -211,6 +229,13 @@ def goal(
             goal_state.pop("last_question", None)
             goal_state.pop("last_question_options", None)
             evidence_parts.append(f"[user answer]\n{answer}")
+            terminal = _goal.apply_goal_verdict(
+                goal_state, "unmet", reason,
+            )
+            if terminal:
+                if sid:
+                    _goal._finish(sid, goal_state, None)
+                return last_result
             persist()
             work_prompt = _goal.next_work_prompt(
                 prompt,
