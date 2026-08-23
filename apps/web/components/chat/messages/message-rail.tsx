@@ -268,11 +268,13 @@ export function MessageRail({ hiddenKey = "" }: { hiddenKey?: string }) {
       const center = ar.top + ar.height * 0.45; // .msg-rail-anchor 的 sticky 位置
       const half = Math.min(center - ar.top - 16, iaTop - 12 - center);
       rail.style.maxHeight = `${Math.max(120, Math.round(half * 2))}px`;
+      rail.classList.toggle("is-overflowing", rail.scrollHeight > rail.clientHeight);
     };
     fit();
     const ro = new ResizeObserver(fit);
     ro.observe(area);
     ro.observe(ia);
+    ro.observe(rail);
     return () => ro.disconnect();
   }, [msgs.length]);
 

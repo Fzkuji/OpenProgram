@@ -33,7 +33,9 @@
   /* 预览卡是条带的兄弟节点，不受这里的 overflow 裁剪。 */
   /* 自己能滚，但不画滚动条——刻度即位置指示，再叠一根滚动条是噪声。 */
   scrollbar-width: none;
-  /* 上下缘渐隐：溢出的刻度淡出而不是被硬切一刀。 */
+}
+/* 上下缘渐隐：只在刻度溢出可视高度时淡出，装得下时不加 mask。 */
+.msg-rail.is-overflowing {
   mask-image: linear-gradient(
     to bottom,
     transparent,
