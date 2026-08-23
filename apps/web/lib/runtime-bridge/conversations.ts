@@ -108,6 +108,61 @@ function feedStoreFromConv(conv: LegacyConv): void {
     .setMessages(conv.id, convToChatMsgs((conv.messages as never[]) || []));
 }
 
+/** Rebuild a compaction event row from DAG summary nodes when the
+ *  wire list omitted it (covered ids folded out of ``shown``, or an
+ *  older worker). No-op if a ``kind=compaction`` row is already there. */
+function spliceCompactionFromGraph(
+  messages: LegacyMessage[],
+  graph: unknown,
+): LegacyMessage[] {
+  if (messages.some((m) => m.kind === "compaction")) return messages;
+  if (!Array.isArray(graph)) return messages;
+  const records = graph.filter((n): n is Record<string, unknown> => (
+    !!n && typeof n === "object"
+    && Array.isArray((n as { covers_ids?: unknown }).covers_ids)
+    && (n as { covers_ids: unknown[] }).covers_ids.length > 0
+    && !(n as { superseded_summary?: unknown }).superseded_summary
+  ));
+  if (!records.length) return messages;
+  const index = new Map<string, number>();
+  messages.forEach((m, i) => {
+    if (typeof m.id === "string" && m.id) index.set(m.id, i);
+  });
+  const inserts: { at: number; row: LegacyMessage }[] = [];
+  for (const n of records) {
+    const covers = (n.covers_ids as unknown[]).map(String).filter(Boolean);
+    let last = -1;
+    for (const id of covers) {
+      const i = index.get(id);
+      if (i !== undefined) last = Math.max(last, i);
+    }
+    let at: number;
+    if (last >= 0) {
+      at = last + 1;
+    } else {
+      const coverSet = new Set(covers);
+      at = messages.findIndex((m) => typeof m.id === "string" && m.id && !coverSet.has(m.id));
+      if (at < 0) at = 0;
+    }
+    const id = typeof n.id === "string" ? n.id : "summary";
+    inserts.push({
+      at,
+      row: {
+        id: `${id}_ui`,
+        role: "system",
+        kind: "compaction",
+        summarised_count: covers.length,
+        content: `Context compacted: covered ${covers.length} older messages`,
+        timestamp: n.created_at,
+      },
+    });
+  }
+  inserts.sort((a, b) => b.at - a.at);
+  const out = messages.slice();
+  for (const { at, row } of inserts) out.splice(at, 0, row);
+  return out;
+}
+
 /* ===== Channel icons ============================================= */
 
 // simple-icons CDN brand marks, each embedding the platform's own hue.
@@ -495,6 +550,7 @@ export function newSession(draftId?: string): void {
 
 export function loadSessionData(data: LegacyConv): void {
   if (!data.messages) data.messages = [];
+  data.messages = spliceCompactionFromGraph(data.messages, data.graph);
   const id = data.id as string;
   const map = convs();
   // Merge data into existing conv. data 里没有的字段 (例如 created_at)

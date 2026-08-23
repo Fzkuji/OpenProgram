@@ -34,6 +34,24 @@ def test_skips_superseded_and_empty():
     assert splice_compaction_event_rows(shown, graph) is shown
 
 
+def test_inserts_before_tail_when_covers_absent():
+    shown = [
+        {"id": "tail0", "role": "user"},
+        {"id": "tail1", "role": "assistant"},
+    ]
+    graph = [{"id": "sum1", "covers_ids": ["old0", "old1"], "created_at": 5}]
+    out = splice_compaction_event_rows(shown, graph)
+    assert [m["id"] for m in out] == ["sum1_ui", "tail0", "tail1"]
+
+
+def test_count_prefers_original_covers_not_expanded_graph():
+    shown = [{"id": "u0"}, {"id": "a0"}, {"id": "u1"}]
+    graph = [{"id": "sum1", "covers_ids": ["u0", "a0", "tool_a", "tool_b"]}]
+    all_msgs = [{"id": "sum1", "covers_ids": ["u0", "a0"]}]
+    out = splice_compaction_event_rows(shown, graph, all_msgs)
+    assert out[2]["summarised_count"] == 2
+
+
 def test_uses_message_timestamp_when_graph_has_none():
     shown = [{"id": "u0"}, {"id": "a0", "timestamp": 9}, {"id": "u1"}]
     graph = [{"id": "sum1", "covers_ids": ["u0", "a0"]}]

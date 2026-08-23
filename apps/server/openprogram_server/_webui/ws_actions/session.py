@@ -88,18 +88,35 @@ def splice_compaction_event_rows(
             i = index.get(cid)
             if i is not None:
                 last_i = max(last_i, i)
-        if last_i < 0:
-            continue
+        if last_i >= 0:
+            at = last_i + 1
+            anchor = shown[last_i]
+        else:
+            # Covered turns are often absent from the rendered list
+            # (folded by the summary). Land before the first kept-tail
+            # row, or at the top if the whole list is tail.
+            cover_set = set(covers)
+            at = next(
+                (i for i, m in enumerate(shown)
+                 if m.get("id") and m.get("id") not in cover_set),
+                0,
+            )
+            anchor = shown[at] if shown else {}
         src = by_id.get(n.get("id")) or {}
+        raw_covers = src.get("covers_ids")
+        n_cov = (
+            len(raw_covers)
+            if isinstance(raw_covers, (list, tuple)) and raw_covers
+            else len(covers)
+        )
         ts = (
             n.get("created_at")
             or src.get("created_at")
             or src.get("timestamp")
-            or shown[last_i].get("timestamp")
-            or shown[last_i].get("created_at")
+            or anchor.get("timestamp")
+            or anchor.get("created_at")
         )
-        n_cov = len(covers)
-        inserts.append((last_i + 1, {
+        inserts.append((at, {
             "id": f"{n['id']}_ui",
             "role": "system",
             "kind": "compaction",
