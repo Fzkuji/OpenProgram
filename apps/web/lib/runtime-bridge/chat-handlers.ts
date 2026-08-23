@@ -571,6 +571,7 @@ export function handleChatResponse(data: ChatResponseData): void {
       useSessionStore.getState().appendMessage(sid, {
         id: "compaction_started_" + Date.now().toString(36),
         role: "system",
+        kind: "compaction",
         content: translateText("Compacting context…", "正在压缩上下文…"),
         status: "done",
       });
@@ -608,6 +609,7 @@ export function handleChatResponse(data: ChatResponseData): void {
       useSessionStore.getState().appendMessage(sid, {
         id: "compaction_finished_" + Date.now().toString(36),
         role: "system",
+        kind: "compaction",
         content,
         status: "done",
       });
@@ -622,6 +624,7 @@ export function handleChatResponse(data: ChatResponseData): void {
       useSessionStore.getState().appendMessage(sid, {
         id: "compaction_failed_" + Date.now().toString(36),
         role: "system",
+        kind: "compaction",
         content: err
           ? translateText("Context compaction failed: ", "上下文压缩失败：") + err
           : translateText("Context compaction failed", "上下文压缩失败"),

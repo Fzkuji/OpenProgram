@@ -167,8 +167,42 @@ function AssistantMessage({
   );
 }
 
+const SYSTEM_EVENT_KINDS = new Set(["compaction", "snip", "event"]);
+
+function formatEventTime(timestamp?: number): string {
+  if (typeof timestamp !== "number" || !Number.isFinite(timestamp) || timestamp <= 0) {
+    return "";
+  }
+  const value = new Date(timestamp > 1e12 ? timestamp : timestamp * 1000);
+  return value.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function SystemEventRow({ msg }: { msg: ChatMsg }) {
+  const { text } = useTranslation();
+  const n = msg.summarisedCount;
+  const label = msg.kind === "compaction" && typeof n === "number"
+    ? text(
+        `Context compacted: covered ${n} older messages`,
+        `上下文已压缩：盖住 ${n} 条旧消息`,
+      )
+    : msg.content;
+  const hm = formatEventTime(msg.timestamp);
+  return (
+    <div className="message system-event" data-msg-id={msg.id} data-kind={msg.kind}>
+      <span className="system-event-rule" aria-hidden />
+      <span className="system-event-text">
+        {label}{hm ? ` · ${hm}` : ""}
+      </span>
+      <span className="system-event-rule" aria-hidden />
+    </div>
+  );
+}
+
 function dispatch(msg: ChatMsg, sessionIdOverride?: string) {
   if (msg.role === "system") {
+    if (msg.kind && SYSTEM_EVENT_KINDS.has(msg.kind)) {
+      return <SystemEventRow msg={msg} />;
+    }
     return (
       <div className="message system" data-msg-id={msg.id}>
         {msg.content}

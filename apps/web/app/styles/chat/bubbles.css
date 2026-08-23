@@ -76,6 +76,28 @@
   background: transparent;
 }
 
+/* Compaction / snip / event: a centered divider, not a chat bubble. */
+.message.system-event {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 24px;
+  background: transparent;
+}
+.system-event-rule {
+  width: 28px;
+  height: 0;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.system-event-text {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 .message-header {
   display: flex;
   align-items: center;

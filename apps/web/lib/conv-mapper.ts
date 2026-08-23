@@ -49,6 +49,8 @@ interface LegacyMsg {
   id?: string;
   timestamp?: number;
   created_at?: number;
+  kind?: string;
+  summarised_count?: number;
   context_tree?: unknown;
   usage?: unknown;
   attempts?: LegacyAttempt[];
@@ -386,7 +388,20 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
       });
       return;
     }
-    out.push({ id, role: "system", content: m.content || "", status: "done" });
+    const kind = m.kind === "compaction" || m.kind === "snip" || m.kind === "event"
+      ? m.kind
+      : undefined;
+    out.push({
+      id,
+      role: "system",
+      content: m.content || "",
+      status: "done",
+      timestamp: ts,
+      kind,
+      summarisedCount: typeof m.summarised_count === "number"
+        ? m.summarised_count
+        : undefined,
+    });
   });
   // 顶层剩余的 attach 卡（锚在用户消息上的 /task 斜杠路径等）：搬到
   // 锚（调用点）的**紧后面**——命令在哪发出，卡就跟在哪。assistant 锚

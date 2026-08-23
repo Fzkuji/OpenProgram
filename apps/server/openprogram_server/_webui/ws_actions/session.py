@@ -59,6 +59,63 @@ def _annotate_spawn_origin(graph: list[dict]) -> None:
         }
 
 
+def splice_compaction_event_rows(
+    shown: list[dict],
+    graph: list[dict],
+    all_msgs: list[dict] | None = None,
+) -> list[dict]:
+    """Rebuild UI-only compaction records from active summary nodes.
+
+    Summary nodes sit off the active branch, so they never appear in
+    ``shown``. Insert a system event row after the last covered message
+    still on the list. Do not write these rows onto ``conv['messages']``
+    — they must not enter LLM context.
+    """
+    records = [
+        n for n in graph
+        if isinstance(n.get("covers_ids"), (list, tuple)) and n["covers_ids"]
+        and not n.get("superseded_summary")
+    ]
+    if not records:
+        return shown
+    index = {m.get("id"): i for i, m in enumerate(shown)}
+    by_id = {m.get("id"): m for m in (all_msgs or [])}
+    inserts: list[tuple[int, dict]] = []
+    for n in records:
+        covers = [str(c) for c in n["covers_ids"] if c]
+        last_i = -1
+        for cid in covers:
+            i = index.get(cid)
+            if i is not None:
+                last_i = max(last_i, i)
+        if last_i < 0:
+            continue
+        src = by_id.get(n.get("id")) or {}
+        ts = (
+            n.get("created_at")
+            or src.get("created_at")
+            or src.get("timestamp")
+            or shown[last_i].get("timestamp")
+            or shown[last_i].get("created_at")
+        )
+        n_cov = len(covers)
+        inserts.append((last_i + 1, {
+            "id": f"{n['id']}_ui",
+            "role": "system",
+            "kind": "compaction",
+            "summarised_count": n_cov,
+            "content": f"Context compacted: covered {n_cov} older messages",
+            "timestamp": ts,
+        }))
+    if not inserts:
+        return shown
+    inserts.sort(key=lambda x: x[0], reverse=True)
+    out = list(shown)
+    for i, row in inserts:
+        out.insert(i, row)
+    return out
+
+
 def _is_top_function_run(m: dict, by_id: dict[str, dict]) -> bool:
     """True if ``m`` is a top-level @agentic_function ENTRY node — the
     root of one complete run (manual /run, fn-form, welcome button, or a
@@ -675,6 +732,7 @@ async def handle_load_session(ws, cmd: dict):
             sf = _spawn_by_id.get(m.get("id"))
             if sf:
                 m["spawned_from"] = sf
+        shown = splice_compaction_event_rows(shown, graph, all_msgs)
         from openprogram.agent.session_config import (
             load_session_run_config,
             permission_from_config,

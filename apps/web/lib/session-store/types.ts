@@ -126,6 +126,10 @@ export interface ChatMsg {
   id: string;                  // msg_id from server, or local generated for user msgs
   role: "user" | "assistant" | "system";
   content: string;             // final assistant text / user text
+  /** Event-divider rows (compaction / snip). Other system rows omit this. */
+  kind?: "compaction" | "snip" | "event";
+  /** Covered-message count on reconstructed compaction rows. */
+  summarisedCount?: number;
   /** Reasoning tokens streamed under a collapsible "Thinking" block. */
   thinking?: string;
   /** Tool calls made during this assistant turn, in emit order. */

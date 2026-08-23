@@ -994,6 +994,20 @@ assert.match(
   /msg\.role === "system"[\s\S]*<MessageTimestamp timestamp=\{msg\.timestamp\}/,
   "transient system messages must render their store timestamp",
 );
+const systemEventRow = messageList.slice(
+  messageList.indexOf("function SystemEventRow"),
+  messageList.indexOf("function dispatch"),
+);
+assert.match(
+  systemEventRow,
+  /className="message system-event"[\s\S]*system-event-text/,
+  "compaction / snip event rows must render as a centered divider",
+);
+assert.doesNotMatch(
+  systemEventRow,
+  /message-actions-footer/,
+  "event divider rows must not keep a right-side timestamp column",
+);
 assert.match(
   runtimeBlock,
   /const footer = \([\s\S]*<MessageTimestamp timestamp=\{msg\.timestamp\}/,
