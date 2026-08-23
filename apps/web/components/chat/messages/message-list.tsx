@@ -228,7 +228,7 @@ function toggleOriginals(cardId: string): void {
   const opening = !originalsOpen.has(cardId);
   const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v);
   const el = document.querySelector(`[data-orig-for="${esc(cardId)}"]`);
-  const hold = prefersReducedMotion() ? 0 : FOLD_MS + 40;
+  const hold = prefersReducedMotion() ? 0 : (opening ? FOLD_MS : 900) + 40;
   const pinTop = el?.getBoundingClientRect().top ?? 0;
   if (el) pinWhile(el, pinTop, hold);
   if (opening) originalsOpen.add(cardId);
@@ -253,7 +253,7 @@ function toggleOriginals(cardId: string): void {
     }
     const y = bar.getBoundingClientRect().top - area.getBoundingClientRect().top;
     if (y < 8 || y > area.clientHeight - 48) {
-      easeScrollBy(area, y - 24, 800);
+      easeScrollBy(area, y - 24, 900);
     }
   }, hold);
 }
