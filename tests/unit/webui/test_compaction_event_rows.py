@@ -29,10 +29,9 @@ def test_active_summary_emits_card_at_boundary_and_event_at_exec():
     }]
     out = splice_compaction_event_rows(shown, graph, all_msgs)
     ids = [m["id"] for m in out]
-    assert ids[0] == "sum1_card"
     assert ids[-1] == "sum1_ui"
-    assert ids == ["sum1_card", "u0", "a0", "u1", "a1", "sum1_ui"]
-    card = out[0]
+    assert ids == ["u0", "a0", "sum1_card", "u1", "a1", "sum1_ui"]
+    card = out[2]
     assert card["slot"] == "card"
     assert card["summarised_count"] == 2
     assert "recap" in card["content"]
@@ -103,5 +102,4 @@ def test_old_node_without_compacted_at_uses_append_order():
     ]
     out = splice_compaction_event_rows(shown, graph, all_msgs)
     ids = [m["id"] for m in out]
-    assert ids[0] == "sum1_card"
-    assert ids[-1] == "sum1_ui"
+    assert ids == ["u0", "a0", "sum1_card", "u1", "a1", "sum1_ui"]

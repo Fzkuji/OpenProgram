@@ -105,6 +105,7 @@
   padding: 6px 16px;
   animation: none;
   opacity: 1;
+  overflow-anchor: auto;
 }
 .compaction-card-head {
   display: block;
@@ -143,6 +144,7 @@
 .covered-turn {
   opacity: 0.55;
   filter: saturate(0.65);
+  overflow-anchor: none;
 }
 
 .message-header {

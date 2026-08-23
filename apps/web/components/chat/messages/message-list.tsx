@@ -180,7 +180,11 @@ function formatEventTime(timestamp?: number): string {
 
 const originalsOpen = new Set<string>();
 const originalsSubs = new Set<() => void>();
+let pinOriginals: { id: string; top: number } | null = null;
 function toggleOriginals(cardId: string): void {
+  const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v);
+  const el = document.querySelector(`[data-msg-id="${esc(cardId)}"]`);
+  if (el) pinOriginals = { id: cardId, top: el.getBoundingClientRect().top };
   if (originalsOpen.has(cardId)) originalsOpen.delete(cardId);
   else originalsOpen.add(cardId);
   originalsSubs.forEach((fn) => fn());
@@ -645,6 +649,16 @@ export function MessageList() {
     originalsSubs.add(fn);
     return () => { originalsSubs.delete(fn); };
   }, []);
+  useLayoutEffect(() => {
+    const pin = pinOriginals;
+    if (!pin) return;
+    pinOriginals = null;
+    const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v);
+    const el = document.querySelector(`[data-msg-id="${esc(pin.id)}"]`);
+    const area = document.getElementById("chatArea");
+    if (!el || !area) return;
+    area.scrollTop += el.getBoundingClientRect().top - pin.top;
+  }, [origTick]);
   const hiddenCovered = new Set<string>();
   const coveredSet = new Set<string>();
   for (const id of ids) {

@@ -113,8 +113,8 @@ def splice_compaction_event_rows(
     Two placements, both off ``conv['messages']`` so they never enter
     LLM context:
 
-    * ``slot=card`` — one row for the *active* summary, at the covered
-      segment's start (the fold).
+    * ``slot=card`` — one row for the *active* summary, after the last
+      covered message (the fold / boundary before the kept tail).
     * ``slot=event`` — one row per summary (including superseded), at
       the compact's execution time.
     """
@@ -211,15 +211,13 @@ def splice_compaction_event_rows(
             continue
         covers = extra["covers_ids"]
         cover_set = set(covers)
-        first = next(
-            (index[cid] for cid in covers if cid in index),
-            next(
-                (i for i, m in enumerate(shown)
-                 if m.get("id") and m.get("id") not in cover_set),
-                0,
-            ),
+        cov_at = [index[cid] for cid in covers if cid in index]
+        fold = (max(cov_at) + 1) if cov_at else next(
+            (i for i, m in enumerate(shown)
+             if m.get("id") and m.get("id") not in cover_set),
+            0,
         )
-        inserts.append((first, {
+        inserts.append((fold, {
             "id": f"{n['id']}_card",
             "role": "system",
             "kind": "compaction",

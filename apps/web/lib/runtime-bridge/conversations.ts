@@ -165,10 +165,12 @@ function spliceCompactionFromGraph(
     });
     if (!active) continue;
     const coverSet = new Set(covers);
-    const first = covers.map((c) => index.get(c)).find((i) => i !== undefined)
-      ?? messages.findIndex((m) => typeof m.id === "string" && m.id && !coverSet.has(m.id));
+    const covAt = covers.map((c) => index.get(c)).filter((i): i is number => i !== undefined);
+    const fold = covAt.length
+      ? Math.max(...covAt) + 1
+      : Math.max(0, messages.findIndex((m) => typeof m.id === "string" && m.id && !coverSet.has(m.id)));
     inserts.push({
-      at: first >= 0 ? first : 0,
+      at: fold,
       row: {
         id: `${id}_card`,
         role: "system",
