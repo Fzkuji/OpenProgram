@@ -178,7 +178,8 @@ spawn 分支根**不**挂在 ROOT 上：它的 `caller` 指向发起它的节点
 渲染层打 ↗ 徽标——见 [`rendering.zh.md`](rendering.zh.md) 图例。）
 
 spawn 分支的上下文是干净的：spawn 分支上的 `get_branch` 止步于 spawn 根，不会经
-caller 边漏进父分支。spawn 分支的聊天视图只显示本分支自己的历史。
+caller 边漏进父分支。spawn 分支的聊天视图只显示本分支自己的历史。反向同样成立：从
+父分支 head 做 `render_path` 时，不会沿 `caller` 下探进 spawn 分支（见 §6）。
 
 ### 完成通知锚定在 HEAD
 
@@ -231,6 +232,11 @@ HEAD 已经包含第一条的回答。
 ROOT 本身不算 ROOT 级祖先。所有顶层对话节点都带 `caller="ROOT"`（§3——正是它让全图
 连通），若展开 ROOT 的 caller 子树，会把会话里所有兄弟分支重新放进来。ROOT 级节点
 的"最近 ROOT 级祖先"就是它自己；行走绝不展开 ROOT。
+
+spawn 分支根（`metadata.spawn_branch_root`）同样不经 `caller` 边进入。spawn 分支是
+独立对话，结果经返回值 / attach 指针回流。若从父主链展开 spawn 根，会把 spawn 的
+指令和裁决泄漏进发起分支（例如 Goal 工作 Agent 读到自己的 judge）。排除是单向的：
+从 spawn 分支内部的 head 渲染时，仍通过主链看到该分支本身。
 
 frame 语义：
 

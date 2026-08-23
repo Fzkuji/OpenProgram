@@ -2,7 +2,8 @@
 
 Goal repeatedly runs an agent and asks a separate completion judge whether a
 condition has been met. There is one Goal Workflow with two ways to supply its
-inputs.
+inputs. The judge uses the session's picked model unless `goal.judge_model` is
+set to a `provider/model` or a bare model name.
 
 ## Use the Programs form
 

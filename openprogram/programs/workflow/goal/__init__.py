@@ -65,6 +65,7 @@ from openprogram.programs.workflow.goal.state import (  # noqa: F401
     _db,
     _emit_goal_update,
     default_max_turns,
+    judge_model,
     load_goal,
     save_goal,
 )

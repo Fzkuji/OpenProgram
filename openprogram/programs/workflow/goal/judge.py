@@ -91,6 +91,7 @@ def _run_decision_turn(session_id: str, prompt: str, *, agent_id: str,
         spawn_caller=spawn_caller,
         advance_head=False,
         tools_override=list(DECISION_TOOLS),
+        model_override=_goal.judge_model() or None,
     )
     if res.failed:
         raise RuntimeError(res.error or "goal decision turn failed")

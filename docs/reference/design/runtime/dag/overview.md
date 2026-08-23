@@ -211,7 +211,9 @@ it with a ↗ badge — see the legend in [`rendering.md`](rendering.md).)
 
 Spawn branches have clean context: `get_branch` on a spawn branch stops at the
 spawn root and does not leak into the parent branch via the caller edge. The
-chat view of a spawn branch shows only the branch's own history.
+chat view of a spawn branch shows only the branch's own history. The reverse
+is also true: `render_path` from a parent-branch head does not descend into a
+spawn branch via `caller` (see §6).
 
 ### The completion notification anchors at HEAD
 
@@ -282,6 +284,14 @@ carries `caller="ROOT"` (§3, which is what keeps the graph connected), so
 expanding ROOT's caller-subtree would re-admit every sibling branch in the
 session. A ROOT-level node is its own nearest ROOT-level ancestor; the walk
 never expands ROOT itself.
+
+Spawn-branch roots (`metadata.spawn_branch_root`) are likewise not entered via
+the `caller` edge. A spawn branch is its own conversation; its result returns
+through the return value / attach pointer. Expanding a spawn root from the
+parent spine would leak the spawned instructions and verdicts into the
+spawning branch (for example a Goal working agent reading its judge). The
+exclusion is directional: rendering from a head inside the spawn branch still
+sees the branch itself via the spine.
 
 Frame semantics:
 

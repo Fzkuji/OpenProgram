@@ -62,7 +62,17 @@ produced by the current GoalRun.
 
 Refinement and judgment run as inspection-only spawned calls. They may inspect
 the working directory with their existing restricted tool sets, do not move the
-session head, and do not create another Goal.
+session head, and do not create another Goal. The completion judge uses
+`goal.judge_model` when that setting is a non-empty `provider/model` or bare
+model name; empty (the default) uses the session's picked model.
+
+Those spawned calls open their own DAG branches (`metadata.spawn_branch_root`).
+`render_path` does not enter a spawn-branch root via the parent's `caller`
+edge, so the working agent never reads judge or refine instructions and
+verdicts from its own history. The exclusion is directional: rendering from a
+head inside the spawn branch still sees the branch via the spine. Results
+return through the spawn's return value (and an attach pointer when the caller
+writes one), not by leaking spawn internals into the parent context.
 
 ## Stopping rules
 

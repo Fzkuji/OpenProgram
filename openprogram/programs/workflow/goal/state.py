@@ -68,6 +68,17 @@ def default_max_turns() -> Optional[int]:
         return DEFAULT_MAX_TURNS
 
 
+def judge_model() -> str:
+    """``goal.judge_model`` from config.json — the model override the
+    completion judge runs on. Empty means the session's picked model."""
+    try:
+        from openprogram import setup as _setup
+        return str((_setup._read_config().get("goal") or {})
+                   .get("judge_model") or "").strip()
+    except Exception:
+        return ""
+
+
 def _emit_goal_update(on_event: Optional[Callable], session_id: str,
                       goal: dict) -> None:
     """Fan the goal state out: dispatcher event stream (for the calling

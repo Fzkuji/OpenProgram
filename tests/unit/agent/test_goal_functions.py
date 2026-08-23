@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import pytest
 
+from openprogram.agent.sub_agent_run import AgentTurnResult
+
 import openprogram.programs.workflow.goal.judge as GJ
 import openprogram.programs.workflow.goal.refinement as GR
 
@@ -126,6 +128,32 @@ def test_goal_decision_turn_failure_propagates(monkeypatch, stub_view) -> None:
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("spawn down")))
     with pytest.raises(RuntimeError):
         GJ.judge_goal(goal="g", session_id="s1")
+
+
+def test_run_decision_turn_passes_judge_model(monkeypatch) -> None:
+    captured = {}
+
+    def fake_run(**kwargs):
+        captured.update(kwargs)
+        return AgentTurnResult(final_text="ok")
+
+    monkeypatch.setattr(
+        "openprogram.agent.sub_agent_run.run_agent_turn", fake_run)
+    monkeypatch.setattr(
+        "openprogram.setup._read_config",
+        lambda: {"goal": {"judge_model": "cheap/model"}},
+    )
+    assert GJ._run_decision_turn(
+        "s1", "p", agent_id="main", spawn_caller="a1") == "ok"
+    assert captured["model_override"] == "cheap/model"
+
+    captured.clear()
+    monkeypatch.setattr(
+        "openprogram.setup._read_config",
+        lambda: {"goal": {"judge_model": ""}},
+    )
+    GJ._run_decision_turn("s1", "p", agent_id="main", spawn_caller="a1")
+    assert captured["model_override"] is None
 
 
 # ---------------------------------------------------------------------------

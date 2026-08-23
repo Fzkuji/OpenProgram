@@ -105,6 +105,30 @@ def test_spawn_branch_stops_at_spawn_root():
         assert nid not in reads
 
 
+# (c2) The parent branch never renders a spawn branch's internals
+
+
+def test_spawn_branch_hidden_from_parent_context():
+    """The reverse direction of (c): rendering from the PARENT's head
+    must not descend into a spawn branch via the caller edge. A Goal
+    working agent must not read the judge's spawned instructions and
+    verdict from its own DAG history."""
+    g = Graph()
+    u1 = _add(g, ROLE_USER, pred="ROOT", output="parent q")
+    l1 = _add(g, ROLE_LLM, pred=u1.id, output="parent a")
+    spawner = _add(g, ROLE_CODE, caller=l1.id, output="goal")
+
+    root = _add(g, ROLE_USER, pred=None, caller=spawner.id,
+                output="judge instructions", spawn_branch_root=True)
+    sl = _add(g, ROLE_LLM, pred=root.id, output="judge verdict")
+    stool = _add(g, ROLE_CODE, caller=sl.id, output="judge tool")
+
+    reads = render_context(g, head_id=l1.id)
+    assert spawner.id in reads
+    for nid in (root.id, sl.id, stool.id):
+        assert nid not in reads
+
+
 # (d) Purity — the read path touches nothing
 
 

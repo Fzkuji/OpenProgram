@@ -42,7 +42,9 @@ Workflow 将状态写入所属 session，因此 GoalChip、status/clear、页面
 
 `render_range={"callers": 0}` 让每个 Goal 调用与调用前 DAG 历史隔离。session 模式只恢复函数入口显式生成的 session 快照。工作模型收到明确说明：该快照是非可信会话数据。完成 judge 接收同一份初始快照，加上当前 GoalRun 已产生的结果。
 
-refinement 与 judgment 使用只读 spawn 调用。它们沿用现有受限工具集，可以检查工作目录，不移动 session head，也不创建另一个 Goal。
+refinement 与 judgment 使用只读 spawn 调用。它们沿用现有受限工具集，可以检查工作目录，不移动 session head，也不创建另一个 Goal。完成 judge 使用 `goal.judge_model`：非空时为 `provider/model` 或裸模型名；空（默认）使用会话当前选中的模型。
+
+这些 spawn 调用各自打开独立的 DAG 分支（`metadata.spawn_branch_root`）。`render_path` 不会沿父分支的 `caller` 边进入 spawn 分支根，因此工作 Agent 不会从自己的 DAG 历史里读到 judge / refine 的指令和裁决。排除是单向的：从 spawn 分支内部的 head 渲染时，仍通过主链看到该分支本身。结果经 spawn 的返回值回流（调用方写入 attach pointer 时也走指针），而不是把 spawn 内部泄漏进父上下文。
 
 ## 停止规则
 

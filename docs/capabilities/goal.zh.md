@@ -1,6 +1,6 @@
 # Goal Workflow
 
-Goal 反复执行 Agent，并由独立 completion judge 判断完成条件是否满足。产品里只有一个 Goal Workflow，两种调用方式只负责提供不同初始上下文。
+Goal 反复执行 Agent，并由独立 completion judge 判断完成条件是否满足。产品里只有一个 Goal Workflow，两种调用方式只负责提供不同初始上下文。judge 默认使用会话当前选中的模型；配置 `goal.judge_model` 为 `provider/model` 或裸模型名可覆盖。
 
 ## 使用 Programs 表单
 

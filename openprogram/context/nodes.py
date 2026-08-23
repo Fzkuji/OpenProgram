@@ -553,6 +553,15 @@ def render_path(graph: Graph, head_id: str) -> list[str]:
     connected), so expanding ROOT would re-admit every sibling branch in
     the session and dissolve branch isolation. A ROOT-level node is its
     own nearest ROOT-level ancestor; ROOT itself is never one.
+
+    Spawn-branch roots (``metadata.spawn_branch_root``) are likewise not
+    entered via the ``caller`` edge: a spawn branch is its own
+    conversation whose result flows back through the return value /
+    attach pointer, so its internals never render into the spawning
+    branch's context. Without this, a Goal working agent could read the
+    judge's spawned instructions and verdicts from its own DAG history.
+    The exclusion is directional — rendering *from* a head inside the
+    spawn branch still sees the branch itself via the spine.
     """
     spine = render_spine(graph, head_id)
     if not spine:
@@ -562,15 +571,20 @@ def render_path(graph: Graph, head_id: str) -> list[str]:
         if n.caller:
             children.setdefault(n.caller, []).append(n.id)
 
-    members: set[str] = set()
+    members: set[str] = set(spine)
     stack = list(spine)
     while stack:
         nid = stack.pop()
-        if nid in members:
-            continue
-        members.add(nid)
         if not _is_root(graph, nid):
-            stack.extend(children.get(nid, ()))
+            for cid in children.get(nid, ()):
+                if cid in members:
+                    continue
+                child = graph.nodes.get(cid)
+                if child is not None and (child.metadata or {}).get(
+                        "spawn_branch_root"):
+                    continue
+                members.add(cid)
+                stack.append(cid)
     return [n.id for n in graph if n.id in members]
 
 

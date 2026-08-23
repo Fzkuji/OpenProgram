@@ -656,6 +656,15 @@ SETTINGS: list[SettingSpec] = [
              "the bound it started with.",
     ),
     SettingSpec(
+        key="goal.judge_model", path=("goal", "judge_model"), group="Goal",
+        label="Goal judge model", widget="text",
+        apply=APPLY_LIVE, default="",
+        help="Model the Goal completion judge runs on, as "
+             "`provider/model` or a bare model name. Empty (default) = "
+             "the session's picked model. Set a cheaper model to cut "
+             "the per-round judgment cost.",
+    ),
+    SettingSpec(
         key="agent.output_style", path=("agent", "output_style"),
         group="Agent", label="Output style", widget="enum",
         apply=APPLY_LIVE, default="default", choices=_output_styles,
