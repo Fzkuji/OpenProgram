@@ -583,13 +583,20 @@ export function handleChatResponse(data: ChatResponseData): void {
     if (sid) {
       const before = data.tokens_before;
       const after = data.tokens_after;
+      const n = Number(data.summarised_count);
+      const content = data.summarised_count != null && Number.isFinite(n)
+        ? translateText(
+            `Context compacted: covered ${n} older messages, ${before} → ${after} tokens`,
+            `上下文已压缩：盖住 ${n} 条旧消息，${before} → ${after} tokens`,
+          )
+        : translateText(
+            `Context compacted: ${before} → ${after} tokens`,
+            `上下文已压缩：${before} → ${after} tokens`,
+          );
       useSessionStore.getState().appendMessage(sid, {
         id: "compaction_finished_" + Date.now().toString(36),
         role: "system",
-        content: translateText(
-          `Context compacted: ${before} → ${after} tokens`,
-          `上下文已压缩：${before} → ${after} tokens`,
-        ),
+        content,
         status: "done",
       });
       if (targetsActive) scrollToBottom();

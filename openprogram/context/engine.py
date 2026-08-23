@@ -371,7 +371,7 @@ class DefaultContextEngine(ContextEngine):
                 )
             self.usage.record_compaction(session_id)
 
-        new_history = db.get_branch(session_id) or history
+        new_history = rendered_history(db, session_id) or history
         tokens_after = self._estimate(new_history)
 
         result = CompactResult(
