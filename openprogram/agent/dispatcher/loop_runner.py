@@ -197,42 +197,12 @@ def run_loop_blocking(
         system_prompt=system_prompt,
     )
 
-    # Snip: free operation — remove oldest turns before trying the
-    # expensive LLM compact.  Runs only when auto-compact threshold
-    # is crossed and history_override is not set.
-    if req.history_override is None and _ctx_engine.should_auto_compact(prep):
-        try:
-            from openprogram.context.snip import snip
-            from openprogram.context.tokens import count_tokens
-            snipped, n_snipped = snip(
-                prep.history_dicts,
-                token_counter=lambda msgs: count_tokens(msgs, model),
-                context_window=prep.context_window,
-            )
-            if n_snipped > 0:
-                history = snipped
-                prep = _ctx_engine.prepare(
-                    agent=agent_profile,
-                    session=db.get_session(req.session_id) or session,
-                    history=history,
-                    model=model,
-                    tools=tools,
-                    system_prompt=system_prompt,
-                )
-                on_event({"type": "chat_response",
-                          "data": {"type": "snip",
-                                   "session_id": req.session_id,
-                                   "turns_removed": n_snipped}})
-        except Exception:
-            # Failing to snip means the oversized context goes to the model
-            # and the provider rejects it — worth knowing about.
-            _log.warning(
-                "history snip failed for session %s",
-                req.session_id, exc_info=True,
-            )
-
-    # Auto-compact: when budget STILL crosses the threshold after
-    # snip, run the full LLM summariser INLINE.
+    # Auto-compact FIRST: the durable fix. It writes a summary node
+    # into the DAG, so the shrink survives this turn (panel, next
+    # turns, reload). Snip runs only as a fallback below — the old
+    # snip-first order let the free in-memory trim drop the budget
+    # back under the threshold every turn, so the LLM compact never
+    # fired and the graph grew without bound.
     if req.history_override is None and _ctx_engine.should_auto_compact(prep):
         try:
             loop = asyncio.new_event_loop()
@@ -268,6 +238,41 @@ def run_loop_blocking(
                                "session_id": req.session_id,
                                "error": f"{type(e).__name__}: {e}",
                                "user_initiated": False}})
+
+    # Snip fallback: compact failed, was skipped (<4 messages), or the
+    # summary alone didn't free enough. Free in-memory trim of the
+    # oldest turns so THIS request still fits the window. Not written
+    # to the DAG — it only shapes what ships now.
+    if req.history_override is None and _ctx_engine.should_auto_compact(prep):
+        try:
+            from openprogram.context.snip import snip
+            from openprogram.context.tokens import count_tokens
+            snipped, n_snipped = snip(
+                prep.history_dicts,
+                token_counter=lambda msgs: count_tokens(msgs, model),
+                context_window=prep.context_window,
+            )
+            if n_snipped > 0:
+                history = snipped
+                prep = _ctx_engine.prepare(
+                    agent=agent_profile,
+                    session=db.get_session(req.session_id) or session,
+                    history=history,
+                    model=model,
+                    tools=tools,
+                    system_prompt=system_prompt,
+                )
+                on_event({"type": "chat_response",
+                          "data": {"type": "snip",
+                                   "session_id": req.session_id,
+                                   "turns_removed": n_snipped}})
+        except Exception:
+            # Failing to snip means the oversized context goes to the model
+            # and the provider rejects it — worth knowing about.
+            _log.warning(
+                "history snip failed for session %s",
+                req.session_id, exc_info=True,
+            )
 
     # Memory recalled for this turn (dag/overview.md §7). ``process_user_turn``
     # stamped it on the user node; read it back from the branch so the block

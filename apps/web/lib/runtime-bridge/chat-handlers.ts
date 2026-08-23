@@ -65,6 +65,7 @@ import {
   shouldHonorRunningTaskClear,
   type ClearedTaskIdentity,
 } from "@/lib/state/running-task-clear";
+import { translateText } from "@/lib/i18n";
 
 /** The app's single draft-channel-choice host (module-level, backed by
  *  `runtimeState._pendingChannelChoice`). */
@@ -560,11 +561,57 @@ export function handleChatResponse(data: ChatResponseData): void {
     handleContextStats(data as ContextStatsData, sid);
     return;
   }
+  // Compaction / snip frames can arrive mid-turn. They must not fall
+  // through to the final-reply branch (that clears running + pending).
+  if (type === "compaction_started") {
+    if (sid) {
+      useSessionStore.getState().appendMessage(sid, {
+        id: "compaction_started_" + Date.now().toString(36),
+        role: "system",
+        content: translateText("Compacting context…", "正在压缩上下文…"),
+        status: "done",
+      });
+      if (targetsActive) scrollToBottom();
+    }
+    return;
+  }
   if (type === "compaction_finished") {
     // 压缩把保留尾部重挂到摘要节点下，活跃分支的节点集合整个换了一批。
     // Context tab 的明暗靠 /context-range 的 node_ids，不刷新就停在压缩前
     // 的旧集合上 → 整图全暗。
     if (targetsActive && sid) refreshHistoryContextRange(sid);
+    if (sid) {
+      const before = data.tokens_before;
+      const after = data.tokens_after;
+      useSessionStore.getState().appendMessage(sid, {
+        id: "compaction_finished_" + Date.now().toString(36),
+        role: "system",
+        content: translateText(
+          `Context compacted: ${before} → ${after} tokens`,
+          `上下文已压缩：${before} → ${after} tokens`,
+        ),
+        status: "done",
+      });
+      if (targetsActive) scrollToBottom();
+    }
+    return;
+  }
+  if (type === "compaction_failed") {
+    if (sid) {
+      const err = String((data as { error?: unknown }).error ?? "");
+      useSessionStore.getState().appendMessage(sid, {
+        id: "compaction_failed_" + Date.now().toString(36),
+        role: "system",
+        content: err
+          ? translateText("Context compaction failed: ", "上下文压缩失败：") + err
+          : translateText("Context compaction failed", "上下文压缩失败"),
+        status: "done",
+      });
+      if (targetsActive) scrollToBottom();
+    }
+    return;
+  }
+  if (type === "snip" || type === "compaction_recommended") {
     return;
   }
   if (type === "status") {

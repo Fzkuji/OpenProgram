@@ -422,10 +422,13 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     submit,
   ]);
 
-  // Pick a slash command — argless commands run immediately, commands
-  // that take arguments just fill the input so the user can type them.
+  // Pick a slash command. Commands with a REQUIRED argument (an
+  // `<angle-bracket>` placeholder in `args`) fill the input so the
+  // user can type it. Everything else — no args, or only optional
+  // `[bracketed]` ones like `/compact [keep_recent_tokens]` — runs
+  // immediately; selecting from the menu means "do it now".
   function selectSlashCommand(cmd: SlashCommand) {
-    if (cmd.args) {
+    if (cmd.args && cmd.args.includes("<")) {
       setInput(`${cmd.name} `);
       requestAnimationFrame(() => textareaRef.current?.focus());
       return;

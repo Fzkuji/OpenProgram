@@ -108,7 +108,9 @@ export function useComposerKeyDown({
     }
     // While the slash menu is open it captures the arrow keys (move the
     // highlight), Enter (pick the highlighted command) and Escape.
-    if (slash.visible) {
+    // `closing` is the 380ms fade-out: visible stays true so the list
+    // can animate, but Enter must fall through to submit → runCommand.
+    if (slash.visible && !slash.closing) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
         slash.move(1);

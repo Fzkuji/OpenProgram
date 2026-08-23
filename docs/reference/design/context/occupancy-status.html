@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>上下文占用与压缩 — 现状</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --surface: #fff; --text: #202124; --muted: #6b7280;
+    --line: #deded9; --blue: #2563eb; --blue-soft: #eff6ff;
+    --green: #15803d; --green-soft: #f0fdf4; --amber: #a16207;
+    --amber-soft: #fffbeb; --red: #b42318; --red-soft: #fef2f2;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 48px 24px 96px; }
+  header { max-width: 760px; margin-bottom: 32px; }
+  .eyebrow { color: var(--blue); font: 600 12px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+  h1 { margin: 10px 0 12px; font-size: clamp(30px, 5vw, 44px); line-height: 1.12; letter-spacing: -.03em; }
+  h2 { margin: 0 0 12px; font-size: 21px; }
+  h3 { margin: 18px 0 8px; font-size: 16px; }
+  p { margin: 0 0 12px; }
+  code { font-family: var(--mono); font-size: .9em; background: #eeeeeb; padding: 2px 5px; border-radius: 4px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pill { border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; background: var(--surface); color: var(--muted); font-size: 12px; }
+  .pill.ok { color: var(--green); border-color: #bbdfc5; background: var(--green-soft); }
+  .pill.warn { color: var(--amber); border-color: #e8d39a; background: var(--amber-soft); }
+  .pill.bad { color: var(--red); border-color: #f0c2bf; background: var(--red-soft); }
+  section { margin-top: 42px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .card { min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+  .card strong { display: block; margin-bottom: 6px; }
+  .card p { color: var(--muted); font-size: 14px; overflow-wrap: anywhere; margin: 0; }
+  .flow { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr; align-items: stretch; gap: 10px; }
+  .flow .step { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; font-size: 14px; }
+  .flow .arrow { align-self: center; color: var(--muted); font-family: var(--mono); }
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); }
+  th, td { padding: 12px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; background: #f1f1ee; }
+  tr:last-child td { border-bottom: 0; }
+  .note { border-left: 4px solid var(--blue); background: var(--blue-soft); padding: 14px 16px; margin: 12px 0; }
+  .warning { border-left-color: var(--amber); background: var(--amber-soft); }
+  .danger { border-left-color: var(--red); background: var(--red-soft); }
+  ul { margin: 8px 0 0; padding-left: 20px; }
+  li { margin: 5px 0; }
+  .tree { padding: 16px 18px; background: #202124; color: #e5e7eb; border-radius: 10px; overflow-x: auto; font-family: var(--mono); font-size: 12px; line-height: 1.55; white-space: pre; }
+  .path { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+  @media (max-width: 760px) {
+    main { padding: 28px 16px 64px; }
+    .grid, .grid-2, .flow { grid-template-columns: 1fr; }
+    .flow .arrow { transform: rotate(90deg); justify-self: center; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Context · Occupancy &amp; compaction</div>
+    <h1>占用和压缩现在到底是什么情况</h1>
+    <p>对照 2026-08-23 这个会话：Grok 4.6，窗口 500k，面板 <strong>637.7k / 500.0k (est.)</strong>，Messages <strong>626.1k · 125.2%</strong>。下面按代码现状写，不是按「应该怎样」写。</p>
+    <div class="meta">
+      <span class="pill ok">圆环点开 Loading：已修</span>
+      <span class="pill bad">图可以大于窗口：开着</span>
+      <span class="pill warn">压缩只在发请求前：开着</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>01 · 两套数，不是一把尺子</h2>
+    <div class="grid">
+      <article class="card">
+        <strong>面板 / 圆环</strong>
+        <p>报「这根分支现在有多大」。<code>rendered_history</code> 本地估 token。超过窗口也原样报，百分比头行封顶 100%。</p>
+      </article>
+      <article class="card">
+        <strong>压缩开关</strong>
+        <p>看下一轮要发出去的预算。<code>budget_pct = (input + output_reserve) / window</code>。到 80% 才在 <em>这次 LLM 调用前</em> 动手。</p>
+      </article>
+      <article class="card">
+        <strong>模型实际吃到的</strong>
+        <p>压缩之后的 rendered 视图：一条 active summary + 没被吃掉的尾。账单是 <code>measured</code>。没发过、或发到一半被掐，图可以一直大于窗口。</p>
+      </article>
+    </div>
+    <div class="note warning">
+      637k / 500k 不是计算器坏了。卡在报图的体积。压缩还没把这张图写小。
+    </div>
+  </section>
+
+  <section>
+    <h2>02 · 压缩现在怎么跑</h2>
+    <p>一次会话最多一条 <strong>active summary</strong>。再压是替换，不是叠。DAG 只追加，不删旧节点，HEAD 不动。模型读的是替换后的 rendered 链。</p>
+    <div class="flow" aria-label="发请求前的压缩">
+      <div class="step"><strong>prepare</strong><br>按 DAG 拼 prompt，算 budget_pct</div>
+      <div class="arrow">→</div>
+      <div class="step"><strong>≥ 80% 则 snip</strong><br>免费砍最老完整 turn。只改这一次要发出去的 history，<em>不写回 DAG</em></div>
+      <div class="arrow">→</div>
+      <div class="step"><strong>还是 ≥ 80% 则 compact</strong><br>LLM 写摘要，追加 <code>context/summary</code> 节点</div>
+      <div class="arrow">→</div>
+      <div class="step"><strong>再 prepare</strong><br>这次请求读 summary + 尾巴</div>
+    </div>
+    <h3>什么时候会跑</h3>
+    <table>
+      <thead><tr><th>触发</th><th>阈值 / 条件</th><th>会不会改面板看到的图</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>建议压缩事件</td>
+          <td><code>budget_pct ≥ 0.70</code></td>
+          <td>不改图，只发事件</td>
+        </tr>
+        <tr>
+          <td>自动 snip</td>
+          <td>下一轮发出去之前，且 <code>≥ 0.80</code></td>
+          <td>不改。面板继续按完整 rendered 估，所以还能溢出</td>
+        </tr>
+        <tr>
+          <td>自动 compact</td>
+          <td>snip 之后还 <code>≥ 0.80</code></td>
+          <td>会。摘要进 DAG，之后的 <code>estimated</code> 应变小</td>
+        </tr>
+        <tr>
+          <td>手动 <code>/compact</code></td>
+          <td>用户点</td>
+          <td>会</td>
+        </tr>
+        <tr>
+          <td>闲着看面板 / 切会话 / worker 刚起来</td>
+          <td>—</td>
+          <td>不会。没有「图大于窗口就压」这条</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="note danger">
+      代码里 <code>AUTO_COMPACT_PCT = 0.80</code>。<code>openprogram/context/README.md</code> 有一处还写 0.85。以代码为准。
+    </div>
+    <h3>这次 637k 为什么还在</h3>
+    <ul>
+      <li>面板走 <code>estimated</code>：按 <code>rendered_history</code> 重算。没有 active summary，或 summary 没盖住这 626k 消息，估出来就会大于 500k。</li>
+      <li>自动压缩绑在「下一轮发出去」。没发、失败、或 <code>worker restarted mid-turn</code> 打断，摘要节点不会出现。</li>
+      <li>即便某次请求只做了 snip：发出去的 prompt 短了，DAG 没变，面板照样报 637k。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>03 · 圆环和面板这条线</h2>
+    <div class="grid-2">
+      <article class="card">
+        <strong>已经是这样</strong>
+        <p>占用三元组一份。切会话进 <code>session_loaded</code>。点圆环读缓存。没有分类时先画圆环的 <code>total_used / window</code>。不画 Loading。全屏遮罩去掉。<code>read()</code> 不再 <code>notify()</code>。</p>
+      </article>
+      <article class="card">
+        <strong>还开着</strong>
+        <p>快照只在 worker 内存，重启要重算。头行百分比封顶、分项可以 125%、空闲地板到 0，三套规则。分类晚到时头行先有数、分项可能先空一拍。</p>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <h2>04 · 问题总表</h2>
+    <table>
+      <thead><tr><th>问题</th><th>状态</th><th>一句话</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>点圆环先 Loading 再出数</td>
+          <td><span class="pill ok">已修</span></td>
+          <td>现拉 <code>GET /context</code>。现用缓存 / 圆环占用。</td>
+        </tr>
+        <tr>
+          <td>点开圆环整页崩</td>
+          <td><span class="pill ok">已修</span></td>
+          <td><code>read()</code> + <code>notify()</code> 死循环。</td>
+        </tr>
+        <tr>
+          <td>全屏遮罩挡侧栏</td>
+          <td><span class="pill ok">已修</span></td>
+          <td>旧 occluder。</td>
+        </tr>
+        <tr>
+          <td>窗口还在跑旧 JS</td>
+          <td><span class="pill ok">已处理</span></td>
+          <td>Electron 缓存，不是源码写回 Loading。</td>
+        </tr>
+        <tr>
+          <td>占用 &gt; 窗口</td>
+          <td><span class="pill bad">开着</span></td>
+          <td>展示的是图体积，不裁切，也不在闲时压缩。</td>
+        </tr>
+        <tr>
+          <td>snip 不写 DAG</td>
+          <td><span class="pill warn">开着</span></td>
+          <td>下次请求变短，面板数字可以照样溢出。</td>
+        </tr>
+        <tr>
+          <td>压缩只在发请求前</td>
+          <td><span class="pill warn">产品未定</span></td>
+          <td>要不要「一看就过窗口就压」，还没定。</td>
+        </tr>
+        <tr>
+          <td>百分比三套规则</td>
+          <td><span class="pill warn">开着</span></td>
+          <td>头行 100%、Messages 125%、Free 0。</td>
+        </tr>
+        <tr>
+          <td>README 阈值 85%</td>
+          <td><span class="pill warn">文档错</span></td>
+          <td>代码是 80%。</td>
+        </tr>
+        <tr>
+          <td>快照不落库</td>
+          <td><span class="pill">铁律</span></td>
+          <td>worker 重启后重算。现用圆环数兜底。</td>
+        </tr>
+        <tr>
+          <td>重启打断进行中的一轮</td>
+          <td><span class="pill">过程问题</span></td>
+          <td>为刷前端停过 worker。和溢出无关，会拦住本该跑的 compact。</td>
+        </tr>
+        <tr>
+          <td><code>package-lock.json</code> 脏</td>
+          <td><span class="pill">杂项</span></td>
+          <td>没进 <code>5d3e3439</code>。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>05 · 文件在哪</h2>
+    <div class="tree">openprogram/context/
+├── session_stats.py     占用 + 分类（圆环和面板同一份）
+├── engine.py            70% 建议 / 80% 发请求前自动压
+├── types.py             budget_pct = (input + reserve) / window
+├── snip.py              只砍这次要发出去的 history
+├── summarize.py         compact 用的摘要
+├── persistence.py       rendered_history；摘要落 DAG
+└── README.md            有一处写成 85%
+
+openprogram/agent/dispatcher/loop_runner.py
+                         prepare → snip → compact → 再 prepare
+
+apps/server/openprogram_server/
+├── server.py                 图变了重算、内存快照、推 context_stats
+└── _webui/
+    ├── ws_actions/session.py 切会话带快照
+    └── routes/tree.py        GET /context（备用）
+
+apps/web/
+├── components/chat/context-badge.tsx
+├── components/chat/context-breakdown-panel.tsx
+├── lib/state/context-breakdown-cache.ts
+└── lib/runtime-bridge/{conversations,chat-handlers}.ts</div>
+    <p class="path" style="margin-top:16px">本页路径：<code>docs/reference/design/context/occupancy-status.html</code></p>
+  </section>
+
+  <section>
+    <h2>06 · 还没做、建议先定的</h2>
+    <ol>
+      <li>图超过窗口时：只展示溢出，还是闲着也自动 compact。</li>
+      <li>snip 要不要写回 DAG，否则面板和「上次真正发出去的」会长期不一致。</li>
+      <li>溢出时头行、分项百分比、Free space 用同一套说法。</li>
+      <li>README 的 85% 改成 80%。</li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>

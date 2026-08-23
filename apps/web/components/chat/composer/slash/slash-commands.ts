@@ -31,7 +31,10 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     description:
       "Summarise older history; keep recent N tokens verbatim (default: window-adaptive)",
     run(rest, { sessionId, send }) {
-      if (!sessionId) return true;
+      if (!sessionId) {
+        alert(translateText("Start a conversation first", "先开始一段对话再执行此命令"));
+        return true;
+      }
       const n = parseInt(rest.trim(), 10);
       send({
         action: "compact",
@@ -73,7 +76,10 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       "Name the current branch (this conversation's head). No name = "
       + "let the model summarise one",
     run(rest, { sessionId, send }) {
-      if (!sessionId) return true;
+      if (!sessionId) {
+        alert(translateText("Start a conversation first", "先开始一段对话再执行此命令"));
+        return true;
+      }
       // A branch in this DAG IS a named leaf — there is no separate
       // "create" step, a fork happens when a turn is written off a
       // non-tip node. So naming the active head is what "/branch" means;
@@ -93,7 +99,11 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     description: "Run a registered skill by name",
     run(rest, { sessionId, send }) {
       const name = rest.trim();
-      if (!name || !sessionId) return true;
+      if (!sessionId) {
+        alert(translateText("Start a conversation first", "先开始一段对话再执行此命令"));
+        return true;
+      }
+      if (!name) return true;
       send({ action: "chat", session_id: sessionId, text: `/skill ${name}` });
       return true;
     },
@@ -118,7 +128,10 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       + "Without --async this blocks until the spawned agent "
       + "finishes (legacy behaviour).",
     run(rest, { sessionId, send }) {
-      if (!sessionId) return true;
+      if (!sessionId) {
+        alert(translateText("Start a conversation first", "先开始一段对话再执行此命令"));
+        return true;
+      }
       send({
         action: "chat",
         session_id: sessionId,
@@ -134,7 +147,10 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       "Merge N peer branches into a reply on this session. "
       + "Same-session: 'sid:head_id'. Mark base with '*' prefix.",
     run(rest, { sessionId, send }) {
-      if (!sessionId) return true;
+      if (!sessionId) {
+        alert(translateText("Start a conversation first", "先开始一段对话再执行此命令"));
+        return true;
+      }
       send({
         action: "chat",
         session_id: sessionId,
@@ -167,7 +183,10 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     description:
       "Roll back to a previous point. No arg = list points; N = rewind to the Nth point",
     run(rest, { sessionId, send }) {
-      if (!sessionId) return true;
+      if (!sessionId) {
+        alert(translateText("Start a conversation first", "先开始一段对话再执行此命令"));
+        return true;
+      }
       const n = parseInt(rest.trim(), 10);
       if (Number.isFinite(n) && n > 0) {
         send({

@@ -570,7 +570,7 @@ ingest(session_id, message)            新消息落 DB 时调用，默认 no-op�
 prepare(agent, session, history,       每个 LLM 调用前跑，返回 TurnPrep
         model, tools)
 should_recommend(prep)                 budget_pct ≥ 0.70？
-should_auto_compact(prep)              budget_pct ≥ 0.85？
+should_auto_compact(prep)              budget_pct ≥ 0.80？
 compact(agent, session_id, model,      触发 compaction，返回 CompactResult
         on_event, previous_summary,
         user_initiated, cancel_event,
