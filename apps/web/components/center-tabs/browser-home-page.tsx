@@ -273,6 +273,7 @@ export function BrowserHomePage() {
 
   return (
     <div className={`${styles.browserHome} ${styles.webPane}`}>
+      <div className={styles.webChrome}>
       <div className={styles.webToolbar}>
         <button type="button" className={styles.webToolbarBtn} disabled title={text("Back", "后退")} aria-label={text("Back", "后退")}>
           <ArrowLeft size={14} aria-hidden="true" />
@@ -322,6 +323,7 @@ export function BrowserHomePage() {
         />
       </div>
       <BookmarkBar ownerId={menuOwnerId} onNavigate={go} />
+      </div>
       <div className={styles.browserHomeBody}>
         {canImport && showImport && (
           <BrowserImportDialog onDismiss={() => {

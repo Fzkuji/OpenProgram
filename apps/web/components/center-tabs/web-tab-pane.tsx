@@ -417,6 +417,7 @@ function DesktopWebTabPane({
 
   return (
     <div className={styles.webPane} onKeyDownCapture={handleRendererShortcut}>
+      <div className={styles.webChrome}>
       <div className={styles.webToolbar}>
         <button
           type="button"
@@ -490,6 +491,7 @@ function DesktopWebTabPane({
         />
       </div>
       <BookmarkBar ownerId={menuOwnerId} onNavigate={navigateTo} />
+      </div>
       {findOpen ? (
         <div className={styles.webFindBar}>
           <input
@@ -571,6 +573,7 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
 
   return (
     <div className={styles.webPane}>
+      <div className={styles.webChrome}>
       <div className={styles.webToolbar}>
         <button
           type="button"
@@ -615,6 +618,7 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
         />
       </div>
       <BookmarkBar ownerId={menuOwnerId} onNavigate={navigateTo} />
+      </div>
       {pipBound ? (
         <PipBoundMask tabId={tabId} />
       ) : url.startsWith("file:") ? (

@@ -1018,6 +1018,38 @@
   container-type: inline-size;
 }
 
+.webChrome {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.webChrome:has(> .bookmarkBar) {
+  --web-chrome-row: 30px;
+  --web-chrome-gap: 4px;
+  gap: var(--web-chrome-gap);
+  padding: var(--web-chrome-gap) 0;
+  border-bottom: 1px solid var(--border);
+}
+.webChrome:has(> .bookmarkBar) .webToolbar,
+.webChrome:has(> .bookmarkBar) .bookmarkBar {
+  height: var(--web-chrome-row);
+  padding: 0 10px;
+  border-bottom: none;
+}
+.webChrome:has(> .bookmarkBar) .webAddress,
+.webChrome:has(> .bookmarkBar) .webToolbarBtn,
+.webChrome:has(> .bookmarkBar) .bookmarkBarItem,
+.webChrome:has(> .bookmarkBar) .bookmarkBarMore,
+.webChrome:has(> .bookmarkBar) .bookmarkBarMoreSlot {
+  height: var(--web-chrome-row);
+}
+.webChrome:has(> .bookmarkBar) .webToolbarBtn,
+.webChrome:has(> .bookmarkBar) .bookmarkBarMore,
+.webChrome:has(> .bookmarkBar) .bookmarkBarMoreSlot {
+  width: var(--web-chrome-row);
+  flex-basis: var(--web-chrome-row);
+}
+
 .webToolbar {
   /* 40px box-border — same row height as the file toolbar, so both
      toolbar-bearing tab kinds share one second header line at y=80. */
@@ -1029,12 +1061,6 @@
   padding: 0 10px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-}
-.webToolbar:has(+ .bookmarkBar) {
-  border-bottom: none;
-  /* Hug the 26px address field so the bookmarks row sits flush under it. */
-  height: 32px;
-  padding: 4px 10px 2px;
 }
 
 .webAddress {
@@ -1122,12 +1148,12 @@
 .webFindBar button:disabled { opacity: .35; cursor: default; }
 
 .bookmarkBar {
-  height: 30px;
+  height: var(--web-chrome-row, 30px);
   box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 2px 10px;
+  padding: 0 10px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
