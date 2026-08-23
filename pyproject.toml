@@ -215,6 +215,18 @@ Changelog = "https://github.com/Fzkuji/OpenProgram/releases"
 Discussions = "https://github.com/Fzkuji/OpenProgram/discussions"
 Paper = "https://arxiv.org/abs/2606.15874"
 
+# Product runtimes install the locked extras on native macOS/Linux
+# architectures. sentence-transformers pulls torch, and current torch
+# builds omit macOS x86_64 wheels unless the resolver is told that
+# environment is required.
+[tool.uv]
+required-environments = [
+    "sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'linux' and platform_machine == 'aarch64'",
+]
+
 [tool.setuptools.packages.find]
 where = [".", "apps/server", "apps/cli/python"]
 include = ["openprogram*", "openprogram_server*", "openprogram_cli*"]

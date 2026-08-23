@@ -1790,6 +1790,13 @@ def test_search_runtime_dependency_supports_macos_x64() -> None:
     )
 
 
+def test_memory_runtime_dependency_supports_macos_x64() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
+    assert "sys_platform == 'darwin' and platform_machine == 'x86_64'" in pyproject
+    assert re.search(r"torch-[^-]+-.*macosx_[^-]+_x86_64\.whl", lock)
+
+
 def test_product_manifest_requires_one_complete_capability_set() -> None:
     manifest = json.loads(
         (ROOT / "scripts" / "release" / "product-runtime.json").read_text(encoding="utf-8")
