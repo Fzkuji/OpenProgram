@@ -13,6 +13,7 @@ import { ChevronRight, ChevronDown } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
 import { MENU_SEPARATOR } from "@/components/chat/top-bar/menu-styles";
 import { useSessionStore } from "@/lib/session-store";
+import { getSocket } from "@/lib/runtime-bridge/state";
 import {
   readContextBreakdownCache,
   subscribeContextBreakdownCache,
@@ -128,6 +129,10 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
   const ringWindow = useSessionStore((s) =>
     sessionId ? s.contextWindow[sessionId] : undefined,
   );
+  const compacting = useSessionStore((s) =>
+    Boolean(sessionId && s.compactionUi[sessionId]?.running),
+  );
+  const canCompact = Boolean(sessionId) && !compacting;
   const [data, setData] = useState<Breakdown | null>(() =>
     readContextBreakdownCache(sessionId, headId),
   );
@@ -309,6 +314,32 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
                   <Row key={s.name} name={s.name} tokens={s.tokens} />
                 ))}
             </Section>
+
+            <div className={MENU_SEPARATOR} style={{ marginTop: 14, marginBottom: 12 }} />
+            <button
+              type="button"
+              disabled={!canCompact}
+              onClick={() => {
+                if (!sessionId || compacting) return;
+                const sock = getSocket();
+                if (sock && sock.readyState === WebSocket.OPEN) {
+                  sock.send(JSON.stringify({
+                    action: "compact",
+                    session_id: sessionId,
+                  }));
+                }
+              }}
+              className="w-full rounded-[8px] px-3 py-1.5 text-[12px]"
+              style={{
+                background: canCompact ? "var(--bg-hover)" : "transparent",
+                color: canCompact ? "var(--text-primary)" : "var(--text-muted)",
+                border: "1px solid var(--border)",
+                cursor: canCompact ? "pointer" : "not-allowed",
+                opacity: canCompact ? 1 : 0.5,
+              }}
+            >
+              {text("Compact now", "立即压缩")}
+            </button>
           </>
         )}
       </div>

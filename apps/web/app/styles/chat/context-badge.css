@@ -46,6 +46,18 @@
   outline: 2px solid var(--accent-blue, #3b9eff);
   outline-offset: 1px;
 }
+.context-ring-badge.is-recommended {
+  box-shadow: 0 0 0 1px var(--warning-soft, #d97706);
+}
+.context-ring-badge.is-busy svg {
+  animation: context-ring-spin 0.8s linear infinite;
+}
+@keyframes context-ring-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .context-ring-badge.is-busy svg { animation: none; }
+}
 
 /* Context breakdown card — usage meters are BLUE (Claude uses blue for
    usage bars; coral stays the action colour, and --accent-blue is

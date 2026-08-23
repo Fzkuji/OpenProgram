@@ -188,6 +188,12 @@ interface ConvState {
     } | null,
     contextWindow?: number | null,
   ) => void;
+  /** Ring + panel compact lifecycle. Not occupancy. */
+  compactionUi: Record<string, { recommended?: boolean; running?: boolean }>;
+  setCompactionUi: (
+    sessionId: string,
+    patch: { recommended?: boolean; running?: boolean },
+  ) => void;
 
   setWsStatus: (s: ConvState["wsStatus"]) => void;
   setConversations: (list: ConvSummary[]) => void;
@@ -506,6 +512,14 @@ export const useSessionStore = create<ConvState>((set) => ({
 
   tokens: {},
   contextWindow: {},
+  compactionUi: {},
+  setCompactionUi: (sessionId, patch) =>
+    set((s) => ({
+      compactionUi: {
+        ...s.compactionUi,
+        [sessionId]: { ...s.compactionUi[sessionId], ...patch },
+      },
+    })),
   heads: {},
   setHead: (sessionId, headId) =>
     set((s) =>

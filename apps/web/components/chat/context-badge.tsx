@@ -22,6 +22,7 @@ import { createPortal } from "react-dom";
 import { useSessionStore } from "@/lib/session-store";
 import { useSessionScope } from "@/lib/session-store/session-scope";
 import { HoverTip } from "@/components/ui/tooltip";
+import { translateText } from "@/lib/i18n";
 import { ContextBreakdownPanel } from "./context-breakdown-panel";
 import {
   readContextBreakdownCache,
@@ -56,6 +57,12 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   const ringUsed = useSessionStore((s) => (sid ? s.tokens[sid]?.total_used : undefined));
   const ringBasis = useSessionStore((s) => (sid ? s.tokens[sid]?.basis : undefined));
   const ringWindow = useSessionStore((s) => (sid ? s.contextWindow[sid] : undefined));
+  const compacting = useSessionStore((s) =>
+    Boolean(sid && s.compactionUi[sid]?.running),
+  );
+  const compactRecommended = useSessionStore((s) =>
+    Boolean(sid && s.compactionUi[sid]?.recommended),
+  );
 
   // Paint from the ring the moment this session is focused. GET /context
   // only fills category detail, and never blocks the click.
@@ -146,8 +153,9 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   const pct = Math.max(0, Math.min(1, used / win));
 
   // 占用越高颜色越警示：<50% 绿，50–80% 黄，≥80% 红。
-  const arcColor =
-    pct >= 0.8 ? "var(--danger-soft)" : pct >= 0.5 ? "var(--warning-soft)" : "var(--success-soft)";
+  const arcColor = compactRecommended
+    ? "var(--warning-soft)"
+    : pct >= 0.8 ? "var(--danger-soft)" : pct >= 0.5 ? "var(--warning-soft)" : "var(--success-soft)";
 
   // tooltip 用 Claude Code 那种「Context 用了多少/共多少 (百分比)」格式
   const fmtNum = (n: number) =>
@@ -155,9 +163,12 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   // basis 说明这个数从哪来：measured = 上一次真实请求实测，estimated =
   // 那之后图变了（压缩/切模型/切分支）按当前图重估。
   const basisLabel = usage?.basis === "estimated" ? " · est." : "";
-  const ringTooltip =
-    `Context ${fmtNum(used)} / ${fmtNum(win)} (${(pct * 100).toFixed(0)}%)${basisLabel}` +
-    (metaLine ? ` · ${metaLine}` : "");
+  const ringTooltip = compacting
+    ? translateText("Compacting context…", "正在压缩上下文…")
+    : compactRecommended
+      ? `${translateText("Suggest compacting", "建议压缩")} · Context ${fmtNum(used)} / ${fmtNum(win)} (${(pct * 100).toFixed(0)}%)${basisLabel}`
+      : `Context ${fmtNum(used)} / ${fmtNum(win)} (${(pct * 100).toFixed(0)}%)${basisLabel}` +
+        (metaLine ? ` · ${metaLine}` : "");
 
   // 环形进度（Claude Code 实测：12px svg、描边 2、轨道 var(--border)、
   // 进度 var(--accent-orange)、-90° 起点）
@@ -172,7 +183,11 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
       <HoverTip label={ringTooltip}>
       <button
         ref={ringRef}
-        className="context-ring-badge"
+        className={
+          "context-ring-badge"
+          + (compactRecommended ? " is-recommended" : "")
+          + (compacting ? " is-busy" : "")
+        }
         onClick={() => setPanelOpen(!panelOpen)}
         aria-label="Context usage"
         aria-expanded={panelOpen}
@@ -183,7 +198,7 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
             cy="6"
             r={R}
             fill="none"
-            stroke="var(--border)"
+            stroke={compactRecommended ? "var(--warning-soft)" : "var(--border)"}
             strokeWidth={SW}
           />
           <circle

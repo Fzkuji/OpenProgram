@@ -565,6 +565,9 @@ export function handleChatResponse(data: ChatResponseData): void {
   // through to the final-reply branch (that clears running + pending).
   if (type === "compaction_started") {
     if (sid) {
+      useSessionStore.getState().setCompactionUi(sid, {
+        running: true, recommended: false,
+      });
       useSessionStore.getState().appendMessage(sid, {
         id: "compaction_started_" + Date.now().toString(36),
         role: "system",
@@ -581,18 +584,27 @@ export function handleChatResponse(data: ChatResponseData): void {
     // 的旧集合上 → 整图全暗。
     if (targetsActive && sid) refreshHistoryContextRange(sid);
     if (sid) {
+      useSessionStore.getState().setCompactionUi(sid, {
+        running: false, recommended: false,
+      });
+      const noOp = Boolean(data.no_op);
       const before = data.tokens_before;
       const after = data.tokens_after;
       const n = Number(data.summarised_count);
-      const content = data.summarised_count != null && Number.isFinite(n)
+      const content = noOp
         ? translateText(
-            `Context compacted: covered ${n} older messages, ${before} → ${after} tokens`,
-            `上下文已压缩：盖住 ${n} 条旧消息，${before} → ${after} tokens`,
+            "Context is already compacted; no older messages to fold.",
+            "当前上下文已是压缩后状态，没有可压缩的旧消息",
           )
-        : translateText(
-            `Context compacted: ${before} → ${after} tokens`,
-            `上下文已压缩：${before} → ${after} tokens`,
-          );
+        : data.summarised_count != null && Number.isFinite(n)
+          ? translateText(
+              `Context compacted: covered ${n} older messages, ${before} → ${after} tokens`,
+              `上下文已压缩：盖住 ${n} 条旧消息，${before} → ${after} tokens`,
+            )
+          : translateText(
+              `Context compacted: ${before} → ${after} tokens`,
+              `上下文已压缩：${before} → ${after} tokens`,
+            );
       useSessionStore.getState().appendMessage(sid, {
         id: "compaction_finished_" + Date.now().toString(36),
         role: "system",
@@ -605,6 +617,7 @@ export function handleChatResponse(data: ChatResponseData): void {
   }
   if (type === "compaction_failed") {
     if (sid) {
+      useSessionStore.getState().setCompactionUi(sid, { running: false });
       const err = String((data as { error?: unknown }).error ?? "");
       useSessionStore.getState().appendMessage(sid, {
         id: "compaction_failed_" + Date.now().toString(36),
@@ -618,7 +631,13 @@ export function handleChatResponse(data: ChatResponseData): void {
     }
     return;
   }
-  if (type === "snip" || type === "compaction_recommended") {
+  if (type === "compaction_recommended") {
+    if (sid) {
+      useSessionStore.getState().setCompactionUi(sid, { recommended: true });
+    }
+    return;
+  }
+  if (type === "snip") {
     return;
   }
   if (type === "status") {
