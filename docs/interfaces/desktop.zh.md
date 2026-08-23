@@ -14,6 +14,12 @@ macOS Desktop App 将 OpenProgram 显示为多 Pane 工作区。每个 Pane 可�
 
 Browser 菜单只管理浏览器动作：新建浏览器 tab、Bookmarks、History、书签栏显示、profile 导入、清除浏览数据和 Browser settings。窗口与 Pane 操作仍归 OpenProgram 窗口菜单管理。
 
+## 页面跳转、popup 与右键操作
+
+网页决定一次操作是在当前页面跳转，还是请求新的浏览上下文。普通链接、表单提交和页内导航保留在当前 Browser tab；带 `target="_blank"` 的链接和调用 `window.open()` 的脚本会创建独立 Browser tab，并立即激活新 tab。
+
+在网页内右键 HTTP(S) 链接，可以选择在新 Browser tab 中打开或复制链接地址。普通页面右键菜单提供 Back、Forward 和 Reload；可编辑字段会按网页报告的可用状态提供 Undo、Redo、Cut、Copy、Paste 和 Select All。菜单动作只作用于打开该菜单的精确 Browser tab。
+
 ## Bookmarks 与 History
 
 书签栏直接显示导入或本地维护的 Bookmarks bar 内容。非空的 Other bookmarks 与 Mobile bookmarks 保持为独立文件夹入口。超出宽度的项目进入有限宽度的溢出菜单；嵌套文件夹逐级展开，并在当前窗口高度内滚动。
