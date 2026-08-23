@@ -349,18 +349,18 @@ function CompactionCard({ msg }: { msg: ChatMsg }) {
     }
     if (clip.dataset.anim === "1" || next === full) return;
     const ms = 900;
+    const lh = parseFloat(getComputedStyle(clip).getPropertyValue("--comp-md-lh")) || 25.5;
     const start = clip.getBoundingClientRect().height;
-    clip.dataset.anim = "1";
     clip.style.transition = "none";
     clip.style.maxHeight = `${start}px`;
-    let end = start;
+    void clip.offsetHeight;
+    clip.dataset.anim = "1";
+    let end = lh * 7;
     if (next) {
       clip.style.maxHeight = "none";
-      end = clip.scrollHeight;
+      end = clip.scrollHeight + 8 + lh;
       clip.style.maxHeight = `${start}px`;
-    } else {
-      const lh = parseFloat(getComputedStyle(clip).getPropertyValue("--comp-md-lh")) || 25.5;
-      end = lh * 7;
+      void clip.offsetHeight;
     }
     if (Math.abs(end - start) < 1) {
       delete clip.dataset.anim;
@@ -370,21 +370,27 @@ function CompactionCard({ msg }: { msg: ChatMsg }) {
       if (!next && card) easeElTopIntoView(card);
       return;
     }
-    const area = document.getElementById("chatArea");
-    if (!next && card && area && card.getBoundingClientRect().top < area.getBoundingClientRect().top) {
-      pinBottomWhile(clip, ms);
-    }
-    clip.getBoundingClientRect();
-    clip.style.transition = `max-height ${ms}ms ease`;
-    clip.style.maxHeight = `${end}px`;
-    window.setTimeout(() => {
-      clip.style.transition = "none";
-      clip.style.maxHeight = "";
-      delete clip.dataset.anim;
-      setFull(next);
-      if (!next && card) easeElTopIntoView(card);
-      requestAnimationFrame(() => { clip.style.transition = ""; });
-    }, ms);
+    requestAnimationFrame(() => {
+      const area = document.getElementById("chatArea");
+      if (!next && card && area && card.getBoundingClientRect().top < area.getBoundingClientRect().top) {
+        pinBottomWhile(clip, ms);
+      }
+      clip.style.transition = `max-height ${ms}ms ease`;
+      clip.style.maxHeight = `${end}px`;
+      window.setTimeout(() => {
+        clip.style.transition = "none";
+        clip.style.maxHeight = `${end}px`;
+        setFull(next);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            delete clip.dataset.anim;
+            clip.style.maxHeight = "";
+            clip.style.transition = "";
+            if (!next && card) easeElTopIntoView(card);
+          });
+        });
+      }, ms);
+    });
   };
   return (
     <>
