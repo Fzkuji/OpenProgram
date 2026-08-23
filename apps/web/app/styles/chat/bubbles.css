@@ -117,6 +117,18 @@
   color: var(--text-faint, var(--text-muted));
   text-align: center;
 }
+.compaction-card-fold {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 240ms ease;
+}
+.message.compaction-card[data-open="1"] .compaction-card-fold {
+  grid-template-rows: 1fr;
+}
+.compaction-card-fold-inner {
+  overflow: hidden;
+  min-height: 0;
+}
 .compaction-card-body {
   margin-top: 6px;
   padding: 8px 12px;
@@ -124,10 +136,37 @@
   border-radius: 8px;
   background: var(--bg-subtle, transparent);
 }
+.compaction-card-md-clip {
+  position: relative;
+  max-height: 10.5em;
+  overflow: hidden;
+  transition: max-height 240ms ease;
+}
+.compaction-card-md-clip[data-full="1"] {
+  max-height: 200rem;
+}
+.compaction-card-md-clip:not([data-full="1"])::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 2.2em;
+  pointer-events: none;
+  background: linear-gradient(transparent, var(--bg-subtle, var(--bg)));
+}
 .compaction-card-md {
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-muted);
+}
+.compaction-card-more {
+  display: block;
+  margin-top: 6px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-faint, var(--text-muted));
+  cursor: pointer;
 }
 .compaction-orig-toggle {
   display: block;
@@ -141,10 +180,29 @@
   text-align: center;
   cursor: pointer;
 }
+.compaction-orig-fold {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 260ms ease;
+}
+.compaction-orig-fold[data-open="1"] {
+  grid-template-rows: 1fr;
+}
+.compaction-orig-fold-inner {
+  overflow: hidden;
+  min-height: 0;
+}
 .covered-turn {
   opacity: 0.55;
   filter: saturate(0.65);
   overflow-anchor: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .compaction-card-fold,
+  .compaction-card-md-clip,
+  .compaction-orig-fold {
+    transition: none;
+  }
 }
 
 .message-header {

@@ -20,6 +20,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 import { ArrowDown } from "lucide-react";
@@ -180,14 +181,35 @@ function formatEventTime(timestamp?: number): string {
 
 const originalsOpen = new Set<string>();
 const originalsSubs = new Set<() => void>();
-let pinOriginals: { id: string; top: number } | null = null;
+const FOLD_MS = 260;
+
+function prefersReducedMotion(): boolean {
+  return typeof matchMedia === "function"
+    && matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function scrollChatTo(el: Element | null, pad: number, smooth: boolean): void {
+  const area = document.getElementById("chatArea");
+  if (!el || !area) return;
+  const top = el.getBoundingClientRect().top - area.getBoundingClientRect().top + area.scrollTop;
+  area.scrollTo({ top: Math.max(0, top - pad), behavior: smooth ? "smooth" : "auto" });
+}
+
 function toggleOriginals(cardId: string): void {
-  const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v);
-  const el = document.querySelector(`[data-orig-for="${esc(cardId)}"]`);
-  if (el) pinOriginals = { id: cardId, top: el.getBoundingClientRect().top };
-  if (originalsOpen.has(cardId)) originalsOpen.delete(cardId);
-  else originalsOpen.add(cardId);
+  const opening = !originalsOpen.has(cardId);
+  if (opening) originalsOpen.add(cardId);
+  else originalsOpen.delete(cardId);
   originalsSubs.forEach((fn) => fn());
+  const delay = prefersReducedMotion() ? 0 : FOLD_MS;
+  window.setTimeout(() => {
+    const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v);
+    if (opening) {
+      const covered = document.querySelectorAll(".covered-turn");
+      scrollChatTo(covered[Math.max(0, covered.length - 3)] ?? null, 12, delay > 0);
+    } else {
+      scrollChatTo(document.querySelector(`[data-msg-id="${esc(cardId)}"]`), 48, delay > 0);
+    }
+  }, delay);
 }
 
 function SystemEventRow({ msg }: { msg: ChatMsg }) {
@@ -227,6 +249,7 @@ function CompactionCard({ msg }: { msg: ChatMsg }) {
   const { text } = useTranslation();
   useMarkdownReady();
   const [open, setOpen] = useState(false);
+  const [full, setFull] = useState(false);
   const [, bump] = useState(0);
   useEffect(() => {
     const fn = () => bump((n) => n + 1);
@@ -262,19 +285,39 @@ function CompactionCard({ msg }: { msg: ChatMsg }) {
         data-kind="compaction"
         data-slot="card"
         data-open={open ? "1" : "0"}
-        onClick={() => setOpen((v) => !v)}
+        data-full={full ? "1" : "0"}
+        onClick={() => setOpen((v) => {
+          if (v) setFull(false);
+          return !v;
+        })}
       >
         <div className="compaction-card-head">
           {title}{hm ? ` · ${hm}` : ""}
         </div>
-        {open ? (
-          <div className="compaction-card-body">
-            <div
-              className="compaction-card-md"
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content || "") }}
-            />
+        <div className="compaction-card-fold">
+          <div className="compaction-card-fold-inner">
+            <div className="compaction-card-body">
+              <div className="compaction-card-md-clip" data-full={full ? "1" : "0"}>
+                <div
+                  className="compaction-card-md"
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content || "") }}
+                />
+              </div>
+              <button
+                type="button"
+                className="compaction-card-more"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFull((v) => !v);
+                }}
+              >
+                {full
+                  ? text("Show less", "收起")
+                  : text("Show all", "展开全部")}
+              </button>
+            </div>
           </div>
-        ) : null}
+        </div>
       </div>
     </>
   );
@@ -648,22 +691,12 @@ export function MessageList() {
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const chatKey = useSessionStore((s) => s.activeChatKey);
   const ids = useMessageIds(sessionId);
-  const [origTick, setOrigTick] = useState(0);
+  const [, setOrigTick] = useState(0);
   useEffect(() => {
     const fn = () => setOrigTick((n) => n + 1);
     originalsSubs.add(fn);
     return () => { originalsSubs.delete(fn); };
   }, []);
-  useLayoutEffect(() => {
-    const pin = pinOriginals;
-    if (!pin) return;
-    pinOriginals = null;
-    const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v);
-    const el = document.querySelector(`[data-orig-for="${esc(pin.id)}"]`);
-    const area = document.getElementById("chatArea");
-    if (!el || !area) return;
-    area.scrollTop += el.getBoundingClientRect().top - pin.top;
-  }, [origTick]);
   const hiddenCovered = new Set<string>();
   const coveredSet = new Set<string>();
   for (const id of ids) {
@@ -820,18 +853,43 @@ export function MessageList() {
       <AgentBranchBanner />
       <WorkspaceAlignmentBanner sessionId={sessionId} />
       <MessageRail />
-      {ids.map((id) => {
-        if (hiddenCovered.has(id)) return null;
-        return (
-          <div
-            key={id}
-            className={coveredSet.has(id) ? "covered-turn" : undefined}
-            style={coveredSet.has(id) ? undefined : { display: "contents" }}
-          >
-            <MessageRow id={id} />
-          </div>
-        );
-      })}
+      {(() => {
+        const nodes: ReactNode[] = [];
+        let i = 0;
+        while (i < ids.length) {
+          const id = ids[i];
+          if (coveredSet.has(id)) {
+            const run: string[] = [];
+            while (i < ids.length && coveredSet.has(ids[i])) {
+              run.push(ids[i]);
+              i += 1;
+            }
+            nodes.push(
+              <div
+                key={`${run[0]}_fold`}
+                className="compaction-orig-fold"
+                data-open={hiddenCovered.has(run[0]) ? "0" : "1"}
+              >
+                <div className="compaction-orig-fold-inner">
+                  {run.map((cid) => (
+                    <div key={cid} className="covered-turn">
+                      <MessageRow id={cid} />
+                    </div>
+                  ))}
+                </div>
+              </div>,
+            );
+            continue;
+          }
+          nodes.push(
+            <div key={id} style={{ display: "contents" }}>
+              <MessageRow id={id} />
+            </div>,
+          );
+          i += 1;
+        }
+        return nodes;
+      })()}
       {showPending ? (
         <PendingReplyIndicator timestamp={runningTask?.started_at} />
       ) : null}

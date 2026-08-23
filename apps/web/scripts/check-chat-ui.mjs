@@ -1029,6 +1029,16 @@ assert.doesNotMatch(
   "the card must not host the originals toggle",
 );
 assert.match(
+  messageList,
+  /compaction-card-more/,
+  "clamped summary recap needs a Show all control",
+);
+assert.match(
+  messageList,
+  /compaction-orig-fold/,
+  "covered originals animate inside a height fold",
+);
+assert.match(
   readChatCss(),
   /\.message\.system-event[\s\S]*animation:\s*none[\s\S]*opacity:\s*1/,
   "event dividers must not stay stuck at the msgAppear from-opacity",
