@@ -222,7 +222,6 @@
 }
 .compaction-orig-fold[data-open="1"] {
   grid-template-rows: 1fr;
-  transition: grid-template-rows 260ms ease;
 }
 .compaction-orig-fold-inner {
   overflow: hidden;
@@ -232,7 +231,6 @@
 }
 .compaction-orig-fold[data-open="1"] .compaction-orig-fold-inner {
   opacity: 1;
-  transition: opacity 260ms ease;
 }
 .covered-turn {
   opacity: 0.55;
@@ -242,9 +240,7 @@
 @media (prefers-reduced-motion: reduce) {
   .compaction-card-md-clip,
   .compaction-orig-fold,
-  .compaction-orig-fold[data-open="1"],
-  .compaction-orig-fold-inner,
-  .compaction-orig-fold[data-open="1"] .compaction-orig-fold-inner {
+  .compaction-orig-fold-inner {
     transition: none;
   }
 }

@@ -181,7 +181,7 @@ function formatEventTime(timestamp?: number): string {
 
 const originalsOpen = new Set<string>();
 const originalsSubs = new Set<() => void>();
-const FOLD_MS = 260;
+const FOLD_MS = 900;
 
 function prefersReducedMotion(): boolean {
   return typeof matchMedia === "function"
@@ -239,35 +239,51 @@ function pinBottomWhile(el: Element, ms: number): void {
 function toggleOriginals(cardId: string): void {
   const opening = !originalsOpen.has(cardId);
   const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v);
-  const el = document.querySelector(`[data-orig-for="${esc(cardId)}"]`);
-  const hold = prefersReducedMotion() ? 0 : (opening ? FOLD_MS : 900) + 40;
-  const pinTop = el?.getBoundingClientRect().top ?? 0;
-  if (el) pinWhile(el, pinTop, hold);
-  if (opening) originalsOpen.add(cardId);
-  else originalsOpen.delete(cardId);
-  originalsSubs.forEach((fn) => fn());
-  window.setTimeout(() => {
-    const area = document.getElementById("chatArea");
-    const bar = document.querySelector(`[data-orig-for="${esc(cardId)}"]`);
-    if (!area || !bar) return;
-    if (opening) {
-      // Peek the last originals only. Cap so the bar + card stay on screen.
+  const bar = document.querySelector(`[data-orig-for="${esc(cardId)}"]`);
+  const area = document.getElementById("chatArea");
+  const hold = prefersReducedMotion() ? 0 : FOLD_MS + 40;
+
+  const apply = () => {
+    if (bar) pinWhile(bar, bar.getBoundingClientRect().top, hold);
+    if (opening) originalsOpen.add(cardId);
+    else originalsOpen.delete(cardId);
+    originalsSubs.forEach((fn) => fn());
+  };
+
+  if (opening) {
+    apply();
+    window.setTimeout(() => {
+      if (!area || !bar) return;
       const areaRect = area.getBoundingClientRect();
       const card = document.querySelector(
         `.message.compaction-card[data-msg-id="${esc(cardId)}"]`,
       );
+      const barTop = bar.getBoundingClientRect().top;
       const keepBottom = (card ?? bar).getBoundingClientRect().bottom;
-      const peek = 120;
-      const room = Math.max(0, areaRect.bottom - keepBottom - 16);
-      const delta = -Math.min(peek, room);
-      if (delta) easeScrollBy(area, delta, 900);
-      return;
-    }
-    const y = bar.getBoundingClientRect().top - area.getBoundingClientRect().top;
-    if (y < 8 || y > area.clientHeight - 48) {
-      easeScrollBy(area, y - 24, 900);
-    }
-  }, hold);
+      const cardExtent = keepBottom - barTop;
+      const target = Math.max(
+        24,
+        Math.min(area.clientHeight / 2, area.clientHeight - cardExtent - 16),
+      );
+      const delta = barTop - areaRect.top - target;
+      if (Math.abs(delta) >= 8) easeScrollBy(area, delta, FOLD_MS);
+    }, hold);
+    return;
+  }
+
+  // Scroll originals off the top first, then fold so the collapse is off-screen.
+  if (!area || !bar || prefersReducedMotion()) {
+    apply();
+    return;
+  }
+  const y = bar.getBoundingClientRect().top - area.getBoundingClientRect().top;
+  const delta = y - 24;
+  if (Math.abs(delta) < 8) {
+    apply();
+    return;
+  }
+  easeScrollBy(area, delta, FOLD_MS);
+  window.setTimeout(apply, FOLD_MS);
 }
 
 function SystemEventRow({ msg }: { msg: ChatMsg }) {
