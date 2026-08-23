@@ -314,6 +314,11 @@ export function destroyStaleTerminals(
 let installed = false;
 
 function showCenterSurface(): boolean {
+  if (
+    typeof window !== "undefined"
+    && (window.location.pathname === "/chat"
+      || window.location.pathname.startsWith("/s/"))
+  ) return true;
   if (!hasNavigate()) return false;
   navigate("/chat");
   return true;

@@ -2,6 +2,7 @@
 const {
   app,
   BrowserWindow,
+  clipboard,
   WebContentsView,
   Menu,
   dialog,
@@ -1737,6 +1738,94 @@ function isTabUrl(u) {
   }
 }
 
+function sendWebTabPopup(record, popupUrl) {
+  if (!record || !isWebUrl(popupUrl) || tabTransfers.isLocked(record.id)) {
+    return false;
+  }
+  const owner = ownerOf(record);
+  if (!owner) return false;
+  owner.win.webContents.send("webtab:popup", {
+    openerId: record.id,
+    url: popupUrl,
+  });
+  return true;
+}
+
+function showWebTabContextMenu(record, params = {}) {
+  const owner = ownerOf(record);
+  if (!owner || tabTransfers.isLocked(record.id)) return false;
+  const ownerId = owner.id;
+  const wc = record.view.webContents;
+  const exact = (action) => () => {
+    const current = ownerOf(record);
+    if (
+      !current
+      || current.id !== ownerId
+      || tabTransfers.isLocked(record.id)
+      || wc.isDestroyed()
+    ) return;
+    action();
+  };
+  const template = [];
+  const linkUrl = isWebUrl(params.linkURL) ? params.linkURL : "";
+  if (linkUrl) {
+    template.push(
+      {
+        label: "Open Link in New Tab",
+        click: exact(() => { sendWebTabPopup(record, linkUrl); }),
+      },
+      {
+        label: "Copy Link Address",
+        click: exact(() => { clipboard.writeText(linkUrl); }),
+      },
+    );
+  }
+
+  const editFlags = params.editFlags || {};
+  if (params.isEditable) {
+    if (template.length) template.push({ type: "separator" });
+    template.push(
+      { label: "Undo", enabled: !!editFlags.canUndo, click: exact(() => wc.undo()) },
+      { label: "Redo", enabled: !!editFlags.canRedo, click: exact(() => wc.redo()) },
+      { type: "separator" },
+      { label: "Cut", enabled: !!editFlags.canCut, click: exact(() => wc.cut()) },
+      { label: "Copy", enabled: !!editFlags.canCopy, click: exact(() => wc.copy()) },
+      { label: "Paste", enabled: !!editFlags.canPaste, click: exact(() => wc.paste()) },
+      { label: "Select All", enabled: !!editFlags.canSelectAll, click: exact(() => wc.selectAll()) },
+    );
+  } else {
+    if (params.selectionText) {
+      if (template.length) template.push({ type: "separator" });
+      template.push({
+        label: "Copy",
+        enabled: editFlags.canCopy !== false,
+        click: exact(() => wc.copy()),
+      });
+    }
+    if (template.length) template.push({ type: "separator" });
+    template.push(
+      {
+        label: "Back",
+        enabled: wc.navigationHistory.canGoBack(),
+        click: exact(() => wc.navigationHistory.goBack()),
+      },
+      {
+        label: "Forward",
+        enabled: wc.navigationHistory.canGoForward(),
+        click: exact(() => wc.navigationHistory.goForward()),
+      },
+      { label: "Reload", click: exact(() => wc.reload()) },
+    );
+  }
+
+  Menu.buildFromTemplate(template).popup({
+    window: owner.win,
+    ...(params.frame ? { frame: params.frame } : {}),
+    ...(params.menuSourceType ? { sourceType: params.menuSourceType } : {}),
+  });
+  return true;
+}
+
 function loadView(record, url) {
   const pending = record.navigation;
   if (pending && pending.url === url) return pending.promise;
@@ -1781,14 +1870,11 @@ function ensureView(ctx, id, url) {
     // this record's renderer window, which creates a distinct Browser tab and
     // leaves the opener Page (and any exact-page agent session) unchanged.
     wc.setWindowOpenHandler(({ url: popupUrl }) => {
-      if (isWebUrl(popupUrl)) {
-        const owner = ownerOf(record);
-        owner?.win.webContents.send("webtab:popup", {
-          openerId: id,
-          url: popupUrl,
-        });
-      }
+      sendWebTabPopup(record, popupUrl);
       return { action: "deny" };
+    });
+    wc.on("context-menu", (_event, params) => {
+      showWebTabContextMenu(record, params);
     });
     for (const ev of [
       "did-navigate",

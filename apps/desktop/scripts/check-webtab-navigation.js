@@ -23,6 +23,8 @@ let focusedWindow = null;
 const fakeWindows = [];
 const browserWindowOptions = [];
 let menuTemplate = null;
+const menuPopupOptions = [];
+const clipboardWrites = [];
 let nextGeneratedWindowId = 1000;
 let generatedNativeViews = 0;
 const generatedNativeRecords = [];
@@ -209,9 +211,14 @@ const fakeElectron = {
   Menu: {
     buildFromTemplate(template) {
       menuTemplate = template;
-      return template;
+      return {
+        popup(options) { menuPopupOptions.push(options); },
+      };
     },
     setApplicationMenu() {},
+  },
+  clipboard: {
+    writeText(value) { clipboardWrites.push(value); },
   },
   ipcMain: {
     on(channel, handler) { ipcListeners.set(channel, handler); },
@@ -436,6 +443,8 @@ function controlledRecord(id, currentUrl = "", loading = false) {
   let delayPrintPdf = false;
   let pendingPrintPdfResolve = null;
   let webContentsDestroyed = false;
+  let canGoBack = false;
+  let canGoForward = false;
   const webContentsListeners = new Map();
   const nativeCalls = {
     reload: 0,
@@ -448,6 +457,14 @@ function controlledRecord(id, currentUrl = "", loading = false) {
     print: [],
     printToPDF: [],
     capturePage: 0,
+  };
+  const editCalls = {
+    undo: 0,
+    redo: 0,
+    cut: 0,
+    copy: 0,
+    paste: 0,
+    selectAll: 0,
   };
   let zoomFactor = 1;
   const webContents = {
@@ -479,13 +496,19 @@ function controlledRecord(id, currentUrl = "", loading = false) {
       detach() { debuggerAttached = false; },
     },
     navigationHistory: {
-      canGoBack: () => false,
-      canGoForward: () => false,
+      canGoBack: () => canGoBack,
+      canGoForward: () => canGoForward,
       goBack() { nativeCalls.back += 1; },
       goForward() { nativeCalls.forward += 1; },
     },
     reload() { nativeCalls.reload += 1; },
     stop() { nativeCalls.stop += 1; },
+    undo() { editCalls.undo += 1; },
+    redo() { editCalls.redo += 1; },
+    cut() { editCalls.cut += 1; },
+    copy() { editCalls.copy += 1; },
+    paste() { editCalls.paste += 1; },
+    selectAll() { editCalls.selectAll += 1; },
     findInPage(query, options) {
       nativeCalls.find.push([query, options]);
       return nativeCalls.find.length;
@@ -566,6 +589,11 @@ function controlledRecord(id, currentUrl = "", loading = false) {
     targetCallCount: () => targetCalls,
     windowOpen: (details) => windowOpenHandler?.(details),
     nativeCalls,
+    editCalls,
+    setNavigationAvailability({ back = false, forward = false } = {}) {
+      canGoBack = back;
+      canGoForward = forward;
+    },
     emitWebContents(event, ...args) {
       if (event === "destroyed") webContentsDestroyed = true;
       for (const handler of webContentsListeners.get(event) ?? []) handler(...args);
@@ -592,11 +620,27 @@ function controlledRecord(id, currentUrl = "", loading = false) {
   };
 }
 
-function checkPopupCreatesIndependentRendererTab() {
+async function checkPopupCreatesIndependentRendererTab() {
   const win = fakeWindow(41);
   const ctx = registerContext("popup-window", win);
-  const opener = hooks.ensureView(ctx, "popup-opener", "");
+  const opener = hooks.ensureView(
+    ctx,
+    "popup-opener",
+    "https://opener.example/current",
+  );
+  const controlled = generatedNativeRecords.at(-1);
   assert.ok(opener, "opener view must be created");
+  assert.ok(controlled, "opener native view must be observable");
+  controlled.controls[0].resolve();
+  await opener.navigation?.promise;
+  controlled.emitWebContents("did-navigate");
+  assert.equal(win.sent.at(-1)[0], "webtab:state");
+  assert.equal(win.sent.at(-1)[1].id, "popup-opener");
+  assert.equal(
+    win.sent.some(([channel]) => channel === "webtab:popup"),
+    false,
+    "ordinary page navigation must update the existing WebTab without creating a popup",
+  );
 
   const result = opener.view.webContents.windowOpen?.({
     url: "https://popup.example/path",
@@ -615,8 +659,95 @@ function checkPopupCreatesIndependentRendererTab() {
     "popup egress must reject non-http(s) URLs",
   );
 
+  controlled.setNavigationAvailability({ back: true, forward: true });
+  const frame = { name: "popup-frame" };
+  controlled.emitWebContents("context-menu", {}, {
+    frame,
+    menuSourceType: "mouse",
+    linkURL: "https://popup.example/from-context-menu",
+    selectionText: "",
+    isEditable: false,
+    editFlags: {},
+  });
+  assert.strictEqual(menuPopupOptions.at(-1)?.window, win);
+  assert.strictEqual(menuPopupOptions.at(-1)?.frame, frame);
+  assert.equal(menuPopupOptions.at(-1)?.sourceType, "mouse");
+  const openLink = menuTemplate.find((item) => item.label === "Open Link in New Tab");
+  const copyLink = menuTemplate.find((item) => item.label === "Copy Link Address");
+  const back = menuTemplate.find((item) => item.label === "Back");
+  const forward = menuTemplate.find((item) => item.label === "Forward");
+  const reload = menuTemplate.find((item) => item.label === "Reload");
+  assert.ok(openLink && copyLink && back && forward && reload,
+    "link context menu must expose link and page navigation actions");
+  openLink.click();
+  assert.deepEqual(plain(win.sent.at(-1)), [
+    "webtab:popup",
+    { openerId: "popup-opener", url: "https://popup.example/from-context-menu" },
+  ]);
+  copyLink.click();
+  assert.equal(clipboardWrites.at(-1), "https://popup.example/from-context-menu");
+  back.click();
+  forward.click();
+  reload.click();
+  assert.deepEqual(
+    plain({
+      back: controlled.nativeCalls.back,
+      forward: controlled.nativeCalls.forward,
+      reload: controlled.nativeCalls.reload,
+    }),
+    { back: 1, forward: 1, reload: 1 },
+  );
+
+  controlled.emitWebContents("context-menu", {}, {
+    frame,
+    menuSourceType: "keyboard",
+    linkURL: "",
+    selectionText: "selected",
+    isEditable: true,
+    editFlags: {
+      canUndo: true,
+      canRedo: true,
+      canCut: true,
+      canCopy: true,
+      canPaste: true,
+      canSelectAll: true,
+    },
+  });
+  for (const label of ["Undo", "Redo", "Cut", "Copy", "Paste", "Select All"]) {
+    assert.ok(menuTemplate.some((item) => item.label === label),
+      `editable context menu must include ${label}`);
+  }
+  menuTemplate.find((item) => item.label === "Copy").click();
+  assert.equal(controlled.editCalls.copy, 1);
+
+  controlled.emitWebContents("context-menu", {}, {
+    linkURL: "javascript:alert(1)",
+    selectionText: "",
+    isEditable: false,
+    editFlags: {},
+  });
+  assert.equal(
+    menuTemplate.some((item) => item.label === "Open Link in New Tab"),
+    false,
+    "non-http(s) links must not receive a new-tab action",
+  );
+
+  controlled.emitWebContents("context-menu", {}, {
+    linkURL: "https://popup.example/stale",
+    selectionText: "",
+    isEditable: false,
+    editFlags: {},
+  });
+  const staleOpenLink = menuTemplate.find((item) => item.label === "Open Link in New Tab");
+
   ctx.views.delete("popup-opener");
   const sentBeforeDetachedOpener = win.sent.length;
+  staleOpenLink.click();
+  assert.equal(
+    win.sent.length,
+    sentBeforeDetachedOpener,
+    "a context menu from a record no longer owned by this window must be inert",
+  );
   opener.view.webContents.windowOpen?.({ url: "https://detached.example/" });
   assert.equal(
     win.sent.length,
@@ -4614,7 +4745,7 @@ Promise.all([
     await checkDownloadsLifecycle();
     await checkTerminalProcessIdentity();
     await checkFocusedRoutingAndCleanup();
-    checkPopupCreatesIndependentRendererTab();
+    await checkPopupCreatesIndependentRendererTab();
     assertTransferApiRegistered();
     await checkTransferPreparationValidationAndAuthorization();
     await checkSuccessfulTransferAndDurableCommit();
