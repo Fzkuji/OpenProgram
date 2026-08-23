@@ -148,6 +148,15 @@ def test_goal_cap_and_judge_failure_use_the_same_transition_helpers(
     _run_goal(
         monkeypatch,
         db,
+        agent_outputs=["one"],
+        verdicts=[("judge_failure", "bad", "", [])],
+        max_rounds=1,
+    )
+    assert G.load_goal("s1")["status"] == "capped"
+
+    _run_goal(
+        monkeypatch,
+        db,
         agent_outputs=["one", "two", "three"],
         verdicts=[
             ("judge_failure", "bad", "", []),
@@ -257,6 +266,40 @@ def test_goal_clear_during_work_does_not_get_overwritten(
     assert module.goal(
         "do work", "done", runtime=_Runtime(),
     ) == "stopped"
+    assert G.load_goal("s1")["status"] == "cleared"
+
+
+def test_goal_is_active_and_clearable_during_refinement(
+    db: SessionDB, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module("openprogram.programs.workflow.goal.goal")
+    agent_module = importlib.import_module("openprogram.agentic_programming.agent")
+    function_module = importlib.import_module(
+        "openprogram.agentic_programming.function"
+    )
+    monkeypatch.setattr(function_module, "current_session_id", lambda: "s1")
+    monkeypatch.setattr(function_module, "current_call_id", lambda: "goal-call")
+    monkeypatch.setattr(G, "_emit_goal_update", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "openprogram.agent.run_control.mark_cancelled",
+        lambda *_args, **_kwargs: None,
+    )
+
+    def clear_during_refinement(*_args, **_kwargs):
+        assert G.load_goal("s1")["status"] == "active"
+        assert G.handle_goal_command("s1", "clear")["text"] == "Goal cleared."
+        return "SPEC", ["item"]
+
+    monkeypatch.setattr(G, "refine_goal_spec_candidate", clear_during_refinement)
+    monkeypatch.setattr(
+        agent_module,
+        "agent",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("a cleared refinement must not start work")
+        ),
+    )
+
+    assert module.goal("do work", "done", runtime=_Runtime()) == ""
     assert G.load_goal("s1")["status"] == "cleared"
 
 

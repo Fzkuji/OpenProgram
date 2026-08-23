@@ -20,9 +20,8 @@ def apply_goal_verdict(goal: dict, verdict: str, reason: str) -> str | None:
                 f"judge failed {failures} times in a row: {reason}"
             )
             return "error"
-        return None
-
-    goal["judge_parse_failures"] = 0
+    else:
+        goal["judge_parse_failures"] = 0
     max_turns = goal.get("max_turns")
     if max_turns and int(goal.get("turns_used") or 0) >= int(max_turns):
         goal["status"] = "capped"

@@ -80,21 +80,6 @@ def goal(
         "context_mode": context_mode,
         "execution_id": caller,
     }
-    try:
-        spec, items = _goal.refine_goal_spec_candidate(
-            condition,
-            session_id=sid,
-            spawn_caller=caller,
-            context=session_view,
-        )
-    except Exception:
-        spec, items = "", []
-    if spec:
-        goal_state["spec"] = spec
-    if items:
-        goal_state["checklist"] = [
-            {"text": item, "done": False} for item in items
-        ]
 
     def persist() -> None:
         if not sid:
@@ -111,6 +96,29 @@ def goal(
         goal_state["last_reason"] = "Goal cancelled."
         if sid:
             _goal._finish(sid, goal_state, None)
+
+    # The run is controllable before refinement starts: /goal status and
+    # /goal clear must observe the same active GoalState during every phase.
+    persist()
+    try:
+        spec, items = _goal.refine_goal_spec_candidate(
+            condition,
+            session_id=sid,
+            spawn_caller=caller,
+            context=session_view,
+        )
+    except Exception:
+        spec, items = "", []
+    if sid:
+        stored = _goal.load_goal(sid)
+        if stored and stored.get("status") == "cleared":
+            return ""
+    if spec:
+        goal_state["spec"] = spec
+    if items:
+        goal_state["checklist"] = [
+            {"text": item, "done": False} for item in items
+        ]
 
     persist()
 
