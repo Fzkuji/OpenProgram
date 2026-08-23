@@ -156,8 +156,8 @@ export function readComposerHeight(): number {
 A short hop never reaches cruise — you start braking first.
 A long hop accelerates to ``JUMP_V_MAX``, holds, then brakes.
 */
-export const JUMP_ACCEL = 9000;
-export const JUMP_V_MAX = 4200;
+export const JUMP_ACCEL = 12500;
+export const JUMP_V_MAX = 8500;
 
 export type JumpMotionPlan = {
   distance: number;
