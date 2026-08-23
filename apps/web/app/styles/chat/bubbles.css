@@ -110,7 +110,7 @@
 .compaction-card-bar {
   display: flex;
   align-items: baseline;
-  justify-content: flex-start;
+  justify-content: center;
   flex-wrap: nowrap;
   gap: 10px;
   padding: 4px 16px 2px;
