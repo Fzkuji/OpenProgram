@@ -163,6 +163,27 @@ function spliceCompactionFromGraph(
   return out;
 }
 
+/** Drop turns a live summary already covers so the event row sits at
+ *  the fold, not as a hairline between 80 still-visible old bubbles. */
+function omitCoveredTurns(
+  messages: LegacyMessage[],
+  graph: unknown,
+): LegacyMessage[] {
+  if (!Array.isArray(graph)) return messages;
+  const covered = new Set<string>();
+  for (const n of graph) {
+    if (!n || typeof n !== "object") continue;
+    if ((n as { superseded_summary?: unknown }).superseded_summary) continue;
+    const ids = (n as { covers_ids?: unknown }).covers_ids;
+    if (!Array.isArray(ids)) continue;
+    for (const id of ids) {
+      if (id) covered.add(String(id));
+    }
+  }
+  if (!covered.size) return messages;
+  return messages.filter((m) => typeof m.id !== "string" || !covered.has(m.id));
+}
+
 /* ===== Channel icons ============================================= */
 
 // simple-icons CDN brand marks, each embedding the platform's own hue.
@@ -550,7 +571,10 @@ export function newSession(draftId?: string): void {
 
 export function loadSessionData(data: LegacyConv): void {
   if (!data.messages) data.messages = [];
-  data.messages = spliceCompactionFromGraph(data.messages, data.graph);
+  data.messages = omitCoveredTurns(
+    spliceCompactionFromGraph(data.messages, data.graph),
+    data.graph,
+  );
   const id = data.id as string;
   const map = convs();
   // Merge data into existing conv. data 里没有的字段 (例如 created_at)

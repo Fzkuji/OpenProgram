@@ -84,6 +84,8 @@
   gap: 12px;
   padding: 8px 24px;
   background: transparent;
+  animation: none;
+  opacity: 1;
 }
 .system-event-rule {
   width: 28px;

@@ -1009,6 +1009,16 @@ assert.doesNotMatch(
   "event divider rows must not keep a right-side timestamp column",
 );
 assert.match(
+  conversations,
+  /function omitCoveredTurns/,
+  "session load must fold covered turns so the compaction row is not buried",
+);
+assert.match(
+  readChatCss(),
+  /\.message\.system-event[\s\S]*animation:\s*none[\s\S]*opacity:\s*1/,
+  "event dividers must not stay stuck at the msgAppear from-opacity",
+);
+assert.match(
   runtimeBlock,
   /const footer = \([\s\S]*<MessageTimestamp timestamp=\{msg\.timestamp\}/,
   "nested and top-level runtime rows must both render their start timestamp",
