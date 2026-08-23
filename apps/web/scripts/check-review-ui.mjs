@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
+import { historyPresentation } from "../components/chat/messages/turn-files-history-state.ts";
+
 const read = (path) => fs.readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const card = read("components/chat/messages/turn-files-chips.tsx");
 const bubble = read("components/chat/messages/assistant-bubble.tsx");
@@ -24,6 +26,31 @@ assert.match(card, /const MAX_CARD_FILES = 20/);
 assert.match(card, /function loadMore\(\)/);
 assert.match(card, /action: "turn_history_state"/);
 assert.match(card, /operation: null,[\s\S]*?setHistoryNonce/);
+const historyResponseStart = card.indexOf('frame?.type !== "turn_history_state_result"');
+const historyResponseEnd = card.indexOf("} catch", historyResponseStart);
+assert.ok(historyResponseStart >= 0 && historyResponseEnd > historyResponseStart);
+assert.match(
+  card.slice(historyResponseStart, historyResponseEnd),
+  /setHistoryError\(""\);\s*setHistoryState\(/,
+);
+assert.match(card, /\} = historyPresentation\([\s\S]*?historyState,[\s\S]*?historyError,[\s\S]*?Review remains available/);
+const refreshed = historyPresentation(
+  { status: "ready", operation: "undo" },
+  "",
+  "fallback",
+);
+assert.deepEqual(refreshed, { notice: "", operation: "undo" });
+const blocked = historyPresentation(
+  { status: "blocked", operation: null, error: "current file state does not match the recorded source" },
+  "",
+  "fallback",
+);
+assert.deepEqual(blocked, {
+  notice: "current file state does not match the recorded source",
+  operation: null,
+});
+assert.match(card, /\{currentAction \? \([\s\S]*?<\/button>\s*\) : historyNotice \? \([\s\S]*?className="turn-files-history-notice"[\s\S]*?title=\{historyNotice\}[\s\S]*?role="status"[\s\S]*?\{historyNotice\}[\s\S]*?\) : null\}\s*<button[\s\S]*?className="turn-files-review"/);
+assert.doesNotMatch(card, /turn-files-blocked/);
 assert.match(card, /updateMessage\(sessionId, assistantMsgId/);
 assert.match(card, /turn-files-history-changed/);
 assert.match(review, /turn-files-history-changed/);
@@ -61,11 +88,15 @@ assert.doesNotMatch(cardCss, /\.turn-files-stat\{[^}]*var\(--font-mono\)/);
 assert.doesNotMatch(cardCss, /\.turn-files-op\{[^}]*var\(--font-mono\)/);
 assert.match(cardCss, /\.turn-files-more\{[^}]*background:var\(--bg-tertiary\)[^}]*font-size:13px/);
 assert.match(cardCss, /\.turn-files-more:hover\{[^}]*background:var\(--bg-hover\)/);
+assert.match(cardCss, /\.turn-files-history-notice\{display:block;min-width:0;max-width:min\(48ch,40cqi\);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var\(--accent-orange\);font-size:12px;line-height:1\.2\}/);
+assert.doesNotMatch(cardCss, /\.turn-files-blocked/);
 assert.match(cardCss, /:where\(\[data-theme-mode="light"\]\) \.turn-files-card,:where\(\[data-theme-mode="light"\]\) \.turn-files-summary,:where\(\[data-theme-mode="light"\]\) \.turn-files-review,:where\(\[data-theme-mode="light"\]\) \.turn-files-more\{background:var\(--bg-primary\);box-shadow:none\}/);
 assert.match(cardCss, /\.turn-files-meter/);
 assert.match(cardCss, /@media\(max-width:420px\)/);
 assert.match(cardCss, /@media\(max-width:420px\)\{\.turn-files-summary\{gap:6px;padding-inline:6px\}\.turn-files-heading\{gap:5px\}/);
 assert.match(cardCss, /@container turn-files \(max-width:420px\)\{\.turn-files-summary\{gap:6px;padding-inline:6px\}\.turn-files-heading\{gap:5px\}/);
+assert.match(cardCss, /@media\(max-width:420px\)[^\n]*\.turn-files-history-notice\{max-width:92px\}/);
+assert.match(cardCss, /@container turn-files \(max-width:420px\)[^\n]*\.turn-files-history-notice\{max-width:92px\}/);
 assert.doesNotMatch(card, /Review all \$\{fileCount\} files|审阅全部 \$\{fileCount\} 个文件/);
 assert.match(design, /\.change-summary\{height:40px;[^}]*background:var\(--bg-tertiary\)/);
 assert.match(design, /\.change-card-demo\{container:change-card\/inline-size/);
@@ -84,6 +115,9 @@ assert.match(design, /\.change-row-counts\{[^}]*grid-template-columns:8ch 8ch[^}
 assert.match(design, /<button class="change-collapse" type="button">Collapse<\/button>/);
 assert.match(design, /\.change-collapse\{[^}]*background:var\(--bg-tertiary\)[^}]*font:13px/);
 assert.match(design, /\.change-collapse:hover\{[^}]*background:var\(--bg-hover\)/);
+assert.match(design, /\.change-summary-notice\{display:block;min-width:0;max-width:min\(48ch,40cqi\);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var\(--accent-orange\);font:12px\/1\.2 var\(--font-sans\)\}/);
+assert.match(design, /<span class="change-summary-actions"><span class="change-summary-notice" title="current file state does not match the recorded source" role="status">current file state does not match the recorded source<\/span><button class="change-summary-action primary" type="button">Review<\/button><\/span>/);
+assert.doesNotMatch(design, /<span class="change-summary-actions"><button class="change-summary-action"[^>]*>[\s\S]*?<span>Undo<\/span>/);
 assert.match(design, /@media\(prefers-color-scheme:light\)\{\.change-card-demo,\.change-summary,\.change-summary-action\.primary,\.change-collapse\{background:var\(--bg-primary\);box-shadow:none\}\}/);
 assert.doesNotMatch(design, /data-theme-mode="light"[^}]*\.change-card-demo/);
 assert.doesNotMatch(

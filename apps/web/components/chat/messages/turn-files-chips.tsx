@@ -18,6 +18,11 @@ import { showToast } from "@/lib/format-utils/toast";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useCurrentProject } from "@/lib/state/files-shared";
 
+import {
+  historyPresentation,
+  type TurnHistoryState,
+} from "./turn-files-history-state";
+
 const COLLAPSE_AFTER = 3;
 const MAX_CARD_FILES = 20;
 
@@ -98,11 +103,7 @@ export function TurnFilesChips({
   const [historyError, setHistoryError] = useState("");
   const [visible, setVisible] = useState(false);
   const [historyNonce, setHistoryNonce] = useState(0);
-  const [historyState, setHistoryState] = useState<{
-    status: string;
-    operation: "undo" | "revert" | "redo" | "reapply" | null;
-    error?: string;
-  } | null>(null);
+  const [historyState, setHistoryState] = useState<TurnHistoryState | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const probeRef = useRef<HTMLDivElement>(null);
   const openReviewTab = useCenterTabs((state) => state.openReviewTab);
@@ -143,6 +144,7 @@ export function TurnFilesChips({
           || data.assistant_msg_id !== assistantMsgId
         ) return;
         socket.removeEventListener("message", onMessage);
+        setHistoryError("");
         setHistoryState({
           status: data.status ?? "error",
           operation: data.action ?? null,
@@ -311,7 +313,17 @@ export function TurnFilesChips({
   const shown = showAll
     ? files.slice(0, MAX_CARD_FILES)
     : files.slice(0, COLLAPSE_AFTER);
-  const currentAction = historyState?.operation ?? null;
+  const {
+    notice: historyNotice,
+    operation: currentAction,
+  } = historyPresentation(
+    historyState,
+    historyError,
+    text(
+      "The current file state does not pass history preflight. Review remains available.",
+      "当前文件状态未通过历史操作预检，仍可审阅。",
+    ),
+  );
   const actionLabel = currentAction === "undo"
     ? text("Undo", "撤回")
     : currentAction === "revert"
@@ -367,6 +379,14 @@ export function TurnFilesChips({
                 <UndoIcon size={14} />
               </span>
             </button>
+          ) : historyNotice ? (
+            <span
+              className="turn-files-history-notice"
+              title={historyNotice}
+              role="status"
+            >
+              {historyNotice}
+            </span>
           ) : null}
           <button
             type="button"
@@ -425,15 +445,6 @@ export function TurnFilesChips({
           {text("Collapse", "收起")}
         </button>
       ) : null}
-      {historyState && historyState.status !== "ready" ? (
-        <div className="turn-files-blocked">
-          {historyState.error || text(
-            "The current file state does not pass history preflight. Review remains available.",
-            "当前文件状态未通过历史操作预检，仍可审阅。",
-          )}
-        </div>
-      ) : null}
-      {historyError ? <div className="turn-files-blocked">{historyError}</div> : null}
       {reverted ? (
         <div className="turn-files-reverted">
           {text(
