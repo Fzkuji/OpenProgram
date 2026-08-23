@@ -80,7 +80,7 @@ test -n "$wheel" || {
 }
 
 "$uv_bin" export --project "$repo_root" --frozen --no-dev \
-  --extra all --extra search --no-emit-project --no-emit-package torch \
+  --extra all --extra search --no-emit-project \
   --output-file "$runtime_root/product-requirements.txt" >/dev/null
 "$uv_bin" pip install --python "$python_bin" --strict --break-system-packages \
   --require-hashes --requirements "$runtime_root/product-requirements.txt"

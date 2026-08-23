@@ -1597,7 +1597,7 @@ def test_release_frontend_staging_includes_prebuilt_docs() -> None:
     assert 'cp -R "$docs_source_dir/." "$docs_target_dir/"' in staging
 
 
-def test_release_asset_staging_invokes_isolated_docs_builder(tmp_path) -> None:
+def test_release_asset_staging_invokes_locked_docs_builder(tmp_path) -> None:
     repo = tmp_path / "repo"
     scripts = repo / "scripts"
     release_scripts = scripts / "release"
@@ -1649,7 +1649,7 @@ printf '<html>docs</html>\\n' > "$PWD/docs/_site/index.html"
         text=True,
     )
     assert uv_log.read_text(encoding="utf-8").strip() == (
-        "run --isolated --no-project --with markdown-it-py --with mdit-py-plugins "
+        "run --isolated --locked --with markdown-it-py --with mdit-py-plugins "
         "--with pygments python -m scripts.docs_site.build"
     )
 
@@ -1666,7 +1666,6 @@ def test_product_runtime_installs_complete_default_capabilities() -> None:
     )
     assert "--frozen --no-dev" in staging
     assert "--extra all --extra search" in staging
-    assert "--no-emit-package torch" in staging
     assert "--require-hashes" in staging
     assert '--no-deps "$wheel"' in staging
     assert "playwright.sync_api" in verifier
@@ -1844,6 +1843,7 @@ def test_native_release_workflow_has_platform_jobs() -> None:
         encoding="utf-8"
     )
     assert "macos-" in workflow
+    assert "macos-26-intel" not in workflow
     assert "ubuntu-" in workflow
     assert "ubuntu-24.04-arm" in workflow
     assert "product-runtime:" in workflow
