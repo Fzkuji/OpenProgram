@@ -31,6 +31,9 @@ if (/useSessionStore\(\(s\) => s\.messagesById\)/.test(src)) {
 if (!src.includes("useShallow")) {
   throw new Error("message-rail lost its useShallow subscription");
 }
+if (!src.includes("hiddenKey") || !src.includes("hidden.has(m.id)")) {
+  throw new Error("message-rail must omit folded covered originals from ticks");
+}
 
 // Mirror of packRow / unpackRow (kept in lockstep with the component).
 const RAIL_SEP = "␟";

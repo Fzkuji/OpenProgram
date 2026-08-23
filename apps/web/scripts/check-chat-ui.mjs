@@ -1025,6 +1025,21 @@ assert.match(
 );
 assert.match(
   messageList,
+  /<span className="compaction-card-info">/,
+  "the compacted-count line is inert text, not a control",
+);
+assert.match(
+  messageList,
+  /<MessageRail hiddenKey=\{/,
+  "the rail must drop folded covered originals from its ticks",
+);
+assert.doesNotMatch(
+  messageList,
+  /clientHeight \/ 3/,
+  "opening originals must not jump by a third of the viewport",
+);
+assert.match(
+  messageList,
   /className="text-hit/,
   "compaction text controls share the text-hit hover class",
 );
@@ -1057,6 +1072,16 @@ assert.match(
   readChatCss(),
   /\.message\.system-event[\s\S]*animation:\s*none[\s\S]*opacity:\s*1/,
   "event dividers must not stay stuck at the msgAppear from-opacity",
+);
+assert.match(
+  readChatCss(),
+  /\.compaction-card-bar[\s\S]*flex-wrap:\s*nowrap/,
+  "compaction info and originals toggle stay on one row",
+);
+assert.match(
+  readChatCss(),
+  /\.text-hit:hover[\s\S]*text-decoration-color:\s*currentColor/,
+  "clickable compaction text must underline on hover",
 );
 assert.match(
   runtimeBlock,

@@ -221,15 +221,32 @@ function toggleOriginals(cardId: string): void {
   const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v);
   const el = document.querySelector(`[data-orig-for="${esc(cardId)}"]`);
   const hold = prefersReducedMotion() ? 0 : FOLD_MS + 40;
-  if (el) pinWhile(el, el.getBoundingClientRect().top, hold);
+  const pinTop = el?.getBoundingClientRect().top ?? 0;
+  if (el) pinWhile(el, pinTop, hold);
   if (opening) originalsOpen.add(cardId);
   else originalsOpen.delete(cardId);
   originalsSubs.forEach((fn) => fn());
-  if (!opening) return;
   window.setTimeout(() => {
     const area = document.getElementById("chatArea");
-    if (!area) return;
-    easeScrollBy(area, -Math.round(area.clientHeight / 3), 500);
+    const bar = document.querySelector(`[data-orig-for="${esc(cardId)}"]`);
+    if (!area || !bar) return;
+    if (opening) {
+      // Peek the last originals only. Cap so the bar + card stay on screen.
+      const areaRect = area.getBoundingClientRect();
+      const card = document.querySelector(
+        `.message.compaction-card[data-msg-id="${esc(cardId)}"]`,
+      );
+      const keepBottom = (card ?? bar).getBoundingClientRect().bottom;
+      const peek = 120;
+      const room = Math.max(0, areaRect.bottom - keepBottom - 16);
+      const delta = -Math.min(peek, room);
+      if (delta) easeScrollBy(area, delta, 900);
+      return;
+    }
+    const y = bar.getBoundingClientRect().top - area.getBoundingClientRect().top;
+    if (y < 8 || y > area.clientHeight - 48) {
+      easeScrollBy(area, y - 24, 800);
+    }
   }, hold);
 }
 
@@ -283,8 +300,8 @@ function CompactionCard({ msg }: { msg: ChatMsg }) {
     ? text(`Compacted ${n} earlier messages`, `已压缩 ${n} 条更早的消息`)
     : text("Compacted earlier messages", "已压缩更早的消息");
   const origLabel = showingOrig
-    ? text("▾ Hide originals", "▾ 隐藏原文")
-    : text("▸ Show originals", "▸ 显示原文");
+    ? text("Hide original messages", "隐藏原始消息")
+    : text("Show original messages", "显示原始消息");
   return (
     <>
       <div
@@ -862,7 +879,7 @@ export function MessageList() {
     <>
       <AgentBranchBanner />
       <WorkspaceAlignmentBanner sessionId={sessionId} />
-      <MessageRail />
+      <MessageRail hiddenKey={[...hiddenCovered].join("\n")} />
       {(() => {
         const nodes: ReactNode[] = [];
         let i = 0;

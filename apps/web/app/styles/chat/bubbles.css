@@ -110,15 +110,21 @@
 .compaction-card-bar {
   display: flex;
   align-items: baseline;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 0 10px;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  gap: 10px;
   padding: 4px 16px 2px;
   font-size: 11px;
   line-height: 1.4;
 }
 .compaction-card-info {
   color: var(--text-faint, var(--text-muted));
+  cursor: default;
+  pointer-events: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .compaction-card-body {
   margin-top: 6px;
@@ -167,14 +173,18 @@
 }
 .text-hit {
   cursor: pointer;
-  color: var(--text-faint, var(--text-muted));
-  transition: color 120ms ease, opacity 120ms ease;
+  color: var(--text-muted);
+  text-underline-offset: 2px;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: color 120ms ease, opacity 120ms ease, text-decoration-color 120ms ease;
 }
 .text-hit:hover {
   color: var(--text-primary, var(--text));
+  text-decoration-color: currentColor;
 }
 .text-hit:active {
-  opacity: 0.7;
+  opacity: 0.65;
 }
 .compaction-card-more {
   border: 0;
@@ -200,6 +210,7 @@
   background: transparent;
   padding: 0;
   font: inherit;
+  flex-shrink: 0;
 }
 .compaction-orig-fold {
   display: grid;

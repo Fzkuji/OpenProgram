@@ -135,6 +135,7 @@ function scrollToMsg(id: string): void {
   const esc = window.CSS && CSS.escape ? CSS.escape(id) : id;
   const el = container.querySelector(`[data-msg-id="${esc}"]`) as HTMLElement | null;
   if (!el) return;
+  if (el.closest(".compaction-orig-fold[data-open='0']")) return;
   const bubble = (el.querySelector(".message-content") as HTMLElement) ?? el;
   const flash = () => {
     // 橙色背景闪烁一下（滚到位后触发）。
@@ -197,8 +198,13 @@ function PreviewCard({
   );
 }
 
-export function MessageRail() {
-  const msgs = useUserMessages();
+export function MessageRail({ hiddenKey = "" }: { hiddenKey?: string }) {
+  const all = useUserMessages();
+  const msgs = useMemo(() => {
+    if (!hiddenKey) return all;
+    const hidden = new Set(hiddenKey.split("\n"));
+    return all.filter((m) => !hidden.has(m.id));
+  }, [all, hiddenKey]);
   const [activeId, setActiveId] = useState<string | null>(null);
   // 光标最靠近的刻度索引；null = 鼠标不在条上。预览卡、加宽、加亮
   // 都锁到这同一条，保证"指哪条就是哪条"。
@@ -229,7 +235,9 @@ export function MessageRail() {
         const esc = window.CSS && CSS.escape ? CSS.escape(m.id) : m.id;
         const el = container.querySelector(`[data-msg-id="${esc}"]`);
         if (!el) continue;
-        if ((el as HTMLElement).getBoundingClientRect().top <= probe) {
+        const rect = (el as HTMLElement).getBoundingClientRect();
+        if (rect.height < 1) continue;
+        if (rect.top <= probe) {
           current = m.id;
         } else break;
       }
