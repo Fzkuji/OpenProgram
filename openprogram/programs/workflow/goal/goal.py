@@ -171,6 +171,10 @@ def goal(
         except CancelledError:
             cancel()
             raise
+        if sid:
+            stored = _goal.load_goal(sid)
+            if stored and stored.get("status") == "cleared":
+                return last_result
 
         if verdict == "needs_user" and question:
             goal_state["status"] = "waiting_user"
@@ -193,6 +197,10 @@ def goal(
                     raise
                 except Exception:
                     answer = ""
+            if sid:
+                stored = _goal.load_goal(sid)
+                if stored and stored.get("status") == "cleared":
+                    return last_result
             if not answer:
                 goal_state["status"] = "error"
                 goal_state["last_reason"] = "Goal requires a user answer."

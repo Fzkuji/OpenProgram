@@ -269,6 +269,35 @@ def test_goal_clear_during_work_does_not_get_overwritten(
     assert G.load_goal("s1")["status"] == "cleared"
 
 
+def test_goal_clear_during_judge_does_not_get_overwritten(
+    db: SessionDB, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module("openprogram.programs.workflow.goal.goal")
+    agent_module = importlib.import_module("openprogram.agentic_programming.agent")
+    function_module = importlib.import_module(
+        "openprogram.agentic_programming.function"
+    )
+    monkeypatch.setattr(function_module, "current_session_id", lambda: "s1")
+    monkeypatch.setattr(function_module, "current_call_id", lambda: "goal-call")
+    monkeypatch.setattr(
+        G, "refine_goal_spec_candidate", lambda *_args, **_kwargs: ("SPEC", []),
+    )
+    monkeypatch.setattr(G, "_emit_goal_update", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "openprogram.agent.run_control.mark_cancelled",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(agent_module, "agent", lambda **_kwargs: "finished")
+
+    def clear_then_accept(*_args, **_kwargs):
+        assert G.handle_goal_command("s1", "clear")["text"] == "Goal cleared."
+        return "met", "done", "", []
+
+    monkeypatch.setattr(G, "evaluate_goal", clear_then_accept)
+    assert module.goal("do work", "done", runtime=_Runtime()) == "finished"
+    assert G.load_goal("s1")["status"] == "cleared"
+
+
 def test_goal_is_active_and_clearable_during_refinement(
     db: SessionDB, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
