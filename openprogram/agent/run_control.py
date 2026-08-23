@@ -1468,11 +1468,21 @@ def is_cancelled(
     A background task checking its own session resolves to its own slot,
     so a stop aimed at the foreground turn never reads as cancelled here.
     """
-    if execution_id is None and _current_session_id.get(None) == session_id:
-        execution_id = _current_execution_id.get(None)
+    if execution_id is None:
+        bound = _current_token.get(None)
+        if bound is not None and bound.session_id == session_id:
+            return bound.is_cancelled()
+        if _current_session_id.get(None) == session_id:
+            execution_id = _current_execution_id.get(None)
     with _cancel_flags_lock:
         token = _current_tokens.get((session_id, execution_id))
-    return token.is_cancelled() if token is not None else False
+    if token is not None:
+        return token.is_cancelled()
+    bound = _current_token.get(None)
+    if bound is not None and bound.session_id == session_id:
+        if execution_id is None or bound.execution_id == execution_id:
+            return bound.is_cancelled()
+    return False
 
 
 def clear_cancel(session_id: str) -> None:

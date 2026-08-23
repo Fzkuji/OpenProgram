@@ -228,6 +228,26 @@ def discard_job(session_id: str, job_id: str) -> bool:
         return True
 
 
+def discard_tracked_job(job_id: str) -> bool:
+    """Withdraw ``job_id`` from every session inbox that queued it.
+
+    Cancel may resolve a caller-side mirror first; the queued entry
+    still lives on the target session.
+    """
+    from openprogram.store import default_store
+    store = default_store()
+    removed = False
+    if not store.root_path.exists():
+        return False
+    for sdir in store.root_path.iterdir():
+        if not sdir.is_dir():
+            continue
+        if (sdir / "inbox.json").exists():
+            if discard_job(sdir.name, job_id):
+                removed = True
+    return removed
+
+
 def clear(session_id: str, *, reason: str = "the target session was stopped") -> int:
     """Session-level cancel: drop every queued entry for ``session_id``
     and leave a system notice in each sender session.
@@ -305,6 +325,10 @@ def _job_is_terminal(session_id: str, job_id: str) -> bool:
         from openprogram.agent.job.store import load_job
         from openprogram.agent.job.types import is_terminal
         t = load_job(session_id, job_id)
+        if t is not None and is_terminal(t.status):
+            return True
+        from openprogram.agent.job import get_runner
+        t = get_runner().get_job(job_id)
         return t is not None and is_terminal(t.status)
     except Exception:
         return False
@@ -372,6 +396,7 @@ __all__ = [
     "enqueue",
     "drain",
     "discard_job",
+    "discard_tracked_job",
     "clear",
     "pending_count",
 ]

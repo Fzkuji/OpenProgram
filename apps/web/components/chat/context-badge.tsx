@@ -218,16 +218,27 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
       </button>
       </HoverTip>
       {typeof document !== "undefined" &&
+        panelOpen &&
         createPortal(
-          <div
+          <>
+            {/* 透明全屏遮罩：挡住 Electron native BrowserView，点击关闭面板 */}
+            <div
+              data-native-view-occluder="true"
+              onClick={() => setPanelOpen(false)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 9998,
+                background: "transparent",
+              }}
+            />
+            <div
               ref={panelRef}
               style={{
                 position: "fixed",
                 right: anchor?.right ?? 16,
                 bottom: anchor?.bottom ?? 16,
                 zIndex: 9999,
-                visibility: panelOpen ? "visible" : "hidden",
-                pointerEvents: panelOpen ? "auto" : "none",
               }}
             >
               <ContextBreakdownPanel
@@ -236,7 +247,8 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
                 headId={headId ?? null}
                 onClose={() => setPanelOpen(false)}
               />
-            </div>,
+            </div>
+          </>,
           document.body,
         )}
     </span>

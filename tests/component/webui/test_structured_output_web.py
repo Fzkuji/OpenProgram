@@ -74,6 +74,7 @@ def test_web_chat_threads_normalized_response_format_to_existing_dispatch(
             "toolset": None,
             "thinking_effort": None,
             "permission_mode": "ask",
+            "sandbox_enabled": None,
         })(),
     )
     monkeypatch.setattr(

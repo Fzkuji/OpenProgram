@@ -138,6 +138,12 @@ BOUNDARY_MANIFEST = (
         kinds=frozenset({"urllib.request.build_opener"}),
     ),
     BoundaryExclusion(
+        path="apps/cli/python/openprogram_cli/_impl/commands/execution.py",
+        boundary_owner="owner-control-plane",
+        reason="owner CLI cancels executions on the authenticated OpenProgram backend",
+        kinds=frozenset({"urllib.request.build_opener"}),
+    ),
+    BoundaryExclusion(
         path="mcp/server/service.py",
         boundary_owner="owner-control-plane",
         reason="stdio MCP calls the authenticated loopback OpenProgram worker",

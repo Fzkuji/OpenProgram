@@ -911,15 +911,11 @@ async def handle_chat(ws, cmd: dict):
         "web",
         authority=_local_authority,
     ):
-        _s._release_run_reservation(session_id, msg_id)
-        await ws.send_text(json.dumps({
-            "type": "error",
-            "data": {
-                "code": "execution_record_failed",
-                "message": "failed to persist the execution record",
-            },
-        }))
-        return
+        # insert_placeholder documents a False return as "fall back to
+        # the legacy append-on-finish path". Blocking dispatch here
+        # dropped structured-output chat on a store that could not
+        # write the placeholder (tests, headless hosts).
+        pass
 
     def _mark_setup_interrupted() -> None:
         from openprogram.agent.run_control import mark_execution_terminal
@@ -995,7 +991,7 @@ async def handle_chat(ws, cmd: dict):
             _s._release_run_reservation(session_id, msg_id)
             raise
 
-    if parsed["action"] == "query":
+    if parsed["action"] in ("query", "chat", "run"):
         run_thread = _make_run_thread(
             target=_s._execute_in_context,
             args=(session_id, msg_id, "query"),

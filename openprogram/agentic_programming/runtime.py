@@ -1048,6 +1048,12 @@ class Runtime:
     def can_ask(self) -> bool:
         """当前是否有人能回答（有前端会话连着）。headless 跑时为 False，
         作者可据此分支（user-input-requests.md API）。"""
+        if getattr(self, "_question_transport", None) is not None:
+            return True
+        try:
+            __import__("openprogram.webui")
+        except ImportError:
+            return False
         return bool(self._ui_session_id())
 
     def set_question_transport(self, transport) -> None:

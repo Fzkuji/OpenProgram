@@ -387,6 +387,7 @@ def _dispatch_to_existing(
             try:
                 runner.admit_job_entity(
                     job, creates_agent=False, caller_turn_id=aid,
+                    dispatch_ready=False,
                 )
             except Exception as e:  # noqa: BLE001
                 return f"[agent error] {type(e).__name__}: {e}"

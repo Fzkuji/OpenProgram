@@ -762,6 +762,12 @@ class JobRunner:
 
         sid_token = set_current_session_id(session_id)
         execution_token = set_current_execution_id(job.id)
+        from openprogram.agent.run_control import current_token as _current_cancel_token
+        _bound_cancel = _current_cancel_token(session_id, execution_id=job.id)
+        _token_ctx = None
+        if _bound_cancel is not None:
+            from openprogram.agent import run_control as _rc
+            _token_ctx = _rc._current_token.set(_bound_cancel)
         job_token = _current_job_id.set(job.id)
         governance_token = _current_job_governance.set(
             self._governance_context(job),
@@ -922,6 +928,12 @@ class JobRunner:
                 pass
             try:
                 reset_current_execution_id(execution_token)
+            except Exception:
+                pass
+            try:
+                if _token_ctx is not None:
+                    from openprogram.agent import run_control as _rc
+                    _rc._current_token.reset(_token_ctx)
             except Exception:
                 pass
             try:
@@ -1094,6 +1106,7 @@ class JobRunner:
                 try:
                     from openprogram.agent import inbox
                     inbox.discard_job(session_id, job_id)
+                    inbox.discard_tracked_job(job_id)
                 except Exception:
                     pass
                 try:
@@ -1114,6 +1127,12 @@ class JobRunner:
         if cur_job is None:
             return None
         if cur_job.status in (JobStatus.PENDING, JobStatus.QUEUED):
+            try:
+                from openprogram.agent import inbox
+                inbox.discard_job(session_id, job_id)
+                inbox.discard_tracked_job(job_id)
+            except Exception:
+                pass
             if info is not None:
                 info["event"].set()
             self._governor.request_stop(job_id, reason_code)
@@ -1673,6 +1692,12 @@ class JobRunner:
         )
         sid_token = set_current_session_id(session_id)
         execution_token = set_current_execution_id(job_id)
+        from openprogram.agent.run_control import current_token as _current_cancel_token
+        _bound_cancel = _current_cancel_token(session_id, execution_id=job_id)
+        _token_ctx = None
+        if _bound_cancel is not None:
+            from openprogram.agent import run_control as _rc
+            _token_ctx = _rc._current_token.set(_bound_cancel)
         # Bind the running job id so spawns made inside this child turn
         # record parent_job_id (cascading cancel walks that chain).
         _job_id_token = _current_job_id.set(job_id)
@@ -1719,16 +1744,10 @@ class JobRunner:
             except ValueError:
                 # Transition rejected — likely already terminal. Done.
                 return
-            if cancel_ev.is_set():
-                # Cancel arrived between queue + pickup.
-                updated = self._finalize_job_status(
-                    session_id, job_id, lease_generation,
-                    JobStatus.CANCELLED, "cancel.user",
-                    error="cancelled before run",
-                )
-                if updated is not None:
-                    self._broadcast_job_status(updated)
-                return
+            # Once RUNNING is published the turn has started for
+            # observers. Fall through into execute so the same
+            # is_cancelled() path a live turn uses can see the stop
+            # (cascading cancel of a running child).
 
             # Progress poller — while the sub-agent is grinding, patch
             # the placeholder attach card's preview text with the
@@ -1902,6 +1921,12 @@ class JobRunner:
                 pass
             try:
                 reset_current_execution_id(execution_token)
+            except Exception:
+                pass
+            try:
+                if _token_ctx is not None:
+                    from openprogram.agent import run_control as _rc
+                    _rc._current_token.reset(_token_ctx)
             except Exception:
                 pass
             try:
@@ -2226,14 +2251,24 @@ class JobRunner:
         store = default_store()
         if not store.root_path.exists():
             return None
+        hits: list[tuple[str, Job]] = []
         for sdir in sorted(store.root_path.iterdir()):
             if not sdir.is_dir():
                 continue
             if (sdir / "jobs.json").exists():
-                t = _store_load(sdir.name, job_id)
-                if t is not None:
-                    return sdir.name
-        return None
+                found = _store_load(sdir.name, job_id)
+                if found is not None:
+                    hits.append((sdir.name, found))
+        if not hits:
+            return None
+        # Prefer the execution home. A linked job is mirrored into the
+        # caller session with parent_session_id rewritten; that copy
+        # must not win cancel / load over the target that holds the
+        # inbox entry.
+        for sid, found in hits:
+            if found.caller_session_id and found.caller_session_id != sid:
+                return sid
+        return hits[0][0]
 
     def _poll_progress(
         self, job: Job, stop_ev: threading.Event,
