@@ -622,7 +622,7 @@ const directRunAfterAssistant = convToChatMsgs([
     role: "assistant",
     type: "status",
     display: "runtime",
-    function: "agentic_workflow",
+    function: "auto_workflow",
     status: "completed",
     caller: "",
     predecessor: "assistant-1",
@@ -660,37 +660,37 @@ assert.equal(assistantOwnedRun[0].runtimeChildren?.[0].calledBy, "assistant-1");
 const startedAt = 1_700_000_000;
 assert.equal(
   runtimeSummaryLabel({
-    fnName: "agentic_workflow",
+    fnName: "auto_workflow",
     status: "running",
     timestamp: startedAt,
     now: (startedAt + 130) * 1000,
     tree: { name: "root", children: [{ name: "read_file" }] },
   }),
-  "agentic_workflow · Running… · 02:10 · 2 steps",
+  "auto_workflow · Running… · 02:10 · 2 steps",
 );
 assert.equal(
   runtimeSummaryLabel({
-    fnName: "agentic_workflow",
+    fnName: "auto_workflow",
     status: "completed",
     tree: { duration_ms: 166_000, output: " 2 files\nprocessed " },
   }),
-  "agentic_workflow · Completed · 02:46 · 2 files processed",
+  "auto_workflow · Completed · 02:46 · 2 files processed",
 );
 assert.equal(
   runtimeSummaryLabel({
-    fnName: "agentic_workflow",
+    fnName: "auto_workflow",
     status: "error",
     tree: { duration_ms: 82_000, error: "Permission denied" },
   }),
-  "agentic_workflow · Error · 01:22 · Permission denied",
+  "auto_workflow · Error · 01:22 · Permission denied",
 );
 assert.equal(
   runtimeSummaryLabel({
-    fnName: "agentic_workflow",
+    fnName: "auto_workflow",
     status: "cancelled",
     tree: { duration_ms: 42_000, error: "cancelled by user", children: [{}, {}] },
   }),
-  "agentic_workflow · Cancelled · 00:42 · 3 steps",
+  "auto_workflow · Cancelled · 00:42 · 3 steps",
 );
 for (const [payloadStatus, expectedStatus] of [
   ["capped", "Stopped"],
@@ -701,33 +701,33 @@ for (const [payloadStatus, expectedStatus] of [
   for (const outerStatus of ["completed", "done"]) {
     assert.match(
       runtimeSummaryLabel({
-        fnName: "agentic_workflow",
+        fnName: "auto_workflow",
         status: outerStatus,
         tree: {
           duration_ms: 42_000,
           output: JSON.stringify({ status: payloadStatus, summary: "Partial result" }),
         },
       }),
-      new RegExp(`^agentic_workflow · ${expectedStatus} · 00:42 ·`),
+      new RegExp(`^auto_workflow · ${expectedStatus} · 00:42 ·`),
       `workflow payload status ${payloadStatus} must override generic outer status ${outerStatus}`,
     );
   }
 }
 assert.match(
   runtimeSummaryLabel({
-    fnName: "agentic_workflow",
+    fnName: "auto_workflow",
     status: "running",
     tree: {
       output: JSON.stringify({ status: "failed", summary: "stale terminal payload" }),
     },
   }),
-  /^agentic_workflow · Running… ·/,
+  /^auto_workflow · Running… ·/,
   "the live outer status must take precedence over a stale terminal payload",
 );
 
 assert.deepEqual(
   runtimeConclusion({
-    fnName: "agentic_workflow",
+    fnName: "auto_workflow",
     status: "completed",
     tree: {
       output: JSON.stringify({
@@ -754,7 +754,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   runtimeConclusion({
-    fnName: "agentic_workflow",
+    fnName: "auto_workflow",
     status: "interrupted",
     tree: { error: "Worker restarted" },
   }),
@@ -767,7 +767,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   runtimeConclusion({
-    fnName: "agentic_workflow",
+    fnName: "auto_workflow",
     status: "completed",
     tree: {
       output: JSON.stringify({
@@ -786,7 +786,7 @@ assert.deepEqual(
 );
 const fullWorkflowSummary = "第一部分已完成并生成研究综述。".repeat(100);
 const fullConclusion = runtimeConclusion({
-  fnName: "agentic_workflow",
+  fnName: "auto_workflow",
   status: "completed",
   tree: {
     output: JSON.stringify({
@@ -803,7 +803,7 @@ assert.equal(
 );
 assert.deepEqual(
   runtimeConclusion({
-    fnName: "agentic_workflow",
+    fnName: "auto_workflow",
     status: "completed",
     tree: {
       output: JSON.stringify({
@@ -825,7 +825,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   runtimeConclusion({
-    fnName: "agentic_workflow",
+    fnName: "auto_workflow",
     status: "error",
     tree: { error: "Permission denied" },
   }),
@@ -838,7 +838,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   runtimeConclusion({
-    fnName: "agentic_workflow",
+    fnName: "auto_workflow",
     status: "cancelled",
     tree: { output: JSON.stringify({ items: [{ status: "completed" }] }) },
   }),
@@ -851,7 +851,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   runtimeConclusion({
-    fnName: "agentic_workflow",
+    fnName: "auto_workflow",
     status: "completed",
     tree: {
       output: JSON.stringify({
@@ -870,7 +870,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   runtimeConclusion({
-    fnName: "agentic_workflow",
+    fnName: "auto_workflow",
     status: "completed",
     tree: { output: "Legacy workflow result" },
   }),
@@ -882,7 +882,7 @@ assert.deepEqual(
   },
 );
 assert.equal(runtimeConclusion({
-  fnName: "agentic_workflow",
+  fnName: "auto_workflow",
   status: "running",
   tree: { output: "partial" },
 }), null);
@@ -1069,17 +1069,17 @@ assert.match(
   "covered originals animate inside a height fold",
 );
 assert.match(
-  readChatCss(),
+  chatCss,
   /\.message\.system-event[\s\S]*animation:\s*none[\s\S]*opacity:\s*1/,
   "event dividers must not stay stuck at the msgAppear from-opacity",
 );
 assert.match(
-  readChatCss(),
+  chatCss,
   /\.compaction-card-bar[\s\S]*flex-wrap:\s*nowrap/,
   "compaction info and originals toggle stay on one row",
 );
 assert.match(
-  readChatCss(),
+  chatCss,
   /\.text-hit:hover[\s\S]*text-decoration-color:\s*currentColor/,
   "clickable compaction text must underline on hover",
 );
@@ -1238,7 +1238,7 @@ assert.match(
 );
 assert.match(
   chatVisualSpec,
-  /subagentLabel\.textContent='agentic_workflow · 已完成';\s*setSubagentOpen\(false\)/,
+  /subagentLabel\.textContent='auto_workflow · 已完成';\s*setSubagentOpen\(false\)/,
   "the slow replay must demonstrate the current parent-terminal auto-collapse",
 );
 assert.match(
@@ -1666,23 +1666,23 @@ assertNoSummaryVerticalOffset(chatVisualSpec, "interactive design sample");
 const zh = (en, cn) => cn;
 assert.equal(
   runtimeSummaryLabel({
-    fnName: "agentic_workflow",
+    fnName: "auto_workflow",
     status: "running",
     timestamp: startedAt,
     now: (startedAt + 8) * 1000,
     tree: { name: "root", children: [{ name: "read_file" }] },
     text: zh,
   }),
-  "agentic_workflow · 运行中… · 00:08 · 2 步",
+  "auto_workflow · 运行中… · 00:08 · 2 步",
 );
 assert.equal(
   runtimeSummaryLabel({
-    fnName: "agentic_workflow",
+    fnName: "auto_workflow",
     status: "completed",
     tree: { duration_ms: 12_000 },
     text: zh,
   }),
-  "agentic_workflow · 已完成 · 00:12 · 1 步",
+  "auto_workflow · 已完成 · 00:12 · 1 步",
 );
 
 console.log("chat-ui checks passed");
