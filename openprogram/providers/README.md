@@ -53,5 +53,6 @@ their provider packages (e.g. ``openprogram.providers.openai_codex``).
 - **`openai_responses/`** — OpenAI Responses API provider
 - **`sources/`** — External catalogues that enrich fetched model rows with metadata
 - **`utils/`**
+- **`xai_subscription/`** — xAI Grok subscription (SuperGrok / X Premium+ OAuth)
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

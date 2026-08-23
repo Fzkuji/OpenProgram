@@ -555,6 +555,13 @@ def _persist_job_cancel_intent(
     job = load_job(session_id, job_id) or _find_job(job_id)
     if job is None:
         return False
+    existing = getattr(job, "reason_code", None)
+    if (
+        existing
+        and str(existing).startswith("budget.")
+        and reason_code == "cancel.user"
+    ):
+        reason_code = existing
     session_id = getattr(job, "parent_session_id", None) or session_id
     if is_terminal(job.status):
         return False
@@ -1468,12 +1475,8 @@ def is_cancelled(
     A background task checking its own session resolves to its own slot,
     so a stop aimed at the foreground turn never reads as cancelled here.
     """
-    if execution_id is None:
-        bound = _current_token.get(None)
-        if bound is not None and bound.session_id == session_id:
-            return bound.is_cancelled()
-        if _current_session_id.get(None) == session_id:
-            execution_id = _current_execution_id.get(None)
+    if execution_id is None and _current_session_id.get(None) == session_id:
+        execution_id = _current_execution_id.get(None)
     with _cancel_flags_lock:
         token = _current_tokens.get((session_id, execution_id))
     if token is not None:

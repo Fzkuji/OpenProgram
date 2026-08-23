@@ -21,12 +21,13 @@ The Runtime layer composes these to build whatever agent behavior is needed.
 
 ## Files in this directory
 
-- **`_rewind.py`** — Multi-turn rewind
+- **`_rewind.py`** — Plan and apply transactional multi-turn rewind operations
 - **`agent.py`** — Agent class
 - **`agent_loop.py`** — Agent loop
 - **`attended.py`** — Attended / unattended mode
 - **`authority.py`** — Runtime-owned speaker attribution and two-tier authorization
 - **`exec.py`** — Shared subprocess execution utilities
+- **`history_ownership.py`** — Resolve owned child change sets for file-history operations
 - **`inbox.py`** — Per-session send_message inbox
 - **`messages.py`** — Custom message types and LLM converters for the agent layer
 - **`plan_mode.py`** — Plan-mode session flag
@@ -42,12 +43,12 @@ The Runtime layer composes these to build whatever agent behavior is needed.
 - **`surface_context.py`** — Turn-scoped awareness of a visible OpenProgram desktop surface
 - **`turn_request_context.py`** — The TurnRequest in force for the current execution context
 - **`types.py`** — Agent types
+- **`workspace_alignment.py`** — Conversation-branch and workspace alignment state
 
 ## Sub-packages
 
 - **`compaction/`** — Context compaction for long agent sessions
 - **`dispatcher/`** — Single entry point for every conversation turn
-- **`goal/`** — Session goals
 - **`internals/`** — Agent package internals
 - **`job/`** — Async job lifecycle
 - **`management/`** — Multi-agent support

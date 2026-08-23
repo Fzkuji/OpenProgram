@@ -1157,13 +1157,18 @@ class JobRunner:
         # all see the signal.
         try:
             from openprogram.agent.run_control import (
+                _cancel_reason,
                 kill_active_runtime,
                 mark_cancelled,
             )
-            mark_cancelled(session_id, execution_id=job_id)
-            kill_active_runtime(session_id, execution_id=job_id)
-            from openprogram.agent.process_runner import kill_active_subprocess
-            kill_active_subprocess(session_id, execution_id=job_id)
+            reason_token = _cancel_reason.set(reason_code)
+            try:
+                mark_cancelled(session_id, execution_id=job_id)
+                kill_active_runtime(session_id, execution_id=job_id)
+                from openprogram.agent.process_runner import kill_active_subprocess
+                kill_active_subprocess(session_id, execution_id=job_id)
+            finally:
+                _cancel_reason.reset(reason_token)
         except Exception:
             pass
         if info is not None:

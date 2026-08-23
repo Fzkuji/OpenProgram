@@ -9,8 +9,7 @@ Primitives:
     1. @agentic_function  — turn a Python function into one that can call an LLM
     2. llm                 — make one model request through the ambient Runtime
     3. agent               — make a tool loop through the ambient Runtime
-    4. goal                — make a judgment loop through the ambient Runtime
-    5. decision.make       — let the LLM make the next-step decision
+    4. decision.make       — let the LLM make the next-step decision
 
 Infrastructure:
 
@@ -29,7 +28,6 @@ agentic_programming, never the other way around.
 - **`agent.py`** — Agent: tool loop = repeatedly call llm + execute tools until done
 - **`decision.py`** — decision
 - **`function.py`** — agentic_function
-- **`goal.py`** — Goal: judgment loop = repeatedly call agent + judge condition until met
 - **`llm.py`** — One model request using the ambient agentic-programming Runtime
 - **`runtime.py`** — runtime
 - **`session.py`** — Session management

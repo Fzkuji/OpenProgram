@@ -57,6 +57,7 @@ import { ControlsCluster } from "./controls/controls-cluster";
 import { usePasteTokens } from "./paste/use-paste-tokens";
 import { useHistoryRecall } from "./input/use-history-recall";
 import { useChatSubmit } from "./submit/use-chat-submit";
+import "./submit/send-chat-message";
 import { useComposerKeyDown } from "./input/use-composer-keydown";
 import { useComposerInputEffects } from "./input/use-composer-input-effects";
 import { EnvironmentRow } from "./environment-row/environment-row";

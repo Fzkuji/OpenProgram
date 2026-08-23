@@ -304,6 +304,12 @@ def managed_clients(monkeypatch: pytest.MonkeyPatch, server: _Server):
     return clients
 
 
+@pytest.fixture(autouse=True)
+def _write_inside_sandbox_roots(request, monkeypatch: pytest.MonkeyPatch) -> None:
+    if "tmp_path" in request.fixturenames:
+        monkeypatch.chdir(request.getfixturevalue("tmp_path"))
+
+
 def test_channel_attachment_download_uses_managed_public_fetch(
     server: _Server,
     managed_clients,

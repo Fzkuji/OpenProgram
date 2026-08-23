@@ -28,6 +28,7 @@ relies on.
 
 ## Files in this directory
 
+- **`_execution_common.py`** — Shared tool-execution wrappers used by ``@function`` and ``@agentic_function``
 - **`_helpers.py`** — Small helpers shared by tool `execute` implementations
 - **`_programs.py`** — First-party *programs*
 - **`_providers.py`** — Shared provider-registry scaffolding for tools with pluggable backends
@@ -41,7 +42,7 @@ relies on.
 ## Sub-packages
 
 - **`applications/`** — Complete programs installed and loaded through their package entry points
-- **`tools/`** — Deterministic `@function` tools, grouped by purpose
-- **`workflow/`** — Model-aware Workflows, including Goal and Auto Workflow
+- **`tools/`** — Deterministic LLM-callable functions, grouped by source purpose
+- **`workflow/`** — All model-aware Programs and complete Workflows
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

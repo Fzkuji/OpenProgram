@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-import subprocess
+from types import SimpleNamespace
 
 from openprogram.protected_paths import applications_root
 from openprogram.sandbox import (
@@ -176,10 +176,13 @@ def test_local_backend_attaches_matched_path_and_rule(monkeypatch):
         lambda: {"sandbox": {"mode": "workspace-write"}},
     )
     monkeypatch.setattr("openprogram.sandbox.unavailable_reason", lambda: None)
-    completed = subprocess.CompletedProcess(
-        [], 1, stdout="", stderr=f"cat: {secret}: Operation not permitted",
+    completed = SimpleNamespace(
+        returncode=1, stdout="", stderr=f"cat: {secret}: Operation not permitted",
     )
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_kw: completed)
+    monkeypatch.setattr(
+        "openprogram.backend.local.subprocess.run",
+        lambda *_a, **_kw: completed,
+    )
     result = LocalBackend().run(f"cat {secret}", timeout=5, cwd="/tmp")
     assert result.sandbox_error == "denied"
     assert result.sandbox_rule == "~/.ssh/**"
