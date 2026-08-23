@@ -33,7 +33,8 @@ def goal(
         model: Model override for the working agent.
         effort: Reasoning effort override.
         max_rounds: Maximum judgment rounds. ``None`` uses the shared Goal
-            setting; a non-positive value has no cap.
+            setting (150 when unset in config); an explicit non-positive
+            value has no cap.
         timeout_s: Timeout per working-agent round.
         context_mode: ``isolated`` for a direct Programs/Python call;
             ``session`` for ``/goal`` to include the current session view.
@@ -77,6 +78,7 @@ def goal(
         "max_turns": round_limit,
         "last_reason": "",
         "judge_parse_failures": 0,
+        "idle_rounds": 0,
         "context_mode": context_mode,
         "execution_id": caller,
     }
@@ -147,10 +149,32 @@ def goal(
     else:
         work_prompt = prompt
 
+    def round_used_tools() -> bool:
+        """Whether the round the ambient Runtime just finished used any
+        tool. ``last_blocks`` is reset at agent start and frozen after
+        execution; when no ambient Runtime is reachable (tests, exotic
+        embeddings) assume tools were used so idle detection never
+        fires on a blind spot."""
+        try:
+            from openprogram.agentic_programming.function import _current_runtime
+            rt = _current_runtime.get()
+            blocks = getattr(rt, "last_blocks", None)
+            if blocks is None:
+                # No ambient Runtime or one without block tracking —
+                # no signal, so never punish.
+                return True
+            return any(
+                isinstance(b, dict) and b.get("type") == "tool"
+                for b in blocks
+            )
+        except Exception:
+            return True
+
     evidence_parts = [session_view] if session_view else []
-    rounds = range(round_limit) if round_limit is not None else itertools.count()
+    # The numeric cap lives in apply_goal_verdict (turns_used vs
+    # max_turns) so a user answer can reset the budget mid-run.
     last_result = ""
-    for round_index in rounds:
+    for round_index in itertools.count():
         if sid:
             stored = _goal.load_goal(sid)
             if stored and stored.get("status") == "cleared":
@@ -169,6 +193,9 @@ def goal(
         except Exception as exc:
             fail(exc)
             raise
+        # Read the tool signal right after the working round, before the
+        # judge's own spawned turn can disturb any runtime state.
+        used_tools = round_used_tools()
         if sid:
             stored = _goal.load_goal(sid)
             if stored and stored.get("status") == "cleared":
@@ -177,7 +204,13 @@ def goal(
         evidence_parts.append(
             f"[goal work round {round_index + 1}]\n{last_result}"
         )
+        from openprogram.programs.workflow.goal.judge import VIEW_TAIL_MAX_CHARS
         session_evidence = "\n".join(evidence_parts)
+        if len(session_evidence) > VIEW_TAIL_MAX_CHARS:
+            prefix = "[earlier evidence truncated]\n"
+            session_evidence = (
+                prefix + session_evidence[-(VIEW_TAIL_MAX_CHARS - len(prefix)):]
+            )
         try:
             verdict, reason, question, options = _goal.evaluate_goal(
                 sid,
@@ -202,32 +235,71 @@ def goal(
             goal_state["last_question_at"] = time.time()
             persist()
             answer = ""
+            # judge 产出的 options 是 [{label, description}] 对象列表（存进
+            # goal_state 供 goal 面板显示 description）；PendingQuestion.options
+            # 与前端 ask 面板只认 list[str]，这里收敛成 label 字符串列表。
+            option_labels = [
+                str(o.get("label") or "").strip()
+                for o in (options or []) if isinstance(o, dict)
+            ]
+            option_labels = [lbl for lbl in option_labels if lbl]
             if runtime is not None:
                 try:
+                    # 无限等待（Claude Code 式）：ask 的超时以
+                    # expires_at = now + timeout 表达，没有 None 语义，
+                    # 用 10 年表示"永不超时"。
                     answer = runtime.ask(
                         question,
-                        options=options or None,
+                        options=option_labels or None,
                         allow_custom=True,
-                        default="",
+                        timeout=315_360_000.0,
                     ) or ""
                 except CancelledError:
                     cancel()
                     raise
                 except Exception:
+                    # UserDeclined / AskTimeout / transport failure —
+                    # degrade to an autonomous decision, never kill the run.
                     answer = ""
             if sid:
                 stored = _goal.load_goal(sid)
                 if stored and stored.get("status") == "cleared":
                     return last_result
-            if not answer:
-                goal_state["status"] = "error"
-                goal_state["last_reason"] = "Goal requires a user answer."
-                if sid:
-                    _goal._finish(sid, goal_state, None)
-                raise RuntimeError("Goal requires a user answer")
             goal_state["status"] = "active"
             goal_state.pop("last_question", None)
             goal_state.pop("last_question_options", None)
+            if not answer:
+                # No usable answer: continue unattended with the most
+                # reasonable plan instead of erroring out. The work
+                # round that produced this question does not count
+                # against the cap — otherwise max_turns=1 + first
+                # decline would cap before the autonomous
+                # continuation ever runs.
+                used = int(goal_state.get("turns_used") or 0)
+                if used > 0:
+                    goal_state["turns_used"] = used - 1
+                terminal = _goal.apply_goal_verdict(
+                    goal_state, "unmet", reason,
+                )
+                if terminal:
+                    if sid:
+                        _goal._finish(sid, goal_state, None)
+                    return last_result
+                persist()
+                work_prompt = _goal.next_work_prompt(
+                    prompt,
+                    goal_state,
+                    reason,
+                    user_declined=True,
+                )
+                continue
+            # A real answer resets the runaway budget (OpenHands style):
+            # the user re-engaged, so stall / idle / turn accounting
+            # restarts while the collected evidence is kept.
+            goal_state["turns_used"] = 0
+            goal_state["idle_rounds"] = 0
+            goal_state["stall_rounds"] = 0
+            goal_state["judge_parse_failures"] = 0
             evidence_parts.append(f"[user answer]\n{answer}")
             terminal = _goal.apply_goal_verdict(
                 goal_state, "unmet", reason,
@@ -249,6 +321,10 @@ def goal(
         if terminal is None:
             terminal = _goal.apply_checklist_stall(
                 goal_state, verdict, reason,
+            )
+        if terminal is None:
+            terminal = _goal.apply_idle_spin(
+                goal_state, used_tools, verdict,
             )
         if terminal:
             if sid:

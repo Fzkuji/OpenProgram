@@ -39,6 +39,7 @@ def _run_goal(
     checklist: list[str] | None = None,
     runtime: _Runtime | None = None,
     context_mode: str = "isolated",
+    tools_per_round: list[bool] | None = None,
 ) -> tuple[str, list[str]]:
     module = importlib.import_module("openprogram.programs.workflow.goal.goal")
     agent_module = importlib.import_module("openprogram.agentic_programming.agent")
@@ -62,8 +63,23 @@ def _run_goal(
     outputs = iter(agent_outputs)
     prompts: list[str] = []
 
+    # 模拟 ambient Runtime 的 last_blocks（零工具轮 → 空列表）。
+    class _RuntimeStub:
+        last_blocks: list = []
+
+    stub = _RuntimeStub()
+    tool_flags = iter(tools_per_round or [])
+    token = None
+    if tools_per_round is not None:
+        token = function_module._current_runtime.set(stub)
+
     def fake_agent(**kwargs):
         prompts.append(kwargs["prompt"])
+        if tools_per_round is not None:
+            stub.last_blocks = (
+                [{"type": "tool", "tool": "bash"}]
+                if next(tool_flags, True) else []
+            )
         return next(outputs)
 
     decisions = iter(verdicts)
@@ -73,13 +89,17 @@ def _run_goal(
         "evaluate_goal",
         lambda *_args, **_kwargs: next(decisions),
     )
-    result = module.goal(
-        "do work",
-        "done",
-        max_rounds=max_rounds,
-        context_mode=context_mode,
-        runtime=runtime or _Runtime(),
-    )
+    try:
+        result = module.goal(
+            "do work",
+            "done",
+            max_rounds=max_rounds,
+            context_mode=context_mode,
+            runtime=runtime or _Runtime(),
+        )
+    finally:
+        if token is not None:
+            function_module._current_runtime.reset(token)
     return result, prompts
 
 
@@ -209,47 +229,80 @@ def test_goal_asks_and_resumes_inside_the_same_workflow(
     )
     assert result == "finished"
     assert runtime.questions[0][0] == "A 还是 B？"
+    # judge 的 [{label, description}] 在传给 runtime.ask 前收敛成 label 列表
+    # （PendingQuestion.options / 前端 ask 面板只认 list[str]）。
+    assert runtime.questions[0][1] == ["A"]
     assert "方案 A" in prompts[1]
     stored = G.load_goal("s1")
     assert stored["status"] == "achieved"
     assert "last_question" not in stored
 
 
-def test_unanswered_goal_question_finishes_as_error(
+def test_unanswered_goal_question_degrades_and_continues(
     db: SessionDB, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    with pytest.raises(RuntimeError, match="requires a user answer"):
-        _run_goal(
-            monkeypatch,
-            db,
-            agent_outputs=["need input"],
-            verdicts=[(
-                "needs_user",
-                "direction required",
-                "A or B?",
-                [],
-            )],
-            runtime=_Runtime(),
-        )
-    stored = G.load_goal("s1")
-    assert stored["status"] == "error"
-    assert stored["last_reason"] == "Goal requires a user answer."
-
-
-def test_answer_on_last_round_finishes_as_capped(
-    db: SessionDB, monkeypatch: pytest.MonkeyPatch,
-) -> None:
+    """拒答/超时/空答案不再杀 goal：降级为 unmet 自主续跑。"""
     result, prompts = _run_goal(
         monkeypatch,
         db,
-        agent_outputs=["need input"],
-        verdicts=[("needs_user", "choose", "A or B?", [])],
+        agent_outputs=["need input", "finished"],
+        verdicts=[
+            ("needs_user", "direction required", "A or B?", []),
+            ("met", "done", "", []),
+        ],
+        runtime=_Runtime(),  # 无答案
+    )
+    assert result == "finished"
+    assert len(prompts) == 2
+    assert "用户未回答" in prompts[1]
+    assert "自行选择最合理方案" in prompts[1]
+    assert G.load_goal("s1")["status"] == "achieved"
+
+
+def test_decline_with_one_round_budget_still_runs_autonomous_work(
+    db: SessionDB, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """拒答不计该提问轮：max_rounds=1 时第一次拒答不得直接 capped，
+    工作 agent 还要再跑一轮（看到「用户未回答，自行选择」）。"""
+    result, prompts = _run_goal(
+        monkeypatch,
+        db,
+        agent_outputs=["need input", "chose myself"],
+        verdicts=[
+            ("needs_user", "direction required", "A or B?", []),
+            ("met", "done", "", []),
+        ],
+        max_rounds=1,
+        runtime=_Runtime(),
+    )
+    assert result == "chose myself"
+    assert len(prompts) == 2
+    assert "用户未回答" in prompts[1]
+    assert G.load_goal("s1")["status"] == "achieved"
+
+
+def test_answer_resets_the_turn_budget(
+    db: SessionDB, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """有效回答重置 turns_used（OpenHands 式预算重置）：即使已到
+    max_rounds，回答后循环仍继续。"""
+    result, prompts = _run_goal(
+        monkeypatch,
+        db,
+        agent_outputs=["need input", "after answer"],
+        verdicts=[
+            ("needs_user", "choose", "A or B?", []),
+            ("met", "done", "", []),
+        ],
         max_rounds=1,
         runtime=_Runtime(["A"]),
     )
-    assert result == "need input"
-    assert len(prompts) == 1
-    assert G.load_goal("s1")["status"] == "capped"
+    assert result == "after answer"
+    assert len(prompts) == 2
+    assert "A" in prompts[1]
+    stored = G.load_goal("s1")
+    assert stored["status"] == "achieved"
+    assert stored["turns_used"] == 1  # 重置后只计回答后的那一轮
 
 
 def test_goal_clear_during_work_does_not_get_overwritten(
@@ -443,6 +496,107 @@ def test_checklist_stall_is_shared_goal_state(
     assert "checklist stuck" in stored["last_reason"]
 
 
+def test_default_max_turns_is_150_when_config_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import openprogram.setup as setup_module
+    monkeypatch.setattr(setup_module, "_read_config", lambda: {})
+    assert G.default_max_turns() == G.DEFAULT_MAX_TURNS == 150
+
+
+def test_explicit_zero_or_negative_max_turns_means_unlimited(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import openprogram.setup as setup_module
+    for value in (0, -1, "0"):
+        monkeypatch.setattr(
+            setup_module, "_read_config",
+            lambda v=value: {"goal": {"max_turns": v}},
+        )
+        assert G.default_max_turns() is None
+    monkeypatch.setattr(
+        setup_module, "_read_config", lambda: {"goal": {"max_turns": 7}},
+    )
+    assert G.default_max_turns() == 7
+
+
+def test_zero_tool_round_warns_then_second_terminates(
+    db: SessionDB, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result, prompts = _run_goal(
+        monkeypatch,
+        db,
+        agent_outputs=["talk only", "still talk"],
+        verdicts=[
+            ("unmet", "no progress", "", []),
+            ("unmet", "no progress", "", []),
+        ],
+        tools_per_round=[False, False],
+    )
+    # 第一次零工具 → 下一轮 prompt 带明确警告
+    assert len(prompts) == 2
+    assert "必须实际动手使用工具" in prompts[1]
+    stored = G.load_goal("s1")
+    assert stored["status"] == "error"
+    assert "idle spin" in stored["last_reason"]
+    assert stored["idle_rounds"] == 2
+
+
+def test_tool_use_resets_the_idle_counter(
+    db: SessionDB, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result, prompts = _run_goal(
+        monkeypatch,
+        db,
+        agent_outputs=["talk only", "did work", "finished"],
+        verdicts=[
+            ("unmet", "no progress", "", []),
+            ("unmet", "keep going", "", []),
+            ("met", "done", "", []),
+        ],
+        tools_per_round=[False, True, True],
+    )
+    assert result == "finished"
+    # 第二轮用了工具 → 计数清零，第三轮 prompt 不再带警告
+    assert "必须实际动手使用工具" in prompts[1]
+    assert "必须实际动手使用工具" not in prompts[2]
+    stored = G.load_goal("s1")
+    assert stored["status"] == "achieved"
+    assert stored["idle_rounds"] == 0
+
+
+def test_judge_evidence_is_tail_truncated(
+    db: SessionDB, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openprogram.programs.workflow.goal.judge import VIEW_TAIL_MAX_CHARS
+
+    module = importlib.import_module("openprogram.programs.workflow.goal.goal")
+    agent_module = importlib.import_module("openprogram.agentic_programming.agent")
+    function_module = importlib.import_module(
+        "openprogram.agentic_programming.function"
+    )
+    monkeypatch.setattr(function_module, "current_session_id", lambda: "s1")
+    monkeypatch.setattr(function_module, "current_call_id", lambda: "goal-call")
+    monkeypatch.setattr(
+        G, "refine_goal_spec_candidate", lambda *_args, **_kwargs: ("SPEC", []),
+    )
+    monkeypatch.setattr(G, "_emit_goal_update", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        agent_module, "agent", lambda **_kwargs: "x" * (VIEW_TAIL_MAX_CHARS + 5000),
+    )
+    seen: list[str] = []
+
+    def capture(*_args, **kwargs):
+        seen.append(kwargs["session_view"])
+        return "met", "done", "", []
+
+    monkeypatch.setattr(G, "evaluate_goal", capture)
+    module.goal("do work", "done", runtime=_Runtime())
+    assert len(seen) == 1
+    assert len(seen[0]) == VIEW_TAIL_MAX_CHARS
+    assert seen[0].startswith("[earlier evidence truncated]\n")
+
+
 def test_goal_update_payload_includes_the_shared_state(
     db: SessionDB, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -457,8 +611,11 @@ def test_goal_update_payload_includes_the_shared_state(
         "status": "active",
         "turns_used": 1,
         "max_turns": 10,
+        "last_question_at": 12.5,
         "checklist": [{"text": "a", "done": False}],
     }
     G._emit_goal_update(None, "s1", goal)
     assert events and events[0]["args"][0] == "goal.update"
-    assert events[0]["args"][2]["goal"]["checklist"] == goal["checklist"]
+    payload = events[0]["args"][2]["goal"]
+    assert payload["checklist"] == goal["checklist"]
+    assert payload["last_question_at"] == 12.5

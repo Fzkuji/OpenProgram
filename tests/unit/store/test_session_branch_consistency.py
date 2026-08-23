@@ -524,6 +524,48 @@ def test_reconcile_finishes_a_durable_cancellation_intent(store):
     assert store.get_session("s1")["status"] == "cancelled"
 
 
+def test_reconcile_settles_zombie_goal_state(store):
+    """A goal loop frozen at active/waiting_user by a dead worker must be
+    settled to error on startup — nobody else will ever finish it."""
+    from openprogram.webui import _exec_dag
+
+    _two_turns(store)
+    store.update_session("s1", goal={
+        "text": "x", "status": "active", "turns_used": 3,
+    })
+    _exec_dag.reconcile_interrupted_runs()
+    goal = (store.get_session("s1").get("extra_meta") or {}).get("goal")
+    assert goal["status"] == "error"
+    assert "worker restarted" in goal["last_reason"]
+
+
+def test_reconcile_settles_waiting_user_zombie_goal(store):
+    """waiting_user is the same zombie class as active: the ask is
+    blocked in a dead worker, so startup must settle it."""
+    from openprogram.webui import _exec_dag
+
+    _two_turns(store)
+    store.update_session("s1", goal={
+        "text": "x", "status": "waiting_user",
+        "last_question": "A or B?",
+    })
+    _exec_dag.reconcile_interrupted_runs()
+    goal = (store.get_session("s1").get("extra_meta") or {}).get("goal")
+    assert goal["status"] == "error"
+    assert "worker restarted" in goal["last_reason"]
+
+
+def test_reconcile_leaves_terminal_goal_alone(store):
+    from openprogram.webui import _exec_dag
+
+    _two_turns(store)
+    store.update_session("s1", goal={"text": "x", "status": "achieved"})
+    _exec_dag.reconcile_interrupted_runs()
+    goal = (store.get_session("s1").get("extra_meta") or {}).get("goal")
+    assert goal["status"] == "achieved"
+    assert "last_reason" not in goal
+
+
 def test_interrupted_exec_tree_keeps_the_restart_reason():
     from openprogram.context.nodes import Call, ROLE_CODE
     from openprogram.webui import _exec_dag

@@ -24,8 +24,10 @@ refinement, judge, round limit, question handling, progress state, and terminal
 statuses as the Programs form.
 
 The active Goal appears in the composer GoalChip. A question from the judge
-uses the standard question panel and resumes the same Workflow execution after
-you answer.
+uses the standard question panel and waits indefinitely; answering resumes the
+same Workflow execution and restarts its round budget. If you decline or leave
+the answer empty, the Workflow continues on its own with the most reasonable
+plan instead of stopping.
 
 ## Status and control
 
@@ -47,7 +49,7 @@ execution boundary.
 | Status | Meaning |
 | --- | --- |
 | `achieved` | The judge accepted the condition and every checklist item. |
-| `capped` | The configured round limit was reached. |
-| `error` | Repeated judge failure or checklist stall stopped the run. |
+| `capped` | The round limit was reached (`goal.max_turns`, default 150; zero or negative in config = unlimited). |
+| `error` | Repeated judge failure, checklist stall, or consecutive tool-less rounds stopped the run. |
 | `waiting_user` | The judge asked a question and is waiting for an answer. |
 | `cleared` | The current session cleared the Goal. |

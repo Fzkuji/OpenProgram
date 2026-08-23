@@ -44,7 +44,8 @@ Both surfaces use the same Goal state and statuses:
   waiting for an answer;
 - `achieved`: the judge accepted the condition and every checklist item;
 - `capped`: the configured round limit was reached;
-- `error`: repeated judge failure or checklist stall stopped the Workflow;
+- `error`: repeated judge failure, checklist stall, zero-tool idle spin,
+  or worker-restart reconciliation stopped the Workflow;
 - `cleared`: the user cleared the Goal.
 
 The Workflow persists this state under the owning session so GoalChip,
@@ -63,6 +64,33 @@ Refinement and judgment run as inspection-only spawned calls. They may inspect
 the working directory with their existing restricted tool sets, do not move the
 session head, and do not create another Goal.
 
+## Stopping rules
+
+The loop stops on the first rule that fires:
+
+- **Round budget.** Every run starts with a turn budget: `goal.max_turns` from
+  config, or 150 when unset. An explicit zero or negative value (in config or
+  as the `max_rounds` argument) removes the cap. Reaching the budget ends the
+  run with status `capped`.
+- **Judge failure.** Three consecutive malformed or failed judge decisions end
+  the run with status `error`.
+- **Checklist stall.** When a checklist exists and the done count does not
+  grow for three consecutive `unmet` rounds, the run ends with status `error`.
+- **Zero-tool idle spin.** Each work round is checked for tool use via the
+  ambient Runtime's frozen block list. A zero-tool round whose verdict is
+  still `unmet` injects an explicit warning into the next work prompt ("you
+  must actually use tools; consecutive tool-less rounds are treated as giving
+  up"); a second consecutive zero-tool round ends the run with status `error`
+  and an idle-spin reason. Any round that uses a tool resets the counter.
+
+The evidence passed to the completion judge is tail-truncated to the judge's
+view budget (24 000 characters); truncation keeps the tail and prefixes a
+single `[earlier evidence truncated]` line.
+
+On worker startup, run-state reconciliation also settles goals a dead worker
+left at `active` or `waiting_user`: they become `error` with a
+"worker restarted while the goal loop was running" reason.
+
 ## User questions and cancellation
 
 `need_user` uses the Runtime question channel inside the same Workflow
@@ -70,6 +98,14 @@ execution. The Goal state changes to `waiting_user`, the question crosses the
 existing subprocess question bridge, and the answer resumes the same loop.
 No ordinary chat message is reinterpreted as an answer to a separate session
 loop.
+
+The question waits indefinitely — an unanswered question never times a goal
+out. When the user declines, the answer is empty, or the ask channel fails,
+the run does not error: it downgrades to an `unmet` continuation whose next
+work prompt tells the agent the user did not answer and to pick the most
+reasonable plan itself, stating the decision and its rationale. A real answer
+resets the runaway accounting — turn budget, idle counter, stall counter, and
+judge-failure counter restart while collected evidence is kept.
 
 The normal function-run cancellation boundary owns Stop. `/goal clear` is a
 cooperative state change checked between rounds; it does not introduce another

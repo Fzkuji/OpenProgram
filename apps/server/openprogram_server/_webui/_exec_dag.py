@@ -446,6 +446,27 @@ def reconcile_interrupted_runs() -> int:
         # Reset it independently of the node loop: a worker killed
         # between the status write and the placeholder insert leaves a
         # running ROW with no running NODE.
+        # A goal loop frozen at active/waiting_user is the same kind of
+        # zombie: the worker that ran it is gone, nobody will ever flip
+        # it to a terminal status, and the GoalChip spins forever. A
+        # fresh worker has no goal loop running, so settle it here.
+        # Premise: this runs at worker startup, so this process has no
+        # live goal loop. Shared-state-dir multi-worker is not handled
+        # — a sibling worker's waiting_user would be wrongly settled.
+        try:
+            full = store.get_session(sid) or {}
+            goal_meta = (full.get("extra_meta") or {}).get("goal")
+            if (isinstance(goal_meta, dict)
+                    and goal_meta.get("status") in {"active", "waiting_user"}):
+                goal_meta = dict(goal_meta)
+                goal_meta["status"] = "error"
+                goal_meta["last_reason"] = (
+                    "worker restarted while the goal loop was running"
+                )
+                store.update_session(sid, goal=goal_meta)
+                fixed += 1
+        except Exception:
+            pass
         session_status = sess.get("status") or ""
         if session_status in {"running", "cancelling"}:
             try:

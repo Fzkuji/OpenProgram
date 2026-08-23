@@ -33,7 +33,9 @@ Goal meta shape (``session extra_meta["goal"]``)::
      judge only flips "done", never edits the list),
      "status": "active" | "waiting_user" | "achieved" |
      "cleared" | "capped" | "error", "created_at": float,
-     "turns_used": int, "max_turns": int | None (None = unlimited),
+     "turns_used": int, "max_turns": int | None (None = unlimited;
+     default 150 when unset in config), "idle_rounds": int (consecutive
+     zero-tool unmet rounds; two in a row stop the loop),
      "last_reason": str, "last_question": str,
      "last_question_at": float, "judge_parse_failures": int}
 
@@ -55,6 +57,8 @@ from openprogram.programs.workflow.goal.judge import (  # noqa: F401
     render_session_view,
 )
 from openprogram.programs.workflow.goal.state import (  # noqa: F401
+    DEFAULT_MAX_TURNS,
+    IDLE_ROUND_LIMIT,
     JUDGE_PARSE_FAILURE_LIMIT,
     STALL_ROUND_LIMIT,
     _CLEAR_VERBS,
@@ -76,8 +80,10 @@ from openprogram.programs.workflow.goal.refinement import (  # noqa: F401
     refine_goal_spec_candidate,
 )
 from openprogram.programs.workflow.goal.loop import (  # noqa: F401
+    IDLE_WARNING,
     apply_checklist_stall,
     apply_goal_verdict,
+    apply_idle_spin,
     next_work_prompt,
 )
 from openprogram.programs.workflow.goal.command import (  # noqa: F401

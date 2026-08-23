@@ -18,6 +18,11 @@ _log = logging.getLogger(__name__)
 JUDGE_PARSE_FAILURE_LIMIT = 3
 # 连续 N 个续轮判定打勾数不涨 → 无进展停机(只读磨洋工守卫)。
 STALL_ROUND_LIMIT = 3
+# 未配置时的默认轮数上限（对齐 OpenHands 的 500 量级预算 + Codex goal
+# 模式 200，取更保守的 150；显式配 0/负数才表示无限）。
+DEFAULT_MAX_TURNS = 150
+# 连续 N 轮零工具且仍 unmet → 判定为 idle spin 停机；第 1 次先警告。
+IDLE_ROUND_LIMIT = 2
 _CLEAR_VERBS = {"clear", "stop", "off", "cancel"}
 
 
@@ -48,18 +53,19 @@ def save_goal(session_id: str, goal: dict) -> None:
 
 def default_max_turns() -> Optional[int]:
     """``goal.max_turns`` from config.json (config_schema setting).
-    ``None`` — the default — means NO turn cap: like Claude Code's and
-    Codex's stop hooks, runaway protection is the internal stop rules
-    (3 consecutive judge failures, idle-spin detection) plus the user's
-    own interrupt / ``/goal clear``, not a number. A positive value set
-    explicitly is honoured."""
+    Unset — the default — means :data:`DEFAULT_MAX_TURNS` (150), the
+    runaway budget every Goal run starts with. An explicit zero or
+    negative value means NO turn cap; an explicit positive value is
+    honoured as-is."""
     try:
         from openprogram import setup as _setup
         v = (_setup._read_config().get("goal") or {}).get("max_turns")
-        n = int(v) if v not in (None, "") else None
-        return n if n and n > 0 else None
+        if v in (None, ""):
+            return DEFAULT_MAX_TURNS
+        n = int(v)
+        return n if n > 0 else None
     except Exception:
-        return None
+        return DEFAULT_MAX_TURNS
 
 
 def _emit_goal_update(on_event: Optional[Callable], session_id: str,
@@ -73,7 +79,7 @@ def _emit_goal_update(on_event: Optional[Callable], session_id: str,
         "goal": {k: goal.get(k) for k in (
             "text", "spec", "checklist", "status", "turns_used",
             "max_turns", "last_reason", "last_question",
-            "last_question_options")},
+            "last_question_at", "last_question_options")},
     }
     if on_event is not None:
         try:

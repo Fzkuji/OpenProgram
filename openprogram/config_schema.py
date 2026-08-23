@@ -641,18 +641,18 @@ SETTINGS: list[SettingSpec] = [
     ),
     SettingSpec(
         key="goal.max_turns", path=("goal", "max_turns"), group="Goal",
-        minimum=1,
         label="Goal max rounds", widget="number",
         apply=APPLY_LIVE, default=None,
         validate=lambda v: (None if v in (None, "")
-                            or (str(v).isdigit() and int(v) > 0)
-                            else "must be empty (unlimited) or a "
-                                 "positive whole number"),
-        help="Optional upper bound on rounds one Goal Workflow may "
-             "consume before it stops with status=capped. Empty "
-             "(default) = no cap — runaway protection is the goal "
-             "loop's own stop rules (judge failures, idle spin) and "
-             "/goal clear. Read when the Workflow starts; each run keeps "
+                            or str(v).lstrip("-").isdigit()
+                            else "must be empty (default 150) or a "
+                                 "whole number (0 or negative = "
+                                 "unlimited)"),
+        help="Upper bound on rounds one Goal Workflow may consume "
+             "before it stops with status=capped. Empty (default) = "
+             "150. Zero or a negative number = no cap (stop rules are "
+             "then judge failures, idle-spin detection and /goal "
+             "clear). Read when the Workflow starts; each run keeps "
              "the bound it started with.",
     ),
     SettingSpec(

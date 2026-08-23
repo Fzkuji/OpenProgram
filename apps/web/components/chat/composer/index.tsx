@@ -63,8 +63,6 @@ import { EnvironmentRow } from "./environment-row/environment-row";
 import { ScopedDropOverlay } from "./attach/scoped-drop-overlay";
 import { ComposerBody } from "./modes/composer-body";
 import { QuestionPanel } from "./modes/question/question-panel";
-import { sendChatMessage } from "./submit/send-chat-message";
-import { enqueueMessage } from "@/lib/state/send-queue";
 import styles from "./composer.module.css";
 
 /* Single shared WebSocket, owned by `lib/net/use-ws.ts` and reached
@@ -176,16 +174,20 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       ? pendingDecision
       : null;
   const activeDecision = askDecision ? null : pendingDecision;
-  // goal 挂起：answeredKey = 乐观收起（点 pill / 发消息后立即收，不等
-  // goal_update 把 status 翻走）；按「会话:轮数:问题」记 key，下一次挂起
-  // 自然重新出现。刷新后水合数据仍是 waiting_user → 面板重现。
+  // goal 挂起：answeredKey = 乐观收起（经 question_reply 回答对应提问后
+  // 立即收，不等 goal_update 把 status 翻走）；按「会话:提问时刻:轮数:问题」
+  // 记 key。有效回答会把 turns_used 归零，同一句再问时靠 last_question_at
+  // 区分；离开 waiting_user 时清掉 key。刷新后水合仍是 waiting_user → 面板重现。
   const goal = useSessionGoal(currentSessionId);
   const [goalAnsweredKey, setGoalAnsweredKey] = useState<string | null>(null);
   const goalKey =
     goal?.status === "waiting_user" && goal.last_question && currentSessionId
-      ? `${currentSessionId}:${goal.turns_used ?? 0}:${goal.last_question}`
+      ? `${currentSessionId}:${goal.last_question_at ?? 0}:${goal.turns_used ?? 0}:${goal.last_question}`
       : null;
   const goalWaiting = goalKey !== null && goalAnsweredKey !== goalKey;
+  useEffect(() => {
+    if (goal?.status !== "waiting_user") setGoalAnsweredKey(null);
+  }, [goal?.status]);
   const send = wsSend;
 
   const isRunning = runningTask !== null;
@@ -385,8 +387,10 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   });
 
   // 顶部提问面板在场时的提交改道（唯一允许改输入框提交行为的地方，样式
-  // 不动）：真 ask → 输入文本作为答案走 question_reply；goal → 普通聊天
-  // 发送本身就是回答（goal 循环收任意用户消息），只需乐观收起面板。
+  // 不动）：ask / confirm —— 含 goal waiting_user 经 runtime.ask 发来的
+  // 提问 —— 输入文本作为答案走 question_reply（回答后端阻塞的 PendingQuestion，
+  // 普通聊天解不开它）。goal 面板独立出现（question.asked 尚未到达 / 已丢失）
+  // 时拿不到 qid，此时不把文本当聊天发出去 —— 等 question.asked 到达。
   const submitWithPanel = useCallback(async () => {
     const trimmed = input.trim();
     if (askDecision && trimmed && askDecision.allow_custom) {
@@ -397,9 +401,12 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       });
       dequeueDecision(askDecision.id);
       setComposerInputFor(activeChatKey ?? currentSessionId, "");
+      // goal 的提问经同一通道回答后，乐观收起 goal 面板（不等 goal_update
+      // 把 waiting_user 翻走）。
+      if (goalKey) setGoalAnsweredKey(goalKey);
       return;
     }
-    if (!askDecision && goalWaiting && !morphed) setGoalAnsweredKey(goalKey);
+    if (!askDecision && goalWaiting && !morphed) return;
     await submit();
   }, [
     input,
@@ -476,59 +483,6 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // 这个圆形按钮，所以这里只管 fn-form / 普通聊天两种。
   const onSendButtonClick = fnFormActive ? submitFnForm : submitWithPanel;
 
-  // Goal 挂起提问卡点选项 = 把选项 label 当一条普通聊天消息发出去，与
-  // 手打回车同一条路：跑着 → 进发送队列（本轮结束自动发出）；空闲 →
-  // sendChatMessage（乐观气泡 / welcome 隐藏 / running 翻转都由它做）。
-  // true = 已受理，卡片乐观隐藏。
-  const sendGoalAnswer = useCallback(
-    (label: string): boolean => {
-      const owner = activeChatKey ?? currentSessionId;
-      const trimmed = label.trim();
-      if (!owner || !trimmed) return false;
-      if (isRunning) {
-        enqueueMessage(owner, {
-          text: trimmed,
-          thinking,
-          toolsEnabled,
-          toolsProfile: activeProfile,
-          webSearchEnabled,
-          serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
-          background: bound !== null,
-        });
-        return true;
-      }
-      if (noEnabledModels) {
-        promptNeedModel();
-        return false;
-      }
-      return sendChatMessage({
-        text: trimmed,
-        sessionId: owner,
-        background: bound !== null,
-        thinking,
-        toolsEnabled,
-        toolsProfile: activeProfile,
-        webSearchEnabled,
-        serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
-      });
-    },
-    [
-      activeChatKey,
-      currentSessionId,
-      isRunning,
-      noEnabledModels,
-      promptNeedModel,
-      send,
-      bound,
-      thinking,
-      toolsEnabled,
-      activeProfile,
-      webSearchEnabled,
-      fastEnabled,
-      fastSupported,
-    ],
-  );
-
   // 拒绝/取消当前的系统决定 —— 走左上角 ✕。发 question_reject 并即时出队
   // （后端 _resolve_question 收口 + 广播）。
   const rejectDecision = useCallback(() => {
@@ -553,6 +507,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
         ),
         prompt: askDecision.prompt,
         options: askDecision.options.map((label) => ({ label })),
+        disabled: false,
         onPick: (label: string) => {
           send({
             action: "question_reply",
@@ -560,10 +515,15 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
             answer: askDecision.multi ? [label] : label,
           });
           dequeueDecision(askDecision.id);
+          // goal 的提问也走这里回答 —— 乐观收起 goal 面板。
+          if (goalKey) setGoalAnsweredKey(goalKey);
         },
       }
     : goalWaiting && !morphed
     ? {
+        // goal 面板独立出现 = 对应的 question.asked 还没到达（或已丢失），
+        // 没有 qid 可以 question_reply，选项先禁用，等 askDecision 到达后
+        // 上面的分支接管（真 ask 优先）。
         badge: (
           <>
             <Target size={13} strokeWidth={2} />
@@ -575,9 +535,8 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           label: o.label,
           description: o.description || undefined,
         })),
-        onPick: (label: string) => {
-          if (sendGoalAnswer(label)) setGoalAnsweredKey(goalKey);
-        },
+        disabled: true,
+        onPick: () => {},
       }
     : null;
   // In chat mode: disabled when textarea is empty OR when a paste
@@ -604,9 +563,12 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // let submitFnForm's setError path light up the missing field's red
   // border instead. The button still LOOKS dim (data-fn-missing) and
   // its title spells out which field is blocking.
+  // goal 面板独立在场（qid 未知）时禁发：文本当聊天发出去解不开后端阻塞
+  // 的 runtime.ask，等 question.asked 到达后转为 ask 面板即可正常回答。
+  const goalPanelBlocked = !askDecision && goalWaiting && !morphed;
   const sendDisabled = fnFormActive
     ? false
-    : !input.trim() || pasteMissing.size > 0;
+    : !input.trim() || pasteMissing.size > 0 || goalPanelBlocked;
   const sendTitle = fnFormActive
     ? missingFnParams.length > 0
       ? text(
@@ -616,6 +578,8 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       : text("Run", "运行")
     : pasteMissing.size > 0
     ? text("Paste content lost. Remove the red chip and re-paste.", "粘贴内容已丢失。请移除红色标签后重新粘贴。")
+    : goalPanelBlocked
+    ? text("Waiting for the question channel…", "等待提问通道就绪…")
     : text("Send message", "发送消息");
 
   /* ---- Render -------------------------------------------------------- */
@@ -718,6 +682,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
             prompt={panel.prompt}
             options={panel.options}
             onPick={panel.onPick}
+            disabled={panel.disabled}
           />
         )}
         <ImageAttachStrip

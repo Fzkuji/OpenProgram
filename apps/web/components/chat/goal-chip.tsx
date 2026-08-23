@@ -27,6 +27,7 @@ export interface GoalState {
   checklist?: { text: string; done: boolean }[] | null;
   last_reason?: string;
   last_question?: string;
+  last_question_at?: number;
   last_question_options?: { label: string; description: string }[];
 }
 

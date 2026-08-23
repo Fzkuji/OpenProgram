@@ -18,7 +18,7 @@ Goal 反复执行 Agent，并由独立 completion judge 判断完成条件是否
 
 这会调用同一个 Goal Workflow，同时把当前会话的压缩上下文作为初始证据。此后 refinement、judge、轮次上限、用户提问、进度状态和终态都与 Programs 表单相同。
 
-active Goal 显示在 composer 的 GoalChip 中。judge 提问时使用标准问题面板，用户回答后恢复同一个 Workflow execution。
+active Goal 显示在 composer 的 GoalChip 中。judge 提问时使用标准问题面板并无限等待；回答后恢复同一个 Workflow execution 并重置轮次预算。拒绝回答或答案为空时，Workflow 不会停止，而是自行选择最合理方案继续。
 
 ## 状态与控制
 
@@ -36,7 +36,7 @@ active Goal 显示在 composer 的 GoalChip 中。judge 提问时使用标准问
 | 状态 | 含义 |
 | --- | --- |
 | `achieved` | judge 接受条件，并且 checklist 全部完成。 |
-| `capped` | 达到配置的轮次上限。 |
-| `error` | 连续 judge 失败或 checklist 停滞导致终止。 |
+| `capped` | 达到轮次上限（`goal.max_turns`，默认 150；config 里配 0 或负数表示无限）。 |
+| `error` | 连续 judge 失败、checklist 停滞或连续零工具轮导致终止。 |
 | `waiting_user` | judge 提问，正在等待回答。 |
 | `cleared` | 当前 session 清除了 Goal。 |
