@@ -188,9 +188,6 @@ function prefersReducedMotion(): boolean {
     && matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-let pinOriginals: { id: string; top: number } | null = null;
-let pendingOrigNudge: { opening: boolean } | null = null;
-
 function easeScrollBy(area: HTMLElement, delta: number, ms: number): void {
   const start = area.scrollTop;
   const end = Math.max(0, start + delta);
@@ -208,23 +205,32 @@ function easeScrollBy(area: HTMLElement, delta: number, ms: number): void {
   requestAnimationFrame(step);
 }
 
+function pinWhile(el: Element, top: number, ms: number): void {
+  const area = document.getElementById("chatArea");
+  if (!area) return;
+  const t0 = performance.now();
+  const tick = () => {
+    area.scrollTop += el.getBoundingClientRect().top - top;
+    if (performance.now() - t0 < ms) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
 function toggleOriginals(cardId: string): void {
   const opening = !originalsOpen.has(cardId);
   const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v);
   const el = document.querySelector(`[data-orig-for="${esc(cardId)}"]`);
-  if (el) pinOriginals = { id: cardId, top: el.getBoundingClientRect().top };
+  const hold = prefersReducedMotion() ? 0 : FOLD_MS + 40;
+  if (el) pinWhile(el, el.getBoundingClientRect().top, hold);
   if (opening) originalsOpen.add(cardId);
   else originalsOpen.delete(cardId);
-  pendingOrigNudge = { opening };
   originalsSubs.forEach((fn) => fn());
-  const delay = prefersReducedMotion() ? 0 : FOLD_MS + 20;
+  if (!opening) return;
   window.setTimeout(() => {
     const area = document.getElementById("chatArea");
-    const nudge = pendingOrigNudge;
-    pendingOrigNudge = null;
-    if (!area || !nudge?.opening) return;
+    if (!area) return;
     easeScrollBy(area, -Math.round(area.clientHeight / 3), 500);
-  }, delay);
+  }, hold);
 }
 
 function SystemEventRow({ msg }: { msg: ChatMsg }) {
@@ -695,22 +701,12 @@ export function MessageList() {
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const chatKey = useSessionStore((s) => s.activeChatKey);
   const ids = useMessageIds(sessionId);
-  const [origTick, setOrigTick] = useState(0);
+  const [, setOrigTick] = useState(0);
   useEffect(() => {
     const fn = () => setOrigTick((n) => n + 1);
     originalsSubs.add(fn);
     return () => { originalsSubs.delete(fn); };
   }, []);
-  useLayoutEffect(() => {
-    const pin = pinOriginals;
-    if (!pin) return;
-    pinOriginals = null;
-    const esc = (v: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v);
-    const el = document.querySelector(`[data-orig-for="${esc(pin.id)}"]`);
-    const area = document.getElementById("chatArea");
-    if (!el || !area) return;
-    area.scrollTop += el.getBoundingClientRect().top - pin.top;
-  }, [origTick]);
   const hiddenCovered = new Set<string>();
   const coveredSet = new Set<string>();
   for (const id of ids) {
