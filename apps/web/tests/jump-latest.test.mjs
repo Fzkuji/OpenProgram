@@ -5,11 +5,11 @@ import test from "node:test";
 import {
   CHAT_AT_BOTTOM_EPSILON,
   chatAtBottomSlack,
-  easeInOutCubic,
-  easeInOutQuint,
   isChatAtBottom,
-  jumpScrollDuration,
+  JUMP_V_MAX,
+  jumpMotionPlan,
   jumpScrollTopAt,
+  jumpTraveled,
   remainingScroll,
 } from "../lib/state/chat-scroll.ts";
 
@@ -70,15 +70,22 @@ test("jump button fades out instead of unmounting immediately", () => {
   assert.match(jumpCss, /280ms/);
 });
 
-test("jump scroll eases in, then out", () => {
-  assert.equal(easeInOutQuint(0), 0);
-  assert.equal(easeInOutQuint(1), 1);
-  assert.equal(easeInOutQuint(0.5), 0.5);
-  assert.ok(easeInOutQuint(0.25) < easeInOutCubic(0.25));
-  assert.ok(easeInOutQuint(0.75) > easeInOutCubic(0.75));
-  assert.equal(jumpScrollTopAt(0, 100, 0), 0);
-  assert.equal(jumpScrollTopAt(0, 100, 1), 100);
-  assert.ok(jumpScrollDuration(80) >= 620);
+test("short hops never reach cruise speed", () => {
+  const short = jumpMotionPlan(400);
+  assert.equal(short.kind, "triangle");
+  assert.ok(short.vPeak < JUMP_V_MAX);
+  assert.equal(short.tCruise, 0);
+  assert.ok(Math.abs(jumpTraveled(short, short.duration) - 400) < 0.5);
+});
+
+test("long hops cruise at the speed cap", () => {
+  const long = jumpMotionPlan(12000);
+  assert.equal(long.kind, "trapezoid");
+  assert.equal(long.vPeak, JUMP_V_MAX);
+  assert.ok(long.tCruise > 0);
+  assert.ok(long.duration > jumpMotionPlan(400).duration);
+  assert.equal(jumpScrollTopAt(0, 12000, 0), 0);
+  assert.ok(Math.abs(jumpScrollTopAt(0, 12000, long.duration) - 12000) < 1);
 });
 
 test("jump keeps the button until the ride finishes", () => {

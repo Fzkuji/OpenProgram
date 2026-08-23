@@ -151,25 +151,80 @@ export function readComposerHeight(): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** Mild cubic — kept for contrast tests. Jump uses the steeper quint. */
-export function easeInOutCubic(t: number): number {
-  const x = Math.min(1, Math.max(0, t));
-  return x < 0.5 ? 4 * x * x * x : 1 - ((-2 * x + 2) ** 3) / 2;
+/** Fixed subway-style motion: accel and brake are constant.
+
+A short hop never reaches cruise — you start braking first.
+A long hop accelerates to ``JUMP_V_MAX``, holds, then brakes.
+*/
+export const JUMP_ACCEL = 9000;
+export const JUMP_V_MAX = 4200;
+
+export type JumpMotionPlan = {
+  distance: number;
+  duration: number;
+  kind: "triangle" | "trapezoid";
+  vPeak: number;
+  tAccel: number;
+  tCruise: number;
+  tDecel: number;
+};
+
+export function jumpMotionPlan(distance: number): JumpMotionPlan {
+  const s = Math.abs(distance);
+  const a = JUMP_ACCEL;
+  const vmax = JUMP_V_MAX;
+  const minCruise = (vmax * vmax) / a;
+  if (s <= minCruise + 1e-6) {
+    const vPeak = Math.sqrt(Math.max(0, a * s));
+    const tAccel = vPeak / a;
+    return {
+      distance: s,
+      duration: 2 * tAccel,
+      kind: "triangle",
+      vPeak,
+      tAccel,
+      tCruise: 0,
+      tDecel: tAccel,
+    };
+  }
+  const tAccel = vmax / a;
+  const sAccel = (vmax * vmax) / (2 * a);
+  const tCruise = (s - 2 * sAccel) / vmax;
+  return {
+    distance: s,
+    duration: 2 * tAccel + tCruise,
+    kind: "trapezoid",
+    vPeak: vmax,
+    tAccel,
+    tCruise,
+    tDecel: tAccel,
+  };
 }
 
-/** Steeper slow-fast-slow so the ride is obvious. */
-export function easeInOutQuint(t: number): number {
-  const x = Math.min(1, Math.max(0, t));
-  return x < 0.5 ? 16 * x ** 5 : 1 - ((-2 * x + 2) ** 5) / 2;
+export function jumpTraveled(plan: JumpMotionPlan, elapsed: number): number {
+  const t = Math.min(plan.duration, Math.max(0, elapsed));
+  const a = JUMP_ACCEL;
+  if (t <= plan.tAccel) return 0.5 * a * t * t;
+  const sAccel = 0.5 * a * plan.tAccel * plan.tAccel;
+  if (t <= plan.tAccel + plan.tCruise) {
+    return sAccel + plan.vPeak * (t - plan.tAccel);
+  }
+  const td = t - plan.tAccel - plan.tCruise;
+  const sCruise = plan.vPeak * plan.tCruise;
+  return sAccel + sCruise + plan.vPeak * td - 0.5 * a * td * td;
 }
 
 export function jumpScrollDuration(distance: number): number {
-  const d = Math.abs(distance);
-  return Math.round(Math.min(980, Math.max(620, 520 + d * 0.42)));
+  return jumpMotionPlan(distance).duration * 1000;
 }
 
-export function jumpScrollTopAt(from: number, to: number, t: number): number {
-  return from + (to - from) * easeInOutQuint(t);
+export function jumpScrollTopAt(from: number, to: number, elapsedSec: number): number {
+  const dist = to - from;
+  if (dist === 0) return to;
+  const plan = jumpMotionPlan(dist);
+  const traveled = jumpTraveled(plan, elapsedSec);
+  const sign = dist < 0 ? -1 : 1;
+  return from + sign * Math.min(Math.abs(dist), traveled);
 }
 
 /** Animate a scroller to the latest message. Returns a cancel function. */
@@ -185,18 +240,19 @@ export function animateJumpToLatest(
     onDone?.();
     return () => {};
   }
-  const dur = jumpScrollDuration(dist);
+  const plan = jumpMotionPlan(dist);
   const t0 = performance.now();
   let raf = 0;
   let cancelled = false;
   const step = (now: number) => {
     if (cancelled) return;
-    const t = Math.min(1, (now - t0) / dur);
-    area.scrollTop = jumpScrollTopAt(from, to, t);
-    if (t < 1) {
+    const elapsed = (now - t0) / 1000;
+    area.scrollTop = jumpScrollTopAt(from, to, elapsed);
+    if (elapsed < plan.duration) {
       raf = requestAnimationFrame(step);
       return;
     }
+    area.scrollTop = to;
     onDone?.();
   };
   raf = requestAnimationFrame(step);
