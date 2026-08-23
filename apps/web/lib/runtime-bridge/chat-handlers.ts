@@ -50,6 +50,10 @@ import { refreshHistoryContextRange } from "./dag";
 import { sessionAckIsActive, useCenterTabs } from "@/lib/state/center-tabs-store";
 import { writeChatScroll } from "@/lib/state/chat-scroll";
 import { useSessionStore } from "@/lib/session-store";
+import {
+  warmContextBreakdown,
+  writeContextBreakdownCache,
+} from "@/lib/state/context-breakdown-cache";
 import { convToChatMsgs } from "@/lib/conv-mapper";
 import {
   clearPendingFirstAck,
@@ -522,6 +526,7 @@ export function handleRunningTaskClear(
     return false;
   }
   store.setRunningTaskFor(sessionId, null, "always");
+  warmContextBreakdown(sessionId, store.heads[sessionId] ?? null);
   // If the clear is for the currently-active session, also drop the
   // legacy single-task / button state so the composer un-locks.
   if ((store.activeChatKey ?? store.currentSessionId) === sessionId) {
@@ -735,6 +740,9 @@ interface ContextStatsData {
   input_total?: number;
   model?: string | null;
   source_mix?: unknown;
+  breakdown?: import("@/lib/state/context-breakdown-cache").ContextBreakdown & {
+    head_id?: string | null;
+  };
 }
 
 function handleContextStats(data: ContextStatsData, sid: string | null): void {
@@ -774,6 +782,17 @@ function handleContextStats(data: ContextStatsData, sid: string | null): void {
       },
       data.window || data.context_window || null,
     );
+
+    const headId =
+      (data.breakdown && "head_id" in data.breakdown
+        ? data.breakdown.head_id
+        : undefined) ?? useSessionStore.getState().heads[sid] ?? null;
+    if (data.breakdown) {
+      writeContextBreakdownCache(sid, headId, data.breakdown);
+    }
+    // Occupancy just moved (turn done / graph change). Keep the panel
+    // snapshot in lockstep — cache hit is not a reason to skip.
+    warmContextBreakdown(sid, headId);
   }
 
   const targetsActive = sid !== null && sid === runtimeState.currentSessionId;

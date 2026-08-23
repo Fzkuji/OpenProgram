@@ -27,9 +27,14 @@ export interface ContextBreakdown {
 const CACHE_LIMIT = 32;
 const cache = new Map<string, ContextBreakdown>();
 const latestRequest = new Map<string, symbol>();
+const listeners = new Set<() => void>();
 
 function cacheKey(sessionId: string | null, headId?: string | null): string | null {
   return sessionId ? JSON.stringify([sessionId, headId ?? null]) : null;
+}
+
+function notify(): void {
+  for (const listener of listeners) listener();
 }
 
 function touch(key: string, value: ContextBreakdown): void {
@@ -40,18 +45,31 @@ function touch(key: string, value: ContextBreakdown): void {
     if (oldest === undefined) break;
     cache.delete(oldest);
   }
+  notify();
+}
+
+export function subscribeContextBreakdownCache(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
 export function readContextBreakdownCache(
   sessionId: string | null,
   headId?: string | null,
 ): ContextBreakdown | null {
-  const key = cacheKey(sessionId, headId);
-  if (!key) return null;
-  const value = cache.get(key);
-  if (!value) return null;
-  touch(key, value);
-  return value;
+  const exact = cacheKey(sessionId, headId);
+  if (!exact) return null;
+  const hit = cache.get(exact);
+  if (hit) {
+    cache.delete(exact);
+    cache.set(exact, hit);
+    return hit;
+  }
+  if (!sessionId) return null;
+  const latest = cache.get(JSON.stringify([sessionId, null]));
+  return latest ?? null;
 }
 
 export function writeContextBreakdownCache(
@@ -59,8 +77,13 @@ export function writeContextBreakdownCache(
   headId: string | null | undefined,
   value: ContextBreakdown,
 ): void {
-  const key = JSON.stringify([sessionId, headId ?? null]);
-  touch(key, value);
+  touch(JSON.stringify([sessionId, headId ?? null]), value);
+  if (headId != null) {
+    // Session-latest copy so a panel that opens before head_id arrives
+    // still paints immediately.
+    const latestKey = JSON.stringify([sessionId, null]);
+    cache.set(latestKey, value);
+  }
 }
 
 type ContextBreakdownFetcher = (
@@ -75,7 +98,7 @@ export async function refreshContextBreakdown(
   fetcher: ContextBreakdownFetcher = (url, init) => fetch(url, init),
 ): Promise<ContextBreakdown | null> {
   const key = JSON.stringify([sessionId, headId ?? null]);
-  const cached = readContextBreakdownCache(sessionId, headId);
+  const cached = cache.get(key) ?? cache.get(JSON.stringify([sessionId, null])) ?? null;
   const requestToken = Symbol();
   latestRequest.set(key, requestToken);
   const isCurrent = () => latestRequest.get(key) === requestToken;
@@ -97,4 +120,20 @@ export async function refreshContextBreakdown(
   } finally {
     if (isCurrent()) latestRequest.delete(key);
   }
+}
+
+/** Background read/update for the panel snapshot.
+ *
+ *  Call on session focus and again when a turn finishes. Skips only when
+ *  the same branch is already in flight — a cache hit is not a skip,
+ *  because the graph may have moved.
+ */
+export function warmContextBreakdown(
+  sessionId: string | null,
+  headId?: string | null,
+): void {
+  if (!sessionId) return;
+  const key = JSON.stringify([sessionId, headId ?? null]);
+  if (latestRequest.has(key)) return;
+  void refreshContextBreakdown(sessionId, headId, new AbortController().signal);
 }

@@ -17,12 +17,17 @@
  * vanishing from the controls row. Tooltip carries the
  * "Context used / window (pct)" breakdown.
  */
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSessionStore } from "@/lib/session-store";
 import { useSessionScope } from "@/lib/session-store/session-scope";
 import { HoverTip } from "@/components/ui/tooltip";
 import { ContextBreakdownPanel } from "./context-breakdown-panel";
+import {
+  readContextBreakdownCache,
+  warmContextBreakdown,
+  writeContextBreakdownCache,
+} from "@/lib/state/context-breakdown-cache";
 
 interface ContextBadgeProps {
   /** Active conversation id. The component is keyed on this so a
@@ -48,12 +53,35 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   // 当前分支头：切分支时 store.heads 会更新，弹窗据此重取该分支的上下文。
   const headId = useSessionStore((s) => (sid ? s.heads[sid] : undefined));
 
+  const ringUsed = useSessionStore((s) => (sid ? s.tokens[sid]?.total_used : undefined));
+  const ringBasis = useSessionStore((s) => (sid ? s.tokens[sid]?.basis : undefined));
+  const ringWindow = useSessionStore((s) => (sid ? s.contextWindow[sid] : undefined));
+
+  // Paint from the ring the moment this session is focused. GET /context
+  // only fills category detail, and never blocks the click.
+  useEffect(() => {
+    if (!sid) return;
+    if (!readContextBreakdownCache(sid, headId ?? null)
+        && (ringUsed != null || ringWindow)) {
+      writeContextBreakdownCache(sid, headId ?? null, {
+        total_used: ringUsed,
+        window: ringWindow,
+        context_window: ringWindow,
+        basis: ringBasis ?? undefined,
+      });
+    }
+    if (!readContextBreakdownCache(sid, headId ?? null)
+        || readContextBreakdownCache(sid, headId ?? null)?.tools == null) {
+      warmContextBreakdown(sid, headId ?? null);
+    }
+  }, [sid, headId, ringUsed, ringWindow, ringBasis]);
+
   // 圆环 DOM ref —— 用它的屏幕坐标把弹窗 portal 到 body 并 fixed 定位，
   // 彻底脱离输入框的圆角/overflow 裁切，真正置顶。
   const ringRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [anchor, setAnchor] = useState<{ right: number; bottom: number } | null>(null);
   useLayoutEffect(() => {
-    if (!panelOpen) return;
     const measure = () => {
       const el = ringRef.current;
       if (!el) return;
@@ -74,6 +102,21 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
       window.removeEventListener("scroll", measure, true);
     };
   }, [panelOpen]);
+
+  // No full-screen occluder: scrolling the sidebar / chat must keep working.
+  // Close only when the pointer lands outside the ring and the card.
+  useEffect(() => {
+    if (!panelOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (ringRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target)) return;
+      setPanelOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [panelOpen, setPanelOpen]);
 
   const usage = useSessionStore((s) => (sid ? s.tokens[sid] : undefined));
   const ctxWindow = useSessionStore((s) => (sid ? s.contextWindow[sid] : undefined));
@@ -159,31 +202,18 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
         </svg>
       </button>
       </HoverTip>
-      {panelOpen &&
-        anchor &&
-        typeof document !== "undefined" &&
+      {typeof document !== "undefined" &&
         createPortal(
-          <>
-            {/* 透明全屏遮罩：点圆环外关闭（不压暗背景，纯 click-catcher）*/}
-            <div
-              data-native-view-occluder="true"
+          <div
+              ref={panelRef}
               style={{
                 position: "fixed",
-                inset: 0,
-                zIndex: 9998,
-              }}
-              onClick={() => setPanelOpen(false)}
-            />
-            {/* 浮动卡片：fixed 定位，右下角对齐圆环右下角 → 卡片盖住圆环，
-                向上、向左展开。portal 到 body，彻底脱离输入框裁切并置顶。*/}
-            <div
-              style={{
-                position: "fixed",
-                right: anchor.right,
-                bottom: anchor.bottom,
+                right: anchor?.right ?? 16,
+                bottom: anchor?.bottom ?? 16,
                 zIndex: 9999,
+                visibility: panelOpen ? "visible" : "hidden",
+                pointerEvents: panelOpen ? "auto" : "none",
               }}
-              onClick={(e) => e.stopPropagation()}
             >
               <ContextBreakdownPanel
                 key={JSON.stringify([sid, headId ?? null])}
@@ -191,8 +221,7 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
                 headId={headId ?? null}
                 onClose={() => setPanelOpen(false)}
               />
-            </div>
-          </>,
+            </div>,
           document.body,
         )}
     </span>

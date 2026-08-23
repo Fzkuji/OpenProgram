@@ -1192,6 +1192,9 @@ def _broadcast_context_stats(session_id: str, msg_id: str, chat_runtime=None, ex
         "context_window": occupancy["window"] or context_window,
         **occupancy,
     }
+    breakdown = conv.get("_last_context_breakdown")
+    if breakdown:
+        stats["breakdown"] = breakdown
     conv["_last_context_stats"] = stats
     _broadcast_chat_response(session_id, msg_id, stats)
 
@@ -1229,13 +1232,24 @@ def _build_context_occupancy(session_id, conv, *, measured_total=None,
     from openprogram.context import session_stats as _cs
 
     try:
-        return _cs.build_stats(
+        occupancy = _cs.build_stats(
             session_id,
             head_id=(conv or {}).get("head_id"),
             measured_total=measured_total,
             window=window,
             estimated_total=estimated_total,
         )
+        snapshot = occupancy.pop("_breakdown", None)
+        if snapshot is not None and conv is not None:
+            occ = {
+                key: occupancy[key]
+                for key in ("window", "total_used", "basis", "estimated", "calibration")
+                if key in occupancy
+            }
+            finalized = _cs.finalize_breakdown(snapshot, occ)
+            finalized["head_id"] = conv.get("head_id")
+            conv["_last_context_breakdown"] = finalized
+        return occupancy
     except Exception:
         prev = (conv or {}).get("_last_context_stats") or {}
         return {
@@ -1319,12 +1333,15 @@ def refresh_context_stats(session_id: str, msg_id: str = "") -> None:
     )
     prev = conv.get("_last_context_stats") or {}
     stats = {
-        **{k: v for k, v in prev.items() if k != "calibration"},
+        **{k: v for k, v in prev.items() if k not in ("calibration", "breakdown")},
         "type": "context_stats",
         "session_id": session_id,
         "context_window": occupancy["window"] or prev.get("context_window"),
         **occupancy,
     }
+    breakdown = conv.get("_last_context_breakdown")
+    if breakdown:
+        stats["breakdown"] = breakdown
     conv["_last_context_stats"] = stats
     _broadcast_chat_response(session_id, msg_id or "", stats)
 

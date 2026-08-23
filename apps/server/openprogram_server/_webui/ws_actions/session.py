@@ -684,6 +684,15 @@ async def handle_load_session(ws, cmd: dict):
         run_cfg = load_session_run_config(conv["id"])
         _effective_permission = permission_from_config(
             run_cfg, default=project_defaults(conv["id"]).get("permission_mode"))
+        # Prefetch occupancy + /context breakdown on session focus so the
+        # client cache is full before the ring is clicked.
+        if not conv.get("_last_context_breakdown"):
+            _s.refresh_context_stats(session_id)
+        _stats = conv.get("_last_context_stats") or {}
+        _bd = conv.get("_last_context_breakdown")
+        if _bd and "breakdown" not in _stats:
+            _stats = {**_stats, "type": "context_stats", "breakdown": _bd}
+            conv["_last_context_stats"] = _stats
         _db_sess = _ddb().get_session(session_id) or {}
         await ws.send_text(json.dumps({
             "type": "session_loaded",
@@ -695,7 +704,7 @@ async def handle_load_session(ws, cmd: dict):
                 "head_id": head,
                 "context_tree": tree_data,
                 "provider_info": _s._get_provider_info(session_id),
-                "context_stats": conv.get("_last_context_stats"),
+                "context_stats": _stats or None,
                 "channel": _db_sess.get("channel"),
                 "account_id": _db_sess.get("account_id"),
                 "peer": _db_sess.get("peer"),

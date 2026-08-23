@@ -144,6 +144,8 @@ def test_refresh_broadcasts_a_fresh_estimate(session):
     # A stale calibration must not survive into an estimated reading.
     assert "calibration" not in out
     assert conv["_last_context_stats"] is out
+    assert out.get("breakdown")
+    assert out["breakdown"]["messages"] >= 0
 
 
 def test_refresh_tracks_a_model_switch_window(monkeypatch, session):

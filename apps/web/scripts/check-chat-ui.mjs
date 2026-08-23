@@ -54,7 +54,11 @@ assert.deepEqual(
   contextBreakdownCache.readContextBreakdownCache("session-a", "head-a"),
   cachedBreakdown,
 );
-assert.equal(contextBreakdownCache.readContextBreakdownCache("session-a", "head-b"), null);
+assert.deepEqual(
+  contextBreakdownCache.readContextBreakdownCache("session-a", "head-b"),
+  cachedBreakdown,
+  "an unknown head falls back to the session-latest snapshot so the panel never flashes empty",
+);
 assert.equal(contextBreakdownCache.readContextBreakdownCache("session-b", "head-a"), null);
 const cachedRefresh = { total_used: 13_000, window: 200_000 };
 contextBreakdownCache.writeContextBreakdownCache("session-c", "head-c", cachedRefresh);
@@ -156,9 +160,20 @@ assert.match(
   contextBreakdownPanel,
   /useState<Breakdown \| null>\(\(\)\s*=>\s*readContextBreakdownCache\(sessionId, headId\),?\s*\)/,
 );
-assert.match(contextBreakdownPanel, /refreshContextBreakdown\(sessionId, headId, controller\.signal\)/);
-assert.match(contextBreakdownPanel, /new AbortController\(\)/);
+assert.match(contextBreakdownPanel, /subscribeContextBreakdownCache\(sync\)/);
+assert.doesNotMatch(
+  contextBreakdownPanel,
+  /refreshContextBreakdown\(/,
+  "opening the panel must not start a fetch",
+);
 assert.doesNotMatch(contextBreakdownPanel, /if \(!sessionId\)[\s\S]{0,300}setLoading\(true\)/);
+assert.doesNotMatch(
+  contextBreakdownPanel,
+  /加载中|Loading…/,
+  "the panel must never render a loading state; snapshots warm on session focus",
+);
+assert.match(source("components/chat/context-badge.tsx"), /warmContextBreakdown\(/);
+
 assert.match(
   contextBadge,
   /<ContextBreakdownPanel\s+key=\{JSON\.stringify\(\[sid, headId \?\? null\]\)\}/,

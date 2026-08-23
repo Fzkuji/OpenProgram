@@ -5,16 +5,17 @@
  * 总览（System prompt / System tools loaded+deferred / MCP / Memory / Skills /
  * Messages / Free space）+ Skills / Memory / MCP 各自的明细列表。
  *
- * 数据来自 GET /api/sessions/{id}/context（后端现算，不落库 —— 存储铁律）。
+ * Snapshot is warmed when the session is focused. This panel never shows
+ * a loading spinner — it paints cache (or zeros) immediately.
  */
 import React, { useEffect, useMemo, useState } from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
-import { useSessionStore } from "@/lib/session-store";
 import { MENU_SEPARATOR } from "@/components/chat/top-bar/menu-styles";
+import { useSessionStore } from "@/lib/session-store";
 import {
   readContextBreakdownCache,
-  refreshContextBreakdown,
+  subscribeContextBreakdownCache,
   type ContextBreakdown as Breakdown,
 } from "@/lib/state/context-breakdown-cache";
 
@@ -118,47 +119,39 @@ function Section({
 
 export function ContextBreakdownPanel({ sessionId, headId }: Props) {
   const { text } = useTranslation();
+  const ringUsed = useSessionStore((s) =>
+    sessionId ? s.tokens[sessionId]?.total_used : undefined,
+  );
+  const ringBasis = useSessionStore((s) =>
+    sessionId ? s.tokens[sessionId]?.basis : undefined,
+  );
+  const ringWindow = useSessionStore((s) =>
+    sessionId ? s.contextWindow[sessionId] : undefined,
+  );
   const [data, setData] = useState<Breakdown | null>(() =>
     readContextBreakdownCache(sessionId, headId),
-  );
-  const [loading, setLoading] = useState(() =>
-    readContextBreakdownCache(sessionId, headId) === null,
   );
   const [open, setOpen] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    const cached = readContextBreakdownCache(sessionId, headId);
-    setData(cached);
-    setLoading(cached === null);
-    if (!sessionId) {
-      // 新会话还没有 id：没有东西可取，直接落空态——否则初始
-      // loading=true 永远悬着，空会话点开就是一张永久 Loading 卡。
-      setData(null);
-      setLoading(false);
-      return;
-    }
-    const controller = new AbortController();
-    refreshContextBreakdown(sessionId, headId, controller.signal)
-      .then((d) => {
-        if (!d || controller.signal.aborted) return;
-        setData(d);
-        // Same record, one writer: whatever the panel just read becomes
-        // what the ring shows too, so opening the panel can never reveal
-        // a second number.
-        if (typeof d.total_used === "number") {
-          const st = useSessionStore.getState();
-          st.setContextStats(
-            sessionId,
-            { ...st.tokens[sessionId], total_used: d.total_used, basis: d.basis ?? null },
-            d.window || d.context_window || null,
-          );
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [sessionId, headId]);
+    const sync = () => {
+      const cached = readContextBreakdownCache(sessionId, headId);
+      if (cached) {
+        setData(cached);
+        return;
+      }
+      if (ringUsed != null || ringWindow) {
+        setData({
+          total_used: ringUsed,
+          window: ringWindow,
+          context_window: ringWindow,
+          basis: ringBasis ?? undefined,
+        });
+      }
+    };
+    sync();
+    return subscribeContextBreakdownCache(sync);
+  }, [sessionId, headId, ringUsed, ringWindow, ringBasis]);
 
   // 窗口和总占用都用服务端 stats 里的那一份（圆环读的同一个字段）。
   // 分项仍是本次现场算出的 breakdown —— 明细可以是估算，但顶部的总数
@@ -212,11 +205,7 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
       }}
     >
       <div className="flex-1 overflow-y-auto" style={{ padding: "16px 16px 16px" }}>
-        {loading ? (
-          <div className="p-6 text-center text-[12px]" style={{ color: "var(--text-muted)" }}>
-            {text("Loading…", "加载中…")}
-          </div>
-        ) : data?.error ? (
+        {data?.error ? (
           <div className="p-4 text-[12px]" style={{ color: "var(--accent-red)" }}>
             {data.error}
           </div>

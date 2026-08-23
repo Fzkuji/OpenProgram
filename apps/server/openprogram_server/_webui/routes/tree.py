@@ -394,6 +394,31 @@ def register(app):
 
         try:
             conv = _s._sessions.get(session_id) or {}
+            stored = conv.get("_last_context_breakdown") or (
+                (conv.get("_last_context_stats") or {}).get("breakdown")
+            )
+            same_head = bool(
+                stored and (
+                    head_id is None
+                    or head_id == stored.get("head_id")
+                    or (
+                        head_id == conv.get("head_id")
+                        and stored.get("head_id") in (None, conv.get("head_id"))
+                    )
+                )
+            )
+            if same_head:
+                occupancy = _s.session_context_stats(
+                    session_id,
+                    head_id=head_id,
+                    estimated_total=int(stored.get("input_used") or 0),
+                    window=int(
+                        stored.get("window")
+                        or stored.get("context_window")
+                        or 0
+                    ) or None,
+                )
+                return JSONResponse(content=_cs.finalize_breakdown(stored, occupancy))
             bd = _cs.compute_breakdown(
                 session_id,
                 head_id,

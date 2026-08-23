@@ -30,6 +30,10 @@ import {
 import { convToChatMsgs } from "@/lib/conv-mapper";
 import { navigate } from "@/lib/navigate";
 import { useSessionStore } from "@/lib/session-store";
+import {
+  warmContextBreakdown,
+  writeContextBreakdownCache,
+} from "@/lib/state/context-breakdown-cache";
 import { pushBranchInfo } from "@/lib/top-bar-sync";
 import { showToast } from "@/lib/format-utils/toast";
 import {
@@ -541,6 +545,11 @@ export function loadSessionData(data: LegacyConv): void {
   }
   if (data.provider_info) updateProviderBadge(data.provider_info as never);
   void loadAgentSettings();
+  const headId = (map[id] as { head_id?: string | null }).head_id ?? null;
+  const incoming = data.context_stats as { breakdown?: object } | undefined;
+  if (incoming?.breakdown) {
+    writeContextBreakdownCache(id, headId, incoming.breakdown as never);
+  }
   if (data.context_stats) {
     // Lazy: chat-handlers imports this module, so a static import cycles.
     void import("./chat-handlers").then((m) =>
@@ -548,6 +557,10 @@ export function loadSessionData(data: LegacyConv): void {
     );
   } else {
     updateContextStats();
+  }
+  // Only hit GET /context when the session payload had no snapshot.
+  if (!incoming?.breakdown) {
+    warmContextBreakdown(id, headId);
   }
   if (area && savedScroll !== null) {
     requestAnimationFrame(() => {

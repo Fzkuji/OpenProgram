@@ -56,9 +56,9 @@ def compute_breakdown(
 ) -> dict:
     """Per-category input-token breakdown for a session branch.
 
-    Storage rule: nothing is stored, everything is recomputed from the
-    branch messages plus the tool / system-prompt raw material recorded on
-    the most recent LLM call.
+    Storage rule: the live compute stays the source of truth. Callers that
+    already run this on a graph change (the ring refresh) should persist the
+    returned snapshot so the /context panel can paint without recomputing.
 
     ``head_id`` is the DAG branch tip the user is looking at; a session can
     hold several branches, so the caller passes the current head and the
@@ -386,8 +386,11 @@ def build_stats(
     estimate is still computed alongside so ``calibration`` can report the
     ratio between them. Omitting it selects ``estimated``.
     """
+    breakdown = None
     if estimated_total is None:
-        estimated, est_window = estimate_total_used(session_id, head_id)
+        breakdown = compute_breakdown(session_id, head_id, context_window=window)
+        estimated = int(breakdown.get("input_used") or 0)
+        est_window = int(breakdown.get("context_window") or 0)
     else:
         estimated = int(estimated_total)
         est_window = int(window or 0)
@@ -408,6 +411,8 @@ def build_stats(
     }
     if basis == "measured" and estimated > 0:
         stats["calibration"] = round(total_used / estimated, 4)
+    if breakdown is not None:
+        stats["_breakdown"] = breakdown
     return stats
 
 
