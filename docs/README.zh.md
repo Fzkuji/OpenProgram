@@ -38,7 +38,19 @@
 
 > 🎉 **论文:** [_LLM-as-Code: Agentic Programming for Agent Harness_](https://arxiv.org/abs/2606.15874) —— 已被 **KDD 2026 Workshop on Agentic Software Engineering (AgenticSE)** 接收。
 
-## 它有什么不同
+## 新闻
+
+- **2026-08-24** — **v0.8.1** — 更小的安装包：产品不再捆绑 PyTorch。
+- **2026-08-24** — **v0.8.0** — 上下文压缩整条链路（自动压缩、摘要卡片、折叠原文、消息导航同步），以及内置浏览器上可点击展开、样式与工具栏一致的书签栏。
+- **2026-08-17** — **v0.7.0** — 完整内置浏览器：多窗格 Browser、书签与紧凑 History、Chrome/Brave/Edge/Chromium 配置导入，以及 Agent 对可见内部网页的 DOM 优先操控。
+- **2026-07-21** — **v0.6.0** — 多 Agent 协作：`spawn` N 个子 Agent，跨会话传信，在隔离的 git worktree 里跑会改文件的分支。
+- **2026-06-22** — **论文接收** —— KDD 2026 Workshop on Agentic Software Engineering（[arXiv:2606.15874](https://arxiv.org/abs/2606.15874)）。
+- **2026-06-07** — **v0.5.0** — 可安装 harness（`openprogram programs install <owner>/<repo>`）、全平台一键安装、多账户 provider 与自动 key 轮换，以及 `rescue` / `doctor` 诊断。
+- **2026-05-28** — **v0.4.0** — Web UI 与 TUI 的设计系统基础。
+- **2026-04-04** — **v0.3.0** — 内置 Anthropic / OpenAI / Gemini provider。
+- **2026-04-03** — **v0.1.0** — 首个版本：`@agentic_function` 装饰器与执行 DAG。
+
+## 为什么是 OpenProgram？
 
 OpenProgram 当前 release 支持 macOS 和 Linux 安装、多 provider，以及终端、浏览器和聊天界面。Windows 原生打包暂缓到后续 release 决策；目前 Windows 与移动设备可以作为浏览器客户端访问受支持的远程主机。harness 本体提供**三种构建 agent Program 的机制**。
 
@@ -98,6 +110,7 @@ openprogram
 | [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | 已包含；产品 runtime 不含 PyTorch 或 EasyOCR | 通过视觉操控桌面应用和 OSWorld 虚拟机。 |
 | [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | 已包含 | 文献调研 → 实验 → 论文初稿。 |
 | [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | 已包含 | 把笔记 / 文档 / 聊天整理成带 `[[wikilinks]]` 的 Obsidian 知识库。 |
+| [Scriptorium](https://github.com/Fzkuji/Scriptorium) | 相关项目 | 可读的 Agent 记忆；Markdown 笔记；事实回链到来源消息；为 Claude Code 提供 MCP。 |
 
 第三方 harness 是额外功能。可变扩展环境使用 `openprogram programs install <owner>/<repo>`（或完整 git URL）；源码编辑和 OCR/Browser 后端替换属于开发者功能。
 
