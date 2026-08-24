@@ -104,7 +104,7 @@ The current OpenProgram release supports macOS and Linux installations, multiple
   </picture>
 </p>
 
-**An agent is a Python function.** You write it like any other function. The docstring is the system prompt: it tells the model what this agent does. Each argument is input for this run. A `str` argument is the task — here, the ticket to classify. That is why there is no extra prompt template and no JSON tools list.
+**An agent is a Python function.** You write it like any other function. The docstring is the system prompt: it tells the model what this agent does. Each argument is input for this run. A `str` argument is the task. In this example the task is the ticket to classify. That is why there is no extra prompt template and no JSON tools list.
 
 Here is an example, compared with the usual way:
 
