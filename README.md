@@ -104,7 +104,7 @@ The current OpenProgram release supports macOS and Linux installations, multiple
   </picture>
 </p>
 
-**An agent is a Python function.** Same example, two write-ups — the usual way, then ours:
+**An agent is a Python function**, compared with the usual way:
 
 <table>
 <tr><th>The usual way</th><th>OpenProgram</th></tr>
