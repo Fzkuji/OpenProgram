@@ -183,7 +183,22 @@ section{padding:94px 0;scroll-margin-top:62px}
 h2{font-size:clamp(30px,3.6vw,46px);line-height:1.09;letter-spacing:-.04em;font-weight:750}
 .lead{color:var(--muted);font-size:17px;max-width:640px}
 
-.use-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+.use-showcase{display:grid;gap:18px}
+.use-featured{
+  display:grid;grid-template-columns:.4fr 1.2fr;gap:36px;align-items:center;
+  padding:32px 34px;border:1px solid var(--border);border-radius:13px;background:var(--surface);
+}
+.use-stat{min-width:0;padding:22px 24px;border:1px solid var(--border);border-radius:11px;background:var(--bg)}
+.use-stat .use-tag{margin-bottom:14px}
+.use-stat-num{display:block;font-size:clamp(64px,8.4vw,92px);line-height:.92;letter-spacing:-.06em;font-weight:780;color:var(--teal)}
+.use-stat-label{display:block;margin-top:10px;color:var(--muted);font-size:14px}
+.use-stat-link{display:inline-block;margin-top:12px;color:var(--teal);font-size:13px}
+.use-featured h3{font-size:28px;letter-spacing:-.03em;margin-bottom:14px}
+.use-results{margin:0;padding:0;list-style:none;color:var(--muted);font-size:14.5px}
+.use-results li{position:relative;padding:7px 0 7px 16px}
+.use-results li::before{content:"";position:absolute;left:0;top:15px;width:6px;height:6px;border-radius:50%;background:var(--teal)}
+.use-featured-links{display:flex;flex-wrap:wrap;align-items:center;gap:18px;margin-top:22px}
+.use-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
 .use-card{
   display:flex;flex-direction:column;min-height:270px;padding:27px;
   border:1px solid var(--border);border-radius:13px;background:var(--surface);
@@ -193,7 +208,11 @@ h2{font-size:clamp(30px,3.6vw,46px);line-height:1.09;letter-spacing:-.04em;font-
 .use-tag{color:var(--teal);font:12px/1.4 var(--mono);margin-bottom:28px}
 .use-card h3{font-size:24px;letter-spacing:-.03em;margin-bottom:12px}
 .use-card p{color:var(--muted);font-size:14.5px;max-width:540px}
-.use-link{margin-top:auto;padding-top:26px;color:var(--teal);font-size:13px}
+.use-link{color:var(--teal);font-size:13px}
+.use-card > .use-link,.use-links{margin-top:auto;padding-top:26px}
+.use-links{display:flex;flex-wrap:wrap;align-items:center;gap:16px}
+.use-source{color:var(--faint);font-size:13px}
+.use-source:hover{color:var(--text)}
 .use-card pre{margin-top:18px;padding:16px;border:1px solid var(--border);border-radius:9px;background:var(--bg);font-size:11px}
 
 .quick-start{background:var(--surface);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
@@ -283,6 +302,7 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
   .hero-grid{gap:42px}.hero{padding-top:74px}
   .proof-grid{grid-template-columns:repeat(2,1fr)}
   .proof-item:nth-child(2){border-right:0}.proof-item:nth-child(-n+2){border-bottom:1px solid var(--border)}
+  .use-featured{grid-template-columns:1fr;gap:22px}
   .use-grid{grid-template-columns:1fr}
   .capability-grid{grid-template-columns:repeat(2,1fr)}
   .capability:nth-child(odd){border-right:1px solid var(--border)}.capability:nth-child(even){border-right:0}
@@ -294,7 +314,7 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
 @media(max-width:680px){
   .wrap{width:min(100% - 30px,1160px)}
   .navin{gap:12px}
-  .navlinks{gap:14px}.navlinks a[href="#use-cases"],.navlinks a[href="#capabilities"],.navlinks .paper-link,.navlinks a[href="https://github.com/Fzkuji/OpenProgram"]{display:none}.nav-install{padding:5px 9px}
+  .navlinks{gap:14px}.navlinks a[href="#capabilities"],.navlinks .paper-link,.navlinks a[href="https://github.com/Fzkuji/OpenProgram"]{display:none}.nav-install{padding:5px 9px}
   .hero{padding:62px 0 58px}.hero-grid{gap:34px}
   h1{font-size:46px}.gradient{display:block}.hero-copy{font-size:16px}
   pre{font-size:11px;padding:17px 16px}
@@ -360,8 +380,8 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
   <aside class="proof" aria-label="Project facts">
     <div class="wrap proof-grid">
       <div class="proof-item"><span class="proof-label">Runtime</span><span class="proof-value">Python 3.11+</span></div>
-      <div class="proof-item"><span class="proof-label">Platforms</span><span class="proof-value">macOS · Linux · Windows</span></div>
-      <div class="proof-item"><span class="proof-label">Interfaces</span><span class="proof-value">Web · TUI · CLI</span></div>
+      <div class="proof-item"><span class="proof-label">Platforms</span><span class="proof-value">macOS · Linux</span></div>
+      <div class="proof-item"><span class="proof-label">Interfaces</span><span class="proof-value">Web UI</span></div>
       <div class="proof-item"><span class="proof-label">License</span><span class="proof-value">Open source · AGPL-3.0</span></div>
     </div>
   </aside>
@@ -370,38 +390,60 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
     <div class="wrap">
       <div class="section-head reveal">
         <div><p class="kicker">Start where you need</p><h2>Use an agent or build your own.</h2></div>
-        <p class="lead">Install an existing harness for a complete workflow, or use the same OpenProgram runtime to create an agent in ordinary Python.</p>
+        <p class="lead">Start from a shipped agent, or use the same OpenProgram runtime to create one in ordinary Python.</p>
       </div>
-      <div class="use-grid reveal">
-        <a class="use-card" href="https://github.com/Fzkuji/GUI-Agent-Harness">
-          <span class="use-tag">openprogram programs install gui</span>
-          <h3>GUI Agent</h3>
-          <p>Operate desktop applications and GUI environments with visual grounding, action execution, and task verification.</p>
-          <span class="use-link">View installation guide →</span>
-        </a>
-        <a class="use-card" href="https://github.com/Fzkuji/Research-Agent-Harness">
-          <span class="use-tag">openprogram programs install research</span>
-          <h3>Research Agent</h3>
-          <p>Run literature research, experiment, analysis, and paper-writing workflows from one agent harness.</p>
-          <span class="use-link">View repository →</span>
-        </a>
-        <a class="use-card" href="https://github.com/Fzkuji/Wiki-Agent-Harness">
-          <span class="use-tag">openprogram programs install wiki</span>
-          <h3>Wiki Agent</h3>
-          <p>Organize notes, documents, and conversations into a maintainable Obsidian knowledge base.</p>
-          <span class="use-link">View repository →</span>
-        </a>
-        <a class="use-card" href="/docs/capabilities/installing-harnesses.html">
-          <span class="use-tag">Build your own</span>
-          <h3>Your agent, ordinary Python</h3>
-          <p>Use a decorated function for the task contract and call the model only where the workflow needs judgement.</p>
+      <div class="use-showcase reveal">
+        <article class="use-featured">
+          <div class="use-stat">
+            <span class="use-tag">Included in the release</span>
+            <span class="use-stat-num">79.8%</span>
+            <span class="use-stat-label">OSWorld Multi-Apps</span>
+            <a class="use-stat-link" href="https://github.com/Fzkuji/GUI-Agent-Harness/blob/main/benchmarks/osworld/multi_apps.md">See the results →</a>
+          </div>
+          <div>
+            <h3>GUI Agent</h3>
+            <ul class="use-results">
+              <li>Give it a natural-language task. It screenshots, clicks, types, and checks the result until the work is done.</li>
+              <li>Same loop on the local desktop or a remote VM.</li>
+              <li>Ships in every supported release.</li>
+            </ul>
+            <div class="use-featured-links">
+              <a class="use-link" href="/docs/capabilities/workflows/gui-agent.html">Read the GUI Agent docs →</a>
+              <a class="use-source" href="https://github.com/Fzkuji/GUI-Agent-Harness">Source →</a>
+            </div>
+          </div>
+        </article>
+        <div class="use-grid">
+          <article class="use-card">
+            <span class="use-tag">~89 functions · 10 stages</span>
+            <h3>Research Agent</h3>
+            <p>Literature → experiment → paper in one pipeline. Citations are checked against four indexes. Numbers in the paper have to match a run_record.</p>
+            <div class="use-links">
+              <a class="use-link" href="/docs/capabilities/workflows/research-agent.html">Read the Research Agent docs →</a>
+              <a class="use-source" href="https://github.com/Fzkuji/Research-Agent-Harness">Source →</a>
+            </div>
+          </article>
+          <article class="use-card">
+            <span class="use-tag">Template-driven HTML wiki</span>
+            <h3>Wiki Agent</h3>
+            <p>Pour sessions and notes into statically hostable HTML pages. Named slots accumulate; full-text search is built in.</p>
+            <div class="use-links">
+              <a class="use-link" href="/docs/capabilities/workflows/wiki-agent.html">Read the Wiki Agent docs →</a>
+              <a class="use-source" href="https://github.com/Fzkuji/Wiki-Agent-Harness">Source →</a>
+            </div>
+          </article>
+          <a class="use-card" href="/docs/capabilities/installing-harnesses.html">
+            <span class="use-tag">Build your own</span>
+            <h3>Your agent, ordinary Python</h3>
+            <p>Use a decorated function for the task contract and call the model only where the workflow needs judgement.</p>
 <pre><code><span class="dec">@agentic_function</span>
 <span class="kw">def</span> <span class="fn">triage</span>(ticket: <span class="fn">str</span>, runtime=<span class="kw">None</span>):
     kind = <span class="agent-call">runtime.exec</span>(ticket,
         choices=[<span class="str">"bug"</span>, <span class="str">"feature"</span>])
     <span class="kw">return</span> handle(ticket, kind)</code></pre>
-          <span class="use-link">Read the harness guide →</span>
-        </a>
+            <span class="use-link">Read the harness guide →</span>
+          </a>
+        </div>
       </div>
     </div>
   </section>
@@ -412,7 +454,7 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
         <div class="quick-copy">
           <p class="kicker">Quick Start</p>
           <h2>Install, then run.</h2>
-          <p>The first run guides you through connecting a model provider and choosing the Web UI or terminal interface.</p>
+          <p>Start the Web UI at http://localhost:18100. The first run guides you through connecting a model provider.</p>
           <a href="/docs/install/install.html">Platform and developer installation →</a>
         </div>
         <div class="command-stack">
@@ -420,9 +462,9 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
             <span class="command-head"><span>1 · Install on macOS / Linux</span><span class="copy">copy</span></span>
             <span class="command-body"><span class="prompt">$ </span>curl -fsSL https://openprogram.io/install | sh</span>
           </button>
-          <button class="command-card" type="button" data-copy="openprogram">
-            <span class="command-head"><span>2 · Start OpenProgram</span><span class="copy">copy</span></span>
-            <span class="command-body"><span class="prompt">$ </span>openprogram</span>
+          <button class="command-card" type="button" data-copy="openprogram web">
+            <span class="command-head"><span>2 · Start the Web UI</span><span class="copy">copy</span></span>
+            <span class="command-body"><span class="prompt">$ </span>openprogram web</span>
           </button>
         </div>
       </div>

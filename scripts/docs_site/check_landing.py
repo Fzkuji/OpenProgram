@@ -409,7 +409,7 @@ def main() -> int:
 
     install = "curl -fsSL https://openprogram.io/install | sh"
     require(install in visible_text, "missing documented installer", failures)
-    require('data-copy="openprogram"' in source,
+    require('data-copy="openprogram web"' in source,
             "missing copyable openprogram run command", failures)
     require("pip install openprogram" not in visible_text,
             "landing page still advertises unsupported pip install", failures)
