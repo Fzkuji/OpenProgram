@@ -104,11 +104,9 @@ The current OpenProgram release supports macOS and Linux installations, multiple
   </picture>
 </p>
 
-**An agent is a Python function** — the same triage agent, written both ways:
+**An agent is a Python function** — the same triage agent, written both ways.
 
-<table>
-<tr><th>Typical harness</th><th>OpenProgram</th></tr>
-<tr><td>
+**Typical harness**
 
 ```python
 TRIAGE_PROMPT = """You are a triage
@@ -127,7 +125,7 @@ if kind not in ("bug", "feature"):
     ...                             # and re-prompt by hand
 ```
 
-</td><td>
+**OpenProgram**
 
 ```python
 @agentic_function
@@ -146,10 +144,7 @@ def triage(ticket: str, runtime=None) -> str:
 🤖 `llm()` = **the LLM call** — one retryable DAG node
 🐍 everything else = **plain Python**, runs every time
 
-</td></tr>
-</table>
-
-**docstring** = the prompt · **type annotations** = the tool schema · `choices=[...]` = a code gate that re-asks until the answer is valid. Same behavior as the left column, with no prompt template and no tool JSON.
+**docstring** = the prompt · **type annotations** = the tool schema · `choices=[...]` = a code gate that re-asks until the answer is valid. Same behavior as the typical harness, with no prompt template and no tool JSON.
 
 ### 2. DAG Context — for native multi-agent systems
 
