@@ -55,14 +55,14 @@
 
 ## 新闻
 
-- **2026-08-24** — **v0.8.0** — 看得见、能展开回原文的上下文压缩，以及内置浏览器的书签栏。
-- **2026-08-17** — **v0.7.0** — 内置浏览器：多窗格、书签、History，以及 Agent 对可见页面的操控。
-- **2026-07-21** — **v0.6.0** — 多 Agent：`spawn` 子 Agent，跨会话传信，会改文件的分支跑在 git worktree 里。
-- **2026-06-22** — **论文接收** —— KDD 2026 Workshop on Agentic Software Engineering（[arXiv:2606.15874](https://arxiv.org/abs/2606.15874)）。
-- **2026-06-07** — **v0.5.0** — 可安装 harness，以及多账户 provider 与自动 key 轮换。
-- **2026-05-28** — **v0.4.0** — Web UI 设计系统。
-- **2026-04-04** — **v0.3.0** — 内置 Anthropic / OpenAI / Gemini provider。
-- **2026-04-03** — **v0.1.0** — 首个版本：`@agentic_function` 与执行 DAG。
+- **2026-08-24** — ✨ 看得见、能展开回原文的上下文压缩，以及内置浏览器的书签栏。
+- **2026-08-17** — 内置浏览器：多窗格、书签、History，以及 Agent 对可见页面的操控。
+- **2026-07-21** — 多 Agent：`spawn` 子 Agent，跨会话传信，会改文件的分支跑在 git worktree 里。
+- **2026-06-22** — 📄 **论文接收** —— KDD 2026 Workshop on Agentic Software Engineering（[arXiv:2606.15874](https://arxiv.org/abs/2606.15874)）。
+- **2026-06-07** — 可安装 harness，以及多账户 provider 与自动 key 轮换。
+- **2026-05-28** — Web UI 设计系统。
+- **2026-04-04** — 内置 Anthropic / OpenAI / Gemini provider。
+- **2026-04-03** — 🌱 首个版本：`@agentic_function` 与执行 DAG。
 
 ## 为什么是 OpenProgram？
 

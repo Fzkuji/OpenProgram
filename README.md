@@ -53,14 +53,14 @@
 
 ## News
 
-- **2026-08-24** — **v0.8.0** — context compaction you can see and expand back to the original, plus a bookmarks bar on the built-in Browser.
-- **2026-08-17** — **v0.7.0** — built-in browser: multiple panes, bookmarks, History, and Agent control of visible pages.
-- **2026-07-21** — **v0.6.0** — multi-agent: `spawn` sub-agents, message across sessions, file-touching branches in git worktrees.
-- **2026-06-22** — **Paper accepted** at the KDD 2026 Workshop on Agentic Software Engineering ([arXiv:2606.15874](https://arxiv.org/abs/2606.15874)).
-- **2026-06-07** — **v0.5.0** — installable harnesses and multi-account providers with automatic key rotation.
-- **2026-05-28** — **v0.4.0** — the Web UI design system.
-- **2026-04-04** — **v0.3.0** — built-in Anthropic / OpenAI / Gemini providers.
-- **2026-04-03** — **v0.1.0** — first release: `@agentic_function` and the execution DAG.
+- **2026-08-24** — ✨ context compaction you can see and expand back to the original, plus a bookmarks bar on the built-in Browser.
+- **2026-08-17** — built-in browser: multiple panes, bookmarks, History, and Agent control of visible pages.
+- **2026-07-21** — multi-agent: `spawn` sub-agents, message across sessions, file-touching branches in git worktrees.
+- **2026-06-22** — 📄 **Paper accepted** at the KDD 2026 Workshop on Agentic Software Engineering ([arXiv:2606.15874](https://arxiv.org/abs/2606.15874)).
+- **2026-06-07** — installable harnesses and multi-account providers with automatic key rotation.
+- **2026-05-28** — the Web UI design system.
+- **2026-04-04** — built-in Anthropic / OpenAI / Gemini providers.
+- **2026-04-03** — 🌱 first release: `@agentic_function` and the execution DAG.
 
 ## Why OpenProgram?
 
