@@ -292,6 +292,10 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             # generated from code at build time (generate_reference.py):
             "reference/config-keys.md", "reference/provider-registry.md"]),
         ("Notes", "笔记", ["reference/claude-code-compaction.md"]),
+        ("Comparisons", "对比", [
+            "comparisons/ai-agent-frameworks.md",
+            "comparisons/related-projects.md",
+        ]),
     ],
     "design": [
         ("Overview", "概览", ["reference/design/README.md"]),
@@ -419,6 +423,8 @@ PAGE_ORDER: dict[str, int] = {
     "reference/session-export.md": 6,
     "reference/output-styles.md": 7,
     "reference/claude-code-compaction.md": 6,
+    "comparisons/ai-agent-frameworks.md": 8,
+    "comparisons/related-projects.md": 9,
     "reference/design": 900,  # design-notes archive always last
     # The context notes read in order: the layer, then compaction, then how the
     # blocks are composed and compared, then the two rendered companions.

@@ -36,8 +36,6 @@
 
 **我们提出 _Agentic Programming_。** LLM 灵活,代码确定。让模型掌控一切,得到的是混乱——不可预测的执行、上下文爆炸、没有输出保证;把一切硬编码,又丢掉了智能。**Harness** 在两者之间取得平衡,逐时逐刻地交织——**想固定的流程交给 Python,写不进脚本的判断交给 LLM。**([完整论证 →](capabilities/agentic-programming/philosophy.md))
 
-> 🎉 **论文:** [_LLM-as-Code: Agentic Programming for Agent Harness_](https://arxiv.org/abs/2606.15874) —— 已被 **KDD 2026 Workshop on Agentic Software Engineering (AgenticSE)** 接收。
-
 **目录**
 
 - [新闻](#新闻)
@@ -49,22 +47,22 @@
   - [1. 安装](#1-安装)
   - [2. 运行](#2-运行)
   - [3. 已包含 Programs 与额外 harness](#3-已包含-programs-与额外-harness)
-- [贡献](#贡献)
-- [致谢](#致谢)
+- [相关项目](comparisons/related-projects.md)
+- [致谢](comparisons/related-projects.md#acknowledgements)
+- [贡献](comparisons/related-projects.md#contributing)
 - [引用](#引用)
 - [许可证](#许可证)
 
 ## 新闻
 
-- **2026-08-24** — **v0.8.1** — 更小的安装包：产品不再捆绑 PyTorch。
-- **2026-08-24** — **v0.8.0** — 上下文压缩整条链路（自动压缩、摘要卡片、折叠原文、消息导航同步），以及内置浏览器上可点击展开、样式与工具栏一致的书签栏。
-- **2026-08-17** — **v0.7.0** — 完整内置浏览器：多窗格 Browser、书签与紧凑 History、Chrome/Brave/Edge/Chromium 配置导入，以及 Agent 对可见内部网页的 DOM 优先操控。
-- **2026-07-21** — **v0.6.0** — 多 Agent 协作：`spawn` N 个子 Agent，跨会话传信，在隔离的 git worktree 里跑会改文件的分支。
+- **2026-08-24** — **v0.8.0** — 看得见、能展开回原文的上下文压缩，以及内置浏览器的书签栏。
+- **2026-08-17** — **v0.7.0** — 内置浏览器：多窗格、书签、History，以及 Agent 对可见页面的操控。
+- **2026-07-21** — **v0.6.0** — 多 Agent：`spawn` 子 Agent，跨会话传信，会改文件的分支跑在 git worktree 里。
 - **2026-06-22** — **论文接收** —— KDD 2026 Workshop on Agentic Software Engineering（[arXiv:2606.15874](https://arxiv.org/abs/2606.15874)）。
-- **2026-06-07** — **v0.5.0** — 可安装 harness（`openprogram programs install <owner>/<repo>`）、全平台一键安装、多账户 provider 与自动 key 轮换，以及 `rescue` / `doctor` 诊断。
-- **2026-05-28** — **v0.4.0** — Web UI 与 TUI 的设计系统基础。
+- **2026-06-07** — **v0.5.0** — 可安装 harness，以及多账户 provider 与自动 key 轮换。
+- **2026-05-28** — **v0.4.0** — Web UI 设计系统。
 - **2026-04-04** — **v0.3.0** — 内置 Anthropic / OpenAI / Gemini provider。
-- **2026-04-03** — **v0.1.0** — 首个版本：`@agentic_function` 装饰器与执行 DAG。
+- **2026-04-03** — **v0.1.0** — 首个版本：`@agentic_function` 与执行 DAG。
 
 ## 为什么是 OpenProgram？
 
@@ -138,36 +136,6 @@ openprogram web
 > 需要一条自己的工作流？直接在聊天里让 agent 创建或更新 Program。
 
 详情见 [快速上手](start/GETTING_STARTED.md)、[安装](install/install.md) 和 [功能](start/features.md)。
-
-## 贡献
-
-这是一个**范式提案**,附带参考实现。欢迎讨论、其他语言的替代实现、验证或挑战此方法的用例,以及 bug 报告。
-
-详见 [CONTRIBUTING.md](https://github.com/Fzkuji/OpenProgram/blob/main/.github/CONTRIBUTING.md)。
-
-## 致谢
-
-OpenProgram 站在前人的肩膀上。工具框架、provider 抽象和若干工具实现移植或改编自下列项目——各自遵循其原许可证。非常感谢这些作者。
-
-- [**OpenClaw**](https://github.com/openclaw/openclaw)(MIT)—— 工具注册表的布局
-  (`name / description / parameters / execute`)、带 `check_fn` + `requires_env`
-  门禁的 provider 抽象、`TOOLSETS` 预设、经 SKILL.md frontmatter + 延迟绑定 `read`
-  的 skill 加载。完整克隆放在 `references/openclaw/`(已 gitignore)供浏览。
-- [**hermes-agent**](https://github.com/himanshuishere/hermes-agent)
-  (MIT)—— `execute_code` 的起点(我们裁掉了 Docker / Modal 层)、
-  `mixture_of_agents`,以及多 provider 的 `web_search` / `image_generate` /
-  `image_analyze` 工具的整体形态。
-- [**pi-coding-agent**](https://github.com/mariozechner/pi-coding-agent)
-  (MIT)—— 经 OpenClaw 引入的规范 AgentSkill 形态
-  (`<available_skills>` XML 格式器,name / description / location)。
-- [**Claude Code**](https://www.anthropic.com/claude-code) —— `DEFAULT_TOOLS`
-  集合的整体人机工学(bash + read / write / edit + glob / grep / list
-  + apply_patch + todo 规划板)以及 todo 工具的 JSON schema。
-- **Anthropic / OpenAI / Google SDK** —— provider 的 HTTP 契约;我们的
-  provider 直接调原生 HTTP API,让 SDK 依赖保持可选。
-
-血缘更具体的工具文件在文件级 docstring 里各自注明了直接灵感来源。这些 MIT
-许可的组件保留其原 MIT 条款;组合作品整体以 AGPL-3.0 分发。
 
 ## 引用
 

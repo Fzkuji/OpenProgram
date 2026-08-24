@@ -38,8 +38,6 @@
 
 **We propose _Agentic Programming_.** An LLM is flexible; code is deterministic. Let the model run everything and you get chaos — unpredictable execution, context explosion, no output guarantees; hard-code everything and you lose the intelligence. A **harness** balances the two, interleaved moment to moment — **Python for the flow you want fixed, the LLM for the judgement you can't script.** ([the full rationale →](capabilities/agentic-programming/philosophy.md))
 
-> 🎉 **Paper:** [_LLM-as-Code: Agentic Programming for Agent Harness_](https://arxiv.org/abs/2606.15874) — accepted at the **KDD 2026 Workshop on Agentic Software Engineering (AgenticSE)**.
-
 **Contents**
 
 - [News](#news)
@@ -51,22 +49,22 @@
   - [1. Install](#1-install)
   - [2. Run](#2-run)
   - [3. Included Programs and additional harnesses](#3-included-programs-and-additional-harnesses)
-- [Contributing](#contributing)
-- [Acknowledgements](#acknowledgements)
+- [Related projects](comparisons/related-projects.md)
+- [Acknowledgements](comparisons/related-projects.md#acknowledgements)
+- [Contributing](comparisons/related-projects.md#contributing)
 - [Citation](#citation)
 - [License](#license)
 
 ## News
 
-- **2026-08-24** — **v0.8.1** — smaller installers: the product no longer bundles PyTorch.
-- **2026-08-24** — **v0.8.0** — context compaction you can follow (automatic compact, summary cards, folded originals, message navigation in sync) and a Chrome-style bookmarks bar on the built-in Browser.
-- **2026-08-17** — **v0.7.0** — complete built-in browser release: multi-pane Browser, bookmarks and compact History, Chrome/Brave/Edge/Chromium profile import, and DOM-first Agent control of visible internal webpages.
-- **2026-07-21** — **v0.6.0** — multi-agent collaboration: `spawn` N sub-agents, message them across sessions, run file-touching branches in isolated git worktrees.
+- **2026-08-24** — **v0.8.0** — context compaction you can see and expand back to the original, plus a bookmarks bar on the built-in Browser.
+- **2026-08-17** — **v0.7.0** — built-in browser: multiple panes, bookmarks, History, and Agent control of visible pages.
+- **2026-07-21** — **v0.6.0** — multi-agent: `spawn` sub-agents, message across sessions, file-touching branches in git worktrees.
 - **2026-06-22** — **Paper accepted** at the KDD 2026 Workshop on Agentic Software Engineering ([arXiv:2606.15874](https://arxiv.org/abs/2606.15874)).
-- **2026-06-07** — **v0.5.0** — installable harnesses (`openprogram programs install <owner>/<repo>`), one-command install on every platform, multi-account providers with automatic key rotation, and the `rescue` / `doctor` diagnostics.
-- **2026-05-28** — **v0.4.0** — the design-system foundation behind the web UI and TUI.
+- **2026-06-07** — **v0.5.0** — installable harnesses and multi-account providers with automatic key rotation.
+- **2026-05-28** — **v0.4.0** — the Web UI design system.
 - **2026-04-04** — **v0.3.0** — built-in Anthropic / OpenAI / Gemini providers.
-- **2026-04-03** — **v0.1.0** — first release: the `@agentic_function` decorator and the execution DAG.
+- **2026-04-03** — **v0.1.0** — first release: `@agentic_function` and the execution DAG.
 
 ## Why OpenProgram?
 
@@ -141,41 +139,6 @@ full guide (install, manage, author, test, publish) is
 > Need a workflow of your own? Ask the agent in chat to create or update a Program.
 
 For details, see [Getting Started](start/GETTING_STARTED.md), [Install](install/install.md), and [Features](start/features.md).
-
-## Contributing
-
-This is a **paradigm proposal** with a reference implementation. We welcome discussions, alternative implementations in other languages, use cases that validate or challenge the approach, and bug reports.
-
-See [CONTRIBUTING.md](https://github.com/Fzkuji/OpenProgram/blob/main/.github/CONTRIBUTING.md) for details.
-
-## Acknowledgements
-
-OpenProgram stands on shoulders. The tool framework, provider abstraction, and
-several tool implementations were ported or adapted from the projects below —
-each under its own license. Enormous thanks to their authors.
-
-- [**OpenClaw**](https://github.com/openclaw/openclaw) (MIT) — layout of the
-  tool registry (`name / description / parameters / execute`), provider
-  abstraction with `check_fn` + `requires_env` gating, `TOOLSETS` presets,
-  skill loading via SKILL.md frontmatter + late-bound `read`. Our full clone
-  lives under `references/openclaw/` (gitignored) for browsing.
-- [**hermes-agent**](https://github.com/himanshuishere/hermes-agent)
-  (MIT) — starting point for `execute_code` (we trimmed the
-  Docker / Modal layers), `mixture_of_agents`, and the general shape of the
-  multi-provider `web_search` / `image_generate` / `image_analyze` tools.
-- [**pi-coding-agent**](https://github.com/mariozechner/pi-coding-agent)
-  (MIT) — via OpenClaw's import, the canonical AgentSkill shape
-  (`<available_skills>` XML formatter, name / description / location).
-- [**Claude Code**](https://www.anthropic.com/claude-code) — overall ergonomics
-  of the `DEFAULT_TOOLS` set (bash + read / write / edit + glob / grep / list
-  + apply_patch + the todo planning board) and the todo tools' JSON schema.
-- **Anthropic / OpenAI / Google SDKs** — provider HTTP contracts; our
-  providers call the raw HTTP APIs to keep SDK dependencies optional.
-
-Individual tool files call out their direct inspirations in file-level
-docstrings where the lineage is more specific. These MIT-licensed components
-keep their original MIT terms; the combined work is distributed under
-AGPL-3.0.
 
 ## Citation
 

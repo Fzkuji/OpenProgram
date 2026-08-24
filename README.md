@@ -36,8 +36,6 @@
 
 **We propose _Agentic Programming_.** An LLM is flexible; code is deterministic. Let the model run everything and you get chaos — unpredictable execution, context explosion, no output guarantees; hard-code everything and you lose the intelligence. A **harness** balances the two, interleaved moment to moment — **Python for the flow you want fixed, the LLM for the judgement you can't script.** ([the full rationale →](docs/capabilities/agentic-programming/philosophy.md))
 
-> 🎉 **Paper:** [_LLM-as-Code: Agentic Programming for Agent Harness_](https://arxiv.org/abs/2606.15874) — accepted at the **KDD 2026 Workshop on Agentic Software Engineering (AgenticSE)**.
-
 **Contents**
 
 - [News](#news)
@@ -50,23 +48,19 @@
   - [1. Install](#1-install)
   - [2. Run](#2-run)
   - [3. Included Programs and additional harnesses](#3-included-programs-and-additional-harnesses)
-- [Contributing](#contributing)
-- [Related projects](#related-projects)
-- [Acknowledgements](#acknowledgements)
 - [Citation](#citation)
 - [License](#license)
 
 ## News
 
-- **2026-08-24** — **v0.8.1** — smaller installers: the product no longer bundles PyTorch.
-- **2026-08-24** — **v0.8.0** — context compaction you can follow (automatic compact, summary cards, folded originals, message navigation in sync) and a Chrome-style bookmarks bar on the built-in Browser.
-- **2026-08-17** — **v0.7.0** — complete built-in browser release: multi-pane Browser, bookmarks and compact History, Chrome/Brave/Edge/Chromium profile import, and DOM-first Agent control of visible internal webpages.
-- **2026-07-21** — **v0.6.0** — multi-agent collaboration: `spawn` N sub-agents, message them across sessions, run file-touching branches in isolated git worktrees.
+- **2026-08-24** — **v0.8.0** — context compaction you can see and expand back to the original, plus a bookmarks bar on the built-in Browser.
+- **2026-08-17** — **v0.7.0** — built-in browser: multiple panes, bookmarks, History, and Agent control of visible pages.
+- **2026-07-21** — **v0.6.0** — multi-agent: `spawn` sub-agents, message across sessions, file-touching branches in git worktrees.
 - **2026-06-22** — **Paper accepted** at the KDD 2026 Workshop on Agentic Software Engineering ([arXiv:2606.15874](https://arxiv.org/abs/2606.15874)).
-- **2026-06-07** — **v0.5.0** — installable harnesses (`openprogram programs install <owner>/<repo>`), one-command install on every platform, multi-account providers with automatic key rotation, and the `rescue` / `doctor` diagnostics.
-- **2026-05-28** — **v0.4.0** — the design-system foundation behind the web UI and TUI.
+- **2026-06-07** — **v0.5.0** — installable harnesses and multi-account providers with automatic key rotation.
+- **2026-05-28** — **v0.4.0** — the Web UI design system.
 - **2026-04-04** — **v0.3.0** — built-in Anthropic / OpenAI / Gemini providers.
-- **2026-04-03** — **v0.1.0** — first release: the `@agentic_function` decorator and the execution DAG.
+- **2026-04-03** — **v0.1.0** — first release: `@agentic_function` and the execution DAG.
 
 ## Why OpenProgram?
 
@@ -217,57 +211,6 @@ full guide (install, manage, author, test, publish) is
 > Need a workflow of your own? Ask the agent in chat to create or update a Program.
 
 For details, see [Getting Started](docs/start/GETTING_STARTED.md), [Install](docs/install/install.md), and [Features](docs/start/features.md).
-
-## Contributing
-
-This is a **paradigm proposal** with a reference implementation. We welcome discussions, alternative implementations in other languages, use cases that validate or challenge the approach, and bug reports.
-
-See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for details.
-
-## Related projects
-
-Writing agents as ordinary typed Python — where the **docstring is the prompt** and the **signature is the contract** — is an idea several groups have arrived at independently. We think that convergence is the strongest evidence the direction is right, and the differences between these designs are where the interesting questions live.
-
-| Project | The shared intuition | Where it goes its own way |
-|---|---|---|
-| [**NVIDIA NOOA**](https://github.com/NVIDIA-NeMo/labs-OO-Agents) (Apache-2.0) | Agents are Python objects; methods with `...` bodies are LLM-implemented, docstrings are prompts, type annotations are contracts. | Object-oriented: state lives on `self`, and the model **acts by writing Python into a Jupyter-style REPL** (CodeAct). OpenProgram keeps functions module-level and has the model **choose among registered functions** instead of emitting code — a narrower action space that's easier to sandbox and replay. |
-| [**DSPy**](https://github.com/stanfordnlp/dspy) (MIT) | A typed **Signature** replaces the hand-written prompt; the framework compiles it. | Optimizes the prompt itself against a metric. We leave prompts fixed and readable, and put the effort into execution structure — the DAG, retries, and context scoping. The two are complementary. |
-| [**Marvin**](https://github.com/PrefectHQ/marvin) (Apache-2.0) · [**Mirascope**](https://github.com/Mirascope/mirascope) (MIT) | Decorate a Python function, let the docstring and return annotation drive a structured LLM call. | Focused on the single well-typed call. OpenProgram adds what happens **across** calls: a shared execution DAG, `spawn`, forking, and per-call context budgets. |
-| [**LangGraph**](https://github.com/langchain-ai/langgraph) (MIT) | Agent runs should be an inspectable graph with checkpoints, not an opaque loop. | The graph is declared up front as nodes and edges. Ours is **recorded from the call stack** — you write plain Python, and the DAG is the trace of what actually ran. |
-| [**smolagents**](https://github.com/huggingface/smolagents) (Apache-2.0) | Let the model act through code rather than rigid tool JSON. | Code-writing agents in a sandbox, like NOOA. We take the same "code is the action language" premise but bind it at **authoring** time via `@agentic_function`, so the deterministic parts are reviewable before anything runs. |
-| [**Scriptorium**](https://github.com/Fzkuji/Scriptorium) | Agent memory you can read; Markdown notes; facts cited to source messages; MCP for Claude Code. | A memory the model writes as ordinary files, so you can open, diff, and trace every fact back to the message it came from. |
-
-If you're building in this space and we've mischaracterized your project — or missed it — please open a PR or an issue. We're happy to be corrected.
-
-## Acknowledgements
-
-OpenProgram stands on shoulders. The tool framework, provider abstraction, and
-several tool implementations were ported or adapted from the projects below —
-each under its own license. Enormous thanks to their authors.
-
-- [**OpenClaw**](https://github.com/openclaw/openclaw) (MIT) — layout of the
-  tool registry (`name / description / parameters / execute`), provider
-  abstraction with `check_fn` + `requires_env` gating, `TOOLSETS` presets,
-  skill loading via SKILL.md frontmatter + late-bound `read`. Our full clone
-  lives under `references/openclaw/` (gitignored) for browsing.
-- [**hermes-agent**](https://github.com/himanshuishere/hermes-agent)
-  (MIT) — starting point for `execute_code` (we trimmed the
-  Docker / Modal layers), `mixture_of_agents`, and the general shape of the
-  multi-provider `web_search` / `image_generate` / `image_analyze` tools.
-- [**pi-coding-agent**](https://github.com/mariozechner/pi-coding-agent)
-  (MIT) — via OpenClaw's import, the canonical AgentSkill shape
-  (`<available_skills>` XML formatter, name / description / location).
-- [**Claude Code**](https://www.anthropic.com/claude-code) — overall ergonomics
-  of the `DEFAULT_TOOLS` set (bash + read / write / edit + glob / grep / list
-  + apply_patch + the todo planning board) and the todo tools' JSON schema.
-- **Anthropic / OpenAI / Google SDKs** — the wire contracts, and the clients
-  the first-party providers stream through. All three ship as base
-  dependencies; the CLI-backed and OAuth providers talk raw HTTP instead.
-
-Individual tool files call out their direct inspirations in file-level
-docstrings where the lineage is more specific. These MIT-licensed components
-keep their original MIT terms; the combined work is distributed under
-AGPL-3.0.
 
 ## Citation
 
