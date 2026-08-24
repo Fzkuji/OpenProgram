@@ -38,6 +38,30 @@
 
 > 🎉 **论文:** [_LLM-as-Code: Agentic Programming for Agent Harness_](https://arxiv.org/abs/2606.15874) —— 已被 **KDD 2026 Workshop on Agentic Software Engineering (AgenticSE)** 接收。
 
+**目录**
+
+- [新闻](#新闻)
+- [为什么是 OpenProgram？](#为什么是-openprogram)
+  - [① DAG 上下文 —— 原生多 agent 系统的地基](#①-dag-上下文--原生多-agent-系统的地基)
+  - [② Agentic 工作流 —— 可信且自我演化的 agent 的地基](#②-agentic-工作流--可信且自我演化的-agent-的地基)
+  - [③ 事件基础设施 —— 主动 agent 的地基](#③-事件基础设施--主动-agent-的地基)
+- [快速开始](#快速开始)
+  - [1. 安装](#1-安装)
+  - [2. 运行](#2-运行)
+  - [3. 已包含 Programs 与额外 harness](#3-已包含-programs-与额外-harness)
+- [排障](#排障)
+  - [高级命令](#高级命令)
+- [怎么用](#怎么用)
+  - [Web UI —— `openprogram web`](#web-ui--openprogram-web)
+  - [终端 UI —— `openprogram`](#终端-ui--openprogram)
+- [CLI 用法](#cli-用法)
+- [功能详情](#功能详情)
+- [集成](#集成)
+- [贡献](#贡献)
+- [致谢](#致谢)
+- [引用](#引用)
+- [许可证](#许可证)
+
 ## 新闻
 
 - **2026-08-24** — **v0.8.1** — 更小的安装包：产品不再捆绑 PyTorch。

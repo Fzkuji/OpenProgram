@@ -40,6 +40,30 @@
 
 > 🎉 **Paper:** [_LLM-as-Code: Agentic Programming for Agent Harness_](https://arxiv.org/abs/2606.15874) — accepted at the **KDD 2026 Workshop on Agentic Software Engineering (AgenticSE)**.
 
+**Contents**
+
+- [News](#news)
+- [Why OpenProgram?](#why-openprogram)
+  - [① DAG Context — for native multi-agent systems](#①-dag-context--for-native-multi-agent-systems)
+  - [② Agentic Workflow — for trustworthy & self-evolving agents](#②-agentic-workflow--for-trustworthy--self-evolving-agents)
+  - [③ Event Infrastructure — for proactive agents](#③-event-infrastructure--for-proactive-agents)
+- [Quick Start](#quick-start)
+  - [1. Install](#1-install)
+  - [2. Run](#2-run)
+  - [3. Included Programs and additional harnesses](#3-included-programs-and-additional-harnesses)
+- [Troubleshooting](#troubleshooting)
+  - [Power-user commands](#power-user-commands)
+- [How to use](#how-to-use)
+  - [Web UI — `openprogram web`](#web-ui--openprogram-web)
+  - [Terminal UI — `openprogram`](#terminal-ui--openprogram)
+- [CLI use](#cli-use)
+- [Detailed features](#detailed-features)
+- [Integration](#integration)
+- [Contributing](#contributing)
+- [Acknowledgements](#acknowledgements)
+- [Citation](#citation)
+- [License](#license)
+
 ## News
 
 - **2026-08-24** — **v0.8.1** — smaller installers: the product no longer bundles PyTorch.

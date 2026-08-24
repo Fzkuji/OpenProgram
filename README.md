@@ -38,6 +38,38 @@
 
 > 🎉 **Paper:** [_LLM-as-Code: Agentic Programming for Agent Harness_](https://arxiv.org/abs/2606.15874) — accepted at the **KDD 2026 Workshop on Agentic Software Engineering (AgenticSE)**.
 
+**Contents**
+
+- [News](#news)
+- [Why OpenProgram?](#why-openprogram)
+  - [① Agentic Function — the primitive everything else is built on](#①-agentic-function--the-primitive-everything-else-is-built-on)
+  - [② DAG Context — for native multi-agent systems](#②-dag-context--for-native-multi-agent-systems)
+  - [③ Agentic Workflow — for trustworthy & self-evolving agents](#③-agentic-workflow--for-trustworthy--self-evolving-agents)
+  - [④ Event Infrastructure — for proactive agents](#④-event-infrastructure--for-proactive-agents)
+- [Quick Start](#quick-start)
+  - [1. Install](#1-install)
+  - [2. Run](#2-run)
+  - [3. Included Programs and additional harnesses](#3-included-programs-and-additional-harnesses)
+- [Customizing](#customizing)
+  - [Level 1 — Write your own agentic function](#level-1--write-your-own-agentic-function)
+  - [Level 2 — Control the context each call sees](#level-2--control-the-context-each-call-sees)
+  - [Level 3 — Pick models, providers, and tools](#level-3--pick-models-providers-and-tools)
+  - [Level 4 — Package it as an installable harness](#level-4--package-it-as-an-installable-harness)
+- [Troubleshooting](#troubleshooting)
+  - [Power-user commands](#power-user-commands)
+- [How to use](#how-to-use)
+  - [Web UI — `openprogram web`](#web-ui--openprogram-web)
+  - [Terminal UI — `openprogram`](#terminal-ui--openprogram)
+  - [Python library — `import openprogram`](#python-library--import-openprogram)
+- [CLI use](#cli-use)
+- [Detailed features](#detailed-features)
+- [Integration](#integration)
+- [Contributing](#contributing)
+- [Related projects](#related-projects)
+- [Acknowledgements](#acknowledgements)
+- [Citation](#citation)
+- [License](#license)
+
 ## News
 
 - **2026-08-24** — **v0.8.1** — smaller installers: the product no longer bundles PyTorch.
