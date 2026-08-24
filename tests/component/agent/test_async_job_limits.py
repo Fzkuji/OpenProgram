@@ -296,7 +296,13 @@ def test_idle_budget_resets_only_after_meaningful_activity(
         clock.advance(0.75)
         assert budget_polled.wait(1.0)
         assert runner.get_job(job_id).status == JobStatus.RUNNING
+        budget_polled.clear()
         clock.advance(0.30)
+        assert budget_polled.wait(1.0)
+        assert wait_until(
+            lambda: runner.get_job(job_id).reason_code == "budget.idle_exhausted",
+            timeout=2.0,
+        )
         final = runner.await_job(job_id, timeout=5)
         assert final.status == JobStatus.CANCELLED
         assert final.reason_code == "budget.idle_exhausted"

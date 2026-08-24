@@ -5,6 +5,30 @@ import threading
 
 import pytest
 
+from tests.support.waiting import wait_until
+
+
+def _wait_for_stamped_cancel_reason(session_id: str) -> None:
+    """Hold the fake turn until cancel has a stored reason.
+
+    ``mark_cancelled`` trips the token before ``_cancel_single`` stamps
+    ``reason_code``. Returning on the token alone lets the runner finalize
+    as ``cancel.user`` even when the trigger was an idle/runtime budget.
+    """
+    from openprogram.agent.job.store import load_job
+    from openprogram.agent.run_control import get_current_execution_id
+
+    job_id = get_current_execution_id()
+    if not job_id:
+        return
+    wait_until(
+        lambda: (
+            (job := load_job(session_id, job_id)) is not None
+            and bool(job.reason_code)
+        ),
+        timeout=1.0,
+    )
+
 
 class _FakeMonotonic:
     def __init__(self) -> None:
@@ -71,10 +95,11 @@ def fake_worker(monkeypatch):
         # picks up the future and the worker body never runs.
         entered.set()
         # Hold until the test releases the barrier or this job is
-        # cancelled. A 1s cap lets a slow CI worker return completed
-        # before the governor's idle timeout can cancel it.
+        # cancelled with a stamped reason. Returning on the token
+        # alone races the budget/user stamp and finalizes as cancel.user.
         while not barrier.is_set():
             if is_cancelled(session_id):
+                _wait_for_stamped_cancel_reason(session_id)
                 cancel_seen.set()
                 return AgentTurnResult(head_id="head_x", final_text="",
                                        failed=True, error="cancelled")

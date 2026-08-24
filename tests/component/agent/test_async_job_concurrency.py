@@ -457,6 +457,10 @@ def test_idle_activity_is_tracked_per_same_session_job(
         clock.advance(0.75)
         assert runner.record_job_activity(active, "provider_data")
         clock.advance(0.5)
+        assert wait_until(
+            lambda: runner.get_job(idle).reason_code == "budget.idle_exhausted",
+            timeout=2.0,
+        )
 
         idle_final = runner.await_job(idle, timeout=5)
         assert idle_final.status.value == "cancelled"
