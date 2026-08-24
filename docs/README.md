@@ -51,14 +51,6 @@
   - [1. Install](#1-install)
   - [2. Run](#2-run)
   - [3. Included Programs and additional harnesses](#3-included-programs-and-additional-harnesses)
-- [Troubleshooting](#troubleshooting)
-  - [1. Power-user commands](#power-user-commands)
-- [How to use](#how-to-use)
-  - [1. Web UI — `openprogram web`](#web-ui--openprogram-web)
-  - [2. Terminal UI — `openprogram`](#terminal-ui--openprogram)
-- [CLI use](#cli-use)
-- [Detailed features](#detailed-features)
-- [Integration](#integration)
 - [Contributing](#contributing)
 - [Acknowledgements](#acknowledgements)
 - [Citation](#citation)
@@ -78,7 +70,7 @@
 
 ## Why OpenProgram?
 
-The current OpenProgram release supports macOS and Linux installations, multiple providers, and terminal, browser, and chat interfaces. Windows native packaging is deferred for a later release decision; Windows and mobile devices can currently use the browser client against a supported remote host. The harness itself provides **three mechanisms for building agent programs.**
+The current OpenProgram release supports macOS and Linux installations, multiple providers, and a Web interface (desktop App or `openprogram web` → http://localhost:18100). Windows native packaging is deferred for a later release decision; Windows and mobile devices can currently use the browser client against a supported remote host. The harness itself provides **three mechanisms for building agent programs.**
 
 ### 1. DAG Context — for native multi-agent systems
 
@@ -117,15 +109,17 @@ One **process-wide event bus** is the substrate under everything: the agent loop
 curl -fsSL https://openprogram.io/install | sh
 ```
 
-macOS desktop users download the unsigned DMG from [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases). Linux users install the complete CLI/server runtime and use its Web UI or TUI; no Linux desktop package is published until a complete package passes the public-entry gate. All supported release installations contain the same complete product capabilities. See **[install.md](install/install.md)** for verification, platform scope, and source-development installation.
+macOS desktop users download the unsigned DMG from [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases). Linux users install the complete CLI/server runtime and open the Web UI; no Linux desktop package is published until a complete package passes the public-entry gate. All supported release installations contain the same complete product capabilities. See **[install.md](install/install.md)** for verification, platform scope, and source-development installation.
 
 ### 2. Run
 
+On macOS, open the desktop App. Or start the Web UI from the command line:
+
 ```bash
-openprogram
+openprogram web
 ```
 
-First run sets up your provider, then asks which surface to open. Skip the prompt with `openprogram tui` (terminal) or `openprogram web` (browser → http://localhost:18100).
+Either way opens **http://localhost:18100**.
 
 ### 3. Included Programs and additional harnesses
 
@@ -146,132 +140,7 @@ full guide (install, manage, author, test, publish) is
 
 > Need a workflow of your own? Ask the agent in chat to create or update a Program.
 
-## Troubleshooting
-
-Two diagnostic commands cover most "it broke and I don't know why" situations:
-
-```bash
-openprogram rescue          # 12 platform-agnostic probes, each with a fix command
-openprogram doctor          # quick "is the install healthy?" check
-openprogram logs tail       # follow the worker log live
-openprogram providers doctor # OAuth tokens — expiring? refresh wired?
-```
-
-`rescue` is the one to reach for first when something doesn't work — it doesn't depend on an LLM being reachable, walks through provider config, ports, dependencies, build artefacts, and prints the exact command to fix each finding. Case-by-case docs live in [troubleshooting.md](server/troubleshooting.md).
-
-For platform-builder topics (`Runtime` retry semantics, the full `@agentic_function` decorator API, the flat-DAG context model) see [API.md](reference/API.md) and the per-topic notes under [reference/api/](reference/README.md).
-
-### Power-user commands
-
-```bash
-openprogram logs list                # all log files with size + age
-openprogram logs tail worker -f      # follow worker.log
-openprogram completion bash          # autocomplete: bash | zsh | powershell
-openprogram secrets list             # same as `providers list` (openclaw-style alias)
-openprogram providers use <prov> [profile]  # pick which account a provider runs on
-openprogram providers login <prov> --account work  # add a second account
-openprogram worker status            # is the backend up? on what port?
-openprogram --print --resume <id>    # continue a previous chat headlessly
-```
-
-**Providers & models** live in **Settings → Providers** (web UI). Each provider takes multiple accounts and multiple API keys under one credential pool — keys auto-rotate, cooling off a rate-limited one. Need a provider that isn't in the built-in list? **Add custom provider** takes just a **Name** and **Base URL** (id auto-generated) for any OpenAI-compatible endpoint; browse its models from the provider's `/models` endpoint or add a model by id, same multi-key management as the rest.
-
----
-
-## How to use
-
-Two ways to interact day-to-day — same backend, same sessions, switch freely.
-
-### Web UI — `openprogram web`
-
-Opens at `http://localhost:18100`. The full surface: a live **mini-DAG** of the session on the right rail, **branch / merge / attach** on any node, **multi-agent** rows tagged by producer, and drag-and-drop **file attachments**. Best when you want to *see and steer* the execution tree, or for longer, branching work.
-
-<p align="center">
-  <img src="images/chat_hero.png" alt="OpenProgram web UI — agentic function call tree, streamed thinking, and the conversation DAG on the right rail" width="880">
-</p>
-
-### Terminal UI — `openprogram`
-
-The same backend without the browser — same commands, same chat history. Release installs include the Python terminal interface; source-development installs can also build Ink on macOS/Linux. One-shot, no UI: `openprogram --print "…"`.
-
-<p align="center">
-  <img src="images/tui_hero.png" alt="OpenProgram terminal UI — welcome screen listing the model, agents, sessions, and the registered skills / providers / tools / applications" width="570">
-</p>
-
-> Sessions live in `~/.openprogram/` and are shared by both — start in the terminal, pick it up in the browser tab, and vice versa.
-
----
-
-## CLI use
-
-Beyond the chat UIs, the `openprogram` command runs headless — script it, pipe it, automate it.
-
-```bash
-# One-shot: send a prompt, print the answer, exit (redirect or pipe it)
-openprogram --print "summarise .github/CHANGELOG.md" > summary.md
-
-# Run a specific agentic function with key=value args
-openprogram programs run research --arg topic="state-space models"
-
-# Continue an earlier session by id (headless; combine with --print)
-openprogram --print --resume local_d9a16a6b06 "and now?"
-```
-
-Same backend and sessions as the UIs (`~/.openprogram/`) — a `--print` run or a resumed session shows up in the web / terminal UI too.
-
-## Detailed features
-
-| Feature | One-line summary |
-|---|---|
-| **Automatic context** | Every `@agentic_function` call is a tree node; the runtime threads it through nested LLM calls — no manual prompt assembly. |
-| **Functions that author functions** | New / fixed `@agentic_function`s are written by the agent itself via ordinary file-editing tools and the documented API. No dedicated `create()` / `fix()` calls. |
-| **Conversation as a git DAG** | Sessions are commits + branches + merges, with the right sidebar exposing the operations. File-touching branches run in isolated git worktrees. |
-| **Memory that writes itself** | Markdown under `~/.openprogram/memory/`: `core.md` (always loaded), `topics/` (one file per subject, every paragraph citing its source), `sources/` (the conversations those citations point at). Conversations are folded into topics in the background, and every write lands whole or not at all. |
-| **Mini-DAG execution view** | The right rail draws every node + edge of the active session and scrolls with the chat. |
-| **Multi-agent + multi-channel** | Every row tagged with its producer agent; channel layer wires external transports (Telegram, Discord, Slack, WeChat). |
-
-The detailed tour of each one — code samples, design rationale, where to look in the codebase — lives in [**features.md**](start/features.md).
-
-## Integration
-
-| Guide | Description |
-|-------|-------------|
-| [Getting Started](start/GETTING_STARTED.md) | 3-minute setup and runnable examples |
-| [Claude Code](integrations/claude-code.md) | Use without API key via Claude Code CLI |
-| [OpenClaw](integrations/openclaw.md) | Use as OpenClaw skill |
-| [API Reference](reference/API.md) | Full API documentation |
-
-<details>
-<summary><strong>Project Structure</strong></summary>
-
-```
-openprogram/                         # Python product package
-├── agent/                           # model loop, compaction, session runtime
-├── agentic_programming/             # llm() / agent() primitives and @agentic_function
-├── programs/
-│   ├── _registry.py                 # Workflow registry and discovery
-│   ├── tools/                       # deterministic @function tools
-│   ├── workflow/                    # llm()/agent() Workflows, including goal/
-│   └── applications/                # owner-recorded external Program checkouts
-├── channels/                        # external chat transports
-├── scheduler/                       # durable schedules and execution
-└── webui/                           # worker API and WebSocket layer
-apps/
-└── cli/                            # TypeScript Ink terminal client
-web/                                 # Next.js interface
-desktop/                             # Electron desktop host
-tests/                               # pytest: <layer>/<product-domain>
-scripts/                             # executable and importable repository maintenance tools
-```
-
-See the workspace READMEs for
-[`openprogram/`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/README.md),
-[`web/`](https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/README.md), and
-[`apps/cli/`](https://github.com/Fzkuji/OpenProgram/blob/main/apps/cli/README.md). Complete
-ownership rules are in
-[Repository Structure](reference/design/repository-structure.html).
-
-</details>
+For details, see [Getting Started](start/GETTING_STARTED.md), [Install](install/install.md), and [Features](start/features.md).
 
 ## Contributing
 

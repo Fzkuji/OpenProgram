@@ -49,14 +49,6 @@
   - [1. 安装](#1-安装)
   - [2. 运行](#2-运行)
   - [3. 已包含 Programs 与额外 harness](#3-已包含-programs-与额外-harness)
-- [排障](#排障)
-  - [1. 高级命令](#高级命令)
-- [怎么用](#怎么用)
-  - [1. Web UI —— `openprogram web`](#web-ui--openprogram-web)
-  - [2. 终端 UI —— `openprogram`](#终端-ui--openprogram)
-- [CLI 用法](#cli-用法)
-- [功能详情](#功能详情)
-- [集成](#集成)
 - [贡献](#贡献)
 - [致谢](#致谢)
 - [引用](#引用)
@@ -76,7 +68,7 @@
 
 ## 为什么是 OpenProgram？
 
-OpenProgram 当前 release 支持 macOS 和 Linux 安装、多 provider，以及终端、浏览器和聊天界面。Windows 原生打包暂缓到后续 release 决策；目前 Windows 与移动设备可以作为浏览器客户端访问受支持的远程主机。harness 本体提供**三种构建 agent Program 的机制**。
+OpenProgram 当前 release 支持 macOS 和 Linux 安装、多 provider，以及 Web 界面（桌面 App 或 `openprogram web` → http://localhost:18100）。Windows 原生打包暂缓到后续 release 决策；目前 Windows 与移动设备可以作为浏览器客户端访问受支持的远程主机。harness 本体提供**三种构建 agent Program 的机制**。
 
 ### 1. DAG 上下文 —— 原生多 agent 系统的地基
 
@@ -115,15 +107,17 @@ OpenProgram 当前 release 支持 macOS 和 Linux 安装、多 provider，以及
 curl -fsSL https://openprogram.io/install | sh
 ```
 
-macOS 桌面用户从 [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases) 下载 unsigned DMG。Linux 用户安装完整 CLI/server runtime，并使用其中的 Web UI 或 TUI；完整桌面包通过公共入口验收前不发布 Linux 桌面产物。所有受支持的 release 安装都具有相同的完整产品能力。校验、平台范围和 source development 安装见 **[install.md](install/install.md)**。
+macOS 桌面用户从 [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases) 下载 unsigned DMG。Linux 用户安装完整 CLI/server runtime，并打开其中的 Web UI；完整桌面包通过公共入口验收前不发布 Linux 桌面产物。所有受支持的 release 安装都具有相同的完整产品能力。校验、平台范围和 source development 安装见 **[install.md](install/install.md)**。
 
 ### 2. 运行
 
+macOS 下打开桌面 App，或用命令启动 Web：
+
 ```bash
-openprogram
+openprogram web
 ```
 
-首次运行会先配置 provider,然后问你打开哪个界面。跳过询问可以直接 `openprogram tui`(终端)或 `openprogram web`(浏览器 → http://localhost:18100)。
+都会打开 **http://localhost:18100**。
 
 ### 3. 已包含 Programs 与额外 harness
 
@@ -143,131 +137,7 @@ openprogram
 
 > 需要一条自己的工作流？直接在聊天里让 agent 创建或更新 Program。
 
-## 排障
-
-两条诊断命令覆盖大多数"坏了但不知道为什么"的情况:
-
-```bash
-openprogram rescue          # 12 项跨平台探测,每项附修复命令
-openprogram doctor          # 快速检查安装是否健康
-openprogram logs tail       # 实时跟踪 worker 日志
-openprogram providers doctor # OAuth token——要过期了?刷新接好了吗?
-```
-
-出问题先找 `rescue`——它不依赖 LLM 可达,逐项检查 provider 配置、端口、依赖、构建产物,并打印修复每一项的确切命令。逐案文档见 [troubleshooting.md](server/troubleshooting.md)。
-
-平台构建者话题(`Runtime` 重试语义、完整的 `@agentic_function` 装饰器 API、扁平 DAG 上下文模型)见 [API.md](reference/API.md) 和 [reference/api/](reference/README.md) 下的分主题页面。
-
-### 高级命令
-
-```bash
-openprogram logs list                # 全部日志文件,带大小和时间
-openprogram logs tail worker -f      # 跟踪 worker.log
-openprogram completion bash          # 自动补全:bash | zsh | powershell
-openprogram secrets list             # 等价 `providers list`(openclaw 风格别名)
-openprogram providers use <prov> [profile]  # 选择 provider 当前跑哪个账号
-openprogram providers login <prov> --account work  # 添加第二个账号
-openprogram worker status            # 后端起了吗?在哪个端口?
-openprogram --print --resume <id>    # headless 接着之前的聊天继续
-```
-
-**Provider 与模型**在 **Settings → Providers**(Web UI)里管理。每个 provider 支持多账号,一个凭据池里可放多个 API key——key 自动轮询,被限流的自动冷却。内置列表里没有的 provider?**添加自定义 Provider** 只需要**名称**和 **Base URL**(id 自动生成),适用于任何 OpenAI 兼容端点;模型可从该 provider 的 `/models` 端点浏览,也可按 id 手动添加,多 key 管理与内置 provider 相同。
-
----
-
-## 怎么用
-
-日常两种交互方式——同一个后端、同一批会话,随时切换。
-
-### Web UI —— `openprogram web`
-
-打开 `http://localhost:18100`。全量界面:右栏是会话的实时 **mini-DAG**,任意节点上可 **branch / merge / attach**,**多 agent** 行按生产者打标,支持拖拽**附件**。适合想*看着并引导*执行树,或较长的、多分支的工作。
-
-<p align="center">
-  <img src="images/chat_hero.png" alt="OpenProgram web UI — agentic function call tree, streamed thinking, and the conversation DAG on the right rail" width="880">
-</p>
-
-### 终端 UI —— `openprogram`
-
-不打开浏览器时仍使用同一个后端、命令和聊天历史。release 安装包含 Python 终端界面；source development 安装可以在 macOS/Linux 额外构建 Ink。一次性无界面调用使用 `openprogram --print "…"`。
-
-<p align="center">
-  <img src="images/tui_hero.png" alt="OpenProgram terminal UI — welcome screen listing the model, agents, sessions, and the registered skills / providers / tools / applications" width="570">
-</p>
-
-> 会话存在 `~/.openprogram/`,两边共享——终端里开始,浏览器标签页里接着,反之亦然。
-
----
-
-## CLI 用法
-
-聊天 UI 之外,`openprogram` 命令可以 headless 跑——写脚本、接管道、做自动化。
-
-```bash
-# 一次性:发 prompt、打印答案、退出(可重定向或接管道)
-openprogram --print "summarise .github/CHANGELOG.md" > summary.md
-
-# 用 key=value 参数运行指定 agentic function
-openprogram programs run research --arg topic="state-space models"
-
-# 按 id 继续早前的会话(headless,配合 --print 使用)
-openprogram --print --resume local_d9a16a6b06 "and now?"
-```
-
-与 UI 同一套后端和会话(`~/.openprogram/`)——`--print` 的一次运行或恢复的会话同样出现在 web / 终端 UI 里。
-
-## 功能详情
-
-| 功能 | 一句话总结 |
-|---|---|
-| **自动上下文** | 每次 `@agentic_function` 调用是一个树节点;runtime 把它穿进嵌套的 LLM 调用——不用手工拼 prompt。 |
-| **函数编写函数** | 新建 / 修复 `@agentic_function` 由 agent 自己用普通文件编辑工具并按 API 文档完成。没有专门的 `create()` / `fix()` 调用。 |
-| **对话即 git DAG** | 会话是 commit + 分支 + 合并,右侧栏暴露这些操作。动文件的分支在隔离的 git worktree 里跑。 |
-| **自己写自己的记忆** | `~/.openprogram/memory/`下的Markdown:`core.md`(常驻注入)、`topics/`(一个主题一个文件,每个段落标注出处)、`sources/`(出处指向的对话原文)。对话在后台被折进主题文件,每次写入要么整体落地要么完全不落地。 |
-| **Mini-DAG 执行视图** | 右栏画出活动会话的每个节点和边,随聊天滚动。 |
-| **多 agent + 多渠道** | 每一行都标注生产它的 agent;渠道层接入外部通道(Telegram、Discord、Slack、微信)。 |
-
-每一项的详细导览——代码示例、设计理由、去代码库哪里看——在 [**features.md**](start/features.md)。
-
-## 集成
-
-| 指南 | 描述 |
-|-------|-------------|
-| [Getting Started](start/GETTING_STARTED.md) | 3 分钟上手及可运行示例 |
-| [Claude Code](integrations/claude-code.md) | 通过 Claude Code CLI 使用,无需 API key |
-| [OpenClaw](integrations/openclaw.md) | 作为 OpenClaw skill 使用 |
-| [API Reference](reference/API.md) | 完整 API 文档 |
-
-<details>
-<summary><strong>项目结构</strong></summary>
-
-```
-openprogram/                         # Python 产品包
-├── agent/                           # 模型循环、工具、目标与压缩
-├── agentic_programming/             # @agentic_function 运行时与上下文
-├── programs/
-│   ├── _registry.py                 # 内置 Agentic Function 注册表
-│   ├── agentic_functions/           # 内置 @agentic_function 模块
-│   ├── functions/                   # 确定性 @function 工具
-│   └── applications/                # 用户登记的外部 Program checkout
-├── channels/                        # 外部聊天渠道
-├── scheduler/                       # 持久化调度与执行
-└── webui/                           # worker API 与 WebSocket 层
-apps/
-└── cli/                            # TypeScript Ink 终端客户端
-web/                                 # Next.js 界面
-desktop/                             # Electron 桌面宿主
-tests/                               # pytest：<layer>/<product-domain>
-scripts/                             # 可执行或可导入的仓库维护工具
-```
-
-各 workspace 的入口说明见
-[`openprogram/`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/README.md)、
-[`web/`](https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/README.md) 和
-[`apps/cli/`](https://github.com/Fzkuji/OpenProgram/blob/main/apps/cli/README.md)。完整归属规则见
-[Repository Structure](reference/design/repository-structure.html)。
-
-</details>
+详情见 [快速上手](start/GETTING_STARTED.md)、[安装](install/install.md) 和 [功能](start/features.md)。
 
 ## 贡献
 

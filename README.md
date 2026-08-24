@@ -50,20 +50,6 @@
   - [1. Install](#1-install)
   - [2. Run](#2-run)
   - [3. Included Programs and additional harnesses](#3-included-programs-and-additional-harnesses)
-- [Customizing](#customizing)
-  - [1. Write your own agentic function](#level-1--write-your-own-agentic-function)
-  - [2. Control the context each call sees](#level-2--control-the-context-each-call-sees)
-  - [3. Pick models, providers, and tools](#level-3--pick-models-providers-and-tools)
-  - [4. Package it as an installable harness](#level-4--package-it-as-an-installable-harness)
-- [Troubleshooting](#troubleshooting)
-  - [1. Power-user commands](#power-user-commands)
-- [How to use](#how-to-use)
-  - [1. Web UI — `openprogram web`](#web-ui--openprogram-web)
-  - [2. Terminal UI — `openprogram`](#terminal-ui--openprogram)
-  - [3. Python library — `import openprogram`](#python-library--import-openprogram)
-- [CLI use](#cli-use)
-- [Detailed features](#detailed-features)
-- [Integration](#integration)
 - [Contributing](#contributing)
 - [Related projects](#related-projects)
 - [Acknowledgements](#acknowledgements)
@@ -84,7 +70,7 @@
 
 ## Why OpenProgram?
 
-The current OpenProgram release supports macOS and Linux installations, multiple providers, and terminal, browser, and chat interfaces. Windows native packaging is deferred for a later release decision; Windows and mobile devices can currently use the browser client against a supported remote host. The harness itself provides **four mechanisms — one primitive and the three capabilities it enables.**
+The current OpenProgram release supports macOS and Linux installations, multiple providers, and a Web interface (desktop App or `openprogram web` → http://localhost:18100). Windows native packaging is deferred for a later release decision; Windows and mobile devices can currently use the browser client against a supported remote host. The harness itself provides **four mechanisms — one primitive and the three capabilities it enables.**
 
 ### 1. Agentic Function — the primitive everything else is built on
 
@@ -199,15 +185,17 @@ A **foundation, honestly labelled**: the plumbing is in place and the proactive 
 curl -fsSL https://openprogram.io/install | sh
 ```
 
-macOS desktop users download the unsigned DMG from [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases). Linux users install the complete CLI/server runtime and use its Web UI or TUI; no Linux desktop package is published until a complete package passes the public-entry gate. All supported release installations contain the same complete product capabilities. Platform scope, verification, and source-development installation are documented in **[docs/install/install.md](docs/install/install.md)**.
+macOS desktop users download the unsigned DMG from [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases). Linux users install the complete CLI/server runtime and open the Web UI; no Linux desktop package is published until a complete package passes the public-entry gate. All supported release installations contain the same complete product capabilities. Platform scope, verification, and source-development installation are documented in **[docs/install/install.md](docs/install/install.md)**.
 
 ### 2. Run
 
+On macOS, open the desktop App. Or start the Web UI from the command line:
+
 ```bash
-openprogram
+openprogram web
 ```
 
-First run sets up your provider, then asks which surface to open. Skip the prompt with `openprogram tui` (terminal) or `openprogram web` (browser → http://localhost:18100).
+Either way opens **http://localhost:18100**.
 
 ### 3. Included Programs and additional harnesses
 
@@ -228,234 +216,7 @@ full guide (install, manage, author, test, publish) is
 
 > Need a workflow of your own? Ask the agent in chat to create or update a Program.
 
-## Customizing
-
-Four levels, from a one-line edit to a distributable package. Start at the top and stop when it does what you need.
-
-### Level 1 — Write your own agentic function
-
-Add a directory under `openprogram/programs/workflow/<your_function>/`
-with the code in `__init__.py`, then add its module name to
-`openprogram/programs/_registry.py::AGENTIC_MODULES`. The registry imports the
-module on startup and exposes its decorated functions.
-
-```python
-# openprogram/programs/workflow/changelog/__init__.py
-import subprocess
-from openprogram import agentic_function
-
-@agentic_function
-def changelog(tag: str, runtime=None) -> str:
-    """Summarize the commits since `tag` as user-facing release notes."""
-    log = subprocess.run(                                   # plain Python — no LLM involved
-        ["git", "log", f"{tag}..HEAD", "--oneline"],
-        capture_output=True, text=True,
-    ).stdout
-    return runtime.exec(f"Write release notes from these commits:\n{log}")
-```
-
-Call it three ways — the agent picks it in chat by name, you run it headlessly, or you import it:
-
-```bash
-openprogram programs run changelog --arg tag=v0.5.0
-```
-
-> Prefer not to write it yourself? Ask the agent in chat: *"add an agentic function that summarizes commits since a tag."* It writes the file, the watcher loads it, and it is callable immediately.
-
-### Level 2 — Control the context each call sees
-
-The two decorator arguments from **[Agentic Function](#1-agentic-function--the-primitive-everything-else-is-built-on)** above are the main tuning knobs, and the reason long runs stay affordable:
-
-```python
-@agentic_function(expose="io", render_range={"callers": 0})
-def audit(repo: str, runtime=None) -> str:
-    """Read every file and report risky patterns."""
-    ...
-```
-
-| Goal | Setting |
-|---|---|
-| Sub-task shouldn't pollute the parent prompt | `render_range={"callers": 0}` — isolated scratch context, reclaimed on return |
-| Parent needs the reasoning, not just the answer | `expose="llm"` (or `"full"`) |
-| Internal helper the parent shouldn't see at all | `expose="hidden"` |
-| Sub-task needs one level of caller history | `render_range={"callers": 1}` |
-
-### Level 3 — Pick models, providers, and tools
-
-Providers and per-agent models live in **Settings → Providers** in the web UI; any OpenAI-compatible endpoint works via **Add custom provider** (name + base URL). From code, override per call:
-
-```python
-runtime.exec("Summarize this.", model="claude-sonnet-5")     # this call only
-runtime.exec("Search the web.", toolset="research")           # swap the tool set
-runtime.exec("Read-only pass.", tools_deny=["bash", "edit"])  # restrict what it can touch
-```
-
-### Level 4 — Package it as an installable harness
-
-A third-party harness is a git repo laid out so `openprogram programs install <owner>/<repo>` can clone it, install its dependencies, and check its contract. The release builder pins and installs GUI / Research / Wiki in advance; the runtime command adds third-party functionality to a mutable extension environment. Nothing is registered centrally, so anyone can publish one:
-
-```bash
-openprogram programs available            # what's installable + what you've installed
-openprogram programs install you/my-harness
-openprogram programs uninstall my-harness
-```
-
-The layout contract and publishing steps are in **[docs/capabilities/installing-harnesses.md](docs/capabilities/installing-harnesses.md)**.
-
-> **Embedding instead?** If you want the paradigm without the app — your own LLM client, your own storage — see [Python library](#python-library--import-openprogram) below.
-
-## Troubleshooting
-
-Two diagnostic commands cover most "it broke and I don't know why" situations:
-
-```bash
-openprogram rescue          # 12 platform-agnostic probes, each with a fix command
-openprogram doctor          # quick "is the install healthy?" check
-openprogram logs tail       # follow the worker log live
-openprogram providers doctor # OAuth tokens — expiring? refresh wired?
-```
-
-`rescue` is the one to reach for first when something doesn't work — it doesn't depend on an LLM being reachable, walks through provider config, ports, dependencies, build artefacts, and prints the exact command to fix each finding. Case-by-case docs live in [docs/server/troubleshooting.md](docs/server/troubleshooting.md).
-
-For platform-builder topics (`Runtime` retry semantics, the full `@agentic_function` decorator API, the flat-DAG context model) see [docs/reference/API.md](docs/reference/API.md) and the per-topic notes under [docs/api/](docs/api/).
-
-### Power-user commands
-
-```bash
-openprogram logs list                # all log files with size + age
-openprogram logs tail worker -f      # follow worker.log
-openprogram completion bash          # autocomplete: bash | zsh | powershell
-openprogram secrets list             # same as `providers list` (openclaw-style alias)
-openprogram providers use <prov> [profile]  # pick which account a provider runs on
-openprogram providers login <prov> --account work  # add a second account
-openprogram worker status            # is the backend up? on what port?
-openprogram --print --resume <id>    # continue a previous chat headlessly
-```
-
-**Providers & models** live in **Settings → Providers** (web UI). Each provider takes multiple accounts and multiple API keys under one credential pool — keys auto-rotate, cooling off a rate-limited one. Need a provider that isn't in the built-in list? **Add custom provider** takes just a **Name** and **Base URL** (id auto-generated) for any OpenAI-compatible endpoint; browse its models from the provider's `/models` endpoint or add a model by id, same multi-key management as the rest.
-
----
-
-## How to use
-
-Two chat surfaces for day-to-day work — same backend, same sessions, switch freely — plus a library mode for embedding the engine in your own code.
-
-### Web UI — `openprogram web`
-
-Opens at `http://localhost:18100`. The full surface: a live **mini-DAG** of the session on the right rail, **branch / merge / attach** on any node, **multi-agent** rows tagged by producer, and drag-and-drop **file attachments**. Best when you want to *see and steer* the execution tree, or for longer, branching work.
-
-<p align="center">
-  <img src="docs/images/chat_hero.png" alt="OpenProgram web UI — agentic function call tree, streamed thinking, and the conversation DAG on the right rail" width="880">
-</p>
-
-### Terminal UI — `openprogram`
-
-The same backend without the browser — same commands, same chat history. Release installs include the Python terminal interface; source-development installs can also build Ink on macOS/Linux. One-shot, no UI: `openprogram --print "…"`.
-
-<p align="center">
-  <img src="docs/images/tui_hero.png" alt="OpenProgram terminal UI — welcome screen listing the model, agents, sessions, and the registered skills / providers / tools / applications" width="570">
-</p>
-
-> Sessions live in `~/.openprogram/` and are shared by both — start in the terminal, pick it up in the browser tab, and vice versa.
-
-### Python library — `import openprogram`
-
-No UI at all: bring your own LLM client, keep state in a directory you choose, and use `@agentic_function` + the execution DAG as a component inside your own app or framework.
-
-```python
-from openprogram import agentic_function, Runtime
-from openprogram.store import SessionStore, session_scope
-
-runtime = Runtime(call=your_llm_call, model="gpt-4o-mini")  # any client, one function
-
-@agentic_function
-def summarize(text, runtime=None):
-    """Summarize the text in one sentence."""
-    return runtime.exec(text)
-
-store = SessionStore(root_path="/var/lib/myapp/sessions")   # yours — not ~/.openprogram
-store.create_session("reviews", agent_id="main")
-with session_scope(store, "reviews"):
-    summarize("The battery lasts all week.", runtime=runtime)
-```
-
-The full guide — including handing your `@agentic_function`s to your own tool loop via `to_openai_tools` — is [docs/capabilities/agentic-programming/embedding-in-your-own-stack.md](docs/capabilities/agentic-programming/embedding-in-your-own-stack.md).
-
----
-
-## CLI use
-
-Beyond the chat UIs, the `openprogram` command runs headless — script it, pipe it, automate it.
-
-```bash
-# One-shot: send a prompt, print the answer, exit (redirect or pipe it)
-openprogram --print "summarise .github/CHANGELOG.md" > summary.md
-
-# Run a specific agentic function with key=value args
-openprogram programs run research --arg topic="state-space models"
-
-# Continue an earlier session by id (headless; combine with --print)
-openprogram --print --resume local_d9a16a6b06 "and now?"
-```
-
-Same backend and sessions as the UIs (`~/.openprogram/`) — a `--print` run or a resumed session shows up in the web / terminal UI too.
-
-## Detailed features
-
-| Feature | One-line summary |
-|---|---|
-| **Automatic context** | Every `@agentic_function` call is a tree node; the runtime threads it through nested LLM calls — no manual prompt assembly. |
-| **Functions that author functions** | New / fixed `@agentic_function`s are written by the agent itself via ordinary file-editing tools and the documented API. No dedicated `create()` / `fix()` calls. |
-| **Conversation as a git DAG** | Sessions are commits + branches + merges, with the right sidebar exposing the operations. File-touching branches run in isolated git worktrees. |
-| **Memory that writes itself** | Markdown under `~/.openprogram/memory/`: `core.md` (always loaded), `topics/` (one file per subject, every paragraph citing its source), `sources/` (the conversations those citations point at). Conversations are folded into topics in the background, and every write lands whole or not at all. |
-| **Mini-DAG execution view** | The right rail draws every node + edge of the active session and scrolls with the chat. |
-| **Multi-agent + multi-channel** | Every row tagged with its producer agent; channel layer wires external transports (Telegram, Discord, Slack, WeChat). |
-| **Session distill** | `/distill` turns a finished session into a reusable skill or `@agentic_function` — the next run starts from the procedure instead of the blank page ([guide](docs/capabilities/distill.md)). |
-
-The detailed tour of each one — code samples, design rationale, where to look in the codebase — lives in [**docs/start/features.md**](docs/start/features.md).
-
-## Integration
-
-| Guide | Description |
-|-------|-------------|
-| [Getting Started](docs/start/GETTING_STARTED.md) | 3-minute setup and runnable examples |
-| [Claude Code](docs/integrations/claude-code.md) | Use without API key via Claude Code CLI |
-| [OpenClaw](docs/integrations/openclaw.md) | Use as OpenClaw skill |
-| [Embedding in your own stack](docs/capabilities/agentic-programming/embedding-in-your-own-stack.md) | DAG-context function calling as a plain library inside your own framework |
-| [API Reference](docs/reference/API.md) | Full API documentation |
-
-<details>
-<summary><strong>Project Structure</strong></summary>
-
-```
-openprogram/                         # reusable Agent Core and compatibility APIs
-├── agent/                         # model loop, tool execution, goals, compaction
-├── agentic_programming/           # @agentic_function runtime and context
-├── programs/
-│   ├── _registry.py               # internal agentic-function registry
-│   ├── functions/
-│   │   ├── vanilla/               # deterministic @function tools
-│   │   └── agentic/               # internal @agentic_function modules
-│   ├── workflows/                 # reusable agent-authored Python projects
-│   └── applications/              # complete Programs, optionally with UI
-├── channels/                       # external chat transports
-├── scheduler/                      # durable schedules and execution
-└── webui/                          # temporary Server compatibility package
-apps/
-├── cli/                            # TypeScript Ink terminal client
-├── server/                         # FastAPI HTTP and WebSocket application
-├── web/                            # Next.js web interface
-└── desktop/                        # Electron desktop shell
-tests/                               # pytest: <layer>/<product-domain>
-scripts/                             # repository maintenance, release, and documentation tooling
-docs/                                # user, operator, and design documentation
-```
-
-The complete ownership rules are in
-[Repository Structure](docs/reference/design/repository-structure.html). Test
-placement and allowed dependencies are summarized in [tests/README.md](tests/README.md).
-
-</details>
+For details, see [Getting Started](docs/start/GETTING_STARTED.md), [Install](docs/install/install.md), and [Features](docs/start/features.md).
 
 ## Contributing
 
