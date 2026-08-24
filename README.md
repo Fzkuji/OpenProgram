@@ -126,7 +126,7 @@ def triage(ticket: str, runtime=None) -> str:
     return llm("Draft a short reply.")
 ```
 
-🤖 `llm()` is the model call
+🤖 `llm()` is the model call<br>
 🐍 everything else is ordinary Python, and it runs every time
 
 </td><td>
