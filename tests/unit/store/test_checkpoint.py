@@ -170,3 +170,21 @@ def test_restore_missing_backup_is_skipped(session_dir, workdir):
     restored = store.restore_turn("turn1")
     assert restored == []
     assert a.read_text() == "modified"
+
+def test_mutation_sequence_allocates_durable_increasing_values():
+    """Each call hands out the next workspace-wide mutation order value,
+    and the counter is durable: a later call (simulating another
+    process) continues the sequence instead of restarting it.
+
+    Regression guard for the allocation path itself: it must work on
+    every platform — the file lock goes through ``openprogram._compat``
+    and the post-replace directory fsync is best-effort (Windows has no
+    directory descriptor to sync; a hard failure there used to be
+    possible).
+    """
+    first = CheckpointStore._next_mutation_sequence()
+    second = CheckpointStore._next_mutation_sequence()
+    assert second == first + 1
+
+    third = CheckpointStore._next_mutation_sequence()
+    assert third == second + 1

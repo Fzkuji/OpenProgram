@@ -124,7 +124,9 @@ def _atomic_write(
                 "write", target, committed=False, cause=exc
             ) from exc
         try:
-            descriptor = os.open(temporary, os.O_RDONLY)
+            # O_RDWR, not O_RDONLY: Windows _commit/fsync requires a writable
+            # handle and raises EBADF on a read-only descriptor.
+            descriptor = os.open(temporary, os.O_RDWR)
             try:
                 os.fsync(descriptor)
             finally:

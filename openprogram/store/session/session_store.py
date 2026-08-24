@@ -701,7 +701,7 @@ class SessionStore:
     @contextmanager
     def _head_file_lock(self, git: GitSession):
         """Serialize every durable meta/HEAD writer across processes."""
-        import fcntl
+        from openprogram import _compat as fcntl
         import hashlib
 
         lock_root = git.path.parent / ".session-locks"

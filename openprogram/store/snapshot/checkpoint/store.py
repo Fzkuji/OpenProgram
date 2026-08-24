@@ -222,7 +222,7 @@ class CheckpointStore:
     @staticmethod
     def _next_mutation_sequence() -> int:
         """Allocate one durable workspace-wide mutation order value."""
-        import fcntl
+        from openprogram import _compat as fcntl
 
         from openprogram.paths import get_state_dir
 
@@ -243,11 +243,14 @@ class CheckpointStore:
                     handle.flush()
                     os.fsync(handle.fileno())
                 os.replace(tmp, counter_path)
-                self_descriptor = os.open(root, os.O_RDONLY)
                 try:
-                    os.fsync(self_descriptor)
-                finally:
-                    os.close(self_descriptor)
+                    self_descriptor = os.open(root, os.O_RDONLY)
+                    try:
+                        os.fsync(self_descriptor)
+                    finally:
+                        os.close(self_descriptor)
+                except OSError:
+                    pass  # Windows has no directory descriptor to sync
                 return value
             finally:
                 fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
@@ -593,7 +596,7 @@ class CheckpointStore:
 
     @contextmanager
     def _rewind_intent_lock(self, key: str):
-        import fcntl
+        from openprogram import _compat as fcntl
 
         digest = hashlib.sha256(f"rewind\0{key}".encode()).hexdigest()[:24]
         root = session_backup_root(self.session_dir) / "intent-locks"
@@ -614,7 +617,7 @@ class CheckpointStore:
 
     @contextmanager
     def _workspace_lock(self, _paths: list[str]):
-        import fcntl
+        from openprogram import _compat as fcntl
 
         with self._workspace_lock_path().open("a+") as handle:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
