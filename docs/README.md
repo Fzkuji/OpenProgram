@@ -86,13 +86,13 @@ GUI Agent, Research Agent, and Wiki Agent ship with every supported release. Thi
 
 ## News
 
-- **2026-08-17** — built-in browser: multiple panes, bookmarks, History, and Agent control of visible pages.
-- **2026-07-21** — multi-agent: `spawn` sub-agents, message across sessions, file-touching branches in git worktrees.
+- **2026-08-17** — Built-in browser: multiple panes, bookmarks, History, and Agent control of visible pages.
+- **2026-07-21** — Multi-agent: `spawn` sub-agents, message across sessions, file-touching branches in git worktrees.
 - **2026-06-22** — 📄 **Paper accepted** at the KDD 2026 Workshop on Agentic Software Engineering ([arXiv:2606.15874](https://arxiv.org/abs/2606.15874)).
-- **2026-06-07** — installable harnesses and multi-account providers with automatic key rotation.
-- **2026-05-28** — the Web UI design system.
-- **2026-04-04** — built-in Anthropic / OpenAI / Gemini providers.
-- **2026-04-03** — 🌱 first release: `@agentic_function` and the execution DAG.
+- **2026-06-07** — Installable harnesses and multi-account providers with automatic key rotation.
+- **2026-05-28** — The Web UI design system.
+- **2026-04-04** — Built-in Anthropic / OpenAI / Gemini providers.
+- **2026-04-03** — 🌱 First release: `@agentic_function` and the execution DAG.
 
 ## Why OpenProgram?
 
