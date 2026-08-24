@@ -231,10 +231,10 @@ duplicated in this historical distribution ledger.
 
 ### Current-batch public-entry acceptance
 
-1. Each platform runtime archive contains a manifest with `present` and `verified` entries for `web`, `providers`, `mcp`, `memory`, `channels`, `search`, `browser.playwright`, `ocr.default`, `model.gpa_detector`, `program.gui`, `program.research`, and `program.wiki`.
+1. Each platform runtime archive contains a manifest with `present` and `verified` entries for `web`, `providers`, `mcp`, `memory`, `channels`, `search`, `browser.playwright`, `model.gpa_detector`, `program.gui`, `program.research`, and `program.wiki`. The archive does not install torch, sentence-transformers, EasyOCR, or NVIDIA/CUDA wheels.
 2. Supported Desktop packaging consumes the already-built runtime archive. The CLI installer consumes the byte-identical archive from GitHub Release. Neither path resolves product dependencies independently.
-3. A normal-user install performs no PyPI dependency resolution, repository clone, npm build, or first-use download for the default browser, OCR, detector model, or first-party Programs.
-4. Public-entry probes verify the worker, Web assets, first-party Program registration, channel/search imports, Playwright Chromium executable, OCR model data, and detector model before an artifact is published or a CLI `current` link is switched.
+3. A normal-user install performs no PyPI dependency resolution, repository clone, npm build, or first-use download for the default browser, detector model, or first-party Programs.
+4. Public-entry probes verify the worker, Web assets, first-party Program registration, channel/search imports, Playwright Chromium executable, and detector model before an artifact is published or a CLI `current` link is switched.
 5. macOS artifact names and documentation state `unsigned`; the release workflow requires no Apple or PyPI credentials and does not run signing, notarization, or PyPI publication.
 6. Documentation does not present `pip install openprogram`, optional GUI/Research/Wiki installation, component-selection prompts, or an unverified Linux Desktop package as normal product installation.
 

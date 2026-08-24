@@ -95,7 +95,7 @@ openprogram
 
 | Program | Release 状态 | 功能 |
 |---|---|---|
-| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | 已包含 PyTorch、默认 OCR 和 detector 模型 | 通过视觉操控桌面应用和 OSWorld 虚拟机。 |
+| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | 已包含；产品 runtime 不含 PyTorch 或 EasyOCR | 通过视觉操控桌面应用和 OSWorld 虚拟机。 |
 | [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | 已包含 | 文献调研 → 实验 → 论文初稿。 |
 | [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | 已包含 | 把笔记 / 文档 / 聊天整理成带 `[[wikilinks]]` 的 Obsidian 知识库。 |
 

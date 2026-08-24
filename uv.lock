@@ -2077,7 +2077,6 @@ dependencies = [
     { name = "rank-bm25" },
     { name = "requests" },
     { name = "rich" },
-    { name = "sentence-transformers" },
     { name = "tiktoken" },
     { name = "typer" },
     { name = "uvicorn", extra = ["standard"] },
@@ -2116,6 +2115,9 @@ dev = [
     { name = "ruff" },
     { name = "setuptools" },
     { name = "trio" },
+]
+embedding = [
+    { name = "sentence-transformers" },
 ]
 search = [
     { name = "semble" },
@@ -2159,7 +2161,7 @@ requires-dist = [
     { name = "rich", specifier = ">=13.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.16" },
     { name = "semble", marker = "extra == 'search'", specifier = ">=0.5.3" },
-    { name = "sentence-transformers", specifier = ">=3.4,<4" },
+    { name = "sentence-transformers", marker = "extra == 'embedding'", specifier = ">=3.4,<4" },
     { name = "setuptools", marker = "extra == 'dev'", specifier = ">=68,<75" },
     { name = "slack-sdk", marker = "extra == 'all'", specifier = ">=3.27.0" },
     { name = "slack-sdk", marker = "extra == 'channels'", specifier = ">=3.27.0" },
@@ -2169,7 +2171,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.29.0" },
     { name = "websockets", specifier = ">=12.0" },
 ]
-provides-extras = ["dev", "search", "channels", "browser", "agent-browser", "browser-stealth", "all"]
+provides-extras = ["dev", "search", "embedding", "channels", "browser", "agent-browser", "browser-stealth", "all"]
 
 [[package]]
 name = "orjson"

@@ -4,7 +4,7 @@ Give it a natural-language task and it operates the desktop autonomously: taking
 
 ## Availability
 
-Every supported release contains this Program, PyTorch/OpenCV, Playwright Chromium, default EasyOCR data, and the fixed GPA detector model. No Program or model installation is required after installing OpenProgram. Developers can use an editable GUI harness checkout or replace the OCR/browser backend for debugging and backend work.
+Every supported release registers this Program and ships Playwright Chromium plus the GPA detector weight. It does not ship PyTorch, OpenCV, or EasyOCR, so desktop perception that needs those libraries is unavailable in the packaged product. Source-development checkouts can still install the harness's own dependencies. Developers can use an editable GUI harness checkout or replace the OCR/browser backend for debugging and backend work.
 
 ## Usage
 
@@ -28,9 +28,9 @@ Each step runs observe (screenshot + component detection + state recognition) â†
 
 ## Dependency notes
 
-- PyTorch + OpenCV account for a substantial part of the release artifact size. No transformers / accelerate dependency is included.
-- The release capability probe rejects an artifact if the default OCR data or detector model is missing.
-- Supported product platforms are macOS and Linux; the bundled EasyOCR backend is available on both.
+- Product runtimes do not install PyTorch or EasyOCR.
+- The release capability probe rejects an artifact if the detector model is missing.
+- Supported product platforms are macOS and Linux.
 - The runtime needs a working directory configured before running (screenshots and run records are written there).
 
 Source and README: `openprogram/programs/applications/gui_harness/`, upstream repository [Fzkuji/GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness).

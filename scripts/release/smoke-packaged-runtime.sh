@@ -35,9 +35,8 @@ test -x "$embedded_python" || {
   exit 1
 }
 PLAYWRIGHT_BROWSERS_PATH="$resources/runtime/assets/playwright"
-EASYOCR_MODULE_PATH="$resources/runtime/assets/easyocr"
 GPA_MODEL_PATH="$resources/runtime/assets/gpa/model.pt"
-export PLAYWRIGHT_BROWSERS_PATH EASYOCR_MODULE_PATH GPA_MODEL_PATH
+export PLAYWRIGHT_BROWSERS_PATH GPA_MODEL_PATH
 "$embedded_python" -I "$resources/runtime/bin/verify-product-runtime.py" \
   "$resources/runtime"
 

@@ -60,7 +60,6 @@ rm -rf "$runtime_root"
 rm -rf "$repo_root/build"
 mkdir -p \
   "$runtime_root/assets/playwright" \
-  "$runtime_root/assets/easyocr" \
   "$runtime_root/assets/gpa" \
   "$runtime_root/bin" \
   "$runtime_root/python" \
@@ -82,85 +81,17 @@ test -n "$wheel" || {
 "$uv_bin" export --project "$repo_root" --frozen --no-dev \
   --extra all --extra search --no-emit-project \
   --output-file "$runtime_root/product-requirements.txt" >/dev/null
-hashed_install=(
-  "$uv_bin" pip install --python "$python_bin" --strict
-  --break-system-packages --require-hashes
-  --requirements "$runtime_root/product-requirements.txt"
-)
-# Linux hashed export resolves sentence-transformers → PyPI torch 2.12.1 plus
-# nvidia-*/cuda-*/triton CUDA wheels (~2GB). Those leftovers survive the later
-# CPU torch pin and blow past GitHub's 2GiB Release asset limit. Drop them
-# from the hashed install and use --no-deps so they are not pulled back.
-if test "$(uname -s)" = Linux; then
-  "$json_python" - "$runtime_root/product-requirements.txt" <<'PY'
-from pathlib import Path
-import sys
-
-path = Path(sys.argv[1])
-blocks, current = [], []
-for line in path.read_text(encoding="utf-8").splitlines(keepends=True):
-    if current:
-        prev_continues = current[-1].rstrip("\n").endswith("\\")
-        if line.startswith((" ", "\t")) or prev_continues:
-            current.append(line)
-            continue
-        blocks.append(current)
-        current = [line]
-    else:
-        current.append(line)
-if current:
-    blocks.append(current)
-
-kept = []
-for block in blocks:
-    name = ""
-    for raw in block:
-        text = raw.strip()
-        if not text or text.startswith("#") or text.startswith("--"):
-            continue
-        token = text.split(";", 1)[0].split("[", 1)[0]
-        name = token.split("==", 1)[0].split(">=", 1)[0].strip().lower()
-        break
-    if name == "torch" or name == "triton" or name.startswith(
-        ("nvidia-", "cuda-")
-    ):
-        continue
-    kept.extend(block)
-path.write_text("".join(kept), encoding="utf-8")
-PY
-  hashed_install+=(--no-deps)
-fi
-"${hashed_install[@]}"
+"$uv_bin" pip install --python "$python_bin" --strict --break-system-packages \
+  --require-hashes --requirements "$runtime_root/product-requirements.txt"
 "$uv_bin" pip install --python "$python_bin" --strict --break-system-packages \
   --no-deps "$wheel"
 
-# Keep GUI inference CPU-only in distributable Linux runtimes. PyPI's Linux
-# Torch wheel can pull CUDA libraries even though the default product does not
-# require a GPU.
-numpy_version="$(read_config programs.gui.numpy)"
-opencv_version="$(read_config programs.gui.opencv)"
-torch_version="$(read_config programs.gui.torch)"
-torchvision_version="$(read_config programs.gui.torchvision)"
-torch_install=(
-  "$uv_bin" pip install --python "$python_bin" --strict
-  --break-system-packages
-  "numpy==$numpy_version" "torch==$torch_version" "torchvision==$torchvision_version"
-)
-if test "$(uname -s)" = Linux; then
-  torch_install+=(--index https://download.pytorch.org/whl/cpu)
-fi
-"${torch_install[@]}"
-
+# Product runtimes do not ship torch. GUI perception (ultralytics / EasyOCR)
+# pulls it, so the harness is installed without those extras; it still
+# registers. Research PDF and Wiki do not need torch.
 program_staging="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-programs.XXXXXX")"
 cleanup() { rm -rf "$program_staging"; }
 trap cleanup EXIT HUP INT TERM
-program_constraints="$program_staging/product-constraints.txt"
-printf '%s\n' \
-  "numpy==$numpy_version" \
-  "opencv-python==$opencv_version" \
-  "torch==$torch_version" \
-  "torchvision==$torchvision_version" \
-  > "$program_constraints"
 
 for program_name in gui research wiki; do
   program_repo="$(read_config "programs.$program_name.repository")"
@@ -172,38 +103,18 @@ for program_name in gui research wiki; do
   git -C "$program_dir" checkout -q --detach FETCH_HEAD
   if test "$program_name" = gui; then
     "$uv_bin" pip install --python "$python_bin" --strict \
-      --break-system-packages --constraint "$program_constraints" \
-      "${program_dir}[ocr]"
+      --break-system-packages --no-deps "$program_dir"
   elif test "$program_name" = research; then
     "$uv_bin" pip install --python "$python_bin" --strict \
-      --break-system-packages --constraint "$program_constraints" \
-      "${program_dir}[pdf]"
+      --break-system-packages "${program_dir}[pdf]"
   else
     "$uv_bin" pip install --python "$python_bin" --strict \
-      --break-system-packages --constraint "$program_constraints" \
-      "$program_dir"
+      --break-system-packages "$program_dir"
   fi
 done
 
-# Program extras can re-resolve torch from PyPI (CUDA on Linux). Drop any
-# leftover CUDA wheels and re-pin the CPU torch used by memory + GUI.
-if test "$(uname -s)" = Linux; then
-  mapfile -t cuda_leftovers < <(
-    "$python_bin" - <<'PY'
-import importlib.metadata
-for dist in importlib.metadata.distributions():
-    name = dist.metadata["Name"] or ""
-    key = name.lower()
-    if key == "triton" or key.startswith("nvidia-") or key.startswith("cuda-"):
-        print(name)
-PY
-  )
-  if test "${#cuda_leftovers[@]}" -gt 0; then
-    "$uv_bin" pip uninstall --python "$python_bin" --break-system-packages -y \
-      "${cuda_leftovers[@]}"
-  fi
-  "${torch_install[@]}"
-fi
+"$uv_bin" pip install --python "$python_bin" --strict --break-system-packages \
+  huggingface-hub
 
 PLAYWRIGHT_BROWSERS_PATH="$runtime_root/assets/playwright" \
   "$python_bin" -m playwright install chromium
@@ -224,10 +135,6 @@ destination = pathlib.Path(target) / filename
 destination.parent.mkdir(parents=True, exist_ok=True)
 shutil.copy2(path, destination)
 PY
-
-EASYOCR_MODULE_PATH="$runtime_root/assets/easyocr" \
-  "$python_bin" -c \
-  "import easyocr; easyocr.Reader(['en', 'ch_sim'], gpu=False, verbose=False)"
 
 # uv creates a convenience alias whose target is the absolute staging path.
 # Remove only aliases that would escape after the runtime is relocated.

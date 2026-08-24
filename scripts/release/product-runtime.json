@@ -10,7 +10,6 @@
     "channels",
     "search",
     "browser.playwright",
-    "ocr.default",
     "model.gpa_detector",
     "program.gui",
     "program.research",
@@ -21,11 +20,7 @@
       "distribution": "gui-agent-harness",
       "import": "gui_harness",
       "repository": "https://github.com/Fzkuji/GUI-Agent-Harness.git",
-      "commit": "c7c0ea03b1cc2b08fe03b3de1f86c6677fe1cb58",
-      "numpy": "1.26.4",
-      "opencv": "4.11.0.86",
-      "torch": "2.2.2",
-      "torchvision": "0.17.2"
+      "commit": "c7c0ea03b1cc2b08fe03b3de1f86c6677fe1cb58"
     },
     "research": {
       "distribution": "research-agent-harness",
@@ -45,7 +40,6 @@
       "repository": "Salesforce/GPA-GUI-Detector",
       "revision": "d04be6b715acb517068ca15d4b79159d26292713",
       "filename": "model.pt"
-    },
-    "easyocr_languages": ["en", "ch_sim"]
+    }
   }
 }

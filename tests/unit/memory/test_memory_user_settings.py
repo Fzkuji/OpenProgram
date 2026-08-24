@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 
 def test_memory_settings_are_declared_and_validated(monkeypatch):
     from openprogram.config_schema import get_settings, set_setting
@@ -115,6 +117,35 @@ def test_organize_topics_uses_live_recent_limit(tmp_path, monkeypatch):
 
     assert api.organize_topics(tmp_path, agent=object()) == []
     assert seen["config"].recent_limit == 25
+
+
+def test_embedding_search_without_sentence_transformers_is_unavailable(
+    tmp_path, monkeypatch,
+):
+    import sys
+
+    from openprogram.memory.management.transaction import TransactionError
+    from openprogram.memory.retrieval import embedding, inspect
+    from openprogram.memory.retrieval.bm25 import MemoryEvent
+
+    event = MemoryEvent(
+        event_id="ev_one", path="topics/one.md", line=1,
+        headings=["One"], date="2026-08-16", dates=["2026-08-16"],
+        content="remember this", refs=[],
+    )
+    monkeypatch.setitem(sys.modules, "sentence_transformers", None)
+    monkeypatch.setattr(embedding, "_default_encoder", None)
+    monkeypatch.setattr(
+        embedding.MemoryEmbeddingIndex, "_events", lambda _self: [event],
+    )
+    inspect._clear_search_index_cache_for_tests()
+
+    with pytest.raises(TransactionError) as error:
+        inspect.search(tmp_path, "remember", method="embedding")
+    assert error.value.code == "EMBEDDING_UNAVAILABLE"
+    assert "sentence-transformers is not installed" in error.value.message
+    assert inspect.search(tmp_path, "remember", method="bm25")["method"] == "bm25"
+    assert embedding.default_model_is_available() is False
 
 
 def test_embedding_status_checks_local_snapshot_without_loading_encoder(monkeypatch):

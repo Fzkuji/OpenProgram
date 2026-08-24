@@ -63,7 +63,7 @@ openprogram programs install <ref> --upgrade    # git pull + 重新解析依赖
 |---|---|---|
 | [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | 已包含 | 固定 source commit 和依赖记录在 product manifest 中。 |
 | [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | 已包含 | 固定 source commit 和依赖记录在 product manifest 中。 |
-| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | 已包含 | PyTorch、OpenCV、默认 EasyOCR 数据、Playwright Chromium 和 GPA detector 模型均进入平台 runtime。 |
+| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | 已包含 | Program 会注册，并附带 GPA detector 权重。产品 runtime 不含 PyTorch、OpenCV 或 EasyOCR。 |
 
 release 用户不执行 `programs install all`、首次启动 Program wizard 或 GUI
 harness 资产 installer。开发者可以用 editable checkout 替换第一方 Program，

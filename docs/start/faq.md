@@ -58,7 +58,7 @@ openprogram logs tail runtime    # pick a log: worker / runtime / ink
 
 ## Why is the release download large?
 
-The complete release includes managed Python, PyTorch, Playwright Chromium, EasyOCR data, the GPA detector, and the GUI, Research, and Wiki Programs. Normal installation does not download these product components separately.
+The complete release includes managed Python, Playwright Chromium, the GPA detector weight, and the GUI, Research, and Wiki Programs. It does not include PyTorch or EasyOCR. Normal installation does not download these product components separately.
 
 ## Can I install Chrome or Edge browser extensions?
 

@@ -69,25 +69,24 @@ def _probe_pdf_tools() -> None:
             raise RuntimeError("built-in read PDF support is unavailable")
 
 
-def _reject_linux_cuda_wheels() -> None:
-    if sys.platform != "linux":
-        return
-    import torch
+_FORBIDDEN_RUNTIME_DISTS = frozenset({
+    "torch",
+    "torchvision",
+    "sentence-transformers",
+    "triton",
+})
 
-    if getattr(torch.version, "cuda", None):
-        raise RuntimeError(
-            "Linux product runtime must use CPU torch, "
-            f"got CUDA {torch.version.cuda}"
-        )
+
+def _reject_torch_wheels() -> None:
     leftover = []
     for dist in importlib.metadata.distributions():
         name = dist.metadata["Name"] or ""
         key = name.lower()
-        if key == "triton" or key.startswith("nvidia-") or key.startswith("cuda-"):
+        if key in _FORBIDDEN_RUNTIME_DISTS or key.startswith(("nvidia-", "cuda-")):
             leftover.append(name)
     if leftover:
         raise RuntimeError(
-            "Linux product runtime must not ship CUDA wheels: "
+            "product runtime must not ship torch or CUDA wheels: "
             + ", ".join(sorted(leftover))
         )
 
@@ -109,34 +108,16 @@ def _probe(
     _verify_openprogram_version(expected_openprogram_version)
     assets = {
         "playwright": "assets/playwright",
-        "easyocr": "assets/easyocr",
         "gpa_detector": "assets/gpa/model.pt",
     }
     playwright_root = _relative_dir(root, assets["playwright"], "Playwright data")
-    easyocr_root = _relative_dir(root, assets["easyocr"], "EasyOCR data")
     gpa_model = _relative_file(root, assets["gpa_detector"], "GPA detector")
     if gpa_model.stat().st_size == 0:
         raise RuntimeError("GPA detector model is empty")
-    if not any(easyocr_root.rglob("*.pth")):
-        raise RuntimeError("EasyOCR model data is missing")
 
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(playwright_root)
-    os.environ["EASYOCR_MODULE_PATH"] = str(easyocr_root)
     os.environ["GPA_MODEL_PATH"] = str(gpa_model)
-
-    gui = product["programs"]["gui"]
-    for distribution, key in (
-        ("numpy", "numpy"),
-        ("opencv-python", "opencv"),
-        ("torch", "torch"),
-        ("torchvision", "torchvision"),
-    ):
-        actual = importlib.metadata.version(distribution).split("+", 1)[0]
-        if actual != gui[key]:
-            raise RuntimeError(
-                f"{distribution} version mismatch: expected {gui[key]}, got {actual}"
-            )
-    _reject_linux_cuda_wheels()
+    _reject_torch_wheels()
 
     importlib.import_module("openprogram")
     frontend = importlib.import_module("openprogram.webui.frontend")
@@ -146,12 +127,10 @@ def _probe(
         "openprogram.providers",
         "openprogram.mcp",
         "openprogram.memory",
-        "sentence_transformers",
         "qrcode",
         "discord",
         "slack_sdk",
         "semble",
-        "easyocr",
         "pymupdf",
         "pypdf",
         "rich",
@@ -250,7 +229,6 @@ def main() -> int:
             },
             "assets": {
                 "playwright": "assets/playwright",
-                "easyocr": "assets/easyocr",
                 "gpa_detector": "assets/gpa/model.pt",
             },
         }

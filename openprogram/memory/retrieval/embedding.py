@@ -6,8 +6,6 @@ import threading
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-
 from .bm25 import (
     MemoryEvent,
     _event_overlaps_window,
@@ -36,7 +34,13 @@ def load_default_encoder(*, local_files_only: bool = True) -> Any:
     if _default_encoder is None:
         with _default_encoder_lock:
             if _default_encoder is None:
-                from sentence_transformers import SentenceTransformer
+                try:
+                    from sentence_transformers import SentenceTransformer
+                except ImportError as exc:
+                    raise ImportError(
+                        "semantic memory is unavailable because "
+                        "sentence-transformers is not installed"
+                    ) from exc
 
                 _default_encoder = SentenceTransformer(
                     MODEL_ID, local_files_only=local_files_only,
@@ -68,7 +72,7 @@ class MemoryEmbeddingIndex:
         self._visible_files = None if files is None else tuple(files)
         self._encoder = encoder
         self._events_cache: list[MemoryEvent] | None = None
-        self._document_vectors: np.ndarray | None = None
+        self._document_vectors: Any | None = None
         self._lock = threading.RLock()
 
     @property
@@ -123,6 +127,8 @@ class MemoryEmbeddingIndex:
         events = self._events()
         if not query or not events:
             return []
+
+        import numpy as np
 
         if self._document_vectors is None:
             with self._lock:

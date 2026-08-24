@@ -58,7 +58,7 @@ openprogram logs tail runtime    # 指定日志：worker / runtime / ink
 
 ## 为什么 release 下载体积较大？
 
-完整 release 已包含 managed Python、PyTorch、Playwright Chromium、EasyOCR 数据、GPA 检测模型，以及 GUI、Research、Wiki Program。普通安装不会再单独下载这些产品组件。
+完整 release 已包含 managed Python、Playwright Chromium、GPA 检测模型权重，以及 GUI、Research、Wiki Program。不包含 PyTorch 或 EasyOCR。普通安装不会再单独下载这些产品组件。
 
 ## 可以安装 Chrome 或 Edge 浏览器扩展吗？
 

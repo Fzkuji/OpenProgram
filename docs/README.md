@@ -97,7 +97,7 @@ Every supported release installation already includes the three first-party Prog
 
 | Program | Release status | What it does |
 |---|---|---|
-| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | Included with PyTorch, default OCR, and the detector model | Drives desktop apps & OSWorld VMs by vision. |
+| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | Included; the product runtime does not ship PyTorch or EasyOCR | Drives desktop apps & OSWorld VMs by vision. |
 | [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | Included | Literature survey → experiments → paper draft. |
 | [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | Included | Turns notes / docs / chats into an Obsidian vault with `[[wikilinks]]`. |
 

@@ -66,7 +66,7 @@ never the checkout it points to.
 |---|---|---|
 | [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | Included | Fixed source commit and dependencies are recorded in the product manifest. |
 | [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | Included | Fixed source commit and dependencies are recorded in the product manifest. |
-| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | Included | PyTorch, OpenCV, default EasyOCR data, Playwright Chromium, and the GPA detector model are built into the platform runtime. |
+| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | Included | The Program is registered and the GPA detector weight is shipped. PyTorch, OpenCV, and EasyOCR are not in the product runtime. |
 
 Release users do not run `programs install all`, a first-run Program wizard,
 or the GUI harness asset installer. Developers may replace a first-party

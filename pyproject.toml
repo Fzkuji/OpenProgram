@@ -114,7 +114,6 @@ dependencies = [
     # Memory retrieval ships both lexical and semantic backends. The encoder
     # weights remain an explicit download from Memory Settings.
     "rank-bm25>=0.2.2",
-    "sentence-transformers>=3.4,<4",
     # Managed memory-tool schema plus the legacy Claude Code adapter used by
     # benchmark paths. The product writer itself follows OpenProgram's default
     # chat provider through AgentSession.
@@ -153,7 +152,10 @@ dev = [
 # tools. Heavy transitive deps for one leaf tool, so it is opt-in; the
 # tools answer with the install hint when the package is absent.
 search = ["semble>=0.5.3"]
-# Runtime deps for the GUI program (gui_agent / gui_harness). The
+# Semantic memory recall. Pulls torch via sentence-transformers; product
+# runtimes omit this extra and keep BM25. Source checkouts that need it:
+#   uv sync --extra embedding
+embedding = ["sentence-transformers>=3.4,<4"]
 # NOTE: the agentic *programs* (gui / research / wiki harnesses) no
 # longer have extras here. Each harness is self-describing — its own
 # pyproject.toml declares its third-party deps, and ``openprogram
@@ -215,10 +217,9 @@ Changelog = "https://github.com/Fzkuji/OpenProgram/releases"
 Discussions = "https://github.com/Fzkuji/OpenProgram/discussions"
 Paper = "https://arxiv.org/abs/2606.15874"
 
-# Product runtimes install the locked extras on native macOS/Linux
-# architectures. sentence-transformers pulls torch, and current torch
-# builds omit macOS x86_64 wheels unless the resolver is told that
-# environment is required.
+# The optional embedding extra pulls torch. Current torch builds omit
+# macOS x86_64 wheels unless the resolver is told that environment is
+# required, so `uv sync --extra embedding` still locks Intel Mac.
 [tool.uv]
 required-environments = [
     "sys_platform == 'darwin' and platform_machine == 'x86_64'",

@@ -35,7 +35,6 @@ function resolvePackagedWorker(resourcesPath, expectedVersion) {
     "channels",
     "search",
     "browser.playwright",
-    "ocr.default",
     "model.gpa_detector",
     "program.gui",
     "program.research",
@@ -67,7 +66,6 @@ function resolvePackagedWorker(resourcesPath, expectedVersion) {
     args: ["-I", "-B", "-m", "openprogram", "worker", "start"],
     env: {
       PLAYWRIGHT_BROWSERS_PATH: resolveAsset("playwright"),
-      EASYOCR_MODULE_PATH: resolveAsset("easyocr"),
       GPA_MODEL_PATH: resolveAsset("gpa_detector"),
     },
   };

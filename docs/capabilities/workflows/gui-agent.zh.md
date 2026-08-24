@@ -4,7 +4,7 @@
 
 ## 可用性
 
-每个受支持的 release 都包含该 Program、PyTorch/OpenCV、Playwright Chromium、默认 EasyOCR 数据和固定 GPA detector 模型。安装 OpenProgram 后不需要再安装 Program 或模型。开发者可以使用 editable GUI harness checkout，或替换 OCR/Browser backend 进行调试和后端开发。
+每个受支持的 release 都会注册该 Program，并带上 Playwright Chromium 和 GPA detector 权重。不附带 PyTorch、OpenCV 或 EasyOCR，因此依赖这些库的桌面感知在打包产品里不可用。源码开发 checkout 仍可安装 harness 自己的依赖。开发者可以使用 editable GUI harness checkout，或替换 OCR/Browser backend 进行调试和后端开发。
 
 ## 怎么用
 
@@ -28,9 +28,9 @@ openprogram programs run gui_agent -a task="Open Firefox and go to google.com"
 
 ## 依赖注意
 
-- PyTorch + OpenCV 占 release artifact 体积的主要部分之一；不包含 transformers / accelerate 依赖。
-- default OCR 数据或 detector 模型缺失时，release capability probe 会拒绝该 artifact。
-- 受支持的产品平台是 macOS 和 Linux；两者均可使用打包的 EasyOCR backend。
+- 产品 runtime 不安装 PyTorch 或 EasyOCR。
+- detector 模型缺失时，release capability probe 会拒绝该 artifact。
+- 受支持的产品平台是 macOS 和 Linux。
 - 运行前需要 runtime 配置好工作目录（截图与运行记录写在那里）。
 
 源码与 README：`openprogram/programs/applications/gui_harness/`，上游仓库 [Fzkuji/GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness)。
