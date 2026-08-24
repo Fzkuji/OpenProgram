@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 No unreleased changes.
 
+## [0.8.1] - 2026-08-24
+
+### Changed
+
+- Product runtime no longer bundles PyTorch, CUDA, or sentence-transformers. Semantic embedding is an optional extra.
+
 ## [0.8.0] - 2026-08-24
 
 ### Changed
