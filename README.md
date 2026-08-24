@@ -104,7 +104,9 @@ The current OpenProgram release supports macOS and Linux installations, multiple
   </picture>
 </p>
 
-**An agent is a Python function**, compared with the usual way:
+**An agent is a Python function.** You write it like any other function. The docstring is the system prompt: it tells the model what this agent does. Each argument is input for this run. A `str` argument is the task — here, the ticket to classify. That is why there is no extra prompt template and no JSON tools list.
+
+Here is an example, compared with the usual way:
 
 <table>
 <tr><th>OpenProgram</th><th>The usual way</th></tr>
@@ -149,7 +151,7 @@ if kind not in ("bug", "feature"):
 </td></tr>
 </table>
 
-The docstring is the prompt. `ticket: str` is what the model is allowed to pass in. `choices=[...]` asks again until the answer is one of those words. Same job as the usual way, without a prompt template or a JSON tools list.
+`choices=[...]` asks again until the answer is one of those words.
 
 ### 2. DAG Context — for native multi-agent systems
 
