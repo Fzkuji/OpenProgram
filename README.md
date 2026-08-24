@@ -107,27 +107,8 @@ The current OpenProgram release supports macOS and Linux installations, multiple
 **An agent is a Python function**, compared with the usual way:
 
 <table>
-<tr><th>The usual way</th><th>OpenProgram</th></tr>
+<tr><th>OpenProgram</th><th>The usual way</th></tr>
 <tr><td>
-
-```python
-TRIAGE_PROMPT = """You are a triage
-agent. Classify the ticket as bug,
-feature, or question. Reply as JSON."""
-
-TOOLS = [{"type": "function", "function": {
-  "name": "triage",
-  "parameters": {"type": "object",
-    "properties": {"ticket": {"type": "string"}},
-    "required": ["ticket"]}}}]
-
-resp = client.chat(TRIAGE_PROMPT, tools=TOOLS)
-kind = json.loads(resp)["kind"]     # hope it parses
-if kind not in ("bug", "feature"):
-    ...                             # and re-prompt by hand
-```
-
-</td><td>
 
 ```python
 @agentic_function
@@ -146,10 +127,29 @@ def triage(ticket: str, runtime=None) -> str:
 🤖 `llm()` is the model call
 🐍 everything else is ordinary Python, and it runs every time
 
+</td><td>
+
+```python
+TRIAGE_PROMPT = """You are a triage
+agent. Classify the ticket as bug,
+feature, or question. Reply as JSON."""
+
+TOOLS = [{"type": "function", "function": {
+  "name": "triage",
+  "parameters": {"type": "object",
+    "properties": {"ticket": {"type": "string"}},
+    "required": ["ticket"]}}}]
+
+resp = client.chat(TRIAGE_PROMPT, tools=TOOLS)
+kind = json.loads(resp)["kind"]     # hope it parses
+if kind not in ("bug", "feature"):
+    ...                             # and re-prompt by hand
+```
+
 </td></tr>
 </table>
 
-The docstring is the prompt. `ticket: str` is what the model is allowed to pass in. `choices=[...]` asks again until the answer is one of those words. Same job as the left side, without a prompt template or a JSON tools list.
+The docstring is the prompt. `ticket: str` is what the model is allowed to pass in. `choices=[...]` asks again until the answer is one of those words. Same job as the usual way, without a prompt template or a JSON tools list.
 
 ### 2. DAG Context — for native multi-agent systems
 
