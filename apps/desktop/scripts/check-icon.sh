@@ -126,8 +126,8 @@ NODE
 
 grep -q 'runner: macos-26$' "$release_workflow" \
   || fail "arm64 desktop releases must use the macos-26 runner"
-grep -q 'runner: macos-26-intel$' "$release_workflow" \
-  || fail "x86_64 desktop releases must use the macos-26-intel runner"
+grep -q 'runner: macos-15-intel$' "$release_workflow" \
+  || fail "x86_64 desktop releases must use the macos-15-intel runner"
 
 audit_dir="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-icon-check.XXXXXX")"
 trap 'rm -rf "$audit_dir"' EXIT

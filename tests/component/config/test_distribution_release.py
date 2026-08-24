@@ -1844,6 +1844,12 @@ def test_native_release_workflow_has_platform_jobs() -> None:
     )
     assert "macos-" in workflow
     assert "macos-26-intel" not in workflow
+    assert "macos-15-intel" in workflow
+    icon_check = (ROOT / "apps" / "desktop" / "scripts" / "check-icon.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "runner: macos-15-intel$" in icon_check
+    assert "macos-26-intel" not in icon_check
     assert "ubuntu-" in workflow
     assert "ubuntu-24.04-arm" in workflow
     assert "product-runtime:" in workflow
