@@ -24,6 +24,7 @@
 
 <p align="center">
   <a href="start/GETTING_STARTED.md">Getting Started</a> &middot;
+  <a href="install/install.md">Install</a> &middot;
   <a href="capabilities/agentic-programming/self-programming-ai-agents.md">Self-Programming Agents</a> &middot;
   <a href="comparisons/ai-agent-frameworks.md">Framework Comparison</a> &middot;
   <a href="reference/API.md">API Reference</a> &middot;
@@ -40,20 +41,50 @@
 
 **Contents**
 
+- [Install](#install)
+- [Quick start](#quick-start)
 - [News](#news)
 - [Why OpenProgram?](#why-openprogram)
   - [1. DAG Context — for native multi-agent systems](#1-dag-context--for-native-multi-agent-systems)
   - [2. Agentic Workflow — for trustworthy & self-evolving agents](#2-agentic-workflow--for-trustworthy--self-evolving-agents)
   - [3. Event Infrastructure — for proactive agents](#3-event-infrastructure--for-proactive-agents)
-- [Quick Start](#quick-start)
-  - [1. Install](#1-install)
-  - [2. Run](#2-run)
-  - [3. Included Programs and additional harnesses](#3-included-programs-and-additional-harnesses)
 - [Related projects](comparisons/related-projects.md)
 - [Acknowledgements](comparisons/related-projects.md#acknowledgements)
 - [Contributing](comparisons/related-projects.md#contributing)
 - [Citation](#citation)
 - [License](#license)
+
+## Install
+
+```bash
+curl -fsSL https://openprogram.io/install | sh
+```
+
+macOS desktop: download the unsigned DMG from [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases). Linux uses the same CLI/server runtime and the Web UI; no Linux desktop package is published. Windows native packaging is not in this release.
+
+Platform matrix, PATH, `openprogram doctor`, and source-checkout install: **[Installation](install/install.md)**.
+
+## Quick start
+
+The first `openprogram` run opens a provider setup wizard, then the terminal chat. Re-run the wizard with `openprogram setup`.
+
+```bash
+openprogram
+```
+
+Open the Web UI at http://localhost:18100:
+
+```bash
+openprogram web
+```
+
+Confirm with one printed reply:
+
+```bash
+openprogram --print "Introduce yourself in one sentence"
+```
+
+GUI Agent, Research Agent, and Wiki Agent ship with every supported release. Third-party Programs use `openprogram programs install <owner>/<repo>`. Details: [Getting Started](start/GETTING_STARTED.md).
 
 ## News
 
@@ -73,7 +104,11 @@ The current OpenProgram release supports macOS and Linux installations, multiple
 ### 1. DAG Context — for native multi-agent systems
 
 <p align="center">
-  <img src="images/highlights/01-dag-context.png" alt="DAG Context — every user, LLM, and function call is one node on a single flat DAG; each @agentic_function declares in one line what context it reads and exposes, so fork, spawn, cross-session messaging, and worktree isolation all follow" width="900">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="images/highlights/01-dag-context.png">
+    <source media="(prefers-color-scheme: light)" srcset="images/highlights/01-dag-context-light.png">
+    <img src="images/highlights/01-dag-context.png" alt="DAG Context — every user, LLM, and function call is one node on a single flat DAG; each @agentic_function declares in one line what context it reads and exposes, so fork, spawn, cross-session messaging, and worktree isolation all follow" width="900">
+  </picture>
 </p>
 
 Every user turn, LLM call, and function call is **one node on a single flat DAG**. Two edges give it meaning: `caller` (who invoked whom) and `reads` (whose output fed this prompt) — so context is assembled from the graph, not hand-stitched. Each `@agentic_function` is **programmable context in one line**: `expose` controls what a call reveals to its parent, and `render_range` controls how much history a call pulls in (`{"callers": 0}` gives a throwaway, self-isolated scratch context that's reclaimed when it returns — no unbounded prompt growth).
@@ -83,7 +118,11 @@ Because context is an **addressable node rather than a per-agent buffer**, multi
 ### 2. Agentic Workflow — for trustworthy & self-evolving agents
 
 <p align="center">
-  <img src="images/highlights/02-agentic-workflow.png" alt="Agentic Workflow — Python drives the flow and code gates enforce the critical steps; a failed validation makes the model re-decide so it cannot skip checks; the agent writes and hot-loads its own @agentic_functions" width="900">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="images/highlights/02-agentic-workflow.png">
+    <source media="(prefers-color-scheme: light)" srcset="images/highlights/02-agentic-workflow-light.png">
+    <img src="images/highlights/02-agentic-workflow.png" alt="Agentic Workflow — Python drives the flow and code gates enforce the critical steps; a failed validation makes the model re-decide so it cannot skip checks; the agent writes and hot-loads its own @agentic_functions" width="900">
+  </picture>
 </p>
 
 **Python drives the flow; the LLM reasons only when asked.** Critical steps become **code gates** — the model's choice is parsed and validated by code, and a failed check makes it *re-decide* instead of quietly moving on, so validation can't be skipped. Every call is a retryable, observable DAG node. That's what makes execution *trustworthy*: the guarantees live in code, not in the model's goodwill.
@@ -93,52 +132,14 @@ Because context is an **addressable node rather than a per-agent buffer**, multi
 ### 3. Event Infrastructure — for proactive agents
 
 <p align="center">
-  <img src="images/highlights/03-event-infrastructure.png" alt="Event Infrastructure — a unified process-wide event bus that the agent loop, auth, context, channels, and memory all emit onto; anything can subscribe by event type, and a proactive policy layer builds on top" width="900">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="images/highlights/03-event-infrastructure.png">
+    <source media="(prefers-color-scheme: light)" srcset="images/highlights/03-event-infrastructure-light.png">
+    <img src="images/highlights/03-event-infrastructure.png" alt="Event Infrastructure — a unified process-wide event bus that the agent loop, auth, context, channels, and memory all emit onto; anything can subscribe by event type, and a proactive policy layer builds on top" width="900">
+  </picture>
 </p>
 
 One **process-wide event bus** is the substrate under everything: the agent loop, auth, context, channels, and memory all emit onto it, and any component can subscribe by event type (every event is a uniform `Event(type, payload, ts)` envelope with `id` / `origin` / `metadata`). This is deliberately a **foundation** — a proactive policy layer that watches the stream and acts is the bus's first intended consumer. The plumbing is in place; the proactivity is yours to build on it.
-
-## Quick Start
-
-### 1. Install
-
-**macOS / Linux CLI or server release:**
-```bash
-curl -fsSL https://openprogram.io/install | sh
-```
-
-macOS desktop users download the unsigned DMG from [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases). Linux users install the complete CLI/server runtime and open the Web UI; no Linux desktop package is published until a complete package passes the public-entry gate. All supported release installations contain the same complete product capabilities. See **[install.md](install/install.md)** for verification, platform scope, and source-development installation.
-
-### 2. Run
-
-On macOS, open the desktop App. Or start the Web UI from the command line:
-
-```bash
-openprogram web
-```
-
-Either way opens **http://localhost:18100**.
-
-### 3. Included Programs and additional harnesses
-
-Every supported release installation already includes the three first-party Programs and their default runtime assets:
-
-| Program | Release status | What it does |
-|---|---|---|
-| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | Included; the product runtime does not ship PyTorch or EasyOCR | Drives desktop apps & OSWorld VMs by vision. |
-| [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | Included | Literature survey → experiments → paper draft. |
-| [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | Included | Turns notes / docs / chats into an Obsidian vault with `[[wikilinks]]`. |
-| [Scriptorium](https://github.com/Fzkuji/Scriptorium) | Related | Agent memory you can read; Markdown notes; facts cited to source messages; MCP for Claude Code. |
-
-Third-party harnesses are additional functionality. Mutable extension environments use `openprogram programs install <owner>/<repo>` (or a full git URL); source editing and replacement OCR/browser backends are developer features.
-
-Writing your own installable harness is one layout contract away — the
-full guide (install, manage, author, test, publish) is
-**[installing-harnesses.md](capabilities/installing-harnesses.md)**.
-
-> Need a workflow of your own? Ask the agent in chat to create or update a Program.
-
-For details, see [Getting Started](start/GETTING_STARTED.md), [Install](install/install.md), and [Features](start/features.md).
 
 ## Citation
 

@@ -1,0 +1,93 @@
+<svg width="1600" height="552" viewBox="0 0 1600 552" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bp-light-00" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3B9EFF"/>
+      <stop offset="1" stop-color="#A855F7"/>
+    </linearGradient>
+    <radialGradient id="glow-light-00" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#3B9EFF" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#3B9EFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2-light-00" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#A855F7" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#A855F7" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1600" height="552" rx="28" fill="#faf9f5"/>
+  <rect x="1" y="1" width="1598" height="550" rx="27" fill="none" stroke="#ddd9ce" stroke-width="1.5"/>
+  <ellipse cx="420" cy="310" rx="430" ry="260" fill="url(#glow-light-00)"/>
+  <ellipse cx="1180" cy="310" rx="380" ry="240" fill="url(#glow2-light-00)"/>
+
+  <!-- cross-column links sit behind labels and cards -->
+  <path d="M784 114 C 804 114, 812 64, 824 64" fill="none" stroke="#7c3aed" stroke-width="1.8" stroke-dasharray="5 4"/>
+  <path d="M992 202 C 1014 202, 1024 142, 1036 142" fill="none" stroke="#7c3aed" stroke-width="1.8" stroke-dasharray="5 4"/>
+  <path d="M888 322 C 940 322, 988 281, 1036 281" fill="none" stroke="#E0A93B" stroke-width="1.8" stroke-dasharray="5 4"/>
+  <path d="M888 406 C 940 406, 988 440, 1036 440" fill="none" stroke="#3B9EFF" stroke-width="1.8" stroke-dasharray="5 4"/>
+
+  <rect x="824" y="28" width="180" height="72" rx="12" fill="#ffffff" stroke="#ddd9ce" stroke-width="1.4"/>
+  <text x="840" y="56" font-family="Geist Mono" font-size="16" fill="#3d3d3a"><tspan fill="#1d6fc2">def</tspan> later(&#8230;)</text>
+  <text x="858" y="78" font-family="Geist Mono" font-size="16" fill="#73726c">&#8230;</text>
+
+  <!-- left: you write -->
+  <g transform="translate(64,40)">
+    <text x="16" y="26" font-family="Instrument Sans" font-weight="700" font-size="32" fill="#3B9EFF">You write</text>
+
+    <rect x="0" y="52" width="590" height="420" rx="12" fill="#ffffff" stroke="#ddd9ce" stroke-width="1.4"/>
+
+    <rect x="12" y="104" width="190" height="36" rx="7" fill="#7c3aed" fill-opacity="0.08"/>
+    <rect x="12" y="144" width="384" height="36" rx="7" fill="#7c3aed" fill-opacity="0.08"/>
+    <rect x="12" y="264" width="566" height="36" rx="7" fill="#9a6b12" fill-opacity="0.08"/>
+    <rect x="12" y="348" width="566" height="72" rx="7" fill="#1d6fc2" fill-opacity="0.08"/>
+
+    <text x="22" y="90" font-family="Geist Mono" font-size="20" fill="#7c3aed">@agentic_function(</text>
+    <text x="42" y="126" font-family="Geist Mono" font-size="20" fill="#3d3d3a">expose=<tspan fill="#2a7a45">"io"</tspan>,</text>
+    <text x="42" y="162" font-family="Geist Mono" font-size="20" fill="#3d3d3a">render_range={<tspan fill="#2a7a45">"callers"</tspan>: <tspan fill="#2a7a45">0</tspan>},</text>
+    <text x="22" y="198" font-family="Geist Mono" font-size="20" fill="#7c3aed">)</text>
+
+    <text x="22" y="246" font-family="Geist Mono" font-size="20" fill="#3d3d3a"><tspan fill="#1d6fc2">def</tspan> triage(ticket: <tspan fill="#2a7a45">str</tspan>, runtime=None) -&gt; <tspan fill="#2a7a45">str</tspan>:</text>
+    <text x="42" y="282" font-family="Geist Mono" font-size="20" fill="#9a6b12">"""Classify, then draft a reply."""</text>
+
+    <text x="42" y="330" font-family="Geist Mono" font-size="20" fill="#3d3d3a"><tspan fill="#1d6fc2">return</tspan> llm(</text>
+    <text x="62" y="366" font-family="Geist Mono" font-size="20" fill="#2a7a45">f"Classify this ticket:\n{ticket}",</text>
+    <text x="62" y="402" font-family="Geist Mono" font-size="20" fill="#3d3d3a">choices=[<tspan fill="#2a7a45">"bug"</tspan>, <tspan fill="#2a7a45">"feature"</tspan>],</text>
+    <text x="42" y="438" font-family="Geist Mono" font-size="20" fill="#3d3d3a">)</text>
+
+    <path d="M194 126 C 290 126, 310 74, 360 74" fill="none" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="5 4"/>
+    <rect x="360" y="48" width="360" height="52" rx="8" fill="#f3eef8" stroke="#e6dcf2" stroke-width="1.3"/>
+    <text x="372" y="81" font-family="Geist Mono" font-size="22" fill="#7c3aed">shown to later functions</text>
+
+    <path d="M396 162 L 500 162" fill="none" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="5 4"/>
+    <rect x="500" y="136" width="428" height="52" rx="8" fill="#f3eef8" stroke="#e6dcf2" stroke-width="1.3"/>
+    <text x="512" y="169" font-family="Geist Mono" font-size="22" fill="#7c3aed">history context from callers</text>
+
+    <path d="M590 282 C 600 282, 606 282, 614 282" fill="none" stroke="#E0A93B" stroke-width="1.6" stroke-dasharray="5 4"/>
+    <rect x="614" y="256" width="210" height="52" rx="8" fill="#f6efe0" stroke="#f6efe0" stroke-width="1.3"/>
+    <text x="626" y="289" font-family="Geist Mono" font-size="22" fill="#9a6b12">system prompt</text>
+
+    <path d="M590 366 C 600 366, 606 366, 614 366" fill="none" stroke="#3B9EFF" stroke-width="1.6" stroke-dasharray="5 4"/>
+    <rect x="614" y="340" width="210" height="52" rx="8" fill="#eef4fb" stroke="#d7e8f6" stroke-width="1.3"/>
+    <text x="626" y="373" font-family="Geist Mono" font-size="22" fill="#1d6fc2">model message</text>
+  </g>
+
+  <!-- right: what the model sees -->
+  <g transform="translate(1036,40)">
+    <text x="16" y="26" font-family="Instrument Sans" font-weight="700" font-size="32" fill="#7c3aed">What the LLM sees</text>
+
+    <rect x="0" y="52" width="500" height="100" rx="12" fill="#f3eef8" stroke="#e6dcf2" stroke-width="1.3"/>
+    <rect x="0" y="68" width="6" height="68" rx="2" fill="#7c3aed"/>
+    <text x="22" y="80" font-family="Geist Mono" font-size="16" fill="#7c3aed" letter-spacing="2">HISTORY</text>
+    <text x="22" y="122" font-family="Geist Mono" font-size="22" fill="#7c3aed">empty</text>
+
+    <rect x="0" y="176" width="500" height="130" rx="12" fill="#f6efe0" stroke="#f6efe0" stroke-width="1.3"/>
+    <rect x="0" y="192" width="6" height="98" rx="2" fill="#E0A93B"/>
+    <text x="22" y="204" font-family="Geist Mono" font-size="16" fill="#9a6b12" letter-spacing="2">SYSTEM</text>
+    <text x="22" y="256" font-family="Geist Mono" font-size="22" fill="#9a6b12">Classify, then draft a reply.</text>
+
+    <rect x="0" y="330" width="500" height="160" rx="12" fill="#eef4fb" stroke="#d7e8f6" stroke-width="1.3"/>
+    <rect x="0" y="346" width="6" height="128" rx="2" fill="#3B9EFF"/>
+    <text x="22" y="358" font-family="Geist Mono" font-size="16" fill="#1d6fc2" letter-spacing="2">USER</text>
+    <text x="22" y="412" font-family="Geist Mono" font-size="22" fill="#1d6fc2">Classify this ticket: &#8230;</text>
+    <text x="22" y="448" font-family="Geist Mono" font-size="22" fill="#1d6fc2">pick one: bug | feature</text>
+  </g>
+</svg>

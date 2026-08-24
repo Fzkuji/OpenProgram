@@ -23,6 +23,7 @@
 
 <p align="center">
   <a href="docs/start/GETTING_STARTED.md">Getting Started</a> &middot;
+  <a href="docs/install/install.md">Install</a> &middot;
   <a href="docs/README.md">Docs</a> &middot;
   <a href="docs/reference/API.md">API Reference</a> &middot;
   <a href="docs/capabilities/agentic-programming/philosophy.md">Philosophy</a> &middot;
@@ -38,18 +39,48 @@
 
 **Contents**
 
+- [Install](#install)
+- [Quick start](#quick-start)
 - [News](#news)
 - [Why OpenProgram?](#why-openprogram)
   - [1. Agentic Function — the primitive everything else is built on](#1-agentic-function--the-primitive-everything-else-is-built-on)
   - [2. DAG Context — for native multi-agent systems](#2-dag-context--for-native-multi-agent-systems)
   - [3. Agentic Workflow — for trustworthy & self-evolving agents](#3-agentic-workflow--for-trustworthy--self-evolving-agents)
   - [4. Event Infrastructure — for proactive agents](#4-event-infrastructure--for-proactive-agents)
-- [Quick Start](#quick-start)
-  - [1. Install](#1-install)
-  - [2. Run](#2-run)
-  - [3. Included Programs and additional harnesses](#3-included-programs-and-additional-harnesses)
 - [Citation](#citation)
 - [License](#license)
+
+## Install
+
+```bash
+curl -fsSL https://openprogram.io/install | sh
+```
+
+macOS desktop: download the unsigned DMG from [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases). Linux uses the same CLI/server runtime and the Web UI; no Linux desktop package is published. Windows native packaging is not in this release.
+
+Platform matrix, PATH, `openprogram doctor`, and source-checkout install: **[Installation](docs/install/install.md)**.
+
+## Quick start
+
+The first `openprogram` run opens a provider setup wizard, then the terminal chat. Re-run the wizard with `openprogram setup`.
+
+```bash
+openprogram
+```
+
+Open the Web UI at http://localhost:18100:
+
+```bash
+openprogram web
+```
+
+Confirm with one printed reply:
+
+```bash
+openprogram --print "Introduce yourself in one sentence"
+```
+
+GUI Agent, Research Agent, and Wiki Agent ship with every supported release. Third-party Programs use `openprogram programs install <owner>/<repo>`. Details: [Getting Started](docs/start/GETTING_STARTED.md).
 
 ## News
 
@@ -69,7 +100,11 @@ The current OpenProgram release supports macOS and Linux installations, multiple
 ### 1. Agentic Function — the primitive everything else is built on
 
 <p align="center">
-  <img src="docs/images/highlights/00-agentic-function.png" alt="Agentic Function — one decorator turns a Python function into an agent: the docstring becomes the system prompt, type annotations become the tool schema, runtime.exec() calls become retryable DAG nodes, and plain if/for/return stays deterministic" width="900">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/highlights/00-agentic-function.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/images/highlights/00-agentic-function-light.png">
+    <img src="docs/images/highlights/00-agentic-function.png" alt="Agentic Function — expose is shown to later functions, render_range is history context from callers, docstring is the system prompt, llm() is the model message" width="900">
+  </picture>
 </p>
 
 **An agent is a Python function** — the same triage agent, written both ways:
@@ -102,16 +137,16 @@ if kind not in ("bug", "feature"):
 def triage(ticket: str, runtime=None) -> str:
     """Classify the ticket as bug / feature /
     question, then draft a reply."""
-    kind = runtime.exec(                    # 🤖 LLM decides
+    kind = llm(                             # 🤖 LLM decides
         ticket, choices=["bug", "feature", "question"])
     if kind == "bug":                       # 🐍 you decide
         logs = search_logs(ticket)          # 🐍 plain Python
-        return runtime.exec(                # 🤖 LLM writes
+        return llm(                         # 🤖 LLM writes
             f"Reply using:\n{logs}")
-    return runtime.exec("Draft a short reply.")
+    return llm("Draft a short reply.")
 ```
 
-🤖 `runtime.exec()` = **the LLM call** — one retryable DAG node
+🤖 `llm()` = **the LLM call** — one retryable DAG node
 🐍 everything else = **plain Python**, runs every time
 
 </td></tr>
@@ -122,7 +157,11 @@ def triage(ticket: str, runtime=None) -> str:
 ### 2. DAG Context — for native multi-agent systems
 
 <p align="center">
-  <img src="docs/images/highlights/01-dag-context.png" alt="DAG Context — every user, LLM, and function call is one node on a single flat DAG; each @agentic_function declares in one line what context it reads and exposes, so fork, spawn, cross-session messaging, and worktree isolation all follow" width="900">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/highlights/01-dag-context.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/images/highlights/01-dag-context-light.png">
+    <img src="docs/images/highlights/01-dag-context.png" alt="DAG Context — every user, LLM, and function call is one node on a single flat DAG; each @agentic_function declares in one line what context it reads and exposes, so fork, spawn, cross-session messaging, and worktree isolation all follow" width="900">
+  </picture>
 </p>
 
 Context is an **addressable node, not a per-agent buffer** — so every multi-agent move is just "point at a different node set":
@@ -137,7 +176,11 @@ Context is an **addressable node, not a per-agent buffer** — so every multi-ag
 ### 3. Agentic Workflow — for trustworthy & self-evolving agents
 
 <p align="center">
-  <img src="docs/images/highlights/02-agentic-workflow.png" alt="Agentic Workflow — Python drives the flow and code gates enforce the critical steps; a failed validation makes the model re-decide so it cannot skip checks; the agent writes and hot-loads its own @agentic_functions" width="900">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/highlights/02-agentic-workflow.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/images/highlights/02-agentic-workflow-light.png">
+    <img src="docs/images/highlights/02-agentic-workflow.png" alt="Agentic Workflow — Python drives the flow and code gates enforce the critical steps; a failed validation makes the model re-decide so it cannot skip checks; the agent writes and hot-loads its own @agentic_functions" width="900">
+  </picture>
 </p>
 
 **A code gate can't be talked past.** When the model's answer fails validation, it is sent back to re-decide — this is the real transcript:
@@ -154,7 +197,11 @@ gate ✓ → branch taken in Python
 ### 4. Event Infrastructure — for proactive agents
 
 <p align="center">
-  <img src="docs/images/highlights/03-event-infrastructure.png" alt="Event Infrastructure — a unified process-wide event bus that the agent loop, auth, context, channels, and memory all emit onto; anything can subscribe by event type, and a proactive policy layer builds on top" width="900">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/highlights/03-event-infrastructure.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/images/highlights/03-event-infrastructure-light.png">
+    <img src="docs/images/highlights/03-event-infrastructure.png" alt="Event Infrastructure — a unified process-wide event bus that the agent loop, auth, context, channels, and memory all emit onto; anything can subscribe by event type, and a proactive policy layer builds on top" width="900">
+  </picture>
 </p>
 
 **One bus, every subsystem.** The agent loop, auth, context, channels, and memory all emit the same `Event(type, payload, ts)` envelope, so anything can watch anything:
@@ -169,48 +216,6 @@ get_event_bus().subscribe(                       # returns an unsubscribe fn
 ```
 
 A **foundation, honestly labelled**: the plumbing is in place and the proactive policy layer is its first intended consumer — that part is yours to build.
-
-## Quick Start
-
-### 1. Install
-
-**macOS / Linux CLI or server release:**
-```bash
-curl -fsSL https://openprogram.io/install | sh
-```
-
-macOS desktop users download the unsigned DMG from [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases). Linux users install the complete CLI/server runtime and open the Web UI; no Linux desktop package is published until a complete package passes the public-entry gate. All supported release installations contain the same complete product capabilities. Platform scope, verification, and source-development installation are documented in **[docs/install/install.md](docs/install/install.md)**.
-
-### 2. Run
-
-On macOS, open the desktop App. Or start the Web UI from the command line:
-
-```bash
-openprogram web
-```
-
-Either way opens **http://localhost:18100**.
-
-### 3. Included Programs and additional harnesses
-
-Every supported release installation already includes the three first-party Programs and their default runtime assets:
-
-| Program | Release status | What it does |
-|---|---|---|
-| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | Included; the product runtime does not ship PyTorch or EasyOCR | Drives desktop apps & OSWorld VMs by vision. |
-| [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | Included | Literature survey → experiments → paper draft. |
-| [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | Included | Turns notes / docs / chats into an Obsidian vault with `[[wikilinks]]`. |
-| [Scriptorium](https://github.com/Fzkuji/Scriptorium) | Related | Agent memory you can read; Markdown notes; facts cited to source messages; MCP for Claude Code. |
-
-Third-party harnesses are additional functionality. Mutable extension environments use `openprogram programs install <owner>/<repo>` (or a full git URL); source editing and replacement OCR/browser backends are developer features.
-
-Writing your own installable harness is one layout contract away — the
-full guide (install, manage, author, test, publish) is
-**[docs/capabilities/installing-harnesses.md](docs/capabilities/installing-harnesses.md)**.
-
-> Need a workflow of your own? Ask the agent in chat to create or update a Program.
-
-For details, see [Getting Started](docs/start/GETTING_STARTED.md), [Install](docs/install/install.md), and [Features](docs/start/features.md).
 
 ## Citation
 
