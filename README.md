@@ -42,10 +42,10 @@
 
 - [News](#news)
 - [Why OpenProgram?](#why-openprogram)
-  1. [Agentic Function — the primitive everything else is built on](#-agentic-function--the-primitive-everything-else-is-built-on)
-  2. [DAG Context — for native multi-agent systems](#-dag-context--for-native-multi-agent-systems)
-  3. [Agentic Workflow — for trustworthy & self-evolving agents](#-agentic-workflow--for-trustworthy--self-evolving-agents)
-  4. [Event Infrastructure — for proactive agents](#-event-infrastructure--for-proactive-agents)
+  1. [Agentic Function — the primitive everything else is built on](#1-agentic-function--the-primitive-everything-else-is-built-on)
+  2. [DAG Context — for native multi-agent systems](#2-dag-context--for-native-multi-agent-systems)
+  3. [Agentic Workflow — for trustworthy & self-evolving agents](#3-agentic-workflow--for-trustworthy--self-evolving-agents)
+  4. [Event Infrastructure — for proactive agents](#4-event-infrastructure--for-proactive-agents)
 - [Quick Start](#quick-start)
   1. [Install](#1-install)
   2. [Run](#2-run)
@@ -86,7 +86,7 @@
 
 The current OpenProgram release supports macOS and Linux installations, multiple providers, and terminal, browser, and chat interfaces. Windows native packaging is deferred for a later release decision; Windows and mobile devices can currently use the browser client against a supported remote host. The harness itself provides **four mechanisms — one primitive and the three capabilities it enables.**
 
-### ① Agentic Function — the primitive everything else is built on
+### 1. Agentic Function — the primitive everything else is built on
 
 <p align="center">
   <img src="docs/images/highlights/00-agentic-function.png" alt="Agentic Function — one decorator turns a Python function into an agent: the docstring becomes the system prompt, type annotations become the tool schema, runtime.exec() calls become retryable DAG nodes, and plain if/for/return stays deterministic" width="900">
@@ -139,7 +139,7 @@ def triage(ticket: str, runtime=None) -> str:
 
 **docstring** = the prompt · **type annotations** = the tool schema · `choices=[...]` = a code gate that re-asks until the answer is valid. Same behavior as the left column, with no prompt template and no tool JSON.
 
-### ② DAG Context — for native multi-agent systems
+### 2. DAG Context — for native multi-agent systems
 
 <p align="center">
   <img src="docs/images/highlights/01-dag-context.png" alt="DAG Context — every user, LLM, and function call is one node on a single flat DAG; each @agentic_function declares in one line what context it reads and exposes, so fork, spawn, cross-session messaging, and worktree isolation all follow" width="900">
@@ -154,7 +154,7 @@ Context is an **addressable node, not a per-agent buffer** — so every multi-ag
 | Try an alternative without losing the original | fork the node |
 | Let a branch touch files safely | it runs in its own `git worktree` |
 
-### ③ Agentic Workflow — for trustworthy & self-evolving agents
+### 3. Agentic Workflow — for trustworthy & self-evolving agents
 
 <p align="center">
   <img src="docs/images/highlights/02-agentic-workflow.png" alt="Agentic Workflow — Python drives the flow and code gates enforce the critical steps; a failed validation makes the model re-decide so it cannot skip checks; the agent writes and hot-loads its own @agentic_functions" width="900">
@@ -171,7 +171,7 @@ gate ✓ → branch taken in Python
 
 **And it grows itself:** the agent edits its own `@agentic_function` files with ordinary file tools → a watcher hot-loads them → the new tool is live on the next turn. No `create()` / `fix()` machinery.
 
-### ④ Event Infrastructure — for proactive agents
+### 4. Event Infrastructure — for proactive agents
 
 <p align="center">
   <img src="docs/images/highlights/03-event-infrastructure.png" alt="Event Infrastructure — a unified process-wide event bus that the agent loop, auth, context, channels, and memory all emit onto; anything can subscribe by event type, and a proactive policy layer builds on top" width="900">
@@ -264,7 +264,7 @@ openprogram programs run changelog --arg tag=v0.5.0
 
 ### Level 2 — Control the context each call sees
 
-The two decorator arguments from **[Agentic Function](#①-agentic-function--the-primitive-everything-else-is-built-on)** above are the main tuning knobs, and the reason long runs stay affordable:
+The two decorator arguments from **[Agentic Function](#1-agentic-function--the-primitive-everything-else-is-built-on)** above are the main tuning knobs, and the reason long runs stay affordable:
 
 ```python
 @agentic_function(expose="io", render_range={"callers": 0})

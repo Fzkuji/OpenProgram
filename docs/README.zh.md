@@ -42,9 +42,9 @@
 
 - [新闻](#新闻)
 - [为什么是 OpenProgram？](#为什么是-openprogram)
-  1. [DAG 上下文 —— 原生多 agent 系统的地基](#-dag-上下文--原生多-agent-系统的地基)
-  2. [Agentic 工作流 —— 可信且自我演化的 agent 的地基](#-agentic-工作流--可信且自我演化的-agent-的地基)
-  3. [事件基础设施 —— 主动 agent 的地基](#-事件基础设施--主动-agent-的地基)
+  1. [DAG 上下文 —— 原生多 agent 系统的地基](#1-dag-上下文--原生多-agent-系统的地基)
+  2. [Agentic 工作流 —— 可信且自我演化的 agent 的地基](#2-agentic-工作流--可信且自我演化的-agent-的地基)
+  3. [事件基础设施 —— 主动 agent 的地基](#3-事件基础设施--主动-agent-的地基)
 - [快速开始](#快速开始)
   1. [安装](#1-安装)
   2. [运行](#2-运行)
@@ -78,7 +78,7 @@
 
 OpenProgram 当前 release 支持 macOS 和 Linux 安装、多 provider，以及终端、浏览器和聊天界面。Windows 原生打包暂缓到后续 release 决策；目前 Windows 与移动设备可以作为浏览器客户端访问受支持的远程主机。harness 本体提供**三种构建 agent Program 的机制**。
 
-### ① DAG 上下文 —— 原生多 agent 系统的地基
+### 1. DAG 上下文 —— 原生多 agent 系统的地基
 
 <p align="center">
   <img src="images/highlights/01-dag-context.png" alt="DAG Context — every user, LLM, and function call is one node on a single flat DAG; each @agentic_function declares in one line what context it reads and exposes, so fork, spawn, cross-session messaging, and worktree isolation all follow" width="900">
@@ -88,7 +88,7 @@ OpenProgram 当前 release 支持 macOS 和 Linux 安装、多 provider，以及
 
 因为上下文是**可寻址的节点而不是每个 agent 一份的缓冲区**,多 agent 不再是外挂:fork 一个分支、`spawn` 一个干净的子 agent、跨会话 `send_message`、把动文件的分支放进隔离的 `git worktree` 里跑——在同一张 DAG 上,每一样都只是"选一组不同的节点当上下文"。
 
-### ② Agentic 工作流 —— 可信且自我演化的 agent 的地基
+### 2. Agentic 工作流 —— 可信且自我演化的 agent 的地基
 
 <p align="center">
   <img src="images/highlights/02-agentic-workflow.png" alt="Agentic Workflow — Python drives the flow and code gates enforce the critical steps; a failed validation makes the model re-decide so it cannot skip checks; the agent writes and hot-loads its own @agentic_functions" width="900">
@@ -98,7 +98,7 @@ OpenProgram 当前 release 支持 macOS 和 Linux 安装、多 provider，以及
 
 *自我演化*是一套机制,不是黑箱:agent 用**普通文件编辑工具**编写和修复自己的 `@agentic_function`,文件监听器热加载,新工具下一轮就上线——没有专门的 `create()` / `fix()` 机构。
 
-### ③ 事件基础设施 —— 主动 agent 的地基
+### 3. 事件基础设施 —— 主动 agent 的地基
 
 <p align="center">
   <img src="images/highlights/03-event-infrastructure.png" alt="Event Infrastructure — a unified process-wide event bus that the agent loop, auth, context, channels, and memory all emit onto; anything can subscribe by event type, and a proactive policy layer builds on top" width="900">

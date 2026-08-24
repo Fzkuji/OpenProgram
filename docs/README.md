@@ -44,9 +44,9 @@
 
 - [News](#news)
 - [Why OpenProgram?](#why-openprogram)
-  1. [DAG Context — for native multi-agent systems](#-dag-context--for-native-multi-agent-systems)
-  2. [Agentic Workflow — for trustworthy & self-evolving agents](#-agentic-workflow--for-trustworthy--self-evolving-agents)
-  3. [Event Infrastructure — for proactive agents](#-event-infrastructure--for-proactive-agents)
+  1. [DAG Context — for native multi-agent systems](#1-dag-context--for-native-multi-agent-systems)
+  2. [Agentic Workflow — for trustworthy & self-evolving agents](#2-agentic-workflow--for-trustworthy--self-evolving-agents)
+  3. [Event Infrastructure — for proactive agents](#3-event-infrastructure--for-proactive-agents)
 - [Quick Start](#quick-start)
   1. [Install](#1-install)
   2. [Run](#2-run)
@@ -80,7 +80,7 @@
 
 The current OpenProgram release supports macOS and Linux installations, multiple providers, and terminal, browser, and chat interfaces. Windows native packaging is deferred for a later release decision; Windows and mobile devices can currently use the browser client against a supported remote host. The harness itself provides **three mechanisms for building agent programs.**
 
-### ① DAG Context — for native multi-agent systems
+### 1. DAG Context — for native multi-agent systems
 
 <p align="center">
   <img src="images/highlights/01-dag-context.png" alt="DAG Context — every user, LLM, and function call is one node on a single flat DAG; each @agentic_function declares in one line what context it reads and exposes, so fork, spawn, cross-session messaging, and worktree isolation all follow" width="900">
@@ -90,7 +90,7 @@ Every user turn, LLM call, and function call is **one node on a single flat DAG*
 
 Because context is an **addressable node rather than a per-agent buffer**, multi-agent stops being a bolt-on: fork a branch, `spawn` a clean sub-agent, `send_message` across sessions, or run a file-touching branch in an isolated `git worktree` — each is just "select a different node set as context" on the same DAG.
 
-### ② Agentic Workflow — for trustworthy & self-evolving agents
+### 2. Agentic Workflow — for trustworthy & self-evolving agents
 
 <p align="center">
   <img src="images/highlights/02-agentic-workflow.png" alt="Agentic Workflow — Python drives the flow and code gates enforce the critical steps; a failed validation makes the model re-decide so it cannot skip checks; the agent writes and hot-loads its own @agentic_functions" width="900">
@@ -100,7 +100,7 @@ Because context is an **addressable node rather than a per-agent buffer**, multi
 
 *Self-evolving* is a mechanism, not a black box: the agent writes and fixes its own `@agentic_function`s with **ordinary file-edit tools**, a file watcher hot-loads them, and the new tool is live on the next turn — no dedicated `create()` / `fix()` machinery.
 
-### ③ Event Infrastructure — for proactive agents
+### 3. Event Infrastructure — for proactive agents
 
 <p align="center">
   <img src="images/highlights/03-event-infrastructure.png" alt="Event Infrastructure — a unified process-wide event bus that the agent loop, auth, context, channels, and memory all emit onto; anything can subscribe by event type, and a proactive policy layer builds on top" width="900">
