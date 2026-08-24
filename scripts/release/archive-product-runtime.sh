@@ -32,6 +32,13 @@ version="$("$python_bin" -I -c \
 mkdir -p "$output_dir"
 archive="$output_dir/OpenProgram-${version}-runtime-${platform}-${arch}.tar.gz"
 tar -C "$(dirname "$runtime_root")" -czf "$archive" "$(basename "$runtime_root")"
+max_bytes=2147483648
+size="$(wc -c < "$archive" | tr -d ' ')"
+if test "$size" -ge "$max_bytes"; then
+  printf 'runtime archive exceeds GitHub Release 2GiB limit: %s (%s bytes)\n' \
+    "$archive" "$size" >&2
+  exit 1
+fi
 if command -v shasum >/dev/null 2>&1; then
   shasum -a 256 "$archive" > "$archive.sha256"
 else

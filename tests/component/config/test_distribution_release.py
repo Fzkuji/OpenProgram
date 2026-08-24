@@ -1673,6 +1673,15 @@ def test_product_runtime_installs_complete_default_capabilities() -> None:
     assert "easyocr" in staging
     assert '"${program_dir}[pdf]"' in staging
     assert "https://download.pytorch.org/whl/cpu" in staging
+    assert 'name.startswith(\n        ("nvidia-", "cuda-")\n    )' in staging
+    assert "hashed_install+=(--no-deps)" in staging
+    assert "cuda_leftovers" in staging
+    assert "Linux product runtime must use CPU torch" in verifier
+    assert "Linux product runtime must not ship CUDA wheels" in verifier
+    assert "_reject_linux_cuda_wheels()" in verifier
+    assert "2147483648" in (
+        ROOT / "scripts" / "release" / "archive-product-runtime.sh"
+    ).read_text(encoding="utf-8")
     assert '"opencv-python==$opencv_version"' in staging
     assert staging.count('--constraint "$program_constraints"') == 3
     assert 'importlib.metadata.version(distribution).split("+", 1)[0]' in verifier
@@ -1689,6 +1698,37 @@ def test_product_runtime_installs_complete_default_capabilities() -> None:
     assert "GUI-Agent-Harness" in product_config
     assert "Research-Agent-Harness" in product_config
     assert "Wiki-Agent-Harness" in product_config
+
+
+def test_linux_hashed_requirements_drop_cuda_wheels(tmp_path: Path) -> None:
+    staging = (ROOT / "scripts" / "release" / "build-product-runtime.sh").read_text(
+        encoding="utf-8"
+    )
+    start = staging.index("from pathlib import Path\n")
+    end = staging.index("path.write_text(\"\".join(kept), encoding=\"utf-8\")\n")
+    filter_src = staging[start:end] + 'path.write_text("".join(kept), encoding="utf-8")\n'
+    reqs = tmp_path / "product-requirements.txt"
+    reqs.write_text(
+        "sentence-transformers==3.4.1 \\\n"
+        "    --hash=sha256:aa\n"
+        "torch==2.12.1 ; sys_platform == 'linux' \\\n"
+        "    --hash=sha256:bb\n"
+        "nvidia-cublas==13.1.1.3 ; sys_platform == 'linux' \\\n"
+        "    --hash=sha256:cc\n"
+        "cuda-toolkit==13.0.2 ; sys_platform == 'linux'\n"
+        "triton==3.7.1 ; sys_platform == 'linux'\n"
+        "pypdf==5.0.0 \\\n"
+        "    --hash=sha256:dd\n",
+        encoding="utf-8",
+    )
+    subprocess.run([sys.executable, "-c", filter_src, str(reqs)], check=True)
+    kept = reqs.read_text(encoding="utf-8")
+    assert "sentence-transformers==3.4.1" in kept
+    assert "pypdf==5.0.0" in kept
+    assert "torch==" not in kept
+    assert "nvidia-" not in kept
+    assert "cuda-" not in kept
+    assert "triton==" not in kept
 
 
 def test_product_runtime_pdf_tool_probe() -> None:
@@ -1763,6 +1803,45 @@ def test_missing_bundled_pdf_dependency_requires_complete_reinstall(
     ):
         assert "reinstall the complete OpenProgram release" in result
         assert "pip install" not in result
+
+
+def test_linux_product_runtime_rejects_cuda_wheels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    verifier = runpy.run_path(str(ROOT / "scripts" / "release" / "verify-product-runtime.py"))
+
+    class _Dist:
+        def __init__(self, name: str) -> None:
+            self.metadata = {"Name": name}
+
+    monkeypatch.setattr(verifier["sys"], "platform", "linux")
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        type("T", (), {"version": type("V", (), {"cuda": "13.0"})()})(),
+    )
+    with pytest.raises(RuntimeError, match="must use CPU torch"):
+        verifier["_reject_linux_cuda_wheels"]()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        type("T", (), {"version": type("V", (), {"cuda": None})()})(),
+    )
+    monkeypatch.setattr(
+        verifier["importlib"].metadata,
+        "distributions",
+        lambda: [_Dist("nvidia-cublas"), _Dist("pypdf")],
+    )
+    with pytest.raises(RuntimeError, match="must not ship CUDA wheels"):
+        verifier["_reject_linux_cuda_wheels"]()
+
+    monkeypatch.setattr(
+        verifier["importlib"].metadata,
+        "distributions",
+        lambda: [_Dist("pypdf")],
+    )
+    verifier["_reject_linux_cuda_wheels"]()
 
 
 def test_product_runtime_rejects_installed_openprogram_version_mismatch(

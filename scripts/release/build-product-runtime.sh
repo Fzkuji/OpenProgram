@@ -82,8 +82,55 @@ test -n "$wheel" || {
 "$uv_bin" export --project "$repo_root" --frozen --no-dev \
   --extra all --extra search --no-emit-project \
   --output-file "$runtime_root/product-requirements.txt" >/dev/null
-"$uv_bin" pip install --python "$python_bin" --strict --break-system-packages \
-  --require-hashes --requirements "$runtime_root/product-requirements.txt"
+hashed_install=(
+  "$uv_bin" pip install --python "$python_bin" --strict
+  --break-system-packages --require-hashes
+  --requirements "$runtime_root/product-requirements.txt"
+)
+# Linux hashed export resolves sentence-transformers → PyPI torch 2.12.1 plus
+# nvidia-*/cuda-*/triton CUDA wheels (~2GB). Those leftovers survive the later
+# CPU torch pin and blow past GitHub's 2GiB Release asset limit. Drop them
+# from the hashed install and use --no-deps so they are not pulled back.
+if test "$(uname -s)" = Linux; then
+  "$json_python" - "$runtime_root/product-requirements.txt" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+blocks, current = [], []
+for line in path.read_text(encoding="utf-8").splitlines(keepends=True):
+    if current:
+        prev_continues = current[-1].rstrip("\n").endswith("\\")
+        if line.startswith((" ", "\t")) or prev_continues:
+            current.append(line)
+            continue
+        blocks.append(current)
+        current = [line]
+    else:
+        current.append(line)
+if current:
+    blocks.append(current)
+
+kept = []
+for block in blocks:
+    name = ""
+    for raw in block:
+        text = raw.strip()
+        if not text or text.startswith("#") or text.startswith("--"):
+            continue
+        token = text.split(";", 1)[0].split("[", 1)[0]
+        name = token.split("==", 1)[0].split(">=", 1)[0].strip().lower()
+        break
+    if name == "torch" or name == "triton" or name.startswith(
+        ("nvidia-", "cuda-")
+    ):
+        continue
+    kept.extend(block)
+path.write_text("".join(kept), encoding="utf-8")
+PY
+  hashed_install+=(--no-deps)
+fi
+"${hashed_install[@]}"
 "$uv_bin" pip install --python "$python_bin" --strict --break-system-packages \
   --no-deps "$wheel"
 
@@ -137,6 +184,26 @@ for program_name in gui research wiki; do
       "$program_dir"
   fi
 done
+
+# Program extras can re-resolve torch from PyPI (CUDA on Linux). Drop any
+# leftover CUDA wheels and re-pin the CPU torch used by memory + GUI.
+if test "$(uname -s)" = Linux; then
+  mapfile -t cuda_leftovers < <(
+    "$python_bin" - <<'PY'
+import importlib.metadata
+for dist in importlib.metadata.distributions():
+    name = dist.metadata["Name"] or ""
+    key = name.lower()
+    if key == "triton" or key.startswith("nvidia-") or key.startswith("cuda-"):
+        print(name)
+PY
+  )
+  if test "${#cuda_leftovers[@]}" -gt 0; then
+    "$uv_bin" pip uninstall --python "$python_bin" --break-system-packages -y \
+      "${cuda_leftovers[@]}"
+  fi
+  "${torch_install[@]}"
+fi
 
 PLAYWRIGHT_BROWSERS_PATH="$runtime_root/assets/playwright" \
   "$python_bin" -m playwright install chromium

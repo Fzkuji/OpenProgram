@@ -69,6 +69,29 @@ def _probe_pdf_tools() -> None:
             raise RuntimeError("built-in read PDF support is unavailable")
 
 
+def _reject_linux_cuda_wheels() -> None:
+    if sys.platform != "linux":
+        return
+    import torch
+
+    if getattr(torch.version, "cuda", None):
+        raise RuntimeError(
+            "Linux product runtime must use CPU torch, "
+            f"got CUDA {torch.version.cuda}"
+        )
+    leftover = []
+    for dist in importlib.metadata.distributions():
+        name = dist.metadata["Name"] or ""
+        key = name.lower()
+        if key == "triton" or key.startswith("nvidia-") or key.startswith("cuda-"):
+            leftover.append(name)
+    if leftover:
+        raise RuntimeError(
+            "Linux product runtime must not ship CUDA wheels: "
+            + ", ".join(sorted(leftover))
+        )
+
+
 def _probe_rich_terminal() -> None:
     from rich.console import Console
 
@@ -113,6 +136,7 @@ def _probe(
             raise RuntimeError(
                 f"{distribution} version mismatch: expected {gui[key]}, got {actual}"
             )
+    _reject_linux_cuda_wheels()
 
     importlib.import_module("openprogram")
     frontend = importlib.import_module("openprogram.webui.frontend")
