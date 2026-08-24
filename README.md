@@ -106,10 +106,10 @@ The current OpenProgram release supports macOS and Linux installations, multiple
 
 **An agent is a Python function.** You write it like any other function. The docstring is the system prompt: it tells the model what this agent does. Each argument is input for this run. A `str` argument is the task. In this example the task is the ticket to classify. There is no extra prompt template and no JSON. `choices=[...]` asks again until the answer is one of those words.
 
-Here is an example, compared with the usual way:
+Here is an example, compared with the common way:
 
 <table>
-<tr><th>OpenProgram</th><th>The usual way</th></tr>
+<tr><th>OpenProgram</th><th>The common way</th></tr>
 <tr><td>
 
 ```python
