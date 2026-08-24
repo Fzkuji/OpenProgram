@@ -288,7 +288,7 @@ def main() -> int:
             image
             for image in page.image_attrs
             if image.get("alt")
-            == "OpenProgram Web UI showing an agent session and its execution DAG"
+            == "OpenProgram Web UI showing an agent session with a conversation summary"
         ),
         None,
     )
@@ -302,7 +302,7 @@ def main() -> int:
             item.get("srcset") == "/docs/images/chat_hero-home.avif"
             and item.get("type") == "image/avif"
             and item.get("width") == "800"
-            and item.get("height") == "386"
+            and item.get("height") == "500"
             for item in hero_picture["sources"]
         ),
         "landing hero does not offer the optimized AVIF image",
@@ -313,7 +313,7 @@ def main() -> int:
     require(
         hero is not None
         and hero.get("width") == "3024"
-        and hero.get("height") == "1462",
+        and hero.get("height") == "1890",
         "landing PNG fallback dimensions differ from its intrinsic dimensions",
         failures,
     )
@@ -460,8 +460,8 @@ def main() -> int:
     if optimized_hero.is_file():
         require(optimized_hero.stat().st_size < 150_000,
                 "optimized landing hero exceeds 150 KiB", failures)
-        require(_avif_dimensions(optimized_hero) == (800, 386),
-                "optimized landing hero dimensions differ from 800x386", failures)
+        require(_avif_dimensions(optimized_hero) == (800, 500),
+                "optimized landing hero dimensions differ from 800x500", failures)
         built_optimized_hero = BUILT_SITE / "images/chat_hero-home.avif"
         require(built_optimized_hero.is_file(),
                 "docs build did not copy the optimized landing hero", failures)
