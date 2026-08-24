@@ -86,7 +86,6 @@ GUI Agent, Research Agent, and Wiki Agent ship with every supported release. Thi
 
 ## News
 
-- **2026-08-24** — ✨ context compaction you can see and expand back to the original, plus a bookmarks bar on the built-in Browser.
 - **2026-08-17** — built-in browser: multiple panes, bookmarks, History, and Agent control of visible pages.
 - **2026-07-21** — multi-agent: `spawn` sub-agents, message across sessions, file-touching branches in git worktrees.
 - **2026-06-22** — 📄 **Paper accepted** at the KDD 2026 Workshop on Agentic Software Engineering ([arXiv:2606.15874](https://arxiv.org/abs/2606.15874)).

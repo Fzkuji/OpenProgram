@@ -84,7 +84,6 @@ GUI Agent、Research Agent、Wiki Agent 已随每个受支持的 release 附带�
 
 ## 新闻
 
-- **2026-08-24** — ✨ 看得见、能展开回原文的上下文压缩，以及内置浏览器的书签栏。
 - **2026-08-17** — 内置浏览器：多窗格、书签、History，以及 Agent 对可见页面的操控。
 - **2026-07-21** — 多 Agent：`spawn` 子 Agent，跨会话传信，会改文件的分支跑在 git worktree 里。
 - **2026-06-22** — 📄 **论文接收** —— KDD 2026 Workshop on Agentic Software Engineering（[arXiv:2606.15874](https://arxiv.org/abs/2606.15874)）。
