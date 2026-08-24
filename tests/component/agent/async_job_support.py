@@ -70,14 +70,15 @@ def fake_worker(monkeypatch):
         # the runner can flip pending→cancelled before the worker
         # picks up the future and the worker body never runs.
         entered.set()
-        # Wait either for barrier OR for cancel — whichever comes first.
-        for _ in range(50):
-            if barrier.wait(0.02):
-                break
+        # Hold until the test releases the barrier or this job is
+        # cancelled. A 1s cap lets a slow CI worker return completed
+        # before the governor's idle timeout can cancel it.
+        while not barrier.is_set():
             if is_cancelled(session_id):
                 cancel_seen.set()
                 return AgentTurnResult(head_id="head_x", final_text="",
                                        failed=True, error="cancelled")
+            barrier.wait(0.02)
         return AgentTurnResult(head_id="head_ok", final_text="hello",
                                failed=False, error=None)
 
