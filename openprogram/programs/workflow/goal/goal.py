@@ -10,13 +10,37 @@ from openprogram.agentic_programming.function import agentic_function
 @agentic_function(
     render_range={"callers": 0},
     input={
+        "prompt": {"multiline": True},
+        "condition": {"hidden": True},
+        "model": {"hidden": True},
+        "effort": {"hidden": True},
+        "max_rounds": {"hidden": True},
+        "timeout_s": {"hidden": True},
         "context_mode": {"hidden": True},
         "runtime": {"hidden": True},
+    },
+    parameters={
+        "type": "object",
+        "properties": {
+            "prompt": {
+                "type": "string",
+                "description": "Task prompt for the working agent.",
+            },
+            "context_mode": {
+                "type": "string",
+                "enum": ["isolated", "session"],
+                "description": (
+                    "isolated (default) omits the current session view; "
+                    "session includes it as initial evidence."
+                ),
+            },
+        },
+        "required": ["prompt"],
     },
 )
 def goal(
     prompt: str,
-    condition: str,
+    condition: str = "",
     *,
     model: str = "",
     effort: str = "",
@@ -36,13 +60,15 @@ def goal(
             setting (150 when unset in config); an explicit non-positive
             value has no cap.
         timeout_s: Timeout per working-agent round.
-        context_mode: ``isolated`` for a direct Programs/Python call;
-            ``session`` for ``/goal`` to include the current session view.
+        context_mode: ``isolated`` (default) omits the current session view;
+            ``session`` includes it. User-forced calls set ``session``;
+            the agent may pass either; Python default stays isolated.
         runtime: Injected Runtime used for user questions.
 
     Returns:
         The last working-agent result.
     """
+    condition = condition or prompt
     if context_mode not in {"isolated", "session"}:
         raise ValueError("context_mode must be 'isolated' or 'session'")
 
@@ -180,6 +206,57 @@ def goal(
             if stored and stored.get("status") == "cleared":
                 return last_result
 
+        qid = goal_state.get("last_question_id")
+        if qid:
+            from openprogram.agent.questions import get_question_registry
+            resolution = get_question_registry().consume(str(qid))
+            if resolution is not None:
+                goal_state.pop("last_question_id", None)
+                outcome, value = resolution
+                answer = value if outcome == "answered" and value else ""
+                goal_state["status"] = "active"
+                goal_state.pop("last_question", None)
+                goal_state.pop("last_question_options", None)
+                reason_now = goal_state.get("last_reason") or ""
+                if answer:
+                    goal_state["turns_used"] = 0
+                    goal_state["idle_rounds"] = 0
+                    goal_state["stall_rounds"] = 0
+                    goal_state["judge_parse_failures"] = 0
+                    evidence_parts.append(f"[user answer]\n{answer}")
+                    terminal = _goal.apply_goal_verdict(
+                        goal_state, "unmet", reason_now,
+                    )
+                    if terminal:
+                        if sid:
+                            _goal._finish(sid, goal_state, None)
+                        return last_result
+                    persist()
+                    work_prompt = _goal.next_work_prompt(
+                        prompt,
+                        goal_state,
+                        reason_now,
+                        user_answer=str(answer),
+                    )
+                else:
+                    used = int(goal_state.get("turns_used") or 0)
+                    if used > 0:
+                        goal_state["turns_used"] = used - 1
+                    terminal = _goal.apply_goal_verdict(
+                        goal_state, "unmet", reason_now,
+                    )
+                    if terminal:
+                        if sid:
+                            _goal._finish(sid, goal_state, None)
+                        return last_result
+                    persist()
+                    work_prompt = _goal.next_work_prompt(
+                        prompt,
+                        goal_state,
+                        reason_now,
+                        user_declined=True,
+                    )
+
         try:
             last_result = agent(
                 prompt=work_prompt,
@@ -234,7 +311,6 @@ def goal(
             goal_state["last_question_options"] = options
             goal_state["last_question_at"] = time.time()
             persist()
-            answer = ""
             # judge 产出的 options 是 [{label, description}] 对象列表（存进
             # goal_state 供 goal 面板显示 description）；PendingQuestion.options
             # 与前端 ask 面板只认 list[str]，这里收敛成 label 字符串列表。
@@ -243,24 +319,49 @@ def goal(
                 for o in (options or []) if isinstance(o, dict)
             ]
             option_labels = [lbl for lbl in option_labels if lbl]
-            if runtime is not None:
+            if runtime is not None and not goal_state.get("last_question_id"):
                 try:
-                    # 无限等待（Claude Code 式）：ask 的超时以
-                    # expires_at = now + timeout 表达，没有 None 语义，
-                    # 用 10 年表示"永不超时"。
-                    answer = runtime.ask(
-                        question,
+                    from openprogram.agent.questions import (
+                        emit_question_asked,
+                        open_question,
+                    )
+                    transport = getattr(runtime, "_question_transport", None)
+
+                    def _on_asked(q):
+                        emit_question_asked(
+                            {
+                                "id": q.id,
+                                "session_id": q.session_id,
+                                "kind": q.kind,
+                                "prompt": q.prompt,
+                                "options": q.options,
+                                "multi": q.multi,
+                                "allow_custom": q.allow_custom,
+                                "detail": q.detail,
+                                "schema": q.schema,
+                                "questions": q.questions,
+                                "expires_at": q.expires_at,
+                            },
+                            transport,
+                        )
+
+                    # 10 年：卡片不被超时收回。不等 Event。
+                    q, _ev = open_question(
+                        session_id=sid or "",
+                        kind="ask",
+                        prompt=question,
                         options=option_labels or None,
                         allow_custom=True,
                         timeout=315_360_000.0,
-                    ) or ""
+                        on_asked=_on_asked,
+                    )
+                    goal_state["last_question_id"] = q.id
+                    persist()
                 except CancelledError:
                     cancel()
                     raise
                 except Exception:
-                    # UserDeclined / AskTimeout / transport failure —
-                    # degrade to an autonomous decision, never kill the run.
-                    answer = ""
+                    pass
             if sid:
                 stored = _goal.load_goal(sid)
                 if stored and stored.get("status") == "cleared":
@@ -268,39 +369,10 @@ def goal(
             goal_state["status"] = "active"
             goal_state.pop("last_question", None)
             goal_state.pop("last_question_options", None)
-            if not answer:
-                # No usable answer: continue unattended with the most
-                # reasonable plan instead of erroring out. The work
-                # round that produced this question does not count
-                # against the cap — otherwise max_turns=1 + first
-                # decline would cap before the autonomous
-                # continuation ever runs.
-                used = int(goal_state.get("turns_used") or 0)
-                if used > 0:
-                    goal_state["turns_used"] = used - 1
-                terminal = _goal.apply_goal_verdict(
-                    goal_state, "unmet", reason,
-                )
-                if terminal:
-                    if sid:
-                        _goal._finish(sid, goal_state, None)
-                    return last_result
-                persist()
-                work_prompt = _goal.next_work_prompt(
-                    prompt,
-                    goal_state,
-                    reason,
-                    user_declined=True,
-                )
-                continue
-            # A real answer resets the runaway budget (OpenHands style):
-            # the user re-engaged, so stall / idle / turn accounting
-            # restarts while the collected evidence is kept.
-            goal_state["turns_used"] = 0
-            goal_state["idle_rounds"] = 0
-            goal_state["stall_rounds"] = 0
-            goal_state["judge_parse_failures"] = 0
-            evidence_parts.append(f"[user answer]\n{answer}")
+            # 本轮当没答：工作继续。用户稍后答了由下一轮开头 consume。
+            used = int(goal_state.get("turns_used") or 0)
+            if used > 0:
+                goal_state["turns_used"] = used - 1
             terminal = _goal.apply_goal_verdict(
                 goal_state, "unmet", reason,
             )
@@ -313,7 +385,7 @@ def goal(
                 prompt,
                 goal_state,
                 reason,
-                user_answer=str(answer),
+                user_declined=True,
             )
             continue
 

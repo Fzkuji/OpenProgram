@@ -71,3 +71,16 @@ def test_web_goal_set_dispatches_the_registered_goal_workflow(
     assert old_chat_loop_started.wait(0.2) is False
     ack = [frame for frame in ws.sent if frame.get("type") == "chat_ack"]
     assert ack and ack[-1]["data"]["function_run"] is True
+
+
+def test_user_forced_goal_fills_missing_context_mode_as_session() -> None:
+    from openprogram.webui.routes.chat import apply_user_goal_context_mode
+
+    filled = apply_user_goal_context_mode("goal", {"prompt": "do it"})
+    assert filled["context_mode"] == "session"
+    kept = apply_user_goal_context_mode(
+        "goal", {"prompt": "do it", "context_mode": "isolated"},
+    )
+    assert kept["context_mode"] == "isolated"
+    other = apply_user_goal_context_mode("research", {"prompt": "do it"})
+    assert "context_mode" not in other

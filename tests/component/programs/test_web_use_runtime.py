@@ -1183,9 +1183,6 @@ def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
     wrapped = install_gui_harness_web_use(original)
     tool = _runtime.get("gui_agent")
     assert tool is not None
-    assert tool.parameters["properties"]["backend"]["enum"] == [
-        "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
-    ]
 
     result = wrapped(
         task="click Save", backend="chrome_devtools_mcp",
@@ -1193,6 +1190,29 @@ def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
     )
     assert result == {"mode": "web_use", "backend": "chrome_devtools_mcp"}
     assert calls[0][0] == "web_use"
+
+
+def test_gui_agent_wrapper_resolves_step_budget():
+    from openprogram.programs.gui_harness_bridge import (
+        DEFAULT_MAX_STEPS,
+        install_gui_harness_web_use,
+    )
+
+    seen = []
+
+    def original(**kwargs):
+        seen.append(kwargs)
+        return {"ok": True}
+
+    wrapped = install_gui_harness_web_use(original)
+    wrapped(task="t")
+    assert seen[-1]["max_steps"] == DEFAULT_MAX_STEPS
+    wrapped(task="t", max_steps=0)
+    assert seen[-1]["max_steps"] == 0
+    wrapped(task="t", max_steps=-3)
+    assert seen[-1]["max_steps"] == 0
+    wrapped(task="t", max_steps=20)
+    assert seen[-1]["max_steps"] == 20
 
 
 def test_direct_list_pages_releases_capture_when_registry_rejects(monkeypatch):

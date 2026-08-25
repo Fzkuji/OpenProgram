@@ -18,12 +18,13 @@ openprogram programs run gui_agent -a task="Open Firefox and go to google.com"
 
 Programs 卡片只填 `task`。其余参数保持默认；命令行和 agent 仍可传入。
 
-参数（函数签名 `gui_agent(task, max_steps=15, app_name="desktop", ...)`）：
+参数（函数签名 `gui_agent(task, max_steps=None, app_name="desktop", ...)`）：
 
 | 参数 | 说明 |
 |---|---|
 | `task` | 要做什么（自然语言） |
-| `max_steps` | 放弃前的最大动作数，默认 15，可选 5 / 10 / 15 / 30 |
+| `max_steps` | 最大动作数。默认 150。`0` 或负数表示不封顶。 |
+| `max_seconds` | 仅 web 路径的墙钟上限。默认不限时。`0` 或负数表示不封顶。桌面路径不用这个字段。 |
 | `app_name` | 用于组件记忆的应用名，如 `firefox`、`libreoffice_calc`，默认 `desktop` |
 
 每一步执行 观察（截图 + 组件检测 + 状态识别）→ 验证上一步结果 → 规划下一动作 → 执行 → 构造下一轮反馈，步与步之间传递结构化反馈，进度不依赖 LLM 上下文记忆。已学过的界面转换会作为捷径复用（组件记忆）。

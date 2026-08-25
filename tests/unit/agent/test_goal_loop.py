@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -29,6 +30,48 @@ class _Runtime:
         return next(self.answers, "")
 
 
+def _stub_questions(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    consume_queue: list | None = None,
+    opened: list | None = None,
+) -> list:
+    opened = opened if opened is not None else []
+    pending = list(consume_queue or [])
+
+    def fake_open_question(**kwargs):
+        q = SimpleNamespace(
+            id=f"qid-{len(opened) + 1}",
+            session_id=kwargs.get("session_id") or "",
+            kind=kwargs.get("kind") or "ask",
+            prompt=kwargs.get("prompt") or "",
+            options=list(kwargs.get("options") or []),
+            multi=bool(kwargs.get("multi")),
+            allow_custom=kwargs.get("allow_custom", True),
+            detail=kwargs.get("detail") or "",
+            schema=dict(kwargs.get("schema") or {}),
+            questions=list(kwargs.get("questions") or []),
+            expires_at=0.0,
+        )
+        opened.append(kwargs)
+        on_asked = kwargs.get("on_asked")
+        if on_asked:
+            on_asked(q)
+        return q, None
+
+    class _Reg:
+        def consume(self, qid):
+            if pending:
+                return pending.pop(0)
+            return None
+
+    questions = importlib.import_module("openprogram.agent.questions")
+    monkeypatch.setattr(questions, "open_question", fake_open_question)
+    monkeypatch.setattr(questions, "get_question_registry", lambda: _Reg())
+    monkeypatch.setattr(questions, "emit_question_asked", lambda *_a, **_k: None)
+    return opened
+
+
 def _run_goal(
     monkeypatch: pytest.MonkeyPatch,
     db: SessionDB,
@@ -40,7 +83,10 @@ def _run_goal(
     runtime: _Runtime | None = None,
     context_mode: str = "isolated",
     tools_per_round: list[bool] | None = None,
+    consume_queue: list | None = None,
+    opened: list | None = None,
 ) -> tuple[str, list[str]]:
+    _stub_questions(monkeypatch, consume_queue=consume_queue, opened=opened)
     module = importlib.import_module("openprogram.programs.workflow.goal.goal")
     agent_module = importlib.import_module("openprogram.agentic_programming.agent")
     function_module = importlib.import_module(
@@ -211,7 +257,7 @@ def test_nonpositive_round_limit_has_no_numeric_cap(
 def test_goal_asks_and_resumes_inside_the_same_workflow(
     db: SessionDB, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    runtime = _Runtime(["方案 A"])
+    opened: list = []
     result, prompts = _run_goal(
         monkeypatch,
         db,
@@ -225,17 +271,79 @@ def test_goal_asks_and_resumes_inside_the_same_workflow(
             ),
             ("met", "done", "", []),
         ],
-        runtime=runtime,
+        consume_queue=[("answered", "方案 A")],
+        opened=opened,
     )
     assert result == "finished"
-    assert runtime.questions[0][0] == "A 还是 B？"
-    # judge 的 [{label, description}] 在传给 runtime.ask 前收敛成 label 列表
+    assert opened[0]["prompt"] == "A 还是 B？"
+    # judge 的 [{label, description}] 在传给 open_question 前收敛成 label 列表
     # （PendingQuestion.options / 前端 ask 面板只认 list[str]）。
-    assert runtime.questions[0][1] == ["A"]
+    assert opened[0]["options"] == ["A"]
     assert "方案 A" in prompts[1]
     stored = G.load_goal("s1")
     assert stored["status"] == "achieved"
     assert "last_question" not in stored
+
+
+def test_needs_user_does_not_block_on_ask(
+    db: SessionDB, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = _Runtime()
+    opened: list = []
+    result, prompts = _run_goal(
+        monkeypatch,
+        db,
+        agent_outputs=["need input", "finished"],
+        verdicts=[
+            ("needs_user", "direction required", "A or B?", []),
+            ("met", "done", "", []),
+        ],
+        runtime=runtime,
+        opened=opened,
+    )
+    assert result == "finished"
+    assert len(prompts) == 2
+    assert runtime.questions == []
+    assert len(opened) == 1
+    assert "用户未回答" in prompts[1]
+
+
+def test_unanswered_question_is_not_reopened(
+    db: SessionDB, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opened: list = []
+    result, prompts = _run_goal(
+        monkeypatch,
+        db,
+        agent_outputs=["one", "two", "finished"],
+        verdicts=[
+            ("needs_user", "choose", "A or B?", []),
+            ("needs_user", "still", "A or B?", []),
+            ("met", "done", "", []),
+        ],
+        opened=opened,
+    )
+    assert result == "finished"
+    assert len(prompts) == 3
+    assert len(opened) == 1
+
+
+def test_consumed_answer_is_injected_next_round(
+    db: SessionDB, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result, prompts = _run_goal(
+        monkeypatch,
+        db,
+        agent_outputs=["need input", "finished"],
+        verdicts=[
+            ("needs_user", "choose", "A or B?", []),
+            ("met", "done", "", []),
+        ],
+        consume_queue=[("answered", "用 A")],
+    )
+    assert result == "finished"
+    assert "用 A" in prompts[1]
+    assert "用户对上一项决定的回答" in prompts[1]
 
 
 def test_unanswered_goal_question_degrades_and_continues(
@@ -295,7 +403,7 @@ def test_answer_resets_the_turn_budget(
             ("met", "done", "", []),
         ],
         max_rounds=1,
-        runtime=_Runtime(["A"]),
+        consume_queue=[("answered", "A")],
     )
     assert result == "after answer"
     assert len(prompts) == 2

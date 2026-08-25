@@ -5,6 +5,7 @@ import asyncio
 import base64
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
+import itertools
 import json
 import math
 import re
@@ -1023,7 +1024,8 @@ def browser_agent(
 
 
 def _run_browser_task_commands(
-    *, task: str, backend: str, max_steps: int, max_seconds: int, runtime,
+    *, task: str, backend: str,
+    max_steps: int | None, max_seconds: float | None, runtime,
 ) -> dict:
     """Optional GUI Agent Harness over the same public command contract."""
     if runtime is None:
@@ -1184,19 +1186,29 @@ def _run_browser_task_commands(
         parameters=_GUI_TOOL_PARAMETERS,
         register_globally=False,
     )(dispatch)
-    deadline = time.monotonic() + max(1, min(int(max_seconds), 1800))
+    if max_seconds is not None and float(max_seconds) > 0:
+        deadline = time.monotonic() + max(1, min(int(max_seconds), 1800))
+    else:
+        deadline = None
+    if max_steps is not None and int(max_steps) > 0:
+        step_iters = range(min(int(max_steps) * 3 + 3, 303))
+    else:
+        step_iters = itertools.count()
     pending_screenshot = None
     pending_screenshot_result = None
     summary = ""
     try:
-        for _ in range(min(max(1, int(max_steps)) * 3 + 3, 303)):
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return {
-                    "status": "failed", "reason_code": "timeout",
-                    "summary": "GUI Agent Harness exceeded its time limit.",
-                    "backend": backend, "web_session_id": session_id,
-                }
+        for _ in step_iters:
+            timeout_s = None
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return {
+                        "status": "failed", "reason_code": "timeout",
+                        "summary": "GUI Agent Harness exceeded its time limit.",
+                        "backend": backend, "web_session_id": session_id,
+                    }
+                timeout_s = max(1, remaining)
             content: list[dict[str, Any]] = [{
                 "type": "text",
                 "text": _step_prompt(
@@ -1223,7 +1235,7 @@ def _run_browser_task_commands(
                     tool_choice={"type": "function", "name": "browser_page"},
                     parallel_tool_calls=False,
                     max_iterations=1,
-                    timeout_s=max(1, remaining),
+                    timeout_s=timeout_s,
                     execution_kind="browser_agent",
                 )
             finally:

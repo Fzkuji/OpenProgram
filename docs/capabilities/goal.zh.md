@@ -1,24 +1,22 @@
 # Goal Workflow
 
-Goal 反复执行 Agent，并由独立 completion judge 判断完成条件是否满足。产品里只有一个 Goal Workflow，两种调用方式只负责提供不同初始上下文。judge 默认使用会话当前选中的模型；配置 `goal.judge_model` 为 `provider/model` 或裸模型名可覆盖。
+Goal 反复执行 Agent，并由独立 completion judge 判断完成条件是否满足。产品里只有一个 Goal Workflow；是否带上当前会话，取决于怎么启动。judge 默认使用会话当前选中的模型；配置 `goal.judge_model` 为 `provider/model` 或裸模型名可覆盖。
 
-## 使用 Programs 表单
+## 自己启动
 
-打开 **Programs → Workflow → goal → Use**，填写 `prompt` 和 `condition`。
-
-这是直接调用：GoalRun 不读取此前聊天历史，但 runtime card 仍记录在所属会话中。
-
-## 使用当前会话
-
-在输入框键入：
+用户手动启动一律带上当前会话作为初始证据（`context_mode=session`）：Programs 表单、`/goal`、welcome 按钮、Retry。打开 **Programs → Workflow → goal → Use**，只填任务（`prompt`）；`condition` 保持隐藏，默认等于这段话。或在输入框键入：
 
 ```text
 /goal 所有单元测试通过，并且 README 说明了新参数
 ```
 
-这会调用同一个 Goal Workflow，同时把当前会话的压缩上下文作为初始证据。此后 refinement、judge、轮次上限、用户提问、进度状态和终态都与 Programs 表单相同。
+runtime card 仍记录在所属会话中。此后 refinement、judge、轮次上限、用户提问、进度状态和终态对每种入口都相同。
 
-active Goal 显示在 composer 的 GoalChip 中。judge 提问时使用标准问题面板并无限等待；回答后恢复同一个 Workflow execution 并重置轮次预算。拒绝回答或答案为空时，Workflow 不会停止，而是自行选择最合理方案继续。
+## Agent 或 Python 启动
+
+Agent 自己调用 `goal` 时可传 `context_mode`：`isolated`（不带会话）或 `session`（带上当前会话）。不传则默认 `isolated`。Python 直接调用 `goal(...)` 同样默认 `isolated`。
+
+active Goal 显示在 composer 的 GoalChip 中。judge 提问时使用标准问题面板；问题挂着，工作继续。答到后下一轮工作会注入该回答并重置轮次预算。拒绝回答或答案为空时，Workflow 不会停止，而是自行选择最合理方案继续。
 
 ## 状态与控制
 

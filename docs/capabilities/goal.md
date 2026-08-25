@@ -1,34 +1,38 @@
 # Goal Workflow
 
 Goal repeatedly runs an agent and asks a separate completion judge whether a
-condition has been met. There is one Goal Workflow with two ways to supply its
-inputs. The judge uses the session's picked model unless `goal.judge_model` is
-set to a `provider/model` or a bare model name.
+condition has been met. There is one Goal Workflow. How it is started decides
+whether the current conversation is included. The judge uses the session's
+picked model unless `goal.judge_model` is set to a `provider/model` or a bare
+model name.
 
-## Use the Programs form
+## Start it yourself
 
-Open **Programs → Workflow → goal → Use** and fill in `prompt` and `condition`.
-This is a direct invocation: the GoalRun starts without reading earlier chat
-history. Its runtime card is still recorded in the owning conversation.
-
-## Use the current conversation
-
-Type a condition after `/goal`:
+A user-started run always includes the current conversation as initial
+evidence (`context_mode=session`): the Programs form, `/goal`, the welcome
+button, and Retry. Open **Programs → Workflow → goal → Use** and fill in the
+task (`prompt`); `condition` stays hidden and defaults to that text. Or type
+the condition after `/goal`:
 
 ```text
 /goal all unit tests pass and the README documents the new flag
 ```
 
-This invokes the same Goal Workflow, but includes the current conversation's
-compacted context as initial evidence. The Workflow then uses the same
-refinement, judge, round limit, question handling, progress state, and terminal
-statuses as the Programs form.
+The runtime card is recorded in the owning conversation. The Workflow then
+uses the same refinement, judge, round limit, question handling, progress
+state, and terminal statuses for every entry.
+
+## When the agent or Python starts it
+
+An agent-issued `goal` call can pass `context_mode`: `isolated` (no session
+view) or `session` (include the current conversation). Omitting it defaults
+to `isolated`. A direct Python `goal(...)` call also defaults to `isolated`.
 
 The active Goal appears in the composer GoalChip. A question from the judge
-uses the standard question panel and waits indefinitely; answering resumes the
-same Workflow execution and restarts its round budget. If you decline or leave
-the answer empty, the Workflow continues on its own with the most reasonable
-plan instead of stopping.
+uses the standard question panel and stays there while work continues. When
+you answer, the next work round receives that answer and restarts its round
+budget. If you decline or leave the answer empty, the Workflow continues on
+its own with the most reasonable plan instead of stopping.
 
 ## Status and control
 

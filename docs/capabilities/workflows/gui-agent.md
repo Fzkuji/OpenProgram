@@ -18,12 +18,13 @@ openprogram programs run gui_agent -a task="Open Firefox and go to google.com"
 
 The Programs card only asks for `task`. Other parameters keep their defaults; CLI and agent calls can still pass them.
 
-Parameters (function signature `gui_agent(task, max_steps=15, app_name="desktop", ...)`):
+Parameters (function signature `gui_agent(task, max_steps=None, app_name="desktop", ...)`):
 
 | Parameter | Description |
 |---|---|
 | `task` | What to do, in natural language |
-| `max_steps` | Maximum number of actions before giving up; default 15, choices 5 / 10 / 15 / 30 |
+| `max_steps` | Maximum number of actions. Default 150. `0` or a negative value means no cap. |
+| `max_seconds` | Web-path wall-clock limit only. Default is no time limit. `0` or a negative value means no cap. Desktop does not use this field. |
 | `app_name` | Application name used for component memory, e.g. `firefox`, `libreoffice_calc`; default `desktop` |
 
 Each step runs observe (screenshot + component detection + state recognition) → verify the previous step's result → plan the next action → execute → build feedback for the next round. Structured feedback is passed between steps, so progress does not depend on the LLM's context memory. Previously learned UI transitions are reused as shortcuts (component memory).

@@ -88,3 +88,14 @@ def test_goal_program_isolated_history_is_part_of_its_registered_contract() -> N
 
     assert goal_module.goal.render_range == {"callers": 0}
     assert goal_module.goal.input_meta["context_mode"]["hidden"] is True
+
+
+def test_goal_agent_tool_exposes_context_mode_not_condition() -> None:
+    goal_module = importlib.import_module(
+        "openprogram.programs.workflow.goal.goal"
+    )
+    params = goal_module.goal._agent_tool.parameters["properties"]
+    assert "prompt" in params
+    assert "context_mode" in params
+    assert params["context_mode"]["enum"] == ["isolated", "session"]
+    assert "condition" not in params

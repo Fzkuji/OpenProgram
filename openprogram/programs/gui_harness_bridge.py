@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Callable
 
+DEFAULT_MAX_STEPS = 150
+
 
 def install_gui_harness_web_use(original: Callable | None = None):
     """Replace the registered gui_agent entry with a backend-aware wrapper."""
@@ -51,45 +53,34 @@ def install_gui_harness_web_use(original: Callable | None = None):
                     "type": "string",
                     "description": "What to do",
                 },
-                "max_steps": {
-                    "type": "integer",
-                    "description": "Maximum number of actions",
-                },
-                "app_name": {
-                    "type": "string",
-                    "description": "Desktop app or browser",
-                },
-                "backend": {
-                    "type": "string",
-                    "description": "Optional built-in Page web_use backend",
-                    "enum": [
-                        "playwright_mcp", "chrome_devtools_mcp",
-                        "open_claude_chrome",
-                    ],
-                },
-                "max_seconds": {
-                    "type": "integer",
-                    "description": "Wall-clock limit",
-                },
-                "allow_general": {"type": "boolean"},
             },
             "required": ["task"],
         },
     )
     def gui_agent(
         task: str,
-        max_steps: int = 15,
+        max_steps: int | None = None,
         app_name: str = "desktop",
         backend: str = "",
-        max_seconds: int = 300,
+        max_seconds: float | None = None,
         runtime=None,
         allow_general: bool = False,
     ) -> dict:
         """Run the installed GUI harness or its exact-Page web_use mode."""
+        if max_steps is None:
+            steps: int | None = DEFAULT_MAX_STEPS
+        else:
+            n = int(max_steps)
+            steps = n if n > 0 else None
+        seconds = (
+            None
+            if max_seconds is None or float(max_seconds) <= 0
+            else float(max_seconds)
+        )
         if not backend:
             return original(
                 task=task,
-                max_steps=max_steps,
+                max_steps=steps if steps is not None else 0,
                 app_name=app_name,
                 runtime=runtime,
                 allow_general=allow_general,
@@ -100,12 +91,12 @@ def install_gui_harness_web_use(original: Callable | None = None):
         return _run_browser_task_commands(
             task=task,
             backend=backend,
-            max_steps=max_steps,
-            max_seconds=max_seconds,
+            max_steps=steps,
+            max_seconds=seconds,
             runtime=runtime,
         )
 
     return gui_agent
 
 
-__all__ = ["install_gui_harness_web_use"]
+__all__ = ["DEFAULT_MAX_STEPS", "install_gui_harness_web_use"]

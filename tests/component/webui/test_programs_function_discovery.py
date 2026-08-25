@@ -168,6 +168,37 @@ def test_programs_treats_workflow_as_category_not_program() -> None:
     assert not old_source.exists()
 
 
+def test_goal_form_exposes_only_prompt_and_condition() -> None:
+    source = (
+        Path(__file__).parents[3]
+        / "openprogram/programs/workflow/goal/goal.py"
+    )
+    goal = next(
+        info for info in _extract_all_functions(str(source), "workflow")
+        if info["name"] == "goal"
+    )
+    visible = [p["name"] for p in goal["params_detail"] if not p.get("hidden")]
+    assert visible == ["prompt"]
+
+
+def test_gui_agent_form_exposes_only_task() -> None:
+    root = Path(__file__).parents[3]
+    sources = [
+        root / "openprogram/programs/applications/gui_harness/gui_harness/main.py",
+        root / "openprogram/programs/gui_harness_bridge.py",
+    ]
+    extracted = []
+    for source in sources:
+        extracted.extend(
+            info for info in _extract_all_functions(str(source), "app")
+            if info["name"] == "gui_agent"
+        )
+    assert extracted
+    for gui in extracted:
+        visible = [p["name"] for p in gui["params_detail"] if not p.get("hidden")]
+        assert visible == ["task"]
+
+
 def test_registered_workflow_is_available_to_favorites(
     tmp_path: Path, monkeypatch
 ) -> None:
