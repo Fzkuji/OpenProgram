@@ -25,7 +25,7 @@
  * reads) for instant feedback before the server's echo lands.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { ChevronRight, Plus } from "lucide-react";
 import { useCurrentSessionId } from "./use-window-globals";
@@ -68,6 +68,10 @@ import {
   wsSend,
   labelFor,
 } from "./sessions-list/helpers";
+import {
+  recentsConversationsEqual,
+  runningIdSetEqual,
+} from "./sessions-list/recents-select";
 
 /** One registry project as `projects_list` ships it (Group-by → Project
  *  mode only). `session_ids` is alive-filtered server-side (same filter
@@ -93,20 +97,19 @@ function readCollapsedProjects(): Set<string> {
   }
 }
 
-export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
+export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewChat: () => string }) {
   const router = useRouter();
   const pathname = usePathname();
   const { t, text, locale } = useTranslation();
-  // The sidebar's source of truth is the React store. The runtime-bridge
-  // mirrors every runtimeState.conversations summary write into it (see
-  // conv-store-mirror), so subscribing here re-renders the list the moment
-  // a session is added / renamed / pinned / deleted — no polling.
-  const conversations = useSessionStore((s) => s.conversations);
+  // Recents only cares about list fields + which ids are running. Other
+  // summary writes (workspace_alignment, running-task payloads) must not
+  // rebuild the table.
+  const conversations = useSessionStore((s) => s.conversations, recentsConversationsEqual);
   const upsertConversation = useSessionStore((s) => s.upsertConversation);
   const removeConversation = useSessionStore((s) => s.removeConversation);
   const clearConversations = useSessionStore((s) => s.clearConversations);
   const currentId = useCurrentSessionId();
-  const runningTasks = useSessionStore((s) => s.runningTasks);
+  const runningTasks = useSessionStore((s) => s.runningTasks, runningIdSetEqual);
   const view = useRecentsView();
 
   /* ---- project mode (Group-by → Project): registry-backed tree ---- */
@@ -588,7 +591,7 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
       ) : null}
     </>
   );
-}
+});
 
 /* ---- sectioning --------------------------------------------------
  * Turns the filtered+sorted conversation list into labelled sections,

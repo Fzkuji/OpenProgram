@@ -13,6 +13,8 @@
  * (`{}` for an empty 2xx body).
  */
 
+import { waitForOwnerAuthBootstrap } from "./owner-auth-bootstrap";
+
 export class HttpError extends Error {
   status: number;
   code?: string;
@@ -27,6 +29,7 @@ export class HttpError extends Error {
 }
 
 export async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
+  await waitForOwnerAuthBootstrap();
   const r = await fetch(url, {
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers || {}) },

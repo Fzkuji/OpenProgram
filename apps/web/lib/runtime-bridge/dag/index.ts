@@ -13,11 +13,16 @@
 
 import { type GNode } from "./types";
 import { runtimeState } from "../state";
-import { render } from "./pipeline";
+import { flushPendingHistoryEmit, render } from "./pipeline";
 import { _recomputeVisibility } from "./render/visibility";
 import { _installInteractionHandlers } from "./render/interaction";
 import {
+  contextRangeUnchanged,
+  type CoverageNode,
+} from "./paint-gate";
+import {
   _contextSet,
+  _coverageSet,
   _highlightMode,
   _lastGraph,
   _lastHeadId,
@@ -27,6 +32,8 @@ import {
   setLastGraph,
   setLastSignature,
 } from "./store/globals";
+
+export type { CoverageNode } from "./paint-gate";
 
 // Install the document-level click + dblclick listeners exactly once,
 // at module load. The handler needs a re-render callback so the panel
@@ -65,19 +72,11 @@ export function repaintBranchTags(): void {
   if (_lastGraph) render(_lastGraph, _lastHeadId);
 }
 
-/** ``nodes`` rows from ``/context-range`` — the per-node degradations
- *  the context pipeline applied. Shape mirrors the endpoint exactly. */
-export interface CoverageNode {
-  node_id: string;
-  in_context: boolean;
-  aged: boolean;
-  spilled: boolean;
-}
-
 export function setHistoryContextRange(
   ids: string[] | null,
   coverage?: CoverageNode[] | null,
 ): void {
+  if (contextRangeUnchanged(_contextSet, _coverageSet, ids, coverage)) return;
   if (!ids || !ids.length) {
     setContextSet(null);
     setCoverageSet(null);
@@ -104,7 +103,6 @@ export function setHistoryContextRange(
     setLastSignature(null);
     render(_lastGraph, _lastHeadId);
   }
-  void _contextSet;
 }
 
 export function refreshHistoryContextRange(sessionId: string | null): void {
@@ -144,6 +142,7 @@ export function recomputeHistoryVisibility(): void {
  */
 export function enterExclusiveCoverageMode(): void {
   if (_highlightMode !== "context") setHighlightMode("context");
+  flushPendingHistoryEmit();
   const sid = runtimeState.currentSessionId;
   if (sid) refreshHistoryContextRange(sid);
   else _recomputeVisibility();

@@ -12,7 +12,7 @@
  * 图标绝对定位在标题行内部，与文字共用同一垂直中心。流式进行中的一轮
  * 不走这里（assistant-bubble 平铺实时块），落定后切到本组件。
  */
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { Wrench } from "lucide-react";
 import { afterTwoAnimationFrames } from "./collapse-frame";
 
@@ -319,7 +319,16 @@ export function StepRow({
 /** 思考步骤：内容轻，点行内联展开。
  *  流式中（running）note 显示**最新**一行——最近在想什么；落定后显示
  *  第一行作固定摘要。展开态的全文随 delta 向下拼接生长。 */
-export function ThinkingStep({ text: thinkingText, running }: {
+const ThinkingBody = memo(function ThinkingBody({ text }: { text: string }) {
+  return (
+    <div
+      className="chat-text"
+      dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }}
+    />
+  );
+});
+
+export const ThinkingStep = memo(function ThinkingStep({ text: thinkingText, running }: {
   text: string;
   running?: boolean;
 }) {
@@ -334,15 +343,10 @@ export function ThinkingStep({ text: thinkingText, running }: {
       note={short(plainNote(line))}
       running={running}
       copyText={thinkingText}
-      inlineBody={
-        <div
-          className="chat-text"
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(thinkingText) }}
-        />
-      }
+      inlineBody={<ThinkingBody text={thinkingText} />}
     />
   );
-}
+});
 
 function parseParams(input?: string): Record<string, unknown> | undefined {
   if (!input) return undefined;

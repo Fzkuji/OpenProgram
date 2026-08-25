@@ -316,11 +316,16 @@ assert.match(messageList, /const chatKey = useSessionStore\(\(s\) => s\.activeCh
 // without it a reader who scrolls up has no way back to the tail.
 assert.match(
   messageList,
-  /useChatAreaStick\(\s*chatKey,\s*ids\.length,\s*lastRole === "user",?\s*\)/,
+  /useChatAreaStick\(\s*chatKey,\s*ids\.length,\s*lastRole === "user",\s*paintRows,?\s*\)/,
 );
 assert.match(messageList, /const \{ detached, jumpToLatest \} = useChatAreaStick/);
 assert.match(messageList, /className="jump-latest"/);
 assert.match(messageList, /previousKeyRef\.current !== chatKey/);
+assert.match(
+  messageList,
+  /seedChanged \|\| becameVisible/,
+  "hiding the singleton then showing it again must reuse the follow/stay rule",
+);
 assert.doesNotMatch(conversations, /agentic_scroll/);
 assert.doesNotMatch(chatHandlers, /agentic_scroll/);
 assert.match(conversations, /readChatScroll\(sessionStorage, id\)/);
@@ -1067,6 +1072,21 @@ assert.match(
   messageList,
   /compaction-orig-fold/,
   "covered originals animate inside a height fold",
+);
+assert.match(
+  chatCss,
+  /\.compaction-orig-fold\[data-open="0"\] \.compaction-orig-fold-inner\s*\{[\s\S]*?content-visibility:\s*hidden/,
+  "folded originals skip layout; the 0fr close stays on the grid parent",
+);
+assert.match(
+  chatCss,
+  /\.compaction-orig-fold\[data-open="1"\] \.compaction-orig-fold-inner\s*\{[\s\S]*?content-visibility:\s*visible/,
+  "showing originals must lift the skip immediately",
+);
+assert.doesNotMatch(
+  messageList,
+  /react-virtuoso|react-window|@tanstack\/react-virtual/,
+  "the transcript must not unload history behind a virtualizer",
 );
 assert.match(
   chatCss,

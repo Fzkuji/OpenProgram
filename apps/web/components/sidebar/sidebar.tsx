@@ -23,7 +23,7 @@
  * `sidebar-primary-nav.tsx`.
  */
 
-import { useEffect, useLayoutEffect, useState, useRef } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useState, useRef } from "react";
 import {
   type AnimatedNavIconHandle,
   PanelLeftCloseIcon,
@@ -57,7 +57,7 @@ function readPersistedSidebarOpen(): boolean {
   }
 }
 
-export function Sidebar() {
+export const Sidebar = memo(function Sidebar() {
   const { t, text } = useTranslation();
 
   const [open, setOpen] = useState<boolean>(true);
@@ -117,7 +117,7 @@ export function Sidebar() {
     });
   }
 
-  function newChat() {
+  const newChat = useCallback(() => {
     // Focus-or-create（浏览器地址栏语义）：已经开着的"新会话"界面
     // ——未发消息的草稿会话 tab 或 NTP tab——直接跳过去，而不是每点
     // 一次就多冒一个 tab。真想多开几个空会话用 tab 条上的 ＋。
@@ -142,7 +142,7 @@ export function Sidebar() {
     }
     newSession(draftId);
     return draftId;
-  }
+  }, []);
 
   return (
     <div
@@ -333,7 +333,7 @@ export function Sidebar() {
       <UserMenuFooter />
     </div>
   );
-}
+});
 
 /**
  * Collapsible section in the sidebar (currently just Favorite

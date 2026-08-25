@@ -231,6 +231,15 @@
 }
 .compaction-orig-fold[data-open="1"] .compaction-orig-fold-inner {
   opacity: 1;
+  content-visibility: visible;
+}
+/* Skip layout of already-clipped originals. Delay the skip so the 0fr
+   close can still measure real inner height; opening lifts skip immediately. */
+.compaction-orig-fold[data-open="0"] .compaction-orig-fold-inner {
+  content-visibility: hidden;
+  transition:
+    opacity 900ms ease,
+    content-visibility 0s 900ms allow-discrete;
 }
 .covered-turn {
   opacity: 0.55;
@@ -240,7 +249,8 @@
 @media (prefers-reduced-motion: reduce) {
   .compaction-card-md-clip,
   .compaction-orig-fold,
-  .compaction-orig-fold-inner {
+  .compaction-orig-fold-inner,
+  .compaction-orig-fold[data-open="0"] .compaction-orig-fold-inner {
     transition: none;
   }
 }

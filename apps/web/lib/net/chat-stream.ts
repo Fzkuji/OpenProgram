@@ -16,9 +16,9 @@
  *         placeholder so streaming deltas have somewhere to land.
  *   chat_response  { type, msg_id, session_id, ... }
  *       type === "stream_event"  { event: { type, ... } }
- *           text        → append to reply.content
- *           thinking    → append to reply.thinking
- *           tool_use    → push a ChatToolCall (status "running")
+ *           text        → coalesce into reply.content (one store stamp / frame)
+ *           thinking    → coalesce into reply.thinking (same rAF budget)
+ *           tool_use    → flush pending text, then push a ChatToolCall (status "running")
  *           tool_result → fill the matching tool's result + status
  *           sub_agent   → upsert a spawn card into reply.attachCards
  *                         (running → completed), keyed on card_id so a
@@ -126,13 +126,69 @@ interface WsEnvelope {
 
 const sessionByMsgId = new Map<string, string>();
 
+type PendingDelta = {
+  sid: string;
+  content: string;
+  thinking: string;
+  blocks: AssistantBlock[];
+};
+
+// ponytail: one rAF for every in-flight reply. Split per-rid frames if
+// many concurrent streams starve a single callback.
+const pendingDeltas = new Map<string, PendingDelta>();
+let deltaRaf = 0;
+
+function cancelDeltaRaf(): void {
+  if (!deltaRaf) return;
+  const caf = globalThis.cancelAnimationFrame;
+  if (typeof caf === "function") caf(deltaRaf);
+  deltaRaf = 0;
+}
+
+function flushPendingDelta(rid: string): void {
+  const pending = pendingDeltas.get(rid);
+  if (!pending) return;
+  pendingDeltas.delete(rid);
+  if (pendingDeltas.size === 0) cancelDeltaRaf();
+  useSessionStore.getState().updateMessage(pending.sid, rid, {
+    content: pending.content,
+    thinking: pending.thinking,
+    blocks: pending.blocks,
+    status: "streaming",
+  });
+}
+
+function dropPendingDelta(rid: string): void {
+  pendingDeltas.delete(rid);
+  if (pendingDeltas.size === 0) cancelDeltaRaf();
+}
+
+function flushAllPendingDeltas(): void {
+  deltaRaf = 0;
+  for (const rid of [...pendingDeltas.keys()]) flushPendingDelta(rid);
+}
+
+function scheduleDeltaFlush(): void {
+  if (deltaRaf) return;
+  const raf = globalThis.requestAnimationFrame;
+  if (typeof raf !== "function") {
+    flushAllPendingDeltas();
+    return;
+  }
+  deltaRaf = raf(flushAllPendingDeltas);
+}
+
 /** Drop every pending msg_id → session mapping. Entries normally die on
  *  their turn's terminal frame (result / error / cancelled); when that
  *  frame is lost (dropped socket, backend crash) they linger forever.
  *  `use-ws.ts` calls this on `session_loaded` — a fresh transcript is
- *  the natural drain point, same rationale as clearHydratedTreePaths. */
+ *  the natural drain point, same rationale as clearHydratedTreePaths.
+ *  Also drops unflushed text/thinking deltas so a hydrate cannot receive
+ *  a late rAF stamp from the previous connection. */
 export function clearSessionByMsgId(): void {
   sessionByMsgId.clear();
+  pendingDeltas.clear();
+  cancelDeltaRaf();
 }
 
 /** Store key for an assistant turn's reply bubble. The user turn is
@@ -266,6 +322,8 @@ function handleResponse(d: ChatResponseData | undefined): void {
   // route by the raw msg_id, so we mutate the right row (not the
   // owning assistant reply).
   if (d.display === "runtime" && (d.type === "status" || d.type === "result")) {
+    if (d.predecessor) flushPendingDelta(d.predecessor);
+    if (d.msg_id) flushPendingDelta(d.msg_id);
     handleRuntimeRow(sid, d);
     return;
   }
@@ -275,6 +333,8 @@ function handleResponse(d: ChatResponseData | undefined): void {
   // Live execution tree for a streaming `/run` — store it on the reply
   // so <RuntimeBlock />'s <ExecutionTree /> renders it as it grows.
   if (d.type === "tree_update" && d.tree) {
+    flushPendingDelta(rid);
+    if (d.msg_id) flushPendingDelta(d.msg_id);
     // The same tree_update channel carries the run's terminal state:
     // live ticks send a root with status="running"; the final flush
     // (live_progress.__exit__) sends the root flipped to
@@ -374,6 +434,7 @@ function handleResponse(d: ChatResponseData | undefined): void {
       existingReply?.status === "cancelled"
       || existingReply?.status === "cancelling"
     ) {
+      dropPendingDelta(rid);
       return;
     }
     // A `/run` turn: tag the reply as a runtime turn up front so
@@ -394,6 +455,7 @@ function handleResponse(d: ChatResponseData | undefined): void {
     return;
   }
   if (d.type === "result" || d.type === "error" || d.type === "cancelled") {
+    flushPendingDelta(rid);
     finalize(sid, rid, d);
   }
 }
@@ -616,6 +678,32 @@ function appendDeltaBlock(
 }
 
 function applyStreamEvent(sid: string, rid: string, evt: StreamEvent): void {
+  if (evt.type === "text" || evt.type === "thinking") {
+    let cur = pendingDeltas.get(rid);
+    if (!cur) {
+      const msg = ensureReply(sid, rid);
+      cur = {
+        sid,
+        content: msg.content ?? "",
+        thinking: msg.thinking ?? "",
+        blocks: msg.blocks ?? [],
+      };
+    }
+    const delta = evt.text ?? "";
+    if (evt.type === "text") {
+      cur.content += delta;
+      cur.blocks = appendDeltaBlock(cur.blocks, "text", delta);
+    } else {
+      cur.thinking += delta;
+      cur.blocks = appendDeltaBlock(cur.blocks, "thinking", delta);
+    }
+    cur.sid = sid;
+    pendingDeltas.set(rid, cur);
+    scheduleDeltaFlush();
+    return;
+  }
+
+  flushPendingDelta(rid);
   const store = useSessionStore.getState();
   const cur = ensureReply(sid, rid);
 
@@ -630,20 +718,6 @@ function applyStreamEvent(sid: string, rid: string, evt: StreamEvent): void {
   }
 
   switch (evt.type) {
-    case "text":
-      store.updateMessage(sid, rid, {
-        content: cur.content + (evt.text ?? ""),
-        blocks: appendDeltaBlock(cur.blocks, "text", evt.text ?? ""),
-        status: "streaming",
-      });
-      break;
-    case "thinking":
-      store.updateMessage(sid, rid, {
-        thinking: (cur.thinking ?? "") + (evt.text ?? ""),
-        blocks: appendDeltaBlock(cur.blocks, "thinking", evt.text ?? ""),
-        status: "streaming",
-      });
-      break;
     case "tool_use": {
       const blocks: AssistantBlock[] = [
         ...(cur.blocks ?? []),

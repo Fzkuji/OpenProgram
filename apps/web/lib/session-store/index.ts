@@ -50,6 +50,11 @@ import type {
   StatusBadgeInfo,
   TreeNode,
 } from "./types";
+import { messagePatchUnchanged } from "./message-patch";
+import {
+  validMessageTimestamp,
+  withMessageTimestamp,
+} from "./message-timestamp";
 
 /** A row the stream is still writing into — its content lives only in
  *  the store until the turn finalizes. */
@@ -77,27 +82,6 @@ function isEmptyRow(m: ChatMsg): boolean {
  * rows keep their authoritative value; live/legacy rows missing one use the
  * local arrival time. Later patches spread over the stored row and therefore
  * cannot replace this value unless they explicitly carry a timestamp. */
-function validMessageTimestamp(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0;
-}
-
-function withMessageTimestamp(msg: ChatMsg, fallback = Date.now()): ChatMsg {
-  const timestamp = validMessageTimestamp(msg.timestamp)
-    ? msg.timestamp
-    : fallback;
-  const runtimeChildren = msg.runtimeChildren?.map((child) =>
-    withMessageTimestamp(child, timestamp));
-  const attachCards = msg.attachCards?.map((child) =>
-    withMessageTimestamp(child, timestamp));
-  if (
-    timestamp === msg.timestamp
-    && runtimeChildren === undefined
-    && attachCards === undefined
-  ) {
-    return msg;
-  }
-  return { ...msg, timestamp, runtimeChildren, attachCards };
-}
 
 interface ConvState {
   /** WS status for UI. */
@@ -747,6 +731,7 @@ export const useSessionStore = create<ConvState>((set) => ({
     set((s) => {
       const cur = s.messagesById[msgId];
       if (!cur) return {};
+      if (messagePatchUnchanged(cur, patch)) return {};
       return {
         messagesById: {
           ...s.messagesById,

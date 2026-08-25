@@ -109,7 +109,10 @@ function isFollowup(n: GNode | undefined): boolean {
 /** The agent's name for a spawn root — tooltip/inspector material.
  *  ``spawned_from.label`` when the runner stamped it, else the branch
  *  name the session recorded. */
-function _spawnName(root: GNode, byId: Record<string, GNode>): string {
+function _spawnName(
+  root: GNode,
+  laneFirstName: Record<number, { id: string; name: string }>,
+): string {
   const direct = (root as Record<string, unknown>).spawned_from as
     | { label?: string | null }
     | undefined;
@@ -117,23 +120,56 @@ function _spawnName(root: GNode, byId: Record<string, GNode>): string {
   if (fromRoot) return fromRoot;
   const own = ((root as Record<string, unknown>).branch_name as string) || "";
   if (own.trim()) return own.trim();
-  for (const id of Object.keys(byId)) {
-    const n = byId[id];
-    if ((n._lane || 0) !== (root._lane || 0) || n.id === root.id) continue;
-    const nm = ((n as Record<string, unknown>).branch_name as string) || "";
-    if (nm.trim()) return nm.trim();
+  const hit = laneFirstName[root._lane || 0];
+  return hit && hit.id !== root.id ? hit.name : "";
+}
+
+function _composerBefore(
+  composerFns: GNode[],
+  spawn: GNode,
+): GNode | undefined {
+  const t = spawn.created_at || 0;
+  let lo = 0;
+  let hi = composerFns.length - 1;
+  let idx = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if ((composerFns[mid].created_at || 0) <= t) {
+      idx = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
   }
-  return "";
+  if (idx < 0) return undefined;
+  const bestT = composerFns[idx].created_at || 0;
+  while (idx > 0 && (composerFns[idx - 1].created_at || 0) === bestT) idx--;
+  return composerFns[idx];
 }
 
 export function buildThreadModel(graph: GNode[]): ThreadModel {
   const byId: Record<string, GNode> = Object.create(null);
-  graph.forEach((n) => { byId[n.id] = n; });
-
   const laneSpawn: Record<number, string> = Object.create(null);
+  const laneFirstName: Record<number, { id: string; name: string }> =
+    Object.create(null);
+  const composerFns: GNode[] = [];
   graph.forEach((n) => {
+    byId[n.id] = n;
     if (isSpawnRoot(n)) laneSpawn[n._lane || 0] = n.id;
+    const nm = ((n as Record<string, unknown>).branch_name as string) || "";
+    const trimmed = nm.trim();
+    if (trimmed && !laneFirstName[n._lane || 0]) {
+      laneFirstName[n._lane || 0] = { id: n.id, name: trimmed };
+    }
+    if (
+      isChainNode(n)
+      && n.display !== "root"
+      && (n.role === "tool" || n._runNode)
+    ) {
+      composerFns.push(n);
+    }
   });
+  composerFns.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
 
   // ── anchor resolution ──
   // agent-internal chain node → its lane's spawn root; followup reply →
@@ -162,21 +198,6 @@ export function buildThreadModel(graph: GNode[]): ThreadModel {
   // Execution nodes climb predecessor/caller to the first chain node or
   // spawn root; that node's anchor owns the event. Spawn roots climb
   // their caller the same way.
-  function composerFunctionBefore(spawn: GNode): GNode | undefined {
-    const t = spawn.created_at || 0;
-    let best: GNode | undefined;
-    Object.keys(byId).forEach((id) => {
-      const cand = byId[id];
-      if (!isChainNode(cand) || cand.display === "root") return;
-      if (cand.role !== "tool" && !cand._runNode) return;
-      if ((cand.created_at || 0) > t) return;
-      if (!best || (cand.created_at || 0) > (best.created_at || 0)) {
-        best = cand;
-      }
-    });
-    return best;
-  }
-
   function ownerOf(n: GNode): string | null {
     let cur: GNode | undefined = n;
     let hops = 0;
@@ -190,7 +211,7 @@ export function buildThreadModel(graph: GNode[]): ThreadModel {
         // of the composer-launched function. Attach to that function
         // so the diamond is not four fork lanes.
         if (isSpawnRoot(n) || (n as Record<string, unknown>).source === "agent_spawn") {
-          const fn = composerFunctionBefore(n);
+          const fn = _composerBefore(composerFns, n);
           if (fn) return anchorOf(fn.id);
         }
         return null;
@@ -214,7 +235,7 @@ export function buildThreadModel(graph: GNode[]): ThreadModel {
         (events[o] = events[o] || []).push(
           { t: n.created_at || 0, kind: "spawn", id: n.id });
       }
-      nameOf[n.id] = _spawnName(n, byId);
+      nameOf[n.id] = _spawnName(n, laneFirstName);
       return;
     }
     if (isChainNode(n)) {

@@ -51,19 +51,33 @@ import {
   _wireChatMutationSync,
   _wireChatScrollSync,
 } from "./render/visibility";
-import { drawNodes } from "./render/nodes";
+import { drawNodes, patchHistoryStatus } from "./render/nodes";
 import { drawBadges } from "./render/badges";
 import { drawEdges } from "./render/edges";
 import {
+  type DagSignatureInput,
+  branchTagsSignature,
+  dagInputSignature,
+  geometryInputSignature,
+  hasAuthoritativeLayout,
+  readHistoryEmitGate,
+  shouldEmitHistorySvg,
+} from "./paint-gate";
+import {
   _contextSet,
   _coverageSet,
-  _currentHead,
+  _highlightMode,
+  _lastGraph,
+  _lastHeadId,
   _lastSignature,
+  _summaryExpanded,
+  _threadOpen,
   _threadSession,
   setCurrentHead,
   setHeadAncestorSet,
   setInternalOwner,
   setInternalSet,
+  setLastGraph,
   setLastSignature,
   setLeafOfNode,
   setParentOf,
@@ -77,6 +91,27 @@ import {
 // First render after a session switch gets the ``dag-enter`` fade-in;
 // subsequent re-renders of the same session swap in place, no flash.
 let _lastRenderedSession: string | null | undefined;
+let _lastGeomSignature: string | null = null;
+let _svgEmitPending = false;
+let _skeletonPending = false;
+
+function historySvgEmitAllowed(): boolean {
+  if (typeof document === "undefined") return false;
+  const gate = readHistoryEmitGate(document);
+  return shouldEmitHistorySvg(gate.panelDisplay, gate.centerView);
+}
+
+/** Paint `_lastGraph` (or the owed skeleton) once the panel is visible. */
+export function flushPendingHistoryEmit(): void {
+  if (!_svgEmitPending) return;
+  _svgEmitPending = false;
+  if (_skeletonPending || !_lastGraph) {
+    showHistorySkeleton();
+    return;
+  }
+  setLastSignature(null);
+  render(_lastGraph, _lastHeadId);
+}
 
 /** Session switch, no capture yet: replace the DAG with pulsing
  *  placeholder bars so the previous session's graph doesn't linger.
@@ -85,9 +120,14 @@ let _lastRenderedSession: string | null | undefined;
 export function showHistorySkeleton(): void {
   const panel = document.getElementById("historyPanel");
   const body = panel && (panel.querySelector(".history-body") as HTMLElement | null);
-  if (!body) return;
   setLastSignature(null);
+  _lastGeomSignature = null;
   _lastRenderedSession = "__loading__";
+  _skeletonPending = true;
+  if (!body || !historySvgEmitAllowed()) {
+    _svgEmitPending = true;
+    return;
+  }
   detachCanvas();
   const el = document.createElement("div");
   el.className = "history-skeleton";
@@ -100,18 +140,70 @@ export function showHistorySkeleton(): void {
   body.replaceChildren(el);
 }
 
-function _signature(graph: GNode[], headId: string | null): string {
-  if (!graph || !graph.length) return "empty|" + (headId || "");
-  const parts = graph.map(
-    (m) =>
-      m.id + ":" + (m.predecessor || "") + ":" + (m.role || "") + ":"
-      + (m.display || "") + ":" + (m.status || ""),
-  );
-  parts.sort();
-  return parts.join(",") + "|" + (headId || "");
+function _signatureInput(graph: GNode[], headId: string | null): DagSignatureInput {
+  const sid = runtimeState.currentSessionId;
+  return {
+    graph,
+    headId,
+    threadOpen: _threadOpen,
+    summaryExpanded: _summaryExpanded,
+    locale: typeof document !== "undefined"
+      ? (document.documentElement.getAttribute("lang") || "")
+      : "",
+    contextSet: _contextSet,
+    coverageSet: _coverageSet,
+    sessionId: sid,
+    branchTags: branchTagsSignature(
+      sid
+        ? (runtimeState._branchesByConv[sid] as Array<{
+          head_msg_id?: string;
+          head_id?: string;
+          name?: string;
+          active?: boolean;
+        }>)
+        : null,
+    ),
+    highlightMode: _highlightMode,
+  };
+}
+
+function _inputSignature(graph: GNode[], headId: string | null): string {
+  return dagInputSignature(_signatureInput(graph, headId));
+}
+
+function _geomSignature(graph: GNode[], headId: string | null): string {
+  return geometryInputSignature(_signatureInput(graph, headId));
+}
+
+function tryStatusPatch(
+  graphIn: GNode[],
+  sig: string,
+  geomSig: string,
+): boolean {
+  if (!_lastGeomSignature || geomSig !== _lastGeomSignature) return false;
+  if (!hasAuthoritativeLayout(graphIn)) return false;
+  const panel = document.getElementById("historyPanel");
+  const body = panel && (panel.querySelector(".history-body") as HTMLElement | null);
+  if (!body || !patchHistoryStatus(body, graphIn)) return false;
+  setLastSignature(sig);
+  return true;
 }
 
 export function render(graphIn: GNode[], headIdIn: string | null): void {
+  const sig = _inputSignature(graphIn, headIdIn);
+  if (sig === _lastSignature) {
+    setLastGraph(graphIn, headIdIn);
+    return;
+  }
+  setLastGraph(graphIn, headIdIn);
+  _skeletonPending = false;
+  if (!historySvgEmitAllowed()) {
+    _svgEmitPending = true;
+    return;
+  }
+  const geomSig = _geomSignature(graphIn, headIdIn);
+  if (tryStatusPatch(graphIn, sig, geomSig)) return;
+
   let graph = graphIn;
   let headId = headIdIn;
 
@@ -181,8 +273,6 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     }
   }
 
-  const sig = _signature(graph, headId);
-  if (sig === _lastSignature && _currentHead === headId) return;
   setLastSignature(sig);
   setCurrentHead(headId);
 
@@ -200,6 +290,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     _resetTooltip();
     setLeafOfNode(Object.create(null));
     _lastRenderedSession = runtimeState.currentSessionId;
+    _lastGeomSignature = geomSig;
     return;
   }
 
@@ -320,6 +411,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   _lastRenderedSession = sess;
 
   attachCanvas(body, svg, world, sess);
+  _lastGeomSignature = geomSig;
   _resetTooltip();
   setVisibleIds(Object.create(null));
 

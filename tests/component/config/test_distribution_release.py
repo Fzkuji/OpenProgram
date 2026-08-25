@@ -1268,6 +1268,11 @@ def test_local_app_refresh_rejects_a_different_product_version_before_build(
     assert refresh.count("--require-source-match") == 2
     assert archive < lock < post_build_gate < first_worker_mutation
     assert post_build_gate < first_pip_mutation
+    chat_gate = refresh.index("zipfile.ZipFile")
+    wheel_found = refresh.index('openprogram-*.whl')
+    assert wheel_found < chat_gate < first_pip_mutation
+    assert 'aria-label="Authenticating"' in refresh[chat_gate:first_pip_mutation]
+    assert 'id="sidebar"' in refresh[chat_gate:first_pip_mutation]
     assert '$(dirname -- "$app_path")/.openprogram-app-install.lock' in refresh
 
 
@@ -1408,6 +1413,8 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         "with zipfile.ZipFile(sys.argv[1], 'w') as archive:\n"
         "    archive.writestr('openprogram-0.6.1.dist-info/METADATA', "
         "'Metadata-Version: 2.1\\nName: openprogram\\nVersion: 0.6.1\\n')\n"
+        "    archive.writestr('openprogram_server/_webui/_frontend/chat.html', "
+        "'<body><div id=\"sidebar\"></div></body>\\n')\n"
         "PY\n",
         encoding="utf-8",
     )
@@ -1595,6 +1602,11 @@ def test_release_frontend_staging_includes_prebuilt_docs() -> None:
     assert "scripts.docs_site.build" in staging
     assert 'docs_target_dir="$target_dir/docs"' in staging
     assert 'cp -R "$docs_source_dir/." "$docs_target_dir/"' in staging
+    copy = staging.index('cp -R "$source_dir/." "$target_dir/"')
+    gate = staging[copy:]
+    assert "chat.html" in gate
+    assert 'aria-label="Authenticating"' in gate
+    assert 'id="sidebar"' in gate
 
 
 def test_release_asset_staging_invokes_locked_docs_builder(tmp_path) -> None:
@@ -1618,6 +1630,7 @@ def test_release_asset_staging_invokes_locked_docs_builder(tmp_path) -> None:
 if [ "$1" = "run" ] && [ "$2" = "build" ]; then
   mkdir -p "$PWD/apps/web/out"
   printf '<html>web</html>\\n' > "$PWD/apps/web/out/index.html"
+  printf '<body><div id="sidebar"></div></body>\\n' > "$PWD/apps/web/out/chat.html"
 fi
 """,
         encoding="utf-8",
@@ -1652,6 +1665,35 @@ printf '<html>docs</html>\\n' > "$PWD/docs/_site/index.html"
         "run --isolated --locked --python 3.12 --with markdown-it-py "
         "--with mdit-py-plugins --with pygments python -m scripts.docs_site.build"
     )
+    staged_chat = (
+        repo / "apps" / "server" / "openprogram_server" / "_webui" / "_frontend" / "chat.html"
+    )
+    assert 'id="sidebar"' in staged_chat.read_text(encoding="utf-8")
+
+    fake_npm.write_text(
+        """#!/bin/sh
+if [ "$1" = "run" ] && [ "$2" = "build" ]; then
+  mkdir -p "$PWD/apps/web/out"
+  printf '<html>web</html>\\n' > "$PWD/apps/web/out/index.html"
+  printf '<main aria-label="Authenticating"></main>\\n' > "$PWD/apps/web/out/chat.html"
+fi
+""",
+        encoding="utf-8",
+    )
+    rejected = subprocess.run(
+        ["bash", str(script)],
+        cwd=repo,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "UV_LOG": str(uv_log),
+        },
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert rejected.returncode != 0
+    assert "Authenticating" in rejected.stderr
 
 
 def test_product_runtime_installs_complete_default_capabilities() -> None:

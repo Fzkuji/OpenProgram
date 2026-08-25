@@ -83,6 +83,8 @@ const { window } = parseHTML("<!doctype html><html><body></body></html>");
 globalThis.window = window;
 globalThis.document = window.document;
 const { renderMd } = await import("../lib/runtime-bridge/markdown-render.ts");
+const cached = renderMd("hello **world**");
+assert.equal(renderMd("hello **world**"), cached, "same src must reuse the sanitized HTML");
 const unsafeControl = document.createElement("div");
 unsafeControl.innerHTML = '$$<img src="x" onerror="window.__workflow_xss=1">$$';
 assert.ok(

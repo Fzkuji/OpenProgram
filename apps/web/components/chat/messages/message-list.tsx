@@ -46,6 +46,17 @@ import {
   resolveChatScrollTop,
   writeChatScroll,
 } from "@/lib/state/chat-scroll";
+import {
+  RECYCLE_MIN_ROWS,
+  collectAlwaysLive,
+  decideLiveRows,
+  foldKey,
+  getRowHeight,
+  heightsFor,
+  noteChatWidth,
+  setRowHeight,
+  type WindowNode,
+} from "@/lib/state/message-window";
 import { Avatar } from "@/components/avatar";
 import { showToast } from "@/lib/format-utils/toast";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
@@ -512,6 +523,54 @@ export const MessageRow = memo(function MessageRow({
   return dispatch(msg, sessionIdOverride);
 });
 
+export const RecyclableRow = memo(function RecyclableRow({
+  id,
+  chatKey,
+  live,
+  onMeasured,
+  sessionIdOverride,
+}: {
+  id: string;
+  chatKey: string;
+  live: boolean;
+  onMeasured: () => void;
+  sessionIdOverride?: string;
+}) {
+  const slotRef = useRef<HTMLDivElement>(null);
+  const height = getRowHeight(chatKey, id);
+  const show = live || height == null;
+  useLayoutEffect(() => {
+    const el = slotRef.current;
+    if (!el) return;
+    if (!show) {
+      el.dataset.seen = "1";
+      return;
+    }
+    const write = () => {
+      const next = el.offsetHeight;
+      if (next > 0 && setRowHeight(chatKey, id, next) === "first") onMeasured();
+    };
+    write();
+    const ro = new ResizeObserver(write);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [show, id, chatKey, onMeasured]);
+  return (
+    <div
+      ref={slotRef}
+      data-msg-slot={id}
+      className="msg-slot"
+      style={!show && height != null ? { height } : undefined}
+    >
+      {show ? (
+        <div style={{ display: "contents" }}>
+          <MessageRow id={id} sessionIdOverride={sessionIdOverride} />
+        </div>
+      ) : null}
+    </div>
+  );
+});
+
 /** Pin `#chatArea` to the bottom as `#chatMessages` grows, unless the
  *  user has scrolled up. Observes the container rather than threading a
  *  dependency through, so both new bubbles and streamed text deltas
@@ -537,10 +596,12 @@ function useChatAreaStick(
   chatKey: string | null,
   newTurnSeed: number,
   ownTurn: boolean,
+  paintRows: boolean,
 ) {
   const activeKeyRef = useRef<string | null>(chatKey);
   const previousKeyRef = useRef<string | null>(null);
   const previousSeedRef = useRef(newTurnSeed);
+  const previousPaintRef = useRef(paintRows);
   const stuckRef = useRef(true);
   const jumpingRef = useRef(false);
   const cancelJumpRef = useRef<(() => void) | null>(null);
@@ -552,6 +613,7 @@ function useChatAreaStick(
   const [detached, setDetached] = useState(false);
 
   useEffect(() => {
+    if (!paintRows) return;
     const area = document.getElementById("chatArea");
     const msgs = document.getElementById("chatMessages");
     if (!area || !msgs) return;
@@ -575,6 +637,7 @@ function useChatAreaStick(
       return atBottom;
     };
     const onScroll = () => {
+      if (area.clientHeight <= 0) return;
       syncDetached();
       scrollTopRef.current = area.scrollTop;
       const key = activeKeyRef.current;
@@ -586,6 +649,7 @@ function useChatAreaStick(
       // undefined. Math rendering now lives in the markdown pipeline.
       // A Jump-to-latest click is already smoothing down; snapping
       // scrollTop here fights that and flashes the transcript.
+      if (area.clientHeight <= 0) return;
       if (
         stuckRef.current
         && !jumpingRef.current
@@ -621,7 +685,7 @@ function useChatAreaStick(
       area.removeEventListener("pointerdown", onPointer);
       ro.disconnect();
     };
-  }, []);
+  }, [paintRows]);
 
   // Save the outgoing position and restore the incoming one before paint.
   // `chatKey` is part of the dependency so equal-length conversations still
@@ -630,6 +694,12 @@ function useChatAreaStick(
   useLayoutEffect(() => {
     const area = document.getElementById("chatArea");
     if (!area) return;
+    if (!paintRows) {
+      previousPaintRef.current = false;
+      return;
+    }
+    const becameVisible = previousPaintRef.current === false;
+    previousPaintRef.current = true;
     const keyChanged = previousKeyRef.current !== chatKey;
     const seedChanged = previousSeedRef.current !== newTurnSeed;
     if (previousKeyRef.current && keyChanged) {
@@ -643,15 +713,20 @@ function useChatAreaStick(
     previousKeyRef.current = chatKey;
     previousSeedRef.current = newTurnSeed;
 
-    const saved = keyChanged && chatKey
+    const saved = (keyChanged || becameVisible) && chatKey
       ? readChatScroll(window.sessionStorage, chatKey)
       : null;
+    // Reveal after a hide must use the same follow/stay rule as a new
+    // turn. Preferring `saved` here left a following reader on a stale
+    // pixel after the transcript grew in DAG / another pane.
     area.scrollTop = resolveChatScrollTop({
       keyChanged,
-      seedChanged,
+      seedChanged: seedChanged || becameVisible,
       saved,
       scrollHeight: area.scrollHeight,
-      currentTop: area.scrollTop,
+      currentTop: becameVisible
+        ? (saved ?? scrollTopRef.current)
+        : area.scrollTop,
       atBottom: stuckRef.current,
       ownTurn,
     });
@@ -667,7 +742,7 @@ function useChatAreaStick(
       );
       setDetached(!stuckRef.current);
     }
-  }, [chatKey, newTurnSeed, ownTurn]);
+  }, [chatKey, newTurnSeed, ownTurn, paintRows]);
 
   const jumpToLatest = useCallback(() => {
     const area = document.getElementById("chatArea");
@@ -811,7 +886,11 @@ function WorkspaceAlignmentBanner({ sessionId }: { sessionId: string | null }) {
   );
 }
 
-export function MessageList() {
+export const MessageList = memo(function MessageList({
+  paintRows = true,
+}: {
+  paintRows?: boolean;
+}) {
   const { text } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const chatKey = useSessionStore((s) => s.activeChatKey);
@@ -824,9 +903,11 @@ export function MessageList() {
   }, []);
   const hiddenCovered = new Set<string>();
   const coveredSet = new Set<string>();
+  const snap = useSessionStore.getState();
   for (const id of ids) {
-    const m = useSessionStore.getState().messagesById[id];
-    if (m?.kind !== "compaction" || m.slot !== "card" || !m.coversIds?.length) continue;
+    const m = snap.messagesById[id];
+    if (!m) continue;
+    if (m.kind !== "compaction" || m.slot !== "card" || !m.coversIds?.length) continue;
     for (const cid of m.coversIds) {
       coveredSet.add(cid);
       if (!originalsOpen.has(m.id)) hiddenCovered.add(cid);
@@ -846,6 +927,7 @@ export function MessageList() {
   // component — and re-map every id — on every single streaming delta,
   // because ``updateMessage`` returns a fresh map object each time.
   const lastId = ids.length ? ids[ids.length - 1] : null;
+  const pendingAnchor = runtimeState._pendingExpandAttach?.anchor;
   const lastRole = useSessionStore((s) =>
     lastId ? (s.messagesById[lastId]?.role ?? null) : null,
   );
@@ -857,11 +939,105 @@ export function MessageList() {
     chatKey,
     ids.length,
     lastRole === "user",
+    paintRows,
   );
+  const [railTarget, setRailTarget] = useState<string | null>(null);
+  const alwaysLive = collectAlwaysLive(
+    ids,
+    (id) => snap.messagesById[id],
+    [pendingAnchor, railTarget],
+  );
+  const [view, setView] = useState({ top: 0, h: 800 });
+  const measureGate = useRef(false);
+  const [, setMeasureGen] = useState(0);
+  const notifyMeasured = useCallback(() => {
+    if (measureGate.current) return;
+    measureGate.current = true;
+    requestAnimationFrame(() => {
+      measureGate.current = false;
+      setMeasureGen((n) => n + 1);
+    });
+  }, []);
+  useLayoutEffect(() => {
+    if (!paintRows) return;
+    const area = document.getElementById("chatArea");
+    if (!area) return;
+    const next = { top: area.scrollTop, h: area.clientHeight };
+    setView((prev) => (prev.top === next.top && prev.h === next.h ? prev : next));
+  }, [chatKey, ids.length, paintRows]);
+  useEffect(() => {
+    if (!paintRows) return;
+    const area = document.getElementById("chatArea");
+    if (!area) return;
+    let raf = 0;
+    const sync = () => {
+      raf = 0;
+      if (chatKey && area.clientWidth > 0 && noteChatWidth(chatKey, area.clientWidth)) {
+        setMeasureGen((n) => n + 1);
+      }
+      const next = { top: area.scrollTop, h: area.clientHeight };
+      setView((prev) => (prev.top === next.top && prev.h === next.h ? prev : next));
+    };
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(sync);
+    };
+    area.addEventListener("scroll", onScroll, { passive: true });
+    const ro = new ResizeObserver(sync);
+    ro.observe(area);
+    return () => {
+      area.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [chatKey, paintRows]);
+  const windowNodes: WindowNode[] = [];
+  {
+    let i = 0;
+    while (i < ids.length) {
+      const id = ids[i];
+      if (coveredSet.has(id)) {
+        const first = id;
+        while (i < ids.length && coveredSet.has(ids[i])) i += 1;
+        windowNodes.push({ kind: "fold", id: first });
+      } else {
+        windowNodes.push({ kind: "row", id });
+        i += 1;
+      }
+    }
+  }
+  if (paintRows && chatKey && typeof document !== "undefined") {
+    const areaW = document.getElementById("chatArea")?.clientWidth ?? 0;
+    if (areaW > 0) noteChatWidth(chatKey, areaW);
+  }
+  const liveSet = paintRows && chatKey
+    ? decideLiveRows({
+        nodes: windowNodes,
+        heights: heightsFor(chatKey),
+        scrollTop: view.top,
+        viewH: view.h,
+        always: alwaysLive,
+        listLen: ids.length,
+        recycleMin: RECYCLE_MIN_ROWS,
+      })
+    : null;
+  useLayoutEffect(() => {
+    if (!paintRows || !chatKey || !liveSet) return;
+    const root = document.getElementById("chatMessages");
+    if (!root) return;
+    let changed = false;
+    root.querySelectorAll<HTMLElement>("[data-fold-id]").forEach((el) => {
+      const fid = el.dataset.foldId;
+      if (!fid) return;
+      if (setRowHeight(chatKey, foldKey(fid), el.offsetHeight) !== "same") {
+        changed = true;
+      }
+    });
+    if (changed) notifyMeasured();
+  });
   const [jumpShown, setJumpShown] = useState(false);
   const [jumpLeaving, setJumpLeaving] = useState(false);
   useEffect(() => {
-    const want = detached && ids.length > 0;
+    const want = paintRows && detached && ids.length > 0;
     if (want) {
       setJumpLeaving(false);
       setJumpShown(true);
@@ -874,7 +1050,7 @@ export function MessageList() {
       setJumpLeaving(false);
     }, JUMP_LATEST_FADE_MS);
     return () => window.clearTimeout(t);
-  }, [detached, ids.length, jumpShown]);
+  }, [detached, ids.length, jumpShown, paintRows]);
 
   // Parent-return actions: once the reload has rows on screen, reveal the
   // original sub-agent timeline row. Collapsed strips unmount their children,
@@ -882,7 +1058,7 @@ export function MessageList() {
   // The flag is consumed only when the reveal actually runs, so a
   // mid-hydration re-render just reschedules it.
   useEffect(() => {
-    if (!runtimeState._pendingExpandAttach || ids.length === 0) return;
+    if (!paintRows || !runtimeState._pendingExpandAttach || ids.length === 0) return;
     const esc = (v: string) =>
       window.CSS && CSS.escape ? CSS.escape(v) : v;
     const t = window.setTimeout(() => {
@@ -912,14 +1088,14 @@ export function MessageList() {
       }, 280);
     }, 250);
     return () => window.clearTimeout(t);
-  }, [ids]);
+  }, [ids, paintRows]);
 
   // Fade the transcript in once per session switch. The ref remembers
   // which session already faded, so streaming updates (ids.length
   // growing) inside the same session don't re-trigger the animation.
   const lastFadedSession = useRef<string | null>(null);
   useEffect(() => {
-    if (!sessionId || ids.length === 0) return;
+    if (!paintRows || !sessionId || ids.length === 0) return;
     if (lastFadedSession.current === sessionId) return;
     lastFadedSession.current = sessionId;
     const el = document.getElementById("chatMessages");
@@ -930,7 +1106,7 @@ export function MessageList() {
       clearTimeout(t);
       el.classList.remove("session-enter");
     };
-  }, [sessionId, ids.length]);
+  }, [sessionId, ids.length, paintRows]);
 
   // Show the standalone indicator while we're still waiting on the
   // turn — either:
@@ -977,8 +1153,10 @@ export function MessageList() {
     <>
       <AgentBranchBanner />
       <WorkspaceAlignmentBanner sessionId={sessionId} />
-      <MessageRail hiddenKey={[...hiddenCovered].join("\n")} />
-      {(() => {
+      {paintRows ? (
+        <MessageRail hiddenKey={[...hiddenCovered].join("\n")} onSeek={setRailTarget} />
+      ) : null}
+      {paintRows ? (() => {
         const nodes: ReactNode[] = [];
         let i = 0;
         while (i < ids.length) {
@@ -993,6 +1171,7 @@ export function MessageList() {
               <div
                 key={`${run[0]}_fold`}
                 className="compaction-orig-fold"
+                data-fold-id={run[0]}
                 data-open={hiddenCovered.has(run[0]) ? "0" : "1"}
               >
                 <div className="compaction-orig-fold-inner">
@@ -1007,21 +1186,33 @@ export function MessageList() {
             continue;
           }
           nodes.push(
-            <div key={id} style={{ display: "contents" }}>
-              <MessageRow id={id} />
-            </div>,
+            liveSet && chatKey ? (
+              <RecyclableRow
+                key={id}
+                id={id}
+                chatKey={chatKey}
+                live={liveSet.has(id)}
+                onMeasured={notifyMeasured}
+              />
+            ) : (
+              <div key={id} style={{ display: "contents" }}>
+                <MessageRow id={id} />
+              </div>
+            ),
           );
           i += 1;
         }
         return nodes;
-      })()}
-      {showPending ? (
+      })() : null}
+      {paintRows && showPending ? (
         <PendingReplyIndicator timestamp={runningTask?.started_at} />
       ) : null}
       {/* Messages typed during the run — dimmed rows under the live
           turn, drained one at a time when it ends. */}
-      <QueuedMessages sessionId={sessionId} onStopAndSend={stopAndSend} />
-      {jumpShown && jumpHost
+      {paintRows ? (
+        <QueuedMessages sessionId={sessionId} onStopAndSend={stopAndSend} />
+      ) : null}
+      {paintRows && jumpShown && jumpHost
         ? createPortal(
             <div className={[
               "jump-latest-anchor",
@@ -1051,4 +1242,4 @@ export function MessageList() {
         : null}
     </>
   );
-}
+});

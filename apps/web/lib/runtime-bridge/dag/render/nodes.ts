@@ -40,6 +40,85 @@ function _isArchivedFailure(
   return !onHead && !isHead;
 }
 
+function applyStatusPaint(
+  g: SVGElement,
+  el: SVGElement | null,
+  node: GNode,
+): void {
+  const status = (node as Record<string, unknown>).status as string | undefined;
+  const onHead = !g.classList.contains("off-head");
+  const isHead = g.classList.contains("is-head");
+  const isFailed = _isArchivedFailure(node, onHead, isHead);
+  const isSuperseded = !!(node as Record<string, unknown>).superseded_summary;
+  const isErr = status === "error" || !!node.is_error;
+
+  g.classList.toggle("is-running", status === "running");
+  if (status === "cancelled" || status === "stopped") {
+    g.setAttribute("opacity", "0.45");
+  } else {
+    g.removeAttribute("opacity");
+  }
+  g.classList.toggle("is-archived-failure", isFailed);
+  g.setAttribute("data-failed", isFailed ? "1" : "0");
+
+  if (el) {
+    if (status === "running") el.setAttribute("stroke-dasharray", "4 3");
+    else el.removeAttribute("stroke-dasharray");
+
+    const base = el.getAttribute("data-base-stroke") || "";
+    const baseW = el.getAttribute("data-base-stroke-width") || "";
+    if (isFailed || isSuperseded) {
+      el.setAttribute("stroke", "var(--dag-ghost, #c9c7bf)");
+      el.setAttribute("stroke-width", "1.6");
+    } else if (isErr) {
+      el.setAttribute("stroke", "#e5534b");
+      if (baseW) el.setAttribute("stroke-width", baseW);
+    } else if (base) {
+      el.setAttribute("stroke", base);
+      if (baseW) el.setAttribute("stroke-width", baseW);
+    }
+  }
+
+  const wantBang = !!(el && isErr);
+  let bang = g.querySelector("[data-status-bang]");
+  if (wantBang && !bang) {
+    bang = _svg("text", {
+      x: String(NODE_R + 2),
+      y: String(-NODE_R),
+      fill: "#e5534b",
+      "font-size": "9",
+      "font-weight": "700",
+      "pointer-events": "none",
+      "data-status-bang": "1",
+    });
+    bang.textContent = "!";
+    g.appendChild(bang);
+  } else if (!wantBang && bang) {
+    bang.remove();
+  }
+}
+
+/** In-place status / running / error marks. False if any drawn node is missing. */
+export function patchHistoryStatus(host: HTMLElement, graph: GNode[]): boolean {
+  const nodeG = host.querySelector("svg.history-svg g.history-nodes");
+  if (!nodeG) return false;
+  const drawn = nodeG.querySelectorAll(".history-node");
+  if (!drawn.length) return false;
+  const byId: Record<string, GNode> = Object.create(null);
+  graph.forEach((m) => { byId[m.id] = m; });
+  for (let i = 0; i < drawn.length; i++) {
+    const g = drawn[i] as SVGElement;
+    const id = g.getAttribute("data-msg-id");
+    const node = id ? byId[id] : undefined;
+    if (!node) return false;
+    const el = g.querySelector("[data-node-shape]") as SVGElement | null;
+    if (!el) return false;
+    applyStatusPaint(g, el, node);
+    (g as any)._nodeData = node;
+  }
+  return true;
+}
+
 export function drawNodes(
   nodeG: SVGElement,
   tree: { byId: Record<string, GNode> },
@@ -76,10 +155,6 @@ export function drawNodes(
     // stamped per-branch by the fold pass (dag/rendering.md §9). On a
     // branch the summary does not apply to, these turns keep colour.
     const isGhost = !!(node as Record<string, unknown>)._ghost;
-    // Rolling compaction: a newer summary absorbed this one. Grey
-    // capsule, nothing to fold (backend strips its covers_ids).
-    const isSuperseded =
-      !!(node as Record<string, unknown>).superseded_summary;
     // The active summary viewed from a branch it does not apply to:
     // the turns around it are live, the capsule is the inert thing.
     const isInert = !!(node as Record<string, unknown>)._summaryInert;
@@ -125,6 +200,12 @@ export function drawNodes(
     const el = _buildShapeEl(_shapeFor(node), color, r);
     if (el) {
       el.setAttribute("pointer-events", "none");
+      el.setAttribute("data-node-shape", "1");
+      el.setAttribute("data-base-stroke", color);
+      el.setAttribute(
+        "data-base-stroke-width",
+        el.getAttribute("stroke-width") || "2.2",
+      );
       // HEAD is said by a breathing glow around its own glyph (§4):
       // light rides the shape at every zoom, where a fill changed what
       // the glyph looks like and a halo ring read as a second node.
@@ -135,35 +216,7 @@ export function drawNodes(
       }
       g.appendChild(el);
     }
-    // ── status 画在节点自己的描边上（rendering.md 第四节，废除占位框） ──
-    const status = (node as Record<string, unknown>).status as string | undefined;
-    if (el && status === "running") {
-      el.setAttribute("stroke-dasharray", "4 3");
-      g.classList.add("is-running");
-    } else if (el && (status === "error" || node.is_error)) {
-      el.setAttribute("stroke", "#e5534b");
-      const bang = _svg("text", {
-        x: String(NODE_R + 2),
-        y: String(-NODE_R),
-        fill: "#e5534b",
-        "font-size": "9",
-        "font-weight": "700",
-        "pointer-events": "none",
-      });
-      bang.textContent = "!";
-      g.appendChild(bang);
-    } else if (status === "cancelled" || status === "stopped") {
-      g.setAttribute("opacity", "0.45");
-    }
-    // ── 出上下文的读法（rendering.md §9/§10）────────────────────
-    // 不在下一次请求里的节点保持分支本色，"出上下文"由白底的缺席
-    // 说（白填充只落在上下文集合里的节点上）+ 虚线来边说。灰描边只
-    // 留给死历史：失败废弃线和被取代的旧摘要——它们在任何分支上都
-    // 永远回不了上下文，这不是"当前视角"的状态。
-    if (el && (isFailed || isSuperseded)) {
-      el.setAttribute("stroke", "var(--dag-ghost, #c9c7bf)");
-      el.setAttribute("stroke-width", "1.6");
-    }
+    applyStatusPaint(g, el, node);
     // ── 内圈：双圈圆的里圈（rendering.md §9）────────────────────
     // 细一号的同心圆，跟外圈同色，在白填充（在上下文中）与镂空两种
     // 状态下都可见。

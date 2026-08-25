@@ -6,16 +6,14 @@ import { setQueryClient } from "@/lib/query-client";
 import { waitForOwnerAuthBootstrap } from "@/lib/net/owner-auth-bootstrap";
 
 function OwnerAuthBoundary({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<"pending" | "ready" | "failed">("pending");
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let active = true;
     void waitForOwnerAuthBootstrap().then(
+      () => {},
       () => {
-        if (active) setState("ready");
-      },
-      () => {
-        if (active) setState("failed");
+        if (active) setFailed(true);
       },
     );
     return () => {
@@ -23,10 +21,7 @@ function OwnerAuthBoundary({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  if (state === "pending") {
-    return <main aria-busy="true" aria-label="Authenticating" />;
-  }
-  if (state === "failed") {
+  if (failed) {
     return (
       <main role="alert">
         Owner authentication failed. Open a new authenticated URL and try again.

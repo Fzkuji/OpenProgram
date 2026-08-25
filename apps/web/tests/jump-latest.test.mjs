@@ -92,8 +92,40 @@ test("jump keeps the button until the ride finishes", () => {
 });
 
 test("MessageList reads detached only after useChatAreaStick", () => {
-  const list = messageList.slice(messageList.indexOf("export function MessageList"));
+  const list = messageList.slice(messageList.indexOf("function MessageList"));
   const stick = list.indexOf("useChatAreaStick(");
-  const fade = list.indexOf("const want = detached");
+  const fade = list.indexOf("const want = paintRows && detached");
   assert.ok(stick >= 0 && fade > stick, "detached fade must follow useChatAreaStick");
+});
+
+test("long lists recycle measured offscreen rows; no virtual list library", () => {
+  const list = messageList.slice(messageList.indexOf("function MessageList"));
+  assert.match(list, /while \(i < ids\.length\)/);
+  assert.match(list, /RECYCLE_MIN_ROWS/);
+  assert.match(list, /display: "contents"/);
+  assert.match(messageList, /data-msg-slot/);
+  assert.match(messageList, /data-msg-id/);
+  assert.doesNotMatch(
+    messageList,
+    /react-virtuoso|react-window|@tanstack\/react-virtual/,
+  );
+});
+
+test("remounted rows do not replay msgAppear", () => {
+  const transcriptCss = readFileSync(
+    new URL("../app/styles/chat/transcript.css", import.meta.url),
+    "utf8",
+  );
+  assert.match(transcriptCss, /\.msg-slot\[data-seen="1"\] \.message/);
+  assert.match(transcriptCss, /animation:\s*none/);
+});
+
+test("content-visibility is not on every message row", () => {
+  const wrap = messageList.slice(
+    messageList.indexOf("nodes.push("),
+    messageList.indexOf("return nodes"),
+  );
+  assert.doesNotMatch(wrap, /content-visibility:\s*auto/);
+  assert.match(wrap, /display: "contents"/);
+  assert.match(wrap, /compaction-orig-fold/);
 });

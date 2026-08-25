@@ -127,3 +127,16 @@
 }
 #chatMessages.session-enter { animation: session-fade-in 180ms ease-out; }
 @keyframes session-fade-in { from { opacity: 0; } }
+
+/* Recycled off-screen rows keep a measured-height slot so scrollHeight
+   stays aligned with a fully mounted transcript. Remount must not replay
+   msgAppear — that animation is first-insert only. */
+.msg-slot {
+  flex-shrink: 0;
+  width: 100%;
+}
+.msg-slot[data-seen="1"] .message {
+  animation: none;
+  opacity: 1;
+  transform: none;
+}

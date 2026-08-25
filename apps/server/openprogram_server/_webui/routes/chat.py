@@ -194,6 +194,13 @@ def register(app):
         return JSONResponse(content=result)
 
 
+def apply_user_goal_context_mode(name: str, kwargs: dict) -> dict:
+    """User-forced goal (form / slash / welcome / retry) defaults to session."""
+    if name == "goal" and "context_mode" not in kwargs:
+        kwargs["context_mode"] = "session"
+    return kwargs
+
+
 def run_agentic_function_call(
     name: str,
     kwargs: dict,
@@ -278,7 +285,7 @@ def run_agentic_function_call(
             "status_code": 409,
         }
 
-    kwargs = dict(kwargs or {})
+    kwargs = apply_user_goal_context_mode(name, dict(kwargs or {}))
     conv = _s._get_or_create_session(session_id)
     session_id = conv["id"]
     if project_id:

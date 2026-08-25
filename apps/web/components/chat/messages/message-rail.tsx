@@ -104,9 +104,16 @@ function useUserMessages(): RailMsg[] {
           if (a.role === "user") break;
           if (a.role !== "assistant" || a.display === "runtime") continue;
           assistantId = a.id;
-          const t = a.blocks?.find((b) => b.type === "text")?.text ?? a.content ?? "";
-          // 保留原始空白/换行，让预览卡按 markdown 渲染；只按长度截断。
-          assistantSummary = t.trim().slice(0, 200);
+          const live =
+            a.status === "streaming" ||
+            a.status === "pending" ||
+            a.status === "running" ||
+            a.status === "cancelling";
+          if (!live) {
+            const t = a.blocks?.find((b) => b.type === "text")?.text ?? a.content ?? "";
+            // 保留原始空白/换行，让预览卡按 markdown 渲染；只按长度截断。
+            assistantSummary = t.trim().slice(0, 200);
+          }
           assistantTurnFiles = a.turnFiles;
           assistantReverted = Boolean(a.reverted);
           break;
@@ -129,15 +136,22 @@ function useUserMessages(): RailMsg[] {
   return useMemo(() => packed.map(unpackRow), [packed]);
 }
 
-function scrollToMsg(id: string): void {
+function scrollToMsg(id: string, onSeek?: (id: string) => void): void {
+  onSeek?.(id);
   const container = document.getElementById("chatMessages");
   if (!container) return;
   const esc = window.CSS && CSS.escape ? CSS.escape(id) : id;
   const el = container.querySelector(`[data-msg-id="${esc}"]`) as HTMLElement | null;
-  if (!el) return;
-  if (el.closest(".compaction-orig-fold[data-open='0']")) return;
-  const bubble = (el.querySelector(".message-content") as HTMLElement) ?? el;
+  const slot = el
+    ? null
+    : (container.querySelector(`[data-msg-slot="${esc}"]`) as HTMLElement | null);
+  const target = el ?? slot;
+  if (!target) return;
+  if (el?.closest(".compaction-orig-fold[data-open='0']")) return;
   const flash = () => {
+    const live = container.querySelector(`[data-msg-id="${esc}"]`) as HTMLElement | null;
+    if (!live || live.closest(".compaction-orig-fold[data-open='0']")) return;
+    const bubble = (live.querySelector(".message-content") as HTMLElement) ?? live;
     // 橙色背景闪烁一下（滚到位后触发）。
     bubble.classList.remove("rail-flash");
     void bubble.offsetWidth;
@@ -146,7 +160,7 @@ function scrollToMsg(id: string): void {
   };
 
   const area = document.getElementById("chatArea");
-  el.scrollIntoView({ behavior: "smooth", block: "start" });
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
   // 等平滑滚动停下再闪：和 Jump to latest 同一条 scrollend / 700ms。
   if (area) whenAreaScrollSettles(area, flash);
   else window.setTimeout(flash, 400);
@@ -198,7 +212,13 @@ function PreviewCard({
   );
 }
 
-export function MessageRail({ hiddenKey = "" }: { hiddenKey?: string }) {
+export function MessageRail({
+  hiddenKey = "",
+  onSeek,
+}: {
+  hiddenKey?: string;
+  onSeek?: (id: string) => void;
+}) {
   const all = useUserMessages();
   const msgs = useMemo(() => {
     if (!hiddenKey) return all;
@@ -233,7 +253,8 @@ export function MessageRail({ hiddenKey = "" }: { hiddenKey?: string }) {
       let current: string | null = msgs[0]?.id ?? null;
       for (const m of msgs) {
         const esc = window.CSS && CSS.escape ? CSS.escape(m.id) : m.id;
-        const el = container.querySelector(`[data-msg-id="${esc}"]`);
+        const el = container.querySelector(`[data-msg-id="${esc}"]`)
+          ?? container.querySelector(`[data-msg-slot="${esc}"]`);
         if (!el) continue;
         const rect = (el as HTMLElement).getBoundingClientRect();
         if (rect.height < 1) continue;
@@ -348,7 +369,7 @@ export function MessageRail({ hiddenKey = "" }: { hiddenKey?: string }) {
         onMouseLeave={() => setHoverIdx(null)}
         onClick={(e) => {
           const i = idxFromY(e.clientY);
-          if (i != null && msgs[i]) scrollToMsg(msgs[i].id);
+          if (i != null && msgs[i]) scrollToMsg(msgs[i].id, onSeek);
         }}
       >
         {msgs.map((m, i) => (
@@ -369,7 +390,7 @@ export function MessageRail({ hiddenKey = "" }: { hiddenKey?: string }) {
             onBlur={() => setHoverIdx((cur) => (cur === i ? null : cur))}
             onClick={(e) => {
               e.stopPropagation();
-              scrollToMsg(m.id);
+              scrollToMsg(m.id, onSeek);
             }}
           />
         ))}

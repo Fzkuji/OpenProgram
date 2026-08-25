@@ -96,6 +96,22 @@ const G = () => [
     predecessor: "a0", _lane: 0, _tier: 2, _depth: 7, created_at: 9 },
 ];
 
+const WF = () => [
+  { id: "ROOT", display: "root", _lane: 0, _tier: 0, _depth: 0,
+    created_at: 0 },
+  { id: "wf", role: "tool", function: "agentic_workflow",
+    predecessor: "ROOT", caller: "",
+    _lane: 0, _tier: 1, _depth: 1, created_at: 1 },
+  { id: "s1", role: "user", source: "agent_spawn", predecessor: "ROOT",
+    caller: "ROOT", _lane: 1, _tier: 1, _depth: 1, created_at: 2 },
+  { id: "s1r", role: "assistant", source: "agent_spawn", predecessor: "s1",
+    _lane: 1, _tier: 2, _depth: 2, created_at: 3 },
+  { id: "s2", role: "user", source: "agent_spawn", predecessor: "ROOT",
+    caller: "ROOT", _lane: 2, _tier: 1, _depth: 1, created_at: 4 },
+  { id: "s2r", role: "assistant", source: "agent_spawn", predecessor: "s2",
+    _lane: 2, _tier: 2, _depth: 2, created_at: 5 },
+];
+
 setThreadOpen(Object.create(null));
 
 {
@@ -212,21 +228,6 @@ assert.equal(
 
 /* ---- 1b. composer-launched function with scarred ROOT-hung spawns ---- */
 {
-  const WF = () => [
-    { id: "ROOT", display: "root", _lane: 0, _tier: 0, _depth: 0,
-      created_at: 0 },
-    { id: "wf", role: "tool", function: "agentic_workflow",
-      predecessor: "ROOT", caller: "",
-      _lane: 0, _tier: 1, _depth: 1, created_at: 1 },
-    { id: "s1", role: "user", source: "agent_spawn", predecessor: "ROOT",
-      caller: "ROOT", _lane: 1, _tier: 1, _depth: 1, created_at: 2 },
-    { id: "s1r", role: "assistant", source: "agent_spawn", predecessor: "s1",
-      _lane: 1, _tier: 2, _depth: 2, created_at: 3 },
-    { id: "s2", role: "user", source: "agent_spawn", predecessor: "ROOT",
-      caller: "ROOT", _lane: 2, _tier: 1, _depth: 1, created_at: 4 },
-    { id: "s2r", role: "assistant", source: "agent_spawn", predecessor: "s2",
-      _lane: 2, _tier: 2, _depth: 2, created_at: 5 },
-  ];
   setThreadOpen(Object.create(null));
   {
     const m = buildThreadModel(WF());
@@ -254,6 +255,85 @@ assert.equal(
   }
   setThreadOpen(Object.create(null));
 }
+
+function scanComposerBefore(graph, spawn) {
+  const byId = Object.create(null);
+  for (const n of graph) byId[n.id] = n;
+  const t = spawn.created_at || 0;
+  let best;
+  for (const id of Object.keys(byId)) {
+    const cand = byId[id];
+    if (!isChainNode(cand) || cand.display === "root") continue;
+    if (cand.role !== "tool" && !cand._runNode) continue;
+    if ((cand.created_at || 0) > t) continue;
+    if (!best || (cand.created_at || 0) > (best.created_at || 0)) best = cand;
+  }
+  return best;
+}
+
+function scanSpawnName(root, byId) {
+  const fromRoot = (root.spawned_from?.label || "").trim();
+  if (fromRoot) return fromRoot;
+  const own = root.branch_name || "";
+  if (own.trim()) return own.trim();
+  for (const id of Object.keys(byId)) {
+    const n = byId[id];
+    if ((n._lane || 0) !== (root._lane || 0) || n.id === root.id) continue;
+    const nm = n.branch_name || "";
+    if (nm.trim()) return nm.trim();
+  }
+  return "";
+}
+
+function assertThreadIndexMatchesScan(graph, label) {
+  const byId = Object.create(null);
+  for (const n of graph) byId[n.id] = n;
+  const m = buildThreadModel(graph);
+  for (const n of graph) {
+    if (!isSpawnRoot(n)) continue;
+    assert.equal(
+      m.nameOf[n.id],
+      scanSpawnName(n, byId),
+      `${label}: nameOf[${n.id}] must match the full-graph name scan`,
+    );
+    const pid = n.caller || n.predecessor || "";
+    const p = pid ? byId[pid] : undefined;
+    if (p?.display === "root") {
+      const fn = scanComposerBefore(graph, n);
+      assert.equal(
+        m.spawnOwnerOf[n.id],
+        fn ? m.anchorOf(fn.id) : undefined,
+        `${label}: spawnOwnerOf[${n.id}] must match the full-graph composer scan`,
+      );
+    }
+  }
+}
+
+{
+  assertThreadIndexMatchesScan(G(), "G");
+  assertThreadIndexMatchesScan(WF(), "WF");
+  const laneNamed = G();
+  delete laneNamed.find((n) => n.id === "s1").spawned_from;
+  laneNamed.find((n) => n.id === "s1_reply").branch_name = "后端架构";
+  assertThreadIndexMatchesScan(laneNamed, "G lane-name");
+  assert.equal(
+    buildThreadModel(laneNamed).nameOf.s1,
+    "后端架构",
+    "lane index must still pick the first other branch_name on the spawn lane",
+  );
+}
+
+const threadSrc = readFileSync(
+  new URL("../lib/runtime-bridge/dag/passes/thread.ts", import.meta.url),
+  "utf8",
+);
+assert.doesNotMatch(
+  threadSrc,
+  /Object\.keys\(byId\)/,
+  "composer / spawn-name must use prebuilt indexes, not a per-spawn full-graph scan",
+);
+assert.match(threadSrc, /composerFns/);
+assert.match(threadSrc, /laneFirstName/);
 
 /* ---- 2. geometry: lattice, thread placement, scene-3 forks ---- */
 
@@ -513,11 +593,20 @@ assert.match(
   /threadModel\.anchorOf\(headId\)/,
   "HEAD re-seats on its anchor when it points at a merged reply",
 );
+const paintGateSrc = readFileSync(
+  new URL("../lib/runtime-bridge/dag/paint-gate.ts", import.meta.url),
+  "utf8",
+);
 assert.match(
-  pipelineSrc,
+  paintGateSrc,
   /m\.status \|\| ""/,
   "the render signature includes status so a running stroke does not "
   + "stick after the node succeeds",
+);
+assert.match(
+  pipelineSrc,
+  /const sig = _inputSignature\(graphIn, headIdIn\)[\s\S]{0,200}return[\s\S]{0,400}const merged = _mergeRuns/,
+  "input signature must short-circuit before merge/fold/thread",
 );
 
 /* ---- 5. edges: centre-to-centre, the dotted thread, scene-3 bridge ---- */

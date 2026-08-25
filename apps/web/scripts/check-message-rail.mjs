@@ -34,6 +34,15 @@ if (!src.includes("useShallow")) {
 if (!src.includes("hiddenKey") || !src.includes("hidden.has(m.id)")) {
   throw new Error("message-rail must omit folded covered originals from ticks");
 }
+if (!src.includes("querySelector(`[data-msg-id=")) {
+  throw new Error("message-rail must probe real [data-msg-id] nodes");
+}
+if (!src.includes(".compaction-orig-fold[data-open='0']")) {
+  throw new Error("rail click must ignore folded covered originals");
+}
+if (/react-virtuoso|react-window|@tanstack\/react-virtual/.test(src)) {
+  throw new Error("message-rail must not depend on a virtual list");
+}
 
 // Mirror of packRow / unpackRow (kept in lockstep with the component).
 const RAIL_SEP = "␟";

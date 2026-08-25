@@ -19,18 +19,25 @@
  * right rail and DAG follow. Interacting with a pane sets it silently
  * (`setActive`), which changes no layout and interrupts no input.
  */
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useMessageIds, useSessionStore } from "@/lib/session-store";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { isChatAtBottom, readBottomPadding, readComposerHeight, readChatScroll, writeChatScroll } from "@/lib/state/chat-scroll";
+import {
+  RECYCLE_MIN_ROWS,
+  collectAlwaysLive,
+  decideLiveRows,
+  heightsFor,
+  noteChatWidth,
+} from "@/lib/state/message-window";
 import { getSocket } from "@/lib/runtime-bridge/state";
 import { wsSend } from "@/components/sidebar/sessions-list/helpers";
 import { Composer } from "./composer";
 import { SessionScopeProvider } from "@/lib/session-store/session-scope";
 import { useTranslation } from "@/lib/i18n";
 
-import { MessageRow } from "./messages/message-list";
+import { MessageRow, RecyclableRow } from "./messages/message-list";
 
 export function PeerSessionPane({
   tabId,
@@ -153,6 +160,64 @@ export function PeerSessionPane({
   const streaming = useSessionStore((s) =>
     sessionId ? Boolean(s.runningTasks[sessionId]) : false,
   );
+  const chatKey = scrollKey;
+  const snap = useSessionStore.getState();
+  const alwaysLive = collectAlwaysLive(ids, (id) => snap.messagesById[id]);
+  const [view, setView] = useState({ top: 0, h: 800 });
+  const measureGate = useRef(false);
+  const [, setMeasureGen] = useState(0);
+  const notifyMeasured = useCallback(() => {
+    if (measureGate.current) return;
+    measureGate.current = true;
+    requestAnimationFrame(() => {
+      measureGate.current = false;
+      setMeasureGen((n) => n + 1);
+    });
+  }, []);
+  useLayoutEffect(() => {
+    const area = areaRef.current;
+    if (!area) return;
+    if (chatKey && area.clientWidth > 0 && noteChatWidth(chatKey, area.clientWidth)) {
+      setMeasureGen((n) => n + 1);
+    }
+    const next = { top: area.scrollTop, h: area.clientHeight };
+    setView((prev) => (prev.top === next.top && prev.h === next.h ? prev : next));
+  }, [chatKey, ids.length]);
+  useEffect(() => {
+    const area = areaRef.current;
+    if (!area) return;
+    let raf = 0;
+    const sync = () => {
+      raf = 0;
+      if (chatKey && area.clientWidth > 0 && noteChatWidth(chatKey, area.clientWidth)) {
+        setMeasureGen((n) => n + 1);
+      }
+      const next = { top: area.scrollTop, h: area.clientHeight };
+      setView((prev) => (prev.top === next.top && prev.h === next.h ? prev : next));
+    };
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(sync);
+    };
+    area.addEventListener("scroll", onScroll, { passive: true });
+    const ro = new ResizeObserver(sync);
+    ro.observe(area);
+    return () => {
+      area.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [chatKey]);
+  const liveSet = chatKey
+    ? decideLiveRows({
+        nodes: ids.map((id) => ({ kind: "row" as const, id })),
+        heights: heightsFor(chatKey),
+        scrollTop: view.top,
+        viewH: view.h,
+        always: alwaysLive,
+        listLen: ids.length,
+        recycleMin: RECYCLE_MIN_ROWS,
+      })
+    : null;
 
   // `flex: 1` (not just height) — the .center-split-* wrapper is a flex row
   // with no explicit height, so the pane fills its slot by flexing.
@@ -223,7 +288,18 @@ export function PeerSessionPane({
             </div>
           ) : (
             ids.map((id) => (
-              <MessageRow key={id} id={id} sessionIdOverride={sessionId ?? undefined} />
+              liveSet && chatKey ? (
+                <RecyclableRow
+                  key={id}
+                  id={id}
+                  chatKey={chatKey}
+                  live={liveSet.has(id)}
+                  onMeasured={notifyMeasured}
+                  sessionIdOverride={sessionId ?? undefined}
+                />
+              ) : (
+                <MessageRow key={id} id={id} sessionIdOverride={sessionId ?? undefined} />
+              )
             ))
           )}
         </div>

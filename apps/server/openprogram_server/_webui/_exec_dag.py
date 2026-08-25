@@ -190,6 +190,56 @@ def build_exec_dag(session_id: str, func_name: str,
 
 # Live progress streaming
 
+def _graph_push_val(n: dict, key: str):
+    v = n.get(key)
+    return "" if v is None else v
+
+
+def _graph_push_signature(graph, head=None) -> str:
+    """Cheap ``branches_list`` fingerprint.
+
+    Matches the frontend ``graphInputSignature`` structural fields
+    (paint-gate.ts). preview / content / output are omitted — glyphs
+    don't read them, so a token-only change must not push the whole graph.
+    """
+    if not isinstance(graph, list) or not graph:
+        return f"0|{head or ''}"
+    tail = [n.get("id") for n in graph[-8:] if isinstance(n, dict)]
+    rows = []
+    for n in graph:
+        if not isinstance(n, dict):
+            continue
+        covers = n.get("covers_ids")
+        spawned = n.get("spawned_from")
+        rows.append((
+            _graph_push_val(n, "id"),
+            _graph_push_val(n, "predecessor"),
+            _graph_push_val(n, "role"),
+            _graph_push_val(n, "display"),
+            _graph_push_val(n, "status"),
+            _graph_push_val(n, "function"),
+            _graph_push_val(n, "caller"),
+            _graph_push_val(n, "source"),
+            _graph_push_val(n, "name"),
+            "+".join(map(str, covers)) if isinstance(covers, (list, tuple)) else "",
+            _graph_push_val(n, "created_at"),
+            _graph_push_val(n, "_tier"),
+            _graph_push_val(n, "_lane"),
+            bool(n.get("_runNode")),
+            bool(n.get("is_error")),
+            bool(n.get("is_named")),
+            _graph_push_val(n, "branch_name"),
+            bool(n.get("superseded_summary")),
+            _graph_push_val(n, "attach_ref"),
+            _graph_push_val(n, "attach_label"),
+            (spawned.get("label") or "") if isinstance(spawned, dict) else "",
+        ))
+    return json.dumps(
+        (len(graph), tail, rows, head or ""),
+        default=str, separators=(",", ":"),
+    )
+
+
 def _poll(session_id: str, msg_id: str, func_name: str,
           stop: threading.Event,
           on_event=None) -> None:
@@ -296,7 +346,8 @@ def _poll(session_id: str, msg_id: str, func_name: str,
             pass
         try:
             payload = build_branches_payload(session_id)
-            gsig = json.dumps(payload.get("graph"), default=str, sort_keys=True)
+            gsig = _graph_push_signature(
+                payload.get("graph"), payload.get("active"))
             if force or gsig != state["last_graph"]:
                 state["last_graph"] = gsig
                 if on_event is not None:

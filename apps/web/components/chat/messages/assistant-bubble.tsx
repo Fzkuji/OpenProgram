@@ -8,6 +8,8 @@
  * card, then the answer text. While the turn is still streaming with
  * nothing rendered yet, a typing indicator stands in.
  */
+import { memo } from "react";
+
 import {
   useSessionStore,
   type AssistantBlock,
@@ -87,6 +89,15 @@ function errorHeadline(
   }
 }
 
+const MarkdownText = memo(function MarkdownText({ text }: { text: string }) {
+  return (
+    <div
+      className="chat-text message-content"
+      dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }}
+    />
+  );
+});
+
 function TypingIndicator() {
   // No name here — the bubble header already shows the agent name, so
   // "<name> is thinking" repeated it. Just the breathing dot + label,
@@ -121,9 +132,7 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
   const { text } = useTranslation();
   // Align the side avatar to the first line of text (re-measures as the
   // message grows / blocks expand).
-  const { containerRef, avatarTop } = useAvatarAlign(
-    `${msg.id}:${msg.content?.length || 0}:${msg.blocks?.length || 0}:${msg.status}`,
-  );
+  const { containerRef, avatarTop } = useAvatarAlign(msg.id);
   const streaming =
     msg.status === "streaming" ||
     msg.status === "pending" ||
@@ -195,13 +204,7 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
       return <ThinkingStep key={`thk_${idx}`} text={b.text || ""} />;
     }
     if (b.type === "text") {
-      return (
-        <div
-          key={`txt_${idx}`}
-          className="chat-text message-content"
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(b.text || "") }}
-        />
-      );
+      return <MarkdownText key={`txt_${idx}`} text={b.text || ""} />;
     }
     // tool block
     const tname = b.tool || "";
@@ -424,13 +427,7 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
               });
               if (!hasTextBlock && hasContent) {
                 rendered.push(
-                  <div
-                    key="legacy_content"
-                    className="chat-text message-content"
-                    dangerouslySetInnerHTML={{
-                      __html: renderMarkdown(contentText),
-                    }}
-                  />,
+                  <MarkdownText key="legacy_content" text={contentText} />,
                 );
               }
               // Render any leftover runtime children that none of the
@@ -528,12 +525,7 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
                   ))}
                 </div>
               ) : null}
-              {hasContent ? (
-                <div
-                  className="chat-text message-content"
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(contentText) }}
-                />
-              ) : null}
+              {hasContent ? <MarkdownText text={contentText} /> : null}
               {streaming && !hasContent ? <TypingIndicator /> : null}
             </>
           )}

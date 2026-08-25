@@ -27,7 +27,9 @@ interface UiWindow {
   toggleWebSearchEnabled?: typeof toggleWebSearchEnabled;
 }
 
-const W = window as unknown as UiWindow;
+const W = (
+  typeof window === "undefined" ? {} : window
+) as unknown as UiWindow;
 
 /* ===== Run / pause =============================================== */
 

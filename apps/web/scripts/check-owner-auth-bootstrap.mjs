@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 let auth;
 try {
@@ -167,5 +169,69 @@ for (const fragment of [
 
 delete globalThis.localStorage;
 delete globalThis.sessionStorage;
+
+{
+  const providersSrc = readFileSync(new URL("../app/providers.tsx", import.meta.url), "utf8");
+  const shellLayoutSrc = readFileSync(
+    new URL("../app/(shell)/layout.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(
+    providersSrc,
+    /aria-label="Authenticating"/,
+    "providers.tsx must not render an Authenticating first-paint",
+  );
+  assert.match(
+    shellLayoutSrc,
+    /loading:\s*\(\)\s*=>/,
+    "AppShell is ssr:false so the static document needs a loading fallback",
+  );
+  assert.match(
+    shellLayoutSrc,
+    /<Sidebar[\s/>]/,
+    "the first-paint fallback must include sidebar chrome",
+  );
+  const uiSrc = readFileSync(
+    new URL("../lib/runtime-bridge/ui.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    uiSrc,
+    /typeof window === "undefined"/,
+    "ui.ts must not read window at module scope; Sidebar SSR imports it",
+  );
+
+  function firstPaintBody(html) {
+    const start = html.search(/<body[^>]*>/i);
+    const after = start >= 0 ? html.slice(start) : html;
+    const scriptAt = after.search(/<script[\s>]/i);
+    return scriptAt >= 0 ? after.slice(0, scriptAt) : after;
+  }
+
+  // Source-only checks cannot catch a stale Next export. If chat.html exists
+  // (apps/web/out or the staged wheel payload), its first-paint body is what
+  // /chat actually serves before hydration.
+  const exportPaths = [
+    fileURLToPath(new URL("../out/chat.html", import.meta.url)),
+    fileURLToPath(
+      new URL("../../server/openprogram_server/_webui/_frontend/chat.html", import.meta.url),
+    ),
+  ];
+  for (const path of exportPaths) {
+    if (!existsSync(path)) continue;
+    const html = readFileSync(path, "utf8");
+    const paint = firstPaintBody(html);
+    assert.doesNotMatch(
+      html,
+      /aria-label="Authenticating"/,
+      `${path} must not ship an Authenticating main`,
+    );
+    assert.match(
+      paint,
+      /id="sidebar"/,
+      `${path} first HTML must include sidebar chrome`,
+    );
+  }
+}
 
 console.log("check-owner-auth-bootstrap: ok");

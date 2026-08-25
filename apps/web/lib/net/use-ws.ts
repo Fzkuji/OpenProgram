@@ -37,6 +37,7 @@ import {
 import { mirrorUpsertConv } from "@/lib/runtime-bridge/conv-store-mirror";
 import { runtimeState, setSocket } from "@/lib/runtime-bridge/state";
 import { applyChatWsMessage, clearSessionByMsgId } from "@/lib/net/chat-stream";
+import { waitForOwnerAuthBootstrap } from "@/lib/net/owner-auth-bootstrap";
 import { translateText } from "@/lib/i18n";
 import { externalLibsReady } from "@/lib/external-libs";
 import { getQueryClient } from "@/lib/query-client";
@@ -744,6 +745,11 @@ export function useWS(): void {
     // wait for them before the first transcript paint. A load failure is
     // not fatal — connect anyway and let markdown fall back.
     async function start(): Promise<void> {
+      try {
+        await waitForOwnerAuthBootstrap();
+      } catch {
+        return;
+      }
       try {
         await externalLibsReady();
       } catch {

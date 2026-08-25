@@ -147,6 +147,26 @@ while true; do
     printf 'OpenProgram wheel was not built\n' >&2
     exit 1
   }
+  "$local_python" - "$wheel" <<'PY'
+import re
+import sys
+import zipfile
+
+wheel = sys.argv[1]
+with zipfile.ZipFile(wheel) as archive:
+    names = [name for name in archive.namelist() if name.endswith("_frontend/chat.html")]
+    if not names:
+        raise SystemExit(f"wheel is missing chat.html: {wheel}")
+    html = archive.read(names[0]).decode("utf-8")
+if 'aria-label="Authenticating"' in html:
+    raise SystemExit(f"wheel chat.html still ships Authenticating: {wheel}")
+start = html.lower().find("<body")
+body = html[start:] if start >= 0 else html
+match = re.search(r"<script[\s>]", body, flags=re.I)
+paint = body[: match.start()] if match else body
+if 'id="sidebar"' not in paint:
+    raise SystemExit(f"wheel chat.html first-paint lacks id=\"sidebar\": {wheel}")
+PY
 
   desktop_stage="$attempt_dir/desktop"
   desktop_asar="$attempt_dir/app.asar"

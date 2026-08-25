@@ -63,9 +63,16 @@ export function sanitizeHtml(html: string): string {
   return sanitized.innerHTML;
 }
 
+// ponytail: FIFO cap, LRU if a long scroll-back session evicts settled bubbles
+const MD_CACHE_MAX = 256;
+const mdCache = new Map<string, string>();
+
 export function renderMd(s: unknown): string {
   if (typeof s !== "string") s = String(s ?? "");
-  let str = s as string;
+  const src = s as string;
+  const hit = mdCache.get(src);
+  if (hit !== undefined) return hit;
+  let str = src;
   const markdown = window.marked ?? npmMarked;
   const mathBlocks: string[] = [];
   const stash = (m: string): string => {
@@ -82,7 +89,13 @@ export function renderMd(s: unknown): string {
   for (let i = 0; i < mathBlocks.length; i++) {
     html = html.replace("%%MATH" + i + "%%", () => escHtml(mathBlocks[i]));
   }
-  return '<span class="md-rendered">' + html + "</span>";
+  const out = '<span class="md-rendered">' + html + "</span>";
+  if (mdCache.size >= MD_CACHE_MAX) {
+    const oldest = mdCache.keys().next().value;
+    if (oldest !== undefined) mdCache.delete(oldest);
+  }
+  mdCache.set(src, out);
+  return out;
 }
 
 export function renderMathInChat(): void {

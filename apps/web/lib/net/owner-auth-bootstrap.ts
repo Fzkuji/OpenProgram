@@ -93,6 +93,7 @@ const browserCoordinator =
         history: window.history,
         fetch: window.fetch.bind(window),
       });
+if (browserCoordinator) void browserCoordinator.wait().catch(() => {});
 
 /** Resolve only after the browser has exchanged any fragment token for its cookie. */
 export function waitForOwnerAuthBootstrap(): Promise<void> {

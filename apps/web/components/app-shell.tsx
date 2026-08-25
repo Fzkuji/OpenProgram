@@ -47,8 +47,9 @@ import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
 import { setNavigate } from "@/lib/navigate";
 import { setLastChatPath } from "@/lib/last-chat-path";
 import { loadExternalLibs } from "@/lib/external-libs";
-import { renderHistoryGraph } from "@/lib/runtime-bridge/dag";
+import { enterExclusiveCoverageMode, renderHistoryGraph } from "@/lib/runtime-bridge/dag";
 import { initOverlayScrollbars } from "@/lib/runtime-bridge/scrollbar";
+import { hostPaintsRows } from "@/lib/state/message-window";
 
 // Scripts shared by every page — loaded once on shell mount and kept alive for
 // the whole session. Page-specific scripts live in PageShell. Files sit in
@@ -92,6 +93,8 @@ function isChatRoute(pathname: string) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
   const { t } = useTranslation();
 
   // Background route warm-up. After AppShell paints and the main
@@ -127,7 +130,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       if (cancelled) return;
       if (i >= WARM_ROUTES.length) return;
       const route = WARM_ROUTES[i];
-      if (route !== pathname) {
+      if (route !== pathnameRef.current) {
         try { router.prefetch(route); } catch { /* ignore */ }
       }
       timer = setTimeout(() => warmNext(i + 1), 800);
@@ -152,9 +155,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         win.cancelIdleCallback(idleId);
       }
     };
-  // Re-run when pathname changes so we don't waste a slot prefetching
-  // the route we're already on. router is stable from useRouter().
-  }, [pathname, router]);
+  // Once per shell mount. Pathname is read from the ref so a route
+  // change does not restart the queue; the slot still skips whatever
+  // page is current at that tick.
+  }, [router]);
   // Debug hooks for the desktop multi-window acceptance runs, which drive
   // the renderer over CDP and therefore can only reach the stores through
   // `window`. Not read by any application code.
@@ -405,6 +409,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const panes = activeGroup && splitAvailable ? compoundPanes : focusedPanes;
   const showDivider = panes.length === 2;
   const sessionPaneIndex = panes.findIndex((pane) => pane.kind === "session");
+  const showChat = isChatRoute(pathname);
+  const paintRows = hostPaintsRows(showChat, sessionPaneIndex, activeTabDagView);
+  // Paint-gate treats ancestor `display:none` (split / non-chat route) as
+  // hidden. DagView only flushes on `visible`, which stays true across
+  // those. Flush here when the host is actually on screen.
+  useEffect(() => {
+    if (showChat && sessionPaneIndex >= 0 && activeTabDagView) {
+      enterExclusiveCoverageMode();
+    }
+  }, [showChat, sessionPaneIndex, activeTabDagView]);
   useEffect(() => {
     setDesktopSplitLayoutAvailable(
       isDesktop && activeKind === "session" && splitAvailable,
@@ -468,7 +482,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  const showChat = isChatRoute(pathname);
   return (
     <div
       className={isDesktop ? "desktop-frame" : undefined}
@@ -600,7 +613,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
       {composerMount && createPortal(<FocusedComposer />, composerMount)}
       {welcomeMount && createPortal(<WelcomeScreen />, welcomeMount)}
-      {messagesMount && createPortal(<MessageList />, messagesMount)}
+      {messagesMount && createPortal(<MessageList paintRows={paintRows} />, messagesMount)}
       {/* Headless — keeps the legacy topbar-updater wrappers installed
          (status / branch / agent state → zustand store) now that the
          visible topbar row is gone. Must live outside the chat-route

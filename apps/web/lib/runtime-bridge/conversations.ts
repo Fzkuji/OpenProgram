@@ -390,7 +390,6 @@ export function onBranchesListMessage(payload: BranchesListPayload): void {
   }
   if (sid === runtimeState.currentSessionId) {
     refreshBranchBadge();
-    repaintBranchTags();
     renderBranchesPanel();
     if (Array.isArray(payload.graph)) {
       renderHistoryGraph(payload.graph as never[], payload.active || null);
@@ -403,6 +402,8 @@ export function onBranchesListMessage(payload: BranchesListPayload): void {
       // 把当前分支头镜像进 Zustand，让订阅 store 的 React 组件（如 /context
       // 弹窗）在切分支时自动感知并重取当前分支的上下文。
       useSessionStore.getState().setHead(sid, payload.active || null);
+    } else {
+      repaintBranchTags();
     }
   }
 }
