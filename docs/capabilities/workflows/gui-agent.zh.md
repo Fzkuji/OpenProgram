@@ -16,6 +16,8 @@
 openprogram programs run gui_agent -a task="Open Firefox and go to google.com"
 ```
 
+Programs 卡片只填 `task`。其余参数保持默认；命令行和 agent 仍可传入。
+
 参数（函数签名 `gui_agent(task, max_steps=15, app_name="desktop", ...)`）：
 
 | 参数 | 说明 |

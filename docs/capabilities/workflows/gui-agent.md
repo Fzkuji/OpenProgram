@@ -16,6 +16,8 @@ Run it directly from the command line:
 openprogram programs run gui_agent -a task="Open Firefox and go to google.com"
 ```
 
+The Programs card only asks for `task`. Other parameters keep their defaults; CLI and agent calls can still pass them.
+
 Parameters (function signature `gui_agent(task, max_steps=15, app_name="desktop", ...)`):
 
 | Parameter | Description |
