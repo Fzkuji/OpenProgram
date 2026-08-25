@@ -1,7 +1,9 @@
 """Global running-work snapshot — GET /api/running.
 
-Aggregates the three in-flight populations the worker already tracks:
+Aggregates the in-flight populations the worker already tracks:
 
+  run      — active chat turns / background executions per session
+             (server._running_tasks; execution_id distinguishes branches)
   tool     — tool calls executing right now (bash, execute_code, …)
   job      — background jobs across ALL sessions (JobRunner.list_jobs)
   process  — background shells started by the `process` tool
@@ -19,6 +21,25 @@ def _collect() -> list[dict]:
     items: list[dict] = []
 
     try:
+        # 进行中的 chat 轮次（含每个会话分支的后台 execution）。这是
+        # "正在运行的程序" 的顶层视角；tool/process 是它的细粒度补充。
+        from openprogram.webui import server as _srv
+        with _srv._running_tasks_lock:
+            tasks = {sid: dict(t) for sid, t in _srv._running_tasks.items()}
+        for sid, task in tasks.items():
+            items.append({
+                "kind": "run",
+                "id": task.get("execution_id") or task.get("msg_id") or sid,
+                "session_id": sid,
+                "execution_id": task.get("execution_id"),
+                "label": task.get("func_name") or "chat",
+                "status": "running",
+                "started_at": task.get("started_at"),
+            })
+    except Exception:
+        pass
+
+    try:
         # openprogram.agent re-exports the agent_loop *function* under the
         # same name, shadowing the module — import the module explicitly.
         import importlib
@@ -29,7 +50,8 @@ def _collect() -> list[dict]:
             items.append({
                 "kind": "tool",
                 "id": cid,
-                "session_id": None,
+                "session_id": call.get("session_id"),
+                "execution_id": call.get("execution_id"),
                 "label": call.get("label") or call.get("tool_name") or "tool",
                 "tool_name": call.get("tool_name"),
                 "status": "running",

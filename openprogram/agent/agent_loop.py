@@ -975,11 +975,18 @@ async def _execute_tool_calls(
             pass
         gate_denial = decide_tool_gate(before_ev)
 
+        # session/execution 由 run_control 的 contextvar 提供：session_id 让
+        # /api/running 能按会话分组和跳转，execution_id 区分前台轮次和后台分支。
+        from openprogram.agent.run_control import (
+            get_current_session_id, get_current_execution_id,
+        )
         with RUNNING_TOOL_CALLS_LOCK:
             RUNNING_TOOL_CALLS[tool_call.id] = {
                 "tool_name": tool_call.name,
                 "label": _tool_call_label(tool_call.name, tool_call.arguments),
                 "started_at": time.time(),
+                "session_id": get_current_session_id(),
+                "execution_id": get_current_execution_id(),
             }
 
         result: AgentToolResult

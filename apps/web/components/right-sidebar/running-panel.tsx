@@ -1,11 +1,10 @@
 "use client";
 
 /**
- * Running panel — global "what is executing right now" view for the
- * right sidebar. Polls GET /api/running (in-flight tool calls, background
- * jobs across all sessions, `process`-tool shells) and renders each
- * with a live elapsed timer. Clicking a row with a session jumps to
- * that session's tab.
+ * Running panel — session-grouped global view of current executions for the
+ * right sidebar. Polls GET /api/running, groups items by session, identifies
+ * parallel branches by execution ID, and keeps unscoped processes under Other.
+ * Session headers open the corresponding conversation tab.
  */
 import { useEffect, useRef, useState } from "react";
 
@@ -14,9 +13,10 @@ import { useSessionStore } from "@/lib/session-store";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 
 type RunningItem = {
-  kind: "tool" | "job" | "process";
+  kind: "tool" | "job" | "process" | "run";
   id: string;
-  session_id: string | null;
+  session_id?: string | null;
+  execution_id?: string | null;
   label: string;
   status: string;
   started_at: number | null;
@@ -86,13 +86,108 @@ export function RunningPanel({ active }: { active: boolean }) {
       ? text("Tool", "工具")
       : kind === "job"
         ? text("Job", "任务")
-        : text("Process", "进程");
+        : kind === "run"
+          ? text("Run", "运行")
+          : text("Process", "进程");
 
-  const openSession = (item: RunningItem) => {
-    if (!item.session_id) return;
-    const title =
-      conversations[item.session_id]?.title || item.session_id.slice(0, 12);
-    useCenterTabs.getState().openSessionTab(item.session_id, title);
+  const sessionGroups = new Map<string, RunningItem[]>();
+  const otherItems: RunningItem[] = [];
+  for (const item of items) {
+    if (!item.session_id) {
+      otherItems.push(item);
+      continue;
+    }
+    const group = sessionGroups.get(item.session_id);
+    if (group) group.push(item);
+    else sessionGroups.set(item.session_id, [item]);
+  }
+
+  const renderItem = (item: RunningItem) => {
+    const elapsed = elapsedOf(item);
+    const branch = item.session_id && item.execution_id
+      ? `${text("branch", "分支")} ${item.execution_id.slice(-8)}`
+      : "";
+    const processPid = !item.session_id && item.kind === "process" && item.pid != null
+      ? `pid ${item.pid}`
+      : "";
+    return (
+      <div
+        key={`${item.kind}:${item.id}`}
+        title={item.label}
+        style={{
+          padding: "8px 10px",
+          marginBottom: 4,
+          borderRadius: 8,
+          border: "1px solid var(--border)",
+          fontSize: 12,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            marginBottom: 2,
+          }}
+        >
+          {/* breathing dot — same look as the sidebar running dot */}
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background:
+                item.status === "cancelling"
+                  ? "var(--warning, #e5a50a)"
+                  : "var(--accent, #3b82f6)",
+              flexShrink: 0,
+              animation: "convRunningBreathe 1.6s ease-in-out infinite",
+            }}
+          />
+          <span
+            style={{
+              color: "var(--text-dim)",
+              textTransform: "uppercase",
+              fontSize: 10,
+              letterSpacing: 0.5,
+              flexShrink: 0,
+            }}
+          >
+            {kindLabel(item.kind)}
+          </span>
+          <span
+            style={{
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              flex: 1,
+            }}
+          >
+            {item.label}
+          </span>
+          {branch && (
+            <span style={{ color: "var(--text-dim)", fontSize: 11, flexShrink: 0 }}>
+              {branch}
+            </span>
+          )}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            color: "var(--text-dim)",
+            fontSize: 11,
+          }}
+        >
+          <span>{processPid}</span>
+          <span style={{ flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+            {item.status !== "running" && item.status !== "cancelling"
+              ? item.status
+              : elapsed || ""}
+          </span>
+        </div>
+      </div>
+    );
   };
 
   if (!loaded) {
@@ -112,99 +207,51 @@ export function RunningPanel({ active }: { active: boolean }) {
 
   return (
     <div style={{ overflowY: "auto", padding: "4px 8px" }}>
-      {items.map((item) => {
-        const elapsed = elapsedOf(item);
-        const sessionTitle = item.session_id
-          ? conversations[item.session_id]?.title
-            || item.session_id.slice(0, 12)
-          : item.pid
-            ? `pid ${item.pid}`
-            : "";
+      {[...sessionGroups.entries()].map(([sessionId, groupItems]) => {
+        const title = conversations[sessionId]?.title || sessionId.slice(0, 12);
         return (
-          <div
-            key={`${item.kind}:${item.id}`}
-            onClick={() => openSession(item)}
-            role={item.session_id ? "button" : undefined}
-            title={item.label}
-            style={{
-              padding: "8px 10px",
-              marginBottom: 4,
-              borderRadius: 8,
-              border: "1px solid var(--border)",
-              cursor: item.session_id ? "pointer" : "default",
-              fontSize: 12,
-            }}
-          >
-            <div
+          <div key={sessionId} style={{ marginBottom: 8 }}>
+            <button
+              type="button"
+              onClick={() => useCenterTabs.getState().openSessionTab(sessionId, title)}
+              title={title}
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                marginBottom: 2,
+                width: "100%",
+                padding: "8px 10px 6px",
+                border: 0,
+                background: "transparent",
+                color: "var(--text)",
+                cursor: "pointer",
+                font: "inherit",
+                fontSize: 12,
+                fontWeight: 600,
+                overflow: "hidden",
+                textAlign: "left",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
               }}
             >
-              {/* breathing dot — same look as the sidebar running dot */}
-              <span
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: "50%",
-                  background:
-                    item.status === "cancelling"
-                      ? "var(--warning, #e5a50a)"
-                      : "var(--accent, #3b82f6)",
-                  flexShrink: 0,
-                  animation: "convRunningBreathe 1.6s ease-in-out infinite",
-                }}
-              />
-              <span
-                style={{
-                  color: "var(--text-dim)",
-                  textTransform: "uppercase",
-                  fontSize: 10,
-                  letterSpacing: 0.5,
-                  flexShrink: 0,
-                }}
-              >
-                {kindLabel(item.kind)}
-              </span>
-              <span
-                style={{
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  flex: 1,
-                }}
-              >
-                {item.label}
-              </span>
-            </div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                color: "var(--text-dim)",
-                fontSize: 11,
-              }}
-            >
-              <span
-                style={{
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {sessionTitle}
-              </span>
-              <span style={{ flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
-                {item.status !== "running" && item.status !== "cancelling"
-                  ? item.status
-                  : elapsed || ""}
-              </span>
-            </div>
+              {title}
+            </button>
+            {groupItems.map(renderItem)}
           </div>
         );
       })}
+      {otherItems.length > 0 && (
+        <div>
+          <div
+            style={{
+              padding: "8px 10px 6px",
+              color: "var(--text)",
+              fontSize: 12,
+              fontWeight: 600,
+            }}
+          >
+            {text("Other", "其他")}
+          </div>
+          {otherItems.map(renderItem)}
+        </div>
+      )}
     </div>
   );
 }
