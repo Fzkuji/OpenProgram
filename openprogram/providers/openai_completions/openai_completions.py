@@ -422,10 +422,13 @@ async def stream_simple(
         if opts.get("parallel_tool_calls") is False:
             params["parallel_tool_calls"] = False
 
-    if opts.reasoning:
+    # Non-reasoning models reject the reasoning_effort parameter.
+    if opts.reasoning and getattr(model, "reasoning", False):
         from openprogram.providers.thinking_spec import translate_reasoning
-        params["reasoning_effort"] = translate_reasoning(
+        effort = translate_reasoning(
             model.provider or "openai", model.id, opts.reasoning)
+        if effort is not None:
+            params["reasoning_effort"] = effort
 
     # Per-request speed / priority tier ("priority" = the Fast mode,
     # "flex" = cheaper-slower). The Responses path already forwards

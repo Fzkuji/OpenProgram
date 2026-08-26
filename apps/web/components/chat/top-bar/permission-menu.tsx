@@ -220,8 +220,8 @@ export function PermissionBadge() {
                   }}
                 >
                   {text(
-                    "Every tool runs without asking — including commands that can change or delete files. Only use this in a sandbox / disposable environment.",
-                    "所有工具都直接执行、不再询问——包括可改动或删除文件的命令。仅在沙箱 / 一次性环境里使用。",
+                    "Every tool runs without approval prompts, including commands that can change or delete files. Sandbox restrictions still apply.",
+                    "所有工具都不经审批直接执行，包括可改动或删除文件的命令。沙箱限制仍然生效。",
                   )}
                 </div>
                 <div

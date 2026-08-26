@@ -406,8 +406,8 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
             // warning (same copy as the web dialog) to the transcript
             // where it wraps, so it's readable at any width.
             pushSystem('Bypass permissions: every tool runs without asking — '
-              + 'including commands that can change or delete files. '
-              + 'Only use this in a sandbox / disposable environment.');
+              + 'including commands that can change or delete files. Sandbox '
+              + 'restrictions still apply.');
             setPickerKind('permission_bypass_confirm');
             return;
           }
