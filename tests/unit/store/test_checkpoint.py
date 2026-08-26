@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from openprogram.store.snapshot.checkpoint import CheckpointStore
+from openprogram.store.snapshot.checkpoint import store as checkpoint_store
 from openprogram.store.snapshot.checkpoint.manifest import entries, load
 from openprogram.store.snapshot.checkpoint.paths import turn_manifest_path
 
@@ -188,3 +189,30 @@ def test_mutation_sequence_allocates_durable_increasing_values():
 
     third = CheckpointStore._next_mutation_sequence()
     assert third == second + 1
+
+
+def test_history_apply_without_dir_fd_reverts_and_reapplies(
+    session_dir, workdir, monkeypatch,
+):
+    monkeypatch.setattr(checkpoint_store, "_DIR_FD_APPLY_SUPPORTED", False)
+    monkeypatch.setattr(
+        "openprogram.paths.get_state_dir", lambda: workdir / "state",
+    )
+    target = workdir / "fallback.py"
+    target.write_text("before", encoding="utf-8")
+    store = CheckpointStore(session_dir)
+    store.backup_before_edit("turn1", str(target))
+    target.write_text("after", encoding="utf-8")
+    store.commit_after_edit("turn1", str(target), operation="edit")
+
+    reverted = store.apply_history_operation(
+        "turn1", "revert", idempotency_key="fallback-revert",
+    )
+    assert reverted["status"] == "committed"
+    assert target.read_text(encoding="utf-8") == "before"
+
+    reapplied = store.apply_history_operation(
+        "turn1", "reapply", idempotency_key="fallback-reapply",
+    )
+    assert reapplied["status"] == "committed"
+    assert target.read_text(encoding="utf-8") == "after"
