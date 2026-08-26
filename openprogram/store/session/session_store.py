@@ -1135,6 +1135,8 @@ class SessionStore:
         node = idx.nodes_by_id.get(node_id)
         if node is None:
             return
+        old_predecessor = node.predecessor or None
+        old_caller = node.caller or None
         metadata = fields.pop("metadata", {})
         for key, value in fields.items():
             setattr(node, key, value)
@@ -1143,6 +1145,11 @@ class SessionStore:
         if isinstance(metadata, dict):
             current = node.metadata if isinstance(node.metadata, dict) else {}
             node.metadata = {**current, **metadata}
+        idx.reindex_edges(
+            node_id,
+            old_predecessor=old_predecessor,
+            old_caller=old_caller,
+        )
         self._rewrite_history_node(git, node)
 
     def merge_node_metadata_batch(

@@ -36,7 +36,7 @@
   <h1>聊天发送队列可靠性设计</h1>
   <p class="sub">基线：<code>b6460fdcb67b6b12843491490968696a5438d4d6</code>。本页定义用户在 turn 运行期间提交下一条普通文本消息时，浏览器队列、WebSocket 和后端 session 独占之间的合同，并记录实现与验证状态。</p>
 
-  <div class="lead"><b>确定方案。</b> 队列保持 renderer 内存态并按 <code>session_id</code> 隔离；队首成功写入 WebSocket 后，该 session 立即进入 optimistic running，直到服务端 ACK/运行态事件接管。后端通过单个原子占用操作确保同一 session 只有一个 turn 可以开始。重连先恢复服务端运行态，再仅处理确认空闲的队列。运行期间暂不接收带附件的排队提交，附件和文字完整保留在 composer 中。</div>
+  <div class="lead"><b>确定方案。</b> 每个 session 的运行中消息模式为 <code>queue</code>（默认）或 <code>steer</code>。queue 保持 renderer 内存态并沿用既有 FIFO；steer 通过 session 文件 inbox 在 agent-loop checkpoint 注入当前 turn，注入时立即写入带 <code>steering: true</code> 标记的 user node。服务端拒绝已结束 turn 的 steer；turn 收尾把尚未消费的 steer 按 FIFO 作为后续普通 turn 输入。goal/workflow 使用自己的 loop，不接入普通 chat 的消费器。</div>
 
   <h2>01 · 目标与边界</h2>
   <div class="grid">
@@ -46,11 +46,11 @@
     </ul></section>
     <section class="card"><h3>产品边界</h3><ul>
       <li>队列不写磁盘，页面刷新会清除未发送项。</li><li>队列只处理普通纯文本 turn。</li>
-      <li>slash、fn-form、附件继续使用各自入口。</li><li>不同窗口各自持有其提交的队列。</li>
+      <li>slash、fn-form、附件继续使用各自入口。</li><li>不同窗口各自持有其提交的队列和 session mode。</li>
     </ul></section>
     <section class="card"><h3>不引入</h3><ul>
       <li>不恢复已删除的 v2 <code>MessageStore</code>。</li><li>不增加 broker、数据库表或新依赖。</li>
-      <li>不把 queued message 提前写进服务端 transcript。</li><li>不改变 steering 的语义。</li>
+      <li>不把 queued message 提前写进服务端 transcript。</li><li>不修改 goal/workflow 的 loop 或消费语义。</li>
     </ul></section>
   </div>
 
@@ -63,6 +63,7 @@
     <div class="state">next queued<br><span class="small">仅发送下一条</span></div>
   </div></div>
   <p>socket write 失败时，队首放回原位置且不进入 running。<code>run_active</code> 表示服务端已有 turn：被拒绝的普通发送放回队首，当前 session 保持 running，等待真实 clear。普通本地 idle→idle 更新不是 drain 信号；服务端 <code>running_task_clear</code> 是权威完成事件，即使 UI 已因 stop 乐观显示 idle，也必须尝试 drain。</p>
+  <p>steer 路径先把该项标为 <code>injecting</code>，按 request id 等待 <code>steer_ack</code>。<code>accepted</code> 后移除临时 queued row，服务端持久化的 user message 接管显示；<code>not_running</code> 解除 injecting 并沿用普通 queue/drain；超时保留原 queued row。agent loop 每次只消费一条 steer。消费时写入 user node，并把当前 assistant placeholder 的 predecessor 指向最新 steer node；turn 收尾取走剩余 inbox 项并依次启动后续普通 turn。</p>
 
   <h2>03 · 组件职责</h2>
   <div class="table-wrap"><table>
@@ -72,6 +73,8 @@
       <tr><td><code>session-store</code></td><td>running→idle 转换触发 drain；服务端真实 clear 可显式重试 drain。</td><td>普通 idle→idle 更新不得触发 drain。</td></tr>
       <tr><td><code>use-ws.ts</code></td><td>连接恢复后，当前 session 通过 <code>load_session</code> 恢复；后台队列通过无焦点副作用的 <code>get_run_state</code> 查询状态。</td><td>不得在未知 run 状态下直接发送队列，也不得为后台队列改变 socket 的 focused session。</td></tr>
       <tr><td><code>ws_actions/chat.py</code></td><td>原子占用 session，成功者才能写 user message 和启动 turn。</td><td>不得把“检查”和“占用”分成可并发穿过的两个阶段。</td></tr>
+      <tr><td><code>ws_actions/runtime.py</code></td><td>仅在 session 仍运行时接受 steer，并返回 request-correlated 结果。</td><td>不得对已结束或无法写入的消息返回成功。</td></tr>
+      <tr><td><code>agent/dispatcher/loop_runner.py</code></td><td>普通 chat 消费一条 steer、注入 agent loop 并同步持久化 conversation chain。</td><td>不得让 <code>agent_spawn</code> 或 goal/workflow 消费普通 chat steer。</td></tr>
     </tbody></table></div>
 
   <h2>04 · 附件、断线与失败语义</h2>
@@ -94,16 +97,23 @@
       <tr><td>运行中带附件提交</td><td>不排队、不清空草稿。</td><td><span class="pill ok">已验证</span></td></tr>
       <tr><td>两个 WebSocket 同时提交同一 session</td><td>一个取得占用，另一个收到 <code>run_active</code>；reservation 在 runtime 接管前始终有效。</td><td><span class="pill ok">已验证</span></td></tr>
       <tr><td>现有 FIFO、撤回、置顶、跨 session 隔离</td><td>行为保持。</td><td><span class="pill ok">已有检查</span></td></tr>
+      <tr><td>运行中 steer</td><td>下一 checkpoint 注入当前 turn，user node 带 steering 标记，reload 后仍可见。</td><td><span class="pill ok">已验证</span></td></tr>
+      <tr><td>turn 已结束时 steer</td><td>ACK 为 <code>not_running</code>，前端回退到普通 queue/drain。</td><td><span class="pill ok">已验证</span></td></tr>
+      <tr><td>turn 收尾仍有 inbox 项</td><td>文件被清除，消息按 FIFO 成为后续普通 turn 输入。</td><td><span class="pill ok">已验证</span></td></tr>
     </tbody></table></div>
 
   <h2>06 · 实现记录</h2>
-  <p><span class="pill ok">实现完成</span>。前端修改集中在发送队列、composer、session running 状态和 WebSocket 重连；后端增加原子 reservation、runtime 接管以及无焦点副作用的运行态查询。停止路径的 optimistic idle 不再提前 drain；服务端真实 clear 即使观察到本地 idle，也会重新尝试队列发送。</p>
+  <p><span class="pill ok">实现完成</span>。queue 仍是默认且保持既有 FIFO。composer 的 per-session 设置新增 queue/steer 模式；steer 请求复用 queued row 表示 injecting 和失败回退。普通 chat agent loop 读取共享文件 inbox，持久化 steering user node 并同步 conversation edge；收尾关闭接受状态和最后 sweep 使用同一个 session 锁，避免 ACK 成功后遗留文件。goal/workflow loop 未修改。</p>
   <div class="table-wrap"><table>
     <thead><tr><th>验证命令</th><th>实际结果</th></tr></thead><tbody>
       <tr><td><code>npm --prefix apps/web run check</code></td><td><span class="pill ok">通过</span>，包含 send-queue、chat-ui、Markdown sanitize 和 WS action 合同。</td></tr>
       <tr><td><code>python -m pytest tests/unit/webui/test_webui_head_mirror_and_run_guard.py tests/unit/webui/test_webui_chat_dispatcher.py tests/component/runtime/test_turn_cancellation.py tests/unit/programs/test_retry_function.py tests/unit/agent/test_dispatcher_integration.py -q</code></td><td><span class="pill ok">61 passed, 1 skipped</span></td></tr>
       <tr><td><code>npm --prefix apps/web exec -- tsc -p apps/web/tsconfig.json --noEmit</code></td><td><span class="pill ok">通过</span></td></tr>
       <tr><td><code>npm --prefix apps/web run build</code></td><td><span class="pill ok">27 个静态页面生成完成</span></td></tr>
+      <tr><td><code>python -m pytest tests/unit/agent/test_chat_steering.py tests/unit/webui/test_ws_steer.py -q</code></td><td><span class="pill ok">5 passed</span></td></tr>
+      <tr><td><code>node --no-warnings --experimental-strip-types apps/web/scripts/check-send-queue.mjs</code></td><td><span class="pill ok">通过</span>，覆盖 injecting 不得并发普通 drain 及 not_running 回退。</td></tr>
+      <tr><td><code>node --no-warnings --experimental-strip-types apps/web/scripts/check-chat-ui.mjs</code></td><td><span class="pill ok">通过</span>，覆盖 mode、steer action、injecting 与 transcript marker wiring。</td></tr>
+      <tr><td><code>ruff check .</code></td><td><span class="pill ok">通过</span></td></tr>
     </tbody></table></div>
   <p class="small">同轮追加修复：assistant Markdown 不再依赖 CDN <code>marked</code>；CDN 不可用时使用已安装的 npm 包，因此普通回复不会退化为带边框的 <code>&lt;pre&gt;</code>。</p>
 </main></body></html>

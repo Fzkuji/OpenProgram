@@ -265,6 +265,12 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const fastSupported = useSessionStore((s) => !!s.agentSettings?.chat?.fast);
   const setComposerSettings = useSessionScope((s) => s.patchSettings);
   const toggleFast = () => setComposerSettings({ fast: !fastEnabled });
+  const runningMessageMode = useSessionScope(
+    (s) => s.settings.runningMessageMode ?? "queue",
+  );
+  const toggleRunningMessageMode = () => setComposerSettings({
+    runningMessageMode: runningMessageMode === "steer" ? "queue" : "steer",
+  });
   const { unattended, toggleUnattended } = useUnattendedMode(
     currentSessionId,
     send,
@@ -385,6 +391,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     webSearchEnabled,
     fastEnabled,
     fastSupported,
+    runningMessageMode,
   });
 
   // 顶部提问面板在场时的提交改道（唯一允许改输入框提交行为的地方，样式
@@ -608,6 +615,8 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       fastEnabled={fastEnabled}
       fastSupported={fastSupported}
       toggleFast={toggleFast}
+      runningMessageMode={runningMessageMode}
+      toggleRunningMessageMode={toggleRunningMessageMode}
       unattended={unattended}
       toggleUnattended={toggleUnattended}
       sandboxEnabled={sandbox}
@@ -714,8 +723,12 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           setInput={setInput}
           isRunning={isRunning}
           runningPlaceholder={text(
-            "type to queue the next message…",
-            "输入下一条消息，本轮结束后自动发送…",
+            runningMessageMode === "steer"
+              ? "type to steer the current turn…"
+              : "type to queue the next message…",
+            runningMessageMode === "steer"
+              ? "输入消息并注入当前轮次…"
+              : "输入下一条消息，本轮结束后自动发送…",
           )}
           onKeyDown={onKeyDown}
           onPaste={onPaste}

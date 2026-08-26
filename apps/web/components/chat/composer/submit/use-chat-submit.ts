@@ -3,9 +3,8 @@
 /**
  * Chat turn submit + stop.
  *
- * `submit` covers three outcomes in priority order: a mid-run QUEUE (a
- * message typed while a task runs is parked in the client-side send
- * queue and dispatched when the turn ends), a slash command, or a
+ * `submit` covers three outcomes in priority order: a mid-run queue/steer
+ * decision, a slash command, or a
  * normal turn. A normal turn
  * expands long-paste tokens and `@path` mentions, converts pending docs
  * into path mentions plus `type:"document"` attachments, and hands the
@@ -20,6 +19,7 @@ import { useCallback } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
 import { enqueueMessage } from "@/lib/state/send-queue";
+import { steerQueuedMessage } from "@/lib/state/steer-message";
 import { buildAttachmentEnvelope } from "@/lib/attachment-marker";
 import { expandAtMentions } from "../attach/at-mention";
 import { expandPasteTokens, missingPasteIds } from "../paste/paste-store";
@@ -51,6 +51,7 @@ export interface ChatSubmitOptions {
   webSearchEnabled: boolean;
   fastEnabled: boolean;
   fastSupported: boolean;
+  runningMessageMode: "queue" | "steer";
 }
 
 export function useChatSubmit({
@@ -74,17 +75,14 @@ export function useChatSubmit({
   webSearchEnabled,
   fastEnabled,
   fastSupported,
+  runningMessageMode,
 }: ChatSubmitOptions) {
   const submit = useCallback(async () => {
     const submitOwnerKey = activeChatKey ?? currentSessionId;
     const trimmed = input.trim();
-    // While a task is running, a sent message is QUEUED, not dispatched:
-    // the backend rejects a concurrent `chat` outright (`code:"run_active"`
-    // in ws_actions/chat.py), so the only honest options are "refuse" or
-    // "hold it until the turn ends". We hold it — the row appears in the
-    // transcript right away as a dimmed "queued" bubble and goes out on
-    // its own when the running task clears. The user can drop it or stop
-    // the current turn to jump it ahead from that row.
+    // During a run every plain-text send first gets one retained queue row.
+    // Queue mode leaves it there; steer mode marks that same row injecting
+    // until steer_ack either accepts it or releases it back to normal drain.
     // (Plain text only — attachments / slash go through the normal path,
     // which is disabled while running.)
     if (isRunning) {
@@ -97,6 +95,7 @@ export function useChatSubmit({
         webSearchEnabled,
         serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
         background: bound !== null,
+        injecting: false,
       }, pendingImages.length + pendingDocs.length);
       if (!queuedId) {
         // 队列只收纯文本；带附件的草稿保持原样并提示，而不是无声 no-op
@@ -107,6 +106,9 @@ export function useChatSubmit({
       }
       setComposerInputFor(submitOwnerKey, "");
       setHistoryIndex(-1);
+      if (runningMessageMode === "steer") {
+        void steerQueuedMessage(submitOwnerKey, queuedId);
+      }
       return;
     }
     // Allow image-only submits — the LLM can answer "describe this
@@ -220,6 +222,7 @@ export function useChatSubmit({
     webSearchEnabled,
     fastEnabled,
     fastSupported,
+    runningMessageMode,
     // ponytail: `bound` and `setHistoryIndex` are stable for a composer
     // instance, so the pre-split dep list omitted them; kept identical.
     // eslint-disable-next-line react-hooks/exhaustive-deps

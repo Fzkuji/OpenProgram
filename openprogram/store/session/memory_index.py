@@ -94,6 +94,40 @@ class SessionMemoryIndex:
         with self._lock:
             self.meta.update(fields)
 
+    def reindex_edges(
+        self,
+        node_id: str,
+        *,
+        old_predecessor: Optional[str],
+        old_caller: Optional[str],
+    ) -> None:
+        """Synchronize forward indexes after an existing node is reparented."""
+        with self._lock:
+            node = self.nodes_by_id.get(node_id)
+            if node is None:
+                return
+
+            def _move(index, old: Optional[str], new: Optional[str]) -> None:
+                if old == new:
+                    return
+                if old:
+                    siblings = index.get(old, [])
+                    if node_id in siblings:
+                        siblings.remove(node_id)
+                    if not siblings:
+                        index.pop(old, None)
+                if new:
+                    children = index.setdefault(new, [])
+                    if node_id not in children:
+                        children.append(node_id)
+
+            _move(
+                self.children_by_predecessor,
+                old_predecessor,
+                node.predecessor or None,
+            )
+            _move(self.children_by_caller, old_caller, node.caller or None)
+
     def update_branch_entry(self, head_msg_id: str, mutate) -> dict:
         """Merge one branch's ``meta["branches"]`` entry and return it.
 

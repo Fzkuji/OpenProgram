@@ -757,13 +757,10 @@ async def handle_chat(ws, cmd: dict):
     # _is_run_active already). Without it, two clients racing on one
     # session dispatch two turns that _append_msg + advance the same
     # HEAD concurrently and interleave the conversation chain. The
-    # frontend already routes to the "steer" action when IT knows a run
-    # is active; this covers the race window it can't see. We REJECT
-    # rather than fold the message into the running turn as a steer:
-    # the steering inbox (research_harness.steering) is only drained by
-    # the research_agent program loop — plain chat turns dispatched via
-    # process_user_turn never read it, so a silent steer-merge here
-    # would swallow the message for every ordinary chat session.
+    # frontend routes to either its queue or the explicit ``steer`` action
+    # when it knows a run is active; this covers the race window it cannot
+    # see. A concurrent ordinary ``chat`` remains a queue fallback, never an
+    # implicit steer, so the user's selected running-message mode stays exact.
     msg_id = str(uuid.uuid4())[:8]
     if not _s._try_reserve_run(session_id, msg_id):
         await ws.send_text(json.dumps({

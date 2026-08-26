@@ -30,6 +30,7 @@ import logging
 import threading
 import time
 import uuid
+from dataclasses import replace
 from typing import Optional
 
 _log = logging.getLogger(__name__)
@@ -191,20 +192,80 @@ def process_user_turn(
     if req.source == "agent_spawn":
         return _process_turn_once(
             req, on_event=on_event, cancel_event=cancel_event)
-    result = _process_turn_once(
-        req, on_event=on_event, cancel_event=cancel_event)
-    # Hooks may deny the stop and force ordinary continuation turns.
+    from openprogram.agent import steering
+
+    steering.begin_accepting(req.session_id)
+    accepting = True
     try:
-        from openprogram.agent.dispatcher.stop_hook import (
-            continue_stop_hook_turns,
-        )
-        return continue_stop_hook_turns(
-            req, result, run_turn=_process_turn_once,
-            on_event=on_event, cancel_event=cancel_event)
-    except Exception:
-        _log.warning("turn.stop hook continuation failed for session %s",
-                     req.session_id, exc_info=True)
+        result = _process_turn_once(
+            req, on_event=on_event, cancel_event=cancel_event)
+        # Hooks may deny the stop and force ordinary continuation turns.
+        try:
+            from openprogram.agent.dispatcher.stop_hook import (
+                continue_stop_hook_turns,
+            )
+            result = continue_stop_hook_turns(
+                req, result, run_turn=_process_turn_once,
+                on_event=on_event, cancel_event=cancel_event)
+        except Exception:
+            _log.warning("turn.stop hook continuation failed for session %s",
+                         req.session_id, exc_info=True)
+
+        def _run_queued(messages: list[str]) -> None:
+            for message in messages:
+                next_req = replace(
+                    req,
+                    user_text=message,
+                    user_msg_id=None,
+                    user_already_persisted=False,
+                    branch_from=INHERIT_PARENT,
+                    history_override=None,
+                    attachments=None,
+                    spawn_caller=None,
+                )
+                queued_cancel = cancel_event
+                if cancel_event is not None and cancel_event.is_set():
+                    queued_cancel = None
+                queued_result = _process_turn_once(
+                    next_req,
+                    on_event=on_event,
+                    cancel_event=queued_cancel,
+                )
+                try:
+                    from openprogram.agent.dispatcher.stop_hook import (
+                        continue_stop_hook_turns,
+                    )
+                    continue_stop_hook_turns(
+                        next_req,
+                        queued_result,
+                        run_turn=_process_turn_once,
+                        on_event=on_event,
+                        cancel_event=queued_cancel,
+                    )
+                except Exception:
+                    _log.warning(
+                        "turn.stop hook continuation failed for queued input in %s",
+                        req.session_id,
+                        exc_info=True,
+                    )
+
+        # A steer can land after the loop's final poll. Keep consuming finite
+        # remainders while the follow-up turns are themselves accepting steer.
+        pending = steering.drain(req.session_id)
+        while pending:
+            _run_queued(pending)
+            pending = steering.drain(req.session_id)
+
+        # Close acceptance and take the last remainder under the same session
+        # lock. Any later WS steer now receives not_running and stays in the
+        # frontend queue instead of creating an orphan file.
+        pending = steering.close_and_drain(req.session_id)
+        accepting = False
+        _run_queued(pending)
         return result
+    finally:
+        if accepting:
+            steering.end_accepting(req.session_id)
 
 
 def _process_turn_once(
@@ -534,6 +595,7 @@ def _process_turn_once(
     #    "the turn is done" signal.
     on_event({"type": "chat_response",
               "data": {"type": "result", "session_id": req.session_id,
+                       "msg_id": user_msg_id,
                        "content": final_text}})
 
     return TurnResult(

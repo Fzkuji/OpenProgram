@@ -129,6 +129,7 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
   // /settings/general → Agent without a reload.
   const profile = useAgentProfile();
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  const bubbleSessionId = sessionIdOverride || currentSessionId || undefined;
   const { text } = useTranslation();
   // Align the side avatar to the first line of text (re-measures as the
   // message grows / blocks expand).
@@ -229,10 +230,14 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
       tool: tname || "?",
       input: b.input || "",
       result: b.result,
+      truncated: b.truncated,
+      totalBytes: b.total_bytes,
+      messageId: b.message_id,
+      nodeId: b.node_id,
       isError: !!b.is_error,
       status: b.is_error ? "error" : "done",
     };
-    return <ToolsBlock key={`tool_${idx}`} tools={[tc]} />;
+    return <ToolsBlock key={`tool_${idx}`} tools={[tc]} sessionId={bubbleSessionId} />;
   };
   const color = agentColor(msg.agentId);
   const initial = agentInitial(msg.agentId);
@@ -404,6 +409,7 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
                       block={b}
                       tree={tree}
                       running={!!b.tool_call_id && runningToolIds.has(b.tool_call_id)}
+                      sessionId={bubbleSessionId}
                     />,
                   );
                 });
@@ -494,7 +500,7 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
                   (t) => !AGENTIC_TOOL_NAMES.has(t.tool || ""),
                 );
                 return nonAgentic.length > 0
-                  ? <ToolsBlock tools={nonAgentic} />
+                  ? <ToolsBlock tools={nonAgentic} sessionId={bubbleSessionId} />
                   : null;
               })()}
               {/* 无 blocks 的旧会话仍用普通时间线行，不切回卡片 UI。 */}

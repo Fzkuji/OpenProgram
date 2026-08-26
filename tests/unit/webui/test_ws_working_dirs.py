@@ -48,6 +48,11 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     db = SessionDB(tmp_path / "sessions.sqlite")
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
     monkeypatch.setattr("openprogram.webui.server._default_agent_id", lambda: "main")
+
+    async def _direct_to_thread(func, /, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(ws_session.asyncio, "to_thread", _direct_to_thread)
     broadcasts: list[dict] = []
 
     def _collect(text: str) -> None:
@@ -128,6 +133,43 @@ def test_session_loaded_returns_additional_working_dirs(
     assert loaded
     settings = loaded[0]["data"]["settings"]
     assert settings["additional_working_dirs"] == [str(extra)]
+
+
+def test_session_loaded_precedes_async_context_stats(
+    env, monkeypatch: pytest.MonkeyPatch,
+):
+    db, _, sid = env
+    db.create_session(sid, "main")
+
+    from openprogram.webui import server as _s
+
+    with _s._sessions_lock:
+        _s._sessions[sid] = {"id": sid}
+    monkeypatch.setattr(_s, "_get_provider_info", lambda session_id=None: {})
+    monkeypatch.setattr(_s, "_is_run_active", lambda session_id: False)
+    context_frames: list[dict] = []
+    monkeypatch.setattr(
+        _s,
+        "_broadcast_chat_response",
+        lambda _sid, _msg_id, frame: context_frames.append(frame),
+    )
+
+    ws = FakeWS()
+
+    async def _after_session_loaded(func, /, *args, **kwargs):
+        assert any(frame.get("type") == "session_loaded" for frame in ws.sent)
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(ws_session.asyncio, "to_thread", _after_session_loaded)
+    try:
+        asyncio.run(ws_session.handle_load_session(ws, {"session_id": sid}))
+    finally:
+        with _s._sessions_lock:
+            _s._sessions.pop(sid, None)
+
+    loaded = next(frame for frame in ws.sent if frame["type"] == "session_loaded")
+    assert loaded["data"]["context_stats"] is None
+    assert context_frames and context_frames[-1]["type"] == "context_stats"
 
 
 def test_session_loaded_replays_running_execution_id(env, monkeypatch):

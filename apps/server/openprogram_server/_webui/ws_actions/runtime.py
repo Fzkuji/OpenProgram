@@ -437,25 +437,40 @@ async def handle_steer(ws, cmd: dict):
     """Mid-run steering from TUI/web: drop a course-correction into a live run.
 
     Writes to the per-session steering inbox (a file dir under the session),
-    which the running research_agent loop drains at its next step boundary —
-    the same inbox the CLI ``steer`` subcommand uses, so it works whether the
-    run is in-process or in a worker subprocess (files cross processes)."""
+    which normal chat and program loops drain at their own checkpoints. It is
+    the same inbox the CLI ``steer`` subcommand uses, so it works across
+    processes."""
     session_id = cmd.get("session_id") or cmd.get("conv_id")
     message = cmd.get("message") or ""
     if not session_id or not message.strip():
         return
-    ok = False
-    try:
-        from research_harness import steering
-        ok = steering.push(session_id, message)
-    except Exception:
-        ok = False
     from openprogram.webui import server as _s
+    result = "not_running"
+    if _s._is_run_active(session_id):
+        try:
+            from openprogram.agent import steering
+            accepted = steering.push_if_accepting(session_id, message)
+            if accepted is None:
+                # A normal web chat between its final sweep and server-side
+                # occupancy release is no longer injectable. Other programs
+                # (research/goal) have their own file-inbox consumers.
+                with _s._running_tasks_lock:
+                    task = _s._running_tasks.get(session_id) or {}
+                if task.get("func_name") != "_chat":
+                    accepted = steering.push(session_id, message)
+            result = "accepted" if accepted else "not_running"
+        except Exception:
+            result = "not_running"
     try:
-        _s._broadcast(json.dumps({
+        await ws.send_text(json.dumps({
             "type": "steer_ack",
-            "data": {"session_id": session_id, "queued": ok,
-                     "message": message.strip()[:200]},
+            "data": {
+                "session_id": session_id,
+                "request_id": cmd.get("request_id"),
+                "result": result,
+                "queued": result == "accepted",
+                "message": message.strip()[:200],
+            },
         }, default=str))
     except Exception:
         pass

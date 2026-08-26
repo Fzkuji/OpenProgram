@@ -165,20 +165,23 @@ def run_query(
         # so the existing reconnect/replay logic works.
         if payload.get("type") == "stream_event":
             evt = payload.get("event") or {}
-            if evt.get("type") == "structured_output_end":
+            _event_msg_id = payload.get("msg_id") or msg_id
+            if (evt.get("type") == "structured_output_end"
+                    and _event_msg_id == msg_id):
                 structured_result.update(
                     structured_output=evt.get("value"),
                     structured_output_mode=evt.get("mode"),
                     attempt=evt.get("attempt"),
                 )
-            with _s._running_tasks_lock:
-                ti = _s._running_tasks.get(session_id)
-                if ti and "stream_events" in ti:
-                    ti["stream_events"].append(evt)
-                    if len(ti["stream_events"]) > 200:
-                        ti["stream_events"] = ti["stream_events"][-200:]
-                    ti["last_event_at"] = time.time()
-            if evt.get("type") == "tool_use":
+            if _event_msg_id == msg_id:
+                with _s._running_tasks_lock:
+                    ti = _s._running_tasks.get(session_id)
+                    if ti and "stream_events" in ti:
+                        ti["stream_events"].append(evt)
+                        if len(ti["stream_events"]) > 200:
+                            ti["stream_events"] = ti["stream_events"][-200:]
+                        ti["last_event_at"] = time.time()
+            if evt.get("type") == "tool_use" and _event_msg_id == msg_id:
                 _tid = evt.get("tool_call_id")
                 blk = {
                     "type": "tool",
@@ -191,7 +194,7 @@ def run_query(
                 tool_blocks_collected.append(blk)
                 if _tid:
                     tool_blocks_by_id[_tid] = blk
-            if evt.get("type") == "tool_result":
+            if evt.get("type") == "tool_result" and _event_msg_id == msg_id:
                 _tid = evt.get("tool_call_id")
                 blk = tool_blocks_by_id.get(_tid)
                 if blk is None:
@@ -218,7 +221,7 @@ def run_query(
                 })
             # Fan out to WS clients with the same envelope
             # shape the legacy on_stream hook used.
-            _s._broadcast_chat_response(session_id, msg_id, {
+            _s._broadcast_chat_response(session_id, _event_msg_id, {
                 "type": "stream_event",
                 "event": evt,
                 "function": "_chat",
@@ -234,6 +237,11 @@ def run_query(
             if payload.get("display") == "runtime":
                 _s._broadcast_chat_response(
                     session_id, payload.get("msg_id") or msg_id, payload,
+                )
+            elif payload.get("msg_id") and payload.get("msg_id") != msg_id:
+                payload = {**payload, "turn_continues": True}
+                _s._broadcast_chat_response(
+                    session_id, payload["msg_id"], payload,
                 )
         elif payload.get("display") == "runtime":
             # Runtime-block placeholder / tree_update envelopes emitted

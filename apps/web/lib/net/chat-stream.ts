@@ -105,6 +105,7 @@ interface ChatResponseData {
   /** The rejected message text, echoed back so the client can re-send it
    *  without the user retyping. Only present on a ``run_active`` error. */
   retry_query?: string;
+  steering?: boolean;
 }
 
 /** Names of LLM-callable @agentic_function tools. When the LLM invokes
@@ -628,6 +629,7 @@ function handleUserMessage(sid: string, d: ChatResponseData): void {
       && d.timestamp > 0
         ? d.timestamp
         : undefined,
+    steering: d.steering === true,
   });
 }
 

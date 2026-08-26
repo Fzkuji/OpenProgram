@@ -30,6 +30,10 @@ interface LegacyBlock {
   result?: unknown;
   is_error?: boolean;
   tool_call_id?: string;
+  truncated?: boolean;
+  total_bytes?: number;
+  message_id?: string;
+  node_id?: string;
 }
 
 interface LegacyAttempt {
@@ -89,6 +93,7 @@ interface LegacyMsg {
   /** Conversation-order edge only; it must not decide runtime ownership. */
   predecessor?: string;
   source?: string;
+  steering?: boolean;
   turn_files?: TurnFileSummary;
   reverted?: boolean;
 }
@@ -226,6 +231,7 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
         timestamp: ts,
         agentId: m.agent_id || undefined,
         source: typeof m.source === "string" ? m.source : undefined,
+        steering: m.steering === true,
         calledBy: typeof m.predecessor === "string" ? m.predecessor : undefined,
         spawnedFrom: sf && sf.caller_id
           ? { callerId: sf.caller_id, label: sf.label || undefined }
@@ -303,6 +309,10 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
               b.result === undefined || b.result === null
                 ? undefined
                 : String(b.result),
+            truncated: b.truncated === true,
+            total_bytes: b.total_bytes,
+            message_id: b.message_id,
+            node_id: b.node_id,
             is_error: !!b.is_error,
           });
           if (b.tool && AGENTIC_TOOL_NAMES.has(b.tool)) return;
@@ -314,6 +324,10 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
               b.result === undefined || b.result === null
                 ? undefined
                 : String(b.result),
+            truncated: b.truncated === true,
+            totalBytes: b.total_bytes,
+            messageId: b.message_id,
+            nodeId: b.node_id,
             isError: !!b.is_error,
             status: b.is_error ? "error" : "done",
           });

@@ -44,6 +44,7 @@ def agent_event_to_envelope(ev, req: "TurnRequest") -> Optional[dict]:
                 "type": "chat_response",
                 "data": {"type": "stream_event",
                          "session_id": cid,
+                         "msg_id": req.user_msg_id,
                          "event": event},
             }
         if ame_type == "thinking_delta":
@@ -51,6 +52,7 @@ def agent_event_to_envelope(ev, req: "TurnRequest") -> Optional[dict]:
                 "type": "chat_response",
                 "data": {"type": "stream_event",
                          "session_id": cid,
+                         "msg_id": req.user_msg_id,
                          "event": {"type": "thinking",
                                    "text": getattr(ame, "delta", "")}},
             }
@@ -65,6 +67,7 @@ def agent_event_to_envelope(ev, req: "TurnRequest") -> Optional[dict]:
                 "data": {
                     "type": "stream_event",
                     "session_id": cid,
+                    "msg_id": req.user_msg_id,
                     "event": event,
                 },
             }
@@ -76,6 +79,7 @@ def agent_event_to_envelope(ev, req: "TurnRequest") -> Optional[dict]:
             "type": "chat_response",
             "data": {"type": "stream_event",
                      "session_id": cid,
+                     "msg_id": req.user_msg_id,
                      "event": {"type": "tool_use",
                                "tool": getattr(ev, "tool_name", "?"),
                                "input": json.dumps(args, default=str)
@@ -88,6 +92,7 @@ def agent_event_to_envelope(ev, req: "TurnRequest") -> Optional[dict]:
             "type": "chat_response",
             "data": {"type": "stream_event",
                      "session_id": cid,
+                     "msg_id": req.user_msg_id,
                      "event": {"type": "tool_result",
                                "tool": getattr(ev, "tool_name", "?"),
                                "result": shorten(getattr(ev, "result", "")),

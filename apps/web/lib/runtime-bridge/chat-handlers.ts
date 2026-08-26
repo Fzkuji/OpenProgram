@@ -695,7 +695,7 @@ export function handleChatResponse(data: ChatResponseData): void {
     && !!runningTask?.msg_id
     && !!data.msg_id
     && data.msg_id !== runningTask.msg_id;
-  if (!nestedRuntimeResult) {
+  if (!nestedRuntimeResult && data.turn_continues !== true) {
     handleRunningTaskClear(sid ?? undefined, {
       execution_id: typeof data.execution_id === "string" ? data.execution_id : undefined,
       msg_id: typeof data.msg_id === "string" ? data.msg_id : undefined,

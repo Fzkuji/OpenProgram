@@ -93,15 +93,10 @@ export function useWS(): void {
         case "status":
           wsHandleStatus(msg as never);
           return true;
-        // `steer_ack` is the broadcast echo of a `steer` action. The web
-        // composer no longer sends one — a message typed during a run
-        // goes into the client-side send queue (lib/state/send-queue)
-        // and is dispatched as a real turn when the run ends, so it
-        // lands in the transcript instead of a file inbox that only the
-        // research_agent loop drains. Any ack reaching this client now
-        // belongs to a steer some OTHER surface (TUI / CLI) issued, and
-        // recovering its text into this composer would hand the user
-        // words they never typed here.
+        // `steer_ack` is consumed by the request-correlated listener in
+        // steer-message.ts. It needs no global session-store mutation here.
+        case "steer_ack":
+          return true;
         case "session_reload": {
           const sid = d?.session_id as string | undefined;
           if (sid && sid === runtimeState.currentSessionId) {

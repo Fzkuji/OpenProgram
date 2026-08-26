@@ -46,6 +46,10 @@ export interface ChatToolCall {
   tool: string;                // tool name
   input: string;               // raw args string
   result?: string;             // result text, once tool_result arrives
+  truncated?: boolean;
+  totalBytes?: number;
+  messageId?: string;
+  nodeId?: string;
   isError?: boolean;
   status: "running" | "done" | "error";
 }
@@ -95,6 +99,8 @@ export interface ComposerSettings {
   tools: boolean;
   webSearch: boolean;
   fast: boolean;
+  /** What Enter does while this session already has a running turn. */
+  runningMessageMode: "queue" | "steer";
   /** Permission mode for this session's tool calls: ask/acceptEdits/
    *  plan/auto/bypass. "" means inherit (backend resolves session →
    *  project → ask). */
@@ -146,6 +152,8 @@ export interface ChatMsg {
    *  can distinguish "real user typed" vs internal synthetic turns
    *  (job_followup, merge_turn, agent_spawn). */
   source?: string;
+  /** User message injected into an already-running agent turn. */
+  steering?: boolean;
   /** Pass-through of the wire ``predecessor`` (conversation-chain
    *  edge) so we can correlate internal-source msgs (e.g.
    *  job_followup) and runtime/attach rows with the turn they hang
@@ -288,6 +296,10 @@ export interface AssistantBlock {
   tool_call_id?: string;
   input?: string;
   result?: string;
+  truncated?: boolean;
+  total_bytes?: number;
+  message_id?: string;
+  node_id?: string;
   is_error?: boolean;
 }
 

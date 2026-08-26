@@ -449,3 +449,8 @@
   color: var(--text-muted);
   letter-spacing: 0.02em;
 }
+.steering-badge {
+  margin-right: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}

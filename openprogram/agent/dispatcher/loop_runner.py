@@ -20,6 +20,7 @@ import json
 import logging
 import threading
 import time
+import uuid
 from typing import Optional, TYPE_CHECKING
 
 from openprogram.agent import plan_mode as _plan_mode
@@ -303,6 +304,78 @@ def run_loop_blocking(
     # custom error / system entries) — agent.py already provides this.
     from openprogram.agent.agent import _default_convert_to_llm
 
+    async def _get_steering_messages():
+        # Same-session spawned turns are side-branch machinery. Let the
+        # foreground chat turn remain the only consumer of its session inbox.
+        if req.source == "agent_spawn":
+            return []
+        from openprogram.agent import steering
+
+        text = steering.pop(req.session_id)
+        if text is None:
+            return []
+        from openprogram.context.nodes import Call, ROLE_USER
+        from openprogram.providers.types import TextContent, UserMessage
+        from openprogram.store import SessionNodeWriter
+
+        message_id = uuid.uuid4().hex[:12]
+        timestamp = time.time()
+        predecessor = (
+            getattr(req, "_steering_tail_id", None)
+            or req.user_msg_id
+            or "ROOT"
+        )
+        metadata = {
+            "source": "web",
+            "steering": True,
+            "agent_id": req.agent_id,
+        }
+        try:
+            from openprogram.agent.authority import normalize_authority, stamp_schema
+
+            metadata.update(normalize_authority(req))
+            stamp_schema(metadata)
+            writer = SessionNodeWriter(db, req.session_id, advance_head=False)
+            writer.append(Call(
+                id=message_id,
+                created_at=timestamp,
+                role=ROLE_USER,
+                output=text,
+                predecessor=predecessor,
+                metadata=metadata,
+            ))
+            if not db.message_exists(req.session_id, message_id):
+                raise RuntimeError("steering user message was not persisted")
+            writer.update(assistant_msg_id, predecessor=message_id)
+        except Exception:
+            # Persistence is part of acceptance. Put the text back so the
+            # turn-end sweep can deliver it as an ordinary next turn.
+            steering.push(req.session_id, text)
+            _log.warning(
+                "failed to persist steering for session %s",
+                req.session_id,
+                exc_info=True,
+            )
+            return []
+        req._steering_tail_id = message_id
+        on_event({
+            "type": "chat_response",
+            "data": {
+                "type": "user_message",
+                "session_id": req.session_id,
+                "msg_id": message_id,
+                "content": text,
+                "source": "web",
+                "steering": True,
+                "timestamp": timestamp,
+                "predecessor": predecessor,
+            },
+        })
+        return [UserMessage(
+            content=[TextContent(text=text)],
+            timestamp=int(timestamp * 1000),
+        )]
+
     config = AgentLoopConfig(
         model=model,
         convert_to_llm=_default_convert_to_llm,
@@ -327,6 +400,7 @@ def run_loop_blocking(
             else agent_profile.get("service_tier")
         ),
         response_format=req.response_format,
+        get_steering_messages=_get_steering_messages,
     )
 
     # Async drain that forwards each AgentEvent → on_event envelope.
