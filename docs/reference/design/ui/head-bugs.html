@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OpenProgram · HEAD 缺陷清单</title>
+<style>
+  :root {
+    --bg: #f4efe6; --paper: #fbf7ef; --ink: #1c1916; --muted: #6b645b;
+    --line: #e4ddd2; --ok: #2f7d4a; --ok-bg: #e4f3e8; --warn: #9a6b12;
+    --warn-bg: #f8ecd0; --bad: #b42318; --bad-bg: #fde8e6; --idle: #5c6570;
+    --idle-bg: #eceff2;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.6 "Iowan Old Style", "Palatino Linotype", Palatino, "Songti SC", serif; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 48px 28px 80px; }
+  .kicker { color: var(--muted); font-size: 13px; letter-spacing: 0.04em; }
+  h1 { font-size: 30px; line-height: 1.25; margin: 8px 0 12px; font-weight: 650; }
+  .lead { color: var(--muted); font-size: 17px; max-width: 42em; }
+  h2 { font-size: 20px; margin: 40px 0 12px; }
+  h3 { font-size: 16px; margin: 22px 0 8px; }
+  p { margin: 0 0 12px; }
+  ul { margin: 0 0 14px; padding-left: 1.2em; }
+  li { margin: 4px 0; }
+  code { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 0.86em;
+    background: #efe8dc; padding: 0.1em 0.35em; border-radius: 4px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+  .pill { display: inline-flex; padding: 4px 10px; border-radius: 999px; font-size: 13px;
+    font-family: "SF Mono", ui-monospace, Menlo, monospace; }
+  .ok { background: var(--ok-bg); color: var(--ok); }
+  .bad { background: var(--bad-bg); color: var(--bad); }
+  .warn { background: var(--warn-bg); color: var(--warn); }
+  .idle { background: var(--idle-bg); color: var(--idle); }
+  .card { background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+    padding: 16px 18px; margin: 10px 0 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; margin: 8px 0 16px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  footer { margin-top: 48px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="kicker">2026-08-23 · 只看已提交的 HEAD，不看工作区未提交改动</div>
+  <h1>仓库当前缺陷（committed main）</h1>
+  <p class="lead">对照的是 <code>2f35c6db</code>。GitHub 上没有开放 issue。今天下午还列过的斜杠 / 压缩 P0，在这之后的十几个 commit 里已经落地，不再算未修。</p>
+  <div class="row">
+    <span class="pill idle">HEAD 2f35c6db</span>
+    <span class="pill ok">无开放 GitHub issue</span>
+    <span class="pill ok">/compact 与斜杠 P0 已修</span>
+    <span class="pill bad">Web 回退只预览不落地</span>
+    <span class="pill warn">其余是边角</span>
+  </div>
+</header>
+
+<h2>范围</h2>
+<div class="card">
+  <p>读的是 <code>git show HEAD</code>。工作区里未提交的 context-badge / session_stats / tree.py / package-lock 等一律当别人正在改，不记进本清单。</p>
+  <p style="margin:0">没有跑完整测试套。下面每条都能指到 HEAD 上的文件。猜的会标明。</p>
+</div>
+
+<h2>已经不该再报的（今天下午之后修过）</h2>
+<table>
+  <thead><tr><th>曾经的问题</th><th>HEAD 上的情况</th></tr></thead>
+  <tbody>
+    <tr><td>点 <code>/compact</code> 只填字</td><td><code>selectSlashCommand</code> 只对含 <code>&lt;…&gt;</code> 的必填参数停住。compact 的 <code>[keep_recent_tokens]</code> 会立刻 <code>run()</code>。</td></tr>
+    <tr><td>菜单收起 380ms 吞回车</td><td>keydown 已改成 <code>visible && !closing</code>，回车落到 <code>runCommand</code>。</td></tr>
+    <tr><td>没 session 静默清空</td><td>会 <code>alert</code>「先开始一段对话」。</td></tr>
+    <tr><td>压缩过程界面无声</td><td>圆环有 busy / 建议态；面板有「立即压缩」；<code>compaction_started/finished/failed</code> 进系统行；snip 也有 kind。</td></tr>
+    <tr><td>snip 抢在摘要前面，DAG 永远不落摘要</td><td><code>loop_runner.py</code> 先 compact 再 snip。</td></tr>
+    <tr><td>假成功（没折叠也 ok）</td><td><code>no_op</code> + finished 文案「无可压」，不烧摘要 LLM。</td></tr>
+    <tr><td>窗口从左上角胀开</td><td><code>9f72e62d</code>：主窗口先隐藏，铺好再 show。</td></tr>
+  </tbody>
+</table>
+
+<h2>还在的问题</h2>
+
+<div class="card">
+  <h3>1. Web 上回退不会真的改 HEAD <span class="pill bad">P1 · 已证实</span></h3>
+  <p>后端默认 <code>phase = "plan"</code>：只出方案，<code>new_head_id</code> 永远是 <code>None</code>，不改对话、不改文件。CLI 会再发 <code>phase: "apply"</code> 加 <code>plan_hash</code> / <code>idempotency_key</code>。Web 气泡 Rewind 和 <code>/rewind N</code> 只发 <code>{action:"rewind", session_id, target_msg_id}</code>。</p>
+  <p style="margin:0">气泡把「没有 new_head_id」显示成 <code>Rewind failed: unknown error</code>。斜杠路径若当时没有气泡监听 <code>rewind_result</code>，就是静默没反应。文件：<code>ws_actions/chat.py</code>、<code>openprogram/agent/_rewind.py</code>、<code>message-actions.tsx</code>、<code>slash-commands.ts</code>。</p>
+</div>
+
+<div class="card">
+  <h3>2. 斜杠 <code>send()</code> 失败仍当成功，草稿被清掉 <span class="pill warn">P2 · 已证实</span></h3>
+  <p style="margin:0">WebSocket 没开时 <code>wsSend</code> 返回 <code>false</code>，但 <code>/compact</code>、<code>/branch</code>、<code>/rewind</code> 的 <code>run()</code> 仍 <code>return true</code>。菜单和提交接着清空输入框。命令没出去，字也没了。</p>
+</div>
+
+<div class="card">
+  <h3>3. 输入 <code>/</code> 再回车会立刻压上下文 <span class="pill warn">P2 · 已证实</span></h3>
+  <p style="margin:0">菜单 <code>/</code> 列出全部命令，第一项是 <code>/compact</code>，可选参数现在直接执行。没高亮时回车等于选第一项。想打开列表却按了回车，就会开压。</p>
+</div>
+
+<div class="card">
+  <h3>4. 跳到最新和斜杠菜单的层级 <span class="pill idle">未证实会挡</span></h3>
+  <p style="margin:0">Jump <code>z-index: 7</code>，输入框 <code>5</code>，但按钮在 <code>bottom: composer + 12px</code>，和菜单是否重叠没在真机上证明。先不按缺陷修。</p>
+</div>
+
+<div class="card">
+  <h3>5. <code>/skill</code> 没写名字会被吞掉 <span class="pill warn">P2 · 已证实</span></h3>
+  <p style="margin:0"><code>slash-commands.ts</code>：<code>if (!name) return true</code>。回车算「已处理」，输入清空，技能没跑，也没有提示。点选会先填 <code>/skill </code>（有 <code>&lt;name&gt;</code>），再回车空名字就踩中。</p>
+</div>
+
+<div class="card">
+  <h3>5b. 菜单收起 380ms 内历史 ↑/↓ 失灵 <span class="pill idle">P3 · 已证实</span></h3>
+  <p style="margin:0">回车已经不截了（<code>visible && !closing</code>），但历史回忆仍看 <code>!slash.visible</code>。收起动画期间 <code>visible</code> 仍为 true，↑/↓ 不能翻历史。</p>
+</div>
+
+<div class="card">
+  <h3>6. <code>/task</code> 可以空跑成一条聊天 <span class="pill warn">P2 · 已证实</span></h3>
+  <p style="margin:0">点选会先填前缀（args 里有 <code>&lt;prompt&gt;</code>）。若有人提交光秃秃的 <code>/task</code>，<code>run()</code> 会 <code>send({action:"chat", text:"/task "})</code>，模型会接到一句空任务。没有「先写 prompt」的拦截。</p>
+</div>
+
+<div class="card">
+  <h3>7. 爆窗抢救（reactive compact）没有自己的界面 <span class="pill warn">P2 · 已证实</span></h3>
+  <p style="margin:0"><code>reactive.py</code> 会发 <code>reactive_compact_started/done/failed</code> 和 <code>reactive_snip</code>。<code>chat-handlers.ts</code> 没接这些 type。里面若调用了 <code>engine.compact</code>，仍会走普通的 <code>compaction_*</code> 行。纯 snip 抢救可能完全没字。</p>
+</div>
+
+<div class="card">
+  <h3>8. <code>/help</code>、<code>/doctor</code> 行为别扭 <span class="pill idle">P3 · 产品</span></h3>
+  <p><code>/help</code> 只把输入设成 <code>/</code>，指望菜单再打开。焦点一丢就什么都没有。</p>
+  <p style="margin:0"><code>/doctor</code> 有会话时把体检报告当用户消息发出去，模型会接着回。没有会话才 <code>alert</code>。</p>
+</div>
+
+<div class="card">
+  <h3>9. TTS 未实现 <span class="pill idle">P3 · 明示未做</span></h3>
+  <p style="margin:0"><code>openprogram/tts.py</code> 对未接的 provider 打印 <code>[tts] not yet implemented</code>。不是回归，是功能缺口。</p>
+</div>
+
+<div class="card">
+  <h3>10. 附件过大 / 非文本会静默丢掉 <span class="pill idle">P3 · 注释写明</span></h3>
+  <p style="margin:0"><code>image-attach.ts</code>：非文本、超大文件直接 skip，没有气泡。用户会以为贴上了。</p>
+</div>
+
+<h2>能力缺口（HEAD 代码对得上）</h2>
+<p>这些不是聊天圈回归，是文档或代码里还敞着的能力。桌面日常用得上的排前面。</p>
+<table>
+  <thead><tr><th></th><th>问题</th><th>证据</th></tr></thead>
+  <tbody>
+    <tr><td>P2</td><td>TUI <code>--resume</code> 不生效。Python 写了 <code>OPENPROGRAM_CONV</code>，Ink 只读 <code>OPENPROGRAM_WS</code>。文档还写着这个 flag 能用。</td><td><code>apps/cli/python/openprogram_cli/_impl/ink.py</code>、<code>apps/cli/src/index.tsx</code>、<code>docs/reference/cli.md</code></td></tr>
+    <tr><td>P2</td><td>企业 SSO 直接 <code>NotImplementedError</code>。</td><td><code>openprogram/auth/methods/sso.py</code></td></tr>
+    <tr><td>P2</td><td>community 插件和 verified 一样进程内 import。文档里的子进程沙箱是 stub，会抛 <code>NotImplementedError</code>。</td><td><code>openprogram/plugins/sandbox.py</code>、<code>loader.py</code></td></tr>
+    <tr><td>P2</td><td><code>provider.json</code> 坏了（读失败 / JSON 坏）变成空 endpoints，没有报错。</td><td><code>openprogram/providers/_provider_meta.py</code></td></tr>
+    <tr><td>P2</td><td>函数跑尽重试后没有「同一帧接着跑」。Retry 是整函数再开一条兄弟枝。</td><td><code>ws_actions/chat.py</code> retry 路径；没有 <code>resume_function</code></td></tr>
+    <tr><td>P2</td><td>递归护栏只看同名深度 5。<code>A→B→A</code> 查不到。</td><td><code>openprogram/agentic_programming/function.py</code></td></tr>
+    <tr><td>P2</td><td>函数表单只认源码里字面量 <code>input=</code>，动态 metadata 看不见。</td><td><code>docs/capabilities/agentic-programming/writing-functions/function-metadata.md</code></td></tr>
+    <tr><td>P2</td><td>Linux 没有发布的桌面 AppImage（安装文档写明，打包门没过）。</td><td><code>docs/install/install.md</code></td></tr>
+    <tr><td>P2</td><td>升级校验失败不会自动回滚，只打印一条 checkout/restart。</td><td><code>docs/server/upgrading.md</code>；设计写明不做</td></tr>
+    <tr><td>P2</td><td>工作流手动发布 + 强制沙箱行为测试门还没对外。</td><td><code>docs/capabilities/agentic-workflow.md</code></td></tr>
+  </tbody>
+</table>
+
+<h2>明确不做（不是 bug）</h2>
+<ul>
+  <li>闲时自动压缩：<code>occupancy-status.html</code> 写了产品未定，不做。</li>
+  <li>压缩不删旧轮、不移动 HEAD：设计如此。</li>
+  <li>snip 只改这一次发出去的 history，不写 DAG：设计如此。</li>
+  <li>环境变量探测 Gemini key：测试标了 xfail，AuthStore 才是正路。</li>
+</ul>
+
+<h2>没法从代码单独判死的</h2>
+<ul>
+  <li>压缩摘要卡 / 原文展开：HEAD 上最后三个 commit（<code>29e671c4</code> <code>9c75ee83</code> <code>2f35c6db</code>）刚在修，没有再看到明显逻辑洞，要真机看。</li>
+  <li>统一注册表和内置表重名：菜单可能出两个同名项。HEAD 上 <code>runCommand</code> 仍先走内置。</li>
+  <li>没有开放 issue，仓库里也几乎没有 FIXME 指向产品缺陷（搜到的 XXX 是临时目录名）。</li>
+</ul>
+
+<h2>建议</h2>
+<p>没有 P0。聊天圈最值得先修的是 Web 回退只 plan 不 apply。然后是 send 失败仍清输入、<code>/</code> 回车误压、空 <code>/skill</code>。不要再把今天下午的斜杠 P0 当未修。</p>
+
+<footer>
+  文件只反映 <code>2f35c6db</code>。工作区脏文件没看。没改代码。
+</footer>
+</div>
+</body>
+</html>
