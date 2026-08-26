@@ -118,7 +118,9 @@
       "decision": "do-not-plan",
       "scope": ["implementation", "testing", "packaging", "compatibility"],
       "visible": false,
-      "decided_at": "2026-08-12"
+      "decided_at": "2026-08-12",
+      "rationale": "Windows opens four fronts at once (porting, a second CI matrix, packaging + signing, sandbox semantics with no cheap equivalent) while the user base runs macOS/Linux and Windows users can reach a remote worker from a browser. Sequencing decision, not a rejection.",
+      "plan": "distribution/windows-support.md"
     },
     {
       "id": "os-credential-store",
