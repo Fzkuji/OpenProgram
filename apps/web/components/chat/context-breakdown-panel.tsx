@@ -12,7 +12,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
 import { HoverTip } from "@/components/ui/tooltip";
-import { MENU_SEPARATOR } from "@/components/chat/top-bar/menu-styles";
 import { useSessionStore } from "@/lib/session-store";
 import { getSocket } from "@/lib/runtime-bridge/state";
 import {
@@ -99,22 +98,23 @@ function Section({
 }) {
   if (count <= 0) return null;
   return (
-    <div className="mt-3">
+    <div className="mt-2">
+      {/* chevron 放标题后面 —— 标题文字和上方分类行同一左缘，不再多一层缩进。*/}
       <button
         onClick={onToggle}
-        className="flex w-full items-center gap-1 text-[12px] font-semibold"
+        className="flex w-full items-center gap-1 py-0.5 text-[12px] font-semibold"
         style={{ color: "var(--text-primary)" }}
       >
-        {open ? (
-          <ChevronDown className="h-3 w-3" />
-        ) : (
-          <ChevronRight className="h-3 w-3" />
-        )}
         <span>
           {title} ({count})
         </span>
+        {open ? (
+          <ChevronDown className="h-3 w-3" style={{ color: "var(--text-muted)" }} />
+        ) : (
+          <ChevronRight className="h-3 w-3" style={{ color: "var(--text-muted)" }} />
+        )}
       </button>
-      {open && <div className="mt-1 pl-4">{children}</div>}
+      {open && <div className="mt-1">{children}</div>}
     </div>
   );
 }
@@ -203,18 +203,14 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
       [text("Skills", "技能"), d.skills || 0],
       [text("Messages", "对话消息"), d.messages || 0],
       [text("Other context (estimated)", "其他上下文（估算）"), d.unclassified || 0],
-      // 空闲 = 窗口 − 顶部那个总占用，跟着 total_used 走而不是跟着分项
-      // 加总走 —— 否则实测总数和估算分项对不上时，头行和这一行互相打架。
-      [text("Free space", "空闲"), Math.max(0, win - totalUsed)],
     ];
     // 全部分类都显示（含 0），不过滤 —— 让用户看到每一档存在与否。
-    const freeLabel = text("Free space", "空闲");
+    // Free space 不单列：顶部总量行的百分比已经表达了同一信息。
     return defs.map(([label, v]) => ({
       label,
       tokens: v,
       pct: win > 0 ? (v / win) * 100 : 0,
       zero: v <= 0,
-      free: label === freeLabel,
     }));
   }, [data, text, win, totalUsed]);
 
@@ -264,9 +260,7 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
     >
       <div
         className="scroll-overlay min-h-0 flex-1 overflow-y-auto"
-        style={{
-          padding: "var(--composer-bottom-row-pad) calc(var(--composer-wrapper-pad-x) + 4px)",
-        }}
+        style={{ padding: "12px 14px" }}
       >
         {data?.error ? (
           <div className="p-4 text-[12px]" style={{ color: "var(--accent-red)" }}>
@@ -292,30 +286,25 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
             </div>
             <UsageBar pct={usedPct * 100} />
 
-            <div
-              className="h-px shrink-0 bg-[var(--border)]"
-              style={{ margin: "var(--composer-bottom-row-pad) 0" }}
-            />
+            <div className="my-3 h-px shrink-0 bg-[var(--border)]" />
 
             {/* 分类分解 —— 每行：标签左 / muted 数值右 / 下方细蓝条
                 （Claude 用量面板 5-hour / weekly 行的形制）。*/}
-            <div className="space-y-3">
+            <div className="space-y-2">
               {rows.map((r) => (
                 <div key={r.label} style={{ opacity: r.zero ? 0.4 : 1 }}>
-                  <div className="mb-[6px] flex items-center justify-between text-[12px]">
+                  <div className="mb-[4px] flex items-center justify-between text-[12px]">
                     <span style={{ color: "var(--text-primary)" }}>{r.label}</span>
                     <span style={{ color: "var(--text-muted)" }}>
                       {fmt(r.tokens)} · {r.pct.toFixed(1)}%
                     </span>
                   </div>
-                  {/* Free space 不是消耗——蓝条语义是"用掉多少"，空闲行
-                      画满条会反向误导，只留空轨。 */}
-                  <UsageBar pct={r.free ? 0 : r.pct} />
+                  <UsageBar pct={r.pct} />
                 </div>
               ))}
             </div>
 
-            <div className={MENU_SEPARATOR} style={{ marginTop: 14, marginBottom: 8 }} />
+            <div className="mt-3 mb-1 h-px shrink-0 bg-[var(--border)]" />
 
             {/* Per-tool */}
             <Section
@@ -381,9 +370,7 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
       {!data?.error && (
         <div
           className="shrink-0 border-t border-[var(--border)]"
-          style={{
-            padding: "12px calc(var(--composer-wrapper-pad-x) + 4px) var(--composer-bottom-row-pad)",
-          }}
+          style={{ padding: "8px 14px" }}
         >
           {recentlyCompacted ? (
             <HoverTip label={text("Recently compacted", "最近已压缩")}>
