@@ -152,7 +152,7 @@
 </div>
 
 <div class="note red">
-  <b>要和"别人根本没打算做"区分开的几条</b>：我们没有LSP、没有19个自动格式化器、没有tree-sitter、没有GitHub Action，opencode这些都有。这些是<b>编码agent</b>的装备，我们定位是通用harness，缺它们不算落后，只在"用OpenProgram写代码"这个场景里算。同样，hermes接了约26个渠道我们接了4个，但它的目标是全平台私人助理；我们的README写着"Any Platform"，所以这一条对我们算数。
+  <b>要和"别人根本没打算做"区分开的几条</b>：我们没有LSP、没有19个自动格式化器、没有tree-sitter、没有GitHub Action，opencode这些都有。这些是<b>编码agent</b>的装备，我们定位是通用harness，缺它们不算落后，只在"用OpenProgram写代码"这个场景里算。同样，openclaw原生接10个渠道、插件渠道20多个，hermes接约26个，我们接4个；它们的目标是全平台私人助理，但我们的README写着"Any Platform"，所以这一条对我们算数。
 </div>
 
 <!-- ══════════════════════════ LAYER 1 ══════════════════════════ -->
@@ -382,7 +382,7 @@
   <text x="744" y="152" fill="#6b6a63" font-size="10" letter-spacing="1.4">谁</text>
   <text x="744" y="170" fill="#bdb9a6" font-size="11.5">codex：远端环境 + 云端任务</text>
   <text x="744" y="188" fill="#bdb9a6" font-size="11.5">claude-code：teleport到云容器</text>
-  <text x="744" y="206" fill="#bdb9a6" font-size="11.5">openclaw：每agent一个Docker</text>
+  <text x="744" y="206" fill="#bdb9a6" font-size="11.5">openclaw：可选沙箱后端，默认关闭</text>
   <text x="744" y="224" fill="#bdb9a6" font-size="11.5">hermes：7种执行后端</text>
   <text x="744" y="248" fill="#4f8ef7" font-size="11.5">我们：docker.py / ssh.py在</text>
   <text x="744" y="264" fill="#4f8ef7" font-size="11.5">backend/ 下，没接沙箱，</text>
@@ -420,7 +420,7 @@
 </tr>
 <tr>
   <td class="dimname">执行模型</td>
-  <td class="us p">常驻worker</td><td>进程内加daemon加云容器</td><td>进程内加app-server加远端</td><td>网关进程加每agent容器</td>
+  <td class="us p">常驻worker</td><td>进程内加daemon加云容器</td><td>进程内加app-server加远端</td><td>网关进程加可选沙箱后端</td>
   <td>本机也拆服务端客户端</td><td>进程内加网关守护</td><td>单进程</td><td>守护进程转发</td>
 </tr>
 <tr>
@@ -455,12 +455,12 @@
 </tr>
 <tr>
   <td class="dimname">多渠道</td>
-  <td class="us n">4个</td><td>手机网页桥，Slack，Discord</td><td>没有聊天渠道，有云任务</td><td>28个，另加电话与Meet</td>
+  <td class="us n">4个</td><td>手机网页桥，Slack，Discord</td><td>没有聊天渠道，有云任务</td><td>原生10个，插件渠道20多个</td>
   <td>GitHub加Slack加ACP加两个IDE</td><td>约26个，另加webhook与cron</td><td>没有</td><td>1个</td>
 </tr>
 <tr>
   <td class="dimname">界面</td>
-  <td class="us p">TUI加网页加Electron</td><td>自研Ink分支加Vim加语音</td><td>ratatui，IDE经socket喂上下文</td><td>TUI加控制台加三个原生App</td>
+  <td class="us p">TUI加网页加Electron</td><td>自研Ink分支加Vim加语音</td><td>ratatui，IDE经socket喂上下文</td><td>TUI加控制台加macOS／iOS／watchOS／Android节点</td>
   <td>OpenTUI加网页加Electron</td><td>Ink TUI加React网页</td><td>自研TUI框架，能跑DOOM</td><td>只有终端</td>
 </tr>
 <tr>
@@ -482,7 +482,7 @@
 </div>
 
 <div class="note blue">
-  <b>矩阵读出来的三件事</b>。第一，形态上我们和openclaw、hermes是一类（常驻网关型通用助理），和claude-code、codex、opencode、pi-mono那一类（编码CLI）不是一回事，所以拿LSP和格式化器比没有意义，拿渠道数量比才有意义。第二，同类里我们的渠道数是4比28比26，差距是数量级的。第三，<b>"对外接口"整行只有我们是空的</b>，而且这一行和形态无关，编码型和网关型都做了。
+  <b>矩阵读出来的三件事</b>。第一，形态上我们和openclaw、hermes是一类（常驻网关型通用助理），和claude-code、codex、opencode、pi-mono那一类（编码CLI）不是一回事，所以拿LSP和格式化器比没有意义，拿渠道数量比才有意义。第二，同类里我们是4个渠道，openclaw是10个原生渠道加20多个插件渠道，hermes约26个，差距是数量级的；openclaw原生覆盖WhatsApp、Telegram、Slack、Discord、Google Chat、Signal、iMessage、Matrix、Microsoft Teams、Zalo，插件渠道包括Twitch、Nostr。第三，<b>"对外接口"整行只有我们是空的</b>，而且这一行和形态无关，编码型和网关型都做了。openclaw的社区规模约为38.8万stars、8.14万forks，org下有89个仓库；ClawHub技能数的公开口径从700多个到1.3万多个不等，只能据此判断生态量级，不能把某个数字当成精确库存。
 </div>
 
 <h3 id="cn">2.3国产四家：把一个开源框架搬进企业要补什么</h3>
@@ -585,6 +585,18 @@
   <td class="p">DSL先不做。guardian值得试，它正好补上我们<code>Gate.ask</code>三态里悬空的那一态。</td>
 </tr>
 <tr>
+  <td class="name">openclaw</td>
+  <td><b>沙箱的能力与默认行为分开记</b>：backend支持Docker、Podman、SSH、OpenShell，<code>mode</code>取<code>off</code>／<code>non-main</code>／<code>all</code>，默认是<code>off</code>。Docker模式默认无网络、只读根文件系统、非root并丢弃capabilities；官方同时明确它不是完美的安全边界。</td>
+  <td>只看到Docker backend会把"具备隔离能力"误写成"默认处于隔离中"。backend、启用范围、默认值和安全保证需要分别比较。</td>
+  <td class="p">借鉴Docker的收紧默认值，但不把容器本身当成完整信任边界；验收同时检查默认模式与实际启动参数。</td>
+</tr>
+<tr>
+  <td class="name">openclaw</td>
+  <td><b>扩展市场与公网Gateway形成两条独立风险面</b>：ClawHub允许任何人发布技能，已经出现恶意指令注入案例；Gateway存在<code>CVE-2026-25253</code>。</td>
+  <td>我们的skills与owner认证Gateway都按本机单人边界设计。技能市场引入不受信发布者，对外服务引入远程攻击者，两者都会改变现有信任前提。</td>
+  <td class="y">如果建设技能市场，发布者身份、权限说明、扫描、下架与安装确认是准入条件；如果对外暴露服务，认证、默认绑定、补丁响应和版本升级单独设门，不能沿用仅面向本机的假设。</td>
+</tr>
+<tr>
   <td class="name">codebuddy</td>
   <td><b>度量AI写了多少代码</b>：git HEAD watcher按文件归因agent与人类的改动比例并上报。</td>
   <td>我们记token和成本，不记产出归属。企业要买单的时候问的是后者。</td>
@@ -600,15 +612,27 @@
 <tr><td colspan="4" style="background:#12110b;color:#5aad4e;font-size:11px;letter-spacing:.16em;padding:8px 12px">主题四 · 让agent更主动、更好测</td></tr>
 <tr>
   <td class="name">openclaw</td>
+  <td><b>Automations加Heartbeat</b>：Automations支持cron、固定间隔与一次性任务，结果投递到聊天渠道或webhook；Heartbeat默认每30分钟主动运行一轮主会话，只上报值得注意的事项。</td>
+  <td>我们的scheduler已有一次性、周期和监控任务骨架，但没有把结果投递到聊天渠道或webhook的出口；channels里的heartbeat只记录适配器存活，不是主动运行主会话的机制。</td>
+  <td class="y"><b>该补的是两个明确边界</b>：scheduler结果投递协议，以及带频率、静默与筛选规则的主会话heartbeat。</td>
+</tr>
+<tr>
+  <td class="name">openclaw</td>
   <td><b>承诺追踪</b>：从聊天里抽出隐含承诺，转成有类型的条目（约定、截止、关心、未了事），置信度阈值0.86，每天最多主动发3条。另有心跳与开机一次性两条独立的主动路径。<span class="src">src/commitments/</span></td>
   <td>我们的proactive层做的是"事件发生时执行规则"，全部由外部事件触发。"从对话内容里长出未来的动作"这条路我们没有。</td>
   <td class="p">机制值得抄，阈值和限流要照抄，否则就是骚扰。</td>
 </tr>
 <tr>
   <td class="name">openclaw</td>
-  <td><b>配对的手机成为agent的手和眼</b>：日历、通讯录、相机、相册、定位、传感器、通知监听、短信、截屏，配上真的APNs推送与带过期的授权组。</td>
-  <td>我们的渠道只用来收发消息。"渠道另一端的设备本身是一个可调用的资源"这个想法没出现过。</td>
-  <td class="n">不做。我们没有原生App，代价与收益不成比例。列在这里是因为它解释了openclaw的144万行原生代码花在哪。</td>
+  <td><b>Dreaming</b>：后台按评分阈值从每日笔记<code>memory/YYYY-MM-DD.md</code>提炼条目并提升进<code>MEMORY.md</code>；上下文压缩前另有自动memory flush，先保存值得长期保留的信息。</td>
+  <td>我们的记忆有每晚<code>reorganize()</code>，但没有"每日笔记按评分晋升到核心记忆"这条显式生命周期；压缩前提炼与后台整理也不是同一个阶段。</td>
+  <td class="p">值得作为分层记忆机制继续比较；评分阈值、自动写入归属和压缩前失败语义必须同时定义。</td>
+</tr>
+<tr>
+  <td class="name">openclaw</td>
+  <td><b>节点把远端设备能力挂成工具</b>：macOS、iOS、watchOS、Android都是原生节点；手机节点提供传感器、日历与通知等能力，Android可经无障碍服务控机，macOS提供<code>computer.act</code>桌面自动化。</td>
+  <td>我们的渠道只用来收发消息，没有把另一台设备的能力注册到agent工具面。"节点协议"与"为产品做一套原生App界面"是两件可分离的事，不能因为不做手机App就把远端设备工具一并排除。</td>
+  <td class="p">节点协议值得单独设计；原生App不是它的前置条件，具体设备能力仍按权限、可撤销授权与平台成本逐项选择。</td>
 </tr>
 <tr>
   <td class="name">pi-mono</td>
@@ -700,7 +724,7 @@
 </table>
 </div>
 <div class="note orange">
-  <b>明确不做的</b>：训练数据管线（我们不训模型）、原生手机App与设备控制（没有App，代价与收益不成比例）、LSP与自动格式化器（编码agent的装备，我们是通用harness，需要时经MCP接现成的）、命令允许清单DSL（现有的fnmatch规则够用，等出现表达不了的真实需求再说）。
+  <b>明确不做的</b>：训练数据管线（我们不训模型）、原生手机App（它不作为节点协议或远端设备工具的前置条件）、LSP与自动格式化器（编码agent的装备，我们是通用harness，需要时经MCP接现成的）、命令允许清单DSL（现有的fnmatch规则够用，等出现表达不了的真实需求再说）。
 </div>
 
 <!-- ══════════════════════════ LAYER 4 ══════════════════════════ -->
@@ -733,7 +757,7 @@
 <tr><td class="name">OpenProgram</td><td>worktree检出的origin/main</td><td>2026-08-10</td><td>另有三个会话在改channels、web、memory-introspection与workflow-first，本页只描述已提交状态</td></tr>
 <tr><td class="name">claude-code</td><td class="p">本机安装的二进制2.1.226（267 MiB）为准，<code>references/claude-code-leaked</code>只作参考</td><td>泄露树截至2026-04</td><td>两者不一致的地方见下表</td></tr>
 <tr><td class="name">codex</td><td class="p">源码树加本机安装的0.146.0，另查<code>~/.codex/</code>运行时目录</td><td>2026-08</td><td>功能台账里105条有三分之一默认关，默认行为不代表能力边界</td></tr>
-<tr><td class="name">其余六家</td><td><code>references/</code>下的源码</td><td>各仓库HEAD</td><td>openclaw HEAD 2026-05-25，weclaw HEAD 2026-03-30</td></tr>
+<tr><td class="name">其余六家</td><td><code>references/</code>下的源码；openclaw另以官方README与docs复核</td><td>源码HEAD／官方文档</td><td>openclaw HEAD 2026-05-25 源码 + 2026-08 官方文档核对，weclaw HEAD 2026-03-30</td></tr>
 <tr><td class="name">国产四家</td><td>本机<code>~/.npm-global/lib/node_modules/</code>下的npm包，读<code>dist/</code>打包产物</td><td>2026-08</td><td>前三个是包装器，改动集中在环境变量与配置层；gemini那个是真源码分支</td></tr>
 <tr><td class="name">Trae</td><td class="n">未获取到实现</td><td>—</td><td>本机没装，<code>/Applications</code>、应用支持目录、VS Code与Cursor扩展目录里都没有。不写猜测</td></tr>
 </table>
