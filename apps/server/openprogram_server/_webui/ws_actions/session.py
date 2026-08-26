@@ -1,6 +1,7 @@
 """Session lifecycle WS actions: delete / clear / load / search / list / follow_up_answer."""
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 
@@ -863,10 +864,7 @@ async def handle_load_session(ws, cmd: dict):
         run_cfg = load_session_run_config(conv["id"])
         _effective_permission = permission_from_config(
             run_cfg, default=project_defaults(conv["id"]).get("permission_mode"))
-        # Prefetch occupancy + /context breakdown on session focus so the
-        # client cache is full before the ring is clicked.
-        if not conv.get("_last_context_breakdown"):
-            _s.refresh_context_stats(session_id)
+        refresh_context_after_load = not conv.get("_last_context_breakdown")
         _stats = conv.get("_last_context_stats") or {}
         _bd = conv.get("_last_context_breakdown")
         if _bd and "breakdown" not in _stats:
@@ -904,6 +902,11 @@ async def handle_load_session(ws, cmd: dict):
                 "status": (_ddb().get_session(session_id) or {}).get("status", "idle"),
             },
         }, default=str))
+        # Cold context accounting is cache warming, not session hydration.
+        # refresh_context_stats broadcasts its own context_stats frame after
+        # the computation finishes, so the transcript can render first.
+        if refresh_context_after_load:
+            await asyncio.to_thread(_s.refresh_context_stats, session_id)
         # _is_run_active above already removed any non-reserved task without
         # a live runtime. The remaining timeout also recovers a reservation
         # whose setup thread died before runtime handoff.

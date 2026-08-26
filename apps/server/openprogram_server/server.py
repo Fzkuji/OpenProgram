@@ -1548,6 +1548,12 @@ async def _handle_ws_command(ws, cmd: dict):
 
     h = WS_ACTIONS.get(action)
     if h is not None:
+        # load_session cannot be moved wholesale to asyncio.to_thread: it
+        # awaits session_loaded, running_task, and question replay frames at
+        # different points. Its blocking models.dev lookup is SWR, and cold
+        # context accounting is offloaded inside the handler. The remaining
+        # DB/graph hydration stays synchronous until computation and sends can
+        # be separated without changing the frame contract.
         await h(ws, cmd)
         return
 
