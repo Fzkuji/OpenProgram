@@ -6,6 +6,136 @@ import json
 import time
 
 
+# Keep ordinary tool results byte-for-byte compatible while preventing one
+# abnormal result from dominating the session_loaded JSON frame. The full
+# persisted node remains available through get_full_tool_output.
+TOOL_OUTPUT_INLINE_MAX_BYTES = 32 * 1024
+
+
+def _serialized_string_prefix(text: str) -> str:
+    """Longest leading substring whose JSON string stays within the cap."""
+    low, high = 0, len(text)
+    while low < high:
+        middle = (low + high + 1) // 2
+        size = len(json.dumps(
+            text[:middle], ensure_ascii=False,
+        ).encode("utf-8"))
+        if size <= TOOL_OUTPUT_INLINE_MAX_BYTES:
+            low = middle
+        else:
+            high = middle - 1
+    return text[:low]
+
+
+def _truncate_tool_record(
+    record: dict,
+    *,
+    message_id: str,
+    fallback_node_id: str | None = None,
+) -> dict:
+    result = record.get("result")
+    serialized = json.dumps(
+        result, ensure_ascii=False, default=str,
+    ).encode("utf-8")
+    if len(serialized) <= TOOL_OUTPUT_INLINE_MAX_BYTES:
+        return record
+    node_id = record.get("tool_call_id") or fallback_node_id
+    if not node_id:
+        return record
+    text = result if isinstance(result, str) else serialized.decode("utf-8")
+    prefix = _serialized_string_prefix(text)
+    return {
+        **record,
+        "result": prefix,
+        "truncated": True,
+        "total_bytes": len(serialized),
+        "message_id": message_id,
+        "node_id": node_id,
+    }
+
+
+def _truncate_tool_blocks(
+    blocks: list,
+    *,
+    message_id: str,
+    tool_node_ids: list[str],
+) -> tuple[list, bool]:
+    changed = False
+    tool_index = 0
+    output = []
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") != "tool":
+            output.append(block)
+            continue
+        fallback = (
+            tool_node_ids[tool_index] if tool_index < len(tool_node_ids) else None
+        )
+        tool_index += 1
+        truncated = _truncate_tool_record(
+            block, message_id=message_id, fallback_node_id=fallback,
+        )
+        changed = changed or truncated is not block
+        output.append(truncated)
+    return output, changed
+
+
+def _truncate_tool_outputs_for_wire(messages: list[dict]) -> list[dict]:
+    """Copy only messages whose inline tool result crosses the wire cap."""
+    output = []
+    for message in messages:
+        message_id = str(message.get("id") or "")
+        tool_calls = message.get("tool_calls")
+        tool_node_ids = [
+            str(call.get("tool_call_id"))
+            for call in (tool_calls or [])
+            if isinstance(call, dict) and call.get("tool_call_id")
+        ]
+        changed = False
+        copied = message
+        if isinstance(tool_calls, list):
+            truncated_calls = [
+                _truncate_tool_record(call, message_id=message_id)
+                if isinstance(call, dict) else call
+                for call in tool_calls
+            ]
+            if any(a is not b for a, b in zip(truncated_calls, tool_calls)):
+                copied = {**copied, "tool_calls": truncated_calls}
+                changed = True
+
+        blocks = message.get("blocks")
+        if isinstance(blocks, list):
+            truncated_blocks, blocks_changed = _truncate_tool_blocks(
+                blocks, message_id=message_id, tool_node_ids=tool_node_ids,
+            )
+            if blocks_changed:
+                copied = {**copied, "blocks": truncated_blocks}
+                changed = True
+
+        raw_extra = message.get("extra")
+        extra = raw_extra
+        if isinstance(raw_extra, str):
+            try:
+                extra = json.loads(raw_extra)
+            except (TypeError, json.JSONDecodeError):
+                extra = None
+        if isinstance(extra, dict) and isinstance(extra.get("blocks"), list):
+            extra_blocks, extra_changed = _truncate_tool_blocks(
+                extra["blocks"],
+                message_id=message_id,
+                tool_node_ids=tool_node_ids,
+            )
+            if extra_changed:
+                truncated_extra = {**extra, "blocks": extra_blocks}
+                if isinstance(raw_extra, str):
+                    truncated_extra = json.dumps(
+                        truncated_extra, ensure_ascii=False, default=str,
+                    )
+                copied = {**copied, "extra": truncated_extra}
+                changed = True
+        output.append(copied if changed else message)
+    return output
+
+
 def _annotate_spawn_origin(graph: list[dict]) -> None:
     """Attach ``spawned_from`` to each ``source=agent_spawn`` user msg
     that's the root of a sub-branch.
@@ -855,6 +985,7 @@ async def handle_load_session(ws, cmd: dict):
             if sf:
                 m["spawned_from"] = sf
         shown = splice_compaction_event_rows(shown, graph, all_msgs)
+        shown = _truncate_tool_outputs_for_wire(shown)
         from openprogram.agent.session_config import (
             load_session_run_config,
             permission_from_config,
@@ -970,6 +1101,43 @@ async def handle_load_session(ws, cmd: dict):
                 "settings": {},
             },
         }, default=str))
+
+
+async def handle_get_full_tool_output(ws, cmd: dict) -> None:
+    """Return one persisted tool node's untruncated output."""
+    from openprogram.agent.session_db import default_db
+
+    session_id = cmd.get("session_id")
+    message_id = cmd.get("message_id")
+    node_id = cmd.get("node_id")
+    request_id = cmd.get("request_id")
+    data = {
+        "session_id": session_id,
+        "message_id": message_id,
+        "node_id": node_id,
+        "request_id": request_id,
+    }
+    row = None
+    if all(isinstance(value, str) and value for value in (
+        session_id, message_id, node_id,
+    )):
+        row = next(
+            (
+                message for message in default_db().get_messages(session_id)
+                if message.get("id") == node_id
+                and message.get("role") == "tool"
+                and message.get("caller") == message_id
+            ),
+            None,
+        )
+    if row is None:
+        data["error"] = "tool output not found"
+    else:
+        data["result"] = row.get("content", "")
+    await ws.send_text(json.dumps({
+        "type": "full_tool_output",
+        "data": data,
+    }, ensure_ascii=False, default=str))
 
 
 async def handle_get_run_state(ws, cmd: dict):
@@ -1331,6 +1499,7 @@ ACTIONS = {
     "update_session_flags": handle_update_session_flags,
     "clear_sessions": handle_clear_sessions,
     "load_session": handle_load_session,
+    "get_full_tool_output": handle_get_full_tool_output,
     "get_run_state": handle_get_run_state,
     "follow_up_answer": handle_follow_up_answer,
     "question_reply": handle_question_reply,

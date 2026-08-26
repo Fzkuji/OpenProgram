@@ -20,6 +20,7 @@ import type { AssistantBlock, ChatMsg, DetailNode } from "@/lib/session-store";
 import { useSessionStore } from "@/lib/session-store";
 import type { TNode } from "./tree-types";
 import { useTranslation } from "@/lib/i18n";
+import { fetchFullToolOutput } from "@/lib/net/tool-output";
 import { getSocket } from "@/lib/runtime-bridge/state";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 import {
@@ -194,6 +195,7 @@ export function StepRow({
   actions,
   copyText,
   detail,
+  onOpenDetail,
   inlineBody,
   subSteps,
   defaultKidsOpen,
@@ -208,6 +210,7 @@ export function StepRow({
   actions?: React.ReactNode;
   copyText?: string;
   detail?: DetailNode;
+  onOpenDetail?: () => void;
   inlineBody?: React.ReactNode;
   subSteps?: React.ReactNode;
   /** 仅当前行的直接子树初始展开。 */
@@ -239,7 +242,8 @@ export function StepRow({
   function openDetail(e: React.MouseEvent) {
     if (!detail) return;
     e.stopPropagation();
-    useSessionStore.getState().showDetail(detail);
+    if (onOpenDetail) onOpenDetail();
+    else useSessionStore.getState().showDetail(detail);
   }
   const Icon = icon === "thinking" ? BrainIcon
     : icon === "subagent" ? BotIcon
@@ -360,37 +364,86 @@ export function FunctionStep({
   block,
   tree,
   running,
+  sessionId,
 }: {
   block: AssistantBlock;
   tree?: TNode | null;
   running?: boolean;
+  sessionId?: string;
 }) {
+  const [fullResult, setFullResult] = useState<string>();
+  const [loadingFull, setLoadingFull] = useState(false);
   const { text } = useTranslation();
   const isError = !!block.is_error;
   const name = block.tool || "?";
   const kids = tree?.children || [];
+  const result = fullResult ?? block.result;
   const detail: DetailNode = {
     path: `chat-tool:${block.tool_call_id || name}`,
     name,
-    status: running ? "running" : isError ? "error" : "completed",
+    status: running || loadingFull ? "running" : isError ? "error" : "completed",
     params: parseParams(block.input),
-    output: block.result === undefined || block.result === null
-      ? undefined : decodeEscapes(String(block.result)),
-    error: isError && block.result
-      ? decodeEscapes(String(block.result)) : undefined,
+    output: result === undefined || result === null
+      ? undefined : decodeEscapes(String(result)),
+    error: isError && result ? decodeEscapes(String(result)) : undefined,
   };
+  async function openDetail() {
+    const store = useSessionStore.getState();
+    const messageId = block.message_id;
+    const nodeId = block.node_id || block.tool_call_id;
+    if (!block.truncated || fullResult !== undefined
+        || !sessionId || !messageId || !nodeId) {
+      store.showDetail(detail);
+      return;
+    }
+    if (loadingFull) return;
+    setLoadingFull(true);
+    store.showDetail({
+      ...detail,
+      status: "running",
+      output: text("Loading...", "加载中..."),
+      error: undefined,
+    });
+    const response = await fetchFullToolOutput(sessionId, messageId, nodeId);
+    setLoadingFull(false);
+    const current = useSessionStore.getState().detailNode;
+    if (response && !response.error && response.result !== undefined) {
+      const complete = String(response.result);
+      setFullResult(complete);
+      if (current?.path === detail.path) {
+        store.showDetail({
+          ...detail,
+          status: isError ? "error" : "completed",
+          output: decodeEscapes(complete),
+          error: isError ? decodeEscapes(complete) : undefined,
+        });
+      }
+      return;
+    }
+    if (current?.path === detail.path) {
+      store.showDetail({
+        ...detail,
+        status: "error",
+        error: response?.error || text(
+          "Full tool output could not be loaded.",
+          "无法加载完整工具输出。",
+        ),
+      });
+    }
+  }
   return (
     <StepRow
       icon="function"
       title={text("Function call", "函数调用")}
       note={`${name}${block.input ? " · " + short(block.input, 60) : ""}${
-        block.result !== undefined && block.result !== null && block.result !== ""
-          ? " → " + short(String(block.result), 60) : ""}`}
+        result !== undefined && result !== null && result !== ""
+          ? " → " + short(String(result), 60) : ""}`}
       error={isError}
-      running={running}
+      running={running || loadingFull}
       copyText={JSON.stringify(
-        { tool: name, input: block.input, result: block.result }, null, 2)}
+        { tool: name, input: block.input, result }, null, 2)}
       detail={detail}
+      onOpenDetail={() => void openDetail()}
       subSteps={kids.length > 0
         ? kids.map((c, i) => <TreeStep key={c.path || i} node={c} />)
         : undefined}
