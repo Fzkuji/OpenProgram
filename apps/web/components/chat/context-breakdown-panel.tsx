@@ -11,6 +11,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
+import { HoverTip } from "@/components/ui/tooltip";
 import { MENU_SEPARATOR } from "@/components/chat/top-bar/menu-styles";
 import { useSessionStore } from "@/lib/session-store";
 import { getSocket } from "@/lib/runtime-bridge/state";
@@ -132,7 +133,30 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
   const compacting = useSessionStore((s) =>
     Boolean(sessionId && s.compactionUi[sessionId]?.running),
   );
-  const canCompact = Boolean(sessionId) && !compacting;
+  const recentlyCompacted = useSessionStore((s) => {
+    if (!sessionId) return false;
+    const order = s.messageOrder[sessionId] || [];
+    let hasNewMessage = false;
+    for (let i = order.length - 1; i >= 0; i -= 1) {
+      const message = s.messagesById[order[i]];
+      if (!message) continue;
+      if (message.role === "user" || message.role === "assistant") {
+        hasNewMessage = true;
+        continue;
+      }
+      if (message.kind !== "compaction" || message.slot === "card") continue;
+      if (message.id.startsWith("compaction_failed_")) return false;
+      const completed = message.slot === "event"
+        || message.id.startsWith("compaction_finished_")
+        || (
+          message.id.startsWith("compaction_started_")
+          && !s.compactionUi[sessionId]?.running
+        );
+      return completed && !hasNewMessage;
+    }
+    return false;
+  });
+  const canCompact = Boolean(sessionId) && !compacting && !recentlyCompacted;
   const [data, setData] = useState<Breakdown | null>(() =>
     readContextBreakdownCache(sessionId, headId),
   );
@@ -162,7 +186,6 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
   // 分项仍是本次现场算出的 breakdown —— 明细可以是估算，但顶部的总数
   // 必须和圆环同源。
   const win = data?.window || data?.context_window || 0;
-  const pct = (v: number) => (win > 0 ? (v / win) * 100 : 0);
 
   const totalUsed = data?.total_used ?? win - (data?.free_space ?? 0);
   const usedPct = win > 0 ? Math.min(1, totalUsed / win) : 0;
@@ -189,13 +212,43 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
     return defs.map(([label, v]) => ({
       label,
       tokens: v,
-      pct: pct(v),
+      pct: win > 0 ? (v / win) * 100 : 0,
       zero: v <= 0,
       free: label === freeLabel,
     }));
   }, [data, text, win, totalUsed]);
 
   const toggle = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }));
+
+  const compactButton = (
+    <button
+      type="button"
+      disabled={!canCompact}
+      aria-busy={compacting}
+      onClick={() => {
+        if (!sessionId || compacting || recentlyCompacted) return;
+        const sock = getSocket();
+        if (sock && sock.readyState === WebSocket.OPEN) {
+          sock.send(JSON.stringify({
+            action: "compact",
+            session_id: sessionId,
+          }));
+        }
+      }}
+      className="w-full rounded-[8px] px-3 py-1.5 text-[12px]"
+      style={{
+        background: canCompact ? "var(--bg-hover)" : "var(--bg-tertiary)",
+        color: canCompact ? "var(--text-primary)" : "var(--text-muted)",
+        border: "1px solid var(--border)",
+        cursor: canCompact ? "pointer" : "not-allowed",
+        opacity: canCompact ? 1 : 0.6,
+      }}
+    >
+      {compacting
+        ? text("Compacting…", "正在压缩…")
+        : text("Compact now", "立即压缩")}
+    </button>
+  );
 
   return (
     <div
@@ -209,7 +262,12 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
         boxShadow: "var(--shadow-popover)",
       }}
     >
-      <div className="flex-1 overflow-y-auto" style={{ padding: "16px 16px 16px" }}>
+      <div
+        className="scroll-overlay min-h-0 flex-1 overflow-y-auto"
+        style={{
+          padding: "var(--composer-bottom-row-pad) calc(var(--composer-wrapper-pad-x) + 4px)",
+        }}
+      >
         {data?.error ? (
           <div className="p-4 text-[12px]" style={{ color: "var(--accent-red)" }}>
             {data.error}
@@ -234,14 +292,17 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
             </div>
             <UsageBar pct={usedPct * 100} />
 
-            <div className={MENU_SEPARATOR} style={{ marginTop: 14, marginBottom: 14 }} />
+            <div
+              className="h-px shrink-0 bg-[var(--border)]"
+              style={{ margin: "var(--composer-bottom-row-pad) 0" }}
+            />
 
             {/* 分类分解 —— 每行：标签左 / muted 数值右 / 下方细蓝条
                 （Claude 用量面板 5-hour / weekly 行的形制）。*/}
-            <div className="space-y-[10px]">
+            <div className="space-y-3">
               {rows.map((r) => (
                 <div key={r.label} style={{ opacity: r.zero ? 0.4 : 1 }}>
-                  <div className="mb-[4px] flex items-center justify-between text-[12px]">
+                  <div className="mb-[6px] flex items-center justify-between text-[12px]">
                     <span style={{ color: "var(--text-primary)" }}>{r.label}</span>
                     <span style={{ color: "var(--text-muted)" }}>
                       {fmt(r.tokens)} · {r.pct.toFixed(1)}%
@@ -314,35 +375,23 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
                   <Row key={s.name} name={s.name} tokens={s.tokens} />
                 ))}
             </Section>
-
-            <div className={MENU_SEPARATOR} style={{ marginTop: 14, marginBottom: 12 }} />
-            <button
-              type="button"
-              disabled={!canCompact}
-              onClick={() => {
-                if (!sessionId || compacting) return;
-                const sock = getSocket();
-                if (sock && sock.readyState === WebSocket.OPEN) {
-                  sock.send(JSON.stringify({
-                    action: "compact",
-                    session_id: sessionId,
-                  }));
-                }
-              }}
-              className="w-full rounded-[8px] px-3 py-1.5 text-[12px]"
-              style={{
-                background: canCompact ? "var(--bg-hover)" : "transparent",
-                color: canCompact ? "var(--text-primary)" : "var(--text-muted)",
-                border: "1px solid var(--border)",
-                cursor: canCompact ? "pointer" : "not-allowed",
-                opacity: canCompact ? 1 : 0.5,
-              }}
-            >
-              {text("Compact now", "立即压缩")}
-            </button>
           </>
         )}
       </div>
+      {!data?.error && (
+        <div
+          className="shrink-0 border-t border-[var(--border)]"
+          style={{
+            padding: "12px calc(var(--composer-wrapper-pad-x) + 4px) var(--composer-bottom-row-pad)",
+          }}
+        >
+          {recentlyCompacted ? (
+            <HoverTip label={text("Recently compacted", "最近已压缩")}>
+              <span className="block">{compactButton}</span>
+            </HoverTip>
+          ) : compactButton}
+        </div>
+      )}
     </div>
   );
 }

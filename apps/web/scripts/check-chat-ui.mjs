@@ -23,6 +23,7 @@ const chatHandlers = source("lib/runtime-bridge/chat-handlers.ts");
 const sessionStore = source("lib/session-store/index.ts");
 const assistantBubble = source("components/chat/messages/assistant-bubble.tsx");
 const queuedMessages = source("components/chat/messages/queued-messages.tsx");
+const userBubble = source("components/chat/messages/user-bubble.tsx");
 const runtimeBlock = source("components/chat/messages/runtime-block.tsx");
 const attachCard = source("components/chat/messages/attach-card.tsx");
 const executionStrip = source("components/chat/messages/execution-strip.tsx");
@@ -172,6 +173,20 @@ assert.doesNotMatch(
   /加载中|Loading…/,
   "the panel must never render a loading state; snapshots warm on session focus",
 );
+assert.match(
+  contextBreakdownPanel,
+  /className="scroll-overlay min-h-0 flex-1 overflow-y-auto"/,
+  "context breakdown content must scroll without a native scrollbar",
+);
+assert.match(
+  contextBreakdownPanel,
+  /className="shrink-0 border-t border-\[var\(--border\)\]"/,
+  "the compact action must live outside the scrolling content",
+);
+assert.match(contextBreakdownPanel, /message\.slot === "event"/);
+assert.match(contextBreakdownPanel, /!compacting && !recentlyCompacted/);
+assert.match(contextBreakdownPanel, /Recently compacted/);
+assert.match(contextBreakdownPanel, /Compacting…/);
 assert.match(source("components/chat/context-badge.tsx"), /warmContextBreakdown\(/);
 
 assert.match(
@@ -955,6 +970,12 @@ assert.match(
   /queuedAt:[\s\S]*className="message-timestamp"[\s\S]*new Date\(row\.queuedAt\)\.toLocaleTimeString/,
   "queued user messages must show their enqueue timestamp before dispatch",
 );
+assert.match(queuedMessages, /Steer now/);
+assert.match(queuedMessages, /Injecting…/);
+assert.match(controlsCluster, /While running: Steer/);
+assert.match(controlsCluster, /While running: Queue/);
+assert.match(userBubble, /msg\.steering[\s\S]*Steered/);
+assert.match(chatHandlers, /data\.turn_continues !== true/);
 assert.match(
   messageActions,
   /export function MessageTimestamp[\s\S]*className="message-timestamp"[\s\S]*aria-label=\{fullTime\}[\s\S]*tabIndex=\{0\}/,
