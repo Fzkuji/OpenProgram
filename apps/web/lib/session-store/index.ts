@@ -1,5 +1,5 @@
-import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
+import { createWithEqualityFn } from "zustand/traditional";
 
 import {
   readSessionDraftState,
@@ -461,7 +461,7 @@ function switchChat(
   };
 }
 
-export const useSessionStore = create<ConvState>((set) => ({
+export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
   wsStatus: "connecting",
   agentSettings: {},
   setAgentSettings: (s) =>

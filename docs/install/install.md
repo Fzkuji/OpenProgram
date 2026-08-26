@@ -1,6 +1,6 @@
 # Installation
 
-OpenProgram has separate release installations for desktop users and CLI/server users. Source checkout installation is for development only.
+OpenProgram has separate release installations for desktop users and CLI/server users. All supported release installations contain the same complete product capabilities; only the launch shell differs. Source checkout installation is for development only.
 
 ## Supported installation matrix
 

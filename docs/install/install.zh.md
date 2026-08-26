@@ -1,6 +1,6 @@
 # 安装
 
-OpenProgram 分别提供桌面 release 安装和 CLI/server release 安装。source checkout 安装只用于开发。
+OpenProgram 分别提供桌面 release 安装和 CLI/server release 安装。所有受支持的 release 安装都具有相同的完整产品能力，只有启动外壳不同。source checkout 安装只用于开发。
 
 ## 支持矩阵
 
