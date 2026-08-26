@@ -45,6 +45,47 @@ def test_runtime_write_does_not_enforce_private_mode(tmp_path: Path) -> None:
     assert json.loads(target.read_text()) == {"token": "value"}
 
 
+def test_atomic_write_fsync_reopens_temp_writable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The durability flush reopens the staged temp file with a writable
+    handle.
+
+    Regression: it used ``O_RDONLY`` — POSIX fsync tolerates a read-only
+    descriptor, but Windows ``os.fsync`` (``_commit``) raises EBADF there,
+    which crashed every credential write on that platform.
+    """
+    import os
+
+    target = tmp_path / "credentials.json"
+    real_open = os.open
+    tmp_flags: list[int] = []
+
+    def spy_open(path, flags, *args, **kwargs):
+        fd = real_open(path, flags, *args, **kwargs)
+        if str(path).endswith(".tmp"):
+            tmp_flags.append(flags)
+        return fd
+
+    monkeypatch.setattr(os, "open", spy_open)
+
+    _private_atomic_write(
+        target,
+        lambda handle: handle.write(b'{"token":"value"}'),
+        root=tmp_path,
+    )
+
+    assert json.loads(target.read_text()) == {"token": "value"}
+    assert tmp_flags, "atomic write never reopened its temp file"
+    # mkstemp's own O_RDWR|O_CREAT|O_EXCL open comes first; the LAST
+    # .tmp open is the pre-replace fsync reopen.
+    assert tmp_flags[-1] & os.O_RDWR, (
+        "the fsync reopen must be writable — O_RDONLY fsync raises EBADF "
+        "on Windows"
+    )
+
+
 def test_doctor_credentials_reports_disabled(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
