@@ -90,6 +90,7 @@ def process_user_turn(request, *, cancel_event):
            speaker_id=request.speaker_id)
     get_event_bus().emit(make_event("question.asked", "agent", {
         "id": "fixture-question", "session_id": request.session_id,
+        "execution_id": request.user_msg_id + "_reply",
     }))
     if request.user_text == "wait-for-cancel":
         record("entered", session_id=request.session_id)
@@ -103,8 +104,8 @@ class Questions:
     def resolve(self, question_id, outcome, value=None):
         record("question", question_id=question_id, outcome=outcome, value=value)
         return True
-    def cancel_session(self, session_id):
-        record("question_cancel", session_id=session_id)
+    def cancel_execution(self, session_id, execution_id):
+        record("question_cancel", session_id=session_id, execution_id=execution_id)
 
 questions = Questions()
 import openprogram.agent.questions as question_module
@@ -757,13 +758,19 @@ def test_sdk_cancellation_reaches_prompt_handler_without_application_result():
         def create_session(self, session_id, agent_id, **_kwargs):
             self.rows[session_id] = {"id": session_id, "agent_id": agent_id}
 
+        def get_nodes(self, session_id):
+            return []
+
     class Questions:
         def __init__(self):
             self.cancelled = []
             self.resolved = []
 
-        def cancel_session(self, session_id):
-            self.cancelled.append(session_id)
+        def cancel_execution(self, session_id, execution_id):
+            self.cancelled.append((session_id, execution_id))
+
+        def list_pending(self, session_id):
+            return []
 
         def resolve(self, question_id, outcome, value=None):
             self.resolved.append((question_id, outcome, value))
@@ -811,7 +818,11 @@ def test_sdk_cancellation_reaches_prompt_handler_without_application_result():
                     make_event(
                         "question.asked",
                         "agent",
-                        {"id": "general-question", "session_id": session_id},
+                        {
+                            "id": "general-question",
+                            "session_id": session_id,
+                            "execution_id": record.execution_id,
+                        },
                     )
                 )
                 assert questions.resolved == [("general-question", "declined", None)]
@@ -825,7 +836,7 @@ def test_sdk_cancellation_reaches_prompt_handler_without_application_result():
                 assert "cancel" in str(caught.value).lower()
                 assert service._active_by_request == {}
                 assert current_token(session_id) is None
-                assert questions.cancelled == [session_id]
+                assert questions.cancelled == [(session_id, record.execution_id)]
                 assert len(audit) == 1
             await client_to_server_send.aclose()
             group.cancel_scope.cancel()
@@ -1172,6 +1183,9 @@ def test_protocol_prompt_cancel_is_same_connection_only_and_completed_is_false()
     class DB:
         def get_session(self, session_id):
             return {"id": session_id, "agent_id": "main"}
+
+        def get_nodes(self, session_id):
+            return []
 
     def process(*_args, **_kwargs):
         entered.set()

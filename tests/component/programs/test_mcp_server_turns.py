@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+from types import SimpleNamespace
 
 import mcp.types as mcp_types
 import pytest
@@ -31,17 +32,33 @@ class FakeSessionDB:
         self.sessions[session_id] = {"id": session_id, "agent_id": agent_id}
 
 
+class CanonicalSessionDB(FakeSessionDB):
+    def __init__(self, nodes=None) -> None:
+        super().__init__()
+        self.nodes = list(nodes or [])
+
+    def get_nodes(self, session_id):
+        return list(self.nodes)
+
+
 class FakeQuestions:
     def __init__(self) -> None:
         self.resolved: list[tuple] = []
-        self.cancelled: list[str] = []
+        self.cancelled: list[tuple[str, str]] = []
+        self.pending: dict[str, str] = {}
 
     def resolve(self, question_id, outcome, value=None):
         self.resolved.append((question_id, outcome, value))
         return True
 
-    def cancel_session(self, session_id):
-        self.cancelled.append(session_id)
+    def list_pending(self, session_id):
+        return [
+            SimpleNamespace(id=qid, execution_id=execution_id)
+            for qid, execution_id in self.pending.items()
+        ]
+
+    def cancel_execution(self, session_id, execution_id):
+        self.cancelled.append((session_id, execution_id))
 
 
 def _context(client_id="0123456789abcdef"):
@@ -59,7 +76,8 @@ def _active(service):
 
 
 def _service(
-    *, db=None, process=None, bus=None, questions=None, calls=None, context=None
+    *, db=None, process=None, bus=None, questions=None, calls=None, context=None,
+    cancel=None,
 ):
     calls = calls if calls is not None else []
     bus = bus or create_event_bus()
@@ -113,7 +131,7 @@ def _service(
         ),
         acquire_cancel_cleanup=acquire_cleanup,
         release_cancel_cleanup=release_cleanup,
-        cancel_execution=cancel_execution,
+        cancel_execution=cancel or cancel_execution,
         question_registry_getter=lambda: questions,
         event_bus_getter=lambda: bus,
     )
@@ -360,15 +378,214 @@ def test_prompt_cancel_owned_request_performs_complete_idempotent_cleanup() -> N
         ("cancel", record.execution_id),
         ("unregister", ("existing", record.thread_cancel, record.execution_id)),
     ]
-    assert questions.cancelled == ["existing"]
+    bus.emit(
+        make_event(
+            "question.asked",
+            "agent",
+            {
+                "id": "late-question",
+                "session_id": "existing",
+                "execution_id": record.execution_id,
+            },
+        )
+    )
+    assert questions.resolved == []
+    assert questions.cancelled == [("existing", record.execution_id)]
     assert len(audit) == 1
     assert audit[0].payload == {
         "request_id": "r1",
+        "execution_id": record.execution_id,
         "session_id": "existing",
         "client_id": "0123456789abcdef",
         "reason": "prompt_cancel",
     }
     assert "secret" not in repr(audit[0])
+
+
+@pytest.mark.parametrize("error", ["terminal", "unexpected"])
+def test_prompt_cancel_service_failure_preserves_live_turn(error) -> None:
+    from openprogram.agent import run_control
+
+    entered = threading.Event()
+    release = threading.Event()
+    audit = []
+    questions = FakeQuestions()
+    bus = create_event_bus()
+    bus.subscribe(lambda event: audit.append(event), types={"mcp.request.cancelled"})
+
+    def process(req, *, cancel_event):
+        entered.set()
+        release.wait(2)
+        return TurnResult("normal", "u", "a")
+
+    def cancel(execution_id):
+        if error == "terminal":
+            raise run_control.ExecutionNotCancellable(
+                execution_id, {"execution_id": execution_id, "status": "completed"}
+            )
+        raise RuntimeError("store failure")
+
+    service = _service(
+        process=process, questions=questions, bus=bus, cancel=cancel,
+    )
+
+    async def scenario():
+        task = asyncio.create_task(
+            service.prompt_send("prompt", session_id="existing", request_id="r1")
+        )
+        await asyncio.to_thread(entered.wait, 1)
+        record = _active(service)[0]
+        result = service.prompt_cancel("existing")
+        assert _payload(result) == {"session_id": "existing", "cancelled": False}
+        assert not record.thread_cancel.is_set()
+        assert not record.tool_cancel.is_set()
+        assert _active(service) == (record,)
+        release.set()
+        normal = await task
+        assert _payload(normal)["text"] == "normal"
+
+    asyncio.run(scenario())
+    assert questions.cancelled == []
+    assert audit == []
+
+
+def test_prompt_cancel_not_found_allows_only_verified_pre_placeholder() -> None:
+    from openprogram.agent import run_control
+
+    entered = threading.Event()
+    release = threading.Event()
+    db = CanonicalSessionDB()
+    questions = FakeQuestions()
+    audit = []
+    bus = create_event_bus()
+    bus.subscribe(lambda event: audit.append(event), types={"mcp.request.cancelled"})
+
+    def process(req, *, cancel_event):
+        entered.set()
+        release.wait(2)
+        return TurnResult("late", "u", "a")
+
+    service = _service(
+        db=db, process=process, questions=questions, bus=bus,
+        cancel=lambda execution_id: (_ for _ in ()).throw(
+            run_control.ExecutionNotFound(execution_id)
+        ),
+    )
+
+    async def scenario():
+        task = asyncio.create_task(
+            service.prompt_send("prompt", session_id="existing", request_id="r1")
+        )
+        await asyncio.to_thread(entered.wait, 1)
+        record = _active(service)[0]
+        result = service.prompt_cancel("existing")
+        assert _payload(result)["cancelled"] is True
+        assert record.thread_cancel.is_set()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        return record
+
+    record = asyncio.run(scenario())
+    assert questions.cancelled == [("existing", record.execution_id)]
+    assert audit[0].payload["execution_id"] == record.execution_id
+
+
+@pytest.mark.parametrize("lookup", ["placeholder", "store_failure", "retired"])
+def test_prompt_cancel_not_found_guards(lookup) -> None:
+    from openprogram.agent import run_control
+
+    entered = threading.Event()
+    release = threading.Event()
+    execution_nodes = []
+    db = CanonicalSessionDB(execution_nodes)
+    questions = FakeQuestions()
+
+    def process(req, *, cancel_event):
+        entered.set()
+        release.wait(2)
+        return TurnResult("normal", "u", "a")
+
+    def cancel(execution_id):
+        raise run_control.ExecutionNotFound(execution_id)
+
+    service = _service(db=db, process=process, questions=questions, cancel=cancel)
+
+    async def scenario():
+        task = asyncio.create_task(
+            service.prompt_send("prompt", session_id="existing", request_id="r1")
+        )
+        await asyncio.to_thread(entered.wait, 1)
+        record = _active(service)[0]
+        if lookup == "placeholder":
+            db.nodes.append(SimpleNamespace(id=record.execution_id))
+        elif lookup == "store_failure":
+            db.get_nodes = lambda _session_id: (_ for _ in ()).throw(
+                RuntimeError("read failed")
+            )
+        else:
+            service._current_cancel_event = (
+                lambda _session_id, *, execution_id: None
+            )
+        result = service.prompt_cancel("existing")
+        assert _payload(result) == {"session_id": "existing", "cancelled": False}
+        assert not record.thread_cancel.is_set()
+        assert _active(service) == (record,)
+        release.set()
+        await task
+
+    asyncio.run(scenario())
+    assert questions.cancelled == []
+
+
+def test_abandoned_outer_cancel_keeps_owner_until_late_worker_returns() -> None:
+    entered = threading.Event()
+    release = threading.Event()
+    worker_done = threading.Event()
+
+    def process(req, *, cancel_event):
+        entered.set()
+        release.wait(2)
+        worker_done.set()
+        return TurnResult(req.user_text, "u", "a")
+
+    def fail(_execution_id):
+        raise RuntimeError("cancel service unavailable")
+
+    service = _service(process=process, cancel=fail)
+
+    async def scenario():
+        old = asyncio.create_task(
+            service.prompt_send("old", session_id="existing", request_id="old-r")
+        )
+        await asyncio.to_thread(entered.wait, 1)
+        old_record = _active(service)[0]
+        old.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await old
+        assert _active(service) == (old_record,)
+        assert not old_record.thread_cancel.is_set()
+
+        blocked = await service.prompt_send(
+            "successor", session_id="existing", request_id="new-r"
+        )
+        assert _payload(blocked) == {"error": "prompt execution failed"}
+        assert not worker_done.is_set()
+
+        release.set()
+        await asyncio.to_thread(worker_done.wait, 1)
+        for _ in range(20):
+            if not _active(service):
+                break
+            await asyncio.sleep(0.01)
+        assert _active(service) == ()
+
+        result = await service.prompt_send(
+            "successor", session_id="existing", request_id="new-r"
+        )
+        assert _payload(result)["text"] == "successor"
+
+    asyncio.run(scenario())
 
 
 def test_prompt_cancel_foreign_completed_and_stale_records_have_no_effect() -> None:
@@ -457,7 +674,7 @@ def test_two_services_cannot_share_or_cross_cancel_one_process_session() -> None
 
         assert _payload(service_a.prompt_cancel(session_id))["cancelled"] is True
         assert record_a.thread_cancel.is_set()
-        assert questions_a.cancelled == [session_id]
+        assert questions_a.cancelled == [(session_id, record_a.execution_id)]
         assert questions_b.cancelled == []
         assert cleanup == [("a", "cancel", record_a.execution_id)]
         release["a"].set()
@@ -630,6 +847,12 @@ def test_question_events_decline_only_current_service_active_request() -> None:
             asyncio.to_thread(entered["existing"].wait, 1),
             asyncio.to_thread(entered["second"].wait, 1),
         )
+        own_record = _active(own)[0]
+        foreign_record = _active(foreign)[0]
+        own_questions.pending["q-own"] = own_record.execution_id
+        own_questions.pending["q-sibling"] = foreign_record.execution_id
+        own_questions.pending["q-ownerless"] = ""
+        foreign_questions.pending["q-foreign"] = foreign_record.execution_id
         bus.emit(
             make_event(
                 "question.asked",
@@ -644,6 +867,14 @@ def test_question_events_decline_only_current_service_active_request() -> None:
                 {"id": "q-foreign", "session_id": "second"},
             )
         )
+        for question_id in ("q-sibling", "q-ownerless"):
+            bus.emit(
+                make_event(
+                    "question.asked",
+                    "agent",
+                    {"id": question_id, "session_id": "existing"},
+                )
+            )
         bus.emit(make_event("question.asked", "agent", {"bad": "event"}))
         release["existing"].set()
         release["second"].set()
@@ -689,6 +920,7 @@ def test_question_claim_and_cancellation_coordinate_on_active_ownership() -> Non
             service.prompt_send("prompt", session_id="existing", request_id="r1")
         )
         await asyncio.to_thread(turn_entered.wait, 1)
+        questions.pending["q-race"] = _active(service)[0].execution_id
         emit_thread = threading.Thread(
             target=lambda: bus.emit(
                 make_event(
@@ -723,6 +955,7 @@ def test_close_unsubscribes_once_and_cleans_only_owned_requests() -> None:
     bus = create_event_bus()
     questions = FakeQuestions()
     calls = []
+    captured_execution_ids = []
     entered = threading.Event()
     release = threading.Event()
 
@@ -738,6 +971,7 @@ def test_close_unsubscribes_once_and_cleans_only_owned_requests() -> None:
             service.prompt_send("prompt", session_id="existing", request_id="r1")
         )
         await asyncio.to_thread(entered.wait, 1)
+        captured_execution_ids.append(_active(service)[0].execution_id)
         service.close()
         service.close()
         release.set()
@@ -745,6 +979,7 @@ def test_close_unsubscribes_once_and_cleans_only_owned_requests() -> None:
             await task
 
     asyncio.run(scenario())
+    execution_id = captured_execution_ids[0]
     bus.emit(
         make_event(
             "question.asked",
@@ -754,7 +989,7 @@ def test_close_unsubscribes_once_and_cleans_only_owned_requests() -> None:
     )
 
     assert _active(service) == ()
-    assert questions.cancelled == ["existing"]
+    assert questions.cancelled == [("existing", execution_id)]
     assert questions.resolved == []
     assert [name for name, _ in calls].count("cancel") == 1
 
@@ -1009,10 +1244,11 @@ def test_cancel_request_cleanup_callback_failures_do_not_retain_ownership() -> N
         )
         await asyncio.to_thread(entered.wait, 1)
         service.cancel_request("r1", reason="secret-caller-reason")
-        assert _active(service) == ()
+        assert _active(service)
+        assert not service._active_by_request["r1"].thread_cancel.is_set()
         release.set()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        result = await task
+        assert _payload(result)["text"] == "late"
 
     asyncio.run(scenario())
     assert cleanup_leases == {}
