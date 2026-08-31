@@ -96,7 +96,10 @@ def dispatch_forced_tool_call(
     # session ContextVars and re-wraps the tool with
     # _wrap_agentic_runtime_block; events are bridged back via an
     # mp.Queue so WS clients see the same envelopes as before.
-    from openprogram.agent.process_runner import run_agentic_in_subprocess
+    from openprogram.agent.process_runner import (
+        agentic_subprocess_timeout_seconds,
+        run_agentic_in_subprocess,
+    )
     from openprogram.agent.run_control import (
         set_current_session_id as _set_cid,
         reset_current_session_id as _reset_cid,
@@ -118,6 +121,9 @@ def dispatch_forced_tool_call(
             provider=provider,
             model=model,
             response_format=response_format,
+            timeout_seconds=agentic_subprocess_timeout_seconds(
+                tool_name, tool_input,
+            ),
         )
     finally:
         try:

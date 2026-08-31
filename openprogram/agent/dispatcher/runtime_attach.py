@@ -151,6 +151,7 @@ def _wrap_agentic_runtime_block(
                 # write is idempotent (db.append_message on same id
                 # upserts) — acceptable.
                 from openprogram.agent.process_runner import (
+                    agentic_subprocess_timeout_seconds,
                     run_agentic_in_subprocess,
                 )
                 import asyncio as _asyncio
@@ -184,11 +185,9 @@ def _wrap_agentic_runtime_block(
 
                         captured_surface = surface_context.capture_pages()
                         surface_snapshot = captured_surface
-                    timeout_seconds = None
-                    if tool_name in {"browser_agent", "gui_agent"}:
-                        raw_timeout = subprocess_args.get("max_seconds")
-                        if raw_timeout is not None and float(raw_timeout) > 0:
-                            timeout_seconds = float(raw_timeout)
+                    timeout_seconds = agentic_subprocess_timeout_seconds(
+                        tool_name, subprocess_args,
+                    )
                     try:
                         return run_agentic_in_subprocess(
                             tool_name=tool_name,

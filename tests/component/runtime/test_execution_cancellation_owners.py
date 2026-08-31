@@ -547,6 +547,17 @@ def test_forced_tool_passes_canonical_execution_id(monkeypatch):
     assert captured["execution_id"] == "fromanchor"
     assert terminal[-1] == ("fromanchor", "completed")
 
+    _Tool.name = "gui_agent"
+    captured.clear()
+    forced_tool.dispatch_forced_tool_call(
+        session_id="s1",
+        anchor_msg_id="|node:guiagent",
+        tool_name="gui_agent",
+        tool_input={"task": "inspect"},
+    )
+    assert captured["timeout_seconds"] == 300
+    _Tool.name = "wc"
+
     runner_out.clear()
     runner_out.update({"killed": True, "signal": 9})
     forced_tool.dispatch_forced_tool_call(
@@ -583,4 +594,3 @@ def test_register_on_cancelled_execution_does_not_retrip(store):
     )
     assert ev.is_set() is False
     assert token.is_cancelled() is False
-

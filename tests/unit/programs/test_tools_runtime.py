@@ -882,7 +882,7 @@ def test_gui_agent_browser_surface_is_captured_for_subprocess(monkeypatch) -> No
 
     assert result.content[0].text == "browser result"
     assert seen["surface_context_snapshot"] is captured
-    assert seen["timeout_seconds"] is None
+    assert seen["timeout_seconds"] == 300
     assert released == [captured]
 
 

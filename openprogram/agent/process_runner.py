@@ -46,6 +46,20 @@ _active_stop_q: dict[str, "mp.Queue"] = {}
 _session_execution: dict[str, str] = {}
 _active_lock = threading.Lock()
 
+_BOUNDED_AGENTIC_TOOLS = {"browser_agent", "gui_agent"}
+_DEFAULT_AGENTIC_TIMEOUT_SECONDS = 300.0
+
+
+def agentic_subprocess_timeout_seconds(
+    tool_name: str, kwargs: dict | None,
+) -> float | None:
+    """Resolve the whole-process deadline for GUI/browser agent calls."""
+    if tool_name not in _BOUNDED_AGENTIC_TOOLS:
+        return None
+    raw = (kwargs or {}).get("max_seconds")
+    value = _DEFAULT_AGENTIC_TIMEOUT_SECONDS if raw is None else float(raw)
+    return value if value > 0 else None
+
 
 def _new_child_webtab_bridge(event_queue):
     pending: dict[str, tuple[threading.Event, dict]] = {}
