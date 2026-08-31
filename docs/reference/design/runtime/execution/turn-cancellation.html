@@ -15,7 +15,7 @@
     <div class="eyebrow">OpenProgram Runtime · normative architecture</div>
     <h1>运行取消：从用户意图到确定终态</h1>
     <p class="lead">本页是 OpenProgram 运行取消功能的唯一权威设计。它定义统一名称、精确目标、状态机、公共协议、协作取消、强制终止、父子传播、持久化、恢复和各界面行为。目标不是增加一个“Stop 函数”，而是让一次取消请求在 App、Web、TUI、CLI、Agent、Workflow 和后台 Job 中具有相同语义。</p>
-    <div class="meta"><span class="pill target">状态：目标设计 · 尚未实施</span><span class="pill scope">范围：Execution control / Runtime / App / Web / TUI / CLI</span><span class="pill">兼容：现有 stop 接口分阶段迁移</span><span class="pill">非目标：事务回滚与 Debugger 实现</span></div>
+    <div class="meta"><span class="pill target">状态：部分实施 · 协议托管 turn 已使用 exact ID</span><span class="pill scope">范围：Execution control / Runtime / App / Web / TUI / CLI</span><span class="pill">兼容：现有 stop 接口分阶段迁移</span><span class="pill">非目标：事务回滚与 Debugger 实现</span></div>
     <nav class="toc" aria-label="页内导航"><a href="#decision">设计结论</a><a href="#current">当前问题</a><a href="#comparison">官方对照</a><a href="#language">命名合同</a><a href="#state">状态机</a><a href="#architecture">架构</a><a href="#protocol">协议</a><a href="#algorithm">取消流程</a><a href="#races">竞态</a><a href="#debug">Debug 边界</a><a href="#migration">迁移</a><a href="#acceptance">验收</a><a href="#status">实现状态</a></nav>
   </header>
 
@@ -401,8 +401,8 @@
         <div class="table-wrap"><table>
           <thead><tr><th>能力</th><th>当前状态</th><th>已存在</th><th>仍需实现</th></tr></thead>
           <tbody>
-            <tr><td>execution-scoped token</td><td><span class="tag partial">Partial</span></td><td><code>CancelToken</code> 已包含 <code>execution_id</code>，并有 turn 生命周期与 cancellation checks。</td><td>统一命名、所有入口强制 exact ID、registry 全面按 execution 索引。</td></tr>
-            <tr><td>协作取消</td><td><span class="tag partial">Partial</span></td><td>provider/agent/tool 路径已有 Event 与 <code>CancelledError</code> 传播设施。</td><td>按 owner adapter 统一覆盖所有执行类型。</td></tr>
+            <tr><td>execution-scoped token</td><td><span class="tag partial">Partial</span></td><td><code>CancelToken</code> 已包含 <code>execution_id</code>；ACP <code>session/prompt</code> 与 MCP <code>prompt_send</code> 生成并贯穿同一 <code>user_msg_id</code> / reply execution ID，按 exact ID claim、query 和 unregister。Turn context、question event 与 subprocess bridge 保留同一 execution owner。</td><td>统一命名、其余入口强制 exact ID、registry 全面按 execution 索引。</td></tr>
+            <tr><td>协作取消</td><td><span class="tag partial">Partial</span></td><td>provider/agent/tool 路径已有 Event 与 <code>CancelledError</code> 传播设施；ACP <code>session/cancel</code> 与 MCP 的 prompt/request/connection cancellation 已调用对应的 <code>cancel_execution(execution_id)</code>，等待中的 question 只按 exact owner 关闭。</td><td>按 owner adapter 统一覆盖其他执行类型，并补齐统一审计与 finalization。</td></tr>
             <tr><td>宽限后终止</td><td><span class="tag partial">Partial</span></td><td>WebSocket stop 已有 4 秒宽限和子进程终止。</td><td>取消第二次点击/force 协议，按 exact execution owner 自动升级。</td></tr>
             <tr><td>持久 cancelling 状态</td><td><span class="tag remove">Not implemented</span></td><td>部分 UI 会发送临时 <code>stopping</code>。</td><td>canonical Execution Record、CAS、reload 与 restart recovery。</td></tr>
             <tr><td>统一 finalization</td><td><span class="tag remove">Not implemented</span></td><td>现有 handler 和个别 Program 有局部补写逻辑。</td><td>父进程 owner adapter、所有组件投影和资源释放。</td></tr>
@@ -410,7 +410,7 @@
             <tr><td>完整验收</td><td><span class="tag remove">Pending</span></td><td>现有 turn cancellation component tests。</td><td>第 18 节全部场景和默认 App 可视验收。</td></tr>
           </tbody>
         </table></div>
-        <div class="callout warn">本文当前只批准目标合同，不声明实现完成。后续代码必须引用本页，并按 Phase 0 的 RED 证据开始；不得先增加参数或兼容分支，再补写设计解释。</div>
+        <div class="callout warn">本文仍是完整目标合同；当前只声明上表列出的部分实现。统一 surface 协议、持久恢复、统一 finalization 与 Phase 5 兼容名称移除均未完成。后续代码必须引用本页，并按 Phase 0 的 RED 证据开始；不得先增加参数或兼容分支，再补写设计解释。</div>
       </section>
 
       <section id="related">
@@ -432,7 +432,7 @@
       </div>
       <div class="panel" style="margin-top:12px">
         <div class="side-title">Implementation status</div>
-        <div class="status-list"><div class="status-row"><span class="tag partial">Partial</span><span>token 与协作检查</span></div><div class="status-row"><span class="tag partial">Partial</span><span>宽限与进程终止</span></div><div class="status-row"><span class="tag remove">Missing</span><span>统一协议与 exact owner</span></div><div class="status-row"><span class="tag remove">Missing</span><span>持久 cancelling 与恢复</span></div><div class="status-row"><span class="tag remove">Pending</span><span>完整 App 验收</span></div></div>
+        <div class="status-list"><div class="status-row"><span class="tag partial">Partial</span><span>协议托管 turn exact owner</span></div><div class="status-row"><span class="tag partial">Partial</span><span>token、协作检查与宽限终止</span></div><div class="status-row"><span class="tag remove">Missing</span><span>统一 surface 协议</span></div><div class="status-row"><span class="tag remove">Missing</span><span>持久 cancelling 与恢复</span></div><div class="status-row"><span class="tag remove">Pending</span><span>完整 App 验收</span></div></div>
       </div>
       <div class="panel" style="margin-top:12px">
         <div class="side-title">Source boundaries</div>
