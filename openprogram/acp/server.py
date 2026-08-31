@@ -131,7 +131,7 @@ class _Session:
         # Question ids forwarded to the client and still unanswered — a
         # cancel must resolve them or the tool gate sits on its Event for
         # the full 300s timeout.
-        self.open_questions: set[str] = set()
+        self.open_questions: dict[str, str] = {}
         self.lock = threading.Lock()
 
 
@@ -263,7 +263,7 @@ class ACPServer:
         except ExecutionNotFound:
             # The prompt may not have persisted its placeholder yet. The
             # exact event still needs to stop that in-flight prompt locally.
-            cancel_event.set()
+            not_found = True
         except ExecutionNotCancellable:
             # A completed/failed prompt won the race; do not rewrite its
             # result or release questions belonging to a different state.
@@ -275,15 +275,38 @@ class ACPServer:
                          execution_id, exc_info=True)
             return None
         else:
+            not_found = False
+
+        # The service call can race prompt teardown and a successor prompt.
+        # Revalidate the identity before touching local event/question state.
+        from openprogram.agent.run_control import current_token
+
+        with sess.lock:
+            if (
+                sess.execution_id != execution_id
+                or sess.cancel_event is not cancel_event
+            ):
+                return None
+            if not_found:
+                token = current_token(sess.id, execution_id=execution_id)
+                if (
+                    token is None
+                    or token.event is not cancel_event
+                    or token.retired
+                ):
+                    return None
             cancel_event.set()
+            qids = [
+                qid for qid, question_execution_id in sess.open_questions.items()
+                if question_execution_id == execution_id
+            ]
+            for qid in qids:
+                sess.open_questions.pop(qid, None)
         # Every permission request still in flight must be answered — the
         # spec requires the "cancelled" outcome, and the tool gate is
         # blocked on the matching question's Event.
         from openprogram.agent.questions import resolve_question_and_broadcast
 
-        with sess.lock:
-            qids = list(sess.open_questions)
-            sess.open_questions.clear()
         for qid in qids:
             try:
                 resolve_question_and_broadcast(qid, "cancelled", None)
@@ -422,6 +445,29 @@ class ACPServer:
         sess = self._sessions.get(data.get("session_id") or "")
         if sess is None:
             return
+        qid = data.get("id")
+        if not qid:
+            return
+        execution_id = data.get("execution_id") or ""
+        if not execution_id:
+            try:
+                from openprogram.agent.questions import get_question_registry
+
+                pending = next(
+                    (
+                        q for q in get_question_registry().list_pending(sess.id)
+                        if q.id == qid
+                    ),
+                    None,
+                )
+                execution_id = getattr(pending, "execution_id", "") or ""
+            except Exception:
+                execution_id = ""
+        with sess.lock:
+            # Events from older question producers may omit execution_id. Bind
+            # those to the turn current at registration, without crossing a
+            # successor turn.
+            sess.open_questions[qid] = execution_id or sess.execution_id or ""
         threading.Thread(target=self._ask_permission, args=(sess, data),
                          daemon=True).start()
 
@@ -432,8 +478,6 @@ class ACPServer:
         if not qid:
             return
         tool = data.get("tool") or "?"
-        with sess.lock:
-            sess.open_questions.add(qid)
         try:
             resp = self._conn.request("session/request_permission", {
                 "sessionId": sess.id,
@@ -458,7 +502,7 @@ class ACPServer:
             return
         finally:
             with sess.lock:
-                sess.open_questions.discard(qid)
+                sess.open_questions.pop(qid, None)
 
         outcome = (resp or {}).get("outcome") or {}
         if outcome.get("outcome") != "selected":

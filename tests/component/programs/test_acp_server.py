@@ -438,7 +438,7 @@ def test_cancel_does_not_override_completed_prompt(
         "cwd": str(tmp_path), "mcpServers": [],
     })["sessionId"]
     sess = c.server._sessions[sid]
-    sess.open_questions.add("q-completed")
+    sess.open_questions["q-completed"] = ""
     calls: list[str] = []
 
     def _cancel(execution_id):
@@ -465,7 +465,7 @@ def test_cancel_does_not_override_completed_prompt(
 
     assert result == {"stopReason": "end_turn"}
     assert calls and calls[0].endswith("_reply")
-    assert sess.open_questions == {"q-completed"}
+    assert sess.open_questions == {"q-completed": ""}
     assert not sess.cancel_event.is_set()
     sess.open_questions.clear()
 
@@ -482,7 +482,7 @@ def test_cancel_does_not_locally_cancel_on_service_failure(
         "cwd": str(tmp_path), "mcpServers": [],
     })["sessionId"]
     sess = c.server._sessions[sid]
-    sess.open_questions.add("q-failure")
+    sess.open_questions["q-failure"] = ""
 
     monkeypatch.setattr(
         run_control, "cancel_execution",
@@ -504,7 +504,7 @@ def test_cancel_does_not_locally_cancel_on_service_failure(
     })
 
     assert result == {"stopReason": "end_turn"}
-    assert sess.open_questions == {"q-failure"}
+    assert sess.open_questions == {"q-failure": ""}
     assert not sess.cancel_event.is_set()
     sess.open_questions.clear()
 
@@ -522,7 +522,7 @@ def test_cancel_resolves_open_questions_as_cancelled(
     })["sessionId"]
     sess = c.server._sessions[sid]
     sess.execution_id = "question-execution_reply"
-    sess.open_questions.add("q-cancel")
+    sess.open_questions["q-cancel"] = sess.execution_id
     event = threading.Event()
     sess.cancel_event = event
     outcomes: list[tuple] = []
@@ -540,7 +540,47 @@ def test_cancel_resolves_open_questions_as_cancelled(
 
     assert event.is_set()
     assert outcomes == [("q-cancel", "cancelled", None)]
-    assert sess.open_questions == set()
+    assert sess.open_questions == {}
+
+
+def test_cancel_keeps_sibling_questions_for_same_session(
+    tmp_db, client, tmp_path, monkeypatch,
+) -> None:
+    """Cancelling one foreground execution does not close a sibling question."""
+    from openprogram.agent import run_control
+
+    c = client()
+    c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
+    sid = c.call("session/new", {
+        "cwd": str(tmp_path), "mcpServers": [],
+    })["sessionId"]
+    sess = c.server._sessions[sid]
+    execution_id = "foreground_reply"
+    sibling_id = "sibling_reply"
+    sess.execution_id = execution_id
+    event = threading.Event()
+    sibling_event = threading.Event()
+    sess.cancel_event = event
+    sess.open_questions = {
+        "foreground-question": execution_id,
+        "sibling-question": sibling_id,
+    }
+    outcomes: list[tuple] = []
+    monkeypatch.setattr(
+        run_control, "cancel_execution",
+        lambda target: {"execution_id": target, "status": "cancelling"},
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.questions.resolve_question_and_broadcast",
+        lambda *args: outcomes.append(args),
+    )
+
+    c.server._session_cancel({"sessionId": sid})
+
+    assert event.is_set()
+    assert not sibling_event.is_set()
+    assert outcomes == [("foreground-question", "cancelled", None)]
+    assert sess.open_questions == {"sibling-question": sibling_id}
 
 
 def test_prompt_cleanup_preserves_successor_execution(
@@ -578,6 +618,141 @@ def test_prompt_cleanup_preserves_successor_execution(
     assert sess.execution_id == "successor_reply"
     assert run_control.current_token(sid, execution_id="successor_reply").event is successor_event
     original(sid, successor_event, execution_id="successor_reply")
+
+
+def test_late_cancel_does_not_touch_successor_questions(
+    tmp_db, client, tmp_path, monkeypatch,
+) -> None:
+    """A delayed old cancel cannot set or clean up a successor turn."""
+    from openprogram.agent import run_control
+
+    c = client()
+    c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
+    sid = c.call("session/new", {
+        "cwd": str(tmp_path), "mcpServers": [],
+    })["sessionId"]
+    sess = c.server._sessions[sid]
+    old_event = threading.Event()
+    successor_event = threading.Event()
+    old_execution = "old_reply"
+    successor_execution = "successor_reply"
+    sess.execution_id = old_execution
+    sess.cancel_event = old_event
+    sess.open_questions["old-question"] = old_execution
+    entered = threading.Event()
+    release = threading.Event()
+
+    def _cancel(execution_id):
+        assert execution_id == old_execution
+        entered.set()
+        assert release.wait(5.0)
+        return {"execution_id": execution_id, "status": "cancelling"}
+
+    monkeypatch.setattr(run_control, "cancel_execution", _cancel)
+    cancel_thread = threading.Thread(
+        target=c.server._session_cancel,
+        args=({"sessionId": sid},),
+        daemon=True,
+    )
+    cancel_thread.start()
+    assert entered.wait(5.0)
+    with sess.lock:
+        sess.execution_id = successor_execution
+        sess.cancel_event = successor_event
+        sess.open_questions.clear()
+        sess.open_questions["successor-question"] = successor_execution
+    release.set()
+    cancel_thread.join(timeout=5.0)
+
+    assert not cancel_thread.is_alive()
+    assert not old_event.is_set()
+    assert not successor_event.is_set()
+    assert sess.execution_id == successor_execution
+    assert sess.open_questions == {"successor-question": successor_execution}
+
+
+def test_not_found_cancel_does_not_touch_retired_turn(
+    tmp_db, client, tmp_path, monkeypatch,
+) -> None:
+    """NotFound fallback is ignored after the exact token has retired."""
+    from openprogram.agent import run_control
+
+    c = client()
+    c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
+    sid = c.call("session/new", {
+        "cwd": str(tmp_path), "mcpServers": [],
+    })["sessionId"]
+    sess = c.server._sessions[sid]
+    event = threading.Event()
+    execution_id = "retired_reply"
+    assert run_control.claim_cancel_event(
+        sid, event, execution_id=execution_id, foreground=True,
+    )
+    run_control.unregister_cancel_event(sid, event, execution_id=execution_id)
+    sess.execution_id = execution_id
+    sess.cancel_event = event
+    sess.open_questions["retired-question"] = execution_id
+    monkeypatch.setattr(
+        run_control, "cancel_execution",
+        lambda _execution_id: (_ for _ in ()).throw(
+            run_control.ExecutionNotFound(execution_id),
+        ),
+    )
+    c.server._session_cancel({"sessionId": sid})
+
+    assert not event.is_set()
+    assert sess.open_questions == {"retired-question": execution_id}
+
+
+def test_not_found_cancel_does_not_touch_changed_identity(
+    tmp_db, client, tmp_path, monkeypatch,
+) -> None:
+    """NotFound fallback is ignored when the session now names another turn."""
+    from openprogram.agent import run_control
+
+    c = client()
+    c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
+    sid = c.call("session/new", {
+        "cwd": str(tmp_path), "mcpServers": [],
+    })["sessionId"]
+    sess = c.server._sessions[sid]
+    old_event = threading.Event()
+    successor_event = threading.Event()
+    old_execution = "old_notfound_reply"
+    sess.execution_id = old_execution
+    sess.cancel_event = old_event
+    sess.open_questions["old-question"] = old_execution
+    entered = threading.Event()
+    release = threading.Event()
+
+    def _cancel(execution_id):
+        assert execution_id == old_execution
+        entered.set()
+        assert release.wait(5.0)
+        raise run_control.ExecutionNotFound(execution_id)
+
+    monkeypatch.setattr(run_control, "cancel_execution", _cancel)
+    cancel_thread = threading.Thread(
+        target=c.server._session_cancel,
+        args=({"sessionId": sid},),
+        daemon=True,
+    )
+    cancel_thread.start()
+    assert entered.wait(5.0)
+    with sess.lock:
+        sess.execution_id = "successor_notfound_reply"
+        sess.cancel_event = successor_event
+        sess.open_questions.clear()
+        sess.open_questions["successor-question"] = "successor_notfound_reply"
+    release.set()
+    cancel_thread.join(timeout=5.0)
+
+    assert not cancel_thread.is_alive()
+    assert not old_event.is_set()
+    assert not successor_event.is_set()
+    assert sess.open_questions == {
+        "successor-question": "successor_notfound_reply",
+    }
 
 
 def test_prompt_rejects_unknown_session(tmp_db, client) -> None:
