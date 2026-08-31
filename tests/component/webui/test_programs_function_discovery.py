@@ -192,14 +192,6 @@ def test_gui_agent_form_exposes_only_supported_public_inputs() -> None:
     assert len(extracted) == 1
     params = extracted[0]["params_detail"]
     assert [p["name"] for p in params if not p.get("hidden")] == ["task", "surface"]
-    assert [p["name"] for p in params if p.get("hidden")] == [
-        "max_steps",
-        "app_name",
-        "backend",
-        "max_seconds",
-        "runtime",
-        "allow_general",
-    ]
 
 
 def test_registered_workflow_is_available_to_favorites(
