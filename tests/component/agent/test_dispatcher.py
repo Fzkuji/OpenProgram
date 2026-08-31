@@ -311,3 +311,42 @@ def test_await_user_approval_emits_question_and_resolves() -> None:
     assert frames[0]["args"] == {"command": "ls"}
     assert frames[0]["session_id"] == "c1"
     assert frames[0]["kind"] == "approval"
+
+
+def test_await_user_approval_emits_execution_owner() -> None:
+    import asyncio
+    from openprogram.agent.questions import QuestionRegistry
+    from openprogram.agent.run_control import (
+        reset_current_execution_id, set_current_execution_id,
+    )
+    import openprogram.agent.questions as Q
+
+    Q._registry = QuestionRegistry()
+    frames, unsub = _grab_approval_frames()
+    execution_token = set_current_execution_id("approval-execution")
+    req = D.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
+                        source="tui", permission_mode="ask")
+
+    def _resolver():
+        reg = Q.get_question_registry()
+        for _ in range(100):
+            time.sleep(0.02)
+            pend = reg.list_pending()
+            if pend:
+                reg.resolve(pend[0].id, "answered", "允许")
+                return
+
+    threading.Thread(target=_resolver, daemon=True).start()
+
+    async def _drive():
+        return await D._await_user_approval(
+            req=req, tool_name="bash", args={"command": "ls"},
+            on_event=lambda e: None, timeout=5.0,
+        )
+
+    try:
+        assert asyncio.run(_drive())[0] is True
+    finally:
+        reset_current_execution_id(execution_token)
+        unsub()
+    assert frames[0]["execution_id"] == "approval-execution"

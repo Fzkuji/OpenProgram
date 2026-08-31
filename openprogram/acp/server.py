@@ -480,10 +480,10 @@ class ACPServer:
             except Exception:
                 execution_id = ""
         with sess.lock:
-            # Events from older question producers may omit execution_id. Bind
-            # those to the turn current at registration, without crossing a
-            # successor turn.
-            sess.open_questions[qid] = execution_id or sess.execution_id or ""
+            # Events from older question producers may omit execution_id. Keep
+            # those ownerless instead of assigning the current foreground
+            # turn, which could make cancellation resolve a sibling question.
+            sess.open_questions[qid] = execution_id
         threading.Thread(target=self._ask_permission, args=(sess, data),
                          daemon=True).start()
 

@@ -340,6 +340,7 @@ def goal(
                                 "detail": q.detail,
                                 "schema": q.schema,
                                 "questions": q.questions,
+                                "execution_id": q.execution_id,
                                 "expires_at": q.expires_at,
                             },
                             transport,

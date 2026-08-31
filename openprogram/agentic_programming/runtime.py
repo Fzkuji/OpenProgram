@@ -1095,6 +1095,7 @@ class Runtime:
                     "detail": q.detail,
                     "schema": q.schema,  # kind="form" 时非空
                     "questions": q.questions,  # kind="ask_many" 时非空
+                    "execution_id": q.execution_id,
                     "expires_at": q.expires_at,
                 },
                 transport,

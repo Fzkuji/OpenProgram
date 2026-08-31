@@ -243,3 +243,44 @@ def test_dispatcher_leaves_an_outer_binding_alone(tmp_db):
         return inside, get_current_session_id()
 
     assert _in_empty_context(_go) == ("s_outer", "s_outer")
+
+
+def test_dispatcher_binds_and_releases_assistant_execution_id(tmp_db):
+    from openprogram.agent.dispatcher.turn_context import TurnBindings
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agent.run_control import (
+        get_current_execution_id, reset_current_execution_id,
+        set_current_execution_id,
+    )
+
+    def _empty_context():
+        binding = TurnBindings.bind(
+            req=TurnRequest(session_id="s9", user_text="hi", agent_id="main",
+                            source="test"),
+            assistant_msg_id="assistant-9", db=tmp_db,
+        )
+        try:
+            assert get_current_execution_id() == "assistant-9"
+        finally:
+            binding.release()
+        assert get_current_execution_id() is None
+
+    _in_empty_context(_empty_context)
+
+    def _outer_context():
+        outer_token = set_current_execution_id("outer-job")
+        try:
+            binding = TurnBindings.bind(
+                req=TurnRequest(session_id="s9", user_text="hi", agent_id="main",
+                                source="test"),
+                assistant_msg_id="assistant-9", db=tmp_db,
+            )
+            try:
+                assert get_current_execution_id() == "outer-job"
+            finally:
+                binding.release()
+            assert get_current_execution_id() == "outer-job"
+        finally:
+            reset_current_execution_id(outer_token)
+
+    _in_empty_context(_outer_context)

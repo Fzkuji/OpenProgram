@@ -571,6 +571,7 @@ async def await_user_approval(
             "expires_at": q.expires_at,
             # approval 专属：工具名 + 参数 + 危险分级，给 approval mode 画危险摘要。
             "tool": tool_name, "args": args, "risk_level": _risk_level(tool_name, args),
+            "execution_id": q.execution_id,
         }, transport)
 
     q, ev = open_question(

@@ -1105,6 +1105,29 @@ def test_non_approval_questions_are_not_forwarded(tmp_db, client,
     assert c.permission_requests == []
 
 
+def test_ownerless_question_is_not_bound_to_foreground_execution(client, tmp_path,
+                                                                 monkeypatch):
+    c = client()
+    c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
+    sid = c.call("session/new", {
+        "cwd": str(tmp_path), "mcpServers": [],
+    })["sessionId"]
+    sess = c.server._sessions[sid]
+    sess.execution_id = "foreground_reply"
+    monkeypatch.setattr(c.server, "_ask_permission", lambda *_args: None)
+
+    c.server._on_question(SimpleNamespace(payload={
+        "id": "ownerless-question", "session_id": sid,
+        "kind": "approval", "prompt": "allow?", "tool": "bash",
+    }))
+    for _ in range(100):
+        with sess.lock:
+            if "ownerless-question" in sess.open_questions:
+                break
+        time.sleep(0.01)
+    assert sess.open_questions["ownerless-question"] == ""
+
+
 def test_unknown_method_is_a_protocol_error(client) -> None:
     c = client()
     with pytest.raises(AssertionError, match="unknown method"):

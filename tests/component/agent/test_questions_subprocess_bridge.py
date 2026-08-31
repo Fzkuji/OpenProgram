@@ -129,6 +129,29 @@ def test_bridge_answered_routes_back():
     assert "qX" not in pending
 
 
+def test_bridge_preserves_or_fills_execution_owner(monkeypatch):
+    from openprogram.agent.process_runner import _bridge_question_to_parent
+
+    answer_q: mp.Queue = mp.get_context("spawn").Queue()
+    pending, lock = set(), threading.Lock()
+    emitted = []
+    monkeypatch.setattr(Q, "emit_question_asked", lambda data: emitted.append(data))
+    data = {"id": "q-owner", "session_id": "s", "kind": "ask",
+            "prompt": "lib?"}
+
+    _bridge_question_to_parent(
+        data, answer_q, pending, lock, execution_id="process-owner",
+    )
+    pq = next(p for p in Q.get_question_registry().list_pending("s")
+              if p.id == "q-owner")
+    assert pq.execution_id == "process-owner"
+    assert emitted[0]["execution_id"] == "process-owner"
+    Q.get_question_registry().resolve("q-owner", "declined", None)
+    assert _drain_one(answer_q) == {
+        "id": "q-owner", "outcome": "declined", "value": None,
+    }
+
+
 def test_bridge_form_carries_schema_and_dict_answer():
     """runtime.form 桥过来时字段 schema 不能丢（前端据此渲染表单），
     答案是 dict 也要原样回流。"""

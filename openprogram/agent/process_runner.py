@@ -197,6 +197,7 @@ def _child_entry(
     surface_context_snapshot: Optional[dict] = None,
     provider: Optional[str] = None,
     model: Optional[str] = None,
+    execution_id: Optional[str] = None,
 ) -> None:
     # Detach into our own process group so ``killpg`` from the parent
     # takes down every grandchild (browser, subprocess providers, ...).
@@ -358,6 +359,7 @@ def _child_entry(
         )
         from openprogram.agent.run_control import (
             set_current_session_id as _set_cid,
+            set_current_execution_id as _set_eid,
         )
 
         # Drop any inherited DB handle and re-acquire so we don't share
@@ -375,6 +377,9 @@ def _child_entry(
         _store_var.set(SessionNodeWriter(db, session_id))
         _turn_id_var.set(anchor_msg_id)
         _set_cid(session_id)
+        # spawn does not copy ContextVars; restore the process owner's exact
+        # id so child-created questions carry the same cancellation owner.
+        _set_eid(execution_id or parent_call_id or session_id)
 
         rt = create_runtime(provider=provider, model=model)
         if response_format_snapshot is not None:
@@ -548,7 +553,9 @@ def _child_entry(
 # The parent registry's Event is what the WS handler sets via resolve(); a
 # small waiter thread bridges that to the answer_queue the child blocks on.
 
-def _bridge_question_to_parent(data, answer_queue, pending_qids, lock) -> None:
+def _bridge_question_to_parent(
+    data, answer_queue, pending_qids, lock, *, execution_id: str | None = None,
+) -> None:
     try:
         from openprogram.agent.questions import (
             PendingQuestion, get_question_registry, emit_question_asked,
@@ -566,6 +573,7 @@ def _bridge_question_to_parent(data, answer_queue, pending_qids, lock) -> None:
         session_id=data.get("session_id") or "",
         kind=data.get("kind") or "ask",
         prompt=data.get("prompt") or "",
+        execution_id=data.get("execution_id") or execution_id or "",
         options=list(data.get("options") or []),
         multi=bool(data.get("multi")),
         allow_custom=bool(data.get("allow_custom", True)),
@@ -582,7 +590,11 @@ def _bridge_question_to_parent(data, answer_queue, pending_qids, lock) -> None:
     # Draw the frontend card (and put it on the event stream) exactly as an
     # in-worker runtime.ask would — no transport passed, so this goes through
     # the default EventLayerTransport.
-    emit_question_asked(data)
+    # Preserve the child's owner in the parent-side event, including legacy
+    # child envelopes that omitted it.
+    forwarded = dict(data)
+    forwarded["execution_id"] = q.execution_id
+    emit_question_asked(forwarded)
 
     def _wait_and_forward() -> None:
         try:
@@ -683,6 +695,7 @@ def run_agentic_in_subprocess(
         else response_format
     )
 
+    eid = execution_id or parent_call_id or session_id
     p = ctx.Process(
         target=_child_entry,
         args=(tool_name, dict(kwargs or {}), session_id, anchor_msg_id,
@@ -690,12 +703,11 @@ def run_agentic_in_subprocess(
               answer_queue, stop_queue, response_format_snapshot,
               render_range, usage_ctx_snapshot, sandbox_policy_snapshot,
               authority, permission_rules_snapshot, surface_context_snapshot,
-              provider, model),
+              provider, model, eid),
         daemon=False,
     )
     p.start()
 
-    eid = execution_id or parent_call_id or session_id
     with _active_lock:
         _active[eid] = p
         _active_stop_q[eid] = stop_queue
@@ -729,6 +741,7 @@ def run_agentic_in_subprocess(
             _bridge_question_to_parent(
                 env.get("data") or {}, answer_queue,
                 pending_qids, pending_qids_lock,
+                execution_id=eid,
             )
             return
         if isinstance(env, dict) and env.get("type") == "goal_update":
