@@ -30,7 +30,7 @@ openprogram programs run gui_agent -a task="检查并完成当前可见表单" -
 |---|---|
 | `task` | 要做什么（自然语言） |
 | `max_steps` | 最大动作数。默认 150。`0` 或负数表示不封顶。 |
-| `max_seconds` | 仅 web 路径的墙钟上限。默认不限时。`0` 或负数表示不封顶。桌面路径不用这个字段。 |
+| `max_seconds` | 通过 OpenProgram Programs 或 Functions 调度时，它是两种 surface 共用的整个子进程截止时间。默认 300 秒；正数会覆盖默认值，`0` 或负数表示不限时。直接调用 Python bridge 时，browser 循环还会在内部执行该限制；desktop harness 没有单独的内部计时器。 |
 | `app_name` | 用于组件记忆的应用名，如 `firefox`、`libreoffice_calc`，默认 `desktop` |
 | `surface` | `desktop` 使用前台 OS/VM 输入，`browser` 使用精确的内置 Page。浏览器路径默认使用标准 Page backend；受信任调用方仍可显式传 `backend`。 |
 

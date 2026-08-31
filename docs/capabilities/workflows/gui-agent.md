@@ -30,7 +30,7 @@ Parameters (function signature `gui_agent(task, max_steps=None, app_name="deskto
 |---|---|
 | `task` | What to do, in natural language |
 | `max_steps` | Maximum number of actions. Default 150. `0` or a negative value means no cap. |
-| `max_seconds` | Web-path wall-clock limit only. Default is no time limit. `0` or a negative value means no cap. Desktop does not use this field. |
+| `max_seconds` | Whole-process deadline for runs dispatched through OpenProgram Programs or Functions, on either surface. Default 300 seconds; a positive value overrides it, while `0` or a negative value removes the deadline. In a direct Python bridge call, the browser loop also enforces this value internally; the desktop harness has no separate internal timer. |
 | `app_name` | Application name used for component memory, e.g. `firefox`, `libreoffice_calc`; default `desktop` |
 | `surface` | `desktop` for foreground OS/VM input or `browser` for an exact built-in Page. The browser route uses the default Page backend unless a trusted caller supplies `backend`. |
 
