@@ -1,7 +1,10 @@
 """Agent: tool loop = repeatedly call llm + execute tools until done."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from openprogram.providers.structured_output import JsonSchemaOutput
 
 
 def agent(
@@ -10,10 +13,10 @@ def agent(
     model: str = "",
     effort: str = "",
     tools: list[str] | None = None,
-    response_format: Any = None,
+    response_format: dict[str, Any] | JsonSchemaOutput | None = None,
     max_iterations: int = 20,
     timeout_s: float | None = None,
-) -> Any:
+) -> str | dict[str, Any] | list[Any] | int | float | bool | None:
     """Run a tool loop: model calls tools, sees results, continues until done.
 
     Args:
@@ -21,7 +24,7 @@ def agent(
         model: Model override (empty = use session default)
         effort: Reasoning effort override
         tools: Tool names to provide (None = all available tools)
-        response_format: JSON Schema output contract (None = return text)
+        response_format: JSON Schema or JsonSchemaOutput contract (None = return text)
         max_iterations: Max tool loop rounds
         timeout_s: Timeout in seconds
 
@@ -44,16 +47,18 @@ def agent(
     else:
         raise TypeError("agent() prompt must be a string or a list of content blocks")
 
-    result = runtime.exec(
-        content=content,
-        response_format=response_format,
-        model=model or None,
-        tools=tools,  # None = use default tools; [] = no tools; [...] = specific tools
-        max_iterations=max_iterations,
-        timeout_s=timeout_s,
-        effort=effort or None,
-        execution_kind="agent",
-    )
+    exec_options: dict[str, Any] = {
+        "content": content,
+        "model": model or None,
+        "tools": tools,  # None = default tools; [] = no tools; [...] = named tools
+        "max_iterations": max_iterations,
+        "timeout_s": timeout_s,
+        "effort": effort or None,
+        "execution_kind": "agent",
+    }
+    if response_format is not None:
+        exec_options["response_format"] = response_format
+    result = runtime.exec(**exec_options)
 
     if response_format is not None:
         return result

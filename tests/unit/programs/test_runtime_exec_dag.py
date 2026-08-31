@@ -295,18 +295,32 @@ def test_llm_public_signature_excludes_tool_loop_parameters():
     )
 
 
-def test_agent_returns_validated_structured_value():
-    response_format = {
-        "type": "object",
-        "properties": {"text": {"type": "string"}},
-        "required": ["text"],
-        "additionalProperties": False,
-    }
+@pytest.mark.parametrize(
+    ("response_format", "raw_result", "expected"),
+    [
+        (
+            {
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+            '{"text": "typed"}',
+            {"text": "typed"},
+        ),
+        ({"type": "array", "items": {"type": "integer"}}, "[1, 2]", [1, 2]),
+        ({"type": "integer"}, "7", 7),
+        ({"type": "null"}, "null", None),
+    ],
+)
+def test_agent_returns_validated_structured_value(
+    response_format, raw_result, expected
+):
     seen = []
 
     def call(content, model="", response_format=None):
         seen.append(response_format)
-        return '{"text": "typed"}'
+        return raw_result
 
     runtime = Runtime(call=call, model="session-model")
     token = _current_runtime.set(runtime)
@@ -317,7 +331,37 @@ def test_agent_returns_validated_structured_value():
         runtime.close()
 
     assert seen == [response_format]
-    assert result == {"text": "typed"}
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("runtime_result", "expected"),
+    [({"text": "legacy"}, "legacy"), ("plain text", "plain text")],
+)
+def test_agent_unstructured_call_preserves_legacy_runtime_contract(
+    runtime_result, expected
+):
+    class LegacyRuntime:
+        def exec(
+            self,
+            *,
+            content,
+            model,
+            tools,
+            max_iterations,
+            timeout_s,
+            effort,
+            execution_kind,
+        ):
+            return runtime_result
+
+    token = _current_runtime.set(LegacyRuntime())
+    try:
+        result = agent("use the legacy runtime")
+    finally:
+        _current_runtime.reset(token)
+
+    assert result == expected
 
 
 def test_llm_string_is_one_text_block_and_one_request():
