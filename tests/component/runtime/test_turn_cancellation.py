@@ -34,6 +34,18 @@ def _clean_registry():
 # --- token lifecycle -------------------------------------------------------
 
 
+def test_clear_turn_context_drops_all_bound_identifiers():
+    ps.set_current_session_id("s1")
+    ps.set_current_execution_id("exec-1")
+    ps._current_token.set(ps.CancellationToken("s1", "exec-1"))
+
+    ps.clear_turn_context()
+
+    assert ps.get_current_session_id() is None
+    assert ps.get_current_execution_id() is None
+    assert ps._current_token.get(None) is None
+
+
 def test_no_turn_means_nothing_to_cancel():
     """Between turns a stop is a no-op, not a flag that poisons what runs next."""
     ps.mark_cancelled("s1")
