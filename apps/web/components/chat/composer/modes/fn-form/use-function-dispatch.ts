@@ -32,6 +32,7 @@ export type FunctionDispatcher = (
 interface UseFunctionDispatchOptions {
   currentSessionId: string | null;
   activeChatKey: string | null;
+  background: boolean;
   isRunning: boolean;
   noEnabledModels: boolean;
   promptNeedModel(): void;
@@ -43,6 +44,7 @@ interface UseFunctionDispatchOptions {
 export function useFunctionDispatch({
   currentSessionId,
   activeChatKey,
+  background,
   isRunning,
   noEnabledModels,
   promptNeedModel,
@@ -82,8 +84,10 @@ export function useFunctionDispatch({
       draftChannelChoiceHost,
       dispatchSessionId,
     );
-    setWelcomeVisible(false);
-    setRunning(true);
+    if (!background) {
+      setWelcomeVisible(false);
+      setRunning(true);
+    }
 
     let placeholderId: string | null = null;
     if (dispatchSessionId) {
@@ -159,7 +163,7 @@ export function useFunctionDispatch({
           window.dispatchEvent(new Event("project-changed"));
         }
 
-        const shouldActivate = sessionAckIsActive(sid);
+        const shouldActivate = !background && sessionAckIsActive(sid);
         useCenterTabs.getState().markSessionReady(sid);
         if (shouldActivate) {
           runtimeState.currentSessionId = sid;
@@ -176,7 +180,7 @@ export function useFunctionDispatch({
           store.truncateFrom(dispatchSessionId, placeholderId);
           store.setRunningTaskFor(dispatchSessionId, null);
         }
-        if (shouldClearLegacyRunning(
+        if (!background && shouldClearLegacyRunning(
           dispatchSessionId,
           store.activeChatKey,
           store.currentSessionId,
@@ -192,6 +196,7 @@ export function useFunctionDispatch({
     return true;
   }, [
     activeChatKey,
+    background,
     currentSessionId,
     isRunning,
     noEnabledModels,

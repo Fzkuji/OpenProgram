@@ -655,7 +655,16 @@ assert.match(
 assert.match(composer, /pendingProjectsByChat\[pendingProjectKey\]/);
 assert.match(composer, /action:\s*"set_session_project"/);
 assert.match(composer, /takePendingProject\(confirmedProjectKey\)/);
-assert.match(composer, /const shouldActivate = sessionAckIsActive\(sid\);/);
+assert.match(
+  composer,
+  /const shouldActivate = !background && sessionAckIsActive\(sid\);/,
+  "a bound function dispatch must not navigate the focused session",
+);
+assert.match(
+  composer,
+  /if \(!background\) \{\s*setWelcomeVisible\(false\);\s*setRunning\(true\);\s*\}/,
+  "a bound function dispatch must not set the focused legacy running state",
+);
 assert.match(composer, /useCenterTabs\.getState\(\)\.markSessionReady\(sid\);/);
 assert.match(
   composer,
@@ -674,7 +683,7 @@ assert.match(composer, /action:\s*"set_conversation_channel"/);
 assert.match(composer, /draftChannelChoiceFor\([^,]+,\s*dispatchSessionId,?\s*\)/);
 assert.match(
   composer,
-  /if \(shouldClearLegacyRunning\([\s\S]*?dispatchSessionId,[\s\S]*?store\.activeChatKey,[\s\S]*?store\.currentSessionId,[\s\S]*?\)\) \{\s*setRunning\(false\);/,
+  /if \(!background && shouldClearLegacyRunning\([\s\S]*?dispatchSessionId,[\s\S]*?store\.activeChatKey,[\s\S]*?store\.currentSessionId,[\s\S]*?\)\) \{\s*setRunning\(false\);/,
 );
 
 const stopBody = composer.slice(

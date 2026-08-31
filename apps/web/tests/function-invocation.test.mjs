@@ -61,12 +61,14 @@ globalThis.history = {
 };
 
 const httpCalls = [];
+let nextHttpResponse = { ok: true, status: 200, payload: {} };
 globalThis.fetch = async (url, init = {}) => {
   httpCalls.push({ url: String(url), init });
+  const response = nextHttpResponse;
   return {
-    ok: true,
-    status: 200,
-    async json() { return {}; },
+    ok: response.ok,
+    status: response.status,
+    async json() { return response.payload; },
   };
 };
 
@@ -136,29 +138,37 @@ const {
 } = await import("../lib/function-invocation.ts");
 const pendingUserText = await import("../lib/pending-user-text.ts");
 const { useSessionStore } = await import("../lib/session-store/index.ts");
+const {
+  draftChannelChoiceHost,
+  setDraftChannelChoice,
+} = await import("../lib/runtime-bridge/draft-channel-choice.ts");
 
 async function submitThroughComposer(input, sessionKey, overrides = {}) {
   let hook;
   const clearedDrafts = [];
+  const activatedSessions = [];
+  const dispatchFrames = [];
+  const bound = overrides.bound ? sessionKey : null;
   function Probe() {
     const dispatchFunction = useFunctionDispatch({
-      currentSessionId: null,
+      currentSessionId: bound,
       activeChatKey: sessionKey,
+      background: bound !== null,
       isRunning: overrides.isRunning ?? false,
       noEnabledModels: overrides.noEnabledModels ?? false,
       promptNeedModel() {},
-      send() { return true; },
-      setCurrentConv() {},
+      send(payload) { dispatchFrames.push(payload); return true; },
+      setCurrentConv(sid) { activatedSessions.push(sid); },
     });
     hook = useChatSubmit({
-      bound: null,
+      bound,
       input,
       activeChatKey: sessionKey,
-      currentSessionId: null,
+      currentSessionId: bound,
       isRunning: overrides.isRunning ?? false,
       noEnabledModels: overrides.noEnabledModels ?? false,
       promptNeedModel() {},
-      send() { return true; },
+      send(payload) { dispatchFrames.push(payload); return true; },
       setComposerInputFor(owner, value) { clearedDrafts.push({ owner, value }); },
       setHistoryIndex() {},
       slash: {
@@ -185,14 +195,19 @@ async function submitThroughComposer(input, sessionKey, overrides = {}) {
   const root = createRoot(host);
   await act(async () => { root.render(createElement(Probe)); });
   await act(async () => { await hook.submit(); });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
   await act(async () => { root.unmount(); });
   host.remove();
-  return { clearedDrafts };
+  return { activatedSessions, clearedDrafts, dispatchFrames };
 }
 
 function resetObservations() {
   httpCalls.length = 0;
   wsFrames.length = 0;
+  nextHttpResponse = { ok: true, status: 200, payload: {} };
 }
 
 function releaseChatReservation(sessionKey) {
@@ -306,6 +321,153 @@ test("attachments do not downgrade a direct function call to chat", async () => 
   assert.equal(httpCalls.length, 0);
   assert.equal(wsFrames.filter((p) => p.action === "chat").length, 0);
   assert.deepEqual(clearedDrafts, []);
+});
+
+test("a bound function call does not mark or navigate the focused session", async () => {
+  const focusedSession = "focused-A";
+  const boundSession = "bound-B";
+  const previousRuntimeSession = runtimeState.currentSessionId;
+  const store = useSessionStore.getState();
+  store.setRunningTaskFor(focusedSession, null);
+  store.setRunningTaskFor(boundSession, null);
+  runtimeState.currentSessionId = focusedSession;
+  resetObservations();
+  nextHttpResponse = {
+    ok: true,
+    status: 200,
+    payload: { session_id: boundSession },
+  };
+
+  const { activatedSessions } = await submitThroughComposer(
+    exact,
+    boundSession,
+    { bound: true },
+  );
+
+  assert.equal(useSessionStore.getState().runningTasks[focusedSession], undefined);
+  assert.equal(
+    useSessionStore.getState().runningTasks[boundSession]?.func_name,
+    "gui_agent",
+  );
+  assert.deepEqual(activatedSessions, []);
+  releaseChatReservation(boundSession);
+  runtimeState.currentSessionId = previousRuntimeSession;
+});
+
+test("a failed bound function call rolls back only its own session", async () => {
+  const focusedSession = "focused-failure-A";
+  const boundSession = "bound-failure-B";
+  const previousRuntimeSession = runtimeState.currentSessionId;
+  const store = useSessionStore.getState();
+  store.setRunningTaskFor(focusedSession, null);
+  store.setRunningTaskFor(boundSession, null);
+  runtimeState.currentSessionId = focusedSession;
+  resetObservations();
+  nextHttpResponse = {
+    ok: false,
+    status: 500,
+    payload: { error: "dispatch failed" },
+  };
+  const originalConsoleError = console.error;
+  console.error = () => {};
+  try {
+    await submitThroughComposer(exact, boundSession, { bound: true });
+  } finally {
+    console.error = originalConsoleError;
+    runtimeState.currentSessionId = previousRuntimeSession;
+  }
+
+  assert.equal(useSessionStore.getState().runningTasks[focusedSession], undefined);
+  assert.equal(useSessionStore.getState().runningTasks[boundSession], undefined);
+});
+
+test("a successful function response binds channel and project before navigation", async () => {
+  const draftSession = "draft-function-success";
+  const createdSession = "created-function-success";
+  resetObservations();
+  useSessionStore.getState().setPendingProject(draftSession, "project-1");
+  setDraftChannelChoice(draftChannelChoiceHost, draftSession, {
+    channel: "slack",
+    account_id: "team-1",
+  });
+  nextHttpResponse = {
+    ok: true,
+    status: 200,
+    payload: { session_id: createdSession },
+  };
+
+  const { activatedSessions, dispatchFrames } = await submitThroughComposer(
+    exact,
+    draftSession,
+  );
+
+  assert.deepEqual(JSON.parse(httpCalls[0].init.body), {
+    kwargs: {
+      task: "Verify title",
+      surface: "browser",
+      max_steps: 3,
+      max_seconds: 90,
+    },
+    project_id: "project-1",
+    session_id: draftSession,
+  });
+  assert.deepEqual(dispatchFrames, [
+    {
+      action: "set_conversation_channel",
+      session_id: createdSession,
+      channel: "slack",
+      account_id: "team-1",
+    },
+    {
+      action: "set_session_project",
+      session_id: createdSession,
+      project_id: "project-1",
+    },
+  ]);
+  assert.deepEqual(activatedSessions, [createdSession]);
+  assert.equal(
+    useSessionStore.getState().pendingProjectsByChat[draftSession],
+    undefined,
+  );
+  releaseChatReservation(draftSession);
+});
+
+test("a failed focused function call clears its placeholder and running state", async () => {
+  const sessionKey = "focused-function-failure";
+  const previousRuntimeSession = runtimeState.currentSessionId;
+  const previousActive = useSessionStore.getState().activeChatKey;
+  const previousCurrent = useSessionStore.getState().currentSessionId;
+  runtimeState.currentSessionId = sessionKey;
+  useSessionStore.setState({
+    activeChatKey: sessionKey,
+    currentSessionId: sessionKey,
+  });
+  resetObservations();
+  nextHttpResponse = {
+    ok: false,
+    status: 503,
+    payload: { error: "temporarily unavailable" },
+  };
+  const originalConsoleError = console.error;
+  console.error = () => {};
+  try {
+    await submitThroughComposer(exact, sessionKey);
+  } finally {
+    console.error = originalConsoleError;
+    runtimeState.currentSessionId = previousRuntimeSession;
+    useSessionStore.setState({
+      activeChatKey: previousActive,
+      currentSessionId: previousCurrent,
+    });
+  }
+
+  assert.equal(useSessionStore.getState().runningTasks[sessionKey], undefined);
+  assert.equal(
+    (useSessionStore.getState().messageOrder[sessionKey] || []).some(
+      (id) => id.startsWith("__optimistic_fn__:"),
+    ),
+    false,
+  );
 });
 
 test("invalid registered expressions open the shared form instead of chat", async () => {

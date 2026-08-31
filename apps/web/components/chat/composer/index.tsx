@@ -376,6 +376,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const dispatchFunction = useFunctionDispatch({
     currentSessionId,
     activeChatKey,
+    background: bound !== null,
     isRunning,
     noEnabledModels,
     promptNeedModel,
