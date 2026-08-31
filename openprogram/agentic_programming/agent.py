@@ -10,9 +10,10 @@ def agent(
     model: str = "",
     effort: str = "",
     tools: list[str] | None = None,
+    response_format: Any = None,
     max_iterations: int = 20,
     timeout_s: float | None = None,
-) -> str:
+) -> Any:
     """Run a tool loop: model calls tools, sees results, continues until done.
 
     Args:
@@ -20,11 +21,12 @@ def agent(
         model: Model override (empty = use session default)
         effort: Reasoning effort override
         tools: Tool names to provide (None = all available tools)
+        response_format: JSON Schema output contract (None = return text)
         max_iterations: Max tool loop rounds
         timeout_s: Timeout in seconds
 
     Returns:
-        Final text result
+        Final text, or the validated JSON value when response_format is set
     """
     from openprogram.agentic_programming.function import _current_runtime
 
@@ -44,6 +46,7 @@ def agent(
 
     result = runtime.exec(
         content=content,
+        response_format=response_format,
         model=model or None,
         tools=tools,  # None = use default tools; [] = no tools; [...] = specific tools
         max_iterations=max_iterations,
@@ -52,7 +55,10 @@ def agent(
         execution_kind="agent",
     )
 
-    # runtime.exec returns dict with 'text' key for agent execution
+    if response_format is not None:
+        return result
+
+    # Preserve the legacy text result contract for unstructured calls.
     if isinstance(result, dict) and "text" in result:
         return result["text"]
     return str(result)

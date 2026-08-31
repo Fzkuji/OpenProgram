@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.agentic_programming import llm
+from openprogram.agentic_programming import agent, llm
 from openprogram.agentic_programming.function import (
     _current_runtime,
     agentic_function,
@@ -293,6 +293,31 @@ def test_llm_public_signature_excludes_tool_loop_parameters():
         name not in signature.parameters
         for name in ("runtime", "tools", "toolset", "max_iterations", "tool_choice")
     )
+
+
+def test_agent_returns_validated_structured_value():
+    response_format = {
+        "type": "object",
+        "properties": {"text": {"type": "string"}},
+        "required": ["text"],
+        "additionalProperties": False,
+    }
+    seen = []
+
+    def call(content, model="", response_format=None):
+        seen.append(response_format)
+        return '{"text": "typed"}'
+
+    runtime = Runtime(call=call, model="session-model")
+    token = _current_runtime.set(runtime)
+    try:
+        result = agent("return structured text", response_format=response_format)
+    finally:
+        _current_runtime.reset(token)
+        runtime.close()
+
+    assert seen == [response_format]
+    assert result == {"text": "typed"}
 
 
 def test_llm_string_is_one_text_block_and_one_request():
