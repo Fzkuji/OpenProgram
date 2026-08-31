@@ -802,6 +802,78 @@ def test_worker_resident_agentic_tool_does_not_spawn(monkeypatch) -> None:
     assert calls == [("call-1", {})]
 
 
+def test_gui_agent_browser_surface_is_captured_for_subprocess(monkeypatch) -> None:
+    from contextlib import nullcontext
+
+    import openprogram.agent.process_runner as process_runner
+    import openprogram.agent.session_db as session_db
+    import openprogram.webui._exec_dag as exec_dag
+    from openprogram.agent import surface_context
+    from openprogram.agent.dispatcher.runtime_attach import (
+        _wrap_agentic_runtime_block,
+    )
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agent.types import AgentTool
+
+    class FakeDB:
+        def invalidate_cache(self, session_id):
+            pass
+
+    async def original_execute(call_id, args, cancel, on_update):
+        raise AssertionError("browser gui_agent should run in the subprocess")
+
+    tool = AgentTool(
+        name="gui_agent",
+        description="probe",
+        parameters={"type": "object", "properties": {}},
+        label="probe",
+        execute=original_execute,
+    )
+    setattr(tool, "_is_agentic", True)
+    captured = {"context_id": "page_ctx_live", "surfaces": []}
+    released = []
+    seen = {}
+    monkeypatch.setattr(surface_context, "capture_pages", lambda: captured)
+    monkeypatch.setattr(
+        surface_context,
+        "release_bindings",
+        lambda context: released.append(context),
+    )
+
+    def run_subprocess(**kwargs):
+        seen.update(kwargs)
+        return {"text": "browser result"}
+
+    monkeypatch.setattr(
+        process_runner, "run_agentic_in_subprocess", run_subprocess,
+    )
+    monkeypatch.setattr(session_db, "default_db", lambda: FakeDB())
+    monkeypatch.setattr(exec_dag, "live_progress", lambda *a, **kw: nullcontext())
+    monkeypatch.setattr(exec_dag, "build_exec_dag", lambda *a, **kw: None)
+
+    wrapped = _wrap_agentic_runtime_block(
+        tool,
+        TurnRequest(
+            session_id="browser-surface",
+            user_text="",
+            agent_id="main",
+            source="web",
+        ),
+        lambda event: None,
+        "assistant-1",
+    )
+    result = _run(wrapped.execute(
+        "call-1",
+        {"task": "read title", "surface": "browser"},
+        None,
+        None,
+    ))
+
+    assert result.content[0].text == "browser result"
+    assert seen["surface_context_snapshot"] is captured
+    assert released == [captured]
+
+
 def test_approval_wrapper_preserves_worker_resident_marker() -> None:
     from openprogram.agent.dispatcher.types import TurnRequest
     from openprogram.agent.internals._approval import wrap_with_approval

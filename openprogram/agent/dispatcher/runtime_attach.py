@@ -161,30 +161,63 @@ def _wrap_agentic_runtime_block(
                 loop = _asyncio.get_event_loop()
                 from openprogram.agent.authority import runtime_authority
                 from openprogram.worktree.context import current_worktree_path
+                subprocess_args = dict(args or {})
+
+                def _run_subprocess():
+                    surface_snapshot = req.surface_context
+                    captured_surface = None
+                    browser_surface = (
+                        tool_name == "browser_agent"
+                        or (
+                            tool_name == "gui_agent"
+                            and (
+                                str(subprocess_args.get("surface") or "desktop")
+                                .strip()
+                                .lower()
+                                == "browser"
+                                or bool(subprocess_args.get("backend"))
+                            )
+                        )
+                    )
+                    if surface_snapshot is None and browser_surface:
+                        from openprogram.agent import surface_context
+
+                        captured_surface = surface_context.capture_pages()
+                        surface_snapshot = captured_surface
+                    try:
+                        return run_agentic_in_subprocess(
+                            tool_name=tool_name,
+                            kwargs=subprocess_args,
+                            session_id=req.session_id,
+                            anchor_msg_id=assistant_msg_id,
+                            work_dir=current_worktree_path(),
+                            on_event=on_event,
+                            # LLM-driven: pass the LLM's tool_call_id so the
+                            # subprocess writes its placeholder under the
+                            # SAME runtime_id the parent persisted, instead
+                            # of inventing a ``forced_<random>`` and leaving
+                            # us with two orphan placeholders for one call.
+                            parent_call_id=call_id,
+                            authority=runtime_authority(
+                                req, f"agentic/{tool_name}"
+                            ),
+                            permission_rules_snapshot=(
+                                _permission_rules_snapshot(req.permission_rules)
+                            ),
+                            surface_context_snapshot=surface_snapshot,
+                            render_range=req.render_range,
+                        )
+                    finally:
+                        if captured_surface is not None:
+                            from openprogram.agent.surface_context import (
+                                release_bindings,
+                            )
+
+                            release_bindings(captured_surface)
+
                 out = await loop.run_in_executor(
                     None,
-                    lambda: run_agentic_in_subprocess(
-                        tool_name=tool_name,
-                        kwargs=dict(args or {}),
-                        session_id=req.session_id,
-                        anchor_msg_id=assistant_msg_id,
-                        work_dir=current_worktree_path(),
-                        on_event=on_event,
-                        # LLM-driven: pass the LLM's tool_call_id so the
-                        # subprocess writes its placeholder under the
-                        # SAME runtime_id the parent persisted, instead
-                        # of inventing a ``forced_<random>`` and leaving
-                        # us with two orphan placeholders for one call.
-                        parent_call_id=call_id,
-                        authority=runtime_authority(
-                            req, f"agentic/{tool_name}"
-                        ),
-                        permission_rules_snapshot=_permission_rules_snapshot(
-                            req.permission_rules
-                        ),
-                        surface_context_snapshot=req.surface_context,
-                        render_range=req.render_range,
-                    ),
+                    _run_subprocess,
                 )
                 if out.get("error"):
                     from openprogram.agent.types import (
