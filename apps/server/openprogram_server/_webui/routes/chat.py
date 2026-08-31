@@ -487,9 +487,9 @@ def run_agentic_function_call(
         pass
 
     def _run():
-        from openprogram.agent.dispatcher import dispatch_forced_tool_call
         try:
             try:
+                from openprogram.agent.dispatcher import dispatch_forced_tool_call
                 out = dispatch_forced_tool_call(
                     session_id=session_id,
                     anchor_msg_id=anchor_msg_id,

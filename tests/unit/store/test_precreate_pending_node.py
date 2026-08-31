@@ -239,6 +239,35 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     )
     assert failed_node.metadata["status"] == "error"
 
+    import builtins
+
+    monkeypatch.setattr(
+        routes_chat, "threading", SimpleNamespace(Thread=_inline_thread),
+    )
+    real_import = builtins.__import__
+
+    def _fail_dispatcher_import(name, *args, **kwargs):
+        if name == "openprogram.agent.dispatcher":
+            raise ImportError("dispatcher unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fail_dispatcher_import)
+    captured.clear()
+    res = routes_chat.run_agentic_function_call(
+        "word_count", {"text": "dispatcher cannot import"}, "s1",
+    )
+    monkeypatch.setattr(builtins, "__import__", real_import)
+
+    assert "error" not in res
+    assert captured == {}
+    with _server._running_tasks_lock:
+        assert "s1" not in _server._running_tasks
+    import_failed_node = next(
+        node for node in store.get_nodes("s1")
+        if node.input == {"text": "dispatcher cannot import"}
+    )
+    assert import_failed_node.metadata["status"] == "error"
+
     def _always_fail_precreate(**kwargs):
         raise RuntimeError("persistent pre-create failure")
 
