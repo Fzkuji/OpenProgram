@@ -114,11 +114,7 @@ class QuestionRegistry:
             for qid, pending in self._pending.items():
                 if pending.session_id != session_id:
                     continue
-                if (
-                    execution_id
-                    and pending.execution_id
-                    and pending.execution_id != execution_id
-                ):
+                if execution_id is not None and pending.execution_id != execution_id:
                     continue
                 ids.append(qid)
         for qid in ids:

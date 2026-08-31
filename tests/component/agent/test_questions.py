@@ -52,6 +52,38 @@ def test_list_and_cancel_session():
     assert reg.consume("a") == ("declined", None)
 
 
+def test_cancel_execution_exact_owner_does_not_touch_ownerless_or_sibling():
+    reg = get_question_registry()
+    owner = PendingQuestion(id="owner", session_id="s", kind="ask", prompt="?",
+                            execution_id="exec-1")
+    sibling = PendingQuestion(id="sibling", session_id="s", kind="ask", prompt="?",
+                              execution_id="exec-2")
+    ownerless = PendingQuestion(id="ownerless", session_id="s", kind="ask",
+                                prompt="?", execution_id="")
+    events = {q.id: reg.register(q) for q in (owner, sibling, ownerless)}
+
+    reg.cancel_execution("s", "exec-1")
+
+    assert events["owner"].is_set()
+    assert not events["sibling"].is_set()
+    assert not events["ownerless"].is_set()
+    assert {q.id for q in reg.list_pending("s")} == {"sibling", "ownerless"}
+    assert reg.consume("owner") == ("cancelled", None)
+
+
+def test_cancel_execution_none_remains_session_wide():
+    reg = get_question_registry()
+    for qid, execution_id in (("owned", "exec-1"), ("ownerless", "")):
+        reg.register(PendingQuestion(id=qid, session_id="s", kind="ask",
+                                     prompt="?", execution_id=execution_id))
+
+    reg.cancel_execution("s", None)
+
+    assert reg.list_pending("s") == []
+    assert reg.consume("owned") == ("cancelled", None)
+    assert reg.consume("ownerless") == ("cancelled", None)
+
+
 # ask_blocking 三态
 
 def test_ask_blocking_answered_from_other_thread():
