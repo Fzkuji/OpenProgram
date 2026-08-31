@@ -277,3 +277,76 @@ def test_session_loaded_keeps_workflow_llm_output_inside_runtime_card(
     assert runtime["function"] == "agentic_workflow"
     assert runtime["context_tree"]
     assert "inner-llm" not in {m["id"] for m in messages}
+
+
+def test_session_loaded_emits_function_run_sibling_navigation(
+    env, monkeypatch: pytest.MonkeyPatch,
+):
+    db, _, sid = env
+    db.create_session(sid, "main")
+    db.append_message(sid, {
+        "id": "u1", "role": "user", "content": "run",
+        "predecessor": "ROOT", "timestamp": 1,
+    })
+    db.append_message(sid, {
+        "id": "a1", "role": "assistant", "content": "starting",
+        "predecessor": "u1", "timestamp": 2,
+    })
+    from openprogram.context.nodes import Call, ROLE_CODE
+    from openprogram.store import SessionNodeWriter
+    writer = SessionNodeWriter(db, sid)
+    for node_id in ("run-early", "run-late"):
+        writer.append(Call(
+            id=node_id,
+            role=ROLE_CODE,
+            name="word_count",
+            output={"status": "completed"},
+            predecessor="a1",
+            metadata={"status": "completed"},
+        ))
+    db.set_head(sid, "run-late")
+
+    from openprogram.webui import persistence
+    from openprogram.webui import server as _s
+    original_aggregate = persistence.aggregate_tool_messages
+
+    def aggregate_with_created_at(messages):
+        aggregated = original_aggregate(messages)
+        created_at = {"run-early": 10, "run-late": 20}
+        for message in aggregated:
+            if message.get("id") in created_at:
+                message["created_at"] = created_at[message["id"]]
+        return aggregated
+
+    monkeypatch.setattr(
+        persistence, "aggregate_tool_messages", aggregate_with_created_at,
+    )
+    monkeypatch.setattr(_s, "_get_provider_info", lambda _sid=None: {})
+    monkeypatch.setattr(_s, "_is_run_active", lambda _sid: False)
+    monkeypatch.setattr(_s, "refresh_context_stats", lambda _sid: None)
+    with _s._sessions_lock:
+        _s._sessions[sid] = {"id": sid}
+
+    ws = FakeWS()
+    try:
+        asyncio.run(ws_session.handle_load_session(ws, {"session_id": sid}))
+        loaded = next(frame for frame in ws.sent if frame["type"] == "session_loaded")
+        late = next(message for message in loaded["data"]["messages"]
+                    if message.get("id") == "run-late")
+        assert late["sibling_index"] == 2
+        assert late["sibling_total"] == 2
+        assert late["prev_sibling_id"] == "run-early"
+        assert late["next_sibling_id"] is None
+
+        db.set_head(sid, "run-early")
+        asyncio.run(ws_session.handle_load_session(ws, {"session_id": sid}))
+        loaded = [frame for frame in ws.sent if frame["type"] == "session_loaded"][-1]
+        early = next(message for message in loaded["data"]["messages"]
+                     if message.get("id") == "run-early")
+        assert early["sibling_index"] == 1
+        assert early["sibling_total"] == 2
+        assert early["prev_sibling_id"] is None
+        assert early["next_sibling_id"] == "run-late"
+    finally:
+        with _s._sessions_lock:
+            _s._sessions.pop(sid, None)

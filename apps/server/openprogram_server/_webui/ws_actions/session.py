@@ -235,9 +235,8 @@ def _compaction_exec_at(
 
 
 def _ordered_fn_run_siblings(
-    all_msgs: list[dict],
-    fn_run_ids: set,
     by_id_all: dict,
+    siblings_by_pred: dict,
     mid_,
     norm_pred,
 ) -> list:
@@ -248,24 +247,14 @@ def _ordered_fn_run_siblings(
         return []
     if not isinstance(src, dict):
         return []
-    pred = norm_pred(src)
-    indexed = list(enumerate(all_msgs))
-    sibs = [
-        (mm, position)
-        for position, mm in indexed
-        if isinstance(mm, dict)
-        and _fn_run_id_in(mm.get("id"), fn_run_ids)
-        and norm_pred(mm) == pred
-    ]
-    sibs.sort(key=lambda item: (item[0].get("created_at") or 0, item[1]))
-    return [item[0].get("id") for item in sibs]
-
-
-def _fn_run_id_in(message_id, fn_run_ids: set) -> bool:
     try:
-        return message_id in fn_run_ids
+        sibs = siblings_by_pred.get(norm_pred(src), ())
     except TypeError:
-        return False
+        return []
+    ordered = sorted(
+        sibs, key=lambda item: (item[0].get("created_at") or 0, item[1])
+    )
+    return [item[0].get("id") for item in ordered]
 
 
 def splice_compaction_event_rows(
@@ -902,7 +891,8 @@ async def handle_load_session(ws, cmd: dict):
             return None if p == "ROOT" else p
 
         _fn_run_ids = set()
-        for mm in all_msgs:
+        _fn_run_siblings_by_pred = {}
+        for position, mm in enumerate(all_msgs):
             if not isinstance(mm, dict):
                 continue
             message_id = mm.get("id")
@@ -912,13 +902,17 @@ async def handle_load_session(ws, cmd: dict):
                     and _is_top_function_run(mm, by_id_all)
                 ):
                     _fn_run_ids.add(message_id)
+                    _fn_run_siblings_by_pred.setdefault(
+                        _norm_pred(mm), []
+                    ).append((mm, position))
             except TypeError:
                 continue
+
         def _fn_run_siblings(mid_):
             """Ordered ids of the fn-run entries sharing ``mid_``'s
             predecessor (self included), by created_at then insertion."""
             return _ordered_fn_run_siblings(
-                all_msgs, _fn_run_ids, by_id_all, mid_, _norm_pred,
+                by_id_all, _fn_run_siblings_by_pred, mid_, _norm_pred,
             )
 
         shown = []

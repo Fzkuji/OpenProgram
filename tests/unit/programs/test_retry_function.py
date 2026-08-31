@@ -451,10 +451,14 @@ def test_fn_run_siblings_sort_once_with_stable_source_positions():
         {"id": "run-tied", "role": "code", "predecessor": "p", "created_at": 1},
     ]
     by_id = {message["id"]: message for message in messages}
+    siblings_by_pred = {"p": [
+        (message, position)
+        for position, message in enumerate(messages)
+        if message["id"] in {"run-late", "run-early", "run-tied"}
+    ]}
     ordered = ws_session._ordered_fn_run_siblings(
-        messages,
-        {"run-late", "run-early", "run-tied"},
         by_id,
+        siblings_by_pred,
         "run-late",
         lambda message: message.get("predecessor"),
     )
@@ -476,10 +480,14 @@ def test_fn_run_siblings_handles_unknown_and_malformed_ids(message_id):
         object(),
     ]
     by_id = {"duplicate": messages[1], None: messages[2]}
+    siblings_by_pred = {None: [
+        (message, position)
+        for position, message in enumerate(messages)
+        if isinstance(message, dict)
+    ]}
     result = ws_session._ordered_fn_run_siblings(
-        messages,
-        {"duplicate", None},
         by_id,
+        siblings_by_pred,
         message_id,
         lambda message: message.get("predecessor"),
     )
@@ -504,10 +512,20 @@ def test_fn_run_siblings_does_not_call_list_index():
         {"id": "first", "role": "code", "predecessor": "p", "created_at": 1},
         {"id": "second", "role": "code", "predecessor": "p", "created_at": 1},
     ])
-    assert ws_session._ordered_fn_run_siblings(
-        messages,
-        {"first", "second"},
+    siblings_by_pred = {"p": [
+        (message, position) for position, message in enumerate(messages)
+    ]}
+    expected = ["first", "second"]
+    first = ws_session._ordered_fn_run_siblings(
         {message["id"]: message for message in messages},
+        siblings_by_pred,
         "second",
         lambda message: message.get("predecessor"),
-    ) == ["first", "second"]
+    )
+    second = ws_session._ordered_fn_run_siblings(
+        {message["id"]: message for message in messages},
+        siblings_by_pred,
+        "first",
+        lambda message: message.get("predecessor"),
+    )
+    assert first == second == expected
