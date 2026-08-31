@@ -489,6 +489,19 @@ test("invalid registered expressions open the shared form instead of chat", asyn
   store.closeFnForm();
 });
 
+test("an incomplete registered expression never executes or becomes chat", async () => {
+  const sessionKey = "local_fn_incomplete";
+  resetObservations();
+  await submitThroughComposer('gui_agent(task="x",', sessionKey);
+
+  const store = useSessionStore.getState();
+  assert.equal(httpCalls.length, 0);
+  assert.equal(wsFrames.filter((p) => p.action === "chat").length, 0);
+  assert.equal(store.fnFormFunction?.name, "gui_agent");
+  assert.deepEqual(store.fnFormPrefill, { task: "x" });
+  store.closeFnForm();
+});
+
 test("parser accepts only whole registered calls with named literals", () => {
   const valid = parseFunctionInvocation(
     "gui_agent(task='a,b=c\\nline', surface=\"browser\", backend=\"local\")",
@@ -522,6 +535,9 @@ test("parser rejects invalid schema values and executable syntax", () => {
     'gui_agent(task=do_bad())',
     'gui_agent(task="x", runtime="secret")',
     'gui_agent(task="x", surface=None)',
+    'gui_agent(task="x",',
+    "gui_agent(",
+    'gui_agent(task="x", __proto__=None)',
   ]) {
     assert.equal(parseFunctionInvocation(input, [guiAgent]).kind, "invalid", input);
   }

@@ -310,22 +310,30 @@ export function parseFunctionInvocation(
     return { kind: "none" };
   }
 
-  const values: Record<string, unknown> = {};
-  const prefill: Record<string, string> = {};
+  const values = new Map<string, unknown>();
+  const prefill = new Map<string, string>();
   let index = openIndex + 1;
   const invalid = (error: string, errorParam?: string): FunctionInvocationParseResult => ({
-    kind: "invalid", fn, error, errorParam, prefill,
+    kind: "invalid",
+    fn,
+    error,
+    errorParam,
+    prefill: Object.fromEntries(prefill),
   });
+  let closed = false;
 
   index = skipSpace(source, index);
-  if (source[index] === ")") index += 1;
+  if (source[index] === ")") {
+    index += 1;
+    closed = true;
+  }
   else {
     while (index < source.length) {
       index = skipSpace(source, index);
       const key = source.slice(index).match(/^([A-Za-z_]\w*)/);
       if (!key) return invalid("Expected a named parameter");
       const name = key[1];
-      if (Object.prototype.hasOwnProperty.call(values, name)) {
+      if (values.has(name)) {
         return invalid(`Duplicate parameter: ${name}`, name);
       }
       index += name.length;
@@ -336,11 +344,12 @@ export function parseFunctionInvocation(
       index = skipSpace(source, index + 1);
       const literal = parseLiteral(source, index);
       if (!literal) return invalid(`Invalid literal for ${name}`, name);
-      values[name] = literal.value;
-      prefill[name] = valueForForm(literal.value);
+      values.set(name, literal.value);
+      prefill.set(name, valueForForm(literal.value));
       index = skipSpace(source, literal.end);
       if (source[index] === ")") {
         index += 1;
+        closed = true;
         break;
       }
       if (source[index] !== ",") {
@@ -354,12 +363,13 @@ export function parseFunctionInvocation(
     }
   }
 
+  if (!closed) return invalid("Expected ')' to close the function call");
   if (skipSpace(source, index) !== source.length) {
     // Recognition is whole-input only. A registered-looking call followed by
     // explanation is ordinary chat, not a partially consumed invocation.
     return { kind: "none" };
   }
-  const normalized = normalizeFunctionArguments(fn, values);
+  const normalized = normalizeFunctionArguments(fn, Object.fromEntries(values));
   if (!normalized.ok) {
     return invalid(normalized.error, normalized.errorParam);
   }
