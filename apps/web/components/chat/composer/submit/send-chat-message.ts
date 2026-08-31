@@ -153,11 +153,9 @@ export function sendChatMessage({
   // focused chat shell, not to the peer session being written to.
   if (!background) setWelcomeVisible(false);
 
-  // The legacy `run ...` typed-command path is gone (Track A removed
-  // the backend parser; fn-form submits now POST /api/function/{name}
-  // directly). So a `run gui_agent ...` typed in the textarea is just
-  // ordinary chat text to the LLM now — no special `exec_thinking_effort`
-  // override here.
+  // Exact registered `name(...)` input is intercepted by useChatSubmit and
+  // never reaches this chat bridge. The removed legacy `run ...` syntax is
+  // ordinary chat text; there is no execution override here.
   // Project picked on a not-yet-created chat: ride the first message so
   // the backend can create the session repo INSIDE the project directory
   // (the post-ack set_session_project arrives after the repo already

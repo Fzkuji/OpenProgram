@@ -741,6 +741,8 @@ class agentic_function:
                       multiline    — True for textarea, False for single-line input
                       options      — list of allowed values (renders as dropdown)
                       hidden       — True to hide from the form (e.g. runtime)
+                      advanced     — True for a user-settable field collapsed
+                                     below the form's primary fields
 
                     Parameters not listed inherit defaults from the function
                     signature (type hints, defaults, docstring Args:).

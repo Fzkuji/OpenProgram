@@ -299,6 +299,8 @@ def _extract_function_info(filepath: str, name: Optional[str], category: str) ->
                         pd["options_from"] = meta["options_from"]
                     if "hidden" in meta:
                         pd["hidden"] = meta["hidden"]
+                    if "advanced" in meta:
+                        pd["advanced"] = meta["advanced"]
                     if "label" in meta:
                         pd["label"] = meta["label"]
 

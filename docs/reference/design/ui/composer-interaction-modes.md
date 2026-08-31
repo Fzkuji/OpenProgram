@@ -40,6 +40,16 @@ so more modes can follow them:
 `runtime.ask` follows the same conventions as a `question` mode rather than as a
 standalone floating popup.
 
+A function invocation has two frontend inputs. Selecting a registered function
+opens `FunctionForm`; entering an exact, complete expression such as
+`gui_agent(task="Verify the title", surface="browser", max_steps=3)` in the idle
+composer invokes the same function without opening the form. The expression is
+recognized only when the entire trimmed input is one registered
+`name(parameter=literal, ...)` call. Both inputs are normalized and schema-validated,
+then passed to the same `FunctionInvocation` dispatcher. Explanatory text that
+contains a call, and call text wrapped in inline or fenced backticks, remain
+ordinary chat input.
+
 ## Model: container + transformation (mode)
 
 ### Container (composer)
@@ -122,12 +132,17 @@ changes the store directly; to have the backend do one thing and give a definite
 | Shape | Channel | Example | Why |
 |---|---|---|---|
 | **Direct store** | Zustand action, frontend state in the same place | Click a sidebar function → `openFnForm(fn)` enters fn-form | Crosses no boundary, the frontend just changes its own shape; putting it on the bus is overkill |
-| **Request (command)** | HTTP POST / RPC, one round trip | fn-form clicks "Run" → `POST /api/function/{name}`; mode reply → `question_reply` WS action | "I want you to do something + give me a reply" (returns `session_id` after running, resolves which question). The request/response model fits best; the bus is fire-and-forget and can't get the reply back |
+| **Request (command)** | HTTP POST / RPC, one round trip | FunctionForm or an exact function expression → `POST /api/function/{name}`; mode reply → `question_reply` WS action | "I want you to do something + give me a reply" (returns `session_id` after running, resolves which question). The request/response model fits best; the bus is fire-and-forget and can't get the reply back |
 | **Broadcast (event)** | event bus → WS | function run progress/output/`question.asked`/`file.changed` | The backend one-directionally emits "what happened"; whoever cares listens, no waiting for a reply |
 
-**Follow fn-form end to end**: click the function (direct store, open the form) → fill in parameters (frontend local state) →
-click run (**request**: POST initiates, returns session_id) → the function runs in a subprocess, with dynamic backflow (**broadcast**:
-run events / mid-flight `runtime.ask` both go through the event layer → WS). Three segments, three channels, each taking the fittest tool.
+**Follow a function invocation end to end**: either select the function (direct
+store, open FunctionForm, fill parameters) or enter an exact registered
+expression (parse and validate in the idle composer). Both paths produce the
+same `FunctionInvocation` and call the shared dispatcher (**request**: POST
+initiates and returns `session_id`) without calling the chat-message sender or
+creating a user chat turn. The function then runs in a subprocess; run events
+and mid-flight `runtime.ask` updates return through the event layer → WS
+(**broadcast**).
 
 Initiating a run is never a fire-and-forget bus event: that loses the
 `session_id`, leaving the frontend with no way to navigate to or bind the

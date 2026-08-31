@@ -3,10 +3,12 @@
  *
  * Owns: input value, attachments, slash menu, plus menu (Tools / Web
  * Search), thinking-effort selector, token badge, send/stop button.
- * Submits chat turns directly via the WS channel; no legacy globals.
+ * Submits chat turns through WS and exact function expressions through the
+ * same HTTP dispatcher as the inline FunctionForm.
  *
  * The pieces are grouped by responsibility: ./submit (submit + stop),
- * ./modes/fn-form/use-fn-form-submit (function dispatch),
+ * ./modes/fn-form/use-function-dispatch (function dispatch),
+ * ./modes/fn-form/use-fn-form-submit (form normalization),
  * ./paste/use-paste-tokens (long-paste chips), ./input (textarea,
  * history recall and key precedence),
  * ./controls/controls-cluster (the bottom control row),
@@ -46,6 +48,7 @@ import { ImageAttachStrip } from "./attach/image-attach-strip";
 import { useFnFormState } from "./modes/fn-form/use-fn-form-state";
 import { useFnFormWrapper } from "./modes/fn-form/use-fn-form-wrapper";
 import { useFnFormSubmit } from "./modes/fn-form/use-fn-form-submit";
+import { useFunctionDispatch } from "./modes/fn-form/use-function-dispatch";
 import { useSlashMenu } from "./slash/use-slash-menu";
 import { useThinkingEffort } from "./controls/use-thinking-effort";
 import { useToolsToggles } from "./controls/use-tools-toggles";
@@ -370,6 +373,16 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
 
   /* ---- Submit -------------------------------------------------------- */
 
+  const dispatchFunction = useFunctionDispatch({
+    currentSessionId,
+    activeChatKey,
+    isRunning,
+    noEnabledModels,
+    promptNeedModel,
+    send,
+    setCurrentConv,
+  });
+
   const { submit, stop } = useChatSubmit({
     bound,
     input,
@@ -392,6 +405,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     fastEnabled,
     fastSupported,
     runningMessageMode,
+    dispatchFunction,
   });
 
   // 顶部提问面板在场时的提交改道（唯一允许改输入框提交行为的地方，样式
@@ -480,13 +494,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const submitFnForm = useFnFormSubmit({
     fnFormFunction,
     fnForm,
-    currentSessionId,
-    activeChatKey,
-    isRunning,
-    noEnabledModels,
-    promptNeedModel,
-    send,
-    setCurrentConv,
+    dispatchFunction,
     handleFnFormClose,
   });
 

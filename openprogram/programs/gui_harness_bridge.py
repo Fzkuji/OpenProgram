@@ -50,10 +50,12 @@ def install_gui_harness_web_use(original: Callable | None = None):
             "max_steps": {
                 "description": "Maximum number of actions",
                 "hidden": True,
+                "advanced": True,
             },
             "app_name": {
                 "description": "Desktop app name used for visual memory",
                 "hidden": True,
+                "advanced": True,
             },
             "surface": {
                 "description": "Execute on the desktop or the selected built-in browser Page",
@@ -66,10 +68,12 @@ def install_gui_harness_web_use(original: Callable | None = None):
                     "open_claude_chrome",
                 ],
                 "hidden": True,
+                "advanced": True,
             },
             "max_seconds": {
                 "description": "Wall-clock limit",
                 "hidden": True,
+                "advanced": True,
             },
             "allow_general": {"hidden": True},
             "runtime": {"hidden": True},

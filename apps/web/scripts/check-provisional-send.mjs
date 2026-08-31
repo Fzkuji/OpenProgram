@@ -643,14 +643,14 @@ assert.match(wsSendBody, /try \{[\s\S]*sock\.send/);
 assert.match(wsSendBody, /catch \(error\) \{[\s\S]*return false;/);
 assert.match(
   composer,
-  /const dispatchSessionId = resolveFnFormSessionId\(currentSessionId, activeChatKey\);/,
+  /const dispatchSessionId = resolveFnFormSessionId\(\s*currentSessionId,\s*activeChatKey,\s*\);/,
 );
 assert.match(composer, /body\.session_id = dispatchSessionId;/);
 assert.match(composer, /store\.setRunningTaskFor\(dispatchSessionId,/);
 assert.match(
   composer,
   /const startedAt = Date\.now\(\);[\s\S]*timestamp: startedAt,[\s\S]*started_at: startedAt \/ 1000,/,
-  "the fn-form placeholder and running task must share one start timestamp",
+  "the function placeholder and running task must share one start timestamp",
 );
 assert.match(composer, /pendingProjectsByChat\[pendingProjectKey\]/);
 assert.match(composer, /action:\s*"set_session_project"/);
@@ -671,7 +671,7 @@ assert.match(
 assert.match(composer, /setComposerInputFor\(submitOwnerKey, ""\)/);
 assert.match(composer, /clearAttachmentsAfterSubmit\(submitOwnerKey\)/);
 assert.match(composer, /action:\s*"set_conversation_channel"/);
-assert.match(composer, /draftChannelChoiceFor\([^,]+, dispatchSessionId\)/);
+assert.match(composer, /draftChannelChoiceFor\([^,]+,\s*dispatchSessionId,?\s*\)/);
 assert.match(
   composer,
   /if \(shouldClearLegacyRunning\([\s\S]*?dispatchSessionId,[\s\S]*?store\.activeChatKey,[\s\S]*?store\.currentSessionId,[\s\S]*?\)\) \{\s*setRunning\(false\);/,
