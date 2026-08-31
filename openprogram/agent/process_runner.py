@@ -554,7 +554,9 @@ def _child_entry(
 # small waiter thread bridges that to the answer_queue the child blocks on.
 
 def _bridge_question_to_parent(
-    data, answer_queue, pending_qids, lock, *, execution_id: str | None = None,
+    data, answer_queue, pending_qids, lock, *,
+    parent_session_id: str | None = None,
+    execution_id: str | None = None,
 ) -> None:
     try:
         from openprogram.agent.questions import (
@@ -568,12 +570,20 @@ def _bridge_question_to_parent(
         return
 
     reg = get_question_registry()
+    resolved_session_id = (
+        data.get("session_id") or ""
+        if parent_session_id is None else parent_session_id
+    )
+    resolved_execution_id = (
+        data.get("execution_id") or ""
+        if execution_id is None else execution_id
+    )
     q = PendingQuestion(
         id=qid,
-        session_id=data.get("session_id") or "",
+        session_id=resolved_session_id,
         kind=data.get("kind") or "ask",
         prompt=data.get("prompt") or "",
-        execution_id=data.get("execution_id") or execution_id or "",
+        execution_id=resolved_execution_id,
         options=list(data.get("options") or []),
         multi=bool(data.get("multi")),
         allow_custom=bool(data.get("allow_custom", True)),
@@ -590,9 +600,10 @@ def _bridge_question_to_parent(
     # Draw the frontend card (and put it on the event stream) exactly as an
     # in-worker runtime.ask would — no transport passed, so this goes through
     # the default EventLayerTransport.
-    # Preserve the child's owner in the parent-side event, including legacy
-    # child envelopes that omitted it.
+    # Forward parent-authoritative ownership. Legacy helper calls fall back to
+    # the child envelope when no parent identity was supplied.
     forwarded = dict(data)
+    forwarded["session_id"] = q.session_id
     forwarded["execution_id"] = q.execution_id
     emit_question_asked(forwarded)
 
@@ -741,6 +752,7 @@ def run_agentic_in_subprocess(
             _bridge_question_to_parent(
                 env.get("data") or {}, answer_queue,
                 pending_qids, pending_qids_lock,
+                parent_session_id=session_id,
                 execution_id=eid,
             )
             return

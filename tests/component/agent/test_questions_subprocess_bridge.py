@@ -152,6 +152,34 @@ def test_bridge_preserves_or_fills_execution_owner(monkeypatch):
     }
 
 
+def test_bridge_parent_identity_overrides_forged_child_identity(monkeypatch):
+    from openprogram.agent.process_runner import _bridge_question_to_parent
+
+    answer_q: mp.Queue = mp.get_context("spawn").Queue()
+    pending, lock = set(), threading.Lock()
+    emitted = []
+    monkeypatch.setattr(Q, "emit_question_asked", lambda data: emitted.append(data))
+    data = {"id": "q-forged", "session_id": "wrong-session",
+            "execution_id": "wrong-owner", "kind": "ask", "prompt": "lib?"}
+
+    _bridge_question_to_parent(
+        data, answer_q, pending, lock,
+        parent_session_id="real-session", execution_id="real-owner",
+    )
+    pq = next(p for p in Q.get_question_registry().list_pending("real-session")
+              if p.id == "q-forged")
+    assert pq.session_id == "real-session"
+    assert pq.execution_id == "real-owner"
+    assert emitted[0]["session_id"] == "real-session"
+    assert emitted[0]["execution_id"] == "real-owner"
+    assert Q.get_question_registry().list_pending("wrong-session") == []
+
+    Q.get_question_registry().cancel_execution("real-session", "real-owner")
+    assert _drain_one(answer_q) == {
+        "id": "q-forged", "outcome": "cancelled", "value": None,
+    }
+
+
 def test_bridge_form_carries_schema_and_dict_answer():
     """runtime.form 桥过来时字段 schema 不能丢（前端据此渲染表单），
     答案是 dict 也要原样回流。"""
