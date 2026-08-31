@@ -725,8 +725,7 @@ async def handle_load_session(ws, cmd: dict):
             active_branch_chain,
             deepest_leaf,
             head_or_tip,
-            sibling_index,
-            siblings as _siblings,
+            sibling_navigation_index,
         )
         from openprogram.agent.session_db import default_db as _db_for_load
         from openprogram.webui.persistence import aggregate_tool_messages
@@ -915,6 +914,10 @@ async def handle_load_session(ws, cmd: dict):
                 by_id_all, _fn_run_siblings_by_pred, mid_, _norm_pred,
             )
 
+        _chat_navigation = sibling_navigation_index(
+            all_msgs,
+            target_ids={m.get("id") for m in chain if m.get("id")},
+        )
         shown = []
         for m in chain:
             mid = m.get("id")
@@ -925,19 +928,15 @@ async def handle_load_session(ws, cmd: dict):
                 i = ids.index(mid) if mid in ids else -1
                 idx = (i + 1) if i >= 0 else 0
                 total = len(ids)
-            else:
-                idx, total = sibling_index(all_msgs, mid)
-                ids = None
-            prev_id = next_id = None
-            if total > 1:
-                if ids is None:
-                    sibs = _siblings(all_msgs, mid)
-                    ids = [s.get("id") for s in sibs]
-                i = ids.index(mid) if mid in ids else -1
+                prev_id = next_id = None
                 if i > 0:
                     prev_id = deepest_leaf(all_msgs, ids[i - 1])
-                if 0 <= i < len(ids) - 1:
+                if 0 <= i < total - 1:
                     next_id = deepest_leaf(all_msgs, ids[i + 1])
+            else:
+                idx, total, prev_id, next_id = _chat_navigation.get(
+                    mid, (0, 0, None, None),
+                )
             # Enrich attach pointer rows with embed stats so the
             # AttachCard can render "EMBEDS N messages · M tokens"
             # without a follow-up round trip. Cost = one O(1)

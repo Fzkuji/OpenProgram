@@ -350,3 +350,107 @@ def test_session_loaded_emits_function_run_sibling_navigation(
     finally:
         with _s._sessions_lock:
             _s._sessions.pop(sid, None)
+
+
+def test_session_loaded_chat_navigation_is_request_indexed(
+    env, monkeypatch: pytest.MonkeyPatch,
+):
+    db, _, sid = env
+    db.create_session(sid, "main")
+    nodes = [
+        ("u1", "user", "ROOT"),
+        ("a-first", "assistant", "u1"),
+        ("a-middle", "assistant", "u1"),
+        ("a-last", "assistant", "u1"),
+        ("u-first-1", "user", "a-first"),
+        ("a-first-1", "assistant", "u-first-1"),
+        ("u-first-2", "user", "a-first-1"),
+        ("a-first-leaf", "assistant", "u-first-2"),
+        ("u-middle", "user", "a-middle"),
+        ("a-middle-leaf", "assistant", "u-middle"),
+        ("u-last-1", "user", "a-last"),
+        ("a-last-1", "assistant", "u-last-1"),
+        ("u-last-2", "user", "a-last-1"),
+        ("a-last-leaf", "assistant", "u-last-2"),
+    ]
+    for timestamp, (node_id, role, predecessor) in enumerate(nodes, start=1):
+        db.append_message(sid, {
+            "id": node_id,
+            "role": role,
+            "content": node_id,
+            "predecessor": predecessor,
+            "timestamp": timestamp,
+        })
+    db.set_head(sid, "a-middle-leaf")
+
+    from openprogram.context.git import dag as dag_module
+    from openprogram.webui import persistence
+    from openprogram.webui import server as _s
+
+    original_aggregate = persistence.aggregate_tool_messages
+
+    def aggregate_with_tied_fork_times(raw_messages):
+        aggregated = original_aggregate(raw_messages)
+        for message in aggregated:
+            if message.get("id") in {"a-first", "a-middle", "a-last"}:
+                message["created_at"] = 10
+        return aggregated
+
+    sibling_key_calls = 0
+    parent_of_calls = 0
+    original_sibling_key = dag_module._sibling_key
+    original_parent_of = dag_module._parent_of
+
+    def counted_sibling_key(message):
+        nonlocal sibling_key_calls
+        sibling_key_calls += 1
+        return original_sibling_key(message)
+
+    def counted_parent_of(message):
+        nonlocal parent_of_calls
+        parent_of_calls += 1
+        return original_parent_of(message)
+
+    monkeypatch.setattr(
+        persistence, "aggregate_tool_messages", aggregate_with_tied_fork_times,
+    )
+    monkeypatch.setattr(dag_module, "_sibling_key", counted_sibling_key)
+    monkeypatch.setattr(dag_module, "_parent_of", counted_parent_of)
+    monkeypatch.setattr(_s, "_get_provider_info", lambda _sid=None: {})
+    monkeypatch.setattr(_s, "_is_run_active", lambda _sid: False)
+    monkeypatch.setattr(_s, "refresh_context_stats", lambda _sid: None)
+    with _s._sessions_lock:
+        _s._sessions[sid] = {"id": sid}
+
+    ws = FakeWS()
+    try:
+        asyncio.run(ws_session.handle_load_session(ws, {"session_id": sid}))
+    finally:
+        with _s._sessions_lock:
+            _s._sessions.pop(sid, None)
+
+    loaded = next(frame for frame in ws.sent if frame["type"] == "session_loaded")
+    middle = next(
+        message for message in loaded["data"]["messages"]
+        if message.get("id") == "a-middle"
+    )
+    assert {
+        key: middle[key]
+        for key in (
+            "sibling_index", "sibling_total",
+            "prev_sibling_id", "next_sibling_id",
+        )
+    } == {
+        "sibling_index": 2,
+        "sibling_total": 3,
+        "prev_sibling_id": "a-first-leaf",
+        "next_sibling_id": "a-last-leaf",
+    }
+    assert sibling_key_calls <= len(nodes) * 2, (
+        "session load must group chat siblings once per request: "
+        f"_sibling_key ran {sibling_key_calls} times for {len(nodes)} messages"
+    )
+    assert parent_of_calls <= len(nodes) * 2, (
+        "session load must index child traversal once per request: "
+        f"_parent_of ran {parent_of_calls} times for {len(nodes)} messages"
+    )
