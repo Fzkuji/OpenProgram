@@ -621,6 +621,16 @@ def test_create_app_enforces_owner_auth_and_public_health(monkeypatch):
         assert detailed.status_code == 200
         assert "uptime_seconds" in detailed.json()
         assert "revision" in detailed.json()
+        assert detailed.json()["websocket_delivery"] == {
+            "connections": 0,
+            "managed_connections": 0,
+            "queue_frames": 0,
+            "queue_bytes": 0,
+            "oldest_age": 0.0,
+            "coalesced": 0,
+            "dropped": 0,
+            "send_failures": 0,
+        }
         assert client.get("/api/providers/list").status_code == 401
         assert client.get(
             "/api/providers/list", headers=_bearer(state)
