@@ -261,8 +261,24 @@ class ACPServer:
         try:
             cancel_execution(execution_id)
         except ExecutionNotFound:
-            # The prompt may not have persisted its placeholder yet. The
-            # exact event still needs to stop that in-flight prompt locally.
+            # The runtime lookup can also report NotFound after swallowing a
+            # store failure. Confirm directly against this session before
+            # treating it as the pre-placeholder race.
+            try:
+                from openprogram.agent.session_db import default_db
+
+                nodes = default_db().get_nodes(sess.id)
+                has_placeholder = any(
+                    getattr(node, "id", None) == execution_id for node in nodes
+                )
+            except Exception:
+                _log.warning(
+                    "ACP execution lookup failed for %s", execution_id,
+                    exc_info=True,
+                )
+                return None
+            if has_placeholder:
+                return None
             not_found = True
         except ExecutionNotCancellable:
             # A completed/failed prompt won the race; do not rewrite its

@@ -755,6 +755,88 @@ def test_not_found_cancel_does_not_touch_changed_identity(
     }
 
 
+def test_not_found_cancel_requires_direct_store_lookup(
+    tmp_db, client, tmp_path, monkeypatch,
+) -> None:
+    """Lookup failure must not turn an infrastructure error into cancel."""
+    from openprogram.agent import run_control
+
+    c = client()
+    c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
+    sid = c.call("session/new", {
+        "cwd": str(tmp_path), "mcpServers": [],
+    })["sessionId"]
+    sess = c.server._sessions[sid]
+    execution_id = "lookup-failure_reply"
+    event = threading.Event()
+    assert run_control.claim_cancel_event(
+        sid, event, execution_id=execution_id, foreground=True,
+    )
+    sess.execution_id = execution_id
+    sess.cancel_event = event
+    sess.open_questions["lookup-failure-question"] = execution_id
+    monkeypatch.setattr(
+        run_control, "cancel_execution",
+        lambda _execution_id: (_ for _ in ()).throw(
+            run_control.ExecutionNotFound(execution_id),
+        ),
+    )
+    broken_store = SimpleNamespace(
+        get_nodes=lambda _session_id: (_ for _ in ()).throw(RuntimeError("read failed")),
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.session_db.default_db", lambda: broken_store,
+    )
+
+    c.server._session_cancel({"sessionId": sid})
+
+    assert not event.is_set()
+    assert sess.open_questions == {"lookup-failure-question": execution_id}
+    run_control.unregister_cancel_event(sid, event, execution_id=execution_id)
+
+
+def test_not_found_cancel_requires_placeholder_absence(
+    tmp_db, client, tmp_path, monkeypatch,
+) -> None:
+    """NotFound is not a fallback when the canonical node already exists."""
+    from openprogram.agent import run_control
+
+    c = client()
+    c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
+    sid = c.call("session/new", {
+        "cwd": str(tmp_path), "mcpServers": [],
+    })["sessionId"]
+    sess = c.server._sessions[sid]
+    execution_id = "existing-placeholder_reply"
+    event = threading.Event()
+    assert run_control.claim_cancel_event(
+        sid, event, execution_id=execution_id, foreground=True,
+    )
+    sess.execution_id = execution_id
+    sess.cancel_event = event
+    sess.open_questions["existing-placeholder-question"] = execution_id
+    monkeypatch.setattr(
+        run_control, "cancel_execution",
+        lambda _execution_id: (_ for _ in ()).throw(
+            run_control.ExecutionNotFound(execution_id),
+        ),
+    )
+    existing_store = SimpleNamespace(
+        get_nodes=lambda _session_id: [SimpleNamespace(id=execution_id)],
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.session_db.default_db", lambda: existing_store,
+    )
+
+    c.server._session_cancel({"sessionId": sid})
+
+    assert not event.is_set()
+    assert sess.open_questions == {
+        "existing-placeholder-question": execution_id,
+    }
+    run_control.unregister_cancel_event(sid, event, execution_id=execution_id)
+
+
 def test_prompt_rejects_unknown_session(tmp_db, client) -> None:
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
