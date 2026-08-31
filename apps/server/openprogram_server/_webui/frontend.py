@@ -129,7 +129,15 @@ def mount_frontend(app) -> None:
     from fastapi.responses import FileResponse, PlainTextResponse
     from starlette.middleware.gzip import GZipMiddleware
 
-    app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
+    class _StaticTextGZipMiddleware(GZipMiddleware):
+        async def __call__(self, scope, receive, send) -> None:  # noqa: ANN001
+            suffix = Path(scope.get("path", "")).suffix.lower()
+            if scope["type"] == "http" and suffix in {".png", ".woff2"}:
+                await self.app(scope, receive, send)
+                return
+            await super().__call__(scope, receive, send)
+
+    app.add_middleware(_StaticTextGZipMiddleware, minimum_size=500, compresslevel=6)
 
     out = out_dir()
 

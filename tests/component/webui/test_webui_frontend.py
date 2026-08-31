@@ -15,6 +15,12 @@ def out_tree(tmp_path, monkeypatch):
     out = wd / "out"
     (out / "_next" / "static" / "chunks").mkdir(parents=True)
     (out / "_next" / "static" / "chunks" / "app.js").write_text("js")
+    (out / "_next" / "static" / "app.css").write_text("css")
+    (out / "icons").mkdir()
+    (out / "icons" / "mark.svg").write_text("<svg></svg>")
+    (out / "icons" / "icon-512.png").write_bytes(b"png")
+    (out / "fonts").mkdir()
+    (out / "fonts" / "inter.woff2").write_bytes(b"woff2")
     (out / "index.html").write_text("<html>index</html>")
     (out / "chat.html").write_text("<html>chat</html>")
     (out / "skills.html").write_text("<html>skills</html>")
@@ -75,13 +81,20 @@ def test_next_static_immutable_cache(client):
     assert "immutable" in r.headers["cache-control"]
 
 
-def test_large_static_text_negotiates_gzip(client, out_tree):
+@pytest.mark.parametrize(
+    ("path", "source"),
+    [
+        ("/_next/static/chunks/app.js", b"const payload = 'compressible';\n" * 400),
+        ("/_next/static/app.css", b".row { color: var(--text); }\n" * 400),
+        ("/icons/mark.svg", b'<svg><path d="M0 0h10v10"/></svg>' * 400),
+    ],
+)
+def test_large_static_text_negotiates_gzip(client, out_tree, path, source):
     _wd, out = out_tree
-    source = ("const payload = 'compressible';\n" * 400).encode()
-    (out / "_next" / "static" / "chunks" / "app.js").write_bytes(source)
+    (out / path.lstrip("/")).write_bytes(source)
 
     compressed = client.get(
-        "/_next/static/chunks/app.js",
+        path,
         headers={"Accept-Encoding": "gzip"},
     )
     assert compressed.status_code == 200
@@ -90,11 +103,29 @@ def test_large_static_text_negotiates_gzip(client, out_tree):
     assert compressed.content == source
 
     identity = client.get(
-        "/_next/static/chunks/app.js",
+        path,
         headers={"Accept-Encoding": "identity"},
     )
     assert "content-encoding" not in identity.headers
     assert identity.content == source
+
+
+@pytest.mark.parametrize(
+    ("path", "source"),
+    [
+        ("/icons/icon-512.png", b"\x89PNG\r\n\x1a\n" + b"compressed-png" * 400),
+        ("/fonts/inter.woff2", b"wOF2" + b"compressed-font" * 400),
+    ],
+)
+def test_precompressed_static_formats_are_not_gzipped(client, out_tree, path, source):
+    _wd, out = out_tree
+    (out / path.lstrip("/")).write_bytes(source)
+
+    response = client.get(path, headers={"Accept-Encoding": "gzip"})
+
+    assert response.status_code == 200
+    assert "content-encoding" not in response.headers
+    assert response.content == source
 
 
 def test_small_static_text_is_not_compressed(client):
