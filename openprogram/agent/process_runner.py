@@ -570,14 +570,16 @@ def _bridge_question_to_parent(
         return
 
     reg = get_question_registry()
-    resolved_session_id = (
-        data.get("session_id") or ""
-        if parent_session_id is None else parent_session_id
-    )
-    resolved_execution_id = (
-        data.get("execution_id") or ""
-        if execution_id is None else execution_id
-    )
+    if parent_session_id is None:
+        # Legacy helper callers have no parent authority; retain the original
+        # child-owner-first resolution and use the argument only as fallback.
+        resolved_session_id = data.get("session_id") or ""
+        resolved_execution_id = data.get("execution_id") or execution_id or ""
+    else:
+        # Production parent calls own both identities; child data is content
+        # only and cannot redirect the registered question.
+        resolved_session_id = parent_session_id
+        resolved_execution_id = execution_id or ""
     q = PendingQuestion(
         id=qid,
         session_id=resolved_session_id,

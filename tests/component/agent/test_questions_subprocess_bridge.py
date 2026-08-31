@@ -152,6 +152,38 @@ def test_bridge_preserves_or_fills_execution_owner(monkeypatch):
     }
 
 
+def test_bridge_legacy_child_owner_precedes_fallback_owner(monkeypatch):
+    from openprogram.agent.process_runner import _bridge_question_to_parent
+
+    answer_q: mp.Queue = mp.get_context("spawn").Queue()
+    pending, lock = set(), threading.Lock()
+    emitted = []
+    monkeypatch.setattr(Q, "emit_question_asked", lambda data: emitted.append(data))
+    _bridge_question_to_parent(
+        {"id": "q-child-owner", "session_id": "legacy", "kind": "ask",
+         "prompt": "?", "execution_id": "child-owner"},
+        answer_q, pending, lock, execution_id="fallback-owner",
+    )
+    pq = next(p for p in Q.get_question_registry().list_pending("legacy")
+              if p.id == "q-child-owner")
+    assert pq.execution_id == "child-owner"
+    assert emitted[0]["execution_id"] == "child-owner"
+    Q.get_question_registry().resolve("q-child-owner", "declined", None)
+    assert _drain_one(answer_q)["id"] == "q-child-owner"
+
+    _bridge_question_to_parent(
+        {"id": "q-fallback-owner", "session_id": "legacy", "kind": "ask",
+         "prompt": "?"},
+        answer_q, pending, lock, execution_id="fallback-owner",
+    )
+    pq = next(p for p in Q.get_question_registry().list_pending("legacy")
+              if p.id == "q-fallback-owner")
+    assert pq.execution_id == "fallback-owner"
+    assert emitted[-1]["execution_id"] == "fallback-owner"
+    Q.get_question_registry().resolve("q-fallback-owner", "declined", None)
+    assert _drain_one(answer_q)["id"] == "q-fallback-owner"
+
+
 def test_bridge_parent_identity_overrides_forged_child_identity(monkeypatch):
     from openprogram.agent.process_runner import _bridge_question_to_parent
 
