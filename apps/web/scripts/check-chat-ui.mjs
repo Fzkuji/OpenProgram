@@ -223,11 +223,10 @@ for (const themeCss of [lightTheme, beigeLightTheme]) {
 }
 assert.match(auroraTheme, /--focus-ring:\s*color-mix\(in srgb, var\(--accent-cyan\) 60%, transparent\);/);
 
-// Markdown must not depend on the optional CDN script. A missing/blocked CDN
-// previously left every assistant response in renderMd's bordered <pre>
-// fallback for the lifetime of the page.
+// Markdown and math rendering are production-bundled dependencies.
 assert.match(markdownRenderer, /import \{ marked as npmMarked \} from "marked";/);
-assert.match(markdownRenderer, /window\.marked\s*\?\?\s*npmMarked/);
+assert.match(markdownRenderer, /import renderMathInElement from "katex\/contrib\/auto-render";/);
+assert.doesNotMatch(markdownRenderer, /window\.(?:marked|renderMathInElement)/);
 assert.doesNotMatch(markdownRenderer, /return "<pre>" \+ escHtml\(str\) \+ "<\/pre>";/);
 
 assert.match(welcome, /src=["{]?["']\/icon\.svg["']/);

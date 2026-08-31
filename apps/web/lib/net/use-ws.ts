@@ -39,7 +39,6 @@ import { runtimeState, setSocket } from "@/lib/runtime-bridge/state";
 import { applyChatWsMessage, clearSessionByMsgId } from "@/lib/net/chat-stream";
 import { waitForOwnerAuthBootstrap } from "@/lib/net/owner-auth-bootstrap";
 import { translateText } from "@/lib/i18n";
-import { externalLibsReady } from "@/lib/external-libs";
 import { getQueryClient } from "@/lib/query-client";
 import {
   loadAgentSettings,
@@ -736,19 +735,11 @@ export function useWS(): void {
       socket.onerror = () => socket?.close();
     }
 
-    // Chat rendering needs the CDN libs (marked / KaTeX) on the page, so
-    // wait for them before the first transcript paint. A load failure is
-    // not fatal — connect anyway and let markdown fall back.
     async function start(): Promise<void> {
       try {
         await waitForOwnerAuthBootstrap();
       } catch {
         return;
-      }
-      try {
-        await externalLibsReady();
-      } catch {
-        /* ignore — connect anyway */
       }
       if (stopped) return;
       initChatPage();

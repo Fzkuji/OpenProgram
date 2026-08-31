@@ -167,10 +167,10 @@
       <p class="lead">本文统一记录 Web 页面刷新、会话加载、WebSocket 消息分发、后台错误展示、EventBus 通知、异步 Job 状态、静态资源加载和本地状态目录的已验证问题，并给出相互兼容的目标合同、任务边界和量化验收标准。</p>
       <div class="meta">
         <span class="tag">受众：Runtime / Server / Web 维护者</span>
-        <span class="tag">状态：TASK 3 审查通过，最终 gate 被已验证基线失败阻断；其余任务待执行</span>
+        <span class="tag">状态：TASK 3 review-passed / baseline-failed；TASK 6 implementation-complete / review-pending；其余任务待执行</span>
         <span class="tag">证据：源码审计、真实会话测量、浏览器测量、定向测试</span>
       </div>
-      <div class="callout bad"><b>主结论：</b>错误事件缺少统一前端合同、刷新时重复发送完整会话，以及 EventBus notify 可能同步阻塞或丢失仍是 P0。WebSocket 广播无界问题已有审查通过的 TASK 3 实现，但最终集成 gate 仍是 <code>baseline-failed</code>。静态资源加载与 CSP 配置冲突属于 P1；React 单条消息更新不是当前首要限制。</div>
+      <div class="callout bad"><b>主结论：</b>错误事件缺少统一前端合同、刷新时重复发送完整会话，以及 EventBus notify 可能同步阻塞或丢失仍是 P0。WebSocket 广播无界问题已有审查通过的 TASK 3 实现，但最终集成 gate 仍是 <code>baseline-failed</code>。TASK 6 已完成本地依赖、静态压缩、延迟表面切分和资源预算候选实现，规格与质量审查仍待独立执行；React 单条消息更新不是当前首要限制。</div>
       <div class="callout warn"><b>范围边界：</b>本文不修改 Agent 推理逻辑、DAG 存储语义、模型提供商协议、权限模型或多用户身份模型。已有专题文档继续负责各自的详细语义；本文只定义它们在 Web 运行时可靠性和性能方面必须共同满足的合同。</div>
     </header>
 
@@ -280,7 +280,7 @@
           <tr><td>R8</td><td class="p1">P1</td><td>重连固定每 2 秒尝试，成功后重新加载整个会话。</td><td>服务重启或网络异常时多个页面会同步重试并重复传输完整状态。</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/net/use-ws.ts">use-ws.ts</a>。</td><td>指数退避、随机抖动、在线恢复后发送已知 revision/seq；不重复生成 UI 错误。</td></tr>
           <tr><td>R9</td><td class="p0">P0</td><td>EventBus notify 的普通 handler 在 emitter 线程同步执行；async handler 无 event loop 时被跳过。</td><td>慢插件阻塞 Agent；部分后台事件没有任何消费者收到。</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/events/bus.py">events/bus.py</a>。</td><td>notify 总是进入专用队列；gate 保持同步并执行明确预算。</td></tr>
           <tr><td>R10</td><td class="p1">P1</td><td>事件日志同步写；<code>tool.before</code> 可重复写；注册表测试漏掉跨行 emit。</td><td>高频工具输出增加同步 IO，日志统计不准确，未注册事件无法由测试发现。</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/events/event_log.py">event_log.py</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/tests/component/agent/test_event_gate.py">test_event_gate.py</a>。</td><td>异步批量日志、单事件单记录、AST 注册检查、大字段摘要化。</td></tr>
-          <tr><td>R11</td><td class="p1">P1</td><td>marked/KaTeX 运行时从 CDN 加载，但 CSP 只允许 <code>script-src 'self'</code>；静态资源未压缩。</td><td>每次加载产生可预期 CSP 错误，数学渲染可能降级；远程首次加载传输增加。</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/external-libs.ts">external-libs.ts</a> 与 <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/owner_auth.py">owner_auth.py</a>。</td><td>依赖本地打包；保持严格 CSP；文本资源使用 gzip 或预压缩内容。</td></tr>
+          <tr><td>R11</td><td class="p1">P1</td><td>TASK 6 候选实现已移除产品运行时 CDN 资源并将 marked/KaTeX 纳入构建；标准 GZipMiddleware 为可压缩响应协商 gzip。</td><td>源码、legacy template、构建产物和 HTTP public entry 已有自动化回归；默认 App browser trace 尚待独立验收。</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/runtime-bridge/markdown-render.ts">markdown-render.ts</a> 与 <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/frontend.py">frontend.py</a>。</td><td><code>implementation-complete</code> / <code>review-pending</code>；保持 self-only CSP。</td></tr>
           <tr><td>R12</td><td class="p2">P2</td><td>Chrome profile 没有容量展示和保留策略；当前约 6.1 GB。</td><td>长期使用后占用磁盘，用户无法从产品中判断来源或安全清理范围。</td><td>最大目录为浏览器 on-device model、Default profile 和 model store。</td><td>展示分类容量；只提供显式、可恢复的清理操作；不自动删除登录态。</td></tr>
         </tbody>
       </table></div>
@@ -465,7 +465,7 @@
         <article class="phase"><div class="id">TASK 3</div><div class="axis"><span class="dot"></span><span class="line"></span></div><div class="body"><h3>每连接有界发送队列 <span class="status partial">review-passed</span></h3><p>在 server 层新增 <code>_webui/ws_delivery.py</code>，建立 sender 生命周期、帧分类、合并规则、终态保障和断连清理；所有广播路径只 enqueue。慢客户端、发送失败、跨线程并发、队列溢出、终态预留和 in-flight 容量回归已通过，未修改 <code>events/bus.py</code>。</p><div class="files"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/server.py">server.py</a><span class="tag">apps/server/.../_webui/ws_delivery.py</span></div></div></article>
         <article class="phase"><div class="id">TASK 4</div><div class="axis"><span class="dot"></span><span class="line"></span></div><div class="body"><h3>Session projection 与增量恢复</h3><p>先固定载荷测量和协议合同，再分离同步计算与异步发送；实现 manifest、viewport messages、Graph summary、detail fetch 和 reconnect delta。评估并复用或删除未接入的 MessageStore。</p><div class="files"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/ws_actions/session.py">session.py</a><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/messages.py">messages.py</a><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/net/use-ws.ts">use-ws.ts</a></div></div></article>
         <article class="phase"><div class="id">TASK 5</div><div class="axis"><span class="dot"></span><span class="line"></span></div><div class="body"><h3>EventBus notify 与日志执行模型</h3><p>notify 转移到专用执行环境；gate 保持同步；日志异步批量写；修复重复 gate 行和大型 payload；用 AST 验证事件注册完整性。兼容现有 plugin hook 公开签名。</p><div class="files"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/events/bus.py">bus.py</a><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/events/event_log.py">event_log.py</a><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/events/registry.py">registry.py</a></div></div></article>
-        <article class="phase"><div class="id">TASK 6</div><div class="axis"><span class="dot"></span><span class="line"></span></div><div class="body"><h3>本地前端依赖、压缩与资源预算</h3><p>删除 CDN runtime loader，将 marked/KaTeX 纳入构建；增加安全的静态压缩；按不在首屏的表面切分资源；保持严格 CSP。验收同时覆盖默认 App 和远程服务器模式。</p><div class="files"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/external-libs.ts">external-libs.ts</a><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/frontend.py">frontend.py</a><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/owner_auth.py">owner_auth.py</a></div></div></article>
+        <article class="phase"><div class="id">TASK 6</div><div class="axis"><span class="dot"></span><span class="line"></span></div><div class="body"><h3>本地前端依赖、压缩与资源预算 <span class="status partial">implementation-complete / review-pending</span></h3><p>CDN runtime loader 和 legacy template 标签已删除，marked/KaTeX 由构建本地提供，其他产品 CDN 图标改为稳定的本地文字标识；标准 GZipMiddleware 负责内容协商；center-tab 非首屏表面使用动态导入并显示 pending 状态；构建预算和 HTTP 回归已通过。默认 App 与远程服务器的独立验收尚未执行。</p><div class="files"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/runtime-bridge/markdown-render.ts">markdown-render.ts</a><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/frontend.py">frontend.py</a><span class="tag">apps/web/scripts/check-static-resource-budget.mjs</span></div></div></article>
         <article class="phase"><div class="id">TASK 7</div><div class="axis"><span class="dot"></span><span class="line"></span></div><div class="body"><h3>容量诊断与显式清理</h3><p>增加只读容量分类和诊断输出；设计 cache/model 的显式清理入口；身份和浏览器用户数据保持默认不清理。该任务不阻塞错误与刷新性能修复。</p></div></article>
       </div>
       <div class="table-wrap"><table>
@@ -550,7 +550,7 @@
           <tr><td>会话增量恢复</td><td><span class="status gap">未接入</span></td><td>MessageStore 模块定义 seq/delta/full，但生产 server/web 没有使用。</td><td>按已确定的 SessionDB/DAG 单一来源实现 projection recovery，并删除独立 store 接口。</td></tr>
           <tr><td>每连接 WebSocket 背压</td><td><span class="status partial">review-passed</span></td><td>每个生产连接使用单一 sender；queued + in-flight 总量不超过 256 帧 / 4 MiB；慢客户端并发发送峰值从 400 降为 1。规格审查和质量审查均为 PASS。</td><td>最终 Python gate 被两个已在任务基线复现的无关失败阻断；保持 <code>baseline-failed</code>。</td></tr>
           <tr><td>EventBus 异步 notify 保证</td><td><span class="status gap">未实现</span></td><td>普通 handler 同步执行；无 loop 的 async handler 被跳过。</td><td>TASK 5。</td></tr>
-          <tr><td>本地 marked/KaTeX 与静态压缩</td><td><span class="status gap">未实现</span></td><td>CDN scripts 与当前 CSP 冲突；静态响应测量无 content encoding。</td><td>TASK 6。</td></tr>
+          <tr><td>本地 marked/KaTeX 与静态压缩</td><td><span class="status partial">implementation-complete / review-pending</span></td><td>源码与 legacy template 零产品 CDN 资源；marked/KaTeX 本地导入；gzip 协商、identity、小响应、既有 encoding 和 SSE 回归通过；构建预算为 2,089,596 B，最大 gzip JS chunk 为 186,752 B。</td><td>独立规格/质量审查；默认 App 与远程服务器 browser trace。</td></tr>
           <tr><td>Profile 容量诊断与清理</td><td><span class="status gap">未实现</span></td><td>只能通过文件系统检查容量。</td><td>TASK 7。</td></tr>
         </tbody>
       </table></div>
@@ -569,6 +569,23 @@
           <tr><td>审查</td><td>规格审查 PASS；质量审查 PASS。两轮确认的 waiter、失败语义、终态分类和 in-flight 容量 finding 都有定向回归。</td></tr>
           <tr><td>完整 gate</td><td>Ruff PASS。Python 完整执行为 6,220 passed、22 skipped、1 xfailed、3 failed；其中生成 README 与 <code>gui_agent surface</code> 已在任务基线独立复现，models.dev 受管 HTTP 用例在候选工作区串行重跑通过。</td></tr>
           <tr><td>交付状态</td><td><code>review-passed</code> / <code>baseline-failed</code>。未标记 complete，未进入下一个依赖任务。</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3 style="margin-top:28px">TASK 6 任务简报与实施证据</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>证据项</th><th>已核对内容</th></tr></thead>
+        <tbody>
+          <tr><td>批准来源</td><td>本页前端与资源合同、TASK 6、Web 首次加载验收和静态 transfer 测量口径；任务从 TASK 3 基线提交创建独立工作区。</td></tr>
+          <tr><td>生产文件</td><td><code>apps/server/openprogram_server/_webui/frontend.py</code>；<code>apps/web/app/layout.tsx</code>；<code>components/app-shell.tsx</code>、<code>components/chat/messages/markdown.ts</code>、<code>components/settings/provider-icon.tsx</code>；<code>lib/format-utils/markdown.tsx</code>、<code>lib/global.d.ts</code>、<code>lib/net/use-ws.ts</code>、<code>lib/runtime-bridge/conversations.ts</code>、<code>lib/runtime-bridge/markdown-render.ts</code>；<code>public/html/index.html</code>；<code>apps/web/package.json</code> 与根 <code>package-lock.json</code>。删除 <code>lib/external-libs.ts</code> 和 <code>lib/cdn-globals.d.ts</code>。</td></tr>
+          <tr><td>验证文件</td><td><code>tests/component/webui/test_webui_frontend.py</code>；<code>apps/web/scripts/check-local-runtime-assets.mjs</code>、<code>check-static-resource-budget.mjs</code>；同步更新 <code>check-chat-ui.mjs</code>、<code>check-markdown-sanitize.mjs</code> 和 <code>check-socket-access.mjs</code>。</td></tr>
+          <tr><td>必须行为</td><td>所有产品 runtime asset 使用本地资源；marked 与 KaTeX 不等待外部 loader；CSP 继续使用 self-only 信任边界；可压缩响应按 <code>Accept-Encoding</code> 使用标准 gzip；小响应、SSE 和已有 <code>Content-Encoding</code> 不重复压缩；非首屏 center-tab 表面按需加载并显示 pending 状态；构建产物进入固定 2 MiB / 350 KiB 预算。</td></tr>
+          <tr><td>兼容与排除</td><td>没有修改 WebSocket 协议、Session projection、EventBus 或错误合同；<code>useMarkdownReady</code> 保留兼容导出；OwnerAuth 的 CSP 定义未放宽。</td></tr>
+          <tr><td>RED</td><td>HTTP public-entry fixture 在大静态 JS 请求中缺少 <code>Content-Encoding</code>，执行结果为 1 failed / 13 passed；本地 runtime 资源脚本在 CDN loader 上失败；资源预算脚本在缺少生产构建产物时失败。</td></tr>
+          <tr><td>GREEN 与受影响验证</td><td>frontend 14 项、OwnerAuth/CSP 42 项、Web unit 115 项、完整 Web source check、TypeScript 和生产构建通过；WebUI 扩大验证 365 项通过、1 项跳过，另有 1 个已在基线复现的 <code>gui_agent surface</code> 失败。</td></tr>
+          <tr><td>资源预算</td><td><code>chat.html</code> 的保守构建产物检查统计 110 个初始及 CSS 引用资源，gzip level 6 编码合计 2,089,596 B；最大压缩 JS chunk 为 186,752 B，均低于固定预算。</td></tr>
+          <tr><td>完整 gate</td><td>Python 完整执行为 6,220 passed、22 skipped、7 deselected、1 xfailed、6 failed、2 errors。失败位于 <code>gui_agent surface</code>、生成 README、models.dev 受管 HTTP 和 <code>test_list_jobs.py</code>；errors 为 unit runtime background-thread 清理。TASK 6 受影响验证保持通过，候选整体状态仍为 <code>baseline-failed</code>。</td></tr>
+          <tr><td>交付状态</td><td><code>implementation-complete</code> / <code>review-pending</code>。未执行规格审查、质量审查、默认 App 刷新、默认 App browser trace、远程服务器 trace 或推送。</td></tr>
         </tbody>
       </table></div>
 

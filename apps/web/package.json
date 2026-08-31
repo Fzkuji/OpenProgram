@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "check": "npm run check:owner-auth-bootstrap && npm run check:secret-non-retrieval && npm run check:extension-management && npm run check:a11y-wiring && npm run check:theme-contract && npm run check:center-tabs && npm run check:integrated-terminal && npm run check:bookmarks && npm run check:built-in-browser && npm run check:compound-tabs && npm run check:web-split && npm run check:web-use-chat-stability && npm run check:settings-columns && npm run check:multi-draft && npm run check:provisional-send && npm run check:chat-ui && npm run check:review-ui && npm run check:composer-tool-profile && npm run check:program-source-categories && npm run check:shared-explorer && npm run check:agent-tool-configuration && npm run check:local-attachment-paths && npm run check:project-picker && npm run check:spawn-cards && npm run check:job-resource && npm run check:job-resources && npm run check:recents-buckets && npm run check:dag-summary && npm run check:dag-subagent && npm run check:socket-access && npm run check:markdown-sanitize && npm run check:memory-status && npm run check:memory-settings && npm run check:scheduler && npm run check:ws-actions && npm run check:message-rail && npm run check:send-queue && npm run check:updates",
+    "check": "npm run check:owner-auth-bootstrap && npm run check:secret-non-retrieval && npm run check:extension-management && npm run check:a11y-wiring && npm run check:theme-contract && npm run check:center-tabs && npm run check:integrated-terminal && npm run check:bookmarks && npm run check:built-in-browser && npm run check:compound-tabs && npm run check:web-split && npm run check:web-use-chat-stability && npm run check:settings-columns && npm run check:multi-draft && npm run check:provisional-send && npm run check:chat-ui && npm run check:review-ui && npm run check:composer-tool-profile && npm run check:program-source-categories && npm run check:shared-explorer && npm run check:agent-tool-configuration && npm run check:local-attachment-paths && npm run check:project-picker && npm run check:spawn-cards && npm run check:job-resource && npm run check:job-resources && npm run check:recents-buckets && npm run check:dag-summary && npm run check:dag-subagent && npm run check:socket-access && npm run check:markdown-sanitize && npm run check:local-runtime-assets && npm run check:memory-status && npm run check:memory-settings && npm run check:scheduler && npm run check:ws-actions && npm run check:message-rail && npm run check:send-queue && npm run check:updates",
     "test": "npm run test:unit",
     "test:unit": "node --no-warnings --experimental-strip-types --test tests/*.test.mjs",
     "check:job-resource": "node --no-warnings --experimental-strip-types scripts/check-job-resource-view.mjs",
@@ -35,6 +35,8 @@
     "check:dag-subagent": "node --no-warnings --experimental-strip-types scripts/check-dag-subagent.mjs",
     "check:socket-access": "node --no-warnings scripts/check-socket-access.mjs",
     "check:markdown-sanitize": "node --no-warnings --experimental-strip-types scripts/check-markdown-sanitize.mjs",
+    "check:local-runtime-assets": "node --no-warnings scripts/check-local-runtime-assets.mjs",
+    "check:static-resource-budget": "node --no-warnings scripts/check-static-resource-budget.mjs",
     "check:memory-status": "node --no-warnings --experimental-strip-types scripts/check-memory-status.mjs",
     "check:memory-settings": "node --no-warnings --experimental-strip-types scripts/check-memory-settings.mjs",
     "check:scheduler": "node --no-warnings scripts/check-scheduler.mjs",
@@ -86,6 +88,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "framer-motion": "^12.40.0",
+    "katex": "^0.16.9",
     "lucide-react": "^1.8.0",
     "marked": "^18.0.3",
     "next": "14.2.35",
@@ -99,6 +102,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@types/katex": "^0.16.7",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",

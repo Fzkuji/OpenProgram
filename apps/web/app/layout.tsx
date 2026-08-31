@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "@xterm/xterm/css/xterm.css";
+import "katex/dist/katex.min.css";
 import { Providers } from "./providers";
 import { THEME_BOOTSTRAP_SCRIPT } from "@/lib/prefs/theme-bootstrap";
 

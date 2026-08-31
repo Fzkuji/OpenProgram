@@ -127,6 +127,9 @@ def ensure_frontend_built() -> None:
 def mount_frontend(app) -> None:
     """Register static serving + SPA fallback. Call LAST in create_app()."""
     from fastapi.responses import FileResponse, PlainTextResponse
+    from starlette.middleware.gzip import GZipMiddleware
+
+    app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
 
     out = out_dir()
 

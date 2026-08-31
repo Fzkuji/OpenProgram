@@ -2,19 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 import { useRouter, usePathname } from "next/navigation";
 import { PageShell } from "./page-shell";
 import { Sidebar } from "./sidebar/sidebar";
 import { RightSidebar } from "./right-sidebar/right-sidebar";
 import { CenterTabStrip } from "./center-tabs/center-tab-strip";
-import { BuiltinTabPane } from "./center-tabs/builtin-tab-pane";
-import { BrowserHomePage } from "./center-tabs/browser-home-page";
-import { FileTabPane } from "./center-tabs/file-tab-pane";
-import { ReviewTabPane } from "./center-tabs/review-tab-pane";
-import { FilesPage } from "./center-tabs/files-page";
-import { NewTabPage } from "./center-tabs/new-tab-page";
-import { TerminalPage } from "./center-tabs/terminal-page";
-import { WebTabPane } from "./center-tabs/web-tab-pane";
 import { WebTabPip } from "./center-tabs/web-tab-pip";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
@@ -46,10 +39,50 @@ import {
 import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
 import { setNavigate } from "@/lib/navigate";
 import { setLastChatPath } from "@/lib/last-chat-path";
-import { loadExternalLibs } from "@/lib/external-libs";
 import { enterExclusiveCoverageMode, renderHistoryGraph } from "@/lib/runtime-bridge/dag";
 import { initOverlayScrollbars } from "@/lib/runtime-bridge/scrollbar";
 import { hostPaintsRows } from "@/lib/state/message-window";
+
+function DeferredPaneLoading() {
+  return (
+    <div className="flex h-full items-center justify-center text-sm text-text-muted">
+      Loading…
+    </div>
+  );
+}
+
+const BuiltinTabPane = dynamic(
+  () => import("./center-tabs/builtin-tab-pane").then((module) => module.BuiltinTabPane),
+  { ssr: false, loading: DeferredPaneLoading },
+);
+const BrowserHomePage = dynamic(
+  () => import("./center-tabs/browser-home-page").then((module) => module.BrowserHomePage),
+  { ssr: false, loading: DeferredPaneLoading },
+);
+const FileTabPane = dynamic(
+  () => import("./center-tabs/file-tab-pane").then((module) => module.FileTabPane),
+  { ssr: false, loading: DeferredPaneLoading },
+);
+const ReviewTabPane = dynamic(
+  () => import("./center-tabs/review-tab-pane").then((module) => module.ReviewTabPane),
+  { ssr: false, loading: DeferredPaneLoading },
+);
+const FilesPage = dynamic(
+  () => import("./center-tabs/files-page").then((module) => module.FilesPage),
+  { ssr: false, loading: DeferredPaneLoading },
+);
+const NewTabPage = dynamic(
+  () => import("./center-tabs/new-tab-page").then((module) => module.NewTabPage),
+  { ssr: false, loading: DeferredPaneLoading },
+);
+const TerminalPage = dynamic(
+  () => import("./center-tabs/terminal-page").then((module) => module.TerminalPage),
+  { ssr: false, loading: DeferredPaneLoading },
+);
+const WebTabPane = dynamic(
+  () => import("./center-tabs/web-tab-pane").then((module) => module.WebTabPane),
+  { ssr: false, loading: DeferredPaneLoading },
+);
 
 // Scripts shared by every page — loaded once on shell mount and kept alive for
 // the whole session. Page-specific scripts live in PageShell. Files sit in
@@ -61,8 +94,8 @@ import { hostPaintsRows } from "@/lib/state/message-window";
 // (imported for side effects by `useWS`).
 // All legacy public/js scripts are migrated to lib/ — see the
 // `import "@/lib/..."` side-effect imports above.
-// CDN libs (marked / KaTeX) live in `lib/external-libs.ts`; the shared
-// inline-script fetch+inject machinery is gone with the legacy JS.
+// Markdown and KaTeX are bundled npm dependencies. There is no runtime
+// script injection or external-library readiness gate.
 
 // Routes where the right sidebar (History / Execution Detail) is
 // relevant. Functions / Chats / Settings don't need it, so it's hidden
@@ -315,10 +348,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     // Overlay scrollbars (was shared/scrollbar.js).
     initOverlayScrollbars();
-
-    // First-mount init: kick off the CDN libs (marked / KaTeX). Everything
-    // else is a React component now, so nothing else is injected here.
-    loadExternalLibs();
 
     return () => {
       document.removeEventListener("click", onClick);

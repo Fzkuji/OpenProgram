@@ -192,29 +192,9 @@ function spliceCompactionFromGraph(
 
 /* ===== Channel icons ============================================= */
 
-// simple-icons CDN brand marks, each embedding the platform's own hue.
-const CHANNEL_ICON_URL: Record<string, string> = {
-  wechat: "https://cdn.simpleicons.org/wechat/07C160",
-  discord: "https://cdn.simpleicons.org/discord/5865F2",
-  telegram: "https://cdn.simpleicons.org/telegram/26A5E4",
-  slack: "https://cdn.simpleicons.org/slack/4A154B",
-};
-
 export function channelIcon(plat: string): string {
-  const lc = String(plat || "").toLowerCase();
-  const url = CHANNEL_ICON_URL[lc];
   const letter = ((plat || "?")[0] || "?").toUpperCase();
-  const letterSpan = '<span class="provider-icon-letter">' + letter + "</span>";
-  if (!url) return letterSpan;
-  // Guard `parentNode`: if the icon errors after the menu closed the
-  // <img> is detached and setting outerHTML throws NoModificationAllowed.
-  return (
-    '<img src="' +
-    url +
-    '" alt="" onerror="if(this.parentNode)this.outerHTML=&quot;' +
-    letterSpan.replace(/"/g, "&amp;quot;") +
-    '&quot;">'
-  );
+  return '<span class="provider-icon-letter">' + letter + "</span>";
 }
 
 /* ===== Channel health poll ======================================= */
