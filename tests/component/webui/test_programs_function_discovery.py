@@ -181,7 +181,7 @@ def test_goal_form_exposes_only_prompt_and_condition() -> None:
     assert visible == ["prompt"]
 
 
-def test_gui_agent_form_exposes_only_task() -> None:
+def test_gui_agent_form_exposes_only_supported_public_inputs() -> None:
     root = Path(__file__).parents[3]
     sources = [
         root / "openprogram/programs/applications/gui_harness/gui_harness/main.py",
@@ -196,7 +196,12 @@ def test_gui_agent_form_exposes_only_task() -> None:
     assert extracted
     for gui in extracted:
         visible = [p["name"] for p in gui["params_detail"] if not p.get("hidden")]
-        assert visible == ["task"]
+        expected = (
+            ["task", "surface"]
+            if Path(gui["filepath"]).name == "gui_harness_bridge.py"
+            else ["task"]
+        )
+        assert visible == expected
 
 
 def test_registered_workflow_is_available_to_favorites(
