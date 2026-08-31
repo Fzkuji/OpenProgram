@@ -37,8 +37,10 @@ def _head(store) -> str | None:
 
 def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_path):
     from openprogram.webui.routes import chat as routes_chat
+    from openprogram.webui import server as web_server
 
     store = _store(tmp_path)
+    real_is_run_active = web_server._is_run_active
     monkeypatch.setattr(
         "openprogram.agent.session_db.default_db", lambda: store)
     monkeypatch.setattr(
@@ -81,6 +83,7 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         captured["record_exists"] = store.message_exists(
             "s1", kw.get("execution_id") or "",
         )
+        captured["run_active"] = real_is_run_active("s1")
         captured["provider"] = kw.get("provider")
         captured["model"] = kw.get("model")
         return {"runtime_msg_id": None, "ok": True}
@@ -119,6 +122,7 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     assert captured["anchor"] == f"|node:{node.id}"
     assert captured["execution_id"] == node.id
     assert captured["record_exists"] is True
+    assert captured["run_active"] is True
     assert captured["provider"] == "minimax-cn-coding-plan"
     assert captured["model"] == "MiniMax-M3"
 
@@ -209,6 +213,32 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     assert captured["anchor"] == f"|node:{captured['execution_id']}"
     assert captured["record_exists"] is True
 
+    class _StartFailureThread:
+        def start(self):
+            raise RuntimeError("thread unavailable")
+
+    monkeypatch.setattr(
+        routes_chat,
+        "threading",
+        SimpleNamespace(Thread=lambda **_kwargs: _StartFailureThread()),
+    )
+    captured.clear()
+
+    res = routes_chat.run_agentic_function_call(
+        "word_count", {"text": "thread cannot start"}, "s1",
+    )
+    assert res["code"] == "function_start_failed"
+    assert res["status_code"] == 500
+    assert captured == {}
+    from openprogram.webui import server as _server
+    with _server._running_tasks_lock:
+        assert "s1" not in _server._running_tasks
+    failed_node = next(
+        node for node in store.get_nodes("s1")
+        if node.input == {"text": "thread cannot start"}
+    )
+    assert failed_node.metadata["status"] == "error"
+
     def _always_fail_precreate(**kwargs):
         raise RuntimeError("persistent pre-create failure")
 
@@ -223,6 +253,9 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     )
     assert res["code"] == "execution_record_failed"
     assert captured == {}
+    from openprogram.webui import server as _server
+    with _server._running_tasks_lock:
+        assert "s1" not in _server._running_tasks
 
 
 def test_missing_session_model_refuses_before_dispatch(monkeypatch):
@@ -273,6 +306,9 @@ def test_missing_session_model_refuses_before_dispatch(monkeypatch):
     assert result["status_code"] == 409
     assert result["code"] == "no_model"
     assert dispatched == []
+    from openprogram.webui import server as web_server
+    with web_server._running_tasks_lock:
+        assert "s1" not in web_server._running_tasks
 
 
 # ---- 2. child reuse: wrapper with _forced_node_id set does not dupe -----

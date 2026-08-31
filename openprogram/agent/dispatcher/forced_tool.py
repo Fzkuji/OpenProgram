@@ -103,7 +103,6 @@ def dispatch_forced_tool_call(
     from openprogram.agent.run_control import (
         set_current_session_id as _set_cid,
         reset_current_session_id as _reset_cid,
-        clear_cancel as _clear_cancel,
     )
     _cid_token = _set_cid(session_id)
     captured_surface = None
@@ -157,8 +156,6 @@ def dispatch_forced_tool_call(
         except ValueError:
             _log.debug("call-id contextvar reset in foreign context",
                        exc_info=True)
-        # Retires this turn's cancel token; the next turn opens its own.
-        _clear_cancel(session_id)
         # Subprocess wrote every nested Call directly to the per-session
         # git history via its OWN SessionStore. Parent worker's cached
         # SessionMemoryIndex never observed those writes — drop the
