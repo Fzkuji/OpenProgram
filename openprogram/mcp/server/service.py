@@ -10,7 +10,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Protocol
 
 import mcp.types as mcp_types
 import anyio
@@ -49,6 +49,35 @@ class ActiveMCPRequest:
     client_id: str
     thread_cancel: threading.Event
     tool_cancel: asyncio.Event
+
+
+class _RegisterCancelEvent(Protocol):
+    def __call__(
+        self,
+        session_id: str,
+        event: threading.Event,
+        *,
+        execution_id: str,
+    ) -> bool: ...
+
+
+class _UnregisterCancelEvent(Protocol):
+    def __call__(
+        self,
+        session_id: str,
+        event: threading.Event,
+        *,
+        execution_id: str,
+    ) -> None: ...
+
+
+class _CurrentCancelEvent(Protocol):
+    def __call__(
+        self,
+        session_id: str,
+        *,
+        execution_id: str,
+    ) -> threading.Event | None: ...
 
 
 def _default_config() -> Mapping[str, Any]:
@@ -398,9 +427,9 @@ class MCPService:
         registry_get: Callable[[str], AgentTool | None] | None = None,
         registry_exposed_names: Callable[[], set[str]] | None = None,
         process_user_turn: Callable[..., Any] | None = None,
-        register_cancel_event: Callable[[str, threading.Event], None] | None = None,
-        unregister_cancel_event: Callable[[str, threading.Event], None] | None = None,
-        current_cancel_event: Callable[[str], threading.Event | None] | None = None,
+        register_cancel_event: _RegisterCancelEvent | None = None,
+        unregister_cancel_event: _UnregisterCancelEvent | None = None,
+        current_cancel_event: _CurrentCancelEvent | None = None,
         acquire_cancel_cleanup: Callable[[str, threading.Event], bool] | None = None,
         release_cancel_cleanup: Callable[[str, threading.Event], None] | None = None,
         cancel_execution: Callable[[str], Any] | None = None,
