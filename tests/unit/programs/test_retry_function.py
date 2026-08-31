@@ -11,6 +11,7 @@ authoritative DAG node) and ``handle_retry_function`` (re-dispatch wiring).
 from __future__ import annotations
 
 import asyncio
+import inspect
 from types import SimpleNamespace
 
 import pytest
@@ -436,3 +437,77 @@ def test_retry_run_is_sibling_and_only_active_head_renders(tmp_path):
     branch_ids = [m["id"] for m in store.get_branch("s1")]
     assert "call1" in branch_ids
     assert "call2" not in branch_ids
+
+
+def test_fn_run_siblings_sort_once_with_stable_source_positions():
+    from openprogram.webui.ws_actions import session as ws_session
+
+    messages = [
+        {"id": "internal", "role": "code", "predecessor": "p", "created_at": 1},
+        {"id": "run-late", "role": "code", "predecessor": "p", "created_at": 2},
+        {"id": "tool", "role": "tool", "predecessor": "p", "created_at": 0},
+        {"id": "run-early", "role": "code", "predecessor": "p", "created_at": 1},
+        {"id": "other", "role": "code", "predecessor": "other-p", "created_at": 0},
+        {"id": "run-tied", "role": "code", "predecessor": "p", "created_at": 1},
+    ]
+    by_id = {message["id"]: message for message in messages}
+    ordered = ws_session._ordered_fn_run_siblings(
+        messages,
+        {"run-late", "run-early", "run-tied"},
+        by_id,
+        "run-late",
+        lambda message: message.get("predecessor"),
+    )
+
+    assert ordered == ["run-early", "run-tied", "run-late"]
+    assert "other" not in ordered
+    assert "internal" not in ordered
+    assert "tool" not in ordered
+
+
+@pytest.mark.parametrize("message_id", ["unknown", None])
+def test_fn_run_siblings_handles_unknown_and_malformed_ids(message_id):
+    from openprogram.webui.ws_actions import session as ws_session
+
+    messages = [
+        {"id": "duplicate", "role": "code", "predecessor": None},
+        {"id": "duplicate", "role": "code", "predecessor": None},
+        {"role": "code", "predecessor": None},
+        object(),
+    ]
+    by_id = {"duplicate": messages[1], None: messages[2]}
+    result = ws_session._ordered_fn_run_siblings(
+        messages,
+        {"duplicate", None},
+        by_id,
+        message_id,
+        lambda message: message.get("predecessor"),
+    )
+
+    if message_id == "unknown":
+        assert result == []
+    else:
+        assert result == ["duplicate", "duplicate", None]
+
+
+def test_fn_run_siblings_does_not_call_list_index():
+    from openprogram.webui.ws_actions import session as ws_session
+
+    source = inspect.getsource(ws_session.handle_load_session)
+    assert "all_msgs.index" not in source
+
+    class IndexForbiddenList(list):
+        def index(self, value, *args):
+            raise AssertionError("sibling sorting must not scan with list.index")
+
+    messages = IndexForbiddenList([
+        {"id": "first", "role": "code", "predecessor": "p", "created_at": 1},
+        {"id": "second", "role": "code", "predecessor": "p", "created_at": 1},
+    ])
+    assert ws_session._ordered_fn_run_siblings(
+        messages,
+        {"first", "second"},
+        {message["id"]: message for message in messages},
+        "second",
+        lambda message: message.get("predecessor"),
+    ) == ["first", "second"]

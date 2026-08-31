@@ -234,6 +234,40 @@ def _compaction_exec_at(
     return at
 
 
+def _ordered_fn_run_siblings(
+    all_msgs: list[dict],
+    fn_run_ids: set,
+    by_id_all: dict,
+    mid_,
+    norm_pred,
+) -> list:
+    """Return fn-run sibling ids in timestamp and source order."""
+    try:
+        src = by_id_all.get(mid_)
+    except TypeError:
+        return []
+    if not isinstance(src, dict):
+        return []
+    pred = norm_pred(src)
+    indexed = list(enumerate(all_msgs))
+    sibs = [
+        (mm, position)
+        for position, mm in indexed
+        if isinstance(mm, dict)
+        and _fn_run_id_in(mm.get("id"), fn_run_ids)
+        and norm_pred(mm) == pred
+    ]
+    sibs.sort(key=lambda item: (item[0].get("created_at") or 0, item[1]))
+    return [item[0].get("id") for item in sibs]
+
+
+def _fn_run_id_in(message_id, fn_run_ids: set) -> bool:
+    try:
+        return message_id in fn_run_ids
+    except TypeError:
+        return False
+
+
 def splice_compaction_event_rows(
     shown: list[dict],
     graph: list[dict],
@@ -850,7 +884,14 @@ async def handle_load_session(ws, cmd: dict):
         # all root-level calls AND their predecessor-less sub-calls (the
         # "1/12" the user saw). Restrict the sibling set to fn-run entry
         # nodes so a fresh, model-anchored session shows exactly 2/2.
-        by_id_all = {mm.get("id"): mm for mm in all_msgs}
+        by_id_all = {}
+        for mm in all_msgs:
+            if not isinstance(mm, dict):
+                continue
+            try:
+                by_id_all[mm.get("id")] = mm
+            except TypeError:
+                continue
 
         def _norm_pred(mm):
             """The fork-point id of a run: its conversation predecessor,
@@ -860,25 +901,25 @@ async def handle_load_session(ws, cmd: dict):
             p = mm.get("predecessor") or mm.get("caller") or None
             return None if p == "ROOT" else p
 
-        _fn_run_ids = {
-            mm.get("id") for mm in all_msgs
-            if mm.get("role") in ("tool", "code")
-            and _is_top_function_run(mm, by_id_all)
-        }
-
+        _fn_run_ids = set()
+        for mm in all_msgs:
+            if not isinstance(mm, dict):
+                continue
+            message_id = mm.get("id")
+            try:
+                if (
+                    mm.get("role") in ("tool", "code")
+                    and _is_top_function_run(mm, by_id_all)
+                ):
+                    _fn_run_ids.add(message_id)
+            except TypeError:
+                continue
         def _fn_run_siblings(mid_):
             """Ordered ids of the fn-run entries sharing ``mid_``'s
             predecessor (self included), by created_at then insertion."""
-            src = by_id_all.get(mid_)
-            if src is None:
-                return []
-            pred = _norm_pred(src)
-            sibs = [
-                mm for mm in all_msgs
-                if mm.get("id") in _fn_run_ids and _norm_pred(mm) == pred
-            ]
-            sibs.sort(key=lambda x: (x.get("created_at") or 0, all_msgs.index(x)))
-            return [mm.get("id") for mm in sibs]
+            return _ordered_fn_run_siblings(
+                all_msgs, _fn_run_ids, by_id_all, mid_, _norm_pred,
+            )
 
         shown = []
         for m in chain:

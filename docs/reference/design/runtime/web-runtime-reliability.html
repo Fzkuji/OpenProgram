@@ -546,6 +546,7 @@
           <tr><td>WebSocket 命令级异常隔离</td><td><span class="status partial">部分</span></td><td>handler 异常返回低敏 <code>action_error</code> 并保持连接。</td><td>修复前端 code 分类和所有 action 的统一 envelope。</td></tr>
           <tr><td>工具输出按需读取</td><td><span class="status done">已有</span></td><td>超过 32 KiB 的工具结果在 wire 中截断，展开时按 session/node/caller 授权读取。</td><td>把 Graph、context tree 和其他重复大字段纳入 projection。</td></tr>
           <tr><td>流式渲染合并与长列表回收</td><td><span class="status done">已有</span></td><td>text/thinking delta 按 animation frame 合并；MessageRow 使用稳定 selector；长列表计算 live rows。</td><td>补性能预算，确保新的 error/delta store 不破坏这些性质。</td></tr>
+          <tr><td>R6 fn-run sibling 排序位置索引</td><td><span class="status done">局部完成</span></td><td><code>_fn_run_siblings</code> 使用一次枚举生成原始位置，并按 <code>created_at or 0</code> 与原始位置排序；重复、缺失和未知 ID 有回归覆盖，排序不再调用 <code>all_msgs.index</code>。</td><td>R6 其余会话加载计算/发送分离、增量恢复和完整 event-loop 预算仍未实现；本行不表示 R6 整体完成。</td></tr>
           <tr><td>后台 Job error 字段</td><td><span class="status partial">部分</span></td><td>Runner 广播和 TypeScript 类型包含 <code>error</code>。</td><td>状态存储、卡片渲染、刷新恢复和 Toast/错误中心关联。</td></tr>
           <tr><td>会话增量恢复</td><td><span class="status gap">未接入</span></td><td>MessageStore 模块定义 seq/delta/full，但生产 server/web 没有使用。</td><td>按已确定的 SessionDB/DAG 单一来源实现 projection recovery，并删除独立 store 接口。</td></tr>
           <tr><td>每连接 WebSocket 背压</td><td><span class="status done">complete</span></td><td>每个生产连接使用单一 sender；queued + in-flight 总量不超过 256 帧 / 4 MiB；慢客户端并发发送峰值从 400 降为 1。规格审查、质量审查和完整 Python gate 均为 PASS。</td><td>无。</td></tr>
