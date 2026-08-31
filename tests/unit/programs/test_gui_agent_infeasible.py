@@ -93,6 +93,9 @@ def test_gui_agent_real_modules_preserve_infeasible(
     """Import the committed harness module graph before replacing leaf calls."""
     import importlib
 
+    if importlib.util.find_spec("cv2") is None:
+        pytest.skip("real GUI harness test requires the optional opencv-python dependency")
+
     execute_task = importlib.import_module("gui_harness.tasks.execute_task")
     result_module = importlib.import_module("gui_harness.tasks.result")
     monkeypatch.setattr(
