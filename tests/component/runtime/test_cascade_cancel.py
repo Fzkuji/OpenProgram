@@ -306,12 +306,14 @@ def test_spawn_inside_job_records_parent(store_fixture, fake_worker,
     def fake_run(*, session_id, prompt, agent_id, branch_from=None,
                  label=None, spawn_caller=None, advance_head=True):
         from openprogram.agent.sub_agent_run import AgentTurnResult
-        # Simulate a tool inside this turn spawning a sub-job.
-        child_id = runner.spawn_job(
-            session_id="p2", prompt="inner child", agent_id="main",
-            parent_msg_id="a_p2",
-        )
-        recorded["child_id"] = child_id
+        # Simulate only the outer turn's tool call. Letting the same fake
+        # spawn from the child would replace this direct-child id with a
+        # recursively created descendant before the assertion runs.
+        if prompt == "outer":
+            recorded["child_id"] = runner.spawn_job(
+                session_id="p2", prompt="inner child", agent_id="main",
+                parent_msg_id="a_p2",
+            )
         return AgentTurnResult(head_id="h", final_text="ok",
                                failed=False, error=None)
 
@@ -326,6 +328,81 @@ def test_spawn_inside_job_records_parent(store_fixture, fake_worker,
     assert "child_id" in recorded
     child_job = runner.await_job(recorded["child_id"], timeout=5.0)
     assert child_job.parent_job_id == parent
+
+
+def test_concurrent_spawns_keep_their_own_parent(store_fixture, fake_worker,
+                                                  monkeypatch):
+    """Concurrent parent turns do not exchange their ambient job ids."""
+    monkeypatch.setenv("OPENPROGRAM_JOB_WORKERS", "4")
+    import openprogram.agent.job.runner as runner_mod
+    runner_mod.shutdown_runner()
+    from openprogram.agent.job import get_runner
+    from openprogram.agent.sub_agent_run import AgentTurnResult
+
+    runner = get_runner()
+    parents_ready = threading.Barrier(2)
+    children = {}
+
+    def fake_run(*, session_id, prompt, agent_id, branch_from=None,
+                 label=None, spawn_caller=None, advance_head=True):
+        if prompt in {"outer-1", "outer-2"}:
+            parents_ready.wait(timeout=5.0)
+            child_session = "p2" if prompt == "outer-1" else "p3"
+            children[prompt] = runner.spawn_job(
+                session_id=child_session,
+                prompt=f"child-of-{prompt}",
+                agent_id="main",
+                parent_msg_id=f"a_{child_session}",
+            )
+        return AgentTurnResult(
+            head_id="h", final_text="ok", failed=False, error=None,
+        )
+
+    monkeypatch.setattr(
+        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
+    )
+    parent_1 = runner.spawn_job(
+        session_id="p1", prompt="outer-1", agent_id="main",
+        parent_msg_id="a_p1",
+    )
+    parent_2 = runner.spawn_job(
+        session_id="p2", prompt="outer-2", agent_id="main",
+        parent_msg_id="a_p2",
+    )
+    runner.await_job(parent_1, timeout=5.0)
+    runner.await_job(parent_2, timeout=5.0)
+
+    child_1 = runner.await_job(children["outer-1"], timeout=5.0)
+    child_2 = runner.await_job(children["outer-2"], timeout=5.0)
+    assert child_1.parent_job_id == parent_1
+    assert child_2.parent_job_id == parent_2
+
+
+def test_worker_clears_job_context_after_execution(store_fixture, fake_worker,
+                                                    monkeypatch):
+    """The executor thread retains no job identity after ``_run_one``."""
+    monkeypatch.setenv("OPENPROGRAM_JOB_WORKERS", "1")
+    import openprogram.agent.job.runner as runner_mod
+    runner_mod.shutdown_runner()
+    from openprogram.agent.job import get_runner
+
+    runner = get_runner()
+    job_id = runner.spawn_job(
+        session_id="p1", prompt="one job", agent_id="main",
+        parent_msg_id="a_p1",
+    )
+    runner.await_job(job_id, timeout=5.0)
+
+    def inspect_worker_context():
+        return (
+            runner_mod._current_job_id.get(),
+            runner_mod._current_job_runner.get(),
+        )
+
+    assert runner._pool.submit(inspect_worker_context).result(timeout=5.0) == (
+        None,
+        None,
+    )
 
 
 def test_session_cancel_clears_inbox_with_sender_notice(store_fixture):
