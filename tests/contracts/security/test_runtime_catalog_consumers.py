@@ -493,12 +493,19 @@ def test_model_listing_fixed_google_probe_uses_fixed_registry_client(
 
 
 def test_models_dev_public_loader_uses_fixed_registry_client(
-    monkeypatch, managed_clients
+    monkeypatch, managed_clients, tmp_path
 ):
     from openprogram.providers.sources import models_dev
 
-    monkeypatch.setattr(models_dev, "_read_disk_cache", lambda: {})
-    models_dev._cache.update({"data": None, "fetched_at": 0.0})
+    monkeypatch.setattr(
+        models_dev, "_disk_cache_path", lambda: tmp_path / "models_dev.json"
+    )
+    models_dev._cache.update({
+        "data": None,
+        "fetched_at": 0.0,
+        "last_attempt_at": 0.0,
+        "refreshing": False,
+    })
 
     models_dev.lookup("openai", "gpt-test")
 

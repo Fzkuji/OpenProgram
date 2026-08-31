@@ -480,14 +480,22 @@ def test_codex_probe_hides_4xx_peer_body(monkeypatch, server):
 
 
 def test_models_dev_public_loader_real_managed_success(
-    monkeypatch, server, real_managed_http
+    monkeypatch, server, real_managed_http, tmp_path
 ):
     from openprogram.providers.sources import models_dev
 
     origin = f"http://public.test:{server.port}"
     monkeypatch.setattr(models_dev, "_CATALOGUE_URL", origin + "/api.json")
     monkeypatch.setattr(models_dev, "_write_disk_cache", lambda _data: None)
-    models_dev._cache.update({"data": None, "fetched_at": 0.0})
+    monkeypatch.setattr(
+        models_dev, "_disk_cache_path", lambda: tmp_path / "models_dev.json"
+    )
+    models_dev._cache.update({
+        "data": None,
+        "fetched_at": 0.0,
+        "last_attempt_at": 0.0,
+        "refreshing": False,
+    })
     registry = dict(safe_http.CONSUMER_REGISTRY)
     spec = registry["webui.model_listing.fixed"]
     registry["webui.model_listing.fixed"] = replace(
