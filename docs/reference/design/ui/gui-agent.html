@@ -33,6 +33,16 @@
 <h2>Result contract</h2>
 <p>Both desktop and browser modes return <code>status</code>, deterministic <code>success</code>, <code>reason_code</code>, <code>summary</code>, and <code>handoff_instruction</code>. Desktop compatibility keeps <code>infeasible_declared</code>, step counts, timing, and history. Browser compatibility keeps backend and WebSession metadata.</p>
 
+<h3>User-visible status</h3>
+<p>The Function card presents the GUI task outcome, not the internal worker lifecycle. A persisted node may use <code>completed</code> to mean that its worker returned a structured result, but that transport state is not shown as the task result. <code>success</code> remains a compatibility field derived from <code>status</code>; it is never an independent decision or a second visible status.</p>
+<table><thead><tr><th>GUI result</th><th>Function card</th><th>Meaning</th></tr></thead><tbody>
+<tr><td>Running outer node</td><td>Running</td><td>The task has not produced a terminal result yet. A stale output cannot override this state.</td></tr>
+<tr><td><code>status=succeeded</code></td><td>Succeeded</td><td>The requested GUI task was verified.</td></tr>
+<tr><td><code>status=failed</code></td><td>Failed</td><td>The task ended without satisfying the request. The summary states why.</td></tr>
+<tr><td><code>status=infeasible</code></td><td>Needs takeover</td><td>A concrete blocker requires the user's action. The handoff instruction is shown.</td></tr>
+<tr><td>Runtime exception, error node, or invalid GUI result contract</td><td>Error</td><td>The function infrastructure raised an error or failed to return a recognized GUI task status.</td></tr>
+</tbody></table>
+
 <h2>Trust and lifecycle boundaries</h2>
 <ul>
 <li>Desktop mode records the frontmost app, must validate the current target window before a coordinate action, and must not learn components from another app. A window outside the observed macOS Space receives one bounded Window-menu recovery; continued invisibility terminates as infeasible with a handoff instruction.</li>
@@ -61,6 +71,7 @@
 <li>Done, infeasible, step exhaustion, invalid planner output, cancellation, and exceptions produce deterministic terminal statuses.</li>
 <li>The exact fail blocker reaches the user-facing handoff text.</li>
 <li>Desktop and built-in-browser invocations expose the same core result fields.</li>
+<li>A terminal GUI Function card displays Succeeded, Failed, or Needs takeover from the structured GUI result. It never labels a failed GUI result Completed merely because the worker returned normally.</li>
 <li>Long desktop and browser tasks retain bounded state, avoid repeated actions, and complete only after verification.</li>
 <li>Real acceptance uses the default OpenProgram App and includes one multi-step desktop task and one multi-step built-in-browser task.</li>
 </ol>
@@ -70,8 +81,9 @@
 <tr><td>Exact-Page Web Use lifecycle and backend isolation</td><td class="yes">Implemented and component-tested</td></tr>
 <tr><td>Infeasible results force <code>success=false</code></td><td class="yes">Implemented and regression-tested</td></tr>
 <tr><td>Single public GUI Agent node, deterministic all-terminal result, and common desktop/Web result fields</td><td class="yes">Implemented and regression-tested</td></tr>
+<tr><td>User-visible GUI result status overrides the internal completed transport state</td><td class="pending">Specified; implementation and live acceptance pending</td></tr>
 <tr><td>Canonical action/observe ownership and compatibility delegation</td><td class="yes">Implemented and regression-tested</td></tr>
 <tr><td>Real multi-step desktop acceptance from the source checkout</td><td class="yes">Accepted with a 16-step Finder task that created and visually verified nested folders, plus Calculator input/result verification</td></tr>
-<tr><td>Real built-in-browser acceptance through the refreshed default App</td><td class="pending">Pending deployment of the uncommitted bridge change</td></tr>
+<tr><td>Real built-in-browser acceptance through the refreshed default App</td><td class="yes">Accepted through the direct Function entry with persisted Page-unavailable failure and handoff output</td></tr>
 </tbody></table>
 </main></body></html>

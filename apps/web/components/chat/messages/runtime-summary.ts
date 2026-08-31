@@ -27,6 +27,7 @@ export type RuntimeConclusion = {
 
 const RUNNING = new Set(["pending", "running", "streaming", "cancelling"]);
 const WORKFLOW_FNS = new Set(["auto_workflow", "agentic_workflow"]);
+const GUI_OUTCOMES = new Set(["succeeded", "failed", "infeasible", "cancelled"]);
 
 function isWorkflowName(fnName: string): boolean {
   return WORKFLOW_FNS.has(fnName);
@@ -90,12 +91,17 @@ function workflowPayload(output: unknown): Record<string, unknown> | null {
 
 function resolvedStatus(input: RuntimeSummaryInput): string {
   const outer = (input.status || input.tree?.status || "").toLowerCase();
-  if (RUNNING.has(outer) || !isWorkflowName(input.fnName)) return outer;
+  if (RUNNING.has(outer)) return outer;
 
   const payload = workflowPayload(input.tree?.output);
   const inner = String(payload?.status || "").toLowerCase();
+  const outerIsGeneric = ["", "completed", "done", "success"].includes(outer);
+  if (outerIsGeneric && input.fnName === "gui_agent") {
+    return GUI_OUTCOMES.has(inner) ? inner : "error";
+  }
+  if (!isWorkflowName(input.fnName)) return outer;
   if (
-    (outer === "" || outer === "completed" || outer === "done" || outer === "success")
+    outerIsGeneric
     && ["capped", "interrupted", "cancelled", "canceled", "failed", "error"].includes(inner)
   ) {
     return inner;
@@ -212,41 +218,61 @@ export function runtimeSummaryLabel(input: RuntimeSummaryInput): string {
   const rawStatus = resolvedStatus(input);
   const running = RUNNING.has(rawStatus);
   const cancelled = rawStatus === "cancelled" || rawStatus === "canceled";
-  const cancelling = rawStatus === "cancelling";
   const interrupted = rawStatus === "interrupted";
   const capped = rawStatus === "capped";
-  const failed = rawStatus === "error" || rawStatus === "failed" || Boolean(input.tree?.error);
-  const status = cancelling
-    ? text("Cancelling…", "正在取消")
-    : running
-    ? text("Running…", "运行中…")
-    : cancelled
-      ? text("Cancelled", "已取消")
-      : interrupted
-        ? text("Interrupted", "已中断")
-        : capped
-          ? text("Stopped", "已停止")
-          : failed
-            ? text("Error", "出错")
-            : text("Completed", "已完成");
+  const guiFailed = input.fnName === "gui_agent" && rawStatus === "failed";
+  const guiInfeasible = input.fnName === "gui_agent" && rawStatus === "infeasible";
+  const guiSucceeded = input.fnName === "gui_agent" && rawStatus === "succeeded";
+  const errored = rawStatus === "error"
+    || (Boolean(input.tree?.error) && !(running || cancelled || interrupted || capped))
+    || (rawStatus === "failed" && !guiFailed);
+  const statusByResult: Record<string, string> = {
+    cancelling: text("Cancelling…", "正在取消"),
+    pending: text("Running…", "运行中…"),
+    running: text("Running…", "运行中…"),
+    streaming: text("Running…", "运行中…"),
+    cancelled: text("Cancelled", "已取消"),
+    canceled: text("Cancelled", "已取消"),
+    interrupted: text("Interrupted", "已中断"),
+    capped: text("Stopped", "已停止"),
+  };
+  const status = errored
+    ? text("Error", "出错")
+    : guiFailed
+      ? text("Failed", "失败")
+      : guiInfeasible
+        ? text("Needs takeover", "需要接手")
+        : guiSucceeded
+          ? text("Succeeded", "成功")
+          : statusByResult[rawStatus] || text("Completed", "已完成");
   const steps = countRuntimeSteps(input.tree);
-  const payload = isWorkflowName(input.fnName)
+  const payload = isWorkflowName(input.fnName) || input.fnName === "gui_agent"
     ? workflowPayload(input.tree?.output)
     : null;
   const handoffPreview = payload?.summary_kind === "workflow_handoff_v1"
     ? preview(payload.summary)
     : "";
+  const guiPreview = input.fnName === "gui_agent"
+    ? preview(guiInfeasible
+      ? payload?.handoff_instruction || payload?.summary
+      : payload?.summary)
+    : "";
   const stepCount = text(
     `${steps} ${steps === 1 ? "step" : "steps"}`,
     `${steps} 步`,
   );
-  const result = running
-    ? (steps ? stepCount : text("Starting", "正在启动"))
-    : cancelled || interrupted || capped
-      ? stepCount
-      : failed
-        ? (preview(input.tree?.error) || stepCount)
-        : (handoffPreview || (payload ? stepCount : preview(input.tree?.output)) || stepCount);
+  let result = stepCount;
+  if (running) {
+    result = steps ? stepCount : text("Starting", "正在启动");
+  } else if (errored) {
+    result = preview(input.tree?.error) || preview(input.tree?.output) || stepCount;
+  } else if (guiInfeasible || guiFailed || guiSucceeded) {
+    result = guiPreview || stepCount;
+  } else if (!(cancelled || interrupted || capped)) {
+    result = handoffPreview
+      || (payload ? stepCount : preview(input.tree?.output))
+      || stepCount;
+  }
   const elapsed = durationMs(input);
   return [input.fnName, status, elapsed === null ? "" : formatDuration(elapsed), result]
     .filter(Boolean)

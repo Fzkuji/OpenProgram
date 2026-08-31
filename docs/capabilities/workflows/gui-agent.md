@@ -40,6 +40,8 @@ Desktop observations include the frontmost application and screenshot coordinate
 
 Desktop and built-in-browser runs share the same terminal fields: `status` (`succeeded`, `infeasible`, `failed`, or `cancelled`), `success`, `reason_code`, `summary`, and `handoff_instruction`. The runner, not the conclusion model, determines success. Desktop results additionally include step history and timing; browser results include backend and WebSession details.
 
+The Function card displays that task result directly: `Succeeded` for a verified result, `Failed` when the task ended without satisfying the request, and `Needs takeover` when the handoff instruction requires user action. `Error` identifies a runtime exception or an invalid GUI result contract. An internal completed worker state never changes a failed GUI result into `Completed`.
+
 ## Dependency notes
 
 - Product runtimes do not install PyTorch or EasyOCR.

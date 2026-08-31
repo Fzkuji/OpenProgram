@@ -40,6 +40,8 @@ openprogram programs run gui_agent -a task="检查并完成当前可见表单" -
 
 桌面和内置浏览器运行共用终态字段：`status`（`succeeded`、`infeasible`、`failed` 或 `cancelled`）、`success`、`reason_code`、`summary` 和 `handoff_instruction`。成功与否由 runner 决定，不由 conclusion 模型决定。桌面结果还包含步骤历史和耗时；浏览器结果还包含 backend 和 WebSession 信息。
 
+Function 卡片直接显示这个任务结果：验证成功显示 `Succeeded`，任务结束但未满足请求显示 `Failed`，接手说明要求用户操作时显示 `Needs takeover`。`Error` 表示运行时异常或不符合契约的 GUI 结果。内部 worker 的 completed 状态不会把失败的 GUI 结果显示成 `Completed`。
+
 ## 依赖注意
 
 - 产品 runtime 不安装 PyTorch 或 EasyOCR。
