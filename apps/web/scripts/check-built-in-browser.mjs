@@ -12,6 +12,7 @@ const browserHome = read("../components/center-tabs/browser-home-page.tsx");
 const browserControls = read("../components/center-tabs/browser-controls.tsx");
 const browserGlyph = read("../components/center-tabs/browser-glyph.tsx");
 const browserPrefs = read("../lib/browser-prefs.ts");
+const ntpShortcuts = read("../lib/ntp-shortcuts.ts");
 const browserLayoutSource = read("../lib/browser-layout.ts");
 const webTabPane = read("../components/center-tabs/web-tab-pane.tsx");
 const mainMenu = read("../components/center-tabs/main-menu.tsx");
@@ -55,6 +56,9 @@ assert.match(browserHome, /canImport && showImport/);
 assert.doesNotMatch(browserHome, /browser-import-dismissed/);
 assert.doesNotMatch(browserHome, /readBookmarks|removeBookmark|subscribeBookmarks|ntpBookmarks|ntpBookmark/);
 assert.match(browserHome, /readShortcuts/);
+assert.doesNotMatch(ntpShortcuts, /google\.com\/s2\/favicons|function faviconUrl/);
+assert.doesNotMatch(browserHome, /faviconUrl|<img/);
+assert.match(browserHome, /styles\.ntpTileInitial/);
 assert.match(browserHome, /className=\{styles\.webToolbar\}/);
 assert.match(browserHome, /<BookmarkBar ownerId=\{menuOwnerId\} onNavigate=\{go\}/);
 assert.match(browserHome, /<BrowserMenu[\s\S]*ownerId=\{menuOwnerId\}/);
@@ -132,9 +136,10 @@ assert.match(browserControls, /browserActionPrefix\(ownerId\)/);
 assert.match(browserControls, /bookmarkFolderActionPrefix\(ownerId, folder\.id\)/);
 assert.match(
   browserControls,
-  /iconUrl:\s*node\.faviconUrl\s*\|\|\s*faviconUrl\(node\.url\)/,
-  "desktop bookmark-folder payloads must include each website favicon",
+  /iconUrl:\s*node\.faviconUrl/,
+  "desktop bookmark-folder payloads may preserve an imported website favicon",
 );
+assert.doesNotMatch(browserControls, /faviconUrl\(node\.url\)/);
 assert.match(browserControls, /icon:\s*"folder"/);
 assert.match(
   browserControls,

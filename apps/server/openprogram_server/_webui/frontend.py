@@ -46,6 +46,56 @@ def out_dir() -> Path:
 # Source roots whose newest mtime invalidates the export.
 _SOURCE_ROOTS = ("app", "components", "lib", "package.json")
 
+_PRECOMPRESSED_MEDIA_TYPES = frozenset({
+    "application/gzip",
+    "application/pdf",
+    "application/x-7z-compressed",
+    "application/x-gzip",
+    "application/x-rar-compressed",
+    "application/zip",
+    "font/woff",
+    "font/woff2",
+    "image/avif",
+    "image/gif",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/x-icon",
+})
+
+
+def _is_precompressed_media_type(value: str) -> bool:
+    media_type = value.partition(";")[0].strip().lower()
+    return (
+        media_type in _PRECOMPRESSED_MEDIA_TYPES
+        or media_type.startswith(("audio/", "video/"))
+    )
+
+
+def _accepts_gzip(value: str) -> bool:
+    """Select gzip with explicit coding precedence over ``*``."""
+    explicit: list[float] = []
+    wildcard: list[float] = []
+    for member in value.split(","):
+        parts = [part.strip() for part in member.split(";")]
+        coding = parts[0].lower()
+        if coding not in {"gzip", "*"}:
+            continue
+        quality = 1.0
+        for parameter in parts[1:]:
+            name, separator, raw = parameter.partition("=")
+            if separator and name.strip().lower() == "q":
+                try:
+                    quality = float(raw.strip())
+                except ValueError:
+                    quality = 0.0
+                if not 0.0 <= quality <= 1.0:
+                    quality = 0.0
+                break
+        (explicit if coding == "gzip" else wildcard).append(quality)
+    selected = explicit if explicit else wildcard
+    return bool(selected and max(selected) > 0.0)
+
 
 def _newest_source_mtime(wd: Path) -> float:
     newest = 0.0
@@ -127,17 +177,41 @@ def ensure_frontend_built() -> None:
 def mount_frontend(app) -> None:
     """Register static serving + SPA fallback. Call LAST in create_app()."""
     from fastapi.responses import FileResponse, PlainTextResponse
-    from starlette.middleware.gzip import GZipMiddleware
+    from starlette.datastructures import Headers
+    from starlette.middleware.gzip import (
+        GZipMiddleware,
+        GZipResponder,
+        IdentityResponder,
+    )
 
-    class _StaticTextGZipMiddleware(GZipMiddleware):
+    class _MimeAwareGZipResponder(GZipResponder):
+        async def send_with_compression(self, message) -> None:  # noqa: ANN001
+            if message["type"] == "http.response.start":
+                headers = Headers(raw=message["headers"])
+                if _is_precompressed_media_type(headers.get("content-type", "")):
+                    self.initial_message = message
+                    self.content_encoding_set = "content-encoding" in headers
+                    self.content_type_is_excluded = True
+                    return
+            await super().send_with_compression(message)
+
+    class _MimeAwareGZipMiddleware(GZipMiddleware):
         async def __call__(self, scope, receive, send) -> None:  # noqa: ANN001
-            suffix = Path(scope.get("path", "")).suffix.lower()
-            if scope["type"] == "http" and suffix in {".png", ".woff2"}:
+            if scope["type"] != "http":
                 await self.app(scope, receive, send)
                 return
-            await super().__call__(scope, receive, send)
+            headers = Headers(scope=scope)
+            if _accepts_gzip(headers.get("Accept-Encoding", "")):
+                responder = _MimeAwareGZipResponder(
+                    self.app,
+                    self.minimum_size,
+                    compresslevel=self.compresslevel,
+                )
+            else:
+                responder = IdentityResponder(self.app, self.minimum_size)
+            await responder(scope, receive, send)
 
-    app.add_middleware(_StaticTextGZipMiddleware, minimum_size=500, compresslevel=6)
+    app.add_middleware(_MimeAwareGZipMiddleware, minimum_size=500, compresslevel=6)
 
     out = out_dir()
 

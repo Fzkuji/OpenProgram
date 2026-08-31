@@ -22,7 +22,6 @@ import {
 } from "@/lib/browser-prefs";
 import {
   addShortcut,
-  faviconUrl,
   hostOf,
   readShortcuts,
   removeShortcut,
@@ -47,30 +46,14 @@ function hostColor(host: string): string {
 
 function ShortcutTile({ shortcut, onOpen }: { shortcut: Shortcut; onOpen(): void }) {
   const { text } = useTranslation();
-  const [broken, setBroken] = useState(false);
   const host = hostOf(shortcut.url);
-  const src = faviconUrl(shortcut.url);
   return (
     <div className={styles.ntpTile}>
       <button type="button" className={styles.ntpTileOpen} onClick={onOpen} title={shortcut.url}>
         <span className={styles.ntpTileIcon}>
-          {broken || !src ? (
-            <span className={styles.ntpTileInitial} style={{ background: hostColor(host || shortcut.label) }}>
-              {(shortcut.label || host || "?").charAt(0).toUpperCase()}
-            </span>
-          ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={src}
-              alt=""
-              width={24}
-              height={24}
-              onError={() => setBroken(true)}
-              onLoad={(event) => {
-                if (event.currentTarget.naturalWidth <= 16) setBroken(true);
-              }}
-            />
-          )}
+          <span className={styles.ntpTileInitial} style={{ background: hostColor(host || shortcut.label) }}>
+            {(shortcut.label || host || "?").charAt(0).toUpperCase()}
+          </span>
         </span>
         <span className={styles.ntpTileLabel}>{shortcut.label}</span>
       </button>

@@ -58,6 +58,14 @@ def client(out_tree):
             headers={"Content-Encoding": "gzip"},
         )
 
+    @app.get("/api/file-raw")
+    async def file_raw():
+        return Response(b"\x89PNG\r\n\x1a\n" + b"png" * 400, media_type="image/png")
+
+    @app.get("/files/raw")
+    async def files_raw():
+        return Response(b"wOF2" + b"font" * 400, media_type="font/woff2")
+
     frontend.mount_frontend(app)
     return TestClient(app)
 
@@ -125,6 +133,49 @@ def test_precompressed_static_formats_are_not_gzipped(client, out_tree, path, so
 
     assert response.status_code == 200
     assert "content-encoding" not in response.headers
+    assert response.content == source
+
+
+@pytest.mark.parametrize(
+    ("path", "query"),
+    [
+        ("/api/file-raw", {"path": "image.png"}),
+        ("/files/raw", {"path": "font.woff2"}),
+    ],
+)
+def test_precompressed_response_mime_is_not_gzipped(client, path, query):
+    response = client.get(
+        path,
+        params=query,
+        headers={"Accept-Encoding": "gzip"},
+    )
+
+    assert response.status_code == 200
+    assert "content-encoding" not in response.headers
+
+
+@pytest.mark.parametrize(
+    ("accept_encoding", "compressed"),
+    [
+        ("gzip;q=0", False),
+        ("GZip", True),
+        ("gzip;q=0, *;q=1", False),
+        ("gzip;q=0.5, *;q=0", True),
+        ("br;q=1, *;q=0.5", True),
+    ],
+)
+def test_gzip_accept_encoding_quality(client, out_tree, accept_encoding, compressed):
+    _wd, out = out_tree
+    source = b"const payload = 'compressible';\n" * 400
+    (out / "_next" / "static" / "chunks" / "app.js").write_bytes(source)
+
+    response = client.get(
+        "/_next/static/chunks/app.js",
+        headers={"Accept-Encoding": accept_encoding},
+    )
+
+    assert response.status_code == 200
+    assert (response.headers.get("content-encoding") == "gzip") is compressed
     assert response.content == source
 
 
