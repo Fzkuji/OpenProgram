@@ -111,7 +111,7 @@
           <div class="card status"><span class="tag now">Current</span><strong><code>agent()</code> 已使用当前 Runtime</strong><p><code>openprogram/agentic_programming/agent.py</code> 调用 <code>runtime.exec(..., execution_kind="agent")</code>，因此本来就适合在 Workflow DAG 内运行。</p></div>
           <div class="card status"><span class="tag now">Current</span><strong><code>run_agent_turn()</code> 是持久 Job 入口</strong><p>它创建或恢复 session Job，处理 worker claim、branch、head、archive、chain depth 等会话生命周期。</p></div>
           <div class="card status"><span class="tag remove">Resolved in workflow</span><strong>Workflow 创建曾走错层</strong><p><code>create_workflow</code> 的编写经 <code>_run_planner_turn() → agent()</code> 执行，归属当前 Workflow 的 public Agent Call；<code>run_agent_turn()</code> 仍仅供 Chat/CLI/Job。</p></div>
-          <div class="card status"><span class="tag now">Partial</span><strong>公共 <code>agent()</code> 结构化结果</strong><p>Runtime 已支持 <code>response_format</code>，公共 <code>agent()</code> 尚未透传；Workflow 规划器仍解析 JSON 文本。</p></div>
+          <div class="card status"><span class="tag keep">Current</span><strong>公共 <code>agent()</code> 已支持结构化结果</strong><p>公共 <code>agent()</code> 已把 <code>response_format</code> 透传到当前 Runtime，并原样返回经过验证的 JSON value；Workflow 规划器仍解析 JSON 文本。</p></div>
         </div>
         <table><thead><tr><th>位置</th><th>当前职责</th><th>问题</th><th>目标</th></tr></thead><tbody>
           <tr><td><code>agentic_programming.agent</code></td><td>当前 Runtime 内工具循环</td><td>参数能力不完整，DAG 标签不够明确</td><td>扩展为唯一公共 Agent 合同</td></tr>
@@ -166,10 +166,10 @@
     model: str = "",
     effort: str = "",
     tools: Sequence[str] | None = None,
-    response_format: type | dict | None = None,
+    response_format: dict | JsonSchemaOutput | None = None,
     max_iterations: int = 20,
     timeout_s: float | None = None,
-) -> str | dict:
+) -> str | dict | list | int | float | bool | None:
     ...</code></pre>
         <p><code>description</code> 只影响可见标签和 Call metadata；<code>agent_id</code> 复用 Agents 页面已有 profile resolver；显式 <code>model</code>/<code>tools</code> 覆盖 profile 对应字段。公开签名不加入 <code>session_id</code>、<code>branch_from</code>、<code>advance_head</code>、<code>archive_when_done</code> 或 <code>run_in_background</code>。</p>
       </section>
@@ -312,7 +312,7 @@ git diff --check</code></pre>
           <div class="card status"><span class="tag keep">Verified current</span><strong>Workflow selection/authoring 已走 public <code>agent()</code></strong><p><code>workflow._run_planner_turn()</code> 调用 <code>openprogram.agentic_programming.agent()</code>（受限 <code>PLANNER_TOOLS</code>）；auto selection 有 <code>AUTO_DECISION_ATTEMPTS</code> 上限。四个注册入口与源码分类的权威合同见authoring设计页。</p></div>
           <div class="card status"><span class="tag now">Partial</span><strong>Workflow 内嵌 <code>agent()</code> 仍用 session adapter</strong><p>legacy <code>code.py</code> 执行路径的 <code>_agent_function()</code> 仍绑定 session turn；项目 snapshot 执行已使用 public <code>agent()</code>。</p></div>
           <div class="card status"><span class="tag target">Pending</span><strong>统一 DAG 与 App 可视验收尚未完成</strong><p>组件测试已覆盖 reuse/create/revise/pin/resume；默认 App 中 selection Agent 节点、Conclusion 与 reload 行为仍待验收。</p></div>
-          <div class="card status"><span class="tag remove">Not implemented</span><strong>public <code>agent()</code> 结构化输出透传</strong><p>规划仍依赖模型返回 JSON 文本；Runtime 已支持 <code>response_format</code>，公共 <code>agent()</code> 尚未暴露该参数。</p></div>
+          <div class="card status"><span class="tag keep">Verified current</span><strong>public <code>agent()</code> 结构化输出透传</strong><p>公共 <code>agent()</code> 已接受裸 JSON Schema 或 <code>JsonSchemaOutput</code>，并原样返回 Runtime 验证后的 object、array、scalar 或 null。未请求结构化输出时继续保留文本和 legacy <code>{"text": ...}</code> 兼容行为；Workflow 规划器迁移不属于这项实现。</p></div>
         </div>
         <div class="footer">文档定位：本页是Agent执行语义的权威合同。Workflow发现、创建、修订、自动入口与源码分类以 <a href="./self-programming-workflow-authoring.html">authoring设计页</a> 为权威来源，其他页面不得复制出第二套入口合同。</div>
       </section>

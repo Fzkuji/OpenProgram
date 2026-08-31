@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import inspect
 from pathlib import Path
+from typing import get_type_hints
 
 import pytest
 
@@ -332,6 +333,10 @@ def test_agent_returns_validated_structured_value(
 
     assert seen == [response_format]
     assert result == expected
+
+
+def test_agent_public_type_hints_are_resolvable():
+    assert "response_format" in get_type_hints(agent)
 
 
 @pytest.mark.parametrize(
