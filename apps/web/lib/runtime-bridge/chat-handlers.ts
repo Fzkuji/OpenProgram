@@ -492,13 +492,28 @@ export function clearHydratedTreePaths(): void {
   hydratedTreePaths.clear();
 }
 
-/** A terminal session load proves a function run already finished before its
- *  HTTP acknowledgement registered the completion reload. */
+const terminalFunctionStatuses = new Set([
+  "cancelled",
+  "completed",
+  "done",
+  "error",
+  "failed",
+  "interrupted",
+  "succeeded",
+  "timeout",
+]);
+
+/** A terminal persisted head proves a function run finished before its HTTP
+ *  acknowledgement registered the completion reload. `run_active=false` is
+ *  insufficient: it can precede the final node write by a few milliseconds. */
 export function settleFunctionReloadAfterSessionLoad(
   sessionId: string,
-  runActive: boolean,
+  headStatus: unknown,
 ): void {
-  if (!runActive) {
+  if (
+    typeof headStatus === "string"
+    && terminalFunctionStatuses.has(headStatus.trim().toLowerCase())
+  ) {
     runtimeState.__reloadOnTaskClear.delete(sessionId);
   }
 }

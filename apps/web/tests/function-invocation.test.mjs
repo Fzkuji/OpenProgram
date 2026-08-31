@@ -301,14 +301,14 @@ test("a function completion never reloads a session left in the background", () 
   runtimeState.currentSessionId = previousRuntimeSession;
 });
 
-test("a terminal session load clears a late completion reload", () => {
+test("only a terminal head clears a late completion reload", () => {
   const sessionKey = "function-clear-before-http-response";
   runtimeState.__reloadOnTaskClear.clear();
   runtimeState.__reloadOnTaskClear.add(sessionKey);
 
-  settleFunctionReloadAfterSessionLoad(sessionKey, true);
+  settleFunctionReloadAfterSessionLoad(sessionKey, "running");
   assert.equal(runtimeState.__reloadOnTaskClear.has(sessionKey), true);
-  settleFunctionReloadAfterSessionLoad(sessionKey, false);
+  settleFunctionReloadAfterSessionLoad(sessionKey, "completed");
   assert.equal(runtimeState.__reloadOnTaskClear.has(sessionKey), false);
 });
 
