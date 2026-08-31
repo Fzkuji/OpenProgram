@@ -1052,6 +1052,11 @@ assert.match(
   /conclusion\.result \? \([\s\S]*runtime-program-conclusion-result/,
   "an explicitly requested direct result must render separately from the workflow handoff",
 );
+assert.match(
+  runtimeBlock,
+  /const retryPayload[\s\S]*node_id: msg\.id[\s\S]*surfaceOriginForChat\(sessionId, true\)[\s\S]*retryPayload\.surface_ref = surface[\s\S]*wsSend\(retryPayload\)/,
+  "Retry must submit the exact code node and retain a legacy Page fallback",
+);
 const runtimeAfterBlock = runtimeBlock.slice(
   runtimeBlock.indexOf("const runtimeAfter ="),
   runtimeBlock.indexOf("// LLM-initiated calls keep"),

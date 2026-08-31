@@ -28,6 +28,8 @@ _FUNCTION_BODY_CONTROL_KEYS = {
     "_session_id",
     "project_id",
     "response_format",
+    "window_id",
+    "surface_ref",
 }
 
 
@@ -182,6 +184,36 @@ def register(app):
         }
         if isinstance(project_id, str) and project_id:
             dispatch_options["project_id"] = project_id
+        surface_ref = (
+            body.get("surface_ref")
+            if isinstance(body.get("surface_ref"), dict) else None
+        )
+        origin_window_id = (
+            body.get("window_id")
+            if isinstance(body.get("window_id"), str) else None
+        )
+        surface_window_id = (
+            surface_ref.get("window_id")
+            if isinstance(surface_ref, dict)
+            and isinstance(surface_ref.get("window_id"), str)
+            else None
+        )
+        if (
+            origin_window_id and surface_window_id
+            and origin_window_id != surface_window_id
+        ):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "surface belongs to another desktop window",
+                    "code": "surface_window_mismatch",
+                },
+            )
+        effective_window_id = origin_window_id or surface_window_id
+        if effective_window_id:
+            dispatch_options["origin_window_id"] = effective_window_id
+        if surface_ref:
+            dispatch_options["surface_ref"] = surface_ref
         result = run_agentic_function_call(
             name,
             kwargs,
@@ -208,6 +240,8 @@ def run_agentic_function_call(
     anchor_msg_id: str | None = None,
     response_format=None,
     project_id: str | None = None,
+    origin_window_id: str | None = None,
+    surface_ref: dict | None = None,
 ) -> dict:
     """Dispatch an @agentic_function via the forced tool-call path and
     return ``{"session_id", "msg_id"}`` (or ``{"error", "status_code",
@@ -426,6 +460,26 @@ def run_agentic_function_call(
                 store=_shim,
             )
             if _node is not None:
+                _origin_window = (
+                    origin_window_id.strip()[:512]
+                    if isinstance(origin_window_id, str) else ""
+                )
+                _origin_tab = (
+                    surface_ref.get("tab_id", "").strip()[:512]
+                    if _origin_window
+                    and isinstance(surface_ref, dict)
+                    and surface_ref.get("window_id") == origin_window_id
+                    and isinstance(surface_ref.get("tab_id"), str)
+                    else ""
+                )
+                if _origin_window:
+                    _surface_origin = {
+                        "version": 1,
+                        "window_id": _origin_window,
+                    }
+                    if _origin_tab:
+                        _surface_origin["tab_id"] = _origin_tab
+                    _node.metadata["surface_origin"] = _surface_origin
                 if _hidden:
                     _node.input = None
                     _node.metadata.update({
@@ -490,6 +544,20 @@ def run_agentic_function_call(
         try:
             try:
                 from openprogram.agent.dispatcher import dispatch_forced_tool_call
+                surface_snapshot = None
+                if origin_window_id:
+                    from openprogram.agent.surface_context import window_context
+
+                    preferred_tab_id = (
+                        str(surface_ref.get("tab_id") or "")
+                        if isinstance(surface_ref, dict)
+                        and surface_ref.get("window_id") == origin_window_id
+                        else ""
+                    )
+                    surface_snapshot = window_context(
+                        origin_window_id,
+                        preferred_tab_id=preferred_tab_id,
+                    )
                 out = dispatch_forced_tool_call(
                     session_id=session_id,
                     anchor_msg_id=anchor_msg_id,
@@ -502,6 +570,7 @@ def run_agentic_function_call(
                     model=model,
                     response_format=response_format,
                     execution_id=_forced_node_id,
+                    surface_context_snapshot=surface_snapshot,
                     on_event=lambda env: _s._broadcast_envelope(env)
                         if hasattr(_s, "_broadcast_envelope")
                         else _s._broadcast(__import__("json").dumps(env, default=str)),

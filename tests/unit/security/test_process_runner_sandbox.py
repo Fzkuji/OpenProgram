@@ -3,6 +3,10 @@ from __future__ import annotations
 import inspect
 import pickle
 import queue
+import threading
+import time
+
+import pytest
 
 
 def test_spawn_payload_contains_explicit_sandbox_snapshot(monkeypatch):
@@ -162,6 +166,131 @@ def test_subprocess_timeout_kills_the_process_tree(monkeypatch):
         "timed_out": True,
         "signal": 9,
     }
+
+
+@pytest.mark.parametrize(
+    "close_results",
+    [
+        [False, False],
+        [False, True],
+    ],
+)
+def test_subprocess_timeout_reports_late_background_page_cleanup(
+    monkeypatch, close_results,
+):
+    from openprogram.agent import process_runner
+    from openprogram.webui.ws_actions import webtab
+
+    owner = object()
+    open_started = threading.Event()
+    release_open = threading.Event()
+    close_attempted = threading.Event()
+    closed_tabs = []
+
+    class FakeProcess:
+        pid = 4321
+        exitcode = -9
+
+        def __init__(self, *, target, args, daemon):
+            del target, daemon
+            self.alive = True
+            self.event_queue = args[6]
+
+        def start(self):
+            self.event_queue.put({
+                "__op_webtab__": True,
+                "data": {
+                    "req_id": "late-open",
+                    "command": {
+                        "op": "open",
+                        "url": "https://www.google.com/",
+                        "window_id": "window-1",
+                        "background": True,
+                    },
+                    "timeout": 2,
+                },
+            })
+
+        def join(self, timeout=None):
+            if self.alive and timeout != 5:
+                assert open_started.wait(1)
+
+        def is_alive(self):
+            return self.alive
+
+        def kill(self):
+            raise AssertionError("process-tree termination should succeed")
+
+    process = FakeProcess
+
+    class FakeContext:
+        Queue = queue.Queue
+
+        def Process(self, **kwargs):
+            return process(**kwargs)
+
+    def request_on_ws(_owner, command, timeout=5.0):
+        del timeout
+        if command["op"] == "open":
+            open_started.set()
+            assert release_open.wait(5)
+            return {
+                "ok": True,
+                "created": True,
+                "reused": False,
+                "window_id": "window-1",
+                "tab_id": "tab-late",
+                "target_id": "target-late",
+            }
+        closed_tabs.append(command["tab_id"])
+        close_attempted.set()
+        succeeded = close_results[min(len(closed_tabs) - 1, len(close_results) - 1)]
+        return {"ok": succeeded, **({} if succeeded else {
+            "error": "close rejected",
+        })}
+
+    monkeypatch.setattr(process_runner.mp, "get_context", lambda _kind: FakeContext())
+    monkeypatch.setattr(
+        "openprogram._compat.kill_process_tree",
+        lambda _pid: setattr(process_runner._active["s"], "alive", False) or True,
+    )
+    monkeypatch.setattr(
+        webtab,
+        "registered_desktop_windows",
+        lambda: [(owner, "window-1", 7)],
+    )
+    monkeypatch.setattr(webtab, "request_on_ws", request_on_ws)
+    monkeypatch.setattr(webtab, "register_binding", lambda *_args, **_kwargs: "surface-late")
+    monkeypatch.setattr(webtab, "binding_connection", lambda _binding_id: owner)
+    monkeypatch.setattr(webtab, "binding_page_key", lambda _binding_id: "page:late")
+    monkeypatch.setattr(webtab, "binding_revisions", lambda _binding_id: {})
+    monkeypatch.setattr(webtab, "release_binding", lambda _binding_id: None)
+
+    started_at = time.monotonic()
+    try:
+        result = process_runner.run_agentic_in_subprocess(
+            tool_name="gui_agent",
+            kwargs={},
+            session_id="s",
+            anchor_msg_id="m",
+            timeout_seconds=0.1,
+            surface_context_snapshot={"origin_window_id": "window-1"},
+        )
+    finally:
+        elapsed = time.monotonic() - started_at
+        release_open.set()
+
+    assert elapsed < 2.0
+    assert close_attempted.wait(2)
+    assert closed_tabs == ["tab-late", "tab-late"]
+    assert result["reason_code"] == "page_cleanup_failed"
+    assert result["success"] is False
+    assert result["infeasible_declared"] is True
+    assert result["page_cleanup_failed"] is True
+    assert result["page_cleanup_result"]["reason_code"] == "page_cleanup_failed"
+    assert "Close the remaining background Page" in result[
+        "handoff_instruction"
+    ]
 
 
 def test_child_entry_keeps_the_legacy_positional_payload_layout():

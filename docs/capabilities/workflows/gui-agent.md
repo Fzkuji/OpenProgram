@@ -16,7 +16,9 @@ Run it directly from the command line:
 openprogram programs run gui_agent -a task="Open Firefox and go to google.com"
 ```
 
-The Programs card asks for `task` and a `surface`. Keep `desktop` for foreground OS input, or select `browser` to operate an exact Page in OpenProgram's built-in browser. Browser actions use the Page's DOM/CDP target and do not activate its tab, raise the OpenProgram window, or move the system pointer.
+The Programs card asks for `task` and a `surface`. Keep `desktop` for foreground OS input, or select `browser` to operate an exact Page in OpenProgram's built-in browser. Browser actions use the Page's DOM/CDP target and do not activate its tab, raise the OpenProgram window, or move the system pointer. GUI Agent reuses an existing Page from the OpenProgram window that submitted the message or Function form. If that window has no Page, it creates one background Page at `https://www.google.com/`, continues the same function run, and closes only that agent-created Page when the run ends. It leaves the selected tab unchanged. If no originating desktop window is available, the result is `infeasible` with a handoff instruction instead of a runtime error. If the desktop rejects cleanup, the result is also `infeasible` and tells the user to close the remaining background Page.
+
+Typing a complete registered expression such as `gui_agent(task="Inspect this Page", surface="browser")` uses the same Function dispatcher as the Programs form; it is not stored or executed as an ordinary chat message. Retry reruns that exact Function node and its stored originating window/Page identity instead of using whichever Page is selected when Retry is clicked.
 
 Run against the built-in browser Page:
 
@@ -38,7 +40,7 @@ Each desktop step runs observe (one screenshot + component detection + state rec
 
 Desktop observations include the frontmost application and screenshot coordinate bounds. If the target application's windows are minimized or located in another macOS Space and remain unavailable after one bounded Window-menu recovery, the run stops as infeasible and asks the user to move or unminimize the window. It does not create additional windows indefinitely.
 
-Desktop coordinate input always applies to the current foreground GUI; it is not a background-window API. Use `surface=browser` when a built-in Page must be inspected or changed without bringing OpenProgram or that Page to the foreground.
+Desktop coordinate input always applies to the current foreground GUI; it is not a background-window API. Use `surface=browser` when a built-in Page must be inspected or changed without bringing OpenProgram or that Page to the foreground. In a multi-window App session, the Page is created in the window that submitted the chat message or Function call. Normal completion, failure, cancellation, timeout, and forced subprocess termination all attempt exact cleanup of an automatically created Page. A rejected cleanup is never reported as success: OpenProgram preserves the Page identity for a bounded retry and returns a manual-close handoff if cleanup still cannot be confirmed.
 
 Desktop and built-in-browser runs share the same terminal fields: `status` (`succeeded`, `infeasible`, `failed`, or `cancelled`), `success`, `reason_code`, `summary`, and `handoff_instruction`. The runner, not the conclusion model, determines success. Desktop results additionally include step history and timing; browser results include backend and WebSession details.
 

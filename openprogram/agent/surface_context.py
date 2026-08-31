@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextvars
 import json
+import os
 import uuid
 from typing import Any
 from urllib.parse import urlsplit
@@ -11,6 +12,27 @@ from urllib.parse import urlsplit
 _current: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "openprogram_surface_context", default=None,
 )
+
+PAGE_CLEANUP_HANDOFF = (
+    "Close the remaining background Page in OpenProgram, then continue the "
+    "task manually or retry it."
+)
+
+
+def page_cleanup_failure(error: str) -> dict:
+    """Return the canonical result when an agent Page may remain open."""
+    return {
+        "ok": False,
+        "status": "infeasible",
+        "success": False,
+        "infeasible_declared": True,
+        "reason_code": "page_cleanup_failed",
+        "error": error,
+        "summary": (
+            "The agent-created background Page could not be confirmed closed."
+        ),
+        "handoff_instruction": PAGE_CLEANUP_HANDOFF,
+    }
 
 
 def _text(value: Any, limit: int) -> str:
@@ -79,10 +101,42 @@ def _preview(value: Any) -> dict:
     }
 
 
+def window_context(
+    window_id: str = "",
+    *,
+    preferred_tab_id: str = "",
+) -> dict:
+    """Create a non-authorizing context that preserves one origin window."""
+    normalized = _text(window_id, 160)
+    return {
+        "context_id": "surface_ctx_" + uuid.uuid4().hex,
+        "origin_window_id": normalized,
+        "origin_tab_id": _text(preferred_tab_id, 512),
+        "window_id": normalized,
+        "primary_surface_key": "",
+        "alias_map": {},
+        "surfaces": [],
+    }
+
+
 def capture(raw: Any, ws) -> dict | None:
     """Validate one renderer ref and capture its bounded DOM/ARIA preview."""
     if not isinstance(raw, dict):
         return None
+    raw_window_id = (
+        _text(raw.get("window_id"), 160)
+        if raw.get("version") == 1 else ""
+    )
+    if raw_window_id and not _text(raw.get("tab_id"), 512):
+        from openprogram.webui.ws_actions import webtab
+
+        if not any(
+            owner is ws and window_id == raw_window_id
+            for owner, window_id, _revision
+            in webtab.registered_desktop_windows()
+        ):
+            return None
+        return window_context(raw_window_id)
     descriptor = _descriptor(raw)
     if descriptor is None:
         return None
@@ -94,6 +148,8 @@ def capture(raw: Any, ws) -> dict | None:
         "surface_key": "s1",
         "aliases": aliases,
         "kind": "web_tab",
+        "window_id": descriptor["window_id"],
+        "tab_id": descriptor["tab_id"],
         "region": region,
         "title": descriptor["title"],
         "origin": descriptor["origin"],
@@ -103,6 +159,9 @@ def capture(raw: Any, ws) -> dict | None:
     }
     context = {
         "context_id": "surface_ctx_" + uuid.uuid4().hex,
+        "origin_window_id": descriptor["window_id"],
+        "origin_tab_id": descriptor["tab_id"],
+        "window_id": descriptor["window_id"],
         "primary_surface_key": "s1",
         "alias_map": {alias: "s1" for alias in aliases},
         "surfaces": [surface],
@@ -346,7 +405,12 @@ DESKTOP_UNAVAILABLE_ERROR = (
 )
 
 
-def open_page(url: str) -> dict:
+def open_page(
+    url: str,
+    *,
+    window_id: str = "",
+    background: bool = False,
+) -> dict:
     """Open a desktop web tab and capture it as a Page context.
 
     Success matches ``capture_active()``. Failure is a dict with
@@ -365,92 +429,319 @@ def open_page(url: str) -> dict:
             "error": f"unsupported url ({exc.reason}): {exc.safe_url}",
         }
 
-    registered = webtab.registered_desktop_windows()
-    connections = list(_server._ws_connections)
-    if registered:
-        owner_ws, window_id, connection_revision = registered[0]
-    elif len(connections) == 1:
-        owner_ws = connections[0]
-        window_id = ""
-        connection_revision = webtab.ensure_connection_revision(owner_ws)
+    requested_window_id = _text(window_id, 160)
+    command = {
+        "op": "open",
+        "url": normalized,
+        **({"window_id": requested_window_id} if requested_window_id else {}),
+        **({"background": True} if background else {}),
+    }
+    owner_ws = None
+    connection_revision = 0
+    if os.environ.get("OPENPROGRAM_IN_AGENTIC_SUBPROCESS") == "1":
+        result = webtab._request(command, 15.0)
     else:
-        return {
-            "ok": False,
-            "reason_code": "desktop_unavailable",
-            "error": DESKTOP_UNAVAILABLE_ERROR,
-        }
+        registered = webtab.registered_desktop_windows()
+        connections = list(_server._ws_connections)
+        if requested_window_id:
+            selected = next((
+                entry for entry in registered
+                if entry[1] == requested_window_id
+            ), None)
+        else:
+            selected = registered[0] if len(registered) == 1 else None
+        if selected is not None:
+            owner_ws, selected_window_id, connection_revision = selected
+            requested_window_id = selected_window_id
+        elif not requested_window_id and len(connections) == 1:
+            owner_ws = connections[0]
+            connection_revision = webtab.ensure_connection_revision(owner_ws)
+        else:
+            return {
+                "ok": False,
+                "reason_code": "desktop_unavailable",
+                "error": DESKTOP_UNAVAILABLE_ERROR,
+            }
+        result = webtab.request_on_ws(owner_ws, command, timeout=15.0)
 
-    result = webtab.request_on_ws(
-        owner_ws, {"op": "open", "url": normalized}, timeout=15.0,
-    )
-    window_id = _text((result or {}).get("window_id"), 160) or window_id
-    tab_id = _text((result or {}).get("tab_id"), 512)
-    target_id = _text((result or {}).get("target_id"), 512)
+    result_value = result if isinstance(result, dict) else {}
     if (
-        not isinstance(result, dict)
-        or not result.get("ok")
-        or not window_id
+        background
+        and result_value.get("reason_code") == webtab.RESPONSE_TIMEOUT_REASON_CODE
+    ):
+        return page_cleanup_failure(str(
+            result_value.get("error")
+            or "desktop Page creation timed out before cleanup was confirmed"
+        ))
+    result_window_id = _text(result_value.get("window_id"), 160)
+    tab_id = _text(result_value.get("tab_id"), 512)
+    target_id = _text(result_value.get("target_id"), 512)
+    agent_owned = (
+        webtab.validated_open_ownership(result_value).get("created") is True
+    )
+
+    def rollback_opened_page() -> dict | None:
+        if not agent_owned:
+            return None
+        rollback_window_id = requested_window_id or result_window_id
+        if owner_ws is None or not rollback_window_id or not tab_id:
+            return page_cleanup_failure(
+                "the opened Page identity could not be safely closed"
+            )
+        close_result: dict = {}
+        for _ in range(2):
+            try:
+                candidate = webtab.request_on_ws(
+                    owner_ws,
+                    {
+                        "op": "close",
+                        "window_id": rollback_window_id,
+                        "tab_id": tab_id,
+                    },
+                    timeout=15.0,
+                )
+                close_result = (
+                    candidate if isinstance(candidate, dict) else {
+                        "ok": False,
+                        "error": (
+                            "desktop app returned an invalid Page close result"
+                        ),
+                    }
+                )
+            except Exception as exc:
+                close_result = {
+                    "ok": False,
+                    "error": f"Page close failed ({type(exc).__name__}: {exc})",
+                }
+            if close_result.get("ok"):
+                break
+        if not isinstance(close_result, dict) or not close_result.get("ok"):
+            return page_cleanup_failure(
+                str((close_result or {}).get("error") or "Page close was rejected")
+                if isinstance(close_result, dict) else
+                "desktop app returned an invalid Page close result"
+            )
+        return None
+
+    if not isinstance(result, dict) or not result.get("ok"):
+        if result_value.get("reason_code") == "page_cleanup_failed":
+            failure = page_cleanup_failure(str(
+                result_value.get("error") or "Page close was rejected"
+            ))
+            for key in (
+                "status", "success", "infeasible_declared",
+                "handoff_instruction",
+            ):
+                if key in result_value:
+                    failure[key] = result_value[key]
+            return failure
+        failure = {
+            "ok": False,
+            "reason_code": str(
+                result_value.get("reason_code") or "desktop_unavailable"
+            ),
+            "error": (
+                str(result_value.get("error"))
+                if result_value.get("error") else
+                "desktop app did not create a web tab (missing tab identity)"
+            ),
+        }
+        for key in (
+            "status", "success", "infeasible_declared", "handoff_instruction",
+        ):
+            if key in result_value:
+                failure[key] = result_value[key]
+        return failure
+    if (
+        not result_window_id
+        or (requested_window_id and result_window_id != requested_window_id)
         or not tab_id
         or not target_id
     ):
+        rollback_failure = rollback_opened_page()
+        if rollback_failure is not None:
+            return rollback_failure
         return {
             "ok": False,
-            "reason_code": "desktop_unavailable",
-            "error": (
-                "desktop app did not create a web tab ("
-                + str((result or {}).get("error") or "missing tab identity")
-                + ")"
-            ),
+            "reason_code": "page_context_stale",
+            "error": "desktop app returned another window or an incomplete Page",
         }
-    binding_id = webtab.register_binding(
-        owner_ws,
-        window_id,
-        tab_id,
-        target_id,
-        geometry_revision=_revision(result.get("geometry_revision")),
-        expected_connection_revision=connection_revision,
-        allow_background=True,
-    )
-    revisions = webtab.binding_revisions(binding_id)
+    window_id = result_window_id
+    binding_id = _text(result.get("binding_id"), 160)
+    if not binding_id:
+        if owner_ws is None:
+            return {
+                "ok": False,
+                "reason_code": "desktop_unavailable",
+                "error": "desktop app did not bind the opened web tab",
+            }
+        try:
+            binding_id = webtab.register_binding(
+                owner_ws,
+                window_id,
+                tab_id,
+                target_id,
+                geometry_revision=_revision(result.get("geometry_revision")),
+                expected_connection_revision=connection_revision,
+                allow_background=True,
+            )
+        except Exception as exc:
+            rollback_failure = rollback_opened_page()
+            if rollback_failure is not None:
+                return rollback_failure
+            return {
+                "ok": False,
+                "reason_code": "page_context_stale",
+                "error": f"opened Page could not be bound ({type(exc).__name__})",
+            }
+    revisions = {
+        key: _revision(result.get(key))
+        for key in (
+            "page_revision", "access_revision", "geometry_revision",
+        )
+        if _revision(result.get(key))
+    } or webtab.binding_revisions(binding_id)
+    aliases = ["web:1"]
+    if not background:
+        aliases.append("focused")
     surface = {
         "surface_key": "p1",
-        "aliases": ["focused", "web:1"],
+        "aliases": aliases,
         "kind": "web_tab",
-        "region": "center",
+        "window_id": window_id,
+        "tab_id": tab_id,
+        "region": "background" if background else "center",
         "title": _text(result.get("title"), 240),
         "origin": _origin(str(result.get("url") or normalized)),
         "capabilities": ["observe", "interact", "navigate"],
         "preview_status": "ready",
+        "visible": not background,
+        "focused": not background,
+        "agent_owned": agent_owned,
         "binding_id": binding_id,
-        "page_key": webtab.binding_page_key(binding_id),
+        "page_key": (
+            _text(result.get("page_key"), 160)
+            or webtab.binding_page_key(binding_id)
+        ),
         **revisions,
     }
+    alias_map = {"p1": "p1", "web:1": "p1"}
+    if not background:
+        alias_map["focused"] = "p1"
     return {
         "context_id": "page_ctx_" + uuid.uuid4().hex,
+        "window_id": window_id,
         "primary_surface_key": "p1",
-        "alias_map": {"p1": "p1", "focused": "p1", "web:1": "p1"},
+        "alias_map": alias_map,
         "surfaces": [surface],
     }
 
 
-def capture_pages(context: dict | None = None) -> dict:
-    """Capture every browser Page across registered Desktop windows."""
+def close_page(context: dict | None) -> dict:
+    """Close one exact Page without selecting its tab or focusing its window."""
     from openprogram.webui import server as _server
     from openprogram.webui.ws_actions import webtab
+
+    value = context if isinstance(context, dict) else {}
+    surface = next((
+        item for item in value.get("surfaces") or []
+        if isinstance(item, dict) and item.get("tab_id")
+    ), {})
+    if surface and surface.get("agent_owned") is not True:
+        release_bindings(value)
+        return {
+            "ok": True,
+            "closed": False,
+            "released": True,
+            "borrowed": True,
+        }
+    window_id = _text(surface.get("window_id") or value.get("window_id"), 160)
+    tab_id = _text(surface.get("tab_id"), 512)
+    if not window_id or not tab_id:
+        return {
+            "ok": False,
+            "reason_code": "page_context_stale",
+            "error": "Page context does not contain an exact window and tab",
+        }
+    command = {"op": "close", "window_id": window_id, "tab_id": tab_id}
+    if os.environ.get("OPENPROGRAM_IN_AGENTIC_SUBPROCESS") == "1":
+        result = webtab._request(command, 5.0)
+    else:
+        owner_ws = next((
+            ws for ws, candidate, _revision
+            in webtab.registered_desktop_windows()
+            if candidate == window_id
+        ), None)
+        if owner_ws is None or owner_ws not in _server._ws_connections:
+            return {
+                "ok": False,
+                "reason_code": "desktop_unavailable",
+                "error": DESKTOP_UNAVAILABLE_ERROR,
+            }
+        result = webtab.request_on_ws(owner_ws, command, timeout=5.0)
+    if isinstance(result, dict) and result.get("ok"):
+        release_bindings(value)
+        return result
+    return result if isinstance(result, dict) else {
+        "ok": False,
+        "reason_code": "desktop_unavailable",
+        "error": "desktop app returned an invalid Page close result",
+    }
+
+
+def capture_pages(context: dict | None = None) -> dict:
+    """Capture context-authorized Pages, or all registered Pages directly."""
+    from openprogram.webui import server as _server
+    from openprogram.webui.ws_actions import webtab
+
+    binding_id = next((
+        str(item.get("binding_id"))
+        for item in (context or {}).get("surfaces") or []
+        if isinstance(item, dict) and item.get("binding_id")
+    ), "")
+    origin_window_id = _text(
+        (context or {}).get("origin_window_id")
+        or (context or {}).get("window_id"),
+        160,
+    )
+    preferred_tab_id = _text(
+        (context or {}).get("origin_tab_id")
+        or next((
+            item.get("tab_id")
+            for item in (context or {}).get("surfaces") or []
+            if isinstance(item, dict) and item.get("tab_id")
+        ), ""),
+        512,
+    )
+    if (
+        context is not None
+        and os.environ.get("OPENPROGRAM_IN_AGENTIC_SUBPROCESS") == "1"
+    ):
+        command = {
+            "op": "capture_pages",
+            **({"binding_id": binding_id} if binding_id else {}),
+            **({"window_id": origin_window_id} if not binding_id else {}),
+            **({"tab_id": preferred_tab_id} if preferred_tab_id else {}),
+        }
+        if not binding_id and not origin_window_id:
+            raise RuntimeError("no accepted Page or origin window is available")
+        bridged = webtab._request(command, 5.0)
+        captured = bridged.get("context") if isinstance(bridged, dict) else None
+        if not isinstance(bridged, dict) or not bridged.get("ok") or not isinstance(
+            captured, dict
+        ):
+            error = (bridged or {}).get("error")
+            raise RuntimeError(str(error or "OpenProgram Page inventory is unavailable"))
+        return captured
 
     connected = list(_server._ws_connections)
     inventories: list[tuple[object, dict, int]] = []
     if context is not None:
-        binding_id = next((
-            str(item.get("binding_id"))
-            for item in context.get("surfaces") or []
-            if isinstance(item, dict) and item.get("binding_id")
-        ), "")
-        if not binding_id:
-            raise RuntimeError("no accepted Page binding is available")
-        result = webtab.request_page_inventory(binding_id)
-        owner = webtab.binding_owner_revision(binding_id)
-        if owner is not None:
+        if binding_id:
+            result = webtab.request_page_inventory(binding_id)
+            owner = webtab.binding_owner_revision(binding_id)
+            if owner is None:
+                raise RuntimeError("accepted Page binding is unavailable")
             owner_ws, connection_revision = owner
             if (
                 not isinstance(result, dict) or not result.get("ok")
@@ -459,6 +750,27 @@ def capture_pages(context: dict | None = None) -> dict:
             ):
                 raise RuntimeError("OpenProgram Page inventory is unavailable")
             inventories.append((owner_ws, result, connection_revision))
+        elif origin_window_id:
+            selected = next((
+                entry for entry in webtab.registered_desktop_windows()
+                if entry[0] in connected and entry[1] == origin_window_id
+            ), None)
+            if selected is None:
+                raise RuntimeError("originating Desktop window is unavailable")
+            owner_ws, _window_id, connection_revision = selected
+            result = webtab.request_on_ws(
+                owner_ws,
+                {"op": "list", "window_id": origin_window_id},
+            )
+            if (
+                not isinstance(result, dict) or not result.get("ok")
+                or result.get("window_id") != origin_window_id
+                or not isinstance(result.get("pages"), list)
+            ):
+                raise RuntimeError("OpenProgram Page inventory is unavailable")
+            inventories.append((owner_ws, result, connection_revision))
+        else:
+            raise RuntimeError("no accepted Page or origin window is available")
     else:
         registered = [
             (ws, window_id, revision)
@@ -479,21 +791,6 @@ def capture_pages(context: dict | None = None) -> dict:
                 and result.get("window_id") != expected_window_id
             ):
                 result = {"ok": False, "reason_code": "page_context_stale"}
-            inventories.append((owner_ws, result, connection_revision))
-
-    registered = [
-        (ws, window_id, revision)
-        for ws, window_id, revision in webtab.registered_desktop_windows()
-        if ws in connected and all(ws is not owner for owner, _, _ in inventories)
-    ]
-    for owner_ws, expected_window_id, connection_revision in registered:
-        result = webtab.request_on_ws(
-            owner_ws, {"op": "list", "window_id": expected_window_id},
-        )
-        if (
-            isinstance(result, dict) and result.get("ok")
-            and result.get("window_id") == expected_window_id
-        ):
             inventories.append((owner_ws, result, connection_revision))
 
     valid_inventories: list[tuple[object, dict, str, int]] = []
@@ -696,8 +993,18 @@ def capture_pages(context: dict | None = None) -> dict:
         for surface in surfaces:
             webtab.release_binding(str(surface["binding_id"]))
         raise
-    primary_window = windows[0]
-    primary = primary_window["focused_page"] or next((
+    preferred = next((
+        item["surface_key"] for item in surfaces
+        if preferred_tab_id and item.get("tab_id") == preferred_tab_id
+    ), "")
+    if preferred_tab_id and not preferred:
+        for surface in surfaces:
+            webtab.release_binding(str(surface["binding_id"]))
+        raise RuntimeError("the submitted Page is unavailable")
+    primary_window = next((
+        window for window in windows if preferred in window["pages"]
+    ), windows[0])
+    primary = preferred or primary_window["focused_page"] or next((
         item["surface_key"]
         for item in surfaces
         if item.get("window_id") == primary_window["window_id"]

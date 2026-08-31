@@ -2,6 +2,7 @@
 
 import { useCallback } from "react";
 
+import { desktopBridge, surfaceOriginForChat } from "@/lib/desktop-bridge";
 import { showToast } from "@/lib/format-utils/toast";
 import { useTranslation } from "@/lib/i18n";
 import { runtimeState } from "@/lib/runtime-bridge/state";
@@ -76,6 +77,10 @@ export function useFunctionDispatch({
       ? dispatchStore.pendingProjectsByChat[pendingProjectKey]
       : undefined;
     const body: Record<string, unknown> = { kwargs };
+    const windowId = desktopBridge()?.windowId;
+    if (windowId) body.window_id = windowId;
+    const surface = surfaceOriginForChat(dispatchSessionId, true);
+    if (surface) body.surface_ref = surface;
     if (pendingProjectId) body.project_id = pendingProjectId;
     if (dispatchSessionId) body.session_id = dispatchSessionId;
     if (options.forkOf) body.fork_of_node = options.forkOf;

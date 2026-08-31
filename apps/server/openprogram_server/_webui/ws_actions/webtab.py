@@ -27,6 +27,18 @@ _connection_revisions: dict[Any, int] = {}
 _page_revisions: dict[tuple[int, str], int] = {}
 _desktop_windows: dict[Any, str] = {}
 _next_revision = itertools.count(1)
+RESPONSE_TIMEOUT_REASON_CODE = "desktop_response_timeout"
+
+
+def validated_open_ownership(value: Any) -> dict[str, bool]:
+    """Return a trusted created/reused pair, or no ownership evidence."""
+    if not isinstance(value, dict):
+        return {}
+    created = value.get("created")
+    reused = value.get("reused")
+    if type(created) is not bool or type(reused) is not bool or created == reused:
+        return {}
+    return {"created": created, "reused": reused}
 
 
 def _payload(command: dict, req_id: str) -> str:
@@ -51,7 +63,11 @@ def _wait_for_reply(
     try:
         send(_payload(command, req_id))
         if not ev.wait(timeout):
-            return {"ok": False, "error": f"timeout: no desktop shell replied within {timeout:g}s"}
+            return {
+                "ok": False,
+                "reason_code": RESPONSE_TIMEOUT_REASON_CODE,
+                "error": f"timeout: no desktop shell replied within {timeout:g}s",
+            }
         return holder.get("result") or {"ok": False, "error": "empty reply"}
     finally:
         with _lock:
@@ -509,6 +525,7 @@ async def handle_webtab_result(ws, cmd: dict):
                if isinstance(cmd.get("geometry_revision"), int) else {}),
             **({"reason_code": cmd["reason_code"]}
                if isinstance(cmd.get("reason_code"), str) else {}),
+            **validated_open_ownership(cmd),
             **({"inventory_revision": max(0, cmd["inventory_revision"])}
                if type(cmd.get("inventory_revision")) is int else {}),
             **({"active_tab_entry_id": cmd["active_tab_entry_id"]}

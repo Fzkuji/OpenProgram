@@ -17,7 +17,11 @@ import logging
 import time
 from typing import Optional
 
-from openprogram.agent.dispatcher.types import EventCallback, _noop
+from openprogram.agent.dispatcher.types import (
+    EventCallback,
+    _noop,
+    _subprocess_terminal_status,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -46,6 +50,7 @@ def dispatch_forced_tool_call(
     response_format=None,
     on_event: Optional[EventCallback] = None,
     execution_id: Optional[str] = None,
+    surface_context_snapshot: Optional[dict] = None,
 ) -> dict:
     """Run a single @agentic_function without invoking the LLM.
 
@@ -124,11 +129,14 @@ def dispatch_forced_tool_call(
                 )
             )
         )
-        surface_snapshot = None
-        if browser_surface:
+        surface_snapshot = surface_context_snapshot
+        if browser_surface and surface_snapshot is None:
             from openprogram.agent import surface_context
 
-            captured_surface = surface_context.capture_pages()
+            try:
+                captured_surface = surface_context.capture_pages()
+            except RuntimeError:
+                captured_surface = surface_context.window_context()
             surface_snapshot = captured_surface
         out = run_agentic_in_subprocess(
             tool_name=tool_name,
@@ -188,13 +196,59 @@ def dispatch_forced_tool_call(
                 _log.warning("failed to advance head for session %s",
                              session_id, exc_info=True)
 
+    cleanup_result = out.get("page_cleanup_result")
+    if out.get("page_cleanup_failed") and isinstance(cleanup_result, dict):
+        if resolved_execution_id:
+            try:
+                from openprogram.agent.session_db import default_db as _ddb
+                from openprogram.agent.run_control import (
+                    mark_execution_terminal,
+                    resume_cancel,
+                )
+                from openprogram.store import SessionNodeWriter as _GS
+
+                _db = _ddb()
+                _db.invalidate_cache(session_id)
+                _record = next(
+                    (
+                        node for node in _db.get_nodes(session_id)
+                        if node.id == resolved_execution_id
+                    ),
+                    None,
+                )
+                _metadata = (
+                    (_record.metadata or {}) if _record is not None else {}
+                )
+                if _metadata.get("status") == "cancelling":
+                    resume_cancel(resolved_execution_id)
+                else:
+                    mark_execution_terminal(
+                        resolved_execution_id,
+                        _subprocess_terminal_status(out, _metadata),
+                        store=_db,
+                    )
+                _GS(_db, session_id).update(
+                    resolved_execution_id,
+                    output=cleanup_result,
+                    metadata={"last_update_at": time.time()},
+                )
+            except Exception:
+                _log.warning(
+                    "failed to persist Page cleanup handoff for %s",
+                    resolved_execution_id,
+                    exc_info=True,
+                )
+        return {
+            "runtime_msg_id": resolved_execution_id or out.get("runtime_msg_id"),
+            "ok": True,
+            "result": cleanup_result,
+        }
+
     _terminal_status = "interrupted"
     if resolved_execution_id:
         from openprogram.agent.run_control import mark_execution_terminal
-        if out.get("timed_out") or out.get("error"):
-            _terminal_status = "error"
-        elif out.get("killed"):
-            _cancel_intent = False
+        _metadata = {}
+        if out.get("killed"):
             try:
                 from openprogram.agent.session_db import default_db as _ddb
                 _record = next(
@@ -204,10 +258,8 @@ def dispatch_forced_tool_call(
                     ),
                     None,
                 )
-                _meta = (_record.metadata or {}) if _record is not None else {}
-                _cancel_intent = bool(
-                    _meta.get("cancellation_requested_at")
-                    or _meta.get("status") in {"cancelling", "cancelled"}
+                _metadata = (
+                    (_record.metadata or {}) if _record is not None else {}
                 )
             except Exception:
                 _log.debug(
@@ -215,11 +267,7 @@ def dispatch_forced_tool_call(
                     resolved_execution_id,
                     exc_info=True,
                 )
-            _terminal_status = (
-                "cancelled" if _cancel_intent else "interrupted"
-            )
-        else:
-            _terminal_status = "completed"
+        _terminal_status = _subprocess_terminal_status(out, _metadata)
         mark_execution_terminal(resolved_execution_id, _terminal_status)
 
     if out.get("killed") and not out.get("timed_out"):

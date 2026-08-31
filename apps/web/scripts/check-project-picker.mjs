@@ -44,6 +44,16 @@ assert.match(
   "a direct workflow call must bind the selected Project before execution",
 );
 assert.match(
+  functionDispatch,
+  /const windowId = desktopBridge\(\)\?\.windowId;[\s\S]*?body\.window_id = windowId/,
+  "a direct GUI function call must preserve its originating desktop window",
+);
+assert.match(
+  functionDispatch,
+  /surfaceOriginForChat\(dispatchSessionId, true\)[\s\S]*?body\.surface_ref = surface/,
+  "the Function form must submit the same exact Page descriptor as chat",
+);
+assert.match(
   workflowSource,
   /@agentic_function\([\s\S]*?input=\{[\s\S]*?"task"[\s\S]*?def auto_workflow\(task: str\)/,
   "auto_workflow must expose only its task parameter",

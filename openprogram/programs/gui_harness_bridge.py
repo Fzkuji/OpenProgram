@@ -11,21 +11,32 @@ def _normalize_gui_result(result):
         return result
     normalized = dict(result)
     status = str(normalized.get("status") or "")
-    if not status:
-        if normalized.get("infeasible_declared"):
-            status = "infeasible"
-        elif isinstance(normalized.get("success"), bool):
+    if normalized.get("infeasible_declared"):
+        status = "infeasible"
+    elif not status:
+        if isinstance(normalized.get("success"), bool):
             status = "succeeded" if normalized["success"] else "failed"
     if not status:
         return normalized
     normalized["status"] = status
     normalized["success"] = status == "succeeded"
-    normalized.setdefault("reason_code", "completed" if status == "succeeded" else status)
-    normalized.setdefault("infeasible_declared", status == "infeasible")
-    normalized.setdefault(
-        "handoff_instruction",
-        str(normalized.get("summary") or "") if status == "infeasible" else "",
-    )
+    reason_code = str(normalized.get("reason_code") or "").strip()
+    if not reason_code or (
+        status == "infeasible"
+        and reason_code in {"completed", "succeeded", "verified"}
+    ):
+        normalized["reason_code"] = (
+            "completed" if status == "succeeded" else status
+        )
+    if status == "infeasible":
+        normalized["infeasible_declared"] = True
+        if not str(normalized.get("handoff_instruction") or "").strip():
+            normalized["handoff_instruction"] = str(
+                normalized.get("summary") or ""
+            )
+    else:
+        normalized.setdefault("infeasible_declared", False)
+        normalized.setdefault("handoff_instruction", "")
     return normalized
 
 

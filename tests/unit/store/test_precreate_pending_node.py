@@ -86,6 +86,9 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         captured["run_active"] = real_is_run_active("s1")
         captured["provider"] = kw.get("provider")
         captured["model"] = kw.get("model")
+        captured["surface_context_snapshot"] = kw.get(
+            "surface_context_snapshot"
+        )
         return {"runtime_msg_id": None, "ok": True}
     monkeypatch.setattr(
         "openprogram.agent.dispatcher.dispatch_forced_tool_call", _stop_dispatch)
@@ -105,7 +108,18 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         routes_chat, "threading", SimpleNamespace(Thread=_inline_thread)
     )
 
-    res = routes_chat.run_agentic_function_call("word_count", {"text": "hi"}, "s1")
+    res = routes_chat.run_agentic_function_call(
+        "word_count",
+        {"text": "hi"},
+        "s1",
+        origin_window_id="window-2",
+        surface_ref={
+            "version": 1,
+            "window_id": "window-2",
+            "tab_id": "tab-submitted",
+            "access": "enabled",
+        },
+    )
     assert "error" not in res
 
     # A top-level code node exists on disk and HEAD points at it.
@@ -115,6 +129,14 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     node = tops[0]
     assert (node.metadata or {}).get("status") == "running"
     assert node.input == {"text": "hi"}
+    assert node.metadata["surface_origin"] == {
+        "version": 1,
+        "window_id": "window-2",
+        "tab_id": "tab-submitted",
+    }
+    assert set(node.metadata["surface_origin"]) == {
+        "version", "window_id", "tab_id",
+    }
     assert _head(store) == node.id
 
     # The child received the pre-created id as a ``|node:<id>`` anchor
@@ -125,6 +147,25 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     assert captured["run_active"] is True
     assert captured["provider"] == "minimax-cn-coding-plan"
     assert captured["model"] == "MiniMax-M3"
+    assert captured["surface_context_snapshot"]["origin_window_id"] == "window-2"
+    assert captured["surface_context_snapshot"]["origin_tab_id"] == "tab-submitted"
+
+    res = routes_chat.run_agentic_function_call(
+        "word_count",
+        {"text": "window only"},
+        "s1",
+        origin_window_id="window-2",
+        surface_ref={"version": 1, "window_id": "window-2"},
+    )
+    assert "error" not in res
+    window_only = next(
+        item for item in store.get_nodes("s1")
+        if item.input == {"text": "window only"}
+    )
+    assert window_only.metadata["surface_origin"] == {
+        "version": 1,
+        "window_id": "window-2",
+    }
 
     from openprogram.agentic_programming import function as function_module
 
@@ -489,7 +530,117 @@ def test_child_error_marks_precreated_running_node(monkeypatch, tmp_path):
     assert (node2.metadata or {}).get("error") == "kwargs pickle failed"
 
 
-def test_browser_surface_capture_error_is_not_replaced_by_cleanup(monkeypatch):
+@pytest.mark.parametrize(
+    ("initial_status", "subprocess_out", "expected_status"),
+    [
+        ("running", {}, "completed"),
+        ("running", {"error": "child failed"}, "error"),
+        ("running", {"killed": True}, "interrupted"),
+        ("cancelling", {"killed": True}, "cancelled"),
+        ("completed", {"error": "late failure"}, "completed"),
+        ("error", {}, "error"),
+        ("interrupted", {}, "interrupted"),
+        ("cancelled", {}, "cancelled"),
+    ],
+)
+def test_parent_page_cleanup_failure_preserves_terminal_metadata(
+    monkeypatch, tmp_path, initial_status, subprocess_out, expected_status,
+):
+    from openprogram.agent.dispatcher import forced_tool
+    from openprogram.agentic_programming.function import create_pending_call_node
+
+    store = SessionStore(tmp_path / "sessions-git")
+    store.create_session("s1", "main", title="t")
+    shim = SessionNodeWriter(store, "s1")
+    node = create_pending_call_node(
+        pending_id="gui-cleanup",
+        function_name="gui_agent",
+        arguments={"task": "inspect", "surface": "browser"},
+        expose="io",
+        caller="",
+        store=shim,
+    )
+    shim.append(node)
+    original_result = {"status": "succeeded", "success": True}
+    original_metadata = {"status": initial_status}
+    if initial_status in {"cancelling", "cancelled"}:
+        original_metadata["reason_code"] = "cancel.user"
+    if initial_status == "error":
+        original_metadata["error"] = "original failure"
+    if initial_status in {"completed", "error", "interrupted", "cancelled"}:
+        original_metadata["finished_at"] = 123.0
+    shim.update(
+        "gui-cleanup",
+        output=original_result,
+        metadata=original_metadata,
+    )
+    cleanup_result = {
+        "status": "infeasible",
+        "success": False,
+        "infeasible_declared": True,
+        "reason_code": "page_cleanup_failed",
+        "summary": (
+            "The agent-created background Page could not be confirmed closed."
+        ),
+        "handoff_instruction": "Close the remaining background Page.",
+    }
+
+    monkeypatch.setattr(
+        "openprogram.agent.session_db.default_db", lambda: store,
+    )
+
+    class _Tool:
+        name = "gui_agent"
+        _is_agentic = True
+
+    monkeypatch.setattr(
+        "openprogram.programs._runtime.get",
+        lambda name, *args, **kwargs: _Tool() if name == _Tool.name else None,
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.process_runner.run_agentic_in_subprocess",
+        lambda **kwargs: {
+            "page_cleanup_failed": True,
+            "page_cleanup_result": cleanup_result,
+            **subprocess_out,
+        },
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.run_control.set_current_session_id", lambda _sid: None,
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.run_control.reset_current_session_id", lambda _token: None,
+    )
+
+    result = forced_tool.dispatch_forced_tool_call(
+        session_id="s1",
+        anchor_msg_id="|node:gui-cleanup",
+        tool_name="gui_agent",
+        tool_input={"task": "inspect", "surface": "browser"},
+        surface_context_snapshot={"context_id": "ctx", "surfaces": []},
+    )
+
+    assert result == {
+        "runtime_msg_id": "gui-cleanup",
+        "ok": True,
+        "result": cleanup_result,
+    }
+    persisted = next(
+        item for item in store.get_nodes("s1") if item.id == "gui-cleanup"
+    )
+    assert persisted.metadata["status"] == expected_status
+    assert persisted.output == cleanup_result
+    if initial_status in {"cancelling", "cancelled"}:
+        assert persisted.metadata["reason_code"] == "cancel.user"
+    if initial_status == "error":
+        assert persisted.metadata["error"] == "original failure"
+    if initial_status in {"completed", "error", "interrupted", "cancelled"}:
+        assert persisted.metadata["finished_at"] == 123.0
+    else:
+        assert persisted.metadata["finished_at"] > 0
+
+
+def test_browser_surface_capture_error_defers_to_child_handoff(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.agent.dispatcher import forced_tool
 
@@ -506,11 +657,10 @@ def test_browser_surface_capture_error_is_not_replaced_by_cleanup(monkeypatch):
         "capture_pages",
         lambda: (_ for _ in ()).throw(RuntimeError("Page capture unavailable")),
     )
+    seen = {}
     monkeypatch.setattr(
         "openprogram.agent.process_runner.run_agentic_in_subprocess",
-        lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("the subprocess must not start without a capture")
-        ),
+        lambda **kwargs: seen.update(kwargs) or {"ok": True},
     )
     monkeypatch.setattr(
         "openprogram.agent.run_control.set_current_session_id", lambda _sid: None,
@@ -522,10 +672,13 @@ def test_browser_surface_capture_error_is_not_replaced_by_cleanup(monkeypatch):
         "openprogram.agent.run_control.clear_cancel", lambda _sid: None,
     )
 
-    with pytest.raises(RuntimeError, match="Page capture unavailable"):
-        forced_tool.dispatch_forced_tool_call(
-            session_id="s1",
-            anchor_msg_id="|node:gui-agent",
-            tool_name="gui_agent",
-            tool_input={"task": "inspect", "surface": "browser"},
-        )
+    result = forced_tool.dispatch_forced_tool_call(
+        session_id="s1",
+        anchor_msg_id="|node:gui-agent",
+        tool_name="gui_agent",
+        tool_input={"task": "inspect", "surface": "browser"},
+    )
+
+    assert result["ok"] is True
+    assert seen["surface_context_snapshot"]["surfaces"] == []
+    assert seen["surface_context_snapshot"]["origin_window_id"] == ""

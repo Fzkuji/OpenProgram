@@ -208,3 +208,22 @@ def test_gui_agent_conclusion_error_invalidates_success(harness_on_path, monkeyp
     assert result["status"] == "failed"
     assert result["reason_code"] == "conclusion_error"
     assert result["success"] is False
+
+
+def test_bridge_canonicalizes_all_infeasible_contract_fields():
+    from openprogram.programs.gui_harness_bridge import _normalize_gui_result
+
+    result = _normalize_gui_result({
+        "status": "infeasible",
+        "success": True,
+        "infeasible_declared": False,
+        "reason_code": "completed",
+        "summary": "A human must complete login.",
+        "handoff_instruction": "",
+    })
+
+    assert result["status"] == "infeasible"
+    assert result["success"] is False
+    assert result["infeasible_declared"] is True
+    assert result["reason_code"] == "infeasible"
+    assert result["handoff_instruction"] == "A human must complete login."

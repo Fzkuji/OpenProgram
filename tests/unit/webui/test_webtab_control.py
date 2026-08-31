@@ -71,12 +71,60 @@ def test_open_tab_roundtrip_preserves_result_url(monkeypatch):
             "url": "https://example.com/",
             "tab_id": "w:https://example.com/",
             "target_id": "target-opened",
+            "created": False,
+            "reused": True,
         },
     )
     result = webtab.request_open_tab("https://example.com/", timeout=0.1)
     assert result["url"] == "https://example.com/"
     assert result["tab_id"] == "w:https://example.com/"
     assert result["target_id"] == "target-opened"
+    assert result["created"] is False
+    assert result["reused"] is True
+
+
+def test_webtab_reply_timeout_has_a_structured_reason_after_send():
+    sent = []
+
+    result = webtab._wait_for_reply(
+        {"op": "open", "url": "https://example.com/", "background": True},
+        0,
+        send=sent.append,
+    )
+
+    assert len(sent) == 1
+    assert result == {
+        "ok": False,
+        "reason_code": webtab.RESPONSE_TIMEOUT_REASON_CODE,
+        "error": "timeout: no desktop shell replied within 0s",
+    }
+    assert webtab._pending == {}
+
+
+@pytest.mark.parametrize("ownership", [
+    {"created": True},
+    {"reused": False},
+    {"created": True, "reused": True},
+    {"created": False, "reused": False},
+    {"created": 1, "reused": False},
+    {"created": True, "reused": 0},
+])
+def test_open_tab_roundtrip_drops_invalid_ownership(monkeypatch, ownership):
+    _install_roundtrip(
+        monkeypatch,
+        {
+            "ok": True,
+            "url": "https://example.com/",
+            "tab_id": "w:https://example.com/",
+            "target_id": "target-opened",
+            **ownership,
+        },
+    )
+
+    result = webtab.request_open_tab("https://example.com/", timeout=0.1)
+
+    assert "created" not in result
+    assert "reused" not in result
 
 
 class _Page:
@@ -172,7 +220,7 @@ def test_request_open_tab_registers_binding_on_success(monkeypatch):
     )
 
 
-def test_open_url_then_close_sends_request_close_tab(monkeypatch):
+def test_open_url_close_respects_renderer_page_ownership(monkeypatch):
     from unittest.mock import MagicMock
     import sys
 
@@ -205,6 +253,7 @@ def test_open_url_then_close_sends_request_close_tab(monkeypatch):
     monkeypatch.setattr(boot, "desktop_app_ws_url", lambda: "ws://app")
 
     closed: list[str] = []
+    ownership = {"created": True, "reused": False}
     monkeypatch.setattr(
         webtab,
         "request_open_tab",
@@ -215,6 +264,7 @@ def test_open_url_then_close_sends_request_close_tab(monkeypatch):
             "target_id": "target-opened",
             "window_id": "win-1",
             "binding_id": "surface_from_open",
+            **ownership,
         },
     )
     monkeypatch.setattr(
@@ -239,6 +289,22 @@ def test_open_url_then_close_sends_request_close_tab(monkeypatch):
     assert closed == ["surface_from_open"]
     assert "Closed the desktop page" in close_out
     assert sid not in tool._sessions
+
+    ownership.update({"created": False, "reused": True})
+    reopened = open_action._open_app_session(
+        "http://cdp",
+        url="https://example.com/",
+        timeout_ms=1000,
+        strict=True,
+    )
+    assert reopened is not None and reopened.startswith("Opened")
+    reused_sid = reopened.split("`")[1]
+    assert tool._sessions[reused_sid]["app_agent_opened"] is False
+
+    closed.clear()
+    reuse_close = lifecycle._close(reused_sid)
+    assert closed == []
+    assert "stays open" in reuse_close
 
 
 def test_app_attach_matches_control_plane_target_across_all_electron_pages():
@@ -389,10 +455,16 @@ def test_close_app_reused_page_detaches_only(monkeypatch):
             self.stopped = True
 
     seen = []
+    released = []
     monkeypatch.setattr(
         webtab,
         "request_close_tab",
         lambda binding_id, timeout=5.0: seen.append(binding_id) or {"ok": True},
+    )
+    monkeypatch.setattr(
+        webtab,
+        "release_binding",
+        lambda binding_id: released.append(binding_id),
     )
     tool._sessions["br_reuse"] = {
         "is_cdp": True,
@@ -405,6 +477,7 @@ def test_close_app_reused_page_detaches_only(monkeypatch):
     try:
         out = lifecycle._close("br_reuse")
         assert seen == []
+        assert released == ["surface_abc"]
         assert "stays open" in out
         assert "br_reuse" not in tool._sessions
     finally:

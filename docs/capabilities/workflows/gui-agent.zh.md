@@ -16,7 +16,9 @@
 openprogram programs run gui_agent -a task="Open Firefox and go to google.com"
 ```
 
-Programs 卡片填写 `task` 和 `surface`。`desktop` 使用前台操作系统输入；`browser` 操作 OpenProgram 内置浏览器中的精确 Page。浏览器动作通过该 Page 的 DOM/CDP target 执行，不激活标签页、不置顶 OpenProgram 窗口，也不移动系统鼠标。
+Programs 卡片填写 `task` 和 `surface`。`desktop` 使用前台操作系统输入；`browser` 操作 OpenProgram 内置浏览器中的精确 Page。浏览器动作通过该 Page 的 DOM/CDP target 执行，不激活标签页、不置顶 OpenProgram 窗口，也不移动系统鼠标。GUI Agent 会复用提交消息或 Function 表单的 OpenProgram 窗口中已有的 Page。该窗口没有 Page 时，它才会创建一个初始地址为 `https://www.google.com/` 的后台 Page，在同一次函数运行中继续执行，并在运行结束时只关闭这个由 agent 创建的 Page；当前选中的标签页保持不变。如果没有可用的来源桌面窗口，结果会是带接手说明的 `infeasible`，而不是运行时异常。如果桌面端拒绝清理，结果同样是 `infeasible`，并要求用户手动关闭残留的后台 Page。
+
+输入完整的已注册函数表达式，例如 `gui_agent(task="检查这个 Page", surface="browser")`，会使用与 Programs 表单相同的 Function dispatcher，不会作为普通聊天消息保存或执行。Retry 会重新运行该精确 Function 节点及其保存的来源窗口/Page 身份，不会改用点击 Retry 时当前选中的 Page。
 
 操作内置浏览器 Page：
 
@@ -38,7 +40,7 @@ openprogram programs run gui_agent -a task="检查并完成当前可见表单" -
 
 桌面观察会包含当前前台应用和截图坐标范围。如果目标应用窗口被最小化或位于另一个 macOS Space，并且经过一次有界的 Window 菜单恢复后仍不可用，运行会以 infeasible 停止，并要求用户移动或取消最小化该窗口；它不会持续创建新窗口。
 
-桌面坐标输入始终作用于当前前台 GUI，不是后台窗口接口。需要在不置顶 OpenProgram 或目标 Page 的情况下操作内置页面时，应使用 `surface=browser`。
+桌面坐标输入始终作用于当前前台 GUI，不是后台窗口接口。需要在不置顶 OpenProgram 或目标 Page 的情况下操作内置页面时，应使用 `surface=browser`。App 同时打开多个窗口时，自动 Page 只创建在提交该聊天消息或 Function 调用的窗口中。正常完成、失败、取消、超时以及子进程被强制终止都会尝试精确清理自动创建的 Page。清理被拒绝时不能报告成功：OpenProgram 会保留 Page 身份并执行一次有界重试；仍无法确认清理时返回手动关闭的接手说明。
 
 桌面和内置浏览器运行共用终态字段：`status`（`succeeded`、`infeasible`、`failed` 或 `cancelled`）、`success`、`reason_code`、`summary` 和 `handoff_instruction`。成功与否由 runner 决定，不由 conclusion 模型决定。桌面结果还包含步骤历史和耗时；浏览器结果还包含 backend 和 WebSession 信息。
 
