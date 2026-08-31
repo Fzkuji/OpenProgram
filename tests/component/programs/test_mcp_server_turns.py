@@ -956,6 +956,46 @@ def test_question_event_requires_registry_exact_owner() -> None:
     ]
 
 
+def test_question_event_resolves_same_registry_instance_used_for_ownership() -> None:
+    bus = create_event_bus()
+    owner_registry = FakeQuestions()
+    other_registry = FakeQuestions()
+    entered = threading.Event()
+    release = threading.Event()
+    getter_calls = []
+
+    def process(req, *, cancel_event):
+        entered.set()
+        release.wait(2)
+        return TurnResult("done", "u", "a")
+
+    service = _service(bus=bus, questions=owner_registry, process=process)
+
+    def getter():
+        getter_calls.append(True)
+        return owner_registry if len(getter_calls) == 1 else other_registry
+
+    service._question_registry_getter = getter
+
+    async def scenario():
+        task = asyncio.create_task(
+            service.prompt_send("prompt", session_id="existing", request_id="r1")
+        )
+        await asyncio.to_thread(entered.wait, 1)
+        execution_id = _active(service)[0].execution_id
+        owner_registry.pending["q-exact"] = execution_id
+        bus.emit(make_event("question.asked", "agent", {
+            "id": "q-exact", "session_id": "existing",
+        }))
+        release.set()
+        await task
+
+    asyncio.run(scenario())
+    assert getter_calls == [True]
+    assert owner_registry.resolved == [("q-exact", "declined", None)]
+    assert other_registry.resolved == []
+
+
 def test_question_claim_and_cancellation_coordinate_on_active_ownership() -> None:
     question_entered = threading.Event()
     release_question = threading.Event()

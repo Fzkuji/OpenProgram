@@ -539,7 +539,7 @@ class MCPService:
             if not owns_session:
                 return
             try:
-                self._question_registry_getter().resolve(question_id, "declined", None)
+                questions.resolve(question_id, "declined", None)
             except Exception:
                 return
             finally:
