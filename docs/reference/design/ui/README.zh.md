@@ -18,7 +18,7 @@ Web UI 界面 — 界面系统、指示点、附件处理、聊天轮次视觉�
 - [`composer-interaction-modes.md`](composer-interaction-modes.md) — Composer 交互模式
 - [`attachment-handling.md`](attachment-handling.md) — 附件处理：附件怎么进模型上下文（[已渲染](attachment-handling.html)）
 - [`chat-attachments.html`](chat-attachments.html) — 聊天附件双向流转：聊天流里显示成什么、agent 怎么把文件交回来、可读文件怎么点开
-- [`gui-agent-context.md`](gui-agent-context.md) — GUI agent 上下文流转
+- [`gui-agent.html`](gui-agent.html) — GUI agent 入口、状态机、结果契约与实现状态
 - [`indicator-dots.md`](indicator-dots.md) — 指示点
 - [`surface-system.md`](surface-system.md) — Surface 系统
 - [`theme-system.html`](theme-system.html) — 主题入口、完整 token 契约、组件消费与桌面浮层传播的权威设计

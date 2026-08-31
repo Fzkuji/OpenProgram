@@ -1177,7 +1177,8 @@ def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
         browser_module,
         "_run_browser_task_commands",
         lambda **kwargs: calls.append(("web_use", kwargs)) or {
-            "mode": "web_use", "backend": kwargs["backend"],
+            "status": "succeeded", "mode": "web_use",
+            "backend": kwargs["backend"],
         },
     )
     wrapped = install_gui_harness_web_use(original)
@@ -1188,8 +1189,77 @@ def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
         task="click Save", backend="chrome_devtools_mcp",
         runtime=SimpleNamespace(),
     )
-    assert result == {"mode": "web_use", "backend": "chrome_devtools_mcp"}
+    assert result["status"] == "succeeded"
+    assert result["success"] is True
+    assert result["infeasible_declared"] is False
+    assert result["backend"] == "chrome_devtools_mcp"
     assert calls[0][0] == "web_use"
+
+
+def test_registered_gui_agent_browser_surface_uses_default_backend(monkeypatch):
+    from openprogram.programs.workflow import browser as browser_module
+    from openprogram.programs.workflow.browser.web_use_runtime import DEFAULT_BACKEND
+    from openprogram.programs.gui_harness_bridge import (
+        DEFAULT_MAX_STEPS,
+        install_gui_harness_web_use,
+    )
+
+    calls = []
+
+    def original(**_kwargs):
+        raise AssertionError("browser surface must not call desktop harness")
+
+    monkeypatch.setattr(
+        browser_module,
+        "_run_browser_task_commands",
+        lambda **kwargs: calls.append(kwargs) or {
+            "status": "succeeded",
+            "reason_code": "verified",
+            "summary": "done",
+            "backend": kwargs["backend"],
+        },
+    )
+
+    runtime = object()
+    wrapped = install_gui_harness_web_use(original)
+    result = wrapped(task="inspect the page", surface="browser", runtime=runtime)
+
+    assert result["success"] is True
+    assert result["backend"] == DEFAULT_BACKEND
+    assert calls == [{
+        "task": "inspect the page",
+        "backend": DEFAULT_BACKEND,
+        "max_steps": DEFAULT_MAX_STEPS,
+        "max_seconds": None,
+        "runtime": runtime,
+    }]
+
+
+def test_gui_agent_app_name_does_not_select_browser_surface(monkeypatch):
+    from openprogram.programs.workflow import browser as browser_module
+    from openprogram.programs.gui_harness_bridge import (
+        install_gui_harness_web_use,
+    )
+
+    calls = []
+
+    def original(**kwargs):
+        calls.append(kwargs)
+        return {"status": "succeeded", "summary": "desktop"}
+
+    monkeypatch.setattr(
+        browser_module,
+        "_run_browser_task_commands",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("app_name must not select the browser route")
+        ),
+    )
+
+    wrapped = install_gui_harness_web_use(original)
+    result = wrapped(task="inspect", app_name="browser", runtime=object())
+
+    assert result["success"] is True
+    assert calls[0]["app_name"] == "browser"
 
 
 def test_gui_agent_wrapper_resolves_step_budget():
@@ -1213,6 +1283,82 @@ def test_gui_agent_wrapper_resolves_step_budget():
     assert seen[-1]["max_steps"] == 0
     wrapped(task="t", max_steps=20)
     assert seen[-1]["max_steps"] == 20
+
+
+def test_gui_agent_wrapper_forces_success_false_when_infeasible_declared():
+    from openprogram.programs.gui_harness_bridge import (
+        install_gui_harness_web_use,
+    )
+
+    def original(**kwargs):
+        return {
+            "infeasible_declared": True,
+            "success": True,
+            "summary": "Human must log in and retry.",
+        }
+
+    wrapped = install_gui_harness_web_use(original)
+    result = wrapped(task="t")
+    assert result["success"] is False
+    assert result["status"] == "infeasible"
+    assert result["infeasible_declared"] is True
+    assert result["handoff_instruction"] == "Human must log in and retry."
+    assert result["summary"] == "Human must log in and retry."
+
+
+def test_gui_agent_wrapper_calls_raw_harness_function_once():
+    from openprogram.programs.gui_harness_bridge import (
+        install_gui_harness_web_use,
+    )
+
+    calls = []
+
+    def raw_harness(**kwargs):
+        calls.append(kwargs)
+        return {"success": True, "summary": "done"}
+
+    def decorated_harness(**_kwargs):
+        raise AssertionError("bridge called the decorated harness wrapper")
+
+    decorated_harness.__wrapped__ = raw_harness
+    wrapped = install_gui_harness_web_use(decorated_harness)
+
+    result = wrapped(task="t")
+    assert result["status"] == "succeeded"
+    assert result["success"] is True
+    assert result["summary"] == "done"
+    assert len(calls) == 1
+
+
+def test_gui_agent_wrapper_records_one_public_gui_agent_node(tmp_path):
+    from openprogram.agentic_programming.function import agentic_function
+    from openprogram.agentic_programming.runtime import Runtime
+    from openprogram.programs.gui_harness_bridge import (
+        install_gui_harness_web_use,
+    )
+    from openprogram.store import SessionNodeWriter, SessionStore, _store
+
+    @agentic_function
+    def gui_step(task, runtime=None):
+        return {"task": task, "success": True, "summary": "done"}
+
+    @agentic_function
+    def gui_agent(task, runtime=None, **_kwargs):
+        return gui_step(task, runtime=runtime)
+
+    store = SessionStore(tmp_path / "sessions")
+    store.create_session("s1", agent_id="main")
+    writer = SessionNodeWriter(store, "s1")
+    token = _store.set(writer)
+    try:
+        wrapped = install_gui_harness_web_use(gui_agent)
+        wrapped(task="t", runtime=Runtime(call=lambda *_a, **_k: "", model="dummy"))
+    finally:
+        _store.reset(token)
+
+    names = [node.name for node in writer.load() if node.is_code()]
+    assert names.count("gui_agent") == 1
+    assert names.count("gui_step") == 1
 
 
 def test_direct_list_pages_releases_capture_when_registry_rejects(monkeypatch):

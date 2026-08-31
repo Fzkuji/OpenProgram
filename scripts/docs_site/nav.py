@@ -327,7 +327,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "reference/design/ui/composer-responsive-controls.html",
             "reference/design/ui/composer-tool-profile-menu.html",
             "reference/design/ui/fn-form-compact-mock.html",
-            "reference/design/ui/gui-agent-context.md",
+            "reference/design/ui/gui-agent.html",
             "reference/design/ui/head-bugs.html",
             "reference/design/ui/send-queue-reliability.html",
             "reference/design/ui/slash-and-compact.html",

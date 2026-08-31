@@ -18,7 +18,7 @@ Web UI surfaces — the surface system, indicator dots, attachment handling, cha
 - [`composer-interaction-modes.md`](composer-interaction-modes.md) — composer interaction modes
 - [`attachment-handling.md`](attachment-handling.md) — attachment handling: how an attached file reaches the model ([rendered](attachment-handling.html))
 - [`chat-attachments.html`](chat-attachments.html) — chat attachments both ways: what the transcript shows, how the agent hands a file back, how a readable file opens
-- [`gui-agent-context.md`](gui-agent-context.md) — GUI agent context flow
+- [`gui-agent.html`](gui-agent.html) — GUI agent entry, state machine, result contract, and implementation status
 - [`indicator-dots.md`](indicator-dots.md) — indicator dots
 - [`surface-system.md`](surface-system.md) — surface system
 - [`theme-system.html`](theme-system.html) — authoritative theme entry, complete token contract, component consumption, and desktop-overlay propagation

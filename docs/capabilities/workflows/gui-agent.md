@@ -16,9 +16,15 @@ Run it directly from the command line:
 openprogram programs run gui_agent -a task="Open Firefox and go to google.com"
 ```
 
-The Programs card only asks for `task`. Other parameters keep their defaults; CLI and agent calls can still pass them.
+The Programs card asks for `task` and a `surface`. Keep `desktop` for OS input, or select `browser` to operate the exact Page selected in OpenProgram's built-in browser.
 
-Parameters (function signature `gui_agent(task, max_steps=None, app_name="desktop", ...)`):
+Run against the built-in browser Page:
+
+```bash
+openprogram programs run gui_agent -a task="Inspect and complete the visible form" -a surface=browser
+```
+
+Parameters (function signature `gui_agent(task, max_steps=None, app_name="desktop", surface="desktop", ...)`):
 
 | Parameter | Description |
 |---|---|
@@ -26,14 +32,19 @@ Parameters (function signature `gui_agent(task, max_steps=None, app_name="deskto
 | `max_steps` | Maximum number of actions. Default 150. `0` or a negative value means no cap. |
 | `max_seconds` | Web-path wall-clock limit only. Default is no time limit. `0` or a negative value means no cap. Desktop does not use this field. |
 | `app_name` | Application name used for component memory, e.g. `firefox`, `libreoffice_calc`; default `desktop` |
+| `surface` | `desktop` for OS/VM input or `browser` for the selected built-in Page. The browser route uses the default Page backend unless a trusted caller supplies `backend`. |
 
-Each step runs observe (screenshot + component detection + state recognition) → verify the previous step's result → plan the next action → execute → build feedback for the next round. Structured feedback is passed between steps, so progress does not depend on the LLM's context memory. Previously learned UI transitions are reused as shortcuts (component memory).
+Each desktop step runs observe (one screenshot + component detection + state recognition) → verify the previous step's result → plan one action → execute → build feedback for the next round. A first-step `done` decision receives a separate current-screen completion check. Feedback keeps the latest eight action outcomes; selecting the same failed action four times stops the run instead of repeating indefinitely. Previously learned UI transitions remain available, but learning is an explicit operation rather than an implicit pre-step side effect. When the agent cannot finish or a human must take over, it chooses fail, stops, and returns `success=false`; both `summary` and `handoff_instruction` preserve the handoff text.
+
+Desktop observations include the frontmost application and screenshot coordinate bounds. If the target application's windows are minimized or located in another macOS Space and remain unavailable after one bounded Window-menu recovery, the run stops as infeasible and asks the user to move or unminimize the window. It does not create additional windows indefinitely.
+
+Desktop and built-in-browser runs share the same terminal fields: `status` (`succeeded`, `infeasible`, `failed`, or `cancelled`), `success`, `reason_code`, `summary`, and `handoff_instruction`. The runner, not the conclusion model, determines success. Desktop results additionally include step history and timing; browser results include backend and WebSession details.
 
 ## Dependency notes
 
 - Product runtimes do not install PyTorch or EasyOCR.
 - The release capability probe rejects an artifact if the detector model is missing.
 - Supported product platforms are macOS and Linux.
-- The runtime needs a working directory configured before running (screenshots and run records are written there).
+- The runtime needs a working directory configured before running. Workflow records are stored under the OpenProgram state directory (`gui_harness/workflows/`), not in the source tree.
 
 Source and README: `openprogram/programs/applications/gui_harness/`, upstream repository [Fzkuji/GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness).

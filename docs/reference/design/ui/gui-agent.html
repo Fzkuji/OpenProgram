@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GUI Agent execution design</title>
+<style>
+  :root{color-scheme:dark;--bg:#111315;--panel:#191c20;--line:#343a40;--text:#e7e9eb;--muted:#a8afb7;--accent:#78a9ff;--good:#76c893;--warn:#ffca6b}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 system-ui,sans-serif}main{max-width:1040px;margin:auto;padding:48px 24px 72px}h1{font-size:38px;line-height:1.15;margin:0 0 12px}h2{margin:36px 0 12px;font-size:23px}h3{margin:24px 0 8px;font-size:17px}p,li{max-width:900px}.lead{font-size:18px;color:var(--muted)}code{background:#0b0d0f;padding:.12em .35em;border-radius:4px}.flow{display:grid;grid-template-columns:repeat(7,minmax(100px,1fr));gap:8px;margin:20px 0;overflow:auto}.node{min-width:100px;padding:14px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);text-align:center}.node:not(:last-child)::after{content:"→";float:right;margin-right:-18px;color:var(--accent)}table{width:100%;border-collapse:collapse;margin:14px 0}th,td{padding:10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:var(--muted)}.yes{color:var(--good)}.pending{color:var(--warn)}
+</style>
+</head>
+<body><main>
+<h1>GUI Agent execution design</h1>
+<p class="lead">One public invocation, one explicit runner, one terminal status. Desktop control and exact-Page browser control share the result contract but retain separate trust boundaries.</p>
+
+<h2>Public entry and routing</h2>
+<p>OpenProgram exposes one tool named <code>gui_agent</code>. Program discovery imports GUI-Agent-Harness, then the OpenProgram bridge registers the public wrapper. The wrapper must call the harness's raw Python implementation, not its already-decorated wrapper, so the execution tree contains exactly one <code>gui_agent</code> node.</p>
+<table><thead><tr><th>Mode</th><th>Selection</th><th>Execution boundary</th></tr></thead><tbody>
+<tr><td>Desktop</td><td><code>surface=desktop</code> and no browser backend</td><td>GUI-Agent-Harness observes the desktop and uses OS or VM input.</td></tr>
+<tr><td>Built-in browser</td><td><code>surface=browser</code>, or an explicit backend for compatibility with older callers</td><td>OpenProgram binds one exact Page and executes through Web Use. An omitted backend resolves to the default Page backend. <code>app_name</code> only names desktop component memory and never changes the route.</td></tr>
+</tbody></table>
+
+<h2>Desktop state machine</h2>
+<div class="flow" aria-label="GUI agent execution flow"><div class="node">observe</div><div class="node">verify previous</div><div class="node">plan one action</div><div class="node">execute</div><div class="node">record feedback</div><div class="node">repeat or stop</div><div class="node">summarize</div></div>
+<p>The runner owns the loop and terminal status. A step returns either an executable action result or one terminal status. The latest eight action results form bounded cross-step state. A fourth identical failed action terminates with <code>repeated_action</code>. The conclusion model writes user-facing text only; it never decides whether the run succeeded.</p>
+<table><thead><tr><th>Status</th><th><code>success</code></th><th>Required evidence</th></tr></thead><tbody>
+<tr><td><code>succeeded</code></td><td>true</td><td>The planner selected done and completion verification permits it, except for explicitly read-only first-observation tasks.</td></tr>
+<tr><td><code>infeasible</code></td><td>false</td><td>A concrete blocker and a human handoff instruction.</td></tr>
+<tr><td><code>failed</code></td><td>false</td><td>Step limit, invalid planner protocol, perception/action error, or missing verification.</td></tr>
+<tr><td><code>cancelled</code></td><td>false</td><td>Cancellation propagated by the host/runtime.</td></tr>
+</tbody></table>
+
+<h2>Result contract</h2>
+<p>Both desktop and browser modes return <code>status</code>, deterministic <code>success</code>, <code>reason_code</code>, <code>summary</code>, and <code>handoff_instruction</code>. Desktop compatibility keeps <code>infeasible_declared</code>, step counts, timing, and history. Browser compatibility keeps backend and WebSession metadata.</p>
+
+<h2>Trust and lifecycle boundaries</h2>
+<ul>
+<li>Desktop mode records the frontmost app, must validate the current target window before a coordinate action, and must not learn components from another app. A window outside the observed macOS Space receives one bounded Window-menu recovery; continued invisibility terminates as infeasible with a handoff instruction.</li>
+<li>Browser mode keeps exact Page identity, backend selection, owner isolation, stale-observation checks, screenshot revocation, and session cleanup inside Web Use.</li>
+<li><code>allow_general</code> remains false for the OpenProgram public entry unless explicitly enabled by a trusted caller.</li>
+<li>Cancellation and unrecoverable exceptions terminate the runner; an unlimited step budget must not convert a repeated infrastructure error into an infinite retry.</li>
+</ul>
+
+<h2>File ownership</h2>
+<table><thead><tr><th>File area</th><th>Single responsibility</th></tr></thead><tbody>
+<tr><td><code>main.py</code></td><td>Public Python/CLI entry, top-level loop, and terminal status.</td></tr>
+<tr><td><code>tasks/execute_task.py</code></td><td>One step: verify, plan, terminal checks, and bounded feedback.</td></tr>
+<tr><td><code>tasks/result.py</code></td><td>User-facing conclusion rendering and runtime workflow-record persistence.</td></tr>
+<tr><td><code>action/actions.py</code> and <code>action/dispatch.py</code></td><td>Atomic OS/VM actions, target localization binding, registry, argument validation, and one dispatch boundary.</td></tr>
+<tr><td><code>perception/observe.py</code></td><td>The one screenshot/detection/state observation pass used by the runner and compatibility API.</td></tr>
+<tr><td><code>memory/</code> and component-memory helpers</td><td>Components, states, and verified transitions.</td></tr>
+<tr><td>OpenProgram bridge</td><td>One public registration, mode routing, parameter defaults, and result normalization.</td></tr>
+</tbody></table>
+
+<h2>Compatibility and exclusions</h2>
+<p>The standalone CLI, direct Python <code>gui_agent()</code>, benchmark <code>execute_task()</code> wrapper, current function name, and existing result details remain compatible. Desktop and Web Use are not merged into one execution engine. Benchmark-only grounding pipelines remain internal and are not part of the public runner refactor.</p>
+
+<h2>Acceptance criteria</h2>
+<ol>
+<li>The OpenProgram DAG shows one <code>gui_agent</code> node followed by <code>gui_step</code>; it never shows nested duplicate <code>gui_agent</code> nodes.</li>
+<li>Done, infeasible, step exhaustion, invalid planner output, cancellation, and exceptions produce deterministic terminal statuses.</li>
+<li>The exact fail blocker reaches the user-facing handoff text.</li>
+<li>Desktop and built-in-browser invocations expose the same core result fields.</li>
+<li>Long desktop and browser tasks retain bounded state, avoid repeated actions, and complete only after verification.</li>
+<li>Real acceptance uses the default OpenProgram App and includes one multi-step desktop task and one multi-step built-in-browser task.</li>
+</ol>
+
+<h2>Implementation status</h2>
+<table><thead><tr><th>Area</th><th>Status</th></tr></thead><tbody>
+<tr><td>Exact-Page Web Use lifecycle and backend isolation</td><td class="yes">Implemented and component-tested</td></tr>
+<tr><td>Infeasible results force <code>success=false</code></td><td class="yes">Implemented and regression-tested</td></tr>
+<tr><td>Single public GUI Agent node, deterministic all-terminal result, and common desktop/Web result fields</td><td class="yes">Implemented and regression-tested</td></tr>
+<tr><td>Canonical action/observe ownership and compatibility delegation</td><td class="yes">Implemented and regression-tested</td></tr>
+<tr><td>Real multi-step desktop acceptance from the source checkout</td><td class="yes">Accepted with a 16-step Finder task that created and visually verified nested folders, plus Calculator input/result verification</td></tr>
+<tr><td>Real built-in-browser acceptance through the refreshed default App</td><td class="pending">Pending deployment of the uncommitted bridge change</td></tr>
+</tbody></table>
+</main></body></html>

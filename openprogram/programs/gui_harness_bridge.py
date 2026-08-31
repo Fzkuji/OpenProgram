@@ -6,10 +6,34 @@ from typing import Callable
 DEFAULT_MAX_STEPS = 150
 
 
+def _normalize_gui_result(result):
+    if not isinstance(result, dict):
+        return result
+    normalized = dict(result)
+    status = str(normalized.get("status") or "")
+    if not status:
+        if normalized.get("infeasible_declared"):
+            status = "infeasible"
+        elif isinstance(normalized.get("success"), bool):
+            status = "succeeded" if normalized["success"] else "failed"
+    if not status:
+        return normalized
+    normalized["status"] = status
+    normalized["success"] = status == "succeeded"
+    normalized.setdefault("reason_code", "completed" if status == "succeeded" else status)
+    normalized.setdefault("infeasible_declared", status == "infeasible")
+    normalized.setdefault(
+        "handoff_instruction",
+        str(normalized.get("summary") or "") if status == "infeasible" else "",
+    )
+    return normalized
+
+
 def install_gui_harness_web_use(original: Callable | None = None):
     """Replace the registered gui_agent entry with a backend-aware wrapper."""
     if original is None:
         from gui_harness.main import gui_agent as original
+    original_impl = getattr(original, "__wrapped__", original)
 
     from openprogram.agentic_programming.function import agentic_function
 
@@ -28,8 +52,12 @@ def install_gui_harness_web_use(original: Callable | None = None):
                 "hidden": True,
             },
             "app_name": {
-                "description": "Desktop app or browser",
+                "description": "Desktop app name used for visual memory",
                 "hidden": True,
+            },
+            "surface": {
+                "description": "Execute on the desktop or the selected built-in browser Page",
+                "options": ["desktop", "browser"],
             },
             "backend": {
                 "description": "Optional built-in Page web_use backend",
@@ -53,6 +81,12 @@ def install_gui_harness_web_use(original: Callable | None = None):
                     "type": "string",
                     "description": "What to do",
                 },
+                "surface": {
+                    "type": "string",
+                    "enum": ["desktop", "browser"],
+                    "description": "Use browser for OpenProgram's selected built-in Page",
+                    "default": "desktop",
+                },
             },
             "required": ["task"],
         },
@@ -61,6 +95,7 @@ def install_gui_harness_web_use(original: Callable | None = None):
         task: str,
         max_steps: int | None = None,
         app_name: str = "desktop",
+        surface: str = "desktop",
         backend: str = "",
         max_seconds: float | None = None,
         runtime=None,
@@ -77,24 +112,39 @@ def install_gui_harness_web_use(original: Callable | None = None):
             if max_seconds is None or float(max_seconds) <= 0
             else float(max_seconds)
         )
-        if not backend:
-            return original(
+        selected_surface = str(surface or "desktop").strip().lower()
+        if selected_surface not in {"desktop", "browser"}:
+            return _normalize_gui_result({
+                "status": "failed",
+                "reason_code": "invalid_surface",
+                "summary": f"Unknown GUI surface: {surface}",
+            })
+        # ``surface`` is the public routing key. An explicit backend keeps
+        # compatibility with callers that predate the surface parameter.
+        browser_mode = bool(backend) or selected_surface == "browser"
+        if not browser_mode:
+            result = original_impl(
                 task=task,
                 max_steps=steps if steps is not None else 0,
                 app_name=app_name,
                 runtime=runtime,
                 allow_general=allow_general,
             )
+            return _normalize_gui_result(result)
         from openprogram.programs.workflow.browser import (
             _run_browser_task_commands,
         )
-        return _run_browser_task_commands(
+        from openprogram.programs.workflow.browser.web_use_runtime import (
+            DEFAULT_BACKEND,
+        )
+        selected_backend = backend or DEFAULT_BACKEND
+        return _normalize_gui_result(_run_browser_task_commands(
             task=task,
-            backend=backend,
+            backend=selected_backend,
             max_steps=steps,
             max_seconds=seconds,
             runtime=runtime,
-        )
+        ))
 
     return gui_agent
 

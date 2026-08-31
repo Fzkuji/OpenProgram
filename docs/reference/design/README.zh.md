@@ -145,7 +145,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`ui/indicator-dots.md`](ui/indicator-dots.md) | 指示点 |
 | [`ui/attachment-handling.md`](ui/attachment-handling.md) | 附件处理（[已渲染](ui/attachment-handling.html)） |
 | [`ui/composer-interaction-modes.md`](ui/composer-interaction-modes.md) | Composer 交互模式 |
-| [`ui/gui-agent-context.md`](ui/gui-agent-context.md) | GUI agent 上下文流转 |
+| [`ui/gui-agent.html`](ui/gui-agent.html) | GUI agent 入口、状态机、结果契约与实现状态 |
 | [`ui/state-layer.md`](ui/state-layer.zh.md) | Web 状态层：会话级 vs 全局 store，会话作用域容器方案 |
 | [`ui/center-tabs-and-split-layout.html`](ui/center-tabs-and-split-layout.html) | 普通 tab 与复合分屏 tab 的生命周期、显示、持久化和跨窗口转移权威设计 |
 | [`ui/project-workspace.md`](ui/project-workspace.md) | 项目工作区——文件、标签页、多会话（[原型](ui/project-workspace-prototype.html)） |
