@@ -422,3 +422,45 @@ def test_child_error_marks_precreated_running_node(monkeypatch, tmp_path):
     assert (node2.metadata or {}).get("status") == "error"
     assert node2.output == {"error": "kwargs pickle failed"}
     assert (node2.metadata or {}).get("error") == "kwargs pickle failed"
+
+
+def test_browser_surface_capture_error_is_not_replaced_by_cleanup(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.agent.dispatcher import forced_tool
+
+    class _Tool:
+        name = "gui_agent"
+        _is_agentic = True
+
+    monkeypatch.setattr(
+        "openprogram.programs._runtime.get",
+        lambda name, *a, **k: _Tool() if name == _Tool.name else None,
+    )
+    monkeypatch.setattr(
+        surface_context,
+        "capture_pages",
+        lambda: (_ for _ in ()).throw(RuntimeError("Page capture unavailable")),
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.process_runner.run_agentic_in_subprocess",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("the subprocess must not start without a capture")
+        ),
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.run_control.set_current_session_id", lambda _sid: None,
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.run_control.reset_current_session_id", lambda _token: None,
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.run_control.clear_cancel", lambda _sid: None,
+    )
+
+    with pytest.raises(RuntimeError, match="Page capture unavailable"):
+        forced_tool.dispatch_forced_tool_call(
+            session_id="s1",
+            anchor_msg_id="|node:gui-agent",
+            tool_name="gui_agent",
+            tool_input={"task": "inspect", "surface": "browser"},
+        )

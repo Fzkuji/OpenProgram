@@ -1235,6 +1235,303 @@ def test_registered_gui_agent_browser_surface_uses_default_backend(monkeypatch):
     }]
 
 
+def test_registered_gui_agent_without_page_returns_structured_handoff(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow.browser import web_use_runtime
+    from openprogram.programs.workflow.browser.web_use_runtime import DEFAULT_BACKEND
+    from openprogram.programs.gui_harness_bridge import (
+        install_gui_harness_web_use,
+    )
+
+    context = {"context_id": "ctx-empty", "surfaces": []}
+    released = []
+
+    class _Registry:
+        def list_pages(self, **_kwargs):
+            return {"ok": True, "pages": []}
+
+        def execute(self, **_kwargs):
+            raise AssertionError("an empty Page inventory must not be observed")
+
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
+    monkeypatch.setattr(surface_context, "current", lambda: None)
+    monkeypatch.setattr(
+        surface_context, "capture_pages", lambda _context=None: context,
+    )
+    monkeypatch.setattr(
+        surface_context, "release_bindings", lambda value: released.append(value),
+    )
+
+    wrapped = install_gui_harness_web_use(
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("browser surface must not call desktop harness")
+        )
+    )
+    result = wrapped(
+        task="inspect the page", surface="browser", runtime=SimpleNamespace(),
+    )
+
+    assert result == {
+        "status": "failed",
+        "success": False,
+        "reason_code": "page_unavailable",
+        "summary": "No accessible built-in Page is open.",
+        "backend": DEFAULT_BACKEND,
+        "infeasible_declared": False,
+        "handoff_instruction": (
+            "Open or restore a built-in Page, then retry this GUI task."
+        ),
+    }
+    assert released == [context]
+
+
+def test_gui_agent_does_not_release_a_borrowed_empty_context(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as module
+    from openprogram.programs.workflow.browser import web_use_runtime
+
+    borrowed = {"context_id": "ctx-borrowed-empty", "surfaces": []}
+    released = []
+
+    class _Registry:
+        def list_pages(self, **_kwargs):
+            return {"ok": True, "pages": []}
+
+        def release_owner(self, _owner_id):
+            return None
+
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
+    monkeypatch.setattr(surface_context, "current", lambda: borrowed)
+    monkeypatch.setattr(
+        surface_context, "capture_pages", lambda _context=None: borrowed,
+    )
+    monkeypatch.setattr(
+        surface_context, "release_bindings", lambda value: released.append(value),
+    )
+
+    result = module._run_browser_task_commands(
+        task="inspect", backend="playwright_mcp",
+        max_steps=1, max_seconds=10, runtime=SimpleNamespace(),
+    )
+
+    assert result["reason_code"] == "page_unavailable"
+    assert released == []
+
+
+def test_gui_agent_failed_first_observe_releases_its_owner(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as module
+    from openprogram.programs.workflow.browser import web_use_runtime
+
+    context = {
+        "context_id": "ctx-first-observe",
+        "surfaces": [{
+            "binding_id": "binding-1",
+            "capabilities": ["observe"],
+        }],
+    }
+    inventory = {
+        "context_id": "ctx-first-inventory",
+        "surfaces": [{
+            "binding_id": "binding-2",
+            "capabilities": ["observe"],
+        }],
+    }
+    released = []
+
+    class _Registry:
+        def __init__(self):
+            self.calls = []
+            self.released_owners = []
+
+        def list_pages(self, **_kwargs):
+            return {
+                "ok": True,
+                "pages": [{
+                    "page_context_token": "pct-first",
+                    "focused": True,
+                }],
+            }
+
+        def execute(self, **kwargs):
+            self.calls.append(kwargs)
+            if kwargs["command"] == "observe":
+                return {
+                    "web_session_id": "cs-first",
+                    "reason_code": "target_lost",
+                }
+            return {"ok": True, "closed": True}
+
+        def release_owner(self, owner_id):
+            self.released_owners.append(owner_id)
+
+    registry = _Registry()
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
+    monkeypatch.setattr(surface_context, "current", lambda: None)
+    monkeypatch.setattr(
+        surface_context,
+        "capture_pages",
+        lambda current=None: context if current is None else inventory,
+    )
+    monkeypatch.setattr(
+        surface_context, "release_bindings", lambda value: released.append(value),
+    )
+
+    result = module._run_browser_task_commands(
+        task="observe", backend="playwright_mcp",
+        max_steps=1, max_seconds=10, runtime=SimpleNamespace(),
+    )
+
+    assert result["status"] == "failed"
+    assert result["reason_code"] == "target_lost"
+    assert any(call["command"] == "close" for call in registry.calls)
+    assert registry.released_owners == ["harness:ctx-first-observe"]
+    assert released == [context]
+
+
+def test_gui_agent_close_error_still_releases_its_owner(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as module
+    from openprogram.programs.workflow.browser import web_use_runtime
+
+    context = {
+        "context_id": "ctx-close-error",
+        "surfaces": [{
+            "binding_id": "binding-1",
+            "capabilities": ["observe"],
+        }],
+    }
+
+    class _Registry:
+        def __init__(self):
+            self.released_owners = []
+
+        def list_pages(self, **_kwargs):
+            return {"ok": True, "pages": []}
+
+        def execute(self, **kwargs):
+            if kwargs["command"] == "observe":
+                return {"frame_id": "f1", "web_session_id": "cs-close"}
+            if kwargs["command"] == "verify":
+                return {"passed": True}
+            if kwargs["command"] == "close":
+                raise RuntimeError("close failed")
+            return {"ok": True}
+
+        def release_owner(self, owner_id):
+            self.released_owners.append(owner_id)
+
+    class _Runtime:
+        def exec(self, **kwargs):
+            asyncio.run(kwargs["tools"][0].execute(
+                "call-1",
+                {
+                    "action": "verify",
+                    "expected_frame_id": "f1",
+                    "assertion": "text_contains",
+                    "value": "done",
+                },
+                asyncio.Event(),
+                None,
+            ))
+            return "verified"
+
+    registry = _Registry()
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
+    monkeypatch.setattr(surface_context, "current", lambda: context)
+    monkeypatch.setattr(
+        surface_context, "capture_pages", lambda _context=None: context,
+    )
+    monkeypatch.setattr(
+        surface_context, "resolve_binding", lambda _page="": "binding-1",
+    )
+    monkeypatch.setattr(
+        surface_context, "resolve_page_key", lambda _page="": "page-1",
+    )
+
+    with pytest.raises(RuntimeError, match="close failed"):
+        module._run_browser_task_commands(
+            task="verify", backend="playwright_mcp",
+            max_steps=1, max_seconds=10, runtime=_Runtime(),
+        )
+
+    assert registry.released_owners == ["harness:ctx-close-error"]
+
+
+def test_gui_agent_releases_only_the_failed_inventory_refresh(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as module
+    from openprogram.programs.workflow.browser import web_use_runtime
+
+    borrowed = {
+        "context_id": "ctx-borrowed",
+        "surfaces": [{
+            "binding_id": "binding-borrowed",
+            "capabilities": ["observe"],
+        }],
+    }
+    inventory = {
+        "context_id": "ctx-inventory",
+        "surfaces": [{
+            "binding_id": "binding-inventory",
+            "capabilities": ["observe"],
+        }],
+    }
+    released = []
+
+    class _Registry:
+        def list_pages(self, **_kwargs):
+            raise RuntimeError("inventory registration failed")
+
+        def execute(self, **kwargs):
+            if kwargs["command"] == "observe":
+                return {"frame_id": "f1", "web_session_id": "cs-refresh"}
+            if kwargs["command"] == "verify":
+                return {"passed": True}
+            return {"ok": True, "closed": True}
+
+        def release_owner(self, _owner_id):
+            return None
+
+    class _Runtime:
+        def exec(self, **kwargs):
+            asyncio.run(kwargs["tools"][0].execute(
+                "call-1",
+                {
+                    "action": "verify",
+                    "expected_frame_id": "f1",
+                    "assertion": "text_contains",
+                    "value": "done",
+                },
+                asyncio.Event(),
+                None,
+            ))
+            return "verified"
+
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
+    monkeypatch.setattr(surface_context, "current", lambda: borrowed)
+    monkeypatch.setattr(
+        surface_context, "capture_pages", lambda _context=None: inventory,
+    )
+    monkeypatch.setattr(
+        surface_context, "release_bindings", lambda context: released.append(context),
+    )
+    monkeypatch.setattr(
+        surface_context, "resolve_binding", lambda _page="": "binding-borrowed",
+    )
+    monkeypatch.setattr(
+        surface_context, "resolve_page_key", lambda _page="": "page-borrowed",
+    )
+
+    result = module._run_browser_task_commands(
+        task="verify", backend="playwright_mcp",
+        max_steps=1, max_seconds=10, runtime=_Runtime(),
+    )
+
+    assert result["status"] == "succeeded"
+    assert released == [inventory]
+
+
 def test_gui_agent_app_name_does_not_select_browser_surface(monkeypatch):
     from openprogram.programs.workflow import browser as browser_module
     from openprogram.programs.gui_harness_bridge import (
@@ -1491,7 +1788,13 @@ def test_temporary_page_capture_is_released_when_lease_rejects(monkeypatch, rout
         web_use_runtime,
     )
 
-    context = {"context_id": "ctx-temp", "surfaces": [{}]}
+    context = {
+        "context_id": "ctx-temp",
+        "surfaces": [{
+            "binding_id": "binding-1",
+            "capabilities": ["observe"],
+        }],
+    }
     released = []
 
     class _Registry:
@@ -1604,9 +1907,25 @@ def test_temporary_page_capture_is_released_when_binding_resolution_fails(
 ):
     from openprogram.agent import surface_context
     from openprogram.programs.workflow import browser as module
+    from openprogram.programs.workflow.browser import web_use_runtime
 
-    context = {"context_id": "ctx-temp", "surfaces": [{}]}
+    context = {
+        "context_id": "ctx-temp",
+        "surfaces": [{
+            "binding_id": "binding-1",
+            "capabilities": ["observe"],
+        }],
+    }
     released = []
+
+    class _Registry:
+        def list_pages(self, **_kwargs):
+            return {"ok": True, "pages": []}
+
+        def execute(self, **_kwargs):
+            raise AssertionError("binding resolution must happen first")
+
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
     monkeypatch.setattr(surface_context, "current", lambda: None)
     monkeypatch.setattr(
         surface_context,
@@ -1682,7 +2001,13 @@ def test_gui_agent_harness_uses_selected_computer_use_backend(monkeypatch):
 
     registry = _Registry()
     monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
-    context = {"context_id": "ctx-1", "surfaces": [{}]}
+    context = {
+        "context_id": "ctx-1",
+        "surfaces": [{
+            "binding_id": "binding-1",
+            "capabilities": ["observe", "interact", "navigate"],
+        }],
+    }
     monkeypatch.setattr(surface_context, "current", lambda: context)
     monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "binding-1")
     monkeypatch.setattr(surface_context, "resolve_page_key", lambda _page="": "page-1")
@@ -1694,6 +2019,7 @@ def test_gui_agent_harness_uses_selected_computer_use_backend(monkeypatch):
                 "call-1",
                 {
                     "action": "verify", "expected_frame_id": "frame-1",
+                    "page_context_token": "pct-current",
                     "assertion": "text_contains", "value": "done",
                 },
                 asyncio.Event(),
@@ -1707,6 +2033,10 @@ def test_gui_agent_harness_uses_selected_computer_use_backend(monkeypatch):
         runtime=_Runtime(),
     )
     assert result["status"] == "succeeded"
+    verify_call = next(
+        call for call in registry.calls if call["command"] == "verify"
+    )
+    assert "page_context_token" not in verify_call["arguments"]
     assert registry.calls[0] == {
         "command": "observe",
         "backend": "chrome_devtools_mcp",
@@ -1832,10 +2162,11 @@ def test_gui_agent_discovers_popup_and_switches_by_exact_page_token(monkeypatch)
     initial = {"context_id": "ctx-pages", "surfaces": [{"surface_key": "p1"}]}
     popup = {"context_id": "ctx-popup", "surfaces": [{"surface_key": "p2"}]}
     captures = []
+    released = []
 
     def capture_pages(context=None):
         captures.append(context)
-        return initial if len(captures) == 1 else popup
+        return initial if len(captures) <= 2 else popup
 
     class _Registry:
         def __init__(self):
@@ -1875,8 +2206,11 @@ def test_gui_agent_discovers_popup_and_switches_by_exact_page_token(monkeypatch)
 
     registry = _Registry()
     monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
-    monkeypatch.setattr(surface_context, "current", lambda: initial)
+    monkeypatch.setattr(surface_context, "current", lambda: None)
     monkeypatch.setattr(surface_context, "capture_pages", capture_pages)
+    monkeypatch.setattr(
+        surface_context, "release_bindings", lambda context: released.append(context),
+    )
 
     class _Runtime:
         calls = 0
@@ -1911,6 +2245,8 @@ def test_gui_agent_discovers_popup_and_switches_by_exact_page_token(monkeypatch)
         call["command"] == "close" and call.get("web_session_id") == "cs-a"
         for call in registry.calls
     )
+    assert captures[:2] == [None, initial]
+    assert released == [initial]
 
 
 def test_gui_harness_screenshot_capability_is_one_request_only(monkeypatch):
@@ -1940,7 +2276,13 @@ def test_gui_harness_screenshot_capability_is_one_request_only(monkeypatch):
 
     registry = _Registry()
     monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
-    monkeypatch.setattr(surface_context, "current", lambda: {"context_id": "ctx"})
+    monkeypatch.setattr(surface_context, "current", lambda: {
+        "context_id": "ctx",
+        "surfaces": [{
+            "binding_id": "b1",
+            "capabilities": ["observe"],
+        }],
+    })
     monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "b1")
     monkeypatch.setattr(surface_context, "resolve_page_key", lambda _page="": "p1")
 
@@ -2014,7 +2356,13 @@ def test_gui_harness_releases_unsent_final_screenshot(monkeypatch):
 
     registry = _Registry()
     monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
-    monkeypatch.setattr(surface_context, "current", lambda: {"context_id": "ctx"})
+    monkeypatch.setattr(surface_context, "current", lambda: {
+        "context_id": "ctx",
+        "surfaces": [{
+            "binding_id": "b1",
+            "capabilities": ["observe"],
+        }],
+    })
     monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "b1")
     monkeypatch.setattr(surface_context, "resolve_page_key", lambda _page="": "p1")
 
@@ -2076,7 +2424,13 @@ def test_gui_harness_releases_same_request_screenshot_on_runtime_error(
 
     registry = _Registry()
     monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
-    monkeypatch.setattr(surface_context, "current", lambda: {"context_id": "ctx"})
+    monkeypatch.setattr(surface_context, "current", lambda: {
+        "context_id": "ctx",
+        "surfaces": [{
+            "binding_id": "b1",
+            "capabilities": ["observe"],
+        }],
+    })
     monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "b1")
     monkeypatch.setattr(surface_context, "resolve_page_key", lambda _page="": "p1")
 

@@ -1033,29 +1033,65 @@ def _run_browser_task_commands(
     from openprogram.agent import surface_context
     from .web_use_runtime import get_registry
 
+    def page_unavailable() -> dict:
+        return {
+            "status": "failed",
+            "reason_code": "page_unavailable",
+            "summary": "No accessible built-in Page is open.",
+            "handoff_instruction": (
+                "Open or restore a built-in Page, then retry this GUI task."
+            ),
+            "backend": backend,
+        }
+
     context = surface_context.current()
     captured_here = context is None
     if context is None:
-        context = surface_context.capture_pages()
+        try:
+            context = surface_context.capture_pages()
+        except RuntimeError:
+            return page_unavailable()
+    release_context_on_exit = captured_here
+
+    def release_captured_context() -> None:
+        nonlocal release_context_on_exit
+        if release_context_on_exit:
+            surface_context.release_bindings(context)
+            release_context_on_exit = False
+
     owner_id = "harness:" + str(context.get("context_id") or "unknown")
     registry = get_registry()
+
+    def release_owner() -> None:
+        cleanup = getattr(registry, "release_owner", None)
+        if callable(cleanup):
+            cleanup(owner_id)
 
     page_inventory: list[dict[str, Any]] = []
     page_inventory_snapshot: dict[str, Any] = {"pages": page_inventory}
     bound_page_identity = ("", "")
 
     def refresh_inventory() -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        inventory_context = None
         try:
             inventory_context = surface_context.capture_pages(context)
             listed = registry.list_pages(
                 context=inventory_context, owner_id=owner_id,
             )
         except Exception:
+            if inventory_context is not None and inventory_context is not context:
+                with suppress(Exception):
+                    surface_context.release_bindings(inventory_context)
             return [], {"pages": []}
         if not listed.get("ok"):
-            surface_context.release_bindings(inventory_context)
+            if inventory_context is not context:
+                with suppress(Exception):
+                    surface_context.release_bindings(inventory_context)
             return [], {"pages": []}
         pages = list(listed.get("pages") or [])
+        if not pages and inventory_context is not context:
+            with suppress(Exception):
+                surface_context.release_bindings(inventory_context)
         snapshot = {
             key: listed.get(key)
             for key in (
@@ -1067,6 +1103,12 @@ def _run_browser_task_commands(
         return pages, snapshot
 
     page_inventory, page_inventory_snapshot = refresh_inventory()
+    if not page_inventory and not surface_context.tool_enabled(context):
+        with suppress(Exception):
+            release_captured_context()
+        with suppress(Exception):
+            release_owner()
+        return page_unavailable()
     try:
         if page_inventory:
             primary = next((
@@ -1094,18 +1136,32 @@ def _run_browser_task_commands(
                 page_key = surface_context.resolve_page_key("")
             finally:
                 surface_context.reset(token)
+            # The registry owns this temporary context once observe starts.
+            release_context_on_exit = False
             observed = registry.execute(
                 command="observe", backend=backend, binding_id=binding_id,
                 page_key=page_key, owner_id=owner_id, page_context=context,
             )
+            if captured_here and not observed.get("web_session_id"):
+                release_context_on_exit = True
     except Exception:
-        if captured_here:
-            surface_context.release_bindings(context)
+        with suppress(Exception):
+            release_owner()
+        with suppress(Exception):
+            release_captured_context()
         raise
     session_id = str(observed.get("web_session_id") or "")
     if not session_id or "frame_id" not in observed:
-        if captured_here and not session_id:
-            surface_context.release_bindings(context)
+        if session_id:
+            with suppress(Exception):
+                registry.execute(
+                    command="close", web_session_id=session_id,
+                    owner_id=owner_id,
+                )
+        with suppress(Exception):
+            release_owner()
+        with suppress(Exception):
+            release_captured_context()
         return {
             "status": "failed",
             "reason_code": observed.get("reason_code", "page_unavailable"),
@@ -1119,8 +1175,8 @@ def _run_browser_task_commands(
 
     def dispatch(action: str, **arguments):
         nonlocal observed, session_id, page_inventory, bound_page_identity
+        page_context_token = str(arguments.pop("page_context_token", "") or "")
         if action == "switch_page":
-            page_context_token = str(arguments.get("page_context_token") or "")
             selected_page = next((
                 page for page in page_inventory
                 if page.get("page_context_token") == page_context_token
@@ -1342,12 +1398,17 @@ def _run_browser_task_commands(
                     _release_screenshot_payload([], unreleased_screenshot)
                     last["screenshot_result"] = None
         finally:
-            registry.execute(
-                command="close", web_session_id=session_id, owner_id=owner_id,
-            )
-            release_owner = getattr(registry, "release_owner", None)
-            if callable(release_owner):
-                release_owner(owner_id)
+            try:
+                registry.execute(
+                    command="close", web_session_id=session_id,
+                    owner_id=owner_id,
+                )
+            finally:
+                try:
+                    release_owner()
+                finally:
+                    with suppress(Exception):
+                        release_captured_context()
 
 
 def _requested_url(arguments: dict | None) -> str:

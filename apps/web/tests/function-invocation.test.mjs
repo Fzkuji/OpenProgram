@@ -139,6 +139,12 @@ const {
 const pendingUserText = await import("../lib/pending-user-text.ts");
 const { useSessionStore } = await import("../lib/session-store/index.ts");
 const {
+  handleRunningTaskClear,
+  settleFunctionReloadAfterSessionLoad,
+} = await import(
+  "../lib/runtime-bridge/chat-handlers.ts"
+);
+const {
   draftChannelChoiceHost,
   setDraftChannelChoice,
 } = await import("../lib/runtime-bridge/draft-channel-choice.ts");
@@ -222,6 +228,11 @@ const exact =
 test("an exact registered function expression dispatches as a function", async () => {
   const sessionKey = "local_fn_exact";
   resetObservations();
+  nextHttpResponse = {
+    ok: true,
+    status: 200,
+    payload: { session_id: sessionKey },
+  };
   await submitThroughComposer(exact, sessionKey);
 
   assert.equal(wsFrames.filter((p) => p.action === "chat").length, 0);
@@ -238,6 +249,87 @@ test("an exact registered function expression dispatches as a function", async (
     session_id: sessionKey,
   });
   releaseChatReservation(sessionKey);
+});
+
+test("a successful response without a session id rolls back the direct run", async () => {
+  const sessionKey = "focused-function-invalid-response";
+  const previousRuntimeSession = runtimeState.currentSessionId;
+  const previousActive = useSessionStore.getState().activeChatKey;
+  const previousCurrent = useSessionStore.getState().currentSessionId;
+  runtimeState.currentSessionId = sessionKey;
+  useSessionStore.setState({
+    activeChatKey: sessionKey,
+    currentSessionId: sessionKey,
+  });
+  resetObservations();
+  const originalConsoleError = console.error;
+  console.error = () => {};
+  try {
+    await submitThroughComposer(exact, sessionKey);
+  } finally {
+    console.error = originalConsoleError;
+    runtimeState.currentSessionId = previousRuntimeSession;
+    useSessionStore.setState({
+      activeChatKey: previousActive,
+      currentSessionId: previousCurrent,
+    });
+  }
+
+  assert.equal(httpCalls.length, 1);
+  assert.equal(wsFrames.filter((p) => p.action === "chat").length, 0);
+  assert.equal(useSessionStore.getState().runningTasks[sessionKey], undefined);
+  assert.equal(
+    (useSessionStore.getState().messageOrder[sessionKey] || []).some(
+      (id) => id.startsWith("__optimistic_fn__:"),
+    ),
+    false,
+  );
+});
+
+test("a function completion never reloads a session left in the background", () => {
+  const sessionKey = "function-background-after-dispatch";
+  const previousRuntimeSession = runtimeState.currentSessionId;
+  resetObservations();
+  runtimeState.currentSessionId = "different-session";
+  runtimeState.__reloadOnTaskClear.clear();
+  runtimeState.__reloadOnTaskClear.add(sessionKey);
+
+  assert.equal(handleRunningTaskClear(sessionKey, { force: true }), true);
+  assert.equal(runtimeState.__reloadOnTaskClear.size, 0);
+  assert.deepEqual(wsFrames, []);
+
+  runtimeState.currentSessionId = previousRuntimeSession;
+});
+
+test("a terminal session load clears a late completion reload", () => {
+  const sessionKey = "function-clear-before-http-response";
+  runtimeState.__reloadOnTaskClear.clear();
+  runtimeState.__reloadOnTaskClear.add(sessionKey);
+
+  settleFunctionReloadAfterSessionLoad(sessionKey, true);
+  assert.equal(runtimeState.__reloadOnTaskClear.has(sessionKey), true);
+  settleFunctionReloadAfterSessionLoad(sessionKey, false);
+  assert.equal(runtimeState.__reloadOnTaskClear.has(sessionKey), false);
+});
+
+test("function completion reloads are tracked independently per session", () => {
+  const previousRuntimeSession = runtimeState.currentSessionId;
+  resetObservations();
+  runtimeState.__reloadOnTaskClear.clear();
+  runtimeState.__reloadOnTaskClear.add("function-session-a");
+  runtimeState.__reloadOnTaskClear.add("function-session-b");
+  runtimeState.currentSessionId = "function-session-a";
+
+  handleRunningTaskClear("function-session-a", { force: true });
+
+  assert.deepEqual(wsFrames, [{
+    action: "load_session",
+    session_id: "function-session-a",
+  }]);
+  assert.equal(runtimeState.__reloadOnTaskClear.has("function-session-a"), false);
+  assert.equal(runtimeState.__reloadOnTaskClear.has("function-session-b"), true);
+  runtimeState.__reloadOnTaskClear.clear();
+  runtimeState.currentSessionId = previousRuntimeSession;
 });
 
 test("explanatory text remains a chat message", async () => {
@@ -327,10 +419,13 @@ test("a bound function call does not mark or navigate the focused session", asyn
   const focusedSession = "focused-A";
   const boundSession = "bound-B";
   const previousRuntimeSession = runtimeState.currentSessionId;
+  const previousReloads = [...runtimeState.__reloadOnTaskClear];
   const store = useSessionStore.getState();
   store.setRunningTaskFor(focusedSession, null);
   store.setRunningTaskFor(boundSession, null);
   runtimeState.currentSessionId = focusedSession;
+  runtimeState.__reloadOnTaskClear.clear();
+  runtimeState.__reloadOnTaskClear.add(focusedSession);
   resetObservations();
   nextHttpResponse = {
     ok: true,
@@ -338,7 +433,7 @@ test("a bound function call does not mark or navigate the focused session", asyn
     payload: { session_id: boundSession },
   };
 
-  const { activatedSessions } = await submitThroughComposer(
+  const { activatedSessions, dispatchFrames } = await submitThroughComposer(
     exact,
     boundSession,
     { bound: true },
@@ -350,8 +445,17 @@ test("a bound function call does not mark or navigate the focused session", asyn
     "gui_agent",
   );
   assert.deepEqual(activatedSessions, []);
+  assert.equal(
+    dispatchFrames.some((frame) => frame.action === "load_session"),
+    false,
+  );
+  assert.deepEqual([...runtimeState.__reloadOnTaskClear], [focusedSession]);
   releaseChatReservation(boundSession);
   runtimeState.currentSessionId = previousRuntimeSession;
+  runtimeState.__reloadOnTaskClear.clear();
+  for (const sessionId of previousReloads) {
+    runtimeState.__reloadOnTaskClear.add(sessionId);
+  }
 });
 
 test("a failed bound function call rolls back only its own session", async () => {
@@ -423,8 +527,19 @@ test("a successful function response binds channel and project before navigation
       session_id: createdSession,
       project_id: "project-1",
     },
+    {
+      action: "load_session",
+      session_id: createdSession,
+    },
   ]);
   assert.deepEqual(activatedSessions, [createdSession]);
+  assert.equal(runtimeState.__reloadOnTaskClear.has(createdSession), true);
+  assert.equal(handleRunningTaskClear(createdSession, { force: true }), true);
+  assert.deepEqual(wsFrames, [{
+    action: "load_session",
+    session_id: createdSession,
+  }]);
+  assert.equal(runtimeState.__reloadOnTaskClear.has(createdSession), false);
   assert.equal(
     useSessionStore.getState().pendingProjectsByChat[draftSession],
     undefined,

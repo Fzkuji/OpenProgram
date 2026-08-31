@@ -217,7 +217,7 @@ export function RuntimeBlock({
       },
       showToast,
     );
-    runtimeState.__reloadOnTaskClear = sessionId;
+    runtimeState.__reloadOnTaskClear.add(sessionId);
     wsSend({ action: "retry_function", session_id: sessionId, function: fnName });
   }
 

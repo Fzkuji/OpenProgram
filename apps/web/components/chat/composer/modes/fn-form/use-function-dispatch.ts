@@ -125,7 +125,9 @@ export function useFunctionDispatch({
           throw new Error(message);
         }
         const sid = payload && payload.session_id;
-        if (typeof sid !== "string" || !sid) return;
+        if (typeof sid !== "string" || !sid) {
+          throw new Error("Function response did not include a session_id");
+        }
 
         if (
           dispatchSessionId
@@ -167,6 +169,8 @@ export function useFunctionDispatch({
         useCenterTabs.getState().markSessionReady(sid);
         if (shouldActivate) {
           runtimeState.currentSessionId = sid;
+          runtimeState.__reloadOnTaskClear.add(sid);
+          send({ action: "load_session", session_id: sid });
           if (sid !== currentSessionId) {
             setCurrentConv(sid);
             pushPath(`/s/${encodeURIComponent(sid)}`);

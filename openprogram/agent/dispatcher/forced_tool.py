@@ -107,6 +107,7 @@ def dispatch_forced_tool_call(
     )
     _cid_token = _set_cid(session_id)
     captured_surface = None
+    out = None
     try:
         resolved_execution_id = (
             execution_id or _execution_id_from_anchor(anchor_msg_id)

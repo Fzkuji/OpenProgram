@@ -30,6 +30,7 @@ import {
   handleSessionsList,
   handleSessionUpdated,
   initChatPage,
+  settleFunctionReloadAfterSessionLoad,
   wsHandleChatAck,
   wsHandleChatResponse,
   wsHandleStatus,
@@ -504,6 +505,10 @@ export function useWS(): void {
           {
             const dd = d as { id?: unknown; run_active?: unknown } | undefined;
             if (typeof dd?.id === "string" && dd.id) {
+              settleFunctionReloadAfterSessionLoad(
+                dd.id,
+                dd.run_active === true,
+              );
               void import("@/lib/state/send-queue").then((m) =>
                 m.reconcileAfterSessionLoad(dd.id as string, dd.run_active === true),
               );
