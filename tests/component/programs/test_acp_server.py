@@ -15,6 +15,7 @@ import select
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import AsyncGenerator
 from unittest.mock import patch
 
@@ -360,10 +361,10 @@ def test_prompt_binds_exact_execution_identity(tmp_db, client, tmp_path,
     assert c.server._sessions[sid].execution_id is None
 
 
-def test_cancel_calls_exact_execution_after_setting_event(
+def test_cancel_calls_exact_execution_before_setting_event(
     tmp_db, client, tmp_path, monkeypatch,
 ) -> None:
-    """ACP cancel targets the live reply ID and sets its event first."""
+    """ACP cancel persists the live reply ID before setting its event."""
     from openprogram.agent import run_control
 
     c = client()
@@ -421,7 +422,162 @@ def test_cancel_calls_exact_execution_after_setting_event(
 
     assert "err" not in result, result.get("err")
     assert result["res"]["stopReason"] == "cancelled"
-    assert calls == [(execution_id, True)]
+    assert calls == [(execution_id, False)]
+    assert c.server._sessions[sid].cancel_event.is_set()
+
+
+def test_cancel_does_not_override_completed_prompt(
+    tmp_db, client, tmp_path, monkeypatch,
+) -> None:
+    """A terminal cancellation rejection leaves the prompt's result intact."""
+    from openprogram.agent import run_control
+
+    c = client()
+    c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
+    sid = c.call("session/new", {
+        "cwd": str(tmp_path), "mcpServers": [],
+    })["sessionId"]
+    sess = c.server._sessions[sid]
+    sess.open_questions.add("q-completed")
+    calls: list[str] = []
+
+    def _cancel(execution_id):
+        calls.append(execution_id)
+        raise run_control.ExecutionNotCancellable(
+            execution_id, {"status": "completed"},
+        )
+
+    monkeypatch.setattr(run_control, "cancel_execution", _cancel)
+    monkeypatch.setattr(
+        "openprogram.agent.questions.resolve_question_and_broadcast",
+        lambda *args: pytest.fail("terminal rejection must not close questions"),
+    )
+
+    def _process(req, **kwargs):
+        c.server._session_cancel({"sessionId": sid})
+        return SimpleNamespace(failed=False)
+
+    monkeypatch.setattr(D, "process_user_turn", _process)
+    result = c.server._session_prompt({
+        "sessionId": sid,
+        "prompt": [{"type": "text", "text": "done"}],
+    })
+
+    assert result == {"stopReason": "end_turn"}
+    assert calls and calls[0].endswith("_reply")
+    assert sess.open_questions == {"q-completed"}
+    assert not sess.cancel_event.is_set()
+    sess.open_questions.clear()
+
+
+def test_cancel_does_not_locally_cancel_on_service_failure(
+    tmp_db, client, tmp_path, monkeypatch,
+) -> None:
+    """Unexpected cancellation-service failures do not fake a local cancel."""
+    from openprogram.agent import run_control
+
+    c = client()
+    c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
+    sid = c.call("session/new", {
+        "cwd": str(tmp_path), "mcpServers": [],
+    })["sessionId"]
+    sess = c.server._sessions[sid]
+    sess.open_questions.add("q-failure")
+
+    monkeypatch.setattr(
+        run_control, "cancel_execution",
+        lambda _execution_id: (_ for _ in ()).throw(RuntimeError("store down")),
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.questions.resolve_question_and_broadcast",
+        lambda *args: pytest.fail("service failure must not close questions"),
+    )
+
+    def _process(req, **kwargs):
+        c.server._session_cancel({"sessionId": sid})
+        return SimpleNamespace(failed=False)
+
+    monkeypatch.setattr(D, "process_user_turn", _process)
+    result = c.server._session_prompt({
+        "sessionId": sid,
+        "prompt": [{"type": "text", "text": "retry"}],
+    })
+
+    assert result == {"stopReason": "end_turn"}
+    assert sess.open_questions == {"q-failure"}
+    assert not sess.cancel_event.is_set()
+    sess.open_questions.clear()
+
+
+def test_cancel_resolves_open_questions_as_cancelled(
+    tmp_db, client, tmp_path, monkeypatch,
+) -> None:
+    """An accepted exact cancellation reports the cancellation outcome."""
+    from openprogram.agent import run_control
+
+    c = client()
+    c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
+    sid = c.call("session/new", {
+        "cwd": str(tmp_path), "mcpServers": [],
+    })["sessionId"]
+    sess = c.server._sessions[sid]
+    sess.execution_id = "question-execution_reply"
+    sess.open_questions.add("q-cancel")
+    event = threading.Event()
+    sess.cancel_event = event
+    outcomes: list[tuple] = []
+    monkeypatch.setattr(
+        run_control, "cancel_execution",
+        lambda execution_id: {"execution_id": execution_id,
+                               "status": "cancelling"},
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.questions.resolve_question_and_broadcast",
+        lambda *args: outcomes.append(args),
+    )
+
+    c.server._session_cancel({"sessionId": sid})
+
+    assert event.is_set()
+    assert outcomes == [("q-cancel", "cancelled", None)]
+    assert sess.open_questions == set()
+
+
+def test_prompt_cleanup_preserves_successor_execution(
+    tmp_db, client, tmp_path, monkeypatch,
+) -> None:
+    """Old prompt cleanup cannot clear a successor's exact token or field."""
+    from openprogram.agent import run_control
+
+    c = client()
+    c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
+    sid = c.call("session/new", {
+        "cwd": str(tmp_path), "mcpServers": [],
+    })["sessionId"]
+    sess = c.server._sessions[sid]
+    original = run_control.unregister_cancel_event
+    successor_event = threading.Event()
+
+    def _unregister(session_id, event=None, **kwargs):
+        original(session_id, event, **kwargs)
+        assert run_control.claim_cancel_event(
+            session_id, successor_event,
+            execution_id="successor_reply", foreground=True,
+        )
+        sess.execution_id = "successor_reply"
+
+    monkeypatch.setattr(run_control, "unregister_cancel_event", _unregister)
+    monkeypatch.setattr(
+        D, "process_user_turn", lambda req, **kwargs: SimpleNamespace(failed=False),
+    )
+
+    assert c.server._session_prompt({
+        "sessionId": sid,
+        "prompt": [{"type": "text", "text": "first"}],
+    }) == {"stopReason": "end_turn"}
+    assert sess.execution_id == "successor_reply"
+    assert run_control.current_token(sid, execution_id="successor_reply").event is successor_event
+    original(sid, successor_event, execution_id="successor_reply")
 
 
 def test_prompt_rejects_unknown_session(tmp_db, client) -> None:

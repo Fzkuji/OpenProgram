@@ -127,7 +127,6 @@ class _Session:
         self.id = session_id
         self.cwd = cwd
         self.cancel_event = threading.Event()
-        self.cancelled = False
         self.execution_id: str | None = None
         # Question ids forwarded to the client and still unanswered — a
         # cancel must resolve them or the tool gate sits on its Event for
@@ -248,19 +247,35 @@ class ACPServer:
         sess = self._sessions.get(params.get("sessionId") or "")
         if sess is None:
             return None
-        from openprogram.agent.run_control import cancel_execution
+        from openprogram.agent.run_control import (
+            ExecutionNotCancellable,
+            ExecutionNotFound,
+            cancel_execution,
+        )
 
         with sess.lock:
             execution_id = sess.execution_id
             cancel_event = sess.cancel_event
-            sess.cancelled = True
+        if execution_id is None:
+            return None
+        try:
+            cancel_execution(execution_id)
+        except ExecutionNotFound:
+            # The prompt may not have persisted its placeholder yet. The
+            # exact event still needs to stop that in-flight prompt locally.
             cancel_event.set()
-        if execution_id is not None:
-            try:
-                cancel_execution(execution_id)
-            except Exception:
-                _log.debug("ACP execution cancellation bridge failed",
-                           exc_info=True)
+        except ExecutionNotCancellable:
+            # A completed/failed prompt won the race; do not rewrite its
+            # result or release questions belonging to a different state.
+            return None
+        except Exception:
+            # Notifications have no error response; leave the live prompt
+            # untouched and surface infrastructure failures in the log.
+            _log.warning("ACP execution cancellation failed for %s",
+                         execution_id, exc_info=True)
+            return None
+        else:
+            cancel_event.set()
         # Every permission request still in flight must be answered — the
         # spec requires the "cancelled" outcome, and the tool gate is
         # blocked on the matching question's Event.
@@ -271,7 +286,7 @@ class ACPServer:
             sess.open_questions.clear()
         for qid in qids:
             try:
-                resolve_question_and_broadcast(qid, "declined", None)
+                resolve_question_and_broadcast(qid, "cancelled", None)
             except Exception:
                 _log.debug("ACP question cancellation failed", exc_info=True)
         return None
@@ -304,7 +319,6 @@ class ACPServer:
                 execution_id=execution_id, foreground=True,
             ):
                 raise RPCError(INTERNAL_ERROR, "a prompt turn is already active")
-            sess.cancelled = False
             sess.cancel_event = cancel_event
             sess.execution_id = execution_id
         try:
