@@ -128,6 +128,7 @@ class _Session:
         self.cwd = cwd
         self.cancel_event = threading.Event()
         self.cancelled = False
+        self.execution_id: str | None = None
         # Question ids forwarded to the client and still unanswered — a
         # cancel must resolve them or the tool gate sits on its Event for
         # the full 300s timeout.
@@ -247,14 +248,19 @@ class ACPServer:
         sess = self._sessions.get(params.get("sessionId") or "")
         if sess is None:
             return None
-        sess.cancelled = True
-        sess.cancel_event.set()
-        from openprogram.agent.run_control import mark_cancelled
+        from openprogram.agent.run_control import cancel_execution
 
-        try:
-            mark_cancelled(sess.id)
-        except Exception:
-            _log.debug("ACP session cancellation bridge failed", exc_info=True)
+        with sess.lock:
+            execution_id = sess.execution_id
+            cancel_event = sess.cancel_event
+            sess.cancelled = True
+            cancel_event.set()
+        if execution_id is not None:
+            try:
+                cancel_execution(execution_id)
+            except Exception:
+                _log.debug("ACP execution cancellation bridge failed",
+                           exc_info=True)
         # Every permission request still in flight must be answered — the
         # spec requires the "cancelled" outcome, and the tool gate is
         # blocked on the matching question's Event.
@@ -289,11 +295,18 @@ class ACPServer:
             unregister_cancel_event,
         )
 
+        user_msg_id = uuid.uuid4().hex[:12]
+        execution_id = user_msg_id + "_reply"
         cancel_event = threading.Event()
-        if not claim_cancel_event(sess.id, cancel_event):
-            raise RPCError(INTERNAL_ERROR, "a prompt turn is already active")
-        sess.cancelled = False
-        sess.cancel_event = cancel_event
+        with sess.lock:
+            if not claim_cancel_event(
+                sess.id, cancel_event,
+                execution_id=execution_id, foreground=True,
+            ):
+                raise RPCError(INTERNAL_ERROR, "a prompt turn is already active")
+            sess.cancelled = False
+            sess.cancel_event = cancel_event
+            sess.execution_id = execution_id
         try:
             result = process_user_turn(
                 TurnRequest(
@@ -304,17 +317,23 @@ class ACPServer:
                     permission_mode=self._permission_mode,
                     attachments=_blocks_to_attachments(blocks) or None,
                     additional_working_dirs=[sess.cwd],
+                    user_msg_id=user_msg_id,
                     **local_owner_authority(),
                 ),
                 on_event=lambda env: self._on_event(sess, env),
-                cancel_event=sess.cancel_event,
+                cancel_event=cancel_event,
             )
         finally:
             # Pass the event back: popping by session id alone would retire a
             # newer turn's token (see agent/run_control.py).
-            unregister_cancel_event(sess.id, sess.cancel_event)
+            with sess.lock:
+                unregister_cancel_event(
+                    sess.id, cancel_event, execution_id=execution_id,
+                )
+                if sess.execution_id == execution_id:
+                    sess.execution_id = None
 
-        if sess.cancelled:
+        if cancel_event.is_set():
             return {"stopReason": "cancelled"}
         if result.failed:
             return {"stopReason": "refusal"}

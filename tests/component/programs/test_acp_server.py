@@ -311,6 +311,119 @@ def test_prompt_streams_text_and_ends_turn(tmp_db, client, tmp_path) -> None:
     assert [m["role"] for m in tmp_db.get_messages(sid)] == ["user", "assistant"]
 
 
+def test_prompt_binds_exact_execution_identity(tmp_db, client, tmp_path,
+                                               monkeypatch) -> None:
+    """ACP claims and releases the same canonical execution as the turn."""
+    from openprogram.agent import run_control
+
+    observed: dict = {}
+    claim = run_control.claim_cancel_event
+    unregister = run_control.unregister_cancel_event
+
+    def _claim(session_id, event, **kwargs):
+        observed["claim"] = kwargs.copy()
+        return claim(session_id, event, **kwargs)
+
+    def _unregister(session_id, event=None, **kwargs):
+        observed["unregister"] = kwargs.copy()
+        return unregister(session_id, event, **kwargs)
+
+    monkeypatch.setattr(run_control, "claim_cancel_event", _claim)
+    monkeypatch.setattr(run_control, "unregister_cancel_event", _unregister)
+
+    c = client()
+    c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
+    sid = c.call("session/new", {
+        "cwd": str(tmp_path), "mcpServers": [],
+    })["sessionId"]
+    captured: dict = {}
+    process = D.process_user_turn
+
+    def _process(req, **kwargs):
+        captured["request"] = req
+        return process(req, **kwargs)
+
+    monkeypatch.setattr(D, "process_user_turn", _process)
+    with _patched_stream(make_text_stream_fn(["ok"])):
+        assert c.call("session/prompt", {
+            "sessionId": sid,
+            "prompt": [{"type": "text", "text": "hi"}],
+        })["stopReason"] == "end_turn"
+
+    req = captured["request"]
+    assert req.user_msg_id
+    execution_id = req.user_msg_id + "_reply"
+    assert observed["claim"] == {
+        "execution_id": execution_id, "foreground": True,
+    }
+    assert observed["unregister"] == {"execution_id": execution_id}
+    assert c.server._sessions[sid].execution_id is None
+
+
+def test_cancel_calls_exact_execution_after_setting_event(
+    tmp_db, client, tmp_path, monkeypatch,
+) -> None:
+    """ACP cancel targets the live reply ID and sets its event first."""
+    from openprogram.agent import run_control
+
+    c = client()
+    c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
+    sid = c.call("session/new", {
+        "cwd": str(tmp_path), "mcpServers": [],
+    })["sessionId"]
+    started = threading.Event()
+    release = threading.Event()
+
+    async def _slow_stream(model, context, options):
+        yield EventStart(partial=_partial(""))
+        yield EventTextStart(content_index=0, partial=_partial(""))
+        yield EventTextDelta(content_index=0, delta="wor",
+                             partial=_partial("wor"))
+        started.set()
+        release.wait(10.0)
+        yield EventTextEnd(content_index=0, content="wor",
+                           partial=_partial("wor"))
+        yield EventDone(reason="stop", message=_final("wor"))
+
+    calls: list[tuple[str, bool]] = []
+
+    def _cancel(execution_id):
+        sess = c.server._sessions[sid]
+        calls.append((execution_id, sess.cancel_event.is_set()))
+        return {"execution_id": execution_id}
+
+    monkeypatch.setattr(run_control, "cancel_execution", _cancel)
+    monkeypatch.setattr(
+        run_control, "mark_cancelled",
+        lambda *_args, **_kwargs: pytest.fail("session cancel must not use mark_cancelled"),
+    )
+    result: dict = {}
+
+    def _prompt() -> None:
+        try:
+            result["res"] = c.call("session/prompt", {
+                "sessionId": sid,
+                "prompt": [{"type": "text", "text": "long one"}],
+            }, timeout=30.0)
+        except Exception as exc:
+            result["err"] = exc
+
+    with _patched_stream(_slow_stream):
+        t = threading.Thread(target=_prompt, daemon=True)
+        t.start()
+        assert started.wait(20.0)
+        execution_id = c.server._sessions[sid].execution_id
+        assert execution_id and execution_id.endswith("_reply")
+        c.notify("session/cancel", {"sessionId": sid})
+        time.sleep(0.3)
+        release.set()
+        t.join(timeout=30.0)
+
+    assert "err" not in result, result.get("err")
+    assert result["res"]["stopReason"] == "cancelled"
+    assert calls == [(execution_id, True)]
+
+
 def test_prompt_rejects_unknown_session(tmp_db, client) -> None:
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
