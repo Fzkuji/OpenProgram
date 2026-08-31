@@ -628,12 +628,14 @@ def run_agentic_in_subprocess(
     model: Optional[str] = None,
     response_format=None,
     render_range: Optional[dict[str, int]] = None,
+    timeout_seconds: Optional[float] = None,
 ) -> dict:
     """Run a single @agentic_function tool in a fork()'d subprocess.
 
-    Blocks until the child exits (normally or via SIGKILL from
-    ``kill_active_subprocess``). Returns whatever the child wrote to its
-    result file, or a killed marker if it died without writing.
+    Blocks until the child exits (normally, via the optional wall-clock
+    timeout, or via SIGKILL from ``kill_active_subprocess``). Returns whatever
+    the child wrote to its result file, or a killed marker if it died without
+    writing.
     """
     result_path = tempfile.mktemp(prefix="op_subproc_", suffix=".pkl")
     # ``spawn`` (not fork) because the parent worker has already loaded
@@ -748,8 +750,20 @@ def run_agentic_in_subprocess(
     drain_thread = threading.Thread(target=_drain, daemon=True)
     drain_thread.start()
 
+    timed_out = False
     try:
-        p.join()
+        if timeout_seconds is None:
+            p.join()
+        else:
+            timeout = max(0.1, float(timeout_seconds))
+            p.join(timeout)
+            if p.is_alive():
+                timed_out = True
+                from openprogram._compat import kill_process_tree
+
+                if not kill_process_tree(p.pid):
+                    p.kill()
+                p.join(timeout=5)
     finally:
         stop_flag.set()
         # Child is gone — decline any still-pending questions so their
@@ -777,11 +791,21 @@ def run_agentic_in_subprocess(
 
     # Pick up the result, if any.
     out: dict
-    try:
-        with open(result_path, "rb") as f:
-            out = pickle.load(f)
-    except Exception:
-        out = {"error": "subprocess died without writing result", "killed": True}
+    if timed_out:
+        out = {
+            "error": f"agentic subprocess timed out after {timeout:g} seconds",
+            "killed": True,
+            "timed_out": True,
+        }
+    else:
+        try:
+            with open(result_path, "rb") as f:
+                out = pickle.load(f)
+        except Exception:
+            out = {
+                "error": "subprocess died without writing result",
+                "killed": True,
+            }
     try:
         os.unlink(result_path)
     except Exception:

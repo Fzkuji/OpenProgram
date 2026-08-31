@@ -105,6 +105,65 @@ def test_spawn_payload_preserves_turn_render_range(monkeypatch):
     assert payload["render_range"] == {"callers": 0, "subcalls": 2}
 
 
+def test_subprocess_timeout_kills_the_process_tree(monkeypatch):
+    from openprogram.agent import process_runner
+
+    joined = []
+    killed = []
+
+    class FakeProcess:
+        pid = 4321
+        exitcode = -9
+
+        def __init__(self, **_kwargs):
+            self.alive = True
+
+        def start(self):
+            pass
+
+        def join(self, timeout=None):
+            joined.append(timeout)
+
+        def is_alive(self):
+            return self.alive
+
+        def kill(self):
+            raise AssertionError("process-tree termination should succeed")
+
+    process = FakeProcess()
+
+    class FakeContext:
+        Queue = queue.Queue
+
+        def Process(self, **_kwargs):
+            return process
+
+    def kill_process_tree(pid):
+        killed.append(pid)
+        process.alive = False
+        return True
+
+    monkeypatch.setattr(process_runner.mp, "get_context", lambda _kind: FakeContext())
+    monkeypatch.setattr("openprogram._compat.kill_process_tree", kill_process_tree)
+
+    result = process_runner.run_agentic_in_subprocess(
+        tool_name="demo",
+        kwargs={},
+        session_id="s",
+        anchor_msg_id="m",
+        timeout_seconds=2.5,
+    )
+
+    assert joined == [2.5, 5]
+    assert killed == [4321]
+    assert result == {
+        "error": "agentic subprocess timed out after 2.5 seconds",
+        "killed": True,
+        "timed_out": True,
+        "signal": 9,
+    }
+
+
 def test_child_entry_keeps_the_legacy_positional_payload_layout():
     from openprogram.agent import process_runner
 

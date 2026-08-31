@@ -626,6 +626,15 @@ def test_bash_execution_failures_use_typed_error(
             "[cancelled by user]",
             "agentic_subprocess_cancelled",
         ),
+        (
+            {
+                "error": "agentic subprocess timed out after 90 seconds",
+                "killed": True,
+                "timed_out": True,
+            },
+            "agentic subprocess timed out after 90 seconds",
+            "agentic_subprocess_timeout",
+        ),
     ],
 )
 def test_agentic_subprocess_failure_reaches_agent_loop_as_typed_error(
@@ -743,6 +752,8 @@ def test_agentic_subprocess_failure_reaches_agent_loop_as_typed_error(
         assert results[0].details["killed"] is True
     if subprocess_result.get("signal") is not None:
         assert results[0].details["signal"] == subprocess_result["signal"]
+    if subprocess_result.get("timed_out"):
+        assert results[0].details["timed_out"] is True
 
 
 def test_worker_resident_agentic_tool_does_not_spawn(monkeypatch) -> None:
@@ -871,7 +882,70 @@ def test_gui_agent_browser_surface_is_captured_for_subprocess(monkeypatch) -> No
 
     assert result.content[0].text == "browser result"
     assert seen["surface_context_snapshot"] is captured
+    assert seen["timeout_seconds"] is None
     assert released == [captured]
+
+
+def test_gui_agent_max_seconds_bounds_the_subprocess(monkeypatch) -> None:
+    from contextlib import nullcontext
+
+    import openprogram.agent.process_runner as process_runner
+    import openprogram.agent.session_db as session_db
+    import openprogram.webui._exec_dag as exec_dag
+    from openprogram.agent.dispatcher.runtime_attach import (
+        _wrap_agentic_runtime_block,
+    )
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agent.types import AgentTool
+
+    class FakeDB:
+        def invalidate_cache(self, session_id):
+            pass
+
+    async def original_execute(call_id, args, cancel, on_update):
+        raise AssertionError("gui_agent should run in the subprocess")
+
+    tool = AgentTool(
+        name="gui_agent",
+        description="probe",
+        parameters={"type": "object", "properties": {}},
+        label="probe",
+        execute=original_execute,
+    )
+    setattr(tool, "_is_agentic", True)
+    seen = {}
+
+    def run_subprocess(**kwargs):
+        seen.update(kwargs)
+        return {"text": "done"}
+
+    monkeypatch.setattr(
+        process_runner, "run_agentic_in_subprocess", run_subprocess,
+    )
+    monkeypatch.setattr(session_db, "default_db", lambda: FakeDB())
+    monkeypatch.setattr(exec_dag, "live_progress", lambda *a, **kw: nullcontext())
+    monkeypatch.setattr(exec_dag, "build_exec_dag", lambda *a, **kw: None)
+
+    wrapped = _wrap_agentic_runtime_block(
+        tool,
+        TurnRequest(
+            session_id="gui-timeout",
+            user_text="",
+            agent_id="main",
+            source="web",
+        ),
+        lambda event: None,
+        "assistant-1",
+    )
+    result = _run(wrapped.execute(
+        "call-1",
+        {"task": "inspect", "max_seconds": 12},
+        None,
+        None,
+    ))
+
+    assert result.content[0].text == "done"
+    assert seen["timeout_seconds"] == 12
 
 
 def test_approval_wrapper_preserves_worker_resident_marker() -> None:

@@ -184,6 +184,11 @@ def _wrap_agentic_runtime_block(
 
                         captured_surface = surface_context.capture_pages()
                         surface_snapshot = captured_surface
+                    timeout_seconds = None
+                    if tool_name in {"browser_agent", "gui_agent"}:
+                        raw_timeout = subprocess_args.get("max_seconds")
+                        if raw_timeout is not None and float(raw_timeout) > 0:
+                            timeout_seconds = float(raw_timeout)
                     try:
                         return run_agentic_in_subprocess(
                             tool_name=tool_name,
@@ -206,6 +211,7 @@ def _wrap_agentic_runtime_block(
                             ),
                             surface_context_snapshot=surface_snapshot,
                             render_range=req.render_range,
+                            timeout_seconds=timeout_seconds,
                         )
                     finally:
                         if captured_surface is not None:
@@ -226,7 +232,15 @@ def _wrap_agentic_runtime_block(
                     from openprogram.providers.types import (
                         TextContent as _CB,
                     )
-                    details = {"reason_code": "agentic_subprocess_error"}
+                    details = {
+                        "reason_code": (
+                            "agentic_subprocess_timeout"
+                            if out.get("timed_out")
+                            else "agentic_subprocess_error"
+                        )
+                    }
+                    if out.get("timed_out"):
+                        details["timed_out"] = True
                     if out.get("killed"):
                         details["killed"] = True
                     if out.get("signal") is not None:
