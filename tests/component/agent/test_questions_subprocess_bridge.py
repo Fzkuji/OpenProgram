@@ -284,3 +284,58 @@ def test_full_loop_child_asks_parent_answers():
         answer_q.put(None)
 
     assert (outcome, value) == ("answered", "luxon")
+
+
+def test_real_spawn_question_preserves_execution_owner(monkeypatch, tmp_path):
+    """The real spawned child carries its owner into the parent question event.
+
+    The second invocation deliberately omits ``execution_id`` to preserve the
+    historical caller contract; the parent call id remains the fallback owner.
+    """
+    from openprogram.agent.process_runner import run_agentic_in_subprocess
+
+    import openprogram.events as events
+
+    seen = []
+
+    def _resolve_question_frame(frame):
+        if frame.get("type") != "question.asked":
+            return
+        seen.append(frame["data"])
+        Q.get_question_registry().resolve(
+            frame["data"]["id"], "answered", ["ok"],
+        )
+
+    monkeypatch.setattr(events, "emit_ws_frame", _resolve_question_frame)
+    from openprogram import setup
+
+    setup.update_config(lambda cfg: cfg.setdefault("providers", {}).update({
+        "openrouter": {"models": [{
+            "id": "spawn-question-model", "name": "Spawn question model",
+            "api": "openai-completions", "base_url": "http://127.0.0.1",
+        }]},
+    }))
+    kwargs = {
+        "questions": [{"question": "Continue?", "header": "confirm"}],
+    }
+    explicit = run_agentic_in_subprocess(
+        tool_name="ask_user_question", kwargs=kwargs,
+        session_id="spawn-owner-session", anchor_msg_id="anchor",
+        parent_call_id="spawn-call", execution_id="spawn-owner",
+        provider="openrouter", model="spawn-question-model",
+        work_dir=str(tmp_path),
+        timeout_seconds=20,
+    )
+    legacy = run_agentic_in_subprocess(
+        tool_name="ask_user_question", kwargs=kwargs,
+        session_id="spawn-legacy-session", anchor_msg_id="anchor",
+        parent_call_id="legacy-call", provider="openrouter",
+        model="spawn-question-model",
+        work_dir=str(tmp_path), timeout_seconds=20,
+    )
+
+    assert explicit.get("ok") is True, explicit
+    assert legacy.get("ok") is True, legacy
+    assert [data["execution_id"] for data in seen] == [
+        "spawn-owner", "legacy-call",
+    ]

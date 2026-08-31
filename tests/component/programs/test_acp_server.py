@@ -1128,6 +1128,109 @@ def test_ownerless_question_is_not_bound_to_foreground_execution(client, tmp_pat
     assert sess.open_questions["ownerless-question"] == ""
 
 
+def test_question_after_completed_foreground_cancel_is_not_registered(
+    client, tmp_path, monkeypatch,
+):
+    import openprogram.agent.questions as questions
+    from openprogram.agent import run_control
+    from openprogram.agent.questions import PendingQuestion
+
+    c = client()
+    c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
+    sid = c.call("session/new", {
+        "cwd": str(tmp_path), "mcpServers": [],
+    })["sessionId"]
+    sess = c.server._sessions[sid]
+    sess.execution_id = "foreground_reply"
+    lookup_started = threading.Event()
+    release_lookup = threading.Event()
+    cancel_done = threading.Event()
+    calls = []
+
+    class BlockingRegistry:
+        def list_pending(self, session_id):
+            assert session_id == sid
+            lookup_started.set()
+            assert release_lookup.wait(2.0)
+            return [PendingQuestion(
+                id="stale-question", session_id=sid, kind="approval",
+                prompt="allow?", execution_id="foreground_reply",
+            )]
+
+    monkeypatch.setattr(questions, "get_question_registry",
+                        lambda: BlockingRegistry())
+    monkeypatch.setattr(c.server, "_ask_permission",
+                        lambda *args: calls.append(args))
+    monkeypatch.setattr(run_control, "cancel_execution", lambda _eid: None)
+
+    question_thread = threading.Thread(
+        target=c.server._on_question,
+        args=(SimpleNamespace(payload={
+            "id": "stale-question", "session_id": sid,
+            "kind": "approval", "prompt": "allow?", "tool": "bash",
+        }),),
+        daemon=True,
+    )
+    question_thread.start()
+    assert lookup_started.wait(2.0)
+    cancel_thread = threading.Thread(
+        target=lambda: (
+            c.server._session_cancel({"sessionId": sid}),
+            cancel_done.set(),
+        ),
+        daemon=True,
+    )
+    cancel_thread.start()
+    assert cancel_done.wait(2.0)
+    release_lookup.set()
+    question_thread.join(2.0)
+    assert not question_thread.is_alive()
+    with sess.lock:
+        assert "stale-question" not in sess.open_questions
+    assert calls == []
+
+
+def test_permission_entry_after_cancel_does_not_send_request(
+    client, tmp_path, monkeypatch,
+):
+    from openprogram.agent import run_control
+
+    c = client()
+    c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
+    sid = c.call("session/new", {
+        "cwd": str(tmp_path), "mcpServers": [],
+    })["sessionId"]
+    sess = c.server._sessions[sid]
+    sess.execution_id = "foreground_reply"
+    captured = {}
+
+    class DeferredThread:
+        def __init__(self, *, target, args, daemon):
+            captured["target"] = target
+            captured["args"] = args
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr("openprogram.acp.server.threading.Thread",
+                        DeferredThread)
+    monkeypatch.setattr(run_control, "cancel_execution", lambda _eid: None)
+    c.server._on_question(SimpleNamespace(payload={
+        "id": "cancelled-question", "session_id": sid,
+        "kind": "approval", "prompt": "allow?", "tool": "bash",
+        "execution_id": "foreground_reply",
+    }))
+    assert sess.open_questions["cancelled-question"] == "foreground_reply"
+    c.server._session_cancel({"sessionId": sid})
+    assert "cancelled-question" not in sess.open_questions
+
+    requested = []
+    monkeypatch.setattr(c.server._conn, "request",
+                        lambda *args, **kwargs: requested.append((args, kwargs)))
+    captured["target"](*captured["args"])
+    assert requested == []
+
+
 def test_unknown_method_is_a_protocol_error(client) -> None:
     c = client()
     with pytest.raises(AssertionError, match="unknown method"):

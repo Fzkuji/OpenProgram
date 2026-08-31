@@ -483,16 +483,38 @@ class ACPServer:
             # Events from older question producers may omit execution_id. Keep
             # those ownerless instead of assigning the current foreground
             # turn, which could make cancellation resolve a sibling question.
+            if (
+                execution_id
+                and execution_id == sess.execution_id
+                and sess.cancel_event.is_set()
+            ):
+                return
             sess.open_questions[qid] = execution_id
-        threading.Thread(target=self._ask_permission, args=(sess, data),
-                         daemon=True).start()
+        threading.Thread(
+            target=self._ask_permission, args=(sess, data, execution_id),
+            daemon=True,
+        ).start()
 
-    def _ask_permission(self, sess: _Session, data: dict) -> None:
+    def _ask_permission(
+        self, sess: _Session, data: dict,
+        expected_execution_id: str | None = None,
+    ) -> None:
         from openprogram.agent.questions import resolve_question_and_broadcast
 
         qid = data.get("id")
         if not qid:
             return
+        if expected_execution_id is None:
+            expected_execution_id = data.get("execution_id") or ""
+        with sess.lock:
+            if sess.open_questions.get(qid) != expected_execution_id:
+                return
+            if (
+                expected_execution_id
+                and expected_execution_id == sess.execution_id
+                and sess.cancel_event.is_set()
+            ):
+                return
         tool = data.get("tool") or "?"
         try:
             resp = self._conn.request("session/request_permission", {
