@@ -16,7 +16,7 @@ Run it directly from the command line:
 openprogram programs run gui_agent -a task="Open Firefox and go to google.com"
 ```
 
-The Programs card asks for `task` and a `surface`. Keep `desktop` for OS input, or select `browser` to operate the exact Page selected in OpenProgram's built-in browser.
+The Programs card asks for `task` and a `surface`. Keep `desktop` for foreground OS input, or select `browser` to operate an exact Page in OpenProgram's built-in browser. Browser actions use the Page's DOM/CDP target and do not activate its tab, raise the OpenProgram window, or move the system pointer.
 
 Run against the built-in browser Page:
 
@@ -32,11 +32,13 @@ Parameters (function signature `gui_agent(task, max_steps=None, app_name="deskto
 | `max_steps` | Maximum number of actions. Default 150. `0` or a negative value means no cap. |
 | `max_seconds` | Web-path wall-clock limit only. Default is no time limit. `0` or a negative value means no cap. Desktop does not use this field. |
 | `app_name` | Application name used for component memory, e.g. `firefox`, `libreoffice_calc`; default `desktop` |
-| `surface` | `desktop` for OS/VM input or `browser` for the selected built-in Page. The browser route uses the default Page backend unless a trusted caller supplies `backend`. |
+| `surface` | `desktop` for foreground OS/VM input or `browser` for an exact built-in Page. The browser route uses the default Page backend unless a trusted caller supplies `backend`. |
 
 Each desktop step runs observe (one screenshot + component detection + state recognition) → verify the previous step's result → plan one action → execute → build feedback for the next round. A first-step `done` decision receives a separate current-screen completion check. Feedback keeps the latest eight action outcomes; selecting the same failed action four times stops the run instead of repeating indefinitely. Previously learned UI transitions remain available, but learning is an explicit operation rather than an implicit pre-step side effect. When the agent cannot finish or a human must take over, it chooses fail, stops, and returns `success=false`; both `summary` and `handoff_instruction` preserve the handoff text.
 
 Desktop observations include the frontmost application and screenshot coordinate bounds. If the target application's windows are minimized or located in another macOS Space and remain unavailable after one bounded Window-menu recovery, the run stops as infeasible and asks the user to move or unminimize the window. It does not create additional windows indefinitely.
+
+Desktop coordinate input always applies to the current foreground GUI; it is not a background-window API. Use `surface=browser` when a built-in Page must be inspected or changed without bringing OpenProgram or that Page to the foreground.
 
 Desktop and built-in-browser runs share the same terminal fields: `status` (`succeeded`, `infeasible`, `failed`, or `cancelled`), `success`, `reason_code`, `summary`, and `handoff_instruction`. The runner, not the conclusion model, determines success. Desktop results additionally include step history and timing; browser results include backend and WebSession details.
 

@@ -17,7 +17,7 @@
 <p>OpenProgram exposes one tool named <code>gui_agent</code>. Program discovery imports GUI-Agent-Harness, then the OpenProgram bridge registers the public wrapper. The wrapper must call the harness's raw Python implementation, not its already-decorated wrapper, so the execution tree contains exactly one <code>gui_agent</code> node.</p>
 <table><thead><tr><th>Mode</th><th>Selection</th><th>Execution boundary</th></tr></thead><tbody>
 <tr><td>Desktop</td><td><code>surface=desktop</code> and no browser backend</td><td>GUI-Agent-Harness observes the desktop and uses OS or VM input.</td></tr>
-<tr><td>Built-in browser</td><td><code>surface=browser</code>, or an explicit backend for compatibility with older callers</td><td>OpenProgram binds one exact Page and executes through Web Use. An omitted backend resolves to the default Page backend. <code>app_name</code> only names desktop component memory and never changes the route.</td></tr>
+<tr><td>Built-in browser</td><td><code>surface=browser</code>, or an explicit backend for compatibility with older callers</td><td>OpenProgram binds one exact Page and executes through Web Use. DOM/CDP actions do not activate the tab, raise the OpenProgram window, or move the system pointer. An omitted backend resolves to the default Page backend. <code>app_name</code> only names desktop component memory and never changes the route.</td></tr>
 </tbody></table>
 
 <h2>Desktop state machine</h2>
@@ -46,7 +46,7 @@
 <h2>Trust and lifecycle boundaries</h2>
 <ul>
 <li>Desktop mode records the frontmost app, must validate the current target window before a coordinate action, and must not learn components from another app. A window outside the observed macOS Space receives one bounded Window-menu recovery; continued invisibility terminates as infeasible with a handoff instruction.</li>
-<li>Browser mode keeps exact Page identity, backend selection, owner isolation, stale-observation checks, screenshot revocation, and session cleanup inside Web Use.</li>
+<li>Browser mode keeps exact Page identity, background Page resolution, backend selection, owner isolation, stale-observation checks, screenshot revocation, and session cleanup inside Web Use. Page actions must leave the selected visible tab and system frontmost application unchanged.</li>
 <li><code>allow_general</code> remains false for the OpenProgram public entry unless explicitly enabled by a trusted caller.</li>
 <li>Cancellation and unrecoverable exceptions terminate the runner; an unlimited step budget must not convert a repeated infrastructure error into an infinite retry.</li>
 </ul>
@@ -73,7 +73,7 @@
 <li>Desktop and built-in-browser invocations expose the same core result fields.</li>
 <li>A terminal GUI Function card displays Succeeded, Failed, or Needs takeover from the structured GUI result. It never labels a failed GUI result Completed merely because the worker returned normally.</li>
 <li>Long desktop and browser tasks retain bounded state, avoid repeated actions, and complete only after verification.</li>
-<li>Real acceptance uses the default OpenProgram App and includes one multi-step desktop task and one multi-step built-in-browser task.</li>
+<li>Real acceptance uses the default OpenProgram App and includes one multi-step desktop task plus one hidden built-in-Page sequence that observes, clicks, and verifies without changing the visible tab or system frontmost application.</li>
 </ol>
 
 <h2>Implementation status</h2>
@@ -81,9 +81,9 @@
 <tr><td>Exact-Page Web Use lifecycle and backend isolation</td><td class="yes">Implemented and component-tested</td></tr>
 <tr><td>Infeasible results force <code>success=false</code></td><td class="yes">Implemented and regression-tested</td></tr>
 <tr><td>Single public GUI Agent node, deterministic all-terminal result, and common desktop/Web result fields</td><td class="yes">Implemented and regression-tested</td></tr>
-<tr><td>User-visible GUI result status overrides the internal completed transport state</td><td class="yes">Implemented, regression-tested, and independently reviewed; live acceptance pending</td></tr>
+<tr><td>User-visible GUI result status overrides the internal completed transport state</td><td class="yes">Implemented, regression-tested, independently reviewed, and accepted in the default App</td></tr>
 <tr><td>Canonical action/observe ownership and compatibility delegation</td><td class="yes">Implemented and regression-tested</td></tr>
 <tr><td>Real multi-step desktop acceptance from the source checkout</td><td class="yes">Accepted with a 16-step Finder task that created and visually verified nested folders, plus Calculator input/result verification</td></tr>
-<tr><td>Real built-in-browser acceptance through the refreshed default App</td><td class="yes">Accepted through the direct Function entry with persisted Page-unavailable failure and handoff output</td></tr>
+<tr><td>Real built-in-browser acceptance through the refreshed default App</td><td class="yes">Accepted on a hidden Page through list, observe, screenshot, click, observe, verify, and close while the visible tab and system frontmost application remained unchanged</td></tr>
 </tbody></table>
 </main></body></html>
