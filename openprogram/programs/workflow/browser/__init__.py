@@ -1233,7 +1233,7 @@ def _run_browser_task_commands(
                 reply = runtime.exec(
                     content=content,
                     tools=[action_tool],
-                    tool_choice={"type": "function", "name": "browser_page"},
+                    tool_choice="required",
                     parallel_tool_calls=False,
                     max_iterations=1,
                     timeout_s=timeout_s,
