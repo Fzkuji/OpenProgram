@@ -1196,6 +1196,36 @@ def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
     assert calls[0][0] == "web_use"
 
 
+def test_programs_cli_resolves_registered_gui_agent(monkeypatch, capsys):
+    from openprogram.agentic_programming.function import _registry
+    from openprogram.cli.commands.programs import _cmd_run
+    from openprogram.programs import gui_harness_bridge
+    from openprogram.programs.gui_harness_bridge import (
+        install_gui_harness_web_use,
+    )
+
+    monkeypatch.setitem(_registry, "gui_agent", _registry.get("gui_agent"))
+    monkeypatch.setattr(
+        gui_harness_bridge,
+        "gui_agent",
+        getattr(gui_harness_bridge, "gui_agent", None),
+        raising=False,
+    )
+
+    wrapped = install_gui_harness_web_use(
+        lambda **_kwargs: {
+            "status": "succeeded",
+            "success": True,
+            "summary": "inspected",
+        },
+    )
+
+    _cmd_run("gui_agent", ["task=inspect"])
+
+    assert gui_harness_bridge.gui_agent is wrapped
+    assert "'status': 'succeeded'" in capsys.readouterr().out
+
+
 def test_registered_gui_agent_browser_surface_uses_default_backend(monkeypatch):
     from openprogram.programs.workflow import browser as browser_module
     from openprogram.programs.workflow.browser.web_use_runtime import DEFAULT_BACKEND

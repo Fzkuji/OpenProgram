@@ -150,6 +150,11 @@ def install_gui_harness_web_use(original: Callable | None = None):
             runtime=runtime,
         ))
 
+    # ``programs run`` resolves a registered function's module and then looks
+    # up the public function name on that module.  The wrapper is defined here
+    # so it can close over the installed harness implementation; publish that
+    # same decorated callable instead of adding a second execution wrapper.
+    globals()["gui_agent"] = gui_agent
     return gui_agent
 
 
