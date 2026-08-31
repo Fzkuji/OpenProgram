@@ -474,8 +474,10 @@ def test_late_owner_registration_reconciles_persisted_cancel(store):
 
 def test_forced_tool_passes_canonical_execution_id(monkeypatch):
     from openprogram.agent.dispatcher import forced_tool
+    from openprogram.agent import surface_context
 
     captured: dict = {}
+    released = []
     terminal: list[tuple[str, str]] = []
     runner_out = {"ok": True}
 
@@ -493,6 +495,13 @@ def test_forced_tool_passes_canonical_execution_id(monkeypatch):
     monkeypatch.setattr(
         "openprogram.agent.process_runner.run_agentic_in_subprocess",
         lambda **kw: captured.update(kw) or dict(runner_out),
+    )
+    page_context = {"context_id": "page-context", "surfaces": []}
+    monkeypatch.setattr(surface_context, "capture_pages", lambda: page_context)
+    monkeypatch.setattr(
+        surface_context,
+        "release_bindings",
+        lambda context: released.append(context),
     )
     monkeypatch.setattr(
         "openprogram.agent.run_control.set_current_session_id", lambda sid: object(),
@@ -553,9 +562,11 @@ def test_forced_tool_passes_canonical_execution_id(monkeypatch):
         session_id="s1",
         anchor_msg_id="|node:guiagent",
         tool_name="gui_agent",
-        tool_input={"task": "inspect"},
+        tool_input={"task": "inspect", "surface": "browser"},
     )
     assert captured["timeout_seconds"] == 300
+    assert captured["surface_context_snapshot"] is page_context
+    assert released == [page_context]
     _Tool.name = "wc"
 
     runner_out.clear()

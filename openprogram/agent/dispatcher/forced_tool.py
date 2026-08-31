@@ -106,10 +106,30 @@ def dispatch_forced_tool_call(
         clear_cancel as _clear_cancel,
     )
     _cid_token = _set_cid(session_id)
+    captured_surface = None
     try:
         resolved_execution_id = (
             execution_id or _execution_id_from_anchor(anchor_msg_id)
         )
+        browser_surface = (
+            tool_name == "browser_agent"
+            or (
+                tool_name == "gui_agent"
+                and (
+                    str((tool_input or {}).get("surface") or "desktop")
+                    .strip()
+                    .lower()
+                    == "browser"
+                    or bool((tool_input or {}).get("backend"))
+                )
+            )
+        )
+        surface_snapshot = None
+        if browser_surface:
+            from openprogram.agent import surface_context
+
+            captured_surface = surface_context.capture_pages()
+            surface_snapshot = captured_surface
         out = run_agentic_in_subprocess(
             tool_name=tool_name,
             kwargs=dict(tool_input or {}),
@@ -124,8 +144,13 @@ def dispatch_forced_tool_call(
             timeout_seconds=agentic_subprocess_timeout_seconds(
                 tool_name, tool_input,
             ),
+            surface_context_snapshot=surface_snapshot,
         )
     finally:
+        if captured_surface is not None:
+            from openprogram.agent.surface_context import release_bindings
+
+            release_bindings(captured_surface)
         try:
             _reset_cid(_cid_token)
         except ValueError:
