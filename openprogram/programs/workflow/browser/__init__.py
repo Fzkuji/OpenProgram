@@ -1197,6 +1197,7 @@ def _run_browser_task_commands(
     pending_screenshot = None
     pending_screenshot_result = None
     summary = ""
+    missed_tool_calls = 0
     try:
         for _ in step_iters:
             timeout_s = None
@@ -1249,8 +1250,24 @@ def _run_browser_task_commands(
             if isinstance(reply, str) and reply.strip():
                 summary = reply.strip()
             if last["seq"] == seq_before:
-                last["result"] = {"ok": False, "reason_code": "tool_not_executed"}
-                continue
+                missed_tool_calls += 1
+                if missed_tool_calls < 2:
+                    last["result"] = {
+                        "ok": False,
+                        "reason_code": "tool_not_executed",
+                    }
+                    continue
+                return {
+                    "status": "failed",
+                    "reason_code": "tool_not_executed",
+                    "summary": (
+                        "The model did not execute the required browser_page "
+                        "tool call."
+                    ),
+                    "backend": backend,
+                    "web_session_id": session_id,
+                }
+            missed_tool_calls = 0
             result = last["result"]
             if last["action"] == "verify" and isinstance(result, dict) and result.get("passed"):
                 return {

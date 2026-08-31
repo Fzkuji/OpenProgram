@@ -2023,9 +2023,9 @@ def test_gui_harness_releases_unsent_final_screenshot(monkeypatch):
 
         def exec(self, **kwargs):
             self.calls += 1
-            if self.calls == 6:
+            if self.calls == 1:
                 asyncio.run(kwargs["tools"][0].execute(
-                    "c6", {"action": "screenshot", "expected_frame_id": "f1"},
+                    "c1", {"action": "screenshot", "expected_frame_id": "f1"},
                     asyncio.Event(), None,
                 ))
             return ""
@@ -2035,7 +2035,10 @@ def test_gui_harness_releases_unsent_final_screenshot(monkeypatch):
         max_steps=1, max_seconds=30, runtime=_Runtime(),
     )
 
-    assert result["reason_code"] == "verification_missing"
+    assert result["reason_code"] == "tool_not_executed"
+    assert result["summary"] == (
+        "The model did not execute the required browser_page tool call."
+    )
     assert captured["result"].images == []
     assert registry.revoked == 1
 

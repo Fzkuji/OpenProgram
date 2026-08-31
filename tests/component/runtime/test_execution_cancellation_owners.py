@@ -579,10 +579,26 @@ def test_forced_tool_passes_canonical_execution_id(monkeypatch):
     )
     assert terminal[-1] == ("unexpected", "interrupted")
 
+    runner_out.clear()
+    runner_out.update({
+        "error": "agentic subprocess timed out after 300 seconds",
+        "killed": True,
+        "timed_out": True,
+    })
+    forced_tool.dispatch_forced_tool_call(
+        session_id="s1",
+        anchor_msg_id="|node:timedout",
+        tool_name="wc",
+        tool_input={},
+    )
+    assert terminal[-1] == ("timedout", "error")
+
     records["requested"] = {
         "status": "cancelling",
         "cancellation_requested_at": 1.0,
     }
+    runner_out.clear()
+    runner_out.update({"killed": True, "signal": 9})
     forced_tool.dispatch_forced_tool_call(
         session_id="s1",
         anchor_msg_id="|node:requested",

@@ -193,7 +193,9 @@ def dispatch_forced_tool_call(
     _terminal_status = "interrupted"
     if resolved_execution_id:
         from openprogram.agent.run_control import mark_execution_terminal
-        if out.get("killed"):
+        if out.get("timed_out") or out.get("error"):
+            _terminal_status = "error"
+        elif out.get("killed"):
             _cancel_intent = False
             try:
                 from openprogram.agent.session_db import default_db as _ddb
@@ -218,13 +220,11 @@ def dispatch_forced_tool_call(
             _terminal_status = (
                 "cancelled" if _cancel_intent else "interrupted"
             )
-        elif out.get("error"):
-            _terminal_status = "error"
         else:
             _terminal_status = "completed"
         mark_execution_terminal(resolved_execution_id, _terminal_status)
 
-    if out.get("killed"):
+    if out.get("killed") and not out.get("timed_out"):
         # If the subprocess was SIGKILLed before it could finalize the
         # runtime-block, patch the placeholder so the UI doesn't show
         # a stuck spinner. handle_stop also patches running rows, so
