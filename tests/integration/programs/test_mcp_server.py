@@ -10,6 +10,7 @@ import sys
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import anyio
 import mcp.types as mcp_types
@@ -85,9 +86,11 @@ permission_module.load_merged_rules = lambda _session_id: PermissionRules(
 )
 
 from openprogram.agent import dispatcher
+from types import SimpleNamespace
 def process_user_turn(request, *, cancel_event):
     record("turn", session_id=request.session_id, prompt=request.user_text,
            speaker_id=request.speaker_id)
+    questions.pending["fixture-question"] = request.user_msg_id + "_reply"
     get_event_bus().emit(make_event("question.asked", "agent", {
         "id": "fixture-question", "session_id": request.session_id,
         "execution_id": request.user_msg_id + "_reply",
@@ -101,9 +104,14 @@ def process_user_turn(request, *, cancel_event):
 dispatcher.process_user_turn = process_user_turn
 
 class Questions:
+    pending = {}
+
     def resolve(self, question_id, outcome, value=None):
         record("question", question_id=question_id, outcome=outcome, value=value)
         return True
+    def list_pending(self, session_id):
+        return [SimpleNamespace(id=qid, execution_id=execution_id)
+                for qid, execution_id in self.pending.items()]
     def cancel_execution(self, session_id, execution_id):
         record("question_cancel", session_id=session_id, execution_id=execution_id)
 
@@ -765,12 +773,14 @@ def test_sdk_cancellation_reaches_prompt_handler_without_application_result():
         def __init__(self):
             self.cancelled = []
             self.resolved = []
+            self.pending = {}
 
         def cancel_execution(self, session_id, execution_id):
             self.cancelled.append((session_id, execution_id))
 
         def list_pending(self, session_id):
-            return []
+            return [SimpleNamespace(id=qid, execution_id=execution_id)
+                    for qid, execution_id in self.pending.items()]
 
         def resolve(self, question_id, outcome, value=None):
             self.resolved.append((question_id, outcome, value))
@@ -814,6 +824,7 @@ def test_sdk_cancellation_reaches_prompt_handler_without_application_result():
                 await asyncio.to_thread(entered.wait, 1)
                 record = tuple(service._active_by_request.values())[0]
                 session_id = record.session_id
+                questions.pending["general-question"] = record.execution_id
                 bus.emit(
                     make_event(
                         "question.asked",

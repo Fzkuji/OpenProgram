@@ -511,24 +511,24 @@ class MCPService:
             record = self._active_by_request.get(request_id) if request_id else None
             if self._closed or record is None:
                 return
-            owner = payload_execution_id if type(payload_execution_id) is str else ""
             try:
+                questions = self._question_registry_getter()
                 pending = next(
                     (
-                        question for question in
-                        self._question_registry_getter().list_pending(session_id)
+                        question for question in questions.list_pending(session_id)
                         if getattr(question, "id", None) == question_id
-                    ),
-                    None,
+                    ), None,
                 )
             except Exception:
-                pending = None
-            registry_owner = getattr(pending, "execution_id", "") or ""
-            if registry_owner and registry_owner != record.execution_id:
                 return
-            if not owner:
-                owner = registry_owner
-            if owner != record.execution_id:
+            registry_owner = getattr(pending, "execution_id", "") or ""
+            if not registry_owner or registry_owner != record.execution_id:
+                return
+            if (
+                type(payload_execution_id) is str
+                and payload_execution_id
+                and payload_execution_id != registry_owner
+            ):
                 return
             try:
                 owns_session = self._acquire_cancel_cleanup(

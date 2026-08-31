@@ -893,6 +893,69 @@ def test_question_events_decline_only_current_service_active_request() -> None:
     assert foreign_questions.resolved == [("q-foreign", "declined", None)]
 
 
+def test_question_event_requires_registry_exact_owner() -> None:
+    bus = create_event_bus()
+    questions = FakeQuestions()
+    entered = threading.Event()
+    release = threading.Event()
+
+    def process(req, *, cancel_event):
+        entered.set()
+        release.wait(2)
+        return TurnResult("done", "u", "a")
+
+    service = _service(bus=bus, questions=questions, process=process)
+
+    async def scenario():
+        task = asyncio.create_task(
+            service.prompt_send("prompt", session_id="existing", request_id="r1")
+        )
+        await asyncio.to_thread(entered.wait, 1)
+        execution_id = _active(service)[0].execution_id
+
+        questions.pending["q-ownerless"] = ""
+        bus.emit(make_event("question.asked", "agent", {
+            "id": "q-ownerless", "session_id": "existing",
+            "execution_id": execution_id,
+        }))
+        questions.pending["q-conflict"] = execution_id
+        bus.emit(make_event("question.asked", "agent", {
+            "id": "q-conflict", "session_id": "existing",
+            "execution_id": "other-execution_reply",
+        }))
+        questions.pending.pop("q-missing", None)
+        bus.emit(make_event("question.asked", "agent", {
+            "id": "q-missing", "session_id": "existing",
+            "execution_id": execution_id,
+        }))
+        original_list_pending = questions.list_pending
+        questions.list_pending = lambda _session_id: (_ for _ in ()).throw(
+            RuntimeError("registry unavailable")
+        )
+        bus.emit(make_event("question.asked", "agent", {
+            "id": "q-registry-failure", "session_id": "existing",
+            "execution_id": execution_id,
+        }))
+        questions.list_pending = original_list_pending
+        questions.pending["q-valid-payload"] = execution_id
+        bus.emit(make_event("question.asked", "agent", {
+            "id": "q-valid-payload", "session_id": "existing",
+            "execution_id": execution_id,
+        }))
+        questions.pending["q-valid-registry"] = execution_id
+        bus.emit(make_event("question.asked", "agent", {
+            "id": "q-valid-registry", "session_id": "existing",
+        }))
+        release.set()
+        await task
+
+    asyncio.run(scenario())
+    assert questions.resolved == [
+        ("q-valid-payload", "declined", None),
+        ("q-valid-registry", "declined", None),
+    ]
+
+
 def test_question_claim_and_cancellation_coordinate_on_active_ownership() -> None:
     question_entered = threading.Event()
     release_question = threading.Event()
