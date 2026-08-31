@@ -536,7 +536,7 @@ Agent 回复发起的 function 及其执行树只属于该回复的执行时间�
 <div class="rule"><b>入口合同：</b>FunctionForm 和精确函数表达式共用一个 kwargs 类型转换器和一个 HTTP 提交器；聊天提交只负责在其前面做精确识别，不能复制函数运行的占位、Project、channel、session 导航或错误回滚逻辑。识别成功后不得调用 <code>sendChatMessage</code>，不得写 pending user text。附件、运行中排队和系统 decision 不隐式变成函数参数。<br>
 顶部折叠标题、Conclusion 和 footer 共享同一个内容列起点，不使用各自的 left、padding-left、margin-left 或 transform 做视觉补偿。footer 与聊天消息的 footer 同款（同一套图标按钮 + 时间戳，悬停显现），justify-content:flex-start；Conclusion 或直接结果到 footer 的垂直间距固定复用 assistant 正文到 footer 的 14px 视觉段落间距，不另设紧凑间距；版本切换<b>复用聊天的 .message-nav 组件</b>（◀ N/M ▶），不另造样式。footer 的复制复制<b>根调用的实际结果</b>（error ?? output），不是参数 JSON。<br>
 <b>分支语义</b>：重试 = <b>参数不变的兄弟分支</b>；修改（Edit）= 把上一次的参数预填回表单、提交后作为<b>可改参数的兄弟分支</b>运行（fork_of_node → 锚到原调用的前驱）。两者都在原位替换显示、旧运行经 ◀ N/M ▶ 仍可回看——<b>绝不在会话尾部追加新调用</b>。运行中占位 = 单条呼吸点行；嵌套在别的消息里（nested）时不渲染 footer。<br>
-<b>实现状态：</b>生产函数 footer 已移除额外左内边距，时间行、折叠标题和 Conclusion 严格共享同一左缘。精确函数表达式到共享 FunctionInvocation 的入口统一正在实现，完成证据在代码通过独立审查后补入。</div>
+<b>实现状态：</b>生产函数 footer 已移除额外左内边距，时间行、折叠标题和 Conclusion 严格共享同一左缘。精确函数表达式、FunctionForm、共享 HTTP dispatcher、Advanced 参数分组和 bound 会话隔离均已实现；<code>function-invocation.test.mjs</code> 覆盖直接调用、普通文本边界、typed kwargs、成功绑定、导航与失败回滚，GUI 不可执行结果和 metadata 由对应 Python 回归覆盖，并已通过独立规格审查。</div>
 
 <!-- ═══════ 4. Sub-agent 当前行为 ═══════ -->
 <h2><span class="num">4</span>Sub-agent 实时显示现状：记录保留，执行区默认收起</h2>
