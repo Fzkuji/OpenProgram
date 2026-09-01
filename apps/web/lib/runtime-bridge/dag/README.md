@@ -11,10 +11,9 @@ effects by `apps/web/components/app-shell.tsx` via `./index`; exposes
 `setHistoryHighlightMode` / `getHistoryHighlightMode` on `window.*`
 (consumed by `../conversations.ts` and the WebSocket handlers).
 
-This module replaced the pre-split monolithic
-`apps/web/lib/runtime-bridge/history-graph.ts` (~1700 lines). That file now
-re-exports from here for back-compat; new code should import from
-`./dag` directly.
+This module replaced and removed the pre-split monolithic
+`apps/web/lib/runtime-bridge/history-graph.ts` (~1700 lines). Current code
+imports from `./dag` directly.
 
 ## Module layout
 
@@ -107,8 +106,8 @@ flat GNode[]
   → first _recomputeVisibility (+ rAF / 250ms / 700ms catch-up)
 ```
 
-State that survives across calls (per-session `_collapsed`,
-`_seenCollapsible`, `_lastSignature`, `_lastGraph`, the various
+State that survives across calls (`_threadOpen`, `_summaryExpanded`,
+`_lastSignature`, `_lastGraph`, the per-session canvas view, and the various
 "wired?" latches) lives in `store/globals.ts`.
 
 ## Known corner cases (locked in by tests + manual checks)
