@@ -12,8 +12,21 @@ from __future__ import annotations
 
 import threading
 
+import pytest
+
 from openprogram.agent.dispatcher.types import INHERIT_PARENT
 from openprogram.agent.job.types import Job, JobStatus
+
+
+@pytest.fixture(autouse=True)
+def _runner_lifecycle(monkeypatch):
+    """Keep the singleton pool and its control threads inside each test."""
+    from openprogram.agent.job import runner as runner_mod
+
+    runner_mod.shutdown_runner()
+    monkeypatch.setattr("openprogram.worker.lock.is_held_by", lambda _pid: True)
+    yield
+    runner_mod.shutdown_runner()
 
 
 def _make_job(**kw):
