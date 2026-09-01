@@ -1392,7 +1392,10 @@ class RuntimeControlService:
         """Durably finalize work whose physical owner is known to be gone."""
         with self.executions._transaction() as connection:
             execution = self.executions._require_execution(connection, execution_id)
-            if execution.status is ExecutionStatus.PAUSED:
+            if (
+                execution.status is ExecutionStatus.PAUSED
+                and execution.current_attempt_id is None
+            ):
                 command = self._applying_command(
                     connection, execution_id, CommandKind.PAUSE
                 )
