@@ -43,10 +43,19 @@ const {
   hasDirtyDraftsForPath,
   persistFileDraft,
   clearFileDraftsForPath,
+  discardFileDraft,
+  moveFileDrafts,
+  loadFileDraft,
   setDraftStoreAdapterForTests,
-  reconcileProjectSnapshot,
+  getDraftPersistenceError,
+  DRAFT_MAX_BYTES,
+  fileDraftBytes,
+  canPersistFileDraft,
+  subscribeDraftPersistenceErrors,
   runAfterServerFileOperation,
   discardFileDraftsBeforeClose,
+  collectDirtyFileTabs,
+  runServerRenameWithDrafts,
 } = await import("../lib/state/files-shared.ts");
 const { MemoryDraftStore } = await import("../lib/state/file-draft-store.ts");
 
@@ -77,31 +86,35 @@ test("quota failure keeps the live draft visible to delete protection", async ()
   setDraftStoreAdapterForTests(store);
   const draft = (value) => ({ draft: value, baselineContent: "原文", baselineMtime: 1 });
   assert.equal((await persistFileDraft("p", "dirty.txt", draft("初稿"))).ok, true);
+  let errorNotifications = 0;
+  const unsubscribe = subscribeDraftPersistenceErrors(() => { errorNotifications += 1; });
   store.failNextWrite = true;
   const failed = await persistFileDraft("p", "dirty.txt", draft("扩大的未持久化稿件"));
   assert.equal(failed.code, "DRAFT_QUOTA_EXCEEDED");
+  assert.ok(errorNotifications > 0);
+  assert.match(getDraftPersistenceError("p:dirty.txt"), /last saved draft was retained/);
   assert.equal(await hasDirtyDraftsForPath("p", "dirty.txt"), true);
   store.failNextWrite = true;
   assert.equal((await clearFileDraftsForPath("p", "dirty.txt")).ok, false);
   assert.equal(await hasDirtyDraftsForPath("p", "dirty.txt"), true);
   assert.equal((await clearFileDraftsForPath("p", "dirty.txt")).ok, true);
   assert.equal(await hasDirtyDraftsForPath("p", "dirty.txt"), false);
+  unsubscribe();
 });
 
-test("authoritative removal awaits cleanup and retries a failed cleanup", async () => {
-  const calls = [];
-  let fail = true;
-  const cleanup = async (projectId) => {
-    calls.push(projectId);
-    if (fail) return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message: "blocked" };
-    return { ok: true };
-  };
-  await reconcileProjectSnapshot(["project-kept", "project-gone"], cleanup);
-  await reconcileProjectSnapshot(["project-kept"], cleanup);
-  assert.deepEqual(calls, ["project-gone"]);
-  fail = false;
-  await reconcileProjectSnapshot(["project-kept"], cleanup);
-  assert.deepEqual(calls, ["project-gone", "project-gone"]);
+test("discarding a failed live expansion preserves the exact A+C index", async () => {
+  const store = new MemoryDraftStore();
+  setDraftStoreAdapterForTests(store);
+  const draft = (value) => ({ draft: value, baselineContent: "基线", baselineMtime: 1 });
+  assert.equal((await persistFileDraft("p", "a.txt", draft("A"))).ok, true);
+  assert.equal((await persistFileDraft("p", "c.txt", draft("C"))).ok, true);
+  store.failNextWrite = true;
+  assert.equal((await persistFileDraft("p", "a.txt", draft("A".repeat(1000)))).ok, false);
+  assert.equal((await discardFileDraft("p", "a.txt")).ok, true);
+  const c = store.drafts.get("p:c.txt");
+  assert.deepEqual(store.indexes.get("p"), {
+    projectId: "p", keys: ["p:c.txt"], count: 1, bytes: c.bytes,
+  });
 });
 
 test("file mutation helpers enforce server, draft, and tab ordering", async () => {
@@ -119,12 +132,85 @@ test("file mutation helpers enforce server, draft, and tab ordering", async () =
   assert.deepEqual(events, ["server-failed"]);
 
   const discarded = await discardFileDraftsBeforeClose([
-    { kind: "file", projectId: "p", path: "a.txt", dirty: true },
-    { kind: "file", projectId: "p", path: "b.txt", dirty: true },
+    { kind: "file", projectId: "p", path: "a.txt", dirty: false },
+    { kind: "file", projectId: "p", path: "b.txt", dirty: false },
   ], async (projectId, path) => {
     events.push(`${projectId}:${path}`);
     return { ok: path === "a.txt" };
-  });
+  }, async () => true);
   assert.equal(discarded, false);
   assert.deepEqual(events, ["server-failed", "p:a.txt", "p:b.txt"]);
+
+  const inactive = await collectDirtyFileTabs(
+    [{ kind: "file", projectId: "p", path: "inactive.txt", dirty: false }],
+    async () => true,
+  );
+  assert.equal(inactive.length, 1, "persistent dirty state arms close confirmation even when tab.dirty is false");
+});
+
+test("canonical draft bytes include metadata in the quota decision", () => {
+  const draft = { draft: "x".repeat(DRAFT_MAX_BYTES), baselineContent: "", baselineMtime: 1 };
+  assert.ok(fileDraftBytes("p:file.txt", draft, 1) > DRAFT_MAX_BYTES);
+  assert.notEqual(
+    fileDraftBytes("p:file.txt", { ...draft, draft: "内容" }, 1),
+    fileDraftBytes("p:file.txt", { ...draft, draft: "内容" }, 1000),
+  );
+  assert.equal(canPersistFileDraft("p:oversize.txt", draft), false);
+});
+
+test("repair failure reports a durable error and retries through the adapter", async () => {
+  const store = new MemoryDraftStore();
+  setDraftStoreAdapterForTests(store);
+  store.failNextWrite = true;
+  assert.equal(await hasDirtyDraftsForPath("p", "missing.txt"), false);
+  assert.match(getDraftPersistenceError("__store__"), /retained for retry/);
+  assert.equal(await hasDirtyDraftsForPath("p", "missing.txt"), false);
+});
+
+test("rename quota failure retains the old draft transactionally", async () => {
+  const store = new MemoryDraftStore();
+  setDraftStoreAdapterForTests(store);
+  const large = { draft: "x".repeat(DRAFT_MAX_BYTES - 500), baselineContent: "", baselineMtime: 1 };
+  assert.equal((await persistFileDraft("p", "old.txt", large)).ok, true);
+  const longPath = `${"n".repeat(1000)}.txt`;
+  const moved = await moveFileDrafts("p", "old.txt", longPath);
+  assert.equal(moved.code, "DRAFT_QUOTA_EXCEEDED");
+  assert.equal(await hasDirtyDraftsForPath("p", "old.txt"), true);
+  assert.equal(await hasDirtyDraftsForPath("p", longPath), false);
+  assert.equal(store.drafts.has("p:old.txt"), true);
+});
+
+test("server rename failure compensates the draft move, with recovery on failed compensation", async () => {
+  const store = new MemoryDraftStore();
+  setDraftStoreAdapterForTests(store);
+  const draft = { draft: "dirty", baselineContent: "base", baselineMtime: 1 };
+  await persistFileDraft("p", "old.txt", draft);
+  const failed = await runServerRenameWithDrafts("p", "old.txt", "new.txt", async () => false);
+  assert.equal(failed.ok, false);
+  assert.equal(store.drafts.has("p:old.txt"), true);
+  assert.equal(store.drafts.has("p:new.txt"), false);
+
+  store.failNextWrite = false;
+  const compensated = await runServerRenameWithDrafts("p", "old.txt", "new.txt", async () => {
+    store.failNextWrite = true;
+    return false;
+  });
+  assert.equal(compensated.ok, false);
+  assert.equal(store.drafts.has("p:old.txt"), false);
+  assert.equal(store.drafts.has("p:new.txt"), true);
+  assert.equal(await hasDirtyDraftsForPath("p", "new.txt"), true);
+});
+
+test("failed expansion stays in the live overlay until explicit discard", async () => {
+  const store = new MemoryDraftStore();
+  setDraftStoreAdapterForTests(store);
+  const draft = (value) => ({ draft: value, baselineContent: "base", baselineMtime: 1 });
+  await persistFileDraft("p", "a.txt", draft("A"));
+  store.failNextWrite = true;
+  assert.equal((await persistFileDraft("p", "a.txt", draft("B"))).ok, false);
+  await persistFileDraft("p", "c.txt", draft("C"));
+  assert.equal((await loadFileDraft("p", "a.txt")).draft, "B");
+  assert.equal((await discardFileDraft("p", "a.txt")).ok, true);
+  assert.equal(await loadFileDraft("p", "a.txt"), null);
+  assert.equal((await loadFileDraft("p", "c.txt")).draft, "C");
 });

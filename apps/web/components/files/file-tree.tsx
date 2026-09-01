@@ -28,9 +28,9 @@ import {
   clearFileDraftsForPath,
   filesWsRequest,
   hasDirtyDraftsForPath,
-  moveFileDrafts,
   noteFileMtime,
   runAfterServerFileOperation,
+  runServerRenameWithDrafts,
   type Project,
 } from "@/lib/state/files-shared";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
@@ -688,18 +688,14 @@ export function FileTree({
     if (name === baseOf(oldPath)) return;
     const dir = parentOf(oldPath);
     const newPath = joinPath(dir, name);
-    await runAfterServerFileOperation(
+    const result = await runServerRenameWithDrafts(
+      projectId,
+      oldPath,
+      newPath,
       () => fileOp("rename", { path: oldPath, new_path: newPath }, [dir]),
-      async () => {
-        const moved = await moveFileDrafts(projectId, oldPath, newPath);
-        if (!moved.ok) {
-          window.alert(moved.message ?? text("Unable to move local draft; the tab was not retargeted.", "无法移动本地草稿；文件标签未重定向。"));
-          return false;
-        }
-        retargetOpenTabs(oldPath, newPath);
-        return true;
-      },
     );
+    if (result.ok) retargetOpenTabs(oldPath, newPath);
+    else if (result.message) window.alert(result.message);
   }
 
   async function copyPathTo(rel: string, absolute: boolean) {
@@ -716,23 +712,20 @@ export function FileTree({
     const dest = joinPath(targetDir, baseOf(clip.path));
     if (dest === clip.path) return;
     if (clip.op === "cut") {
-      await runAfterServerFileOperation(
+      const result = await runServerRenameWithDrafts(
+        projectId,
+        clip.path,
+        dest,
         () => fileOp(
           "rename",
           { path: clip.path, new_path: dest },
           [parentOf(clip.path), targetDir],
         ),
-        async () => {
-          const moved = await moveFileDrafts(projectId, clip.path, dest);
-          if (!moved.ok) {
-            window.alert(moved.message ?? text("Unable to move local draft; the tab was not retargeted.", "无法移动本地草稿；文件标签未重定向。"));
-            return false;
-          }
-          treeClipboard.current = null;
-          retargetOpenTabs(clip.path, dest);
-          return true;
-        },
       );
+      if (result.ok) {
+        treeClipboard.current = null;
+        retargetOpenTabs(clip.path, dest);
+      } else if (result.message) window.alert(result.message);
     } else {
       await fileOp("copy", { path: clip.path, new_path: dest }, [targetDir]);
     }

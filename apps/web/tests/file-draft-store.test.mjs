@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   DraftStoreQuotaError,
   MemoryDraftStore,
+  rebuildDraftIndexes,
 } from "../lib/state/file-draft-store.ts";
 
 const encoder = new TextEncoder();
@@ -68,4 +69,37 @@ test("rename, delete, unlink, and close/reload failures preserve the old record"
   snapshot = await store.load();
   assert.equal(snapshot.drafts.length, 0, "project unlink clears its drafts");
   assert.equal(snapshot.indexes.length, 0);
+});
+
+test("refresh index repair keeps drafts and removes ghost and empty indexes", () => {
+  const draft = record("p", "kept.txt", "dirty");
+  const indexes = rebuildDraftIndexes({
+    drafts: [draft],
+    indexes: [
+      { projectId: "p", keys: [draft.key, "p:ghost.txt"], count: 2, bytes: draft.bytes },
+      { projectId: "empty", keys: [], count: 0, bytes: 0 },
+    ],
+  });
+  assert.deepEqual(indexes, [{ projectId: "p", keys: [draft.key], count: 1, bytes: draft.bytes }]);
+});
+
+test("adapter mutation serializes concurrent contexts and repair failure is atomic", async () => {
+  const store = new MemoryDraftStore();
+  const a = record("p", "a.txt", "A");
+  const c = record("p", "c.txt", "C");
+  await Promise.all([
+    store.mutate((snapshot) => ({
+      drafts: [...snapshot.drafts, a],
+      indexes: rebuildDraftIndexes({ drafts: [...snapshot.drafts, a], indexes: snapshot.indexes }),
+    })),
+    store.mutate((snapshot) => ({
+      drafts: [...snapshot.drafts, c],
+      indexes: rebuildDraftIndexes({ drafts: [...snapshot.drafts, c], indexes: snapshot.indexes }),
+    })),
+  ]);
+  assert.deepEqual((await store.load()).drafts.map((entry) => entry.key).sort(), [a.key, c.key]);
+  const before = await store.load();
+  store.failNextWrite = true;
+  await assert.rejects(store.repair(), DraftStoreQuotaError);
+  assert.deepEqual(await store.load(), before);
 });

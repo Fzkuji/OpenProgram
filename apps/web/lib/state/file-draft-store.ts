@@ -22,8 +22,31 @@ export interface DraftStoreSnapshot {
   indexes: DraftStoreIndex[];
 }
 
+export type DraftStoreMutation = (snapshot: DraftStoreSnapshot) => DraftStoreSnapshot;
+
+/** Rebuild aggregate indexes exclusively from draft records. Stale index keys
+ * are ignored and projects with no remaining draft receive no index. */
+export function rebuildDraftIndexes(snapshot: DraftStoreSnapshot): DraftStoreIndex[] {
+  const grouped = new Map<string, DraftStoreIndex>();
+  for (const record of snapshot.drafts) {
+    const index = grouped.get(record.projectId) ?? {
+      projectId: record.projectId, keys: [], count: 0, bytes: 0,
+    };
+    if (!index.keys.includes(record.key)) index.keys.push(record.key);
+    index.count = index.keys.length;
+    index.bytes = index.keys.reduce((sum, key) => {
+      const draft = snapshot.drafts.find((candidate) => candidate.key === key);
+      return sum + (draft?.bytes ?? 0);
+    }, 0);
+    grouped.set(record.projectId, index);
+  }
+  return [...grouped.values()];
+}
+
 export interface DraftStoreAdapter {
   load(): Promise<DraftStoreSnapshot>;
+  mutate(operation: DraftStoreMutation): Promise<DraftStoreSnapshot>;
+  repair(): Promise<DraftStoreSnapshot>;
   put(record: DraftStoreRecord, index: DraftStoreIndex): Promise<void>;
   remove(keys: string[], index?: DraftStoreIndex): Promise<void>;
   move(records: Array<{ oldKey: string; record: DraftStoreRecord }>, index?: DraftStoreIndex): Promise<void>;
@@ -35,14 +58,6 @@ export class DraftStoreQuotaError extends Error {
     super(message);
     this.name = "QuotaExceededError";
   }
-}
-
-function transactionResult(tx: IDBTransaction): Promise<void> {
-  return new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error("IndexedDB transaction failed"));
-    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
-  });
 }
 
 function requestResult<T>(request: IDBRequest<T>): Promise<T> {
@@ -84,39 +99,78 @@ export class IndexedDbDraftStore implements DraftStoreAdapter {
     };
   }
 
-  async put(record: DraftStoreRecord, index: DraftStoreIndex): Promise<void> {
+  async mutate(operation: DraftStoreMutation): Promise<DraftStoreSnapshot> {
     const db = await this.open();
-    const tx = db.transaction(["drafts", "project_index"], "readwrite");
-    tx.objectStore("drafts").put(record);
-    tx.objectStore("project_index").put(index);
-    await transactionResult(tx);
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(["drafts", "project_index"], "readwrite");
+      const draftsRequest = tx.objectStore("drafts").getAll();
+      const indexesRequest = tx.objectStore("project_index").getAll();
+      let drafts: DraftStoreRecord[] | undefined;
+      let indexes: DraftStoreIndex[] | undefined;
+      let next: DraftStoreSnapshot | undefined;
+      const run = () => {
+        if (!drafts || !indexes || next) return;
+        try {
+          next = operation({ drafts, indexes });
+          const draftStore = tx.objectStore("drafts");
+          const indexStore = tx.objectStore("project_index");
+          draftStore.clear();
+          indexStore.clear();
+          for (const record of next.drafts) draftStore.put(record);
+          for (const index of next.indexes) indexStore.put(index);
+        } catch (error) {
+          tx.abort();
+          reject(error);
+        }
+      };
+      draftsRequest.onsuccess = () => { drafts = draftsRequest.result as DraftStoreRecord[]; run(); };
+      indexesRequest.onsuccess = () => { indexes = indexesRequest.result as DraftStoreIndex[]; run(); };
+      tx.oncomplete = () => { if (next) resolve(next); };
+      tx.onerror = () => reject(tx.error ?? new Error("IndexedDB transaction failed"));
+      tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
+    });
+  }
+
+  repair(): Promise<DraftStoreSnapshot> {
+    return this.mutate((snapshot) => ({
+      drafts: snapshot.drafts,
+      indexes: rebuildDraftIndexes(snapshot),
+    }));
+  }
+
+  async put(record: DraftStoreRecord, index: DraftStoreIndex): Promise<void> {
+    await this.mutate((snapshot) => ({
+      drafts: [...snapshot.drafts.filter((entry) => entry.key !== record.key), structuredClone(record)],
+      indexes: [...snapshot.indexes.filter((entry) => entry.projectId !== index.projectId), structuredClone(index)],
+    }));
   }
 
   async remove(keys: string[], index?: DraftStoreIndex): Promise<void> {
-    const db = await this.open();
-    const tx = db.transaction(["drafts", "project_index"], "readwrite");
-    for (const key of keys) tx.objectStore("drafts").delete(key);
-    if (index) tx.objectStore("project_index").put(index);
-    await transactionResult(tx);
+    await this.mutate((snapshot) => ({
+      drafts: snapshot.drafts.filter((record) => !keys.includes(record.key)),
+      indexes: index
+        ? [...snapshot.indexes.filter((entry) => entry.projectId !== index.projectId), structuredClone(index)]
+        : snapshot.indexes,
+    }));
   }
 
   async move(records: Array<{ oldKey: string; record: DraftStoreRecord }>, index?: DraftStoreIndex): Promise<void> {
-    const db = await this.open();
-    const tx = db.transaction(["drafts", "project_index"], "readwrite");
-    for (const { oldKey, record } of records) {
-      tx.objectStore("drafts").put(record);
-      tx.objectStore("drafts").delete(oldKey);
-    }
-    if (index) tx.objectStore("project_index").put(index);
-    await transactionResult(tx);
+    await this.mutate((snapshot) => ({
+      drafts: [
+        ...snapshot.drafts.filter((entry) => !records.some((item) => item.oldKey === entry.key)),
+        ...records.map(({ record }) => structuredClone(record)),
+      ],
+      indexes: index
+        ? [...snapshot.indexes.filter((entry) => entry.projectId !== index.projectId), structuredClone(index)]
+        : snapshot.indexes,
+    }));
   }
 
   async clear(keys: string[], projectId: string): Promise<void> {
-    const db = await this.open();
-    const tx = db.transaction(["drafts", "project_index"], "readwrite");
-    for (const key of keys) tx.objectStore("drafts").delete(key);
-    tx.objectStore("project_index").delete(projectId);
-    await transactionResult(tx);
+    await this.mutate((snapshot) => ({
+      drafts: snapshot.drafts.filter((record) => !keys.includes(record.key)),
+      indexes: snapshot.indexes.filter((index) => index.projectId !== projectId),
+    }));
   }
 }
 
@@ -126,12 +180,32 @@ export class MemoryDraftStore implements DraftStoreAdapter {
   readonly drafts = new Map<string, DraftStoreRecord>();
   readonly indexes = new Map<string, DraftStoreIndex>();
   failNextWrite = false;
+  private mutationQueue: Promise<unknown> = Promise.resolve();
 
   async load(): Promise<DraftStoreSnapshot> {
     return {
       drafts: [...this.drafts.values()].map((record) => structuredClone(record)),
       indexes: [...this.indexes.values()].map((index) => structuredClone(index)),
     };
+  }
+
+  mutate(operation: DraftStoreMutation): Promise<DraftStoreSnapshot> {
+    const next = this.mutationQueue.then(async () => {
+      this.maybeFail();
+      const snapshot = await this.load();
+      const result = operation(snapshot);
+      this.drafts.clear();
+      this.indexes.clear();
+      for (const record of result.drafts) this.drafts.set(record.key, structuredClone(record));
+      for (const index of result.indexes) this.indexes.set(index.projectId, structuredClone(index));
+      return result;
+    });
+    this.mutationQueue = next.catch(() => undefined);
+    return next;
+  }
+
+  repair(): Promise<DraftStoreSnapshot> {
+    return this.mutate((snapshot) => ({ drafts: snapshot.drafts, indexes: rebuildDraftIndexes(snapshot) }));
   }
 
   private maybeFail(): void {
@@ -141,29 +215,37 @@ export class MemoryDraftStore implements DraftStoreAdapter {
   }
 
   async put(record: DraftStoreRecord, index: DraftStoreIndex): Promise<void> {
-    this.maybeFail();
-    this.drafts.set(record.key, structuredClone(record));
-    this.indexes.set(index.projectId, structuredClone(index));
+    await this.mutate((snapshot) => ({
+      drafts: [...snapshot.drafts.filter((entry) => entry.key !== record.key), structuredClone(record)],
+      indexes: [...snapshot.indexes.filter((entry) => entry.projectId !== index.projectId), structuredClone(index)],
+    }));
   }
 
   async remove(keys: string[], index?: DraftStoreIndex): Promise<void> {
-    this.maybeFail();
-    for (const key of keys) this.drafts.delete(key);
-    if (index) this.indexes.set(index.projectId, structuredClone(index));
+    await this.mutate((snapshot) => ({
+      drafts: snapshot.drafts.filter((record) => !keys.includes(record.key)),
+      indexes: index
+        ? [...snapshot.indexes.filter((entry) => entry.projectId !== index.projectId), structuredClone(index)]
+        : snapshot.indexes,
+    }));
   }
 
   async move(records: Array<{ oldKey: string; record: DraftStoreRecord }>, index?: DraftStoreIndex): Promise<void> {
-    this.maybeFail();
-    for (const { oldKey, record } of records) {
-      this.drafts.delete(oldKey);
-      this.drafts.set(record.key, structuredClone(record));
-    }
-    if (index) this.indexes.set(index.projectId, structuredClone(index));
+    await this.mutate((snapshot) => ({
+      drafts: [
+        ...snapshot.drafts.filter((entry) => !records.some((item) => item.oldKey === entry.key)),
+        ...records.map(({ record }) => structuredClone(record)),
+      ],
+      indexes: index
+        ? [...snapshot.indexes.filter((entry) => entry.projectId !== index.projectId), structuredClone(index)]
+        : snapshot.indexes,
+    }));
   }
 
   async clear(keys: string[], projectId: string): Promise<void> {
-    this.maybeFail();
-    for (const key of keys) this.drafts.delete(key);
-    this.indexes.delete(projectId);
+    await this.mutate((snapshot) => ({
+      drafts: snapshot.drafts.filter((record) => !keys.includes(record.key)),
+      indexes: snapshot.indexes.filter((index) => index.projectId !== projectId),
+    }));
   }
 }

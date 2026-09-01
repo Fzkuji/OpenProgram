@@ -7,6 +7,7 @@
     "check:file-cache-drafts": "node --no-warnings scripts/check-file-cache-drafts.mjs",
     "test": "npm run test:unit",
     "test:unit": "node --no-warnings --experimental-strip-types --test tests/*.test.mjs",
+    "test:browser:file-cache-drafts": "node --no-warnings tests/file-draft-store.browser.test.mjs",
     "check:job-resource": "node --no-warnings --experimental-strip-types scripts/check-job-resource-view.mjs",
     "check:owner-auth-bootstrap": "node --no-warnings --experimental-strip-types scripts/check-owner-auth-bootstrap.mjs",
     "check:secret-non-retrieval": "node --no-warnings --experimental-strip-types scripts/check-secret-non-retrieval.mjs",

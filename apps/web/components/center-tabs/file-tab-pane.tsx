@@ -41,6 +41,7 @@ import {
   persistFileDraft,
   rawFileUrl,
   getCachedFileRead,
+  useDraftPersistenceError,
 } from "@/lib/state/files-shared";
 import { FileViewer, IMAGE_EXTS } from "@/components/files/file-viewer";
 import styles from "./center-tabs.module.css";
@@ -83,6 +84,7 @@ export function FileTabPane({
   const [saveFailed, setSaveFailed] = useState(false);
   const [draftHydrated, setDraftHydrated] = useState(false);
   const [draftPersistError, setDraftPersistError] = useState<string | null>(null);
+  const persistentDraftError = useDraftPersistenceError(fileDraftKey(projectId, path));
   // Keyed by the read's own path instead of being reset on path change:
   // on a cache hit the child viewer reports synchronously BEFORE this
   // component's effects would run, so path-keying makes stale entries
@@ -92,6 +94,8 @@ export function FileTabPane({
   // Bumped by conflict-Reload so the viewer remounts and refetches.
   const [viewerEpoch, setViewerEpoch] = useState(0);
   const saveControllerRef = useRef<AbortController | null>(null);
+  const draftGeneration = useRef(0);
+  const draftOperationGeneration = useRef(0);
 
   const segments = path.split("/");
   const base = (segments[segments.length - 1] || "").toLowerCase();
@@ -166,6 +170,8 @@ export function FileTabPane({
   // surviving unmount is the point.
   useEffect(() => {
     if (!bufferForPath) return;
+    const generation = draftGeneration.current;
+    const operationGeneration = ++draftOperationGeneration.current;
     const key = fileDraftKey(projectId, path);
     if (bufferForPath.draft !== bufferForPath.baseline) {
       const draft = {
@@ -181,11 +187,13 @@ export function FileTabPane({
         return;
       }
       void persistFileDraft(projectId, path, draft).then((result) => {
+        if (generation !== draftGeneration.current || operationGeneration !== draftOperationGeneration.current) return;
         if (!result.ok) setDraftPersistError(result.message ?? text("Unable to save local draft.", "无法保存本地草稿。"))
         else setDraftPersistError(null);
       });
     } else {
       void discardFileDraft(projectId, path).then((result) => {
+        if (generation !== draftGeneration.current || operationGeneration !== draftOperationGeneration.current) return;
         if (!result.ok) setDraftPersistError(result.message ?? text("Unable to discard local draft.", "无法丢弃本地草稿。"));
       });
     }
@@ -221,6 +229,7 @@ export function FileTabPane({
     if (saving || conflict) return; // Cmd+S has no disabled state
     const buf = bufferForPath;
     if (!buf || buf.draft === buf.baseline) return; // clean → nothing to save
+    const generation = draftGeneration.current;
     setSaving(true);
     setSaveFailed(false);
     const controller = new AbortController();
@@ -256,6 +265,7 @@ export function FileTabPane({
       setSaving(false);
       return;
     }
+    if (generation !== draftGeneration.current) return;
     setSaving(false);
     if (res?.project_id !== projectId || res.path !== path) {
       setSaveFailed(true);
@@ -287,7 +297,9 @@ export function FileTabPane({
   };
 
   const revert = async () => {
+    const generation = draftGeneration.current;
     const result = await discardFileDraft(projectId, path);
+    if (generation !== draftGeneration.current) return;
     if (!result.ok) {
       setDraftPersistError(result.message ?? text("Unable to discard local draft.", "无法丢弃本地草稿。"));
       return;
@@ -300,7 +312,9 @@ export function FileTabPane({
 
   /** Conflict recovery: drop the draft, refetch, re-baseline. */
   const reload = async () => {
+    const generation = draftGeneration.current;
     const result = await discardFileDraft(projectId, path);
+    if (generation !== draftGeneration.current) return;
     if (!result.ok) {
       setDraftPersistError(result.message ?? text("Unable to discard local draft.", "无法丢弃本地草稿。"));
       return;
@@ -435,8 +449,8 @@ export function FileTabPane({
           <div className={fileStyles.conflictNote}>
             {text("Save failed.", "保存失败。")}
           </div>
-        ) : draftPersistError ? (
-          <div className={fileStyles.conflictNote}>{draftPersistError}</div>
+        ) : draftPersistError || persistentDraftError ? (
+          <div className={fileStyles.conflictNote}>{draftPersistError || persistentDraftError}</div>
         ) : null}
         <div className={styles.viewerHost}>
         <FileViewer
