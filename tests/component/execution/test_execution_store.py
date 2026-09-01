@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from openprogram.execution.model import (
+    CapabilitySet,
     CommandKind,
     CommandStatus,
     ExecutionStatus,
@@ -26,10 +27,72 @@ def _execution(store: ExecutionStore, **overrides):
         "run_id": "run_1",
         "session_id": "session_1",
         "revision_id": "revision_1",
-        "capabilities": {"pause", "step", "steer", "fork", "retry"},
+        "capabilities": CapabilitySet(
+            pause=True,
+            step=True,
+            steer=True,
+            fork=True,
+            retry=True,
+            safe_point_kinds=("action.before", "action.after"),
+            state_schema_version=1,
+        ),
     }
     values.update(overrides)
+    revision_id = values["revision_id"]
+    if store.get_revision(revision_id) is None:
+        store.create_revision(
+            revision_id=revision_id,
+            manifest={"entrypoint": revision_id, "schema": 1},
+        )
     return store.create_execution(**values)
+
+
+def test_revision_is_content_addressed_immutable_and_durable(tmp_path) -> None:
+    path = tmp_path / "runtime" / "executions.sqlite3"
+    store = ExecutionStore(path)
+    created = store.create_revision(
+        manifest={"entrypoint": "research.workflow", "tools": ["search"]}
+    )
+
+    assert created.revision_id.startswith("rev_")
+    assert ExecutionStore(path).get_revision(created.revision_id) == created
+    assert (
+        store.create_revision(
+            manifest={"entrypoint": "research.workflow", "tools": ["search"]}
+        )
+        == created
+    )
+
+    with pytest.raises(ExecutionConflict) as collision:
+        store.create_revision(
+            revision_id=created.revision_id,
+            manifest={"entrypoint": "different.workflow"},
+        )
+    assert collision.value.code == "revision_id_collision"
+
+
+def test_execution_requires_a_registered_revision(tmp_path) -> None:
+    store = _store(tmp_path)
+    with pytest.raises(ExecutionConflict) as missing:
+        store.create_execution(
+            execution_id="exec_missing_revision",
+            run_id="run_1",
+            session_id="session_1",
+            revision_id="rev_missing",
+        )
+    assert missing.value.code == "revision_not_found"
+
+
+def test_run_identity_is_bound_to_one_session(tmp_path) -> None:
+    store = _store(tmp_path)
+    _execution(store)
+    with pytest.raises(ExecutionConflict) as mismatch:
+        _execution(
+            store,
+            execution_id="exec_other_session",
+            session_id="session_2",
+        )
+    assert mismatch.value.code == "run_identity_mismatch"
 
 
 def test_create_is_durable_and_rebuildable_from_append_only_events(tmp_path) -> None:

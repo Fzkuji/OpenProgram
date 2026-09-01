@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from collections.abc import Iterator
 from typing import Any, Mapping
 
 
@@ -55,6 +56,85 @@ def _dict(value: Mapping[str, Any] | None) -> dict[str, Any]:
 
 
 @dataclass(frozen=True)
+class CapabilitySet:
+    pause: bool = False
+    step: bool = False
+    steer: bool = False
+    fork: bool = False
+    retry: bool = False
+    safe_point_kinds: tuple[str, ...] = ()
+    state_schema_version: int | None = None
+
+    def names(self) -> frozenset[str]:
+        return frozenset(
+            name
+            for name in ("pause", "step", "steer", "fork", "retry")
+            if getattr(self, name)
+        )
+
+    def __contains__(self, name: object) -> bool:
+        return name in self.names()
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.names())
+
+    def __len__(self) -> int:
+        return len(self.names())
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "pause": self.pause,
+            "step": self.step,
+            "steer": self.steer,
+            "fork": self.fork,
+            "retry": self.retry,
+            "safe_point_kinds": list(self.safe_point_kinds),
+            "state_schema_version": self.state_schema_version,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "CapabilitySet":
+        return cls(
+            pause=bool(value.get("pause")),
+            step=bool(value.get("step")),
+            steer=bool(value.get("steer")),
+            fork=bool(value.get("fork")),
+            retry=bool(value.get("retry")),
+            safe_point_kinds=tuple(value.get("safe_point_kinds") or ()),
+            state_schema_version=(
+                int(value["state_schema_version"])
+                if value.get("state_schema_version") is not None
+                else None
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class RunRecord:
+    run_id: str
+    session_id: str
+    created_at: float
+
+
+@dataclass(frozen=True)
+class RevisionRecord:
+    revision_id: str
+    content_hash: str
+    manifest: Mapping[str, Any]
+    created_at: float
+    parent_revision_id: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "revision_id": self.revision_id,
+            "content_hash": self.content_hash,
+            "manifest": _dict(self.manifest),
+            "created_at": self.created_at,
+            "parent_revision_id": self.parent_revision_id,
+        }
+
+
+@dataclass(frozen=True)
 class ExecutionRecord:
     execution_id: str
     run_id: str
@@ -68,7 +148,7 @@ class ExecutionRecord:
     owner_lease: Mapping[str, Any] = field(default_factory=dict)
     checkpoint_head_id: str | None = None
     safe_point: Mapping[str, Any] = field(default_factory=dict)
-    capabilities: frozenset[str] = field(default_factory=frozenset)
+    capabilities: CapabilitySet = field(default_factory=CapabilitySet)
     effect_summary: Mapping[str, Any] = field(default_factory=dict)
     created_at: float = 0.0
     updated_at: float = 0.0
@@ -88,7 +168,7 @@ class ExecutionRecord:
             "owner_lease": _dict(self.owner_lease),
             "checkpoint_head_id": self.checkpoint_head_id,
             "safe_point": _dict(self.safe_point),
-            "capabilities": sorted(self.capabilities),
+            "capabilities": self.capabilities.to_dict(),
             "effect_summary": _dict(self.effect_summary),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -110,7 +190,7 @@ class ExecutionRecord:
             owner_lease=_dict(value.get("owner_lease")),
             checkpoint_head_id=value.get("checkpoint_head_id") or None,
             safe_point=_dict(value.get("safe_point")),
-            capabilities=frozenset(value.get("capabilities") or ()),
+            capabilities=CapabilitySet.from_dict(value.get("capabilities") or {}),
             effect_summary=_dict(value.get("effect_summary")),
             created_at=float(value.get("created_at") or 0.0),
             updated_at=float(value.get("updated_at") or 0.0),

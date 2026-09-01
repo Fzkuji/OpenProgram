@@ -13,12 +13,15 @@ from pathlib import Path
 from typing import Any, Iterator, Mapping
 
 from .model import (
+    CapabilitySet,
     CommandKind,
     CommandStatus,
     ControlCommand,
     ExecutionEvent,
     ExecutionRecord,
     ExecutionStatus,
+    RevisionRecord,
+    RunRecord,
     TERMINAL_COMMAND_STATUSES,
     TERMINAL_EXECUTION_STATUSES,
 )
@@ -85,6 +88,23 @@ class ExecutionStore:
                 )
             connection.executescript(
                 """
+                CREATE TABLE IF NOT EXISTS runs (
+                    run_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    created_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS runs_session_created
+                    ON runs(session_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS revisions (
+                    revision_id TEXT PRIMARY KEY,
+                    parent_revision_id TEXT,
+                    content_hash TEXT UNIQUE NOT NULL,
+                    manifest_json TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    FOREIGN KEY(parent_revision_id) REFERENCES revisions(revision_id)
+                );
+
                 CREATE TABLE IF NOT EXISTS executions (
                     execution_id TEXT PRIMARY KEY,
                     run_id TEXT NOT NULL,
@@ -141,6 +161,68 @@ class ExecutionStore:
                 );
                 CREATE INDEX IF NOT EXISTS events_execution_sequence
                     ON execution_events(execution_id, sequence);
+
+                CREATE TABLE IF NOT EXISTS attempts (
+                    attempt_id TEXT PRIMARY KEY,
+                    execution_id TEXT NOT NULL,
+                    generation INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    owner_id TEXT NOT NULL,
+                    lease_expires_at REAL NOT NULL,
+                    leased_at REAL NOT NULL,
+                    activated_at REAL,
+                    updated_at REAL NOT NULL,
+                    ended_at REAL,
+                    outcome TEXT,
+                    UNIQUE(execution_id, generation),
+                    FOREIGN KEY(execution_id) REFERENCES executions(execution_id)
+                );
+                CREATE INDEX IF NOT EXISTS attempts_execution_status
+                    ON attempts(execution_id, status, generation);
+
+                CREATE TABLE IF NOT EXISTS effects (
+                    effect_id TEXT PRIMARY KEY,
+                    execution_id TEXT NOT NULL,
+                    attempt_id TEXT NOT NULL,
+                    action_id TEXT NOT NULL,
+                    classification TEXT NOT NULL,
+                    idempotency_key TEXT,
+                    metadata_json TEXT NOT NULL,
+                    fingerprint TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    receipt_json TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    dispatched_at REAL,
+                    updated_at REAL NOT NULL,
+                    resolved_at REAL,
+                    FOREIGN KEY(execution_id) REFERENCES executions(execution_id),
+                    FOREIGN KEY(attempt_id) REFERENCES attempts(attempt_id)
+                );
+                CREATE INDEX IF NOT EXISTS effects_execution_status
+                    ON effects(execution_id, status, created_at);
+
+                CREATE TABLE IF NOT EXISTS checkpoints (
+                    checkpoint_id TEXT PRIMARY KEY,
+                    execution_id TEXT NOT NULL,
+                    revision_id TEXT NOT NULL,
+                    parent_checkpoint_id TEXT,
+                    source_execution_version INTEGER NOT NULL,
+                    frontier_json TEXT NOT NULL,
+                    state_refs_json TEXT NOT NULL,
+                    completed_actions_json TEXT NOT NULL,
+                    effect_receipts_json TEXT NOT NULL,
+                    child_frontier_json TEXT NOT NULL,
+                    pending_commands_json TEXT NOT NULL,
+                    created_by_attempt_id TEXT NOT NULL,
+                    content_hash TEXT UNIQUE NOT NULL,
+                    schema_version INTEGER NOT NULL,
+                    created_at REAL NOT NULL,
+                    FOREIGN KEY(execution_id) REFERENCES executions(execution_id),
+                    FOREIGN KEY(parent_checkpoint_id) REFERENCES checkpoints(checkpoint_id),
+                    FOREIGN KEY(created_by_attempt_id) REFERENCES attempts(attempt_id)
+                );
+                CREATE INDEX IF NOT EXISTS checkpoints_execution_created
+                    ON checkpoints(execution_id, created_at);
                 """
             )
             connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
@@ -166,7 +248,7 @@ class ExecutionStore:
         run_id: str | None = None,
         execution_id: str | None = None,
         parent_execution_id: str | None = None,
-        capabilities: set[str] | frozenset[str] = frozenset(),
+        capabilities: CapabilitySet = CapabilitySet(),
     ) -> ExecutionRecord:
         execution_id = execution_id or f"exec_{uuid.uuid4().hex}"
         if not session_id or not revision_id:
@@ -174,6 +256,10 @@ class ExecutionStore:
                 "invalid_identity", "session_id and revision_id are required"
             )
         with self._transaction() as connection:
+            if self._get_revision(connection, revision_id) is None:
+                raise ExecutionConflict(
+                    "revision_not_found", f"revision not found: {revision_id}"
+                )
             if parent_execution_id is not None:
                 parent = self._get_execution(connection, parent_execution_id)
                 if parent is None:
@@ -189,6 +275,17 @@ class ExecutionStore:
                     )
             run_id = run_id or f"run_{uuid.uuid4().hex}"
             now = time.time()
+            run = self._get_run(connection, run_id)
+            if run is None:
+                connection.execute(
+                    "INSERT INTO runs (run_id, session_id, created_at) VALUES (?, ?, ?)",
+                    (run_id, session_id, now),
+                )
+            elif run.session_id != session_id:
+                raise ExecutionConflict(
+                    "run_identity_mismatch",
+                    "run_id is already bound to a different session",
+                )
             record = ExecutionRecord(
                 execution_id=execution_id,
                 run_id=run_id,
@@ -197,7 +294,7 @@ class ExecutionStore:
                 parent_execution_id=parent_execution_id,
                 status=ExecutionStatus.QUEUED,
                 status_version=1,
-                capabilities=frozenset(capabilities),
+                capabilities=capabilities,
                 created_at=now,
                 updated_at=now,
             )
@@ -216,6 +313,80 @@ class ExecutionStore:
                 created_at=now,
             )
         return record
+
+    def create_revision(
+        self,
+        *,
+        manifest: Mapping[str, Any],
+        revision_id: str | None = None,
+        parent_revision_id: str | None = None,
+    ) -> RevisionRecord:
+        manifest_value = dict(manifest)
+        content_hash = _fingerprint(manifest_value)
+        requested_id = revision_id
+        revision_id = revision_id or f"rev_{content_hash[:32]}"
+        with self._transaction() as connection:
+            existing = self._get_revision(connection, revision_id)
+            if existing is not None:
+                if (
+                    existing.content_hash != content_hash
+                    or existing.parent_revision_id != parent_revision_id
+                ):
+                    raise ExecutionConflict(
+                        "revision_id_collision",
+                        f"revision_id already names different content: {revision_id}",
+                    )
+                return existing
+            by_content_row = connection.execute(
+                "SELECT * FROM revisions WHERE content_hash = ?", (content_hash,)
+            ).fetchone()
+            if by_content_row is not None:
+                by_content = self._revision(by_content_row)
+                if (
+                    requested_id is None
+                    and by_content.parent_revision_id == parent_revision_id
+                ):
+                    return by_content
+                raise ExecutionConflict(
+                    "revision_content_exists",
+                    f"revision content already exists as {by_content.revision_id}",
+                )
+            if (
+                parent_revision_id is not None
+                and self._get_revision(connection, parent_revision_id) is None
+            ):
+                raise ExecutionConflict(
+                    "parent_revision_not_found",
+                    f"parent revision not found: {parent_revision_id}",
+                )
+            now = time.time()
+            connection.execute(
+                "INSERT INTO revisions "
+                "(revision_id, parent_revision_id, content_hash, manifest_json, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    revision_id,
+                    parent_revision_id,
+                    content_hash,
+                    _json(manifest_value),
+                    now,
+                ),
+            )
+            return RevisionRecord(
+                revision_id=revision_id,
+                parent_revision_id=parent_revision_id,
+                content_hash=content_hash,
+                manifest=manifest_value,
+                created_at=now,
+            )
+
+    def get_revision(self, revision_id: str) -> RevisionRecord | None:
+        with closing(self._connect()) as connection:
+            return self._get_revision(connection, revision_id)
+
+    def get_run(self, run_id: str) -> RunRecord | None:
+        with closing(self._connect()) as connection:
+            return self._get_run(connection, run_id)
 
     def get_execution(self, execution_id: str) -> ExecutionRecord | None:
         with closing(self._connect()) as connection:
@@ -463,6 +634,7 @@ class ExecutionStore:
         expected_version: int,
         target: ExecutionStatus,
         reason_code: str | None,
+        clear_owner: bool = False,
     ) -> ExecutionRecord:
         current = self._require_execution(connection, execution_id)
         if current.status_version != expected_version:
@@ -479,20 +651,37 @@ class ExecutionStore:
         now = time.time()
         terminal_at = now if target in TERMINAL_EXECUTION_STATUSES else None
         new_version = expected_version + 1
-        updated = connection.execute(
-            "UPDATE executions SET status = ?, status_version = ?, "
-            "reason_code = ?, updated_at = ?, terminal_at = ? "
-            "WHERE execution_id = ? AND status_version = ?",
-            (
-                target.value,
-                new_version,
-                reason_code,
-                now,
-                terminal_at,
-                execution_id,
-                expected_version,
-            ),
-        )
+        if clear_owner:
+            updated = connection.execute(
+                "UPDATE executions SET status = ?, status_version = ?, "
+                "reason_code = ?, updated_at = ?, terminal_at = ?, "
+                "current_attempt_id = NULL, owner_lease_json = '{}' "
+                "WHERE execution_id = ? AND status_version = ?",
+                (
+                    target.value,
+                    new_version,
+                    reason_code,
+                    now,
+                    terminal_at,
+                    execution_id,
+                    expected_version,
+                ),
+            )
+        else:
+            updated = connection.execute(
+                "UPDATE executions SET status = ?, status_version = ?, "
+                "reason_code = ?, updated_at = ?, terminal_at = ? "
+                "WHERE execution_id = ? AND status_version = ?",
+                (
+                    target.value,
+                    new_version,
+                    reason_code,
+                    now,
+                    terminal_at,
+                    execution_id,
+                    expected_version,
+                ),
+            )
         if updated.rowcount != 1:
             raise ExecutionConflict("stale_version", "execution changed concurrently")
         record = self._require_execution(connection, execution_id)
@@ -614,7 +803,7 @@ class ExecutionStore:
                 _json(record.owner_lease),
                 record.checkpoint_head_id,
                 _json(record.safe_point),
-                _json(sorted(record.capabilities)),
+                _json(record.capabilities.to_dict()),
                 _json(record.effect_summary),
                 record.created_at,
                 record.updated_at,
@@ -637,7 +826,7 @@ class ExecutionStore:
             owner_lease=_object(row["owner_lease_json"]),
             checkpoint_head_id=row["checkpoint_head_id"],
             safe_point=_object(row["safe_point_json"]),
-            capabilities=frozenset(json.loads(row["capabilities_json"])),
+            capabilities=CapabilitySet.from_dict(json.loads(row["capabilities_json"])),
             effect_summary=_object(row["effect_summary_json"]),
             created_at=float(row["created_at"]),
             updated_at=float(row["updated_at"]),
@@ -685,6 +874,37 @@ class ExecutionStore:
             "SELECT * FROM commands WHERE command_id = ?", (command_id,)
         ).fetchone()
         return self._command(row) if row is not None else None
+
+    @staticmethod
+    def _revision(row: sqlite3.Row) -> RevisionRecord:
+        return RevisionRecord(
+            revision_id=str(row["revision_id"]),
+            parent_revision_id=row["parent_revision_id"],
+            content_hash=str(row["content_hash"]),
+            manifest=_object(row["manifest_json"]),
+            created_at=float(row["created_at"]),
+        )
+
+    def _get_revision(
+        self, connection: sqlite3.Connection, revision_id: str
+    ) -> RevisionRecord | None:
+        row = connection.execute(
+            "SELECT * FROM revisions WHERE revision_id = ?", (revision_id,)
+        ).fetchone()
+        return self._revision(row) if row is not None else None
+
+    @staticmethod
+    def _get_run(connection: sqlite3.Connection, run_id: str) -> RunRecord | None:
+        row = connection.execute(
+            "SELECT * FROM runs WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return RunRecord(
+            run_id=str(row["run_id"]),
+            session_id=str(row["session_id"]),
+            created_at=float(row["created_at"]),
+        )
 
 
 @lru_cache(maxsize=8)
