@@ -25,6 +25,9 @@ Design notes:
   macros. ``@reboot`` fires once when the worker starts.
 - When day-of-month and day-of-week are both restricted (not ``*``),
   they combine with OR, matching Vixie/ISC cron semantics.
+- The daemon logs an ordinary tick failure and waits for the next minute.
+  ``--once`` remains fail-fast, and process-control ``BaseException`` values
+  are never converted into daemon retries.
 """
 
 from __future__ import annotations
@@ -32,6 +35,7 @@ from __future__ import annotations
 from contextlib import redirect_stderr, redirect_stdout
 import datetime as dt
 import json
+import logging
 import multiprocessing
 import os
 import signal
@@ -47,6 +51,8 @@ from openprogram import sandbox as _sandbox
 
 from .cron import _load, _resolve_path, _store_lock, _verify_execution_spec
 
+
+_LOG = logging.getLogger(__name__)
 
 _MACRO_EXPANSIONS = {
     "@yearly":   "0 0 1 1 *",
@@ -509,19 +515,31 @@ def run_forever(stop_event: threading.Event | None = None) -> None:
     print("press Ctrl+C to stop.")
 
     state = _load_state()
-    _tick(state, reboot=True)
+    reboot = True
 
-    while not stop["flag"] and not (stop_event and stop_event.is_set()):
+    while True:
+        try:
+            _tick(state, reboot=reboot)
+        except Exception as exc:  # noqa: BLE001 — retry at the next minute
+            _LOG.warning(
+                "scheduler tick failed: %s: %s",
+                type(exc).__name__,
+                exc,
+                exc_info=True,
+            )
+        reboot = False
+        if stop["flag"] or (stop_event and stop_event.is_set()):
+            break
         now = dt.datetime.now()
         remain = 60 - now.second - now.microsecond / 1_000_000
+        deadline = time.monotonic() + remain
         # Break sleep into 1s chunks so signals are responsive
         while remain > 0 and not stop["flag"] and not (stop_event and stop_event.is_set()):
             chunk = min(1.0, remain)
             time.sleep(chunk)
-            remain -= chunk
+            remain = deadline - time.monotonic()
         if stop["flag"] or (stop_event and stop_event.is_set()):
             break
-        _tick(state)
 
     print("\nscheduler-worker stopped.")
 

@@ -94,7 +94,7 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
         "providers", "web", "resume", "init", "doctor", "browser",
         "worker", "update", "memory", "mcp", "trash", "backup",
         "recordings", "stop", "status", "restart", "upgrade", "help",
-        "execution", "jobs",
+        "execution", "jobs", "scheduler-worker", "cron-worker",
     }
     bypass_flags = {
         "--print", "-p", "--help", "-h", "--version", "--print-prompt",

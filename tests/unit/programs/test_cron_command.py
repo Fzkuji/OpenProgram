@@ -39,6 +39,20 @@ def _create(**kw) -> str:
     return cron_tool.execute(action="create", **kw)
 
 
+@pytest.mark.parametrize("argv", [
+    ["scheduler-worker"],
+    ["scheduler-worker", "--once"],
+    ["scheduler-worker", "--list"],
+    ["cron-worker"],
+    ["cron-worker", "--once"],
+    ["cron-worker", "--list"],
+])
+def test_scheduler_worker_bypasses_tui_stdio_redirect(argv):
+    from openprogram.cli import _looks_like_tui_invocation
+
+    assert _looks_like_tui_invocation(argv) is False
+
+
 def test_create_with_command_persists_command_field(sched):
     out = _create(cron="*/5 * * * *", command="echo hi", cwd=str(sched.parent))
     assert "Created scheduler task" in out
