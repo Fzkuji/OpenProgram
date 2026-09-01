@@ -674,3 +674,22 @@ def test_owner_loss_leaves_non_owner_states_unchanged(tmp_path) -> None:
     assert repeated.execution == paused.execution
     assert repeated.attempt is None
     assert repeated.command is None
+
+
+def test_startup_recovery_scans_nonterminal_executions(tmp_path) -> None:
+    executions, attempts, running, _ = _execution(tmp_path, active=True)
+    queued = executions.create_execution(
+        execution_id="exec_queued",
+        run_id="run_queued",
+        session_id="session_1",
+        revision_id=running.revision_id,
+    )
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+
+    recovered = service.recover_startup()
+
+    assert [item.execution.execution_id for item in recovered] == [
+        running.execution_id
+    ]
+    assert recovered[0].execution.status is ExecutionStatus.INTERRUPTED
+    assert executions.get_execution(queued.execution_id) == queued

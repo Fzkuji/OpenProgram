@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from threading import RLock
 from typing import Any, Mapping
+
+from openprogram.paths import get_active_profile
 
 from .attempts import AttemptConflict, AttemptRecord, AttemptStore
 from .checkpoints import (
@@ -21,7 +24,27 @@ from .model import (
     ExecutionStatus,
     TERMINAL_EXECUTION_STATUSES,
 )
-from .store import ExecutionConflict, ExecutionStore
+from .store import ExecutionConflict, ExecutionStore, default_store
+
+
+_default_control_services: dict[str, RuntimeControlService] = {}
+_default_control_services_lock = RLock()
+
+
+def default_control_service() -> RuntimeControlService:
+    """Return the canonical control service for the active profile."""
+    profile = get_active_profile() or "default"
+    with _default_control_services_lock:
+        service = _default_control_services.get(profile)
+        if service is None:
+            executions = default_store()
+            service = RuntimeControlService(
+                executions,
+                AttemptStore(executions),
+                DriverRegistry(),
+            )
+            _default_control_services[profile] = service
+        return service
 
 
 _CANCEL_SUPERSEDES = (
@@ -405,6 +428,18 @@ class RuntimeControlService:
             attempt=attempt,
             command=command,
         )
+
+    def recover_startup(self) -> tuple[RecoveryCompletion, ...]:
+        """Recover nonterminal executions whose previous owner is gone."""
+        recoveries = []
+        for execution in self.executions.list_nonterminal():
+            if execution.status in {
+                ExecutionStatus.RUNNING,
+                ExecutionStatus.PAUSING,
+                ExecutionStatus.CANCELLING,
+            }:
+                recoveries.append(self.recover_owner_loss(execution.execution_id))
+        return tuple(recoveries)
 
     def resolve_effect(
         self,

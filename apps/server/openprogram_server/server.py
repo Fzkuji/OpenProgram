@@ -1693,6 +1693,20 @@ def _web_config() -> dict:
     }
 
 
+async def _recover_execution_control() -> None:
+    """Recover canonical executions before legacy DAG reconciliation."""
+    try:
+        from openprogram.execution import default_control_service
+
+        recovered = await asyncio.to_thread(
+            default_control_service().recover_startup
+        )
+        if recovered:
+            _log(f"[startup] recovered {len(recovered)} canonical execution(s)")
+    except Exception as e:  # noqa: BLE001
+        _log(f"[startup] canonical execution recovery failed: {e}")
+
+
 def create_app(*, owner_auth=None, port: int = 18100):
     """Create the FastAPI application with mandatory owner authentication."""
     from contextlib import asynccontextmanager
@@ -1825,6 +1839,7 @@ def create_app(*, owner_auth=None, port: int = 18100):
     _STARTUP = (
         _capture_loop,
         _subscribe_event_bus,
+        _recover_execution_control,
         _reconcile_interrupted_runs,
         _recover_interrupted_rewinds,
         _start_mcp_servers,

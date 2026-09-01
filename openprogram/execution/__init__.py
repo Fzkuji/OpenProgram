@@ -42,6 +42,7 @@ from .control import (
     ReconciliationCompletion,
     RuntimeControlService,
     SafePointCompletion,
+    default_control_service,
 )
 from .store import ExecutionStore, default_store
 
@@ -77,5 +78,6 @@ __all__ = [
     "SafePointCompletion",
     "AttemptCompletion",
     "ReconciliationCompletion",
+    "default_control_service",
     "default_store",
 ]
