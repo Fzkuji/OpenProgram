@@ -144,8 +144,8 @@ function _detailFor(node: GNode): DetailNode {
 }
 
 /** Install document-level click / dblclick listeners. ``rerender`` is
- *  invoked after a collapse toggle so the panel rebuilds with the new
- *  ``_collapsed`` state.
+ *  invoked after a toggle so the panel rebuilds with the updated summary
+ *  or thread expansion state.
  *
  *  Called at module load, so it has to tolerate a DOM-less host: this
  *  module is now reachable from SSR and from the Node check scripts. */
