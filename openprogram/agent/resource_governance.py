@@ -1440,7 +1440,8 @@ class ResourceGovernor:
                                     AND borrowed_parent_job_id IS NOT NULL
                                     AND owner_instance_id IS NOT NULL
                                 ) THEN ? ELSE released_at END
-                   WHERE job_id = ?""",
+                   WHERE job_id = ?
+                     AND state IN ('preparing','queued','live','stopping')""",
                 (reason_code, time.time(), job_id),
             )
 

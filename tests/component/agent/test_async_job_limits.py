@@ -56,6 +56,230 @@ def test_queued_cancel_does_not_cancel_unrelated_session_runtime(
         fake_worker[1].set()
         runner.shutdown()
 
+
+def test_running_cancel_does_not_signal_a_concurrent_completion(monkeypatch):
+    from openprogram.agent import run_control
+    from openprogram.agent.job import runner as runner_module
+    from openprogram.agent.job.runner import JobRunner
+    from openprogram.agent.job.types import Job, JobStatus
+
+    job = Job(
+        id="completed-race", parent_session_id="p1",
+        prompt="done", agent_id="main", status=JobStatus.RUNNING,
+    )
+    cancel_event = threading.Event()
+    stop_requests: list[str] = []
+    runtime_kills: list[str] = []
+
+    class Governor:
+        def request_stop(self, _job_id: str, reason_code: str) -> None:
+            stop_requests.append(reason_code)
+
+    runner = object.__new__(JobRunner)
+    runner._lock = threading.Lock()
+    runner._jobs = {
+        job.id: {
+            "event": cancel_event,
+            "future": None,
+            "session_id": "p1",
+        },
+    }
+    runner._governor = Governor()
+    monkeypatch.setattr(runner_module, "_store_load", lambda *_args: job)
+
+    def complete_before_cancel(_session_id: str, *, execution_id=None) -> None:
+        assert execution_id == job.id
+        job.status = JobStatus.COMPLETED
+        job.reason_code = "completed"
+
+    monkeypatch.setattr(run_control, "mark_cancelled", complete_before_cancel)
+    monkeypatch.setattr(
+        run_control,
+        "kill_active_runtime",
+        lambda _session_id, *, execution_id=None: runtime_kills.append(
+            execution_id,
+        ),
+    )
+
+    result = runner._cancel_single(job.id, reason_code="cancel.user")
+
+    assert result is job
+    assert result.status == JobStatus.COMPLETED
+    assert cancel_event.is_set() is False
+    assert runtime_kills == []
+    assert stop_requests == []
+
+
+def test_cancelled_without_live_owner_still_stops_admission(monkeypatch):
+    from openprogram.agent import run_control
+    from openprogram.agent.job import runner as runner_module
+    from openprogram.agent.job.runner import JobRunner
+    from openprogram.agent.job.types import Job, JobStatus
+
+    job = Job(
+        id="ownerless-cancel", parent_session_id="p1",
+        prompt="cancel", agent_id="main", status=JobStatus.RUNNING,
+    )
+    cancel_event = threading.Event()
+    stop_requests: list[str] = []
+
+    class Governor:
+        def request_stop(self, _job_id: str, reason_code: str) -> None:
+            stop_requests.append(reason_code)
+
+    runner = object.__new__(JobRunner)
+    runner._lock = threading.Lock()
+    runner._jobs = {
+        job.id: {
+            "event": cancel_event,
+            "future": None,
+            "session_id": "p1",
+        },
+    }
+    runner._governor = Governor()
+    monkeypatch.setattr(runner_module, "_store_load", lambda *_args: job)
+
+    def finish_cancel(_session_id: str, *, execution_id=None) -> None:
+        assert execution_id == job.id
+        job.status = JobStatus.CANCELLED
+        job.reason_code = "budget.runtime_exhausted"
+
+    monkeypatch.setattr(run_control, "mark_cancelled", finish_cancel)
+
+    result = runner._cancel_single(
+        job.id, reason_code="budget.runtime_exhausted",
+    )
+
+    assert result is job
+    assert cancel_event.is_set() is False
+    assert stop_requests == ["budget.runtime_exhausted"]
+
+
+def test_concurrent_pending_cancel_uses_one_reason_everywhere(
+    store_fixture, monkeypatch,
+):
+    from openprogram.agent import inbox
+    from openprogram.agent.job.runner import JobRunner
+    from openprogram.agent.job.store import load_job, save_job
+    from openprogram.agent.job.types import Job
+
+    job = Job(
+        id="pending-cancel-race", parent_session_id="p1",
+        prompt="cancel", agent_id="main",
+    )
+    save_job("p1", job)
+    stop_requests: list[str] = []
+    request_lock = threading.Lock()
+
+    class Governor:
+        def request_stop(self, _job_id: str, reason_code: str) -> None:
+            with request_lock:
+                stop_requests.append(reason_code)
+
+    runner = object.__new__(JobRunner)
+    runner._lock = threading.Lock()
+    runner._jobs = {
+        job.id: {
+            "event": threading.Event(),
+            "future": None,
+            "session_id": "p1",
+        },
+    }
+    runner._done_events = {job.id: threading.Event()}
+    runner._governor = Governor()
+    runner._dispatch_wake = threading.Event()
+    runner._broadcast_job_status = lambda _job: None
+    runner._update_attach_card = lambda _job: None
+    monkeypatch.setattr(inbox, "discard_job", lambda *_args: None)
+    monkeypatch.setattr(inbox, "discard_tracked_job", lambda *_args: None)
+    start = threading.Barrier(3)
+    errors: list[BaseException] = []
+    results = []
+
+    def cancel(reason_code: str) -> None:
+        try:
+            start.wait(timeout=2.0)
+            results.append(
+                runner._cancel_single(job.id, reason_code=reason_code),
+            )
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=cancel, args=(reason_code,))
+        for reason_code in ("budget.runtime_exhausted", "cancel.user")
+    ]
+    for thread in threads:
+        thread.start()
+    start.wait(timeout=2.0)
+    for thread in threads:
+        thread.join(timeout=2.0)
+
+    assert not any(thread.is_alive() for thread in threads)
+    assert errors == []
+    final = load_job("p1", job.id)
+    assert final is not None
+    assert all(result.reason_code == final.reason_code for result in results)
+    assert stop_requests
+    assert set(stop_requests) == {final.reason_code}
+
+
+def test_budget_reason_survives_cancel_intent_persistence_failure(
+    store_fixture, fake_worker, monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(
+        "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
+    )
+    from openprogram.agent import resource_governance
+    from openprogram.agent.job import store as job_store
+    from openprogram.agent.job.runner import JobRunner
+    from openprogram.agent.job.types import JobStatus
+    from openprogram.usage.ledger import UsageLedger
+
+    clock = _FakeMonotonic()
+    resolved = resource_governance.resolve_resource_limits(
+        resource_governance.ResourceLimits(max_runtime_seconds=1),
+        scheduler_capacity=1,
+    )
+    original_update = job_store.update_job_status
+    failures: list[str] = []
+
+    def fail_cancel_intent(session_id, job_id, status, **fields):
+        if status == JobStatus.RUNNING and fields.get("cancel_requested_at"):
+            failures.append(job_id)
+            raise OSError("job store unavailable")
+        return original_update(session_id, job_id, status, **fields)
+
+    monkeypatch.setattr(job_store, "update_job_status", fail_cancel_intent)
+    runner = JobRunner(
+        max_workers=1,
+        governor=resource_governance.ResourceGovernor(
+            UsageLedger(tmp_path / "governance.db"),
+            limit_resolver=lambda _sid, _job: resolved,
+        ),
+        monotonic_clock=clock,
+        budget_poll_seconds=0.01,
+    )
+    try:
+        job_id = runner.spawn_job(
+            session_id="p1", prompt="persist-failure", agent_id="main",
+        )
+        assert fake_worker[3].wait(1.0)
+        clock.advance(1.1)
+        final = runner.await_job(job_id, timeout=5.0)
+
+        assert failures == [job_id]
+        assert final.status == JobStatus.CANCELLED
+        assert final.reason_code == "budget.runtime_exhausted"
+        row = runner._governor.ledger.connection().execute(
+            "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+        assert tuple(row) == ("released", "budget.runtime_exhausted")
+    finally:
+        fake_worker[1].set()
+        runner.shutdown()
+
 def test_runner_restart_dispatches_persisted_governed_queue(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):

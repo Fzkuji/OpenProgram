@@ -290,13 +290,15 @@ def update_job_status(
             except Exception:
                 return None
             if t.status == new_status:
-                # No-op transition is OK (idempotent caller). Still apply
-                # field updates if any.
-                for k, v in fields.items():
-                    if hasattr(t, k):
-                        setattr(t, k, v)
-                jobs[job_id] = t.to_dict()
-                _write_raw(path, jobs)
+                # Non-terminal no-op transitions may refresh progress fields.
+                # A terminal row is an immutable outcome: a retry or racing
+                # cancellation must not rewrite its first reason/result.
+                if not is_terminal(t.status):
+                    for k, v in fields.items():
+                        if hasattr(t, k):
+                            setattr(t, k, v)
+                    jobs[job_id] = t.to_dict()
+                    _write_raw(path, jobs)
             elif not can_transition(t.status, new_status):
                 raise ValueError(
                     f"illegal job transition {t.status.value} → "

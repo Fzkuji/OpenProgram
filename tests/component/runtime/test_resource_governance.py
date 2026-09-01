@@ -926,6 +926,33 @@ def test_stopping_keeps_live_capacity_until_worker_release(tmp_path) -> None:
     assert governor.try_start("t_2", owner_instance_id="worker") is True
 
 
+def test_stop_request_does_not_overwrite_released_reason(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _job: resolved)
+    job = Job(id="finished", parent_session_id="s1", prompt="p", agent_id="a")
+    governor.admit_job(job, persist=lambda _job: None)
+    assert governor.try_start(job.id, owner_instance_id="worker") is True
+    generation = ledger.connection().execute(
+        "SELECT lease_generation FROM job_admissions WHERE job_id = ?",
+        (job.id,),
+    ).fetchone()[0]
+    assert governor.release_job(
+        job.id,
+        "completed",
+        owner_instance_id="worker",
+        lease_generation=generation,
+    ) is True
+
+    governor.request_stop(job.id, "cancel.user")
+
+    row = ledger.connection().execute(
+        "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
+        (job.id,),
+    ).fetchone()
+    assert tuple(row) == ("released", "completed")
+
+
 def test_claim_next_skips_older_job_from_saturated_session(tmp_path) -> None:
     ledger = UsageLedger(tmp_path / "usage.db")
     resolved = resolve_resource_limits(

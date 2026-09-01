@@ -75,8 +75,8 @@ from openprogram.agent.job.types import (
 _log = logging.getLogger(__name__)
 
 _DEFAULT_MAX_WORKERS = 4
-# Hard ceiling on the wait we'll give a worker to honour cancel before
-# forcibly flipping the entity to cancelled.
+# Delay before reporting that a worker has not honoured cancellation. The
+# ownership fence remains live until that worker exits or lease recovery wins.
 _CANCEL_TIMEOUT_SECS = 30.0
 _LEASE_RENEW_SECS = 10.0
 _RECONCILE_SECS = 5.0
@@ -921,7 +921,9 @@ class JobRunner:
             current = _store_load(session_id, job.id) or job
             if cancelled:
                 status = JobStatus.CANCELLED
-                reason_code = current.reason_code or "cancel.user"
+                reason_code = self._cancel_reason_for_finalization(
+                    job.id, current.reason_code,
+                )
             elif result.failed:
                 status = JobStatus.ERRORED
                 reason_code = _execution_failure_reason(result.error)
@@ -1132,6 +1134,9 @@ class JobRunner:
 
         Effect:
 
+          * asks the unified execution service to persist the exact reason
+            before signalling; an in-process copy preserves it if persistence
+            is temporarily unavailable
           * sets the job's cancel event (worker drops out on next
             cooperative checkpoint)
           * sets the session-level cancel event via
@@ -1141,8 +1146,8 @@ class JobRunner:
             ``kill_active_runtime``
           * if the job is still in pending/queued, flips to cancelled
             immediately (no worker pickup yet, nothing to wait for)
-          * if running, schedules a 30s watchdog that force-flips to
-            cancelled if the worker hasn't honoured the signal
+          * if running, schedules a watchdog that reports slow cancellation
+            while retaining the live ownership fence
         """
         with self._lock:
             info = self._jobs.get(job_id)
@@ -1155,41 +1160,11 @@ class JobRunner:
             info = None
         else:
             session_id = info["session_id"]
-        if info is None:
-            # Not on the pool. A queued job with no pool entry is a
-            # tracked dispatch still queued in the target's inbox
-            # (agent(to=…) hit a busy target) — withdraw it: pull the
-            # inbox entry and flip the entity. NO session-level cancel
-            # here: the target is busy running someone ELSE's turn,
-            # which withdrawing a queued job must not kill.
-            queued_job = _store_load(session_id, job_id)
-            if queued_job is not None and queued_job.status in (
-                JobStatus.PENDING, JobStatus.QUEUED,
-            ):
-                try:
-                    from openprogram.agent import inbox
-                    inbox.discard_job(session_id, job_id)
-                    inbox.discard_tracked_job(job_id)
-                except Exception:
-                    pass
-                try:
-                    self._governor.request_stop(job_id, reason_code)
-                    updated = _store_update_status(
-                        session_id, job_id, JobStatus.CANCELLED,
-                        cancel_requested_at=time.time(),
-                        error=reason or "withdrawn before delivery",
-                        reason_code=reason_code,
-                    )
-                except ValueError:
-                    updated = _store_load(session_id, job_id)
-                if updated is not None:
-                    self._broadcast_job_status(updated)
-                    self._wake_done(job_id)
-                    self._update_attach_card(updated)
-                return updated
         cur_job = _store_load(session_id, job_id)
         if cur_job is None:
             return None
+        if is_terminal(cur_job.status):
+            return cur_job
         if cur_job.status in (JobStatus.PENDING, JobStatus.QUEUED):
             try:
                 from openprogram.agent import inbox
@@ -1197,85 +1172,145 @@ class JobRunner:
                 inbox.discard_tracked_job(job_id)
             except Exception:
                 pass
-            if info is not None:
-                info["event"].set()
-            self._governor.request_stop(job_id, reason_code)
             try:
                 updated = _store_update_status(
                     session_id, job_id, JobStatus.CANCELLED,
                     cancel_requested_at=time.time(),
-                    error=reason or "cancelled before pickup",
+                    error=reason or (
+                        "withdrawn before delivery"
+                        if info is None else "cancelled before pickup"
+                    ),
                     reason_code=reason_code,
                 )
             except ValueError:
                 updated = _store_load(session_id, job_id)
-            if updated is not None:
+            if updated is not None and is_terminal(updated.status):
+                if updated.status != JobStatus.CANCELLED:
+                    return updated
+                try:
+                    self._governor.request_stop(
+                        job_id, updated.reason_code or reason_code,
+                    )
+                except Exception:
+                    _log.exception(
+                        "failed to stop resource admission for job %s", job_id,
+                    )
+                if info is not None:
+                    info["event"].set()
                 self._broadcast_job_status(updated)
                 self._wake_done(job_id)
                 self._update_attach_card(updated)
                 _broadcast_session_reload(session_id, reason="job_cancelled")
-            self._dispatch_wake.set()
-            return updated
+                with self._lock:
+                    current_info = self._jobs.get(job_id)
+                    if (
+                        current_info is not None
+                        and current_info.get("future") is None
+                    ):
+                        self._jobs.pop(job_id, None)
+                        self._done_events.pop(job_id, None)
+                self._dispatch_wake.set()
+                return updated
+            if updated is None:
+                return None
+            # The dispatcher won the pending -> running race. Continue through
+            # the running path so the exact reason is durable before its token
+            # is published.
+            cur_job = updated
+            with self._lock:
+                info = self._jobs.get(job_id) or info
+
+        # Keep a process-local copy before any compatibility fallback can
+        # signal the worker. If persistence is temporarily unavailable, the
+        # worker still finalizes with the exact first cancellation reason.
+        persisted_reason = (
+            cur_job.reason_code if cur_job.cancel_requested_at is not None
+            else None
+        )
+        with self._lock:
+            live_info = self._jobs.get(job_id)
+            if live_info is not None:
+                info = live_info
+                effective_reason = live_info.setdefault(
+                    "cancel_reason_code", persisted_reason or reason_code,
+                )
+            else:
+                effective_reason = persisted_reason or reason_code
+
         # Bridge to existing session-level cancel infra so the LLM
         # stream + bash subprocess + agent_loop pre-invocation hook
         # all see the signal.
         try:
             from openprogram.agent.run_control import (
                 _cancel_reason,
-                kill_active_runtime,
                 mark_cancelled,
             )
-            reason_token = _cancel_reason.set(reason_code)
+            reason_token = _cancel_reason.set(effective_reason)
             try:
                 mark_cancelled(session_id, execution_id=job_id)
-                kill_active_runtime(session_id, execution_id=job_id)
-                from openprogram.agent.process_runner import kill_active_subprocess
-                kill_active_subprocess(session_id, execution_id=job_id)
             finally:
                 _cancel_reason.reset(reason_token)
+        except Exception:
+            pass
+        latest = _store_load(session_id, job_id)
+        if latest is not None and is_terminal(latest.status):
+            if latest.status == JobStatus.CANCELLED:
+                try:
+                    self._governor.request_stop(
+                        job_id, latest.reason_code or effective_reason,
+                    )
+                except Exception:
+                    _log.exception(
+                        "failed to stop resource admission for job %s", job_id,
+                    )
+            return latest
+        try:
+            from openprogram.agent.run_control import kill_active_runtime
+            kill_active_runtime(session_id, execution_id=job_id)
+        except Exception:
+            pass
+        try:
+            from openprogram.agent.process_runner import kill_active_subprocess
+            kill_active_subprocess(session_id, execution_id=job_id)
         except Exception:
             pass
         if info is not None:
             info["event"].set()
 
-        # Status-side: if still pending/queued, flip terminal now.
-        # If running, leave terminal flip to the worker (or the
-        # watchdog).
-        self._governor.request_stop(job_id, reason_code)
+        # The first durable cancellation intent wins. A concurrent user,
+        # parent, or budget cancellation may arrive after another reason was
+        # already persisted; never overwrite that earlier decision in the
+        # resource ledger.
+        latest = _store_load(session_id, job_id)
+        effective_reason = (
+            latest.reason_code if latest is not None and latest.reason_code
+            else effective_reason
+        )
         try:
-            if cur_job.status == JobStatus.RUNNING:
-                # Stamp request time but stay in running. Worker will
-                # detect cancel and self-flip.
-                #
-                # This MUST go through the store's locked
-                # read-modify-write, not save_job: the worker was
-                # signalled a few lines above and can reach its own
-                # terminal write inside the window since _store_load.
-                # A blind save of the snapshot we read then rewrote
-                # ``status: running`` over the worker's ``cancelled``,
-                # resurrecting a finished job — the row stayed
-                # non-terminal forever (phantom "running" in the job
-                # panel, reconciled to "worker died before completion"
-                # on next startup). update_job_status applies the
-                # field under the same lock and raises on a status that
-                # has since moved on.
-                _store_update_status(
-                    session_id, job_id, JobStatus.RUNNING,
-                    cancel_requested_at=time.time(),
-                    reason_code=reason_code,
-                )
-                # Watchdog: force cancel if worker doesn't honour signal.
-                lease_generation = info.get("lease_generation") if info else None
-                if lease_generation is not None:
-                    self._schedule_force_cancel(
-                        session_id, job_id, lease_generation,
-                    )
-                return _store_load(session_id, job_id) or cur_job
-        except ValueError:
-            # The worker moved the job on while we were stamping —
-            # its state is the truthful one.
-            return _store_load(session_id, job_id) or cur_job
-        return cur_job
+            self._governor.request_stop(job_id, effective_reason)
+        except Exception:
+            _log.exception(
+                "failed to stop resource admission for job %s", job_id,
+            )
+        if latest is not None:
+            cur_job = latest
+
+        lease_generation = info.get("lease_generation") if info else None
+        if lease_generation is not None:
+            self._schedule_force_cancel(session_id, job_id, lease_generation)
+        return _store_load(session_id, job_id) or cur_job
+
+    def _cancel_reason_for_finalization(
+        self, job_id: str, persisted_reason: str | None,
+    ) -> str:
+        if persisted_reason:
+            return persisted_reason
+        with self._lock:
+            info = self._jobs.get(job_id)
+            in_memory_reason = (
+                info.get("cancel_reason_code") if info is not None else None
+            )
+        return in_memory_reason or "cancel.user"
 
     def get_job(self, job_id: str) -> Optional[Job]:
         sid = self._find_session_for_job(job_id)
@@ -1569,6 +1604,37 @@ class JobRunner:
                 if claim is None:
                     self._executor_slots.release()
                     break
+                claimed_job = _store_load(claim.session_id, claim.job_id)
+                if claimed_job is None or is_terminal(claimed_job.status):
+                    reason_code = (
+                        claimed_job.reason_code
+                        if claimed_job is not None and claimed_job.reason_code
+                        else "error.job_missing"
+                    )
+                    try:
+                        released = self._governor.release_job(
+                            claim.job_id,
+                            reason_code,
+                            owner_instance_id=self._instance_id,
+                            lease_generation=claim.lease_generation,
+                        )
+                    except Exception:
+                        released = False
+                        _log.exception(
+                            "failed to release terminal claim for job %s",
+                            claim.job_id,
+                        )
+                    if released:
+                        if claimed_job is not None:
+                            self._broadcast_job_status(claimed_job)
+                            self._update_attach_card(claimed_job)
+                        self._wake_done(claim.job_id)
+                        with self._lock:
+                            self._jobs.pop(claim.job_id, None)
+                            self._done_events.pop(claim.job_id, None)
+                        self._executor_slots.release()
+                        self._dispatch_wake.set()
+                        continue
                 time_limits = self._governor.job_time_limits(claim.job_id)
                 claimed_monotonic = self._monotonic()
                 with self._lock:
@@ -1943,7 +2009,7 @@ class JobRunner:
                 new_status = JobStatus.COMPLETED
             current_reason = (_store_load(session_id, job_id) or job).reason_code
             reason_code = (
-                (current_reason or "cancel.user")
+                self._cancel_reason_for_finalization(job_id, current_reason)
                 if new_status == JobStatus.CANCELLED
                 else _execution_failure_reason(result.error)
                 if new_status == JobStatus.ERRORED

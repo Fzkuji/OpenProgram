@@ -134,6 +134,56 @@ def test_registered_event_is_the_token_event():
     assert ps.is_cancelled("s1") is True
 
 
+def test_exact_cancel_without_persisted_execution_still_trips_token():
+    event = threading.Event()
+    ps.register_cancel_event("s1", event, execution_id="missing-execution")
+    try:
+        ps.mark_cancelled("s1", execution_id="missing-execution")
+        assert event.is_set() is True
+    finally:
+        ps.unregister_cancel_event(
+            "s1", event, execution_id="missing-execution",
+        )
+
+
+def test_exact_cancel_persistence_failure_only_trips_target_token(monkeypatch):
+    target = threading.Event()
+    sibling = threading.Event()
+    ps.register_cancel_event("s1", target, execution_id="target")
+    ps.register_cancel_event("s1", sibling, execution_id="sibling")
+
+    def fail_cancel(_execution_id: str) -> None:
+        raise OSError("disk failed")
+
+    monkeypatch.setattr(ps, "cancel_execution", fail_cancel)
+    try:
+        ps.mark_cancelled("s1", execution_id="target")
+        assert target.is_set() is True
+        assert sibling.is_set() is False
+    finally:
+        ps.unregister_cancel_event("s1", target, execution_id="target")
+        ps.unregister_cancel_event("s1", sibling, execution_id="sibling")
+
+
+def test_exact_cancel_rejected_as_terminal_does_not_trip_stale_token(
+    monkeypatch,
+):
+    event = threading.Event()
+    ps.register_cancel_event("s1", event, execution_id="completed")
+
+    def reject_cancel(execution_id: str) -> None:
+        raise ps.ExecutionNotCancellable(execution_id)
+
+    monkeypatch.setattr(ps, "cancel_execution", reject_cancel)
+    try:
+        ps.mark_cancelled("s1", execution_id="completed")
+        assert event.is_set() is False
+    finally:
+        ps.unregister_cancel_event(
+            "s1", event, execution_id="completed",
+        )
+
+
 def test_tripping_the_event_directly_is_visible_as_cancelled():
     ev = threading.Event()
     ps.register_cancel_event("s1", ev)

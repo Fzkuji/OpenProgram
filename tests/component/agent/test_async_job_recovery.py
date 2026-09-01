@@ -571,7 +571,12 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
     clock = _FakeMonotonic()
     child_entered = threading.Event()
     release_child = threading.Event()
+    cancel_intent_staged = threading.Event()
+    release_cancel_signal = threading.Event()
+    concurrent_cancel_done = threading.Event()
     child_ids: list[str] = []
+    concurrent_cancel_errors: list[BaseException] = []
+    concurrent_cancel: threading.Thread | None = None
 
     def limits(_session_id, job):
         seconds = 1 if job.prompt == "child-runtime" else 10
@@ -614,6 +619,13 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
     monkeypatch.setattr(
         "openprogram.agent.sub_agent_run._execute_agent_turn", fake_execute,
     )
+
+    def observe_cancel_intent(execution_id: str) -> None:
+        if child_ids and execution_id == child_ids[0]:
+            cancel_intent_staged.set()
+            release_cancel_signal.wait(2.0)
+
+    run_control.set_after_intent_hook(observe_cancel_intent)
     parent_id = runner.spawn_job(
         session_id="p1", prompt="parent-runtime", agent_id="main",
         parent_msg_id="a1",
@@ -641,6 +653,29 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
         ).fetchone()[0]
         assert live_count == 1
         clock.advance(1.1)
+        assert cancel_intent_staged.wait(1.0)
+        staged_child = runner.get_job(child_id)
+        assert staged_child is not None
+        assert staged_child.reason_code == "budget.runtime_exhausted"
+        assert not run_control.is_cancelled(
+            "p1", execution_id=child_id,
+        )
+
+        def cancel_again_as_user() -> None:
+            try:
+                runner.cancel_job(child_id, reason="concurrent user cancel")
+            except BaseException as exc:  # noqa: BLE001
+                concurrent_cancel_errors.append(exc)
+            finally:
+                concurrent_cancel_done.set()
+
+        concurrent_cancel = threading.Thread(target=cancel_again_as_user)
+        concurrent_cancel.start()
+        release_cancel_signal.set()
+        assert concurrent_cancel_done.wait(2.0)
+        concurrent_cancel.join(timeout=1.0)
+        assert not concurrent_cancel.is_alive()
+        assert concurrent_cancel_errors == []
         assert wait_until(
             lambda: (
                 (child := runner.get_job(child_id)) is not None
@@ -657,11 +692,17 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
             assert child_id not in runner._done_events
         assert run_control.current_token("p1", execution_id=child_id) is None
         row = runner._governor.ledger.connection().execute(
-            "SELECT state FROM job_admissions WHERE job_id = ?", (child_id,),
+            "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
+            (child_id,),
         ).fetchone()
         assert row[0] == "released"
+        assert row[1] == "budget.runtime_exhausted"
     finally:
+        run_control.set_after_intent_hook(None)
+        release_cancel_signal.set()
         release_child.set()
+        if concurrent_cancel is not None:
+            concurrent_cancel.join(timeout=2.0)
         runner.shutdown(wait=False)
 
 def test_borrowed_child_activity_refreshes_child_and_parent_idle(

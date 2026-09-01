@@ -432,28 +432,41 @@ def is_turn_running(session_id: str) -> bool:
 
 
 def mark_cancelled(session_id: str, *, execution_id: str | None = None) -> None:
-    """Compatibility: trip the live token, then cancel through the service.
+    """Compatibility: cancel an exact execution, or trip a session token.
 
-    MCP/ACP still call this session-scoped helper. The token is tripped
-    first so waiters unblock even when no DAG record exists. When an
-    execution id or in-process owner is known, the call continues into
-    ``cancel_execution``.
+    MCP/ACP still call this helper. When an execution id or in-process owner
+    is known, the unified service persists cancellation intent before it
+    publishes the signal. The direct token trip remains an idempotent fallback
+    when no persisted execution can be resolved or persistence fails.
+    Session-only calls have no exact record to persist and signal directly.
     """
     with _cancel_flags_lock:
         token = _current_tokens.get((session_id, execution_id))
         if token is None and execution_id is None:
             token = _current_tokens.get((session_id, None))
-    if token is not None:
-        token.cancel()
     target = execution_id or (token.execution_id if token is not None else None)
     if target:
         try:
-            cancel_execution(target)
-        except (ExecutionNotFound, ExecutionNotCancellable):
-            pass
+            result = cancel_execution(target)
+        except ExecutionNotCancellable:
+            return
+        except ExecutionNotFound:
+            if token is not None:
+                token.cancel()
+            return
         except Exception:
-            pass
+            if token is not None:
+                token.cancel()
+            return
+        status = (
+            result.get("status") if isinstance(result, dict)
+            else getattr(result, "status", None)
+        )
+        if token is not None and status not in _TERMINAL_STATUSES:
+            token.cancel()
         return
+    if token is not None:
+        token.cancel()
     if _session_index.get(session_id):
         try:
             cancel_session_executions(session_id)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 import subprocess
 import sys
 import threading
@@ -27,18 +28,39 @@ def store(tmp_path, monkeypatch) -> SessionStore:
     import openprogram.store.session.session_store as store_module
 
     monkeypatch.setattr(store_module, "_default_store", value)
-    return value
+    try:
+        yield value
+    finally:
+        _drain_runtime_control()
+        timer = value._index_timer
+        try:
+            value._flush_index()
+        finally:
+            if timer is not None:
+                timer.join(timeout=1.0)
+            atexit.unregister(value._flush_index)
+
+
+def _drain_runtime_control() -> None:
+    with run_control._cancel_flags_lock:
+        run_control._current_tokens.clear()
+        run_control._cancel_cleanup_leases.clear()
+    for owner in run_control._owners.values():
+        owner.retired = True
+        if owner.token is not None:
+            owner.token.retire()
+    threads = list(run_control._grace_threads.values())
+    run_control._owners.clear()
+    run_control._session_index.clear()
+    for thread in threads:
+        thread.join(timeout=1.0)
+    run_control._grace_threads.clear()
+    run_control._finalizing.clear()
 
 
 @pytest.fixture(autouse=True)
 def clean_runtime_control():
-    with run_control._cancel_flags_lock:
-        run_control._current_tokens.clear()
-        run_control._cancel_cleanup_leases.clear()
-    run_control._owners.clear()
-    run_control._session_index.clear()
-    run_control._grace_threads.clear()
-    run_control._finalizing.clear()
+    _drain_runtime_control()
     run_control.set_after_intent_hook(None)
     run_control.set_execution_update_hook(None)
     run_control.clear_turn_context()
@@ -48,13 +70,8 @@ def clean_runtime_control():
     registry._events.clear()
     registry._results.clear()
     yield
+    _drain_runtime_control()
     run_control.CANCEL_GRACE_S = 4.0
-    with run_control._cancel_flags_lock:
-        run_control._current_tokens.clear()
-        run_control._cancel_cleanup_leases.clear()
-    run_control._owners.clear()
-    run_control._grace_threads.clear()
-    run_control._finalizing.clear()
     run_control.set_after_intent_hook(None)
     run_control.set_execution_update_hook(None)
     run_control.clear_turn_context()
