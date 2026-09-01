@@ -102,6 +102,15 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
     refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    const onDraftError = (event: Event) => {
+      const detail = (event as CustomEvent<{ message?: string }>).detail;
+      if (detail?.message) setErr(detail.message);
+    };
+    window.addEventListener("project-draft-error", onDraftError);
+    return () => window.removeEventListener("project-draft-error", onDraftError);
+  }, []);
+
   // Locate the missing folder: relocate the PROJECT to the path the
   // user picks. Distinct from switchTo — the session's binding does not
   // move, only the directory the project points at, which is why this

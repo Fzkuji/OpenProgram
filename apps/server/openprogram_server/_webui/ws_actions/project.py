@@ -81,8 +81,11 @@ def _session_meta(session_id: str) -> dict:
 
 async def handle_list_projects(ws, cmd: dict):
     session_id = (cmd.get("session_id") or "").strip() or None
-    projects: list[dict] = []
+    projects: list[dict] | None = None
     current_project_id: str | None = None
+    status = "ready"
+    error_code: str | None = None
+    error: str | None = None
     try:
         from openprogram.store.project import project_store as _projects
         _projects.get_default_project()  # ensure the default label exists
@@ -93,13 +96,21 @@ async def handle_list_projects(ws, cmd: dict):
             cur = _projects.project_for_session(session_id)
             current_project_id = cur.id if cur else None
     except Exception:
-        projects = []
+        # An unavailable registry is not an authoritative empty snapshot.
+        # Keep the request context so clients can retry without clearing
+        # project-scoped state for projects that still exist.
+        status = "error"
+        error_code = "PROJECT_REGISTRY_UNAVAILABLE"
+        error = "Project registry is unavailable."
     await ws.send_text(json.dumps({
         "type": "projects_list",
         "data": {
             "projects": projects,
             "current_project_id": current_project_id,
             "session_id": session_id,
+            "status": status,
+            "error_code": error_code,
+            "error": error,
         },
     }, default=str))
 

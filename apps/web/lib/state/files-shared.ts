@@ -13,8 +13,6 @@ import {
   type DraftStoreAdapter,
 } from "./file-draft-store";
 
-const knownProjectIds = new Set<string>();
-
 export interface Project {
   id: string;
   name: string;
@@ -47,6 +45,27 @@ export function fileResponseMatchesOwner(
   });
 }
 
+interface ProjectListResponse {
+  projects: Project[] | null;
+  current_project_id: string | null;
+  session_id: string | null;
+  status?: "ready" | "error";
+  error_code?: string | null;
+  error?: string | null;
+}
+
+/** Last cleanup failure is retained for the existing file error surfaces. */
+export const draftPersistenceErrors = new Map<string, string>();
+
+function reportDraftPersistenceError(scope: string, message: string): void {
+  draftPersistenceErrors.set(scope, message);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("project-draft-error", {
+      detail: { scope, message },
+    }));
+  }
+}
+
 /**
  * Resolve the conversation's current project (id + path). Returns
  * undefined while resolving, null when nothing browsable is bound.
@@ -63,11 +82,7 @@ export function useCurrentProject(): Project | null | undefined {
   const [project, setProject] = useState<Project | null | undefined>(undefined);
 
   const resolve = useCallback(async (): Promise<boolean> => {
-    const data = await wsRequest<{
-      projects: Project[];
-      current_project_id: string | null;
-      session_id: string | null;
-    }>(
+    const data = await wsRequest<ProjectListResponse>(
       "list_projects",
       { session_id: sessionId ?? "" },
       "projects_list",
@@ -78,14 +93,12 @@ export function useCurrentProject(): Project | null | undefined {
       // 回显请求的 session_id（空串回显 null），据此只认自己那条。
       (d) => (d.session_id ?? null) === (sessionId || null),
     );
-    if (!data) return false;
-    const projects = data.projects || [];
-    const currentProjectIds = new Set(projects.map((item) => item.id));
-    for (const removedId of knownProjectIds) {
-      if (!currentProjectIds.has(removedId)) void clearProjectDrafts(removedId);
-    }
-    knownProjectIds.clear();
-    for (const projectId of currentProjectIds) knownProjectIds.add(projectId);
+    if (!data || data.status === "error" || !Array.isArray(data.projects)) return false;
+    const projects = data.projects;
+    // Only a successful registry response is authoritative. Empty is a
+    // removal snapshot only after a prior successful snapshot; no product
+    // delete action is inferred from a transient unavailable response.
+    await reconcileProjectSnapshot(projects.map((item) => item.id));
     const wantId =
       (!sessionId ? pendingProjectId : data.current_project_id) ??
       data.current_project_id ??
@@ -323,8 +336,12 @@ let draftIndexByProject = new Map<string, ProjectDraftIndex>();
 let draftClock = 0;
 let draftQueue: Promise<unknown> = Promise.resolve();
 let draftStorePromise: Promise<DraftStoreAdapter | null> | null = null;
+/** Bytes of the latest live buffer, including a buffer whose IDB write failed. */
+const liveDraftBytesByKey = new Map<string, number>();
+let draftStoreOverride: DraftStoreAdapter | null | undefined;
 
 function getDraftStore(): Promise<DraftStoreAdapter | null> {
+  if (draftStoreOverride !== undefined) return Promise.resolve(draftStoreOverride);
   if (typeof indexedDB === "undefined") return Promise.resolve(null);
   if (!draftStorePromise) draftStorePromise = Promise.resolve(new IndexedDbDraftStore());
   return draftStorePromise;
@@ -417,16 +434,33 @@ async function hydrateDraftState(): Promise<void> {
 }
 
 function draftBytesTotal(): number {
-  let total = 0;
-  for (const bytes of draftBytesByKey.values()) total += bytes;
-  return total;
+  const keys = new Set([...draftBytesByKey.keys(), ...liveDraftBytesByKey.keys()]);
+  return [...keys].reduce((sum, key) => sum + (liveDraftBytesByKey.get(key) ?? draftBytesByKey.get(key) ?? 0), 0);
+}
+
+function effectiveDraftBytes(key: string): number {
+  return liveDraftBytesByKey.get(key) ?? draftBytesByKey.get(key) ?? 0;
 }
 
 export function canPersistFileDraft(key: string, draft: FileDraft): boolean {
   const bytes = fileDraftBytes(key, draft);
-  const previous = draftBytesByKey.get(key) ?? 0;
-  const count = draftBytesByKey.has(key) ? draftBytesByKey.size : draftBytesByKey.size + 1;
+  const keys = new Set([...draftBytesByKey.keys(), ...liveDraftBytesByKey.keys()]);
+  const previous = effectiveDraftBytes(key);
+  const count = keys.has(key) ? keys.size : keys.size + 1;
   return count <= DRAFT_MAX_ENTRIES && draftBytesTotal() - previous + bytes <= DRAFT_MAX_BYTES;
+}
+
+/** Inject a transactional fake for executable web tests. Production leaves
+ * this unset and always uses the native IndexedDB adapter. */
+export function setDraftStoreAdapterForTests(adapter: DraftStoreAdapter | null): void {
+  draftStoreOverride = adapter;
+  draftStorePromise = null;
+  draftHydration = Promise.resolve();
+  draftBytesByKey = new Map();
+  draftIndexByProject = new Map();
+  liveDraftBytesByKey.clear();
+  fileDrafts.clear();
+  draftPersistenceErrors.clear();
 }
 
 function enqueueDraft<T>(operation: () => Promise<T>): Promise<T> {
@@ -467,7 +501,13 @@ export function persistFileDraft(projectId: string, path: string, value: FileDra
       return { ok: false, code: "DRAFT_QUOTA_EXCEEDED", message: "Local dirty-draft storage is full; save, export, or discard a draft first." };
     }
     const store = await getDraftStore();
-    if (!store) return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message: "Local dirty-draft storage is unavailable." };
+    if (!store) {
+      const message = "Local dirty-draft storage is unavailable; the dirty buffer was retained.";
+      fileDrafts.set(key, structuredClone(value));
+      liveDraftBytesByKey.set(key, fileDraftBytes(key, value));
+      reportDraftPersistenceError(key, message);
+      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
+    }
     const previousBytes = draftBytesByKey.get(key) ?? 0;
     const stored: StoredDraft = {
       ...structuredClone(value), key, projectId, path,
@@ -481,19 +521,27 @@ export function persistFileDraft(projectId: string, path: string, value: FileDra
       count: hasKey ? previousIndex.count : previousIndex.count + 1,
       bytes: previousIndex.bytes - previousBytes + stored.bytes,
     };
+    // Record the live candidate before the write. If the browser rejects the
+    // transaction, close/delete checks still see this unsaved content.
+    fileDrafts.set(key, structuredClone(value));
+    liveDraftBytesByKey.set(key, stored.bytes);
     try {
       await store.put(stored, index);
       draftBytesByKey.set(key, stored.bytes);
+      liveDraftBytesByKey.delete(key);
       draftIndexByProject.set(projectId, index);
-      fileDrafts.set(key, structuredClone(value));
+      draftPersistenceErrors.delete(key);
       return { ok: true };
     } catch (error) {
-      const quota = typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "QuotaExceededError";
-      return {
+      const quota = (typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "QuotaExceededError")
+        || (typeof error === "object" && error !== null && "name" in error && error.name === "QuotaExceededError");
+      const result: DraftPersistenceResult = {
         ok: false,
         code: quota ? "DRAFT_QUOTA_EXCEEDED" : "DRAFT_PERSISTENCE_FAILED",
         message: quota ? "Local dirty-draft storage is full; the last saved draft was retained." : "Unable to persist the dirty draft; the last saved draft was retained.",
       };
+      reportDraftPersistenceError(key, result.message ?? "Unable to persist the dirty draft.");
+      return result;
     }
   });
 }
@@ -503,12 +551,12 @@ export function discardFileDraft(projectId: string, path: string): Promise<Draft
   return enqueueDraft(async () => {
     await hydrateDraftState();
     const store = await getDraftStore();
-    const previous = draftBytesByKey.get(key) ?? 0;
+    const previous = effectiveDraftBytes(key);
     const oldIndex = draftIndexByProject.get(projectId);
     if (!store) {
-      fileDrafts.delete(key);
-      draftBytesByKey.delete(key);
-      return { ok: true };
+      const message = "Unable to discard the local dirty draft because storage is unavailable.";
+      reportDraftPersistenceError(key, message);
+      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
     }
     try {
       const nextIndex = oldIndex && (() => {
@@ -518,10 +566,14 @@ export function discardFileDraft(projectId: string, path: string): Promise<Draft
       await store.remove([key], nextIndex);
       fileDrafts.delete(key);
       draftBytesByKey.delete(key);
+      liveDraftBytesByKey.delete(key);
+      draftPersistenceErrors.delete(key);
       if (nextIndex) draftIndexByProject.set(projectId, nextIndex);
       return { ok: true };
     } catch {
-      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message: "Unable to discard the local dirty draft." };
+      const message = "Unable to discard the local dirty draft.";
+      reportDraftPersistenceError(key, message);
+      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
     }
   });
 }
@@ -550,15 +602,9 @@ export function moveFileDrafts(projectId: string, oldPath: string, newPath: stri
     }, 0);
     const store = await getDraftStore();
     if (!store) {
-      for (const item of moved) {
-        fileDrafts.set(item.nextKey, item.value);
-        draftBytesByKey.set(item.nextKey, item.bytes);
-        draftBytesByKey.delete(item.key);
-        fileDrafts.delete(item.key);
-      }
-      if (oldIndex && nextKeys && nextBytes !== undefined)
-        draftIndexByProject.set(projectId, { ...oldIndex, keys: nextKeys, bytes: nextBytes });
-      return { ok: true };
+      const message = "Unable to move the local dirty draft because storage is unavailable.";
+      reportDraftPersistenceError(projectId, message);
+      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
     }
     try {
       await store.move(
@@ -576,15 +622,43 @@ export function moveFileDrafts(projectId: string, oldPath: string, newPath: stri
       for (const item of moved) {
         fileDrafts.set(item.nextKey, item.value);
         draftBytesByKey.set(item.nextKey, item.bytes);
+        if (liveDraftBytesByKey.has(item.key)) liveDraftBytesByKey.set(item.nextKey, item.bytes);
         draftBytesByKey.delete(item.key);
+        liveDraftBytesByKey.delete(item.key);
         fileDrafts.delete(item.key);
+        draftPersistenceErrors.delete(item.key);
       }
       if (oldIndex && nextKeys && nextBytes !== undefined) draftIndexByProject.set(projectId, { ...oldIndex, keys: nextKeys, bytes: nextBytes });
       return { ok: true };
     } catch {
-      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message: "Unable to move the local dirty draft." };
+      const message = "Unable to move the local dirty draft.";
+      reportDraftPersistenceError(projectId, message);
+      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
     }
   });
+}
+
+/** Shared ordering boundary for file-tree mutations: server success must
+ * precede draft movement, and tab retargeting must follow both. */
+export async function runAfterServerFileOperation(
+  serverOperation: () => Promise<boolean>,
+  afterSuccess: () => Promise<boolean> | boolean,
+): Promise<boolean> {
+  if (!(await serverOperation())) return false;
+  return Boolean(await afterSuccess());
+}
+
+/** Shared close boundary: every dirty draft is discarded successfully before
+ * the caller mutates the tab strip. */
+export async function discardFileDraftsBeforeClose(
+  tabs: readonly { projectId?: string; path?: string; dirty?: boolean }[],
+  discard: (projectId: string, path: string) => Promise<DraftPersistenceResult> = discardFileDraft,
+): Promise<boolean> {
+  for (const tab of tabs) {
+    if (!tab.dirty || !tab.projectId || !tab.path) continue;
+    if (!(await discard(tab.projectId, tab.path)).ok) return false;
+  }
+  return true;
 }
 
 export function dirtyDraftsForPath(projectId: string, path: string): string[] {
@@ -595,7 +669,8 @@ export function dirtyDraftsForPath(projectId: string, path: string): string[] {
 export async function hasDirtyDraftsForPath(projectId: string, path: string): Promise<boolean> {
   await hydrateDraftState();
   const prefix = fileDraftKey(projectId, path);
-  return [...draftBytesByKey.keys()].some((key) => key === prefix || key.startsWith(`${prefix}/`));
+  return [...new Set([...draftBytesByKey.keys(), ...liveDraftBytesByKey.keys()])]
+    .some((key) => key === prefix || key.startsWith(`${prefix}/`));
 }
 
 /** Explicitly discard a file or directory's drafts after its server-side
@@ -605,7 +680,8 @@ export function clearFileDraftsForPath(projectId: string, path: string): Promise
   return enqueueDraft(async () => {
     await hydrateDraftState();
     const prefix = fileDraftKey(projectId, path);
-    const keys = [...draftBytesByKey.keys()].filter((key) => key === prefix || key.startsWith(`${prefix}/`));
+    const keys = [...new Set([...draftBytesByKey.keys(), ...liveDraftBytesByKey.keys()])]
+      .filter((key) => key === prefix || key.startsWith(`${prefix}/`));
     if (keys.length === 0) return { ok: true };
     const store = await getDraftStore();
     const index = draftIndexByProject.get(projectId);
@@ -615,17 +691,24 @@ export function clearFileDraftsForPath(projectId: string, path: string): Promise
       bytes: nextKeys.reduce((sum, key) => sum + (draftBytesByKey.get(key) ?? 0), 0),
     } satisfies ProjectDraftIndex : undefined;
     if (!store) {
-      for (const key of keys) { fileDrafts.delete(key); draftBytesByKey.delete(key); }
-      if (nextIndex) draftIndexByProject.set(projectId, nextIndex);
-      return { ok: true };
+      const message = "Unable to discard the local dirty draft because storage is unavailable.";
+      reportDraftPersistenceError(projectId, message);
+      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
     }
     try {
       await store.remove(keys, nextIndex);
-      for (const key of keys) { fileDrafts.delete(key); draftBytesByKey.delete(key); }
+      for (const key of keys) {
+        fileDrafts.delete(key);
+        draftBytesByKey.delete(key);
+        liveDraftBytesByKey.delete(key);
+        draftPersistenceErrors.delete(key);
+      }
       if (nextIndex) draftIndexByProject.set(projectId, nextIndex);
       return { ok: true };
     } catch {
-      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message: "Unable to discard the local dirty draft." };
+      const message = "Unable to discard the local dirty draft.";
+      reportDraftPersistenceError(projectId, message);
+      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
     }
   });
 }
@@ -634,19 +717,28 @@ export function clearProjectDrafts(projectId: string): Promise<DraftPersistenceR
   return enqueueDraft(async () => {
     await hydrateDraftState();
     const store = await getDraftStore();
-    const keys = [...draftBytesByKey.keys()].filter((key) => key.startsWith(`${projectId}:`));
+    const keys = [...new Set([...draftBytesByKey.keys(), ...liveDraftBytesByKey.keys()])]
+      .filter((key) => key.startsWith(`${projectId}:`));
     if (!store) {
-      for (const key of keys) { fileDrafts.delete(key); draftBytesByKey.delete(key); }
-      draftIndexByProject.delete(projectId);
-      return { ok: true };
+      const message = "Unable to clear project dirty drafts because storage is unavailable.";
+      reportDraftPersistenceError(projectId, message);
+      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
     }
     try {
       await store.clear(keys, projectId);
-      for (const key of keys) { fileDrafts.delete(key); draftBytesByKey.delete(key); }
+      for (const key of keys) {
+        fileDrafts.delete(key);
+        draftBytesByKey.delete(key);
+        liveDraftBytesByKey.delete(key);
+        draftPersistenceErrors.delete(key);
+      }
       draftIndexByProject.delete(projectId);
+      draftPersistenceErrors.delete(projectId);
       return { ok: true };
     } catch {
-      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message: "Unable to clear project dirty drafts." };
+      const message = "Unable to clear project dirty drafts.";
+      reportDraftPersistenceError(projectId, message);
+      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
     }
   });
 }

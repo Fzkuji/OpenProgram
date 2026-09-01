@@ -57,6 +57,22 @@ def test_projects_list_session_ids_alive_filtered(fake_registry):
     assert by_id["default"]["is_default"] is True
 
 
+def test_projects_list_registry_error_is_not_authoritative_empty(monkeypatch):
+    monkeypatch.setattr(
+        project_store, "get_default_project",
+        lambda: (_ for _ in ()).throw(RuntimeError("registry unavailable")),
+    )
+    ws = _FakeWS()
+
+    asyncio.run(ws_project.handle_list_projects(ws, {"session_id": "s1"}))
+
+    data = ws.sent[0]["data"]
+    assert data["status"] == "error"
+    assert data["error_code"] == "PROJECT_REGISTRY_UNAVAILABLE"
+    assert data["session_id"] == "s1"
+    assert data["projects"] is None
+
+
 def test_remove_project_action_is_unavailable_and_registry_unchanged(
     tmp_path, monkeypatch: pytest.MonkeyPatch,
 ):

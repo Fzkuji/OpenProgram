@@ -17,7 +17,7 @@ import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
 import { findCenterTabGroup } from "@/lib/state/center-tab-groups";
 import { useSessionStore } from "@/lib/session-store";
 import { newSession } from "@/lib/runtime-bridge/conversations";
-import { discardFileDraft } from "@/lib/state/files-shared";
+import { discardFileDraftsBeforeClose } from "@/lib/state/files-shared";
 import { deleteAttachments } from "@/components/chat/composer/attach/attach-idb";
 import {
   draftChannelChoiceHost,
@@ -266,13 +266,10 @@ export function useTabLifecycle({
         return;
       // Discard confirmed — drop the surviving draft buffer too, so
       // reopening the file starts from disk, not the "discarded" edit.
-      for (const tab of tabsToClose) {
-        if (tab.kind !== "file" || !tab.projectId || !tab.path) continue;
-        const result = await discardFileDraft(tab.projectId, tab.path);
-        if (!result.ok) {
-          window.alert(result.message ?? text("Unable to discard the local draft; the tab remains open.", "无法丢弃本地草稿；文件标签仍保持打开。"));
-          return;
-        }
+      const discarded = await discardFileDraftsBeforeClose(tabsToClose);
+      if (!discarded) {
+        window.alert(text("Unable to discard the local draft; the tab remains open.", "无法丢弃本地草稿；文件标签仍保持打开。"));
+        return;
       }
     }
     // Pin the survivors' widths for a mouse close (Chrome), so the next

@@ -30,6 +30,7 @@ import {
   hasDirtyDraftsForPath,
   moveFileDrafts,
   noteFileMtime,
+  runAfterServerFileOperation,
   type Project,
 } from "@/lib/state/files-shared";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
@@ -687,15 +688,18 @@ export function FileTree({
     if (name === baseOf(oldPath)) return;
     const dir = parentOf(oldPath);
     const newPath = joinPath(dir, name);
-    const ok = await fileOp("rename", { path: oldPath, new_path: newPath }, [dir]);
-    if (ok) {
-      const moved = await moveFileDrafts(projectId, oldPath, newPath);
-      if (!moved.ok) {
-        window.alert(moved.message ?? text("Unable to move local draft; the tab was not retargeted.", "无法移动本地草稿；文件标签未重定向。"));
-        return;
-      }
-      retargetOpenTabs(oldPath, newPath);
-    }
+    await runAfterServerFileOperation(
+      () => fileOp("rename", { path: oldPath, new_path: newPath }, [dir]),
+      async () => {
+        const moved = await moveFileDrafts(projectId, oldPath, newPath);
+        if (!moved.ok) {
+          window.alert(moved.message ?? text("Unable to move local draft; the tab was not retargeted.", "无法移动本地草稿；文件标签未重定向。"));
+          return false;
+        }
+        retargetOpenTabs(oldPath, newPath);
+        return true;
+      },
+    );
   }
 
   async function copyPathTo(rel: string, absolute: boolean) {
@@ -712,20 +716,23 @@ export function FileTree({
     const dest = joinPath(targetDir, baseOf(clip.path));
     if (dest === clip.path) return;
     if (clip.op === "cut") {
-      const ok = await fileOp(
-        "rename",
-        { path: clip.path, new_path: dest },
-        [parentOf(clip.path), targetDir],
+      await runAfterServerFileOperation(
+        () => fileOp(
+          "rename",
+          { path: clip.path, new_path: dest },
+          [parentOf(clip.path), targetDir],
+        ),
+        async () => {
+          const moved = await moveFileDrafts(projectId, clip.path, dest);
+          if (!moved.ok) {
+            window.alert(moved.message ?? text("Unable to move local draft; the tab was not retargeted.", "无法移动本地草稿；文件标签未重定向。"));
+            return false;
+          }
+          treeClipboard.current = null;
+          retargetOpenTabs(clip.path, dest);
+          return true;
+        },
       );
-      if (ok) {
-        const moved = await moveFileDrafts(projectId, clip.path, dest);
-        if (!moved.ok) {
-          window.alert(moved.message ?? text("Unable to move local draft; the tab was not retargeted.", "无法移动本地草稿；文件标签未重定向。"));
-          return;
-        }
-        treeClipboard.current = null;
-        retargetOpenTabs(clip.path, dest);
-      }
     } else {
       await fileOp("copy", { path: clip.path, new_path: dest }, [targetDir]);
     }
@@ -734,28 +741,32 @@ export function FileTree({
   async function doDelete(path: string) {
     const hasDraft = await hasDirtyDraftsForPath(projectId, path);
     if (hasDraft && !window.confirm(text("Discard unsaved changes before deleting?", "删除前丢弃未保存的修改？"))) return;
-    const ok = await fileOp("delete", { path }, [parentOf(path)]);
-    if (!ok) return;
-    if (hasDraft) {
-      const cleared = await clearFileDraftsForPath(projectId, path);
-      if (!cleared.ok) {
-        window.alert(cleared.message ?? text("Unable to discard the local draft; tabs remain open.", "无法丢弃本地草稿；文件标签仍保持打开。"));
-        return;
-      }
-    }
-    // Close any center tab now pointing at a deleted file (the path
-    // itself, or anything under a deleted dir).
-    const s = useCenterTabs.getState();
-    for (const t of [...s.tabs]) {
-      if (
-        t.kind === "file" &&
-        t.projectId === projectId &&
-        t.path &&
-        (t.path === path || t.path.startsWith(path + "/"))
-      ) {
-        s.closeTab(t.id);
-      }
-    }
+    await runAfterServerFileOperation(
+      () => fileOp("delete", { path }, [parentOf(path)]),
+      async () => {
+        if (hasDraft) {
+          const cleared = await clearFileDraftsForPath(projectId, path);
+          if (!cleared.ok) {
+            window.alert(cleared.message ?? text("Unable to discard the local draft; tabs remain open.", "无法丢弃本地草稿；文件标签仍保持打开。"));
+            return false;
+          }
+        }
+        // Close any center tab now pointing at a deleted file (the path
+        // itself, or anything under a deleted dir).
+        const s = useCenterTabs.getState();
+        for (const t of [...s.tabs]) {
+          if (
+            t.kind === "file" &&
+            t.projectId === projectId &&
+            t.path &&
+            (t.path === path || t.path.startsWith(path + "/"))
+          ) {
+            s.closeTab(t.id);
+          }
+        }
+        return true;
+      },
+    );
   }
 
   function onRowContextMenu(
