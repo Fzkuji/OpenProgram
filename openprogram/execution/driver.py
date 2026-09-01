@@ -41,6 +41,21 @@ class TerminationReceipt:
     details: Mapping[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class ActivationInput:
+    """Immutable activation input kept separate from the published checkpoint."""
+
+    checkpoint: CheckpointManifest | None
+    steer_inputs: tuple[Mapping[str, Any], ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "steer_inputs",
+            tuple({"command_id": item["command_id"], "payload": dict(item["payload"])} for item in self.steer_inputs),
+        )
+
+
 class ExecutionDriver(Protocol[HandleT]):
     """Execution-kind adapter used only through RuntimeControlService."""
 
@@ -49,7 +64,7 @@ class ExecutionDriver(Protocol[HandleT]):
     async def activate(
         self,
         attempt: AttemptRecord,
-        checkpoint: CheckpointManifest | None,
+        activation: ActivationInput,
     ) -> HandleT: ...
 
     async def request_pause(

@@ -16,7 +16,13 @@ from .checkpoints import (
     CheckpointManifest,
     ExecutionCheckpointStore,
 )
-from .driver import DriverAck, DriverBinding, DriverRegistry, DriverRegistryConflict
+from .driver import (
+    ActivationInput,
+    DriverAck,
+    DriverBinding,
+    DriverRegistry,
+    DriverRegistryConflict,
+)
 from .effects import EffectRecord, EffectStatus, EffectStore
 from .model import (
     CommandKind,
@@ -138,7 +144,7 @@ class RuntimeControlService:
         driver: Any | None = None,
     ) -> ControlDispatch:
         """Resume a paused execution without changing its revision or identity."""
-        command, execution, attempt, checkpoint, duplicate = self._resume_transaction(
+        command, execution, attempt, checkpoint, steer_inputs, duplicate = self._resume_transaction(
             command_id=command_id,
             execution_id=execution_id,
             expected_version=expected_version,
@@ -150,7 +156,7 @@ class RuntimeControlService:
         if duplicate:
             return ControlDispatch(command=command, execution=execution, delivered=False)
         delivered, issue = await self._activate(
-            attempt, checkpoint, activator=activator, driver=driver
+            attempt, checkpoint, steer_inputs, activator=activator, driver=driver
         )
         return ControlDispatch(
             command=command,
@@ -172,7 +178,7 @@ class RuntimeControlService:
         driver: Any | None = None,
     ) -> ControlDispatch:
         """Create exactly one durable permit and activate a fresh attempt."""
-        command, execution, attempt, checkpoint, duplicate = self._resume_transaction(
+        command, execution, attempt, checkpoint, steer_inputs, duplicate = self._resume_transaction(
             command_id=command_id,
             execution_id=execution_id,
             expected_version=expected_version,
@@ -184,7 +190,7 @@ class RuntimeControlService:
         if duplicate:
             return ControlDispatch(command=command, execution=execution, delivered=False)
         delivered, issue = await self._activate(
-            attempt, checkpoint, activator=activator, driver=driver
+            attempt, checkpoint, steer_inputs, activator=activator, driver=driver
         )
         return ControlDispatch(
             command=command,
@@ -232,6 +238,7 @@ class RuntimeControlService:
         ExecutionRecord,
         AttemptRecord | None,
         CheckpointManifest | None,
+        tuple[Mapping[str, Any], ...],
         bool,
     ]:
         if not owner_id or ttl_seconds <= 0:
@@ -253,7 +260,7 @@ class RuntimeControlService:
                     if execution.checkpoint_head_id
                     else None
                 )
-                return command, execution, None, checkpoint, True
+                return command, execution, None, checkpoint, (), True
             checkpoint = (
                 self.checkpoints._get(connection, execution.checkpoint_head_id)
                 if execution.checkpoint_head_id
@@ -273,21 +280,13 @@ class RuntimeControlService:
                     CommandStatus.APPLYING.value,
                 ),
             ).fetchall()
-            if steering_rows:
-                state_refs = dict(checkpoint.state_refs)
-                steering = list(state_refs.get("steering", ()))
-                steering.extend(
-                    {
-                        "command_id": str(row["command_id"]),
-                        "payload": dict(self.executions._command(row).payload),
-                    }
-                    for row in steering_rows
-                )
-                # This is an activation-only view.  The immutable stored
-                # checkpoint remains unchanged until the next safe point.
-                activation_refs = dict(state_refs)
-                activation_refs["steering"] = steering
-                checkpoint = replace(checkpoint, state_refs=activation_refs)
+            steer_inputs = tuple(
+                {
+                    "command_id": str(row["command_id"]),
+                    "payload": dict(self.executions._command(row).payload),
+                }
+                for row in steering_rows
+            )
             unresolved = connection.execute(
                 "SELECT effect_id FROM effects WHERE execution_id = ? "
                 "AND status IN ('dispatched', 'uncertain') LIMIT 1",
@@ -370,12 +369,13 @@ class RuntimeControlService:
                 )
             else:
                 command = applying
-            return command, reserved, active, checkpoint, False
+            return command, reserved, active, checkpoint, steer_inputs, False
 
     async def _activate(
         self,
         attempt: AttemptRecord | None,
         checkpoint: CheckpointManifest | None,
+        steer_inputs: tuple[Mapping[str, Any], ...],
         *,
         activator: Callable[..., Any] | None,
         driver: Any | None = None,
@@ -388,7 +388,10 @@ class RuntimeControlService:
         if callback is None:
             return False, "activation_unavailable"
         try:
-            result = callback(attempt, checkpoint)
+            result = callback(
+                attempt,
+                ActivationInput(checkpoint=checkpoint, steer_inputs=steer_inputs),
+            )
             if inspect.isawaitable(result):
                 result = await result
             if isinstance(result, DriverBinding):

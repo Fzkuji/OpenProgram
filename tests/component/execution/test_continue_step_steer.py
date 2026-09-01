@@ -151,8 +151,8 @@ def test_continue_activation_receives_paused_steering(tmp_path):
     )
     seen = []
 
-    def activate(attempt, checkpoint):
-        seen.append(checkpoint)
+    def activate(attempt, activation):
+        seen.append(activation)
 
     result = asyncio.run(
         service.request_continue(
@@ -164,7 +164,9 @@ def test_continue_activation_receives_paused_steering(tmp_path):
         )
     )
     assert result.execution.status is ExecutionStatus.RUNNING
-    assert seen[0].state_refs["steering"][0]["payload"] == dict(steer.command.payload)
+    assert seen[0].checkpoint.checkpoint_id == paused.checkpoint_head_id
+    assert seen[0].checkpoint.content_hash == service.checkpoints.get(paused.checkpoint_head_id).content_hash
+    assert seen[0].steer_inputs[0]["payload"] == dict(steer.command.payload)
 
 
 def test_step_owner_loss_rejects_step_command_and_is_idempotent(tmp_path):

@@ -29,6 +29,7 @@ from .effects import (
     EffectStore,
 )
 from .driver import (
+    ActivationInput,
     DriverAck,
     DriverBinding,
     DriverRegistry,
@@ -68,6 +69,7 @@ __all__ = [
     "EffectStatus",
     "EffectStore",
     "DriverAck",
+    "ActivationInput",
     "DriverBinding",
     "DriverRegistry",
     "ExecutionDriver",
