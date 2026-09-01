@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 
 async def _async_noop():
     return None
@@ -38,3 +40,37 @@ def test_canonical_execution_recovery_runs_before_legacy_dag_recovery(
     asyncio.run(run_lifespan())
 
     assert events == ["execution", "dag"]
+
+
+def test_canonical_execution_recovery_failure_blocks_startup(monkeypatch):
+    from openprogram.webui import server
+
+    events = []
+
+    def fail_recovery():
+        raise RuntimeError("canonical recovery unavailable")
+
+    monkeypatch.setattr(
+        "openprogram.execution.default_control_service", fail_recovery
+    )
+    monkeypatch.setattr(
+        server,
+        "reconcile_interrupted_runs",
+        lambda: events.append("dag"),
+    )
+    monkeypatch.setattr("openprogram.mcp.load_mcp_servers", _async_noop)
+    monkeypatch.setattr("openprogram.mcp.shutdown_mcp_servers", _async_noop)
+    monkeypatch.setattr("openprogram.skills.watcher.start_watcher", lambda **_: None)
+    monkeypatch.setattr("openprogram.plugins.autoupdate.start", lambda: None)
+    monkeypatch.setattr("openprogram.agent._rewind.recover_all_rewinds", lambda: 0)
+
+    app = server.create_app(owner_auth=object())
+
+    async def run_lifespan():
+        async with app.router.lifespan_context(app):
+            pass
+
+    with pytest.raises(RuntimeError, match="canonical recovery unavailable"):
+        asyncio.run(run_lifespan())
+
+    assert events == []
