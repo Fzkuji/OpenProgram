@@ -21,6 +21,9 @@ from pathlib import Path
 import pytest
 
 from openprogram.context.persistence import SUMMARY_NODE_NAME
+from openprogram.context.nodes import Call, ROLE_CODE
+from openprogram.store import SessionNodeWriter
+from openprogram.agentic_programming.function import create_pending_call_node
 from openprogram.store.session.session_store import SessionStore
 from openprogram.webui.graph_builder import build_session_graph
 
@@ -160,3 +163,51 @@ def test_structured_message_content_has_a_graph_preview(store):
     assert _row(graph, "call1")["preview"] == (
         '{"status": "completed", "result": ["saved", "report.md"]}'
     )
+
+
+def test_sequential_root_programs_stay_on_one_overview_lane(store):
+    """Independent Program runs are ordered actions, not retry forks."""
+    store.create_session("s1", "main", title="t")
+    writer = SessionNodeWriter(store, "s1")
+    writer.append(Call(
+        id="ROOT", role="user", output="", metadata={"display": "root"},
+    ))
+    for i in range(3):
+        writer.append(Call(
+            id=f"program-{i}", role=ROLE_CODE, name="gui_agent",
+            output="completed", predecessor="ROOT",
+        ))
+
+    graph = build_session_graph("s1", "program-2")
+    rows = [_row(graph, f"program-{i}") for i in range(3)]
+
+    assert [row["_lane"] for row in rows] == [0, 0, 0]
+    assert [row["_depth"] for row in rows] == [1.0, 2.0, 3.0]
+
+
+def test_persisted_program_retry_becomes_a_real_fork(store):
+    store.create_session("s1", "main", title="t")
+    writer = SessionNodeWriter(store, "s1")
+    writer.append(Call(
+        id="ROOT", role="user", output="", metadata={"display": "root"},
+    ))
+    original = create_pending_call_node(
+        pending_id="run-1", function_name="gui_agent", arguments={},
+        expose="io", forced_predecessor="ROOT", store=writer,
+    )
+    retry = create_pending_call_node(
+        pending_id="retry", function_name="gui_agent", arguments={},
+        expose="io", forced_predecessor="ROOT", retry_of="run-1",
+        store=writer,
+    )
+    assert original is not None and retry is not None
+    writer.append(original)
+    writer.append(retry)
+
+    graph = build_session_graph("s1", "retry")
+    source_row = _row(graph, "run-1")
+    retry_row = _row(graph, "retry")
+
+    assert retry_row["retry_of"] == "run-1"
+    assert retry_row["_lane"] != source_row["_lane"]
+    assert retry_row["_depth"] == source_row["_depth"]

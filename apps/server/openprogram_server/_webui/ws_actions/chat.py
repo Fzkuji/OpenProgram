@@ -1151,6 +1151,7 @@ async def handle_retry_function(ws, cmd: dict):
 
     result = run_agentic_function_call(
         func_name, kwargs, session_id, anchor_msg_id=anchor,
+        retry_of=node.id,
     )
     if "error" in result:
         _s._broadcast_chat_response(session_id, str(uuid.uuid4())[:8], {

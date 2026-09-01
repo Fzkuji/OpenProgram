@@ -87,8 +87,9 @@ def test_retry_redispatches_with_original_kwargs(monkeypatch):
 
     calls = []
 
-    def _fake_run(name, kwargs, session_id, anchor_msg_id="ROOT"):
-        calls.append((name, kwargs, session_id, anchor_msg_id))
+    def _fake_run(name, kwargs, session_id, anchor_msg_id="ROOT", **options):
+        calls.append((name, kwargs, session_id, anchor_msg_id,
+                      options.get("retry_of")))
         return {"session_id": session_id, "msg_id": "abc"}
 
     monkeypatch.setattr(
@@ -103,7 +104,10 @@ def test_retry_redispatches_with_original_kwargs(monkeypatch):
     # Re-dispatched exactly once, with the prior call's kwargs + session,
     # anchored at the original call's predecessor (ROOT here) so the
     # re-run forks as a SIBLING branch instead of stacking.
-    assert calls == [("word_count", {"text": "hello world"}, "s1", "pred:ROOT")]
+    assert calls == [(
+        "word_count", {"text": "hello world"}, "s1", "pred:ROOT",
+        nodes[0].id,
+    )]
     # Acked the new run over the WS (so the client can follow the stream).
     assert ws.sent and "chat_ack" in ws.sent[0]
 
@@ -121,8 +125,8 @@ def test_retry_anchors_at_original_calls_predecessor(monkeypatch):
 
     anchors = []
 
-    def _fake_run(name, kwargs, session_id, anchor_msg_id="ROOT"):
-        anchors.append(anchor_msg_id)
+    def _fake_run(name, kwargs, session_id, anchor_msg_id="ROOT", **options):
+        anchors.append((anchor_msg_id, options.get("retry_of")))
         return {"session_id": session_id, "msg_id": "abc"}
 
     monkeypatch.setattr(
@@ -131,7 +135,7 @@ def test_retry_anchors_at_original_calls_predecessor(monkeypatch):
     asyncio.run(chat.handle_retry_function(
         _FakeWS(), {"session_id": "s1", "function": "word_count"}
     ))
-    assert anchors == ["pred:llm_reply_9"]
+    assert anchors == [("pred:llm_reply_9", nodes[0].id)]
 
 
 def test_retry_targets_latest_top_level_call_not_nested(monkeypatch):
@@ -148,8 +152,8 @@ def test_retry_targets_latest_top_level_call_not_nested(monkeypatch):
 
     calls = []
 
-    def _fake_run(name, kwargs, session_id, anchor_msg_id="ROOT"):
-        calls.append((kwargs, anchor_msg_id))
+    def _fake_run(name, kwargs, session_id, anchor_msg_id="ROOT", **options):
+        calls.append((kwargs, anchor_msg_id, options.get("retry_of")))
         return {"session_id": session_id, "msg_id": "abc"}
 
     monkeypatch.setattr(
@@ -159,7 +163,7 @@ def test_retry_targets_latest_top_level_call_not_nested(monkeypatch):
         _FakeWS(), {"session_id": "s1", "function": "gui_agent"}
     ))
     # Outer kwargs, anchored at the outer call's predecessor (ROOT).
-    assert calls == [({"task": "outer"}, "pred:ROOT")]
+    assert calls == [({"task": "outer"}, "pred:ROOT", outer.id)]
 
 
 def test_retry_never_strips_messages_and_errors_without_prior_call(monkeypatch):

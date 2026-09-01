@@ -45,6 +45,7 @@ def build_session_graph(
     # list_branches, which only returns live tips). Unnamed branches
     # (no `name`) get no label.
     caller_map: dict[str, str] = {}
+    metadata_map: dict[str, dict] = {}
     nodes = []
     try:
         nodes = db.get_nodes(session_id) or []
@@ -64,6 +65,7 @@ def build_session_graph(
             m for m in full_msgs if m.get("id") not in hidden_ids
         ]
         for n in nodes:
+            metadata_map[n.id] = dict(n.metadata or {})
             if n.caller:
                 caller_map[n.id] = n.caller
     except Exception:
@@ -191,6 +193,9 @@ def build_session_graph(
             row["covers_ids"] = covers_ids[mid]
         if mid in superseded:
             row["superseded_summary"] = True
+        retry_of = metadata_map.get(mid, {}).get("retry_of")
+        if isinstance(retry_of, str) and retry_of:
+            row["retry_of"] = retry_of
         for key in (
             "tokens_before", "tokens_after",
             "summarised_count", "compacted_at",

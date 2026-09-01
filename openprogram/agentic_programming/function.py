@@ -235,6 +235,7 @@ def create_pending_call_node(
     docstring: str = "",
     caller: Optional[str] = None,
     forced_predecessor: Optional[str] = None,
+    retry_of: Optional[str] = None,
     store=None,
 ):
     """Build the placeholder code ``Call`` for an @agentic_function run.
@@ -285,6 +286,8 @@ def create_pending_call_node(
         "expose": expose,
         "status": "running",
     }
+    if retry_of:
+        meta["retry_of"] = retry_of
     if render_range:
         meta["render_range"] = dict(render_range)
     # The function's docstring travels on the node so it renders into

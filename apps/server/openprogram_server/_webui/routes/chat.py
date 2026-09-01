@@ -208,6 +208,7 @@ def run_agentic_function_call(
     anchor_msg_id: str | None = None,
     response_format=None,
     project_id: str | None = None,
+    retry_of: str | None = None,
 ) -> dict:
     """Dispatch an @agentic_function via the forced tool-call path and
     return ``{"session_id", "msg_id"}`` (or ``{"error", "status_code",
@@ -423,6 +424,7 @@ def run_agentic_function_call(
                 ),
                 caller=_caller,
                 forced_predecessor=_forced_pred,
+                retry_of=retry_of,
                 store=_shim,
             )
             if _node is not None:

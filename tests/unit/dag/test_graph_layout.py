@@ -134,6 +134,23 @@ def test_root_function_call_same_spacing_as_chat():
     assert _no_overlap(by)
 
 
+def test_explicit_program_retry_is_the_only_root_program_fork():
+    by = _annotate([
+        _root(),
+        {"id": "run-1", "role": "code", "function": "gui_agent",
+         "predecessor": "ROOT", "created_at": 1},
+        {"id": "run-2", "role": "code", "function": "gui_agent",
+         "predecessor": "ROOT", "created_at": 2},
+        {"id": "retry", "role": "code", "function": "gui_agent",
+         "predecessor": "ROOT", "retry_of": "run-2", "created_at": 3},
+    ])
+
+    assert by["run-1"]["_lane"] == by["run-2"]["_lane"] == 0
+    assert by["run-1"]["_depth"] < by["run-2"]["_depth"]
+    assert by["retry"]["_lane"] != 0
+    assert by["retry"]["_depth"] == by["run-2"]["_depth"]
+
+
 def test_retry_fork_clears_base_lane():
     """Retry → 2nd branch starts past the entire base lane (no overlap)."""
     by = _annotate([
