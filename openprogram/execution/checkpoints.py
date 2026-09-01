@@ -9,7 +9,7 @@ from contextlib import closing
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Sequence
 
-from .model import ExecutionRecord, TERMINAL_EXECUTION_STATUSES
+from .model import ExecutionRecord, TERMINAL_EXECUTION_STATUSES, _snapshot_json
 from .store import ExecutionStore, _json
 
 
@@ -47,6 +47,23 @@ class CheckpointManifest:
     schema_version: int
     created_at: float
 
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "frontier", tuple(_snapshot_json(item) for item in self.frontier)
+        )
+        object.__setattr__(self, "state_refs", _snapshot_json(self.state_refs))
+        object.__setattr__(
+            self,
+            "completed_actions",
+            tuple(_snapshot_json(item) for item in self.completed_actions),
+        )
+        object.__setattr__(
+            self,
+            "effect_receipts",
+            tuple(_snapshot_json(item) for item in self.effect_receipts),
+        )
+        object.__setattr__(self, "child_frontier", _snapshot_json(self.child_frontier))
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "checkpoint_id": self.checkpoint_id,
@@ -54,11 +71,13 @@ class CheckpointManifest:
             "revision_id": self.revision_id,
             "parent_checkpoint_id": self.parent_checkpoint_id,
             "source_execution_version": self.source_execution_version,
-            "frontier": [dict(item) for item in self.frontier],
-            "state_refs": dict(self.state_refs),
-            "completed_actions": [dict(item) for item in self.completed_actions],
-            "effect_receipts": [dict(item) for item in self.effect_receipts],
-            "child_frontier": dict(self.child_frontier),
+            "frontier": [_snapshot_json(item) for item in self.frontier],
+            "state_refs": _snapshot_json(self.state_refs),
+            "completed_actions": [
+                _snapshot_json(item) for item in self.completed_actions
+            ],
+            "effect_receipts": [_snapshot_json(item) for item in self.effect_receipts],
+            "child_frontier": _snapshot_json(self.child_frontier),
             "pending_command_ids": list(self.pending_command_ids),
             "created_by_attempt_id": self.created_by_attempt_id,
             "content_hash": self.content_hash,

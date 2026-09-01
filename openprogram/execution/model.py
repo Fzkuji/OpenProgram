@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import Enum
 from collections.abc import Collection, Iterator
@@ -53,6 +54,14 @@ TERMINAL_COMMAND_STATUSES = frozenset({CommandStatus.APPLIED, CommandStatus.REJE
 
 def _dict(value: Mapping[str, Any] | None) -> dict[str, Any]:
     return dict(value or {})
+
+
+def _json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _snapshot_json(value: Any) -> Any:
+    return json.loads(_json(value))
 
 
 @dataclass(frozen=True)
@@ -138,11 +147,14 @@ class RevisionRecord:
     created_at: float
     parent_revision_id: str | None = None
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "manifest", _snapshot_json(self.manifest))
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "revision_id": self.revision_id,
             "content_hash": self.content_hash,
-            "manifest": _dict(self.manifest),
+            "manifest": _snapshot_json(self.manifest),
             "created_at": self.created_at,
             "parent_revision_id": self.parent_revision_id,
         }

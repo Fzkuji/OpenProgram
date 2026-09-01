@@ -75,6 +75,40 @@ def test_checkpoint_publish_is_content_addressed_and_updates_head_atomically(
     assert executions.rebuild_execution(execution.execution_id) == updated
 
 
+def test_checkpoint_snapshots_nested_inputs_from_caller_mutation(tmp_path) -> None:
+    executions, execution = _execution(tmp_path)
+    checkpoints = ExecutionCheckpointStore(executions)
+    frontier = [{"step": {"id": "collect"}}]
+    state_refs = {"state": {"version": 1}}
+    completed_actions = [{"action": {"id": "action_1"}}]
+    effect_receipts = [{"receipt": {"id": "receipt_1"}}]
+    child_frontier = {"child": {"status": "ready"}}
+
+    checkpoint, _ = checkpoints.publish(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        revision_id=execution.revision_id,
+        parent_checkpoint_id=None,
+        frontier=frontier,
+        state_refs=state_refs,
+        completed_actions=completed_actions,
+        effect_receipts=effect_receipts,
+        child_frontier=child_frontier,
+        pending_command_ids=(),
+        created_by_attempt_id="attempt_1",
+    )
+    expected = checkpoint.to_dict()
+
+    frontier[0]["step"]["id"] = "changed"
+    state_refs["state"]["version"] = 2
+    completed_actions[0]["action"]["id"] = "changed"
+    effect_receipts[0]["receipt"]["id"] = "changed"
+    child_frontier["child"]["status"] = "changed"
+
+    assert checkpoint.to_dict() == expected
+    assert checkpoints.get(checkpoint.checkpoint_id) == checkpoint
+
+
 def test_checkpoint_publish_is_idempotent_for_identical_content(tmp_path) -> None:
     executions, execution = _execution(tmp_path)
     checkpoints = ExecutionCheckpointStore(executions)

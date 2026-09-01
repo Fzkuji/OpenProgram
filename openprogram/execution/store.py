@@ -25,6 +25,8 @@ from .model import (
     RunRecord,
     TERMINAL_COMMAND_STATUSES,
     TERMINAL_EXECUTION_STATUSES,
+    _json,
+    _snapshot_json,
 )
 from .state_machine import validate_command, validate_transition
 
@@ -41,10 +43,6 @@ class ExecutionConflict(ExecutionStoreError):
 
 class CommandConflict(ExecutionStoreError):
     pass
-
-
-def _json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _object(raw: str | None) -> dict[str, Any]:
@@ -180,7 +178,7 @@ class ExecutionStore:
         revision_id: str | None = None,
         parent_revision_id: str | None = None,
     ) -> RevisionRecord:
-        manifest_value = dict(manifest)
+        manifest_value = _snapshot_json(manifest)
         content_hash = _fingerprint(manifest_value)
         requested_id = revision_id
         revision_id = revision_id or f"rev_{content_hash[:32]}"

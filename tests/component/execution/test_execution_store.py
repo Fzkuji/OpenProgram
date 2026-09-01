@@ -75,6 +75,18 @@ def test_revision_is_content_addressed_immutable_and_durable(tmp_path) -> None:
     assert collision.value.code == "revision_id_collision"
 
 
+def test_revision_snapshots_nested_manifest_from_caller_mutation(tmp_path) -> None:
+    path = tmp_path / "runtime" / "executions.sqlite3"
+    manifest = {"entrypoint": {"steps": [{"id": "collect"}]}}
+    created = ExecutionStore(path).create_revision(manifest=manifest)
+    expected = created.to_dict()
+
+    manifest["entrypoint"]["steps"][0]["id"] = "changed"
+
+    assert created.to_dict() == expected
+    assert ExecutionStore(path).get_revision(created.revision_id) == created
+
+
 def test_execution_requires_a_registered_revision(tmp_path) -> None:
     store = _store(tmp_path)
     with pytest.raises(ExecutionConflict) as missing:
