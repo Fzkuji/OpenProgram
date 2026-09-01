@@ -214,6 +214,7 @@ class AttemptStore:
             attempt = self._require(connection, attempt_id)
             self._validate_generation(attempt, generation)
             if attempt.status is AttemptStatus.ENDED:
+                self._validate_not_fenced(attempt)
                 raise AttemptConflict("terminal", "attempt has ended")
             now = self._clock()
             self._validate_lease(attempt, now)
@@ -238,6 +239,7 @@ class AttemptStore:
             attempt = self._require(connection, attempt_id)
             self._validate_generation(attempt, generation)
             if attempt.status is AttemptStatus.ENDED:
+                self._validate_not_fenced(attempt)
                 raise AttemptConflict("terminal", "attempt has ended")
             now = self._clock()
             self._validate_lease(attempt, now)
@@ -285,8 +287,8 @@ class AttemptStore:
             return attempt
         now = self._clock()
         connection.execute(
-            "UPDATE attempts SET status = ?, outcome = ?, ended_at = ?, "
-            "updated_at = ? WHERE attempt_id = ?",
+            "UPDATE attempts SET status = ?, lease_expires_at = 0, outcome = ?, "
+            "ended_at = ?, updated_at = ? WHERE attempt_id = ?",
             (AttemptStatus.ENDED.value, outcome, now, now, attempt.attempt_id),
         )
         return self._require(connection, attempt.attempt_id)
@@ -303,6 +305,11 @@ class AttemptStore:
     def _validate_lease(attempt: AttemptRecord, now: float) -> None:
         if attempt.lease_expires_at <= now:
             raise AttemptConflict("lease_expired", "attempt lease has expired")
+
+    @staticmethod
+    def _validate_not_fenced(attempt: AttemptRecord) -> None:
+        if attempt.lease_expires_at == 0:
+            raise AttemptConflict("stale_owner", "attempt owner was recovered")
 
     @staticmethod
     def _validate_owner(

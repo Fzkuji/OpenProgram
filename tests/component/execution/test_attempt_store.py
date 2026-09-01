@@ -207,3 +207,13 @@ def test_finish_attempt_changes_execution_and_clears_owner_lease_atomically(
             ttl_seconds=10,
         )
     assert terminal.value.code == "terminal"
+
+    with pytest.raises(AttemptConflict) as repeated_finish:
+        attempts.finish(
+            ended.attempt_id,
+            generation=ended.generation,
+            expected_execution_version=completed.status_version,
+            target=ExecutionStatus.COMPLETED,
+            outcome="result_committed",
+        )
+    assert repeated_finish.value.code == "terminal"

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 
-from openprogram.execution.attempts import AttemptStore
+import pytest
+
+from openprogram.execution.attempts import AttemptConflict, AttemptStore
 from openprogram.execution.checkpoints import CheckpointFragment
 from openprogram.execution.control import RuntimeControlService
 from openprogram.execution.driver import (
@@ -508,6 +510,35 @@ def test_owner_loss_interrupts_running_attempt_and_is_idempotent(tmp_path) -> No
 
     repeated = service.recover_owner_loss(execution.execution_id)
     assert repeated.execution == recovered.execution
+    assert attempts.get(attempt.attempt_id) == recovered.attempt
+
+
+def test_owner_loss_fences_the_recovered_attempt_owner(tmp_path) -> None:
+    executions, attempts, execution, attempt = _execution(tmp_path, active=True)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+
+    recovered = service.recover_owner_loss(execution.execution_id)
+    assert recovered.attempt is not None
+    assert recovered.attempt.lease_expires_at == 0
+
+    with pytest.raises(AttemptConflict) as heartbeat:
+        attempts.heartbeat(
+            attempt.attempt_id,
+            generation=attempt.generation,
+            ttl_seconds=30,
+        )
+    assert heartbeat.value.code == "stale_owner"
+
+    with pytest.raises(AttemptConflict) as finish:
+        service.finish_attempt(
+            attempt_id=attempt.attempt_id,
+            generation=attempt.generation,
+            expected_execution_version=execution.status_version,
+            target=ExecutionStatus.COMPLETED,
+            outcome="completed",
+        )
+    assert finish.value.code == "stale_owner"
+    assert executions.get_execution(execution.execution_id) == recovered.execution
     assert attempts.get(attempt.attempt_id) == recovered.attempt
 
 
