@@ -8,6 +8,7 @@ from openprogram.execution.attempts import AttemptConflict, AttemptStore
 from openprogram.execution.checkpoints import CheckpointFragment
 from openprogram.execution.control import RuntimeControlService
 from openprogram.execution.driver import ActivationInput, DriverBinding, DriverRegistry
+from openprogram.execution.effects import EffectClassification, EffectStatus, EffectStore
 from openprogram.execution.model import CapabilitySet, CommandStatus, ExecutionStatus
 from openprogram.execution.store import ExecutionStore
 
@@ -323,16 +324,16 @@ def test_safe_point_rejects_missing_and_continue_commands_explicitly(tmp_path):
         )
     assert unsupported.value.code == "unsupported_command"
     with pytest.raises(AttemptConflict) as missing:
-        service.arrive_safe_point(
-            attempt_id=continued.execution.current_attempt_id,
-            generation=continued.execution.owner_lease["generation"],
-            command_id="missing",
-            expected_execution_version=continued.execution.status_version,
-            fragment=CheckpointFragment(
-                safe_point_kind="action.after",
-                frontier=({"step_id": "invalid"},),
-                state_refs={},
-            ),
+            service.arrive_safe_point(
+                attempt_id=continued.execution.current_attempt_id,
+                generation=continued.execution.owner_lease["generation"],
+                command_id="missing",
+                expected_execution_version=continued.execution.status_version,
+                fragment=CheckpointFragment(
+                    safe_point_kind="action.after",
+                    frontier=({"step_id": "invalid"},),
+                    state_refs={},
+                ),
         )
     assert missing.value.code == "command_not_found"
 
@@ -534,6 +535,167 @@ def test_late_step_safe_point_after_cancel_finishes_and_retries_cancel(tmp_path)
     assert repeated.execution.status is ExecutionStatus.CANCELLED
     assert store.get_command("cancel_1").status is CommandStatus.APPLIED
     assert store.get_execution("exec_1").current_attempt_id is None
+
+
+def test_late_step_safe_point_with_unresolved_effect_requires_reconciliation(tmp_path):
+    store, attempts, service, paused = _paused(tmp_path)
+    started = asyncio.run(
+        service.request_step(
+            command_id="step_1",
+            execution_id=paused.execution_id,
+            expected_version=paused.status_version,
+            actor={"surface": "test"},
+        )
+    )
+    effect = EffectStore(store).register(
+        effect_id="effect_1",
+        execution_id=paused.execution_id,
+        attempt_id=started.execution.current_attempt_id,
+        action_id="send_message",
+        classification=EffectClassification.NONREPEATABLE,
+        idempotency_key=None,
+        metadata={},
+    )
+    EffectStore(store).mark_dispatched(effect.effect_id, expected_status=effect.status)
+    cancelling = asyncio.run(
+        service.request_cancel(
+            command_id="cancel_1",
+            execution_id=paused.execution_id,
+            expected_version=started.execution.status_version,
+            actor={"surface": "test"},
+            reason_code="race",
+        )
+    )
+    completion = service.arrive_safe_point(
+        attempt_id=started.execution.current_attempt_id,
+        generation=started.execution.owner_lease["generation"],
+        command_id="step_1",
+        expected_execution_version=cancelling.execution.status_version,
+        fragment=CheckpointFragment(
+            safe_point_kind="control.step",
+            frontier=({"step_id": "late"},),
+            state_refs={},
+            control_step={"step_id": "late"},
+        ),
+    )
+    assert completion.execution.status is ExecutionStatus.RECONCILIATION_REQUIRED
+    assert completion.command.status is CommandStatus.REJECTED
+    assert store.get_command("cancel_1").status is CommandStatus.APPLYING
+    resolved = service.resolve_effect(
+        effect_id="effect_1",
+        expected_status=EffectStatus.DISPATCHED,
+        outcome=EffectStatus.COMMITTED,
+        receipt={"provider_message_id": "message_1"},
+    )
+    assert resolved.execution.status is ExecutionStatus.CANCELLED
+    assert resolved.command is not None
+    assert resolved.command.status is CommandStatus.APPLIED
+
+
+def test_pause_and_step_applied_fast_paths_reject_cross_execution_command(tmp_path):
+    store, attempts, service, paused = _paused(tmp_path)
+    other = store.create_execution(
+        execution_id="exec_2",
+        run_id="run_2",
+        session_id="session_2",
+        revision_id=paused.revision_id,
+        capabilities=paused.capabilities,
+    )
+    leased, reserved = attempts.lease(
+        other.execution_id,
+        expected_version=other.status_version,
+        owner_id="other-worker",
+        ttl_seconds=30,
+        attempt_id="other_attempt",
+    )
+    other_attempt, other_running = attempts.activate(
+        leased.attempt_id,
+        generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    other_checkpoint, other_running = service.checkpoints.publish(
+        other.execution_id,
+        expected_version=other_running.status_version,
+        revision_id=other_running.revision_id,
+        parent_checkpoint_id=None,
+        frontier=({"step_id": "other-start"},),
+        state_refs={},
+        completed_actions=(),
+        effect_receipts=(),
+        child_frontier={},
+        pending_command_ids=(),
+        created_by_attempt_id=other_attempt.attempt_id,
+    )
+    other_pause = asyncio.run(
+        service.request_pause(
+            command_id="pause_other",
+            execution_id=other.execution_id,
+            expected_version=other_running.status_version,
+            actor={"surface": "test"},
+        )
+    )
+    service.arrive_safe_point(
+        attempt_id=other_attempt.attempt_id,
+        generation=other_attempt.generation,
+        command_id="pause_other",
+        expected_execution_version=other_pause.execution.status_version,
+        fragment=CheckpointFragment(
+            safe_point_kind="action.after",
+            frontier=({"step_id": "other-pause"},),
+            state_refs={},
+        ),
+    )
+    other_paused = store.get_execution(other.execution_id)
+    assert other_paused is not None
+    other_step = asyncio.run(
+        service.request_step(
+            command_id="step_other",
+            execution_id=other.execution_id,
+            expected_version=other_paused.status_version,
+            actor={"surface": "test"},
+        )
+    )
+    service.arrive_step_safe_point(
+        attempt_id=other_step.execution.current_attempt_id,
+        generation=other_step.execution.owner_lease["generation"],
+        command_id="step_other",
+        expected_execution_version=other_step.execution.status_version,
+        safe_point_kind="control.step",
+        frontier=({"step_id": "other-step"},),
+        state_refs={},
+        control_step={"step_id": "other-step"},
+    )
+    continued = asyncio.run(
+        service.request_continue(
+            command_id="continue_1",
+            execution_id=paused.execution_id,
+            expected_version=paused.status_version,
+            actor={"surface": "test"},
+        )
+    )
+    for command_id in (other_pause.command.command_id, other_step.command.command_id):
+        with pytest.raises(AttemptConflict) as mismatch:
+                service.arrive_safe_point(
+                    attempt_id=continued.execution.current_attempt_id,
+                    generation=continued.execution.owner_lease["generation"],
+                    command_id=command_id,
+                    expected_execution_version=continued.execution.status_version,
+                    fragment=CheckpointFragment(
+                        safe_point_kind=(
+                            "control.step"
+                            if command_id == "step_other"
+                            else "action.after"
+                        ),
+                        frontier=({"step_id": "invalid"},),
+                        state_refs={},
+                        control_step=(
+                            {"step_id": "invalid"}
+                            if command_id == "step_other"
+                            else None
+                        ),
+                    ),
+            )
+        assert mismatch.value.code == "command_mismatch"
 
 
 @pytest.mark.parametrize("fail", [False, True])

@@ -772,14 +772,26 @@ class RuntimeControlService:
                     "invalid_state",
                     f"applying cancel cannot finish execution in {execution.status.value}",
                 )
+            unresolved = connection.execute(
+                "SELECT 1 FROM effects WHERE execution_id = ? "
+                "AND status IN ('dispatched', 'uncertain') LIMIT 1",
+                (execution.execution_id,),
+            ).fetchone() is not None
+            target = (
+                ExecutionStatus.RECONCILIATION_REQUIRED
+                if unresolved
+                else ExecutionStatus.CANCELLED
+            )
+            outcome = "reconciliation_required" if unresolved else "cancelled_at_safe_point"
+            reason_code = "effect_reconciliation" if unresolved else cancel.payload.get("reason_code")
             ended, cancelled = self.attempts._finish_in_transaction(
                 connection,
                 attempt_id,
                 generation=generation,
                 expected_execution_version=execution.status_version,
-                target=ExecutionStatus.CANCELLED,
-                outcome="cancelled_at_safe_point",
-                reason_code=cancel.payload.get("reason_code"),
+                target=target,
+                outcome=outcome,
+                reason_code=reason_code,
             )
             command = self.executions._get_command(connection, command_id)
             if command is None:
@@ -793,13 +805,14 @@ class RuntimeControlService:
                     result_version=cancelled.status_version,
                     rejection_code="superseded_by_cancel",
                 )
-            cancel = self.executions._transition_command(
-                connection,
-                cancel.command_id,
-                expected_status=CommandStatus.APPLYING,
-                target=CommandStatus.APPLIED,
-                result_version=cancelled.status_version,
-            )
+            if not unresolved:
+                cancel = self.executions._transition_command(
+                    connection,
+                    cancel.command_id,
+                    expected_status=CommandStatus.APPLYING,
+                    target=CommandStatus.APPLIED,
+                    result_version=cancelled.status_version,
+                )
             checkpoint = (
                 self.checkpoints._get(connection, cancelled.checkpoint_head_id)
                 if cancelled.checkpoint_head_id
@@ -834,6 +847,8 @@ class RuntimeControlService:
             self.attempts._validate_generation(attempt, generation)
             execution = self.executions._require_execution(connection, attempt.execution_id)
             command = self.executions._get_command(connection, command_id)
+            if command is not None and command.execution_id != execution.execution_id:
+                raise AttemptConflict("command_mismatch", "safe point command belongs to another execution")
             if command is not None and command.status is CommandStatus.APPLIED:
                 checkpoint = (
                     self.checkpoints._get(connection, execution.checkpoint_head_id)
@@ -1155,6 +1170,8 @@ class RuntimeControlService:
             self.attempts._validate_generation(attempt, generation)
             execution = self.executions._require_execution(connection, attempt.execution_id)
             command = self.executions._get_command(connection, command_id)
+            if command is not None and command.execution_id != execution.execution_id:
+                raise AttemptConflict("command_mismatch", "safe point command belongs to another execution")
             if command is not None and command.status is CommandStatus.APPLIED:
                 checkpoint = (
                     self.checkpoints._get(connection, execution.checkpoint_head_id)
