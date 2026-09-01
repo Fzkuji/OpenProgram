@@ -35,6 +35,100 @@ registerHooks({
   },
 });
 
+test("Program internals are folded into the Program thread by default", async () => {
+  const { buildThreadModel } = await import(
+    "../lib/runtime-bridge/dag/passes/thread.ts"
+  );
+  const graph = [
+    { id: "ROOT", role: "user", display: "root", _lane: 0, created_at: 0 },
+    { id: "program", role: "tool", function: "gui_agent", caller: "",
+      predecessor: "ROOT", _lane: 0, created_at: 1 },
+    { id: "internal-reply", role: "assistant", caller: "program",
+      predecessor: "", _lane: 0, created_at: 2 },
+    { id: "internal-step", role: "tool", function: "inspect",
+      caller: "internal-reply", predecessor: "", _lane: 0, created_at: 3 },
+  ];
+
+  const model = buildThreadModel(graph, "program");
+
+  assert.deepEqual(model.visible.map((node) => node.id), ["ROOT", "program"]);
+  assert.deepEqual(
+    model.events.program.map((event) => event.id),
+    ["internal-reply", "internal-step"],
+  );
+});
+
+test("Program overview projection preserves semantic edges and real forks", async () => {
+  const { projectTopPrograms } = await import(
+    "../lib/runtime-bridge/dag/passes/project-programs.ts"
+  );
+  const graph = [
+    { id: "ROOT", role: "user", display: "root", _lane: 0, _tier: 0 },
+    { id: "prior", role: "assistant", predecessor: "ROOT", _lane: 0, _tier: 2 },
+    { id: "program", role: "tool", function: "gui_agent", caller: "",
+      predecessor: "prior", _lane: 6, _tier: 4 },
+    { id: "retry", role: "tool", function: "gui_agent", caller: "",
+      predecessor: "prior", retry_of: "program", _lane: 8, _tier: 1 },
+    { id: "fork", role: "user", predecessor: "prior", _lane: 10, _tier: 1 },
+    { id: "fork-reply", role: "assistant", predecessor: "fork",
+      _lane: 10, _tier: 2 },
+  ];
+
+  const projected = projectTopPrograms(graph);
+  const byId = Object.fromEntries(projected.map((node) => [node.id, node]));
+
+  assert.equal(byId.program._overview_parent, "ROOT");
+  assert.equal(byId.program._lane, 0);
+  assert.equal(byId.program._tier, 1);
+  assert.equal(byId.program.predecessor, "prior");
+  assert.equal(byId.retry._overview_parent, undefined);
+  assert.equal(byId.retry._lane, 8);
+  assert.equal(byId.fork._overview_parent, undefined);
+  assert.equal(byId.fork._lane, 10);
+  assert.equal(byId["fork-reply"].predecessor, "fork");
+});
+
+test("cyclic spawn ownership cannot overflow thread or HEAD traversal", async () => {
+  const { buildThreadModel } = await import(
+    "../lib/runtime-bridge/dag/passes/thread.ts"
+  );
+  const { setThreadOpen } = await import(
+    "../lib/runtime-bridge/dag/store/globals.ts"
+  );
+  const graph = [
+    { id: "ROOT", role: "user", display: "root", _lane: 0 },
+    { id: "a", role: "user", source: "agent_spawn", predecessor: null,
+      caller: "b", _lane: 1 },
+    { id: "b", role: "user", source: "agent_spawn", predecessor: null,
+      caller: "a", _lane: 2 },
+  ];
+  setThreadOpen({ a: true, b: true });
+
+  const model = buildThreadModel(graph, "a");
+
+  assert.equal(model.isOpen("a"), false);
+  assert.equal(model.isOpen("b"), false);
+});
+
+test("equal legacy timestamps attach a clean spawn to the latest Program", async () => {
+  const { buildThreadModel } = await import(
+    "../lib/runtime-bridge/dag/passes/thread.ts"
+  );
+  const graph = [
+    { id: "ROOT", role: "user", display: "root", _lane: 0, timestamp: 0 },
+    { id: "user", role: "user", predecessor: "ROOT", caller: "ROOT",
+      _lane: 0, timestamp: 100 },
+    { id: "program", role: "tool", function: "gui_agent", predecessor: "ROOT",
+      caller: "", _lane: 0, timestamp: 100 },
+    { id: "spawn", role: "user", source: "agent_spawn", predecessor: "ROOT",
+      caller: "ROOT", _lane: 2, timestamp: 100 },
+  ];
+
+  const model = buildThreadModel(graph, "program");
+
+  assert.equal(model.spawnOwnerOf.spawn, "program");
+});
+
 function inputSig(over = {}) {
   return dagInputSignature({
     graph: [{ id: "a", role: "user", predecessor: null, status: "" }],
@@ -213,7 +307,7 @@ test("pipeline compares the input signature before expensive passes or SVG", () 
   const patch = renderSrc.indexOf("tryStatusPatch(");
   const merge = renderSrc.indexOf("const merged = _mergeRuns");
   const fold = renderSrc.indexOf("_foldSummaries");
-  const thread = renderSrc.indexOf("buildThreadModel(graph)");
+  const thread = renderSrc.indexOf("buildThreadModel(");
   const svg = renderSrc.indexOf('_svg("svg"');
   const replace = renderSrc.indexOf("replaceChildren");
   const attach = renderSrc.indexOf("attachCanvas");

@@ -43,6 +43,7 @@ import { _mergeRuns } from "./passes/merge-runs";
 import { _demoteDecorationCards } from "./passes/demote-decoration-cards";
 import { _foldSummaries } from "./passes/fold-summaries";
 import { buildThreadModel } from "./passes/thread";
+import { projectTopPrograms } from "./passes/project-programs";
 import { _buildTree } from "./layout/build-tree";
 import { _assignDepth } from "./layout/depth";
 import { _assignLanes, _headAncestors } from "./layout/assign-lanes";
@@ -216,6 +217,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   headId = collapsedR.headId;
 
   _demoteDecorationCards(graph);
+  graph = projectTopPrograms(graph);
 
   // Stable leafOfNode from PRE-collapse graph for colouring. Collapsing
   // removes a leaf, which would otherwise make the spawn node itself
@@ -244,7 +246,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
       setThreadSession(sid);
     }
   }
-  const threadModel = buildThreadModel(graph);
+  const threadModel = buildThreadModel(graph, headId);
   graph = threadModel.visible;
 
   // HEAD may point at a reply that merged into its anchor (a followup,

@@ -585,7 +585,7 @@ assert.match(
 );
 assert.match(
   pipelineSrc,
-  /_foldSummaries\(graph, headId\)[\s\S]{0,900}buildThreadModel\(graph\)/,
+  /_foldSummaries\(graph, headId\)[\s\S]{0,900}buildThreadModel\(graph(?:, headId)?\)/,
   "threads fold after summaries so the two passes compose",
 );
 assert.match(

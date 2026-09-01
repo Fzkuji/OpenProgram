@@ -26,6 +26,7 @@ export interface GNode {
   _tier?: number;
   _internal?: boolean;
   _runNode?: boolean;
+  _overview_parent?: string | null;
   [k: string]: any;
 }
 
@@ -51,8 +52,12 @@ export { LANE_COLORS } from "@/lib/format-utils/lane-colors";
  *  注意：对话链上的首轮 user **不**属于这一类——它带 predecessor="ROOT"
  *  哨兵（见 webui/server.py 的 append 与 dag/overview.md §3），不靠 fallback。
  *  与 render/edges.ts 的 `predecessor || caller` 画边语义对齐。 */
-export function layoutParent(n: GNode): string | null | undefined {
+export function semanticParent(n: GNode): string | null | undefined {
   return n.predecessor || n.caller;
+}
+
+export function layoutParent(n: GNode): string | null | undefined {
+  return n._overview_parent || semanticParent(n);
 }
 
 export type HighlightMode = "viewport" | "context";
