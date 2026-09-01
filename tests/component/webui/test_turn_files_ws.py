@@ -617,6 +617,95 @@ def test_review_scope_pages_file_rows_and_echoes_request_id(store, tmp_path):
     assert len(json.dumps(data)) < 100_000
 
 
+def test_review_scope_filters_before_paging_and_invalidates_filter_snapshot(store, tmp_path):
+    session_id, msg_id = "s_filtered_scope", "u1_reply"
+    _seed(store, session_id, msg_id)
+    _git, index = store._open(session_id)
+    rows = []
+    for number in range(240):
+        if number % 3 == 0:
+            rel = f"tests/test_{number}.py"
+        elif number % 3 == 1:
+            rel = f"docs/guide_{number}.md"
+        else:
+            rel = f"src/module_{number}.py"
+        rows.append({
+            "path": str(tmp_path / rel), "rel": rel, "op": "modify",
+            "added": number, "removed": 1, "binary": False,
+            "diff_state": "available", "recoverability": "exact",
+        })
+    index.nodes_by_id[msg_id].metadata = {
+        **(index.nodes_by_id[msg_id].metadata or {}),
+        "turn_files": {"version": 2, "files": rows, "file_count": len(rows)},
+    }
+
+    first_ws = FakeWS()
+    _run(tf.handle_review_scope(first_ws, {
+        "session_id": session_id, "assistant_msg_id": msg_id,
+        "scope": "turn", "category": "Tests", "query": "test_",
+        "sort": "path", "cursor": 0, "limit": 20,
+    }))
+    first = first_ws.sent[0]["data"]
+    assert first["status"] == "ready"
+    assert first["file_count"] == 80
+    assert first["added"] == sum(row["added"] for row in rows if row["rel"].startswith("tests/"))
+    assert len(first["files"]) == 20
+    assert all(row["rel"].startswith("tests/") for row in first["files"])
+    assert first["next_cursor"] == 20
+
+    next_ws = FakeWS()
+    _run(tf.handle_review_scope(next_ws, {
+        "session_id": session_id, "assistant_msg_id": msg_id,
+        "scope": "turn", "category": "Tests", "query": "test_",
+        "sort": "path", "cursor": first["next_cursor"], "limit": 20,
+        "snapshot_id": first["snapshot_id"],
+    }))
+    assert len(next_ws.sent[0]["data"]["files"]) == 20
+
+    stale_ws = FakeWS()
+    _run(tf.handle_review_scope(stale_ws, {
+        "session_id": session_id, "assistant_msg_id": msg_id,
+        "scope": "turn", "category": "Docs", "query": "guide_",
+        "sort": "path", "cursor": first["next_cursor"], "limit": 20,
+        "snapshot_id": first["snapshot_id"],
+    }))
+    assert stale_ws.sent[0]["data"]["status"] == "stale"
+    assert stale_ws.sent[0]["data"]["error"] == "STALE_SNAPSHOT"
+
+
+def test_workspace_review_snapshot_rejects_worktree_content_change(store, tmp_path, monkeypatch):
+    root = tmp_path / "snapshot-repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "t@example.com"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "T"], check=True)
+    target = root / "tracked.py"
+    target.write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-qm", "base"], check=True)
+    target.write_text("after\n", encoding="utf-8")
+    monkeypatch.setattr(tf, "_project_root", lambda _session_id: root)
+
+    first = tf._workspace_scope("session", category="Code", query="tracked")
+    assert first["status"] == "ready"
+    assert first["files"][0]["base"]["kind"] == "blob"
+    assert first["files"][0]["worktree"]["kind"] == "regular"
+    diff = tf._workspace_file_diff("session", str(target), first["snapshot_id"])
+    assert "after" in diff["diff"]
+    subprocess.run(["git", "-C", str(root), "add", "tracked.py"], check=True)
+    target.write_text("changed-after-snapshot\n", encoding="utf-8")
+
+    ws = FakeWS()
+    _run(tf.handle_review_scope(ws, {
+        "session_id": "session", "scope": "workspace", "category": "Code",
+        "query": "tracked", "snapshot_id": first["snapshot_id"],
+        "cursor": 0, "limit": 100,
+    }))
+    data = ws.sent[0]["data"]
+    assert data["status"] == "stale"
+    assert data["error"] == "STALE_SNAPSHOT"
+
+
 def test_diff_page_mounts_at_most_two_hundred_lines(store, tmp_path):
     session_id, msg_id = "s_line_page", "u1_reply"
     _seed(store, session_id, msg_id)

@@ -11,6 +11,7 @@ import styles from "./review-tab-pane.module.css";
 
 type ReviewScope = "turn" | "branch" | "workspace";
 type ReviewCategory = "All" | "Code" | "Tests" | "Docs" | "Large";
+type ReviewSort = "path" | "alpha" | "category" | "recent";
 
 interface ReviewFile {
   path: string;
@@ -51,6 +52,9 @@ interface ScopeState {
   prev_cursor?: number | null;
   error?: string;
   linked_impacts: LinkedImpact[];
+  category?: ReviewCategory;
+  query?: string;
+  sort?: ReviewSort;
 }
 
 interface DiffState {
@@ -72,13 +76,6 @@ function send(payload: unknown): boolean {
   return true;
 }
 
-function categoryOf(file: ReviewFile): ReviewCategory {
-  if (file.diff_state && file.diff_state !== "available") return "Large";
-  if (/(^|\/)(tests?|specs?)(\/|_|-)/i.test(file.rel)) return "Tests";
-  if (/\.(md|mdx|rst|txt)$/i.test(file.rel)) return "Docs";
-  return "Code";
-}
-
 export function ReviewTabPane({
   sessionId,
   assistantMsgId,
@@ -98,6 +95,8 @@ export function ReviewTabPane({
   const [diffHistory, setDiffHistory] = useState<number[]>([]);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [category, setCategory] = useState<ReviewCategory>("All");
+  const [query] = useState("");
+  const [sort] = useState<ReviewSort>("path");
   const [scopeState, setScopeState] = useState<ScopeState>({
     loading: true,
     status: "loading",
@@ -115,6 +114,7 @@ export function ReviewTabPane({
     setFileCursor(0);
     setDiffCursor(0);
     setDiffHistory([]);
+    setScopeState((current) => ({ ...current, snapshot_id: undefined }));
   }, [initialScope, initialPath, sessionId, assistantMsgId]);
 
   useEffect(() => {
@@ -161,12 +161,15 @@ export function ReviewTabPane({
           file_count: data.file_count ?? files.length,
           added: data.added ?? null,
           removed: data.removed ?? null,
-          snapshot_id: data.snapshot_id,
+          snapshot_id: data.status === "ready" ? data.snapshot_id : undefined,
           cursor: data.cursor ?? 0,
           next_cursor: data.next_cursor,
           prev_cursor: data.prev_cursor,
           error: data.error,
           linked_impacts: data.linked_impacts ?? [],
+          category: data.category,
+          query: data.query,
+          sort: data.sort,
         });
         setSelectedPath((current) => {
           if (current && files.some((file) => file.path === current)) return current;
@@ -182,8 +185,14 @@ export function ReviewTabPane({
       session_id: sessionId,
       assistant_msg_id: assistantMsgId,
       scope,
+      category,
+      query,
+      sort,
       cursor: fileCursor,
       limit: 100,
+      ...(fileCursor > 0 && scopeState.snapshot_id
+        ? { snapshot_id: scopeState.snapshot_id }
+        : {}),
       request_id: requestId,
     });
     if (!sent) {
@@ -196,7 +205,7 @@ export function ReviewTabPane({
       }));
     }
     return () => socket.removeEventListener("message", onMessage);
-  }, [assistantMsgId, fileCursor, refreshNonce, scope, sessionId, text]);
+  }, [assistantMsgId, category, fileCursor, query, refreshNonce, scope, sessionId, sort, text]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -239,6 +248,9 @@ export function ReviewTabPane({
       session_id: sessionId,
       assistant_msg_id: assistantMsgId,
       scope,
+      category,
+      query,
+      sort,
       path: selectedPath,
       cursor: diffCursor,
       snapshot_id: scopeState.snapshot_id,
@@ -254,23 +266,20 @@ export function ReviewTabPane({
     return () => socket.removeEventListener("message", onMessage);
   }, [
     assistantMsgId,
+    category,
     diffCursor,
+    query,
     scope,
     scopeState.snapshot_id,
     selectedPath,
     sessionId,
+    sort,
     text,
   ]);
 
   const selected = useMemo(
     () => scopeState.files.find((file) => file.path === selectedPath),
     [scopeState.files, selectedPath],
-  );
-  const visibleFiles = useMemo(
-    () => category === "All"
-      ? scopeState.files
-      : scopeState.files.filter((file) => categoryOf(file) === category),
-    [category, scopeState.files],
   );
   const sourceLabel = scopeState.source === "git"
     ? "Git workspace"
@@ -311,9 +320,11 @@ export function ReviewTabPane({
               className={scope === value ? styles.scopeActive : styles.scope}
               onClick={() => {
                 setScope(value);
+                setSelectedPath("");
                 setFileCursor(0);
                 setDiffCursor(0);
                 setDiffHistory([]);
+                setScopeState((current) => ({ ...current, snapshot_id: undefined }));
               }}
               disabled={value === "turn" && !assistantMsgId}
             >
@@ -337,7 +348,14 @@ export function ReviewTabPane({
                 type="button"
                 key={value}
                 aria-pressed={category === value}
-                onClick={() => setCategory(value)}
+                onClick={() => {
+                  setCategory(value);
+                  setSelectedPath("");
+                  setFileCursor(0);
+                  setDiffCursor(0);
+                  setDiffHistory([]);
+                  setScopeState((current) => ({ ...current, snapshot_id: undefined }));
+                }}
               >
                 {value}
               </button>
@@ -347,9 +365,9 @@ export function ReviewTabPane({
             <div className={styles.empty}>{text("Loading files…", "正在加载文件…")}</div>
           ) : scopeState.error ? (
             <div className={styles.empty}>{scopeState.error}</div>
-          ) : visibleFiles.length === 0 ? (
+          ) : scopeState.files.length === 0 ? (
             <div className={styles.empty}>{text("No changes in this scope", "此范围没有修改")}</div>
-          ) : visibleFiles.map((file) => (
+          ) : scopeState.files.map((file) => (
             <button
               type="button"
               key={file.path}

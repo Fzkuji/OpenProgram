@@ -21,6 +21,14 @@ _MAX_DIFF_BYTES = 512 * 1024
 _MAX_DIFF_PAGE_BYTES = 256 * 1024
 _MAX_DIFF_LINES = 200
 _MAX_DIFF_LINE_BYTES = 64 * 1024
+_REVIEW_CATEGORIES = {"All", "Code", "Tests", "Docs", "Large"}
+_REVIEW_SORTS = {"path", "alpha", "category", "recent"}
+_MAX_REVIEW_SNAPSHOTS = 256
+
+# Review snapshots are deliberately separate from the read cache.  They hold
+# the exact candidate set used by a page/diff request until its content is
+# invalidated by a fresh workspace comparison.
+_REVIEW_SNAPSHOTS: dict[str, dict] = {}
 
 
 class _OutputLimitError(OSError):
@@ -144,35 +152,130 @@ def _totals(files: list[dict]) -> tuple[int | None, int | None]:
     )
 
 
+def _review_category(file: dict) -> str:
+    if file.get("diff_state") and file.get("diff_state") != "available":
+        return "Large"
+    rel = str(file.get("rel") or file.get("path") or "")
+    if re.search(r"(?:^|/)(?:tests?|specs?)(?:/|_|-)", rel, re.I):
+        return "Tests"
+    if re.search(r"\.(?:md|mdx|rst|txt)$", rel, re.I):
+        return "Docs"
+    return "Code"
+
+
+def _review_filter_files(
+    files: list[dict], category: str, query: str, sort: str,
+) -> list[dict]:
+    category = category if category in _REVIEW_CATEGORIES else "All"
+    query = query.strip().casefold()
+    filtered = [
+        file for file in files
+        if (category == "All" or _review_category(file) == category)
+        and (
+            not query
+            or query in str(file.get("rel") or "").casefold()
+            or query in str(file.get("path") or "").casefold()
+        )
+    ]
+    if sort in {"path", "alpha"}:
+        return sorted(
+            filtered,
+            key=lambda file: (
+                str(file.get("rel") or file.get("path") or "").casefold(),
+                str(file.get("rel") or file.get("path") or ""),
+            ),
+        )
+    if sort == "category":
+        return sorted(
+            filtered,
+            key=lambda file: (
+                _review_category(file),
+                str(file.get("rel") or file.get("path") or "").casefold(),
+            ),
+        )
+    if sort == "recent":
+        return list(reversed(filtered))
+    return filtered
+
+
 def _scope_payload(scope: str, source: str, files: list[dict], **extra) -> dict:
     snapshot_basis = extra.pop("_snapshot_basis", files)
-    bounded = files[:_MAX_SCOPE_FILES]
-    added, removed = _totals(bounded)
+    snapshot_owner = extra.pop("_snapshot_owner", {})
+    snapshot_store = extra.pop("_snapshot_store", None)
+    category = extra.pop("category", "All")
+    query = str(extra.pop("query", "") or "")
+    sort = extra.pop("sort", "path")
+    filtered = _review_filter_files(files, category, query, sort)
+    bounded = filtered[:_MAX_SCOPE_FILES]
+    added, removed = _totals(filtered)
     payload = {
         "status": "ready",
         "scope": scope,
         "source": source,
         "files": bounded,
-        "file_count": len(files),
+        "file_count": len(filtered),
         "added": added,
         "removed": removed,
-        "truncated": len(files) > _MAX_SCOPE_FILES,
+        "truncated": len(filtered) > _MAX_SCOPE_FILES,
+        "category": category,
+        "query": query,
+        "sort": sort,
         **extra,
     }
+    snapshot_value = {
+        "scope": scope,
+        "source": source,
+        "owner": snapshot_owner,
+        "files": snapshot_basis,
+        "category": category,
+        "query": query,
+        "sort": sort,
+        "head_id": extra.get("head_id"),
+    }
     payload["snapshot_id"] = "sha256:" + hashlib.sha256(
-        json.dumps({
-            "scope": scope,
-            "source": source,
-            "files": snapshot_basis,
-            "head_id": extra.get("head_id"),
-        }, sort_keys=True, default=str).encode(),
+        json.dumps(snapshot_value, sort_keys=True, default=str).encode(),
     ).hexdigest()
+    _REVIEW_SNAPSHOTS[payload["snapshot_id"]] = {
+        "scope": scope,
+        "source": source,
+        "owner": snapshot_owner,
+        "category": category,
+        "query": query,
+        "sort": sort,
+        "files": filtered,
+        "payload": payload,
+        **(snapshot_store or {}),
+    }
+    while len(_REVIEW_SNAPSHOTS) > _MAX_REVIEW_SNAPSHOTS:
+        del _REVIEW_SNAPSHOTS[next(iter(_REVIEW_SNAPSHOTS))]
     return payload
 
 
-def _page_scope(result: dict, cursor: int, limit: int) -> dict:
+def _page_scope(
+    result: dict, cursor: int, limit: int, snapshot_id: str = "",
+) -> dict:
     if result.get("status") != "ready":
         return result
+    if (
+        (cursor > 0 and not snapshot_id)
+        or (snapshot_id and (
+            snapshot_id != result.get("snapshot_id")
+            or snapshot_id not in _REVIEW_SNAPSHOTS
+        ))
+    ):
+        return {
+            "status": "stale",
+            "scope": result.get("scope"),
+            "error": "STALE_SNAPSHOT",
+            "snapshot_id": snapshot_id,
+            "category": result.get("category", "All"),
+            "query": result.get("query", ""),
+            "sort": result.get("sort", "path"),
+            "files": [],
+            "file_count": 0,
+            "added": 0,
+            "removed": 0,
+        }
     files = result.get("files") or []
     start = max(0, cursor)
     size = max(1, min(limit, _SCOPE_PAGE_SIZE))
@@ -286,7 +389,10 @@ def _history_eligibility(session_id: str, turn_id: str) -> dict:
     }
 
 
-def _turn_scope(session_id: str, turn_id: str) -> dict:
+def _turn_scope(
+    session_id: str, turn_id: str, *, category: str = "All", query: str = "",
+    sort: str = "path",
+) -> dict:
     opened = _open_session(session_id)
     if opened is None:
         return {"status": "error", "error": f"unknown session {session_id!r}"}
@@ -414,11 +520,17 @@ def _turn_scope(session_id: str, turn_id: str) -> dict:
         owned_turn_ids=ownership["owned_turn_ids"],
         blockers=ownership["blockers"],
         linked_impacts=ownership["linked"],
+        category=category,
+        query=query,
+        sort=sort,
+        _snapshot_owner={"session_id": session_id, "assistant_msg_id": turn_id},
         _snapshot_basis=snapshot_basis,
     )
 
 
-def _branch_scope(session_id: str) -> dict:
+def _branch_scope(
+    session_id: str, *, category: str = "All", query: str = "", sort: str = "path",
+) -> dict:
     opened = _open_session(session_id)
     if opened is None:
         return {"status": "error", "error": f"unknown session {session_id!r}"}
@@ -513,6 +625,10 @@ def _branch_scope(session_id: str) -> dict:
         head_id=index.head_id,
         blockers=ownership["blockers"],
         linked_impacts=ownership["linked"],
+        category=category,
+        query=query,
+        sort=sort,
+        _snapshot_owner={"session_id": session_id},
         _snapshot_basis=[{
             "path": lineage["path"],
             "before": lineage["before"],
@@ -590,7 +706,119 @@ def _workspace_identity(path: Path) -> dict:
         return {"kind": "unavailable"}
 
 
-def _workspace_scope(session_id: str) -> dict:
+def _git_blob_state(root: Path, tree: str, rel: str) -> tuple[dict, bytes | None]:
+    try:
+        raw = _git_output(root, "ls-tree", "-z", tree, "--", rel)
+        entry = raw.split(b"\0", 1)[0]
+        if not entry:
+            return {"kind": "absent"}, None
+        header, _path = entry.split(b"\t", 1)
+        mode, _kind, object_id = header.split()
+        size = int(_git_output(root, "cat-file", "-s", object_id.decode()).strip())
+        try:
+            content = _git_output(root, "cat-file", "blob", object_id.decode())
+        except _OutputLimitError:
+            content = None
+        digest = (
+            "sha256:" + hashlib.sha256(content).hexdigest()
+            if content is not None
+            else "git:" + object_id.decode()
+        )
+        return {
+            "kind": "blob", "digest": digest, "mode": mode.decode(), "size": size,
+        }, content
+    except (OSError, ValueError):
+        return {"kind": "unavailable"}, None
+
+
+def _index_blob_state(root: Path, rel: str) -> tuple[dict, bytes | None]:
+    try:
+        raw = _git_output(root, "ls-files", "--stage", "-z", "--", rel)
+        entry = raw.split(b"\0", 1)[0]
+        if not entry:
+            return {"kind": "absent"}, None
+        header, _path = entry.split(b"\t", 1)
+        mode, object_id, _stage = header.split()
+        state = {
+            "kind": "blob", "digest": "git:" + object_id.decode(),
+            "mode": mode.decode(),
+        }
+        try:
+            content = _git_output(root, "cat-file", "blob", object_id.decode())
+        except _OutputLimitError:
+            content = None
+        return state, content
+    except (OSError, ValueError):
+        return {"kind": "unavailable"}, None
+
+
+def _workspace_content_state(root: Path, rel: str) -> tuple[dict, bytes | None]:
+    try:
+        relative = Path(rel)
+        if relative.is_absolute() or ".." in relative.parts or not relative.name:
+            raise OSError("unsafe workspace path")
+        descriptor = os.open(
+            root,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        try:
+            for component in relative.parts[:-1]:
+                child = os.open(
+                    component,
+                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                    | getattr(os, "O_NOFOLLOW", 0),
+                    dir_fd=descriptor,
+                )
+                os.close(descriptor)
+                descriptor = child
+            file_descriptor = os.open(
+                relative.name,
+                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=descriptor,
+            )
+            try:
+                info = os.fstat(file_descriptor)
+                identity = {
+                    "kind": (
+                        "regular" if stat.S_ISREG(info.st_mode)
+                        else "symlink" if stat.S_ISLNK(info.st_mode) else "other"
+                    ),
+                    "dev": info.st_dev, "ino": info.st_ino,
+                    "size": info.st_size, "mtime_ns": info.st_mtime_ns,
+                }
+                if identity["kind"] != "regular":
+                    return identity, None
+                chunks: list[bytes] = []
+                digest = hashlib.sha256()
+                total = 0
+                while True:
+                    chunk = os.read(file_descriptor, 64 * 1024)
+                    if not chunk:
+                        break
+                    digest.update(chunk)
+                    total += len(chunk)
+                    if total <= _MAX_DIFF_BYTES:
+                        chunks.append(chunk)
+                state = {
+                    **identity,
+                    "digest": "sha256:" + digest.hexdigest(),
+                    "mode": format(stat.S_IMODE(info.st_mode), "04o"),
+                }
+                return state, b"".join(chunks) if total <= _MAX_DIFF_BYTES else None
+            finally:
+                os.close(file_descriptor)
+        finally:
+            os.close(descriptor)
+    except FileNotFoundError:
+        return {"kind": "absent"}, None
+    except OSError:
+        return {"kind": "unavailable"}, None
+
+
+def _workspace_scope(
+    session_id: str, *, category: str = "All", query: str = "", sort: str = "path",
+) -> dict:
     root = _project_root(session_id)
     if root is None or not (root / ".git").exists():
         return {
@@ -663,9 +891,64 @@ def _workspace_scope(session_id: str) -> dict:
             "old_rel": old_rel,
             "workspace_identity": _workspace_identity(root / rel),
         })
+    try:
+        head_identity = _git_output(root, "rev-parse", "HEAD^{tree}").decode().strip()
+        index_vector = _git_output(root, "ls-files", "--stage", "-z")
+        index_identity = "sha256:" + hashlib.sha256(index_vector).hexdigest()
+    except OSError as exc:
+        return {
+            "status": "unavailable", "scope": "workspace", "source": "git",
+            "files": [], "file_count": 0, "error": str(exc),
+        }
+    candidate_states: dict[str, dict] = {}
+    snapshot_basis = []
+    for row in files:
+        base_rel = row.get("old_rel") or row["rel"]
+        base, base_content = _git_blob_state(root, "HEAD", base_rel)
+        index, index_content = _index_blob_state(root, row["rel"])
+        worktree, worktree_content = _workspace_content_state(root, row["rel"])
+        row.update({"base": base, "index": index, "worktree": worktree})
+        if (
+            (base.get("kind") == "blob" and base_content is None)
+            or (index.get("kind") == "blob" and index_content is None)
+            or (worktree.get("kind") == "regular" and worktree_content is None)
+        ):
+            row["diff_state"] = "large"
+            row["binary"] = False
+        # Preserve the old field used by the workspace diff boundary.
+        row["workspace_identity"] = {
+            key: value for key, value in worktree.items()
+            if key in {"kind", "dev", "ino", "size", "mtime_ns"}
+        }
+        candidate_states[row["path"]] = {
+            "base": b"" if base.get("kind") == "absent" else base_content,
+            "index": b"" if index.get("kind") == "absent" else index_content,
+            "worktree": b"" if worktree.get("kind") == "absent" else worktree_content,
+        }
+        snapshot_basis.append({
+            key: row.get(key)
+            for key in ("path", "rel", "old_rel", "status_code", "base", "index", "worktree")
+        })
     return _scope_payload(
         "workspace", "git", files,
         root=str(root), ignored_policy="exclude_standard",
+        category=category,
+        query=query,
+        sort=sort,
+        _snapshot_owner={"session_id": session_id, "root": str(root)},
+        _snapshot_basis={
+            "head_identity": head_identity,
+            "index_identity": index_identity,
+            "candidates": snapshot_basis,
+        },
+        _snapshot_store={
+            "workspace": {
+                "root": str(root),
+                "head_identity": head_identity,
+                "index_identity": index_identity,
+                "candidates": candidate_states,
+            },
+        },
     )
 
 
@@ -965,6 +1248,23 @@ def _branch_file_diff(session_id: str, path: str, cursor: int = 0) -> dict:
     )
 
 
+def _render_content_diff(
+    before: bytes | None, after: bytes | None, path: str, cursor: int = 0,
+) -> dict:
+    if before is None or after is None:
+        return {"diff": "", "diff_state": "large"}
+    if b"\0" in before or b"\0" in after:
+        return {"diff": "", "diff_state": "binary"}
+    lines = difflib.unified_diff(
+        before.decode("utf-8", errors="replace").splitlines(keepends=True),
+        after.decode("utf-8", errors="replace").splitlines(keepends=True),
+        fromfile=f"a/{os.path.basename(path)}",
+        tofile=f"b/{os.path.basename(path)}",
+        n=3,
+    )
+    return _page_diff_lines(lines, cursor)
+
+
 def _workspace_file_diff(
     session_id: str,
     path: str,
@@ -972,53 +1272,40 @@ def _workspace_file_diff(
     cursor: int = 0,
 ) -> dict:
     root = _project_root(session_id)
-    if root is None:
+    snapshot = _REVIEW_SNAPSHOTS.get(snapshot_id)
+    if root is None or snapshot is None:
         return {"diff": "", "diff_state": "unavailable", "error": "workspace unavailable"}
     root = Path(os.path.abspath(root))
+    if snapshot.get("scope") != "workspace" or snapshot.get("owner", {}).get("session_id") != session_id:
+        return {"diff": "", "diff_state": "unavailable", "error": "STALE_SNAPSHOT"}
     candidate = Path(os.path.abspath(path))
     try:
         rel = str(candidate.relative_to(root))
     except (OSError, ValueError):
         return {"diff": "", "diff_state": "unavailable", "error": "path is outside workspace"}
-    scope = _workspace_scope(session_id)
+    scope = _workspace_scope(
+        session_id,
+        category=snapshot.get("category", "All"),
+        query=snapshot.get("query", ""),
+        sort=snapshot.get("sort", "path"),
+    )
     if scope.get("status") != "ready" or scope.get("snapshot_id") != snapshot_id:
-        return {"diff": "", "diff_state": "unavailable", "error": "stale workspace snapshot"}
+        return {"diff": "", "diff_state": "unavailable", "error": "STALE_SNAPSHOT"}
     member = next(
-        (row for row in scope.get("files", []) if Path(os.path.abspath(row["path"])) == candidate),
+        (row for row in snapshot.get("files", []) if Path(os.path.abspath(row["path"])) == candidate),
         None,
     )
     if member is None:
         return {"diff": "", "diff_state": "unavailable", "error": "path is not in workspace scope"}
-    tracked = member.get("status_code") != "??"
-    if tracked:
-        try:
-            raw = _git_output(
-                root, "diff", "--no-ext-diff", "HEAD", "--", rel,
-                max_bytes=_MAX_DIFF_BYTES,
-            )
-        except _OutputLimitError:
-            return {"diff": "", "diff_state": "large"}
-        except OSError as exc:
-            return {"diff": "", "diff_state": "unavailable", "error": str(exc)}
-        if len(raw) > _MAX_DIFF_BYTES:
-            return {"diff": "", "diff_state": "large"}
-        return _page_diff_lines(
-            raw.decode("utf-8", errors="replace").splitlines(keepends=True),
-            cursor,
-        )
-    try:
-        raw = _read_workspace_file(root, rel, member.get("workspace_identity") or {})
-    except OSError as exc:
-        return {"diff": "", "diff_state": "unavailable", "error": str(exc)}
-    if len(raw) > _MAX_DIFF_BYTES:
-        return {"diff": "", "diff_state": "large"}
-    if b"\0" in raw:
-        return {"diff": "", "diff_state": "binary"}
-    lines = difflib.unified_diff(
-        [], raw.decode("utf-8", errors="replace").splitlines(keepends=True),
-        fromfile="/dev/null", tofile=f"b/{rel}", n=3,
-    )
-    return _page_diff_lines(lines, cursor)
+    if (member.get("worktree") or {}).get("kind") not in {"regular", "absent"}:
+        return {
+            "diff": "", "diff_state": "unavailable",
+            "error": "workspace path is not a regular file",
+        }
+    content = snapshot.get("workspace", {}).get("candidates", {}).get(member["path"])
+    if content is None:
+        return {"diff": "", "diff_state": "unavailable", "error": "STALE_SNAPSHOT"}
+    return _render_content_diff(content.get("base"), content.get("worktree"), rel, cursor)
 
 
 def _read_workspace_file(root: Path, rel: str, identity: dict) -> bytes:
@@ -1113,17 +1400,31 @@ async def handle_review_scope(ws, cmd: dict) -> None:
     turn_id = (cmd.get("assistant_msg_id") or "").strip()
     cursor = int(cmd.get("cursor") or 0)
     limit = int(cmd.get("limit") or _SCOPE_PAGE_SIZE)
-    if not session_id:
+    category = (cmd.get("category") or "All").strip()
+    query = str(cmd.get("query") or "")
+    sort = (cmd.get("sort") or "path").strip()
+    snapshot_id = (cmd.get("snapshot_id") or "").strip()
+    if category not in _REVIEW_CATEGORIES:
+        result = {"status": "error", "error": f"unknown review category {category!r}"}
+    elif sort not in _REVIEW_SORTS:
+        result = {"status": "error", "error": f"unknown review sort {sort!r}"}
+    elif not session_id:
         result = {"status": "error", "error": "session_id is required"}
     elif scope == "turn":
-        result = await _run(lambda: _turn_scope(session_id, turn_id))
+        result = await _run(lambda: _turn_scope(
+            session_id, turn_id, category=category, query=query, sort=sort,
+        ))
     elif scope == "branch":
-        result = await _run(lambda: _branch_scope(session_id))
+        result = await _run(lambda: _branch_scope(
+            session_id, category=category, query=query, sort=sort,
+        ))
     elif scope == "workspace":
-        result = await _run(lambda: _workspace_scope(session_id))
+        result = await _run(lambda: _workspace_scope(
+            session_id, category=category, query=query, sort=sort,
+        ))
     else:
         result = {"status": "error", "error": f"unknown review scope {scope!r}"}
-    result = _page_scope(result, cursor, limit)
+    result = _page_scope(result, cursor, limit, snapshot_id)
     await ws.send_text(json.dumps({
         "type": "review_scope_result",
         "data": {
@@ -1141,19 +1442,31 @@ async def handle_review_file_diff(ws, cmd: dict) -> None:
     turn_id = (cmd.get("assistant_msg_id") or "").strip()
     path = (cmd.get("path") or "").strip()
     snapshot_id = (cmd.get("snapshot_id") or "").strip()
+    category = (cmd.get("category") or "All").strip()
+    query = str(cmd.get("query") or "")
+    sort = (cmd.get("sort") or "path").strip()
     cursor = int(cmd.get("cursor") or 0)
-    if not session_id or not path:
+    if category not in _REVIEW_CATEGORIES or sort not in _REVIEW_SORTS:
+        result = {"diff": "", "diff_state": "unavailable", "error": "invalid review filter"}
+    elif not session_id or not path:
         result = {"diff": "", "diff_state": "unavailable", "error": "session_id and path are required"}
     else:
         current_scope = (
-            await _run(lambda: _turn_scope(session_id, turn_id))
+            await _run(lambda: _turn_scope(
+                session_id, turn_id, category=category, query=query, sort=sort,
+            ))
             if scope == "turn"
-            else await _run(lambda: _branch_scope(session_id))
+            else await _run(lambda: _branch_scope(
+                session_id, category=category, query=query, sort=sort,
+            ))
             if scope == "branch"
-            else await _run(lambda: _workspace_scope(session_id))
+            else await _run(lambda: _workspace_scope(
+                session_id, category=category, query=query, sort=sort,
+            ))
             if scope == "workspace"
             else {"status": "error", "error": f"unknown review scope {scope!r}"}
         )
+        saved_snapshot = _REVIEW_SNAPSHOTS.get(snapshot_id)
         member = next(
             (row for row in current_scope.get("files", []) if row.get("path") == path),
             None,
@@ -1162,8 +1475,11 @@ async def handle_review_file_diff(ws, cmd: dict) -> None:
             current_scope.get("status") != "ready"
             or not snapshot_id
             or current_scope.get("snapshot_id") != snapshot_id
+            or saved_snapshot is None
+            or saved_snapshot.get("scope") != scope
+            or saved_snapshot.get("owner", {}).get("session_id") != session_id
         ):
-            result = {"diff": "", "diff_state": "unavailable", "error": "stale review snapshot"}
+            result = {"diff": "", "diff_state": "unavailable", "error": "STALE_SNAPSHOT"}
         elif member is None:
             result = {"diff": "", "diff_state": "unavailable", "error": "path is not in review scope"}
         elif scope == "turn":
