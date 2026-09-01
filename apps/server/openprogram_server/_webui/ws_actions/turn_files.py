@@ -1599,6 +1599,16 @@ async def handle_review_scope(ws, cmd: dict) -> None:
     else:
         result = {"status": "error", "error": f"unknown review scope {scope!r}"}
     result = _page_scope(result, cursor, limit, snapshot_id)
+    # Every response, including validation and stale/error responses, carries
+    # the request context so clients can safely correlate terminal states.
+    result = {
+        **result,
+        "scope": scope,
+        "category": category,
+        "query": query,
+        "sort": sort,
+        "snapshot_id": result.get("snapshot_id") or snapshot_id or None,
+    }
     await ws.send_text(json.dumps({
         "type": "review_scope_result",
         "data": {

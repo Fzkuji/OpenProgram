@@ -618,6 +618,22 @@ def test_review_scope_pages_file_rows_and_echoes_request_id(store, tmp_path):
     assert len(json.dumps(data)) < 100_000
 
 
+def test_review_scope_error_echoes_filter_context(store):
+    ws = FakeWS()
+    _run(tf.handle_review_scope(ws, {
+        "session_id": "session", "scope": "workspace",
+        "category": "Invalid", "query": "needle", "sort": "path",
+        "snapshot_id": "snapshot-old", "request_id": "error-request",
+    }))
+
+    data = ws.sent[0]["data"]
+    assert data["status"] == "error"
+    assert data["category"] == "Invalid"
+    assert data["query"] == "needle"
+    assert data["sort"] == "path"
+    assert data["snapshot_id"] == "snapshot-old"
+
+
 def test_review_scope_filters_before_paging_and_invalidates_filter_snapshot(store, tmp_path):
     session_id, msg_id = "s_filtered_scope", "u1_reply"
     _seed(store, session_id, msg_id)
@@ -672,6 +688,10 @@ def test_review_scope_filters_before_paging_and_invalidates_filter_snapshot(stor
     }))
     assert stale_ws.sent[0]["data"]["status"] == "stale"
     assert stale_ws.sent[0]["data"]["error"] == "STALE_SNAPSHOT"
+    assert stale_ws.sent[0]["data"]["category"] == "Docs"
+    assert stale_ws.sent[0]["data"]["query"] == "guide_"
+    assert stale_ws.sent[0]["data"]["sort"] == "path"
+    assert stale_ws.sent[0]["data"]["snapshot_id"] == first["snapshot_id"]
 
 
 def test_workspace_review_snapshot_rejects_worktree_content_change(store, tmp_path, monkeypatch):
@@ -705,6 +725,42 @@ def test_workspace_review_snapshot_rejects_worktree_content_change(store, tmp_pa
     data = ws.sent[0]["data"]
     assert data["status"] == "stale"
     assert data["error"] == "STALE_SNAPSHOT"
+
+
+def test_workspace_review_page_stales_after_workspace_change(store, tmp_path, monkeypatch):
+    root = tmp_path / "workspace-page-repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "t@example.com"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "T"], check=True)
+    for number in range(120):
+        (root / f"tracked_{number}.py").write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-qm", "base"], check=True)
+    for number in range(120):
+        (root / f"tracked_{number}.py").write_text("after\n", encoding="utf-8")
+    monkeypatch.setattr(tf, "_project_root", lambda _session_id: root)
+
+    first_ws = FakeWS()
+    _run(tf.handle_review_scope(first_ws, {
+        "session_id": "session", "scope": "workspace", "cursor": "", "limit": 20,
+    }))
+    first = first_ws.sent[0]["data"]
+    assert first["status"] == "ready"
+    assert first["next_cursor"].startswith("rc_")
+
+    (root / "tracked_0.py").write_text("changed-after-page\n", encoding="utf-8")
+    next_ws = FakeWS()
+    _run(tf.handle_review_scope(next_ws, {
+        "session_id": "session", "scope": "workspace", "cursor": first["next_cursor"],
+        "snapshot_id": first["snapshot_id"], "limit": 20,
+    }))
+    data = next_ws.sent[0]["data"]
+    assert data["status"] == "stale"
+    assert data["error"] == "STALE_SNAPSHOT"
+    assert data["category"] == "All"
+    assert data["query"] == ""
+    assert data["sort"] == "path"
 
 
 def test_review_scope_rejects_raw_offset_cursor(store, tmp_path):

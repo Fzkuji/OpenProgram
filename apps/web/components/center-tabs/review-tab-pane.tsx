@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileText } from "lucide-react";
 
 import { FeatherIcon } from "@/components/animated-icons";
@@ -96,8 +96,11 @@ export function ReviewTabPane({
   const [diffHistory, setDiffHistory] = useState<string[]>([]);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [category, setCategory] = useState<ReviewCategory>("All");
-  const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<ReviewSort>("path");
+  // The protocol supports query/sort, but this pane currently keeps the
+  // default values without adding controls to the existing toolbar layout.
+  const query = "";
+  const sort: ReviewSort = "path";
+  const staleRecoveryRef = useRef<string | null>(null);
   const [scopeState, setScopeState] = useState<ScopeState>({
     loading: true,
     status: "loading",
@@ -109,7 +112,31 @@ export function ReviewTabPane({
   });
   const [diffState, setDiffState] = useState<DiffState>({ loading: false });
 
+  const clearReviewForStale = useCallback(() => {
+    setSelectedPath("");
+    setFileCursor(null);
+    setDiffCursor(null);
+    setDiffHistory([]);
+    setDiffState({ loading: false });
+    setScopeState((current) => ({
+      ...current,
+      loading: true,
+      status: "loading",
+      files: [],
+      file_count: 0,
+      added: null,
+      removed: null,
+      snapshot_id: undefined,
+      cursor: null,
+      next_cursor: null,
+      prev_cursor: null,
+      page: undefined,
+      error: undefined,
+    }));
+  }, []);
+
   useEffect(() => {
+    staleRecoveryRef.current = null;
     setScope(initialScope);
     setSelectedPath(initialPath ?? "");
     setFileCursor(null);
@@ -121,7 +148,10 @@ export function ReviewTabPane({
   useEffect(() => {
     const refresh = (event: Event) => {
       const detail = (event as CustomEvent).detail ?? {};
-      if (detail.sessionId === sessionId) setRefreshNonce((value) => value + 1);
+      if (detail.sessionId === sessionId) {
+        staleRecoveryRef.current = null;
+        setRefreshNonce((value) => value + 1);
+      }
     };
     window.addEventListener("turn-files-history-changed", refresh);
     return () => window.removeEventListener("turn-files-history-changed", refresh);
@@ -154,6 +184,24 @@ export function ReviewTabPane({
         if (scope === "turn" && data.assistant_msg_id !== assistantMsgId) return;
         if (data.category !== category || data.query !== query || data.sort !== sort) return;
         socket.removeEventListener("message", onMessage);
+        const stale = data.status === "stale" || data.error === "STALE_SNAPSHOT";
+        if (stale) {
+          const recoveryKey = `${scope}\u0000${category}\u0000${query}\u0000${sort}\u0000${fileCursor ?? ""}`;
+          const retry = staleRecoveryRef.current !== recoveryKey;
+          staleRecoveryRef.current = recoveryKey;
+          clearReviewForStale();
+          if (retry) {
+            setRefreshNonce((value) => value + 1);
+            return;
+          }
+          setScopeState((current) => ({
+            ...current,
+            loading: false,
+            status: "stale",
+            error: data.error ?? "STALE_SNAPSHOT",
+          }));
+          return;
+        }
         const files: ReviewFile[] = data.files ?? [];
         setScopeState({
           loading: false,
@@ -208,7 +256,7 @@ export function ReviewTabPane({
       }));
     }
     return () => socket.removeEventListener("message", onMessage);
-  }, [assistantMsgId, category, fileCursor, query, refreshNonce, scope, sessionId, sort, text]);
+  }, [assistantMsgId, category, clearReviewForStale, fileCursor, query, refreshNonce, scope, sessionId, sort, text]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -234,6 +282,22 @@ export function ReviewTabPane({
           || data.sort !== sort
         ) return;
         socket.removeEventListener("message", onMessage);
+        if (data.error === "STALE_SNAPSHOT") {
+          const recoveryKey = `${scope}\u0000${category}\u0000${query}\u0000${sort}\u0000${selectedPath}\u0000${diffCursor ?? ""}`;
+          const retry = staleRecoveryRef.current !== recoveryKey;
+          staleRecoveryRef.current = recoveryKey;
+          clearReviewForStale();
+          if (retry) setRefreshNonce((value) => value + 1);
+          else {
+            setScopeState((current) => ({
+              ...current,
+              loading: false,
+              status: "stale",
+              error: data.error,
+            }));
+          }
+          return;
+        }
         setDiffState({
           loading: false,
           path: selectedPath,
@@ -282,6 +346,7 @@ export function ReviewTabPane({
     sessionId,
     sort,
     text,
+    clearReviewForStale,
   ]);
 
   const selected = useMemo(
@@ -339,37 +404,6 @@ export function ReviewTabPane({
             </button>
           ))}
         </div>
-        <input
-          className={styles.queryInput}
-          aria-label={text("Filter files", "筛选文件")}
-          placeholder={text("Filter files", "筛选文件")}
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setSelectedPath("");
-            setFileCursor(null);
-            setDiffCursor(null);
-            setDiffHistory([]);
-            setScopeState((current) => ({ ...current, snapshot_id: undefined }));
-          }}
-        />
-        <select
-          className={styles.sortSelect}
-          aria-label={text("Sort files", "排序文件")}
-          value={sort}
-          onChange={(event) => {
-            setSort(event.target.value as ReviewSort);
-            setSelectedPath("");
-            setFileCursor(null);
-            setDiffCursor(null);
-            setDiffHistory([]);
-            setScopeState((current) => ({ ...current, snapshot_id: undefined }));
-          }}
-        >
-          <option value="path">{text("Path", "路径")}</option>
-          <option value="category">{text("Category", "分类")}</option>
-          <option value="recent">{text("Recent", "最近")}</option>
-        </select>
         <div className={styles.totals} aria-label={text("Change totals", "修改统计")}>
           <b>{scopeState.file_count}</b>
           <span>{text("files", "个文件")}</span>
@@ -388,6 +422,7 @@ export function ReviewTabPane({
                 aria-pressed={category === value}
                 onClick={() => {
                   setCategory(value);
+                  staleRecoveryRef.current = null;
                   setSelectedPath("");
                   setFileCursor(null);
                   setDiffCursor(null);
