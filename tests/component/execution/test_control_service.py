@@ -753,6 +753,93 @@ def test_owner_loss_leaves_non_owner_states_unchanged(tmp_path) -> None:
     assert repeated.command is None
 
 
+@pytest.mark.parametrize("idle_status", [ExecutionStatus.QUEUED, ExecutionStatus.PAUSED])
+def test_owner_loss_recovers_leased_idle_execution(tmp_path, idle_status) -> None:
+    executions, attempts, execution, _ = _execution(tmp_path, active=False)
+    if idle_status is ExecutionStatus.PAUSED:
+        execution = asyncio.run(
+            RuntimeControlService(executions, attempts, DriverRegistry()).request_pause(
+                command_id="pause_1",
+                execution_id=execution.execution_id,
+                expected_version=execution.status_version,
+                actor={"surface": "test"},
+            )
+        ).execution
+    leased, reserved = attempts.lease(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        owner_id="worker_1",
+        ttl_seconds=30,
+        attempt_id="attempt_1",
+    )
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+
+    recovered = service.recover_owner_loss(execution.execution_id)
+
+    assert recovered.execution.status is idle_status
+    assert recovered.execution.current_attempt_id is None
+    assert recovered.execution.owner_lease == {}
+    assert recovered.attempt is not None
+    assert recovered.attempt.status.value == "ended"
+    assert recovered.attempt.lease_expires_at == 0
+    with pytest.raises(AttemptConflict) as heartbeat:
+        attempts.heartbeat(
+            leased.attempt_id,
+            generation=leased.generation,
+            ttl_seconds=30,
+        )
+    assert heartbeat.value.code == "stale_owner"
+    with pytest.raises(AttemptConflict) as finish:
+        service.finish_attempt(
+            attempt_id=leased.attempt_id,
+            generation=leased.generation,
+            expected_execution_version=reserved.status_version,
+            target=ExecutionStatus.COMPLETED,
+            outcome="completed",
+        )
+    assert finish.value.code == "stale_owner"
+
+    replacement, replacement_execution = attempts.lease(
+        execution.execution_id,
+        expected_version=recovered.execution.status_version,
+        owner_id="worker_2",
+        ttl_seconds=30,
+        attempt_id="attempt_2",
+    )
+    assert replacement.generation == leased.generation + 1
+    assert replacement_execution.current_attempt_id == replacement.attempt_id
+
+
+@pytest.mark.parametrize("idle_status", [ExecutionStatus.QUEUED, ExecutionStatus.PAUSED])
+def test_startup_recovery_recovers_leased_idle_execution(tmp_path, idle_status) -> None:
+    executions, attempts, execution, _ = _execution(tmp_path, active=False)
+    if idle_status is ExecutionStatus.PAUSED:
+        execution = asyncio.run(
+            RuntimeControlService(executions, attempts, DriverRegistry()).request_pause(
+                command_id="pause_1",
+                execution_id=execution.execution_id,
+                expected_version=execution.status_version,
+                actor={"surface": "test"},
+            )
+        ).execution
+    leased, _ = attempts.lease(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        owner_id="worker_1",
+        ttl_seconds=30,
+        attempt_id="attempt_1",
+    )
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+
+    recovered = service.recover_startup()
+
+    assert len(recovered) == 1
+    assert recovered[0].execution.status is idle_status
+    assert recovered[0].execution.current_attempt_id is None
+    assert recovered[0].attempt is not None
+    assert recovered[0].attempt.attempt_id == leased.attempt_id
+
+
 def test_startup_recovery_scans_nonterminal_executions(tmp_path) -> None:
     executions, attempts, running, _ = _execution(tmp_path, active=True)
     queued = executions.create_execution(

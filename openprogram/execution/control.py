@@ -316,10 +316,17 @@ class RuntimeControlService:
         with self.executions._transaction() as connection:
             execution = self.executions._require_execution(connection, execution_id)
             if execution.status not in {
+                ExecutionStatus.QUEUED,
                 ExecutionStatus.RUNNING,
                 ExecutionStatus.PAUSING,
+                ExecutionStatus.PAUSED,
                 ExecutionStatus.CANCELLING,
             }:
+                return RecoveryCompletion(execution=execution)
+            if (
+                execution.status in {ExecutionStatus.QUEUED, ExecutionStatus.PAUSED}
+                and execution.current_attempt_id is None
+            ):
                 return RecoveryCompletion(execution=execution)
 
             unresolved = connection.execute(
@@ -330,7 +337,11 @@ class RuntimeControlService:
             command_kind: CommandKind | None = None
             apply_command = False
             reject_command = False
-            if execution.status is ExecutionStatus.RUNNING:
+            if execution.status in {ExecutionStatus.QUEUED, ExecutionStatus.PAUSED}:
+                target = execution.status
+                reason_code = "owner_lost_before_activation"
+                outcome = "owner_lost_before_activation"
+            elif execution.status is ExecutionStatus.RUNNING:
                 target = (
                     ExecutionStatus.RECONCILIATION_REQUIRED
                     if unresolved
@@ -437,7 +448,10 @@ class RuntimeControlService:
                 ExecutionStatus.RUNNING,
                 ExecutionStatus.PAUSING,
                 ExecutionStatus.CANCELLING,
-            }:
+            } or (
+                execution.status in {ExecutionStatus.QUEUED, ExecutionStatus.PAUSED}
+                and execution.current_attempt_id is not None
+            ):
                 recoveries.append(self.recover_owner_loss(execution.execution_id))
         return tuple(recoveries)
 

@@ -545,7 +545,8 @@ class ExecutionStore:
             raise ExecutionConflict(
                 "terminal", f"execution is already {current.status.value}"
             )
-        validate_transition(current.status, target)
+        if current.status is not target or not clear_owner:
+            validate_transition(current.status, target)
         now = time.time()
         terminal_at = now if target in TERMINAL_EXECUTION_STATUSES else None
         new_version = expected_version + 1
