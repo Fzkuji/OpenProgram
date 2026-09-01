@@ -140,6 +140,6 @@ Design points:
 | attach (embedding) | implemented | `_merge.py` + `branch.py` `_attach_info` + generator |
 | attach edges (attach_ref dashed line, source tip → attach node) | implemented | `dag/render/edges.ts` |
 | worktree merge (a separate mechanism: git worktree ff-only file merge) | implemented | `worktree-item.tsx` |
-| merge node drawing (shape, lane, convergence lines) | specified in `rendering.md` scenario 10 | `dag/shapes.ts`, `dag/render/edges.ts` |
+| merge node drawing (shape, lane, convergence lines) | specified in `rendering.md` scenario 10 | `dag/render/shapes.ts`, `dag/render/edges.ts` |
 | inter-branch messaging (`send_to_branch`) | not yet built | to be added |
 | sub-branch service chain (spawn_branch → attach merge-back) | partial: /task sub-agents exist; the merge-back still needs wiring | reuses merge |

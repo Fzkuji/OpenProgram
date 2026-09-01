@@ -783,7 +783,7 @@ The whole spec is implemented. Where each part lives:
 
 | Spec item | Implementation |
 |---|---|
-| Infinite canvas (pan / zoom / fit / dot lattice) | `dag/canvas.ts` + `.history-body` in `styles/dag/canvas.css`; view state in `dag/store/globals.ts`; HUD in `components/chat/dag-view.tsx` |
+| Infinite canvas (pan / zoom / fit / dot lattice) | `dag/interaction/canvas.ts` + `.history-body` in `styles/dag/canvas.css`; view state in `dag/store/globals.ts`; HUD in `components/chat/dag-view.tsx` |
 | §1 lane / tier / depth layout | `dag/layout/geometry.ts::computeGeometry` (tier-packed chain lanes with per-lane tier zeroing, preorder rows, scene-3 fork rows + gap column, recursive thread placement that inserts later chain rows and reserves thread columns); lattice, no-overlap, thread columns/rows and fork geometry all executed and asserted by `apps/web/scripts/check-dag-subagent.mjs` |
 | §2 rule ③ glyphs are cells | no shape is sized from text, and no text draws on the canvas beyond the shoulder count and the capsule note |
 | §4 HEAD breathing glow | `render/nodes.ts` stamps `data-head` + the branch colour as `color`; `dag-head-glow` keyframes in `styles/dag/nodes.css` (reduced-motion → steady glow); every glyph stays hollow (`shapes.ts`); HEAD pointing at a merged reply re-seats on its anchor (`pipeline.ts` via `threadModel.anchorOf`) |
@@ -803,7 +803,7 @@ The whole spec is implemented. Where each part lives:
 | §9 capsule shape | `shapes.ts` `capsule` (keyed on `covers_ids`, tagged `data-shape` so `_applyShapeSize` leaves its geometry alone) |
 | §9 fold + pleats + ghosts | `passes/fold-summaries.ts` (fold), `render/nodes.ts` (pleats, `已压缩 · N 轮` caption, ghost stroke), `render/edges.ts` (dashed ghost edge), `_summaryExpanded` in `store/globals.ts`; executed by `apps/web/scripts/check-dag-summary.mjs` |
 | §10 archived failure | `render/nodes.ts::_isArchivedFailure` — `status=error` AND off the HEAD chain; grey overrides §4's red |
-| §11 one card, two states / fork & edit | `dag/tooltip.ts`: `renderNodeInfo` feeds both states, `expandTooltip` deepens the card in place; `render/inspector.ts` builds only the verb list (+ raw JSON layer), wired in `render/interaction.ts`; the actions go through `POST /api/chat/checkout` |
+| §11 one card, two states / fork & edit | `dag/interaction/tooltip.ts`: `renderNodeInfo` feeds both states, `expandTooltip` deepens the card in place; `render/inspector.ts` builds only the verb list (+ raw JSON layer), wired in `interaction/nodes.ts`; the actions go through `POST /api/chat/checkout` |
 | §11 legend | `DagLegend` in `components/chat/dag-view.tsx` (inside the canvas HUD), `.dag-legend` in `styles/dag/hud.css` |
 | §12 call thread + agent spawn | `shapes.ts` (spawn → square), `passes/thread.ts` (model), `layout/geometry.ts` (recursive placement), `render/edges.ts` (dotted thread line, centre-to-centre chain edges, scene-3 bridge), `render/nodes.ts` (`data-thread*`, shoulder count), `render/interaction.ts` (`toggleThreadOpen`); executed by `apps/web/scripts/check-dag-subagent.mjs` |
 | §12 the name on the wire | `task/runner.py::_update_attach_card` stamps `attach.label` from the task; `ws_actions/session.py::_annotate_spawn_origin` carries it to the spawn root as `spawned_from.label`; tested in `tests/unit/test_task_attach_integration.py` |

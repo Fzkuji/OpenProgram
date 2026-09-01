@@ -107,7 +107,7 @@ function _graphNode(id: string): GNode | null {
 /**
  * Build the right-rail DetailNode for a DAG node.
  *
- * Field accessors mirror ``dag/tooltip.ts`` (``preview ?? content ??
+ * Field accessors mirror ``dag/interaction/tooltip.ts`` (``preview ?? content ??
  * output`` for the body, ``llm`` for model/token meta) so the panel and
  * the hover card never disagree about what a node contains.
  */

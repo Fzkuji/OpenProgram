@@ -147,7 +147,7 @@ function DagLegend() {
  *  into the composer's `#dagHudSlot` so they ride the composer wherever
  *  it sits and however tall it grows. Rendered only while the DAG
  *  perspective is showing — the slot stays an empty div in chat. The
- *  zoom readout is written by `dag/canvas.ts` on every view change — it
+ *  zoom readout is written by `dag/interaction/canvas.ts` on every view change — it
  *  is the camera's number, and routing it through React state would
  *  repaint the tree on every wheel event of a gesture. */
 function DagHud({ active }: { active: boolean }) {
