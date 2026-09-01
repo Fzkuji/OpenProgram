@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from threading import Event, Thread
 
 import pytest
 
@@ -751,6 +752,82 @@ def test_owner_loss_leaves_non_owner_states_unchanged(tmp_path) -> None:
     assert repeated.execution == paused.execution
     assert repeated.attempt is None
     assert repeated.command is None
+
+
+def test_replacement_binds_while_recovery_is_before_registry_unbind(
+    tmp_path, monkeypatch
+) -> None:
+    executions, attempts, execution, _ = _execution(tmp_path, active=False)
+    attempt, execution = attempts.lease(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        owner_id="worker_1",
+        ttl_seconds=30,
+        attempt_id="attempt_1",
+    )
+    registry = DriverRegistry()
+    service = RuntimeControlService(executions, attempts, registry)
+    _bind(registry, execution, attempt, RecordingDriver(executions))
+
+    recovery_committed = Event()
+    allow_unbind = Event()
+    original_unbind = registry.unbind
+
+    def delayed_unbind(*args, **kwargs):
+        recovery_committed.set()
+        assert allow_unbind.wait(timeout=5)
+        return original_unbind(*args, **kwargs)
+
+    monkeypatch.setattr(registry, "unbind", delayed_unbind)
+    errors: list[BaseException] = []
+
+    def recover() -> None:
+        try:
+            service.recover_owner_loss(execution.execution_id)
+        except BaseException as exc:  # pragma: no cover - failure is asserted below
+            errors.append(exc)
+
+    recovery_thread = Thread(target=recover)
+    recovery_thread.start()
+    try:
+        assert recovery_committed.wait(timeout=5)
+
+        recovered = executions.get_execution(execution.execution_id)
+        assert recovered is not None
+        assert recovered.current_attempt_id is None
+        replacement, reserved = attempts.lease(
+            execution.execution_id,
+            expected_version=recovered.status_version,
+            owner_id="worker_2",
+            ttl_seconds=30,
+            attempt_id="attempt_2",
+        )
+        _bind(registry, reserved, replacement, RecordingDriver(executions))
+        active, running = attempts.activate(
+            replacement.attempt_id,
+            generation=replacement.generation,
+            expected_execution_version=reserved.status_version,
+        )
+    finally:
+        allow_unbind.set()
+        recovery_thread.join(timeout=5)
+
+    assert not recovery_thread.is_alive()
+    assert not errors
+    assert active.attempt_id == replacement.attempt_id
+    assert running.current_attempt_id == replacement.attempt_id
+    assert registry.resolve(
+        execution.execution_id,
+        attempt_id=replacement.attempt_id,
+        generation=replacement.generation,
+    ).attempt_id == replacement.attempt_id
+    with pytest.raises(AttemptConflict) as stale_owner:
+        attempts.heartbeat(
+            attempt.attempt_id,
+            generation=attempt.generation,
+            ttl_seconds=30,
+        )
+    assert stale_owner.value.code == "stale_owner"
 
 
 @pytest.mark.parametrize("idle_status", [ExecutionStatus.QUEUED, ExecutionStatus.PAUSED])

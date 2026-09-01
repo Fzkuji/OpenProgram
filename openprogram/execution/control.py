@@ -107,8 +107,18 @@ class RuntimeControlService:
         self.executions = executions
         self.attempts = attempts
         self.registry = registry
+        self.registry.set_owner_resolver(self._durable_owner)
         self.effects = EffectStore(executions)
         self.checkpoints = ExecutionCheckpointStore(executions)
+
+    def _durable_owner(self, execution_id: str) -> tuple[str, int] | None:
+        execution = self.executions.get_execution(execution_id)
+        if execution is None or execution.current_attempt_id is None:
+            return None
+        generation = execution.owner_lease.get("generation")
+        if not isinstance(generation, int):
+            return None
+        return execution.current_attempt_id, generation
 
     async def request_pause(
         self,

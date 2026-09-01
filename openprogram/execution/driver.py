@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from threading import RLock
-from typing import Any, Generic, Mapping, Protocol, TypeVar
+from typing import Any, Callable, Generic, Mapping, Protocol, TypeVar
 
 from .attempts import AttemptRecord
 from .checkpoints import CheckpointManifest
@@ -100,13 +100,35 @@ class DriverRegistry:
     def __init__(self) -> None:
         self._bindings: dict[str, DriverBinding[Any]] = {}
         self._lock = RLock()
+        self._owner_resolver: Callable[[str], tuple[str, int] | None] | None = None
+
+    def set_owner_resolver(
+        self, resolver: Callable[[str], tuple[str, int] | None]
+    ) -> None:
+        """Attach the durable owner fence used when replacing stale bindings."""
+        with self._lock:
+            self._owner_resolver = resolver
 
     def bind(self, binding: DriverBinding[HandleT]) -> DriverBinding[HandleT]:
         with self._lock:
             current = self._bindings.get(binding.execution_id)
             if current is binding:
                 return binding
+            durable_owner = None
+            if self._owner_resolver is not None:
+                durable_owner = self._owner_resolver(binding.execution_id)
+                if durable_owner != (binding.attempt_id, binding.generation):
+                    raise DriverRegistryConflict(
+                        "stale_owner",
+                        "driver binding does not match the durable execution owner",
+                    )
             if current is not None:
+                if self._owner_resolver is not None and durable_owner != (
+                    current.attempt_id,
+                    current.generation,
+                ):
+                    self._bindings[binding.execution_id] = binding
+                    return binding
                 raise DriverRegistryConflict(
                     "owner_exists",
                     "execution already has a live driver binding",
