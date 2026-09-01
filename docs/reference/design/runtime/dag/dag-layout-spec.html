@@ -42,6 +42,15 @@ svg:hover .comm-line{opacity:.9}
   <span><b>状态=描边</b>（running虚线/error红/cancelled灰，场景12）</span>
 </div>
 
+<div class="note">
+<b style="color:var(--acc)">前端模块边界：</b><br>
+DAG TypeScript 按数据投影（<code>passes/</code>）、几何（<code>layout/</code>）、
+绘制与交互（<code>render/</code>）、相机（<code>canvas.ts</code>）分层。接近 500 行的
+文件继续按稳定职责拆分：tooltip 的纯内容模型与 DOM 生命周期分离，pipeline 的图准备与
+SVG 提交分离，thread 的节点分类与归属计算分离。拆分不得改变公开入口、DOM class、SVG
+结构、测试可见状态或相机行为；单个文件原则上不超过 500 行。
+</div>
+
 <div class="rule" style="margin-bottom:24px;border-left-color:var(--acc)">
 <b style="color:var(--acc)">阶段一：先固定 branch-head 数据合同，不修改图形：</b><br>
 <code>SessionStore.list_branches()</code> 只返回 conversation predecessor 图的真实叶子。

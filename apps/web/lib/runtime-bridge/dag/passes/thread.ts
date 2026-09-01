@@ -26,9 +26,20 @@
  * same never-persisted contract as the compaction fold.
  */
 
-import { type GNode, layoutParent } from "../types";
+import type { GNode } from "../types";
 import { _headAncestors } from "../layout/assign-lanes";
 import { _threadOpen } from "../store/globals";
+import {
+  isChainNode,
+  isFollowup,
+  isSpawnRoot,
+} from "./thread-nodes";
+export {
+  isChainNode,
+  isIndependentRootProgram,
+  isSpawnRoot,
+  isTopProgramRun,
+} from "./thread-nodes";
 
 export interface ThreadEvent {
   t: number;
@@ -53,78 +64,8 @@ export interface ThreadModel {
   anchorOf: (id: string) => string;
 }
 
-function _isRootRef(id: string | null | undefined): boolean {
-  return !id || id === "ROOT";
-}
-
-/** A spawn branch root: ``source=agent_spawn`` with no conversation
- *  predecessor (dag/overview.md §4). The ROOT sentinel is the same as
- *  empty — a composer-run fallback used to write predecessor=ROOT. */
-export function isSpawnRoot(n: GNode): boolean {
-  return (
-    (n as Record<string, unknown>).source === "agent_spawn"
-    && _isRootRef(n.predecessor)
-  );
-}
-
 function nodeTime(n: GNode): number {
   return (n.created_at ?? n.timestamp ?? 0) as number;
-}
-
-export function isTopProgramRun(n: GNode): boolean {
-  const name = String(n.function || n.name || "");
-  return (
-    (n.role === "tool" || n.role === "code" || !!n._runNode)
-    && _isRootRef(n.caller)
-    && !!name
-    && n.display !== "root"
-    && n.display !== "runtime"
-    && n.function !== "attach"
-    && !name.startsWith("context/")
-  );
-}
-
-export function isIndependentRootProgram(
-  n: GNode,
-  byId: Record<string, GNode>,
-): boolean {
-  const pid = layoutParent(n);
-  const parent = pid ? byId[pid] : undefined;
-  return isTopProgramRun(n) && parent?.display === "root" && !n.retry_of;
-}
-
-/** A conversation-layer node: something the chain itself is made of.
- *  ``merge`` stays on the chain (it is a chain operation); everything
- *  with a caller-tree pedigree (runtime rows, tools, run nodes,
- *  function placeholders) is execution — except a composer-launched
- *  function hung on ROOT, which is the user's explicit action and
- *  sits as a main-lane square under the diamond. */
-export function isChainNode(n: GNode): boolean {
-  if (n.display === "root") return true;
-  if (isSpawnRoot(n)) return false;
-  // An agent-internal turn surfaced as a THREAD item (stamped by the
-  // thread pass on its visible clone): it keeps its own shape and
-  // colour but lays out on the agent's thread, not as a lane.
-  if ((n as Record<string, unknown>)._agentTurn) return false;
-  if (n.function === "merge") return true;
-  if (isTopProgramRun(n)) return true;
-  return (
-    (n.role === "user" || n.role === "assistant")
-    && n.display !== "runtime"
-    && !n._runNode
-    && !n.function
-    && (!!n.predecessor || _isRootRef(n.caller))
-  );
-}
-
-/** The reply a followup chain hangs off: climb ``predecessor`` past
- *  every ``job_followup`` reply. Scarred data — a followup whose
- *  predecessor an old bug rewound — resolves to the same anchor, which
- *  is why the scar stops rendering as a fork. */
-function isFollowup(n: GNode | undefined): boolean {
-  return !!n
-    && (n as Record<string, unknown>).source === "job_followup"
-    && n.role === "assistant";
 }
 
 /** The agent's name for a spawn root — tooltip/inspector material.

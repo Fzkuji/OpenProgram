@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { registerHooks } from "node:module";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -33,6 +33,24 @@ registerHooks({
     }
     return nextResolve(specifier, context);
   },
+});
+
+test("DAG production TypeScript modules stay below 500 lines", () => {
+  const root = fileURLToPath(new URL("../lib/runtime-bridge/dag", import.meta.url));
+  const files = [];
+  const visit = (dir) => {
+    for (const name of readdirSync(dir)) {
+      const path = `${dir}/${name}`;
+      if (statSync(path).isDirectory()) visit(path);
+      else if (name.endsWith(".ts")) files.push(path);
+    }
+  };
+  visit(root);
+  const oversized = files.flatMap((path) => {
+    const lines = readFileSync(path, "utf8").split("\n").length;
+    return lines > 500 ? [`${path.slice(root.length + 1)}: ${lines}`] : [];
+  });
+  assert.deepEqual(oversized, []);
 });
 
 test("Program internals are folded into the Program thread by default", async () => {

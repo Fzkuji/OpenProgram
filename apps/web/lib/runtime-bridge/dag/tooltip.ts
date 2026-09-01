@@ -26,26 +26,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { type GNode } from "./types";
-import { translateText } from "@/lib/i18n";
-
-/** Rough token count. The graph payload carries no measured count for
- *  user turns, and asking the backend per node for a number that only
- *  has to be indicative would be a request per click. ~4 chars/token is
- *  the standard English approximation; ``llm.output_tokens`` is used
- *  verbatim when the node actually has a measurement. */
-function _estimateTokens(node: GNode): { n: number; exact: boolean } {
-  const meta = (node.llm || {}) as Record<string, unknown>;
-  const out = meta.output_tokens;
-  if (typeof out === "number" && out > 0) return { n: out, exact: true };
-  return { n: Math.max(1, Math.ceil(_bodyText(node).length / 4)), exact: false };
-}
-
-/** The node's main text body — shared with fork-and-edit, which drops
- *  it into the composer. */
-export function _bodyText(node: GNode): string {
-  const v = node.preview ?? node.content ?? node.output ?? "";
-  return typeof v === "string" ? v : String(v);
-}
+import {
+  bodyText as _bodyText,
+  clampText,
+  kindLabel,
+  tooltipRows,
+} from "./tooltip-content";
+export { bodyText as _bodyText } from "./tooltip-content";
 
 const SHOW_DELAY_MS = 450;   // hover-stay before the card appears
 const BRIEF_CHARS = 120;     // chars per body block, hover cut
@@ -178,10 +165,6 @@ export function expandTooltip(
 
 // ── render ─────────────────────────────────────────────────────────
 
-type Row =
-  | { kind: "kv"; key: string; value: string }
-  | { kind: "block"; key: string; value: string };
-
 /** Render the node's info — header plus rows — into ``into``.
  *  ``detail: false`` is the hover cut (short previews, core rows);
  *  ``detail: true`` is the right-click cut (every field, long
@@ -194,39 +177,13 @@ export function renderNodeInfo(
   detail: boolean,
 ): void {
   _appendHeader(into, node, el);
-  _rows(node, el, detail).forEach((row) => {
+  tooltipRows(node, el, detail).forEach((row) => {
     if (row.kind === "block") {
       _appendBlock(into, row.key, row.value, detail ? DETAIL_CHARS : BRIEF_CHARS);
     } else {
       _appendKv(into, row.key, row.value);
     }
   });
-}
-
-function _kindLabel(node: GNode, el: Element | null): string {
-  if (node.display === "root") return "root";
-  if (Array.isArray((node as Record<string, unknown>).covers_ids)) {
-    return "context/summary";
-  }
-  // A spawn root is a user turn by role, but "user" is the wrong answer
-  // to "what am I looking at" — it is another agent (dag/rendering.md
-  // §12), and this card is where its name lives now that the canvas
-  // draws no captions.
-  if ((node as Record<string, unknown>).source === "agent_spawn"
-      && !node.predecessor) {
-    const nm = (el?.getAttribute("data-spawn-name") || "").trim();
-    return nm
-      ? translateText(`sub-agent · ${nm}`, `子 agent · ${nm}`)
-      : translateText("sub-agent", "子 agent");
-  }
-  const fn = node.function;
-  if (fn === "attach") return "function call · attach";
-  if (fn === "merge") return "function call · merge";
-  if (node.role === "tool") {
-    const name = (node.name as string | undefined) || fn;
-    return name ? `function call · ${name}` : "function call";
-  }
-  return (node.role || "?").toString();
 }
 
 function _appendHeader(
@@ -238,7 +195,7 @@ function _appendHeader(
   header.className = "history-tooltip-header";
   const title = document.createElement("div");
   title.className = "history-tooltip-kind";
-  title.textContent = _kindLabel(node, el);
+  title.textContent = kindLabel(node, el);
   header.appendChild(title);
   const chips: string[] = [];
   if (node.source && node.source !== "web") chips.push(node.source);
@@ -255,123 +212,6 @@ function _appendHeader(
     header.appendChild(meta);
   }
   tip.appendChild(header);
-}
-
-/** How the node stands relative to the next request, read off the DOM
- *  flags the node drawer stamped — the card can never disagree with
- *  the picture beside it. */
-function _coverageText(el: Element): string {
-  if (el.getAttribute("data-failed") === "1") {
-    return translateText("failed turn · archived", "失败轮 · 已留档");
-  }
-  if (el.getAttribute("data-ghost") === "1") {
-    return translateText("folded into a summary", "已折叠进摘要");
-  }
-  if (el.classList.contains("out-of-context")) {
-    return translateText("not in coverage", "不在覆盖内");
-  }
-  return translateText("✓ in coverage", "✓ 在覆盖内");
-}
-
-/** The rows for one node. The brief cut keeps what identifies the node
- *  (name, tokens, output, fold count); the detail cut adds every field
- *  plus the standing facts (coverage, context state, id). */
-function _rows(node: GNode, el: Element | null, detail: boolean): Row[] {
-  const rows: Row[] = [];
-  const fn = node.function;
-  const role = node.role;
-
-  if (role === "tool") {
-    if (node.name) rows.push(_kv("name", String(node.name)));
-    if (detail && typeof node.input === "string" && node.input) {
-      rows.push(_block("input", node.input));
-    }
-    const out = _bodyText(node);
-    if (out) rows.push(_block("output", out));
-  } else if (fn === "attach" || fn === "merge") {
-    if (node.attach_manual) rows.push(_kv("manual", "true"));
-    if (node.attach_label) rows.push(_kv("label", String(node.attach_label)));
-    if (detail) {
-      if (node.attach_ref) rows.push(_kv("head_id", String(node.attach_ref)));
-      if (node.attach_source_commit_id) {
-        rows.push(_kv("source_commit_id", String(node.attach_source_commit_id)));
-      }
-    }
-    const out = _bodyText(node);
-    if (out) rows.push(_block("output", out));
-  } else {
-    let tokensShown = false;
-    if (role === "assistant" || role === "llm") {
-      const meta = (node.llm || {}) as Record<string, unknown>;
-      if (typeof meta.model === "string" && meta.model) {
-        rows.push(_kv("model", meta.model));
-      }
-      if (typeof meta.input_tokens === "number"
-          || typeof meta.output_tokens === "number") {
-        rows.push(_kv("tokens",
-          `${meta.input_tokens ?? "?"} → ${meta.output_tokens ?? "?"}`));
-        tokensShown = true;
-      }
-    }
-    if (!tokensShown && node.display !== "root") {
-      const tok = _estimateTokens(node);
-      rows.push(_kv(
-        tok.exact ? "tokens" : translateText("tokens (est.)", "tokens（估）"),
-        tok.n.toLocaleString()));
-    }
-    const out = _bodyText(node);
-    if (out) rows.push(_block("output", out));
-  }
-
-  if (Array.isArray((node as Record<string, unknown>).covers_ids)) {
-    const rec = node as Record<string, unknown>;
-    const tb = rec.tokens_before;
-    const ta = rec.tokens_after;
-    if (typeof tb === "number" && typeof ta === "number") {
-      rows.push(_kv("tokens", `${tb} → ${ta}`));
-    }
-    const at = rec.compacted_at;
-    if (typeof at === "number" && at > 0) {
-      const d = new Date(at > 1e12 ? at : at * 1000);
-      rows.push(_kv(
-        translateText("compacted", "压缩于"),
-        d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      ));
-    }
-  }
-
-  // The picture's own facts (§11/§12). The fold count identifies the
-  // node and stays on the brief cut; coverage / context / id are
-  // standing detail.
-  if (el) {
-    const threadN = el.getAttribute("data-thread");
-    if (threadN) {
-      rows.push(_kv(translateText("calls", "调用"),
-        translateText(String(threadN), `${threadN} 次`)));
-    }
-    if (detail) {
-      const summaryN = el.getAttribute("data-summary");
-      if (summaryN) {
-        rows.push(_kv(translateText("covers", "覆盖"),
-          translateText(`${summaryN} turns`, `${summaryN} 轮`)));
-      }
-      if (node.display !== "root") {
-        rows.push(_kv(translateText("context", "上下文"), _coverageText(el)));
-      }
-    }
-  }
-  if (detail && node.display !== "root") {
-    rows.push(_kv("id", String(node.id).slice(0, 12)));
-  }
-  return rows;
-}
-
-function _kv(key: string, value: string): Row {
-  return { kind: "kv", key, value };
-}
-
-function _block(key: string, value: string): Row {
-  return { kind: "block", key, value };
 }
 
 function _appendKv(tip: HTMLElement, key: string, value: string): void {
@@ -402,15 +242,9 @@ function _appendBlock(
   wrap.appendChild(lbl);
   const bod = document.createElement("div");
   bod.className = "history-tooltip-body";
-  bod.textContent = _clamp(value || "(empty)", chars);
+  bod.textContent = clampText(value || "(empty)", chars);
   wrap.appendChild(bod);
   tip.appendChild(wrap);
-}
-
-function _clamp(s: string, n: number): string {
-  const trimmed = s.replace(/\s+/g, " ").trim();
-  if (trimmed.length <= n) return trimmed;
-  return trimmed.slice(0, n).replace(/\s+\S*$/, "") + "…";
 }
 
 // ── position ───────────────────────────────────────────────────────
