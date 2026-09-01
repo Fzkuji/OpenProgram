@@ -14,7 +14,7 @@
   <div class="eyebrow">OpenProgram Runtime · normative architecture</div>
   <h1>统一运行控制：暂停、继续、单步、调整与取消</h1>
   <p class="lead">本页是 OpenProgram 运行控制的唯一权威设计。它固定执行标识、持久状态、命令协议、安全点、检查点、owner 合同、恢复规则和未来逻辑修改方式。Chat、Agent、Workflow、后台 Job、工具与子进程共享这一控制模型；各界面不再维护自己的 stop、pause 或 resume 语义。</p>
-  <div class="meta"><span class="pill target">状态：目标架构已固定 · 实现迁移未完成</span><span class="pill scope">范围：Runtime / App / Web / TUI / CLI / ACP / MCP</span><span class="pill">唯一目标：execution_id</span><span class="pill">迁移策略：一次切换，不长期兼容</span></div>
+  <div class="meta"><span class="pill target">状态：目标架构已固定 · Core Fork/Retry 已实现</span><span class="pill scope">范围：Runtime / App / Web / TUI / CLI / ACP / MCP</span><span class="pill">唯一目标：execution_id</span><span class="pill">迁移策略：一次切换，不长期兼容</span></div>
   <nav class="toc" aria-label="页内导航"><a href="#decision">结论</a><a href="#current">现状</a><a href="#reference">参考</a><a href="#identity">标识</a><a href="#record">记录</a><a href="#state">状态机</a><a href="#commands">命令</a><a href="#safe-point">安全点</a><a href="#checkpoint">检查点</a><a href="#effects">副作用</a><a href="#revision">修改逻辑</a><a href="#driver">Owner</a><a href="#recovery">恢复</a><a href="#cutover">切换</a><a href="#acceptance">验收</a><a href="#status">实现状态</a></nav>
 </header>
 <main>
@@ -182,6 +182,7 @@ ControlCommand {
   checkpoint_id, execution_id, revision_id,
   parent_checkpoint_id, status_version,
   frontier: [{step_id, phase, branch_id}],
+  completed_frontier: [{step_id, contract_hash}],
   program_state_ref, conversation_state_ref,
   completed_actions: [{action_id, input_hash, result_ref}],
   effect_receipts: [{effect_id, classification, receipt_ref, outcome}],
@@ -327,7 +328,7 @@ runtime.finish_attempt(attempt_id, outcome)</code></pre>
       <tr><td>Pause / Continue / Step</td><td><span class="tag partial">Partial</span></td><td>Exact pause 先持久化 intent，再通知匹配 attempt；continue 从原始 checkpoint 创建新 generation attempt；step 使用唯一 durable permit，并把一次 managed action、checkpoint、attempt 结束、paused 与 command applied 放在同一事务。启动与 owner-loss recovery 会收敛未完成 command，effect 未解决时优先进入 reconciliation。</td><td>各实际 Driver 接入和 surface 切换，并删除旧全局 pause、session fallback 与分散 controls。</td></tr>
       <tr><td>Durable steering</td><td><span class="tag partial">Partial</span></td><td>Exact execution steer 已使用持久 command payload、稳定 FIFO、独立 ActivationInput 和 safe-point checkpoint receipt；running、pausing 与 paused 后续 activation 均有原子应用、幂等重试、owner fencing、cancel/pause 优先级和 owner-loss rejection。</td><td>各实际 Driver 接入和 surface 切换，并删除旧 session file inbox 与兼容 ack 路径。</td></tr>
       <tr><td>Checkpoint / Effect</td><td><span class="tag partial">Partial</span></td><td>统一内容寻址 manifest、revision/frontier、checkpoint head CAS、effect 分类与 terminal receipt 已落到 canonical store；只有当前未过期 attempt 可以发布或 dispatch，unresolved dispatch 阻止 checkpoint、terminal finalization 和自动恢复。Control Service 在 receipts 完整后继续 cancel finalization，非 cancel execution 回到 paused。</td><td>各 Driver 生成完整 state refs/receipts、专用外部查询/人工 reconciler 和旧 Workflow/mutation 数据切换。</td></tr>
-      <tr><td>Revision / Fork / Retry</td><td><span class="tag partial">Partial</span></td><td>不可变内容寻址 revision 和 parent identity 已实现；Workflow revision artifacts 与失败后重新执行仍可作为迁移输入。</td><td>compatible prefix 校验、新 child execution branch、retry policy 和统一协议。</td></tr>
+      <tr><td>Revision / Fork / Retry</td><td><span class="tag target">Core implemented</span></td><td>revision 使用 <code>{parent_revision_id, manifest}</code> 内容寻址；fork/retry 在单一 SQLite transaction 中持久化 command、revision、queued child 和 branch events。child 继承 run、session、capabilities，并记录 source checkpoint。</td><td>transport/UI 接入、Driver activation wiring、legacy DAG projection。</td></tr>
       <tr><td>Debugger surface</td><td><span class="tag remove">Not implemented</span></td><td>Execution/DAG 展示与现有 controls。</td><td>inspector、capability controls、command progress 和 branch view。</td></tr>
     </tbody>
   </table></div>

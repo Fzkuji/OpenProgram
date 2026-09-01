@@ -203,6 +203,7 @@ class ExecutionRecord:
     created_at: float = 0.0
     updated_at: float = 0.0
     terminal_at: float | None = None
+    source_checkpoint_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -213,6 +214,7 @@ class ExecutionRecord:
             "status": self.status.value,
             "status_version": self.status_version,
             "parent_execution_id": self.parent_execution_id,
+            "source_checkpoint_id": self.source_checkpoint_id,
             "reason_code": self.reason_code,
             "current_attempt_id": self.current_attempt_id,
             "owner_lease": _dict(self.owner_lease),
@@ -235,6 +237,7 @@ class ExecutionRecord:
             status=ExecutionStatus(value["status"]),
             status_version=int(value["status_version"]),
             parent_execution_id=value.get("parent_execution_id") or None,
+            source_checkpoint_id=value.get("source_checkpoint_id") or None,
             reason_code=value.get("reason_code") or None,
             current_attempt_id=value.get("current_attempt_id") or None,
             owner_lease=_dict(value.get("owner_lease")),
@@ -265,6 +268,7 @@ class ControlCommand:
     updated_at: float
     result_version: int | None = None
     rejection_code: str | None = None
+    result_json: Mapping[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -279,6 +283,7 @@ class ControlCommand:
             "updated_at": self.updated_at,
             "result_version": self.result_version,
             "rejection_code": self.rejection_code,
+            "result_json": _dict(self.result_json),
         }
 
 

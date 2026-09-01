@@ -9,8 +9,9 @@ import sqlite3
 from .model import CapabilitySet
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 _LEGACY_SCHEMA_VERSION = 1
+_PREVIOUS_SCHEMA_VERSION = 2
 
 
 class UnsupportedSchema(RuntimeError):
@@ -29,6 +30,8 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
         _create_current_schema(connection)
     elif current == _LEGACY_SCHEMA_VERSION:
         _migrate_v1(connection)
+    elif current == _PREVIOUS_SCHEMA_VERSION:
+        _migrate_v2(connection)
     elif current == SCHEMA_VERSION:
         _create_current_schema(connection)
     else:
@@ -62,6 +65,7 @@ def _create_current_schema(connection: sqlite3.Connection) -> None:
             run_id TEXT NOT NULL,
             session_id TEXT NOT NULL,
             parent_execution_id TEXT,
+            source_checkpoint_id TEXT,
             revision_id TEXT NOT NULL,
             status TEXT NOT NULL,
             status_version INTEGER NOT NULL,
@@ -95,6 +99,7 @@ def _create_current_schema(connection: sqlite3.Connection) -> None:
             updated_at REAL NOT NULL,
             result_version INTEGER,
             rejection_code TEXT,
+            result_json TEXT NOT NULL DEFAULT '{}',
             FOREIGN KEY(execution_id) REFERENCES executions(execution_id)
         );
         CREATE INDEX IF NOT EXISTS commands_execution_status
@@ -164,6 +169,7 @@ def _create_current_schema(connection: sqlite3.Connection) -> None:
             completed_actions_json TEXT NOT NULL,
             effect_receipts_json TEXT NOT NULL,
             child_frontier_json TEXT NOT NULL,
+            completed_frontier_json TEXT,
             pending_commands_json TEXT NOT NULL,
             created_by_attempt_id TEXT NOT NULL,
             content_hash TEXT UNIQUE NOT NULL,
@@ -182,9 +188,41 @@ def _create_current_schema(connection: sqlite3.Connection) -> None:
 def _migrate_v1(connection: sqlite3.Connection) -> None:
     _require_v1_tables(connection)
     _create_current_schema(connection)
+    _migrate_v2(connection)
     _migrate_v1_capabilities(connection)
     _migrate_v1_runs(connection)
     _migrate_v1_revisions(connection)
+
+
+def _migrate_v2(connection: sqlite3.Connection) -> None:
+    """Add the fork/retry fields without rewriting existing records."""
+    _add_column_if_missing(
+        connection,
+        "executions",
+        "source_checkpoint_id TEXT REFERENCES checkpoints(checkpoint_id)",
+    )
+    _add_column_if_missing(
+        connection,
+        "commands",
+        "result_json TEXT NOT NULL DEFAULT '{}'",
+    )
+    _add_column_if_missing(
+        connection,
+        "checkpoints",
+        "completed_frontier_json TEXT",
+    )
+    _create_current_schema(connection)
+
+
+def _add_column_if_missing(
+    connection: sqlite3.Connection, table: str, definition: str
+) -> None:
+    column = definition.split()[0]
+    columns = {
+        str(row[1]) for row in connection.execute(f"PRAGMA table_info({table})")
+    }
+    if column not in columns:
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN {definition}")
 
 
 def _require_v1_tables(connection: sqlite3.Connection) -> None:

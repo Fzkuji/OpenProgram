@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import inspect
+import sqlite3
+import time
 import uuid
 from dataclasses import dataclass, replace
 from threading import RLock
@@ -30,6 +32,7 @@ from .model import (
     ControlCommand,
     ExecutionRecord,
     ExecutionStatus,
+    RevisionRecord,
     TERMINAL_EXECUTION_STATUSES,
     _thaw_json,
 )
@@ -110,6 +113,21 @@ class RecoveryCompletion:
     execution: ExecutionRecord
     attempt: AttemptRecord | None = None
     command: ControlCommand | None = None
+
+
+@dataclass(frozen=True)
+class BranchCompletion:
+    """Atomic result of a fork or retry command."""
+
+    command: ControlCommand
+    execution: ExecutionRecord
+    child: ExecutionRecord
+    revision: RevisionRecord
+    checkpoint: CheckpointManifest
+
+    @property
+    def child_execution(self) -> ExecutionRecord:
+        return self.child
 
 
 class RuntimeControlService:
@@ -233,6 +251,240 @@ class RuntimeControlService:
         # the first safe point of the next continue/step attempt.
         return ControlDispatch(command=command, execution=execution, delivered=False)
 
+    def request_fork(
+        self,
+        *,
+        command_id: str,
+        execution_id: str,
+        expected_version: int,
+        actor: Mapping[str, Any],
+        revision_manifest: Mapping[str, Any] | None = None,
+        compatible_prefix: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]] | None = None,
+        checkpoint_id: str | None = None,
+        revision_id: str | None = None,
+        child_execution_id: str | None = None,
+        manifest: Mapping[str, Any] | None = None,
+        source_checkpoint_id: str | None = None,
+    ) -> BranchCompletion:
+        """Create a queued child with a new immutable revision atomically."""
+        if revision_manifest is None:
+            revision_manifest = manifest
+        if checkpoint_id is None:
+            checkpoint_id = source_checkpoint_id
+        if revision_manifest is None:
+            raise ExecutionConflict("revision_manifest_required", "fork requires a revision manifest")
+        if compatible_prefix is None:
+            raise ExecutionConflict("compatible_prefix_required", "fork requires a compatible prefix")
+        payload = {
+            "checkpoint_id": checkpoint_id,
+            "revision_manifest": dict(revision_manifest),
+            "compatible_prefix": [dict(item) for item in compatible_prefix],
+        }
+        if revision_id is not None:
+            payload["revision_id"] = revision_id
+        if child_execution_id is not None:
+            payload["child_execution_id"] = child_execution_id
+        return self._request_branch(
+            command_id=command_id,
+            execution_id=execution_id,
+            expected_version=expected_version,
+            actor=actor,
+            kind=CommandKind.FORK,
+            payload=payload,
+            manifest=revision_manifest,
+            compatible_prefix=compatible_prefix,
+            checkpoint_id=checkpoint_id,
+            revision_id=revision_id,
+            child_execution_id=child_execution_id,
+        )
+
+    def request_retry(
+        self,
+        *,
+        command_id: str,
+        execution_id: str,
+        expected_version: int,
+        actor: Mapping[str, Any],
+        child_execution_id: str | None = None,
+        payload: Mapping[str, Any] | None = None,
+    ) -> BranchCompletion:
+        """Create a queued same-revision child from the source checkpoint head."""
+        command_payload = dict(payload or {})
+        if child_execution_id is not None:
+            command_payload["child_execution_id"] = child_execution_id
+        return self._request_branch(
+            command_id=command_id,
+            execution_id=execution_id,
+            expected_version=expected_version,
+            actor=actor,
+            kind=CommandKind.RETRY,
+            payload=command_payload,
+            manifest=None,
+            compatible_prefix=None,
+            checkpoint_id=None,
+            revision_id=None,
+            child_execution_id=child_execution_id,
+        )
+
+    def _request_branch(
+        self,
+        *,
+        command_id: str,
+        execution_id: str,
+        expected_version: int,
+        actor: Mapping[str, Any],
+        kind: CommandKind,
+        payload: Mapping[str, Any],
+        manifest: Mapping[str, Any] | None,
+        compatible_prefix: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]] | None,
+        checkpoint_id: str | None,
+        revision_id: str | None,
+        child_execution_id: str | None,
+    ) -> BranchCompletion:
+        with self.executions._transaction() as connection:
+            command, duplicate = self.executions._accept_command(
+                connection,
+                command_id=command_id,
+                execution_id=execution_id,
+                expected_version=expected_version,
+                kind=kind,
+                payload=payload,
+                actor=actor,
+            )
+            source = self.executions._require_execution(connection, execution_id)
+            if duplicate:
+                result = dict(command.result_json)
+                child_id = result.get("child_execution_id")
+                if not child_id:
+                    raise ExecutionConflict("branch_result_missing", "branch command has no child result")
+                child = self.executions._require_execution(connection, str(child_id))
+                revision = self.executions._get_revision(connection, child.revision_id)
+                checkpoint = (
+                    self.checkpoints._get(connection, child.source_checkpoint_id)
+                    if child.source_checkpoint_id
+                    else None
+                )
+                if revision is None or checkpoint is None:
+                    raise ExecutionConflict("branch_result_missing", "branch result references missing records")
+                return BranchCompletion(command, source, child, revision, checkpoint)
+
+            if kind is CommandKind.FORK and checkpoint_id is None:
+                raise ExecutionConflict("checkpoint_required", "fork requires an explicit checkpoint")
+            checkpoint_id = checkpoint_id or source.checkpoint_head_id
+            if checkpoint_id is None:
+                raise ExecutionConflict("checkpoint_required", "a published checkpoint is required")
+            checkpoint = self.checkpoints._get(connection, checkpoint_id)
+            if checkpoint is None:
+                raise ExecutionConflict("checkpoint_not_found", "specified checkpoint is not published")
+            if checkpoint.execution_id != source.execution_id or checkpoint.revision_id != source.revision_id:
+                raise ExecutionConflict("invalid_checkpoint", "checkpoint does not belong to the source revision")
+            unresolved = connection.execute(
+                "SELECT 1 FROM effects WHERE execution_id = ? AND status IN ('dispatched', 'uncertain') LIMIT 1",
+                (execution_id,),
+            ).fetchone()
+            if unresolved is not None:
+                raise ExecutionConflict("unresolved_effect", "source execution has an unresolved effect")
+            if kind is CommandKind.FORK:
+                if checkpoint.completed_frontier is None:
+                    raise ExecutionConflict("checkpoint_frontier_required", "fork requires a completed frontier")
+                normalized = self._validate_compatible_prefix(compatible_prefix)
+                source_prefix = self._validate_compatible_prefix(checkpoint.completed_frontier)
+                if normalized != source_prefix:
+                    raise ExecutionConflict("incompatible_prefix", "compatible prefix does not match the checkpoint")
+            command = self.executions._transition_command(
+                connection,
+                command_id,
+                expected_status=CommandStatus.ACCEPTED,
+                target=CommandStatus.APPLYING,
+            )
+            if kind is CommandKind.FORK:
+                revision = self.executions._create_revision_in_transaction(
+                    connection,
+                    manifest=manifest or {},
+                    revision_id=revision_id,
+                    parent_revision_id=source.revision_id,
+                )
+            else:
+                revision = self.executions._get_revision(connection, source.revision_id)
+                if revision is None:
+                    raise ExecutionConflict("revision_not_found", "source revision is missing")
+
+            child_id = child_execution_id or f"exec_{uuid.uuid4().hex}"
+            now = time.time()
+            child = ExecutionRecord(
+                execution_id=child_id,
+                run_id=source.run_id,
+                session_id=source.session_id,
+                revision_id=revision.revision_id,
+                parent_execution_id=source.execution_id,
+                source_checkpoint_id=checkpoint.checkpoint_id,
+                status=ExecutionStatus.QUEUED,
+                status_version=1,
+                capabilities=source.capabilities,
+                created_at=now,
+                updated_at=now,
+            )
+            try:
+                self.executions._insert_execution(connection, child)
+            except sqlite3.IntegrityError as exc:
+                raise ExecutionConflict("execution_exists", f"execution already exists: {child_id}") from exc
+            self.executions._append_event(
+                connection,
+                execution_id=child.execution_id,
+                execution_version=child.status_version,
+                kind="execution.created",
+                payload={"record": child.to_dict()},
+                created_at=now,
+            )
+            self.executions._append_event(
+                connection,
+                execution_id=source.execution_id,
+                execution_version=source.status_version,
+                command_id=command_id,
+                kind="execution.branch.created",
+                payload={
+                    "child_execution_id": child.execution_id,
+                    "revision_id": revision.revision_id,
+                    "checkpoint_id": checkpoint.checkpoint_id,
+                    "kind": kind.value,
+                },
+                created_at=now,
+            )
+            command = self.executions._transition_command(
+                connection,
+                command_id,
+                expected_status=CommandStatus.APPLYING,
+                target=CommandStatus.APPLIED,
+                result_version=source.status_version,
+                result_json={
+                    "child_execution_id": child.execution_id,
+                    "revision_id": revision.revision_id,
+                    "checkpoint_id": checkpoint.checkpoint_id,
+                },
+            )
+            return BranchCompletion(command, source, child, revision, checkpoint)
+
+    @staticmethod
+    def _validate_compatible_prefix(
+        prefix: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]] | None,
+    ) -> tuple[tuple[str, str], ...]:
+        if prefix is None:
+            raise ExecutionConflict("compatible_prefix_required", "compatible prefix is required")
+        values: list[tuple[str, str]] = []
+        for item in prefix:
+            if set(item) != {"step_id", "contract_hash"}:
+                raise ExecutionConflict("invalid_compatible_prefix", "prefix entries must contain step_id and contract_hash")
+            step_id = item["step_id"]
+            contract_hash = item["contract_hash"]
+            if not isinstance(step_id, str) or not isinstance(contract_hash, str):
+                raise ExecutionConflict("invalid_compatible_prefix", "prefix fields must be strings")
+            values.append((step_id, contract_hash))
+        if len({step_id for step_id, _ in values}) != len(values):
+            raise ExecutionConflict("invalid_compatible_prefix", "compatible prefix contains duplicate steps")
+        if values != sorted(values):
+            raise ExecutionConflict("invalid_compatible_prefix", "compatible prefix must be sorted")
+        return tuple(values)
+
     def _resume_transaction(
         self,
         *,
@@ -266,8 +518,11 @@ class RuntimeControlService:
             execution = self.executions._require_execution(connection, execution_id)
             if duplicate:
                 checkpoint = (
-                    self.checkpoints._get(connection, execution.checkpoint_head_id)
-                    if execution.checkpoint_head_id
+                    self.checkpoints._get(
+                        connection,
+                        execution.checkpoint_head_id or execution.source_checkpoint_id,
+                    )
+                    if (execution.checkpoint_head_id or execution.source_checkpoint_id)
                     else None
                 )
                 return command, execution, None, checkpoint, (), True
@@ -277,8 +532,11 @@ class RuntimeControlService:
                     "execution already has a current attempt",
                 )
             checkpoint = (
-                self.checkpoints._get(connection, execution.checkpoint_head_id)
-                if execution.checkpoint_head_id
+                self.checkpoints._get(
+                    connection,
+                    execution.checkpoint_head_id or execution.source_checkpoint_id,
+                )
+                if (execution.checkpoint_head_id or execution.source_checkpoint_id)
                 else None
             )
             if checkpoint is None:
@@ -537,6 +795,15 @@ class RuntimeControlService:
     ) -> tuple[bool, str | None]:
         if attempt is None:
             return False, None
+        if checkpoint is None and attempt.execution_id:
+            child_execution = self.executions.get_execution(attempt.execution_id)
+            if child_execution is not None:
+                checkpoint_id = (
+                    child_execution.checkpoint_head_id
+                    or child_execution.source_checkpoint_id
+                )
+                if checkpoint_id is not None:
+                    checkpoint = self.checkpoints.get(checkpoint_id)
         callback = activator or self.activator
         if callback is None and driver is not None:
             callback = driver.activate
@@ -920,6 +1187,7 @@ class RuntimeControlService:
                 revision_id=execution.revision_id,
                 parent_checkpoint_id=execution.checkpoint_head_id,
                 frontier=fragment.frontier,
+                completed_frontier=fragment.completed_frontier,
                 state_refs=state_refs,
                 completed_actions=fragment.completed_actions,
                 effect_receipts=fragment.effect_receipts,
@@ -1066,6 +1334,7 @@ class RuntimeControlService:
                 revision_id=execution.revision_id,
                 parent_checkpoint_id=execution.checkpoint_head_id,
                 frontier=fragment.frontier,
+                completed_frontier=fragment.completed_frontier,
                 state_refs=state_refs,
                 completed_actions=fragment.completed_actions,
                 effect_receipts=fragment.effect_receipts,
@@ -1266,6 +1535,7 @@ class RuntimeControlService:
                 revision_id=execution.revision_id,
                 parent_checkpoint_id=execution.checkpoint_head_id,
                 frontier=fragment.frontier,
+                completed_frontier=fragment.completed_frontier,
                 state_refs=state_refs,
                 completed_actions=completed,
                 effect_receipts=fragment.effect_receipts,

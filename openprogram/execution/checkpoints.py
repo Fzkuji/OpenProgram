@@ -18,7 +18,7 @@ from .model import (
 from .store import ExecutionStore, _json
 
 
-CHECKPOINT_SCHEMA_VERSION = 1
+CHECKPOINT_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -28,6 +28,7 @@ class CheckpointFragment:
     safe_point_kind: str
     frontier: tuple[Mapping[str, Any], ...]
     state_refs: Mapping[str, Any]
+    completed_frontier: tuple[Mapping[str, Any], ...] | None = None
     completed_actions: tuple[Mapping[str, Any], ...] = ()
     effect_receipts: tuple[Mapping[str, Any], ...] = ()
     child_frontier: Mapping[str, Any] = field(default_factory=dict)
@@ -55,11 +56,18 @@ class CheckpointManifest:
     content_hash: str
     schema_version: int
     created_at: float
+    completed_frontier: tuple[Mapping[str, Any], ...] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
             self, "frontier", tuple(_freeze_json(item) for item in self.frontier)
         )
+        if self.completed_frontier is not None:
+            object.__setattr__(
+                self,
+                "completed_frontier",
+                tuple(_freeze_json(item) for item in self.completed_frontier),
+            )
         object.__setattr__(self, "state_refs", _freeze_json(self.state_refs))
         object.__setattr__(
             self,
@@ -81,6 +89,11 @@ class CheckpointManifest:
             "parent_checkpoint_id": self.parent_checkpoint_id,
             "source_execution_version": self.source_execution_version,
             "frontier": _thaw_json(self.frontier),
+            "completed_frontier": (
+                _thaw_json(self.completed_frontier)
+                if self.completed_frontier is not None
+                else None
+            ),
             "state_refs": _thaw_json(self.state_refs),
             "completed_actions": [
                 _thaw_json(item) for item in self.completed_actions
@@ -125,6 +138,7 @@ class ExecutionCheckpointStore:
         child_frontier: Mapping[str, Any],
         pending_command_ids: Sequence[str],
         created_by_attempt_id: str,
+        completed_frontier: Sequence[Mapping[str, Any]] | None = None,
     ) -> tuple[CheckpointManifest, ExecutionRecord]:
         content = {
             "execution_id": execution_id,
@@ -132,6 +146,11 @@ class ExecutionCheckpointStore:
             "parent_checkpoint_id": parent_checkpoint_id,
             "source_execution_version": expected_version,
             "frontier": [dict(item) for item in frontier],
+            "completed_frontier": (
+                [dict(item) for item in completed_frontier]
+                if completed_frontier is not None
+                else None
+            ),
             "state_refs": dict(state_refs),
             "completed_actions": [dict(item) for item in completed_actions],
             "effect_receipts": [dict(item) for item in effect_receipts],
@@ -150,6 +169,7 @@ class ExecutionCheckpointStore:
                 revision_id=revision_id,
                 parent_checkpoint_id=parent_checkpoint_id,
                 frontier=frontier,
+                completed_frontier=completed_frontier,
                 state_refs=state_refs,
                 completed_actions=completed_actions,
                 effect_receipts=effect_receipts,
@@ -175,6 +195,7 @@ class ExecutionCheckpointStore:
         child_frontier: Mapping[str, Any],
         pending_command_ids: Sequence[str],
         created_by_attempt_id: str,
+        completed_frontier: Sequence[Mapping[str, Any]] | None = None,
         checkpoint_id: str | None = None,
         content_hash: str | None = None,
     ) -> tuple[CheckpointManifest, ExecutionRecord]:
@@ -185,6 +206,11 @@ class ExecutionCheckpointStore:
             "parent_checkpoint_id": parent_checkpoint_id,
             "source_execution_version": expected_version,
             "frontier": [dict(item) for item in frontier],
+            "completed_frontier": (
+                [dict(item) for item in completed_frontier]
+                if completed_frontier is not None
+                else None
+            ),
             "state_refs": dict(state_refs),
             "completed_actions": [dict(item) for item in completed_actions],
             "effect_receipts": [dict(item) for item in effect_receipts],
@@ -242,6 +268,11 @@ class ExecutionCheckpointStore:
             parent_checkpoint_id=parent_checkpoint_id,
             source_execution_version=expected_version,
             frontier=tuple(dict(item) for item in frontier),
+            completed_frontier=(
+                tuple(dict(item) for item in completed_frontier)
+                if completed_frontier is not None
+                else None
+            ),
             state_refs=dict(state_refs),
             completed_actions=tuple(dict(item) for item in completed_actions),
             effect_receipts=tuple(dict(item) for item in effect_receipts),
@@ -274,11 +305,11 @@ class ExecutionCheckpointStore:
         connection.execute(
             "INSERT INTO checkpoints "
             "(checkpoint_id, execution_id, revision_id, parent_checkpoint_id, "
-            "source_execution_version, frontier_json, state_refs_json, "
-            "completed_actions_json, effect_receipts_json, child_frontier_json, "
+                "source_execution_version, frontier_json, state_refs_json, "
+            "completed_actions_json, completed_frontier_json, effect_receipts_json, child_frontier_json, "
             "pending_commands_json, created_by_attempt_id, content_hash, "
             "schema_version, created_at) VALUES "
-            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 checkpoint.checkpoint_id,
                 checkpoint.execution_id,
@@ -288,6 +319,11 @@ class ExecutionCheckpointStore:
                 _json(_thaw_json(checkpoint.frontier)),
                 _json(_thaw_json(checkpoint.state_refs)),
                 _json(_thaw_json(checkpoint.completed_actions)),
+                (
+                    _json(_thaw_json(checkpoint.completed_frontier))
+                    if checkpoint.completed_frontier is not None
+                    else None
+                ),
                 _json(_thaw_json(checkpoint.effect_receipts)),
                 _json(_thaw_json(checkpoint.child_frontier)),
                 _json(checkpoint.pending_command_ids),
@@ -312,6 +348,11 @@ class ExecutionCheckpointStore:
             parent_checkpoint_id=row["parent_checkpoint_id"],
             source_execution_version=int(row["source_execution_version"]),
             frontier=tuple(json.loads(row["frontier_json"])),
+            completed_frontier=(
+                tuple(json.loads(row["completed_frontier_json"]))
+                if row["completed_frontier_json"] is not None
+                else None
+            ),
             state_refs=dict(json.loads(row["state_refs_json"])),
             completed_actions=tuple(json.loads(row["completed_actions_json"])),
             effect_receipts=tuple(json.loads(row["effect_receipts_json"])),

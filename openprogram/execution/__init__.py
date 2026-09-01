@@ -39,6 +39,7 @@ from .driver import (
 )
 from .control import (
     AttemptCompletion,
+    BranchCompletion,
     ControlDispatch,
     ReconciliationCompletion,
     RuntimeControlService,
@@ -79,6 +80,7 @@ __all__ = [
     "RuntimeControlService",
     "SafePointCompletion",
     "AttemptCompletion",
+    "BranchCompletion",
     "ReconciliationCompletion",
     "default_control_service",
     "default_store",

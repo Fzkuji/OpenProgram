@@ -105,6 +105,7 @@ class ExecutionStore:
         run_id: str | None = None,
         execution_id: str | None = None,
         parent_execution_id: str | None = None,
+        source_checkpoint_id: str | None = None,
         capabilities: CapabilitySet = CapabilitySet(),
     ) -> ExecutionRecord:
         execution_id = execution_id or f"exec_{uuid.uuid4().hex}"
@@ -130,6 +131,16 @@ class ExecutionStore:
                         "parent_identity_mismatch",
                         "child execution must share its parent's run and session",
                     )
+                if source_checkpoint_id is not None:
+                    checkpoint = connection.execute(
+                        "SELECT execution_id FROM checkpoints WHERE checkpoint_id = ?",
+                        (source_checkpoint_id,),
+                    ).fetchone()
+                    if checkpoint is None or checkpoint["execution_id"] != parent_execution_id:
+                        raise ExecutionConflict(
+                            "invalid_checkpoint",
+                            "source checkpoint does not belong to the parent execution",
+                        )
             run_id = run_id or f"run_{uuid.uuid4().hex}"
             now = time.time()
             run = self._get_run(connection, run_id)
@@ -149,6 +160,7 @@ class ExecutionStore:
                 session_id=session_id,
                 revision_id=revision_id,
                 parent_execution_id=parent_execution_id,
+                source_checkpoint_id=source_checkpoint_id,
                 status=ExecutionStatus.QUEUED,
                 status_version=1,
                 capabilities=capabilities,
@@ -179,63 +191,80 @@ class ExecutionStore:
         parent_revision_id: str | None = None,
     ) -> RevisionRecord:
         manifest_value = _snapshot_json(manifest)
-        content_hash = _fingerprint(manifest_value)
+        content_hash = _fingerprint(
+            {"parent_revision_id": parent_revision_id, "manifest": manifest_value}
+        )
         requested_id = revision_id
         revision_id = revision_id or f"rev_{content_hash[:32]}"
         with self._transaction() as connection:
-            existing = self._get_revision(connection, revision_id)
-            if existing is not None:
-                if (
-                    existing.content_hash != content_hash
-                    or existing.parent_revision_id != parent_revision_id
-                ):
-                    raise ExecutionConflict(
-                        "revision_id_collision",
-                        f"revision_id already names different content: {revision_id}",
-                    )
-                return existing
-            by_content_row = connection.execute(
-                "SELECT * FROM revisions WHERE content_hash = ?", (content_hash,)
-            ).fetchone()
-            if by_content_row is not None:
-                by_content = self._revision(by_content_row)
-                if (
-                    requested_id is None
-                    and by_content.parent_revision_id == parent_revision_id
-                ):
-                    return by_content
-                raise ExecutionConflict(
-                    "revision_content_exists",
-                    f"revision content already exists as {by_content.revision_id}",
-                )
-            if (
-                parent_revision_id is not None
-                and self._get_revision(connection, parent_revision_id) is None
-            ):
-                raise ExecutionConflict(
-                    "parent_revision_not_found",
-                    f"parent revision not found: {parent_revision_id}",
-                )
-            now = time.time()
-            connection.execute(
-                "INSERT INTO revisions "
-                "(revision_id, parent_revision_id, content_hash, manifest_json, created_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (
-                    revision_id,
-                    parent_revision_id,
-                    content_hash,
-                    _json(manifest_value),
-                    now,
-                ),
-            )
-            return RevisionRecord(
+            return self._create_revision_in_transaction(
+                connection,
+                manifest=manifest_value,
                 revision_id=revision_id,
                 parent_revision_id=parent_revision_id,
+                requested_id=requested_id,
                 content_hash=content_hash,
-                manifest=manifest_value,
-                created_at=now,
             )
+
+    def _create_revision_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        manifest: Mapping[str, Any],
+        revision_id: str | None,
+        parent_revision_id: str | None,
+        requested_id: str | None = None,
+        content_hash: str | None = None,
+    ) -> RevisionRecord:
+        manifest_value = _snapshot_json(manifest)
+        content_hash = content_hash or _fingerprint(
+            {"parent_revision_id": parent_revision_id, "manifest": manifest_value}
+        )
+        revision_id = revision_id or f"rev_{content_hash[:32]}"
+        existing = self._get_revision(connection, revision_id)
+        if existing is not None:
+            if (
+                existing.content_hash != content_hash
+                or existing.parent_revision_id != parent_revision_id
+            ):
+                raise ExecutionConflict(
+                    "revision_id_collision",
+                    f"revision_id already names different content: {revision_id}",
+                )
+            return existing
+        by_content_row = connection.execute(
+            "SELECT * FROM revisions WHERE content_hash = ?", (content_hash,)
+        ).fetchone()
+        if by_content_row is not None:
+            by_content = self._revision(by_content_row)
+            if by_content.parent_revision_id == parent_revision_id:
+                return by_content
+            raise ExecutionConflict(
+                "revision_content_exists",
+                f"revision content already exists as {by_content.revision_id}",
+            )
+        if (
+            parent_revision_id is not None
+            and self._get_revision(connection, parent_revision_id) is None
+        ):
+            raise ExecutionConflict(
+                "parent_revision_not_found",
+                f"parent revision not found: {parent_revision_id}",
+            )
+        now = time.time()
+        connection.execute(
+            "INSERT INTO revisions "
+            "(revision_id, parent_revision_id, content_hash, manifest_json, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (revision_id, parent_revision_id, content_hash, _json(manifest_value), now),
+        )
+        return RevisionRecord(
+            revision_id=revision_id,
+            parent_revision_id=parent_revision_id,
+            content_hash=content_hash,
+            manifest=manifest_value,
+            created_at=now,
+        )
 
     def get_revision(self, revision_id: str) -> RevisionRecord | None:
         with closing(self._connect()) as connection:
@@ -507,8 +536,8 @@ class ExecutionStore:
             "INSERT INTO commands "
             "(command_id, execution_id, expected_version, kind, payload_json, "
             "actor_json, fingerprint, status, submitted_at, updated_at, "
-            "result_version, rejection_code) VALUES "
-            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "result_version, rejection_code, result_json) VALUES "
+            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 command.command_id,
                 command.execution_id,
@@ -522,6 +551,7 @@ class ExecutionStore:
                 command.updated_at,
                 command.result_version,
                 command.rejection_code,
+                _json(command.result_json),
             ),
         )
         self._append_event(
@@ -615,6 +645,7 @@ class ExecutionStore:
         result_version: int | None = None,
         rejection_code: str | None = None,
         receipt: Mapping[str, Any] | None = None,
+        result_json: Mapping[str, Any] | None = None,
     ) -> ControlCommand:
         current = self._get_command(connection, command_id)
         if current is None:
@@ -647,14 +678,23 @@ class ExecutionStore:
         now = time.time()
         connection.execute(
             "UPDATE commands SET status = ?, updated_at = ?, "
-            "result_version = ?, rejection_code = ? WHERE command_id = ?",
-            (target.value, now, result_version, rejection_code, command_id),
+            "result_version = ?, rejection_code = ?, result_json = ? WHERE command_id = ?",
+            (
+                target.value,
+                now,
+                result_version,
+                rejection_code,
+                _json(result_json or {}),
+                command_id,
+            ),
         )
         command = self._get_command(connection, command_id)
         assert command is not None
         payload: dict[str, Any] = {"command": command.to_dict()}
         if receipt is not None:
             payload["receipt"] = dict(receipt)
+        if result_json is not None:
+            payload["result"] = dict(result_json)
         self._append_event(
             connection,
             execution_id=command.execution_id,
@@ -698,17 +738,18 @@ class ExecutionStore:
     ) -> None:
         connection.execute(
             "INSERT INTO executions "
-            "(execution_id, run_id, session_id, parent_execution_id, "
+            "(execution_id, run_id, session_id, parent_execution_id, source_checkpoint_id, "
             "revision_id, status, status_version, reason_code, "
             "current_attempt_id, owner_lease_json, checkpoint_head_id, "
             "safe_point_json, capabilities_json, effect_summary_json, "
             "created_at, updated_at, terminal_at) VALUES "
-            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 record.execution_id,
                 record.run_id,
                 record.session_id,
                 record.parent_execution_id,
+                record.source_checkpoint_id,
                 record.revision_id,
                 record.status.value,
                 record.status_version,
@@ -733,6 +774,7 @@ class ExecutionStore:
             session_id=str(row["session_id"]),
             revision_id=str(row["revision_id"]),
             parent_execution_id=row["parent_execution_id"],
+            source_checkpoint_id=row["source_checkpoint_id"],
             status=ExecutionStatus(row["status"]),
             status_version=int(row["status_version"]),
             reason_code=row["reason_code"],
@@ -763,6 +805,7 @@ class ExecutionStore:
             updated_at=float(row["updated_at"]),
             result_version=row["result_version"],
             rejection_code=row["rejection_code"],
+            result_json=_object(row["result_json"]),
         )
 
     def _get_execution(
