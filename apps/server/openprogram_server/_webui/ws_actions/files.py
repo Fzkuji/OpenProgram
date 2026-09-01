@@ -101,6 +101,9 @@ _WRITE_MAX_BYTES = 5_000_000  # 5 MB
 _QUERY_PAGE_SIZE = 100
 _QUERY_MAX_SNAPSHOTS = 256
 _QUERY_MAX_SNAPSHOT_ITEMS = 10_000
+_QUERY_MAX_TOTAL_ITEMS = 50_000
+_QUERY_MAX_TOTAL_BYTES = 16 * 1024 * 1024
+_QUERY_MAX_CURSORS = 100_000
 _QUERY_SNAPSHOT_TTL = 300.0
 _SEARCH_IGNORED_DIRS = frozenset({
     "node_modules", ".git", "dist", ".next", "__pycache__",
@@ -160,7 +163,7 @@ def _resolve(project_id: str, path: str) -> tuple[str | None, str | None]:
 
 def _query_path(path: object) -> tuple[str | None, str | None]:
     """Return a canonical project-relative path for query actions."""
-    if not isinstance(path, str) or os.path.isabs(path):
+    if not isinstance(path, str) or os.path.isabs(path) or "\x00" in path:
         return None, "path escapes project root"
     normalized = os.path.normpath(path or "")
     if normalized in ("", "."):
@@ -196,16 +199,63 @@ def _query_error(project_id: str, path: str, *, code: str,
     return payload
 
 
+def _snapshot_footprint(snapshot: _QuerySnapshot) -> tuple[int, int]:
+    return len(snapshot.rows), sum(
+        len(json.dumps(row, sort_keys=True, default=str, separators=(",", ":")))
+        for row in snapshot.rows
+    )
+
+
+def _snapshot_usage() -> tuple[int, int, int]:
+    with _QUERY_LOCK:
+        footprints = [_snapshot_footprint(snapshot)
+                      for snapshot in _QUERY_SNAPSHOTS.values()]
+        return (
+            sum(items for items, _bytes in footprints),
+            sum(_bytes for _items, _bytes in footprints),
+            len(_QUERY_CURSORS),
+        )
+
+
 def _remember_snapshot(snapshot: _QuerySnapshot) -> None:
+    new_items, new_bytes = _snapshot_footprint(snapshot)
+    if (new_items > _QUERY_MAX_TOTAL_ITEMS
+            or new_bytes > _QUERY_MAX_TOTAL_BYTES):
+        raise _QueryLimitError
     with _QUERY_LOCK:
         now = time.monotonic()
         for snapshot_id, old in list(_QUERY_SNAPSHOTS.items()):
             if now - old.created_at >= _QUERY_SNAPSHOT_TTL:
                 _evict_snapshot(snapshot_id)
+        used_items, used_bytes, _cursor_count = _snapshot_usage_locked()
+        while _QUERY_SNAPSHOTS and (
+            used_items + new_items > _QUERY_MAX_TOTAL_ITEMS
+            or used_bytes + new_bytes > _QUERY_MAX_TOTAL_BYTES
+        ):
+            evicted = next(iter(_QUERY_SNAPSHOTS))
+            old = _QUERY_SNAPSHOTS.get(evicted)
+            if old is not None:
+                old_items, old_bytes = _snapshot_footprint(old)
+                used_items -= old_items
+                used_bytes -= old_bytes
+            _evict_snapshot(evicted)
+        if (used_items + new_items > _QUERY_MAX_TOTAL_ITEMS
+                or used_bytes + new_bytes > _QUERY_MAX_TOTAL_BYTES):
+            raise _QueryLimitError
         _QUERY_SNAPSHOTS[snapshot.snapshot_id] = snapshot
         while len(_QUERY_SNAPSHOTS) > _QUERY_MAX_SNAPSHOTS:
             evicted = next(iter(_QUERY_SNAPSHOTS))
             _evict_snapshot(evicted)
+
+
+def _snapshot_usage_locked() -> tuple[int, int, int]:
+    footprints = [_snapshot_footprint(snapshot)
+                  for snapshot in _QUERY_SNAPSHOTS.values()]
+    return (
+        sum(items for items, _bytes in footprints),
+        sum(_bytes for _items, _bytes in footprints),
+        len(_QUERY_CURSORS),
+    )
 
 
 def _evict_snapshot(snapshot_id: str) -> None:
@@ -222,6 +272,14 @@ def _new_cursor(snapshot_id: str, offset: int) -> str:
         existing = _QUERY_CURSOR_TOKENS.get(key)
         if existing is not None:
             return existing
+        while len(_QUERY_CURSORS) >= _QUERY_MAX_CURSORS:
+            candidates = [
+                candidate for candidate in _QUERY_SNAPSHOTS
+                if candidate != snapshot_id
+            ]
+            if not candidates:
+                raise _QueryLimitError
+            _evict_snapshot(candidates[0])
         token = secrets.token_urlsafe(24)
         _QUERY_CURSORS[token] = (snapshot_id, offset)
         _QUERY_CURSOR_TOKENS[key] = token
@@ -349,6 +407,19 @@ def _open_child_dir(parent_fd: int, name: str) -> int:
         raise
 
 
+def _open_relative_dir(root_fd: int, relative_dir: str) -> int:
+    fd = os.dup(root_fd)
+    try:
+        for part in relative_dir.split("/") if relative_dir else ():
+            child = _open_child_dir(fd, part)
+            os.close(fd)
+            fd = child
+        return fd
+    except Exception:
+        os.close(fd)
+        raise
+
+
 def _directory_snapshot_fd(fd: int) -> tuple[list[dict], tuple]:
     entries: list[dict] = []
     basis = []
@@ -439,10 +510,14 @@ def _search_rows(project_id: str, path: str, query: str, mode: str,
         code, message = _fs_query_failure(exc)
         return [], (), (code, message)
 
-    pending = [(root_fd, path)]
+    pending = [path]
     try:
       while pending:
-        directory_fd, relative_dir = pending.pop()
+        relative_dir = pending.pop()
+        try:
+            directory_fd = _open_relative_dir(root_fd, relative_dir)
+        except _UnsafeQueryPath as exc:
+            raise OSError(errno.ELOOP, str(exc)) from exc
         try:
             with os.scandir(directory_fd) as directory_entries:
                 children = sorted(
@@ -473,7 +548,7 @@ def _search_rows(project_id: str, path: str, query: str, mode: str,
                     continue
                 if entry_type != "all" and entry_type != kind:
                     if is_dir:
-                        pending.append((_open_child_dir(directory_fd, entry.name), rel))
+                        pending.append(rel)
                     continue
                 name_match, _name_rank = _search_match(entry.name, query, mode)
                 path_match, path_rank = _search_match(rel, query, mode)
@@ -493,39 +568,53 @@ def _search_rows(project_id: str, path: str, query: str, mode: str,
                         "project_name": project_name,
                     }))
                 if is_dir:
-                    pending.append((_open_child_dir(directory_fd, entry.name), rel))
+                    pending.append(rel)
         finally:
             os.close(directory_fd)
     except OSError as exc:
-        for pending_fd, _relative_dir in pending:
-            try:
-                os.close(pending_fd)
-            except OSError:
-                pass
         code, message = _fs_query_failure(exc)
         return [], (), (code, message)
+    finally:
+        os.close(root_fd)
     rows.sort(key=lambda item: (item[0], item[1]["path"].casefold(), item[1]["path"]))
     return [row for _rank, row in rows], tuple(sorted(basis)), None
 
 
 def _query_page(snapshot: _QuerySnapshot, offset: int, page_size: int,
                 field: str, cursor: str | None = None) -> dict:
-    rows = snapshot.rows[offset:offset + page_size]
-    next_cursor = None
-    if offset + len(rows) < len(snapshot.rows):
-        next_cursor = _new_cursor(snapshot.snapshot_id, offset + len(rows))
-    return {
-        "project_id": snapshot.project_id,
-        "path": snapshot.path,
-        "snapshot_id": snapshot.snapshot_id,
-        "cursor": cursor,
-        "next_cursor": next_cursor,
-        "page_size": page_size,
-        "total": len(snapshot.rows),
-        "sort": snapshot.sort,
-        "error_code": None,
-        field: list(rows),
-    }
+    kind = "directory" if field == "entries" else "search"
+    with _QUERY_LOCK:
+        active = _QUERY_SNAPSHOTS.get(snapshot.snapshot_id)
+        if active is not snapshot or (
+            time.monotonic() - snapshot.created_at >= _QUERY_SNAPSHOT_TTL
+        ):
+            return _query_error(snapshot.project_id, snapshot.path,
+                                code="STALE_SNAPSHOT", kind=kind)
+        rows = snapshot.rows[offset:offset + page_size]
+        next_cursor = None
+        try:
+            if offset + len(rows) < len(snapshot.rows):
+                next_cursor = _new_cursor(snapshot.snapshot_id, offset + len(rows))
+                if _QUERY_SNAPSHOTS.get(snapshot.snapshot_id) is not snapshot:
+                    return _query_error(snapshot.project_id, snapshot.path,
+                                        code="STALE_SNAPSHOT", kind=kind)
+        except _QueryLimitError:
+            if cursor is None:
+                _evict_snapshot(snapshot.snapshot_id)
+            return _query_error(snapshot.project_id, snapshot.path,
+                                code="LIMIT_EXCEEDED", kind=kind)
+        return {
+            "project_id": snapshot.project_id,
+            "path": snapshot.path,
+            "snapshot_id": snapshot.snapshot_id,
+            "cursor": cursor,
+            "next_cursor": next_cursor,
+            "page_size": page_size,
+            "total": len(snapshot.rows),
+            "sort": snapshot.sort,
+            "error_code": None,
+            field: list(rows),
+        }
 
 
 def _tree_query(project_id: str, path: object, page_size: object,
@@ -625,7 +714,12 @@ def _tree_query(project_id: str, path: object, page_size: object,
         entry_type="all", sort=sort_name, basis=basis, rows=tuple(entries),
         created_at=time.monotonic(),
     )
-    _remember_snapshot(snapshot)
+    try:
+        _remember_snapshot(snapshot)
+    except _QueryLimitError:
+        return _query_error(project_id, canonical_path or "",
+                            code="LIMIT_EXCEEDED", message="snapshot is too large",
+                            kind="directory")
     return _query_page(snapshot, 0, size, "entries")
 
 
@@ -742,7 +836,12 @@ def _search_query(project_id: str, path: object, query: object,
         return _query_error(project_id, canonical_path or "",
                             code="LIMIT_EXCEEDED", message="snapshot is too large",
                             kind="search")
-    _remember_snapshot(snapshot)
+    try:
+        _remember_snapshot(snapshot)
+    except _QueryLimitError:
+        return _query_error(project_id, canonical_path or "",
+                            code="LIMIT_EXCEEDED", message="snapshot is too large",
+                            kind="search")
     return _query_page(snapshot, 0, size, "results")
 
 

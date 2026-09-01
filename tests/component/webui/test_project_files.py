@@ -21,6 +21,7 @@ import asyncio
 import errno
 import json
 import os
+import resource
 import types
 from pathlib import Path
 
@@ -395,6 +396,69 @@ def test_tree_limit_stops_after_maximum_entry_probe(project_root):
     assert data["error_code"] == "LIMIT_EXCEEDED"
     assert data["entries"] == []
     assert data["snapshot_id"] is None
+
+
+def test_search_closes_sibling_directory_fds_under_low_nofile_limit(project_root):
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if hard < 256 or soft <= 256:
+        pytest.skip("host file-descriptor limit cannot be lowered to 256")
+    for index in range(300):
+        (project_root / f"sibling-{index:03d}").mkdir()
+    resource.setrlimit(resource.RLIMIT_NOFILE, (256, hard))
+    try:
+        data = _run(ws_files.handle_project_file_search, {
+            "project_id": "p1", "path": "", "query": "needle",
+        })["data"]
+    finally:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
+    assert data["error_code"] is None
+
+
+def test_global_snapshot_quota_bounds_items_bytes_and_cursors(project_root, monkeypatch):
+    with ws_files._QUERY_LOCK:
+        ws_files._QUERY_SNAPSHOTS.clear()
+        ws_files._QUERY_CURSORS.clear()
+        ws_files._QUERY_CURSOR_TOKENS.clear()
+    monkeypatch.setattr(ws_files, "_QUERY_MAX_TOTAL_ITEMS", 30)
+    monkeypatch.setattr(ws_files, "_QUERY_MAX_TOTAL_BYTES", 10_000)
+    monkeypatch.setattr(ws_files, "_QUERY_MAX_CURSORS", 2)
+    for index in range(4):
+        (project_root / f"quota-{index}.txt").write_text("x", encoding="utf-8")
+    for _ in range(5):
+        _run(ws_files.handle_project_file_tree, {
+            "project_id": "p1", "path": "", "page_size": 1,
+        })
+        items, bytes_used, cursors = ws_files._snapshot_usage()
+        assert items <= 30
+        assert bytes_used <= 10_000
+        assert cursors <= 2
+
+
+def test_query_page_barrier_does_not_return_cursor_for_evicted_snapshot(project_root, monkeypatch):
+    first = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 1,
+    })["data"]
+    snapshot = ws_files._QUERY_SNAPSHOTS[first["snapshot_id"]]
+    original_new_cursor = ws_files._new_cursor
+
+    def evict_before_return(snapshot_id, offset):
+        ws_files._evict_snapshot(snapshot_id)
+        return original_new_cursor(snapshot_id, offset)
+
+    monkeypatch.setattr(ws_files, "_new_cursor", evict_before_return)
+    page = ws_files._query_page(snapshot, 0, 1, "entries")
+    assert page["error_code"] == "STALE_SNAPSHOT"
+
+
+def test_query_path_nul_is_invalid_request(project_root):
+    for handler, field in ((ws_files.handle_project_file_tree, "entries"),
+                           (ws_files.handle_project_file_search, "results")):
+        command = {"project_id": "p1", "path": "bad\x00path"}
+        if field == "results":
+            command["query"] = "needle"
+        data = _run(handler, command)["data"]
+        assert data["error_code"] == "INVALID_REQUEST"
+        assert data[field] == []
 
 
 def test_tree_path_traversal_rejected(project_root):
