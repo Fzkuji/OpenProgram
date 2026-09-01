@@ -11,7 +11,7 @@ from openprogram.execution.effects import (
     EffectStatus,
     EffectStore,
 )
-from openprogram.execution.model import CapabilitySet
+from openprogram.execution.model import CapabilitySet, ExecutionStatus
 from openprogram.execution.store import ExecutionStore
 
 
@@ -140,3 +140,85 @@ def test_expired_attempt_cannot_register_an_effect(tmp_path) -> None:
             metadata={},
         )
     assert stale.value.code == "stale_attempt"
+
+
+@pytest.mark.parametrize(
+    "intent_status", [ExecutionStatus.PAUSING, ExecutionStatus.CANCELLING]
+)
+def test_pause_or_cancel_intent_closes_new_effect_admission(
+    tmp_path, intent_status
+) -> None:
+    executions, effects, execution = _stores(tmp_path)
+    planned = effects.register(
+        effect_id="effect_planned",
+        execution_id=execution.execution_id,
+        attempt_id="attempt_1",
+        action_id="write_blob",
+        classification=EffectClassification.IDEMPOTENT,
+        idempotency_key="blob_planned",
+        metadata={},
+    )
+    execution = executions.transition_execution(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        target=intent_status,
+    )
+
+    with pytest.raises(EffectConflict) as registration:
+        effects.register(
+            effect_id="effect_new",
+            execution_id=execution.execution_id,
+            attempt_id="attempt_1",
+            action_id="write_blob",
+            classification=EffectClassification.IDEMPOTENT,
+            idempotency_key="blob_new",
+            metadata={},
+        )
+    assert registration.value.code == "admission_closed"
+
+    with pytest.raises(EffectConflict) as dispatch:
+        effects.mark_dispatched(
+            planned.effect_id,
+            expected_status=EffectStatus.PLANNED,
+        )
+    assert dispatch.value.code == "admission_closed"
+
+
+@pytest.mark.parametrize(
+    "intent_status", [ExecutionStatus.PAUSING, ExecutionStatus.CANCELLING]
+)
+def test_existing_unresolved_effect_can_reconcile_after_intent(
+    tmp_path, intent_status
+) -> None:
+    executions, effects, execution = _stores(tmp_path)
+    planned = effects.register(
+        effect_id="effect_existing",
+        execution_id=execution.execution_id,
+        attempt_id="attempt_1",
+        action_id="send_message",
+        classification=EffectClassification.NONREPEATABLE,
+        idempotency_key=None,
+        metadata={},
+    )
+    dispatched = effects.mark_dispatched(
+        planned.effect_id,
+        expected_status=EffectStatus.PLANNED,
+    )
+    execution = executions.transition_execution(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        target=intent_status,
+    )
+
+    uncertain = effects.mark_uncertain(
+        dispatched.effect_id,
+        expected_status=EffectStatus.DISPATCHED,
+    )
+    resolved = effects.resolve(
+        uncertain.effect_id,
+        expected_status=EffectStatus.UNCERTAIN,
+        outcome=EffectStatus.COMMITTED,
+        receipt={"provider_message_id": "message_1"},
+    )
+
+    assert resolved.status is EffectStatus.COMMITTED

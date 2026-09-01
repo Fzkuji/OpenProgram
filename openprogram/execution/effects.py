@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Mapping
 
+from .model import ExecutionStatus
 from .store import ExecutionStore, _json
 
 
@@ -39,6 +40,9 @@ TERMINAL_EFFECT_STATUSES = frozenset(
 )
 UNRESOLVED_EFFECT_STATUSES = frozenset(
     {EffectStatus.DISPATCHED, EffectStatus.UNCERTAIN}
+)
+EFFECT_ADMISSION_CLOSED_STATUSES = frozenset(
+    {ExecutionStatus.PAUSING, ExecutionStatus.CANCELLING}
 )
 
 
@@ -80,6 +84,14 @@ class EffectConflict(RuntimeError):
     def __init__(self, code: str, message: str):
         self.code = code
         super().__init__(message)
+
+
+def _require_effect_admission(execution) -> None:
+    if execution.status in EFFECT_ADMISSION_CLOSED_STATUSES:
+        raise EffectConflict(
+            "admission_closed",
+            f"cannot admit an effect while execution is {execution.status.value}",
+        )
 
 
 class EffectStore:
@@ -125,6 +137,7 @@ class EffectStore:
                     )
                 return self._record(row)
             execution = self.executions._require_execution(connection, execution_id)
+            _require_effect_admission(execution)
             now = self._clock()
             attempt = connection.execute(
                 "SELECT execution_id, status, lease_expires_at FROM attempts "
@@ -272,10 +285,17 @@ class EffectStore:
                     f"found {current.status.value}",
                 )
             now = self._clock()
-            if require_current_attempt:
+            execution = None
+            if target is EffectStatus.DISPATCHED:
                 execution = self.executions._require_execution(
                     connection, current.execution_id
                 )
+                _require_effect_admission(execution)
+            if require_current_attempt:
+                if execution is None:
+                    execution = self.executions._require_execution(
+                        connection, current.execution_id
+                    )
                 attempt = connection.execute(
                     "SELECT status, lease_expires_at FROM attempts "
                     "WHERE attempt_id = ?",
