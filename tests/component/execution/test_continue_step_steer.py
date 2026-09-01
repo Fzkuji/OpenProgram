@@ -285,3 +285,140 @@ def test_pause_safe_point_rolls_back_when_attempt_close_fails(tmp_path, monkeypa
     assert after.status is ExecutionStatus.PAUSING
     assert after.checkpoint_head_id == continued.execution.checkpoint_head_id
     assert store.get_command(steer.command.command_id).status is CommandStatus.ACCEPTED
+
+
+def test_running_steer_is_consumed_at_safe_point_once(tmp_path):
+    store, attempts, service, paused = _paused(tmp_path)
+    continued = asyncio.run(
+        service.request_continue(
+            command_id="continue_1",
+            execution_id=paused.execution_id,
+            expected_version=paused.status_version,
+            actor={"surface": "test"},
+        )
+    )
+    steer = service.request_steer(
+        command_id="steer_1",
+        execution_id=paused.execution_id,
+        expected_version=continued.execution.status_version,
+        actor={"surface": "test"},
+        payload={"message": "apply while running"},
+    )
+    completed = service.arrive_safe_point(
+        attempt_id=continued.execution.current_attempt_id,
+        generation=continued.execution.owner_lease["generation"],
+        command_id=steer.command.command_id,
+        expected_execution_version=continued.execution.status_version,
+        fragment=CheckpointFragment(
+            safe_point_kind="action.after",
+            frontier=({"step_id": "running-steer", "phase": "after"},),
+            state_refs={"program": {"cursor": 3}},
+        ),
+    )
+    assert completed.execution.status is ExecutionStatus.RUNNING
+    assert completed.checkpoint is not None
+    assert completed.checkpoint.state_refs["steering"][0]["payload"] == dict(steer.command.payload)
+    assert completed.command.status is CommandStatus.APPLIED
+    applied_events = [event for event in store.list_events(paused.execution_id) if event.kind == "command.applied"]
+    assert len([event for event in applied_events if event.command_id == "steer_1"]) == 1
+    receipt = next(event.payload["receipt"] for event in applied_events if event.command_id == "steer_1")
+    assert receipt["checkpoint_id"] == completed.checkpoint.checkpoint_id
+
+    repeated = service.arrive_safe_point(
+        attempt_id=continued.execution.current_attempt_id,
+        generation=continued.execution.owner_lease["generation"],
+        command_id=steer.command.command_id,
+        expected_execution_version=completed.execution.status_version,
+        fragment=CheckpointFragment(
+            safe_point_kind="action.after",
+            frontier=({"step_id": "ignored", "phase": "after"},),
+            state_refs={"program": {"cursor": 4}},
+        ),
+    )
+    assert repeated.checkpoint == completed.checkpoint
+    assert len([event for event in store.list_events(paused.execution_id) if event.kind == "command.applied" and event.command_id == "steer_1"]) == 1
+
+
+def test_running_steer_safe_point_rolls_back_on_command_failure(tmp_path, monkeypatch):
+    store, attempts, service, paused = _paused(tmp_path)
+    continued = asyncio.run(
+        service.request_continue(
+            command_id="continue_1",
+            execution_id=paused.execution_id,
+            expected_version=paused.status_version,
+            actor={"surface": "test"},
+        )
+    )
+    steer = service.request_steer(
+        command_id="steer_1",
+        execution_id=paused.execution_id,
+        expected_version=continued.execution.status_version,
+        actor={"surface": "test"},
+        payload={"message": "rollback"},
+    )
+    original = store._transition_command
+
+    def fail_after_checkpoint(connection, command_id, **kwargs):
+        if kwargs.get("target") is CommandStatus.APPLIED:
+            raise RuntimeError("injected command failure")
+        return original(connection, command_id, **kwargs)
+
+    monkeypatch.setattr(store, "_transition_command", fail_after_checkpoint)
+    with pytest.raises(RuntimeError, match="injected command failure"):
+        service.arrive_safe_point(
+            attempt_id=continued.execution.current_attempt_id,
+            generation=continued.execution.owner_lease["generation"],
+            command_id=steer.command.command_id,
+            expected_execution_version=continued.execution.status_version,
+            fragment=CheckpointFragment(
+                safe_point_kind="action.after",
+                frontier=({"step_id": "rollback", "phase": "after"},),
+                state_refs={"program": {"cursor": 5}},
+            ),
+        )
+    after = store.get_execution(paused.execution_id)
+    assert after is not None
+    assert after.status is ExecutionStatus.RUNNING
+    assert after.checkpoint_head_id == continued.execution.checkpoint_head_id
+    assert store.get_command(steer.command.command_id).status is CommandStatus.ACCEPTED
+
+
+def test_pause_priority_still_closes_attempt_when_arrival_names_steer(tmp_path):
+    store, attempts, service, paused = _paused(tmp_path)
+    continued = asyncio.run(
+        service.request_continue(
+            command_id="continue_1",
+            execution_id=paused.execution_id,
+            expected_version=paused.status_version,
+            actor={"surface": "test"},
+        )
+    )
+    steer = service.request_steer(
+        command_id="steer_1",
+        execution_id=paused.execution_id,
+        expected_version=continued.execution.status_version,
+        actor={"surface": "test"},
+        payload={"message": "at pause boundary"},
+    )
+    pausing = asyncio.run(
+        service.request_pause(
+            command_id="pause_2",
+            execution_id=paused.execution_id,
+            expected_version=continued.execution.status_version,
+            actor={"surface": "test"},
+        )
+    )
+    completed = service.arrive_safe_point(
+        attempt_id=continued.execution.current_attempt_id,
+        generation=continued.execution.owner_lease["generation"],
+        command_id=steer.command.command_id,
+        expected_execution_version=pausing.execution.status_version,
+        fragment=CheckpointFragment(
+            safe_point_kind="action.after",
+            frontier=({"step_id": "pause-steer", "phase": "after"},),
+            state_refs={"program": {"cursor": 6}},
+        ),
+    )
+    assert completed.execution.status is ExecutionStatus.PAUSED
+    assert store.get_command("pause_2").status is CommandStatus.APPLIED
+    assert store.get_command("steer_1").status is CommandStatus.APPLIED
