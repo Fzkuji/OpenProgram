@@ -936,6 +936,44 @@ def test_evicted_snapshot_cursor_is_stale_after_same_hash_rebuild(monkeypatch):
     assert stale["error"] == "STALE_SNAPSHOT"
 
 
+def test_expired_snapshot_rebuild_advances_epoch_for_scope_and_diff(monkeypatch):
+    now = [100.0]
+    monkeypatch.setattr(tf.time, "monotonic", lambda: now[0])
+    tf._REVIEW_SNAPSHOTS.clear()
+    tf._REVIEW_CURSORS.clear()
+    tf._REVIEW_SNAPSHOT_EPOCHS.clear()
+    monkeypatch.setattr(tf, "_REVIEW_SNAPSHOT_TTL", 5.0)
+    files = [
+        {"path": "/one.py", "rel": "one.py", "added": 1, "removed": 0},
+        {"path": "/two.py", "rel": "two.py", "added": 1, "removed": 0},
+    ]
+
+    first = tf._scope_payload("turn", "mutation_journal", files)
+    first_page = tf._page_scope({**first, "files": files}, "", 1)
+    first_entry = tf._get_review_snapshot(first["snapshot_id"])
+    member = {"path": "/one.py", "base": {"kind": "absent"}, "after": {"kind": "regular"}}
+    diff_page = tf._bind_diff_page(
+        {"diff": "", "diff_state": "available", "next_cursor": 200},
+        "", first["snapshot_id"], "/one.py", member, 200, first_entry["epoch"],
+    )
+    old_diff_cursor = diff_page["next_cursor"]
+
+    now[0] += 10
+    rebuilt = tf._scope_payload("turn", "mutation_journal", files)
+    rebuilt_entry = tf._get_review_snapshot(rebuilt["snapshot_id"])
+    stale = tf._page_scope(rebuilt, first_page["next_cursor"], 1, first["snapshot_id"])
+    valid_diff, _offset = tf._resolve_diff_cursor(
+        old_diff_cursor, rebuilt["snapshot_id"], rebuilt_entry["epoch"],
+        "/one.py", member, 200,
+    )
+
+    assert rebuilt["snapshot_id"] == first["snapshot_id"]
+    assert rebuilt_entry["epoch"] == first_entry["epoch"] + 1
+    assert stale["status"] == "stale"
+    assert stale["error"] == "STALE_SNAPSHOT"
+    assert not valid_diff
+
+
 def test_workspace_review_snapshot_detects_same_tree_new_head(store, tmp_path, monkeypatch):
     root = tmp_path / "same-tree-repo"
     root.mkdir()

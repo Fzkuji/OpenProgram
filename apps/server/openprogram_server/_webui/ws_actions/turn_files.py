@@ -245,6 +245,16 @@ def _review_value_bytes(value: Any) -> int:
     return len(str(value).encode())
 
 
+def _tombstone_review_snapshot(snapshot_id: str, entry: dict) -> None:
+    _REVIEW_SNAPSHOT_EPOCHS[snapshot_id] = entry.get("epoch", 0)
+    for token, cursor in list(_REVIEW_CURSORS.items()):
+        if cursor.get("snapshot_id") == snapshot_id:
+            del _REVIEW_CURSORS[token]
+    while len(_REVIEW_SNAPSHOT_EPOCHS) > _MAX_REVIEW_SNAPSHOT_TOMBSTONES:
+        tombstone = next(iter(_REVIEW_SNAPSHOT_EPOCHS))
+        del _REVIEW_SNAPSHOT_EPOCHS[tombstone]
+
+
 def _expire_review_registry(now: float | None = None) -> None:
     now = time.monotonic() if now is None else now
     with _REVIEW_REGISTRY_LOCK:
@@ -253,13 +263,15 @@ def _expire_review_registry(now: float | None = None) -> None:
             if now - entry["created_at"] >= _REVIEW_SNAPSHOT_TTL
         ]
         for snapshot_id in expired:
-            del _REVIEW_SNAPSHOTS[snapshot_id]
+            entry = _REVIEW_SNAPSHOTS.pop(snapshot_id, None)
+            if entry is not None:
+                _tombstone_review_snapshot(snapshot_id, entry)
         expired_cursors = [
             token for token, entry in _REVIEW_CURSORS.items()
             if now - entry["created_at"] >= _REVIEW_SNAPSHOT_TTL
         ]
         for token in expired_cursors:
-            del _REVIEW_CURSORS[token]
+            _REVIEW_CURSORS.pop(token, None)
 
 
 def _remember_review_snapshot(snapshot_id: str, entry: dict) -> bool:
@@ -282,13 +294,7 @@ def _remember_review_snapshot(snapshot_id: str, entry: dict) -> bool:
             oldest = min(_REVIEW_SNAPSHOTS, key=lambda key: _REVIEW_SNAPSHOTS[key]["created_at"])
             evicted = _REVIEW_SNAPSHOTS[oldest]
             del _REVIEW_SNAPSHOTS[oldest]
-            _REVIEW_SNAPSHOT_EPOCHS[oldest] = evicted.get("epoch", 0)
-            for token, cursor in list(_REVIEW_CURSORS.items()):
-                if cursor.get("snapshot_id") == oldest:
-                    del _REVIEW_CURSORS[token]
-            while len(_REVIEW_SNAPSHOT_EPOCHS) > _MAX_REVIEW_SNAPSHOT_TOMBSTONES:
-                tombstone = next(iter(_REVIEW_SNAPSHOT_EPOCHS))
-                del _REVIEW_SNAPSHOT_EPOCHS[tombstone]
+            _tombstone_review_snapshot(oldest, evicted)
         return snapshot_id in _REVIEW_SNAPSHOTS
 
 
