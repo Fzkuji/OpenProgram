@@ -392,6 +392,11 @@ class RuntimeControlService:
             current_command = self.executions._get_command(connection, command.command_id)
             if current_command is None:
                 raise AttemptConflict("activation_failed", "activation command disappeared")
+            if current_command.execution_id != execution.execution_id:
+                raise AttemptConflict(
+                    "command_mismatch",
+                    "activation command belongs to another execution",
+                )
             if current_command.status is CommandStatus.APPLIED:
                 return current_command, execution
             if (
@@ -746,6 +751,11 @@ class RuntimeControlService:
             command = self.executions._get_command(connection, command_id)
             if command is None:
                 raise AttemptConflict("command_not_found", f"safe point command not found: {command_id}")
+            if command.execution_id != execution.execution_id:
+                raise AttemptConflict(
+                    "command_mismatch",
+                    "safe point command belongs to another execution",
+                )
             cancel = self._applying_command(connection, execution.execution_id, CommandKind.CANCEL)
             if cancel is None:
                 if not (
@@ -1622,6 +1632,11 @@ class RuntimeControlService:
         *,
         receipt: Mapping[str, Any] | None = None,
     ) -> ControlCommand:
+        if command.execution_id != execution.execution_id:
+            raise AttemptConflict(
+                "command_mismatch",
+                "command belongs to another execution",
+            )
         if command.status is CommandStatus.APPLIED:
             return command
         return self.executions.transition_command(

@@ -698,6 +698,62 @@ def test_pause_and_step_applied_fast_paths_reject_cross_execution_command(tmp_pa
         assert mismatch.value.code == "command_mismatch"
 
 
+def test_cross_execution_late_command_cannot_finalize_cancellation(tmp_path):
+    store, attempts, service, paused = _paused(tmp_path)
+    started = asyncio.run(
+        service.request_step(
+            command_id="step_1",
+            execution_id=paused.execution_id,
+            expected_version=paused.status_version,
+            actor={"surface": "test"},
+        )
+    )
+    cancelling = asyncio.run(
+        service.request_cancel(
+            command_id="cancel_1",
+            execution_id=paused.execution_id,
+            expected_version=started.execution.status_version,
+            actor={"surface": "test"},
+            reason_code="race",
+        )
+    )
+    other = store.create_execution(
+        execution_id="exec_2",
+        run_id="run_2",
+        session_id="session_2",
+        revision_id=paused.revision_id,
+        capabilities=paused.capabilities,
+    )
+    other_pause = asyncio.run(
+        service.request_pause(
+            command_id="pause_other",
+            execution_id=other.execution_id,
+            expected_version=other.status_version,
+            actor={"surface": "test"},
+        )
+    )
+    with pytest.raises(AttemptConflict) as mismatch:
+        service.arrive_safe_point(
+            attempt_id=started.execution.current_attempt_id,
+            generation=started.execution.owner_lease["generation"],
+            command_id=other_pause.command.command_id,
+            expected_execution_version=cancelling.execution.status_version,
+            fragment=CheckpointFragment(
+                safe_point_kind="action.after",
+                frontier=({"step_id": "cross-execution"},),
+                state_refs={},
+            ),
+        )
+    assert mismatch.value.code == "command_mismatch"
+    current = store.get_execution(paused.execution_id)
+    assert current is not None
+    assert current.status is ExecutionStatus.CANCELLING
+    assert current.current_attempt_id == started.execution.current_attempt_id
+    assert store.get_command("cancel_1").status is CommandStatus.APPLYING
+    assert store.get_command("step_1").status is CommandStatus.REJECTED
+    assert store.get_command("pause_other") == other_pause.command
+
+
 @pytest.mark.parametrize("fail", [False, True])
 def test_late_activation_after_pause_finishes_pause_intent(tmp_path, fail):
     store, attempts, service, paused = _paused(tmp_path)
