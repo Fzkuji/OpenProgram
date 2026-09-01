@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from typing import Any, Mapping
 
 
@@ -93,7 +93,21 @@ class CapabilitySet:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "CapabilitySet":
+    def from_dict(
+        cls, value: Mapping[str, Any] | Collection[str]
+    ) -> "CapabilitySet":
+        if not isinstance(value, Mapping):
+            names = frozenset(value)
+            supported = frozenset({"pause", "step", "steer", "fork", "retry"})
+            if not names.issubset(supported):
+                raise ValueError("legacy capabilities contain an unsupported name")
+            return cls(
+                pause="pause" in names,
+                step="step" in names,
+                steer="steer" in names,
+                fork="fork" in names,
+                retry="retry" in names,
+            )
         return cls(
             pause=bool(value.get("pause")),
             step=bool(value.get("step")),

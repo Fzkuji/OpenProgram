@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import json
+import sqlite3
+
 import pytest
 
+from openprogram.execution._schema import SCHEMA_VERSION
 from openprogram.execution.model import (
     CapabilitySet,
     CommandKind,
@@ -105,7 +109,136 @@ def test_create_is_durable_and_rebuildable_from_append_only_events(tmp_path) -> 
     events = reopened.list_events(created.execution_id)
     assert [event.kind for event in events] == ["execution.created"]
     assert events[0].execution_version == 1
-    assert events[0].schema_version == 1
+    assert events[0].schema_version == SCHEMA_VERSION
+
+
+def test_v1_store_migrates_legacy_capabilities_in_executions_and_events(
+    tmp_path,
+) -> None:
+    path = tmp_path / "runtime" / "executions.sqlite3"
+    path.parent.mkdir()
+    legacy_record = {
+        "execution_id": "exec_legacy",
+        "run_id": "run_legacy",
+        "session_id": "session_legacy",
+        "revision_id": "revision_legacy",
+        "status": "paused",
+        "status_version": 3,
+        "capabilities": ["pause", "step"],
+        "created_at": 1.0,
+        "updated_at": 2.0,
+        "terminal_at": None,
+    }
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE executions (
+                execution_id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                parent_execution_id TEXT,
+                revision_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                status_version INTEGER NOT NULL,
+                reason_code TEXT,
+                current_attempt_id TEXT,
+                owner_lease_json TEXT NOT NULL,
+                checkpoint_head_id TEXT,
+                safe_point_json TEXT NOT NULL,
+                capabilities_json TEXT NOT NULL,
+                effect_summary_json TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                terminal_at REAL
+            );
+            CREATE TABLE commands (
+                command_id TEXT PRIMARY KEY,
+                execution_id TEXT NOT NULL,
+                expected_version INTEGER NOT NULL,
+                kind TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                actor_json TEXT NOT NULL,
+                fingerprint TEXT NOT NULL,
+                status TEXT NOT NULL,
+                submitted_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                result_version INTEGER,
+                rejection_code TEXT
+            );
+            CREATE TABLE execution_events (
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                execution_id TEXT NOT NULL,
+                execution_version INTEGER,
+                command_id TEXT,
+                kind TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                schema_version INTEGER NOT NULL
+            );
+            """
+        )
+        connection.execute(
+            "INSERT INTO executions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "exec_legacy",
+                "run_legacy",
+                "session_legacy",
+                None,
+                "revision_legacy",
+                "paused",
+                3,
+                None,
+                None,
+                "{}",
+                None,
+                "{}",
+                json.dumps(["pause", "step"]),
+                "{}",
+                1.0,
+                2.0,
+                None,
+            ),
+        )
+        connection.execute(
+            "INSERT INTO execution_events "
+            "(execution_id, execution_version, command_id, kind, payload_json, created_at, schema_version) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "exec_legacy",
+                3,
+                None,
+                "execution.updated",
+                json.dumps({"record": legacy_record}),
+                2.0,
+                1,
+            ),
+        )
+        connection.execute("PRAGMA user_version = 1")
+
+    store = ExecutionStore(path)
+
+    execution = store.get_execution("exec_legacy")
+    assert execution is not None
+    assert execution.capabilities == CapabilitySet(pause=True, step=True)
+    assert store.rebuild_execution("exec_legacy") == execution
+    assert store.get_run("run_legacy").session_id == "session_legacy"
+    assert store.get_revision("revision_legacy").manifest == {
+        "legacy_revision_id": "revision_legacy"
+    }
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+        assert json.loads(
+            connection.execute(
+                "SELECT capabilities_json FROM executions WHERE execution_id = ?",
+                ("exec_legacy",),
+            ).fetchone()[0]
+        ) == CapabilitySet(pause=True, step=True).to_dict()
+        assert json.loads(
+            connection.execute(
+                "SELECT payload_json FROM execution_events WHERE execution_id = ?",
+                ("exec_legacy",),
+            ).fetchone()[0]
+        )["record"]["capabilities"] == CapabilitySet(pause=True, step=True).to_dict()
 
 
 def test_transition_uses_version_cas_and_terminal_state_is_immutable(tmp_path) -> None:

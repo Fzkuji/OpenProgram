@@ -2,22 +2,42 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
 
+from .model import CapabilitySet
 
-SCHEMA_VERSION = 1
+
+SCHEMA_VERSION = 2
+_LEGACY_SCHEMA_VERSION = 1
 
 
 class UnsupportedSchema(RuntimeError):
-    def __init__(self, version: int):
+    def __init__(self, version: int, reason: str | None = None):
         self.version = version
-        super().__init__(f"unsupported execution store schema: {version}")
+        self.reason = reason
+        message = f"unsupported execution store schema: {version}"
+        if reason:
+            message = f"{message} ({reason})"
+        super().__init__(message)
 
 
 def initialize_schema(connection: sqlite3.Connection) -> None:
     current = int(connection.execute("PRAGMA user_version").fetchone()[0])
-    if current not in (0, SCHEMA_VERSION):
+    if current == 0:
+        _create_current_schema(connection)
+    elif current == _LEGACY_SCHEMA_VERSION:
+        _migrate_v1(connection)
+    elif current == SCHEMA_VERSION:
+        _create_current_schema(connection)
+    else:
         raise UnsupportedSchema(current)
+
+    connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+
+def _create_current_schema(connection: sqlite3.Connection) -> None:
     connection.executescript(
         """
         CREATE TABLE IF NOT EXISTS runs (
@@ -157,4 +177,115 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
             ON checkpoints(execution_id, created_at);
         """
     )
-    connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+
+def _migrate_v1(connection: sqlite3.Connection) -> None:
+    _require_v1_tables(connection)
+    _create_current_schema(connection)
+    _migrate_v1_capabilities(connection)
+    _migrate_v1_runs(connection)
+    _migrate_v1_revisions(connection)
+
+
+def _require_v1_tables(connection: sqlite3.Connection) -> None:
+    expected = {
+        "executions": {"run_id", "session_id", "revision_id", "capabilities_json"},
+        "commands": {"command_id", "execution_id"},
+        "execution_events": {"execution_id", "payload_json"},
+    }
+    for table, columns in expected.items():
+        actual = {
+            str(row[1]) for row in connection.execute(f"PRAGMA table_info({table})")
+        }
+        if not columns.issubset(actual):
+            raise UnsupportedSchema(
+                _LEGACY_SCHEMA_VERSION,
+                f"cannot migrate missing or incompatible {table} table",
+            )
+
+
+def _migrate_v1_capabilities(connection: sqlite3.Connection) -> None:
+    for row in connection.execute(
+        "SELECT execution_id, capabilities_json FROM executions"
+    ):
+        try:
+            capabilities = CapabilitySet.from_dict(json.loads(row["capabilities_json"]))
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise UnsupportedSchema(
+                _LEGACY_SCHEMA_VERSION,
+                f"cannot migrate capabilities for execution {row['execution_id']}",
+            ) from exc
+        connection.execute(
+            "UPDATE executions SET capabilities_json = ? WHERE execution_id = ?",
+            (_json(capabilities.to_dict()), row["execution_id"]),
+        )
+
+    for row in connection.execute(
+        "SELECT sequence, payload_json FROM execution_events"
+    ):
+        try:
+            payload = json.loads(row["payload_json"])
+            record = payload.get("record") if isinstance(payload, dict) else None
+            if not isinstance(record, dict) or "capabilities" not in record:
+                continue
+            record["capabilities"] = CapabilitySet.from_dict(
+                record["capabilities"]
+            ).to_dict()
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise UnsupportedSchema(
+                _LEGACY_SCHEMA_VERSION,
+                f"cannot migrate capabilities in event {row['sequence']}",
+            ) from exc
+        connection.execute(
+            "UPDATE execution_events SET payload_json = ? WHERE sequence = ?",
+            (_json(payload), row["sequence"]),
+        )
+
+
+def _migrate_v1_runs(connection: sqlite3.Connection) -> None:
+    conflicts = connection.execute(
+        "SELECT run_id FROM executions GROUP BY run_id "
+        "HAVING COUNT(DISTINCT session_id) != 1"
+    ).fetchall()
+    if conflicts:
+        raise UnsupportedSchema(
+            _LEGACY_SCHEMA_VERSION,
+            f"cannot migrate run {conflicts[0]['run_id']} with multiple sessions",
+        )
+    conflicts = connection.execute(
+        "SELECT executions.run_id FROM executions JOIN runs "
+        "ON runs.run_id = executions.run_id "
+        "WHERE runs.session_id != executions.session_id LIMIT 1"
+    ).fetchall()
+    if conflicts:
+        raise UnsupportedSchema(
+            _LEGACY_SCHEMA_VERSION,
+            f"cannot migrate run {conflicts[0]['run_id']} with multiple sessions",
+        )
+    connection.execute(
+        "INSERT OR IGNORE INTO runs (run_id, session_id, created_at) "
+        "SELECT run_id, session_id, MIN(created_at) FROM executions "
+        "GROUP BY run_id, session_id"
+    )
+
+
+def _migrate_v1_revisions(connection: sqlite3.Connection) -> None:
+    for row in connection.execute(
+        "SELECT DISTINCT revision_id FROM executions ORDER BY revision_id"
+    ):
+        revision_id = str(row["revision_id"])
+        manifest = {"legacy_revision_id": revision_id}
+        connection.execute(
+            "INSERT OR IGNORE INTO revisions "
+            "(revision_id, parent_revision_id, content_hash, manifest_json, created_at) "
+            "VALUES (?, NULL, ?, ?, 0)",
+            (revision_id, _hash(manifest), _json(manifest)),
+        )
+
+
+def _json(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _hash(value: object) -> str:
+    return hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
