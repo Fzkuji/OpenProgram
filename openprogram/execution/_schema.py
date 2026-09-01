@@ -65,7 +65,7 @@ def _create_current_schema(connection: sqlite3.Connection) -> None:
             run_id TEXT NOT NULL,
             session_id TEXT NOT NULL,
             parent_execution_id TEXT,
-            source_checkpoint_id TEXT,
+            source_checkpoint_id TEXT REFERENCES checkpoints(checkpoint_id),
             revision_id TEXT NOT NULL,
             status TEXT NOT NULL,
             status_version INTEGER NOT NULL,

@@ -232,6 +232,15 @@ class ExecutionStore:
                     f"revision_id already names different content: {revision_id}",
                 )
             return existing
+        # Preserve and reuse pre-v3 rows whose identity was hashed from only
+        # the manifest.  Their stored hash remains untouched.
+        for row in connection.execute(
+            "SELECT * FROM revisions WHERE parent_revision_id IS ?",
+            (parent_revision_id,),
+        ):
+            legacy = self._revision(row)
+            if legacy.manifest == manifest_value:
+                return legacy
         by_content_row = connection.execute(
             "SELECT * FROM revisions WHERE content_hash = ?", (content_hash,)
         ).fetchone()
