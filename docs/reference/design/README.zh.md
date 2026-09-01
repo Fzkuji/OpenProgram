@@ -54,8 +54,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 |---|---|
 | [`runtime/overview.md`](runtime/overview.md) | Runtime API 行为（另见 [`../api/runtime.md`](../api/runtime.md)） |
 | [`runtime/operations/user-input-requests.md`](runtime/operations/user-input-requests.md) | runtime.ask/confirm 等用户输入 |
-| [`runtime/controllability-and-three-surface-sync.md`](runtime/controllability-and-three-surface-sync.md) | 值守/无人值守开关 + 中途干预 + 优雅停 + 三端同步 |
-| [`runtime/p3-three-surface-sync.md`](runtime/p3-three-surface-sync.md) | P3 三端同步实施细节 |
+| [`runtime/execution/execution-control.html`](runtime/execution/execution-control.html) | **权威设计**：统一暂停、继续、单步、调整、取消、检查点、revision、恢复与多端同步 |
 | [`runtime/unified-session-context.md`](runtime/unified-session-context.md) | 统一 session context |
 | [`runtime/agent-configuration-ui.html`](runtime/agent-configuration-ui.html) | Agent 配置整体框架：身份、模型、指令、Programs、Skills、MCP、Sessions（[基础配置](runtime/agent-core-configuration-ui.html)、[能力配置](runtime/agent-capability-configuration-ui.html)、[Programs 选择器](runtime/agent-tool-configuration-ui.html)） |
 | [`runtime/execution/agent-worktree.md`](runtime/execution/agent-worktree.md) | Agent worktree 行为 |

@@ -655,7 +655,7 @@ currently looking at, before you have retried it. Off-HEAD alone would grey
 every sibling branch. The node has to be a failure *and* abandoned.
 
 `status` is the store's own terminal marker, written by the turn machinery
-([Execution cancellation](../execution/turn-cancellation.html) for the cancel case, which stays
+([Unified execution control](../execution/execution-control.html) for the cancel case, which stays
 `cancelled` and keeps its own 50% grey). The graph reads it; it never decides
 it.
 

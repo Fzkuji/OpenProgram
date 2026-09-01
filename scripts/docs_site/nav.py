@@ -457,6 +457,8 @@ PAGE_ORDER: dict[str, int] = {
     "reference/design/runtime/agent-collaboration.md": 1002,
     "reference/design/runtime/agent-collab-architecture.html": 1003,
     "reference/design/runtime/agent-collab-comparison.html": 1004,
+    # Unified lifecycle and debugger control contract for all runtime owners.
+    "reference/design/runtime/execution/execution-control.html": 1005,
     # Center tabs: authoritative tab/group/view state and split-layout design.
     "reference/design/ui/center-tabs-and-split-layout.html": 1009,
     "reference/design/ui/built-in-browser.html": 1010,

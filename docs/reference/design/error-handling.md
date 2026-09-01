@@ -147,5 +147,5 @@ concentrations.
 
 ## Related Files
 
-- [Execution cancellation](runtime/execution/turn-cancellation.html) — the cancellation lifecycle and why `CancelledError` is a `BaseException`
+- [Unified execution control](runtime/execution/execution-control.html) — pause, continue, step, steering, cancellation, and why `CancelledError` is a `BaseException`
 - [`runtime/dag/overview.md`](runtime/dag/overview.md) — error as a terminal node status

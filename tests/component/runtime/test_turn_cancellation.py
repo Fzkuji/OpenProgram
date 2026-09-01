@@ -4,7 +4,7 @@ The invariant under test: a stop trips the token of the turn running *now*
 and nothing else. A token retired at turn end can never affect the next
 turn, which is what removes the need for any cleanup-time flag reset.
 
-See docs/reference/design/runtime/execution/turn-cancellation.html.
+See docs/reference/design/runtime/execution/execution-control.html.
 """
 
 from __future__ import annotations

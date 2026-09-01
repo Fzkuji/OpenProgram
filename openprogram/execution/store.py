@@ -1,0 +1,699 @@
+"""SQLite authority for canonical execution and control-command records."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sqlite3
+import time
+import uuid
+from contextlib import closing, contextmanager
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Iterator, Mapping
+
+from .model import (
+    CommandKind,
+    CommandStatus,
+    ControlCommand,
+    ExecutionEvent,
+    ExecutionRecord,
+    ExecutionStatus,
+    TERMINAL_COMMAND_STATUSES,
+    TERMINAL_EXECUTION_STATUSES,
+)
+from .state_machine import validate_command, validate_transition
+
+
+SCHEMA_VERSION = 1
+
+
+class ExecutionStoreError(RuntimeError):
+    def __init__(self, code: str, message: str):
+        self.code = code
+        super().__init__(message)
+
+
+class ExecutionConflict(ExecutionStoreError):
+    pass
+
+
+class CommandConflict(ExecutionStoreError):
+    pass
+
+
+def _json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _object(raw: str | None) -> dict[str, Any]:
+    if not raw:
+        return {}
+    value = json.loads(raw)
+    if not isinstance(value, dict):
+        raise ValueError("stored JSON value must be an object")
+    return value
+
+
+def _fingerprint(value: Mapping[str, Any]) -> str:
+    return hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
+
+
+class ExecutionStore:
+    """Transactional store with append-only events and materialized records."""
+
+    def __init__(self, path: str | Path):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._initialize()
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(str(self.path), timeout=5.0)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA busy_timeout = 5000")
+        connection.execute("PRAGMA journal_mode = WAL")
+        return connection
+
+    def _initialize(self) -> None:
+        with closing(self._connect()) as connection, connection:
+            current = int(connection.execute("PRAGMA user_version").fetchone()[0])
+            if current not in (0, SCHEMA_VERSION):
+                raise ExecutionStoreError(
+                    "unsupported_schema",
+                    f"execution store schema {current} is not supported",
+                )
+            connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS executions (
+                    execution_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    parent_execution_id TEXT,
+                    revision_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    status_version INTEGER NOT NULL,
+                    reason_code TEXT,
+                    current_attempt_id TEXT,
+                    owner_lease_json TEXT NOT NULL,
+                    checkpoint_head_id TEXT,
+                    safe_point_json TEXT NOT NULL,
+                    capabilities_json TEXT NOT NULL,
+                    effect_summary_json TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    terminal_at REAL,
+                    FOREIGN KEY(parent_execution_id) REFERENCES executions(execution_id)
+                );
+                CREATE INDEX IF NOT EXISTS executions_session_status
+                    ON executions(session_id, status, updated_at);
+                CREATE INDEX IF NOT EXISTS executions_run_parent
+                    ON executions(run_id, parent_execution_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS commands (
+                    command_id TEXT PRIMARY KEY,
+                    execution_id TEXT NOT NULL,
+                    expected_version INTEGER NOT NULL,
+                    kind TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    actor_json TEXT NOT NULL,
+                    fingerprint TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    submitted_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    result_version INTEGER,
+                    rejection_code TEXT,
+                    FOREIGN KEY(execution_id) REFERENCES executions(execution_id)
+                );
+                CREATE INDEX IF NOT EXISTS commands_execution_status
+                    ON commands(execution_id, status, submitted_at);
+
+                CREATE TABLE IF NOT EXISTS execution_events (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    execution_id TEXT NOT NULL,
+                    execution_version INTEGER,
+                    command_id TEXT,
+                    kind TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    schema_version INTEGER NOT NULL,
+                    FOREIGN KEY(execution_id) REFERENCES executions(execution_id)
+                );
+                CREATE INDEX IF NOT EXISTS events_execution_sequence
+                    ON execution_events(execution_id, sequence);
+                """
+            )
+            connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+    @contextmanager
+    def _transaction(self) -> Iterator[sqlite3.Connection]:
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            yield connection
+            connection.commit()
+        except BaseException:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def create_execution(
+        self,
+        *,
+        session_id: str,
+        revision_id: str,
+        run_id: str | None = None,
+        execution_id: str | None = None,
+        parent_execution_id: str | None = None,
+        capabilities: set[str] | frozenset[str] = frozenset(),
+    ) -> ExecutionRecord:
+        execution_id = execution_id or f"exec_{uuid.uuid4().hex}"
+        if not session_id or not revision_id:
+            raise ExecutionConflict(
+                "invalid_identity", "session_id and revision_id are required"
+            )
+        with self._transaction() as connection:
+            if parent_execution_id is not None:
+                parent = self._get_execution(connection, parent_execution_id)
+                if parent is None:
+                    raise ExecutionConflict(
+                        "parent_not_found", "parent execution does not exist"
+                    )
+                if run_id is None:
+                    run_id = parent.run_id
+                if parent.run_id != run_id or parent.session_id != session_id:
+                    raise ExecutionConflict(
+                        "parent_identity_mismatch",
+                        "child execution must share its parent's run and session",
+                    )
+            run_id = run_id or f"run_{uuid.uuid4().hex}"
+            now = time.time()
+            record = ExecutionRecord(
+                execution_id=execution_id,
+                run_id=run_id,
+                session_id=session_id,
+                revision_id=revision_id,
+                parent_execution_id=parent_execution_id,
+                status=ExecutionStatus.QUEUED,
+                status_version=1,
+                capabilities=frozenset(capabilities),
+                created_at=now,
+                updated_at=now,
+            )
+            try:
+                self._insert_execution(connection, record)
+            except sqlite3.IntegrityError as exc:
+                raise ExecutionConflict(
+                    "execution_exists", f"execution already exists: {execution_id}"
+                ) from exc
+            self._append_event(
+                connection,
+                execution_id=execution_id,
+                execution_version=record.status_version,
+                kind="execution.created",
+                payload={"record": record.to_dict()},
+                created_at=now,
+            )
+        return record
+
+    def get_execution(self, execution_id: str) -> ExecutionRecord | None:
+        with closing(self._connect()) as connection:
+            return self._get_execution(connection, execution_id)
+
+    def list_nonterminal(
+        self, *, session_id: str | None = None
+    ) -> list[ExecutionRecord]:
+        terminal = tuple(status.value for status in TERMINAL_EXECUTION_STATUSES)
+        placeholders = ",".join("?" for _ in terminal)
+        query = f"SELECT * FROM executions WHERE status NOT IN ({placeholders})"
+        values: list[Any] = list(terminal)
+        if session_id is not None:
+            query += " AND session_id = ?"
+            values.append(session_id)
+        query += " ORDER BY created_at, execution_id"
+        with closing(self._connect()) as connection:
+            return [self._record(row) for row in connection.execute(query, values)]
+
+    def transition_execution(
+        self,
+        execution_id: str,
+        *,
+        expected_version: int,
+        target: ExecutionStatus,
+        reason_code: str | None = None,
+    ) -> ExecutionRecord:
+        with self._transaction() as connection:
+            return self._transition_execution(
+                connection,
+                execution_id,
+                expected_version=expected_version,
+                target=target,
+                reason_code=reason_code,
+            )
+
+    def accept_command(
+        self,
+        *,
+        command_id: str,
+        execution_id: str,
+        expected_version: int,
+        kind: CommandKind,
+        payload: Mapping[str, Any],
+        actor: Mapping[str, Any],
+    ) -> ControlCommand:
+        with self._transaction() as connection:
+            command, _ = self._accept_command(
+                connection,
+                command_id=command_id,
+                execution_id=execution_id,
+                expected_version=expected_version,
+                kind=kind,
+                payload=payload,
+                actor=actor,
+                fingerprint_extra={},
+            )
+            return command
+
+    def accept_command_with_transition(
+        self,
+        *,
+        command_id: str,
+        execution_id: str,
+        expected_version: int,
+        kind: CommandKind,
+        target: ExecutionStatus,
+        payload: Mapping[str, Any],
+        actor: Mapping[str, Any],
+        reason_code: str | None = None,
+    ) -> tuple[ControlCommand, ExecutionRecord]:
+        with self._transaction() as connection:
+            command, duplicate = self._accept_command(
+                connection,
+                command_id=command_id,
+                execution_id=execution_id,
+                expected_version=expected_version,
+                kind=kind,
+                payload=payload,
+                actor=actor,
+                fingerprint_extra={
+                    "target": target.value,
+                    "reason_code": reason_code,
+                },
+            )
+            if duplicate:
+                execution = self._require_execution(connection, execution_id)
+                return command, execution
+            execution = self._transition_execution(
+                connection,
+                execution_id,
+                expected_version=expected_version,
+                target=target,
+                reason_code=reason_code,
+            )
+            command = self._transition_command(
+                connection,
+                command_id,
+                expected_status=CommandStatus.ACCEPTED,
+                target=CommandStatus.APPLYING,
+            )
+            return command, execution
+
+    def get_command(self, command_id: str) -> ControlCommand | None:
+        with closing(self._connect()) as connection:
+            return self._get_command(connection, command_id)
+
+    def transition_command(
+        self,
+        command_id: str,
+        *,
+        expected_status: CommandStatus,
+        target: CommandStatus,
+        result_version: int | None = None,
+        rejection_code: str | None = None,
+    ) -> ControlCommand:
+        with self._transaction() as connection:
+            return self._transition_command(
+                connection,
+                command_id,
+                expected_status=expected_status,
+                target=target,
+                result_version=result_version,
+                rejection_code=rejection_code,
+            )
+
+    def list_events(self, execution_id: str) -> list[ExecutionEvent]:
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT * FROM execution_events WHERE execution_id = ? "
+                "ORDER BY sequence",
+                (execution_id,),
+            )
+            return [
+                ExecutionEvent(
+                    sequence=int(row["sequence"]),
+                    execution_id=str(row["execution_id"]),
+                    execution_version=row["execution_version"],
+                    command_id=row["command_id"],
+                    kind=str(row["kind"]),
+                    payload=_object(row["payload_json"]),
+                    created_at=float(row["created_at"]),
+                    schema_version=int(row["schema_version"]),
+                )
+                for row in rows
+            ]
+
+    def rebuild_execution(self, execution_id: str) -> ExecutionRecord | None:
+        record = None
+        for event in self.list_events(execution_id):
+            if event.kind in {"execution.created", "execution.updated"}:
+                record = ExecutionRecord.from_dict(event.payload["record"])
+        return record
+
+    def _accept_command(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        command_id: str,
+        execution_id: str,
+        expected_version: int,
+        kind: CommandKind,
+        payload: Mapping[str, Any],
+        actor: Mapping[str, Any],
+        fingerprint_extra: Mapping[str, Any],
+    ) -> tuple[ControlCommand, bool]:
+        fingerprint = _fingerprint(
+            {
+                "execution_id": execution_id,
+                "expected_version": expected_version,
+                "kind": kind.value,
+                "payload": dict(payload),
+                "actor": dict(actor),
+                **dict(fingerprint_extra),
+            }
+        )
+        existing_row = connection.execute(
+            "SELECT * FROM commands WHERE command_id = ?", (command_id,)
+        ).fetchone()
+        if existing_row is not None:
+            if existing_row["fingerprint"] != fingerprint:
+                raise CommandConflict(
+                    "idempotency_collision",
+                    f"command_id was already used for a different request: {command_id}",
+                )
+            return self._command(existing_row), True
+
+        execution = self._require_execution(connection, execution_id)
+        if execution.status_version != expected_version:
+            raise ExecutionConflict(
+                "stale_version",
+                f"expected execution version {expected_version}, "
+                f"found {execution.status_version}",
+            )
+        validate_command(kind, execution.status, execution.capabilities)
+        now = time.time()
+        command = ControlCommand(
+            command_id=command_id,
+            execution_id=execution_id,
+            expected_version=expected_version,
+            kind=kind,
+            payload=dict(payload),
+            actor=dict(actor),
+            status=CommandStatus.ACCEPTED,
+            submitted_at=now,
+            updated_at=now,
+        )
+        connection.execute(
+            "INSERT INTO commands "
+            "(command_id, execution_id, expected_version, kind, payload_json, "
+            "actor_json, fingerprint, status, submitted_at, updated_at, "
+            "result_version, rejection_code) VALUES "
+            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                command.command_id,
+                command.execution_id,
+                command.expected_version,
+                command.kind.value,
+                _json(command.payload),
+                _json(command.actor),
+                fingerprint,
+                command.status.value,
+                command.submitted_at,
+                command.updated_at,
+                command.result_version,
+                command.rejection_code,
+            ),
+        )
+        self._append_event(
+            connection,
+            execution_id=execution_id,
+            execution_version=execution.status_version,
+            command_id=command_id,
+            kind="command.accepted",
+            payload={"command": command.to_dict()},
+            created_at=now,
+        )
+        return command, False
+
+    def _transition_execution(
+        self,
+        connection: sqlite3.Connection,
+        execution_id: str,
+        *,
+        expected_version: int,
+        target: ExecutionStatus,
+        reason_code: str | None,
+    ) -> ExecutionRecord:
+        current = self._require_execution(connection, execution_id)
+        if current.status_version != expected_version:
+            raise ExecutionConflict(
+                "stale_version",
+                f"expected execution version {expected_version}, "
+                f"found {current.status_version}",
+            )
+        if current.status in TERMINAL_EXECUTION_STATUSES:
+            raise ExecutionConflict(
+                "terminal", f"execution is already {current.status.value}"
+            )
+        validate_transition(current.status, target)
+        now = time.time()
+        terminal_at = now if target in TERMINAL_EXECUTION_STATUSES else None
+        new_version = expected_version + 1
+        updated = connection.execute(
+            "UPDATE executions SET status = ?, status_version = ?, "
+            "reason_code = ?, updated_at = ?, terminal_at = ? "
+            "WHERE execution_id = ? AND status_version = ?",
+            (
+                target.value,
+                new_version,
+                reason_code,
+                now,
+                terminal_at,
+                execution_id,
+                expected_version,
+            ),
+        )
+        if updated.rowcount != 1:
+            raise ExecutionConflict("stale_version", "execution changed concurrently")
+        record = self._require_execution(connection, execution_id)
+        self._append_event(
+            connection,
+            execution_id=execution_id,
+            execution_version=record.status_version,
+            kind="execution.updated",
+            payload={"record": record.to_dict()},
+            created_at=now,
+        )
+        return record
+
+    def _transition_command(
+        self,
+        connection: sqlite3.Connection,
+        command_id: str,
+        *,
+        expected_status: CommandStatus,
+        target: CommandStatus,
+        result_version: int | None = None,
+        rejection_code: str | None = None,
+    ) -> ControlCommand:
+        current = self._get_command(connection, command_id)
+        if current is None:
+            raise CommandConflict("not_found", f"command not found: {command_id}")
+        if current.status in TERMINAL_COMMAND_STATUSES:
+            raise CommandConflict(
+                "terminal", f"command is already {current.status.value}"
+            )
+        if current.status is not expected_status:
+            raise CommandConflict(
+                "stale_status",
+                f"expected command status {expected_status.value}, "
+                f"found {current.status.value}",
+            )
+        allowed = {
+            CommandStatus.ACCEPTED: {
+                CommandStatus.APPLYING,
+                CommandStatus.REJECTED,
+            },
+            CommandStatus.APPLYING: {
+                CommandStatus.APPLIED,
+                CommandStatus.REJECTED,
+            },
+        }
+        if target not in allowed[current.status]:
+            raise CommandConflict(
+                "invalid_transition",
+                f"invalid command transition: {current.status.value} -> {target.value}",
+            )
+        now = time.time()
+        connection.execute(
+            "UPDATE commands SET status = ?, updated_at = ?, "
+            "result_version = ?, rejection_code = ? WHERE command_id = ?",
+            (target.value, now, result_version, rejection_code, command_id),
+        )
+        command = self._get_command(connection, command_id)
+        assert command is not None
+        self._append_event(
+            connection,
+            execution_id=command.execution_id,
+            execution_version=result_version,
+            command_id=command_id,
+            kind=f"command.{target.value}",
+            payload={"command": command.to_dict()},
+            created_at=now,
+        )
+        return command
+
+    @staticmethod
+    def _append_event(
+        connection: sqlite3.Connection,
+        *,
+        execution_id: str,
+        kind: str,
+        payload: Mapping[str, Any],
+        created_at: float,
+        execution_version: int | None = None,
+        command_id: str | None = None,
+    ) -> None:
+        connection.execute(
+            "INSERT INTO execution_events "
+            "(execution_id, execution_version, command_id, kind, payload_json, "
+            "created_at, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                execution_id,
+                execution_version,
+                command_id,
+                kind,
+                _json(payload),
+                created_at,
+                SCHEMA_VERSION,
+            ),
+        )
+
+    @staticmethod
+    def _insert_execution(
+        connection: sqlite3.Connection, record: ExecutionRecord
+    ) -> None:
+        connection.execute(
+            "INSERT INTO executions "
+            "(execution_id, run_id, session_id, parent_execution_id, "
+            "revision_id, status, status_version, reason_code, "
+            "current_attempt_id, owner_lease_json, checkpoint_head_id, "
+            "safe_point_json, capabilities_json, effect_summary_json, "
+            "created_at, updated_at, terminal_at) VALUES "
+            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                record.execution_id,
+                record.run_id,
+                record.session_id,
+                record.parent_execution_id,
+                record.revision_id,
+                record.status.value,
+                record.status_version,
+                record.reason_code,
+                record.current_attempt_id,
+                _json(record.owner_lease),
+                record.checkpoint_head_id,
+                _json(record.safe_point),
+                _json(sorted(record.capabilities)),
+                _json(record.effect_summary),
+                record.created_at,
+                record.updated_at,
+                record.terminal_at,
+            ),
+        )
+
+    @staticmethod
+    def _record(row: sqlite3.Row) -> ExecutionRecord:
+        return ExecutionRecord(
+            execution_id=str(row["execution_id"]),
+            run_id=str(row["run_id"]),
+            session_id=str(row["session_id"]),
+            revision_id=str(row["revision_id"]),
+            parent_execution_id=row["parent_execution_id"],
+            status=ExecutionStatus(row["status"]),
+            status_version=int(row["status_version"]),
+            reason_code=row["reason_code"],
+            current_attempt_id=row["current_attempt_id"],
+            owner_lease=_object(row["owner_lease_json"]),
+            checkpoint_head_id=row["checkpoint_head_id"],
+            safe_point=_object(row["safe_point_json"]),
+            capabilities=frozenset(json.loads(row["capabilities_json"])),
+            effect_summary=_object(row["effect_summary_json"]),
+            created_at=float(row["created_at"]),
+            updated_at=float(row["updated_at"]),
+            terminal_at=(
+                float(row["terminal_at"]) if row["terminal_at"] is not None else None
+            ),
+        )
+
+    @staticmethod
+    def _command(row: sqlite3.Row) -> ControlCommand:
+        return ControlCommand(
+            command_id=str(row["command_id"]),
+            execution_id=str(row["execution_id"]),
+            expected_version=int(row["expected_version"]),
+            kind=CommandKind(row["kind"]),
+            payload=_object(row["payload_json"]),
+            actor=_object(row["actor_json"]),
+            status=CommandStatus(row["status"]),
+            submitted_at=float(row["submitted_at"]),
+            updated_at=float(row["updated_at"]),
+            result_version=row["result_version"],
+            rejection_code=row["rejection_code"],
+        )
+
+    def _get_execution(
+        self, connection: sqlite3.Connection, execution_id: str
+    ) -> ExecutionRecord | None:
+        row = connection.execute(
+            "SELECT * FROM executions WHERE execution_id = ?", (execution_id,)
+        ).fetchone()
+        return self._record(row) if row is not None else None
+
+    def _require_execution(
+        self, connection: sqlite3.Connection, execution_id: str
+    ) -> ExecutionRecord:
+        record = self._get_execution(connection, execution_id)
+        if record is None:
+            raise ExecutionConflict("not_found", f"execution not found: {execution_id}")
+        return record
+
+    def _get_command(
+        self, connection: sqlite3.Connection, command_id: str
+    ) -> ControlCommand | None:
+        row = connection.execute(
+            "SELECT * FROM commands WHERE command_id = ?", (command_id,)
+        ).fetchone()
+        return self._command(row) if row is not None else None
+
+
+@lru_cache(maxsize=8)
+def _store_for_path(path: Path) -> ExecutionStore:
+    return ExecutionStore(path)
+
+
+def default_store() -> ExecutionStore:
+    """Return the store for the currently active profile."""
+    from openprogram.paths import get_execution_db_path
+
+    return _store_for_path(get_execution_db_path())

@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>统一运行控制：暂停、继续、单步、调整与取消</title>
+<style>
+:root{color-scheme:dark;--bg:#0f1217;--panel:#171c23;--panel2:#1d242d;--line:#303946;--text:#e8ecf2;--muted:#9ca7b6;--blue:#78a9ff;--cyan:#5bcbd7;--green:#74d49a;--orange:#ee9a69;--red:#ee777d;--purple:#b79cff;--mono:ui-monospace,"SFMono-Regular",Menlo,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.72 var(--sans)}a{color:var(--blue)}code,pre{font-family:var(--mono)}code{padding:1px 5px;border-radius:4px;background:#252c35;color:#e3e8ef;font-size:.9em}.page{width:min(1220px,calc(100% - 32px));margin:auto;padding:28px 0 76px}header{padding:8px 0 26px;border-bottom:1px solid var(--line)}.eyebrow{color:var(--cyan);font:11px var(--mono);letter-spacing:.1em;text-transform:uppercase}h1{max-width:1020px;margin:9px 0 12px;font-size:clamp(30px,4.7vw,50px);line-height:1.12;letter-spacing:-.03em;overflow-wrap:anywhere}h2{margin:0 0 14px;font-size:24px;line-height:1.28}h3{margin:22px 0 8px;font-size:16px}.lead{max-width:980px;margin:0;color:#c9cfd8;font-size:16px}.meta,.toc{display:flex;flex-wrap:wrap;gap:8px}.meta{margin-top:18px}.pill{max-width:100%;padding:4px 9px;border:1px solid var(--line);border-radius:999px;color:#bac2ce;font:11px var(--mono);overflow-wrap:anywhere}.pill.target{border-color:#4d456b;background:#241f34;color:#cab8ff}.pill.scope{border-color:#315c63;background:#17252a;color:#91dce7}.toc{margin-top:18px}.toc a{padding:5px 9px;border:1px solid var(--line);border-radius:7px;color:#b7bfca;text-decoration:none;font-size:12px}.toc a:hover,.toc a:focus-visible{border-color:#39717b;background:#17252a;color:#91dce7}main{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:38px}article,section,.grid2,.grid3,.decision,.panel,.callout,.card{min-width:0}aside{position:sticky;top:18px;align-self:start;padding-top:31px}section{padding:32px 0;border-bottom:1px solid var(--line)}p{margin:9px 0}ul,ol{padding-left:22px}li+li{margin-top:5px}.decision,.panel,.callout,.card{border:1px solid var(--line);border-radius:11px;background:var(--panel);padding:15px 17px}.decision{border-color:#39717b;background:#142126}.decision strong{color:#91dce7}.callout{margin:14px 0}.callout.warn{border-left:3px solid var(--orange);background:#241d18}.callout.danger{border-left:3px solid var(--red);background:#26191c}.callout.good{border-left:3px solid var(--green);background:#16231c}.grid2,.grid3{display:grid;gap:12px;margin:16px 0}.grid2{grid-template-columns:repeat(2,minmax(0,1fr))}.grid3{grid-template-columns:repeat(3,minmax(0,1fr))}.card h3{margin:0 0 6px}.card p{margin:0;color:var(--muted);font-size:13px}.sig{display:block;margin:8px 0;color:#c8b9fa;font:12px var(--mono)}table{width:100%;margin:15px 0;border-collapse:collapse;font-size:13px}th,td{padding:10px 11px;border:1px solid var(--line);text-align:left;vertical-align:top}th{background:var(--panel2);color:#e2e7ed}td{color:#c2c9d2}.table-wrap{max-width:100%;overflow:auto}.diagram{max-width:100%;margin:17px 0;padding:18px;border:1px solid var(--line);border-radius:12px;background:#0b0f14;overflow:auto}.diagram svg{display:block;min-width:900px;width:100%;height:auto}.diagram text{font-family:var(--mono)}pre{max-width:100%;overflow:auto;margin:14px 0;padding:15px 17px;border:1px solid var(--line);border-radius:10px;background:#0b0f14;color:#dfe5ec;font-size:12px;line-height:1.62}pre code{padding:0;background:transparent;color:inherit}.tag{display:inline-block;padding:2px 7px;border-radius:999px;font:10px var(--mono)}.tag.target{background:#222b3d;color:#9bbbf0}.tag.remove{background:#382020;color:#f09a9a}.tag.partial{background:#382e1d;color:#e8c887}.side-title{margin:0 0 11px;color:var(--muted);font:11px var(--mono);letter-spacing:.08em;text-transform:uppercase}.side-list{list-style:none;padding:0;margin:0}.side-list li{padding:7px 0;border-bottom:1px solid #29313b;font-size:12px}.side-list li:last-child{border-bottom:0}.phase{display:grid;grid-template-columns:126px minmax(0,1fr);gap:16px;padding:16px 0;border-top:1px solid var(--line)}.phase-id{color:var(--cyan);font:12px var(--mono)}.phase h3{margin:0 0 5px}.phase p{margin:0;color:var(--muted);font-size:13px}.gate{margin-top:7px;color:#dac699;font:11px var(--mono)}.status-list{display:grid;gap:8px}.status-row{display:grid;grid-template-columns:92px minmax(0,1fr);gap:8px;font-size:12px}.status-row span:last-child{color:var(--muted)}.source{color:#8ea0b7;font:11px/1.55 var(--mono)}.state-lab{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:16px 0}.state-lab button{padding:10px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);font:12px var(--mono);cursor:pointer}.state-lab button[aria-pressed="true"]{border-color:var(--cyan);background:#172a30;color:#9de3eb}.state-note{min-height:84px;padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:#10151b;color:#c6cdd7}.state-note strong{color:var(--cyan)}footer{padding-top:26px;color:var(--muted);font-size:12px}:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}@media(max-width:940px){main{grid-template-columns:minmax(0,1fr)}aside{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding-top:22px}.grid3,.grid2{grid-template-columns:minmax(0,1fr)}}@media(max-width:620px){.page{width:calc(100% - 22px)}aside{grid-template-columns:minmax(0,1fr)}.phase{grid-template-columns:minmax(0,1fr)}.lead{font-size:15px}h2{font-size:21px}.decision code,.card code,td code,.source{overflow-wrap:anywhere;word-break:break-word}.state-lab{grid-template-columns:minmax(0,1fr)}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<div class="page">
+<header>
+  <div class="eyebrow">OpenProgram Runtime · normative architecture</div>
+  <h1>统一运行控制：暂停、继续、单步、调整与取消</h1>
+  <p class="lead">本页是 OpenProgram 运行控制的唯一权威设计。它固定执行标识、持久状态、命令协议、安全点、检查点、owner 合同、恢复规则和未来逻辑修改方式。Chat、Agent、Workflow、后台 Job、工具与子进程共享这一控制模型；各界面不再维护自己的 stop、pause 或 resume 语义。</p>
+  <div class="meta"><span class="pill target">状态：目标架构已固定 · 实现迁移未完成</span><span class="pill scope">范围：Runtime / App / Web / TUI / CLI / ACP / MCP</span><span class="pill">唯一目标：execution_id</span><span class="pill">迁移策略：一次切换，不长期兼容</span></div>
+  <nav class="toc" aria-label="页内导航"><a href="#decision">结论</a><a href="#current">现状</a><a href="#reference">参考</a><a href="#identity">标识</a><a href="#record">记录</a><a href="#state">状态机</a><a href="#commands">命令</a><a href="#safe-point">安全点</a><a href="#checkpoint">检查点</a><a href="#effects">副作用</a><a href="#revision">修改逻辑</a><a href="#driver">Owner</a><a href="#recovery">恢复</a><a href="#cutover">切换</a><a href="#acceptance">验收</a><a href="#status">实现状态</a></nav>
+</header>
+<main>
+<article>
+<section id="decision">
+  <h2>1. 固定设计结论</h2>
+  <div class="decision"><strong>所有运行控制都是对一个持久 Execution 提交命令。</strong>用户可以暂停、继续、执行一个安全步骤、调整未执行部分、取消，或从检查点创建新 revision。Runtime 先持久化命令，再由当前 attempt 的 owner 执行；界面只读取 canonical Execution Record 和事件，不推断运行状态。</div>
+  <div class="grid3">
+    <div class="card"><h3>同一控制对象</h3><span class="sig">run_id → execution_id → attempt_id</span><p>会话负责归属，run 负责逻辑链，execution 绑定不可变 revision，attempt 表示一次物理激活。控制命令只接受精确 <code>execution_id</code>。</p></div>
+    <div class="card"><h3>同一持久协议</h3><span class="sig">command → event → materialized state</span><p>所有 transport 调用同一个命令服务。命令幂等，状态有版本，迟到响应不能覆盖新状态。</p></div>
+    <div class="card"><h3>同一恢复模型</h3><span class="sig">safe point + checkpoint + effect receipt</span><p>暂停和恢复只发生在声明过的安全边界。已确认副作用不重放，结果不确定的副作用必须先核对。</p></div>
+  </div>
+  <div class="callout warn"><strong>暂停不是冻结 Python 线程。</strong>Runtime 不保存任意指令地址、调用栈、锁状态或不可序列化对象。暂停请求在下一个 durable safe point 生效；继续从已发布的 checkpoint 恢复。这个边界同时支持跨进程恢复、server restart 和后续 revision 修改。</div>
+</section>
+
+<section id="current">
+  <h2>2. 当前实现与必须移除的分歧</h2>
+  <p>当前代码包含可复用的取消、checkpoint、rewind 和 steering 能力，但还没有统一运行控制。下列入口只作为迁移证据，不是目标合同。</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>当前实现</th><th>实际行为</th><th>目标处理</th></tr></thead>
+    <tbody>
+      <tr><td><code>/api/pause</code>、<code>/api/resume</code></td><td>切换进程全局 <code>threading.Event</code>；没有精确 execution identity，主执行路径没有稳定安全点调用。</td><td>删除全局事件。只保留 <code>execution.pause</code> 与 <code>execution.continue</code>。</td></tr>
+      <tr><td>WS <code>stop</code>、REST <code>/api/stop</code></td><td>可按 <code>session_id</code> 推断前台执行，再调用 exact cancellation。</td><td>删除 session fallback。所有 surface 直接提交 <code>execution.cancel</code>。</td></tr>
+      <tr><td><code>mark_cancelled(..., execution_id=None)</code> 与 token alias</td><td>迁移期入口允许调用者绕过 canonical command。</td><td>取消公共导出；owner 只响应已经持久化的命令。</td></tr>
+      <tr><td>session-scoped steering inbox</td><td>消息按会话落盘，接收 execution 由运行中状态推断。</td><td>改为 execution-scoped durable command，并记录 accepted/applied/rejected。</td></tr>
+      <tr><td>Workflow 函数名、调用序号、参数 hash checkpoint</td><td>可复用已完成结果，但不能稳定表达 revision、step identity、attempt 和外部副作用。</td><td>迁入正式 Checkpoint Manifest。</td></tr>
+      <tr><td>DAG、Job、Workflow 和 UI 本地状态</td><td>分别保存或推断 lifecycle，局部 finalizer 补写部分终态。</td><td>全部成为 Execution Record 投影；只有 Control Service 写 canonical lifecycle。</td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout danger">目标架构不增加“旧 stop 调新 cancel”“session pause 转 exact pause”一类长期适配层。存量数据使用明确 schema migration 一次转换；旧代码入口在切换提交中一起删除。</div>
+</section>
+
+<section id="scope">
+  <h2>3. 能力与边界</h2>
+  <div class="grid2">
+    <div class="card"><h3>正式能力</h3><ul><li><code>pause</code>：目标执行子树到达安全点并发布 checkpoint。</li><li><code>continue</code>：从当前 checkpoint 继续同一 execution。</li><li><code>step</code>：只推进到下一个声明的安全点，然后再次 paused。</li><li><code>steer</code>：调整未执行逻辑，不修改已提交历史。</li><li><code>cancel</code>：终止目标执行子树，Runtime 必要时自动升级终止。</li><li><code>fork</code>：从 checkpoint 与不可变 revision 创建 execution 分支。</li><li><code>retry</code>：从失败或中断执行的合法 checkpoint 创建新 execution。</li></ul></div>
+    <div class="card"><h3>明确不提供</h3><ul><li>通用 Python 源码行级暂停与恢复。</li><li>保存线程栈、锁、socket、生成器或 provider stream 的内存快照。</li><li>通用事务回滚或未知外部系统的自动撤销。</li><li>客户端提交 PID、timeout、force、checkpoint 内容或 finalizer。</li><li>按 session 猜测目标，或关闭页面时自动取消。</li><li>对运行中的历史 revision 原地修改代码。</li><li>由 UI 组合低层命令模拟正式能力。</li></ul></div>
+  </div>
+</section>
+
+<section id="reference">
+  <h2>4. 参考合同</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>参考</th><th>采用</th><th>OpenProgram 限制</th></tr></thead>
+    <tbody>
+      <tr><td><a href="https://microsoft.github.io/debug-adapter-protocol/">Debug Adapter Protocol</a></td><td>控制动作与观察请求分离；暂停后结构化读取状态；能力协商决定 step、terminate 或 restart。</td><td>基础 Runtime 不声称所有 Program 都支持源码级 stack/variable debugger。</td></tr>
+      <tr><td><a href="https://github.com/temporalio/documentation/blob/main/docs/encyclopedia/workflow/workflow-execution/workflow-execution.mdx">Temporal Workflow Execution</a> 与 <a href="https://github.com/temporalio/documentation/blob/main/docs/encyclopedia/workflow/workflow-pause.mdx">Workflow Pause</a></td><td>持久状态、精确执行标识、open/closed lifecycle；pause 停止新 dispatch，但不撤销已开始 activity，timer 与 timeout 继续。</td><td>OpenProgram 在活动 action 返回或超时后的 safe point 才确认 paused。</td></tr>
+      <tr><td><a href="https://docs.langchain.com/oss/python/langgraph/persistence">LangGraph persistence</a>、<a href="https://docs.langchain.com/oss/python/langgraph/interrupts">interrupts</a> 与 <a href="https://docs.langchain.com/oss/python/langgraph/use-time-travel">time travel</a></td><td>checkpoint、interrupt/resume、从历史 checkpoint replay 或 fork；旧历史保留。</td><td>增加 effect receipt；未知结果的非幂等 action 禁止自动重放。</td></tr>
+      <tr><td><a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/">Kubernetes Pod lifecycle</a></td><td>终止意图先持久化，随后协作终止，宽限期后强制终止，控制面确定终态。</td><td>只作为 cancel 内部策略，不公开 force 或进程信号。</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="identity">
+  <h2>5. 标识与不可变边界</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>标识</th><th>生命周期</th><th>规则</th></tr></thead>
+    <tbody>
+      <tr><td><code>session_id</code></td><td>对话或工作区容器</td><td>用于授权、查询和 UI 分组，不能作为运行控制目标。</td></tr>
+      <tr><td><code>run_id</code></td><td>一个用户目标的完整执行链</td><td>包含原 execution、retry 和 fork；不绑定某一代码版本。</td></tr>
+      <tr><td><code>execution_id</code></td><td>一个不可变 revision 下的逻辑执行</td><td>唯一公共控制目标。pause/continue 不改变它；fork、revision 修改和 terminal 后 retry 创建新 execution。</td></tr>
+      <tr><td><code>attempt_id</code></td><td>一次 worker/进程激活</td><td>owner lease 与日志边界。恢复同一 execution 可创建新 attempt；旧 attempt 由 fencing token 禁止回写。</td></tr>
+      <tr><td><code>revision_id</code></td><td>不可变 Program、plan、tool contract 与 policy</td><td>execution 创建后不可更换。修改未来逻辑必须创建新 revision 和新 execution。</td></tr>
+      <tr><td><code>step_id</code></td><td>revision 内稳定的语义步骤</td><td>不能由临时调用序号生成；用于 frontier、step、兼容性校验和调试展示。</td></tr>
+      <tr><td><code>checkpoint_id</code></td><td>safe point 的不可变快照</td><td>只有原子发布的 checkpoint 能用于 continue、fork 或 retry。</td></tr>
+      <tr><td><code>command_id</code></td><td>一次控制意图</td><td>全局唯一幂等键；重复提交返回第一次结果，不重复执行。</td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout good"><strong>暂停后继续同一个 execution。</strong>逻辑和 revision 未改变时，continue 只推进原 execution；如果 worker 已释放，则新建 attempt。只有 revision、执行分支或 terminal 后重试变化时，才新建 execution。</div>
+</section>
+
+<section id="record">
+  <h2>6. Canonical Record 与命令记录</h2>
+  <p>Runtime Store 保存 append-only events，并维护可按版本 compare-and-set 的 materialized record。DAG node、Job row、Workflow state、消息状态和 UI indicator 都只读取或投影该记录。</p>
+<pre><code>ExecutionRecord {
+  execution_id, run_id, session_id,
+  parent_execution_id, revision_id,
+  status, status_version, reason_code,
+  current_attempt_id, owner_lease,
+  checkpoint_head_id, safe_point,
+  active_child_ids, pending_command_ids,
+  capability_set, effect_summary,
+  created_at, updated_at, terminal_at
+}
+
+ControlCommand {
+  command_id, execution_id, expected_version,
+  kind, payload, actor, submitted_at,
+  status: accepted | applying | applied | rejected,
+  result_version, rejection_code
+}</code></pre>
+  <ul><li>每个状态变化产生 event；materialized record 可从 events 重建。</li><li><code>expected_version</code> 防止旧页面覆盖新状态；重复 <code>command_id</code> 不重新执行。</li><li>terminal transition 只发生一次；late owner 只能附加审计事件，不能改终态。</li><li>Runtime Store 是唯一事实源；owner registry 只保存短期运行句柄。</li></ul>
+</section>
+
+<section id="state">
+  <h2>7. 两层状态机</h2>
+  <p>逻辑 Execution 与物理 Attempt 分开建模。用户看到 Execution 状态；worker lease、进程退出和恢复使用 Attempt 状态。</p>
+  <div class="diagram">
+    <svg viewBox="0 0 1040 390" role="img" aria-labelledby="state-title state-desc">
+      <title id="state-title">统一 Execution 状态机</title><desc id="state-desc">queued 进入 running。running 可进入 pausing 再到 paused，paused 可继续回 running；running 或 paused 可进入 cancelling 再到 cancelled。running 也可进入 completed、failed、interrupted 或 reconciliation required。终态不能返回运行。</desc>
+      <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#808a98"/></marker><marker id="control-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#5bcbd7"/></marker></defs>
+      <g fill="#171c23" stroke="#46515f" stroke-width="2"><rect x="35" y="145" width="116" height="54" rx="9"/><rect x="220" y="145" width="116" height="54" rx="9"/><rect x="410" y="40" width="126" height="54" rx="9"/><rect x="610" y="40" width="116" height="54" rx="9"/><rect x="410" y="145" width="126" height="54" rx="9"/><rect x="610" y="145" width="116" height="54" rx="9"/><rect x="410" y="250" width="126" height="54" rx="9"/><rect x="590" y="250" width="116" height="54" rx="9"/><rect x="770" y="250" width="116" height="54" rx="9"/><rect x="820" y="40" width="180" height="54" rx="9"/></g>
+      <g fill="#e8ecf2" font-size="14" text-anchor="middle"><text x="93" y="178">queued</text><text x="278" y="178">running</text><text x="473" y="73">pausing</text><text x="668" y="73">paused</text><text x="473" y="178">cancelling</text><text x="668" y="178">cancelled</text><text x="473" y="283">completed</text><text x="648" y="283">failed</text><text x="828" y="283">interrupted</text><text x="910" y="67">reconciliation_required</text></g>
+      <g fill="none" stroke="#808a98" stroke-width="2" marker-end="url(#arrow)"><path d="M151 172H220"/><path d="M278 145V67H410"/><path d="M536 67H610"/><path d="M278 199V277H410"/><path d="M336 177H410"/><path d="M536 172H610"/><path d="M336 185Q420 230 590 272"/><path d="M336 192Q500 334 770 283"/><path d="M336 158Q570 0 820 55"/></g>
+      <g fill="none" stroke="#5bcbd7" stroke-width="2" marker-end="url(#control-arrow)"><path d="M668 94V124Q668 133 650 133H312Q278 133 278 145"/><path d="M610 83Q565 118 536 145"/><path d="M473 94V145"/></g>
+      <g fill="#91dfe8" font-size="11"><text x="365" y="58">pause</text><text x="558" y="57">safe point + checkpoint</text><text x="504" y="126">cancel has precedence</text><text x="460" y="119">cancel</text></g>
+    </svg>
+  </div>
+  <div class="state-lab" aria-label="状态语义浏览器"><button type="button" data-state="running" aria-pressed="true">running</button><button type="button" data-state="pausing" aria-pressed="false">pausing</button><button type="button" data-state="paused" aria-pressed="false">paused</button><button type="button" data-state="cancelling" aria-pressed="false">cancelling</button><button type="button" data-state="reconcile" aria-pressed="false">reconciliation_required</button><button type="button" data-state="terminal" aria-pressed="false">terminal</button></div>
+  <div class="state-note" id="state-note" aria-live="polite"><strong>running</strong>：存在有效 attempt lease，owner 可以派发新 managed action；Runtime 在每个 safe point 检查待处理命令。</div>
+  <h3>Attempt 状态</h3><p><code>leased → active → checkpointing → ended</code>。pause 可以在 checkpoint 发布后结束 attempt，也可以短暂保留 lease；这是调度策略，不改变 Execution 的 <code>paused</code> 语义。失去 lease 的 owner 无权写 checkpoint 或终态。</p>
+  <div class="callout warn"><strong>命令优先级固定：</strong><code>cancel &gt; pause &gt; step/continue &gt; steer</code>。已经持久化 cancel 后，continue、step 和 fork 拒绝；cancel 会解除 pause、question、approval 和 resource wait。</div>
+</section>
+
+<section id="commands">
+  <h2>8. 唯一命令协议</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>命令</th><th>合法状态</th><th>完成条件</th></tr></thead>
+    <tbody>
+      <tr><td><code>execution.pause</code></td><td>queued、running</td><td>目标子树不再 dispatch；活动 owner 到达 safe point；checkpoint 已发布；状态 paused。</td></tr>
+      <tr><td><code>execution.continue</code></td><td>paused</td><td>checkpoint 校验通过，attempt 获得 lease，状态 running。</td></tr>
+      <tr><td><code>execution.step</code></td><td>paused</td><td>消费一个 safe-point permit，完成一个 managed action 或控制步骤，再发布 checkpoint 并 paused。</td></tr>
+      <tr><td><code>execution.steer</code></td><td>running、pausing、paused</td><td>owner 在 safe point 应用或拒绝，并记录对应 step/revision。</td></tr>
+      <tr><td><code>execution.cancel</code></td><td>所有非终态</td><td>目标子树无活动 owner，投影 finalization 完成，状态 cancelled。</td></tr>
+      <tr><td><code>execution.fork</code></td><td>paused、completed、failed、interrupted</td><td>从指定 checkpoint 和 revision 创建 child execution；原 execution 不变。</td></tr>
+      <tr><td><code>execution.retry</code></td><td>failed、interrupted</td><td>从最近合法 checkpoint 创建同 revision 的 child execution。</td></tr>
+    </tbody>
+  </table></div>
+<pre><code>{
+  "type": "execution.pause",
+  "command_id": "cmd_...",
+  "execution_id": "exec_...",
+  "expected_version": 17,
+  "payload": {"reason": "user"}
+}
+
+{"type":"execution.command.updated","command":{"status":"accepted"}}
+{"type":"execution.updated","execution":{"status":"pausing","status_version":18}}
+{"type":"execution.command.updated","command":{"status":"applied","result_version":19}}
+{"type":"execution.updated","execution":{"status":"paused","status_version":19}}</code></pre>
+  <p>REST、WebSocket、CLI、TUI、ACP、MCP 和内部 Python 调用只是 transport adapter，共同调用 <code>submit_execution_command(command)</code>；任何 transport 都不得直接设置 token、event、DAG status 或 process signal。</p>
+</section>
+
+<section id="safe-point">
+  <h2>9. 安全点与单步单位</h2>
+  <p>safe point 表示此前工作已提交、此后工作尚未派发。每个 Execution Driver 声明边界与能力；没有 checkpoint 能力的 owner 可以 cancel，但不能声称支持 pause/continue。</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>类型</th><th>合法 safe point</th><th>一个 step</th></tr></thead>
+    <tbody>
+      <tr><td>Chat / agent loop</td><td>provider 请求前；完整响应提交后；tool dispatch 前；tool result 持久化后。</td><td>一次 provider decision 或一次 tool action。</td></tr>
+      <tr><td>Workflow</td><td>稳定 <code>step_id</code> 前后；branch join；显式 checkpoint。</td><td>一个确定 step 或控制流节点。</td></tr>
+      <tr><td>后台 Job</td><td>领取任务前；durable item 完成后；batch 边界。</td><td>一个 item 或声明 batch。</td></tr>
+      <tr><td>Tool / subprocess</td><td>dispatch 前；带 receipt 的完成后。</td><td>一个完整 invocation。</td></tr>
+      <tr><td>Question / approval</td><td>请求已持久化且尚未 resolved。</td><td>接收并提交一个 answer/decision。</td></tr>
+      <tr><td>Child execution</td><td>admission 前；child terminal 或 paused 后。</td><td>创建并等待 child 到下一个 durable boundary。</td></tr>
+    </tbody>
+  </table></div>
+  <ol><li>pause intent 持久化后立即关闭目标子树 admission gate。</li><li>已 dispatch 的 provider/tool/child action 继续到结果、超时或 cancel；Runtime 不伪造中间结果。</li><li>owner 到达边界时提交 checkpoint fragment 和 effect receipts。</li><li>所有活动后代确认后，根状态从 pausing 进入 paused。</li><li>step 只发一个 permit；涉及 child 时覆盖到 child 的下一个 durable boundary。</li></ol>
+</section>
+
+<section id="checkpoint">
+  <h2>10. Checkpoint Manifest</h2>
+  <p>Checkpoint 是不可变内容对象。Runtime 先写 payload 与 blobs，验证 hash 和 schema，最后 compare-and-set 更新 <code>checkpoint_head_id</code>；未发布对象由 GC 清理，不能用于恢复。</p>
+<pre><code>CheckpointManifest {
+  checkpoint_id, execution_id, revision_id,
+  parent_checkpoint_id, status_version,
+  frontier: [{step_id, phase, branch_id}],
+  program_state_ref, conversation_state_ref,
+  completed_actions: [{action_id, input_hash, result_ref}],
+  effect_receipts: [{effect_id, classification, receipt_ref, outcome}],
+  child_frontier, pending_commands,
+  schema_version, created_by_attempt_id, content_hash
+}</code></pre>
+  <div class="grid2"><div class="card"><h3>必须包含</h3><p>revision、稳定 frontier、可序列化 Program state、已完成 action receipt、子执行关系、待处理 durable command、schema 和 content hash。</p></div><div class="card"><h3>不包含</h3><p>线程栈、mutex、PID、socket、provider stream object、任意闭包、未提交局部变量或原进程对象地址。</p></div></div>
+  <p>现有 mutation journal、Workflow checkpoint 和 DAG history 作为 manifest fragment 或 projection 接入，不再分别定义“resume 已完成了什么”。</p>
+</section>
+
+<section id="effects">
+  <h2>11. 外部副作用与恢复安全</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>分类</th><th>自动恢复规则</th><th>例子</th></tr></thead>
+    <tbody>
+      <tr><td><code>pure</code></td><td>可重算；保存输入与结果 hash 即可。</td><td>解析、格式转换、确定计算。</td></tr>
+      <tr><td><code>idempotent</code></td><td>使用稳定 <code>effect_id</code> / provider idempotency key 重试。</td><td>API upsert、内容寻址写入。</td></tr>
+      <tr><td><code>compensatable</code></td><td>保存 receipt 与显式 compensation；只有 Program policy 明确请求才执行补偿。</td><td>创建后可按 resource ID 删除的资源。</td></tr>
+      <tr><td><code>nonrepeatable</code></td><td>dispatch 后失联则进入 <code>reconciliation_required</code>。</td><td>发送消息、支付、部署、无幂等键提交。</td></tr>
+      <tr><td><code>unknown</code></td><td>按 nonrepeatable 处理，禁止自动重放。</td><td>未声明 effect contract 的第三方工具。</td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout danger"><strong>dispatch 已发生但 receipt 未持久化时，Runtime 不得自动再次调用。</strong>reconciler 通过外部查询、人工确认或 Program 专用逻辑，把 effect 标记为 committed、not_committed 或 compensated；完成前 continue、step、retry 和 fork 均拒绝。</div>
+</section>
+
+<section id="revision">
+  <h2>12. 调整后续逻辑与从检查点分支</h2>
+  <div class="grid2"><div class="card"><h3>Steer：同 revision 的输入调整</h3><p>补充约束、改变下一步优先级或提供新上下文。命令在 safe point 应用；如果会改变已完成 step contract，owner 拒绝并要求 fork。</p></div><div class="card"><h3>Fork：新 revision 的结构调整</h3><p>修改 workflow graph、后续代码、工具集合、model policy 或输出 schema。先暂停，选择 checkpoint，创建不可变 revision，再创建同一 <code>run_id</code> 下的新 child execution。</p></div></div>
+  <h3>Fork 校验</h3>
+  <ol><li>源 checkpoint 已发布且没有 unresolved effect。</li><li>新 revision 声明 <code>compatible_prefix</code>：完成的 <code>step_id</code>、输入/输出 schema、effect contract 和依赖 hash。</li><li>一致的完成前缀可复用；受影响 step 从更早 checkpoint 重新执行。</li><li>新 execution 记录 parent、forked checkpoint 与新 revision；原 execution 保持 paused 或原 terminal。</li><li>UI 同时显示两个分支，不把新结果写回原 execution。</li></ol>
+  <div class="callout good">未来可以增加源代码断点、条件断点、step in/out 和变量修改，但它们只能作为特定 Driver capability。基础协议的 identity、command、safe point、checkpoint 和 revision 边界不改变。</div>
+</section>
+
+<section id="driver">
+  <h2>13. Runtime Control Service 与 Execution Driver</h2>
+  <div class="diagram">
+    <svg viewBox="0 0 1080 440" role="img" aria-labelledby="arch-title arch-desc">
+      <title id="arch-title">统一运行控制架构</title><desc id="arch-desc">所有界面向 Runtime Control Service 提交精确 execution command。服务持久化命令与状态，协调 lease、安全点、checkpoint、effect 和恢复。Chat、Workflow、Job、Tool Driver 执行 owner 协议，DAG 和 UI 是读模型。</desc>
+      <defs><marker id="arch-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#7f8997"/></marker></defs>
+      <g fill="#171c23" stroke="#3b4654" stroke-width="2"><rect x="30" y="45" width="170" height="46" rx="8"/><rect x="30" y="115" width="170" height="46" rx="8"/><rect x="30" y="185" width="170" height="46" rx="8"/><rect x="30" y="255" width="170" height="46" rx="8"/><rect x="290" y="86" width="220" height="174" rx="12"/><rect x="600" y="40" width="205" height="72" rx="9"/><rect x="600" y="137" width="205" height="72" rx="9"/><rect x="600" y="234" width="205" height="72" rx="9"/><rect x="600" y="331" width="205" height="72" rx="9"/><rect x="880" y="65" width="165" height="54" rx="8"/><rect x="880" y="155" width="165" height="54" rx="8"/><rect x="880" y="245" width="165" height="54" rx="8"/><rect x="880" y="335" width="165" height="54" rx="8"/></g>
+      <g fill="#e8ecf2" font-size="13" text-anchor="middle"><text x="115" y="73">App / Web</text><text x="115" y="143">TUI / CLI</text><text x="115" y="213">ACP / MCP</text><text x="115" y="283">Parent execution</text><text x="400" y="122">Runtime Control Service</text><text x="400" y="153">command + state machine</text><text x="400" y="184">lease + fencing</text><text x="400" y="215">recovery + finalization</text><text x="702" y="71">Runtime Store</text><text x="702" y="91">events + records</text><text x="702" y="168">Checkpoint Store</text><text x="702" y="188">manifests + blobs</text><text x="702" y="265">Effect Ledger</text><text x="702" y="285">receipts + reconciliation</text><text x="702" y="362">Execution Registry</text><text x="702" y="382">live handles only</text><text x="962" y="97">Chat driver</text><text x="962" y="187">Workflow driver</text><text x="962" y="277">Job driver</text><text x="962" y="367">Tool/process driver</text></g>
+      <g fill="none" stroke="#7f8997" stroke-width="2" marker-end="url(#arch-arrow)"><path d="M200 68H245V130H290"/><path d="M200 138H290"/><path d="M200 208H245V180H290"/><path d="M200 278H245V220H290"/><path d="M510 112H600"/><path d="M510 151H600"/><path d="M510 190H600"/><path d="M510 229H600"/><path d="M805 76H845V92H880"/><path d="M805 173H845V182H880"/><path d="M805 270H845V272H880"/><path d="M805 367H880"/></g>
+    </svg>
+  </div>
+<pre><code>protocol ExecutionDriver:
+    capabilities() -> CapabilitySet
+    activate(attempt, checkpoint) -> DriverHandle
+    request_pause(handle, command_id) -> Ack
+    request_cancel(handle, command_id) -> Ack
+    inspect(handle) -> RuntimeSnapshot
+    terminate(handle, reason) -> TerminationReceipt
+
+runtime.arrive_safe_point(attempt_id, manifest_fragment, effect_receipts)
+runtime.finish_attempt(attempt_id, outcome)</code></pre>
+  <ul><li>Control Service 唯一负责授权、状态 CAS、命令优先级、父子传播、fencing、recovery 和 terminal finalization。</li><li>Driver 负责执行类型特有的协作信号、checkpoint fragment、inspect 数据和受控 terminate。</li><li>Capability 包含 <code>can_pause</code>、<code>can_step</code>、<code>can_steer</code>、<code>can_fork</code>、safe-point kinds 和 state schema version。</li><li>Driver 不直接写 canonical status；projection failure 进入可重试 outbox。</li></ul>
+</section>
+
+<section id="cancel">
+  <h2>14. Cancel 算法</h2>
+  <div class="phase"><div class="phase-id">01 · COMMIT</div><div><h3>持久化 intent</h3><p>授权 exact execution，按版本写 <code>cancelling</code>，关闭目标子树 admission gate，记录 reason。任何信号都不能早于此步。</p><div class="gate">Gate: durable command + canonical cancelling</div></div></div>
+  <div class="phase"><div class="phase-id">02 · PROPAGATE</div><div><h3>固定后代集合并传播</h3><p>对非终态后代写 cancel intent；竞态创建的 child 因祖先 gate 关闭而拒绝 admission。</p><div class="gate">Gate: no child escapes the subtree</div></div></div>
+  <div class="phase"><div class="phase-id">03 · COOPERATE</div><div><h3>请求 owner 协作结束</h3><p>中止 provider stream、取消 async task、解除 question/approval/resource wait，并通知所有 Driver。</p><div class="gate">Gate: every live owner receives one exact request</div></div></div>
+  <div class="phase"><div class="phase-id">04 · ESCALATE</div><div><h3>宽限后自动终止</h3><p>对仍持有相同 fenced lease 的 owner 执行 terminate。用户不提交第二个命令，不传 force 或 timeout。</p><div class="gate">Gate: ownership rechecked immediately before terminate</div></div></div>
+  <div class="phase"><div class="phase-id">05 · FINALIZE</div><div><h3>控制面写唯一终态</h3><p>完成 usage、resource、question、checkpoint 和 projection finalization。已 terminal child 保持原状态；因父级终止的 child 记录 <code>parent_cancelled</code>。</p><div class="gate">Gate: no active owner; terminal compare-and-set</div></div></div>
+  <div class="callout warn"><strong>cancel 不等于 rollback。</strong>已提交消息、文件 mutation、tool result、usage、checkpoint 和外部 receipt 保留。Program 可提交显式 compensation，但 cancel 本身不撤销历史。</div>
+</section>
+
+<section id="recovery">
+  <h2>15. Restart 与 owner 丢失恢复</h2>
+  <ol><li>启动时扫描所有非终态 Execution Record 和未完成 ControlCommand。</li><li>使旧 owner lease 过期并增加 fencing generation；旧进程迟到写入拒绝。</li><li><code>cancelling</code> 继续 cancel finalization，不恢复业务逻辑。</li><li><code>pausing</code> 有已发布 checkpoint 时转 paused；没有时根据 effect ledger 转 interrupted 或 reconciliation_required。</li><li><code>paused</code> 保持 paused，不自动创建 attempt。</li><li><code>running</code> 只有 Driver 可恢复、checkpoint 合法且无 uncertain effect 时创建新 attempt，否则 interrupted 或 reconciliation_required。</li><li>projection outbox 重放到 DAG、Job、Workflow 和 UI；projection 不能反向覆盖 canonical record。</li></ol>
+  <div class="callout good">Question 和 approval 不依赖原进程内 <code>Event</code> 恢复。请求是 durable resource；continue 时新 attempt 重新订阅 unresolved request，cancel 时 Control Service 关闭它。</div>
+</section>
+
+<section id="surface">
+  <h2>16. Debugger 与界面合同</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>界面元素</th><th>来源</th><th>行为</th></tr></thead>
+    <tbody>
+      <tr><td>Pause / Continue / Step / Cancel</td><td>Execution capability 与 status</td><td>不可用能力 disabled 并显示原因；点击只提交 durable command。</td></tr>
+      <tr><td>运行树</td><td>run、parent/child execution、attempt events</td><td>显示分支、checkpoint、活动 attempt 和 terminal history。</td></tr>
+      <tr><td>Inspector</td><td>Checkpoint Manifest、driver inspect、effect ledger</td><td>paused 显示稳定状态；running 只显示已提交快照，不读取任意进程内存。</td></tr>
+      <tr><td>修改后续逻辑</td><td>revision editor + prefix validation</td><td>保存生成新 revision，再 fork；原 execution 保留。</td></tr>
+      <tr><td>Steer</td><td>durable command status</td><td>显示 accepted、applied step 或 rejection，不只显示“已发送”。</td></tr>
+      <tr><td>Reload</td><td>canonical snapshot + event cursor</td><td>先快照后订阅；本地 spinner 不能覆盖 server state。</td></tr>
+    </tbody>
+  </table></div>
+  <p>CLI/TUI 使用相同词汇：<code>openprogram execution pause &lt;execution_id&gt;</code>、<code>continue</code>、<code>step</code>、<code>steer</code>、<code>cancel</code>、<code>fork</code>、<code>retry</code>。ACP/MCP 保存 request/turn 与 execution 的 exact mapping；协议 cancel 只能取消映射到的 execution。</p>
+</section>
+
+<section id="security">
+  <h2>17. 权限、审计与资源</h2>
+  <ul><li>服务端从 Execution Record 解析 session、owner、revision 和 process handle；客户端字段不能替代记录。</li><li>未授权或跨租户 execution 返回统一 not found，避免泄露存在性、状态和输出。</li><li>command event 记录 actor、surface、reason、expected version、结果和 receipts，但不记录秘密、完整 prompt 或环境变量。</li><li>paused execution 默认释放 worker slot、GPU/CPU admission 和并发配额；只保留声明过的 durable storage 与外部 lease。</li><li>pause 期间 timeout、预算和外部租约是否继续由资源类型声明；UI 显示 policy，Runtime 不隐式补时。</li><li>强制终止只针对 registry 解析的 fenced process group；不接受客户端 PID 或路径。</li></ul>
+  <h3>Session policy 与 Execution command 分离</h3>
+  <p><code>attended</code> 是 session 级 capability policy，不是 execution lifecycle。所有 surface 通过同一 <code>session.policy.update</code> 写持久 session metadata；新 execution 在 admission 时得到 policy snapshot。<code>attended=false</code> 表示工具目录不提供 ask/clarify 能力，但不能暂停、取消或改变已经运行的 execution。需要改变活动 execution 时，仍提交精确的 execution command。</p>
+  <p>三端同步使用同一规则：连接先读取 session、active execution 和 pending command 快照，再从 event cursor 继续；任何 surface 都不保存独立的 attended、running、paused 或 steering truth。</p>
+</section>
+
+<section id="cutover">
+  <h2>18. 一次切换的实施顺序</h2>
+  <p>内部组件可以分片实现，但公开协议只在 canonical path 完整后切换。每个分片使用最终字段和命令名称，不引入待删除的中间 API。</p>
+  <div class="phase"><div class="phase-id">SLICE 1 · CORE</div><div><h3>Store、Command 与状态机</h3><p>建立 events、materialized record、idempotency、CAS、run/execution/attempt/revision identity 和 projection outbox。</p><div class="gate">Exit: every legal and illegal transition is tested</div></div></div>
+  <div class="phase"><div class="phase-id">SLICE 2 · OWNER</div><div><h3>Driver、lease、safe point 与 checkpoint</h3><p>先接 Chat/Agent 和 Job，建立 capability、fencing、manifest 原子发布和 effect ledger；不公开半成品 pause。</p><div class="gate">Exit: restart and stale-owner fault injection pass</div></div></div>
+  <div class="phase"><div class="phase-id">SLICE 3 · CANCEL</div><div><h3>把当前 cancellation 迁入统一命令</h3><p>重实现 exact cancel、传播、wait wake、自动升级和 finalization；未合并分支只移植验证过的语义和测试，不整体合并旧结构。</p><div class="gate">Exit: every execution kind cancels through one service</div></div></div>
+  <div class="phase"><div class="phase-id">SLICE 4 · CONTROL</div><div><h3>Pause、Continue、Step 与 Steering</h3><p>接入稳定 safe point；steering 从 session inbox 迁为 durable execution command；UI 只显示真实 capability。</p><div class="gate">Exit: pause/restart/continue and step pass without memory stack reuse</div></div></div>
+  <div class="phase"><div class="phase-id">SLICE 5 · FORK</div><div><h3>Revision、prefix 与 reconciliation</h3><p>建立 revision store、fork/retry、checkpoint compatibility 和专用 reconciler contract。</p><div class="gate">Exit: edited future logic creates an auditable execution branch</div></div></div>
+  <div class="phase"><div class="phase-id">SLICE 6 · CUTOVER</div><div><h3>同一次发布切换所有 surface</h3><p>运行 schema migration；所有 transport 同时改用 canonical commands；删除旧入口、全局 pause、session fallback、alias、直接状态写入和旧 steering inbox。</p><div class="gate">Exit: repository and protocol tests prove one surface remains</div></div></div>
+  <div class="phase"><div class="phase-id">SLICE 7 · VERIFY</div><div><h3>完整门禁与默认 App 验收</h3><p>运行 affected、contracts、全量和三轮并行稳定性；刷新默认 App，在 18100 验收并核对 CI 后合入 main。</p><div class="gate">Exit: source, package, App and origin/main identify the same commit</div></div></div>
+</section>
+
+<section id="acceptance">
+  <h2>19. 验收矩阵</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>场景</th><th>必须结果</th><th>禁止结果</th></tr></thead>
+    <tbody>
+      <tr><td>同 session 多个 execution</td><td>命令只影响 exact execution 子树。</td><td>按 session 取消最近运行或影响后续 execution。</td></tr>
+      <tr><td>provider/tool 中 pause</td><td>不派发新 action；当前 action 结果或超时后 paused；结果有 receipt。</td><td>丢弃副作用或把部分 stream 当 checkpoint。</td></tr>
+      <tr><td>paused 后 restart/continue</td><td>同 execution、新 attempt、同 revision，从 frontier 继续。</td><td>依赖旧线程或重做 completed nonrepeatable action。</td></tr>
+      <tr><td>Step</td><td>跨一个声明 safe point 后 paused。</td><td>无限运行或 child 内部失控。</td></tr>
+      <tr><td>Pause/cancel 竞态</td><td>cancel 获胜，等待解除，最终 cancelled。</td><td>永久 pausing 或 continue 重新激活。</td></tr>
+      <tr><td>完成/cancel 竞态</td><td>一个 terminal CAS；重复命令幂等。</td><td>terminal 相互覆盖。</td></tr>
+      <tr><td>旧 lease 迟到回写</td><td>fencing 拒绝并记录 stale owner。</td><td>覆盖 checkpoint head 或 terminal。</td></tr>
+      <tr><td>dispatch 后 receipt 前崩溃</td><td>reconciliation_required，确认前不自动重试。</td><td>重复外部消息、支付、部署或提交。</td></tr>
+      <tr><td>steer accepted 未 applied</td><td>restart 后 pending 可见，最终 applied/rejected。</td><td>只有内存 ack 或无法确定接收者。</td></tr>
+      <tr><td>修改后续 workflow</td><td>新 revision、新 child execution、prefix 校验、旧历史保留。</td><td>原地换代码或写回旧 execution。</td></tr>
+      <tr><td>不可协作 subprocess</td><td>intent 先持久化，宽限后 exact terminate，最终 cancelled。</td><td>第二次点击、公开 force、误杀新 owner。</td></tr>
+      <tr><td>reload/event gap</td><td>snapshot + cursor 恢复同一状态。</td><td>本地 flag 覆盖 canonical record。</td></tr>
+      <tr><td>越权命令</td><td>统一 not found，无信息泄露。</td><td>跨 session 控制。</td></tr>
+      <tr><td>全部 surface</td><td>调用同一 command service。</td><td>transport 直接操作 token、event、PID 或投影。</td></tr>
+    </tbody>
+  </table></div>
+  <h3>交付门禁</h3>
+  <ol><li>每个 slice 先写会失败的 contract/component/fault-injection test，再实现最小完整语义。</li><li>状态机、命令幂等、fencing、checkpoint atomicity、effect reconciliation 和 projection recovery 有独立测试。</li><li>仓库扫描不存在公开 stop、session-target control、global pause、force mode、兼容 alias 或 surface 直接状态写入。</li><li>按 <code>tests/README.md</code> 运行 affected suites、<code>tests/contracts</code>、全量和三轮 <code>-n 4</code> 稳定性。</li><li>文档构建、链接、桌面/窄屏渲染、键盘交互和 reduced-motion 检查通过。</li><li>本地、CI 和默认 <code>/Applications/OpenProgram.app</code> 的 18100 实例全部验证后合入 main。</li></ol>
+</section>
+
+<section id="status">
+  <h2>20. 实现状态</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>目标能力</th><th>状态</th><th>可复用基础</th><th>缺口</th></tr></thead>
+    <tbody>
+      <tr><td>Canonical Store</td><td><span class="tag partial">Partial</span></td><td><code>openprogram.execution</code> 已定义最终 execution/command vocabulary、状态机、profile-aware SQLite store、append-only events、materialized record、version CAS、幂等 command 与原子 intent transition。</td><td>attempt/revision/checkpoint/effect 表、projection outbox、driver 与现有运行路径切换。</td></tr>
+      <tr><td>Exact cancellation</td><td><span class="tag partial">Partial</span></td><td>execution token/owner、intent 顺序、终态保护、resource admission、宽限终止和 startup wake 的部分实现。</td><td>迁入 command/driver；删除 session fallback、alias 和局部 finalizer。</td></tr>
+      <tr><td>Pause / Continue / Step</td><td><span class="tag remove">Not implemented</span></td><td>旧全局 pause 只作为删除证据；Workflow 有局部 checkpoint。</td><td>exact command、safe point、manifest、capability、restart recovery 和 permit。</td></tr>
+      <tr><td>Durable steering</td><td><span class="tag partial">Partial</span></td><td>跨进程 session file inbox 与 WS ack。</td><td>execution identity、command record、应用位置、恢复和 rejection。</td></tr>
+      <tr><td>Checkpoint / Effect</td><td><span class="tag partial">Partial</span></td><td>Workflow item checkpoint、file mutation journal、rewind plan/apply。</td><td>统一 manifest、revision/frontier、原子 head、effect 分类和 reconciliation。</td></tr>
+      <tr><td>Revision / Fork / Retry</td><td><span class="tag partial">Partial</span></td><td>Workflow revision artifacts 与失败后重新执行。</td><td>不可变 revision、compatible prefix、新 execution branch 和统一协议。</td></tr>
+      <tr><td>Debugger surface</td><td><span class="tag remove">Not implemented</span></td><td>Execution/DAG 展示与现有 controls。</td><td>inspector、capability controls、command progress 和 branch view。</td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout warn">上表是当前代码事实，前十九节是稳定目标合同。后续可以补充 Driver capability 和具体 checkpoint schema，但不得重新引入 session-target control、双写状态、长期兼容入口、原地 revision 修改或任意内存栈恢复。</div>
+</section>
+
+<section id="related">
+  <h2>21. 相关设计</h2>
+  <ul><li><a href="async-job-lifecycle.html">Async Job lifecycle</a>：持久 Job 的队列、worker 与恢复。</li><li><a href="../dag/overview.html">DAG status vocabulary</a>：execution history 与关系投影。</li><li><a href="../agent-resource-governance.html">Agent resource governance</a>：admission、lease、budget 和资源释放。</li><li><a href="../operations/user-input-requests.html">User input requests</a>：durable question/approval。</li><li><a href="../../error-handling.html">Error handling</a>：cancelled、interrupted 与 failed 的边界。</li></ul>
+</section>
+</article>
+
+<aside aria-label="设计摘要">
+  <div class="panel"><div class="side-title">Stable contract</div><ul class="side-list"><li><code>execution_id</code> 是唯一目标</li><li>pause/continue 保持 execution</li><li>revision 改动创建新 execution</li><li>命令先持久化，owner 后执行</li><li>safe point 发布 checkpoint</li><li>未知副作用不自动重放</li><li>Runtime Store 是唯一事实源</li></ul></div>
+  <div class="panel" style="margin-top:12px"><div class="side-title">Canonical commands</div><ul class="side-list"><li><code>execution.pause</code></li><li><code>execution.continue</code></li><li><code>execution.step</code></li><li><code>execution.steer</code></li><li><code>execution.cancel</code></li><li><code>execution.fork</code></li><li><code>execution.retry</code></li></ul></div>
+  <div class="panel" style="margin-top:12px"><div class="side-title">Removed at cutover</div><div class="status-list"><div class="status-row"><span class="tag remove">Remove</span><span>global pause event</span></div><div class="status-row"><span class="tag remove">Remove</span><span>WS/REST stop</span></div><div class="status-row"><span class="tag remove">Remove</span><span>session fallback</span></div><div class="status-row"><span class="tag remove">Remove</span><span>force mode</span></div><div class="status-row"><span class="tag remove">Remove</span><span>direct projection writes</span></div></div></div>
+  <div class="panel" style="margin-top:12px"><div class="side-title">Primary code boundaries</div><p class="source">openprogram/agent/run_control.py<br>openprogram/agent/steering.py<br>apps/server/.../routes/lifecycle.py<br>apps/server/.../ws_actions/runtime.py<br>openprogram/programs/workflow/_runtime/<br>Execution DAG / Job / Question / Checkpoint</p></div>
+</aside>
+</main>
+<footer>OpenProgram Runtime Design · Unified Execution Control</footer>
+</div>
+<script>
+const stateText={running:'<strong>running</strong>：存在有效 attempt lease，owner 可以派发新 managed action；Runtime 在每个 safe point 检查待处理命令。',pausing:'<strong>pausing</strong>：pause intent 已持久化且 admission gate 已关闭；已有 action 可以完成，owner 正在发布 checkpoint。',paused:'<strong>paused</strong>：目标子树已到达 durable safe point，checkpoint 已发布；没有新 action 派发。',cancelling:'<strong>cancelling</strong>：cancel intent 已持久化；Runtime 正在协作结束、解除等待并按需 terminate。',reconcile:'<strong>reconciliation_required</strong>：外部副作用是否提交无法确定。确认前禁止自动 continue、step、retry 或 fork。',terminal:'<strong>terminal</strong>：completed、failed、cancelled、interrupted 不可原地恢复或覆盖；需要继续时创建 child execution。'};const note=document.getElementById('state-note');document.querySelectorAll('[data-state]').forEach(button=>{button.addEventListener('click',()=>{document.querySelectorAll('[data-state]').forEach(item=>item.setAttribute('aria-pressed','false'));button.setAttribute('aria-pressed','true');note.innerHTML=stateText[button.dataset.state]})});
+</script>
+</body>
+</html>
