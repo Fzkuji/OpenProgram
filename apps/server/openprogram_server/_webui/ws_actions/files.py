@@ -214,9 +214,6 @@ def _evict_snapshot(snapshot_id: str) -> None:
         if key[0] == snapshot_id:
             _QUERY_CURSOR_TOKENS.pop(key, None)
             _QUERY_CURSORS.pop(token, None)
-            for token, (snapshot_id, _offset) in list(_QUERY_CURSORS.items()):
-                if snapshot_id == evicted:
-                    _QUERY_CURSORS.pop(token, None)
 
 
 def _new_cursor(snapshot_id: str, offset: int) -> str:
@@ -357,6 +354,8 @@ def _directory_snapshot_fd(fd: int) -> tuple[list[dict], tuple]:
     basis = []
     with os.scandir(fd) as iterator:
         for entry in iterator:
+            if len(entries) >= _QUERY_MAX_SNAPSHOT_ITEMS:
+                raise _QueryLimitError
             stat_result = entry.stat(follow_symlinks=False)
             kind = "dir" if entry.is_dir(follow_symlinks=False) else "file"
             entries.append({

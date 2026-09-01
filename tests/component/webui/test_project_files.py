@@ -340,6 +340,63 @@ def test_repeated_cursor_requests_reuse_bounded_token(project_root):
         assert data["next_cursor"] == expected_next
 
 
+def test_snapshot_eviction_removes_all_cursors_and_returns_stale(project_root, monkeypatch):
+    with ws_files._QUERY_LOCK:
+        ws_files._QUERY_SNAPSHOTS.clear()
+        ws_files._QUERY_CURSORS.clear()
+        ws_files._QUERY_CURSOR_TOKENS.clear()
+    monkeypatch.setattr(ws_files, "_QUERY_MAX_SNAPSHOTS", 1)
+    for index in range(4):
+        (project_root / f"evict-{index}.txt").write_text("x", encoding="utf-8")
+    first = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 1,
+    })["data"]
+    cursor_one = first["next_cursor"]
+    second = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 1,
+        "cursor": cursor_one,
+    })["data"]
+    cursor_two = second["next_cursor"]
+    _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "src", "page_size": 1,
+    })
+    assert cursor_one not in ws_files._QUERY_CURSORS
+    assert cursor_two not in ws_files._QUERY_CURSORS
+    stale = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "cursor": cursor_one,
+    })["data"]
+    assert stale["error_code"] == "STALE_SNAPSHOT"
+
+
+def test_expired_snapshot_removes_cursor_and_returns_stale(project_root, monkeypatch):
+    with ws_files._QUERY_LOCK:
+        ws_files._QUERY_SNAPSHOTS.clear()
+        ws_files._QUERY_CURSORS.clear()
+        ws_files._QUERY_CURSOR_TOKENS.clear()
+    monkeypatch.setattr(ws_files, "_QUERY_SNAPSHOT_TTL", 0.0)
+    (project_root / "ttl.txt").write_text("x", encoding="utf-8")
+    first = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 1,
+    })["data"]
+    cursor = first["next_cursor"]
+    stale = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "cursor": cursor,
+    })["data"]
+    assert stale["error_code"] == "STALE_SNAPSHOT"
+    assert cursor not in ws_files._QUERY_CURSORS
+
+
+def test_tree_limit_stops_after_maximum_entry_probe(project_root):
+    for index in range(ws_files._QUERY_MAX_SNAPSHOT_ITEMS + 1):
+        (project_root / f"large-{index:05d}.txt").write_text("x", encoding="utf-8")
+    data = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 100,
+    })["data"]
+    assert data["error_code"] == "LIMIT_EXCEEDED"
+    assert data["entries"] == []
+    assert data["snapshot_id"] is None
+
+
 def test_tree_path_traversal_rejected(project_root):
     for bad in ("../outside", "src/../../outside", "/etc"):
         data = _run(ws_files.handle_project_file_tree,
