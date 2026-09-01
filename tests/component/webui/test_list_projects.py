@@ -70,10 +70,10 @@ def test_remove_project_action_is_unavailable_and_registry_unchanged(
         "project_id": "proj_remove",
     }))
 
-    # An action with no handler answers `action_error` — it used to be
+    # An action with no handler answers `operation_error` — it used to be
     # dropped in silence, which made a deliberately-removed action
     # indistinguishable from a backend that never replied.
-    assert [f["type"] for f in ws.sent] == ["action_error"]
+    assert [f["type"] for f in ws.sent] == ["operation_error"]
     assert ws.sent[0]["data"]["action"] == "remove_project"
     assert ws.sent[0]["data"]["code"] == "unknown_action"
     assert json.loads(registry_path.read_text(encoding="utf-8")) == before

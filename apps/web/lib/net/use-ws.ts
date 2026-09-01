@@ -11,7 +11,7 @@
  */
 import { useEffect } from "react";
 
-import { consumeActionError } from "@/lib/net/action-error";
+import { consumeCommandErrorFrame } from "@/lib/net/action-error";
 import type {
   PermissionRulesDetail,
   JobStatusDetail,
@@ -69,6 +69,7 @@ export function useWS(): void {
       type?: string;
       data?: Record<string, unknown>;
     }): boolean {
+      if (consumeCommandErrorFrame(msg, translateText)) return true;
       const d = msg.data;
       switch (msg.type) {
         case "pong":
@@ -167,10 +168,6 @@ export function useWS(): void {
               ReturnType<typeof useSessionStore.getState>["appendMessage"]
             >[1]);
           }).catch(() => { /* best-effort UI line */ });
-          return true;
-        }
-        case "action_error": {
-          consumeActionError(d, translateText);
           return true;
         }
         case "attach_branch_result": {

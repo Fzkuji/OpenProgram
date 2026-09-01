@@ -9,6 +9,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from openprogram.programs.workflow.ask_user import ask_user, set_ask_user
 from openprogram.webui import server
+from openprogram.webui.ws_errors import operation_error_frame
 
 
 class _SequenceWS:
@@ -56,19 +57,28 @@ def test_handler_failure_isolated_and_next_ping_runs(
 
     monkeypatch.setattr(server, "WS_ACTIONS", {"bad": fail})
     ws = _SequenceWS([
-        json.dumps({"action": "bad", "session_id": "s1", "secret": "do-not-echo"}),
+        json.dumps({
+            "action": "bad",
+            "session_id": "s1",
+            "request_id": "request-1",
+            "secret": "do-not-echo",
+        }),
         "ping",
         WebSocketDisconnect(1000),
     ])
 
     asyncio.run(server._websocket_handler(ws))
 
-    action_error = next(frame for frame in ws.sent if frame["type"] == "action_error")
-    assert action_error["data"] == {
+    operation_error = next(
+        frame for frame in ws.sent if frame["type"] == "operation_error"
+    )
+    assert operation_error["data"] == {
         "action": "bad",
         "session_id": "s1",
+        "request_id": "request-1",
         "code": "handler_error",
-        "error": "action failed",
+        "message": "Action failed",
+        "retryable": False,
     }
     assert ws.sent[-1] == {"type": "pong"}
     assert "do-not-echo" not in json.dumps(ws.sent)
@@ -86,18 +96,30 @@ def test_handler_error_rejects_non_string_metadata(
 
     monkeypatch.setattr(server, "WS_ACTIONS", {"bad": fail})
     ws = _SequenceWS([
-        json.dumps({"action": "bad", "session_id": {"secret": "do-not-log"}}),
+        json.dumps({
+            "action": "bad",
+            "session_id": {"secret": "do-not-log"},
+            "request_id": {"secret": "do-not-log-request"},
+        }),
         json.dumps({"action": {"secret": "do-not-log-action"}}),
-        json.dumps({"action": "missing", "session_id": {"secret": "do-not-log-id"}}),
+        json.dumps({
+            "action": "missing",
+            "session_id": {"secret": "do-not-log-id"},
+            "request_id": "x" * 129,
+        }),
         WebSocketDisconnect(1000),
     ])
 
     asyncio.run(server._websocket_handler(ws))
 
-    action_error = next(frame for frame in ws.sent if frame["type"] == "action_error")
-    assert action_error["data"]["session_id"] is None
+    operation_error = next(
+        frame for frame in ws.sent if frame["type"] == "operation_error"
+    )
+    assert operation_error["data"]["session_id"] is None
+    assert operation_error["data"]["request_id"] is None
     assert ws.sent[-2]["data"]["action"] is None
     assert ws.sent[-1]["data"]["session_id"] is None
+    assert ws.sent[-1]["data"]["request_id"] is None
     assert "do-not-log" not in json.dumps(ws.sent)
     assert "do-not-log" not in caplog.text
     assert "do-not-log" not in capsys.readouterr().out
@@ -112,7 +134,51 @@ def test_invalid_json_does_not_close_the_connection(monkeypatch: pytest.MonkeyPa
     assert ws.sent[-1] == {"type": "pong"}
 
 
-def test_handler_transport_disconnect_ends_connection_without_action_error(
+def test_unknown_action_returns_correlated_operation_error() -> None:
+    ws = _SequenceWS([
+        json.dumps({
+            "action": "removed_action",
+            "session_id": "s1",
+            "request_id": "request-2",
+        }),
+        "ping",
+        WebSocketDisconnect(1000),
+    ])
+
+    asyncio.run(server._websocket_handler(ws))
+
+    assert ws.sent[-2] == {
+        "type": "operation_error",
+        "data": {
+            "action": "removed_action",
+            "session_id": "s1",
+            "request_id": "request-2",
+            "code": "unknown_action",
+            "message": "Unknown action",
+            "retryable": False,
+        },
+    }
+    assert ws.sent[-1] == {"type": "pong"}
+
+
+@pytest.mark.parametrize("field", ["action", "session_id", "request_id"])
+@pytest.mark.parametrize("invalid", ["x" * 129, "line\u0085break", "line\nbreak"])
+def test_operation_error_rejects_unsafe_metadata(field: str, invalid: str) -> None:
+    command = {
+        "action": "bad",
+        "session_id": "s1",
+        "request_id": "x" * 128,
+        field: invalid,
+    }
+
+    data = operation_error_frame(command, code="handler_error")["data"]
+
+    assert data[field] is None
+    if field != "request_id":
+        assert data["request_id"] == "x" * 128
+
+
+def test_handler_transport_disconnect_ends_connection_without_operation_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def disconnect(ws, cmd) -> None:
@@ -126,7 +192,10 @@ def test_handler_transport_disconnect_ends_connection_without_action_error(
 
     asyncio.run(server._websocket_handler(ws))
 
-    assert all(frame["type"] not in {"action_error", "pong"} for frame in ws.sent)
+    assert all(
+        frame["type"] not in {"operation_error", "action_error", "pong"}
+        for frame in ws.sent
+    )
 
 
 class _DisconnectWhenReadyWS(_SequenceWS):
