@@ -65,6 +65,30 @@ interface TreeResult {
   project_id: string;
   path: string;
   entries?: TreeEntry[];
+  snapshot_id?: string | null;
+  next_cursor?: string | null;
+  error_code?: string | null;
+  error?: string;
+}
+
+interface SearchResult extends TreeEntry {
+  path: string;
+  project_id?: string;
+  project_name?: string;
+}
+
+interface DirectoryPage {
+  snapshotId: string | null;
+  nextCursor: string | null;
+}
+
+interface SearchResultPayload {
+  project_id: string;
+  path: string;
+  results?: SearchResult[];
+  snapshot_id?: string | null;
+  next_cursor?: string | null;
+  error_code?: string | null;
   error?: string;
 }
 
@@ -219,8 +243,12 @@ export function FileTree({
     navigate("/chat");
   };
   const [dirs, setDirs] = useState<Record<string, DirState>>({});
+  const [directoryPages, setDirectoryPages] = useState<Record<string, DirectoryPage>>({});
+  const [loadingMore, setLoadingMore] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchMode, setSearchMode] = useState<ExplorerSearchMode>("filter");
   const [fuzzySearch, setFuzzySearch] = useState(true);
@@ -235,31 +263,95 @@ export function FileTree({
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; type: "file" | "dir" } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const directoryPagesRef = useRef<Record<string, DirectoryPage>>({});
+  const queryQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const queryGeneration = useRef(0);
+  const searchGeneration = useRef(0);
+
+  useEffect(() => {
+    directoryPagesRef.current = directoryPages;
+  }, [directoryPages]);
+
+  function queuedQuery<T>(
+    action: string,
+    payload: Record<string, unknown>,
+    responseType: string,
+  ): Promise<T | null> {
+    const next = queryQueue.current.then(() =>
+      wsRequest<T>(action, payload, responseType),
+    );
+    queryQueue.current = next.catch(() => null);
+    return next;
+  }
 
   const load = useCallback(
-    async (path: string) => {
-      setDirs((d) => ({ ...d, [path]: "loading" }));
-      const data = await filesWsRequest<TreeResult>(
+    async (path: string, cursor?: string | null, retry = true): Promise<TreeResult | null> => {
+      const generation = queryGeneration.current;
+      if (cursor) {
+        setLoadingMore((previous) => new Set(previous).add(path));
+      } else {
+        setDirs((d) => ({ ...d, [path]: "loading" }));
+      }
+      const page = directoryPagesRef.current[path];
+      const data = await queuedQuery<TreeResult>(
         "project_file_tree",
-        { project_id: projectId, path },
+        {
+          project_id: projectId,
+          path,
+          ...(cursor ? { cursor, snapshot_id: page?.snapshotId } : {}),
+        },
         "project_file_tree_result",
       );
-      if (!data || data.error || data.path !== path || !data.entries) {
-        setDirs((d) => ({ ...d, [path]: "error" }));
-        return;
+      if (cursor) {
+        setLoadingMore((previous) => {
+          const next = new Set(previous);
+          next.delete(path);
+          return next;
+        });
+      }
+      if (generation !== queryGeneration.current) return null;
+      if (data?.error_code === "STALE_SNAPSHOT" && cursor && retry) {
+        setDirs((d) => ({ ...d, [path]: "loading" }));
+        setDirectoryPages((pages) => {
+          const next = { ...pages };
+          delete next[path];
+          return next;
+        });
+        return load(path, null, false);
+      }
+      if (!data || data.error || data.error_code || data.path !== path || !data.entries) {
+        setDirs((d) => ({ ...d, [path]: cursor && Array.isArray(d[path]) ? d[path] : "error" }));
+        return data;
       }
       for (const e of data.entries) {
         if (e.type === "file") latestFileMtime.set(joinPath(path, e.name), e.mtime);
       }
-      const entries = data.entries;
-      setDirs((d) => ({ ...d, [path]: entries }));
+      setDirs((d) => {
+        const existing = cursor && Array.isArray(d[path]) ? d[path] : [];
+        const entries = [...existing, ...data.entries!].filter(
+          (entry, index, all) => all.findIndex((candidate) => candidate.name === entry.name) === index,
+        );
+        return { ...d, [path]: entries };
+      });
+      setDirectoryPages((pages) => ({
+        ...pages,
+        [path]: {
+          snapshotId: data.snapshot_id ?? null,
+          nextCursor: data.next_cursor ?? null,
+        },
+      }));
+      return data;
     },
     [projectId],
   );
 
   // (Re)load the root whenever the project changes.
   useEffect(() => {
+    queryGeneration.current += 1;
+    searchGeneration.current += 1;
     setDirs({});
+    setDirectoryPages({});
+    setLoadingMore(new Set());
     setExpanded(new Set());
     // 组件跨项目复用（右栏不带 key 渲染）：上一个项目的选中行、
     // 内联新建/重命名、筛选词都指向旧根目录下的相对路径，留着会
@@ -269,8 +361,10 @@ export function FileTree({
     setRenaming(null);
     setMenu(null);
     setFilter("");
+    setSearchResults([]);
+    setSearchLoading(false);
     setSearchOpen(false);
-    load("");
+    void load("");
   }, [load]);
 
   useEffect(() => {
@@ -303,10 +397,19 @@ export function FileTree({
     if (dirs[path] === undefined) load(path);
   }
 
+  function loadMore(path: string) {
+    const page = directoryPagesRef.current[path];
+    if (!page?.nextCursor || loadingMore.has(path)) return;
+    void load(path, page.nextCursor);
+  }
+
   function refetchRoot() {
+    queryGeneration.current += 1;
     setDirs({});
+    setDirectoryPages({});
+    setLoadingMore(new Set());
     setExpanded(new Set());
-    load("");
+    void load("");
   }
 
   /* ---- file management ops ---------------------------------------- */
@@ -352,6 +455,27 @@ export function FileTree({
       return next;
     });
     for (const d of chain) if (dirs[d] === undefined) load(d);
+  }
+
+  async function revealSearchResult(path: string, type: "file" | "dir") {
+    setFilter("");
+    setSearchOpen(false);
+    const parts = path.split("/");
+    let directory = "";
+    for (let index = 0; index < parts.length - (type === "dir" ? 0 : 1); index += 1) {
+      const child = parts[index];
+      const page = await load(directory);
+      let loaded = page;
+      while (loaded?.next_cursor && !loaded.entries?.some((entry) => entry.name === child)) {
+        loaded = await load(directory, loaded.next_cursor);
+      }
+      if (!loaded?.entries?.some((entry) => entry.name === child)) return;
+      setExpanded((previous) => new Set(previous).add(joinPath(directory, child)));
+      directory = joinPath(directory, child);
+    }
+    setSelected({ path, type });
+    revealTarget.current = path;
+    if (type === "file") openFile(path);
   }
 
   /** "Reveal in file tree" from elsewhere in the app (the per-turn file
@@ -500,12 +624,67 @@ export function FileTree({
     }
     return [...entries].map(([path, entry]) => ({ path, entry }));
   }, [dirs]);
+  useEffect(() => {
+    const query = filter.trim();
+    const generation = ++searchGeneration.current;
+    setSearchResults([]);
+    if (!query) {
+      setSearchLoading(false);
+      return;
+    }
+    setSearchLoading(true);
+    const timer = setTimeout(() => {
+      void (async () => {
+        let cursor: string | null = null;
+        let snapshotId: string | null = null;
+        let retriedStale = false;
+        const combined: SearchResult[] = [];
+        while (generation === searchGeneration.current) {
+          const data: SearchResultPayload | null = await queuedQuery<SearchResultPayload>(
+            "project_file_search",
+            {
+              project_id: projectId,
+              path: "",
+              query,
+              mode: fuzzySearch ? "fuzzy" : "contains",
+              type: "all",
+              page_size: 100,
+              ...(cursor ? { cursor, snapshot_id: snapshotId } : {}),
+            },
+            "project_file_search_result",
+          );
+          if (generation !== searchGeneration.current) return;
+          if (data?.error_code === "STALE_SNAPSHOT" && cursor && !retriedStale) {
+            cursor = null;
+            snapshotId = null;
+            combined.length = 0;
+            setSearchResults([]);
+            retriedStale = true;
+            continue;
+          }
+          if (!data || data.error_code || !data.results) break;
+          for (const result of data.results) {
+            if (!combined.some((existing) => existing.path === result.path)) {
+              combined.push(result);
+            }
+          }
+          setSearchResults([...combined]);
+          cursor = data.next_cursor ?? null;
+          snapshotId = data.snapshot_id ?? null;
+          if (!cursor) break;
+        }
+        if (generation === searchGeneration.current) setSearchLoading(false);
+      })();
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [filter, fuzzySearch, projectId]);
+
   const searchMatches = useMemo(() => {
-    if (!filter.trim()) return [];
+    if (filter.trim()) return searchResults.map((entry) => ({ path: entry.path, entry }));
     return searchableEntries
       .filter(({ entry }) => matchingIndexes(entry.name, filter, fuzzySearch))
       .sort((left, right) => left.path.localeCompare(right.path));
-  }, [filter, fuzzySearch, searchableEntries]);
+  }, [filter, fuzzySearch, searchableEntries, searchResults]);
   const visiblePaths = useMemo(
     () => visibleSearchPaths(searchableEntries.map(({ path }) => path), filter, fuzzySearch),
     [filter, fuzzySearch, searchableEntries],
@@ -540,6 +719,37 @@ export function FileTree({
   function moveSearchResult(delta: number) {
     if (!searchMatches.length) return;
     setSearchMatchIndex((index) => (index + delta + searchMatches.length) % searchMatches.length);
+  }
+
+  function renderSearchResults(): React.ReactNode {
+    return (
+      <div role="list" aria-label={text("Project search results", "项目搜索结果")}>
+        {searchMatches.map(({ path, entry }) => (
+          <button
+            key={path}
+            type="button"
+            className={styles.treeRow}
+            data-tree-path={path}
+            title={path}
+            onClick={() => void revealSearchResult(path, entry.type)}
+          >
+            {entry.type === "dir" ? (
+              <Folder size={15} className={styles.treeIconFolder} />
+            ) : (
+              <FileGlyph name={entry.name} />
+            )}
+            <ExplorerMatchText
+              className={styles.treeName}
+              value={entry.name}
+              query={filter}
+              fuzzy={fuzzySearch}
+              current={currentSearchPath === path}
+            />
+            <span className={styles.treeHint}>{path}</span>
+          </button>
+        ))}
+      </div>
+    );
   }
 
   function renderDir(dir: string, depth: number): React.ReactNode {
@@ -665,6 +875,20 @@ export function FileTree({
       <>
         {createRow}
         {rows}
+        {directoryPages[dir]?.nextCursor ? (
+          <button
+            type="button"
+            className={styles.treeRow}
+            style={{ paddingLeft: TREE_BASE_PAD + depth * INDENT }}
+            aria-label={text("Load more entries", "加载更多条目")}
+            disabled={loadingMore.has(dir)}
+            onClick={() => loadMore(dir)}
+          >
+            {loadingMore.has(dir)
+              ? text("Loading…", "加载中…")
+              : text("Load more", "加载更多")}
+          </button>
+        ) : null}
       </>
     );
   }
@@ -716,9 +940,13 @@ export function FileTree({
         }
       />
       <div className={styles.treeBody}>
-        {filter.trim() && searchMode === "filter" && searchMatches.length === 0
-          ? <div className={styles.treeHint}>{text("No matches", "无匹配")}</div>
-          : renderDir("", 0)}
+        {filter.trim() ? (
+          searchLoading && searchMatches.length === 0 ? (
+            <div className={styles.treeHint}>{text("Searching…", "搜索中…")}</div>
+          ) : searchMatches.length === 0 ? (
+            <div className={styles.treeHint}>{text("No matches", "无匹配")}</div>
+          ) : renderSearchResults()
+        ) : renderDir("", 0)}
       </div>
 
       {/* Right-click context menu — same Popover/MENU_PANEL pattern as
