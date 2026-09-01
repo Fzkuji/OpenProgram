@@ -116,6 +116,13 @@ def prepare_turn(
         # below — the pair lets the UI tag both halves of a turn.
         "agent_id": req.agent_id,
     }
+    if req.spawn_caller and req.spawned_from_session:
+        # A cross-session fork has two independent relations: predecessor is
+        # the exact target-session context node, while caller identifies the
+        # source-session node that requested the work.  Keep the node id on
+        # the graph edge and persist only its session namespace as metadata.
+        user_msg["caller"] = req.spawn_caller
+        user_msg["spawned_from_session"] = req.spawned_from_session
     from openprogram.agent.authority import normalize_authority, stamp_schema
     user_msg.update(normalize_authority(req))
     # Marks the node as written by a build that records authority, so a

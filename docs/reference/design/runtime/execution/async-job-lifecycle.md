@@ -107,14 +107,17 @@ interrupted; it waits for the current atomic operation to finish before exiting.
 
 ### D6. The relationship between Task and session
 
-A task always runs on **one** parent session. Cross-session is conceptually
-equivalent to merge / attach (already exists) and is out of scope for tasks.
+A task always runs on **one** target session. A caller may live in another
+session, but that does not make execution multi-session: the canonical entity
+keeps `parent_session_id=<target>` and, when different, records
+`caller_session_id=<source>`.
 
 `task.parent_session_id` is exactly the one the sub-agent uses in
 `process_user_turn(session_id=...)` — consistent with how `run_agent_turn`
 behaves. The sub-agent's output lands as a branch of that session (or a new
 root, depending on `context_mode`), so the session repo holds both the task
-entity and the task's product, which is self-consistent.
+entity and the task's product. A linked mirror in the source session provides
+visibility and ownership checks; it is not a second execution identity.
 
 ### D7. The relationship between Task and sub-agent
 
@@ -134,7 +137,7 @@ LLM.
 The attach pointer (the `function="attach"` node) is written by `_run_spawn` /
 `_task_impl`:
 
-- On spawn, a **placeholder attach card** is written immediately (`function="attach"`, `extra.attach.job_id = <job_id>`, `extra.attach.status = "running"`), content="(running)", with `source_commit_id` left empty.
+- After admission succeeds and before dispatch starts, a **placeholder attach card** is written (`function="attach"`, `extra.attach.job_id = <job_id>`, `extra.attach.status = "running"`), content="(running)", with `source_commit_id` left empty. For a cross-session spawn the card is stored in the source session but its `attach.session_id` names the target.
 - When the task completes, the runner updates the same attach card node: fill in `head_id` / `source_commit_id`, replace content with `final_text`, and change `status` to `completed` / `cancelled` / `errored`.
 - When the generator sees an attach node with `status="running"`, it skips expansion (does not enter commit items) and only shows the card placeholder in the UI. When it sees `status="completed"`, it follows the existing attach-expansion path (see scenario B in `context.md`).
 
@@ -346,7 +349,7 @@ Stop in the UI or the agent decides to abort.
 - **Task priority / SLA**: FIFO is enough, with no high-priority preemption. A priority queue can be added later as needed.
 - **Resume / continuation**: cancelled / errored tasks can't "pick up where they left off." A user retry equals spawning a new task.
 - **Task retry policy**: the runner does not auto-retry; the upper-layer agent / plan decides for itself.
-- **Cross-session tasks**: a task binds to only one session. Use attach / merge for cross-session.
+- **Multi-target tasks**: one task has exactly one immutable execution session. A cross-session caller is supported through `caller_session_id` plus a source-side attach, but one entity never executes in several target sessions.
 - **DAG-shaped task dependencies**: `await_tasks(mode="all"|"any")` is already enough for plan mode; an explicit DAG / pipeline is left for later.
 - **Streaming subscription of task output**: the first version only retrieves final_text on task completion. Subscribing to the stream mid-flight (so the parent agent sees the sub-agent thinking out loud) is left for later.
 - **Resource quotas**: per-user concurrent task count / token caps are out of scope for this design and require a multi-tenant model first.

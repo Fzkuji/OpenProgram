@@ -201,6 +201,22 @@ test("thread open, coverage, locale, or status change busts the signature", () =
   );
 });
 
+test("cross-session spawn marker change busts the paint signature", () => {
+  const base = inputSig();
+  assert.notEqual(
+    inputSig({
+      graph: [{ id: "a", role: "user", status: "", spawn_remote: true }],
+    }),
+    base,
+  );
+  assert.notEqual(
+    inputSig({
+      graph: [{ id: "a", role: "user", status: "", spawn_out: true }],
+    }),
+    base,
+  );
+});
+
 test("pipeline compares the input signature before expensive passes or SVG", () => {
   const src = readFileSync(
     new URL("../lib/runtime-bridge/dag/pipeline.ts", import.meta.url),

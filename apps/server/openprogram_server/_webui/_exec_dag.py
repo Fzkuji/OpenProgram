@@ -233,6 +233,12 @@ def _graph_push_signature(graph, head=None) -> str:
             _graph_push_val(n, "attach_ref"),
             _graph_push_val(n, "attach_label"),
             (spawned.get("label") or "") if isinstance(spawned, dict) else "",
+            bool(n.get("spawn_remote")),
+            _graph_push_val(n, "spawn_remote_session"),
+            _graph_push_val(n, "spawn_remote_id"),
+            bool(n.get("spawn_out")),
+            _graph_push_val(n, "spawn_out_session"),
+            _graph_push_val(n, "spawn_out_head"),
         ))
     return json.dumps(
         (len(graph), tail, rows, head or ""),

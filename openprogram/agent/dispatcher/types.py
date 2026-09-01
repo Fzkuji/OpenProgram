@@ -139,6 +139,11 @@ class TurnRequest:
     # Validated, turn-scoped descriptor and DOM/ARIA preview for a visible
     # OpenProgram desktop surface. Raw renderer refs never reach providers.
     surface_context: Optional[dict[str, Any]] = None
+    # Session that owns ``spawn_caller`` when it is outside this turn's
+    # session.  Appended for positional-constructor compatibility.  The node
+    # id remains the real caller edge; this field supplies its namespace for
+    # persisted provenance and cross-session rendering.
+    spawned_from_session: Optional[str] = None
 
 
 @dataclass

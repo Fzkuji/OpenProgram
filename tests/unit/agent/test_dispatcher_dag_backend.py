@@ -137,6 +137,50 @@ def test_first_turn_spawn_leaves_head_off_root(dag_db: DagSessionDB):
     assert (dag_db.get_session("s-dag-spawn") or {}).get("head_id") != "ROOT"
 
 
+def test_cross_session_exact_fork_persists_source_provenance(
+    dag_db: DagSessionDB,
+):
+    """A remote caller and a target predecessor are distinct DAG edges."""
+    with __import__("unittest.mock", fromlist=["patch"]).patch.object(
+        D, "_run_loop_blocking", side_effect=_stub_loop("target base")
+    ):
+        base = D.process_user_turn(
+            D.TurnRequest(
+                session_id="target-session",
+                agent_id="claude",
+                user_text="target prompt",
+                source="cli",
+            ),
+            on_event=lambda _e: None,
+        )
+    target_head = (dag_db.get_session("target-session") or {})["head_id"]
+
+    with __import__("unittest.mock", fromlist=["patch"]).patch.object(
+        D, "_run_loop_blocking", side_effect=_stub_loop("remote result")
+    ):
+        spawned = D.process_user_turn(
+            D.TurnRequest(
+                session_id="target-session",
+                agent_id="claude",
+                user_text="continue remotely",
+                source="agent_spawn",
+                branch_from=base.assistant_msg_id,
+                spawn_caller="source-assistant",
+                spawned_from_session="source-session",
+                advance_head=False,
+            ),
+            on_event=lambda _e: None,
+        )
+
+    assert (dag_db.get_session("target-session") or {})["head_id"] == target_head
+    pair = dag_db._open("target-session")
+    assert pair is not None
+    user_node = pair[1].nodes_by_id[spawned.user_msg_id]
+    assert user_node.predecessor == base.assistant_msg_id
+    assert user_node.caller == "source-assistant"
+    assert (user_node.metadata or {})["spawned_from_session"] == "source-session"
+
+
 def test_history_passed_to_loop_on_dag(dag_db: DagSessionDB):
     # Round 1
     with __import__("unittest.mock", fromlist=["patch"]).patch.object(

@@ -425,6 +425,7 @@ class ReconcileResult:
     released_worker_lost: int = 0
     finalization_conflicts: int = 0
     completed_pending: tuple[tuple[str, str], ...] = ()
+    worker_lost: tuple[tuple[str, str], ...] = ()
 
 
 def _durable_job_time_limits(
@@ -1120,6 +1121,28 @@ class ResourceGovernor:
                 (job_id, admission_id, parent_msg_id),
             ).rowcount == 1
 
+    def publish_accepted_job(
+        self,
+        job_id: str,
+        *,
+        admission_id: str,
+    ) -> bool:
+        """Make a newly admitted Job claimable after caller side effects.
+
+        Unlike ``mark_dispatch_ready``, this path has no mutable resume head
+        to stage.  Its fence is the immutable admission id plus the queued,
+        undispatched state.
+        """
+        with self.ledger.immediate() as conn:
+            return conn.execute(
+                """UPDATE job_admissions SET dispatch_ready = 1
+                   WHERE job_id = ? AND admission_id = ?
+                     AND state = 'queued' AND dispatch_ready = 0
+                     AND resume_parent_msg_id IS NULL
+                     AND borrowed_parent_job_id IS NULL""",
+                (job_id, admission_id),
+            ).rowcount == 1
+
     def reset_deferred_resume(
         self,
         job_id: str,
@@ -1727,6 +1750,7 @@ class ResourceGovernor:
                ORDER BY admitted_seq"""
         ).fetchall()
         finalized = rolled_back = released_missing = released_lost = 0
+        worker_lost: list[tuple[str, str]] = []
         for row in rows:
             if row["job_id"] in pending_job_ids:
                 continue
@@ -1809,6 +1833,8 @@ class ResourceGovernor:
                     ),
                 ).rowcount
             released_lost += int(changed == 1)
+            if changed == 1:
+                worker_lost.append((str(row["job_id"]), str(row["session_id"])))
         return ReconcileResult(
             finalized_preparing=finalized,
             rolled_back_preparing=rolled_back,
@@ -1816,6 +1842,7 @@ class ResourceGovernor:
             released_worker_lost=released_lost,
             finalization_conflicts=finalization_conflicts,
             completed_pending=tuple(completed_pending),
+            worker_lost=tuple(worker_lost),
         )
 
     def job_time_limits(self, job_id: str) -> tuple[int | None, int | None]:

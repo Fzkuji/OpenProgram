@@ -134,6 +134,19 @@ session）fork、继承到该节点为止的链。`run_in_background=true` 返�
 `job_output(job_id)`（阻塞取结果）和 `job_stop(job_id)`（取消）管理
 异步形态。
 
+`"SID:MSG_ID"` 是精确 fork 地址。在接收任务前必须同时确认 session 和
+message 存在；这个 message 不会被改为分支当前 tip。已归档分支仍可作为
+fork 来源，因为该操作只读历史并创建新分支，不是向已归档分支投递任务。
+
+地址指向另一个 session 时，必须分开两种 session 角色。session S 的节点 A
+从 `"T:M"` 启动时，新分支和 canonical Job 在目标 session T 执行，M 是精确
+predecessor。Job 记录 `parent_session_id=T`、`parent_msg_id=M`、
+`caller_session_id=S`、`caller_msg_id=A`。attach 卡片存在源 session S 的 A
+旁边，但卡片中的 `attach.session_id` 是 T，终态 `head_id` 是目标分支的
+tip。创建或终态化卡片不移动 S 的 HEAD；派生轮使用 `advance_head=false`，
+也不替换 T 当前选中的 HEAD。异步完成后，第 2.5 节的普通回送 turn 可以再
+推进 S 的 HEAD。
+
 **`to=` — 给已有 agent 派受管任务。** 传了 `to` 就不新建分支：prompt 作为
 一件正式任务派给指认的已有分支。寻址与 send_message 完全一致
 （`"SID:HEAD"` 归位到分支当前末端；分支名先精确匹配、再唯一前缀；歧义列出
@@ -250,6 +263,15 @@ HEAD 并推进它。**每个投递 session 有一把回送串行锁
 这样锚定不丢回流出处：派生时写下的 **attach 指针**仍然挂
 `predecessor = caller_msg_id`，DAG 上照样能看出每条子分支从哪一轮 fork 出去、
 每个结果从哪条分支回流。子分支本身是并列的独立一支，**不并回主线**。
+
+跨会话派生时，指针仍位于发起方 session，但引用目标
+`(session_id, head_id)`。终态化从目标 session 读目标分支及其 ContextCommit，
+然后更新发起方 session 里的卡片。源侧发起节点标记 `spawn_out`；目标侧第一个
+`agent_spawn` user 节点记录 `caller=<source node>` 与
+`metadata.spawned_from_session=<source session>`，并投影为 `spawn_remote`。
+因为源 session 里有真实 attach 指针，它的异步 followup 通过 attach 展开获取结果，
+不再内联一份重复回复。`send_message` 与 `agent(to=...)` 不创建分支和 attach
+指针，因此它们的回复仍内联，也不会得到任何 spawn 标记。
 
 ### 2.6 归档：把一个 agent 从 agent 列表里移出
 
@@ -597,7 +619,7 @@ session 上下文的调用（用户、UI）不受这条限制。
 | 列举 | `list_agents` 列出真实的多 session 及各自的分支 |
 | 归档（§2.6） | 已归档 agent 从 `list_agents` 消失、在 `scope="archived"` 里出现；`send_message` 与 `agent(to=)` 拒收，`read_conversation` 与 `agent(start_from=…)` 照常；任何 session 都能归档任何 agent，且标记单向；成功完成、已被合并吸收的派生同样出现在 `scope="archived"` 里，它的 head 也仍然指认它自己那条分支 |
 | 发给同 session 已有分支 | A 发给同 session 的 B 分支，A 不阻塞，B 跑一轮，回复自动回 A |
-| 跨 session | A 发给别的 session 走同一路径；两边实时更新 |
+| 跨 session | 向另一个 session 投递时两边实时更新。`send_message` / `agent(to=...)` 仍是纯消息投递。`agent(start_from="T:M")` 在 T 创建分支和 canonical Job，卡片留在发起 session，源与目标 DAG 节点分别标记 `spawn_out` / `spawn_remote`，不移动任一选中 HEAD |
 | 健壮性（§5） | A↔B 互发到消息预算用完自动停，预算为 0 时不停；一次派 30 个是排队不是过载；取消父→子全停；给正忙的 B 发消息先排队、等它这轮结束再投；子失败父会被告知；超大结果截断并给出文件路径 |
 | 安全（§5.7-5.9） | deny 策略下投递被拦下等确认；不存在的 to 报错；子分支权限不高于父、不进 UI 选择列表 |
 | 前端 | web 界面里选分支发消息，DAG 出现通信节点，hover 显示回流连线 |

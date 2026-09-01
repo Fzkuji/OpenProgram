@@ -109,6 +109,8 @@ export type DagSigNode = {
   attach_ref?: string;
   attach_label?: string;
   spawned_from?: { label?: string | null } | null;
+  spawn_remote?: boolean;
+  spawn_out?: boolean;
 };
 
 export type DagSignatureInput = {
@@ -136,7 +138,8 @@ function nodeGeometryPart(m: DagSigNode): string {
     + (m.is_named ? "1" : "") + ":"
     + (m.branch_name || "") + ":" + (m.superseded_summary ? "1" : "") + ":"
     + (m.attach_ref || "") + ":" + (m.attach_label || "") + ":"
-    + (m.spawned_from && m.spawned_from.label || "");
+    + (m.spawned_from && m.spawned_from.label || "") + ":"
+    + (m.spawn_remote ? "1" : "") + ":" + (m.spawn_out ? "1" : "");
 }
 
 function graphParts(

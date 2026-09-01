@@ -46,6 +46,7 @@ def _execute_agent_turn(
     branch_from: Optional[str] = None,
     label: Optional[str] = None,
     spawn_caller: Optional[str] = None,
+    spawned_from_session: Optional[str] = None,
     advance_head: bool = True,
     tools_override: Optional[list[str]] = None,
     render_range: Optional[dict[str, int]] = None,
@@ -121,6 +122,7 @@ def _execute_agent_turn(
         # spawning node, so the branch is an explicit spawn (see
         # dag/overview.md §2.3). No-op for inherit forks.
         spawn_caller=spawn_caller,
+        spawned_from_session=spawned_from_session,
         # Same-session sub-agent turns pass False: the spawned branch
         # must not steal the session head mid-run (HEAD single-writer,
         # context/compaction.md §5) — the transcript follows the head,
@@ -286,6 +288,7 @@ def emit_spawn_event(
     prompt: str,
     chosen_agent: str,
     card_id: str,
+    target_session_id: Optional[str] = None,
     tool_call_id: Optional[str] = None,
     head_id: Optional[str] = None,
     content: str = "",
@@ -319,7 +322,7 @@ def emit_spawn_event(
                 "card_id": card_id,
                 "content": content,
                 "attach": {
-                    "session_id": session_id,
+                    "session_id": target_session_id or session_id,
                     "head_id": head_id,
                     "label": label or "",
                     "prompt": (prompt or "")[:500],
@@ -341,6 +344,7 @@ def write_attach_pointer_for_spawn(
     prompt: str,
     chosen_agent: str,
     node_id: Optional[str] = None,
+    target_session_id: Optional[str] = None,
 ) -> Optional[str]:
     """Write an `attach`-function pointer node for a synchronous
     agent() spawn (LLM tool call, foreground). Mirrors the body of
@@ -357,6 +361,7 @@ def write_attach_pointer_for_spawn(
     try:
         from openprogram.agent.session_db import default_db
         store = default_db()
+        target_session = target_session_id or session_id
         sess_row = store.get_session(session_id) or {}
         head_before = sess_row.get("head_id")
         # Anchor the attach pointer DIRECTLY to the caller turn (the
@@ -370,9 +375,12 @@ def write_attach_pointer_for_spawn(
         fork_anchor = caller_msg_id
 
         source_commit_id = None
+        terminal_status = (
+            "errored" if result.failed or result.error else "completed"
+        )
         try:
             from openprogram.context.commit.store import load_commit_for_head
-            _src = load_commit_for_head(store, session_id, result.head_id)
+            _src = load_commit_for_head(store, target_session, result.head_id)
             if _src is not None:
                 source_commit_id = _src.id
         except Exception:
@@ -400,12 +408,12 @@ def write_attach_pointer_for_spawn(
             "agent_id": chosen_agent,
             "extra": _json.dumps({
                 "attach": {
-                    "session_id": session_id,
+                    "session_id": target_session,
                     "head_id": result.head_id,
                     "label": label or "",
                     "prompt": prompt[:500],
                     "source_commit_id": source_commit_id,
-                    "status": "completed",
+                    "status": terminal_status,
                 },
             }, default=str),
         }
@@ -420,10 +428,11 @@ def write_attach_pointer_for_spawn(
         # content is now reachable from main via the attach pointer.
         # Same retirement the async runner does on completion (see
         # job/runner.py::_update_attach_card).
-        try:
-            store.mark_merged(session_id, [result.head_id])
-        except Exception:
-            pass
+        if terminal_status == "completed":
+            try:
+                store.mark_merged(target_session, [result.head_id])
+            except Exception:
+                pass
         # Broadcast session_reload so the UI re-renders the DAG with
         # the new attach pointer + reference edge.
         # 步 4：走总线（ws.frame 事件），不再 import webui；帧内容不变。
@@ -454,6 +463,7 @@ def write_attach_placeholder_for_spawn(
     chosen_agent: str,
     node_id: Optional[str] = None,
     job_id: Optional[str] = None,
+    target_session_id: Optional[str] = None,
 ) -> Optional[str]:
     """Write a ``status=running`` placeholder attach card for an async
     spawn, anchored at the CALLING node（在哪调用就锚在哪）. The runner
@@ -468,6 +478,7 @@ def write_attach_placeholder_for_spawn(
     try:
         from openprogram.agent.session_db import default_db
         store = default_db()
+        target_session = target_session_id or session_id
         sess_row = store.get_session(session_id) or {}
         head_before = sess_row.get("head_id")
         attach_node_id = node_id or _uuid.uuid4().hex[:12]
@@ -483,7 +494,7 @@ def write_attach_placeholder_for_spawn(
             "agent_id": chosen_agent,
             "extra": _json.dumps({
                 "attach": {
-                    "session_id": session_id,
+                    "session_id": target_session,
                     "head_id": None,
                     "label": label or "",
                     "prompt": prompt[:500],

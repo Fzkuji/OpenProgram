@@ -359,7 +359,14 @@ class JobRunner:
         # job from a previous process is flipped to errored. The
         # state-machine transition rules cover (running, errored).
         try:
-            _store_reconcile(legacy_only=True)
+            legacy_orphans: list[Job] = []
+            _store_reconcile(
+                legacy_only=True,
+                on_reconciled=legacy_orphans.append,
+            )
+            for orphan in legacy_orphans:
+                self._broadcast_job_status(orphan)
+                self._update_attach_card(orphan, error_text=orphan.error)
         except Exception:
             pass
         self._reconcile_resources()
@@ -605,11 +612,19 @@ class JobRunner:
                     )
                 idempotent = True
             else:
+                hold_for_accepted = bool(
+                    on_accepted is not None
+                    and borrowed_claim is None
+                )
                 decision = self.admit_job_entity(
                     job,
                     creates_agent=creates_agent,
                     caller_turn_id=caller_msg_id,
-                    dispatch_ready=not defer_dispatch and borrowed_claim is None,
+                    dispatch_ready=(
+                        not defer_dispatch
+                        and borrowed_claim is None
+                        and not hold_for_accepted
+                    ),
                     borrowed_claim=(borrowed_claim[:3] if borrowed_claim else None),
                 )
                 idempotent = decision.idempotent
@@ -618,14 +633,20 @@ class JobRunner:
                 on_accepted(job)
             except Exception:
                 self._governor.request_stop(job.id, "error.accepted_side_effect")
+                updated = None
                 try:
-                    _store_update_status(
+                    updated = _store_update_status(
                         session_id, job.id, JobStatus.ERRORED,
                         error="accepted job side effect failed",
                         reason_code="error.accepted_side_effect",
                     )
                 except Exception:
                     pass
+                if updated is not None:
+                    self._broadcast_job_status(updated)
+                    self._update_attach_card(
+                        updated, error_text="accepted job side effect failed",
+                    )
                 raise
         if borrowed_claim is not None:
             self._run_borrowed_job(job, borrowed_claim)
@@ -661,6 +682,33 @@ class JobRunner:
         with self._lock:
             self._jobs[job.id] = entry
             self._done_events[job.id] = done_ev
+        if on_accepted is not None and not idempotent:
+            if not self._governor.publish_accepted_job(
+                job.id,
+                admission_id=job.admission_id or "",
+            ):
+                error = f"job {job.id!r} could not become dispatchable"
+                self._governor.request_stop(
+                    job.id, "error.accepted_side_effect",
+                )
+                try:
+                    updated = _store_update_status(
+                        session_id,
+                        job.id,
+                        JobStatus.ERRORED,
+                        error=error,
+                        reason_code="error.accepted_side_effect",
+                    )
+                except Exception:
+                    updated = None
+                if updated is not None:
+                    self._broadcast_job_status(updated)
+                    self._update_attach_card(updated, error_text=error)
+                with self._lock:
+                    self._jobs.pop(job.id, None)
+                    self._done_events.pop(job.id, None)
+                done_ev.set()
+                raise RuntimeError(error)
         self._dispatch_wake.set()
 
         return job.id
@@ -816,6 +864,13 @@ class JobRunner:
                 branch_from = (
                     None if job.context_mode == "clean" else job.parent_msg_id
                 )
+                spawned_from_session = (
+                    job.caller_session_id
+                    if job.creates_agent
+                    and job.caller_session_id
+                    and job.caller_session_id != job.parent_session_id
+                    else None
+                )
                 kwargs = {
                     "session_id": session_id,
                     "prompt": job.prompt,
@@ -824,10 +879,13 @@ class JobRunner:
                     "label": job.label,
                     "spawn_caller": (
                         job.spawn_caller or job.caller_msg_id
-                        if branch_from is None else None
+                        if branch_from is None or spawned_from_session
+                        else None
                     ),
                     "advance_head": job.advance_head,
                 }
+                if spawned_from_session:
+                    kwargs["spawned_from_session"] = spawned_from_session
                 if job.tools_override is not None:
                     kwargs["tools_override"] = job.tools_override
                 if job.model_override is not None:
@@ -1122,6 +1180,7 @@ class JobRunner:
                 if updated is not None:
                     self._broadcast_job_status(updated)
                     self._wake_done(job_id)
+                    self._update_attach_card(updated)
                 return updated
         cur_job = _store_load(session_id, job_id)
         if cur_job is None:
@@ -1590,6 +1649,7 @@ class JobRunner:
                             current = terminal.get("job")
                             if current is not None:
                                 self._broadcast_job_status(current)
+                                self._update_attach_card(current)
                             self._wake_done(claim.job_id)
                             with self._lock:
                                 self._jobs.pop(claim.job_id, None)
@@ -1635,6 +1695,9 @@ class JobRunner:
                             updated = current
                     if updated is not None:
                         self._broadcast_job_status(updated)
+                        self._update_attach_card(
+                            updated, error_text="executor submission failed",
+                        )
                         self._wake_done(claim.job_id)
                         with self._lock:
                             self._jobs.pop(claim.job_id, None)
@@ -1796,6 +1859,13 @@ class JobRunner:
                     pass
                 try:
                     from openprogram.agent.authority import normalize_authority
+                    spawned_from_session = (
+                        job.caller_session_id
+                        if job.creates_agent
+                        and job.caller_session_id
+                        and job.caller_session_id != job.parent_session_id
+                        else None
+                    )
                     _turn_kwargs = dict(
                         session_id=session_id,
                         prompt=job.prompt,
@@ -1807,11 +1877,16 @@ class JobRunner:
                         # seq-stitched into a sibling). dag/overview.md §2.3.
                         spawn_caller=(
                             job.spawn_caller or job.caller_msg_id
-                            if branch_from is None else None
+                            if branch_from is None or spawned_from_session
+                            else None
                         ),
                         # Same-session spawn: never steal the head.
                         advance_head=job.advance_head,
                     )
+                    if spawned_from_session:
+                        _turn_kwargs["spawned_from_session"] = (
+                            spawned_from_session
+                        )
                     if job.tools_override is not None:
                         _turn_kwargs["tools_override"] = job.tools_override
                     if job.model_override is not None:
@@ -2092,6 +2167,15 @@ class JobRunner:
             job = _store_load(session_id, job_id)
             if job is not None and is_terminal(job.status):
                 self._broadcast_job_status(job)
+                self._update_attach_card(job, error_text=job.error)
+                _broadcast_session_reload(
+                    session_id, reason=f"job_{job.status.value}",
+                )
+        for job_id, session_id in result.worker_lost:
+            job = _store_load(session_id, job_id)
+            if job is not None and is_terminal(job.status):
+                self._broadcast_job_status(job)
+                self._update_attach_card(job, error_text=job.error)
                 _broadcast_session_reload(
                     session_id, reason=f"job_{job.status.value}",
                 )
@@ -2171,13 +2255,16 @@ class JobRunner:
                 )
                 if job is not None and not is_terminal(job.status):
                     try:
-                        _store_update_status(
+                        updated = _store_update_status(
                             session_id, job_id, JobStatus.ERRORED,
                             error="deferred inbox intent missing",
                             reason_code="error.deferred_inbox_intent_missing",
                         )
                     except Exception:
-                        pass
+                        updated = None
+                    if updated is not None:
+                        self._broadcast_job_status(updated)
+                        self._update_attach_card(updated)
                 continue
             try:
                 inbox.enqueue(session_id, **intent)
@@ -2296,10 +2383,13 @@ class JobRunner:
             from openprogram.agent.session_db import default_db
             from openprogram.store import SessionNodeWriter
             db = default_db()
-            pair = db._open(job.parent_session_id)  # noqa: SLF001
-            if pair is None:
+            target_session = job.parent_session_id
+            card_session = job.caller_session_id or target_session
+            target_pair = db._open(target_session)  # noqa: SLF001
+            card_pair = db._open(card_session)  # noqa: SLF001
+            if target_pair is None or card_pair is None:
                 return
-            _git, idx = pair
+            _git, idx = target_pair
             try:
                 baseline_seq = max(
                     (n.seq for n in idx.all_nodes() if n.seq is not None),
@@ -2308,15 +2398,16 @@ class JobRunner:
             except Exception:
                 baseline_seq = -1
             last_patched_id: Optional[str] = None
-            shim = SessionNodeWriter(db, job.parent_session_id)
+            shim = SessionNodeWriter(db, card_session)
         except Exception:
             return
         while not stop_ev.is_set():
             if stop_ev.wait(1.5):
                 break
             try:
-                pair2 = db._open(job.parent_session_id)  # noqa: SLF001
-                if pair2 is None:
+                pair2 = db._open(target_session)  # noqa: SLF001
+                card_pair2 = db._open(card_session)  # noqa: SLF001
+                if pair2 is None or card_pair2 is None:
                     continue
                 _, idx2 = pair2
                 latest = None
@@ -2338,7 +2429,7 @@ class JobRunner:
                     continue
                 if len(preview) > 600:
                     preview = preview[:600].rstrip() + "…"
-                node = idx2.nodes_by_id.get(job.attach_pointer_id)
+                node = card_pair2[1].nodes_by_id.get(job.attach_pointer_id)
                 if not node:
                     continue
                 shim.update(job.attach_pointer_id, output=preview)
@@ -2346,7 +2437,7 @@ class JobRunner:
                 self.record_job_activity(job.id, "child_progress")
                 try:
                     _broadcast_session_reload(
-                        job.parent_session_id, reason="job_progress",
+                        card_session, reason="job_progress",
                     )
                 except Exception:
                     pass
@@ -2367,7 +2458,9 @@ class JobRunner:
         try:
             from openprogram.agent.session_db import default_db
             db = default_db()
-            pair = db._open(job.parent_session_id)  # noqa: SLF001
+            target_session = job.parent_session_id
+            card_session = job.caller_session_id or target_session
+            pair = db._open(card_session)  # noqa: SLF001
             if pair is None:
                 return
             _git, idx = pair
@@ -2380,7 +2473,10 @@ class JobRunner:
                 extra_json = json.loads(extra_raw) if isinstance(extra_raw, str) else (extra_raw or {})
             except Exception:
                 extra_json = {}
-            attach = dict(extra_json.get("attach") or {})
+            attach = dict(
+                md.get("attach") or extra_json.get("attach") or {}
+            )
+            attach["session_id"] = target_session
             attach["job_id"] = job.id
             attach["status"] = job.status.value
             if job.head_id:
@@ -2400,7 +2496,7 @@ class JobRunner:
                         load_commit_for_head,
                     )
                     src = load_commit_for_head(
-                        db, job.parent_session_id, job.head_id,
+                        db, target_session, job.head_id,
                     )
                     if src is not None:
                         attach["source_commit_id"] = src.id
@@ -2426,7 +2522,7 @@ class JobRunner:
             if job.label and job.head_id:
                 try:
                     db.set_branch_name(
-                        job.parent_session_id,
+                        target_session,
                         job.head_id,
                         job.label,
                     )
@@ -2443,14 +2539,16 @@ class JobRunner:
             # can see what failed.
             if job.head_id and job.status == JobStatus.COMPLETED:
                 try:
-                    db.mark_merged(job.parent_session_id, [job.head_id])
+                    db.mark_merged(target_session, [job.head_id])
                 except Exception:
                     pass
             # Update the persisted node's metadata + output text.
-            output = job.result_text or error_text or node.output or ""
+            output = (
+                job.result_text or error_text or job.error or node.output or ""
+            )
             try:
                 from openprogram.store import SessionNodeWriter
-                shim = SessionNodeWriter(db, job.parent_session_id)
+                shim = SessionNodeWriter(db, card_session)
                 shim.update(
                     job.attach_pointer_id,
                     output=output,
@@ -2464,9 +2562,9 @@ class JobRunner:
             # re-estimates. Firing here, at the write, is what keeps a
             # sub-agent finishing from leaving a stale graph on screen.
             _broadcast_session_reload(
-                job.parent_session_id, reason="job_attach",
+                card_session, reason="job_attach",
             )
-            _refresh_context_stats(job.parent_session_id)
+            _refresh_context_stats(card_session)
         except Exception:
             pass
 
@@ -2527,19 +2625,11 @@ class JobRunner:
         # Cross-session send_message: deliver to caller_session_id (the
         # sender), NOT the target session the job ran in.
         deliver_session = job.caller_session_id or job.parent_session_id
-        # Carry the reply INLINE unless the initiator has an attach pointer
-        # to expand. Two things remove one: the job ran in a different
-        # session (the pointer, if any, is not on the delivery session's
-        # chain), or the job wrote no pointer at all — a delivery to an
-        # EXISTING branch (``agent(to=…)``, ``send_message``) creates none,
-        # because it spawns nothing to attach. Without this second case a
-        # same-session delivery told the initiator "the transcript is
-        # attached above" with nothing attached, and the result never
-        # arrived.
-        inline_reply = bool(
-            job.caller_session_id
-            and job.caller_session_id != job.parent_session_id
-        ) or not job.attach_pointer_id
+        # Carry the reply INLINE only when the initiator has no attach pointer
+        # to expand. A cross-session spawn persists its pointer in the caller
+        # session; a delivery to an EXISTING branch (``agent(to=…)`` or
+        # ``send_message``) creates none because it spawns nothing to attach.
+        inline_reply = not job.attach_pointer_id
 
         def _go():
             try:

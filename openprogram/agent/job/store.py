@@ -34,7 +34,7 @@ import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from openprogram import _compat as fcntl
 
@@ -326,12 +326,18 @@ def update_job_status(
     return t
 
 
-def reconcile_orphans(*, legacy_only: bool = False) -> int:
+def reconcile_orphans(
+    *,
+    legacy_only: bool = False,
+    on_reconciled: Optional[Callable[[Job], None]] = None,
+) -> int:
     """Walk every session repo, flip non-terminal jobs → errored.
 
     Called once at process startup (server.py / dispatcher entry).
     ``legacy_only`` leaves Jobs with durable admission ids to the
     resource reconciler.
+    ``on_reconciled`` receives each canonical recovered Job after its caller
+    mirror is current; caller-side linked mirrors are not reported twice.
     Returns the number of jobs reconciled.
     """
     from openprogram.store import default_store
@@ -368,6 +374,7 @@ def reconcile_orphans(*, legacy_only: bool = False) -> int:
                     t.status = JobStatus.ERRORED
                     t.completed_at = time.time()
                     t.error = "worker died before completion"
+                    t.reason_code = "error.worker_lost"
                     rows[tid] = t.to_dict()
                     linked_updates.append(t)
                     mutated = True
@@ -381,6 +388,18 @@ def reconcile_orphans(*, legacy_only: bool = False) -> int:
             _commit(sid, f"job: reconcile orphans (startup)")
     for job in linked_updates:
         mirror_linked_job_to_caller(job)
+        # A cross-session linked job is also stored as a caller-side mirror
+        # whose parent_session_id was rewritten to that caller. Notify only
+        # for the canonical execution row; otherwise a recovery observer
+        # would update the source attach once with the target session and a
+        # second time with the mirror's source session.
+        is_linked_mirror = bool(
+            job.relation == "linked"
+            and job.caller_session_id
+            and job.caller_session_id == job.parent_session_id
+        )
+        if on_reconciled is not None and not is_linked_mirror:
+            on_reconciled(job)
     return count
 
 
