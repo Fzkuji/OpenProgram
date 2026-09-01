@@ -547,6 +547,52 @@ def test_owner_loss_pausing_with_checkpoint_applies_pause(tmp_path) -> None:
     assert recovered.attempt.outcome == "owner_lost_after_checkpoint"
 
 
+def test_owner_loss_pausing_with_checkpoint_and_unresolved_effect_requires_reconciliation(
+    tmp_path,
+) -> None:
+    executions, attempts, execution, attempt = _execution(tmp_path, active=True)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    _, checkpointed = service.checkpoints.publish(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        revision_id=execution.revision_id,
+        parent_checkpoint_id=None,
+        frontier=({"kind": "action.after", "step_id": "tool_1"},),
+        state_refs={"conversation": "blob:conversation-1"},
+        completed_actions=(),
+        effect_receipts=(),
+        child_frontier={},
+        pending_command_ids=(),
+        created_by_attempt_id=attempt.attempt_id,
+    )
+    effects = EffectStore(executions)
+    effect = effects.register(
+        effect_id="effect_1",
+        execution_id=execution.execution_id,
+        attempt_id=attempt.attempt_id,
+        action_id="send_message",
+        classification=EffectClassification.NONREPEATABLE,
+        idempotency_key=None,
+        metadata={},
+    )
+    effects.mark_dispatched(effect.effect_id, expected_status=effect.status)
+    pausing = asyncio.run(
+        service.request_pause(
+            command_id="pause_1",
+            execution_id=execution.execution_id,
+            expected_version=checkpointed.status_version,
+            actor={"surface": "test"},
+        )
+    )
+
+    recovered = service.recover_owner_loss(execution.execution_id)
+
+    assert pausing.execution.status is ExecutionStatus.PAUSING
+    assert recovered.execution.status is ExecutionStatus.RECONCILIATION_REQUIRED
+    assert recovered.command is not None
+    assert recovered.command.status is CommandStatus.APPLYING
+
+
 def test_owner_loss_pausing_without_checkpoint_rejects_pause(tmp_path) -> None:
     executions, attempts, execution, _ = _execution(tmp_path, active=True)
     service = RuntimeControlService(executions, attempts, DriverRegistry())

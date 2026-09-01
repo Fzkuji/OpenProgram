@@ -340,15 +340,15 @@ class RuntimeControlService:
                 outcome = "reconciliation_required" if unresolved else "owner_lost"
             elif execution.status is ExecutionStatus.PAUSING:
                 command_kind = CommandKind.PAUSE
-                if execution.checkpoint_head_id is not None:
+                if unresolved:
+                    target = ExecutionStatus.RECONCILIATION_REQUIRED
+                    reason_code = "effect_reconciliation"
+                    outcome = "reconciliation_required"
+                elif execution.checkpoint_head_id is not None:
                     target = ExecutionStatus.PAUSED
                     reason_code = "owner_lost_after_checkpoint"
                     outcome = "owner_lost_after_checkpoint"
                     apply_command = True
-                elif unresolved:
-                    target = ExecutionStatus.RECONCILIATION_REQUIRED
-                    reason_code = "effect_reconciliation"
-                    outcome = "reconciliation_required"
                 else:
                     target = ExecutionStatus.INTERRUPTED
                     reason_code = "owner_lost_before_checkpoint"
