@@ -20,6 +20,7 @@ from openprogram.execution.effects import (
 )
 from openprogram.execution.model import (
     CapabilitySet,
+    CommandKind,
     CommandStatus,
     ExecutionStatus,
 )
@@ -225,6 +226,47 @@ def test_queued_pause_and_cancel_finish_without_a_live_driver(tmp_path) -> None:
     assert repeated_cancel.command == cancelled.command
     assert repeated_cancel.execution == cancelled.execution
     assert not repeated_cancel.delivered
+
+
+def test_queued_pause_apply_is_atomic_and_recovery_converges(tmp_path, monkeypatch) -> None:
+    executions, attempts, queued, _ = _execution(tmp_path, active=False)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    original = executions._transition_command
+
+    def fail_apply(connection, command_id, **kwargs):
+        if kwargs.get("target") is CommandStatus.APPLIED:
+            raise RuntimeError("injected queued pause apply failure")
+        return original(connection, command_id, **kwargs)
+
+    monkeypatch.setattr(executions, "_transition_command", fail_apply)
+    with pytest.raises(RuntimeError, match="injected queued pause apply failure"):
+        asyncio.run(
+            service.request_pause(
+                command_id="pause_1",
+                execution_id=queued.execution_id,
+                expected_version=queued.status_version,
+                actor={"surface": "test"},
+            )
+        )
+    assert executions.get_execution(queued.execution_id) == queued
+    assert executions.get_command("pause_1") is None
+
+    monkeypatch.setattr(executions, "_transition_command", original)
+    command, paused, duplicate = executions.accept_command_with_transition(
+        command_id="pause_2",
+        execution_id=queued.execution_id,
+        expected_version=queued.status_version,
+        kind=CommandKind.PAUSE,
+        target=ExecutionStatus.PAUSED,
+        payload={},
+        actor={"surface": "test"},
+    )
+    assert not duplicate and command.status is CommandStatus.APPLYING
+    assert paused.status is ExecutionStatus.PAUSED
+    recovered = service.recover_owner_loss(queued.execution_id)
+    assert recovered.execution.status is ExecutionStatus.PAUSED
+    assert recovered.command is not None
+    assert recovered.command.status is CommandStatus.APPLIED
 
 
 def test_cancel_supersedes_an_applying_pause(tmp_path) -> None:

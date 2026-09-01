@@ -9,7 +9,12 @@ from contextlib import closing
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Sequence
 
-from .model import ExecutionRecord, TERMINAL_EXECUTION_STATUSES, _snapshot_json
+from .model import (
+    ExecutionRecord,
+    TERMINAL_EXECUTION_STATUSES,
+    _freeze_json,
+    _thaw_json,
+)
 from .store import ExecutionStore, _json
 
 
@@ -53,20 +58,20 @@ class CheckpointManifest:
 
     def __post_init__(self) -> None:
         object.__setattr__(
-            self, "frontier", tuple(_snapshot_json(item) for item in self.frontier)
+            self, "frontier", tuple(_freeze_json(item) for item in self.frontier)
         )
-        object.__setattr__(self, "state_refs", _snapshot_json(self.state_refs))
+        object.__setattr__(self, "state_refs", _freeze_json(self.state_refs))
         object.__setattr__(
             self,
             "completed_actions",
-            tuple(_snapshot_json(item) for item in self.completed_actions),
+            tuple(_freeze_json(item) for item in self.completed_actions),
         )
         object.__setattr__(
             self,
             "effect_receipts",
-            tuple(_snapshot_json(item) for item in self.effect_receipts),
+            tuple(_freeze_json(item) for item in self.effect_receipts),
         )
-        object.__setattr__(self, "child_frontier", _snapshot_json(self.child_frontier))
+        object.__setattr__(self, "child_frontier", _freeze_json(self.child_frontier))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -75,13 +80,13 @@ class CheckpointManifest:
             "revision_id": self.revision_id,
             "parent_checkpoint_id": self.parent_checkpoint_id,
             "source_execution_version": self.source_execution_version,
-            "frontier": [_snapshot_json(item) for item in self.frontier],
-            "state_refs": _snapshot_json(self.state_refs),
+            "frontier": _thaw_json(self.frontier),
+            "state_refs": _thaw_json(self.state_refs),
             "completed_actions": [
-                _snapshot_json(item) for item in self.completed_actions
+                _thaw_json(item) for item in self.completed_actions
             ],
-            "effect_receipts": [_snapshot_json(item) for item in self.effect_receipts],
-            "child_frontier": _snapshot_json(self.child_frontier),
+            "effect_receipts": [_thaw_json(item) for item in self.effect_receipts],
+            "child_frontier": _thaw_json(self.child_frontier),
             "pending_command_ids": list(self.pending_command_ids),
             "created_by_attempt_id": self.created_by_attempt_id,
             "content_hash": self.content_hash,
@@ -248,7 +253,7 @@ class ExecutionCheckpointStore:
             created_at=now,
         )
         self._insert(connection, checkpoint)
-        safe_point = dict(checkpoint.frontier[-1]) if checkpoint.frontier else {}
+        safe_point = _thaw_json(checkpoint.frontier[-1]) if checkpoint.frontier else {}
         updated = connection.execute(
             "UPDATE executions SET checkpoint_head_id = ?, safe_point_json = ?, status_version = ?, updated_at = ? WHERE execution_id = ? AND status_version = ?",
             (checkpoint_id, _json(safe_point), expected_version + 1, now, execution_id, expected_version),
@@ -280,11 +285,11 @@ class ExecutionCheckpointStore:
                 checkpoint.revision_id,
                 checkpoint.parent_checkpoint_id,
                 checkpoint.source_execution_version,
-                _json(checkpoint.frontier),
-                _json(checkpoint.state_refs),
-                _json(checkpoint.completed_actions),
-                _json(checkpoint.effect_receipts),
-                _json(checkpoint.child_frontier),
+                _json(_thaw_json(checkpoint.frontier)),
+                _json(_thaw_json(checkpoint.state_refs)),
+                _json(_thaw_json(checkpoint.completed_actions)),
+                _json(_thaw_json(checkpoint.effect_receipts)),
+                _json(_thaw_json(checkpoint.child_frontier)),
                 _json(checkpoint.pending_command_ids),
                 checkpoint.created_by_attempt_id,
                 checkpoint.content_hash,

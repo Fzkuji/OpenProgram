@@ -31,6 +31,7 @@ from .model import (
     ExecutionRecord,
     ExecutionStatus,
     TERMINAL_EXECUTION_STATUSES,
+    _thaw_json,
 )
 from .store import ExecutionConflict, ExecutionStore, _json, default_store
 
@@ -393,6 +394,11 @@ class RuntimeControlService:
                 raise AttemptConflict("activation_failed", "activation command disappeared")
             if current_command.status is CommandStatus.APPLIED:
                 return current_command, execution
+            if (
+                current_command.status is CommandStatus.REJECTED
+                and execution.status in TERMINAL_EXECUTION_STATUSES
+            ):
+                return current_command, execution
             if current_command.status is CommandStatus.APPLYING and delivered:
                 if current_command.kind is CommandKind.CONTINUE:
                     current_command = self.executions._transition_command(
@@ -534,6 +540,15 @@ class RuntimeControlService:
             if inspect.isawaitable(result):
                 result = await result
             if isinstance(result, DriverBinding):
+                if (
+                    result.execution_id != attempt.execution_id
+                    or result.attempt_id != attempt.attempt_id
+                    or result.generation != attempt.generation
+                ):
+                    raise DriverRegistryConflict(
+                        "invalid_binding",
+                        "activation returned a binding for a different attempt",
+                    )
                 self.registry.bind(result)
             elif isinstance(result, tuple) and len(result) == 2:
                 driver, handle = result
@@ -594,13 +609,13 @@ class RuntimeControlService:
             actor=actor,
             supersede_kinds=_PAUSE_SUPERSEDES,
             supersede_code="superseded_by_pause",
+            apply_command=immediate,
         )
         if duplicate:
             return ControlDispatch(
                 command=command, execution=execution, delivered=False
             )
         if execution.status is ExecutionStatus.PAUSED:
-            command = self._mark_applied(command, execution)
             return ControlDispatch(
                 command=command, execution=execution, delivered=False
             )
@@ -667,7 +682,25 @@ class RuntimeControlService:
         if execution is None:
             raise AttemptConflict("execution_not_found", "attempt execution is missing")
         command = self.executions.get_command(command_id)
-        if command is not None and command.kind is CommandKind.STEP:
+        if command is None:
+            raise AttemptConflict("command_not_found", f"safe point command not found: {command_id}")
+        if command.kind not in {
+            CommandKind.STEP,
+            CommandKind.PAUSE,
+            CommandKind.STEER,
+        }:
+            raise AttemptConflict(
+                "unsupported_command",
+                f"safe point cannot consume {command.kind.value}",
+            )
+        cancelled = self._arrive_superseded_safe_point(
+            attempt_id=attempt_id,
+            generation=generation,
+            command_id=command_id,
+        )
+        if cancelled is not None:
+            return cancelled
+        if command.kind is CommandKind.STEP:
             return self._arrive_step_safe_point(
                 attempt_id=attempt_id,
                 generation=generation,
@@ -691,6 +724,101 @@ class RuntimeControlService:
                 expected_execution_version=expected_execution_version,
                 fragment=fragment,
             )
+        raise AttemptConflict(
+            "unsupported_command",
+            f"safe point cannot consume {command.kind.value}",
+        )
+
+    def _arrive_superseded_safe_point(
+        self,
+        *,
+        attempt_id: str,
+        generation: int,
+        command_id: str,
+    ) -> SafePointCompletion | None:
+        """Reconcile a late lower-priority report against cancellation."""
+        completion = None
+        unbind = False
+        with self.executions._transaction() as connection:
+            attempt = self.attempts._require(connection, attempt_id)
+            self.attempts._validate_generation(attempt, generation)
+            execution = self.executions._require_execution(connection, attempt.execution_id)
+            command = self.executions._get_command(connection, command_id)
+            if command is None:
+                raise AttemptConflict("command_not_found", f"safe point command not found: {command_id}")
+            cancel = self._applying_command(connection, execution.execution_id, CommandKind.CANCEL)
+            if cancel is None:
+                if not (
+                    execution.status is ExecutionStatus.CANCELLED
+                    and command.status in {
+                        CommandStatus.APPLIED,
+                        CommandStatus.REJECTED,
+                    }
+                ):
+                    return None
+                checkpoint = (
+                    self.checkpoints._get(connection, execution.checkpoint_head_id)
+                    if execution.checkpoint_head_id
+                    else None
+                )
+                return SafePointCompletion(
+                    command=command,
+                    execution=execution,
+                    attempt=attempt,
+                    checkpoint=checkpoint,
+                )
+            if execution.status is not ExecutionStatus.CANCELLING:
+                raise AttemptConflict(
+                    "invalid_state",
+                    f"applying cancel cannot finish execution in {execution.status.value}",
+                )
+            ended, cancelled = self.attempts._finish_in_transaction(
+                connection,
+                attempt_id,
+                generation=generation,
+                expected_execution_version=execution.status_version,
+                target=ExecutionStatus.CANCELLED,
+                outcome="cancelled_at_safe_point",
+                reason_code=cancel.payload.get("reason_code"),
+            )
+            command = self.executions._get_command(connection, command_id)
+            if command is None:
+                raise AttemptConflict("command_not_found", f"safe point command not found: {command_id}")
+            if command.status in {CommandStatus.ACCEPTED, CommandStatus.APPLYING}:
+                command = self.executions._transition_command(
+                    connection,
+                    command_id,
+                    expected_status=command.status,
+                    target=CommandStatus.REJECTED,
+                    result_version=cancelled.status_version,
+                    rejection_code="superseded_by_cancel",
+                )
+            cancel = self.executions._transition_command(
+                connection,
+                cancel.command_id,
+                expected_status=CommandStatus.APPLYING,
+                target=CommandStatus.APPLIED,
+                result_version=cancelled.status_version,
+            )
+            checkpoint = (
+                self.checkpoints._get(connection, cancelled.checkpoint_head_id)
+                if cancelled.checkpoint_head_id
+                else None
+            )
+            completion = SafePointCompletion(
+                command=command,
+                execution=cancelled,
+                attempt=ended,
+                checkpoint=checkpoint,
+            )
+            unbind = True
+        if unbind:
+            self.registry.unbind(
+                execution.execution_id,
+                attempt_id=attempt_id,
+                generation=generation,
+            )
+        return completion
     def _arrive_pause_safe_point(
         self,
         *,
@@ -706,6 +834,18 @@ class RuntimeControlService:
             self.attempts._validate_generation(attempt, generation)
             execution = self.executions._require_execution(connection, attempt.execution_id)
             command = self.executions._get_command(connection, command_id)
+            if command is not None and command.status is CommandStatus.APPLIED:
+                checkpoint = (
+                    self.checkpoints._get(connection, execution.checkpoint_head_id)
+                    if execution.checkpoint_head_id
+                    else None
+                )
+                return SafePointCompletion(
+                    command=command,
+                    execution=execution,
+                    attempt=attempt,
+                    checkpoint=checkpoint,
+                )
             if (
                 execution.status_version != expected_execution_version
                 or command is None
@@ -765,7 +905,7 @@ class RuntimeControlService:
                 target=ExecutionStatus.PAUSED,
                 outcome="paused_at_safe_point",
             )
-            safe_point = dict(checkpoint.frontier[-1]) if checkpoint.frontier else {
+            safe_point = _thaw_json(checkpoint.frontier[-1]) if checkpoint.frontier else {
                 "kind": fragment.safe_point_kind
             }
             receipt = {"checkpoint_id": checkpoint.checkpoint_id, "safe_point": safe_point}
@@ -915,7 +1055,7 @@ class RuntimeControlService:
                     outcome="paused_at_safe_point",
                 )
                 unbind = True
-            safe_point = dict(checkpoint.frontier[-1]) if checkpoint.frontier else {"kind": fragment.safe_point_kind}
+            safe_point = _thaw_json(checkpoint.frontier[-1]) if checkpoint.frontier else {"kind": fragment.safe_point_kind}
             receipt = {"checkpoint_id": checkpoint.checkpoint_id, "safe_point": safe_point}
             applied = []
             if pause is not None:
@@ -1014,12 +1154,24 @@ class RuntimeControlService:
             attempt = self.attempts._require(connection, attempt_id)
             self.attempts._validate_generation(attempt, generation)
             execution = self.executions._require_execution(connection, attempt.execution_id)
+            command = self.executions._get_command(connection, command_id)
+            if command is not None and command.status is CommandStatus.APPLIED:
+                checkpoint = (
+                    self.checkpoints._get(connection, execution.checkpoint_head_id)
+                    if execution.checkpoint_head_id
+                    else None
+                )
+                return SafePointCompletion(
+                    command=command,
+                    execution=execution,
+                    attempt=attempt,
+                    checkpoint=checkpoint,
+                )
             if execution.status_version != expected_execution_version:
                 raise AttemptConflict(
                     "stale_version",
                     f"expected execution version {expected_execution_version}, found {execution.status_version}",
                 )
-            command = self.executions._get_command(connection, command_id)
             if (
                 command is None
                 or command.execution_id != execution.execution_id
@@ -1030,35 +1182,7 @@ class RuntimeControlService:
             if fragment.safe_point_kind not in execution.capabilities.safe_point_kinds:
                 raise AttemptConflict("unsupported_safe_point", "driver reported an undeclared safe point")
 
-            cancel = self._applying_command(connection, execution.execution_id, CommandKind.CANCEL)
             pause = self._applying_command(connection, execution.execution_id, CommandKind.PAUSE)
-            if cancel is not None:
-                ended, cancelled = self.attempts._finish_in_transaction(
-                    connection,
-                    attempt_id,
-                    generation=generation,
-                    expected_execution_version=expected_execution_version,
-                    target=ExecutionStatus.CANCELLED,
-                    outcome="cancelled_at_step_safe_point",
-                    reason_code=cancel.payload.get("reason_code"),
-                )
-                command = self.executions._transition_command(
-                    connection,
-                    command_id,
-                    expected_status=CommandStatus.APPLYING,
-                    target=CommandStatus.REJECTED,
-                    result_version=cancelled.status_version,
-                    rejection_code="superseded_by_cancel",
-                )
-                cancel = self.executions._transition_command(
-                    connection,
-                    cancel.command_id,
-                    expected_status=CommandStatus.APPLYING,
-                    target=CommandStatus.APPLIED,
-                    result_version=cancelled.status_version,
-                )
-                self.registry.unbind(execution.execution_id, attempt_id=attempt_id, generation=generation)
-                return SafePointCompletion(command=command, execution=cancelled, attempt=ended, checkpoint=self.checkpoints._get(connection, execution.checkpoint_head_id) if execution.checkpoint_head_id else None)
 
             checkpoint_version = expected_execution_version
             if execution.status is ExecutionStatus.RUNNING:
@@ -1125,7 +1249,7 @@ class RuntimeControlService:
                 target=ExecutionStatus.PAUSED,
                 outcome="step_at_safe_point",
             )
-            safe_point = dict(checkpoint.frontier[-1]) if checkpoint.frontier else {"kind": fragment.safe_point_kind}
+            safe_point = _thaw_json(checkpoint.frontier[-1]) if checkpoint.frontier else {"kind": fragment.safe_point_kind}
             receipt = {"checkpoint_id": checkpoint.checkpoint_id, "safe_point": safe_point}
             if pause is not None:
                 command = self.executions._transition_command(
@@ -1241,6 +1365,19 @@ class RuntimeControlService:
         """Durably finalize work whose physical owner is known to be gone."""
         with self.executions._transaction() as connection:
             execution = self.executions._require_execution(connection, execution_id)
+            if execution.status is ExecutionStatus.PAUSED:
+                command = self._applying_command(
+                    connection, execution_id, CommandKind.PAUSE
+                )
+                if command is not None:
+                    command = self.executions._transition_command(
+                        connection,
+                        command.command_id,
+                        expected_status=CommandStatus.APPLYING,
+                        target=CommandStatus.APPLIED,
+                        result_version=execution.status_version,
+                    )
+                return RecoveryCompletion(execution=execution, command=command)
             if execution.status not in {
                 ExecutionStatus.QUEUED,
                 ExecutionStatus.RUNNING,

@@ -4,10 +4,10 @@ import asyncio
 
 import pytest
 
-from openprogram.execution.attempts import AttemptStore
+from openprogram.execution.attempts import AttemptConflict, AttemptStore
 from openprogram.execution.checkpoints import CheckpointFragment
 from openprogram.execution.control import RuntimeControlService
-from openprogram.execution.driver import DriverRegistry
+from openprogram.execution.driver import ActivationInput, DriverBinding, DriverRegistry
 from openprogram.execution.model import CapabilitySet, CommandStatus, ExecutionStatus
 from openprogram.execution.store import ExecutionStore
 
@@ -139,6 +139,20 @@ def test_step_is_one_permit_and_atomically_pauses_with_receipt(tmp_path):
     assert store.get_command("steer_1").status is CommandStatus.APPLIED
     assert completed.checkpoint.state_refs["steering"][0]["payload"]["message"] == "use source A"
 
+    repeated = service.arrive_step_safe_point(
+        attempt_id=result.execution.current_attempt_id,
+        generation=result.execution.owner_lease["generation"],
+        command_id="step_1",
+        expected_execution_version=completed.execution.status_version,
+        safe_point_kind="control.step",
+        frontier=({"step_id": "ignored"},),
+        state_refs={},
+        control_step={"step_id": "ignored"},
+    )
+    assert repeated.command == completed.command
+    assert repeated.execution == completed.execution
+    assert repeated.checkpoint == completed.checkpoint
+
 
 def test_continue_activation_receives_paused_steering(tmp_path):
     store, attempts, service, paused = _paused(tmp_path)
@@ -167,6 +181,57 @@ def test_continue_activation_receives_paused_steering(tmp_path):
     assert seen[0].checkpoint.checkpoint_id == paused.checkpoint_head_id
     assert seen[0].checkpoint.content_hash == service.checkpoints.get(paused.checkpoint_head_id).content_hash
     assert seen[0].steer_inputs[0]["payload"] == dict(steer.command.payload)
+
+
+def test_activation_input_rejects_nested_mutation_and_preserves_checkpoint_hash(tmp_path):
+    store, attempts, service, paused = _paused(tmp_path)
+    checkpoint = service.checkpoints.get(paused.checkpoint_head_id)
+    assert checkpoint is not None
+    activation = ActivationInput(
+        checkpoint=checkpoint,
+        steer_inputs=(
+            {
+                "command_id": "steer_1",
+                "payload": {"nested": {"items": [1], "flags": frozenset({"a"})}},
+            },
+        ),
+    )
+    before = checkpoint.content_hash
+    with pytest.raises(TypeError):
+        activation.checkpoint.frontier[0]["step_id"] = "changed"
+    with pytest.raises(AttributeError):
+        activation.steer_inputs[0]["payload"]["nested"]["items"].append(2)
+    with pytest.raises(AttributeError):
+        activation.steer_inputs[0]["payload"]["nested"]["flags"].add("b")
+    assert checkpoint.content_hash == before
+    assert service.checkpoints.get(checkpoint.checkpoint_id).content_hash == before
+
+
+def test_invalid_activation_binding_uses_activation_failure_lifecycle(tmp_path):
+    store, attempts, service, paused = _paused(tmp_path)
+
+    def activate(attempt, activation):
+        return DriverBinding(
+            execution_id=attempt.execution_id,
+            attempt_id="other-attempt",
+            generation=attempt.generation,
+            driver=object(),
+            handle=object(),
+        )
+
+    result = asyncio.run(
+        service.request_continue(
+            command_id="continue_1",
+            execution_id=paused.execution_id,
+            expected_version=paused.status_version,
+            actor={"surface": "test"},
+            activator=activate,
+        )
+    )
+    assert result.issue_code == "activation_failed"
+    assert result.command.rejection_code == "activation_failed"
+    assert result.execution.status is ExecutionStatus.PAUSED
+    assert result.execution.current_attempt_id is None
 
 
 def test_activation_failure_rejects_continue_and_releases_attempt(tmp_path):
@@ -232,6 +297,44 @@ def test_legacy_checkpoint_second_argument_is_not_an_activation_contract(tmp_pat
     assert result.issue_code == "activation_failed"
     assert result.command.status is CommandStatus.REJECTED
     assert result.execution.status is ExecutionStatus.PAUSED
+
+
+def test_safe_point_rejects_missing_and_continue_commands_explicitly(tmp_path):
+    store, attempts, service, paused = _paused(tmp_path)
+    continued = asyncio.run(
+        service.request_continue(
+            command_id="continue_1",
+            execution_id=paused.execution_id,
+            expected_version=paused.status_version,
+            actor={"surface": "test"},
+        )
+    )
+    with pytest.raises(AttemptConflict) as unsupported:
+        service.arrive_safe_point(
+            attempt_id=continued.execution.current_attempt_id,
+            generation=continued.execution.owner_lease["generation"],
+            command_id="continue_1",
+            expected_execution_version=continued.execution.status_version,
+            fragment=CheckpointFragment(
+                safe_point_kind="action.after",
+                frontier=({"step_id": "invalid"},),
+                state_refs={},
+            ),
+        )
+    assert unsupported.value.code == "unsupported_command"
+    with pytest.raises(AttemptConflict) as missing:
+        service.arrive_safe_point(
+            attempt_id=continued.execution.current_attempt_id,
+            generation=continued.execution.owner_lease["generation"],
+            command_id="missing",
+            expected_execution_version=continued.execution.status_version,
+            fragment=CheckpointFragment(
+                safe_point_kind="action.after",
+                frontier=({"step_id": "invalid"},),
+                state_refs={},
+            ),
+        )
+    assert missing.value.code == "command_not_found"
 
 
 def test_late_success_after_cancel_finishes_cancel_intent(tmp_path):
@@ -364,6 +467,75 @@ def test_late_step_activation_after_cancel_finishes_cancel_intent(tmp_path, fail
     assert execution.current_attempt_id is None
 
 
+def test_late_step_safe_point_after_cancel_finishes_and_retries_cancel(tmp_path):
+    store, attempts, service, paused = _paused(tmp_path)
+
+    async def scenario():
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def activate(attempt, activation):
+            entered.set()
+            await release.wait()
+
+        step = asyncio.create_task(
+            service.request_step(
+                command_id="step_1",
+                execution_id=paused.execution_id,
+                expected_version=paused.status_version,
+                actor={"surface": "test"},
+                activator=activate,
+            )
+        )
+        await entered.wait()
+        running = store.get_execution(paused.execution_id)
+        cancelled = await service.request_cancel(
+            command_id="cancel_1",
+            execution_id=paused.execution_id,
+            expected_version=running.status_version,
+            actor={"surface": "test"},
+            reason_code="race",
+        )
+        point = await asyncio.to_thread(
+            service.arrive_safe_point,
+            attempt_id=running.current_attempt_id,
+            generation=running.owner_lease["generation"],
+            command_id="step_1",
+            expected_execution_version=cancelled.execution.status_version,
+            fragment=CheckpointFragment(
+                safe_point_kind="control.step",
+                frontier=({"step_id": "late"},),
+                state_refs={},
+                control_step={"step_id": "late"},
+            ),
+        )
+        release.set()
+        activation_result = await step
+        repeated = await asyncio.to_thread(
+            service.arrive_safe_point,
+            attempt_id=running.current_attempt_id,
+            generation=running.owner_lease["generation"],
+            command_id="step_1",
+            expected_execution_version=cancelled.execution.status_version,
+            fragment=CheckpointFragment(
+                safe_point_kind="control.step",
+                frontier=({"step_id": "ignored"},),
+                state_refs={},
+                control_step={"step_id": "ignored"},
+            ),
+        )
+        return cancelled, point, activation_result, repeated
+
+    cancelled, point, activation_result, repeated = asyncio.run(scenario())
+    assert cancelled.execution.status is ExecutionStatus.CANCELLING
+    assert point.command.status is CommandStatus.REJECTED
+    assert activation_result.command.status is CommandStatus.REJECTED
+    assert repeated.command == point.command
+    assert repeated.execution.status is ExecutionStatus.CANCELLED
+    assert store.get_command("cancel_1").status is CommandStatus.APPLIED
+    assert store.get_execution("exec_1").current_attempt_id is None
+
+
 @pytest.mark.parametrize("fail", [False, True])
 def test_late_activation_after_pause_finishes_pause_intent(tmp_path, fail):
     store, attempts, service, paused = _paused(tmp_path)
@@ -477,6 +649,21 @@ def test_pause_safe_point_commits_steer_checkpoint_and_receipts_together(tmp_pat
     events = store.list_events(paused.execution_id)
     receipts = [event.payload.get("receipt") for event in events if event.kind == "command.applied"]
     assert any(item and item["checkpoint_id"] == completed.checkpoint.checkpoint_id for item in receipts)
+
+    repeated = service.arrive_safe_point(
+        attempt_id=continued.execution.current_attempt_id,
+        generation=continued.execution.owner_lease["generation"],
+        command_id="pause_2",
+        expected_execution_version=completed.execution.status_version,
+        fragment=CheckpointFragment(
+            safe_point_kind="action.after",
+            frontier=({"step_id": "ignored", "phase": "after"},),
+            state_refs={},
+        ),
+    )
+    assert repeated.command == completed.command
+    assert repeated.execution == completed.execution
+    assert repeated.checkpoint == completed.checkpoint
 
 
 def test_pause_safe_point_rolls_back_when_attempt_close_fails(tmp_path, monkeypatch):

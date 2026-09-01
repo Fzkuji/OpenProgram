@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass, field
 from enum import Enum
 from collections.abc import Collection, Iterator
+from types import MappingProxyType
 from typing import Any, Mapping
 
 
@@ -62,6 +63,29 @@ def _json(value: Any) -> str:
 
 def _snapshot_json(value: Any) -> Any:
     return json.loads(_json(value))
+
+
+def _freeze_json(value: Any) -> Any:
+    """Return a recursively immutable representation of JSON-like data."""
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze_json(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_json(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(_freeze_json(item) for item in value)
+    return value
+
+
+def _thaw_json(value: Any) -> Any:
+    """Return ordinary JSON-compatible containers for persistence/serialization."""
+    if isinstance(value, Mapping):
+        return {key: _thaw_json(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [_thaw_json(item) for item in value]
+    if isinstance(value, (set, frozenset)):
+        items = [_thaw_json(item) for item in value]
+        return sorted(items, key=lambda item: _json(item))
+    return value
 
 
 @dataclass(frozen=True)

@@ -9,6 +9,7 @@ from typing import Any, Callable, Generic, Mapping, Protocol, TypeVar
 from .attempts import AttemptRecord
 from .checkpoints import CheckpointManifest
 from .model import CapabilitySet
+from .model import _freeze_json
 
 
 HandleT = TypeVar("HandleT")
@@ -51,8 +52,13 @@ class ActivationInput:
     def __post_init__(self) -> None:
         object.__setattr__(
             self,
+            "checkpoint",
+            _freeze_json(self.checkpoint),
+        )
+        object.__setattr__(
+            self,
             "steer_inputs",
-            tuple({"command_id": item["command_id"], "payload": dict(item["payload"])} for item in self.steer_inputs),
+            tuple(_freeze_json(item) for item in self.steer_inputs),
         )
 
 

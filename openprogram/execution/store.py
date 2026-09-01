@@ -315,6 +315,7 @@ class ExecutionStore:
         reason_code: str | None = None,
         supersede_kinds: Collection[CommandKind] = (),
         supersede_code: str = "superseded",
+        apply_command: bool = False,
     ) -> tuple[ControlCommand, ExecutionRecord, bool]:
         with self._transaction() as connection:
             command, duplicate = self._accept_command(
@@ -367,6 +368,14 @@ class ExecutionStore:
                 expected_status=CommandStatus.ACCEPTED,
                 target=CommandStatus.APPLYING,
             )
+            if apply_command:
+                command = self._transition_command(
+                    connection,
+                    command_id,
+                    expected_status=CommandStatus.APPLYING,
+                    target=CommandStatus.APPLIED,
+                    result_version=execution.status_version,
+                )
             return command, execution, False
 
     def get_command(self, command_id: str) -> ControlCommand | None:
