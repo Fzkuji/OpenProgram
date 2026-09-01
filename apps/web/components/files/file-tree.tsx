@@ -6,8 +6,8 @@
  * focuses) its center file tab.
  *
  * Lazily loads one directory listing per expand via the worker's
- * ``project_file_tree`` action (root "" on mount). Search is local to
- * already-loaded nodes and preserves the tree hierarchy.
+ * ``project_file_tree`` action (root "" on mount). Filter search is served
+ * by the worker; highlight mode preserves the real tree hierarchy.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -249,6 +249,7 @@ export function FileTree({
   const [filter, setFilter] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchMode, setSearchMode] = useState<ExplorerSearchMode>("filter");
   const [fuzzySearch, setFuzzySearch] = useState(true);
@@ -267,6 +268,9 @@ export function FileTree({
   const queryQueue = useRef<Promise<unknown>>(Promise.resolve());
   const queryGeneration = useRef(0);
   const searchGeneration = useRef(0);
+  const revealTarget = useRef<string | null>(null);
+  const revealScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const revealFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     directoryPagesRef.current = directoryPages;
@@ -276,9 +280,13 @@ export function FileTree({
     action: string,
     payload: Record<string, unknown>,
     responseType: string,
+    canRun: () => boolean,
   ): Promise<T | null> {
+    // Single replacement point for Task G request_id migration. Until that
+    // protocol exists, stale project/query work is skipped before opening a
+    // WebSocket request and therefore cannot delay the current generation.
     const next = queryQueue.current.then(() =>
-      wsRequest<T>(action, payload, responseType),
+      canRun() ? wsRequest<T>(action, payload, responseType) : null,
     );
     queryQueue.current = next.catch(() => null);
     return next;
@@ -301,6 +309,7 @@ export function FileTree({
           ...(cursor ? { cursor, snapshot_id: page?.snapshotId } : {}),
         },
         "project_file_tree_result",
+        () => generation === queryGeneration.current,
       );
       if (cursor) {
         setLoadingMore((previous) => {
@@ -312,6 +321,9 @@ export function FileTree({
       if (generation !== queryGeneration.current) return null;
       if (data?.error_code === "STALE_SNAPSHOT" && cursor && retry) {
         setDirs((d) => ({ ...d, [path]: "loading" }));
+        const nextPages = { ...directoryPagesRef.current };
+        delete nextPages[path];
+        directoryPagesRef.current = nextPages;
         setDirectoryPages((pages) => {
           const next = { ...pages };
           delete next[path];
@@ -333,13 +345,12 @@ export function FileTree({
         );
         return { ...d, [path]: entries };
       });
-      setDirectoryPages((pages) => ({
-        ...pages,
-        [path]: {
-          snapshotId: data.snapshot_id ?? null,
-          nextCursor: data.next_cursor ?? null,
-        },
-      }));
+      const nextPage = {
+        snapshotId: data.snapshot_id ?? null,
+        nextCursor: data.next_cursor ?? null,
+      };
+      directoryPagesRef.current = { ...directoryPagesRef.current, [path]: nextPage };
+      setDirectoryPages((pages) => ({ ...pages, [path]: nextPage }));
       return data;
     },
     [projectId],
@@ -351,6 +362,7 @@ export function FileTree({
     searchGeneration.current += 1;
     setDirs({});
     setDirectoryPages({});
+    directoryPagesRef.current = {};
     setLoadingMore(new Set());
     setExpanded(new Set());
     // 组件跨项目复用（右栏不带 key 渲染）：上一个项目的选中行、
@@ -363,7 +375,13 @@ export function FileTree({
     setFilter("");
     setSearchResults([]);
     setSearchLoading(false);
+    setSearchError(null);
     setSearchOpen(false);
+    revealTarget.current = null;
+    if (revealScrollTimer.current) clearTimeout(revealScrollTimer.current);
+    if (revealFlashTimer.current) clearTimeout(revealFlashTimer.current);
+    revealScrollTimer.current = null;
+    revealFlashTimer.current = null;
     void load("");
   }, [load]);
 
@@ -407,8 +425,14 @@ export function FileTree({
     queryGeneration.current += 1;
     setDirs({});
     setDirectoryPages({});
+    directoryPagesRef.current = {};
     setLoadingMore(new Set());
     setExpanded(new Set());
+    revealTarget.current = null;
+    if (revealScrollTimer.current) clearTimeout(revealScrollTimer.current);
+    if (revealFlashTimer.current) clearTimeout(revealFlashTimer.current);
+    revealScrollTimer.current = null;
+    revealFlashTimer.current = null;
     void load("");
   }
 
@@ -457,22 +481,40 @@ export function FileTree({
     for (const d of chain) if (dirs[d] === undefined) load(d);
   }
 
-  async function revealSearchResult(path: string, type: "file" | "dir") {
-    setFilter("");
-    setSearchOpen(false);
+  async function locateTreePath(path: string, type: "file" | "dir"): Promise<boolean> {
     const parts = path.split("/");
     let directory = "";
-    for (let index = 0; index < parts.length - (type === "dir" ? 0 : 1); index += 1) {
+    for (let index = 0; index < parts.length - 1; index += 1) {
       const child = parts[index];
       const page = await load(directory);
       let loaded = page;
-      while (loaded?.next_cursor && !loaded.entries?.some((entry) => entry.name === child)) {
+      while (
+        loaded?.next_cursor &&
+        !loaded.entries?.some((entry) => entry.name === child && entry.type === "dir")
+      ) {
         loaded = await load(directory, loaded.next_cursor);
       }
-      if (!loaded?.entries?.some((entry) => entry.name === child)) return;
+      if (!loaded?.entries?.some((entry) => entry.name === child && entry.type === "dir")) {
+        return false;
+      }
       setExpanded((previous) => new Set(previous).add(joinPath(directory, child)));
       directory = joinPath(directory, child);
     }
+    const target = parts[parts.length - 1];
+    let loaded = await load(directory);
+    while (
+      loaded?.next_cursor &&
+      !loaded.entries?.some((entry) => entry.name === target && entry.type === type)
+    ) {
+      loaded = await load(directory, loaded.next_cursor);
+    }
+    return Boolean(loaded?.entries?.some((entry) => entry.name === target && entry.type === type));
+  }
+
+  async function revealSearchResult(path: string, type: "file" | "dir") {
+    setFilter("");
+    setSearchOpen(false);
+    if (!(await locateTreePath(path, type))) return;
     setSelected({ path, type });
     revealTarget.current = path;
     if (type === "file") openFile(path);
@@ -484,7 +526,6 @@ export function FileTree({
    *  flash it, so a deeply nested file is findable without hunting.
    *  Wired as a window CustomEvent so the caller needs no ref into this
    *  tree. ponytail: reuses expandChain + the existing `selected` state. */
-  const revealTarget = useRef<string | null>(null);
   useEffect(() => {
     const onReveal = (ev: Event) => {
       const d = (ev as CustomEvent<{ projectId?: string; path?: string }>).detail;
@@ -510,7 +551,11 @@ export function FileTree({
     revealTarget.current = null;
     row.scrollIntoView({ block: "center" });
     row.classList.add(styles.treeRowFlash);
-    setTimeout(() => row.classList.remove(styles.treeRowFlash), 1200);
+    if (revealFlashTimer.current) clearTimeout(revealFlashTimer.current);
+    revealFlashTimer.current = setTimeout(() => {
+      row.classList.remove(styles.treeRowFlash);
+      revealFlashTimer.current = null;
+    }, 1200);
   });
 
   /** Directory a create targets: selected dir → itself, selected file
@@ -628,6 +673,7 @@ export function FileTree({
     const query = filter.trim();
     const generation = ++searchGeneration.current;
     setSearchResults([]);
+    setSearchError(null);
     if (!query) {
       setSearchLoading(false);
       return;
@@ -652,6 +698,7 @@ export function FileTree({
               ...(cursor ? { cursor, snapshot_id: snapshotId } : {}),
             },
             "project_file_search_result",
+            () => generation === searchGeneration.current,
           );
           if (generation !== searchGeneration.current) return;
           if (data?.error_code === "STALE_SNAPSHOT" && cursor && !retriedStale) {
@@ -662,7 +709,11 @@ export function FileTree({
             retriedStale = true;
             continue;
           }
-          if (!data || data.error_code || !data.results) break;
+          if (!data || data.error_code || !data.results) {
+            setSearchError(data?.error_code ?? "IO_ERROR");
+            setSearchResults([]);
+            break;
+          }
           for (const result of data.results) {
             if (!combined.some((existing) => existing.path === result.path)) {
               combined.push(result);
@@ -692,6 +743,9 @@ export function FileTree({
   const currentSearchPath = searchMatches.length
     ? searchMatches[searchMatchIndex % searchMatches.length].path
     : null;
+  const currentSearchType = searchMatches.length
+    ? searchMatches[searchMatchIndex % searchMatches.length].entry.type
+    : null;
 
   useEffect(() => {
     setSearchMatchIndex(0);
@@ -699,6 +753,13 @@ export function FileTree({
 
   useEffect(() => {
     if (!currentSearchPath) return;
+    const generation = queryGeneration.current;
+    if (filter.trim() && searchMode === "highlight") {
+      void locateTreePath(
+        currentSearchPath,
+        currentSearchType ?? "file",
+      );
+    }
     const parents: string[] = [];
     let parent = parentOf(currentSearchPath);
     while (parent) {
@@ -709,44 +770,65 @@ export function FileTree({
       setExpanded((previous) => new Set([...previous, ...parents]));
     }
     const timer = setTimeout(() => {
+      if (generation !== queryGeneration.current) return;
       rootRef.current?.querySelector<HTMLElement>(
         `[data-tree-path="${CSS.escape(currentSearchPath)}"]`,
       )?.scrollIntoView({ block: "nearest" });
     });
-    return () => clearTimeout(timer);
-  }, [currentSearchPath]);
+    revealScrollTimer.current = timer;
+    return () => {
+      clearTimeout(timer);
+      if (revealScrollTimer.current === timer) revealScrollTimer.current = null;
+    };
+  }, [currentSearchPath, currentSearchType, filter, searchMode]);
 
   function moveSearchResult(delta: number) {
     if (!searchMatches.length) return;
     setSearchMatchIndex((index) => (index + delta + searchMatches.length) % searchMatches.length);
   }
 
+  function renderSearchError(): React.ReactNode {
+    if (!searchError) return null;
+    const message =
+      searchError === "LIMIT_EXCEEDED"
+        ? text("Search results exceed the limit", "搜索结果超过限制")
+        : searchError === "PERMISSION"
+          ? text("Search permission denied", "搜索权限不足")
+          : searchError === "IO_ERROR"
+            ? text("Search failed due to an I/O error", "搜索发生 I/O 错误")
+            : searchError === "INVALID_REQUEST"
+              ? text("Invalid search request", "搜索请求无效")
+              : text("Search failed", "搜索失败");
+    return <div className={styles.treeHint}>{message}</div>;
+  }
+
   function renderSearchResults(): React.ReactNode {
     return (
       <div role="list" aria-label={text("Project search results", "项目搜索结果")}>
         {searchMatches.map(({ path, entry }) => (
-          <button
-            key={path}
-            type="button"
-            className={styles.treeRow}
-            data-tree-path={path}
-            title={path}
-            onClick={() => void revealSearchResult(path, entry.type)}
-          >
-            {entry.type === "dir" ? (
-              <Folder size={15} className={styles.treeIconFolder} />
-            ) : (
-              <FileGlyph name={entry.name} />
-            )}
-            <ExplorerMatchText
-              className={styles.treeName}
-              value={entry.name}
-              query={filter}
-              fuzzy={fuzzySearch}
-              current={currentSearchPath === path}
-            />
-            <span className={styles.treeHint}>{path}</span>
-          </button>
+          <div key={path} role="listitem">
+            <button
+              type="button"
+              className={styles.treeRow}
+              data-tree-path={path}
+              title={path}
+              onClick={() => void revealSearchResult(path, entry.type)}
+            >
+              {entry.type === "dir" ? (
+                <Folder size={15} className={styles.treeIconFolder} />
+              ) : (
+                <FileGlyph name={entry.name} />
+              )}
+              <ExplorerMatchText
+                className={styles.treeName}
+                value={entry.name}
+                query={filter}
+                fuzzy={fuzzySearch}
+                current={currentSearchPath === path}
+              />
+              <span className={styles.treeHint}>{path}</span>
+            </button>
+          </div>
         ))}
       </div>
     );
@@ -940,13 +1022,20 @@ export function FileTree({
         }
       />
       <div className={styles.treeBody}>
-        {filter.trim() ? (
+        {filter.trim() && searchMode === "filter" ? (
           searchLoading && searchMatches.length === 0 ? (
             <div className={styles.treeHint}>{text("Searching…", "搜索中…")}</div>
+          ) : searchError ? (
+            renderSearchError()
           ) : searchMatches.length === 0 ? (
             <div className={styles.treeHint}>{text("No matches", "无匹配")}</div>
           ) : renderSearchResults()
-        ) : renderDir("", 0)}
+        ) : (
+          <>
+            {filter.trim() ? renderSearchError() : null}
+            {renderDir("", 0)}
+          </>
+        )}
       </div>
 
       {/* Right-click context menu — same Popover/MENU_PANEL pattern as
