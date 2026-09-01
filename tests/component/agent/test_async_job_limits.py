@@ -314,6 +314,60 @@ def test_runner_restart_dispatches_persisted_governed_queue(
         fake_worker[1].set()
         runner.shutdown()
 
+def test_runner_startup_wakes_dispatcher_before_fallback_poll(
+    store_fixture, fake_worker, monkeypatch, tmp_path,
+):
+    """A persisted dispatch-ready job is claimed by the startup wake."""
+    monkeypatch.setattr(
+        "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
+    )
+    from openprogram.agent.resource_governance import (
+        ResourceGovernor, ResourceLimits, resolve_resource_limits,
+    )
+    from openprogram.agent.job.runner import JobRunner
+    from openprogram.agent.job.store import save_job
+    from openprogram.agent.job.types import Job
+    from openprogram.usage.ledger import UsageLedger
+
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    governor = ResourceGovernor(
+        UsageLedger(tmp_path / "governance.db"),
+        limit_resolver=lambda _sid, _job: resolved,
+    )
+    job = Job(
+        id="startup_wake", parent_session_id="p1",
+        prompt="start immediately", agent_id="main",
+    )
+    governor.admit_job(job, persist=lambda accepted: save_job("p1", accepted))
+
+    dispatch_gate = threading.Event()
+    dispatcher_entered = threading.Event()
+    captured_wake = {}
+    real_dispatch_loop = JobRunner._dispatch_loop
+
+    def blocked_dispatch_loop(runner):
+        captured_wake["event"] = runner._dispatch_wake
+        dispatcher_entered.set()
+        dispatch_gate.wait(timeout=5.0)
+        return real_dispatch_loop(runner)
+
+    monkeypatch.setattr(JobRunner, "_dispatch_loop", blocked_dispatch_loop)
+    runner = None
+    try:
+        runner = JobRunner(max_workers=1, governor=governor)
+        assert dispatcher_entered.wait(1.0)
+        wake = captured_wake.get("event")
+        assert wake is not None
+        assert wake.is_set()
+        dispatch_gate.set()
+        assert fake_worker[3].wait(1.0)
+    finally:
+        dispatch_gate.set()
+        fake_worker[1].set()
+        if runner is not None:
+            runner.shutdown()
+
+
 def test_worker_lost_fence_prevents_stale_runner_from_writing_completed(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
