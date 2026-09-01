@@ -58,7 +58,12 @@ _TRANSITIONS: dict[ExecutionStatus, frozenset[ExecutionStatus]] = {
     ExecutionStatus.PAUSED: frozenset(
         {ExecutionStatus.RUNNING, ExecutionStatus.CANCELLING}
     ),
-    ExecutionStatus.CANCELLING: frozenset({ExecutionStatus.CANCELLED}),
+    ExecutionStatus.CANCELLING: frozenset(
+        {
+            ExecutionStatus.CANCELLED,
+            ExecutionStatus.RECONCILIATION_REQUIRED,
+        }
+    ),
     ExecutionStatus.RECONCILIATION_REQUIRED: frozenset(
         {
             ExecutionStatus.PAUSED,

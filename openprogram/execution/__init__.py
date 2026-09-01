@@ -36,7 +36,13 @@ from .driver import (
     RuntimeSnapshot,
     TerminationReceipt,
 )
-from .control import ControlDispatch, RuntimeControlService, SafePointCompletion
+from .control import (
+    AttemptCompletion,
+    ControlDispatch,
+    ReconciliationCompletion,
+    RuntimeControlService,
+    SafePointCompletion,
+)
 from .store import ExecutionStore, default_store
 
 __all__ = [
@@ -69,5 +75,7 @@ __all__ = [
     "ControlDispatch",
     "RuntimeControlService",
     "SafePointCompletion",
+    "AttemptCompletion",
+    "ReconciliationCompletion",
     "default_store",
 ]

@@ -12,13 +12,14 @@ from .checkpoints import (
     ExecutionCheckpointStore,
 )
 from .driver import DriverAck, DriverRegistry, DriverRegistryConflict
-from .effects import EffectStore
+from .effects import EffectRecord, EffectStatus, EffectStore
 from .model import (
     CommandKind,
     CommandStatus,
     ControlCommand,
     ExecutionRecord,
     ExecutionStatus,
+    TERMINAL_EXECUTION_STATUSES,
 )
 from .store import ExecutionConflict, ExecutionStore
 
@@ -48,6 +49,20 @@ class SafePointCompletion:
     execution: ExecutionRecord
     attempt: AttemptRecord
     checkpoint: CheckpointManifest
+
+
+@dataclass(frozen=True)
+class AttemptCompletion:
+    execution: ExecutionRecord
+    attempt: AttemptRecord
+    command: ControlCommand | None = None
+
+
+@dataclass(frozen=True)
+class ReconciliationCompletion:
+    effect: EffectRecord
+    execution: ExecutionRecord
+    command: ControlCommand | None = None
 
 
 class RuntimeControlService:
@@ -202,6 +217,115 @@ class RuntimeControlService:
             execution=paused,
             attempt=ended,
             checkpoint=checkpoint,
+        )
+
+    def finish_attempt(
+        self,
+        *,
+        attempt_id: str,
+        generation: int,
+        expected_execution_version: int,
+        target: ExecutionStatus,
+        outcome: str,
+        command_id: str | None = None,
+        reason_code: str | None = None,
+    ) -> AttemptCompletion:
+        if target not in TERMINAL_EXECUTION_STATUSES:
+            raise AttemptConflict(
+                "invalid_outcome",
+                "finish_attempt requires a terminal execution target",
+            )
+        attempt = self.attempts.get(attempt_id)
+        if attempt is None:
+            raise AttemptConflict("not_found", f"attempt not found: {attempt_id}")
+        command = self.executions.get_command(command_id) if command_id else None
+        if command_id is not None and (
+            command is None
+            or command.execution_id != attempt.execution_id
+            or command.status is not CommandStatus.APPLYING
+        ):
+            raise AttemptConflict(
+                "command_mismatch",
+                "attempt outcome does not match an applying command",
+            )
+        unresolved = self.effects.list_unresolved(attempt.execution_id)
+        actual_target = (
+            ExecutionStatus.RECONCILIATION_REQUIRED if unresolved else target
+        )
+        ended, execution = self.attempts.finish(
+            attempt_id,
+            generation=generation,
+            expected_execution_version=expected_execution_version,
+            target=actual_target,
+            outcome=("reconciliation_required" if unresolved else outcome),
+            reason_code=("effect_reconciliation" if unresolved else reason_code),
+        )
+        self.registry.unbind(
+            execution.execution_id,
+            attempt_id=attempt_id,
+            generation=generation,
+        )
+        if command is not None and execution.status in TERMINAL_EXECUTION_STATUSES:
+            command = self._mark_applied(command, execution)
+        return AttemptCompletion(
+            execution=execution,
+            attempt=ended,
+            command=command,
+        )
+
+    def resolve_effect(
+        self,
+        *,
+        effect_id: str,
+        expected_status: EffectStatus,
+        outcome: EffectStatus,
+        receipt: Mapping[str, Any],
+    ) -> ReconciliationCompletion:
+        effect = self.effects.resolve(
+            effect_id,
+            expected_status=expected_status,
+            outcome=outcome,
+            receipt=receipt,
+        )
+        execution = self.executions.get_execution(effect.execution_id)
+        if execution is None:
+            raise AttemptConflict("execution_not_found", "effect execution is missing")
+        if (
+            execution.status is not ExecutionStatus.RECONCILIATION_REQUIRED
+            or self.effects.list_unresolved(execution.execution_id)
+        ):
+            return ReconciliationCompletion(effect=effect, execution=execution)
+        commands = self.executions.list_commands(
+            execution.execution_id,
+            statuses=(CommandStatus.APPLYING,),
+            kinds=(CommandKind.CANCEL,),
+        )
+        command = commands[0] if commands else None
+        if command is None:
+            execution = self.executions.transition_execution(
+                execution.execution_id,
+                expected_version=execution.status_version,
+                target=ExecutionStatus.PAUSED,
+                reason_code="effects_reconciled",
+            )
+        else:
+            execution = self.executions.transition_execution(
+                execution.execution_id,
+                expected_version=execution.status_version,
+                target=ExecutionStatus.CANCELLING,
+                reason_code="effects_reconciled",
+            )
+            execution = self.executions.transition_execution(
+                execution.execution_id,
+                expected_version=execution.status_version,
+                target=ExecutionStatus.CANCELLED,
+                reason_code="cancelled_after_reconciliation",
+            )
+            command = self._mark_applied(command, execution)
+        return ReconciliationCompletion(
+            effect=effect,
+            execution=execution,
+            command=command,
         )
 
     def _mark_applied(

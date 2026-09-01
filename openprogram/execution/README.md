@@ -24,5 +24,11 @@ for recovery. A pause becomes applied only after the current attempt publishes
 a declared safe-point checkpoint and relinquishes ownership; cancel atomically
 supersedes lower-priority applying commands.
 
+Attempt finalization checks the effect ledger. A dispatched or uncertain effect
+moves the execution to `reconciliation_required` instead of claiming a terminal
+outcome. Once every effect has a terminal receipt, an applying cancel resumes
+its canonical finalization; otherwise the execution becomes paused for an
+explicit continuation decision.
+
 The normative design is
 [`docs/reference/design/runtime/execution/execution-control.html`](../../docs/reference/design/runtime/execution/execution-control.html).

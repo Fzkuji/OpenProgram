@@ -10,6 +10,11 @@ from openprogram.execution.driver import (
     DriverBinding,
     DriverRegistry,
 )
+from openprogram.execution.effects import (
+    EffectClassification,
+    EffectStatus,
+    EffectStore,
+)
 from openprogram.execution.model import (
     CapabilitySet,
     CommandStatus,
@@ -256,3 +261,86 @@ def test_pause_completes_only_after_checkpoint_and_attempt_finalization(
         attempt_id=attempt.attempt_id,
         generation=attempt.generation,
     )
+
+
+def test_cancel_applies_only_after_the_attempt_finishes(tmp_path) -> None:
+    executions, attempts, execution, attempt = _execution(tmp_path, active=True)
+    registry = DriverRegistry()
+    driver = RecordingDriver(executions)
+    _bind(registry, execution, attempt, driver)
+    service = RuntimeControlService(executions, attempts, registry)
+    cancelling = asyncio.run(
+        service.request_cancel(
+            command_id="cancel_1",
+            execution_id=execution.execution_id,
+            expected_version=execution.status_version,
+            actor={"surface": "test"},
+            reason_code="user_cancelled",
+        )
+    )
+
+    completed = service.finish_attempt(
+        attempt_id=attempt.attempt_id,
+        generation=attempt.generation,
+        expected_execution_version=cancelling.execution.status_version,
+        target=ExecutionStatus.CANCELLED,
+        outcome="cooperative_cancel",
+        command_id="cancel_1",
+        reason_code="user_cancelled",
+    )
+
+    assert completed.execution.status is ExecutionStatus.CANCELLED
+    assert completed.command is not None
+    assert completed.command.status is CommandStatus.APPLIED
+    assert completed.attempt.outcome == "cooperative_cancel"
+    assert registry.snapshot() == ()
+
+
+def test_uncertain_effect_requires_reconciliation_before_cancel_finishes(
+    tmp_path,
+) -> None:
+    executions, attempts, execution, attempt = _execution(tmp_path, active=True)
+    effects = EffectStore(executions)
+    planned = effects.register(
+        effect_id="effect_1",
+        execution_id=execution.execution_id,
+        attempt_id=attempt.attempt_id,
+        action_id="send_message",
+        classification=EffectClassification.NONREPEATABLE,
+        idempotency_key=None,
+        metadata={},
+    )
+    effects.mark_dispatched(planned.effect_id, expected_status=planned.status)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    cancelling = asyncio.run(
+        service.request_cancel(
+            command_id="cancel_1",
+            execution_id=execution.execution_id,
+            expected_version=execution.status_version,
+            actor={"surface": "test"},
+            reason_code="user_cancelled",
+        )
+    )
+
+    awaiting = service.finish_attempt(
+        attempt_id=attempt.attempt_id,
+        generation=attempt.generation,
+        expected_execution_version=cancelling.execution.status_version,
+        target=ExecutionStatus.CANCELLED,
+        outcome="cooperative_cancel",
+        command_id="cancel_1",
+        reason_code="user_cancelled",
+    )
+    assert awaiting.execution.status is ExecutionStatus.RECONCILIATION_REQUIRED
+    assert awaiting.command is not None
+    assert awaiting.command.status is CommandStatus.APPLYING
+
+    reconciled = service.resolve_effect(
+        effect_id="effect_1",
+        expected_status=EffectStatus.DISPATCHED,
+        outcome=EffectStatus.COMMITTED,
+        receipt={"provider_message_id": "message_1"},
+    )
+    assert reconciled.execution.status is ExecutionStatus.CANCELLED
+    assert reconciled.command is not None
+    assert reconciled.command.status is CommandStatus.APPLIED

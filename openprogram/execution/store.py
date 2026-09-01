@@ -521,6 +521,27 @@ class ExecutionStore:
         with closing(self._connect()) as connection:
             return self._get_command(connection, command_id)
 
+    def list_commands(
+        self,
+        execution_id: str,
+        *,
+        statuses: Collection[CommandStatus] = (),
+        kinds: Collection[CommandKind] = (),
+    ) -> list[ControlCommand]:
+        query = "SELECT * FROM commands WHERE execution_id = ?"
+        values: list[Any] = [execution_id]
+        if statuses:
+            status_values = tuple(status.value for status in statuses)
+            query += " AND status IN (" + ",".join("?" for _ in status_values) + ")"
+            values.extend(status_values)
+        if kinds:
+            kind_values = tuple(kind.value for kind in kinds)
+            query += " AND kind IN (" + ",".join("?" for _ in kind_values) + ")"
+            values.extend(kind_values)
+        query += " ORDER BY submitted_at, command_id"
+        with closing(self._connect()) as connection:
+            return [self._command(row) for row in connection.execute(query, values)]
+
     def transition_command(
         self,
         command_id: str,
