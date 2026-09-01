@@ -20,9 +20,11 @@ Three APIs live here:
   original API, kept verbatim because ``AgentSession`` still targets it.
   New code uses typed events.
 
-The process-wide bus (``get_event_bus``) appends every typed event as one
-JSON line via ``event_log.log_event`` — per-session ``events.jsonl`` files
-with 5 MB rotation; gate verdicts on the same line as a ``gate`` field.
+The process-wide bus (``get_event_bus``) appends every completed typed
+dispatch as one JSON line via ``event_log.log_event`` — per-session
+``events.jsonl`` files with 5 MB rotation.  A gate event observed through
+``emit`` defers that write until ``emit_gate`` can put its verdict on the
+same line as a ``gate`` field.
 """
 from __future__ import annotations
 
@@ -36,6 +38,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from openprogram.events.event_log import log_event as _log_event
+from openprogram.events.registry import EVENTS
 
 _log = logging.getLogger(__name__)
 
@@ -140,10 +143,6 @@ _warned_unregistered: set[str] = set()
 
 
 def _warn_unregistered(event_type: str) -> None:
-    try:
-        from openprogram.events.registry import EVENTS
-    except Exception:
-        return
     if event_type not in EVENTS and event_type not in _warned_unregistered:
         _warned_unregistered.add(event_type)
         _log.warning("event type %r is not in the events registry",
@@ -189,7 +188,11 @@ class EventBus:
         """
         if isinstance(target, Event):
             _warn_unregistered(target.type)
-            if self.log_events:
+            spec = EVENTS.get(target.type)
+            # A gate event may pass through typed observers before its
+            # synchronous verdict.  Defer its only log row until emit_gate
+            # can include that verdict instead of writing the same ID twice.
+            if self.log_events and (spec is None or spec.kind != "gate"):
                 _log_event(target)
             with self._lock:
                 subs = list(self._subscribers)

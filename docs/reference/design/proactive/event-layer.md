@@ -155,7 +155,7 @@ asking the gate. Head movement stays with the normal TurnWriter path inside each
 
 ## 6. The Event Log
 
-The process-wide bus appends every typed event as one JSON line, always on:
+The process-wide bus appends every completed typed dispatch as one JSON line, always on:
 
 - `~/.openprogram/sessions/<sid>/events.jsonl` when the event carries a session whose directory exists;
 - `~/.openprogram/logs/events.jsonl` otherwise.
@@ -163,6 +163,13 @@ The process-wide bus appends every typed event as one JSON line, always on:
 A file past 5 MB rotates to `.1` (replacing the previous `.1`). Gate verdicts are recorded on the same line as
 a `gate` field — `{allowed, reasons, duration_ms, subscribers}` — not emitted as a second event. This is the
 layer's observability: read the log after a real turn to see the full stream and every gate decision.
+
+When a registered gate event first passes through `emit(event)` for typed observers, that notify phase defers
+the disk write. The same Event must then reach `emit_gate(event)`, which writes the single verdict-enriched row.
+Calling `emit` alone for a gate type is an incomplete dispatch: observers still receive it, but no event-log row
+is written before the verdict exists. `emit_gate(event)` is also a complete gate-only dispatch—the current
+`turn.stop` path uses it directly—so it writes one verdict row without invoking typed observers. Notify-kind
+events continue to log during `emit`.
 
 ## 7. Placement: a Process-Level Singleton Bus
 
@@ -191,7 +198,7 @@ Dependency direction: the event system imports nothing from webui. webui subscri
 | consumer-facing surface | backed by |
 |---|---|
 | `tool_gate.register_tool_gate` / `decide_tool_gate` / `ToolGateDenied` | thin shell over `subscribe_gate("tool.before", ...)` / `emit_gate` — public signatures unchanged for agent_loop and the proactive engine |
-| plugin `hooks` entrypoint | `plugins/hooks.register_plugin_hooks` subscribes each handler on the bus, keyed by bus event name — notify events via `subscribe`, gate events (`tool.before`) via `subscribe_gate` with the veto protocol (falsy return allows, a reason string or `ToolGateDenied` denies, any other exception is logged and fail-open) |
+| plugin `hooks` entrypoint | `plugins/hooks.register_plugin_hooks` subscribes each handler on the bus, keyed by bus event name — notify events via `subscribe`, gate events (`tool.before` and `turn.stop`) via `subscribe_gate` with the veto protocol (falsy return allows, a reason string or `ToolGateDenied` denies, any other exception is logged and fail-open) |
 | `/goal` state changes | `goal._emit_goal_update` also emits `goal.update` |
 | config.json `hooks` | `openprogram.events.install_config_hooks()` at worker start |
 | type-B sources (auth, context, channels, memory) | `openprogram/events/bridges.py` bridge + per-source `emit_safe` taps |
