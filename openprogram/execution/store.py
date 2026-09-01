@@ -10,7 +10,7 @@ import uuid
 from contextlib import closing, contextmanager
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Iterator, Mapping
+from typing import Any, Collection, Iterator, Mapping
 
 from .model import (
     CapabilitySet,
@@ -457,6 +457,8 @@ class ExecutionStore:
         payload: Mapping[str, Any],
         actor: Mapping[str, Any],
         reason_code: str | None = None,
+        supersede_kinds: Collection[CommandKind] = (),
+        supersede_code: str = "superseded",
     ) -> tuple[ControlCommand, ExecutionRecord]:
         with self._transaction() as connection:
             command, duplicate = self._accept_command(
@@ -482,6 +484,31 @@ class ExecutionStore:
                 target=target,
                 reason_code=reason_code,
             )
+            if supersede_kinds:
+                values = tuple(kind.value for kind in supersede_kinds)
+                placeholders = ",".join("?" for _ in values)
+                rows = connection.execute(
+                    "SELECT command_id, status FROM commands "
+                    "WHERE execution_id = ? AND command_id != ? "
+                    "AND status IN (?, ?) "
+                    f"AND kind IN ({placeholders})",
+                    (
+                        execution_id,
+                        command_id,
+                        CommandStatus.ACCEPTED.value,
+                        CommandStatus.APPLYING.value,
+                        *values,
+                    ),
+                ).fetchall()
+                for row in rows:
+                    self._transition_command(
+                        connection,
+                        str(row["command_id"]),
+                        expected_status=CommandStatus(row["status"]),
+                        target=CommandStatus.REJECTED,
+                        result_version=execution.status_version,
+                        rejection_code=supersede_code,
+                    )
             command = self._transition_command(
                 connection,
                 command_id,

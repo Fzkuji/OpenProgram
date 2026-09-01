@@ -18,5 +18,11 @@ outcomes to this control plane instead of writing lifecycle state directly.
 The process-local driver registry stores only exact attempt/generation bindings;
 it is not a lifecycle authority and cannot replace durable execution state.
 
+`RuntimeControlService` commits pause and cancel intent before notifying a live
+driver. Missing or failing local delivery leaves the durable command applying
+for recovery. A pause becomes applied only after the current attempt publishes
+a declared safe-point checkpoint and relinquishes ownership; cancel atomically
+supersedes lower-priority applying commands.
+
 The normative design is
 [`docs/reference/design/runtime/execution/execution-control.html`](../../docs/reference/design/runtime/execution/execution-control.html).

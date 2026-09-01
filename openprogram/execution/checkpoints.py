@@ -6,7 +6,7 @@ import hashlib
 import json
 import time
 from contextlib import closing
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Sequence
 
 from .model import ExecutionRecord, TERMINAL_EXECUTION_STATUSES
@@ -14,6 +14,19 @@ from .store import ExecutionStore, _json
 
 
 CHECKPOINT_SCHEMA_VERSION = 1
+
+
+@dataclass(frozen=True)
+class CheckpointFragment:
+    """Driver-owned state captured at one declared safe point."""
+
+    safe_point_kind: str
+    frontier: tuple[Mapping[str, Any], ...]
+    state_refs: Mapping[str, Any]
+    completed_actions: tuple[Mapping[str, Any], ...] = ()
+    effect_receipts: tuple[Mapping[str, Any], ...] = ()
+    child_frontier: Mapping[str, Any] = field(default_factory=dict)
+    pending_command_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

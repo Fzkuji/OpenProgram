@@ -17,7 +17,11 @@ from .model import (
     RunRecord,
 )
 from .attempts import AttemptRecord, AttemptStatus, AttemptStore
-from .checkpoints import CheckpointManifest, ExecutionCheckpointStore
+from .checkpoints import (
+    CheckpointFragment,
+    CheckpointManifest,
+    ExecutionCheckpointStore,
+)
 from .effects import (
     EffectClassification,
     EffectRecord,
@@ -32,6 +36,7 @@ from .driver import (
     RuntimeSnapshot,
     TerminationReceipt,
 )
+from .control import ControlDispatch, RuntimeControlService, SafePointCompletion
 from .store import ExecutionStore, default_store
 
 __all__ = [
@@ -49,6 +54,7 @@ __all__ = [
     "AttemptStatus",
     "AttemptStore",
     "CheckpointManifest",
+    "CheckpointFragment",
     "ExecutionCheckpointStore",
     "EffectClassification",
     "EffectRecord",
@@ -60,5 +66,8 @@ __all__ = [
     "ExecutionDriver",
     "RuntimeSnapshot",
     "TerminationReceipt",
+    "ControlDispatch",
+    "RuntimeControlService",
+    "SafePointCompletion",
     "default_store",
 ]
