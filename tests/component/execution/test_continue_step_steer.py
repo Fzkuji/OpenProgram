@@ -4,12 +4,18 @@ import asyncio
 
 import pytest
 
+import openprogram.execution.store as execution_store
 from openprogram.execution.attempts import AttemptConflict, AttemptStore
 from openprogram.execution.checkpoints import CheckpointFragment
 from openprogram.execution.control import RuntimeControlService
 from openprogram.execution.driver import ActivationInput, DriverBinding, DriverRegistry
 from openprogram.execution.effects import EffectClassification, EffectStatus, EffectStore
-from openprogram.execution.model import CapabilitySet, CommandStatus, ExecutionStatus
+from openprogram.execution.model import (
+    CapabilitySet,
+    CommandKind,
+    CommandStatus,
+    ExecutionStatus,
+)
 from openprogram.execution.store import ExecutionStore
 
 
@@ -98,6 +104,153 @@ def test_continue_reuses_execution_and_creates_one_new_attempt(tmp_path):
     assert len(store.list_commands(paused.execution_id)) == 2
     current = attempts.get(result.execution.current_attempt_id)
     assert current is not None and current.generation == 2
+
+
+@pytest.mark.parametrize("operation", ["continue", "step"])
+def test_resume_rejects_an_existing_idle_owner_concurrently(tmp_path, operation):
+    store, attempts, service, paused = _paused(tmp_path)
+    leased, reserved = attempts.lease(
+        paused.execution_id,
+        expected_version=paused.status_version,
+        owner_id="worker_2",
+        ttl_seconds=30,
+        attempt_id="attempt_2",
+    )
+
+    async def submit(command_id):
+        request = getattr(service, f"request_{operation}")
+        return await request(
+            command_id=command_id,
+            execution_id=paused.execution_id,
+            expected_version=reserved.status_version,
+            actor={"surface": "test"},
+        )
+
+    async def scenario():
+        return await asyncio.gather(
+            submit(f"{operation}_1"), submit(f"{operation}_2"),
+            return_exceptions=True,
+        )
+
+    results = asyncio.run(scenario())
+
+    assert all(isinstance(result, AttemptConflict) for result in results)
+    assert all(result.code == "owner_exists" for result in results)
+    assert store.get_command(f"{operation}_1") is None
+    assert store.get_command(f"{operation}_2") is None
+    assert attempts.get(leased.attempt_id) == leased
+    current = store.get_execution(paused.execution_id)
+    assert current is not None and current.current_attempt_id == leased.attempt_id
+
+
+def test_owner_loss_paused_idle_attempt_applies_pause_and_is_idempotent(
+    tmp_path, monkeypatch
+):
+    store, attempts, service, paused = _paused(tmp_path)
+    leased, reserved = attempts.lease(
+        paused.execution_id,
+        expected_version=paused.status_version,
+        owner_id="worker_2",
+        ttl_seconds=30,
+        attempt_id="attempt_2",
+    )
+
+    # This state is produced by a crash after the pause transition was
+    # committed but before the applying pause command was finalized.
+    monkeypatch.setattr(execution_store, "validate_command", lambda *args: None)
+    with store._transaction() as connection:
+        command, duplicate = store._accept_command(
+            connection,
+            command_id="pause_2",
+            execution_id=paused.execution_id,
+            expected_version=reserved.status_version,
+            kind=CommandKind.PAUSE,
+            payload={},
+            actor={"surface": "test"},
+        )
+        assert not duplicate
+        command = store._transition_command(
+            connection,
+            command.command_id,
+            expected_status=CommandStatus.ACCEPTED,
+            target=CommandStatus.APPLYING,
+        )
+
+    recovered = service.recover_owner_loss(paused.execution_id)
+
+    assert recovered.execution.status is ExecutionStatus.PAUSED
+    assert recovered.execution.current_attempt_id is None
+    assert recovered.command is not None
+    assert recovered.command.status is CommandStatus.APPLIED
+    assert recovered.attempt is not None
+    assert recovered.attempt.attempt_id == leased.attempt_id
+    assert recovered.attempt.outcome == "owner_lost_before_activation"
+
+    repeated = service.recover_owner_loss(paused.execution_id)
+    assert repeated.execution == recovered.execution
+    assert repeated.command is None
+    assert store.get_command("pause_2") == recovered.command
+
+
+@pytest.mark.parametrize("unresolved", [False, True])
+def test_owner_loss_rejects_accepted_and_applying_steer_commands(
+    tmp_path, unresolved
+):
+    store, attempts, service, paused = _paused(tmp_path)
+    continued = asyncio.run(
+        service.request_continue(
+            command_id="continue_1",
+            execution_id=paused.execution_id,
+            expected_version=paused.status_version,
+            actor={"surface": "test"},
+        )
+    )
+    steer_1 = service.request_steer(
+        command_id="steer_1",
+        execution_id=continued.execution.execution_id,
+        expected_version=continued.execution.status_version,
+        actor={"surface": "test"},
+        payload={"message": "accepted"},
+    )
+    steer_2 = service.request_steer(
+        command_id="steer_2",
+        execution_id=continued.execution.execution_id,
+        expected_version=continued.execution.status_version,
+        actor={"surface": "test"},
+        payload={"message": "applying"},
+    )
+    store.transition_command(
+        steer_2.command.command_id,
+        expected_status=CommandStatus.ACCEPTED,
+        target=CommandStatus.APPLYING,
+    )
+    if unresolved:
+        effect_store = EffectStore(store)
+        effect = effect_store.register(
+            effect_id="effect_1",
+            execution_id=continued.execution.execution_id,
+            attempt_id=continued.execution.current_attempt_id,
+            action_id="send_message",
+            classification=EffectClassification.NONREPEATABLE,
+            idempotency_key=None,
+            metadata={},
+        )
+        effect_store.mark_dispatched(effect.effect_id, expected_status=effect.status)
+
+    recovered = service.recover_owner_loss(continued.execution.execution_id)
+
+    expected_status = (
+        ExecutionStatus.RECONCILIATION_REQUIRED if unresolved else ExecutionStatus.INTERRUPTED
+    )
+    expected_code = "effect_reconciliation" if unresolved else "owner_lost"
+    assert recovered.execution.status is expected_status
+    assert recovered.command is not None
+    assert recovered.command.status is CommandStatus.REJECTED
+    for command_id in (steer_1.command.command_id, steer_2.command.command_id):
+        command = store.get_command(command_id)
+        assert command is not None
+        assert command.status is CommandStatus.REJECTED
+        assert command.rejection_code == expected_code
 
 
 def test_step_is_one_permit_and_atomically_pauses_with_receipt(tmp_path):

@@ -271,6 +271,11 @@ class RuntimeControlService:
                     else None
                 )
                 return command, execution, None, checkpoint, (), True
+            if execution.current_attempt_id is not None:
+                raise AttemptConflict(
+                    "owner_exists",
+                    "execution already has a current attempt",
+                )
             checkpoint = (
                 self.checkpoints._get(connection, execution.checkpoint_head_id)
                 if execution.checkpoint_head_id
@@ -1435,6 +1440,9 @@ class RuntimeControlService:
                 target = execution.status
                 reason_code = "owner_lost_before_activation"
                 outcome = "owner_lost_before_activation"
+                if execution.status is ExecutionStatus.PAUSED:
+                    command_kind = CommandKind.PAUSE
+                    apply_command = True
             elif execution.status is ExecutionStatus.RUNNING:
                 running_commands = True
                 target = (
@@ -1505,15 +1513,19 @@ class RuntimeControlService:
             command = None
             if running_commands:
                 rows = connection.execute(
-                    "SELECT * FROM commands WHERE execution_id = ? AND status = ? "
-                    "ORDER BY submitted_at, command_id",
-                    (execution_id, CommandStatus.APPLYING.value),
+                    "SELECT * FROM commands WHERE execution_id = ? "
+                    "AND status IN (?, ?) ORDER BY submitted_at, command_id",
+                    (
+                        execution_id,
+                        CommandStatus.ACCEPTED.value,
+                        CommandStatus.APPLYING.value,
+                    ),
                 ).fetchall()
                 for row in rows:
                     recovered_command = self.executions._transition_command(
                         connection,
                         str(row["command_id"]),
-                        expected_status=CommandStatus.APPLYING,
+                        expected_status=CommandStatus(row["status"]),
                         target=CommandStatus.REJECTED,
                         result_version=recovered.status_version,
                         rejection_code=(
