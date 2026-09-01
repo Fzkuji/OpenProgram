@@ -79,7 +79,9 @@ outside).
 from __future__ import annotations
 
 import asyncio
+from contextlib import contextmanager
 import errno
+import hashlib
 import json
 import os
 import secrets
@@ -110,6 +112,205 @@ _SEARCH_IGNORED_DIRS = frozenset({
     "node_modules", ".git", "dist", ".next", "__pycache__",
     ".venv", "venv", ".cache", "target", "build",
 })
+_MUTATION_LOCKS: dict[str, threading.RLock] = {}
+_MUTATION_LOCKS_GUARD = threading.Lock()
+
+
+def _mutation_lock(project_id: str) -> threading.RLock:
+    with _MUTATION_LOCKS_GUARD:
+        return _MUTATION_LOCKS.setdefault(project_id, threading.RLock())
+
+
+@contextmanager
+def _workspace_mutation_lock(project_id: str):
+    """Serialize mutations across threads and worker processes."""
+    local = _mutation_lock(project_id)
+    with local:
+        lock_file = None
+        try:
+            from openprogram.paths import get_state_dir
+            state = get_state_dir()
+            state.mkdir(parents=True, exist_ok=True)
+            try:
+                state.chmod(0o700)
+            except OSError:
+                pass
+            lock_path = state / "file_operations.lock"
+            lock_file = open(lock_path, "a+b")
+            try:
+                os.chmod(lock_path, 0o600)
+            except OSError:
+                pass
+            try:
+                import fcntl
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            except (ImportError, OSError):
+                pass
+            yield
+        finally:
+            if lock_file is not None:
+                try:
+                    import fcntl
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                except (ImportError, OSError):
+                    pass
+                lock_file.close()
+
+
+def _file_digest(target: str) -> str | None:
+    try:
+        with open(target, "rb") as stream:
+            digest = hashlib.sha256()
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+            return digest.hexdigest()
+    except OSError:
+        return None
+
+
+def _identity(project_id: str, path: str) -> dict:
+    target, error = _resolve(project_id, path)
+    if error or target is None:
+        return {"exists": False, "error": error}
+    try:
+        info = os.stat(target, follow_symlinks=False)
+    except OSError:
+        return {"exists": False}
+    kind = "dir" if stat.S_ISDIR(info.st_mode) else "file"
+    return {
+        "exists": True, "kind": kind, "dev": info.st_dev, "ino": info.st_ino,
+        "mtime_ns": info.st_mtime_ns,
+        "digest": _file_digest(target) if kind == "file" else None,
+    }
+
+
+def _identity_matches(actual: dict, expected: dict) -> bool:
+    if bool(actual.get("exists")) != bool(expected.get("exists")):
+        return False
+    if not actual.get("exists"):
+        return True
+    return all(field not in expected or actual.get(field) == expected.get(field)
+               for field in ("kind", "dev", "ino", "mtime_ns", "digest"))
+
+
+def _mutation_states(project_id: str, action: str, payload: dict) -> tuple[dict, dict]:
+    path = str(payload.get("path") or "")
+    before = {"path": path, "source": _identity(project_id, path)}
+    if action == "project_file_write":
+        raw = str(payload.get("content") or "").encode("utf-8")
+        after = {"path": path, "target": {
+            "exists": True, "kind": "file", "digest": hashlib.sha256(raw).hexdigest(),
+        }}
+    elif action == "project_file_create":
+        kind = payload.get("kind")
+        after = {"path": path, "target": {"exists": True, "kind": kind,
+                                               "digest": hashlib.sha256(b"").hexdigest()
+                                               if kind == "file" else None}}
+    elif action in {"project_file_rename", "project_file_copy"}:
+        destination = str(payload.get("new_path") or "")
+        before["destination"] = _identity(project_id, destination)
+        source = before["source"]
+        target = {"exists": True, "kind": source.get("kind"),
+                  "digest": source.get("digest")}
+        # rename preserves the filesystem identity; copy intentionally does
+        # not.  Its durable proof is the destination kind/content digest.
+        if action == "project_file_rename":
+            target.update(dev=source.get("dev"), ino=source.get("ino"))
+        after = {"path": path, "destination": destination, "target": target}
+    else:
+        after = {"path": path, "target": {"exists": False}}
+    return before, after
+
+
+def _mutation_state_matches(project_id: str, action: str, payload: dict,
+                            state: dict, *, after: bool) -> bool:
+    path = str(payload.get("path") or "")
+    if action == "project_file_write":
+        actual = _identity(project_id, path)
+        return _identity_matches(actual, state.get("target", {})) if after else _identity_matches(actual, state.get("source", {}))
+    if action == "project_file_create":
+        actual = _identity(project_id, path)
+        return _identity_matches(actual, state.get("target", {})) if after else not actual.get("exists")
+    if action == "project_file_delete":
+        actual = _identity(project_id, path)
+        return not actual.get("exists") if after else _identity_matches(actual, state.get("source", {}))
+    destination = str(payload.get("new_path") or "")
+    source = _identity(project_id, path)
+    target = _identity(project_id, destination)
+    if after:
+        expected = state.get("target", {})
+        source_ok = (
+            not source.get("exists")
+            if action == "project_file_rename"
+            else _identity_matches(source, state.get("source", {}))
+        )
+        return source_ok and _identity_matches(target, expected)
+    return _identity_matches(source, state.get("source", {})) and not target.get("exists")
+
+
+def _replayed_mutation_result(project_id: str, action: str, payload: dict) -> dict:
+    result = {"ok": True}
+    if action == "project_file_write":
+        target, _error = _resolve(project_id, str(payload.get("path") or ""))
+        try:
+            result["mtime"] = os.stat(target).st_mtime if target else None
+        except OSError:
+            result["mtime"] = None
+    return result
+
+
+def _normalise_mutation_result(result: dict) -> dict:
+    result = dict(result)
+    if result.get("status") == "recovery_required":
+        return result
+    if result.get("ok"):
+        result.setdefault("status", "ready")
+        return result
+    if result.get("conflict"):
+        result.setdefault("status", "conflict")
+        result.setdefault("error_code", "CONFLICT")
+        return result
+    if result.get("error"):
+        result.setdefault("status", "error")
+        message = str(result["error"]).lower()
+        if ("must be" in message or "required" in message
+                or "escapes" in message or "invalid" in message):
+            code = "INVALID_REQUEST"
+        elif "permission" in message:
+            code = "PERMISSION"
+        elif ("does not exist" in message or "unknown project" in message
+              or "not a " in message):
+            code = "NOT_FOUND"
+        elif "already exists" in message or "changed on disk" in message:
+            code = "CONFLICT"
+        else:
+            code = "IO_ERROR"
+        result.setdefault("error_code", code)
+        if code == "CONFLICT":
+            result["status"] = "conflict"
+    return result
+
+
+def _normalise_file_result(result: dict) -> dict:
+    """Give non-mutating file replies one stable terminal shape."""
+    result = dict(result)
+    if result.get("error"):
+        result.setdefault("status", "error")
+        message = str(result["error"]).lower()
+        if ("must be" in message or "required" in message
+                or "escapes" in message or "invalid" in message):
+            code = "INVALID_REQUEST"
+        elif "permission" in message:
+            code = "PERMISSION"
+        elif ("not found" in message or "does not exist" in message
+              or "unknown project" in message or "not a " in message):
+            code = "NOT_FOUND"
+        else:
+            code = "IO_ERROR"
+        result.setdefault("error_code", code)
+    else:
+        result.setdefault("status", "ready")
+    return result
 
 
 def _request_id(cmd: dict) -> str | None:
@@ -132,18 +333,62 @@ def _durable_file_action(project_id: str, action: str, key: object,
         FileOperationConflict, default_file_operation_store, fingerprint,
     )
     store = default_file_operation_store()
-    try:
-        row, owner = store.begin(project_id, action, key, fingerprint(payload))
-    except FileOperationConflict:
-        return {"error_code": "IDEMPOTENCY_KEY_CONFLICT",
-                "error": "idempotency key is bound to another file operation"}
-    if not owner:
-        return store.replay(row)
-    result = fn()
-    store.complete(row["operation_id"], result)
-    result = dict(result)
-    result["operation_id"] = row["operation_id"]
-    return result
+    with _workspace_mutation_lock(project_id):
+        before, after = _mutation_states(project_id, action, payload)
+        try:
+            row, owner = store.begin(
+                project_id, action, key, fingerprint(payload),
+                payload=payload, before=before, after=after,
+            )
+        except FileOperationConflict:
+            return {"status": "conflict", "error_code": "IDEMPOTENCY_KEY_CONFLICT",
+                    "error": "idempotency key is bound to another file operation"}
+        if not owner:
+            if row.get("status") in {"completed", "recovery_required", "conflict", "error"}:
+                return store.replay(row)
+            stored_payload = json.loads(row.get("payload_json") or "{}")
+            stored_before = json.loads(row.get("before_json") or "{}")
+            # An in-flight record has no durable receipt proving that the FS
+            # operation completed.  Even if the current state equals the
+            # intended after-image, another writer could have produced it.
+            # Only a stored completed receipt permits replay.
+            if not _mutation_state_matches(project_id, action, stored_payload, stored_before, after=False):
+                result = {"status": "recovery_required", "error_code": "RECOVERY_REQUIRED",
+                          "error": "file operation state cannot be reconciled safely"}
+                store.complete(row["operation_id"], result)
+                result["operation_id"] = row["operation_id"]
+                return result
+            # The previous process recorded its intent but did not change the
+            # filesystem. Continue under the same workspace lock.
+            payload = stored_payload
+        store.mark_applying(row["operation_id"])
+        try:
+            result = fn()
+        except Exception as exc:
+            # The journal is an intent record, not an in-memory lease.  A
+            # handler exception must leave a terminal, explainable record so
+            # a restart cannot expose a permanent in_flight operation.
+            if _mutation_state_matches(project_id, action, payload, after, after=True):
+                result = _replayed_mutation_result(project_id, action, payload)
+                terminal = "completed"
+            elif _mutation_state_matches(project_id, action, payload, before, after=False):
+                result = {"error": f"{type(exc).__name__}: file operation failed",
+                          "error_code": "IO_ERROR"}
+                terminal = "error"
+            else:
+                result = {"status": "recovery_required",
+                          "error_code": "RECOVERY_REQUIRED",
+                          "error": "file operation state cannot be reconciled safely"}
+                terminal = "recovery_required"
+            store.finish(row["operation_id"], result, status=terminal, phase=terminal)
+            result = _normalise_mutation_result(result)
+            result["operation_id"] = row["operation_id"]
+            return result
+        result = _normalise_mutation_result(result)
+        store.complete(row["operation_id"], result)
+        result = dict(result)
+        result["operation_id"] = row["operation_id"]
+        return result
 
 
 @dataclass(frozen=True)
@@ -229,6 +474,7 @@ def _query_error(project_id: str, path: str, *, code: str,
         "page_size": _QUERY_PAGE_SIZE,
         "error_code": code,
         "error": message or code,
+        "status": "error",
     }
     payload["entries" if kind == "directory" else "results"] = []
     return payload
@@ -655,6 +901,7 @@ def _query_page(snapshot: _QuerySnapshot, offset: int, page_size: int,
             "total": len(snapshot.rows),
             "sort": snapshot.sort,
             "error_code": None,
+            "status": "ready",
             field: list(rows),
         }
 
@@ -1115,7 +1362,7 @@ async def handle_project_file_tree(ws, cmd: dict) -> None:
         )
         await ws.send_text(json.dumps({
             "type": "project_file_tree_result", "data": {
-                **result, "request_id": _request_id(cmd),
+                **result, "action": "project_file_tree", "request_id": _request_id(cmd),
             },
         }, default=str))
         return
@@ -1127,7 +1374,7 @@ async def handle_project_file_tree(ws, cmd: dict) -> None:
     )
     await ws.send_text(json.dumps({
         "type": "project_file_tree_result",
-        "data": {**result, "request_id": _request_id(cmd)},
+        "data": {**result, "action": "project_file_tree", "request_id": _request_id(cmd)},
     }, default=str))
 
 
@@ -1144,7 +1391,7 @@ async def handle_project_file_search(ws, cmd: dict) -> None:
         )
         await ws.send_text(json.dumps({
             "type": "project_file_search_result", "data": {
-                **result, "request_id": _request_id(cmd),
+                **result, "action": "project_file_search", "request_id": _request_id(cmd),
             },
         }, default=str))
         return
@@ -1157,7 +1404,7 @@ async def handle_project_file_search(ws, cmd: dict) -> None:
     )
     await ws.send_text(json.dumps({
         "type": "project_file_search_result",
-        "data": {**result, "request_id": _request_id(cmd)},
+        "data": {**result, "action": "project_file_search", "request_id": _request_id(cmd)},
     }, default=str))
 
 
@@ -1165,12 +1412,12 @@ async def handle_project_file_read(ws, cmd: dict) -> None:
     project_id = (cmd.get("project_id") or "").strip()
     path = cmd.get("path") or ""  # no .strip() — see handle_project_file_tree
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(
-        None, lambda: _read_file(project_id, path),
-    )
+    result = ({"error_code": "INVALID_REQUEST", "error": "project_id and path are required"}
+              if not project_id or not isinstance(cmd.get("path"), str)
+              else await loop.run_in_executor(None, lambda: _read_file(project_id, path)))
     payload = {"project_id": project_id, "path": path,
-               "request_id": _request_id(cmd)}
-    payload.update(result)
+               "action": "project_file_read", "request_id": _request_id(cmd)}
+    payload.update(_normalise_file_result(result))
     await ws.send_text(json.dumps({
         "type": "project_file_read_result",
         "data": payload,
@@ -1197,8 +1444,8 @@ async def handle_project_file_write(ws, cmd: dict) -> None:
             ),
         )
     payload = {"project_id": project_id, "path": path,
-               "request_id": _request_id(cmd)}
-    payload.update(result)
+               "action": "project_file_write", "request_id": _request_id(cmd)}
+    payload.update(_normalise_mutation_result(result))
     await ws.send_text(json.dumps({
         "type": "project_file_write_result",
         "data": payload,
@@ -1218,8 +1465,8 @@ async def handle_project_file_create(ws, cmd: dict) -> None:
         ),
     )
     payload = {"project_id": project_id, "path": path, "kind": kind,
-               "request_id": _request_id(cmd)}
-    payload.update(result)
+               "action": "project_file_create", "request_id": _request_id(cmd)}
+    payload.update(_normalise_mutation_result(result))
     await ws.send_text(json.dumps({
         "type": "project_file_create_result",
         "data": payload,
@@ -1239,8 +1486,8 @@ async def handle_project_file_rename(ws, cmd: dict) -> None:
         ),
     )
     payload = {"project_id": project_id, "path": path, "new_path": new_path,
-               "request_id": _request_id(cmd)}
-    payload.update(result)
+               "action": "project_file_rename", "request_id": _request_id(cmd)}
+    payload.update(_normalise_mutation_result(result))
     await ws.send_text(json.dumps({
         "type": "project_file_rename_result",
         "data": payload,
@@ -1260,8 +1507,8 @@ async def handle_project_file_copy(ws, cmd: dict) -> None:
         ),
     )
     payload = {"project_id": project_id, "path": path, "new_path": new_path,
-               "request_id": _request_id(cmd)}
-    payload.update(result)
+               "action": "project_file_copy", "request_id": _request_id(cmd)}
+    payload.update(_normalise_mutation_result(result))
     await ws.send_text(json.dumps({
         "type": "project_file_copy_result",
         "data": payload,
@@ -1279,8 +1526,8 @@ async def handle_project_file_delete(ws, cmd: dict) -> None:
         ),
     )
     payload = {"project_id": project_id, "path": path,
-               "request_id": _request_id(cmd)}
-    payload.update(result)
+               "action": "project_file_delete", "request_id": _request_id(cmd)}
+    payload.update(_normalise_mutation_result(result))
     await ws.send_text(json.dumps({
         "type": "project_file_delete_result",
         "data": payload,
@@ -1291,12 +1538,12 @@ async def handle_project_file_reveal(ws, cmd: dict) -> None:
     project_id = (cmd.get("project_id") or "").strip()
     path = cmd.get("path") or ""  # no .strip() — see handle_project_file_tree
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(
-        None, lambda: _reveal_entry(project_id, path),
-    )
+    result = ({"error_code": "INVALID_REQUEST", "error": "project_id and path are required"}
+              if not project_id or not isinstance(cmd.get("path"), str)
+              else await loop.run_in_executor(None, lambda: _reveal_entry(project_id, path)))
     payload = {"project_id": project_id, "path": path,
-               "request_id": _request_id(cmd)}
-    payload.update(result)
+               "action": "project_file_reveal", "request_id": _request_id(cmd)}
+    payload.update(_normalise_file_result(result))
     await ws.send_text(json.dumps({
         "type": "project_file_reveal_result",
         "data": payload,

@@ -92,7 +92,18 @@ export function filesWsRequest<T>(
   responseType: string,
   options: WsRequestOptions = {},
 ): Promise<T | null> {
-  return wsRequest<T>(action, payload, responseType, undefined, 4000, {
+  const ownerKeys = [
+    "project_id", "session_id", "assistant_msg_id", "path", "snapshot_id",
+  ] as const;
+  const expected = Object.fromEntries(
+    ownerKeys.filter((key) => payload[key] !== undefined)
+      .map((key) => [key, payload[key]]),
+  );
+  const match = (data: T) => {
+    const owner = data as T & Record<string, unknown>;
+    return Object.entries(expected).every(([key, value]) => owner[key] === value);
+  };
+  return wsRequest<T>(action, payload, responseType, match, 4000, {
     ...options, requestId: true,
   });
 }

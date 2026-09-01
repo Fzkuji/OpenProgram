@@ -98,13 +98,15 @@ export function TurnFilesChips({
   const [visible, setVisible] = useState(false);
   const [historyNonce, setHistoryNonce] = useState(0);
   const [historyState, setHistoryState] = useState<TurnHistoryState | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const historyControllerRef = useRef<AbortController | null>(null);
   const probeRef = useRef<HTMLDivElement>(null);
   const openReviewTab = useCenterTabs((state) => state.openReviewTab);
 
   useEffect(() => {
     setReverted(initiallyReverted);
   }, [initiallyReverted]);
+
+  useEffect(() => () => historyControllerRef.current?.abort(), [assistantMsgId, sessionId]);
 
   useEffect(() => {
     if (embedded) setFileCount(summary?.file_count ?? embedded.length);
@@ -126,11 +128,11 @@ export function TurnFilesChips({
   useEffect(() => {
     if (!visible || !sessionId) return;
     const controller = new AbortController();
-    void wsRequest<{ status?: string; action?: TurnHistoryOperation | null; error?: string; assistant_msg_id?: string }>(
+    void wsRequest<{ status?: string; action?: TurnHistoryOperation | null; error?: string; session_id?: string; assistant_msg_id?: string }>(
       "turn_history_state",
       { session_id: sessionId, assistant_msg_id: assistantMsgId },
       "turn_history_state_result",
-      (data) => data.assistant_msg_id === assistantMsgId,
+      (data) => data.session_id === sessionId && data.assistant_msg_id === assistantMsgId,
       4000,
       { signal: controller.signal, requestId: true },
     ).then((data) => {
@@ -146,51 +148,36 @@ export function TurnFilesChips({
   }, [assistantMsgId, historyNonce, sessionId, visible]);
 
   useEffect(() => {
-    if (embedded) {
-      setFiles(embedded);
-      return;
-    }
-    if (!visible) return;
-    if (!sessionId || !assistantMsgId) return;
-    const controller = new AbortController();
-    void wsRequest<{ files?: TurnFile[]; file_count?: number; reverted?: boolean; assistant_msg_id?: string }>(
-      "list_turn_files",
-      { session_id: sessionId, assistant_msg_id: assistantMsgId },
-      "list_turn_files_result",
-      (data) => data.assistant_msg_id === assistantMsgId,
-      4000,
-      { signal: controller.signal, requestId: true },
-    ).then((data) => {
-      if (!data || controller.signal.aborted) return;
-        setFiles((data.files ?? []).slice(0, MAX_CARD_FILES));
-        setFileCount(data.file_count ?? data.files?.length ?? 0);
-        setReverted(Boolean(data.reverted));
-    });
-    return () => controller.abort();
-  }, [assistantMsgId, embedded, sessionId, visible]);
+    if (embedded) setFiles(embedded);
+  }, [embedded]);
 
   function historyAction(direction: "undo" | "redo") {
     if (!sessionId || busy) return;
     setBusy(direction);
+    historyControllerRef.current?.abort();
+    const controller = new AbortController();
+    historyControllerRef.current = controller;
     const action = direction === "undo" ? "revert_turn" : "reapply_turn";
     const responseType = direction === "undo"
       ? "revert_turn_result"
       : "reapply_turn_result";
-    void wsRequest<{ msg_id?: string; status?: string; errors?: string[]; request_id?: string }>(
+    void wsRequest<{ session_id?: string; msg_id?: string; status?: string; errors?: string[]; error?: string; error_code?: string; request_id?: string }>(
       action,
       { session_id: sessionId, msg_id: assistantMsgId, idempotency_key: crypto.randomUUID() },
       responseType,
-      (data) => data.msg_id === assistantMsgId,
+      (data) => data.session_id === sessionId && data.msg_id === assistantMsgId,
       4000,
-      { requestId: true },
+      { requestId: true, signal: controller.signal },
     ).then((data) => {
+      if (controller.signal.aborted) return;
       if (!data) {
         setBusy(null);
         showToast(text("History action failed: not connected", "历史操作失败：连接已断开"));
         return;
       }
         setBusy(null);
-        const errors: string[] = data.errors ?? [];
+        const errors: string[] = data.errors ?? (data.error
+          ? [data.error_code ?? data.error] : []);
         if (errors.length) {
           const message = errors.join("; ");
           setHistoryError(message);
@@ -218,30 +205,21 @@ export function TurnFilesChips({
     });
   }
 
-  function loadMore() {
-    if (!sessionId || loadingMore) return;
-    setLoadingMore(true);
-    void wsRequest<{ files?: TurnFile[]; file_count?: number; assistant_msg_id?: string }>(
-      "list_turn_files",
-      { session_id: sessionId, assistant_msg_id: assistantMsgId },
-      "list_turn_files_result",
-      (data) => data.assistant_msg_id === assistantMsgId,
-      4000,
-      { requestId: true },
-    ).then((data) => {
-      if (!data) {
-        setLoadingMore(false);
-        return;
-      }
-        setLoadingMore(false);
-        setFiles((data.files ?? []).slice(0, MAX_CARD_FILES));
-        setFileCount(data.file_count ?? data.files?.length ?? 0);
-        setShowAll(true);
-    });
-  }
-
   if (!files) {
-    return <div ref={probeRef} className="turn-files-probe" aria-hidden="true" />;
+    return (
+      <div ref={probeRef} className="turn-files-card turn-files-summary-unavailable">
+        <span>{text("File summary unavailable.", "文件摘要不可用。")}</span>
+        {sessionId ? (
+          <button
+            type="button"
+            className="turn-files-review"
+            onClick={() => openReviewTab(sessionId, assistantMsgId, "turn")}
+          >
+            {text("Open Review", "打开审阅")}
+          </button>
+        ) : null}
+      </div>
+    );
   }
   if (files.length === 0) {
     if (allFileWritesFailed(blocks)) {
@@ -374,20 +352,15 @@ export function TurnFilesChips({
         ))}
       </div>
 
-      {!showAll && (files.length > COLLAPSE_AFTER || fileCount > files.length) ? (
+      {!showAll && files.length > COLLAPSE_AFTER ? (
         <button
           type="button"
           className="turn-files-more"
-          disabled={loadingMore}
-          onClick={() => fileCount > files.length ? loadMore() : setShowAll(true)}
+          onClick={() => setShowAll(true)}
         >
           {text(
-            loadingMore
-              ? "Loading more files…"
-              : `Show ${Math.min(MAX_CARD_FILES - COLLAPSE_AFTER, fileCount - COLLAPSE_AFTER)} more files`,
-            loadingMore
-              ? "正在加载更多文件…"
-              : `再显示 ${Math.min(MAX_CARD_FILES - COLLAPSE_AFTER, fileCount - COLLAPSE_AFTER)} 个文件`,
+            `Show ${Math.min(MAX_CARD_FILES - COLLAPSE_AFTER, fileCount - COLLAPSE_AFTER)} more files`,
+            `再显示 ${Math.min(MAX_CARD_FILES - COLLAPSE_AFTER, fileCount - COLLAPSE_AFTER)} 个文件`,
           )}
         </button>
       ) : showAll ? (

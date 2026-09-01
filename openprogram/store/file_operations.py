@@ -28,6 +28,10 @@ class FileOperationStore:
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.path.parent.chmod(0o700)
+        except OSError:
+            pass
         with self._connect() as db:
             db.execute("""
                 CREATE TABLE IF NOT EXISTS file_operations (
@@ -37,22 +41,46 @@ class FileOperationStore:
                     fingerprint TEXT NOT NULL,
                     operation_id TEXT NOT NULL UNIQUE,
                     status TEXT NOT NULL,
+                    phase TEXT NOT NULL DEFAULT 'prepared',
+                    payload_json TEXT NOT NULL DEFAULT '{}',
+                    before_json TEXT NOT NULL DEFAULT '{}',
+                    after_json TEXT NOT NULL DEFAULT '{}',
                     result_json TEXT,
                     created_at REAL NOT NULL,
                     updated_at REAL NOT NULL,
                     PRIMARY KEY (project_id, action, idempotency_key)
                 )
             """)
+            columns = {row[1] for row in db.execute("PRAGMA table_info(file_operations)")}
+            for name, definition in (
+                ("phase", "TEXT NOT NULL DEFAULT 'prepared'"),
+                ("payload_json", "TEXT NOT NULL DEFAULT '{}'"),
+                ("before_json", "TEXT NOT NULL DEFAULT '{}'"),
+                ("after_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ):
+                if name not in columns:
+                    db.execute(f"ALTER TABLE file_operations ADD COLUMN {name} {definition}")
+        try:
+            self.path.chmod(0o600)
+        except OSError:
+            pass
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(str(self.path), timeout=5.0)
+        for sidecar in (self.path, Path(f"{self.path}-wal"), Path(f"{self.path}-shm")):
+            try:
+                sidecar.chmod(0o600)
+            except OSError:
+                pass
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA busy_timeout=5000")
         db.execute("PRAGMA journal_mode=WAL")
         return db
 
     def begin(self, project_id: str, action: str, key: str,
-              request_fingerprint: str) -> tuple[dict[str, Any], bool]:
+              request_fingerprint: str, *, payload: Mapping[str, Any] | None = None,
+              before: Mapping[str, Any] | None = None,
+              after: Mapping[str, Any] | None = None) -> tuple[dict[str, Any], bool]:
         now = time.time()
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -67,23 +95,41 @@ class FileOperationStore:
             operation_id = f"fileop_{uuid.uuid4().hex}"
             db.execute(
                 "INSERT INTO file_operations(project_id, action, idempotency_key, "
-                "fingerprint, operation_id, status, result_json, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, 'in_flight', NULL, ?, ?)",
-                (project_id, action, key, request_fingerprint, operation_id, now, now),
+                "fingerprint, operation_id, status, phase, payload_json, before_json, "
+                "after_json, result_json, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, 'in_flight', 'prepared', ?, ?, ?, NULL, ?, ?)",
+                (project_id, action, key, request_fingerprint, operation_id,
+                 json.dumps(dict(payload or {}), sort_keys=True, separators=(",", ":"), default=str),
+                 json.dumps(dict(before or {}), sort_keys=True, separators=(",", ":"), default=str),
+                 json.dumps(dict(after or {}), sort_keys=True, separators=(",", ":"), default=str),
+                 now, now),
             )
             row = db.execute(
                 "SELECT * FROM file_operations WHERE operation_id=?", (operation_id,)
             ).fetchone()
             return dict(row), True
 
-    def complete(self, operation_id: str, result: Mapping[str, Any]) -> None:
+    def finish(self, operation_id: str, result: Mapping[str, Any], *,
+               status: str = "completed", phase: str = "completed") -> None:
         now = time.time()
         with self._connect() as db:
             db.execute(
-                "UPDATE file_operations SET status='completed', result_json=?, "
+                "UPDATE file_operations SET status=?, phase=?, result_json=?, "
                 "updated_at=? WHERE operation_id=? AND status='in_flight'",
-                (json.dumps(dict(result), sort_keys=True, separators=(",", ":"),
+                (status, phase,
+                 json.dumps(dict(result), sort_keys=True, separators=(",", ":"),
                              ensure_ascii=False, default=str), now, operation_id),
+            )
+
+    def complete(self, operation_id: str, result: Mapping[str, Any]) -> None:
+        self.finish(operation_id, result)
+
+    def mark_applying(self, operation_id: str) -> None:
+        with self._connect() as db:
+            db.execute(
+                "UPDATE file_operations SET phase='applying', updated_at=? "
+                "WHERE operation_id=? AND status='in_flight'",
+                (time.time(), operation_id),
             )
 
     @staticmethod
@@ -92,9 +138,9 @@ class FileOperationStore:
         if not isinstance(result, dict):
             result = {}
         result["operation_id"] = row["operation_id"]
-        if row["status"] != "completed":
+        if row["status"] not in {"completed", "recovery_required", "conflict", "error"}:
             result.setdefault("in_flight", True)
-            result.setdefault("status", "in_flight")
+            result.setdefault("status", row.get("phase") or "in_flight")
         return result
 
 

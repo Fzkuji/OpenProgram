@@ -23,11 +23,22 @@ test("FileTree bounds search results and cancels generation-stale queries", () =
   assert.match(source, /const generation = \+\+searchGeneration\.current/);
   assert.match(source, /generation !== searchGeneration\.current/);
   assert.match(source, /const MAX_SEARCH_RESULTS = 500/);
-  assert.match(source, /const combined = new Map<string, SearchResult>\(\)/);
+  assert.match(source, /const searchRows = useRef\(new Map<string, SearchResult>\(\)\)/);
+  assert.match(source, /const searchCursor = useRef<string \| null>\(null\)/);
+  assert.match(source, /const searchSnapshot = useRef<string \| null>\(null\)/);
+  assert.match(source, /const searchLoadingGeneration = useRef<number \| null>\(null\)/);
+  assert.match(source, /try \{[\s\S]*finally \{[\s\S]*searchLoadingGeneration\.current === generation/);
+  assert.match(source, /fetchSearchPage\(searchGeneration\.current\)/);
+  assert.doesNotMatch(source, /fetchedPages < Math\.min\(searchPage/);
   assert.match(source, /new AbortController\(\)/);
   assert.match(source, /filesWsRequest/);
   assert.doesNotMatch(source, /queryQueue/);
   assert.match(source, /\(\) => generation === queryGeneration\.current/);
+});
+
+test("file changes invalidate only the owning project tree", () => {
+  assert.match(source, /detail\?\.project_id !== projectId/);
+  assert.match(source, /detail: \{ project_id: projectId \}/);
 });
 
 test("Filter and Highlight preserve their existing tree semantics", () => {

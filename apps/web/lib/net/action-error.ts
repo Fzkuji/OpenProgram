@@ -1,4 +1,5 @@
 import { showToast } from "@/lib/format-utils/toast";
+import { isWsRequestPending } from "@/lib/net/ws-request";
 
 export interface ActionErrorNotice {
   action: string;
@@ -78,6 +79,10 @@ export function consumeCommandErrorFrame(
   if (frame.type !== "operation_error" && frame.type !== "action_error") {
     return false;
   }
+  // wsRequest owns correlated failures.  The global dispatcher must leave
+  // those frames available to the request listener and avoid a duplicate
+  // toast; uncorrelated errors remain user-visible here.
+  if (isWsRequestPending(frame.data?.request_id, frame.data?.action)) return false;
   consumeOperationError(frame.data, translate);
   return true;
 }

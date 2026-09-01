@@ -6,6 +6,7 @@ import { FileText } from "lucide-react";
 import { FeatherIcon } from "@/components/animated-icons";
 import { useTranslation } from "@/lib/i18n";
 import { getSocket } from "@/lib/runtime-bridge/state";
+import { registerWsRequest } from "@/lib/net/ws-request";
 import { UnifiedDiff } from "@/components/chat/messages/unified-diff";
 import styles from "./review-tab-pane.module.css";
 
@@ -176,11 +177,14 @@ export function ReviewTabPane({
       return;
     }
     setScopeState((current) => ({ ...current, loading: true, error: undefined }));
+    const controller = new AbortController();
     const requestId = crypto.randomUUID();
+    const releasePending = registerWsRequest(requestId, "review_scope");
     const finishScopeError = (error: string) => {
       socket.removeEventListener("message", onMessage);
       socket.removeEventListener("close", onClose);
       window.clearTimeout(timeoutId);
+      releasePending();
       setScopeState((current) => ({
         ...current,
         loading: false,
@@ -196,14 +200,22 @@ export function ReviewTabPane({
       try {
         const frame = JSON.parse(event.data);
         const data = frame?.data ?? {};
+        if (controller.signal.aborted) return;
+        if (frame?.type === "operation_error" && data.request_id === requestId
+          && data.action === "review_scope"
+          && data.session_id === sessionId) {
+          finishScopeError(data.message || data.code || text("Review request failed", "审阅请求失败"));
+          return;
+        }
         if (frame?.type !== "review_scope_result") return;
         if (data.request_id !== requestId) return;
-        if (data.session_id !== sessionId || data.scope !== scope) return;
+        if (data.action !== "review_scope" || data.session_id !== sessionId || data.scope !== scope) return;
         if (scope === "turn" && data.assistant_msg_id !== assistantMsgId) return;
         if (data.category !== category || data.query !== query || data.sort !== sort) return;
         socket.removeEventListener("message", onMessage);
         socket.removeEventListener("close", onClose);
         window.clearTimeout(timeoutId);
+        releasePending();
         const stale = data.status === "stale" || data.error === "STALE_SNAPSHOT";
         if (stale) {
           const recoveryKey = `${scope}\u0000${category}\u0000${query}\u0000${sort}\u0000${fileCursor ?? ""}`;
@@ -275,6 +287,8 @@ export function ReviewTabPane({
       finishScopeError(text("Not connected", "连接已断开"));
     }
     return () => {
+      controller.abort();
+      releasePending();
       socket.removeEventListener("message", onMessage);
       socket.removeEventListener("close", onClose);
       window.clearTimeout(timeoutId);
@@ -288,11 +302,14 @@ export function ReviewTabPane({
       return;
     }
     setDiffState({ loading: true, path: selectedPath });
+    const controller = new AbortController();
     const requestId = crypto.randomUUID();
+    const releasePending = registerWsRequest(requestId, "review_file_diff");
     const finishDiffError = (error: string) => {
       socket.removeEventListener("message", onMessage);
       socket.removeEventListener("close", onClose);
       window.clearTimeout(timeoutId);
+      releasePending();
       setDiffState({ loading: false, path: selectedPath, error });
     };
     const onClose = () => finishDiffError(text("Diff request disconnected", "差异请求连接已断开"));
@@ -300,10 +317,18 @@ export function ReviewTabPane({
       try {
         const frame = JSON.parse(event.data);
         const data = frame?.data ?? {};
+        if (controller.signal.aborted) return;
+        if (frame?.type === "operation_error" && data.request_id === requestId
+          && data.action === "review_file_diff"
+          && data.session_id === sessionId) {
+          finishDiffError(data.message || data.code || text("Diff request failed", "差异请求失败"));
+          return;
+        }
         if (frame?.type !== "review_file_diff_result") return;
         if (data.request_id !== requestId) return;
         if (
-          data.session_id !== sessionId
+          data.action !== "review_file_diff"
+          || data.session_id !== sessionId
           || data.scope !== scope
           || data.path !== selectedPath
           || data.snapshot_id !== scopeState.snapshot_id
@@ -314,6 +339,7 @@ export function ReviewTabPane({
         socket.removeEventListener("message", onMessage);
         socket.removeEventListener("close", onClose);
         window.clearTimeout(timeoutId);
+        releasePending();
         if (data.error === "STALE_SNAPSHOT") {
           const recoveryKey = `${scope}\u0000${category}\u0000${query}\u0000${sort}\u0000${selectedPath}\u0000${diffCursor ?? ""}`;
           const retry = staleRecoveryRef.current !== recoveryKey;
@@ -381,6 +407,8 @@ export function ReviewTabPane({
       finishDiffError(text("Not connected", "连接已断开"));
     }
     return () => {
+      controller.abort();
+      releasePending();
       socket.removeEventListener("message", onMessage);
       socket.removeEventListener("close", onClose);
       window.clearTimeout(timeoutId);

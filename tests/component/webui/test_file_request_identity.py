@@ -96,3 +96,91 @@ def test_file_write_replay_collision_and_restart(project):
                      "expected_mtime": command["expected_mtime"]}),
     )
     assert not owner and store.replay(row)["operation_id"] == first["operation_id"]
+
+
+def test_copy_replay_and_terminal_recovery_are_durable(project, tmp_path):
+    request_id = str(uuid.uuid4())
+    command = {
+        "project_id": "p1", "path": "source.txt", "new_path": "copy.txt",
+        "idempotency_key": "copy-once", "request_id": request_id,
+    }
+    first = run(files.handle_project_file_copy, command)["data"]
+    assert first["status"] == "ready"
+    replay = run(files.handle_project_file_copy, command)["data"]
+    assert replay["operation_id"] == first["operation_id"]
+    assert (project / "copy.txt").read_text(encoding="utf-8") == "before"
+
+    from openprogram.store.file_operations import FileOperationStore
+    db_path = tmp_path / "empty-profile" / "file_operations.db"
+    store = FileOperationStore(db_path)
+    row, owner = store.begin("p1", "project_file_delete", "crash-key", "fp",
+                              payload={"path": "missing.txt"},
+                              before={"source": {"exists": True}},
+                              after={"target": {"exists": False}})
+    assert owner
+    store.finish(row["operation_id"], {
+        "status": "recovery_required",
+        "error_code": "RECOVERY_REQUIRED",
+        "error": "file operation state cannot be reconciled safely",
+    }, status="recovery_required", phase="recovery_required")
+    reopened = FileOperationStore(db_path)
+    replayed = reopened.replay(reopened.begin(
+        "p1", "project_file_delete", "crash-key", "fp",
+    )[0])
+    assert replayed["status"] == "recovery_required"
+    assert "in_flight" not in replayed
+    assert db_path.stat().st_mode & 0o777 == 0o600
+    assert db_path.parent.stat().st_mode & 0o777 == 0o700
+
+
+def test_inflight_after_image_is_not_assumed_to_be_our_write(project):
+    from openprogram.store.file_operations import default_file_operation_store, fingerprint
+
+    payload = {"path": "source.txt", "content": "same", "expected_mtime": None}
+    before, after = files._mutation_states("p1", "project_file_write", payload)
+    store = default_file_operation_store()
+    row, owner = store.begin(
+        "p1", "project_file_write", "crashed-write", fingerprint(payload),
+        payload=payload, before=before, after=after,
+    )
+    assert owner
+    # An unrelated writer produces the same bytes after the intent was
+    # persisted.  There is no durable apply token, so retry must stop.
+    (project / "source.txt").write_text("same", encoding="utf-8")
+    result = run(files.handle_project_file_write, {
+        "project_id": "p1", **payload,
+        "idempotency_key": "crashed-write", "request_id": str(uuid.uuid4()),
+    })["data"]
+    assert result["status"] == "recovery_required"
+    assert result["error_code"] == "RECOVERY_REQUIRED"
+    assert result["operation_id"] == row["operation_id"]
+
+
+def test_inflight_before_image_is_retried_under_the_lock(project):
+    from openprogram.store.file_operations import default_file_operation_store, fingerprint
+
+    payload = {"path": "source.txt", "content": "retry", "expected_mtime": None}
+    before, after = files._mutation_states("p1", "project_file_write", payload)
+    store = default_file_operation_store()
+    row, owner = store.begin(
+        "p1", "project_file_write", "retry-write", fingerprint(payload),
+        payload=payload, before=before, after=after,
+    )
+    assert owner
+    result = run(files.handle_project_file_write, {
+        "project_id": "p1", **payload,
+        "idempotency_key": "retry-write", "request_id": str(uuid.uuid4()),
+    })["data"]
+    assert result["status"] == "ready"
+    assert result["operation_id"] == row["operation_id"]
+    assert (project / "source.txt").read_text(encoding="utf-8") == "retry"
+
+
+def test_review_stale_states_keep_their_protocol_code():
+    assert files._normalise_file_result({"error": "path escapes project root"})["error_code"] == "INVALID_REQUEST"
+    from openprogram.webui.ws_actions import turn_files
+
+    for code in ("STALE_SNAPSHOT", "STALE_CURSOR"):
+        result = turn_files._stable_file_result({"status": "stale", "error": code})
+        assert result["status"] == "stale"
+        assert result["error_code"] == code

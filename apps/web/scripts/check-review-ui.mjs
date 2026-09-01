@@ -13,7 +13,7 @@ const reviewLayout = read("lib/state/review-tab-layout.ts");
 const cardCss = read("app/styles/chat/turn-files-card.css");
 const design = read("../../docs/reference/design/ui/chat-turn-visual-spec.html");
 
-assert.match(card, /if \(embedded\) \{\s*setFiles\(embedded\);\s*return;/);
+assert.match(card, /if \(embedded\) setFiles\(embedded\);/);
 assert.match(bubble, /summary=\{msg\.turnFiles\}/);
 assert.match(rail, /summary=\{assistantTurnFiles\}/);
 assert.doesNotMatch(card, /turn_file_diff|UnifiedDiff|aria-expanded/);
@@ -23,7 +23,7 @@ assert.match(card, /text\("Redo"/);
 assert.match(card, /openReviewTab/);
 assert.match(card, /IntersectionObserver/);
 assert.match(card, /const MAX_CARD_FILES = 20/);
-assert.match(card, /function loadMore\(\)/);
+assert.doesNotMatch(card, /list_turn_files|function loadMore\(\)/);
 assert.match(card, /wsRequest[\s\S]*"turn_history_state"/);
 assert.match(card, /operation: null,[\s\S]*?setHistoryNonce/);
 assert.match(card, /setHistoryError\(""\);\s*setHistoryState\(/);

@@ -1711,6 +1711,34 @@ async def _run(fn) -> Any:
     return await loop.run_in_executor(None, fn)
 
 
+def _stable_file_result(result: dict) -> dict:
+    """Normalize turn-file replies without exposing exception text as a code."""
+    result = dict(result)
+    error = result.get("error")
+    if error:
+        text = str(error).lower()
+        if "stale_snapshot" in text or "stale snapshot" in text:
+            result["status"] = "stale"
+            result["error_code"] = "STALE_SNAPSHOT"
+        elif "stale_cursor" in text or "stale cursor" in text:
+            result["status"] = "stale"
+            result["error_code"] = "STALE_CURSOR"
+        else:
+            result.setdefault("status", "error")
+            result.setdefault("error_code", "INVALID_REQUEST" if "required" in text
+                          or "invalid" in text or "unsafe" in text
+                          or "unknown review" in text
+                          else "NOT_FOUND" if "unknown" in text
+                          or "not found" in text or "not recorded" in text
+                          else "CONFLICT" if "stale" in text or "run_active" in text
+                          else "IO_ERROR")
+    elif result.get("status") not in {"blocked", "stale"}:
+        result.setdefault("status", "ready")
+    if result.get("status") == "stale":
+        result.setdefault("error_code", "STALE_SNAPSHOT")
+    return result
+
+
 def _review_request_values(cmd: dict, *, include_path: bool = False) -> tuple[dict, str | None]:
     errors: list[str] = []
 
@@ -1772,10 +1800,11 @@ async def handle_list_turn_files(ws, cmd: dict) -> None:
         if session_id and turn_id
         else {"files": [], "paths": [], "error": "session_id and assistant_msg_id are required"}
     )
+    result = _stable_file_result(result)
     await ws.send_text(json.dumps({
         "type": "list_turn_files_result",
         "data": {"session_id": session_id, "assistant_msg_id": turn_id,
-                 "request_id": cmd.get("request_id"), **result},
+                 "request_id": cmd.get("request_id"), **result, "action": "list_turn_files"},
     }, default=str))
 
 
@@ -1783,17 +1812,27 @@ async def handle_turn_file_diff(ws, cmd: dict) -> None:
     session_id = (cmd.get("session_id") or "").strip()
     turn_id = (cmd.get("assistant_msg_id") or "").strip()
     path = (cmd.get("path") or "").strip()
-    cursor = int(cmd.get("cursor") or 0)
+    raw_cursor = cmd.get("cursor")
+    cursor_invalid = False
+    try:
+        cursor = int(raw_cursor or 0)
+    except (TypeError, ValueError):
+        cursor = 0
+        cursor_invalid = True
     result = (
         await _run(lambda: _turn_file_diff(session_id, turn_id, path, cursor))
         if session_id and turn_id and path
         else {"diff": "", "diff_state": "unavailable", "error": "session_id, assistant_msg_id and path are required"}
     )
+    if cursor_invalid:
+        result = {"diff": "", "diff_state": "unavailable", "error": "cursor must be an integer"}
+    result = _stable_file_result(result)
     await ws.send_text(json.dumps({
         "type": "turn_file_diff_result",
         "data": {
             "session_id": session_id, "assistant_msg_id": turn_id, "path": path,
-            "request_id": cmd.get("request_id"), "approximate": False, **result,
+            "request_id": cmd.get("request_id"), "approximate": False,
+            **result, "action": "turn_file_diff",
         },
     }, default=str))
 
@@ -1836,6 +1875,7 @@ async def handle_review_scope(ws, cmd: dict) -> None:
         except Exception as exc:
             result = {"status": "error", "error": str(exc)}
     result = _page_scope(result, cursor, limit, snapshot_id)
+    result = _stable_file_result(result)
     # Every response, including validation and stale/error responses, carries
     # the request context so clients can safely correlate terminal states.
     result = {
@@ -1853,6 +1893,7 @@ async def handle_review_scope(ws, cmd: dict) -> None:
             "assistant_msg_id": turn_id,
             "request_id": values["request_id"],
             **result,
+            "action": "review_scope",
         },
     }, default=str))
 
@@ -1937,13 +1978,15 @@ async def handle_review_file_diff(ws, cmd: dict) -> None:
                 )
         except Exception as exc:
             result = {"diff": "", "diff_state": "unavailable", "error": str(exc)}
+    result = _stable_file_result(result)
     await ws.send_text(json.dumps({
         "type": "review_file_diff_result",
         "data": {
             "session_id": session_id, "assistant_msg_id": turn_id,
             "request_id": values["request_id"],
             "scope": scope, "path": path, "snapshot_id": snapshot_id,
-            "category": category, "query": query, "sort": sort, **result,
+            "category": category, "query": query, "sort": sort,
+            **result, "action": "review_file_diff",
         },
     }, default=str))
 
@@ -1958,13 +2001,14 @@ async def handle_turn_history_state(ws, cmd: dict) -> None:
         result = {"status": "blocked", "action": None, "error": "run_active"}
     else:
         result = await _run(lambda: _history_eligibility(session_id, turn_id))
+    result = _stable_file_result(result)
     await ws.send_text(json.dumps({
         "type": "turn_history_state_result",
         "data": {
             "session_id": session_id,
             "assistant_msg_id": turn_id,
             "request_id": cmd.get("request_id"),
-            **result,
+            **result, "action": "turn_history_state",
         },
     }, default=str))
 
@@ -1981,11 +2025,13 @@ async def handle_revert_turn(ws, cmd: dict) -> None:
             session_id, msg_id,
             idempotency_key=(cmd.get("idempotency_key") or None),
         ))
+    result = _stable_file_result(result)
     await ws.send_text(json.dumps({
         "type": "revert_turn_result",
         "data": {
             "session_id": session_id, "msg_id": msg_id,
             "request_id": cmd.get("request_id"),
+            "action": "revert_turn",
             "reverted_paths": result.get("restored_paths") or [],
             "status": result.get("status"),
             "transaction_id": result.get("transaction_id"),
@@ -2010,11 +2056,13 @@ async def handle_reapply_turn(ws, cmd: dict) -> None:
             session_id, msg_id,
             idempotency_key=(cmd.get("idempotency_key") or None),
         ))
+    result = _stable_file_result(result)
     await ws.send_text(json.dumps({
         "type": "reapply_turn_result",
         "data": {
             "session_id": session_id, "msg_id": msg_id,
             "request_id": cmd.get("request_id"),
+            "action": "reapply_turn",
             "reapplied_paths": result.get("restored_paths") or [],
             "status": result.get("status"),
             "transaction_id": result.get("transaction_id"),

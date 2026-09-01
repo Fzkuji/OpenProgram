@@ -193,7 +193,7 @@ function TextViewer({
       { signal: controller.signal },
     ).then((res) => {
       if (cancelled) return;
-      if (!res || res.error || res.path !== path) {
+      if (!res || res.project_id !== projectId || res.error || res.path !== path) {
         setFailed(true);
         onLoadedRef.current?.(null);
         return;

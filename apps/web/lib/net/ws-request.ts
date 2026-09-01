@@ -8,6 +8,20 @@
  */
 import { getSocket } from "@/lib/runtime-bridge/state";
 
+const pendingRequestIds = new Map<string, string>();
+
+/** Used by the shared WS dispatcher to avoid toasting a request-local error. */
+export function isWsRequestPending(requestIdValue: unknown, action?: unknown): boolean {
+  return typeof requestIdValue === "string"
+    && pendingRequestIds.get(requestIdValue) === action;
+}
+
+/** Register a manually-dispatched request (Review keeps snapshot handling local). */
+export function registerWsRequest(requestIdValue: string, action: string): () => void {
+  pendingRequestIds.set(requestIdValue, action);
+  return () => pendingRequestIds.delete(requestIdValue);
+}
+
 export interface WsRequestOptions {
   signal?: AbortSignal;
   requestId?: boolean;
@@ -56,10 +70,14 @@ export function wsRequest<T = unknown>(
     const id = (requestOptions.requestId ?? CORRELATED_ACTIONS.has(action))
       ? requestId()
       : null;
+    if (id) pendingRequestIds.set(id, action);
     let done = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     const finish = (value: T | null) => {
       if (done) return;
       done = true;
+      if (timeout !== undefined) clearTimeout(timeout);
+      if (id) pendingRequestIds.delete(id);
       ws.removeEventListener("message", onMsg);
       requestOptions.signal?.removeEventListener("abort", onAbort);
       resolve(value);
@@ -67,9 +85,22 @@ export function wsRequest<T = unknown>(
     const onMsg = (e: MessageEvent) => {
       try {
         const m = JSON.parse(e.data as string);
+        if (m?.type === "operation_error" && id
+          && m.data?.request_id === id
+          && m.data?.action === action) {
+          const errorData = {
+            ...(m.data as Record<string, unknown>),
+            status: "error",
+            error_code: m.data?.code,
+            error: m.data?.message,
+          } as T;
+          finish(errorData);
+          return;
+        }
         if (
           m && m.type === responseType
           && (!id || m.data?.request_id === id)
+          && (!id || m.data?.action === action)
           && (!match || match(m.data as T))
         ) {
           finish(m.data as T);
@@ -84,7 +115,7 @@ export function wsRequest<T = unknown>(
     ws.send(JSON.stringify({
       action, ...payload, ...(id ? { request_id: id } : {}),
     }));
-    setTimeout(() => {
+    timeout = setTimeout(() => {
       finish(null);
     }, timeoutMs);
   });

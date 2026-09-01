@@ -271,6 +271,13 @@ export function FileTree({
   const queryControllers = useRef(new Set<AbortController>());
   const queryGeneration = useRef(0);
   const searchGeneration = useRef(0);
+  const searchCursor = useRef<string | null>(null);
+  const searchSnapshot = useRef<string | null>(null);
+  const searchQuery = useRef("");
+  const searchModeRef = useRef<"fuzzy" | "contains">("contains");
+  const searchRows = useRef(new Map<string, SearchResult>());
+  const searchLoadingRef = useRef(false);
+  const searchLoadingGeneration = useRef<number | null>(null);
   const revealTarget = useRef<string | null>(null);
   const revealScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const revealFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -332,7 +339,8 @@ export function FileTree({
         });
         return load(path, null, false);
       }
-      if (!data || data.error || data.error_code || data.path !== path || !data.entries) {
+      if (!data || data.project_id !== projectId || data.error || data.error_code
+        || data.path !== path || !data.entries) {
         setDirs((d) => ({ ...d, [path]: cursor && Array.isArray(d[path]) ? d[path] : "error" }));
         return data;
       }
@@ -389,6 +397,7 @@ export function FileTree({
     void load("");
     return () => {
       for (const controller of queryControllers.current) controller.abort();
+      queryGeneration.current += 1;
     };
   }, [load]);
 
@@ -431,6 +440,12 @@ export function FileTree({
   function refetchRoot() {
     for (const controller of queryControllers.current) controller.abort();
     queryGeneration.current += 1;
+    searchGeneration.current += 1;
+    setSearchResults([]);
+    setSearchPage(1);
+    setSearchHasMore(false);
+    setSearchError(null);
+    setSearchLoading(false);
     setDirs({});
     setDirectoryPages({});
     directoryPagesRef.current = {};
@@ -444,6 +459,24 @@ export function FileTree({
     void load("");
   }
 
+  useEffect(() => {
+    const invalidate = (event: Event) => {
+      const detail = (event as CustomEvent<{ project_id?: string }>).detail;
+      if (detail?.project_id !== projectId) return;
+      for (const controller of queryControllers.current) controller.abort();
+      queryGeneration.current += 1;
+      searchGeneration.current += 1;
+      setSearchResults([]);
+      setSearchPage(1);
+      setSearchHasMore(false);
+      setSearchError(null);
+      setSearchLoading(false);
+      refetchRoot();
+    };
+    window.addEventListener("project-files-changed", invalidate);
+    return () => window.removeEventListener("project-files-changed", invalidate);
+  }, [projectId]);
+
   /* ---- file management ops ---------------------------------------- */
 
   /** Run one worker file op; on success re-list the affected dirs and
@@ -455,18 +488,26 @@ export function FileTree({
     refreshDirs: string[],
   ): Promise<boolean> {
     const generation = queryGeneration.current;
-    const data = await fileQuery<{ ok?: boolean; error?: string }>(
+    const data = await fileQuery<{ project_id?: string; path?: string; ok?: boolean; status?: string; error_code?: string; error?: string }>(
       `project_file_${op}`,
       { project_id: projectId, ...payload, idempotency_key: crypto.randomUUID() },
       `project_file_${op}_result`,
       () => generation === queryGeneration.current,
     );
-    if (!data || data.error) {
-      if (data?.error) window.alert(data.error);
+    if (!data || data.project_id !== projectId || data.path !== payload.path
+      || data.error || data.status === "conflict" || data.status === "recovery_required"
+      || data.status === "error") {
+      if (data?.error || data?.error_code) window.alert(data.error ?? data.error_code);
       return false;
     }
-    for (const d of new Set(refreshDirs)) load(d);
-    if (op !== "reveal") window.dispatchEvent(new Event("project-files-changed"));
+    // The project-files-changed listener performs one generation-safe refresh;
+    // avoid starting directory requests that the event would immediately abort.
+    void refreshDirs;
+    if (op !== "reveal") {
+      window.dispatchEvent(new CustomEvent("project-files-changed", {
+        detail: { project_id: projectId },
+      }));
+    }
     return true;
   }
 
@@ -679,71 +720,93 @@ export function FileTree({
     }
     return [...entries].map(([path, entry]) => ({ path, entry }));
   }, [dirs]);
+  const fetchSearchPage = useCallback(async (generation: number, reset = false) => {
+    const query = searchQuery.current;
+    if (!query || generation !== searchGeneration.current || searchLoadingRef.current) return;
+    searchLoadingRef.current = true;
+    searchLoadingGeneration.current = generation;
+    setSearchLoading(true);
+    try {
+      if (reset) {
+        searchCursor.current = null;
+        searchSnapshot.current = null;
+        searchRows.current.clear();
+        setSearchResults([]);
+      }
+      let cursor = searchCursor.current;
+      let snapshotId = searchSnapshot.current;
+      let retriedStale = false;
+      while (generation === searchGeneration.current) {
+        const data: SearchResultPayload | null = await fileQuery<SearchResultPayload>(
+          "project_file_search",
+          {
+            project_id: projectId,
+            path: "",
+            query,
+            mode: searchModeRef.current,
+            type: "all",
+            page_size: 100,
+            ...(cursor ? { cursor, snapshot_id: snapshotId } : {}),
+          },
+          "project_file_search_result",
+          () => generation === searchGeneration.current,
+        );
+        if (generation !== searchGeneration.current) return;
+        if (data?.error_code === "STALE_SNAPSHOT" && cursor && !retriedStale) {
+          cursor = null;
+          snapshotId = null;
+          searchCursor.current = null;
+          searchSnapshot.current = null;
+          searchRows.current.clear();
+          setSearchResults([]);
+          retriedStale = true;
+          continue;
+        }
+        if (!data || data.project_id !== projectId || data.error_code || !data.results) {
+          setSearchError(data?.error_code ?? "IO_ERROR");
+          setSearchResults([]);
+          break;
+        }
+        for (const result of data.results) {
+          if (searchRows.current.size >= MAX_SEARCH_RESULTS) break;
+          searchRows.current.set(result.path, result);
+        }
+        searchCursor.current = data.next_cursor ?? null;
+        searchSnapshot.current = data.snapshot_id ?? null;
+        setSearchResults([...searchRows.current.values()]);
+        setSearchHasMore(Boolean(searchCursor.current)
+          && searchRows.current.size < MAX_SEARCH_RESULTS);
+        break;
+      }
+    } finally {
+      if (searchLoadingGeneration.current === generation) {
+        searchLoadingRef.current = false;
+        searchLoadingGeneration.current = null;
+        if (generation === searchGeneration.current) setSearchLoading(false);
+      }
+    }
+  }, [projectId]);
+
   useEffect(() => {
     const query = filter.trim();
     const generation = ++searchGeneration.current;
+    searchQuery.current = query;
+    searchModeRef.current = fuzzySearch ? "fuzzy" : "contains";
     setSearchResults([]);
     setSearchHasMore(false);
     setSearchError(null);
+    searchCursor.current = null;
+    searchSnapshot.current = null;
+    searchRows.current.clear();
+    searchLoadingRef.current = false;
+    setSearchLoading(false);
     if (!query) {
       setSearchLoading(false);
       return;
     }
-    setSearchLoading(true);
-    const timer = setTimeout(() => {
-      void (async () => {
-        let cursor: string | null = null;
-        let snapshotId: string | null = null;
-        let retriedStale = false;
-        const combined = new Map<string, SearchResult>();
-        let fetchedPages = 0;
-        while (generation === searchGeneration.current && fetchedPages < Math.min(searchPage, 5)) {
-          const data: SearchResultPayload | null = await fileQuery<SearchResultPayload>(
-            "project_file_search",
-            {
-              project_id: projectId,
-              path: "",
-              query,
-              mode: fuzzySearch ? "fuzzy" : "contains",
-              type: "all",
-              page_size: 100,
-              ...(cursor ? { cursor, snapshot_id: snapshotId } : {}),
-            },
-            "project_file_search_result",
-            () => generation === searchGeneration.current,
-          );
-          if (generation !== searchGeneration.current) return;
-          if (data?.error_code === "STALE_SNAPSHOT" && cursor && !retriedStale) {
-            cursor = null;
-            snapshotId = null;
-            combined.clear();
-            setSearchResults([]);
-            retriedStale = true;
-            continue;
-          }
-          if (!data || data.error_code || !data.results) {
-            setSearchError(data?.error_code ?? "IO_ERROR");
-            setSearchResults([]);
-            break;
-          }
-          fetchedPages += 1;
-          for (const result of data.results) {
-            if (combined.size >= MAX_SEARCH_RESULTS) break;
-            combined.set(result.path, result);
-          }
-          setSearchResults([...combined.values()]);
-          cursor = data.next_cursor ?? null;
-          snapshotId = data.snapshot_id ?? null;
-          if (!cursor || combined.size >= MAX_SEARCH_RESULTS) break;
-        }
-        if (generation === searchGeneration.current) {
-          setSearchHasMore(Boolean(cursor) && combined.size < MAX_SEARCH_RESULTS);
-        }
-        if (generation === searchGeneration.current) setSearchLoading(false);
-      })();
-    }, 200);
+    const timer = setTimeout(() => void fetchSearchPage(generation, true), 200);
     return () => clearTimeout(timer);
-  }, [filter, fuzzySearch, projectId, searchPage]);
+  }, [fetchSearchPage, filter, fuzzySearch, projectId]);
 
   const searchMatches = useMemo(() => {
     if (filter.trim()) return searchResults.map((entry) => ({ path: entry.path, entry }));
@@ -851,7 +914,10 @@ export function FileTree({
             className={styles.treeRow}
             aria-label={text("Load more search results", "加载更多搜索结果")}
             disabled={searchLoading}
-            onClick={() => setSearchPage((page) => Math.min(page + 1, 5))}
+            onClick={() => {
+              setSearchPage((page) => Math.min(page + 1, 5));
+              void fetchSearchPage(searchGeneration.current);
+            }}
           >
             {searchLoading ? text("Loading…", "加载中…") : text("Load more", "加载更多")}
           </button>
