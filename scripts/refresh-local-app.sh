@@ -8,6 +8,24 @@ manifest="$runtime_root/runtime-manifest.json"
 installed_asar="$app_path/Contents/Resources/app.asar"
 uv_bin="${OPENPROGRAM_UV_BIN:-$(command -v uv || true)}"
 
+# The default App is shared by every worktree. Refuse to replace it from a
+# checkout that predates the latest locally fetched main: otherwise an older
+# feature branch can silently restore already-fixed server or UI behavior.
+# A caller deliberately validating historical code must use a separate
+# OPENPROGRAM_APP_PATH, not replace the user's normal App.
+if test "$app_path" = "/Applications/OpenProgram.app" && \
+  git -C "$repo_root" rev-parse --verify --quiet refs/remotes/origin/main \
+    >/dev/null; then
+  if ! git -C "$repo_root" merge-base --is-ancestor \
+    refs/remotes/origin/main HEAD; then
+    printf '%s\n' \
+      'refusing to refresh the default App from a checkout behind origin/main' \
+      'fetch/rebase the branch, or set OPENPROGRAM_APP_PATH to a separate App' \
+      >&2
+    exit 1
+  fi
+fi
+
 if test -n "${OPENPROGRAM_LOCAL_PYTHON:-}"; then
   local_python="$OPENPROGRAM_LOCAL_PYTHON"
 else
@@ -172,6 +190,7 @@ PY
   desktop_asar="$attempt_dir/app.asar"
   node "$asar_cli" extract "$installed_asar" "$desktop_stage"
   while IFS= read -r desktop_file; do
+    test -n "$desktop_file" || continue
     source_file="$repo_root/apps/desktop/$desktop_file"
     test -f "$source_file" || {
       printf 'desktop module listed in build.files is missing: %s\n' \
