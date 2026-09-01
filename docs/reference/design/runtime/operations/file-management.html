@@ -52,10 +52,10 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
 <main class="page">
   <header class="top">
     <div><div class="eyebrow">OpenProgram / Runtime operations / Canonical design</div><h1>文件修改、Review 与历史恢复</h1><p class="lead">本页统一定义文件归因、单轮 Undo、历史 Revert、多轮 Rewind、对话 Branch、Review scope、冲突处理和恢复存储。聊天视觉规范只负责外观；任何实现、测试和宣传口径均以本页语义为准。</p></div>
-    <div class="meta"><span class="pill pending">目标设计 · 部分实现</span><span class="pill">当前实现 · Task A–D review-passed</span><span class="pill">范围 · App / Web / TUI / runtime</span></div>
+    <div class="meta"><span class="pill pending">目标设计 · 文件管理成熟化待实现</span><span class="pill">当前实现 · 历史恢复与基础 Review</span><span class="pill">范围 · App / Web / TUI / runtime</span></div>
   </header>
 
-  <nav class="nav" aria-label="文档目录"><a href="#model">操作模型</a><a href="#current">当前实现</a><a href="#references">参考</a><a href="#architecture">架构</a><a href="#journal">数据合同</a><a href="#rewind">多轮恢复</a><a href="#branches">分支与子代理</a><a href="#failures">失败状态</a><a href="#ui">界面</a><a href="#performance">性能</a><a href="#acceptance">验收</a></nav>
+  <nav class="nav" aria-label="文档目录"><a href="#model">操作模型</a><a href="#current">当前实现</a><a href="#references">参考</a><a href="#architecture">架构</a><a href="#file-query">文件查询</a><a href="#journal">数据合同</a><a href="#rewind">多轮恢复</a><a href="#branches">分支与子代理</a><a href="#failures">失败状态</a><a href="#ui">界面</a><a href="#performance">性能</a><a href="#acceptance">验收</a><a href="#implementation-status">实现状态</a></nav>
 
   <section id="model">
     <h2>一个模型，四种操作</h2>
@@ -77,18 +77,22 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
     <h2>当前实现与必须修复的缺口</h2>
     <p class="intro">以下均由当前源码确认。它们解释了十几万行误统计、响应慢和多轮恢复可能产生部分成功的原因。</p>
     <div class="table-wrap"><table><thead><tr><th>当前路径</th><th>现状</th><th>风险</th><th>目标</th></tr></thead><tbody>
-      <tr><td><code>agent_loop._snapshot_cwd</code></td><td>Task A 已删除 Bash 前后 cwd 扫描、候选预复制和执行器调用。</td><td>普通 Bash、后台日志和外部写入不再进入 turn mutation。</td><td><span class="tag yes">完成</span> 仅 trusted file mutator 生成 receipt。</td></tr>
-      <tr><td><code>_checkpoint_changed_files</code></td><td>Task A 已删除该路径；prepared receipt 明确区分 regular before image 与 absent。</td><td>超过统计预算的既有文件保持 <code>modify</code>，stats 为 unknown，不再按新文件整量新增。</td><td><span class="tag yes">完成</span> baseline 缺失不编码成 absent。</td></tr>
-      <tr><td><code>CheckpointStore.restore_turn</code></td><td>Task B 的单轮入口已改用全量 plan、profile-stable lock、durable intent、条件式 leaf mutation、verify 与 rollback；legacy 方法只保留给迁移测试，生产 <code>revert_turn</code> 不再调用。</td><td>冲突、缺 blob、stale plan 均零写入；外部 pathname/open-fd race 保留外部内容并进入 recovery_required。</td><td><span class="tag yes">完成</span> 单轮与多轮均使用事务式 apply。</td></tr>
-      <tr><td><code>rewind_to</code></td><td>Task C 已改为 active suffix 一次规划、同路径折叠、dirfd/no-follow 条件写、durable intent、文件验证后 HEAD CAS；不再逐轮 revert 或改写旧节点。</td><td>文件、plan、父目录、HEAD 或 branch version 变化均阻止提交；mixed crash state 在启动时安全回滚或进入 recovery_required。</td><td><span class="tag yes">完成</span> WS 默认只返回 plan，apply 必须携带 plan hash 与幂等键。</td></tr>
-      <tr><td><code>rewind_to</code> + caller subtree</td><td>Task E 已把同 session、非 worktree、带显式 origin 的 owned child 递归纳入 causal closure；每个 receipt 带持久单调 <code>mutation_sequence</code>，同路径按实际 workspace 顺序折叠。</td><td>running owned 或同 workspace linked actor 阻止恢复；completed/cancelled/errored 且有 durable head 的 owned change set 进入同一事务，legacy ambiguous job 不获得恢复权限。</td><td><span class="tag yes">完成</span> linked peer/cross-session 与 worktree 只报告影响，不并入父 change set。</td></tr>
-      <tr><td><code>/api/chat/checkout</code></td><td>Task E 以一次 HEAD CAS 同步写入 workspace mismatch；连续 checkout 保留真正物化文件所属的 source head。</td><td>下一次 mutating turn 在明确选择 Keep current files 或 Restore branch code 前被阻止；两个决定均绑定 source/target，stale 请求不能采用新 checkout。</td><td><span class="tag yes">完成</span> Restore 复用事务式 preflight、幂等键、rollback 与 crash recovery，且不移动 conversation HEAD。</td></tr>
-      <tr><td><code>ProjectGit.revert_agent_commit</code></td><td>Task B 已从单轮 Undo/Revert 生产路径移除 ProjectGit 调用。</td><td>单轮历史恢复不再 reset/revert 用户 Git，不读取或修改 index/commit。</td><td><span class="tag yes">完成</span> Workspace Git 操作保留独立入口。</td></tr>
-      <tr><td><code>ShadowGitStore</code></td><td>Task D 的 Turn/Branch Review 与 diff 已只读 exact mutation journal；Workspace Review 只读 Git status/numstat。Shadow Git 不再是 Review 事实源。</td><td>legacy shadow commit 路径仍存在，但不再影响文件卡、Review 或恢复资格。</td><td><span class="tag yes">Review 降级完成</span> 后续可独立清理 legacy cache。</td></tr>
-      <tr><td>Checkpoint GC / unknown turn</td><td>Task B/C 的 plan 必须证明目标 turn、全部 actions 与 recovery blob 可用；unknown、expired、corrupt 或不精确 receipt 不显示可执行历史 action。</td><td>Review metadata 仍可读，但 code restore 返回 unavailable；不会写 Reverted metadata或移动 HEAD。</td><td><span class="tag yes">完成</span> Expired 只允许只读 Review。</td></tr>
-      <tr><td>Branch metadata</td><td>Task C/E 已统一 restore transaction、HEAD/version CAS、branch refs、writer epoch 与 checkout workspace alignment；source leaf 保留，旧 conversation 节点不因 Rewind 被全局隐藏。</td><td>checkout、Keep、Restore 都绑定 expected source/target；并发 HEAD 或文件变化返回 blocked、rolled_back 或 recovery_required。</td><td><span class="tag yes">完成</span> branch projection 与 Review 使用同一 mutation sequence。</td></tr>
-      <tr><td><code>TurnFilesChips</code></td><td>Task D 已将聚合值与前三个文件随 assistant metadata 持久化；legacy 仅在进入视口后查询。卡片最多挂载 20 行，不再挂载 diff。</td><td>Review 文件列表每页 100，diff 每页最多 200 行 / 256 KiB，并用 request id + snapshot 防止旧响应和跨 scope 读取。</td><td><span class="tag yes">完成</span> 点击文件或 Review 打开确定性的 center Review tab。</td></tr>
-      <tr><td>Web / TUI / Python CLI</td><td>Task C 已统一 Web WS 与 Python CLI 的只读 plan、显式 confirm/apply、plan hash、幂等键和结果状态；Task D 的 Web center Review 已接入三个 scope。</td><td>Web diff/payload 有界且 actor/producer/linked impact 可见；TUI/CLI 保持同一恢复协议，不复制 Web center pane。</td><td><span class="tag yes">协议与 Web Review 完成</span></td></tr>
+      <tr><td><code>agent_loop._snapshot_cwd</code></td><td>Bash 前后 cwd 扫描、候选预复制和执行器调用已删除。</td><td>普通 Bash、后台日志和外部写入不再进入 turn mutation。</td><td><span class="tag yes">完成</span> 仅 trusted file mutator 生成 receipt。</td></tr>
+      <tr><td><code>_checkpoint_changed_files</code></td><td>该路径已删除；prepared receipt 明确区分 regular before image 与 absent。</td><td>超过统计预算的既有文件保持 <code>modify</code>，stats 为 unknown，不再按新文件整量新增。</td><td><span class="tag yes">完成</span> baseline 缺失不编码成 absent。</td></tr>
+      <tr><td><code>CheckpointStore.restore_turn</code></td><td>单轮入口使用全量 plan、profile-stable lock、durable intent、条件式 leaf mutation、verify 与 rollback；legacy 方法只保留给迁移测试，生产 <code>revert_turn</code> 不再调用。</td><td>冲突、缺 blob、stale plan 均零写入；外部 pathname/open-fd race 保留外部内容并进入 recovery_required。</td><td><span class="tag yes">完成</span> 单轮与多轮均使用事务式 apply。</td></tr>
+      <tr><td><code>rewind_to</code></td><td>使用 active suffix 一次规划、同路径折叠、dirfd/no-follow 条件写、durable intent、文件验证后 HEAD CAS；不逐轮 revert 或改写旧节点。</td><td>文件、plan、父目录、HEAD 或 branch version 变化均阻止提交；mixed crash state 在启动时安全回滚或进入 recovery_required。</td><td><span class="tag yes">完成</span> WS 默认只返回 plan，apply 必须携带 plan hash 与幂等键。</td></tr>
+      <tr><td><code>rewind_to</code> + caller subtree</td><td>同 session、非 worktree、带显式 origin 的 owned child 递归纳入 causal closure；每个 receipt 带持久单调 <code>mutation_sequence</code>，同路径按实际 workspace 顺序折叠。</td><td>running owned 或同 workspace linked actor 阻止恢复；completed/cancelled/errored 且有 durable head 的 owned change set 进入同一事务，legacy ambiguous job 不获得恢复权限。</td><td><span class="tag yes">完成</span> linked peer/cross-session 与 worktree 只报告影响，不并入父 change set。</td></tr>
+      <tr><td><code>/api/chat/checkout</code></td><td>以一次 HEAD CAS 同步写入 workspace mismatch；连续 checkout 保留真正物化文件所属的 source head。</td><td>下一次 mutating turn 在明确选择 Keep current files 或 Restore branch code 前被阻止；两个决定均绑定 source/target，stale 请求不能采用新 checkout。</td><td><span class="tag yes">完成</span> Restore 复用事务式 preflight、幂等键、rollback 与 crash recovery，且不移动 conversation HEAD。</td></tr>
+      <tr><td><code>ProjectGit.revert_agent_commit</code></td><td>已从单轮 Undo/Revert 生产路径移除 ProjectGit 调用。</td><td>单轮历史恢复不再 reset/revert 用户 Git，不读取或修改 index/commit。</td><td><span class="tag yes">完成</span> Workspace Git 操作保留独立入口。</td></tr>
+      <tr><td><code>ShadowGitStore</code></td><td>Turn/Branch Review 与 diff 只读 exact mutation journal；Workspace Review 只读 Git status/numstat。Shadow Git 不再是 Review 事实源。</td><td>legacy shadow commit 路径仍存在，但不再影响文件卡、Review 或恢复资格。</td><td><span class="tag yes">Review 降级完成</span> 后续可独立清理 legacy cache。</td></tr>
+      <tr><td>Checkpoint GC / unknown turn</td><td>plan 必须证明目标 turn、全部 actions 与 recovery blob 可用；unknown、expired、corrupt 或不精确 receipt 不显示可执行历史 action。</td><td>Review metadata 仍可读，但 code restore 返回 unavailable；不会写 Reverted metadata或移动 HEAD。</td><td><span class="tag yes">完成</span> Expired 只允许只读 Review。</td></tr>
+      <tr><td>Branch metadata</td><td>统一 restore transaction、HEAD/version CAS、branch refs、writer epoch 与 checkout workspace alignment；source leaf 保留，旧 conversation 节点不因 Rewind 被全局隐藏。</td><td>checkout、Keep、Restore 都绑定 expected source/target；并发 HEAD 或文件变化返回 blocked、rolled_back 或 recovery_required。</td><td><span class="tag yes">完成</span> branch projection 与 Review 使用同一 mutation sequence。</td></tr>
+      <tr><td><code>TurnFilesChips</code></td><td>聚合值与前三个文件随 assistant metadata 持久化；legacy 仅在进入视口后查询。卡片最多挂载 20 行，不再挂载 diff。</td><td>Review 文件列表每页 100，diff 每页最多 200 行 / 256 KiB，并用 request id + snapshot 防止旧响应和跨 scope 读取。</td><td><span class="tag yes">完成</span> 点击文件或 Review 打开确定性的 center Review tab。</td></tr>
+      <tr><td>Web / TUI / Python CLI</td><td>Web WS 与 Python CLI 统一使用只读 plan、显式 confirm/apply、plan hash、幂等键和结果状态；Web center Review 已接入三个 scope。</td><td>Web diff/payload 有界且 actor/producer/linked impact 可见；TUI/CLI 保持同一恢复协议，不复制 Web center pane。</td><td><span class="tag yes">协议与 Web Review 完成</span></td></tr>
+      <tr><td>Project file explorer</td><td>目录按展开时加载；搜索只在已加载目录的节点中进行。</td><td>未展开目录中的文件不会被搜索到；目录结果没有可复用的稳定 snapshot/cursor 合同。</td><td><span class="tag unknown">待实现</span> project-scoped 后端搜索、目录分页与稳定 cursor。</td></tr>
+      <tr><td>File WebSocket lifecycle</td><td>部分 Review 请求已回显 <code>request_id</code>；项目文件请求仍依赖按响应 type 的全局串行队列，<code>list_turn_files</code> 没有 request id。</td><td>并发时不能由每个调用独立认领响应；全局串行会把无关的文件加载相互阻塞。</td><td><span class="tag unknown">待实现</span> 所有文件相关 WS action 强制 request_id 并按该 id 关联响应。</td></tr>
+      <tr><td>Read cache and drafts</td><td>读取缓存和未保存草稿均无容量上限；草稿只在页面内存中保存。</td><td>长期使用会累积内存；刷新页面可能丢失 dirty draft。</td><td><span class="tag unknown">待实现</span> 有界 LRU read cache 与独立、持久化的 dirty draft store。</td></tr>
+      <tr><td>Review filters and paging</td><td>Review 先取一页文件，再在客户端按 Code/Tests/Docs/Large 分类。</td><td>分类结果只代表当前页；不同页和 workspace 变化之间不能形成稳定的筛选视图。</td><td><span class="tag unknown">待实现</span> server 先筛选与排序，再对固定 snapshot 分页。</td></tr>
     </tbody></table></div>
   </section>
 
@@ -126,6 +130,77 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
       <path class="edge" d="M917 324V375"/><path class="edge" d="M815 404H775"/>
     </svg></div>
     <div class="decision-line danger" style="margin-top:12px"><b>普通 Bash 与 Workspace Review 的边界：</b>Bash 可以在沙箱或 worktree 中运行，但本地共享工作区里的通用 shell 结果不自动归因给某个 turn。Git 能显示当前 workspace 变化，却不能证明它属于哪一轮，也不能赋予 turn Undo 权限。</div>
+  </section>
+
+  <section id="file-query">
+    <h2>文件浏览、搜索与 Review 查询合同</h2>
+    <p class="intro">Project file explorer 与 Review 都使用 project/session 绑定的服务端快照。目录、搜索和 Review 过滤先确定完整的有序候选集，再返回一页；客户端不得以当前页数据推断项目或 scope 的完整结果。</p>
+    <div class="table-wrap"><table><thead><tr><th>查询</th><th>事实源与范围</th><th>排序、筛选与分页</th><th>无效化</th></tr></thead><tbody>
+      <tr><td>Directory listing</td><td>由 <code>project_id</code> 解析的项目根目录；path 必须是规范化的根内相对目录。排除路径穿越、符号链接逃逸和服务端禁止浏览的目录。</td><td>先按类型（目录、文件）和根内规范化路径稳定排序，再建立 snapshot。每页最多 100 项；cursor 是不透明 token，不是数组下标。</td><td>目录版本、ignore 规则或请求中的 project/path/sort 不匹配时返回 <code>STALE_SNAPSHOT</code>，客户端从第一页重取。</td></tr>
+      <tr><td>Project search</td><td>服务端遍历同一项目根，并应用与目录浏览相同的访问与忽略规则；不依赖树已展开的节点。结果只包含名称或根内相对路径匹配的项目文件与目录。</td><td>先以 query、匹配模式和类型过滤，再按稳定 rank、根内路径排序并建立 snapshot；分页只作用于已过滤结果。搜索 query 或模式变化必须丢弃 cursor。</td><td>项目切换、搜索 snapshot 到期或根目录版本变化后显示可刷新状态；不得把其他项目的旧结果保留在新项目中。</td></tr>
+      <tr><td>Review scope</td><td>This turn / Current branch 读取 mutation journal；Workspace 读取 Git 的 HEAD、index 和 worktree。每一项继续携带 source、actor 和 change-set 归因。</td><td>服务端先按 category、path query、operation、diff state 与排序过滤，随后对该过滤结果建立 snapshot 并分页。计数和 totals 针对完整过滤结果，不是当前页。</td><td>scope、assistant message、filter、sort 或 snapshot 任一不匹配时拒绝 cursor；Workspace 还比较固定 candidate list 与每个候选的 index/worktree identity。选择的文件若不在新 snapshot 中，清空 selection 和 diff。</td></tr>
+      <tr><td>Review file diff</td><td>只接受已由同一 Review snapshot 返回的 path；turn/branch 读取 journal blob，workspace 读取 snapshot 中记录的 HEAD/index/worktree blob pair。</td><td>diff cursor 同样是不透明且绑定 file identity、blob pair、scope snapshot 与行预算的 token。每次最多 200 行或 256 KiB。</td><td>snapshot、候选列表、index/worktree identity 或 blob pair 改变时返回 stale，不返回来自另一版本的后续 diff 页。</td></tr>
+    </tbody></table></div>
+    <h3>稳定 cursor</h3>
+    <div class="schema"><pre>{
+  "snapshot_id": "snap_...",
+  "query_kind": "directory | project_search | review_scope | review_diff",
+  "owner": {"project_id": "...", "session_id": "..."},
+  "basis": "directory/version or journal/Git revision",
+  "filter": {"query": "...", "category": "...", "sort": "..."},
+  "cursor": "opaque token",
+  "next_cursor": "opaque token | null",
+  "page_size": 100
+}</pre><div class="schema-note"><h3>cursor 不变量</h3><ul><li>cursor 只在创建它的 snapshot、owner、query kind、过滤条件和排序完全一致时有效；服务端不接受客户端提供的 offset、路径锚点或跨项目 token。</li><li>snapshot 保存候选集的稳定顺序或足以重建该顺序的不可变 revision；后续页绝不重新扫描后混入新增、删除或重排的项。</li><li>snapshot 可受容量和 TTL 限制。逐出或内容版本改变时明确返回 stale，由客户端刷新首屏；不得悄悄改用最新列表继续旧 cursor。</li><li>目录和搜索各自使用 cursor；Review 文件列表与单文件 diff 使用不同 cursor namespace，不能互换。</li></ul></div></div>
+    <h3>Workspace Review snapshot</h3>
+    <div class="schema"><pre>{
+  "snapshot_id": "workspace_...",
+  "project_id": "...",
+  "head_identity": "commit/tree identity",
+  "index_identity": "index tree identity",
+  "candidates": [{
+    "path": "canonical relative path",
+    "status": "XY or ??",
+    "base": {"kind": "blob | absent", "digest": "...", "mode": "..."},
+    "index": {"kind": "blob | absent", "digest": "...", "mode": "..."},
+    "worktree": {"kind": "regular | absent", "digest": "...", "mode": "...", "identity": "lstat fingerprint"}
+  }]
+}</pre><div class="schema-note"><h3>Workspace 不变量</h3><ul><li>创建 snapshot 时一次性确定未提交 candidate list，按规范化相对 path 排序；它包含 staged、unstaged、untracked、rename/delete 的所有相关 path，且保留旧路径和新路径的对应关系。</li><li>每个 candidate 固定 HEAD base、index blob 和 worktree content identity/blob pair。文本 diff 只能从该 pair 渲染，不能在后续请求中重新执行最新 <code>git diff</code> 代替。</li><li>请求下一页或单文件 diff 前，服务端重新读取 status candidate vector、index tree identity 和目标 path 的 no-follow worktree identity；任一新增、删除、状态、mode、index blob、worktree digest 或路径映射变化均返回 <code>STALE_SNAPSHOT</code>。</li><li>snapshot 保存的 content blob 受同一 review storage quota 管理；blob 缺失、超限或过期也返回 stale/unavailable，绝不从当前 worktree 近似补齐旧 diff。</li></ul></div></div>
+    <h3>所有文件 WebSocket 请求</h3>
+    <div class="table-wrap"><table><thead><tr><th>规则</th><th>合同</th><th>禁止</th></tr></thead><tbody>
+      <tr><td>必填关联键</td><td>所有文件浏览、读取、写入、创建、重命名、复制、删除、reveal、turn summary、turn diff、Review scope 与 Review diff 请求都带客户端生成的 UUID <code>request_id</code>；成功、stale、validation error 和 transport error 都原样回显。</td><td>不接受缺失或非 UUID 的文件请求；不再以 response type、path 或到达顺序认领响应。</td></tr>
+      <tr><td>响应验证</td><td>客户端以 <code>request_id</code> 作为唯一 pending key，并额外验证 action、project/session、snapshot 与目标 path；组件卸载、项目切换或新查询会取消并遗忘旧 pending key。</td><td>不得用全局请求队列消除竞态；一个慢目录请求不能阻塞另一个文件 read 或 Review diff。</td></tr>
+      <tr><td>写入幂等与冲突</td><td>有副作用的文件 action 还携带独立 <code>idempotency_key</code> 与现有的 optimistic-lock 条件。服务端以 action、owner、canonical payload 和 precondition fingerprint 建立 durable record。<code>request_id</code> 仅关联本次传输，不替代写入幂等键。</td><td>不把重连后的新 request id 当作新写入；不以缓存 mtime 覆盖服务端冲突结果。</td></tr>
+      <tr><td>错误形状</td><td>每个结果提供 <code>request_id</code>、action、owner、status 和稳定 error code；<code>STALE_SNAPSHOT</code>、<code>NOT_FOUND</code>、<code>CONFLICT</code> 与 <code>INVALID_REQUEST</code> 可被 UI 明确处理。</td><td>不吞掉缺少 request id、错误 owner 或未知 response 的帧，也不将其更新到当前文件状态。</td></tr>
+    </tbody></table></div>
+    <h3>写操作 idempotency_key</h3>
+    <div class="schema"><pre>{
+  "record_key": {"owner": "profile + project", "action": "project_file_write", "idempotency_key": "uuid"},
+  "fingerprint": "sha256(action + owner + canonical payload + precondition)",
+  "state": "prepared | in_flight | completed",
+  "operation_id": "fileop_...",
+  "result": "canonical terminal result or null"
+}</pre><div class="schema-note"><h3>幂等不变量</h3><ul><li>owner 是经授权的 profile 与 project；canonical payload 使用规范化根内 path、标准化 operation 参数和内容 digest，排除 <code>request_id</code> 与 <code>idempotency_key</code>。precondition fingerprint 包含 expected mtime/digest、源与目标路径、overwrite 条件及影响目录的版本条件。</li><li>服务端在与文件 mutation 同一 durable scope 中原子领取 <code>(owner, action, idempotency_key)</code>。同一 record key 的 fingerprint 不同，返回 <code>IDEMPOTENCY_KEY_CONFLICT</code>，零文件写入。</li><li>同 fingerprint 的 in-flight 重试绑定既有 <code>operation_id</code>，等待既有操作到本次请求的响应期限；未完成时返回 <code>IN_PROGRESS</code> 和该 operation id，客户端只能重试同一个 key，不能另发写入。</li><li>完成后 durable record 保存 canonical terminal result。相同 fingerprint 的任何重试只重放该结果，即使 request_id 不同，也不再次执行文件 mutation。进程重启先恢复或判定 in-flight record，再允许其结果被重放。</li><li>record retention 至少覆盖客户端重试窗口与 worker restart recovery；过期清理不得删除仍为 in-flight 的 record，且不会将已过期 key 解释为一个不同 fingerprint 的成功重放。</li></ul></div></div>
+    <h3>缓存与未保存草稿</h3>
+    <div class="table-wrap"><table><thead><tr><th>存储</th><th>键与容量</th><th>淘汰与一致性</th><th>数据保护</th></tr></thead><tbody>
+      <tr><td>Read cache</td><td>键为 <code>project_id + canonical relative path + content revision</code>；最多 64 项且最多 16 MiB，使用访问顺序 LRU。</td><td>只缓存成功且完整的只读结果。写入、rename、delete、tree revision 变化和容量超限会失效或淘汰最旧的干净 read；缓存未命中只触发新的 request_id 请求。</td><td>缓存不是编辑状态，也不保存 dirty text。</td></tr>
+      <tr><td>Dirty draft store</td><td>浏览器原生 IndexedDB 的 <code>openprogram-file-drafts</code> 数据库，键为 <code>project_id + canonical relative path</code>；持久化 UTF-8 draft、baseline content revision、baseline mtime、保存状态与更新时间。容量上限为 32 个 draft 或 8 MiB。</td><td>干净 draft 可删除；dirty draft 不参与 LRU 淘汰。所有 entry 与 aggregate byte/count index 在一个 readwrite transaction 中更新。</td><td>页面刷新、tab unmount、切换项目和 read-cache 淘汰都不能删除 dirty draft。服务端文件变化后保留草稿并标记冲突，保存必须继续提交其原始 baseline 条件。</td></tr>
+      <tr><td>路径变更与清理</td><td>成功 rename 在 IndexedDB transaction 中移动同项目 draft key；copy 不共享 source draft。删除文件、项目解绑或删除项目先列出 dirty draft，要求明确的保存、保留/导出或丢弃选择。</td><td>任何文件操作失败时不变更 draft key。确认 discard/unlink 后，相关 draft 与 project aggregate index 在单个 IndexedDB transaction 中清理；清理失败保留原记录并报告失败。</td><td>跨项目的同名 path 永不共享 cache、draft、selection 或 search snapshot；不因 tree 刷新、Review 切换或后台响应重置编辑器 buffer。</td></tr>
+    </tbody></table></div>
+    <h3>IndexedDB dirty draft 合同</h3>
+    <div class="schema"><pre>{
+  "database": "openprogram-file-drafts",
+  "stores": ["drafts", "project_index"],
+  "draft": {
+    "key": "project_id + canonical relative path",
+    "draft_utf8_bytes": 0,
+    "baseline_utf8_bytes": 0,
+    "baseline_revision": "...",
+    "baseline_mtime": 0,
+    "updated_at": "local monotonic ordering"
+  }
+}</pre><div class="schema-note"><h3>持久化与恢复不变量</h3><ul><li>使用浏览器原生 IndexedDB，不增加依赖。配额计算使用 <code>TextEncoder</code> 的 UTF-8 byte length，计入 draft、baseline 与所存元数据；<code>project_index</code> 保存每项目的键集合、count 和总 bytes。启动时以 project_index 恢复该项目的 dirty drafts；索引缺失或不一致时扫描 drafts 重建索引，不删除记录。</li><li>新建、更新、rename、discard 与 project cleanup 都在一个 IndexedDB readwrite transaction 内先计算新旧 bytes，再同时写 draft 与 aggregate index。超出 32 项或 8 MiB 时 transaction 不写入，现有 draft 保持不变。</li><li>编辑器在接受会把持久化 draft 超出配额的输入前先检查预算；满额时阻止创建新 dirty draft，并显示可见的保存、还原、导出或显式丢弃提示。已有 dirty draft 不自动淘汰；更新已有 draft 遇到浏览器 <code>QuotaExceededError</code> 时保留最近成功持久化版本、显示持久化失败状态并暂停进一步会扩大该记录的编辑，直到用户处理空间或显式导出/丢弃。</li><li>删除项目文件时，若对应 dirty draft 存在，服务端删除完成前 UI 必须要求保存、导出保留或明确 discard；成功 discard 才清理该 key。项目解绑或删除同样先展示该项目 draft 数量和 bytes，确认后清理所有该项目 keys 与 index；取消或失败不清理。</li><li>draft 内容仅保存在当前浏览器 origin 的 IndexedDB；不进入日志、遥测、模型上下文、WebSocket payload 或跨设备同步。显式 discard、确认的项目清理、浏览器站点数据清除和应用卸载会删除本地内容；恢复时不得自动上传或重新写回项目文件。</li></ul></div></div>
+    <div class="decision-line" style="margin-top:12px"><b>Review 的顺序固定：</b>解析 scope 和 owner → 取得或创建事实源 snapshot → 服务端过滤与排序 → 对过滤结果分页 → 客户端渲染单页。分类按钮和搜索框不是前端对已加载一页的二次筛选。</div>
   </section>
 
   <section id="journal">
@@ -269,7 +344,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
       <tr><td>Assistant turn card</td><td>精确文件数、净增删、前三个文件；完整外框和约 40px header。左侧使用用户指定的 19px FeatherIcon 表示本轮包含直接文件编辑，不使用网站 logo。总增删数字始终显示 additions 与 deletions 两项，包括零值；其下以 2.5px 双色比例条编码两者的真实占比。操作组、按钮和 Undo 图标不参与 flex 收缩，方向图标使用 1em 与按钮文字等高，标题区域承担截断；≤420px 时标题缩写为 “N files”，FeatherIcon、统计和操作保持可见，header 固定 40px。header 与文件列表之间保留一条分界线；目录弱、basename 强，统计固定列宽，分类只在 Review 中出现。</td><td>最新可恢复 turn：Undo；成功 Undo 后且重新预检可用：Redo；历史 turn：Revert；历史 Revert 后且重新预检可用：Reapply；所有 turn：Review。Undo / Revert / Redo / Reapply 使用文字加方向图标，Review 使用中性色描边按钮。header 只显示当前可执行动作，unavailable、blocked 与 Reverted 状态只在 footer 说明。</td><td>Redo 与 Reapply 都写新的 reapply transaction，不维护独立线性栈；不显示 header chips、禁用状态标签或参考产品品牌元素。</td></tr>
       <tr><td>User message footer</td><td>现有消息动作中的 Restore checkpoint 入口。</td><td>打开 checkpoint impact sheet，明确 before_turn/after_turn，默认 Code + conversation。</td><td>不在点击后立即恢复；必须先显示影响、可恢复性和外部副作用。</td></tr>
       <tr><td>Assistant message footer</td><td>Branch 动作。</td><td>Branch from here，副标题 Files stay as they are。</td><td>不暗中恢复 checkpoint。</td></tr>
-      <tr><td>Changes center tab</td><td>This turn / Current branch / Workspace；Workspace 内含 Unstaged / Staged / Branch / Commit；左文件 rail、右单文件 diff；来源标签始终可见。</td><td>Unified / Side-by-side、行级评论、Open file、Reveal。File 使用现有虚拟化 editor tab，不在 Review 内复制整文件。</td><td>Workspace scope 不显示 turn Undo；一次只挂载一个有界 diff。</td></tr>
+      <tr><td>Changes center tab</td><td>This turn / Current branch / Workspace；Workspace 内含 Unstaged / Staged / Branch / Commit；左文件 rail、右单文件 diff；来源标签始终可见。搜索与分类显示完整过滤结果的总数，页码只表示该结果集。</td><td>Unified / Side-by-side、行级评论、Open file、Reveal。改变 scope、搜索、分类或排序时清空 cursor、selection 和 diff；File 使用现有虚拟化 editor tab，不在 Review 内复制整文件。</td><td>Workspace scope 不显示 turn Undo；一次只挂载一个有界 diff；不能在客户端只过滤已加载的一页。</td></tr>
       <tr><td>History impact sheet</td><td>目标 prompt、撤回 turn 数、文件数、branch 结果、恢复模式、冲突和 unavailable 原因。</td><td>确认 Rewind、Conversation only、Code only；取消无副作用。</td><td>blocked 时无 Force 按钮；高级手动恢复从 Review 处理。</td></tr>
       <tr><td>Alignment banner</td><td>Conversation branch 与 workspace projection 不一致的原因。</td><td>Keep current files 或 Restore branch code。</td><td>不能只显示警告后让 mutating turn 静默开始。</td></tr>
     </tbody></table></div>
@@ -279,47 +354,68 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
     <h2>性能、保留、安全与兼容</h2>
     <div class="status-grid">
       <div class="status-card"><b>Turn finalize</b><p>复杂度只与 committed changed paths 有关；不遍历 workspace。摘要在 finalize 持久化并随 transcript 返回。</p></div>
-      <div class="status-card"><b>Review loading</b><p>文件列表每页 100；只保留相邻页。选中文件后每批最多 200 行或 256 KiB，并支持继续加载。</p></div>
+      <div class="status-card"><b>Review loading</b><p>服务端先筛选和稳定排序，文件列表每页 100；客户端只保留当前页和相邻页。选中文件后每批最多 200 行或 256 KiB，并支持继续加载。</p></div>
       <div class="status-card"><b>Diff budget</b><p>计算超预算返回 timeout metadata；不阻塞 Agent 完成，也不回退到 before 与当前磁盘的跨轮近似 diff。</p></div>
-      <div class="status-card"><b>Snapshot pagination</b><p>分类、搜索、排序和 cursor 都绑定同一 snapshot revision；workspace 变化后旧页标 stale 并整体刷新，不能混页。</p></div>
-      <div class="status-card"><b>Request generation</b><p>切文件取消旧 diff 请求；迟到响应必须匹配 scope、snapshot revision、change set、blob pair 和 request generation。</p></div>
+      <div class="status-card"><b>Snapshot pagination</b><p>目录、项目搜索和 Review 的分类、搜索、排序与 opaque cursor 都绑定同一 snapshot；workspace 或项目变化后旧页返回 stale 并整体刷新，不能混页。</p></div>
+      <div class="status-card"><b>Request identity</b><p>每个文件 WS 请求有 UUID request_id；切文件或切项目取消旧请求。迟到响应还必须匹配 owner、scope、snapshot revision、change set 与 blob pair。</p></div>
       <div class="status-card"><b>Large restore plan</b><p>上千文件预检作为可观察后台任务，冲突结果分页；进入 APPLYING 后不可取消，只能完成或事务回滚。</p></div>
       <div class="status-card"><b>Recovery blobs</b><p>使用独立内容寻址存储，按 digest 去重，权限限于本地用户；不进入 session Git。默认保留最近 100 个 checkpoint 和每个 file lineage 的首个 baseline。</p></div>
       <div class="status-card"><b>GC visibility</b><p>Pinned、活动 task、未解决冲突、prepared/applying intent 和仍被 branch ref 引用的 checkpoint 不回收。其余 blob 到期后显示 Review available / Code restore unavailable。</p></div>
       <div class="status-card"><b>Secrets</b><p>blob 不进入日志、遥测或模型上下文；session 删除一并清理无引用 blob。外部路径必须有当时和恢复时的明确授权。</p></div>
-      <div class="status-card"><b>Legacy sessions</b><p>旧 checkpoint 只用于只读 Review 或明确标记 approximate；没有 digest/recovery contract 时不提供新 Undo/Rewind code 模式。</p></div>
+      <div class="status-card"><b>Read cache and drafts</b><p>Read cache 受 64 项 / 16 MiB LRU 限制；dirty draft 独立持久化，受 32 项 / 8 MiB 配额保护且绝不自动淘汰。</p></div>
+      <div class="status-card"><b>Legacy sessions</b><p>旧 checkpoint 只用于只读 Review 或明确标记 unavailable；没有 digest/recovery contract 时不提供新 Undo/Rewind code 模式，也不保留无 request_id 的兼容入口。</p></div>
       <div class="status-card"><b>TUI parity</b><p><code>/rewind</code> 先展示同一 server plan，再选择模式并确认；不能继续直接调用旧 <code>rewind_to</code>。</p></div>
       <div class="status-card"><b>App/Web parity</b><p>同一 plan/apply 协议和幂等 request id；UI 只渲染 server 返回的 canonical impact，不在客户端重算。</p></div>
       <div class="status-card"><b>Line comments</b><p>绑定 change_set id、before/after blob pair、side 与 hunk/line；scope、branch 或 restore 变化后标 stale，不能发送到另一版本。</p></div>
     </div>
+    <h3>稳定模块职责与兼容移除</h3>
+    <div class="table-wrap"><table><thead><tr><th>模块</th><th>最终职责</th><th>不承担的职责</th></tr></thead><tbody>
+      <tr><td><code>apps/server/.../ws_actions/files.py</code></td><td>项目根授权、目录 listing、project search、read 与写入类文件操作；统一校验 project/path、request_id、idempotency key 和目录/search snapshot。</td><td>不计算 turn/branch Review，不保存浏览器缓存或草稿。</td></tr>
+      <tr><td><code>apps/server/.../ws_actions/turn_files.py</code></td><td>从 mutation journal 与 Git 生成 Review scope、过滤后的分页结果和绑定 snapshot 的单文件 diff；统一回显 request_id。</td><td>不提供项目文件树搜索，不让 turn diff 绕过 Review snapshot。</td></tr>
+      <tr><td><code>apps/web/lib/net/ws-request.ts</code></td><td>创建 request_id、维护按 id 的 pending registry、超时/取消和严格响应验证。</td><td>不以 response type 匹配第一个响应，不维护文件请求的全局串行队列。</td></tr>
+      <tr><td><code>apps/web/lib/state/files-shared.ts</code></td><td>以 project-scoped key 管理有界 read cache、持久 dirty draft store 与显式失效事件。</td><td>不作为组件间的无界内容仓库，不保存 Review page 或 socket listener。</td></tr>
+      <tr><td><code>FileTree</code> / <code>FilesPage</code></td><td>渲染目录、搜索和文件操作意图；仅消费服务端分页与 project search 结果。</td><td>不扫描本地已加载节点来代表项目搜索，不自行重排跨页结果。</td></tr>
+      <tr><td><code>ReviewTabPane</code></td><td>保存当前 scope/filter/snapshot/cursor/selection，渲染服务器确认的单页与单文件 diff。</td><td>不对当前页二次过滤来实现 category/search，不复用另一 scope 的 diff。</td></tr>
+      <tr><td><code>FileTabPane</code></td><td>编辑器 buffer、保存冲突提示和 dirty-draft 生命周期；从项目文件读取 canonical 内容。</td><td>不直接调用旧 turn diff 入口；历史文件比较统一由 Review tab 打开。</td></tr>
+    </tbody></table></div>
+    <div class="decision-line danger" style="margin-top:12px"><b>最终移除临时兼容入口：</b>删除按 response type 配对的 <code>filesWsRequest</code> 全局队列、缺少 <code>request_id</code> 的文件 action、<code>FileTabPane</code> 直接调用的 <code>turn_file_diff</code> 入口，以及把 <code>list_turn_files</code> 当作新消息摘要回填的路径。旧 session 没有可用的 journal/review snapshot 时返回只读 unavailable；不为旧入口保留会绕过新合同的 fallback。</div>
   </section>
 
   <section id="acceptance">
     <h2>实施 brief 与验收矩阵</h2>
-    <p class="intro">生产实现已获批准，并按下列边界拆成连续、可独立评审的任务；每个任务通过 specification review 和 quality review 后才进入下一项。任何尚未通过对应 gate 的能力继续标记 Pending。</p>
+    <p class="intro">A–E 是已完成并通过独立 specification review 与 quality review 的历史恢复/基础 Review 边界；F–J 在实现状态附录所列基线中均为 Pending。每个新增任务实现后也必须通过相同审查，才能更新本页状态。</p>
     <div class="table-wrap"><table><thead><tr><th>任务</th><th>生产边界</th><th>必须先失败的 public-entry 场景</th><th>排除</th><th>状态与证据</th></tr></thead><tbody>
-      <tr><td>A · Exact mutation journal</td><td><code>programs/tools/files/</code>、turn context/finalize、checkpoint manifest/store。</td><td>已有 &gt;5 MiB 文件首轮修改不算全新增；Bash ignored log 不进入 turn；失败 edit 无 receipt。</td><td>不实现 Review UI，不改用户 Git。</td><td><span class="tag yes">review-passed</span> <code>188fba55</code>；RED 3 failed / 4 passed；最终 215 + 54 passed；ruff 通过。</td></tr>
-      <tr><td>B · Safe single-turn Undo/Revert</td><td><code>agent/internals/_revert.py</code>、workspace lock、durable intent。</td><td>后续同文件修改时零写入；创建文件 digest 不符时不删除；中途 I/O 失败不部分标记。</td><td>不实现 multi-turn HEAD move。</td><td><span class="tag yes">review-passed</span> <code>2385f45d</code>；RED import failure，spec/quality repair 后最终 321 + 41 passed；ruff 通过。</td></tr>
-      <tr><td>C · Multi-turn planner/apply</td><td><code>agent/_rewind.py</code>、session head API、intent recovery、WS/CLI protocol。</td><td>同文件跨三轮恢复到目标；file failure 不移动 HEAD；sibling branch 不受影响；stale plan 零写入。</td><td>不重写 compaction 或 DAG schema。</td><td><span class="tag yes">review-passed</span> <code>9c8064e6</code>；spec/quality race repair 后最终 364 passed；ruff 通过。</td></tr>
-      <tr><td>D · Review scopes and UI</td><td><code>ws_actions/turn_files.py</code>、message metadata、center tab/store、chat card。</td><td>历史 transcript 不逐条请求；Workspace ignored 排除；一次只挂载一个有界 diff；三 scope 来源一致。</td><td>不加第三 pane、新窗口或参考产品品牌。</td><td><span class="tag yes">review-passed</span> <code>29f70607</code>；10,000-path 与 100,000-line probes、A–D 387 passed；TypeScript/ruff/UI gate 通过。</td></tr>
-      <tr><td>E · Branch alignment and multi-agent ownership</td><td>checkout/branch UI、active-lineage fold、owned/linked/worktree ownership。</td><td>conversation-only checkout 后 mutating turn 不静默开始；owned background child 运行时阻止父 restore、完成后按 origin 进入 causal closure；linked peer/cross-session 不被父 restore；worktree child 不改父 workspace。</td><td>不实现通用 workspace cloning。</td><td><span class="tag yes">review-passed</span> <code>24874d15</code>；最终规范审查与质量审查均 PASS；Task E scoped 94 passed、完整定向组合 145 passed；TypeScript/ruff/WS action gate 通过。</td></tr>
+      <tr><td>A · Exact mutation journal</td><td><code>programs/tools/files/</code>、turn context/finalize、checkpoint manifest/store。</td><td>已有 &gt;5 MiB 文件首轮修改不算全新增；Bash ignored log 不进入 turn；失败 edit 无 receipt。</td><td>不实现 Review UI，不改用户 Git。</td><td><span class="tag yes">review-passed</span> public-entry、受影响测试与静态检查均已验证。</td></tr>
+      <tr><td>B · Safe single-turn Undo/Revert</td><td><code>agent/internals/_revert.py</code>、workspace lock、durable intent。</td><td>后续同文件修改时零写入；创建文件 digest 不符时不删除；中途 I/O 失败不部分标记。</td><td>不实现 multi-turn HEAD move。</td><td><span class="tag yes">review-passed</span> public-entry、受影响测试与静态检查均已验证。</td></tr>
+      <tr><td>C · Multi-turn planner/apply</td><td><code>agent/_rewind.py</code>、session head API、intent recovery、WS/CLI protocol。</td><td>同文件跨三轮恢复到目标；file failure 不移动 HEAD；sibling branch 不受影响；stale plan 零写入。</td><td>不重写 compaction 或 DAG schema。</td><td><span class="tag yes">review-passed</span> public-entry、受影响测试与静态检查均已验证。</td></tr>
+      <tr><td>D · Review scopes and UI</td><td><code>ws_actions/turn_files.py</code>、message metadata、center tab/store、chat card。</td><td>历史 transcript 不逐条请求；Workspace ignored 排除；一次只挂载一个有界 diff；三 scope 来源一致。</td><td>不加第三 pane、新窗口或参考产品品牌。</td><td><span class="tag yes">review-passed</span> public-entry、受影响测试、TypeScript 与 UI gate 均已验证。</td></tr>
+      <tr><td>E · Branch alignment and multi-agent ownership</td><td>checkout/branch UI、active-lineage fold、owned/linked/worktree ownership。</td><td>conversation-only checkout 后 mutating turn 不静默开始；owned background child 运行时阻止父 restore、完成后按 origin 进入 causal closure；linked peer/cross-session 不被父 restore；worktree child 不改父 workspace。</td><td>不实现通用 workspace cloning。</td><td><span class="tag yes">review-passed</span> public-entry、受影响测试、TypeScript、ruff 与 WS action gate 均已验证。</td></tr>
+      <tr><td>F · Project query snapshots</td><td><code>ws_actions/files.py</code> 的目录分页、project search、路径授权与 snapshot registry；<code>FileTree</code> 的结果状态。</td><td>未展开目录中的命名文件能被搜索；第一页后修改目录不会让同一 cursor 混入新项；cross-project cursor 被拒绝。</td><td>不更改视觉布局、不引入全文内容索引或第三方搜索服务。</td><td><span class="tag unknown">Pending</span> 目录与搜索的 stable cursor 契约。</td></tr>
+      <tr><td>G · File request identity</td><td>文件类 WS dispatch、<code>ws-request.ts</code>、durable idempotency record 与所有文件/Review 调用者。</td><td>两个同 action 请求可乱序返回且分别更新正确调用者；缺失 request_id 被拒绝；相同 <code>idempotency_key</code> 的 in-flight retry 绑定原 operation，完成后重放结果；相同 key 而 fingerprint 不同则冲突且零写入。</td><td>不改变非文件 WS action 的协议，不把 request_id 当作写入幂等键。</td><td><span class="tag unknown">Pending</span> 全部文件 action 的 request_id、durable idempotency 与响应匹配。</td></tr>
+      <tr><td>H · Bounded cache and durable drafts</td><td><code>files-shared.ts</code>、原生 IndexedDB draft store、<code>FileViewer</code>、<code>FileTabPane</code>、tab close/rename/delete/unlink 生命周期。</td><td>超过 read-cache 限额后只淘汰干净 LRU read；刷新、tab 切换和项目切换后 IndexedDB dirty draft 仍存在；quota/浏览器 <code>QuotaExceededError</code> 时旧 draft 与 aggregate index 原子保留，满额阻止新 dirty 并显示提示。</td><td>不引入协作编辑、远端草稿同步或无限离线文件副本。</td><td><span class="tag unknown">Pending</span> 64 项 / 16 MiB read cache 与 32 项 / 8 MiB draft store。</td></tr>
+      <tr><td>I · Filtered Review pagination</td><td><code>turn_files.py</code> 的 filter/sort/snapshot/page，以及 <code>ReviewTabPane</code> 的 query state。</td><td>分类结果跨页完整；改变 category/query/sort 后旧 cursor 与 selected diff 失效；Workspace snapshot 固定 staged/unstaged/untracked candidate list 及每文件 blob pair，随后 index/worktree 任一变化返回 stale。</td><td>不增加第三 Review pane，不改变 mutation journal 或 Git 的事实源。</td><td><span class="tag unknown">Pending</span> 先筛选后分页与精确 Workspace snapshot。</td></tr>
+      <tr><td>J · Canonical entry-point cutover</td><td>文件模块调用图、旧 adapter 删除、legacy-session unavailable 呈现。</td><td>没有 <code>filesWsRequest</code> 全局队列、无 request_id 文件 action 或直接 <code>turn_file_diff</code> 的 UI 调用；旧 session 不会走 bypass fallback。</td><td>不为旧入口保持隐藏兼容开关，不删除可验证的只读历史元数据。</td><td><span class="tag unknown">Pending</span> 模块职责稳定且临时入口已移除。</td></tr>
     </tbody></table></div>
     <h3>完整可见验收</h3>
     <div class="scenario-grid">
-      <div class="scenario"><b>Latest Undo and Redo</b><p>3 个精确文件，Undo 预检通过后卡片和 Review 显示 Reverted，并在重新预检仍可通过时显示 Redo；conversation 保留。</p><div class="result">PASS: exact + journaled</div></div>
-      <div class="scenario"><b>Historical Revert</b><p>无后续路径依赖时成功；存在同路径后续修改时 blocked，零文件改变。</p><div class="result">PASS: no silent merge</div></div>
-      <div class="scenario"><b>Three-turn Rewind</b><p>同一路径多轮修改折叠成一个 target state；durable intent 协调文件与 target branch。只有文件验证和 branch 激活均成功才 COMMITTED，否则为 ROLLED_BACK 或 RECOVERY_REQUIRED。</p><div class="result">PASS: one coordinated plan</div></div>
+      <div class="scenario"><b>Directory and search pages</b><p>搜索命中一个未展开深层目录中的文件；并发 create/rename 后继续旧 cursor 必须返回 stale，刷新后结果按项目内稳定顺序重新开始。</p><div class="result">REQUIRED: complete project scope</div></div>
+      <div class="scenario"><b>All file request IDs</b><p>目录 read、file read、write、rename、turn summary、Review list 和 Review diff 同时发出并乱序返回。每个 response 只能被匹配的 pending request 接受；同 idempotency key 的 write retry 只关联同一 operation 并重放完成结果。</p><div class="result">REQUIRED: no type-based matching or duplicate write</div></div>
+      <div class="scenario"><b>Dirty draft under pressure</b><p>填满 read cache 与 IndexedDB draft quota 后刷新页面、切换 tab 和项目。已有 dirty draft 可恢复并保留原 baseline；新 draft 或扩大 draft 在无空间时不提交 transaction，并显示可见处理提示。</p><div class="result">REQUIRED: no silent draft loss</div></div>
       <div class="scenario"><b>Conversation only</b><p>立即创建并激活稳定 target branch，source branch ref/head 不变；文件保持当前，alignment banner 出现，下一次文件修改前要求决策。</p><div class="result">PASS: mismatch visible</div></div>
       <div class="scenario"><b>Code only</b><p>HEAD 不动，追加 rewind transaction，Current branch Review 反映新状态。</p><div class="result">PASS: history preserved</div></div>
       <div class="scenario"><b>Branch from here</b><p>确认时 target branch ref 立即存在并激活，source branch HEAD 不变；文件保持当前。下一条消息只是延长已创建的 target branch。</p><div class="result">PASS: source preserved</div></div>
       <div class="scenario"><b>Retry/Edit sibling</b><p>新分支绑定明确 before/after checkpoint；保持当前文件或恢复目标文件由用户选择，不从旧运行结果静默继续。</p><div class="result">PASS: checkpoint explicit</div></div>
       <div class="scenario"><b>Revert and Reapply</b><p>历史 Revert 仅在无后续同 lineage 依赖时成功；Reapply 再次预检并写新 transaction。</p><div class="result">PASS: no redo shortcut</div></div>
-      <div class="scenario"><b>Large and many</b><p>111k/百万行、10,000 paths、超大单行、binary 和 10,000-turn 多分支 session 保持有界 payload、DOM、查询和预检进度。</p><div class="result">PASS: bounded work</div></div>
+      <div class="scenario"><b>Filtered Review pages</b><p>超过一页的 Code、Tests、Docs 和 Large 结果分别先在服务端过滤；切换分类、query 或排序后旧页和已选 diff 均不再显示。Workspace 创建 snapshot 后修改 index、worktree 内容或候选列表，后续页和 diff 均返回 stale。</p><div class="result">REQUIRED: filter before page and exact workspace pair</div></div>
       <div class="scenario"><b>Concurrent writer</b><p>OpenProgram background task、其他 session 或外部进程改变文件时计划失效或 apply 后校验回滚。</p><div class="result">PASS: zero overwrite</div></div>
       <div class="scenario"><b>Crash recovery</b><p>在每个 intent phase 强制终止并重启，最终必须是 COMMITTED、ROLLED_BACK 或持久化到具体路径的 RECOVERY_REQUIRED；永不假报 committed，也不覆盖外部新写入。</p><div class="result">PASS: every path explainable</div></div>
-      <div class="scenario"><b>Unsupported side effects</b><p>文件 Restore 不修改 Git index/commit、无 receipt 的 ignored/external 文件、数据库、网络、进程或部署；trusted mutator 明确记录的允许路径仍按 journal 恢复。</p><div class="result">PASS: scope literal</div></div>
+      <div class="scenario"><b>Canonical cutover</b><p>从用户可见文件入口检查调用图：没有临时 queue、缺 request_id action 或 direct turn diff fallback；无法按新合同解释的旧 session 显示只读 unavailable。</p><div class="result">REQUIRED: no compatibility bypass</div></div>
     </div>
-    <div class="decision-line" style="margin-top:12px"><b>实现状态：</b>Task A–E 均已通过独立 specification review 与 quality review。生产路径现已包含 exact mutation journal、事务式 Undo/Reapply/Rewind、三个有界 Review scope、中心 Review 页面、40px 文件卡、branch/workspace alignment，以及按 durable mutation sequence 计算的 owned/linked/worktree actor 规则。</div>
+  </section>
+  <section id="implementation-status">
+    <h2>实现状态</h2>
+    <div class="decision-line danger"><b>当前基线未实现本次成熟化范围：</b>目录分页与不透明稳定 cursor、覆盖完整项目范围的服务端搜索、所有文件 WebSocket action 的强制 request_id、受容量限制的 read cache、跨刷新保留且不自动淘汰的 dirty draft、Review 服务端先筛选后分页、上述稳定模块边界，以及临时兼容入口的最终删除均未实现。本页现有的历史恢复与基础 Review 不能作为这些能力已完成的证据。</div>
+    <p class="intro" style="margin-top:12px">在 F–J 全部完成相应 public-entry RED/GREEN、受影响测试、完整 gate 与独立 specification/quality review 前，本页不得将任一成熟化能力标为完成。实现证据应写入对应任务记录；本设计页只维护当前合同与总体状态。</p>
   </section>
 </main>
 <script>
