@@ -22,11 +22,15 @@ def _check_python_version() -> tuple[bool, str, str]:
 
 
 def _check_node() -> tuple[bool, str, str]:
+    if os.environ.get("OPENPROGRAM_IMMUTABLE_RUNTIME") == "1":
+        return True, "node available", "not required in immutable product runtime"
     n = shutil.which("node")
     return (n is not None), "node available", n or "not on PATH"
 
 
 def _check_npm() -> tuple[bool, str, str]:
+    if os.environ.get("OPENPROGRAM_IMMUTABLE_RUNTIME") == "1":
+        return True, "npm available", "not required in immutable product runtime"
     n = shutil.which("npm")
     return (n is not None), "npm available", n or "not on PATH"
 

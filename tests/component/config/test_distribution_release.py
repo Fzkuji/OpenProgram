@@ -1729,8 +1729,8 @@ def test_product_runtime_installs_complete_default_capabilities() -> None:
     assert '"pypdf>=5.0"' in pyproject
     assert '"rich>=13.0"' in pyproject
     assert '"sentence_transformers"' not in verifier
-    assert "_reject_torch_wheels()" in verifier
-    assert "product runtime must not ship torch or CUDA wheels" in verifier
+    assert "_reject_excluded_runtime_wheels()" in verifier
+    assert "product runtime must not ship excluded distributions or wheels" in verifier
     assert '"pypdf",' in verifier
     assert "_probe_pdf_tools()" in verifier
     assert "_probe_rich_terminal()" in verifier
@@ -1748,6 +1748,27 @@ def test_product_runtime_pdf_tool_probe() -> None:
 def test_product_runtime_rich_terminal_probe() -> None:
     verifier = runpy.run_path(str(ROOT / "scripts" / "release" / "verify-product-runtime.py"))
     verifier["_probe_rich_terminal"]()
+
+
+def test_immutable_runtime_doctor_does_not_require_node_or_npm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openprogram.cli.commands import doctor
+
+    monkeypatch.setenv("OPENPROGRAM_IMMUTABLE_RUNTIME", "1")
+    monkeypatch.setattr(doctor.shutil, "which", lambda _name: None)
+
+    assert doctor._check_node() == (
+        True,
+        "node available",
+        "not required in immutable product runtime",
+    )
+    assert doctor._check_npm() == (
+        True,
+        "npm available",
+        "not required in immutable product runtime",
+    )
+    assert doctor._check_git() == (False, "git available", "not on PATH")
 
 
 def test_packaged_cli_falls_back_when_ink_runtime_is_absent(
@@ -1814,7 +1835,43 @@ def test_missing_bundled_pdf_dependency_requires_complete_reinstall(
         assert "pip install" not in result
 
 
-def test_product_runtime_rejects_torch_wheels(
+@pytest.mark.parametrize(
+    "excluded_dist",
+    [
+        "easyocr",
+        "opencv-contrib-python",
+        "opencv-contrib-python-headless",
+        "opencv-python",
+        "opencv-python-headless",
+        "torch",
+        "torchvision",
+        "sentence-transformers",
+        "triton",
+        "nvidia-cublas",
+        "cuda-runtime",
+        "opencv_python_headless",
+    ],
+)
+def test_product_runtime_rejects_excluded_distributions(
+    monkeypatch: pytest.MonkeyPatch,
+    excluded_dist: str,
+) -> None:
+    verifier = runpy.run_path(str(ROOT / "scripts" / "release" / "verify-product-runtime.py"))
+
+    class _Dist:
+        def __init__(self, name: str) -> None:
+            self.metadata = {"Name": name}
+
+    monkeypatch.setattr(
+        verifier["importlib"].metadata,
+        "distributions",
+        lambda: [_Dist(excluded_dist), _Dist("pypdf")],
+    )
+    with pytest.raises(RuntimeError, match="must not ship excluded distributions"):
+        verifier["_reject_excluded_runtime_wheels"]()
+
+
+def test_product_runtime_accepts_runtime_without_excluded_distributions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     verifier = runpy.run_path(str(ROOT / "scripts" / "release" / "verify-product-runtime.py"))
@@ -1826,25 +1883,9 @@ def test_product_runtime_rejects_torch_wheels(
     monkeypatch.setattr(
         verifier["importlib"].metadata,
         "distributions",
-        lambda: [_Dist("torch"), _Dist("pypdf")],
-    )
-    with pytest.raises(RuntimeError, match="must not ship torch"):
-        verifier["_reject_torch_wheels"]()
-
-    monkeypatch.setattr(
-        verifier["importlib"].metadata,
-        "distributions",
-        lambda: [_Dist("nvidia-cublas"), _Dist("pypdf")],
-    )
-    with pytest.raises(RuntimeError, match="must not ship torch"):
-        verifier["_reject_torch_wheels"]()
-
-    monkeypatch.setattr(
-        verifier["importlib"].metadata,
-        "distributions",
         lambda: [_Dist("pypdf")],
     )
-    verifier["_reject_torch_wheels"]()
+    verifier["_reject_excluded_runtime_wheels"]()
 
 
 def test_product_runtime_rejects_installed_openprogram_version_mismatch(
@@ -2135,7 +2176,36 @@ def test_linux_install_docs_do_not_claim_a_desktop_artifact() -> None:
         assert expected in contents
 
 
-def test_public_docs_describe_one_complete_release_product() -> None:
+def test_public_install_docs_pin_current_product_version() -> None:
+    version = _desktop_package()["version"]
+    english = (ROOT / "docs" / "install" / "install.md").read_text(encoding="utf-8")
+    chinese = (ROOT / "docs" / "install" / "install.zh.md").read_text(
+        encoding="utf-8"
+    )
+    design = (
+        ROOT
+        / "docs"
+        / "reference"
+        / "design"
+        / "distribution"
+        / "installation-packaging.html"
+    ).read_text(encoding="utf-8")
+    plan = (
+        ROOT
+        / "docs"
+        / "reference"
+        / "design"
+        / "distribution"
+        / "implementation-plan.md"
+    ).read_text(encoding="utf-8")
+
+    assert f"OPENPROGRAM_VERSION={version} sh" in english
+    assert f"OPENPROGRAM_VERSION={version} sh" in chinese
+    assert f"正式版本</strong>：v{version}" in design
+    assert f"### Current v{version} release acceptance" in plan
+
+
+def test_public_docs_describe_one_release_product_runtime() -> None:
     public_docs = [
         ROOT / "README.md",
         ROOT / "docs" / "README.md",
@@ -2191,8 +2261,21 @@ def test_public_docs_describe_one_complete_release_product() -> None:
     combined = "\n".join(path.read_text(encoding="utf-8") for path in public_docs)
     for phrase in forbidden:
         assert phrase not in combined
-    assert "same complete product capabilities" in combined
-    assert "相同的完整产品能力" in combined
+    assert "same product runtime" in combined
+    assert "相同的 product runtime" in combined
+    assert "PyTorch, OpenCV, and EasyOCR are not in the product runtime" in combined
+    assert "product runtime 明确不含 PyTorch、OpenCV 和 EasyOCR" in combined
+    assert "Program packages and their supported runtime assets" in combined
+    assert "Program package 与受支持的 runtime 资产" in combined
+    for inaccurate_claim in (
+        "default OCR/model data",
+        "默认 OCR/模型数据",
+        "Their Python dependencies, default OCR data",
+        "它们的 Python 依赖、默认 OCR 数据",
+        "their dependencies, and their default runtime assets",
+        "三项第一方 Programs、依赖和默认 runtime 资产",
+    ):
+        assert inaccurate_claim not in combined
 
 
 def test_public_product_surfaces_do_not_offer_python_package_install() -> None:

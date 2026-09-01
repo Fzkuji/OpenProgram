@@ -1,6 +1,6 @@
 # Installation
 
-OpenProgram has separate release installations for desktop users and CLI/server users. All supported release installations contain the same complete product capabilities; only the launch shell differs. Source checkout installation is for development only.
+OpenProgram has separate release installations for desktop users and CLI/server users. All supported release installations contain the same product runtime; only the launch shell differs. Optional backend dependencies are described below. Source checkout installation is for development only.
 
 ## Supported installation matrix
 
@@ -16,7 +16,7 @@ Only artifacts attached to a published [GitHub Release](https://github.com/Fzkuj
 
 ## Desktop installation
 
-The supported macOS desktop artifact contains Electron and the complete platform product runtime. The runtime includes managed CPython, OpenProgram, the prebuilt Web UI, providers, channels, search, Playwright Chromium, default OCR/model data, and the GUI, Research, and Wiki first-party Programs. It does not use a system Python or Node.js at runtime. Git is required for session and Memory history and is checked by `openprogram doctor`. Linux currently uses the complete CLI/server release because the complete AppImage failed its packaging gate; no reduced Linux desktop artifact is published.
+The supported macOS desktop artifact contains Electron and the platform product runtime. The runtime includes managed CPython, OpenProgram, the prebuilt Web UI, providers, channels, search, Playwright Chromium, the GPA detector weight, and the GUI, Research, and Wiki first-party Programs. The GUI Program is registered, but the product runtime deliberately excludes PyTorch, OpenCV, and EasyOCR; GUI perception paths that require those dependencies need a separately configured backend or development overlay. The runtime does not use a system Python or Node.js. Git is required for session and Memory history and is checked by `openprogram doctor`. Linux currently uses the same CLI/server runtime because the AppImage failed its packaging gate; no reduced Linux desktop artifact is published.
 
 ### macOS
 
@@ -38,7 +38,7 @@ curl -fsSL https://openprogram.io/install | sh
 The short bootstrap resolves the latest stable GitHub Release and then runs the installer from that immutable tag. For a reproducible install of a specific release, pass the version to the shell process:
 
 ```bash
-curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION=0.7.0 sh
+curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION=0.8.1 sh
 ```
 
 The command creates `~/.local/bin/openprogram`. If that directory is not already on `PATH`, invoke it by its absolute path or add the directory to the shell configuration.
@@ -51,13 +51,13 @@ Before switching `current`, the installer automatically runs the version probe a
 ~/.local/bin/openprogram doctor
 ```
 
-The Web UI is served at `http://localhost:18100`. The runtime contains the prebuilt Web UI, so Node.js is not required. Before activation, the installer verifies Web, providers, MCP, memory, channels, search, Chromium, OCR/model data, and all three first-party Programs. `doctor` may still report missing user configuration such as provider credentials.
+The Web UI is served at `http://localhost:18100`. The runtime contains the prebuilt Web UI, so Node.js is not required. Before activation, the installer verifies Web, providers, MCP, memory, channels, search, Chromium, the GPA detector weight, and registration and import of all three first-party Programs. `doctor` may still report missing user configuration such as provider credentials.
 
 ## Included product and additional extensions
 
-GUI Agent, Research Agent, and Wiki Agent are part of every supported release installation. Their Python dependencies, default OCR data, GPA detector model, and Playwright Chromium are included and require no first-use installation.
+GUI Agent, Research Agent, and Wiki Agent are part of every supported release installation. Their Program packages, the GPA detector weight, and Playwright Chromium are included. The GUI Program is installed without dependency resolution: PyTorch, OpenCV, and EasyOCR are not in the product runtime, so GUI perception paths that use them require a separately configured backend or development overlay.
 
-Third-party Programs are additional user-selected functionality and are stored separately from the read-only product runtime. Editable first-party Program sources, diagnostics, local frontend builds, and replacement OCR/browser backends are developer additions; they are not required to make a normal installation complete.
+Third-party Programs are additional user-selected functionality and are stored separately from the read-only product runtime. Editable first-party Program sources, diagnostics, local frontend builds, and replacement OCR/browser backends are developer additions. Replacement backends or dependencies are required only for GUI perception paths that use libraries omitted from the product runtime; they do not change the base runtime manifest.
 
 ## Development checkout
 
