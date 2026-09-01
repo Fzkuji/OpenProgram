@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const shared = readFileSync(new URL("../lib/state/files-shared.ts", import.meta.url), "utf8");
+const store = readFileSync(new URL("../lib/state/file-draft-store.ts", import.meta.url), "utf8");
 const viewer = readFileSync(new URL("../components/files/file-viewer.tsx", import.meta.url), "utf8");
 const pane = readFileSync(new URL("../components/center-tabs/file-tab-pane.tsx", import.meta.url), "utf8");
+const tree = readFileSync(new URL("../components/files/file-tree.tsx", import.meta.url), "utf8");
 const lifecycle = readFileSync(new URL("../components/center-tabs/use-tab-lifecycle.ts", import.meta.url), "utf8");
 
 assert.match(shared, /READ_CACHE_MAX_ENTRIES\s*=\s*64/);
@@ -16,15 +18,24 @@ assert.match(shared, /createObjectStore\(DRAFT_STORE/);
 assert.match(shared, /createObjectStore\(DRAFT_INDEX_STORE/);
 assert.match(shared, /DRAFT_MAX_ENTRIES\s*=\s*32/);
 assert.match(shared, /DRAFT_MAX_BYTES\s*=\s*8 \* 1024 \* 1024/);
-assert.match(shared, /transaction\(\[DRAFT_STORE, DRAFT_INDEX_STORE\], "readwrite"\)/);
 assert.match(shared, /QuotaExceededError/);
 assert.match(shared, /moveFileDrafts/);
 assert.match(shared, /clearProjectDrafts/);
+assert.match(shared, /DraftStoreAdapter/);
+assert.match(store, /export interface DraftStoreAdapter/);
+assert.match(store, /export class IndexedDbDraftStore/);
+assert.match(store, /indexedDB\.open/);
+assert.match(store, /transaction\(\["drafts", "project_index"\], "readwrite"\)/);
+assert.match(store, /export class MemoryDraftStore/);
 assert.match(viewer, /getCachedFileRead\(projectId, path, knownMtime\)/);
 assert.match(viewer, /cacheFileRead\(res\)/);
 assert.match(pane, /loadFileDraft\(projectId, path\)/);
 assert.match(pane, /persistFileDraft\(projectId, path, draft\)/);
 assert.match(pane, /Local draft storage is full/);
 assert.match(lifecycle, /discardFileDraft\(tab\.projectId, tab\.path\)/);
+assert.match(tree, /noteFileMtime\(projectId, joinPath\(path, e\.name\), e\.mtime\)/);
+assert.match(tree, /await moveFileDrafts\(projectId, oldPath, newPath\)/);
+assert.match(tree, /await clearFileDraftsForPath\(projectId, path\)/);
+assert.doesNotMatch(tree, /latestFileMtime/);
 
 console.log("file cache and durable draft contracts: ok");

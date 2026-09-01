@@ -286,7 +286,12 @@ export function FileTabPane({
     }
   };
 
-  const revert = () => {
+  const revert = async () => {
+    const result = await discardFileDraft(projectId, path);
+    if (!result.ok) {
+      setDraftPersistError(result.message ?? text("Unable to discard local draft.", "无法丢弃本地草稿。"));
+      return;
+    }
     setBuffer((prev) =>
       prev && prev.path === path ? { ...prev, draft: prev.baseline } : prev,
     );
@@ -294,8 +299,12 @@ export function FileTabPane({
   };
 
   /** Conflict recovery: drop the draft, refetch, re-baseline. */
-  const reload = () => {
-    void discardFileDraft(projectId, path);
+  const reload = async () => {
+    const result = await discardFileDraft(projectId, path);
+    if (!result.ok) {
+      setDraftPersistError(result.message ?? text("Unable to discard local draft.", "无法丢弃本地草稿。"));
+      return;
+    }
     invalidateFileRead(projectId, path);
     setConflict(false);
     setSaveFailed(false);

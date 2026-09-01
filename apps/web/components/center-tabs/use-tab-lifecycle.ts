@@ -258,7 +258,7 @@ export function useTabLifecycle({
     );
   }
 
-  function onTabsClose(e: React.SyntheticEvent, tabsToClose: CenterTab[]) {
+  async function onTabsClose(e: React.SyntheticEvent, tabsToClose: CenterTab[]) {
     e.stopPropagation();
     cancelDrag();
     if (tabsToClose.some((tab) => tab.dirty)) {
@@ -267,8 +267,12 @@ export function useTabLifecycle({
       // Discard confirmed — drop the surviving draft buffer too, so
       // reopening the file starts from disk, not the "discarded" edit.
       for (const tab of tabsToClose) {
-        if (tab.kind === "file" && tab.projectId && tab.path)
-          void discardFileDraft(tab.projectId, tab.path);
+        if (tab.kind !== "file" || !tab.projectId || !tab.path) continue;
+        const result = await discardFileDraft(tab.projectId, tab.path);
+        if (!result.ok) {
+          window.alert(result.message ?? text("Unable to discard the local draft; the tab remains open.", "无法丢弃本地草稿；文件标签仍保持打开。"));
+          return;
+        }
       }
     }
     // Pin the survivors' widths for a mouse close (Chrome), so the next

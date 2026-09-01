@@ -8,6 +8,12 @@ import { useCallback, useEffect, useState } from "react";
 
 import { wsRequest, type WsRequestOptions } from "@/lib/net/ws-request";
 import { useSessionStore } from "@/lib/session-store";
+import {
+  IndexedDbDraftStore,
+  type DraftStoreAdapter,
+} from "./file-draft-store";
+
+const knownProjectIds = new Set<string>();
 
 export interface Project {
   id: string;
@@ -74,6 +80,12 @@ export function useCurrentProject(): Project | null | undefined {
     );
     if (!data) return false;
     const projects = data.projects || [];
+    const currentProjectIds = new Set(projects.map((item) => item.id));
+    for (const removedId of knownProjectIds) {
+      if (!currentProjectIds.has(removedId)) void clearProjectDrafts(removedId);
+    }
+    knownProjectIds.clear();
+    for (const projectId of currentProjectIds) knownProjectIds.add(projectId);
     const wantId =
       (!sessionId ? pendingProjectId : data.current_project_id) ??
       data.current_project_id ??
@@ -310,6 +322,13 @@ let draftBytesByKey = new Map<string, number>();
 let draftIndexByProject = new Map<string, ProjectDraftIndex>();
 let draftClock = 0;
 let draftQueue: Promise<unknown> = Promise.resolve();
+let draftStorePromise: Promise<DraftStoreAdapter | null> | null = null;
+
+function getDraftStore(): Promise<DraftStoreAdapter | null> {
+  if (typeof indexedDB === "undefined") return Promise.resolve(null);
+  if (!draftStorePromise) draftStorePromise = Promise.resolve(new IndexedDbDraftStore());
+  return draftStorePromise;
+}
 
 function draftMetadataBytes(key: string, draft: FileDraft): number {
   return utf8.encode(JSON.stringify({
@@ -447,8 +466,8 @@ export function persistFileDraft(projectId: string, path: string, value: FileDra
     if (!canPersistFileDraft(key, value)) {
       return { ok: false, code: "DRAFT_QUOTA_EXCEEDED", message: "Local dirty-draft storage is full; save, export, or discard a draft first." };
     }
-    const db = await openDraftDb();
-    if (!db) return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message: "Local dirty-draft storage is unavailable." };
+    const store = await getDraftStore();
+    if (!store) return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message: "Local dirty-draft storage is unavailable." };
     const previousBytes = draftBytesByKey.get(key) ?? 0;
     const stored: StoredDraft = {
       ...structuredClone(value), key, projectId, path,
@@ -463,10 +482,7 @@ export function persistFileDraft(projectId: string, path: string, value: FileDra
       bytes: previousIndex.bytes - previousBytes + stored.bytes,
     };
     try {
-      const tx = db.transaction([DRAFT_STORE, DRAFT_INDEX_STORE], "readwrite");
-      tx.objectStore(DRAFT_STORE).put(stored);
-      tx.objectStore(DRAFT_INDEX_STORE).put(index);
-      await waitForTransaction(tx);
+      await store.put(stored, index);
       draftBytesByKey.set(key, stored.bytes);
       draftIndexByProject.set(projectId, index);
       fileDrafts.set(key, structuredClone(value));
@@ -486,28 +502,23 @@ export function discardFileDraft(projectId: string, path: string): Promise<Draft
   const key = fileDraftKey(projectId, path);
   return enqueueDraft(async () => {
     await hydrateDraftState();
-    const db = await openDraftDb();
+    const store = await getDraftStore();
     const previous = draftBytesByKey.get(key) ?? 0;
     const oldIndex = draftIndexByProject.get(projectId);
-    if (!db) {
+    if (!store) {
       fileDrafts.delete(key);
       draftBytesByKey.delete(key);
       return { ok: true };
     }
     try {
-      const tx = db.transaction([DRAFT_STORE, DRAFT_INDEX_STORE], "readwrite");
-      tx.objectStore(DRAFT_STORE).delete(key);
-      if (oldIndex) {
+      const nextIndex = oldIndex && (() => {
         const keys = oldIndex.keys.filter((candidate) => candidate !== key);
-        tx.objectStore(DRAFT_INDEX_STORE).put({ projectId, keys, count: keys.length, bytes: Math.max(0, oldIndex.bytes - previous) } satisfies ProjectDraftIndex);
-      }
-      await waitForTransaction(tx);
+        return { projectId, keys, count: keys.length, bytes: Math.max(0, oldIndex.bytes - previous) } satisfies ProjectDraftIndex;
+      })();
+      await store.remove([key], nextIndex);
       fileDrafts.delete(key);
       draftBytesByKey.delete(key);
-      if (oldIndex) {
-        const keys = oldIndex.keys.filter((candidate) => candidate !== key);
-        draftIndexByProject.set(projectId, { projectId, keys, count: keys.length, bytes: Math.max(0, oldIndex.bytes - previous) });
-      }
+      if (nextIndex) draftIndexByProject.set(projectId, nextIndex);
       return { ok: true };
     } catch {
       return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message: "Unable to discard the local dirty draft." };
@@ -522,37 +533,53 @@ export function moveFileDrafts(projectId: string, oldPath: string, newPath: stri
     const prefix = fileScopeKey(projectId, oldPath);
     const entries = [...fileDrafts.entries()].filter(([key]) => key === prefix || key.startsWith(`${prefix}/`));
     if (entries.length === 0) return { ok: true };
-    const db = await openDraftDb();
-    if (!db) {
-      for (const [key, value] of entries) {
-        const suffix = key === prefix ? "" : key.slice(prefix.length);
-        fileDrafts.set(fileDraftKey(projectId, newPath + suffix), value);
-        fileDrafts.delete(key);
+    const moved = entries.map(([key, value]) => {
+      const suffix = key === prefix ? "" : key.slice(prefix.length);
+      const nextPath = newPath + suffix;
+      const nextKey = fileDraftKey(projectId, nextPath);
+      return { key, value, nextPath, nextKey, bytes: fileDraftBytes(nextKey, value) };
+    });
+    const oldIndex = draftIndexByProject.get(projectId);
+    const nextKeys = oldIndex?.keys.map((key) => {
+      const item = moved.find((candidate) => candidate.key === key);
+      return item?.nextKey ?? key;
+    });
+    const nextBytes = nextKeys?.reduce((sum, key) => {
+      const item = moved.find((candidate) => candidate.nextKey === key);
+      return sum + (item?.bytes ?? draftBytesByKey.get(key) ?? 0);
+    }, 0);
+    const store = await getDraftStore();
+    if (!store) {
+      for (const item of moved) {
+        fileDrafts.set(item.nextKey, item.value);
+        draftBytesByKey.set(item.nextKey, item.bytes);
+        draftBytesByKey.delete(item.key);
+        fileDrafts.delete(item.key);
       }
+      if (oldIndex && nextKeys && nextBytes !== undefined)
+        draftIndexByProject.set(projectId, { ...oldIndex, keys: nextKeys, bytes: nextBytes });
       return { ok: true };
     }
     try {
-      const tx = db.transaction([DRAFT_STORE, DRAFT_INDEX_STORE], "readwrite");
-      const index = draftIndexByProject.get(projectId);
-      for (const [key, value] of entries) {
-        const suffix = key === prefix ? "" : key.slice(prefix.length);
-        const nextPath = newPath + suffix;
-        const nextKey = fileDraftKey(projectId, nextPath);
-        tx.objectStore(DRAFT_STORE).put({ ...structuredClone(value), key: nextKey, projectId, path: nextPath, bytes: fileDraftBytes(nextKey, value), updatedAt: ++draftClock } satisfies StoredDraft);
-        tx.objectStore(DRAFT_STORE).delete(key);
+      await store.move(
+        moved.map((item) => ({
+          oldKey: item.key,
+          record: {
+            ...structuredClone(item.value), key: item.nextKey, projectId,
+            path: item.nextPath, bytes: item.bytes, updatedAt: ++draftClock,
+          } satisfies StoredDraft,
+        })),
+        oldIndex && nextKeys && nextBytes !== undefined
+          ? { ...oldIndex, keys: nextKeys, bytes: nextBytes }
+          : undefined,
+      );
+      for (const item of moved) {
+        fileDrafts.set(item.nextKey, item.value);
+        draftBytesByKey.set(item.nextKey, item.bytes);
+        draftBytesByKey.delete(item.key);
+        fileDrafts.delete(item.key);
       }
-      if (index) tx.objectStore(DRAFT_INDEX_STORE).put({ ...index, keys: index.keys.map((key) => key === prefix || key.startsWith(`${prefix}/`) ? fileDraftKey(projectId, newPath + (key === prefix ? "" : key.slice(prefix.length))) : key) } satisfies ProjectDraftIndex);
-      await waitForTransaction(tx);
-      for (const [key, value] of entries) {
-        const suffix = key === prefix ? "" : key.slice(prefix.length);
-        const nextKey = fileDraftKey(projectId, newPath + suffix);
-        fileDrafts.set(nextKey, value);
-        const bytes = draftBytesByKey.get(key);
-        if (bytes !== undefined) draftBytesByKey.set(nextKey, bytes);
-        draftBytesByKey.delete(key);
-        fileDrafts.delete(key);
-      }
-      if (index) draftIndexByProject.set(projectId, { ...index, keys: index.keys.map((key) => key === prefix || key.startsWith(`${prefix}/`) ? fileDraftKey(projectId, newPath + (key === prefix ? "" : key.slice(prefix.length))) : key) });
+      if (oldIndex && nextKeys && nextBytes !== undefined) draftIndexByProject.set(projectId, { ...oldIndex, keys: nextKeys, bytes: nextBytes });
       return { ok: true };
     } catch {
       return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message: "Unable to move the local dirty draft." };
@@ -571,21 +598,50 @@ export async function hasDirtyDraftsForPath(projectId: string, path: string): Pr
   return [...draftBytesByKey.keys()].some((key) => key === prefix || key.startsWith(`${prefix}/`));
 }
 
+/** Explicitly discard a file or directory's drafts after its server-side
+ * deletion has succeeded. The draft records and project index change in one
+ * transaction; a failed transaction leaves every record intact. */
+export function clearFileDraftsForPath(projectId: string, path: string): Promise<DraftPersistenceResult> {
+  return enqueueDraft(async () => {
+    await hydrateDraftState();
+    const prefix = fileDraftKey(projectId, path);
+    const keys = [...draftBytesByKey.keys()].filter((key) => key === prefix || key.startsWith(`${prefix}/`));
+    if (keys.length === 0) return { ok: true };
+    const store = await getDraftStore();
+    const index = draftIndexByProject.get(projectId);
+    const nextKeys = index?.keys.filter((key) => !keys.includes(key));
+    const nextIndex = index && nextKeys ? {
+      projectId, keys: nextKeys, count: nextKeys.length,
+      bytes: nextKeys.reduce((sum, key) => sum + (draftBytesByKey.get(key) ?? 0), 0),
+    } satisfies ProjectDraftIndex : undefined;
+    if (!store) {
+      for (const key of keys) { fileDrafts.delete(key); draftBytesByKey.delete(key); }
+      if (nextIndex) draftIndexByProject.set(projectId, nextIndex);
+      return { ok: true };
+    }
+    try {
+      await store.remove(keys, nextIndex);
+      for (const key of keys) { fileDrafts.delete(key); draftBytesByKey.delete(key); }
+      if (nextIndex) draftIndexByProject.set(projectId, nextIndex);
+      return { ok: true };
+    } catch {
+      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message: "Unable to discard the local dirty draft." };
+    }
+  });
+}
+
 export function clearProjectDrafts(projectId: string): Promise<DraftPersistenceResult> {
   return enqueueDraft(async () => {
     await hydrateDraftState();
-    const db = await openDraftDb();
+    const store = await getDraftStore();
     const keys = [...draftBytesByKey.keys()].filter((key) => key.startsWith(`${projectId}:`));
-    if (!db) {
+    if (!store) {
       for (const key of keys) { fileDrafts.delete(key); draftBytesByKey.delete(key); }
       draftIndexByProject.delete(projectId);
       return { ok: true };
     }
     try {
-      const tx = db.transaction([DRAFT_STORE, DRAFT_INDEX_STORE], "readwrite");
-      for (const key of keys) tx.objectStore(DRAFT_STORE).delete(key);
-      tx.objectStore(DRAFT_INDEX_STORE).delete(projectId);
-      await waitForTransaction(tx);
+      await store.clear(keys, projectId);
       for (const key of keys) { fileDrafts.delete(key); draftBytesByKey.delete(key); }
       draftIndexByProject.delete(projectId);
       return { ok: true };

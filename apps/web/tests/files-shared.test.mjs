@@ -22,7 +22,11 @@ registerHooks({
   },
 });
 
-globalThis.window = { addEventListener() {}, removeEventListener() {} };
+globalThis.window = {
+  location: { pathname: "/chat" },
+  addEventListener() {},
+  removeEventListener() {},
+};
 globalThis.document = { addEventListener() {}, removeEventListener() {} };
 globalThis.localStorage = { getItem() { return null; }, setItem() {}, removeItem() {} };
 globalThis.WebSocket = { OPEN: 1 };
