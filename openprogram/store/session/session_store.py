@@ -1454,38 +1454,6 @@ class SessionStore:
             child = idx.nodes_by_id.get(kid_id)
             return child is not None and _conversation_node(child)
 
-        # Identify the session's "main" tip — the leaf reached by
-        # walking the earliest conv-root down its kids[0] primary
-        # path. This matches the DAG lane-0 trunk exactly, so the
-        # branch the user visually identifies as "the straight line
-        # down the middle" gets the "main" label.
-        roots = [
-            n for n in idx.all_nodes()
-            if _conversation_node(n)
-            and (not n.caller or n.caller == "ROOT")
-            and (_node_conv_predecessor(n) or "ROOT") == "ROOT"
-            and not _is_spawn_root(n.metadata or {})
-        ]
-        # Pure predecessor-edge walk (dag/overview.md): from
-        # the earliest root, follow the primary (first-registered) conv
-        # child until the chain ends. Spawn branch roots never appear
-        # in ``children_by_predecessor`` (their predecessor is None),
-        # so no spawn/task special-casing is needed.
-        main_tip_id: Optional[str] = None
-        if roots:
-            cur = min(roots, key=lambda n: n.created_at).id
-            seen: set[str] = set()
-            while cur not in seen:
-                seen.add(cur)
-                kids = [
-                    kid for kid in idx.children_by_predecessor.get(cur, [])
-                    if _conv_child(kid)
-                ]
-                if not kids:
-                    break
-                cur = kids[0]
-            main_tip_id = cur
-
         merged = self.merged_heads(session_id)
 
         for node in idx.all_nodes():
@@ -1511,26 +1479,6 @@ class SessionStore:
                 "updated_at": (label or {}).get("updated_at") if isinstance(label, dict) else node.created_at,
                 "archived": bool(label.get("archived")) if isinstance(label, dict) else False,
             })
-        # Main_tip may have children (the /task spawn it stopped at), so
-        # the leaf-only loop above won't include it. Push it in by hand so
-        # the right-rail Branches panel still lists the trunk you can
-        # checkout to "go back" to — but with its own name (or None →
-        # short-hex), no "main" special-case. See branch-naming.md 决策 3.
-        if main_tip_id and not any(t["head_msg_id"] == main_tip_id for t in tips):
-            main_node = idx.nodes_by_id.get(main_tip_id)
-            if main_node:
-                label = named.get(main_tip_id)
-                name = (
-                    label.get("name") if isinstance(label, dict)
-                    else label
-                )
-                tips.append({
-                    "head_msg_id": main_tip_id,
-                    "name": name,
-                    "created_at": main_node.created_at,
-                    "updated_at": main_node.created_at,
-                    "archived": bool(label.get("archived")) if isinstance(label, dict) else False,
-                })
         # Compaction no longer clones the kept tail (§8): a summary node
         # splices into the chain and the tail keeps its own ids, so the
         # branch tips need no translation. A summary node that ends up a

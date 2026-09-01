@@ -133,6 +133,16 @@ def test_list_branches_excludes_runtime_context_root(db):
     assert tips == {"a1"}
 
 
+def test_list_branches_does_not_restore_merged_primary_tip(db):
+    """Primary-tip handling must preserve the merged-head exclusion."""
+    db.create_session("s1", agent_id="a")
+    _append(db, "s1", "u1", role="user")
+    _append(db, "s1", "a1", role="assistant", parent="u1")
+    db.mark_merged("s1", ["a1"])
+
+    assert db.list_branches("s1") == []
+
+
 def test_spawn_branch_register_head_false_keeps_head(db):
     """A same-session sub-agent spawn must not steal the session head
     (context/compaction.md §5) — the transcript follows the head, and a

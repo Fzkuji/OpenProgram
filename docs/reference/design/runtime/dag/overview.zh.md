@@ -214,8 +214,9 @@ HEAD 已经包含第一条的回答。
   conversation 节点包括 user、llm，以及 caller 为空或 `ROOT` 的顶层 Program。节点只要
   有任一此类 successor，就是祖先节点，不能再次作为 branch tip。内部 execution child、
   runtime/attach 行与 context 行不延续 conversation，因此不取消其 owner 的 tip 身份。
-  共享同一 predecessor 的并行顶层 Program 仍是不同叶子。主路径 tip 行走使用同一套
-  successor 判定。分支名存在会话 meta 的 `branches: {head_id: name}`。
+  共享同一 predecessor 的并行顶层 Program 仍是不同叶子。不存在特殊的主路径 tip
+  fallback：已合并节点和非 conversation 节点始终保持排除。分支名存在会话 meta 的
+  `branches: {head_id: name}`。
 
 ## 6. 上下文渲染
 

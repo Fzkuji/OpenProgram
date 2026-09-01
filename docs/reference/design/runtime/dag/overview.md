@@ -259,9 +259,9 @@ includes the first answer.
   such successor is an ancestor, not another branch tip. Internal execution
   children, runtime/attach rows, and context rows do not continue the
   conversation and therefore do not remove their owner's tip. Parallel
-  top-level Programs sharing one predecessor remain separate leaves. The
-  primary-tip walk applies the same successor predicate. Branch names live in
-  session meta under `branches: {head_id: name}`.
+  top-level Programs sharing one predecessor remain separate leaves. There is
+  no special main-tip fallback: merged and non-conversation nodes stay excluded.
+  Branch names live in session meta under `branches: {head_id: name}`.
 
 ## 6. Context Rendering
 
