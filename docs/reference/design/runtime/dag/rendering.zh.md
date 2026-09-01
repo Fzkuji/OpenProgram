@@ -84,7 +84,7 @@ HUD 不自带任何外观。胶囊列在输入框 env-pill 规则里
 
 | 部件 | 位置 |
 |---|---|
-| 平移 / 缩放 / fit | `apps/web/lib/runtime-bridge/dag/canvas.ts`（HUD 按钮走 `zoomStep` / `resetZoom`） |
+| 平移 / 缩放 / fit | `apps/web/lib/runtime-bridge/dag/interaction/canvas.ts`（HUD 按钮走 `zoomStep` / `resetZoom`） |
 | 视角状态 | `dag/store/globals.ts` 的 `_viewTx` / `_viewTy` / `_viewScale` / `_viewSession` |
 | 画布与点阵 | `apps/web/app/styles/dag/canvas.css` 的 `.history-body` |
 | HUD | `apps/web/components/chat/dag-view.tsx` 的 `DagHud`；胶囊外观来自 `composer.module.css` 的 env-pill 规则，图例框架来自 `MENU_PANEL`，内部排版在 `styles/dag/hud.css` |

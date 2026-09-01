@@ -11,7 +11,7 @@
 import type { GNode } from "../types";
 import { getSocket, runtimeState } from "../../state";
 import { translateText } from "@/lib/i18n";
-import { _branchColor, _svg, _textWidth } from "../shapes";
+import { _branchColor, _svg, _textWidth } from "./shapes";
 import { isSpawnRoot, type ThreadModel } from "../passes/thread";
 import { _currentHead } from "../store/globals";
 

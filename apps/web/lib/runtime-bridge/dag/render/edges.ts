@@ -19,8 +19,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { type GNode, COL_W, PAD_X, PAD_Y, ROW_H } from "../types";
-import { _branchColor, _edgePath, _svg } from "../shapes";
-import { _onEdgeDblclick } from "./interaction";
+import { _branchColor, _edgePath, _svg } from "./shapes";
+import { _onEdgeDblclick } from "../interaction/nodes";
 import { coversIds } from "../passes/fold-summaries";
 import { isChainNode, isSpawnRoot } from "../passes/thread";
 import type { Geometry } from "../layout/geometry";

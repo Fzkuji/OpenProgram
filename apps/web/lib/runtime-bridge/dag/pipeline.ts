@@ -31,13 +31,13 @@
 import { type GNode } from "./types";
 import { runtimeState } from "../state";
 import { computeGeometry } from "./layout/geometry";
-import { _branchColor, _svg } from "./shapes";
-import { attachCanvas, detachCanvas } from "./canvas";
+import { _branchColor, _svg } from "./render/shapes";
+import { attachCanvas, detachCanvas } from "./interaction/canvas";
 import {
   hideTooltip as _hideTooltip,
   resetTooltip as _resetTooltip,
   showTooltip as _showTooltip,
-} from "./tooltip";
+} from "./interaction/tooltip";
 import { _collapseRuntimePairs } from "./passes/collapse-runtime-pairs";
 import { _mergeRuns } from "./passes/merge-runs";
 import { _demoteDecorationCards } from "./passes/demote-decoration-cards";

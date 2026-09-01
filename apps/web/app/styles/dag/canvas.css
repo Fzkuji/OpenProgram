@@ -1,9 +1,9 @@
 /* DAG 无限画布：.history-body 点阵/拖拽、SVG 面、加载骨架。
-   对应来源：lib/runtime-bridge/dag/canvas.ts、pipeline.ts */
+   对应来源：lib/runtime-bridge/dag/interaction/canvas.ts、pipeline.ts */
 
 /* ============ History DAG view ============ */
 
-/* The infinite canvas surface (lib/runtime-bridge/dag/canvas.ts). No
+/* The infinite canvas surface (lib/runtime-bridge/dag/interaction/canvas.ts). No
    scrollbars and no content-driven size: the SVG fills this box and the
    graph is reached by moving the camera.
 

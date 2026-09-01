@@ -44,8 +44,8 @@ const globals =
 const { setSummaryExpanded, toggleSummaryExpanded } = globals;
 
 const nodesPath = new URL("../lib/runtime-bridge/dag/render/nodes.ts", import.meta.url);
-const shapesPath = new URL("../lib/runtime-bridge/dag/shapes.ts", import.meta.url);
-const interactionPath = new URL("../lib/runtime-bridge/dag/render/interaction.ts", import.meta.url);
+const shapesPath = new URL("../lib/runtime-bridge/dag/render/shapes.ts", import.meta.url);
+const interactionPath = new URL("../lib/runtime-bridge/dag/interaction/nodes.ts", import.meta.url);
 const inspectorPath = new URL("../lib/runtime-bridge/dag/render/inspector.ts", import.meta.url);
 const pipelinePath = new URL("../lib/runtime-bridge/dag/pipeline.ts", import.meta.url);
 

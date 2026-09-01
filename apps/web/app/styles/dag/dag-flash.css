@@ -1,5 +1,5 @@
 /* DAG→聊天行联动闪烁（dblclick 定位后的黄色强调）。
-   对应来源：lib/runtime-bridge/dag/render/interaction.ts、
+   对应来源：lib/runtime-bridge/dag/interaction/nodes.ts、
    components/chat/messages/message-list.tsx */
 
 /* Brief flash applied by history-graph._scrollChatTo when a DAG

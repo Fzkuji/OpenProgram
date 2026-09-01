@@ -2,7 +2,7 @@
  * stay in tooltip.ts; this module only decides what the card says. */
 
 import { translateText } from "@/lib/i18n";
-import type { GNode } from "./types";
+import type { GNode } from "../types";
 
 export type TooltipRow =
   | { kind: "kv"; key: string; value: string }

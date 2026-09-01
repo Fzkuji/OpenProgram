@@ -13,7 +13,7 @@
 }
 /* The DAG host, center-width. `.history-body` (right-dock.css) is the
    infinite canvas the renderer writes the SVG into — it fills this box
-   and pans/zooms under the user's hand (lib/runtime-bridge/dag/canvas.ts),
+   and pans/zooms under the user's hand (lib/runtime-bridge/dag/interaction/canvas.ts),
    so a perspective switch or a split-view drag changes what is on screen
    without re-flowing the graph. */
 .dag-view {

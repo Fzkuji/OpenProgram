@@ -40,7 +40,7 @@ import { Maximize2, Minus, Plus, Shapes } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
 import { enterExclusiveCoverageMode } from "@/lib/runtime-bridge/dag";
-import { fitCanvas, resetZoom, zoomStep } from "@/lib/runtime-bridge/dag/canvas";
+import { fitCanvas, resetZoom, zoomStep } from "@/lib/runtime-bridge/dag/interaction/canvas";
 import { MENU_PANEL } from "@/components/chat/top-bar/menu-styles";
 
 const STROKE = "var(--accent-primary, #4a7dfc)";

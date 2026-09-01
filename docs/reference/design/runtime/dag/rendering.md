@@ -108,7 +108,7 @@ cluster's segments, the legend's upward anchoring and rows).
 
 | Piece | Where |
 |---|---|
-| Pan / zoom / fit | `apps/web/lib/runtime-bridge/dag/canvas.ts` (`zoomStep` / `resetZoom` for the HUD buttons) |
+| Pan / zoom / fit | `apps/web/lib/runtime-bridge/dag/interaction/canvas.ts` (`zoomStep` / `resetZoom` for the HUD buttons) |
 | View state | `_viewTx` / `_viewTy` / `_viewScale` / `_viewSession` in `dag/store/globals.ts` |
 | Surface + lattice | `.history-body` in `apps/web/app/styles/dag/canvas.css` |
 | HUD | `DagHud` in `apps/web/components/chat/dag-view.tsx`; pill look from the env-pill rule in `composer.module.css`, legend frame from `MENU_PANEL`, internals in `styles/dag/hud.css` |

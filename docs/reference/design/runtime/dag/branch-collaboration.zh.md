@@ -124,7 +124,7 @@ def send_to_branch(target_branch: str, message: str, wait_reply: bool = False) -
 | 合并 UI | `apps/web/components/right-sidebar/branches/merge-modal.tsx` |
 | attach 解析 | `openprogram/webui/ws_actions/branch.py` `_attach_info` |
 | DAG 连线 | `apps/web/lib/runtime-bridge/dag/render/edges.ts` |
-| DAG 形状 | `apps/web/lib/runtime-bridge/dag/shapes.ts` |
+| DAG 形状 | `apps/web/lib/runtime-bridge/dag/render/shapes.ts` |
 | 布局（merge 节点 lane） | `openprogram/webui/graph_layout/{lane,__init__}.py` |
 | send_to_branch 工具 | 待在 `openprogram/programs/tools/` 下新建 |
 | 验证 | `scripts/dag_dump.py` |

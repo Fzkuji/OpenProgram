@@ -25,7 +25,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { type GNode } from "./types";
+import { type GNode } from "../types";
 import {
   bodyText as _bodyText,
   clampText,

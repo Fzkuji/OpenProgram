@@ -1,5 +1,5 @@
 /* DAG 画布 HUD：缩放簇（− · 读数 · +）与图例。
-   对应来源：components/chat/dag-view.tsx、lib/runtime-bridge/dag/canvas.ts */
+   对应来源：components/chat/dag-view.tsx、lib/runtime-bridge/dag/interaction/canvas.ts */
 
 /* ============ Canvas legend ============ */
 /* A collapsible corner card naming the shapes and the two greys. It

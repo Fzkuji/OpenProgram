@@ -1,8 +1,8 @@
 /* DAG 节点悬停卡/详情卡（同一窗口两态）。
-   对应来源：lib/runtime-bridge/dag/tooltip.ts */
+   对应来源：lib/runtime-bridge/dag/interaction/tooltip.ts */
 
 /* DAG node card — ONE window, two states
-   (apps/web/lib/runtime-bridge/dag/tooltip.ts). Hover shows the brief
+   (apps/web/lib/runtime-bridge/dag/interaction/tooltip.ts). Hover shows the brief
    state; right-click flips the same element to `.detail`: full rows,
    verbs at the bottom, pointer-events on. Click is the node's own
    action. */

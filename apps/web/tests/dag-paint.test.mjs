@@ -53,6 +53,19 @@ test("DAG production TypeScript modules stay below 500 lines", () => {
   assert.deepEqual(oversized, []);
 });
 
+test("DAG root contains only public entry and core pipeline modules", () => {
+  const root = fileURLToPath(new URL("../lib/runtime-bridge/dag", import.meta.url));
+  const rootModules = readdirSync(root)
+    .filter((name) => name.endsWith(".ts"))
+    .sort();
+  assert.deepEqual(rootModules, [
+    "index.ts",
+    "paint-gate.ts",
+    "pipeline.ts",
+    "types.ts",
+  ]);
+});
+
 test("Program internals are folded into the Program thread by default", async () => {
   const { buildThreadModel } = await import(
     "../lib/runtime-bridge/dag/passes/thread.ts"

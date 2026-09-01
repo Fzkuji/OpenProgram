@@ -15,7 +15,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { _applyShapeSize } from "../shapes";
+import { _applyShapeSize } from "./shapes";
 import {
   _chatMutationObserver,
   _chatScrollWired,

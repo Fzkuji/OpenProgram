@@ -289,7 +289,7 @@ assert.match(
 // This used to hop through a `showDetail` wrapper in runtime-bridge/ui.ts;
 // that intermediary is gone and the click site calls the store directly.
 const dagInteraction = readFileSync(
-  new URL("../lib/runtime-bridge/dag/render/interaction.ts", import.meta.url),
+  new URL("../lib/runtime-bridge/dag/interaction/nodes.ts", import.meta.url),
   "utf8",
 );
 assert.match(

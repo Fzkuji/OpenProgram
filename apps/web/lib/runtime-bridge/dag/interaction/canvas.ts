@@ -29,8 +29,8 @@
  * were looking. Only a session switch re-fits.
  */
 
-import { COL_W, PAD_X, PAD_Y } from "./types";
-import { closeNodeLayers } from "./render/inspector";
+import { COL_W, PAD_X, PAD_Y } from "../types";
+import { closeNodeLayers } from "../render/inspector";
 import { hideTooltip } from "./tooltip";
 import {
   _viewSession,
@@ -39,7 +39,7 @@ import {
   _viewTy,
   setView,
   setViewSession,
-} from "./store/globals";
+} from "../store/globals";
 
 /** The inspector popover and the hover card are anchored in SCREEN
  *  space, at where their node was when they opened. The camera moving

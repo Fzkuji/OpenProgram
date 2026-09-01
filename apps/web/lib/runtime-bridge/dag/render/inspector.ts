@@ -33,7 +33,7 @@ import { getSocket, runtimeState } from "../../state";
 import { useSessionStore } from "../../../session-store";
 import { showToast } from "@/lib/format-utils/toast";
 import { translateText } from "@/lib/i18n";
-import { _bodyText, closeTooltipDetail, expandTooltip } from "../tooltip";
+import { _bodyText, closeTooltipDetail, expandTooltip } from "../interaction/tooltip";
 
 function _roleLabel(node: GNode, el?: Element): string {
   if (node.display === "root") return "root";

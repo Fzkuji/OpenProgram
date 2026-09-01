@@ -37,7 +37,7 @@ import {
   closeNodeLayers,
   forkAndEditNode,
   showNodeMenu,
-} from "./inspector";
+} from "../render/inspector";
 
 export function _chatBubbleFor(msgId: string): Element | null {
   if (!msgId) return null;

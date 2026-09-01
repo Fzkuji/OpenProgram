@@ -10,8 +10,8 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { type GNode, LANE_COLORS, NODE_R } from "./types";
-import { isSpawnRoot } from "./passes/thread";
+import { type GNode, LANE_COLORS, NODE_R } from "../types";
+import { isSpawnRoot } from "../passes/thread";
 
 export const CURSOR_R = NODE_R * 0.55;
 
