@@ -28,7 +28,7 @@ class Driver:
             state_schema_version=1,
         )
 
-    async def activate(self, attempt, checkpoint):
+    async def activate(self, attempt, activation):
         return Handle(attempt.attempt_id)
 
     async def request_pause(self, handle, command_id: str) -> DriverAck:

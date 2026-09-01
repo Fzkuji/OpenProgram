@@ -169,6 +169,71 @@ def test_continue_activation_receives_paused_steering(tmp_path):
     assert seen[0].steer_inputs[0]["payload"] == dict(steer.command.payload)
 
 
+def test_activation_failure_rejects_continue_and_releases_attempt(tmp_path):
+    store, attempts, service, paused = _paused(tmp_path)
+
+    def fail(attempt, activation):
+        raise RuntimeError("activation failed")
+
+    result = asyncio.run(
+        service.request_continue(
+            command_id="continue_1",
+            execution_id=paused.execution_id,
+            expected_version=paused.status_version,
+            actor={"surface": "test"},
+            activator=fail,
+        )
+    )
+    assert result.issue_code == "activation_failed"
+    assert result.command.status is CommandStatus.REJECTED
+    assert result.command.rejection_code == "activation_failed"
+    assert result.execution.status is ExecutionStatus.PAUSED
+    assert result.execution.current_attempt_id is None
+    assert store.get_command("continue_1").status is CommandStatus.REJECTED
+
+
+def test_activation_failure_rejects_step_and_allows_new_continue(tmp_path):
+    store, attempts, service, paused = _paused(tmp_path)
+
+    def fail(attempt, activation):
+        raise RuntimeError("activation failed")
+
+    result = asyncio.run(
+        service.request_step(
+            command_id="step_1",
+            execution_id=paused.execution_id,
+            expected_version=paused.status_version,
+            actor={"surface": "test"},
+            activator=fail,
+        )
+    )
+    assert result.issue_code == "activation_failed"
+    assert result.command.status is CommandStatus.REJECTED
+    assert result.execution.status is ExecutionStatus.PAUSED
+    current = store.get_execution(paused.execution_id)
+    assert current is not None and current.current_attempt_id is None
+
+
+def test_legacy_checkpoint_second_argument_is_not_an_activation_contract(tmp_path):
+    store, attempts, service, paused = _paused(tmp_path)
+
+    def legacy(attempt, checkpoint):
+        return checkpoint.state_refs
+
+    result = asyncio.run(
+        service.request_continue(
+            command_id="continue_legacy",
+            execution_id=paused.execution_id,
+            expected_version=paused.status_version,
+            actor={"surface": "test"},
+            activator=legacy,
+        )
+    )
+    assert result.issue_code == "activation_failed"
+    assert result.command.status is CommandStatus.REJECTED
+    assert result.execution.status is ExecutionStatus.PAUSED
+
+
 def test_step_owner_loss_rejects_step_command_and_is_idempotent(tmp_path):
     store, attempts, service, paused = _paused(tmp_path)
     started = asyncio.run(

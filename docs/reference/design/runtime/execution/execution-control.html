@@ -228,7 +228,7 @@ ControlCommand {
   </div>
 <pre><code>protocol ExecutionDriver:
     capabilities() -> CapabilitySet
-    activate(attempt, checkpoint) -> DriverHandle
+    activate(attempt, activation) -> DriverHandle
     request_pause(handle, command_id) -> Ack
     request_cancel(handle, command_id) -> Ack
     inspect(handle) -> RuntimeSnapshot
@@ -236,6 +236,7 @@ ControlCommand {
 
 runtime.arrive_safe_point(attempt_id, manifest_fragment, effect_receipts)
 runtime.finish_attempt(attempt_id, outcome)</code></pre>
+  <p><code>activation</code> 是独立的 <code>ActivationInput</code>，包含原始、不可变且可验证的 <code>CheckpointManifest</code>，以及按 <code>submitted_at, command_id</code> 排序的 durable pending steer inputs。Driver 不得把 steer 临时写入 checkpoint 或修改 checkpoint 的 <code>content_hash</code>；后续 safe point 负责发布包含实际输入的下一份 checkpoint 和 applied receipt。</p>
   <ul><li>Control Service 唯一负责授权、状态 CAS、命令优先级、父子传播、fencing、recovery 和 terminal finalization。</li><li>Driver 负责执行类型特有的协作信号、checkpoint fragment、inspect 数据和受控 terminate。</li><li>Capability 包含 <code>can_pause</code>、<code>can_step</code>、<code>can_steer</code>、<code>can_fork</code>、safe-point kinds 和 state schema version。</li><li>Driver 不直接写 canonical status；projection failure 进入可重试 outbox。</li></ul>
 </section>
 

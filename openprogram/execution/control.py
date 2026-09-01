@@ -35,6 +35,9 @@ from .model import (
 from .store import ExecutionConflict, ExecutionStore, _json, default_store
 
 
+Activator = Callable[[AttemptRecord, ActivationInput], Any]
+
+
 _default_control_services: dict[str, RuntimeControlService] = {}
 _default_control_services_lock = RLock()
 
@@ -117,7 +120,7 @@ class RuntimeControlService:
         attempts: AttemptStore,
         registry: DriverRegistry,
         *,
-        activator: Callable[..., Any] | None = None,
+        activator: Activator | None = None,
         owner_id: str = "control-service",
         lease_ttl_seconds: float = 30.0,
     ) -> None:
@@ -140,7 +143,7 @@ class RuntimeControlService:
         actor: Mapping[str, Any],
         owner_id: str | None = None,
         ttl_seconds: float | None = None,
-        activator: Callable[..., Any] | None = None,
+        activator: Activator | None = None,
         driver: Any | None = None,
     ) -> ControlDispatch:
         """Resume a paused execution without changing its revision or identity."""
@@ -158,6 +161,12 @@ class RuntimeControlService:
         delivered, issue = await self._activate(
             attempt, checkpoint, steer_inputs, activator=activator, driver=driver
         )
+        if delivered:
+            command = self._mark_applied(command, execution)
+        else:
+            command, execution = self._activation_failed(
+                attempt, command, issue_code=issue or "activation_failed"
+            )
         return ControlDispatch(
             command=command,
             execution=execution,
@@ -174,7 +183,7 @@ class RuntimeControlService:
         actor: Mapping[str, Any],
         owner_id: str | None = None,
         ttl_seconds: float | None = None,
-        activator: Callable[..., Any] | None = None,
+        activator: Activator | None = None,
         driver: Any | None = None,
     ) -> ControlDispatch:
         """Create exactly one durable permit and activate a fresh attempt."""
@@ -192,6 +201,10 @@ class RuntimeControlService:
         delivered, issue = await self._activate(
             attempt, checkpoint, steer_inputs, activator=activator, driver=driver
         )
+        if not delivered:
+            command, execution = self._activation_failed(
+                attempt, command, issue_code=issue or "activation_failed"
+            )
         return ControlDispatch(
             command=command,
             execution=execution,
@@ -359,17 +372,91 @@ class RuntimeControlService:
                 expected_status=CommandStatus.ACCEPTED,
                 target=CommandStatus.APPLYING,
             )
-            if kind is CommandKind.CONTINUE:
-                command = self.executions._transition_command(
+            command = applying
+            return command, reserved, active, checkpoint, steer_inputs, False
+
+    def _activation_failed(
+        self,
+        attempt: AttemptRecord | None,
+        command: ControlCommand,
+        *,
+        issue_code: str,
+    ) -> tuple[ControlCommand, ExecutionRecord]:
+        if attempt is None:
+            raise AttemptConflict("activation_failed", "activation has no attempt")
+        with self.executions._transaction() as connection:
+            current_attempt = self.attempts._require(connection, attempt.attempt_id)
+            self.attempts._validate_generation(current_attempt, attempt.generation)
+            execution = self.executions._require_execution(connection, attempt.execution_id)
+            if execution.current_attempt_id != attempt.attempt_id:
+                raise AttemptConflict("stale_owner", "activation attempt no longer owns execution")
+            if execution.status is ExecutionStatus.RUNNING:
+                pausing = self.executions._transition_execution(
                     connection,
-                    command_id,
-                    expected_status=CommandStatus.APPLYING,
-                    target=CommandStatus.APPLIED,
-                    result_version=reserved.status_version,
+                    execution.execution_id,
+                    expected_version=execution.status_version,
+                    target=ExecutionStatus.PAUSING,
+                    reason_code=issue_code,
+                )
+                paused = self.executions._transition_execution(
+                    connection,
+                    execution.execution_id,
+                    expected_version=pausing.status_version,
+                    target=ExecutionStatus.PAUSED,
+                    reason_code=issue_code,
+                    clear_owner=True,
+                )
+            elif execution.status is ExecutionStatus.PAUSING:
+                paused = self.executions._transition_execution(
+                    connection,
+                    execution.execution_id,
+                    expected_version=execution.status_version,
+                    target=ExecutionStatus.PAUSED,
+                    reason_code=issue_code,
+                    clear_owner=True,
+                )
+            elif execution.status is ExecutionStatus.CANCELLING:
+                paused = self.executions._transition_execution(
+                    connection,
+                    execution.execution_id,
+                    expected_version=execution.status_version,
+                    target=ExecutionStatus.CANCELLED,
+                    reason_code="cancelled_during_activation",
+                    clear_owner=True,
                 )
             else:
-                command = applying
-            return command, reserved, active, checkpoint, steer_inputs, False
+                raise AttemptConflict(
+                    "activation_failed",
+                    f"cannot recover activation while execution is {execution.status.value}",
+                )
+            ended = self.attempts._end_for_owner_loss(
+                connection, current_attempt, outcome=issue_code
+            )
+            self.executions._append_event(
+                connection,
+                execution_id=execution.execution_id,
+                execution_version=paused.status_version,
+                kind="attempt.ended",
+                payload={"attempt": ended.to_dict()},
+                created_at=ended.updated_at,
+            )
+            current_command = self.executions._get_command(connection, command.command_id)
+            if current_command is None or current_command.status is not CommandStatus.APPLYING:
+                raise AttemptConflict("activation_failed", "activation command changed concurrently")
+            rejected = self.executions._transition_command(
+                connection,
+                command.command_id,
+                expected_status=CommandStatus.APPLYING,
+                target=CommandStatus.REJECTED,
+                result_version=paused.status_version,
+                rejection_code=issue_code,
+            )
+        self.registry.unbind(
+            attempt.execution_id,
+            attempt_id=attempt.attempt_id,
+            generation=attempt.generation,
+        )
+        return rejected, paused
 
     async def _activate(
         self,
@@ -377,7 +464,7 @@ class RuntimeControlService:
         checkpoint: CheckpointManifest | None,
         steer_inputs: tuple[Mapping[str, Any], ...],
         *,
-        activator: Callable[..., Any] | None,
+        activator: Activator | None,
         driver: Any | None = None,
     ) -> tuple[bool, str | None]:
         if attempt is None:
@@ -386,7 +473,7 @@ class RuntimeControlService:
         if callback is None and driver is not None:
             callback = driver.activate
         if callback is None:
-            return False, "activation_unavailable"
+            return True, None
         try:
             result = callback(
                 attempt,
@@ -419,7 +506,7 @@ class RuntimeControlService:
                 )
             return True, None
         except Exception:
-            return False, "activation_error"
+            return False, "activation_failed"
 
     def _durable_owner(self, execution_id: str) -> tuple[str, int] | None:
         execution = self.executions.get_execution(execution_id)
