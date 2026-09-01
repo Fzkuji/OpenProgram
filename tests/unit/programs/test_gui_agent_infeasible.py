@@ -22,17 +22,10 @@ def harness_on_path():
     return root
 
 
-def test_legacy_harness_json_parser_imports_resolve():
-    from openprogram.programs.agentic_functions._utils import (
-        parse_json as parse_from_utils,
-    )
-    from openprogram.programs.agentic_functions.json_parsing import (
-        parse_json as parse_from_module,
-    )
+def test_harness_json_parser_import_resolves():
     from openprogram.programs.workflow.json_parsing import parse_json
 
-    assert parse_from_utils is parse_json
-    assert parse_from_module is parse_json
+    assert parse_json('{"status": "ok"}') == {"status": "ok"}
 
 
 def _stub_harness_loop(monkeypatch, *, step_result=None, conclusion_result=None):
