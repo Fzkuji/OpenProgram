@@ -8,6 +8,25 @@
  */
 import { getSocket } from "@/lib/runtime-bridge/state";
 
+export interface WsRequestOptions {
+  signal?: AbortSignal;
+  requestId?: boolean;
+}
+
+function requestId(): string {
+  const randomUUID = globalThis.crypto?.randomUUID;
+  if (randomUUID) return randomUUID.call(globalThis.crypto);
+  throw new Error("Web Crypto randomUUID is required");
+}
+
+const CORRELATED_ACTIONS = new Set([
+  "project_file_tree", "project_file_search", "project_file_read",
+  "project_file_write", "project_file_create", "project_file_rename",
+  "project_file_copy", "project_file_delete", "project_file_reveal",
+  "list_turn_files", "turn_file_diff", "review_scope", "review_file_diff",
+  "turn_history_state", "revert_turn", "reapply_turn",
+]);
+
 export function wsRequest<T = unknown>(
   action: string,
   payload: Record<string, unknown>,
@@ -16,35 +35,57 @@ export function wsRequest<T = unknown>(
   // topbar 项目徽标、右栏文件树各发一条 list_projects），仅按 type 匹配
   // 会拿到"别人"那条请求的回复。传 match 后只认谓词通过的帧（通常校验
   // 后端回显的请求参数），其余同类型帧跳过、继续等自己的回复。
-  match?: (data: T) => boolean,
+  matchOrOptions?: ((data: T) => boolean) | WsRequestOptions,
   timeoutMs = 4000,
+  options: WsRequestOptions = {},
 ): Promise<T | null> {
+  const match = typeof matchOrOptions === "function" ? matchOrOptions : undefined;
+  const requestOptions = typeof matchOrOptions === "function"
+    ? options
+    : matchOrOptions ?? options;
   const ws = getSocket();
   return new Promise((resolve) => {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       resolve(null);
       return;
     }
+    if (requestOptions.signal?.aborted) {
+      resolve(null);
+      return;
+    }
+    const id = (requestOptions.requestId ?? CORRELATED_ACTIONS.has(action))
+      ? requestId()
+      : null;
     let done = false;
+    const finish = (value: T | null) => {
+      if (done) return;
+      done = true;
+      ws.removeEventListener("message", onMsg);
+      requestOptions.signal?.removeEventListener("abort", onAbort);
+      resolve(value);
+    };
     const onMsg = (e: MessageEvent) => {
       try {
         const m = JSON.parse(e.data as string);
-        if (m && m.type === responseType && (!match || match(m.data as T))) {
-          done = true;
-          ws.removeEventListener("message", onMsg);
-          resolve(m.data as T);
+        if (
+          m && m.type === responseType
+          && (!id || m.data?.request_id === id)
+          && (!match || match(m.data as T))
+        ) {
+          finish(m.data as T);
         }
       } catch {
         /* ignore non-JSON frames */
       }
     };
+    const onAbort = () => finish(null);
     ws.addEventListener("message", onMsg);
-    ws.send(JSON.stringify({ action, ...payload }));
+    requestOptions.signal?.addEventListener("abort", onAbort, { once: true });
+    ws.send(JSON.stringify({
+      action, ...payload, ...(id ? { request_id: id } : {}),
+    }));
     setTimeout(() => {
-      if (!done) {
-        ws.removeEventListener("message", onMsg);
-        resolve(null);
-      }
+      finish(null);
     }, timeoutMs);
   });
 }

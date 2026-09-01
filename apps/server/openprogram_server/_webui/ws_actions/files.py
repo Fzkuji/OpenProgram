@@ -89,6 +89,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 
 # Hard cap on a single text read — the panel shows sources, not dumps.
@@ -109,6 +110,40 @@ _SEARCH_IGNORED_DIRS = frozenset({
     "node_modules", ".git", "dist", ".next", "__pycache__",
     ".venv", "venv", ".cache", "target", "build",
 })
+
+
+def _request_id(cmd: dict) -> str | None:
+    value = cmd.get("request_id")
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = uuid.UUID(value)
+    except (ValueError, AttributeError):
+        return None
+    return str(parsed) if str(parsed) == value else None
+
+
+def _durable_file_action(project_id: str, action: str, key: object,
+                         payload: dict, fn):
+    """Claim, execute, and persist one retry-safe file mutation."""
+    if not isinstance(key, str) or not key:
+        return fn()
+    from openprogram.store.file_operations import (
+        FileOperationConflict, default_file_operation_store, fingerprint,
+    )
+    store = default_file_operation_store()
+    try:
+        row, owner = store.begin(project_id, action, key, fingerprint(payload))
+    except FileOperationConflict:
+        return {"error_code": "IDEMPOTENCY_KEY_CONFLICT",
+                "error": "idempotency key is bound to another file operation"}
+    if not owner:
+        return store.replay(row)
+    result = fn()
+    store.complete(row["operation_id"], result)
+    result = dict(result)
+    result["operation_id"] = row["operation_id"]
+    return result
 
 
 @dataclass(frozen=True)
@@ -1079,7 +1114,9 @@ async def handle_project_file_tree(ws, cmd: dict) -> None:
             message="root is not accepted; use project_id and relative path",
         )
         await ws.send_text(json.dumps({
-            "type": "project_file_tree_result", "data": result,
+            "type": "project_file_tree_result", "data": {
+                **result, "request_id": _request_id(cmd),
+            },
         }, default=str))
         return
     result = await loop.run_in_executor(
@@ -1090,7 +1127,7 @@ async def handle_project_file_tree(ws, cmd: dict) -> None:
     )
     await ws.send_text(json.dumps({
         "type": "project_file_tree_result",
-        "data": result,
+        "data": {**result, "request_id": _request_id(cmd)},
     }, default=str))
 
 
@@ -1106,7 +1143,9 @@ async def handle_project_file_search(ws, cmd: dict) -> None:
             kind="search",
         )
         await ws.send_text(json.dumps({
-            "type": "project_file_search_result", "data": result,
+            "type": "project_file_search_result", "data": {
+                **result, "request_id": _request_id(cmd),
+            },
         }, default=str))
         return
     result = await loop.run_in_executor(
@@ -1118,7 +1157,7 @@ async def handle_project_file_search(ws, cmd: dict) -> None:
     )
     await ws.send_text(json.dumps({
         "type": "project_file_search_result",
-        "data": result,
+        "data": {**result, "request_id": _request_id(cmd)},
     }, default=str))
 
 
@@ -1129,7 +1168,8 @@ async def handle_project_file_read(ws, cmd: dict) -> None:
     result = await loop.run_in_executor(
         None, lambda: _read_file(project_id, path),
     )
-    payload = {"project_id": project_id, "path": path}
+    payload = {"project_id": project_id, "path": path,
+               "request_id": _request_id(cmd)}
     payload.update(result)
     await ws.send_text(json.dumps({
         "type": "project_file_read_result",
@@ -1149,9 +1189,15 @@ async def handle_project_file_write(ws, cmd: dict) -> None:
     else:
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
-            None, lambda: _write_file(project_id, path, content, expected_mtime),
+            None, lambda: _durable_file_action(
+                project_id, "project_file_write", cmd.get("idempotency_key"),
+                {"path": path, "content": content,
+                 "expected_mtime": expected_mtime},
+                lambda: _write_file(project_id, path, content, expected_mtime),
+            ),
         )
-    payload = {"project_id": project_id, "path": path}
+    payload = {"project_id": project_id, "path": path,
+               "request_id": _request_id(cmd)}
     payload.update(result)
     await ws.send_text(json.dumps({
         "type": "project_file_write_result",
@@ -1165,9 +1211,14 @@ async def handle_project_file_create(ws, cmd: dict) -> None:
     kind = cmd.get("kind") or "file"
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(
-        None, lambda: _create_entry(project_id, path, kind),
+        None, lambda: _durable_file_action(
+            project_id, "project_file_create", cmd.get("idempotency_key"),
+            {"path": path, "kind": kind},
+            lambda: _create_entry(project_id, path, kind),
+        ),
     )
-    payload = {"project_id": project_id, "path": path, "kind": kind}
+    payload = {"project_id": project_id, "path": path, "kind": kind,
+               "request_id": _request_id(cmd)}
     payload.update(result)
     await ws.send_text(json.dumps({
         "type": "project_file_create_result",
@@ -1181,9 +1232,14 @@ async def handle_project_file_rename(ws, cmd: dict) -> None:
     new_path = cmd.get("new_path") or ""
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(
-        None, lambda: _rename_entry(project_id, path, new_path),
+        None, lambda: _durable_file_action(
+            project_id, "project_file_rename", cmd.get("idempotency_key"),
+            {"path": path, "new_path": new_path},
+            lambda: _rename_entry(project_id, path, new_path),
+        ),
     )
-    payload = {"project_id": project_id, "path": path, "new_path": new_path}
+    payload = {"project_id": project_id, "path": path, "new_path": new_path,
+               "request_id": _request_id(cmd)}
     payload.update(result)
     await ws.send_text(json.dumps({
         "type": "project_file_rename_result",
@@ -1197,9 +1253,14 @@ async def handle_project_file_copy(ws, cmd: dict) -> None:
     new_path = cmd.get("new_path") or ""
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(
-        None, lambda: _copy_entry(project_id, path, new_path),
+        None, lambda: _durable_file_action(
+            project_id, "project_file_copy", cmd.get("idempotency_key"),
+            {"path": path, "new_path": new_path},
+            lambda: _copy_entry(project_id, path, new_path),
+        ),
     )
-    payload = {"project_id": project_id, "path": path, "new_path": new_path}
+    payload = {"project_id": project_id, "path": path, "new_path": new_path,
+               "request_id": _request_id(cmd)}
     payload.update(result)
     await ws.send_text(json.dumps({
         "type": "project_file_copy_result",
@@ -1212,9 +1273,13 @@ async def handle_project_file_delete(ws, cmd: dict) -> None:
     path = cmd.get("path") or ""  # no .strip() — see handle_project_file_tree
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(
-        None, lambda: _delete_entry(project_id, path),
+        None, lambda: _durable_file_action(
+            project_id, "project_file_delete", cmd.get("idempotency_key"),
+            {"path": path}, lambda: _delete_entry(project_id, path),
+        ),
     )
-    payload = {"project_id": project_id, "path": path}
+    payload = {"project_id": project_id, "path": path,
+               "request_id": _request_id(cmd)}
     payload.update(result)
     await ws.send_text(json.dumps({
         "type": "project_file_delete_result",
@@ -1229,7 +1294,8 @@ async def handle_project_file_reveal(ws, cmd: dict) -> None:
     result = await loop.run_in_executor(
         None, lambda: _reveal_entry(project_id, path),
     )
-    payload = {"project_id": project_id, "path": path}
+    payload = {"project_id": project_id, "path": path,
+               "request_id": _request_id(cmd)}
     payload.update(result)
     await ws.send_text(json.dumps({
         "type": "project_file_reveal_result",

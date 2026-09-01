@@ -1774,7 +1774,8 @@ async def handle_list_turn_files(ws, cmd: dict) -> None:
     )
     await ws.send_text(json.dumps({
         "type": "list_turn_files_result",
-        "data": {"session_id": session_id, "assistant_msg_id": turn_id, **result},
+        "data": {"session_id": session_id, "assistant_msg_id": turn_id,
+                 "request_id": cmd.get("request_id"), **result},
     }, default=str))
 
 
@@ -1984,12 +1985,15 @@ async def handle_revert_turn(ws, cmd: dict) -> None:
         "type": "revert_turn_result",
         "data": {
             "session_id": session_id, "msg_id": msg_id,
+            "request_id": cmd.get("request_id"),
             "reverted_paths": result.get("restored_paths") or [],
             "status": result.get("status"),
             "transaction_id": result.get("transaction_id"),
             "conflicts": result.get("conflicts") or [],
             "unavailable": result.get("unavailable") or [],
-            "errors": [result["error"]] if result.get("error") else [],
+            "errors": (["IDEMPOTENCY_KEY_CONFLICT"]
+                       if result.get("status") == "idempotency_conflict"
+                       else [result["error"]] if result.get("error") else []),
         },
     }, default=str))
 
@@ -2010,12 +2014,15 @@ async def handle_reapply_turn(ws, cmd: dict) -> None:
         "type": "reapply_turn_result",
         "data": {
             "session_id": session_id, "msg_id": msg_id,
+            "request_id": cmd.get("request_id"),
             "reapplied_paths": result.get("restored_paths") or [],
             "status": result.get("status"),
             "transaction_id": result.get("transaction_id"),
             "conflicts": result.get("conflicts") or [],
             "unavailable": result.get("unavailable") or [],
-            "errors": [result["error"]] if result.get("error") else [],
+            "errors": (["IDEMPOTENCY_KEY_CONFLICT"]
+                       if result.get("status") == "idempotency_conflict"
+                       else [result["error"]] if result.get("error") else []),
         },
     }, default=str))
 

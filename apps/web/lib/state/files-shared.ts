@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 
-import { wsRequest } from "@/lib/net/ws-request";
+import { wsRequest, type WsRequestOptions } from "@/lib/net/ws-request";
 import { useSessionStore } from "@/lib/session-store";
 
 export interface Project {
@@ -86,20 +86,15 @@ export function useCurrentProject(): Project | null | undefined {
 
 /* ---- WS helpers shared by file-tree / file-viewer ----------------- */
 
-// wsRequest matches replies by frame *type* only, so two in-flight
-// requests of the same action would both resolve with whichever reply
-// lands first. Serialise all file-browsing requests through one chain.
-// ponytail: global queue; per-action queues if tree loads ever feel slow.
-let queue: Promise<unknown> = Promise.resolve();
-
 export function filesWsRequest<T>(
   action: string,
   payload: Record<string, unknown>,
   responseType: string,
+  options: WsRequestOptions = {},
 ): Promise<T | null> {
-  const next = queue.then(() => wsRequest<T>(action, payload, responseType));
-  queue = next.catch(() => null);
-  return next;
+  return wsRequest<T>(action, payload, responseType, undefined, 4000, {
+    ...options, requestId: true,
+  });
 }
 
 /** Last mtime seen per project-relative file path (fed by the tree

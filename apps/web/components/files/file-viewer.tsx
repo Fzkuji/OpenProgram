@@ -149,6 +149,7 @@ function TextViewer({
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     setFailed(false);
     if (abs) {
       // No readCache / mtime here: an attachment is immutable in
@@ -189,6 +190,7 @@ function TextViewer({
       "project_file_read",
       { project_id: projectId, path },
       "project_file_read_result",
+      { signal: controller.signal },
     ).then((res) => {
       if (cancelled) return;
       if (!res || res.error || res.path !== path) {
@@ -202,6 +204,7 @@ function TextViewer({
     });
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [projectId, path, abs, sessionId]);
 

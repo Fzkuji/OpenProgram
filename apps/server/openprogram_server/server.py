@@ -12,13 +12,13 @@ import asyncio
 import importlib
 import inspect
 import json
+import uuid
 import os
 import queue
 import sys
 import threading
 import time
 import traceback
-import uuid
 from typing import Any, Optional
 
 from openprogram.programs.workflow.ask_user import set_ask_user, ask_user
@@ -1638,6 +1638,41 @@ def _build_ws_action_registry() -> dict:
 
 WS_ACTIONS: dict = _build_ws_action_registry()
 
+_FILE_REQUEST_ACTIONS = frozenset({
+    "project_file_tree", "project_file_search", "project_file_read",
+    "project_file_write", "project_file_create", "project_file_rename",
+    "project_file_copy", "project_file_delete", "project_file_reveal",
+    "list_turn_files", "turn_file_diff", "review_scope", "review_file_diff",
+    "turn_history_state", "revert_turn", "reapply_turn",
+})
+_FILE_MUTATION_ACTIONS = frozenset({
+    "project_file_write", "project_file_create", "project_file_rename",
+    "project_file_copy", "project_file_delete", "revert_turn", "reapply_turn",
+})
+
+
+def _valid_uuid_request_id(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        return str(uuid.UUID(value)) == value
+    except (ValueError, AttributeError):
+        return False
+
+
+def _validate_file_request(cmd: dict, action: str) -> None:
+    """Reject file requests before a handler can start filesystem work."""
+    from openprogram.webui.ws_errors import OperationError
+
+    if action not in _FILE_REQUEST_ACTIONS:
+        return
+    if not _valid_uuid_request_id(cmd.get("request_id")):
+        raise OperationError("invalid_request", scope="system")
+    if action in _FILE_MUTATION_ACTIONS:
+        key = cmd.get("idempotency_key")
+        if not isinstance(key, str) or not key or len(key) > 256 or not key.isprintable():
+            raise OperationError("invalid_request", scope="system")
+
 
 async def _handle_ws_command(ws, cmd: dict):
     """Handle a WebSocket command from the client."""
@@ -1648,6 +1683,7 @@ async def _handle_ws_command(ws, cmd: dict):
         from openprogram.webui.ws_errors import OperationError
 
         raise OperationError("invalid_request", scope="system")
+    _validate_file_request(cmd, action)
     print(f"[ws] command received: action={action}")
 
     h = WS_ACTIONS.get(action)

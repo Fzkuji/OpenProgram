@@ -17,14 +17,16 @@ test("FileTree pages directories with snapshot cursors and an accessible load-mo
   assert.match(source, /all\.findIndex\(\(candidate\) => candidate\.name === entry\.name\)/);
 });
 
-test("FileTree searches the complete project with serialized, generation-checked queries", () => {
+test("FileTree bounds search results and cancels generation-stale queries", () => {
   assert.match(source, /project_file_search/);
   assert.match(source, /setTimeout\(\(\) =>/);
   assert.match(source, /const generation = \+\+searchGeneration\.current/);
   assert.match(source, /generation !== searchGeneration\.current/);
-  assert.match(source, /const queryQueue = useRef<Promise<unknown>>/);
-  assert.match(source, /next = queryQueue\.current\.then\(\(\) =>/);
-  assert.match(source, /canRun\(\) \? wsRequest/);
+  assert.match(source, /const MAX_SEARCH_RESULTS = 500/);
+  assert.match(source, /const combined = new Map<string, SearchResult>\(\)/);
+  assert.match(source, /new AbortController\(\)/);
+  assert.match(source, /filesWsRequest/);
+  assert.doesNotMatch(source, /queryQueue/);
   assert.match(source, /\(\) => generation === queryGeneration\.current/);
 });
 

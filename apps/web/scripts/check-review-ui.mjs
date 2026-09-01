@@ -24,15 +24,9 @@ assert.match(card, /openReviewTab/);
 assert.match(card, /IntersectionObserver/);
 assert.match(card, /const MAX_CARD_FILES = 20/);
 assert.match(card, /function loadMore\(\)/);
-assert.match(card, /action: "turn_history_state"/);
+assert.match(card, /wsRequest[\s\S]*"turn_history_state"/);
 assert.match(card, /operation: null,[\s\S]*?setHistoryNonce/);
-const historyResponseStart = card.indexOf('frame?.type !== "turn_history_state_result"');
-const historyResponseEnd = card.indexOf("} catch", historyResponseStart);
-assert.ok(historyResponseStart >= 0 && historyResponseEnd > historyResponseStart);
-assert.match(
-  card.slice(historyResponseStart, historyResponseEnd),
-  /setHistoryError\(""\);\s*setHistoryState\(/,
-);
+assert.match(card, /setHistoryError\(""\);\s*setHistoryState\(/);
 assert.match(card, /\} = historyPresentation\([\s\S]*?historyState,[\s\S]*?historyError,[\s\S]*?Review remains available/);
 const refreshed = historyPresentation(
   { status: "ready", operation: "undo" },

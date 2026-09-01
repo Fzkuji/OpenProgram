@@ -94,6 +94,7 @@ interface SearchResultPayload {
 
 /** Dirs rendered dimmed (still expandable — just visually de-emphasised). */
 const DIM_DIRS = new Set([".git", "node_modules", ".venv", "__pycache__"]);
+const MAX_SEARCH_RESULTS = 500;
 
 function joinPath(dir: string, name: string): string {
   return dir ? `${dir}/${name}` : name;
@@ -249,6 +250,8 @@ export function FileTree({
   const [filter, setFilter] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [searchPage, setSearchPage] = useState(1);
+  const [searchHasMore, setSearchHasMore] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchMode, setSearchMode] = useState<ExplorerSearchMode>("filter");
@@ -265,7 +268,7 @@ export function FileTree({
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const directoryPagesRef = useRef<Record<string, DirectoryPage>>({});
-  const queryQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const queryControllers = useRef(new Set<AbortController>());
   const queryGeneration = useRef(0);
   const searchGeneration = useRef(0);
   const revealTarget = useRef<string | null>(null);
@@ -276,20 +279,18 @@ export function FileTree({
     directoryPagesRef.current = directoryPages;
   }, [directoryPages]);
 
-  function queuedQuery<T>(
+  function fileQuery<T>(
     action: string,
     payload: Record<string, unknown>,
     responseType: string,
     canRun: () => boolean,
   ): Promise<T | null> {
-    // Single replacement point for Task G request_id migration. Until that
-    // protocol exists, stale project/query work is skipped before opening a
-    // WebSocket request and therefore cannot delay the current generation.
-    const next = queryQueue.current.then(() =>
-      canRun() ? wsRequest<T>(action, payload, responseType) : null,
-    );
-    queryQueue.current = next.catch(() => null);
-    return next;
+    if (!canRun()) return Promise.resolve(null);
+    const controller = new AbortController();
+    queryControllers.current.add(controller);
+    return filesWsRequest<T>(action, payload, responseType, {
+      signal: controller.signal,
+    }).finally(() => queryControllers.current.delete(controller));
   }
 
   const load = useCallback(
@@ -301,7 +302,7 @@ export function FileTree({
         setDirs((d) => ({ ...d, [path]: "loading" }));
       }
       const page = directoryPagesRef.current[path];
-      const data = await queuedQuery<TreeResult>(
+      const data = await fileQuery<TreeResult>(
         "project_file_tree",
         {
           project_id: projectId,
@@ -358,6 +359,7 @@ export function FileTree({
 
   // (Re)load the root whenever the project changes.
   useEffect(() => {
+    for (const controller of queryControllers.current) controller.abort();
     queryGeneration.current += 1;
     searchGeneration.current += 1;
     setDirs({});
@@ -374,6 +376,8 @@ export function FileTree({
     setMenu(null);
     setFilter("");
     setSearchResults([]);
+    setSearchPage(1);
+    setSearchHasMore(false);
     setSearchLoading(false);
     setSearchError(null);
     setSearchOpen(false);
@@ -383,6 +387,9 @@ export function FileTree({
     revealScrollTimer.current = null;
     revealFlashTimer.current = null;
     void load("");
+    return () => {
+      for (const controller of queryControllers.current) controller.abort();
+    };
   }, [load]);
 
   useEffect(() => {
@@ -422,6 +429,7 @@ export function FileTree({
   }
 
   function refetchRoot() {
+    for (const controller of queryControllers.current) controller.abort();
     queryGeneration.current += 1;
     setDirs({});
     setDirectoryPages({});
@@ -446,10 +454,12 @@ export function FileTree({
     payload: Record<string, unknown>,
     refreshDirs: string[],
   ): Promise<boolean> {
-    const data = await filesWsRequest<{ ok?: boolean; error?: string }>(
+    const generation = queryGeneration.current;
+    const data = await fileQuery<{ ok?: boolean; error?: string }>(
       `project_file_${op}`,
-      { project_id: projectId, ...payload },
+      { project_id: projectId, ...payload, idempotency_key: crypto.randomUUID() },
       `project_file_${op}_result`,
+      () => generation === queryGeneration.current,
     );
     if (!data || data.error) {
       if (data?.error) window.alert(data.error);
@@ -673,6 +683,7 @@ export function FileTree({
     const query = filter.trim();
     const generation = ++searchGeneration.current;
     setSearchResults([]);
+    setSearchHasMore(false);
     setSearchError(null);
     if (!query) {
       setSearchLoading(false);
@@ -684,9 +695,10 @@ export function FileTree({
         let cursor: string | null = null;
         let snapshotId: string | null = null;
         let retriedStale = false;
-        const combined: SearchResult[] = [];
-        while (generation === searchGeneration.current) {
-          const data: SearchResultPayload | null = await queuedQuery<SearchResultPayload>(
+        const combined = new Map<string, SearchResult>();
+        let fetchedPages = 0;
+        while (generation === searchGeneration.current && fetchedPages < Math.min(searchPage, 5)) {
+          const data: SearchResultPayload | null = await fileQuery<SearchResultPayload>(
             "project_file_search",
             {
               project_id: projectId,
@@ -704,7 +716,7 @@ export function FileTree({
           if (data?.error_code === "STALE_SNAPSHOT" && cursor && !retriedStale) {
             cursor = null;
             snapshotId = null;
-            combined.length = 0;
+            combined.clear();
             setSearchResults([]);
             retriedStale = true;
             continue;
@@ -714,21 +726,24 @@ export function FileTree({
             setSearchResults([]);
             break;
           }
+          fetchedPages += 1;
           for (const result of data.results) {
-            if (!combined.some((existing) => existing.path === result.path)) {
-              combined.push(result);
-            }
+            if (combined.size >= MAX_SEARCH_RESULTS) break;
+            combined.set(result.path, result);
           }
-          setSearchResults([...combined]);
+          setSearchResults([...combined.values()]);
           cursor = data.next_cursor ?? null;
           snapshotId = data.snapshot_id ?? null;
-          if (!cursor) break;
+          if (!cursor || combined.size >= MAX_SEARCH_RESULTS) break;
+        }
+        if (generation === searchGeneration.current) {
+          setSearchHasMore(Boolean(cursor) && combined.size < MAX_SEARCH_RESULTS);
         }
         if (generation === searchGeneration.current) setSearchLoading(false);
       })();
     }, 200);
     return () => clearTimeout(timer);
-  }, [filter, fuzzySearch, projectId]);
+  }, [filter, fuzzySearch, projectId, searchPage]);
 
   const searchMatches = useMemo(() => {
     if (filter.trim()) return searchResults.map((entry) => ({ path: entry.path, entry }));
@@ -830,6 +845,17 @@ export function FileTree({
             </button>
           </div>
         ))}
+        {searchHasMore ? (
+          <button
+            type="button"
+            className={styles.treeRow}
+            aria-label={text("Load more search results", "加载更多搜索结果")}
+            disabled={searchLoading}
+            onClick={() => setSearchPage((page) => Math.min(page + 1, 5))}
+          >
+            {searchLoading ? text("Loading…", "加载中…") : text("Load more", "加载更多")}
+          </button>
+        ) : null}
       </div>
     );
   }

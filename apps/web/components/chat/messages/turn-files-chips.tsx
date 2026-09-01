@@ -8,7 +8,7 @@ import {
   UndoIcon,
 } from "@/components/animated-icons";
 import { useTranslation } from "@/lib/i18n";
-import { getSocket } from "@/lib/runtime-bridge/state";
+import { wsRequest } from "@/lib/net/ws-request";
 import { useSessionStore } from "@/lib/session-store";
 import type {
   AssistantBlock,
@@ -20,6 +20,7 @@ import { useCurrentProject } from "@/lib/state/files-shared";
 
 import {
   historyPresentation,
+  type TurnHistoryOperation,
   type TurnHistoryState,
 } from "./turn-files-history-state";
 
@@ -64,13 +65,6 @@ function summaryFiles(summary?: TurnFileSummary, projectRoot?: string): TurnFile
       ? file.path.slice(root.length)
       : basename(file.path),
   }));
-}
-
-function send(payload: unknown): boolean {
-  const socket = getSocket();
-  if (!socket || socket.readyState !== WebSocket.OPEN) return false;
-  socket.send(JSON.stringify(payload));
-  return true;
 }
 
 export function TurnFilesChips({
@@ -131,37 +125,24 @@ export function TurnFilesChips({
 
   useEffect(() => {
     if (!visible || !sessionId) return;
-    const socket = getSocket();
-    if (!socket) return;
-    const requestId = crypto.randomUUID();
-    const onMessage = (event: MessageEvent) => {
-      try {
-        const frame = JSON.parse(event.data);
-        const data = frame?.data ?? {};
-        if (
-          frame?.type !== "turn_history_state_result"
-          || data.request_id !== requestId
-          || data.assistant_msg_id !== assistantMsgId
-        ) return;
-        socket.removeEventListener("message", onMessage);
+    const controller = new AbortController();
+    void wsRequest<{ status?: string; action?: TurnHistoryOperation | null; error?: string; assistant_msg_id?: string }>(
+      "turn_history_state",
+      { session_id: sessionId, assistant_msg_id: assistantMsgId },
+      "turn_history_state_result",
+      (data) => data.assistant_msg_id === assistantMsgId,
+      4000,
+      { signal: controller.signal, requestId: true },
+    ).then((data) => {
+      if (!data || controller.signal.aborted) return;
         setHistoryError("");
         setHistoryState({
           status: data.status ?? "error",
           operation: data.action ?? null,
           error: data.error,
         });
-      } catch {
-        /* ignore unrelated frames */
-      }
-    };
-    socket.addEventListener("message", onMessage);
-    if (!send({
-      action: "turn_history_state",
-      session_id: sessionId,
-      assistant_msg_id: assistantMsgId,
-      request_id: requestId,
-    })) socket.removeEventListener("message", onMessage);
-    return () => socket.removeEventListener("message", onMessage);
+    });
+    return () => controller.abort();
   }, [assistantMsgId, historyNonce, sessionId, visible]);
 
   useEffect(() => {
@@ -171,33 +152,21 @@ export function TurnFilesChips({
     }
     if (!visible) return;
     if (!sessionId || !assistantMsgId) return;
-    const socket = getSocket();
-    if (!socket) return;
-    const onMessage = (event: MessageEvent) => {
-      try {
-        const frame = JSON.parse(event.data);
-        const data = frame?.data ?? {};
-        if (
-          frame?.type !== "list_turn_files_result"
-          || data.assistant_msg_id !== assistantMsgId
-        ) return;
-        socket.removeEventListener("message", onMessage);
+    const controller = new AbortController();
+    void wsRequest<{ files?: TurnFile[]; file_count?: number; reverted?: boolean; assistant_msg_id?: string }>(
+      "list_turn_files",
+      { session_id: sessionId, assistant_msg_id: assistantMsgId },
+      "list_turn_files_result",
+      (data) => data.assistant_msg_id === assistantMsgId,
+      4000,
+      { signal: controller.signal, requestId: true },
+    ).then((data) => {
+      if (!data || controller.signal.aborted) return;
         setFiles((data.files ?? []).slice(0, MAX_CARD_FILES));
         setFileCount(data.file_count ?? data.files?.length ?? 0);
         setReverted(Boolean(data.reverted));
-      } catch {
-        /* ignore unrelated frames */
-      }
-    };
-    socket.addEventListener("message", onMessage);
-    if (!send({
-      action: "list_turn_files",
-      session_id: sessionId,
-      assistant_msg_id: assistantMsgId,
-    })) {
-      socket.removeEventListener("message", onMessage);
-    }
-    return () => socket.removeEventListener("message", onMessage);
+    });
+    return () => controller.abort();
   }, [assistantMsgId, embedded, sessionId, visible]);
 
   function historyAction(direction: "undo" | "redo") {
@@ -207,23 +176,19 @@ export function TurnFilesChips({
     const responseType = direction === "undo"
       ? "revert_turn_result"
       : "reapply_turn_result";
-    const socket = getSocket();
-    if (!socket || !send({
+    void wsRequest<{ msg_id?: string; status?: string; errors?: string[]; request_id?: string }>(
       action,
-      session_id: sessionId,
-      msg_id: assistantMsgId,
-      idempotency_key: crypto.randomUUID(),
-    })) {
-      setBusy(null);
-      showToast(text("History action failed: not connected", "历史操作失败：连接已断开"));
-      return;
-    }
-    const onMessage = (event: MessageEvent) => {
-      try {
-        const frame = JSON.parse(event.data);
-        const data = frame?.data ?? {};
-        if (frame?.type !== responseType || data.msg_id !== assistantMsgId) return;
-        socket.removeEventListener("message", onMessage);
+      { session_id: sessionId, msg_id: assistantMsgId, idempotency_key: crypto.randomUUID() },
+      responseType,
+      (data) => data.msg_id === assistantMsgId,
+      4000,
+      { requestId: true },
+    ).then((data) => {
+      if (!data) {
+        setBusy(null);
+        showToast(text("History action failed: not connected", "历史操作失败：连接已断开"));
+        return;
+      }
         setBusy(null);
         const errors: string[] = data.errors ?? [];
         if (errors.length) {
@@ -250,44 +215,29 @@ export function TurnFilesChips({
         showToast(direction === "undo"
           ? text("Changes reverted", "修改已撤回")
           : text("Changes reapplied", "修改已重做"));
-      } catch {
-        /* ignore unrelated frames */
-      }
-    };
-    socket.addEventListener("message", onMessage);
+    });
   }
 
   function loadMore() {
     if (!sessionId || loadingMore) return;
-    const socket = getSocket();
-    if (!socket) return;
     setLoadingMore(true);
-    const onMessage = (event: MessageEvent) => {
-      try {
-        const frame = JSON.parse(event.data);
-        const data = frame?.data ?? {};
-        if (
-          frame?.type !== "list_turn_files_result"
-          || data.assistant_msg_id !== assistantMsgId
-        ) return;
-        socket.removeEventListener("message", onMessage);
+    void wsRequest<{ files?: TurnFile[]; file_count?: number; assistant_msg_id?: string }>(
+      "list_turn_files",
+      { session_id: sessionId, assistant_msg_id: assistantMsgId },
+      "list_turn_files_result",
+      (data) => data.assistant_msg_id === assistantMsgId,
+      4000,
+      { requestId: true },
+    ).then((data) => {
+      if (!data) {
+        setLoadingMore(false);
+        return;
+      }
         setLoadingMore(false);
         setFiles((data.files ?? []).slice(0, MAX_CARD_FILES));
         setFileCount(data.file_count ?? data.files?.length ?? 0);
         setShowAll(true);
-      } catch {
-        /* ignore unrelated frames */
-      }
-    };
-    socket.addEventListener("message", onMessage);
-    if (!send({
-      action: "list_turn_files",
-      session_id: sessionId,
-      assistant_msg_id: assistantMsgId,
-    })) {
-      socket.removeEventListener("message", onMessage);
-      setLoadingMore(false);
-    }
+    });
   }
 
   if (!files) {

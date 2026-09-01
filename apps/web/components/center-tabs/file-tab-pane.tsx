@@ -264,7 +264,13 @@ export function FileTabPane({
     setSaveFailed(false);
     const res = await filesWsRequest<WriteResult>(
       "project_file_write",
-      { project_id: projectId, path, content: buf.draft, expected_mtime: buf.baseMtime },
+      {
+        project_id: projectId,
+        path,
+        content: buf.draft,
+        expected_mtime: buf.baseMtime,
+        idempotency_key: crypto.randomUUID(),
+      },
       "project_file_write_result",
     );
     setSaving(false);
