@@ -6,6 +6,16 @@ from contextvars import copy_context
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _runner_lifecycle():
+    """Close the singleton pool created by synchronous agent turns."""
+    from openprogram.agent.job import runner as runner_mod
+
+    runner_mod.shutdown_runner()
+    yield
+    runner_mod.shutdown_runner()
+
+
 @pytest.fixture
 def store(tmp_path, monkeypatch):
     from openprogram.store.session.session_store import SessionStore
