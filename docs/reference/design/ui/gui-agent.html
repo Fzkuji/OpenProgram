@@ -5,90 +5,265 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>GUI Agent execution design</title>
 <style>
-  :root{color-scheme:dark;--bg:#111315;--panel:#191c20;--line:#343a40;--text:#e7e9eb;--muted:#a8afb7;--accent:#78a9ff;--good:#76c893;--warn:#ffca6b}
-  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 system-ui,sans-serif}main{max-width:1040px;margin:auto;padding:48px 24px 72px}h1{font-size:38px;line-height:1.15;margin:0 0 12px}h2{margin:36px 0 12px;font-size:23px}h3{margin:24px 0 8px;font-size:17px}p,li{max-width:900px}.lead{font-size:18px;color:var(--muted)}code{background:#0b0d0f;padding:.12em .35em;border-radius:4px}.flow{display:grid;grid-template-columns:repeat(7,minmax(100px,1fr));gap:8px;margin:20px 0;overflow:auto}.node{min-width:100px;padding:14px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);text-align:center}.node:not(:last-child)::after{content:"→";float:right;margin-right:-18px;color:var(--accent)}table{width:100%;border-collapse:collapse;margin:14px 0}th,td{padding:10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:var(--muted)}.yes{color:var(--good)}.pending{color:var(--warn)}
+  :root {
+    color-scheme: dark;
+    --bg: #0b0f14; --panel: #121923; --line: #2b394a; --text: #edf3f8;
+    --muted: #9bacbc; --blue: #70b7ff; --cyan: #54d6cc; --green: #6fda8b;
+    --orange: #ffb66d; --red: #ff817a; --violet: #c3a6ff;
+    --mono: ui-monospace,"SFMono-Regular",Menlo,Monaco,Consolas,monospace;
+    --sans: Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; overflow-x: hidden; background: radial-gradient(circle at 78% -10%,rgba(84,214,204,.09),transparent 34rem),radial-gradient(circle at 12% 8%,rgba(112,183,255,.08),transparent 30rem),var(--bg); color: var(--text); font: 14px/1.62 var(--sans); }
+  a { color: var(--blue); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  a:hover { color: #a5d2ff; }
+  a:focus-visible, summary:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; border-radius: 4px; }
+  code,.mono { font-family: var(--mono); }
+  code { padding: .12em .35em; border: 1px solid rgba(112,183,255,.13); border-radius: 5px; background: #0b121a; color: #d9eaff; font-size: .92em; }
+  .page { width: min(1460px,100%); max-width: 100%; overflow-x: hidden; margin: 0 auto; padding: clamp(20px,3vw,36px) clamp(14px,2.4vw,28px) clamp(64px,7vw,92px); display: grid; grid-template-columns: 224px minmax(0,1fr); gap: clamp(18px,2.4vw,34px); }
+  .rail { position: sticky; top: 22px; align-self: start; max-height: calc(100vh - 44px); overflow: auto; padding: 16px 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(18,25,35,.92); backdrop-filter: blur(16px); }
+  .rail .label { margin: 0 0 9px 10px; color: var(--muted); font: 700 10px/1.3 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+  .rail a { display: block; padding: 7px 10px; border-left: 2px solid transparent; color: var(--muted); text-decoration: none; font-size: 12.5px; }
+  .rail a:hover { color: var(--text); border-left-color: var(--blue); background: rgba(112,183,255,.06); }
+  .rail-note { margin-top: 18px; padding: 12px 10px 2px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11.5px; }
+  main,section,.diagram,.table-wrap,.path { width: 100%; min-width: 0; max-width: 100%; }
+  header { padding: 10px 4px 28px; }
+  .eyebrow { color: var(--cyan); font: 700 11px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+  h1 { margin: 12px 0 14px; max-width: 980px; font-size: clamp(34px,5vw,62px); line-height: 1.02; letter-spacing: -.045em; }
+  .lead { max-width: 930px; margin: 0; color: #c7d3de; font-size: clamp(16px,2vw,20px); line-height: 1.52; }
+  .status-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; background: rgba(18,25,35,.72); color: var(--muted); font: 600 11px/1.2 var(--mono); }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px rgba(111,218,139,.1); }
+  .pill.boundary::before { background: var(--orange); box-shadow: 0 0 0 3px rgba(255,182,109,.1); }
+  .metrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; margin-top: 20px; }
+  .metric { padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: rgba(8,13,19,.45); }
+  .metric strong { display: block; font-size: 22px; letter-spacing: -.03em; }
+  .metric span { display: block; margin-top: 2px; color: var(--muted); font-size: 11.5px; }
+  section { scroll-margin-top: 22px; margin-top: 24px; padding: 26px; border: 1px solid var(--line); border-radius: 16px; background: linear-gradient(145deg,rgba(24,34,48,.93),rgba(15,22,31,.96)); box-shadow: 0 18px 60px rgba(0,0,0,.16); }
+  h2 { margin: 0 0 7px; font-size: 23px; letter-spacing: -.02em; }
+  h3 { margin: 22px 0 8px; font-size: 16px; }
+  p { max-width: 980px; }
+  .section-kicker { margin: 0 0 4px; color: var(--cyan); font: 700 10px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+  .section-intro { margin: 0 0 20px; color: var(--muted); max-width: 920px; }
+  .diagram { overflow-x: auto; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: #0a1119; }
+  .diagram svg { display: block; min-width: 900px; width: 100%; height: auto; }
+  .svg-box { fill: #121c27; stroke: #3a4d61; stroke-width: 1.5; }
+  .svg-entry { fill: #142339; stroke: #589fe8; } .svg-desktop { fill: #16271f; stroke: #55b978; } .svg-browser { fill: #252039; stroke: #9978dc; } .svg-result { fill: #2a2117; stroke: #d79655; }
+  .svg-line { fill: none; stroke: #60758a; stroke-width: 1.6; marker-end: url(#arrow); } .svg-line.desktop { stroke: #55b978; } .svg-line.browser { stroke: #9978dc; }
+  .svg-title { fill: #edf3f8; font: 600 13px var(--mono); } .svg-sub { fill: #9bacbc; font: 11px var(--mono); } .svg-label { fill: #9bacbc; font: 10px var(--mono); }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; color: var(--muted); font-size: 11px; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; } .legend i { width: 18px; height: 9px; border-radius: 3px; border: 1px solid var(--blue); background: #142339; }
+  .legend .desktop { border-color: var(--green); background: #16271f; } .legend .browser { border-color: var(--violet); background: #252039; }
+  .two-col { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; } .three-col { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+  .card { padding: 17px; border: 1px solid var(--line); border-radius: 12px; background: rgba(8,13,19,.42); } .card h3 { margin: 0 0 7px; } .card p { margin: 0; color: var(--muted); }
+  .tag { display: inline-block; margin-bottom: 8px; color: var(--cyan); font: 700 10px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+  .path { display: grid; grid-template-columns: repeat(7,minmax(118px,1fr)); gap: 8px; overflow-x: auto; padding: 4px 0 9px; }
+  .step { position: relative; min-height: 104px; padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: #0c141d; }
+  .step:not(:last-child)::after { content: "→"; position: absolute; right: -8px; top: 40%; z-index: 2; color: var(--blue); }
+  .step b { display: block; margin-bottom: 5px; font-size: 12px; } .step span { color: var(--muted); font-size: 11px; } .step .n { color: var(--blue); font: 700 10px var(--mono); }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+  table { width: 100%; min-width: 720px; border-collapse: collapse; background: rgba(8,13,19,.34); }
+  th,td { padding: 11px 13px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { background: #111a25; color: var(--muted); font: 700 10.5px/1.4 var(--mono); letter-spacing: .07em; text-transform: uppercase; } tr:last-child td { border-bottom: 0; } td { color: #cdd8e2; font-size: 12.5px; }
+  .lane { padding: 17px; border: 1px solid var(--line); border-top: 3px solid var(--green); border-radius: 12px; background: rgba(8,13,19,.38); } .lane.browser { border-top-color: var(--violet); } .lane h3 { margin: 0 0 8px; }
+  .lane ul { margin: 10px 0 0; padding-left: 18px; color: var(--muted); } .lane li { margin: 6px 0; }
+  .contract { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 9px; }
+  .state { padding: 15px; border: 1px solid var(--line); border-radius: 11px; background: #0c141d; } .state strong { display: block; margin-bottom: 4px; font: 700 12px var(--mono); } .state span { color: var(--muted); font-size: 11.5px; }
+  .state.success strong { color: var(--green); } .state.takeover strong { color: var(--orange); } .state.failure strong { color: var(--red); } .state.cancel strong { color: var(--violet); }
+  .callout { margin: 14px 0; padding: 14px 16px; border-left: 3px solid var(--orange); border-radius: 8px; background: rgba(255,182,109,.07); color: #dce4eb; }
+  details { border: 1px solid var(--line); border-radius: 11px; background: rgba(8,13,19,.32); margin: 9px 0; } summary { cursor: pointer; list-style: none; padding: 13px 15px; font-weight: 650; }
+  summary::-webkit-details-marker { display: none; } summary::before { content: "+"; display: inline-block; width: 20px; color: var(--blue); font-family: var(--mono); } details[open] summary::before { content: "−"; }
+  .detail-body { padding: 0 15px 15px 35px; color: var(--muted); }
+  .file-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; } .file { padding: 13px; border: 1px solid var(--line); border-radius: 10px; background: #0c141d; }
+  .file a { display: block; overflow-wrap: anywhere; font: 600 11.5px/1.45 var(--mono); } .file span { display: block; margin-top: 5px; color: var(--muted); font-size: 11.5px; }
+  .decision { display: grid; grid-template-columns: 90px 1fr; gap: 12px; padding: 13px 0; border-bottom: 1px solid var(--line); } .decision:last-child { border-bottom: 0; }
+  .decision b { font: 700 10.5px/1.4 var(--mono); letter-spacing: .05em; text-transform: uppercase; } .decision p { margin: 0; color: var(--muted); }
+  .adopt b { color: var(--green); } .modify b { color: var(--orange); } .reject b { color: var(--red); }
+  .evidence-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; } .evidence-item { padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: #0c141d; }
+  .evidence-item strong { display: block; color: var(--green); font-size: 12px; } .evidence-item code { display: block; margin-top: 6px; overflow-wrap: anywhere; white-space: normal; }
+  footer { margin-top: 24px; padding: 18px 4px; color: var(--muted); font-size: 11.5px; }
+  @media (max-width:1120px) { .page { display: block; width: 100%; } .rail { position: static; width: 100%; min-width: 0; max-width: 100%; max-height: none; margin-bottom: 18px; display: flex; gap: 3px; overflow-x: auto; white-space: nowrap; } .rail .label,.rail-note { display: none; } .rail a { border-left: 0; border-bottom: 2px solid transparent; } .metrics,.contract { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+  @media (max-width:720px) { .page { padding: 20px 14px 70px; gap: 18px; } section { padding: 19px; } .metrics,.contract,.two-col,.three-col,.file-list,.evidence-grid { grid-template-columns: 1fr; } h1 { font-size: 38px; } }
+  @media (prefers-reduced-motion:reduce) { html { scroll-behavior: auto; } *,*::before,*::after { transition-duration: .01ms !important; } }
 </style>
 </head>
-<body><main>
-<h1>GUI Agent execution design</h1>
-<p class="lead">One public invocation, one explicit runner, one terminal status. Desktop control and exact-Page browser control share the result contract but retain separate trust boundaries.</p>
+<body>
+<div class="page">
+  <nav class="rail" aria-label="GUI Agent design sections">
+    <div class="label">Design map</div>
+    <a href="#overview">Purpose and scope</a><a href="#current-api">Current conflicts</a><a href="#target-api">Target API</a><a href="#architecture">System architecture</a><a href="#invocation">Invocation contract</a><a href="#comparison">Naming references</a><a href="#runner">Runner state machine</a><a href="#lifecycle">Page lifecycle</a><a href="#results">Result contract</a><a href="#boundaries">Trust boundaries</a><a href="#ownership">File ownership</a><a href="#decisions">Design choices</a><a href="#failures">Failure paths</a><a href="#migration">Migration</a><a href="#evidence">Evidence</a>
+    <div class="rail-note">Audience: maintainers reviewing execution, state, cleanup, and UI semantics.</div>
+  </nav>
+  <main>
+    <header id="overview">
+      <div class="eyebrow">OpenProgram · GUI Agent · Target reviewed design · Runtime migration pending</div>
+      <h1>One task entry, two mode executors, explicit control primitives.</h1>
+      <p class="lead"><code>gui_agent</code> is the ordinary user entry. It selects exactly one surface and calls an unregistered executor: <code>run_computer_task</code> for foreground desktop control or <code>run_browser_task</code> for one exact built-in Browser Page. Browser primitives belong to <code>browser_control</code>. No layer calls another decorated task function.</p>
+      <div class="status-strip"><span class="pill">one ordinary user entry</span><span class="pill">one task loop per surface</span><span class="pill">one terminal result contract</span><span class="pill boundary">runtime migration pending</span></div>
+      <div class="metrics"><div class="metric"><strong>1</strong><span>ordinary user entry: <code>gui_agent</code></span></div><div class="metric"><strong>2</strong><span>explicit task executors</span></div><div class="metric"><strong>1</strong><span>low-level Browser control API</span></div><div class="metric"><strong>0</strong><span>implicit surface changes</span></div></div>
+    </header>
 
-<h2>Public entry and routing</h2>
-<p>OpenProgram exposes one tool named <code>gui_agent</code>. Program discovery imports GUI-Agent-Harness, then the OpenProgram bridge registers the public wrapper. The wrapper must call the harness's raw Python implementation, not its already-decorated wrapper, so the execution tree contains exactly one <code>gui_agent</code> node.</p>
-<table><thead><tr><th>Mode</th><th>Selection</th><th>Execution boundary</th></tr></thead><tbody>
-<tr><td>Desktop</td><td><code>surface=desktop</code> and no browser backend</td><td>GUI-Agent-Harness observes the desktop and uses OS or VM input.</td></tr>
-<tr><td>Built-in browser</td><td><code>surface=browser</code>, or an explicit backend for compatibility with older callers</td><td>OpenProgram lists only the Pages in the desktop window that submitted the message or Function form and reuses an existing exact Page when one is available. If that window has no Page, the runner creates one exclusive background Page at the Browser start URL, binds it without changing the selected tab or window focus, and closes only that agent-created Page when the run ends. DOM/CDP actions do not activate the tab, raise the OpenProgram window, or move the system pointer. An omitted backend resolves to the default Page backend. <code>app_name</code> only names desktop component memory and never changes the route.</td></tr>
-</tbody></table>
+    <section id="current-api">
+      <div class="section-kicker">Current implementation</div><h2>Why the current API is inconsistent</h2>
+      <p class="section-intro">The repository currently exposes names created at different stages of development. These names overlap in responsibility and the Browser path has two high-level loops. This section records the implementation that must be migrated; it is not the target contract.</p>
+      <div class="table-wrap"><table><thead><tr><th>Current symbol</th><th>Current responsibility</th><th>Conflict</th></tr></thead><tbody>
+        <tr><td><code>gui_agent</code></td><td>Routes desktop or Browser tasks</td><td>A hidden <code>backend</code> argument can make Browser mode win over an explicit surface.</td></tr>
+        <tr><td><code>browser_agent</code></td><td>Runs a complete Browser task</td><td>Duplicates the Browser task role already reachable through <code>gui_agent(surface="browser")</code>.</td></tr>
+        <tr><td><code>web_use</code></td><td>Lists, observes, acts on, verifies, and closes Browser Pages</td><td>The name does not distinguish Browser control from search, HTTP, or general web access.</td></tr>
+        <tr><td><code>_run_browser_task</code> and <code>_run_browser_task_commands</code></td><td>Two Browser planning/execution loops</td><td>Backend selection changes orchestration instead of selecting only a control adapter.</td></tr>
+        <tr><td>Harness <code>original_impl</code></td><td>Runs the desktop task</td><td>The behavior is correct, but the architectural role has no explicit name.</td></tr>
+      </tbody></table></div>
+    </section>
 
-<h2>Desktop state machine</h2>
-<div class="flow" aria-label="GUI agent execution flow"><div class="node">observe</div><div class="node">verify previous</div><div class="node">plan one action</div><div class="node">execute</div><div class="node">record feedback</div><div class="node">repeat or stop</div><div class="node">summarize</div></div>
-<p>The runner owns the loop and terminal status. A step returns either an executable action result or one terminal status. The latest eight action results form bounded cross-step state. A fourth identical failed action terminates with <code>repeated_action</code>. The conclusion model writes user-facing text only; it never decides whether the run succeeded.</p>
-<table><thead><tr><th>Status</th><th><code>success</code></th><th>Required evidence</th></tr></thead><tbody>
-<tr><td><code>succeeded</code></td><td>true</td><td>The planner selected done and completion verification permits it, except for explicitly read-only first-observation tasks.</td></tr>
-<tr><td><code>infeasible</code></td><td>false</td><td>A concrete blocker and a human handoff instruction.</td></tr>
-<tr><td><code>failed</code></td><td>false</td><td>Step limit, invalid planner protocol, perception/action error, or missing verification.</td></tr>
-<tr><td><code>cancelled</code></td><td>false</td><td>Cancellation propagated by the host/runtime.</td></tr>
-</tbody></table>
+    <section id="target-api">
+      <div class="section-kicker">Target contract</div><h2>Names describe level and responsibility</h2>
+      <div class="table-wrap"><table><thead><tr><th>Name</th><th>Level</th><th>Visibility</th><th>Single responsibility</th></tr></thead><tbody>
+        <tr><td><code>gui_agent</code></td><td>Task entry</td><td>Function form, exact expression, Favorites</td><td>Validate arguments, select one explicit surface, call one raw executor, normalize the result.</td></tr>
+        <tr><td><code>computer_use</code></td><td>Specialized task entry</td><td>Advanced direct API; hidden from the ordinary Favorites list</td><td>Expose desktop-task parameters and call <code>run_computer_task</code>.</td></tr>
+        <tr><td><code>browser_use</code></td><td>Specialized task entry</td><td>Advanced direct API; hidden from the ordinary Favorites list</td><td>Expose Browser-task parameters and call <code>run_browser_task</code>.</td></tr>
+        <tr><td><code>run_computer_task</code></td><td>Raw executor</td><td>Unregistered internal Python function</td><td>Run the Harness desktop loop exactly once.</td></tr>
+        <tr><td><code>run_browser_task</code></td><td>Raw executor</td><td>Unregistered internal Python function</td><td>Own the single Browser plan/observe/act/verify loop and Page finalization.</td></tr>
+        <tr><td><code>browser_control</code></td><td>Control primitive</td><td>Agent tool and advanced low-level API</td><td>Perform typed Page inventory, navigation, observation, action, verification, release, and close operations.</td></tr>
+      </tbody></table></div>
+      <div class="callout"><strong>Registration rule.</strong> A registered task function may call a raw executor, but it must not call a decorated task function. Therefore <code>gui_agent</code> never invokes the registered <code>computer_use</code> or <code>browser_use</code> wrapper; all three entries delegate to the same raw executors.</div>
+    </section>
 
-<h2>Result contract</h2>
-<p>Both desktop and browser modes return <code>status</code>, deterministic <code>success</code>, <code>reason_code</code>, <code>summary</code>, and <code>handoff_instruction</code>. Desktop compatibility keeps <code>infeasible_declared</code>, step counts, timing, and history. Browser compatibility keeps backend and WebSession metadata.</p>
+    <section id="architecture">
+      <div class="section-kicker">Primary path</div><h2>System architecture</h2>
+      <p class="section-intro">Every ordinary invocation creates one <code>gui_agent</code> FunctionInvocation. The explicit <code>surface</code> value selects one raw executor. <code>run_browser_task</code> uses worker-owned Page state through <code>browser_control</code>; <code>run_computer_task</code> uses the foreground Harness. An adapter setting may select a Browser transport, but cannot select the surface.</p>
+      <div class="diagram"><svg viewBox="0 0 1080 560" role="img" aria-labelledby="arch-title arch-desc"><title id="arch-title">GUI Agent invocation and execution architecture</title><desc id="arch-desc">Function form, exact expression, and exact-node Retry reach one dispatcher and bridge. The bridge selects desktop Harness control or exact Page browser control. Both return one normalized terminal result to the Function card.</desc><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#60758a"/></marker></defs>
+        <rect class="svg-box svg-entry" x="30" y="35" width="220" height="70" rx="11"/><text class="svg-title" x="140" y="64" text-anchor="middle">Function form</text><text class="svg-sub" x="140" y="83" text-anchor="middle">typed kwargs</text>
+        <rect class="svg-box svg-entry" x="30" y="135" width="220" height="70" rx="11"/><text class="svg-title" x="140" y="164" text-anchor="middle">Exact expression</text><text class="svg-sub" x="140" y="183" text-anchor="middle">parsed before UserMessage</text>
+        <rect class="svg-box svg-entry" x="30" y="235" width="220" height="70" rx="11"/><text class="svg-title" x="140" y="264" text-anchor="middle">Exact-node Retry</text><text class="svg-sub" x="140" y="283" text-anchor="middle">stored kwargs + Page origin</text>
+        <rect class="svg-box" x="330" y="120" width="240" height="100" rx="11"/><text class="svg-title" x="450" y="154" text-anchor="middle">POST /api/function/gui_agent</text><text class="svg-sub" x="450" y="176" text-anchor="middle">forced-tool dispatcher</text><text class="svg-sub" x="450" y="195" text-anchor="middle">one persisted ProgramRun</text>
+        <rect class="svg-box" x="650" y="120" width="220" height="100" rx="11"/><text class="svg-title" x="760" y="154" text-anchor="middle">explicit surface router</text><text class="svg-sub" x="760" y="176" text-anchor="middle">validation · defaults</text><text class="svg-sub" x="760" y="195" text-anchor="middle">result normalization</text>
+        <rect class="svg-box svg-desktop" x="540" y="330" width="230" height="105" rx="11"/><text class="svg-title" x="655" y="363" text-anchor="middle">run_computer_task</text><text class="svg-sub" x="655" y="385" text-anchor="middle">screenshot + OCR/detector</text><text class="svg-sub" x="655" y="404" text-anchor="middle">foreground OS / VM input</text>
+        <rect class="svg-box svg-browser" x="825" y="330" width="230" height="105" rx="11"/><text class="svg-title" x="940" y="363" text-anchor="middle">run_browser_task</text><text class="svg-sub" x="940" y="385" text-anchor="middle">exact Page + browser_control</text><text class="svg-sub" x="940" y="404" text-anchor="middle">DOM / CDP action</text>
+        <rect class="svg-box svg-result" x="655" y="490" width="285" height="52" rx="20"/><text class="svg-title" x="797" y="519" text-anchor="middle">normalized result → Function card</text>
+        <path class="svg-line" d="M250 70C295 70 290 150 330 150"/><path class="svg-line" d="M250 170H330"/><path class="svg-line" d="M250 270C295 270 290 190 330 190"/><path class="svg-line" d="M570 170H650"/><path class="svg-line desktop" d="M720 220C720 270 655 275 655 330"/><path class="svg-line browser" d="M800 220C800 270 940 275 940 330"/><path class="svg-line desktop" d="M655 435C655 475 720 470 735 490"/><path class="svg-line browser" d="M940 435C940 475 875 470 860 490"/><text class="svg-label" x="582" y="286">surface=desktop</text><text class="svg-label" x="875" y="286">surface=browser</text>
+      </svg></div>
+      <div class="legend"><span><i></i>shared invocation</span><span><i class="desktop"></i>foreground desktop boundary</span><span><i class="browser"></i>exact Page boundary</span></div>
+    </section>
 
-<h3>User-visible status</h3>
-<p>The Function card presents the GUI task outcome, not the internal worker lifecycle. A persisted node may use <code>completed</code> to mean that its worker returned a structured result, but that transport state is not shown as the task result. <code>success</code> remains a compatibility field derived from <code>status</code>; it is never an independent decision or a second visible status.</p>
-<table><thead><tr><th>GUI result</th><th>Function card</th><th>Meaning</th></tr></thead><tbody>
-<tr><td>Running outer node</td><td>Running</td><td>The task has not produced a terminal result yet. A stale output cannot override this state.</td></tr>
-<tr><td><code>status=succeeded</code></td><td>Succeeded</td><td>The requested GUI task was verified.</td></tr>
-<tr><td><code>status=failed</code></td><td>Failed</td><td>The task ended without satisfying the request. The summary states why.</td></tr>
-<tr><td><code>status=infeasible</code></td><td>Needs takeover</td><td>A concrete blocker requires the user's action. The handoff instruction is shown.</td></tr>
-<tr><td>Runtime exception, error node, or invalid GUI result contract</td><td>Error</td><td>The function infrastructure raised an error or failed to return a recognized GUI task status.</td></tr>
-</tbody></table>
+    <section id="invocation">
+      <div class="section-kicker">Entry semantics</div><h2>Invocation contract</h2><p class="section-intro">The input surface determines whether text becomes a direct FunctionInvocation or a normal chat message. Function form and exact expression are two editors for the same object; they are not two runtime paths.</p>
+      <div class="table-wrap"><table><thead><tr><th>Input</th><th>Classification</th><th>Persisted result</th><th>Page origin</th></tr></thead><tbody>
+        <tr><td><code>gui_agent(task="…", surface="browser")</code> as the entire composer value</td><td>Registered expression with named literal arguments</td><td>One ProgramRun; no UserMessage and no extra Agent text turn</td><td>Submitting window and current Page identity are captured</td></tr>
+        <tr><td>Favorite Programs / Function form</td><td>Schema-generated typed kwargs</td><td>The same <code>POST /api/function/gui_agent</code></td><td>The same window and surface capture</td></tr>
+        <tr><td>Retry on a prior GUI Agent card</td><td>Exact stored function node</td><td>A sibling run with stored kwargs</td><td>Stored origin; never whichever Page is selected later</td></tr>
+        <tr><td>“Please explain <code>gui_agent(...)</code>” or fenced code</td><td>Normal message</td><td>UserMessage followed by ordinary Agent reasoning</td><td>No direct function surface binding</td></tr>
+      </tbody></table></div>
+      <div class="callout"><strong>One-node invariant.</strong> Each submitted public task creates one root FunctionInvocation. The root calls an unregistered executor, so <code>gui_agent(surface="browser")</code> does not create a nested <code>browser_use</code> task node. Only step-level <code>browser_control</code> children appear beneath it.</div>
+    </section>
 
-<h2>Trust and lifecycle boundaries</h2>
-<ul>
-<li>Desktop mode records the frontmost app, must validate the current target window before a coordinate action, and must not learn components from another app. A window outside the observed macOS Space receives one bounded Window-menu recovery; continued invisibility terminates as infeasible with a handoff instruction.</li>
-<li>Browser mode keeps exact Page identity, background Page resolution, backend selection, owner isolation, stale-observation checks, screenshot revocation, and session cleanup inside Web Use. Ref clicks execute in the bound Page DOM, while screenshots use Electron hidden-page capture with <code>stayHidden</code>; neither path may reveal or activate the Page. Page actions must leave the selected visible tab and system frontmost application unchanged.</li>
-<li>Automatic Page creation is recovery for an empty inventory, not a second browser engine. It targets the originating desktop window, creates an ungrouped Page that is never selected or shown, permits only the existing normalized HTTP(S) start URL, and removes only that agent-owned Page during cleanup. A rejected exact close retains its owner and Page identity for a bounded parent retry; continued rejection returns <code>page_cleanup_failed</code> with a manual-close handoff and cannot remain successful. An unavailable desktop shell remains an infeasible handoff.</li>
-<li>The Function form and a complete registered expression in the composer use one Function dispatcher. The persisted Function node owns the versioned originating window/Page identity, and Retry addresses that exact node and stored identity rather than searching for a recent same-name call or sampling the current Page.</li>
-<li><code>allow_general</code> remains false for the OpenProgram public entry unless explicitly enabled by a trusted caller.</li>
-<li>Cancellation and unrecoverable exceptions terminate the runner; an unlimited step budget must not convert a repeated infrastructure error into an infinite retry.</li>
-</ul>
+    <section id="comparison">
+      <div class="section-kicker">External terminology</div><h2>Why the Browser names use task and control levels</h2>
+      <p class="section-intro">Current Browser automation frameworks distinguish a high-level task agent from lower-level page operations. OpenProgram follows that distinction while keeping its unified <code>gui_agent</code> entry.</p>
+      <div class="table-wrap"><table><thead><tr><th>Framework</th><th>High-level task name</th><th>Page/control names</th><th>Design implication</th></tr></thead><tbody>
+        <tr><td><a href="https://github.com/browser-use/browser-use">Browser Use</a></td><td><code>Agent(task=...)</code></td><td><code>BrowserSession</code>, <code>Page</code>, actions</td><td><code>browser_use</code> is suitable for a complete Browser task, not individual commands.</td></tr>
+        <tr><td><a href="https://github.com/browserbase/stagehand">Stagehand</a></td><td><code>agent.execute</code></td><td><code>act</code>, <code>observe</code>, <code>extract</code></td><td>Task orchestration and deterministic page operations remain separate.</td></tr>
+        <tr><td><a href="https://github.com/microsoft/playwright-mcp">Playwright MCP</a></td><td>Host agent owns the task</td><td><code>browser_navigate</code>, <code>browser_snapshot</code>, <code>browser_click</code></td><td>Low-level Browser tools use an explicit Browser prefix.</td></tr>
+        <tr><td><a href="https://github.com/ChromeDevTools/chrome-devtools-mcp">Chrome DevTools MCP</a></td><td>Host agent owns the task</td><td><code>list_pages</code>, <code>navigate_page</code>, <code>click</code></td><td>Page operations are capabilities, not a second task agent.</td></tr>
+      </tbody></table></div>
+      <div class="callout"><code>web_use</code> is retired because “web” also describes search, HTTP retrieval, and general web data. <code>browser_control</code> states both the controlled resource and the abstraction level.</div>
+    </section>
 
-<h2>File ownership</h2>
-<table><thead><tr><th>File area</th><th>Single responsibility</th></tr></thead><tbody>
-<tr><td><code>main.py</code></td><td>Public Python/CLI entry, top-level loop, and terminal status.</td></tr>
-<tr><td><code>tasks/execute_task.py</code></td><td>One step: verify, plan, terminal checks, and bounded feedback.</td></tr>
-<tr><td><code>tasks/result.py</code></td><td>User-facing conclusion rendering and runtime workflow-record persistence.</td></tr>
-<tr><td><code>action/actions.py</code> and <code>action/dispatch.py</code></td><td>Atomic OS/VM actions, target localization binding, registry, argument validation, and one dispatch boundary.</td></tr>
-<tr><td><code>perception/observe.py</code></td><td>The one screenshot/detection/state observation pass used by the runner and compatibility API.</td></tr>
-<tr><td><code>memory/</code> and component-memory helpers</td><td>Components, states, and verified transitions.</td></tr>
-<tr><td>OpenProgram bridge</td><td>One public registration, mode routing, parameter defaults, and result normalization.</td></tr>
-<tr><td>OpenProgram Function dispatcher</td><td>One execution path for the Function form, exact composer expressions, and exact-node Retry, including persisted Page origin.</td></tr>
-</tbody></table>
+    <section id="runner">
+      <div class="section-kicker">Task logic</div><h2>Runner state machine and decision ownership</h2><p class="section-intro">The runner controls iteration and terminal truth. The planner proposes one action or one terminal decision. The conclusion model produces user-facing prose only; it cannot change the terminal state.</p>
+      <div class="path" aria-label="GUI Agent step loop"><div class="step"><span class="n">01</span><b>Observe</b><span>one current screen or exact Page frame</span></div><div class="step"><span class="n">02</span><b>Verify previous</b><span>deterministic evidence before another action</span></div><div class="step"><span class="n">03</span><b>Plan one action</b><span>typed action, done, or fail</span></div><div class="step"><span class="n">04</span><b>Execute once</b><span>one dispatch boundary; no backend fallback</span></div><div class="step"><span class="n">05</span><b>Record feedback</b><span>bounded latest eight outcomes</span></div><div class="step"><span class="n">06</span><b>Repeat or stop</b><span>four identical failed actions stop</span></div><div class="step"><span class="n">07</span><b>Summarize</b><span>wording only; status already fixed</span></div></div>
+      <div class="three-col"><div class="card"><span class="tag">Planner owns</span><h3>Next action</h3><p>One validated action, <code>done</code>, or <code>fail</code>. Invalid protocols terminate rather than silently retrying.</p></div><div class="card"><span class="tag">Runner owns</span><h3>Status and limits</h3><p>Verification, step/time limits, cancellation, repeated-action detection, cleanup, and terminal normalization.</p></div><div class="card"><span class="tag">Conclusion owns</span><h3>User-facing text</h3><p><code>summary</code> and handoff wording. It cannot convert a failure into success.</p></div></div>
+    </section>
 
-<h2>Compatibility and exclusions</h2>
-<p>The standalone CLI, direct Python <code>gui_agent()</code>, benchmark <code>execute_task()</code> wrapper, current function name, and existing result details remain compatible. Desktop and Web Use are not merged into one execution engine. Benchmark-only grounding pipelines remain internal and are not part of the public runner refactor.</p>
+    <section id="lifecycle">
+      <div class="section-kicker">Built-in Browser</div><h2>Exact Page lifecycle</h2><p class="section-intro">Browser mode does not launch a separate browser engine and does not use the OS pointer. It uses the Page registry and WebSession state already owned by the OpenProgram worker.</p>
+      <div class="two-col"><div class="lane browser"><h3>Borrow an existing Page</h3><ul><li>Inventory is restricted to the originating OpenProgram window.</li><li>The selected exact Page becomes a binding with owner and revision checks.</li><li>Actions use DOM/CDP and screenshots use hidden <code>capturePage</code>.</li><li>Finalization releases the binding but never closes the user's Page.</li></ul></div><div class="lane browser"><h3>Create a background Page</h3><ul><li>Only an empty usable inventory triggers creation.</li><li>The Page starts at the normalized Browser start URL and remains unselected.</li><li>The runner records <code>agent_owned=true</code> only from a trusted created response.</li><li>Every terminal path attempts exact close; rejection becomes takeover.</li></ul></div></div>
+      <h3>Lifecycle transitions</h3><div class="table-wrap"><table><thead><tr><th>State</th><th>Required identity</th><th>Allowed operation</th><th>Exit rule</th></tr></thead><tbody>
+        <tr><td>Inventory</td><td><code>window_id</code> + inventory revision</td><td>Choose a Page or create one background Page</td><td>No cross-window implicit fallback</td></tr>
+        <tr><td>Bound Page</td><td><code>binding_id</code> + Page/access/geometry revisions</td><td>Resolve target without activation</td><td>Replacement or stale revision rejects before action</td></tr>
+        <tr><td>WebSession</td><td><code>page_context_token → web_session_id → expected_frame_id</code></td><td><code>observe</code>, one <code>act</code>, <code>verify</code></td><td>Write actions require a new observation</td></tr>
+        <tr><td>Finalizing</td><td>Recorded owner, window, tab, and ownership</td><td>Release borrowed binding or close owned Page</td><td>Close rejection preserves identity and returns <code>page_cleanup_failed</code></td></tr>
+      </tbody></table></div>
+      <div class="callout">Hidden Page actions must leave the visible tab, OpenProgram window focus, and system frontmost application unchanged. A DOM ref click may show the agent cursor overlay inside that Page; it does not move the system pointer.</div>
+    </section>
 
-<h2>Acceptance criteria</h2>
-<ol>
-<li>The OpenProgram DAG shows one <code>gui_agent</code> node followed by <code>gui_step</code>; it never shows nested duplicate <code>gui_agent</code> nodes.</li>
-<li>Done, infeasible, step exhaustion, invalid planner output, cancellation, and exceptions produce deterministic terminal statuses.</li>
-<li>The exact fail blocker reaches the user-facing handoff text.</li>
-<li>Desktop and built-in-browser invocations expose the same core result fields.</li>
-<li>A terminal GUI Function card displays Succeeded, Failed, or Needs takeover from the structured GUI result. It never labels a failed GUI result Completed merely because the worker returned normally.</li>
-<li>Long desktop and browser tasks retain bounded state, avoid repeated actions, and complete only after verification.</li>
-<li>Real acceptance uses the default OpenProgram App and includes one multi-step desktop task plus one hidden built-in-Page sequence that observes, clicks, and verifies without changing the visible tab or system frontmost application.</li>
-<li>Invoking <code>gui_agent(surface="browser")</code> with an empty Page inventory creates exactly one background Page, continues the same single <code>gui_agent</code> run, and closes that Page afterward; it never creates a visible tab, focuses a window, or returns <code>page_unavailable</code> while a desktop shell can create the Page. If exact close is rejected, the task returns <code>infeasible</code> with a manual-close handoff instead of success.</li>
-</ol>
+    <section id="results">
+      <div class="section-kicker">Exit semantics</div><h2>One result contract, no ambiguous “completed” state</h2><p class="section-intro">Desktop and Browser modes return the same core fields: <code>status</code>, <code>success</code>, <code>reason_code</code>, <code>summary</code>, and <code>handoff_instruction</code>. <code>success</code> is derived from status and is true only for <code>succeeded</code>.</p>
+      <div class="contract"><div class="state success"><strong>succeeded · true</strong><span>Task completion was verified. Function card: <b>Succeeded</b>.</span></div><div class="state takeover"><strong>infeasible · false</strong><span>Concrete blocker requires user action. Function card: <b>Needs takeover</b>.</span></div><div class="state failure"><strong>failed · false</strong><span>Request was not satisfied. Function card: <b>Failed</b>.</span></div><div class="state cancel"><strong>cancelled · false</strong><span>Host cancellation propagated. Function card: <b>Cancelled</b>.</span></div></div>
+      <div class="two-col" style="margin-top:12px"><div class="card"><span class="tag">Transport state</span><h3><code>completed</code></h3><p>The worker returned a structured result and persistence finished. This is not a GUI task outcome and is not shown as the terminal task label.</p></div><div class="card"><span class="tag">Contract error</span><h3>Error</h3><p>A runtime exception, error node, or unrecognized GUI result is infrastructure failure. It is distinct from <code>failed</code> and <code>infeasible</code>.</p></div></div>
+    </section>
 
-<h2>Implementation status</h2>
-<table><thead><tr><th>Area</th><th>Status</th></tr></thead><tbody>
-<tr><td>Exact-Page Web Use lifecycle and backend isolation</td><td class="yes">Implemented and component-tested</td></tr>
-<tr><td>Infeasible results force <code>success=false</code></td><td class="yes">Implemented and regression-tested</td></tr>
-<tr><td>Single public GUI Agent node, deterministic all-terminal result, and common desktop/Web result fields</td><td class="yes">Implemented and regression-tested</td></tr>
-<tr><td>User-visible GUI result status overrides the internal completed transport state</td><td class="yes">Implemented, regression-tested, independently reviewed, and accepted in the default App</td></tr>
-<tr><td>Canonical action/observe ownership and compatibility delegation</td><td class="yes">Implemented and regression-tested</td></tr>
-<tr><td>Real multi-step desktop acceptance from the source checkout</td><td class="yes">Accepted with a 16-step Finder task that created and visually verified nested folders, plus Calculator input/result verification</td></tr>
-<tr><td>Real built-in-browser acceptance through the refreshed default App</td><td class="yes">Accepted on a hidden Page through list, observe, screenshot, click, observe, verify, and close while the visible tab and system frontmost application remained unchanged</td></tr>
-<tr><td>Empty-inventory automatic background Page creation and cleanup</td><td class="yes">Implemented, regression-tested, independently reviewed, and accepted in the default App without foreground activation</td></tr>
-</tbody></table>
-</main></body></html>
+    <section id="boundaries">
+      <div class="section-kicker">Security and behavior</div><h2>Trust boundaries</h2>
+      <div class="table-wrap"><table><thead><tr><th>Concern</th><th>Desktop surface</th><th>Browser surface</th></tr></thead><tbody><tr><td>Observation</td><td>Foreground desktop screenshot, OCR, detector, component memory</td><td>Exact Page DOM/ARIA plus bounded viewport screenshot when needed</td></tr><tr><td>Input</td><td>OS or VM mouse, keyboard, and clipboard</td><td>DOM/CDP action against the bound Page; no OS input</td></tr><tr><td>Focus</td><td>Coordinate input requires the intended foreground target</td><td>No tab activation, window raise, or system pointer movement</td></tr><tr><td>Identity</td><td>Frontmost application and observed coordinate bounds</td><td>Owner, window, tab, target, binding, session, frame, and revision chain</td></tr><tr><td>General actions</td><td><code>allow_general=false</code> for the public OpenProgram entry</td><td>Only the allowed Web Use command/action schema</td></tr><tr><td>Cleanup</td><td>Runner state and action resources terminate with the subprocess</td><td>Borrowed bindings release; agent-owned Pages close or require takeover</td></tr></tbody></table></div>
+      <h3>Explicit exclusions</h3><div class="three-col"><div class="card"><h3>No background desktop control</h3><p><code>surface=desktop</code> is not a background-window API. A target outside the observed macOS Space receives one bounded Window-menu recovery; continued invisibility returns infeasible with a handoff instruction.</p></div><div class="card"><h3>No automatic backend fallback</h3><p>A backend failure cannot trigger a second backend and duplicate the side effect.</p></div><div class="card"><h3>No benchmark pipeline exposure</h3><p>Grounding benchmarks, crop/zoom experiments, and evaluation-only state remain internal to the Harness.</p></div></div>
+    </section>
+
+    <section id="ownership">
+      <div class="section-kicker">Repository map</div><h2>File ownership and single responsibilities</h2><p class="section-intro">The execution path is divided by authority: UI classification, server dispatch, public routing, subprocess lifecycle, Page capability state, renderer resolution, and native capture each have one owner.</p>
+      <div class="file-list">
+        <div class="file"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/function-invocation.ts">apps/web/lib/function-invocation.ts</a><span>Parse only a complete registered expression with named literal arguments.</span></div>
+        <div class="file"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/composer/modes/fn-form/use-function-dispatch.ts">apps/web/…/use-function-dispatch.ts</a><span>Submit typed kwargs and capture exact window/Page origin.</span></div>
+        <div class="file"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/routes/chat.py">apps/server/…/routes/chat.py</a><span>Create one ProgramRun and enter the forced-tool dispatcher.</span></div>
+        <div class="file"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/gui_harness_bridge.py">openprogram/programs/gui_harness_bridge.py</a><span>Own public task entries, explicit surface validation, compatibility aliases, and result normalization. It contains no task loop.</span></div>
+        <div class="file"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/process_runner.py">openprogram/agent/process_runner.py</a><span>Own subprocess bridge, finalization fence, tracked Page ownership, bounded cleanup.</span></div>
+        <div class="file"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/surface_context.py">openprogram/agent/surface_context.py</a><span>Open, bind, release, and exactly close Page context without selecting it.</span></div>
+        <div class="file"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/workflow/browser/__init__.py">openprogram/programs/workflow/browser/__init__.py</a><span>Export Browser symbols only after the task loop, control primitives, and session lifecycle move into focused modules.</span></div>
+        <div class="file"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/workflow/browser/task.py">openprogram/programs/workflow/browser/task.py</a><span>Target owner of the single <code>run_browser_task</code> orchestration loop.</span></div>
+        <div class="file"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/workflow/browser/control.py">openprogram/programs/workflow/browser/control.py</a><span>Target owner of typed <code>browser_control</code> operations and adapter selection.</span></div>
+        <div class="file"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/ws_actions/webtab.py">apps/server/…/ws_actions/webtab.py</a><span>Worker-owned binding protocol, exact screenshot request, revision validation.</span></div>
+        <div class="file"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/desktop-bridge.ts">apps/web/lib/desktop-bridge.ts</a><span>Resolve the exact renderer Page, perform DOM ref click, reject stale geometry.</span></div>
+        <div class="file"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main.js">apps/desktop/main.js</a><span>Own native WebContentsView lifecycle and hidden <code>capturePage(stayHidden)</code>.</span></div>
+        <div class="file"><a href="https://github.com/Fzkuji/GUI-Agent-Harness/blob/main/gui_harness/main.py">GUI-Agent-Harness · main.py</a><span>Desktop public Python/CLI loop and terminal status.</span></div>
+        <div class="file"><a href="https://github.com/Fzkuji/GUI-Agent-Harness/blob/main/gui_harness/tasks/execute_task.py">GUI-Agent-Harness · tasks/execute_task.py</a><span>Verify, plan, terminal checks, one action, and bounded feedback per step.</span></div>
+      </div>
+    </section>
+
+    <section id="decisions">
+      <div class="section-kicker">Reference adoption</div><h2>Adopted, modified, and rejected choices</h2>
+      <div class="decision adopt"><b>Adopted</b><p>GUI-Agent-Harness keeps its desktop observe → verify → plan → act loop, OCR/detector perception, component memory, VM adapters, and direct Python/CLI compatibility.</p></div>
+      <div class="decision modify"><b>Modified</b><p>OpenProgram wraps the raw Harness implementation so there is one public DAG node, adds <code>surface</code> routing, normalizes all terminal results, and bridges Browser work back to worker-owned Web Use state.</p></div>
+      <div class="decision modify"><b>Modified</b><p>Browser control uses exact Page capabilities, DOM refs, WebSession ownership, and hidden native capture instead of applying desktop screenshots and coordinate input to a browser pane.</p></div>
+      <div class="decision reject"><b>Rejected</b><p>Calling the decorated Harness wrapper from another decorated wrapper. It creates duplicate <code>gui_agent</code> nodes and two runtime boundaries.</p></div>
+      <div class="decision reject"><b>Rejected</b><p>Using OS input for hidden Browser Pages, activating a tab before each action, or choosing the currently selected Page during Retry.</p></div>
+      <div class="decision reject"><b>Rejected</b><p>Inferring success from conclusion prose, normal worker completion, or a truthy legacy field after status says fail/infeasible.</p></div>
+    </section>
+
+    <section id="failures">
+      <div class="section-kicker">Failure handling</div><h2>Failure paths and required exits</h2>
+      <div class="table-wrap"><table><thead><tr><th>Failure</th><th>Where detected</th><th>Required public result</th><th>Resource rule</th></tr></thead><tbody>
+        <tr><td>Planner selects fail/infeasible</td><td>Harness step</td><td><code>status=infeasible</code>, <code>success=false</code>, blocker and handoff preserved</td><td>Stop immediately; do not let conclusion override</td></tr>
+        <tr><td>Step limit, repeated invalid action, missing verification</td><td>Runner</td><td><code>status=failed</code>, stable reason code</td><td>Finalize once</td></tr>
+        <tr><td>No originating desktop window</td><td>Page open boundary</td><td><code>infeasible</code> with instruction to launch/connect the App</td><td>No Page created</td></tr>
+        <tr><td>Stale Page, binding, geometry, or frame</td><td>Worker/renderer boundary</td><td>Rejected before action with stale-context reason</td><td>Never retarget implicitly</td></tr>
+        <tr><td>Owned Page close rejected</td><td>Surface/process finalization</td><td><code>infeasible</code>, <code>page_cleanup_failed</code>, manual-close handoff</td><td>Preserve owner/window/tab identity for bounded retry</td></tr>
+        <tr><td>Timeout, cancellation, forced child termination</td><td>Host/process runner</td><td>Original terminal state unless cleanup itself requires takeover</td><td>Finalization fence waits for in-flight Page bridge and then cleans</td></tr>
+        <tr><td>Runtime exception or invalid result schema</td><td>Dispatcher/UI contract</td><td>Function card shows <b>Error</b></td><td>Never reinterpret as task failure or success</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <section id="migration">
+      <div class="section-kicker">Implementation boundary</div><h2>Migration order preserves one behavior change at a time</h2>
+      <div class="path" aria-label="GUI Agent API migration"><div class="step"><span class="n">01</span><b>Extract raw executors</b><span>Name <code>run_computer_task</code> and converge both Browser loops into <code>run_browser_task</code>.</span></div><div class="step"><span class="n">02</span><b>Separate control</b><span>Move Page commands and adapter selection to <code>browser_control</code>.</span></div><div class="step"><span class="n">03</span><b>Fix routing</b><span>Require explicit surface; reject conflicting Browser-only arguments.</span></div><div class="step"><span class="n">04</span><b>Add direct entries</b><span>Register advanced <code>computer_use</code> and <code>browser_use</code> wrappers over raw executors.</span></div><div class="step"><span class="n">05</span><b>Hide aliases</b><span>Map <code>browser_agent</code> and <code>web_use</code> without listing them in forms or Favorites.</span></div><div class="step"><span class="n">06</span><b>Verify UI tree</b><span>Assert one root task node and only step-level children.</span></div><div class="step"><span class="n">07</span><b>Remove aliases</b><span>Delete compatibility names after one documented compatibility cycle.</span></div></div>
+      <div class="table-wrap"><table><thead><tr><th>Old name or behavior</th><th>Compatibility behavior</th><th>Final state</th></tr></thead><tbody>
+        <tr><td><code>browser_agent</code></td><td>Hidden alias that forwards to the raw Browser executor and emits a deprecation notice</td><td>Removed; use <code>browser_use</code> or <code>gui_agent(surface="browser")</code></td></tr>
+        <tr><td><code>web_use</code></td><td>Hidden alias preserving the existing command schema</td><td>Removed; use <code>browser_control</code></td></tr>
+        <tr><td><code>backend</code> changes the surface</td><td>Conflicting arguments return <code>invalid_arguments</code> before execution</td><td>Adapter choice exists only inside Browser control</td></tr>
+        <tr><td>Two Browser task loops</td><td>Characterization tests preserve lifecycle and result behavior during extraction</td><td>Exactly one <code>run_browser_task</code></td></tr>
+      </tbody></table></div>
+    </section>
+
+    <section id="evidence">
+      <div class="section-kicker">Implementation status</div><h2>Implemented contracts and pending migration</h2><p class="section-intro">The result contract and Page lifecycle below are implemented. The target names, single Browser loop, focused Browser modules, alias visibility, and strict surface routing remain pending until the migration tests pass.</p>
+      <div class="evidence-grid"><div class="evidence-item"><strong>PASS · infeasible contract</strong><code>tests/unit/programs/test_gui_agent_infeasible.py</code></div><div class="evidence-item"><strong>PASS · parent/child Page lifecycle</strong><code>tests/component/agent/test_process_runner_webtab_bridge.py</code></div><div class="evidence-item"><strong>PASS · exact Page open/close semantics</strong><code>tests/unit/agent/test_web_use_surface.py</code></div><div class="evidence-item"><strong>PASS · Browser runner and cleanup</strong><code>tests/component/programs/test_web_use_runtime.py</code></div><div class="evidence-item"><strong>PASS · desktop App acceptance</strong><code>multi-step Finder creation and Calculator result verification</code></div><div class="evidence-item"><strong>PENDING · Browser App acceptance</strong><code>refresh and rerun after the runtime migration is committed</code></div></div>
+      <h3>Observable acceptance criteria</h3>
+      <details open><summary>Invocation and DAG</summary><div class="detail-body">Function form, exact registered expression, and exact-node Retry each produce one ProgramRun. The expanded DAG contains one <code>gui_agent</code> root followed by <code>gui_step</code>; no nested duplicate root exists.</div></details>
+      <details><summary>Terminal truth</summary><div class="detail-body">Done, infeasible, failure, cancellation, exception, and cleanup rejection produce deterministic statuses. Fail/infeasible cannot return <code>success=true</code>; transport completion cannot display as task success.</div></details>
+      <details><summary>Background Page behavior</summary><div class="detail-body">An empty originating-window inventory creates exactly one hidden Page, continues the same run, performs observe/click/verify without changing visible selection or system frontmost application, and closes only that owned Page.</div></details>
+      <details><summary>Cleanup honesty</summary><div class="detail-body">Every normal and abnormal terminal path attempts exact cleanup. A rejected close returns <code>page_cleanup_failed</code> and a manual takeover instruction rather than success.</div></details>
+    </section>
+    <footer>Target engineering design with current implementation status. Product usage belongs in Capabilities → Workflows → GUI Agent; implementation history belongs in Git.</footer>
+  </main>
+</div>
+</body>
+</html>
