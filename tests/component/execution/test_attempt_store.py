@@ -124,6 +124,52 @@ def test_expired_or_stale_attempt_cannot_activate_or_heartbeat(tmp_path) -> None
     assert stale.value.code == "stale_generation"
 
 
+def test_expired_active_attempt_cannot_heartbeat_or_finish(tmp_path) -> None:
+    execution_store, execution = _execution(tmp_path)
+    clock = Clock()
+    attempts = AttemptStore(execution_store, clock=clock)
+    leased, reserved = attempts.lease(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        owner_id="worker_1",
+        ttl_seconds=5,
+    )
+    active, running = attempts.activate(
+        leased.attempt_id,
+        generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    clock.now = 106
+    before_execution = execution_store.get_execution(execution.execution_id)
+
+    with pytest.raises(AttemptConflict) as heartbeat:
+        attempts.heartbeat(
+            active.attempt_id,
+            generation=active.generation,
+            ttl_seconds=5,
+        )
+    assert heartbeat.value.code == "lease_expired"
+
+    with pytest.raises(AttemptConflict) as finish:
+        attempts.finish(
+            active.attempt_id,
+            generation=active.generation,
+            expected_execution_version=running.status_version,
+            target=ExecutionStatus.COMPLETED,
+            outcome="result_committed",
+        )
+    assert finish.value.code == "lease_expired"
+
+    after_execution = execution_store.get_execution(execution.execution_id)
+    after_attempt = attempts.get(active.attempt_id)
+    assert after_execution == before_execution
+    assert after_execution is not None
+    assert after_execution.current_attempt_id == active.attempt_id
+    assert after_attempt is not None
+    assert after_attempt.status is AttemptStatus.ACTIVE
+    assert after_attempt.lease_expires_at == 105
+
+
 def test_finish_attempt_changes_execution_and_clears_owner_lease_atomically(
     tmp_path,
 ) -> None:

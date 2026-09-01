@@ -173,8 +173,7 @@ class AttemptStore:
                     "invalid_state", f"attempt is already {attempt.status.value}"
                 )
             now = self._clock()
-            if attempt.lease_expires_at <= now:
-                raise AttemptConflict("lease_expired", "attempt lease has expired")
+            self._validate_lease(attempt, now)
             execution = self.executions._require_execution(
                 connection, attempt.execution_id
             )
@@ -217,6 +216,7 @@ class AttemptStore:
             if attempt.status is AttemptStatus.ENDED:
                 raise AttemptConflict("terminal", "attempt has ended")
             now = self._clock()
+            self._validate_lease(attempt, now)
             connection.execute(
                 "UPDATE attempts SET lease_expires_at = ?, updated_at = ? "
                 "WHERE attempt_id = ?",
@@ -239,6 +239,8 @@ class AttemptStore:
             self._validate_generation(attempt, generation)
             if attempt.status is AttemptStatus.ENDED:
                 raise AttemptConflict("terminal", "attempt has ended")
+            now = self._clock()
+            self._validate_lease(attempt, now)
             execution = self.executions._require_execution(
                 connection, attempt.execution_id
             )
@@ -251,7 +253,6 @@ class AttemptStore:
                 reason_code=reason_code,
                 clear_owner=True,
             )
-            now = self._clock()
             connection.execute(
                 "UPDATE attempts SET status = ?, outcome = ?, ended_at = ?, "
                 "updated_at = ? WHERE attempt_id = ?",
@@ -279,6 +280,11 @@ class AttemptStore:
                 "stale_generation",
                 f"expected attempt generation {generation}, found {attempt.generation}",
             )
+
+    @staticmethod
+    def _validate_lease(attempt: AttemptRecord, now: float) -> None:
+        if attempt.lease_expires_at <= now:
+            raise AttemptConflict("lease_expired", "attempt lease has expired")
 
     @staticmethod
     def _validate_owner(
