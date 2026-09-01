@@ -161,12 +161,9 @@ class RuntimeControlService:
         delivered, issue = await self._activate(
             attempt, checkpoint, steer_inputs, activator=activator, driver=driver
         )
-        if delivered:
-            command = self._mark_applied(command, execution)
-        else:
-            command, execution = self._activation_failed(
-                attempt, command, issue_code=issue or "activation_failed"
-            )
+        command, execution = self._finish_activation(
+            attempt, command, delivered=delivered, issue_code=issue
+        )
         return ControlDispatch(
             command=command,
             execution=execution,
@@ -201,10 +198,9 @@ class RuntimeControlService:
         delivered, issue = await self._activate(
             attempt, checkpoint, steer_inputs, activator=activator, driver=driver
         )
-        if not delivered:
-            command, execution = self._activation_failed(
-                attempt, command, issue_code=issue or "activation_failed"
-            )
+        command, execution = self._finish_activation(
+            attempt, command, delivered=delivered, issue_code=issue
+        )
         return ControlDispatch(
             command=command,
             execution=execution,
@@ -375,88 +371,144 @@ class RuntimeControlService:
             command = applying
             return command, reserved, active, checkpoint, steer_inputs, False
 
-    def _activation_failed(
+    def _finish_activation(
         self,
         attempt: AttemptRecord | None,
         command: ControlCommand,
         *,
-        issue_code: str,
+        delivered: bool,
+        issue_code: str | None,
     ) -> tuple[ControlCommand, ExecutionRecord]:
+        """Close the activation race while holding the execution write lock."""
         if attempt is None:
             raise AttemptConflict("activation_failed", "activation has no attempt")
+        reason = issue_code or "activation_failed"
+        unbind = False
         with self.executions._transaction() as connection:
             current_attempt = self.attempts._require(connection, attempt.attempt_id)
             self.attempts._validate_generation(current_attempt, attempt.generation)
             execution = self.executions._require_execution(connection, attempt.execution_id)
-            if execution.current_attempt_id != attempt.attempt_id:
-                raise AttemptConflict("stale_owner", "activation attempt no longer owns execution")
-            if execution.status is ExecutionStatus.RUNNING:
+            current_command = self.executions._get_command(connection, command.command_id)
+            if current_command is None:
+                raise AttemptConflict("activation_failed", "activation command disappeared")
+            if current_command.status is CommandStatus.APPLIED:
+                return current_command, execution
+            if current_command.status is CommandStatus.APPLYING and delivered:
+                if current_command.kind is CommandKind.CONTINUE:
+                    current_command = self.executions._transition_command(
+                        connection,
+                        current_command.command_id,
+                        expected_status=CommandStatus.APPLYING,
+                        target=CommandStatus.APPLIED,
+                        result_version=execution.status_version,
+                    )
+                return current_command, execution
+
+            cancel = self._applying_command(
+                connection, execution.execution_id, CommandKind.CANCEL
+            )
+            pause = self._applying_command(
+                connection, execution.execution_id, CommandKind.PAUSE
+            )
+            unresolved = connection.execute(
+                "SELECT 1 FROM effects WHERE execution_id = ? "
+                "AND status IN ('dispatched', 'uncertain') LIMIT 1",
+                (execution.execution_id,),
+            ).fetchone() is not None
+            if cancel is not None:
+                target = (
+                    ExecutionStatus.RECONCILIATION_REQUIRED
+                    if unresolved
+                    else ExecutionStatus.CANCELLED
+                )
+                target_reason = "effect_reconciliation" if unresolved else "cancelled_during_activation"
+                outcome = "reconciliation_required" if unresolved else "cancelled_during_activation"
+            elif pause is not None:
+                target = ExecutionStatus.PAUSED
+                target_reason = "pause_during_activation"
+                outcome = "pause_during_activation"
+            else:
+                target = ExecutionStatus.PAUSED
+                target_reason = reason
+                outcome = reason
+
+            if execution.status is ExecutionStatus.RUNNING and target is ExecutionStatus.PAUSED:
                 pausing = self.executions._transition_execution(
                     connection,
                     execution.execution_id,
                     expected_version=execution.status_version,
                     target=ExecutionStatus.PAUSING,
-                    reason_code=issue_code,
+                    reason_code=target_reason,
                 )
-                paused = self.executions._transition_execution(
+                execution = self.executions._transition_execution(
                     connection,
                     execution.execution_id,
                     expected_version=pausing.status_version,
                     target=ExecutionStatus.PAUSED,
-                    reason_code=issue_code,
+                    reason_code=target_reason,
                     clear_owner=True,
                 )
-            elif execution.status is ExecutionStatus.PAUSING:
-                paused = self.executions._transition_execution(
+            elif execution.status in {
+                ExecutionStatus.PAUSING,
+                ExecutionStatus.CANCELLING,
+            }:
+                execution = self.executions._transition_execution(
                     connection,
                     execution.execution_id,
                     expected_version=execution.status_version,
-                    target=ExecutionStatus.PAUSED,
-                    reason_code=issue_code,
-                    clear_owner=True,
-                )
-            elif execution.status is ExecutionStatus.CANCELLING:
-                paused = self.executions._transition_execution(
-                    connection,
-                    execution.execution_id,
-                    expected_version=execution.status_version,
-                    target=ExecutionStatus.CANCELLED,
-                    reason_code="cancelled_during_activation",
+                    target=target,
+                    reason_code=target_reason,
                     clear_owner=True,
                 )
             else:
                 raise AttemptConflict(
                     "activation_failed",
-                    f"cannot recover activation while execution is {execution.status.value}",
+                    f"cannot settle activation while execution is {execution.status.value}",
                 )
             ended = self.attempts._end_for_owner_loss(
-                connection, current_attempt, outcome=issue_code
+                connection, current_attempt, outcome=outcome
             )
             self.executions._append_event(
                 connection,
                 execution_id=execution.execution_id,
-                execution_version=paused.status_version,
+                execution_version=execution.status_version,
                 kind="attempt.ended",
                 payload={"attempt": ended.to_dict()},
                 created_at=ended.updated_at,
             )
-            current_command = self.executions._get_command(connection, command.command_id)
-            if current_command is None or current_command.status is not CommandStatus.APPLYING:
-                raise AttemptConflict("activation_failed", "activation command changed concurrently")
-            rejected = self.executions._transition_command(
-                connection,
-                command.command_id,
-                expected_status=CommandStatus.APPLYING,
-                target=CommandStatus.REJECTED,
-                result_version=paused.status_version,
-                rejection_code=issue_code,
+            if current_command.status is CommandStatus.APPLYING:
+                current_command = self.executions._transition_command(
+                    connection,
+                    current_command.command_id,
+                    expected_status=CommandStatus.APPLYING,
+                    target=CommandStatus.REJECTED,
+                    result_version=execution.status_version,
+                    rejection_code=reason,
+                )
+            if cancel is not None and not unresolved:
+                self.executions._transition_command(
+                    connection,
+                    cancel.command_id,
+                    expected_status=CommandStatus.APPLYING,
+                    target=CommandStatus.APPLIED,
+                    result_version=execution.status_version,
+                )
+            elif pause is not None:
+                self.executions._transition_command(
+                    connection,
+                    pause.command_id,
+                    expected_status=CommandStatus.APPLYING,
+                    target=CommandStatus.APPLIED,
+                    result_version=execution.status_version,
+                )
+            unbind = True
+        if unbind:
+            self.registry.unbind(
+                attempt.execution_id,
+                attempt_id=attempt.attempt_id,
+                generation=attempt.generation,
             )
-        self.registry.unbind(
-            attempt.execution_id,
-            attempt_id=attempt.attempt_id,
-            generation=attempt.generation,
-        )
-        return rejected, paused
+        return current_command, execution
 
     async def _activate(
         self,

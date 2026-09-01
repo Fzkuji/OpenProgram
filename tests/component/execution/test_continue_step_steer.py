@@ -234,6 +234,180 @@ def test_legacy_checkpoint_second_argument_is_not_an_activation_contract(tmp_pat
     assert result.execution.status is ExecutionStatus.PAUSED
 
 
+def test_late_success_after_cancel_finishes_cancel_intent(tmp_path):
+    store, attempts, service, paused = _paused(tmp_path)
+
+    async def scenario():
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def activate(attempt, activation):
+            entered.set()
+            await release.wait()
+
+        continuation = asyncio.create_task(
+            service.request_continue(
+                command_id="continue_1",
+                execution_id=paused.execution_id,
+                expected_version=paused.status_version,
+                actor={"surface": "test"},
+                activator=activate,
+            )
+        )
+        await entered.wait()
+        running = store.get_execution(paused.execution_id)
+        cancelled = await service.request_cancel(
+            command_id="cancel_1",
+            execution_id=paused.execution_id,
+            expected_version=running.status_version,
+            actor={"surface": "test"},
+            reason_code="race",
+        )
+        release.set()
+        late = await continuation
+        return store, cancelled, late
+
+    store, cancelled, late = asyncio.run(scenario())
+    assert late.command.status is CommandStatus.REJECTED
+    assert cancelled.execution.status is ExecutionStatus.CANCELLING
+    assert store.get_command("cancel_1").status is CommandStatus.APPLIED
+    execution = store.get_execution("exec_1")
+    assert execution.status is ExecutionStatus.CANCELLED
+    assert execution.current_attempt_id is None
+
+
+def test_late_activation_failure_after_cancel_finishes_cancel_intent(tmp_path):
+    store, attempts, service, paused = _paused(tmp_path)
+
+    async def scenario():
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def activate(attempt, activation):
+            entered.set()
+            await release.wait()
+            raise RuntimeError("late activation failure")
+
+        continuation = asyncio.create_task(
+            service.request_continue(
+                command_id="continue_1",
+                execution_id=paused.execution_id,
+                expected_version=paused.status_version,
+                actor={"surface": "test"},
+                activator=activate,
+            )
+        )
+        await entered.wait()
+        running = store.get_execution(paused.execution_id)
+        cancelled = await service.request_cancel(
+            command_id="cancel_1",
+            execution_id=paused.execution_id,
+            expected_version=running.status_version,
+            actor={"surface": "test"},
+            reason_code="race",
+        )
+        release.set()
+        late = await continuation
+        return store, cancelled, late
+
+    store, cancelled, late = asyncio.run(scenario())
+    assert late.command.status is CommandStatus.REJECTED
+    assert cancelled.execution.status is ExecutionStatus.CANCELLING
+    assert store.get_command("cancel_1").status is CommandStatus.APPLIED
+    execution = store.get_execution("exec_1")
+    assert execution.status is ExecutionStatus.CANCELLED
+    assert execution.current_attempt_id is None
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_late_step_activation_after_cancel_finishes_cancel_intent(tmp_path, fail):
+    store, attempts, service, paused = _paused(tmp_path)
+
+    async def scenario():
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def activate(attempt, activation):
+            entered.set()
+            await release.wait()
+            if fail:
+                raise RuntimeError("late activation failure")
+
+        step = asyncio.create_task(
+            service.request_step(
+                command_id="step_1",
+                execution_id=paused.execution_id,
+                expected_version=paused.status_version,
+                actor={"surface": "test"},
+                activator=activate,
+            )
+        )
+        await entered.wait()
+        running = store.get_execution(paused.execution_id)
+        cancelled = await service.request_cancel(
+            command_id="cancel_1",
+            execution_id=paused.execution_id,
+            expected_version=running.status_version,
+            actor={"surface": "test"},
+            reason_code="race",
+        )
+        release.set()
+        late = await step
+        return store, cancelled, late
+
+    store, cancelled, late = asyncio.run(scenario())
+    assert late.command.status is CommandStatus.REJECTED
+    assert cancelled.execution.status is ExecutionStatus.CANCELLING
+    assert store.get_command("cancel_1").status is CommandStatus.APPLIED
+    execution = store.get_execution("exec_1")
+    assert execution.status is ExecutionStatus.CANCELLED
+    assert execution.current_attempt_id is None
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_late_activation_after_pause_finishes_pause_intent(tmp_path, fail):
+    store, attempts, service, paused = _paused(tmp_path)
+
+    async def scenario():
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def activate(attempt, activation):
+            entered.set()
+            await release.wait()
+            if fail:
+                raise RuntimeError("late activation failure")
+
+        continuation = asyncio.create_task(
+            service.request_continue(
+                command_id="continue_1",
+                execution_id=paused.execution_id,
+                expected_version=paused.status_version,
+                actor={"surface": "test"},
+                activator=activate,
+            )
+        )
+        await entered.wait()
+        running = store.get_execution(paused.execution_id)
+        pausing = await service.request_pause(
+            command_id="pause_2",
+            execution_id=paused.execution_id,
+            expected_version=running.status_version,
+            actor={"surface": "test"},
+        )
+        release.set()
+        late = await continuation
+        return pausing, late
+
+    pausing, late = asyncio.run(scenario())
+    assert pausing.execution.status is ExecutionStatus.PAUSING
+    assert late.command.status is CommandStatus.REJECTED
+    assert store.get_command("pause_2").status is CommandStatus.APPLIED
+    execution = store.get_execution("exec_1")
+    assert execution.status is ExecutionStatus.PAUSED
+    assert execution.current_attempt_id is None
+
+
 def test_step_owner_loss_rejects_step_command_and_is_idempotent(tmp_path):
     store, attempts, service, paused = _paused(tmp_path)
     started = asyncio.run(
