@@ -18,6 +18,7 @@ Covers the wire contract:
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 import os
 import types
@@ -226,6 +227,117 @@ def test_project_search_does_not_follow_symlink(project_root):
         "project_id": "p1", "path": "", "query": "needle",
     })["data"]
     assert data["results"] == []
+
+
+@pytest.mark.parametrize("field,value", [
+    ("query", {"needle": True}),
+    ("mode", {"contains": True}),
+    ("type", ["file"]),
+    ("sort", ["rank_path"]),
+    ("page_size", "100"),
+    ("page_size", 0),
+    ("page_size", 101),
+])
+def test_project_search_rejects_malformed_query_fields(project_root, field, value):
+    data = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": "needle", field: value,
+    })["data"]
+    assert data["error_code"] == "INVALID_REQUEST"
+    assert data["results"] == []
+
+
+def test_project_search_rejects_empty_query_explicitly(project_root):
+    data = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": "",
+    })["data"]
+    assert data["error_code"] == "INVALID_REQUEST"
+    assert data["results"] == []
+
+
+def test_project_query_reports_permission_without_partial_snapshot(project_root, monkeypatch):
+    original_scandir = ws_files.os.scandir
+
+    def denied(path):
+        if isinstance(path, int):
+            raise PermissionError(errno.EACCES, "permission denied")
+        return original_scandir(path)
+
+    monkeypatch.setattr(ws_files.os, "scandir", denied)
+    data = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": "needle",
+    })["data"]
+    assert data["error_code"] == "PERMISSION"
+    assert data["results"] == []
+    assert data["snapshot_id"] is None
+
+
+def test_project_query_rejects_symlink_path_even_when_inside_project(project_root):
+    target = project_root / "real-dir"
+    target.mkdir()
+    (target / "needle.txt").write_text("x", encoding="utf-8")
+    (project_root / "inside-link").symlink_to(target, target_is_directory=True)
+    for handler, field in ((ws_files.handle_project_file_tree, "entries"),
+                           (ws_files.handle_project_file_search, "results")):
+        command = {"project_id": "p1", "path": "inside-link"}
+        if field == "results":
+            command["query"] = "needle"
+        data = _run(handler, command)["data"]
+        assert data["error_code"] == "INVALID_REQUEST"
+        assert data[field] == []
+
+
+def test_project_search_does_not_follow_directory_replaced_by_symlink(project_root, monkeypatch):
+    nested = project_root / "nested"
+    nested.mkdir()
+    external = project_root.parent / "raced-external"
+    external.mkdir()
+    (external / "needle.txt").write_text("secret", encoding="utf-8")
+    original_open = ws_files.os.open
+
+    def racing_open(path, flags, *args, **kwargs):
+        if kwargs.get("dir_fd") is not None and path == "nested":
+            nested.rmdir()
+            nested.symlink_to(external, target_is_directory=True)
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(ws_files.os, "open", racing_open)
+    data = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": "needle",
+    })["data"]
+    assert data["error_code"] in {"IO_ERROR", "PERMISSION"}
+    assert data["results"] == []
+    assert data["snapshot_id"] is None
+
+
+def test_project_queries_reject_ignored_path(project_root):
+    ignored = project_root / "node_modules"
+    ignored.mkdir()
+    (ignored / "needle.js").write_text("x", encoding="utf-8")
+    tree = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "node_modules",
+    })["data"]
+    search = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "node_modules", "query": "needle",
+    })["data"]
+    assert tree["error_code"] == search["error_code"] == "INVALID_REQUEST"
+    assert tree["entries"] == [] and search["results"] == []
+
+
+def test_repeated_cursor_requests_reuse_bounded_token(project_root):
+    for index in range(105):
+        (project_root / f"bounded-{index:03d}.txt").write_text("x", encoding="utf-8")
+    first = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 1,
+    })["data"]
+    cursor = first["next_cursor"]
+    expected_next = None
+    for _ in range(1000):
+        data = _run(ws_files.handle_project_file_tree, {
+            "project_id": "p1", "path": "", "page_size": 1, "cursor": cursor,
+        })["data"]
+        assert data["error_code"] is None
+        expected_next = expected_next or data["next_cursor"]
+        assert data["next_cursor"] == expected_next
 
 
 def test_tree_path_traversal_rejected(project_root):

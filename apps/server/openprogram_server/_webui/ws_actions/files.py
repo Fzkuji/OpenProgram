@@ -79,13 +79,16 @@ outside).
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 import os
 import secrets
 import shutil
+import stat
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass
 
 # Hard cap on a single text read — the panel shows sources, not dumps.
@@ -97,6 +100,8 @@ _WRITE_MAX_BYTES = 5_000_000  # 5 MB
 
 _QUERY_PAGE_SIZE = 100
 _QUERY_MAX_SNAPSHOTS = 256
+_QUERY_MAX_SNAPSHOT_ITEMS = 10_000
+_QUERY_SNAPSHOT_TTL = 300.0
 _SEARCH_IGNORED_DIRS = frozenset({
     "node_modules", ".git", "dist", ".next", "__pycache__",
     ".venv", "venv", ".cache", "target", "build",
@@ -115,11 +120,21 @@ class _QuerySnapshot:
     sort: str
     basis: tuple
     rows: tuple
+    created_at: float
 
 
 _QUERY_SNAPSHOTS: dict[str, _QuerySnapshot] = {}
 _QUERY_CURSORS: dict[str, tuple[str, int]] = {}
+_QUERY_CURSOR_TOKENS: dict[tuple[str, int], str] = {}
 _QUERY_LOCK = threading.RLock()
+
+
+class _UnsafeQueryPath(ValueError):
+    pass
+
+
+class _QueryLimitError(OSError):
+    pass
 
 
 def _resolve(project_id: str, path: str) -> tuple[str | None, str | None]:
@@ -145,8 +160,6 @@ def _resolve(project_id: str, path: str) -> tuple[str | None, str | None]:
 
 def _query_path(path: object) -> tuple[str | None, str | None]:
     """Return a canonical project-relative path for query actions."""
-    if path is None:
-        return "", None
     if not isinstance(path, str) or os.path.isabs(path):
         return None, "path escapes project root"
     normalized = os.path.normpath(path or "")
@@ -158,9 +171,13 @@ def _query_path(path: object) -> tuple[str | None, str | None]:
 
 
 def _query_page_size(value: object) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
+    if value is None:
         return _QUERY_PAGE_SIZE
-    return max(1, min(value, _QUERY_PAGE_SIZE))
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("page_size must be an integer")
+    if not 1 <= value <= _QUERY_PAGE_SIZE:
+        raise ValueError(f"page_size must be between 1 and {_QUERY_PAGE_SIZE}")
+    return value
 
 
 def _query_error(project_id: str, path: str, *, code: str,
@@ -181,19 +198,36 @@ def _query_error(project_id: str, path: str, *, code: str,
 
 def _remember_snapshot(snapshot: _QuerySnapshot) -> None:
     with _QUERY_LOCK:
+        now = time.monotonic()
+        for snapshot_id, old in list(_QUERY_SNAPSHOTS.items()):
+            if now - old.created_at >= _QUERY_SNAPSHOT_TTL:
+                _evict_snapshot(snapshot_id)
         _QUERY_SNAPSHOTS[snapshot.snapshot_id] = snapshot
         while len(_QUERY_SNAPSHOTS) > _QUERY_MAX_SNAPSHOTS:
             evicted = next(iter(_QUERY_SNAPSHOTS))
-            _QUERY_SNAPSHOTS.pop(evicted)
+            _evict_snapshot(evicted)
+
+
+def _evict_snapshot(snapshot_id: str) -> None:
+    _QUERY_SNAPSHOTS.pop(snapshot_id, None)
+    for key, token in list(_QUERY_CURSOR_TOKENS.items()):
+        if key[0] == snapshot_id:
+            _QUERY_CURSOR_TOKENS.pop(key, None)
+            _QUERY_CURSORS.pop(token, None)
             for token, (snapshot_id, _offset) in list(_QUERY_CURSORS.items()):
                 if snapshot_id == evicted:
                     _QUERY_CURSORS.pop(token, None)
 
 
 def _new_cursor(snapshot_id: str, offset: int) -> str:
-    token = secrets.token_urlsafe(24)
     with _QUERY_LOCK:
+        key = (snapshot_id, offset)
+        existing = _QUERY_CURSOR_TOKENS.get(key)
+        if existing is not None:
+            return existing
+        token = secrets.token_urlsafe(24)
         _QUERY_CURSORS[token] = (snapshot_id, offset)
+        _QUERY_CURSOR_TOKENS[key] = token
     return token
 
 
@@ -205,7 +239,13 @@ def _snapshot_for_cursor(cursor: object) -> tuple[_QuerySnapshot | None, int]:
         if state is None:
             return None, 0
         snapshot_id, offset = state
-        return _QUERY_SNAPSHOTS.get(snapshot_id), offset
+        snapshot = _QUERY_SNAPSHOTS.get(snapshot_id)
+        if snapshot is None:
+            return None, 0
+        if time.monotonic() - snapshot.created_at >= _QUERY_SNAPSHOT_TTL:
+            _evict_snapshot(snapshot_id)
+            return None, 0
+        return snapshot, offset
 
 
 def _directory_entries(target: str) -> list[dict]:
@@ -260,6 +300,108 @@ def _project_info(project_id: str) -> tuple[str | None, str | None, str | None]:
     return root, getattr(project, "name", None) or project_id, None
 
 
+def _query_ignored_path(path: str) -> bool:
+    return any(part in _SEARCH_IGNORED_DIRS for part in path.split("/"))
+
+
+def _directory_flags() -> int:
+    return (os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0))
+
+
+def _open_query_dir(project_id: str, path: str) -> int:
+    root, _name, error = _project_info(project_id)
+    if error:
+        raise FileNotFoundError(error)
+    current = root
+    for part in path.split("/") if path else ():
+        current = os.path.join(current, part)
+        try:
+            path_stat = os.lstat(current)
+        except OSError:
+            break
+        if stat.S_ISLNK(path_stat.st_mode):
+            raise _UnsafeQueryPath("path contains a symbolic link")
+    fd = os.open(root, _directory_flags())
+    try:
+        for part in path.split("/") if path else ():
+            try:
+                child = os.open(part, _directory_flags(), dir_fd=fd)
+            except OSError as exc:
+                if getattr(exc, "errno", None) == getattr(errno, "ELOOP", 40):
+                    raise _UnsafeQueryPath("path contains a symbolic link") from exc
+                raise
+            os.close(fd)
+            fd = child
+        return fd
+    except Exception:
+        os.close(fd)
+        raise
+
+
+def _open_child_dir(parent_fd: int, name: str) -> int:
+    try:
+        return os.open(name, _directory_flags(), dir_fd=parent_fd)
+    except OSError as exc:
+        try:
+            path_stat = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        except OSError:
+            raise exc
+        if stat.S_ISLNK(path_stat.st_mode):
+            raise OSError(errno.ELOOP, "directory replaced by symbolic link") from exc
+        raise
+
+
+def _directory_snapshot_fd(fd: int) -> tuple[list[dict], tuple]:
+    entries: list[dict] = []
+    basis = []
+    with os.scandir(fd) as iterator:
+        for entry in iterator:
+            stat_result = entry.stat(follow_symlinks=False)
+            kind = "dir" if entry.is_dir(follow_symlinks=False) else "file"
+            entries.append({
+                "name": entry.name,
+                "type": kind,
+                "size": stat_result.st_size,
+                "mtime": stat_result.st_mtime,
+            })
+            basis.append((
+                entry.name, kind, stat_result.st_dev, stat_result.st_ino,
+                stat_result.st_size, stat_result.st_mtime_ns, stat_result.st_mode,
+            ))
+    entries.sort(key=lambda row: (
+        0 if row["type"] == "dir" else 1,
+        row["name"].casefold(), row["name"],
+    ))
+    return entries, tuple(sorted(basis, key=lambda row: (row[0].casefold(), row[0])))
+
+
+def _directory_basis_fd(fd: int) -> tuple:
+    basis = []
+    with os.scandir(fd) as iterator:
+        for entry in iterator:
+            stat_result = entry.stat(follow_symlinks=False)
+            basis.append((
+                entry.name,
+                "dir" if entry.is_dir(follow_symlinks=False) else "file",
+                stat_result.st_dev, stat_result.st_ino, stat_result.st_size,
+                stat_result.st_mtime_ns, stat_result.st_mode,
+            ))
+    return tuple(sorted(basis, key=lambda row: (row[0].casefold(), row[0])))
+
+
+def _fs_query_failure(exc: OSError) -> tuple[str, str]:
+    if isinstance(exc, _QueryLimitError):
+        return "LIMIT_EXCEEDED", "snapshot is too large"
+    if str(exc).startswith("unknown project"):
+        return "NOT_FOUND", str(exc)
+    if isinstance(exc, PermissionError):
+        return "PERMISSION", "permission denied while reading project files"
+    if isinstance(exc, (FileNotFoundError, NotADirectoryError)):
+        return "NOT_FOUND", "project path not found or is not a directory"
+    return "IO_ERROR", "unable to read project files"
+
+
 def _search_match(value: str, query: str, mode: str) -> tuple[bool, int]:
     if not query:
         return True, 0
@@ -283,50 +425,56 @@ def _search_match(value: str, query: str, mode: str) -> tuple[bool, int]:
 
 
 def _search_rows(project_id: str, path: str, query: str, mode: str,
-                 entry_type: str) -> tuple[list[dict], tuple, str | None]:
+                 entry_type: str) -> tuple[list[dict], tuple, tuple[str, str] | None]:
     root, project_name, error = _project_info(project_id)
     if error:
-        return [], (), error
-    target, error = _resolve(project_id, path)
-    if error:
-        return [], (), error
-    if not os.path.isdir(target):
-        return [], (), f"not a directory: {path!r}"
+        return [], (), ("NOT_FOUND", error)
 
     rows: list[tuple[int, dict]] = []
     basis: list[tuple] = []
-    pending = [target]
-    while pending:
-        directory = pending.pop()
+    try:
+        root_fd = _open_query_dir(project_id, path)
+    except _UnsafeQueryPath as exc:
+        return [], (), ("INVALID_REQUEST", str(exc))
+    except OSError as exc:
+        code, message = _fs_query_failure(exc)
+        return [], (), (code, message)
+
+    pending = [(root_fd, path)]
+    try:
+      while pending:
+        directory_fd, relative_dir = pending.pop()
         try:
-            with os.scandir(directory) as directory_entries:
+            with os.scandir(directory_fd) as directory_entries:
                 children = sorted(
                     directory_entries,
                     key=lambda entry: (entry.name.casefold(), entry.name),
                 )
         except OSError:
-            continue
-        for entry in children:
-            try:
+            raise
+        try:
+            for entry in children:
                 if entry.is_symlink():
                     continue
                 is_dir = entry.is_dir(follow_symlinks=False)
                 is_file = entry.is_file(follow_symlinks=False)
                 if not (is_dir or is_file):
                     continue
-                rel = os.path.relpath(entry.path, root).replace(os.sep, "/")
+                rel = f"{relative_dir}/{entry.name}" if relative_dir else entry.name
                 stat_result = entry.stat(follow_symlinks=False)
+                kind = "dir" if is_dir else "file"
                 basis.append((
-                    rel, "dir" if is_dir else "file", stat_result.st_dev,
-                    stat_result.st_ino, stat_result.st_size,
-                    stat_result.st_mtime_ns, stat_result.st_mode,
+                    rel, kind, stat_result.st_dev, stat_result.st_ino,
+                    stat_result.st_size, stat_result.st_mtime_ns,
+                    stat_result.st_mode,
                 ))
+                if len(basis) > _QUERY_MAX_SNAPSHOT_ITEMS:
+                    raise _QueryLimitError
                 if is_dir and entry.name in _SEARCH_IGNORED_DIRS:
                     continue
-                kind = "dir" if is_dir else "file"
                 if entry_type != "all" and entry_type != kind:
                     if is_dir:
-                        pending.append(entry.path)
+                        pending.append((_open_child_dir(directory_fd, entry.name), rel))
                     continue
                 name_match, _name_rank = _search_match(entry.name, query, mode)
                 path_match, path_rank = _search_match(rel, query, mode)
@@ -346,9 +494,17 @@ def _search_rows(project_id: str, path: str, query: str, mode: str,
                         "project_name": project_name,
                     }))
                 if is_dir:
-                    pending.append(entry.path)
+                    pending.append((_open_child_dir(directory_fd, entry.name), rel))
+        finally:
+            os.close(directory_fd)
+    except OSError as exc:
+        for pending_fd, _relative_dir in pending:
+            try:
+                os.close(pending_fd)
             except OSError:
-                continue
+                pass
+        code, message = _fs_query_failure(exc)
+        return [], (), (code, message)
     rows.sort(key=lambda item: (item[0], item[1]["path"].casefold(), item[1]["path"]))
     return [row for _rank, row in rows], tuple(sorted(basis)), None
 
@@ -379,11 +535,35 @@ def _tree_query(project_id: str, path: object, page_size: object,
     if path_error:
         return _query_error(project_id, "", code="INVALID_REQUEST",
                             message=path_error)
+    if _query_ignored_path(canonical_path or ""):
+        return _query_error(project_id, canonical_path or "",
+                            code="INVALID_REQUEST", message="path is ignored")
     sort_name = sort if isinstance(sort, str) and sort else "dirs_first_path"
+    if sort == "":
+        return _query_error(project_id, canonical_path or "",
+                            code="INVALID_REQUEST", message="sort must not be empty")
+    if not isinstance(sort, str) and sort is not None:
+        return _query_error(project_id, canonical_path or "",
+                            code="INVALID_REQUEST", message="sort must be a string")
     if sort_name != "dirs_first_path":
         return _query_error(project_id, canonical_path or "",
                             code="INVALID_REQUEST", message="unsupported sort")
-    size = _query_page_size(page_size)
+    try:
+        size = _query_page_size(page_size)
+    except ValueError as exc:
+        return _query_error(project_id, canonical_path or "",
+                            code="INVALID_REQUEST", message=str(exc))
+    if not isinstance(project_id, str) or not project_id:
+        return _query_error(project_id or "", canonical_path or "",
+                            code="INVALID_REQUEST", message="project_id is required")
+    if cursor is not None and (not isinstance(cursor, str) or not cursor):
+        return _query_error(project_id, canonical_path or "",
+                            code="INVALID_REQUEST", message="cursor must be a string")
+    if snapshot_id is not None and (
+        not isinstance(snapshot_id, str) or not snapshot_id
+    ):
+        return _query_error(project_id, canonical_path or "",
+                            code="INVALID_REQUEST", message="snapshot_id must be a string")
     if cursor is not None:
         snapshot, offset = _snapshot_for_cursor(cursor)
         if snapshot is None or snapshot.kind != "directory" or (
@@ -394,39 +574,57 @@ def _tree_query(project_id: str, path: object, page_size: object,
         ):
             return _query_error(project_id, canonical_path or "",
                                 code="STALE_SNAPSHOT", kind="directory")
-        target, error = _resolve(project_id, canonical_path or "")
-        if error or target is None or not os.path.isdir(target):
-            return _query_error(project_id, canonical_path or "",
-                                code="STALE_SNAPSHOT", kind="directory")
         try:
-            basis = _directory_basis(target)
-        except OSError:
-            basis = None
+            fd = _open_query_dir(project_id, canonical_path or "")
+        except _UnsafeQueryPath as exc:
+            return _query_error(project_id, canonical_path or "",
+                                code="INVALID_REQUEST", message=str(exc))
+        except OSError as exc:
+            code, message = _fs_query_failure(exc)
+            return _query_error(project_id, canonical_path or "", code=code,
+                                message=message, kind="directory")
+        try:
+            basis = _directory_basis_fd(fd)
+        except OSError as exc:
+            code, message = _fs_query_failure(exc)
+            return _query_error(project_id, canonical_path or "", code=code,
+                                message=message, kind="directory")
+        finally:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
         if basis != snapshot.basis:
             return _query_error(project_id, canonical_path or "",
                                 code="STALE_SNAPSHOT", kind="directory")
         return _query_page(snapshot, offset, size, "entries", str(cursor))
 
-    target, error = _resolve(project_id, canonical_path or "")
-    if error:
-        code = "NOT_FOUND" if error.startswith("unknown project") else "INVALID_REQUEST"
-        return _query_error(project_id, canonical_path or "", code=code,
-                            message=error, kind="directory")
-    if target is None or not os.path.isdir(target):
-        return _query_error(project_id, canonical_path or "", code="NOT_FOUND",
-                            message=f"not a directory: {canonical_path!r}",
-                            kind="directory")
     try:
-        entries = _directory_entries(target)
-        basis = _directory_basis(target)
+        fd = _open_query_dir(project_id, canonical_path or "")
+    except _UnsafeQueryPath as exc:
+        return _query_error(project_id, canonical_path or "",
+                            code="INVALID_REQUEST", message=str(exc))
     except OSError as exc:
-        return _query_error(project_id, canonical_path or "", code="NOT_FOUND",
-                            message=f"{type(exc).__name__}: {exc}",
+        code, message = _fs_query_failure(exc)
+        return _query_error(project_id, canonical_path or "", code=code,
+                            message=message, kind="directory")
+    try:
+        entries, basis = _directory_snapshot_fd(fd)
+    except OSError as exc:
+        code, message = _fs_query_failure(exc)
+        return _query_error(project_id, canonical_path or "", code=code,
+                            message=message, kind="directory")
+    finally:
+        os.close(fd)
+    if len(entries) > _QUERY_MAX_SNAPSHOT_ITEMS:
+        return _query_error(project_id, canonical_path or "",
+                            code="LIMIT_EXCEEDED", message="snapshot is too large",
                             kind="directory")
     snapshot = _QuerySnapshot(
         snapshot_id=secrets.token_urlsafe(18), kind="directory",
         project_id=project_id, path=canonical_path or "", query="", mode="",
         entry_type="all", sort=sort_name, basis=basis, rows=tuple(entries),
+        created_at=time.monotonic(),
     )
     _remember_snapshot(snapshot)
     return _query_page(snapshot, 0, size, "entries")
@@ -439,10 +637,43 @@ def _search_query(project_id: str, path: object, query: object,
     if path_error:
         return _query_error(project_id, "", code="INVALID_REQUEST",
                             message=path_error, kind="search")
-    query_text = query if isinstance(query, str) else ""
-    mode_name = mode if isinstance(mode, str) and mode else "contains"
-    type_name = entry_type if isinstance(entry_type, str) and entry_type else "all"
-    sort_name = sort if isinstance(sort, str) and sort else "rank_path"
+    if not isinstance(project_id, str) or not project_id:
+        return _query_error(project_id or "", canonical_path or "",
+                            code="INVALID_REQUEST", message="project_id is required",
+                            kind="search")
+    if not isinstance(query, str) or not query.strip():
+        return _query_error(project_id, canonical_path or "",
+                            code="INVALID_REQUEST", message="query is required",
+                            kind="search")
+    if mode is None:
+        mode_name = "contains"
+    elif isinstance(mode, str):
+        mode_name = mode
+    else:
+        return _query_error(project_id, canonical_path or "",
+                            code="INVALID_REQUEST", message="mode must be a string",
+                            kind="search")
+    if entry_type is None:
+        type_name = "all"
+    elif isinstance(entry_type, str):
+        type_name = entry_type
+    else:
+        return _query_error(project_id, canonical_path or "",
+                            code="INVALID_REQUEST", message="type must be a string",
+                            kind="search")
+    if sort is None:
+        sort_name = "rank_path"
+    elif isinstance(sort, str):
+        sort_name = sort
+    else:
+        return _query_error(project_id, canonical_path or "",
+                            code="INVALID_REQUEST", message="sort must be a string",
+                            kind="search")
+    query_text = query
+    if _query_ignored_path(canonical_path or ""):
+        return _query_error(project_id, canonical_path or "",
+                            code="INVALID_REQUEST", message="path is ignored",
+                            kind="search")
     if mode_name not in {"contains", "prefix", "exact", "fuzzy"}:
         return _query_error(project_id, canonical_path or "",
                             code="INVALID_REQUEST", message="unsupported match mode",
@@ -455,7 +686,21 @@ def _search_query(project_id: str, path: object, query: object,
         return _query_error(project_id, canonical_path or "",
                             code="INVALID_REQUEST", message="unsupported sort",
                             kind="search")
-    size = _query_page_size(page_size)
+    try:
+        size = _query_page_size(page_size)
+    except ValueError as exc:
+        return _query_error(project_id, canonical_path or "",
+                            code="INVALID_REQUEST", message=str(exc), kind="search")
+    if cursor is not None and (not isinstance(cursor, str) or not cursor):
+        return _query_error(project_id, canonical_path or "",
+                            code="INVALID_REQUEST", message="cursor must be a string",
+                            kind="search")
+    if snapshot_id is not None and (
+        not isinstance(snapshot_id, str) or not snapshot_id
+    ):
+        return _query_error(project_id, canonical_path or "",
+                            code="INVALID_REQUEST", message="snapshot_id must be a string",
+                            kind="search")
     if cursor is not None:
         snapshot, offset = _snapshot_for_cursor(cursor)
         if snapshot is None or snapshot.kind != "project_search" or (
@@ -472,7 +717,11 @@ def _search_query(project_id: str, path: object, query: object,
         rows, basis, error = _search_rows(
             project_id, canonical_path or "", query_text, mode_name, type_name,
         )
-        if error or basis != snapshot.basis:
+        if error:
+            code, message = error
+            return _query_error(project_id, canonical_path or "", code=code,
+                                message=message, kind="search")
+        if basis != snapshot.basis or rows != list(snapshot.rows):
             return _query_error(project_id, canonical_path or "",
                                 code="STALE_SNAPSHOT", kind="search")
         return _query_page(snapshot, offset, size, "results", str(cursor))
@@ -481,15 +730,19 @@ def _search_query(project_id: str, path: object, query: object,
         project_id, canonical_path or "", query_text, mode_name, type_name,
     )
     if error:
-        code = "NOT_FOUND" if error.startswith("unknown project") else "INVALID_REQUEST"
+        code, message = error
         return _query_error(project_id, canonical_path or "", code=code,
-                            message=error, kind="search")
+                            message=message, kind="search")
     snapshot = _QuerySnapshot(
         snapshot_id=secrets.token_urlsafe(18), kind="project_search",
         project_id=project_id, path=canonical_path or "", query=query_text,
         mode=mode_name, entry_type=type_name, sort=sort_name, basis=basis,
-        rows=tuple(rows),
+        rows=tuple(rows), created_at=time.monotonic(),
     )
+    if len(rows) > _QUERY_MAX_SNAPSHOT_ITEMS:
+        return _query_error(project_id, canonical_path or "",
+                            code="LIMIT_EXCEEDED", message="snapshot is too large",
+                            kind="search")
     _remember_snapshot(snapshot)
     return _query_page(snapshot, 0, size, "results")
 
@@ -713,7 +966,7 @@ async def handle_project_file_tree(ws, cmd: dict) -> None:
     project_id = raw_project_id.strip() if isinstance(raw_project_id, str) else ""
     # No .strip(): filenames with leading/trailing whitespace must
     # round-trip so the echoed ``path`` matches the request.
-    path = cmd.get("path") or ""
+    path = cmd["path"] if "path" in cmd else ""
     loop = asyncio.get_event_loop()
     if "root" in cmd:
         result = _query_error(
@@ -739,7 +992,7 @@ async def handle_project_file_tree(ws, cmd: dict) -> None:
 async def handle_project_file_search(ws, cmd: dict) -> None:
     raw_project_id = cmd.get("project_id")
     project_id = raw_project_id.strip() if isinstance(raw_project_id, str) else ""
-    path = cmd.get("path") or ""
+    path = cmd["path"] if "path" in cmd else ""
     loop = asyncio.get_event_loop()
     if "root" in cmd:
         result = _query_error(
