@@ -11,6 +11,7 @@
  */
 import { useEffect } from "react";
 
+import { consumeActionError } from "@/lib/net/action-error";
 import type {
   PermissionRulesDetail,
   JobStatusDetail,
@@ -168,21 +169,7 @@ export function useWS(): void {
           return true;
         }
         case "action_error": {
-          // The backend had no handler for an action we sent. Always a
-          // frontend/backend contract break, never a user error — say so
-          // loudly instead of leaving the caller waiting on a frame that
-          // will never arrive.
-          const act = d?.action as string | undefined;
-          console.error("[useWS] backend rejected action:", act, d?.error);
-          void import("@/lib/format-utils/toast").then(({ showToast }) => {
-            showToast(
-              translateText(
-                `Unknown action ${act ?? "?"} — no backend handler`,
-                `未知操作 ${act ?? "?"} — 后端没有对应处理器`,
-              ),
-              { tone: "error" },
-            );
-          });
+          consumeActionError(d, translateText);
           return true;
         }
         case "attach_branch_result": {

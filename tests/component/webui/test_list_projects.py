@@ -75,6 +75,7 @@ def test_remove_project_action_is_unavailable_and_registry_unchanged(
     # indistinguishable from a backend that never replied.
     assert [f["type"] for f in ws.sent] == ["action_error"]
     assert ws.sent[0]["data"]["action"] == "remove_project"
+    assert ws.sent[0]["data"]["code"] == "unknown_action"
     assert json.loads(registry_path.read_text(encoding="utf-8")) == before
     assert "remove_project" not in ws_project.ACTIONS
     assert "remove_project" not in server.WS_ACTIONS

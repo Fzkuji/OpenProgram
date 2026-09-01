@@ -1573,6 +1573,7 @@ async def _handle_ws_command(ws, cmd: dict):
         "data": {
             "action": action,
             "session_id": session_id,
+            "code": "unknown_action",
             "error": f"unknown action {action!r}",
         },
     }, default=str))
