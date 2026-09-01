@@ -91,9 +91,9 @@ export interface RuntimeState {
    *  ``head`` = attach.head_id, ``anchor`` = the reply that dispatched
    *  the spawn. MessageList opens the owning strip and flashes the row. */
   _pendingExpandAttach: { head: string; anchor: string } | null;
-  /** Session id whose transcript must be reloaded when its running task
-   *  clears (a dispatched function run whose card is already on disk). */
-  __reloadOnTaskClear: string | null;
+  /** Session ids whose transcripts must be reloaded when their running tasks
+   *  clear (dispatched function runs whose cards are already on disk). */
+  __reloadOnTaskClear: Set<string>;
 }
 
 function initialSessionId(): string | null {
@@ -147,7 +147,7 @@ export const runtimeState: RuntimeState = {
   _branchLaneColorMap: {},
   _postCheckoutScrollTo: null,
   _pendingExpandAttach: null,
-  __reloadOnTaskClear: null,
+  __reloadOnTaskClear: new Set<string>(),
 };
 
 /** The shared app socket, or undefined when not connected yet. */

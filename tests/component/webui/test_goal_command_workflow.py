@@ -20,6 +20,7 @@ def test_web_goal_set_dispatches_the_registered_goal_workflow(
     import openprogram.programs.workflow.goal as goal_pkg
     from openprogram.webui import server as server
     from openprogram.webui.ws_actions.chat import handle_chat
+    from openprogram.webui.ws_actions import webtab
     import openprogram.webui.routes.chat as chat_routes
 
     db = SessionDB(tmp_path / "sessions-git")
@@ -52,9 +53,19 @@ def test_web_goal_set_dispatches_the_registered_goal_workflow(
     )
 
     ws = _FakeWS()
+    monkeypatch.setattr(
+        webtab,
+        "registered_desktop_windows",
+        lambda: [(ws, "window-1", 1)],
+    )
     asyncio.run(handle_chat(ws, {
         "text": "/goal tests pass",
         "session_id": "web-goal",
+        "surface": {
+            "version": 1,
+            "window_id": "window-1",
+            "tab_id": "tab-submitted",
+        },
     }))
 
     assert calls == [(
@@ -65,12 +76,33 @@ def test_web_goal_set_dispatches_the_registered_goal_workflow(
             "context_mode": "session",
         },
         "web-goal",
-        {},
+        {
+            "origin_window_id": "window-1",
+            "surface_ref": {
+                "version": 1,
+                "window_id": "window-1",
+                "tab_id": "tab-submitted",
+            },
+        },
     )]
     assert goal_pkg.load_goal("web-goal") is None
     assert old_chat_loop_started.wait(0.2) is False
     ack = [frame for frame in ws.sent if frame.get("type") == "chat_ack"]
     assert ack and ack[-1]["data"]["function_run"] is True
+
+    calls.clear()
+    asyncio.run(handle_chat(ws, {
+        "text": "/goal must not dispatch",
+        "session_id": "web-goal",
+        "surface": {
+            "version": 1,
+            "window_id": "window-other",
+            "tab_id": "tab-forged",
+        },
+    }))
+    assert calls == []
+    errors = [frame for frame in ws.sent if frame.get("type") == "chat_response"]
+    assert errors[-1]["data"]["code"] == "page_context_stale"
 
 
 def test_user_forced_goal_fills_missing_context_mode_as_session() -> None:

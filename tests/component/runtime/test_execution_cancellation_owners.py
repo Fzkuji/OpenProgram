@@ -567,6 +567,18 @@ def test_forced_tool_passes_canonical_execution_id(monkeypatch):
     assert captured["timeout_seconds"] == 300
     assert captured["surface_context_snapshot"] is page_context
     assert released == [page_context]
+
+    origin_context = surface_context.window_context("window-2")
+    captured.clear()
+    forced_tool.dispatch_forced_tool_call(
+        session_id="s1",
+        anchor_msg_id="|node:guiagent-origin",
+        tool_name="gui_agent",
+        tool_input={"task": "inspect", "surface": "browser"},
+        surface_context_snapshot=origin_context,
+    )
+    assert captured["surface_context_snapshot"] is origin_context
+    assert released == [page_context]
     _Tool.name = "wc"
 
     runner_out.clear()
@@ -606,6 +618,50 @@ def test_forced_tool_passes_canonical_execution_id(monkeypatch):
         tool_input={},
     )
     assert terminal[-1] == ("requested", "cancelled")
+
+
+def test_forced_tool_exit_does_not_retire_successor_token(monkeypatch):
+    from openprogram.agent.dispatcher import forced_tool
+
+    class _Tool:
+        name = "wc"
+        _is_agentic = True
+
+    class _DB:
+        @staticmethod
+        def invalidate_cache(_session_id):
+            return None
+
+    successor = {}
+
+    def run_then_handover(**_kwargs):
+        successor["token"] = run_control.begin_turn(
+            "direct-session", "successor_reply",
+        )
+        return {"runtime_msg_id": None}
+
+    monkeypatch.setattr(
+        "openprogram.programs._runtime.get",
+        lambda name, *args, **kwargs: _Tool() if name == _Tool.name else None,
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.process_runner.run_agentic_in_subprocess",
+        run_then_handover,
+    )
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", _DB)
+
+    result = forced_tool.dispatch_forced_tool_call(
+        session_id="direct-session",
+        anchor_msg_id="",
+        tool_name="wc",
+        tool_input={},
+    )
+
+    token = successor["token"]
+    assert result["ok"] is True
+    assert run_control.current_token("direct-session") is token
+    assert token.retired is False
+    run_control.end_turn("direct-session", token)
 
 
 def test_register_on_cancelled_execution_does_not_retrip(store):

@@ -193,7 +193,7 @@ export function wsHandleChatAck(data: ChatAckData): void {
   // and is a no-op once this load_session lands the card. Guarded on
   // function_run so a plain chat ack is untouched.
   if (data.function_run && data.session_id === runtimeState.currentSessionId) {
-    runtimeState.__reloadOnTaskClear = data.session_id;
+    runtimeState.__reloadOnTaskClear.add(data.session_id);
     const sock = getSocket();
     if (sock && sock.readyState === WebSocket.OPEN) {
       sock.send(
@@ -492,6 +492,32 @@ export function clearHydratedTreePaths(): void {
   hydratedTreePaths.clear();
 }
 
+const terminalFunctionStatuses = new Set([
+  "cancelled",
+  "completed",
+  "done",
+  "error",
+  "failed",
+  "interrupted",
+  "succeeded",
+  "timeout",
+]);
+
+/** A terminal persisted head proves a function run finished before its HTTP
+ *  acknowledgement registered the completion reload. `run_active=false` is
+ *  insufficient: it can precede the final node write by a few milliseconds. */
+export function settleFunctionReloadAfterSessionLoad(
+  sessionId: string,
+  headStatus: unknown,
+): void {
+  if (
+    typeof headStatus === "string"
+    && terminalFunctionStatuses.has(headStatus.trim().toLowerCase())
+  ) {
+    runtimeState.__reloadOnTaskClear.delete(sessionId);
+  }
+}
+
 function hydrateTranscriptForTreeUpdate(data: ChatResponseData): void {
   const sid = (data as { session_id?: string }).session_id;
   const path = ((data as { tree?: { path?: string } }).tree || {}).path;
@@ -509,7 +535,7 @@ function hydrateTranscriptForTreeUpdate(data: ChatResponseData): void {
   ) {
     return;
   }
-  runtimeState.__reloadOnTaskClear = sid;
+  runtimeState.__reloadOnTaskClear.add(sid);
   const sock = getSocket();
   if (sock && sock.readyState === WebSocket.OPEN) {
     sock.send(JSON.stringify({ action: "load_session", session_id: sid }));
@@ -537,11 +563,12 @@ export function handleRunningTaskClear(
   // retried run is a sibling branch whose HEAD lands at run completion,
   // so re-hydrate now — the branch view then renders only the active
   // version and the old run moves behind the < N/M > switcher.
-  if (runtimeState.__reloadOnTaskClear === sessionId) {
-    runtimeState.__reloadOnTaskClear = null;
-    const sock = getSocket();
-    if (sock && sock.readyState === WebSocket.OPEN) {
-      sock.send(JSON.stringify({ action: "load_session", session_id: sessionId }));
+  if (runtimeState.__reloadOnTaskClear.delete(sessionId)) {
+    if (runtimeState.currentSessionId === sessionId) {
+      const sock = getSocket();
+      if (sock && sock.readyState === WebSocket.OPEN) {
+        sock.send(JSON.stringify({ action: "load_session", session_id: sessionId }));
+      }
     }
   }
   return true;

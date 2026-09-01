@@ -1853,6 +1853,8 @@ function loadView(record, url) {
 // re-mounts the renderer pane, which calls ensure again — reloading
 // here would throw away scroll/form/SPA state and defeat the whole
 // persistent-view design. Explicit navigation goes through navigate.
+const HIDDEN_WEBTAB_BOUNDS = { x: 0, y: 0, width: 1280, height: 800 };
+
 function ensureView(ctx, id, url) {
   if (!ctx || typeof id !== "string" || !id) return null;
   if (tabTransfers.isLocked(id)) return null;
@@ -1864,6 +1866,10 @@ function ensureView(ctx, id, url) {
     record = { id, view, ownerId: ctx.id, navigation: null, findRequestId: null };
     ctx.views.set(id, record);
     ctx.win.contentView.addChildView(view);
+    // A never-shown Page otherwise has a 0x0 viewport, so neither Electron
+    // nor CDP can capture it. Keep a real CSS viewport while the native view
+    // stays hidden; visible layouts replace these bounds before showing it.
+    view.setBounds(HIDDEN_WEBTAB_BOUNDS);
     view.setVisible(false);
     const wc = view.webContents;
     // Native popup windows are disabled. A valid web popup is delegated to
@@ -2031,8 +2037,13 @@ function stopFindView(ctx, id, action) {
 async function captureView(ctx, id) {
   const record = recordFor(ctx, id);
   if (!record) return null;
+  const contents = record.view.webContents;
   try {
-    const image = await record.view.webContents.capturePage();
+    const image = await contents.capturePage(
+      undefined,
+      { stayHidden: true },
+    );
+    if (recordFor(ctx, id) !== record || contents.isDestroyed()) return null;
     if (!image || (typeof image.isEmpty === "function" && image.isEmpty())) {
       return null;
     }

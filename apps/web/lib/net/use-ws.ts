@@ -31,6 +31,7 @@ import {
   handleSessionsList,
   handleSessionUpdated,
   initChatPage,
+  settleFunctionReloadAfterSessionLoad,
   wsHandleChatAck,
   wsHandleChatResponse,
   wsHandleStatus,
@@ -488,8 +489,23 @@ export function useWS(): void {
           clearSessionByMsgId();
           loadSessionData(d as never);
           {
-            const dd = d as { id?: unknown; run_active?: unknown } | undefined;
+            const dd = d as {
+              id?: unknown;
+              head_id?: unknown;
+              messages?: unknown;
+              graph?: unknown;
+              run_active?: unknown;
+            } | undefined;
             if (typeof dd?.id === "string" && dd.id) {
+              const rows = [
+                ...(Array.isArray(dd.messages) ? dd.messages : []),
+                ...(Array.isArray(dd.graph) ? dd.graph : []),
+              ] as Array<{ id?: unknown; status?: unknown }>;
+              const head = rows.find((row) => row?.id === dd.head_id);
+              settleFunctionReloadAfterSessionLoad(
+                dd.id,
+                head?.status,
+              );
               void import("@/lib/state/send-queue").then((m) =>
                 m.reconcileAfterSessionLoad(dd.id as string, dd.run_active === true),
               );

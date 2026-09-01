@@ -690,8 +690,63 @@ async def handle_chat(ws, cmd: dict):
                 from openprogram.webui.routes.chat import (
                     run_agentic_function_call,
                 )
+                _validated_surface = None
+                if surface_ref is not None:
+                    _surface_window = surface_ref.get("window_id")
+                    _surface_tab = surface_ref.get("tab_id")
+                    from openprogram.webui.ws_actions import webtab
+                    _surface_version_valid = (
+                        type(surface_ref.get("version")) is int
+                        and surface_ref.get("version") == 1
+                    )
+                    _surface_tab_valid = (
+                        _surface_tab is None
+                        or (
+                            isinstance(_surface_tab, str)
+                            and bool(_surface_tab)
+                        )
+                    )
+                    _surface_window_owned = (
+                        isinstance(_surface_window, str)
+                        and bool(_surface_window)
+                        and any(
+                            owner is ws and window_id == _surface_window
+                            for owner, window_id, _revision
+                            in webtab.registered_desktop_windows()
+                        )
+                    )
+                    if not (
+                        _surface_version_valid
+                        and _surface_tab_valid
+                        and _surface_window_owned
+                    ):
+                        await ws.send_text(json.dumps({
+                            "type": "chat_response",
+                            "data": {
+                                "type": "error",
+                                "session_id": session_id,
+                                "code": "page_context_stale",
+                                "content": (
+                                    "The submitted Page context is stale or "
+                                    "belongs to another desktop window."
+                                ),
+                            },
+                        }))
+                        return
+                    _validated_surface = {
+                        "version": 1,
+                        "window_id": _surface_window,
+                    }
+                    if _surface_tab:
+                        _validated_surface["tab_id"] = _surface_tab
+                _run_options = {}
+                if _validated_surface:
+                    _run_options["origin_window_id"] = _validated_surface[
+                        "window_id"
+                    ]
+                    _run_options["surface_ref"] = _validated_surface
                 _run = run_agentic_function_call(
-                    _name, _kwargs, session_id,
+                    _name, _kwargs, session_id, **_run_options,
                 )
                 if "error" in _run:
                     await ws.send_text(json.dumps({
@@ -1045,46 +1100,27 @@ async def handle_chat(ws, cmd: dict):
         raise
 
 
-def _last_call_node(session_id: str, func_name: str):
-    """The most recent TOP-LEVEL ``func_name`` code node in the session,
-    or ``None`` if the function was never called there.
-
-    Top-level = a code node whose caller is NOT itself a code node
-    (fn-form / manual retry → caller "ROOT"; LLM-issued → an llm reply).
-    Nested sub-calls of the same name (a function that calls itself) are
-    excluded so a retry re-runs the OUTER invocation, not an internal
-    step.
-    """
+def _retry_call_node(session_id: str, node_id: str, func_name: str):
+    """Return the exact persisted top-level code node named by Retry."""
+    if not all(
+        isinstance(value, str) and value
+        for value in (session_id, node_id, func_name)
+    ):
+        return None
     from openprogram.agent.session_db import default_db
     try:
         nodes = default_db().get_nodes(session_id)
     except Exception:
         return None
     code_ids = {n.id for n in nodes if n.is_code()}
-    latest = None
-    for n in sorted(nodes, key=lambda x: x.seq):
-        if (n.is_code() and n.name == func_name
-                and isinstance(n.input, dict)
-                and n.caller not in code_ids):
-            latest = n
-    return latest
-
-
-def _last_call_kwargs(session_id: str, func_name: str):
-    """Kwargs of the most recent ``func_name`` code node in the session,
-    or ``None`` if the function was never called there.
-
-    Reads the authoritative persisted DAG node (``Call.input``) rather
-    than reconstructing kwargs from the rendered execution tree — the
-    tree stringifies / truncates params for display, so re-dispatching
-    from it could silently run the wrong arguments. ``runtime`` /
-    ``callback`` injected params are dropped (not real user args).
-    """
-    latest = _last_call_node(session_id, func_name)
-    if latest is None:
-        return None
-    return {k: v for k, v in latest.input.items()
-            if k not in ("runtime", "callback")}
+    return next((
+        node for node in nodes
+        if node.id == node_id
+        and node.is_code()
+        and node.name == func_name
+        and isinstance(node.input, dict)
+        and node.caller not in code_ids
+    ), None)
 
 
 def _call_predecessor(node) -> str:
@@ -1110,8 +1146,7 @@ def _call_predecessor(node) -> str:
 
 
 async def handle_retry_function(ws, cmd: dict):
-    """Re-run a function call's LAST invocation with the SAME kwargs, in
-    the SAME session, as a SIBLING BRANCH of the original call.
+    """Re-run the exact function code node selected by the user.
 
     Wired to the runtime-block Retry button. Mirrors chat-message retry
     (``_fork_user_turn_and_run``): the re-run is anchored at the original
@@ -1130,17 +1165,17 @@ async def handle_retry_function(ws, cmd: dict):
     if not session_id or not func_name:
         return
 
-    node = _last_call_node(session_id, func_name)
-    if node is None:
+    def _fail(message: str) -> None:
         _s._broadcast_chat_response(session_id, str(uuid.uuid4())[:8], {
             "type": "error",
-            "content": (
-                f"Retry failed: no prior {func_name!r} call found in this "
-                "session to re-run."
-            ),
+            "content": f"Retry failed: {message}",
             "function": func_name,
             "display": "runtime",
         })
+
+    node = _retry_call_node(session_id, cmd.get("node_id"), func_name)
+    if node is None:
+        _fail(f"no matching {func_name!r} call node found in this session.")
         return
 
     kwargs = {k: v for k, v in node.input.items()
@@ -1149,16 +1184,85 @@ async def handle_retry_function(ws, cmd: dict):
     # a sibling branch (same fork model as chat retry), not a stacked run.
     anchor = _call_predecessor(node)
 
+    from openprogram.webui.ws_actions import webtab
+    registered_window_id = next((
+        window_id for owner, window_id, _revision
+        in webtab.registered_desktop_windows()
+        if owner is ws
+    ), None)
+    clicked_surface = (
+        cmd.get("surface_ref")
+        if isinstance(cmd.get("surface_ref"), dict) else None
+    )
+    metadata = node.metadata if isinstance(node.metadata, dict) else {}
+    if "surface_origin" in metadata:
+        stored_origin = metadata["surface_origin"]
+        stored_version = (
+            stored_origin.get("version")
+            if isinstance(stored_origin, dict) else None
+        )
+        stored_window = (
+            stored_origin.get("window_id")
+            if isinstance(stored_origin, dict) else None
+        )
+        stored_tab = (
+            stored_origin.get("tab_id")
+            if isinstance(stored_origin, dict)
+            and "tab_id" in stored_origin else None
+        )
+        stored_version_valid = (
+            type(stored_version) is int and stored_version == 1
+        )
+        stored_window_valid = (
+            isinstance(stored_window, str) and bool(stored_window)
+        )
+        stored_tab_valid = (
+            stored_tab is None
+            or (isinstance(stored_tab, str) and bool(stored_tab))
+        )
+        if not (
+            stored_version_valid and stored_window_valid and stored_tab_valid
+        ):
+            _fail("the selected call has an invalid stored Page origin.")
+            return
+        if registered_window_id != stored_window:
+            _fail("the original desktop window is no longer connected here.")
+            return
+        origin_window_id = stored_window
+        surface_ref = (
+            {
+                "version": 1,
+                "window_id": stored_window,
+                "tab_id": stored_tab,
+            }
+            if stored_tab else None
+        )
+    else:
+        # Nodes created before surface_origin was persisted may use the
+        # exact Page reported by the desktop at click time.
+        origin_window_id = registered_window_id
+        surface_ref = clicked_surface
+        surface_window_id = (
+            surface_ref.get("window_id")
+            if isinstance(surface_ref, dict)
+            and isinstance(surface_ref.get("window_id"), str)
+            else None
+        )
+        if surface_ref and (
+            not origin_window_id or surface_window_id != origin_window_id
+        ):
+            _fail("surface belongs to another desktop window.")
+            return
+    options = {"anchor_msg_id": anchor}
+    if origin_window_id:
+        options["origin_window_id"] = origin_window_id
+    if surface_ref:
+        options["surface_ref"] = surface_ref
     result = run_agentic_function_call(
-        func_name, kwargs, session_id, anchor_msg_id=anchor,
+        func_name, kwargs, session_id, **options,
     )
     if "error" in result:
-        _s._broadcast_chat_response(session_id, str(uuid.uuid4())[:8], {
-            "type": "error",
-            "content": f"Retry failed: {result['error']}",
-            "function": func_name,
-            "display": "runtime",
-        })
+        _fail(result["error"])
         return
     await ws.send_text(json.dumps({
         "type": "chat_ack",
@@ -1169,7 +1273,11 @@ async def handle_retry_function(ws, cmd: dict):
         # after the spawned child's import finishes). See wsHandleChatAck.
         "data": {"session_id": result.get("session_id", session_id),
                  "msg_id": result.get("msg_id", ""),
-                 "execution_id": result.get("msg_id") or result.get("execution_id") or "",
+                 "execution_id": (
+                     result.get("execution_id")
+                     or result.get("msg_id")
+                     or ""
+                 ),
                  "function_run": True},
     }))
 

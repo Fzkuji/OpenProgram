@@ -18,6 +18,7 @@ const COMPOSER_PARTS = [
   "input/use-history-recall.ts",
   "input/use-composer-keydown.ts",
   "modes/composer-body.tsx",
+  "modes/fn-form/use-function-dispatch.ts",
   "modes/fn-form/use-fn-form-submit.ts",
   "controls/controls-cluster.tsx",
   "environment-row/chips/connection-status-chip.tsx",

@@ -3,9 +3,9 @@
 /**
  * Chat turn submit + stop.
  *
- * `submit` covers three outcomes in priority order: a mid-run queue/steer
- * decision, a slash command, or a
- * normal turn. A normal turn
+ * `submit` first recognizes a whole-input registered function expression,
+ * then covers a mid-run queue/steer decision, a slash command, or a normal
+ * turn. A normal turn
  * expands long-paste tokens and `@path` mentions, converts pending docs
  * into path mentions plus `type:"document"` attachments, and hands the
  * payload to `sendChatMessage` — the bridge that fires the optimistic user
@@ -18,8 +18,11 @@
 import { useCallback } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
+import { parseFunctionInvocation } from "@/lib/function-invocation";
+import { showToast } from "@/lib/format-utils/toast";
 import { enqueueMessage } from "@/lib/state/send-queue";
 import { steerQueuedMessage } from "@/lib/state/steer-message";
+import { useFunctions } from "@/lib/state/functions-store";
 import { buildAttachmentEnvelope } from "@/lib/attachment-marker";
 import { expandAtMentions } from "../attach/at-mention";
 import { expandPasteTokens, missingPasteIds } from "../paste/paste-store";
@@ -27,6 +30,7 @@ import { sendChatMessage } from "./send-chat-message";
 import { resolveFnFormSessionId } from "../modes/fn-form/session-target";
 import type { useComposerAttachments } from "../attach/use-composer-attachments";
 import type { useSlashMenu } from "../slash/use-slash-menu";
+import type { FunctionDispatcher } from "../modes/fn-form/use-function-dispatch";
 
 type Attachments = ReturnType<typeof useComposerAttachments>;
 
@@ -52,6 +56,7 @@ export interface ChatSubmitOptions {
   fastEnabled: boolean;
   fastSupported: boolean;
   runningMessageMode: "queue" | "steer";
+  dispatchFunction: FunctionDispatcher;
 }
 
 export function useChatSubmit({
@@ -76,10 +81,35 @@ export function useChatSubmit({
   fastEnabled,
   fastSupported,
   runningMessageMode,
+  dispatchFunction,
 }: ChatSubmitOptions) {
   const submit = useCallback(async () => {
     const submitOwnerKey = activeChatKey ?? currentSessionId;
     const trimmed = input.trim();
+    const invocation = parseFunctionInvocation(
+      trimmed,
+      useFunctions.getState().functions,
+    );
+    if (invocation.kind === "invalid") {
+      useSessionStore.getState().openFnForm(invocation.fn, invocation.prefill);
+      showToast(`Invalid function call: ${invocation.error}`, { tone: "error" });
+      return;
+    }
+    if (invocation.kind === "valid") {
+      if (pendingImages.length > 0 || pendingDocs.length > 0) {
+        showToast(
+          "Attachments cannot be added to a direct function call. Remove them or send a normal message.",
+          { tone: "error" },
+        );
+        return;
+      }
+      const accepted = dispatchFunction(invocation.fn, invocation.kwargs);
+      if (!accepted) return;
+      setComposerInputFor(submitOwnerKey, "");
+      setHistoryIndex(-1);
+      slash.close();
+      return;
+    }
     // During a run every plain-text send first gets one retained queue row.
     // Queue mode leaves it there; steer mode marks that same row injecting
     // until steer_ack either accepts it or releases it back to normal drain.
@@ -223,6 +253,7 @@ export function useChatSubmit({
     fastEnabled,
     fastSupported,
     runningMessageMode,
+    dispatchFunction,
     // ponytail: `bound` and `setHistoryIndex` are stable for a composer
     // instance, so the pre-split dep list omitted them; kept identical.
     // eslint-disable-next-line react-hooks/exhaustive-deps

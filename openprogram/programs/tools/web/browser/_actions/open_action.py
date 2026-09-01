@@ -182,6 +182,7 @@ def _open_app_session(
             request_active_tab,
             request_bound_tab,
             request_open_tab,
+            validated_open_ownership,
         )
         if binding_id:
             reply = request_bound_tab(
@@ -240,7 +241,11 @@ def _open_app_session(
         "app_tab_id": reply.get("tab_id"),
         "app_target_id": target_id,
         "app_binding_id": binding_id or reply.get("binding_id"),
-        "app_agent_opened": not binding_id and bool(url),
+        "app_agent_opened": (
+            not binding_id
+            and bool(url)
+            and validated_open_ownership(reply).get("created") is True
+        ),
     }
     return (
         f"Opened browser session `{session_id}` "

@@ -22,6 +22,19 @@ def harness_on_path():
     return root
 
 
+def test_legacy_harness_json_parser_imports_resolve():
+    from openprogram.programs.agentic_functions._utils import (
+        parse_json as parse_from_utils,
+    )
+    from openprogram.programs.agentic_functions.json_parsing import (
+        parse_json as parse_from_module,
+    )
+    from openprogram.programs.workflow.json_parsing import parse_json
+
+    assert parse_from_utils is parse_json
+    assert parse_from_module is parse_json
+
+
 def _stub_harness_loop(monkeypatch, *, step_result=None, conclusion_result=None):
     """gui_agent imports execute_task at call time; stub it so cv2 stays unused."""
     execute_task = types.ModuleType("gui_harness.tasks.execute_task")
@@ -72,6 +85,49 @@ def test_gui_agent_fail_forces_success_false(harness_on_path, monkeypatch):
     assert result["summary"] == "FAIL/INFEASIBLE need human login"
     assert result["handoff_instruction"] == "FAIL/INFEASIBLE need human login"
     assert stubs["seen"].get("infeasible") is True
+
+
+def test_gui_agent_real_modules_preserve_infeasible(
+    harness_on_path, monkeypatch,
+):
+    """Import the committed harness module graph before replacing leaf calls."""
+    import importlib
+
+    if importlib.util.find_spec("cv2") is None:
+        pytest.skip("real GUI harness test requires the optional opencv-python dependency")
+
+    execute_task = importlib.import_module("gui_harness.tasks.execute_task")
+    result_module = importlib.import_module("gui_harness.tasks.result")
+    monkeypatch.setattr(
+        execute_task,
+        "gui_step",
+        lambda **_kwargs: {
+            "done": True,
+            "infeasible": True,
+            "plan": {
+                "call": "fail",
+                "args": {"reasoning": "FAIL/INFEASIBLE take over login"},
+            },
+        },
+    )
+    monkeypatch.setattr(result_module, "save_workflow_record", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        result_module,
+        "conclusion",
+        lambda **_kwargs: {
+            "summary": "incorrect optimistic conclusion",
+            "success": True,
+            "issues": None,
+        },
+    )
+
+    from gui_harness.main import gui_agent
+
+    result = gui_agent(task="need login", max_steps=1, runtime=object())
+
+    assert result["success"] is False
+    assert result["infeasible_declared"] is True
+    assert result["handoff_instruction"] == "FAIL/INFEASIBLE take over login"
 
 
 def test_gui_agent_step_limit_cannot_be_overridden_by_conclusion(
@@ -152,3 +208,22 @@ def test_gui_agent_conclusion_error_invalidates_success(harness_on_path, monkeyp
     assert result["status"] == "failed"
     assert result["reason_code"] == "conclusion_error"
     assert result["success"] is False
+
+
+def test_bridge_canonicalizes_all_infeasible_contract_fields():
+    from openprogram.programs.gui_harness_bridge import _normalize_gui_result
+
+    result = _normalize_gui_result({
+        "status": "infeasible",
+        "success": True,
+        "infeasible_declared": False,
+        "reason_code": "completed",
+        "summary": "A human must complete login.",
+        "handoff_instruction": "",
+    })
+
+    assert result["status"] == "infeasible"
+    assert result["success"] is False
+    assert result["infeasible_declared"] is True
+    assert result["reason_code"] == "infeasible"
+    assert result["handoff_instruction"] == "A human must complete login."

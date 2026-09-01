@@ -15,8 +15,8 @@ const fileTreeCss = source("components/files/files-panel.module.css");
 const projectsPage = source("components/projects/projects-page.tsx");
 const projectsCss = source("components/projects/projects-page.module.css");
 const sessionsList = source("components/sidebar/sessions-list.tsx");
-const fnFormSubmit = source(
-  "components/chat/composer/modes/fn-form/use-fn-form-submit.ts",
+const functionDispatch = source(
+  "components/chat/composer/modes/fn-form/use-function-dispatch.ts",
 );
 const workflowSource = source(
   "../../openprogram/programs/workflow/auto_workflow.py",
@@ -39,9 +39,19 @@ assert.match(projectMenu, /setPendingProject\(activeChatKey, created\.project\.i
 assert.match(workingDirs, /pendingProjectsByChat\[activeChatKey\]/);
 assert.match(workingDirs, /pendingProjectId \?\? currentProjectId/);
 assert.match(
-  fnFormSubmit,
+  functionDispatch,
   /if \(pendingProjectId\) body\.project_id = pendingProjectId/,
   "a direct workflow call must bind the selected Project before execution",
+);
+assert.match(
+  functionDispatch,
+  /const windowId = desktopBridge\(\)\?\.windowId;[\s\S]*?body\.window_id = windowId/,
+  "a direct GUI function call must preserve its originating desktop window",
+);
+assert.match(
+  functionDispatch,
+  /surfaceOriginForChat\(dispatchSessionId, true\)[\s\S]*?body\.surface_ref = surface/,
+  "the Function form must submit the same exact Page descriptor as chat",
 );
 assert.match(
   workflowSource,

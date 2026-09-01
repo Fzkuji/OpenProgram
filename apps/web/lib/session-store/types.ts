@@ -26,6 +26,10 @@ export interface FnParam {
   default?: string;
   placeholder?: string;
   hidden?: boolean;
+  /** User-settable but collapsed below the primary fields. Unlike hidden
+   *  internal runtime parameters, advanced fields are valid direct-call
+   *  arguments and appear in the FunctionForm's Advanced section. */
+  advanced?: boolean;
   multiline?: boolean;
   options?: string[];
   options_from?: string;
@@ -146,7 +150,7 @@ export interface ChatMsg {
   /** Tool calls made during this assistant turn, in emit order. */
   tools?: ChatToolCall[];
   status?: MessageStatus;
-  function?: string;           // if this was /run
+  function?: string;           // if this is a direct function run
   display?: "runtime" | "normal";
   /** Pass-through of metadata.source from the server so the client
    *  can distinguish "real user typed" vs internal synthetic turns
@@ -179,7 +183,7 @@ export interface ChatMsg {
   errorReason?: string;
   errorRetryable?: boolean;
   errorRetryAfterS?: number;
-  /** Execution tree captured with a `/run` result, rendered inside the
+  /** Execution tree captured with a function result, rendered inside the
    *  runtime block. */
   contextTree?: TreeNode;
   /** Provider usage for the runtime block footer. Opaque — passed

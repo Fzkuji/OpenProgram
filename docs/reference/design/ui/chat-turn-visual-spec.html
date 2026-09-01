@@ -469,8 +469,17 @@ Agent 回复发起的 function 及其执行树只属于该回复的执行时间�
 <b>实现状态：</b>生产组件已使用收起实心、展开空心的圆点状态；收起态是均匀、不透明、能够遮住连接线的浅色色面，圆形色面连续缩小并露出原有连接线，子内容以同一个 220ms 过渡展开或折叠，外径统一为主层 26px、子层 23px。其余既有行为不变：所有时间线行均提供复制操作，右侧展开箭头和步骤数提示已移除。</div>
 
 <!-- ═══════ 3. 手动函数运行 ═══════ -->
-<h2><span class="num">3</span>手动函数运行：同一条时间线 + 消息式 footer</h2>
-<div class="desc">表单（fn-form）或 <code>//run</code> 手动发起的函数调用<b>不再有独立卡片样式</b>——保留左侧 Function 类型头像，右侧使用同一条无框时间线；该头像只标识调用类型，不表示 Agent 发言。展开运行摘要后，根行只展示直接子节点；每个子节点的后代仍默认折叠，由用户逐层展开。顶部折叠标题、Conclusion 和底部消息式 footer 都是 <code>.runtime-program-content</code> 的直接内容，左缘统一从 0px 起点开始；footer 不再额外增加 2px 左内边距。把鼠标移进下面区域试。</div>
+<h2><span class="num">3</span>手动函数运行：一个 FunctionInvocation，两种输入方式</h2>
+<div class="desc">函数表单和完整函数表达式是同一个 <code>FunctionInvocation { name, kwargs }</code> 的两种编辑方式。表单点“运行”直接提交 typed kwargs；普通输入框中的整段文本若精确匹配一个已注册函数及其命名参数，也在创建 user message 之前转换成同一个对象并提交。两者都只产生下面这一条 ProgramRun，不创建 UserBubble，也不经过一次额外的 Agent 文本回合。带前后说明文字、反引号或代码围栏的函数片段仍是普通消息，避免把讨论代码误执行。</div>
+<table class="path-table">
+  <thead><tr><th>输入</th><th>入口判定</th><th>持久化与显示</th></tr></thead>
+  <tbody>
+    <tr><td><code>gui_agent(task=&quot;…&quot;, surface=&quot;browser&quot;)</code></td><td>整段精确匹配、函数已注册、仅命名字面量参数</td><td><code>POST /api/function/gui_agent</code> → 单条 ProgramRun</td></tr>
+    <tr><td>Favorite Programs 的 gui_agent 表单</td><td>表单 schema 生成同一个 typed kwargs</td><td><code>POST /api/function/gui_agent</code> → 单条 ProgramRun</td></tr>
+    <tr><td><code>请解释 gui_agent(...)</code> 或 <code>`gui_agent(...)`</code></td><td>不是整段函数表达式</td><td>普通 UserMessage → Agent</td></tr>
+  </tbody>
+</table>
+<div class="desc">识别器不执行 JavaScript/Python，不支持位置参数、属性访问、变量或任意表达式；它只解析字符串、数值、布尔、null 和函数 schema 允许的平面命名参数。缺少必填项或类型不合法时保留草稿、打开同一个表单并显示参数错误，不降级成聊天消息。运行展示保留左侧 Function 类型头像和右侧无框时间线；该头像只标识 ProgramRun 类型，不表示 Agent 发言。展开运行摘要后，根行只展示直接子节点；每个子节点的后代仍默认折叠，由用户逐层展开。</div>
 <div class="stage run-host">
   <div class="runtime-program-run">
     <div class="runtime-program-avatar" aria-hidden="true">ƒ</div>
@@ -524,9 +533,10 @@ Agent 回复发起的 function 及其执行树只属于该回复的执行时间�
     </div>
   </div>
 </div>
-<div class="rule">顶部折叠标题、Conclusion 和 footer 共享同一个内容列起点，不使用各自的 left、padding-left、margin-left 或 transform 做视觉补偿。footer 与聊天消息的 footer 同款（同一套图标按钮 + 时间戳，悬停显现），justify-content:flex-start；Conclusion 或直接结果到 footer 的垂直间距固定复用 assistant 正文到 footer 的 14px 视觉段落间距，不另设紧凑间距；版本切换<b>复用聊天的 .message-nav 组件</b>（◀ N/M ▶），不另造样式。footer 的复制复制<b>根调用的实际结果</b>（error ?? output），不是参数 JSON。<br>
+<div class="rule"><b>入口合同：</b>FunctionForm 和精确函数表达式共用一个 kwargs 类型转换器和一个 HTTP 提交器；聊天提交只负责在其前面做精确识别，不能复制函数运行的占位、Project、channel、session 导航或错误回滚逻辑。识别成功后不得调用 <code>sendChatMessage</code>，不得写 pending user text。附件、运行中排队和系统 decision 不隐式变成函数参数。<br>
+顶部折叠标题、Conclusion 和 footer 共享同一个内容列起点，不使用各自的 left、padding-left、margin-left 或 transform 做视觉补偿。footer 与聊天消息的 footer 同款（同一套图标按钮 + 时间戳，悬停显现），justify-content:flex-start；Conclusion 或直接结果到 footer 的垂直间距固定复用 assistant 正文到 footer 的 14px 视觉段落间距，不另设紧凑间距；版本切换<b>复用聊天的 .message-nav 组件</b>（◀ N/M ▶），不另造样式。footer 的复制复制<b>根调用的实际结果</b>（error ?? output），不是参数 JSON。<br>
 <b>分支语义</b>：重试 = <b>参数不变的兄弟分支</b>；修改（Edit）= 把上一次的参数预填回表单、提交后作为<b>可改参数的兄弟分支</b>运行（fork_of_node → 锚到原调用的前驱）。两者都在原位替换显示、旧运行经 ◀ N/M ▶ 仍可回看——<b>绝不在会话尾部追加新调用</b>。运行中占位 = 单条呼吸点行；嵌套在别的消息里（nested）时不渲染 footer。<br>
-<b>实现状态：</b>生产函数 footer 已移除额外左内边距，时间行、折叠标题和 Conclusion 严格共享同一左缘。</div>
+<b>实现状态：</b>生产函数 footer 已移除额外左内边距，时间行、折叠标题和 Conclusion 严格共享同一左缘。精确函数表达式、FunctionForm、共享 HTTP dispatcher、Advanced 参数分组和 bound 会话隔离均已实现；<code>function-invocation.test.mjs</code> 覆盖直接调用、普通文本边界、typed kwargs、成功绑定、导航与失败回滚，GUI 不可执行结果和 metadata 由对应 Python 回归覆盖，并已通过独立规格审查。</div>
 
 <!-- ═══════ 4. Sub-agent 当前行为 ═══════ -->
 <h2><span class="num">4</span>Sub-agent 实时显示现状：记录保留，执行区默认收起</h2>

@@ -28,6 +28,8 @@ _FUNCTION_BODY_CONTROL_KEYS = {
     "_session_id",
     "project_id",
     "response_format",
+    "window_id",
+    "surface_ref",
 }
 
 
@@ -182,6 +184,36 @@ def register(app):
         }
         if isinstance(project_id, str) and project_id:
             dispatch_options["project_id"] = project_id
+        surface_ref = (
+            body.get("surface_ref")
+            if isinstance(body.get("surface_ref"), dict) else None
+        )
+        origin_window_id = (
+            body.get("window_id")
+            if isinstance(body.get("window_id"), str) else None
+        )
+        surface_window_id = (
+            surface_ref.get("window_id")
+            if isinstance(surface_ref, dict)
+            and isinstance(surface_ref.get("window_id"), str)
+            else None
+        )
+        if (
+            origin_window_id and surface_window_id
+            and origin_window_id != surface_window_id
+        ):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "surface belongs to another desktop window",
+                    "code": "surface_window_mismatch",
+                },
+            )
+        effective_window_id = origin_window_id or surface_window_id
+        if effective_window_id:
+            dispatch_options["origin_window_id"] = effective_window_id
+        if surface_ref:
+            dispatch_options["surface_ref"] = surface_ref
         result = run_agentic_function_call(
             name,
             kwargs,
@@ -208,6 +240,8 @@ def run_agentic_function_call(
     anchor_msg_id: str | None = None,
     response_format=None,
     project_id: str | None = None,
+    origin_window_id: str | None = None,
+    surface_ref: dict | None = None,
 ) -> dict:
     """Dispatch an @agentic_function via the forced tool-call path and
     return ``{"session_id", "msg_id"}`` (or ``{"error", "status_code",
@@ -300,23 +334,27 @@ def run_agentic_function_call(
             }
         default_db().update_session(session_id, project_id=project_id)
         _projects.bind_session(session_id, project_id)
-    # Reject a second run while one is already in flight in this session.
-    # The chat/retry path already guards via _is_run_active; the fn-form /
-    # Retry entry point did not, so two concurrent runs could advance HEAD
-    # at the same time and interleave the conversation chain (corrupt
-    # siblings, a dropped running_task entry from the setdefault below).
-    # Same 409 the chat retry path returns.
-    if _s._is_run_active(session_id):
+    msg_id = uuid.uuid4().hex[:8]
+    # Claim the same atomic session occupancy used by chat before mutating
+    # the DAG. The reservation covers parent-side node creation; activation
+    # below hands ownership to the direct function worker.
+    if not _s._try_reserve_run(session_id, msg_id):
         return {
-            "error": (
-                "a run is currently active in this session — wait for it "
-                "to finish or stop it first"
-            ),
+            "error": _s.RUN_ACTIVE_ERROR,
             "code": "run_active",
             "status_code": 409,
         }
-    provider, model = _s._runtime_management._resolve_session_provider_model(conv)
+    try:
+        provider, model = _s._runtime_management._resolve_session_provider_model(conv)
+    except Exception as exc:
+        _s._release_run_reservation(session_id, msg_id)
+        return {
+            "error": f"failed to resolve the session model: {type(exc).__name__}: {exc}",
+            "code": "model_resolution_failed",
+            "status_code": 500,
+        }
     if not provider:
+        _s._release_run_reservation(session_id, msg_id)
         return {
             "error": (
                 "No model available for this session. Enable a model or "
@@ -333,14 +371,25 @@ def run_agentic_function_call(
     # the run's caller so it forks as a sibling of the original.
     if anchor_msg_id is None:
         anchor_msg_id = ""
-    work_dir = _resolve_work_dir(session_id)
-    # msg_id is only a WS-routing handle for the response stream;
-    # it is never written to the DAG. The code node written by the
+    try:
+        work_dir = _resolve_work_dir(session_id)
+        from openprogram.agent.session_db import default_db as _rc_db2
+        agent_id = (
+            (_rc_db2().get_session(session_id) or {}).get("agent_id")
+            or _s._default_agent_id()
+        )
+    except Exception as exc:
+        _s._release_run_reservation(session_id, msg_id)
+        return {
+            "error": f"failed to prepare function execution: {type(exc).__name__}: {exc}",
+            "code": "function_setup_failed",
+            "status_code": 500,
+        }
+    # msg_id is only a WS-routing handle for the response stream; it is
+    # never written to the DAG. The code node written by the
     # @agentic_function is the canonical record: a NEW run (empty anchor)
     # gets the predecessor field = the session head (or ROOT for an empty
     # session); a Retry (explicit pred:<id> anchor) forks off that id.
-    msg_id = uuid.uuid4().hex[:8]
-
     # Ensure the session ROOT node exists so a run that anchors at ROOT
     # (empty session, or a legacy retry) resolves to a real node. No
     # anchor row is written for the run itself.
@@ -411,6 +460,26 @@ def run_agentic_function_call(
                 store=_shim,
             )
             if _node is not None:
+                _origin_window = (
+                    origin_window_id.strip()[:512]
+                    if isinstance(origin_window_id, str) else ""
+                )
+                _origin_tab = (
+                    surface_ref.get("tab_id", "").strip()[:512]
+                    if _origin_window
+                    and isinstance(surface_ref, dict)
+                    and surface_ref.get("window_id") == origin_window_id
+                    and isinstance(surface_ref.get("tab_id"), str)
+                    else ""
+                )
+                if _origin_window:
+                    _surface_origin = {
+                        "version": 1,
+                        "window_id": _origin_window,
+                    }
+                    if _origin_tab:
+                        _surface_origin["tab_id"] = _origin_tab
+                    _node.metadata["surface_origin"] = _surface_origin
                 if _hidden:
                     _node.input = None
                     _node.metadata.update({
@@ -427,14 +496,21 @@ def run_agentic_function_call(
         except Exception as exc:
             _precreate_error = exc
     if _precreate_error is not None:
+        _s._release_run_reservation(session_id, msg_id)
         return {
             "error": "failed to persist the execution record",
             "code": "execution_record_failed",
             "status_code": 500,
         }
 
-    from openprogram.agent.session_db import default_db as _rc_db2
-    agent_id = (_rc_db2().get_session(session_id) or {}).get("agent_id") or _s._default_agent_id()
+    execution_id = _forced_node_id or f"{msg_id}_reply"
+    with _s._running_tasks_lock:
+        _reserved_task = _s._running_tasks.get(session_id)
+        if _reserved_task and _reserved_task.get("msg_id") == msg_id:
+            _reserved_task.update({
+                "func_name": name,
+                "execution_id": execution_id,
+            })
 
     # Stage-1 title (immediate placeholder): the call signature, so
     # the sidebar row shows instantly and the session survives a
@@ -465,9 +541,23 @@ def run_agentic_function_call(
         pass
 
     def _run():
-        from openprogram.agent.dispatcher import dispatch_forced_tool_call
         try:
             try:
+                from openprogram.agent.dispatcher import dispatch_forced_tool_call
+                surface_snapshot = None
+                if origin_window_id:
+                    from openprogram.agent.surface_context import window_context
+
+                    preferred_tab_id = (
+                        str(surface_ref.get("tab_id") or "")
+                        if isinstance(surface_ref, dict)
+                        and surface_ref.get("window_id") == origin_window_id
+                        else ""
+                    )
+                    surface_snapshot = window_context(
+                        origin_window_id,
+                        preferred_tab_id=preferred_tab_id,
+                    )
                 out = dispatch_forced_tool_call(
                     session_id=session_id,
                     anchor_msg_id=anchor_msg_id,
@@ -480,6 +570,7 @@ def run_agentic_function_call(
                     model=model,
                     response_format=response_format,
                     execution_id=_forced_node_id,
+                    surface_context_snapshot=surface_snapshot,
                     on_event=lambda env: _s._broadcast_envelope(env)
                         if hasattr(_s, "_broadcast_envelope")
                         else _s._broadcast(__import__("json").dumps(env, default=str)),
@@ -512,37 +603,59 @@ def run_agentic_function_call(
             # never did — only set it on start). Mirrors
             # _execute/chat.py:277-278.
             try:
-                with _s._running_tasks_lock:
-                    gone = _s._running_tasks.pop(session_id, None)
-                _s._emit_running_task_event(
-                    session_id,
-                    cleared_msg_id=(gone or {}).get("msg_id"),
-                    cleared_execution_id=(gone or {}).get("execution_id"),
-                )
+                if _s._finish_owned_run(session_id, msg_id):
+                    _s._emit_running_task_event(
+                        session_id,
+                        cleared_msg_id=msg_id,
+                        cleared_execution_id=execution_id,
+                    )
             except Exception:
                 pass
 
-    # Mark the session running BEFORE starting the thread so its
-    # sidebar row shows the flowing animation (convRunningFlow)
-    # immediately — same signal the chat path emits at chat_ack. Must
-    # precede Thread.start(): a very fast function could otherwise hit
-    # its finalize pop before this setdefault runs, re-pinning the
-    # session as "running" forever. The thread's finally pops it +
-    # emits running_task_clear when the run ends.
     try:
-        with _s._running_tasks_lock:
-            _s._running_tasks.setdefault(session_id, {
-                "msg_id": msg_id, "func_name": name,
-                "started_at": time.time(), "last_event_at": time.time(),
-                "display_params": "", "loaded_func_ref": None,
-                "stream_events": [],
-                "execution_id": _forced_node_id,
-            })
-        _s._emit_running_task_event(session_id)
-    except Exception:
-        pass
+        worker = threading.Thread(target=_run, daemon=True)
+    except BaseException as exc:
+        _s._release_run_reservation(session_id, msg_id)
+        if _forced_node_id:
+            from openprogram.agent.run_control import mark_execution_terminal
+            mark_execution_terminal(_forced_node_id, "error")
+        return {
+            "error": f"failed to create function execution: {type(exc).__name__}: {exc}",
+            "code": "function_start_failed",
+            "status_code": 500,
+        }
 
-    threading.Thread(target=_run, daemon=True).start()
+    if not _s._activate_run_reservation(session_id, msg_id, worker):
+        if _forced_node_id:
+            from openprogram.agent.run_control import mark_execution_terminal
+            mark_execution_terminal(_forced_node_id, "error")
+        return {
+            "error": "function execution reservation was lost before startup",
+            "code": "function_start_failed",
+            "status_code": 409,
+        }
+    _s._emit_running_task_event(session_id)
+
+    try:
+        worker.start()
+    except BaseException as exc:  # thread creation/start must roll back occupancy
+        if _forced_node_id:
+            try:
+                from openprogram.agent.run_control import mark_execution_terminal
+                mark_execution_terminal(_forced_node_id, "error")
+            except Exception:
+                pass
+        if _s._finish_owned_run(session_id, msg_id):
+            _s._emit_running_task_event(
+                session_id,
+                cleared_msg_id=msg_id,
+                cleared_execution_id=execution_id,
+            )
+        return {
+            "error": f"failed to start function execution: {type(exc).__name__}: {exc}",
+            "code": "function_start_failed",
+            "status_code": 500,
+        }
 
     # The fn-form path creates the session row directly (no WS
     # action ran), so the sidebar — which only fetches the list on

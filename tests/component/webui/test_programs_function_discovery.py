@@ -3,6 +3,7 @@ from pathlib import Path
 from openprogram.webui._functions import (
     _discover_workflow_functions,
     _extract_all_functions,
+    _extract_function_info,
 )
 
 
@@ -181,17 +182,54 @@ def test_goal_form_exposes_only_prompt_and_condition() -> None:
     assert visible == ["prompt"]
 
 
-def test_gui_agent_form_exposes_only_supported_public_inputs() -> None:
-    root = Path(__file__).parents[3]
-    source = root / "openprogram/programs/gui_harness_bridge.py"
-    assert source.is_file()
-    extracted = [
+def test_gui_agent_form_exposes_primary_and_advanced_parameters() -> None:
+    source = (
+        Path(__file__).parents[3]
+        / "openprogram/programs/gui_harness_bridge.py"
+    )
+    gui = next(
         info for info in _extract_all_functions(str(source), "app")
         if info["name"] == "gui_agent"
+    )
+
+    primary = [
+        param["name"] for param in gui["params_detail"]
+        if not param.get("hidden")
     ]
-    assert len(extracted) == 1
-    params = extracted[0]["params_detail"]
-    assert [p["name"] for p in params if not p.get("hidden")] == ["task", "surface"]
+    advanced = {
+        param["name"] for param in gui["params_detail"]
+        if param.get("advanced")
+    }
+    user_params = {
+        param["name"] for param in gui["params_detail"]
+        if not param.get("hidden") or param.get("advanced")
+    }
+
+    assert primary == ["task", "surface"]
+    assert advanced == {"max_steps", "max_seconds", "app_name", "backend"}
+    assert user_params == {*primary, *advanced}
+
+
+def test_function_info_preserves_advanced_input_metadata(tmp_path: Path) -> None:
+    source = tmp_path / "advanced_function.py"
+    source.write_text(
+        '@agentic_function(input={\n'
+        '    "max_steps": {"hidden": True, "advanced": True},\n'
+        '})\n'
+        'def advanced_function(task: str, max_steps: int = 3) -> str:\n'
+        '    """Run one task."""\n'
+        '    return task\n',
+        encoding="utf-8",
+    )
+
+    info = _extract_function_info(str(source), "advanced_function", "app")
+
+    assert info is not None
+    max_steps = next(
+        param for param in info["params_detail"] if param["name"] == "max_steps"
+    )
+    assert max_steps["hidden"] is True
+    assert max_steps["advanced"] is True
 
 
 def test_registered_workflow_is_available_to_favorites(

@@ -29,6 +29,19 @@ def _noop(_: dict) -> None:
     pass
 
 
+def _subprocess_terminal_status(out: dict, metadata: dict | None = None) -> str:
+    """Classify one subprocess result without overriding cancel intent."""
+    if out.get("timed_out") or out.get("error"):
+        return "error"
+    if out.get("killed"):
+        cancellation_requested = bool(
+            (metadata or {}).get("cancellation_requested_at")
+            or (metadata or {}).get("status") in {"cancelling", "cancelled"}
+        )
+        return "cancelled" if cancellation_requested else "interrupted"
+    return "completed"
+
+
 # Sentinel: "caller did not specify predecessor, dispatcher should pick"
 # vs explicit ``None`` which means "fork from root". The two cases need
 # different behavior — see TurnRequest.caller.

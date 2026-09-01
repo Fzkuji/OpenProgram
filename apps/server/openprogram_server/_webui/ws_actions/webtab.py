@@ -11,6 +11,8 @@ installDesktopMenuHandlers）收到后 openWebTab(url) 并经同一条 WS 回
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import itertools
 import json
 import threading
@@ -27,6 +29,39 @@ _connection_revisions: dict[Any, int] = {}
 _page_revisions: dict[tuple[int, str], int] = {}
 _desktop_windows: dict[Any, str] = {}
 _next_revision = itertools.count(1)
+RESPONSE_TIMEOUT_REASON_CODE = "desktop_response_timeout"
+_PNG_DATA_URL_PREFIX = "data:image/png;base64,"
+# Leave JSON framing headroom below Uvicorn's 16 MiB WebSocket message limit.
+_MAX_SCREENSHOT_DATA_URL_CHARS = 12 * 1024 * 1024
+
+
+def validated_open_ownership(value: Any) -> dict[str, bool]:
+    """Return a trusted created/reused pair, or no ownership evidence."""
+    if not isinstance(value, dict):
+        return {}
+    created = value.get("created")
+    reused = value.get("reused")
+    if type(created) is not bool or type(reused) is not bool or created == reused:
+        return {}
+    return {"created": created, "reused": reused}
+
+
+def _validated_png_data_url(value: Any) -> str | None:
+    """Return one bounded, base64-valid PNG data URL from the renderer."""
+    if (
+        not isinstance(value, str)
+        or len(value) <= len(_PNG_DATA_URL_PREFIX)
+        or len(value) > _MAX_SCREENSHOT_DATA_URL_CHARS
+        or not value.startswith(_PNG_DATA_URL_PREFIX)
+    ):
+        return None
+    try:
+        raw = base64.b64decode(
+            value[len(_PNG_DATA_URL_PREFIX):], validate=True,
+        )
+    except (binascii.Error, ValueError):
+        return None
+    return value if raw.startswith(b"\x89PNG\r\n\x1a\n") else None
 
 
 def _payload(command: dict, req_id: str) -> str:
@@ -51,7 +86,11 @@ def _wait_for_reply(
     try:
         send(_payload(command, req_id))
         if not ev.wait(timeout):
-            return {"ok": False, "error": f"timeout: no desktop shell replied within {timeout:g}s"}
+            return {
+                "ok": False,
+                "reason_code": RESPONSE_TIMEOUT_REASON_CODE,
+                "error": f"timeout: no desktop shell replied within {timeout:g}s",
+            }
         return holder.get("result") or {"ok": False, "error": "empty reply"}
     finally:
         with _lock:
@@ -322,6 +361,91 @@ def request_bound_tab(
     return result
 
 
+def request_bound_screenshot(
+    binding_id: str,
+    *,
+    timeout: float = 5.0,
+    expected_page_revision: int = 0,
+    expected_access_revision: int = 0,
+    expected_geometry_revision: int = 0,
+) -> dict:
+    """Capture one exact Page through Electron without revealing the view."""
+    import os
+    if os.environ.get("OPENPROGRAM_IN_AGENTIC_SUBPROCESS") == "1":
+        command = {"op": "screenshot", "binding_id": binding_id}
+        if expected_page_revision:
+            command["expected_page_revision"] = expected_page_revision
+        if expected_access_revision:
+            command["expected_access_revision"] = expected_access_revision
+        if expected_geometry_revision:
+            command["expected_geometry_revision"] = expected_geometry_revision
+        return _request(command, timeout)
+    with _lock:
+        entry = _bindings.get(binding_id)
+        revision_mismatch = entry is not None and (
+            (
+                expected_page_revision
+                and entry[5] != expected_page_revision
+            ) or (
+                expected_access_revision
+                and entry[6] != expected_access_revision
+            ) or (
+                expected_geometry_revision
+                and entry[7] != expected_geometry_revision
+            )
+        )
+    if entry is None:
+        return {
+            "ok": False,
+            "error": "surface binding is unavailable",
+            "reason_code": "page_context_stale",
+        }
+    if revision_mismatch:
+        release_binding(binding_id)
+        return {
+            "ok": False,
+            "error": "surface binding revision changed",
+            "reason_code": "page_context_stale",
+        }
+    ws, window_id, tab_id, target_id, expires_at, *_rest = entry
+    if time.monotonic() >= expires_at:
+        release_binding(binding_id)
+        return {
+            "ok": False,
+            "error": "surface binding expired",
+            "reason_code": "page_context_stale",
+        }
+    command = {
+        "op": "screenshot",
+        "window_id": window_id,
+        "tab_id": tab_id,
+    }
+    if expected_geometry_revision:
+        command["expected_geometry_revision"] = expected_geometry_revision
+    result = request_on_ws(ws, command, timeout)
+    if not result.get("ok"):
+        return result
+    if result.get("window_id") != window_id or result.get("tab_id") != tab_id:
+        _invalidate_page(ws, target_id)
+        return {
+            "ok": False,
+            "error": "captured web tab changed",
+            "reason_code": "page_context_stale",
+        }
+    result_geometry_revision = result.get("geometry_revision")
+    if expected_geometry_revision and (
+        type(result_geometry_revision) is not int
+        or result_geometry_revision != expected_geometry_revision
+    ):
+        release_binding(binding_id)
+        return {
+            "ok": False,
+            "error": "web tab geometry changed during capture",
+            "reason_code": "page_context_stale",
+        }
+    return result
+
+
 def request_page_inventory(binding_id: str, timeout: float = 5.0) -> dict:
     """List every Page owned by the same renderer as one accepted binding."""
     with _lock:
@@ -496,9 +620,15 @@ async def handle_webtab_result(ws, cmd: dict):
         window_id = cmd.get("window_id")
         if ws is not None and isinstance(window_id, str) and window_id:
             _desktop_windows[ws] = window_id
+        image_data_url = _validated_png_data_url(cmd.get("image_data_url"))
+        invalid_image = "image_data_url" in cmd and image_data_url is None
         holder["result"] = {
-            "ok": bool(cmd.get("ok")),
-            "error": cmd.get("error"),
+            "ok": bool(cmd.get("ok")) and not invalid_image,
+            "error": (
+                cmd.get("error")
+                if not invalid_image
+                else "invalid desktop web tab screenshot"
+            ),
             **({"window_id": cmd["window_id"]}
                if isinstance(cmd.get("window_id"), str) else {}),
             **({"url": cmd["url"]} if isinstance(cmd.get("url"), str) else {}),
@@ -506,10 +636,12 @@ async def handle_webtab_result(ws, cmd: dict):
             **({"target_id": cmd["target_id"]} if isinstance(cmd.get("target_id"), str) else {}),
             **({"title": cmd["title"]} if isinstance(cmd.get("title"), str) else {}),
             **({"preview": cmd["preview"]} if isinstance(cmd.get("preview"), dict) else {}),
+            **({"image_data_url": image_data_url} if image_data_url else {}),
             **({"geometry_revision": cmd["geometry_revision"]}
                if isinstance(cmd.get("geometry_revision"), int) else {}),
             **({"reason_code": cmd["reason_code"]}
                if isinstance(cmd.get("reason_code"), str) else {}),
+            **validated_open_ownership(cmd),
             **({"inventory_revision": max(0, cmd["inventory_revision"])}
                if type(cmd.get("inventory_revision")) is int else {}),
             **({"active_tab_entry_id": cmd["active_tab_entry_id"]}

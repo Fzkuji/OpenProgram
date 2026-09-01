@@ -166,6 +166,87 @@ def test_function_http_forwards_pending_project_before_dispatch(monkeypatch):
     assert seen["project_id"] == "project-1"
 
 
+def test_function_http_forwards_exact_origin_page(monkeypatch):
+    from openprogram.webui.routes import chat as routes_chat
+
+    app = FastAPI()
+    routes_chat.register(app)
+    seen = {}
+
+    def run(name, kwargs, session_id, **options):
+        seen.update(options)
+        return {"session_id": "s1", "msg_id": "m1"}
+
+    monkeypatch.setattr(routes_chat, "run_agentic_function_call", run)
+    response = TestClient(app).post(
+        "/api/function/gui_agent",
+        json={
+            "kwargs": {"task": "inspect"},
+            "window_id": "window-1",
+            "surface_ref": {
+                "version": 1,
+                "window_id": "window-1",
+                "tab_id": "tab-submitted",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert seen["origin_window_id"] == "window-1"
+    assert seen["surface_ref"] == {
+        "version": 1,
+        "window_id": "window-1",
+        "tab_id": "tab-submitted",
+    }
+
+
+def test_function_http_keeps_legacy_top_level_surface_argument(monkeypatch):
+    from openprogram.webui.routes import chat as routes_chat
+
+    app = FastAPI()
+    routes_chat.register(app)
+    seen = {}
+
+    def run(name, kwargs, session_id, **options):
+        seen.update(kwargs=kwargs, options=options)
+        return {"session_id": "s1", "msg_id": "m1"}
+
+    monkeypatch.setattr(routes_chat, "run_agentic_function_call", run)
+    response = TestClient(app).post(
+        "/api/function/gui_agent",
+        json={"task": "inspect", "surface": "browser"},
+    )
+
+    assert response.status_code == 200
+    assert seen["kwargs"] == {"task": "inspect", "surface": "browser"}
+    assert "surface_ref" not in seen["options"]
+
+
+def test_function_http_rejects_surface_from_another_window(monkeypatch):
+    from openprogram.webui.routes import chat as routes_chat
+
+    app = FastAPI()
+    routes_chat.register(app)
+    calls = []
+    monkeypatch.setattr(
+        routes_chat,
+        "run_agentic_function_call",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    response = TestClient(app).post(
+        "/api/function/gui_agent",
+        json={
+            "kwargs": {"task": "inspect"},
+            "window_id": "window-1",
+            "surface_ref": {"window_id": "window-2", "tab_id": "tab-other"},
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "surface_window_mismatch"
+    assert calls == []
+
+
 def test_function_dispatch_propagates_schema_to_nested_runtime(monkeypatch):
     from openprogram.agent.dispatcher.forced_tool import dispatch_forced_tool_call
     from openprogram.providers.structured_output import normalize_response_format

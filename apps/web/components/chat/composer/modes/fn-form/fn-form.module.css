@@ -368,3 +368,21 @@
   font-size: var(--fs-base);
   padding: 4px 0;
 }
+
+.advanced {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.advancedSummary {
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  user-select: none;
+}
+.advancedFields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+}

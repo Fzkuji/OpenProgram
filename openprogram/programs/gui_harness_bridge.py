@@ -11,21 +11,32 @@ def _normalize_gui_result(result):
         return result
     normalized = dict(result)
     status = str(normalized.get("status") or "")
-    if not status:
-        if normalized.get("infeasible_declared"):
-            status = "infeasible"
-        elif isinstance(normalized.get("success"), bool):
+    if normalized.get("infeasible_declared"):
+        status = "infeasible"
+    elif not status:
+        if isinstance(normalized.get("success"), bool):
             status = "succeeded" if normalized["success"] else "failed"
     if not status:
         return normalized
     normalized["status"] = status
     normalized["success"] = status == "succeeded"
-    normalized.setdefault("reason_code", "completed" if status == "succeeded" else status)
-    normalized.setdefault("infeasible_declared", status == "infeasible")
-    normalized.setdefault(
-        "handoff_instruction",
-        str(normalized.get("summary") or "") if status == "infeasible" else "",
-    )
+    reason_code = str(normalized.get("reason_code") or "").strip()
+    if not reason_code or (
+        status == "infeasible"
+        and reason_code in {"completed", "succeeded", "verified"}
+    ):
+        normalized["reason_code"] = (
+            "completed" if status == "succeeded" else status
+        )
+    if status == "infeasible":
+        normalized["infeasible_declared"] = True
+        if not str(normalized.get("handoff_instruction") or "").strip():
+            normalized["handoff_instruction"] = str(
+                normalized.get("summary") or ""
+            )
+    else:
+        normalized.setdefault("infeasible_declared", False)
+        normalized.setdefault("handoff_instruction", "")
     return normalized
 
 
@@ -50,10 +61,12 @@ def install_gui_harness_web_use(original: Callable | None = None):
             "max_steps": {
                 "description": "Maximum number of actions",
                 "hidden": True,
+                "advanced": True,
             },
             "app_name": {
                 "description": "Desktop app name used for visual memory",
                 "hidden": True,
+                "advanced": True,
             },
             "surface": {
                 "description": "Execute on the desktop or the selected built-in browser Page",
@@ -66,10 +79,12 @@ def install_gui_harness_web_use(original: Callable | None = None):
                     "open_claude_chrome",
                 ],
                 "hidden": True,
+                "advanced": True,
             },
             "max_seconds": {
                 "description": "Wall-clock limit",
                 "hidden": True,
+                "advanced": True,
             },
             "allow_general": {"hidden": True},
             "runtime": {"hidden": True},
@@ -146,6 +161,11 @@ def install_gui_harness_web_use(original: Callable | None = None):
             runtime=runtime,
         ))
 
+    # ``programs run`` resolves a registered function's module and then looks
+    # up the public function name on that module.  The wrapper is defined here
+    # so it can close over the installed harness implementation; publish that
+    # same decorated callable instead of adding a second execution wrapper.
+    globals()["gui_agent"] = gui_agent
     return gui_agent
 
 

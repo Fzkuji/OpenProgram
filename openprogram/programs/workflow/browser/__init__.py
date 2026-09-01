@@ -107,8 +107,8 @@ _AGENT_CURSOR_SCRIPT = r"""
 armed => {
   const key = "__openprogramAgentCursor";
   let state = globalThis[key];
-  if (!state || state.version !== 1) {
-    state = {version: 1, armed: false};
+  if (!state || state.version !== 2) {
+    state = {version: 2, armed: false, show: null};
     try {
       Object.defineProperty(globalThis, key, {
         value: state, configurable: true,
@@ -116,9 +116,7 @@ armed => {
     } catch (_) {
       return false;
     }
-    addEventListener("pointerdown", event => {
-      if (!state.armed || !event.isTrusted) return;
-      state.armed = false;
+    state.show = (clientX, clientY) => {
       document.querySelectorAll("[data-openprogram-agent-cursor]")
         .forEach(node => node.remove());
 
@@ -127,8 +125,8 @@ armed => {
       host.setAttribute("aria-hidden", "true");
       Object.assign(host.style, {
         position: "fixed",
-        left: `${event.clientX}px`,
-        top: `${event.clientY}px`,
+        left: `${clientX}px`,
+        top: `${clientY}px`,
         width: "0",
         height: "0",
         zIndex: "2147483647",
@@ -176,10 +174,35 @@ armed => {
         ], {duration: 900, easing: "ease-out"});
       }
       setTimeout(() => host.remove(), reduced ? 240 : 900);
+    };
+    addEventListener("pointerdown", event => {
+      if (!state.armed || !event.isTrusted) return;
+      state.armed = false;
+      state.show(event.clientX, event.clientY);
     }, true);
   }
   state.armed = Boolean(armed);
   return true;
+}
+"""
+
+_BACKGROUND_REF_CLICK_SCRIPT = r"""
+element => {
+  const cursor = globalThis.__openprogramAgentCursor;
+  if (cursor?.armed && typeof cursor.show === "function") {
+    const rect = element.getBoundingClientRect();
+    cursor.armed = false;
+    cursor.show(rect.left + rect.width / 2, rect.top + rect.height / 2);
+  }
+  if (typeof element.click === "function") {
+    element.click();
+    return;
+  }
+  element.dispatchEvent(new MouseEvent("click", {
+    bubbles: true,
+    cancelable: true,
+    view: window,
+  }));
 }
 """
 
@@ -591,9 +614,14 @@ class BrowserPageController:
             actual = target.evaluate(_REF_SNAPSHOT_SCRIPT)
         except Exception:
             return None, "stale_observation"
-        if not isinstance(actual, dict) or not actual.get("connected") or any(
-            actual.get(field) != expected.get(field)
-            for field in ("tag", "role", "name", "disabled")
+        if (
+            not isinstance(actual, dict)
+            or not actual.get("connected")
+            or not actual.get("visible")
+            or any(
+                actual.get(field) != expected.get(field)
+                for field in ("tag", "role", "name", "disabled")
+            )
         ):
             return None, "stale_observation"
         return target, None
@@ -728,7 +756,36 @@ class BrowserPageController:
             # can be passed directly to Playwright mouse coordinates even on
             # Retina / device_scale_factor != 1 displays.
             before = page.evaluate(_VIEWPORT_SCRIPT)
-            image = page.screenshot(full_page=False, scale="css")
+            if self.binding_id:
+                from openprogram.webui.ws_actions.webtab import (
+                    request_bound_screenshot,
+                )
+
+                capture = request_bound_screenshot(
+                    self.binding_id,
+                    timeout=5.0,
+                    expected_page_revision=self.page_revision,
+                    expected_access_revision=self.access_revision,
+                    expected_geometry_revision=self.geometry_revision,
+                )
+                image_data_url = str(capture.get("image_data_url") or "")
+                if not capture.get("ok") or not image_data_url.startswith(
+                    "data:image/png;base64,"
+                ):
+                    return {
+                        "ok": False,
+                        "reason_code": str(
+                            capture.get("reason_code") or "screenshot_failed"
+                        ),
+                    }
+                try:
+                    image = base64.b64decode(
+                        image_data_url.split(",", 1)[1], validate=True,
+                    )
+                except (ValueError, TypeError):
+                    return {"ok": False, "reason_code": "screenshot_failed"}
+            else:
+                image = page.screenshot(full_page=False, scale="css")
             after = page.evaluate(_VIEWPORT_SCRIPT)
             if before != after or not self._fresh(expected_frame_id):
                 return self._invalidate_frame()
@@ -785,7 +842,14 @@ class BrowserPageController:
                 return self._invalidate_frame()
             return {"ok": False, "reason_code": ref_error}
         if action == "click":
-            self._agent_click(target.click)
+            if self._ref_meta.get((ref or "").lstrip("@"), {}).get("disabled"):
+                return {"ok": False, "reason_code": "target_disabled"}
+            if self.binding_id:
+                self._agent_click(
+                    lambda: target.evaluate(_BACKGROUND_REF_CLICK_SCRIPT)
+                )
+            else:
+                self._agent_click(target.click)
             return self._mutated(f"clicked {ref}")
         if action == "type":
             target.fill(text)
@@ -1023,6 +1087,11 @@ def browser_agent(
     )
 
 
+DEFAULT_GUI_BROWSER_START_URL = "https://www.google.com/"
+_CANCELLATION_ERRORS = (CancelledError, ExecInterrupt, asyncio.CancelledError)
+_GUI_TASK_ERRORS = (*_CANCELLATION_ERRORS, Exception)
+
+
 def _run_browser_task_commands(
     *, task: str, backend: str,
     max_steps: int | None, max_seconds: float | None, runtime,
@@ -1033,29 +1102,121 @@ def _run_browser_task_commands(
     from openprogram.agent import surface_context
     from .web_use_runtime import get_registry
 
+    def page_unavailable(
+        summary: str = "No accessible built-in Page is open.",
+        *,
+        reason_code: str = "page_unavailable",
+        infeasible: bool = False,
+        handoff_instruction: str = "",
+    ) -> dict:
+        return {
+            "status": "infeasible" if infeasible else "failed",
+            "reason_code": reason_code,
+            "summary": summary,
+            "handoff_instruction": handoff_instruction or (
+                "Launch or reconnect the OpenProgram desktop app, then retry "
+                "this GUI task."
+                if infeasible else
+                "Open or restore a built-in Page, then retry this GUI task."
+            ),
+            "backend": backend,
+        }
+
     context = surface_context.current()
     captured_here = context is None
     if context is None:
-        context = surface_context.capture_pages()
+        try:
+            context = surface_context.capture_pages()
+        except RuntimeError:
+            context = surface_context.window_context()
+    release_context_on_exit = captured_here
+    auto_opened_context: dict[str, Any] | None = None
+    initial_url = ""
+
+    def release_captured_context() -> None:
+        nonlocal release_context_on_exit
+        if release_context_on_exit:
+            surface_context.release_bindings(context)
+            release_context_on_exit = False
+
     owner_id = "harness:" + str(context.get("context_id") or "unknown")
     registry = get_registry()
+
+    def release_owner() -> None:
+        cleanup = getattr(registry, "release_owner", None)
+        if callable(cleanup):
+            cleanup(owner_id)
+
+    def close_auto_opened_page() -> dict[str, Any] | None:
+        nonlocal auto_opened_context
+        if auto_opened_context is None:
+            return None
+        opened, auto_opened_context = auto_opened_context, None
+        try:
+            result = surface_context.close_page(opened)
+        except Exception as exc:
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        if not isinstance(result, dict) or not result.get("ok"):
+            return result if isinstance(result, dict) else {
+                "ok": False,
+                "error": "desktop app returned an invalid Page close result",
+            }
+        return None
+
+    def cleanup_failed(
+        close_failure: dict[str, Any],
+        previous: dict[str, Any] | None = None,
+    ) -> dict:
+        previous_reason = str((previous or {}).get("reason_code") or "")
+        prior = (
+            f" after the GUI task ended with {previous_reason}"
+            if previous_reason and previous_reason != "verified" else
+            " after the GUI task was verified"
+        )
+        return page_unavailable(
+            "The background Page could not be confirmed closed"
+            + prior
+            + " ("
+            + str(close_failure.get("error") or "close was rejected")
+            + ").",
+            reason_code="page_cleanup_failed",
+            infeasible=True,
+            handoff_instruction=(
+                "Close the remaining background Page in OpenProgram, "
+                "then continue the task manually or retry it."
+            ),
+        )
 
     page_inventory: list[dict[str, Any]] = []
     page_inventory_snapshot: dict[str, Any] = {"pages": page_inventory}
     bound_page_identity = ("", "")
 
-    def refresh_inventory() -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    def refresh_inventory(
+    ) -> tuple[list[dict[str, Any]], dict[str, Any], str]:
+        inventory_context = None
         try:
             inventory_context = surface_context.capture_pages(context)
             listed = registry.list_pages(
                 context=inventory_context, owner_id=owner_id,
             )
-        except Exception:
-            return [], {"pages": []}
-        if not listed.get("ok"):
-            surface_context.release_bindings(inventory_context)
-            return [], {"pages": []}
+        except Exception as exc:
+            if inventory_context is not None and inventory_context is not context:
+                with suppress(Exception):
+                    surface_context.release_bindings(inventory_context)
+            return [], {"pages": []}, str(exc) or "Page inventory is unavailable"
+        if not isinstance(listed, dict) or not listed.get("ok"):
+            if inventory_context is not context:
+                with suppress(Exception):
+                    surface_context.release_bindings(inventory_context)
+            return [], {"pages": []}, str(
+                (listed or {}).get("reason_code")
+                if isinstance(listed, dict) else
+                "invalid Page inventory result"
+            )
         pages = list(listed.get("pages") or [])
+        if not pages and inventory_context is not context:
+            with suppress(Exception):
+                surface_context.release_bindings(inventory_context)
         snapshot = {
             key: listed.get(key)
             for key in (
@@ -1064,16 +1225,79 @@ def _run_browser_task_commands(
             )
         }
         snapshot["pages"] = pages
-        return pages, snapshot
+        return pages, snapshot, ""
 
-    page_inventory, page_inventory_snapshot = refresh_inventory()
+    page_inventory, page_inventory_snapshot, inventory_error = refresh_inventory()
+    if (
+        not page_inventory
+        and inventory_error
+        and not surface_context.tool_enabled(context)
+    ):
+        with suppress(Exception):
+            release_captured_context()
+        with suppress(Exception):
+            release_owner()
+        has_origin_window = bool(
+            context.get("origin_window_id") or context.get("window_id")
+        )
+        return page_unavailable(
+            f"The built-in Page inventory could not be read ({inventory_error}).",
+            reason_code=(
+                "page_context_stale" if has_origin_window
+                else "desktop_unavailable"
+            ),
+            infeasible=not has_origin_window,
+        )
+    if not page_inventory and not surface_context.tool_enabled(context):
+        windows = context.get("windows") or []
+        requested_window_id = str(
+            context.get("origin_window_id")
+            or (
+                context.get("window_id")
+                if len(windows) <= 1 else ""
+            )
+            or ""
+        )
+        opened = surface_context.open_page(
+            DEFAULT_GUI_BROWSER_START_URL,
+            window_id=requested_window_id,
+            background=True,
+        )
+        if opened.get("ok") is False:
+            with suppress(Exception):
+                release_captured_context()
+            with suppress(Exception):
+                release_owner()
+            return page_unavailable(
+                str(opened.get("error") or "The desktop Page could not be created."),
+                reason_code=str(
+                    opened.get("reason_code") or "desktop_unavailable"
+                ),
+                infeasible=True,
+                handoff_instruction=str(opened.get("handoff_instruction") or ""),
+            )
+        with suppress(Exception):
+            release_captured_context()
+        context = opened
+        release_context_on_exit = True
+        owner_id = "harness:" + str(context.get("context_id") or "unknown")
+        initial_url = DEFAULT_GUI_BROWSER_START_URL
+        auto_opened_context = context
+    if not page_inventory and not surface_context.tool_enabled(context):
+        close_failure = close_auto_opened_page()
+        with suppress(Exception):
+            release_captured_context()
+        with suppress(Exception):
+            release_owner()
+        unavailable = page_unavailable()
+        return (
+            cleanup_failed(close_failure, unavailable)
+            if close_failure is not None else
+            unavailable
+        )
     try:
         if page_inventory:
-            primary = next((
-                page for page in page_inventory if page.get("focused")
-            ), next((
-                page for page in page_inventory if page.get("visible")
-            ), page_inventory[0]))
+            primary = page_inventory[0]
             bound_page_identity = (
                 str(primary.get("window_id") or ""),
                 str(primary.get("tab_id") or ""),
@@ -1094,24 +1318,54 @@ def _run_browser_task_commands(
                 page_key = surface_context.resolve_page_key("")
             finally:
                 surface_context.reset(token)
+            # The registry owns this temporary context once observe starts.
+            release_context_on_exit = False
             observed = registry.execute(
                 command="observe", backend=backend, binding_id=binding_id,
                 page_key=page_key, owner_id=owner_id, page_context=context,
             )
-    except Exception:
-        if captured_here:
-            surface_context.release_bindings(context)
+            if captured_here and not observed.get("web_session_id"):
+                release_context_on_exit = True
+    except _GUI_TASK_ERRORS as exc:
+        close_failure = close_auto_opened_page()
+        with suppress(Exception):
+            release_owner()
+        with suppress(Exception):
+            release_captured_context()
+        if close_failure is not None:
+            return cleanup_failed(close_failure, {
+                "reason_code": (
+                    "cancelled"
+                    if isinstance(exc, _CANCELLATION_ERRORS)
+                    else "runtime_error"
+                ),
+                "summary": f"{type(exc).__name__}: {exc}",
+            })
         raise
     session_id = str(observed.get("web_session_id") or "")
     if not session_id or "frame_id" not in observed:
-        if captured_here and not session_id:
-            surface_context.release_bindings(context)
-        return {
+        close_failure = close_auto_opened_page()
+        if session_id:
+            with suppress(Exception):
+                registry.execute(
+                    command="close", web_session_id=session_id,
+                    owner_id=owner_id,
+                )
+        with suppress(Exception):
+            release_owner()
+        with suppress(Exception):
+            release_captured_context()
+        unavailable = {
             "status": "failed",
             "reason_code": observed.get("reason_code", "page_unavailable"),
             "summary": "The selected Page could not be observed.",
             "backend": backend,
         }
+        return (
+            cleanup_failed(close_failure, unavailable)
+            if close_failure is not None else
+            unavailable
+        )
 
     last: dict[str, Any] = {
         "result": None, "action": "", "seq": 0, "screenshot_result": None,
@@ -1119,8 +1373,8 @@ def _run_browser_task_commands(
 
     def dispatch(action: str, **arguments):
         nonlocal observed, session_id, page_inventory, bound_page_identity
+        page_context_token = str(arguments.pop("page_context_token", "") or "")
         if action == "switch_page":
-            page_context_token = str(arguments.get("page_context_token") or "")
             selected_page = next((
                 page for page in page_inventory
                 if page.get("page_context_token") == page_context_token
@@ -1198,22 +1452,30 @@ def _run_browser_task_commands(
     pending_screenshot_result = None
     summary = ""
     missed_tool_calls = 0
+    terminal_result: dict[str, Any] | None = None
+    preserve_primary_exception = False
+
+    def finish(result: dict[str, Any]) -> dict[str, Any]:
+        nonlocal terminal_result
+        terminal_result = result
+        return result
+
     try:
         for _ in step_iters:
             timeout_s = None
             if deadline is not None:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    return {
+                    return finish({
                         "status": "failed", "reason_code": "timeout",
                         "summary": "GUI Agent Harness exceeded its time limit.",
                         "backend": backend, "web_session_id": session_id,
-                    }
+                    })
                 timeout_s = max(1, remaining)
             content: list[dict[str, Any]] = [{
                 "type": "text",
                 "text": _step_prompt(
-                    task, "", observed, _result_for_prompt(last["result"]),
+                    task, initial_url, observed, _result_for_prompt(last["result"]),
                     page_inventory_snapshot,
                 ),
             }]
@@ -1257,7 +1519,7 @@ def _run_browser_task_commands(
                         "reason_code": "tool_not_executed",
                     }
                     continue
-                return {
+                return finish({
                     "status": "failed",
                     "reason_code": "tool_not_executed",
                     "summary": (
@@ -1266,15 +1528,15 @@ def _run_browser_task_commands(
                     ),
                     "backend": backend,
                     "web_session_id": session_id,
-                }
+                })
             missed_tool_calls = 0
             result = last["result"]
             if last["action"] == "verify" and isinstance(result, dict) and result.get("passed"):
-                return {
+                return finish({
                     "status": "succeeded", "reason_code": "verified",
                     "summary": summary or "Browser task completed and verified.",
                     "backend": backend, "web_session_id": session_id,
-                }
+                })
             if last["action"] == "screenshot":
                 pending_screenshot_result = result
                 pending_screenshot = _screenshot_image_block(result)
@@ -1284,13 +1546,13 @@ def _run_browser_task_commands(
                     owner_id=owner_id,
                 )
                 if "frame_id" not in observed:
-                    return {
+                    return finish({
                         "status": "failed",
                         "reason_code": observed.get("reason_code", "page_unavailable"),
                         "summary": "The Page could not be observed after an action.",
                         "backend": backend, "web_session_id": session_id,
-                    }
-                page_inventory, page_inventory_snapshot = refresh_inventory()
+                    })
+                page_inventory, page_inventory_snapshot, _ = refresh_inventory()
                 if all(bound_page_identity):
                     for page in page_inventory:
                         page["bound"] = (
@@ -1302,24 +1564,38 @@ def _run_browser_task_commands(
                     owner_id=owner_id,
                 )
                 if "frame_id" not in observed:
-                    return {
+                    return finish({
                         "status": "failed",
                         "reason_code": observed.get("reason_code", "page_unavailable"),
                         "summary": "The Page could not be observed after waiting.",
                         "backend": backend, "web_session_id": session_id,
-                    }
-                page_inventory, page_inventory_snapshot = refresh_inventory()
+                    })
+                page_inventory, page_inventory_snapshot, _ = refresh_inventory()
                 if all(bound_page_identity):
                     for page in page_inventory:
                         page["bound"] = (
                             page.get("window_id"), page.get("tab_id")
                         ) == bound_page_identity
-        return {
+        return finish({
             "status": "failed", "reason_code": "verification_missing",
             "summary": summary or "Browser task ended without verification.",
             "backend": backend, "web_session_id": session_id,
-        }
+        })
+    except _GUI_TASK_ERRORS as exc:
+        close_failure = close_auto_opened_page()
+        if close_failure is not None:
+            return finish(cleanup_failed(close_failure, {
+                "reason_code": (
+                    "cancelled"
+                    if isinstance(exc, _CANCELLATION_ERRORS)
+                    else "runtime_error"
+                ),
+                "summary": f"{type(exc).__name__}: {exc}",
+            }))
+        preserve_primary_exception = True
+        raise
     finally:
+        screenshot_cleanup_error: Exception | None = None
         try:
             unreleased_screenshot = (
                 pending_screenshot_result or last["screenshot_result"]
@@ -1341,13 +1617,44 @@ def _run_browser_task_commands(
                 finally:
                     _release_screenshot_payload([], unreleased_screenshot)
                     last["screenshot_result"] = None
+        except Exception as exc:
+            screenshot_cleanup_error = exc
         finally:
-            registry.execute(
-                command="close", web_session_id=session_id, owner_id=owner_id,
+            close_failure = close_auto_opened_page()
+            if close_failure is not None:
+                cleanup_result = cleanup_failed(
+                    close_failure, terminal_result,
+                )
+                if terminal_result is not None:
+                    terminal_result.clear()
+                    terminal_result.update(cleanup_result)
+            preserve_outcome = (
+                preserve_primary_exception
+                or (
+                    terminal_result is not None
+                    and terminal_result.get("reason_code")
+                    == "page_cleanup_failed"
+                )
             )
-            release_owner = getattr(registry, "release_owner", None)
-            if callable(release_owner):
-                release_owner(owner_id)
+            try:
+                registry.execute(
+                    command="close", web_session_id=session_id,
+                    owner_id=owner_id,
+                )
+            except Exception:
+                if not preserve_outcome:
+                    raise
+            finally:
+                try:
+                    release_owner()
+                except Exception:
+                    if not preserve_outcome:
+                        raise
+                finally:
+                    with suppress(Exception):
+                        release_captured_context()
+        if screenshot_cleanup_error is not None and not preserve_outcome:
+            raise screenshot_cleanup_error
 
 
 def _requested_url(arguments: dict | None) -> str:
@@ -1374,6 +1681,7 @@ def _open_page_error(opened: dict) -> dict:
     from openprogram.agent.surface_context import DESKTOP_UNAVAILABLE_ERROR
 
     return {
+        **opened,
         "ok": False,
         "reason_code": opened.get("reason_code") or "desktop_unavailable",
         "error": opened.get("error") or DESKTOP_UNAVAILABLE_ERROR,
