@@ -403,6 +403,11 @@ class JobRunner:
             name="op-job-budget",
         )
         self._budget_thread.start()
+        # A new runner may inherit dispatch-ready jobs from the durable
+        # admission ledger.  Trigger the first scan once initialization is
+        # complete instead of depending on the dispatch loop's 500 ms
+        # fallback poll.
+        self._dispatch_wake.set()
 
     def _governance_context(self, job: Job) -> JobGovernanceContext:
         ledger = self._governor.ledger

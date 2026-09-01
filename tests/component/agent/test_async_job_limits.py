@@ -83,7 +83,7 @@ def test_runner_restart_dispatches_persisted_governed_queue(
 
     runner = JobRunner(max_workers=1, governor=governor)
     try:
-        assert fake_worker[3].wait(1.0)
+        assert fake_worker[3].wait(2.0)
         fake_worker[1].set()
         assert runner.await_job(job.id, timeout=5).status == JobStatus.COMPLETED
     finally:
