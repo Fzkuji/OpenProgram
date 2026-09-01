@@ -47,9 +47,10 @@ interface ScopeState {
   added: number | null;
   removed: number | null;
   snapshot_id?: string;
-  cursor?: number;
-  next_cursor?: number | null;
-  prev_cursor?: number | null;
+  cursor?: string | null;
+  next_cursor?: string | null;
+  prev_cursor?: string | null;
+  page?: number;
   error?: string;
   linked_impacts: LinkedImpact[];
   category?: ReviewCategory;
@@ -62,9 +63,9 @@ interface DiffState {
   path?: string;
   diff?: string;
   diff_state?: string;
-  cursor?: number;
-  next_cursor?: number | null;
-  prev_cursor?: number | null;
+  cursor?: string | null;
+  next_cursor?: string | null;
+  prev_cursor?: string | null;
   line_count?: number;
   error?: string;
 }
@@ -90,13 +91,13 @@ export function ReviewTabPane({
   const { text } = useTranslation();
   const [scope, setScope] = useState<ReviewScope>(initialScope);
   const [selectedPath, setSelectedPath] = useState(initialPath ?? "");
-  const [fileCursor, setFileCursor] = useState(0);
-  const [diffCursor, setDiffCursor] = useState(0);
-  const [diffHistory, setDiffHistory] = useState<number[]>([]);
+  const [fileCursor, setFileCursor] = useState<string | null>(null);
+  const [diffCursor, setDiffCursor] = useState<string | null>(null);
+  const [diffHistory, setDiffHistory] = useState<string[]>([]);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [category, setCategory] = useState<ReviewCategory>("All");
-  const [query] = useState("");
-  const [sort] = useState<ReviewSort>("path");
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<ReviewSort>("path");
   const [scopeState, setScopeState] = useState<ScopeState>({
     loading: true,
     status: "loading",
@@ -111,8 +112,8 @@ export function ReviewTabPane({
   useEffect(() => {
     setScope(initialScope);
     setSelectedPath(initialPath ?? "");
-    setFileCursor(0);
-    setDiffCursor(0);
+    setFileCursor(null);
+    setDiffCursor(null);
     setDiffHistory([]);
     setScopeState((current) => ({ ...current, snapshot_id: undefined }));
   }, [initialScope, initialPath, sessionId, assistantMsgId]);
@@ -151,6 +152,7 @@ export function ReviewTabPane({
         if (data.request_id !== requestId) return;
         if (data.session_id !== sessionId || data.scope !== scope) return;
         if (scope === "turn" && data.assistant_msg_id !== assistantMsgId) return;
+        if (data.category !== category || data.query !== query || data.sort !== sort) return;
         socket.removeEventListener("message", onMessage);
         const files: ReviewFile[] = data.files ?? [];
         setScopeState({
@@ -162,9 +164,10 @@ export function ReviewTabPane({
           added: data.added ?? null,
           removed: data.removed ?? null,
           snapshot_id: data.status === "ready" ? data.snapshot_id : undefined,
-          cursor: data.cursor ?? 0,
+          cursor: data.cursor ?? null,
           next_cursor: data.next_cursor,
           prev_cursor: data.prev_cursor,
+          page: data.page ?? 1,
           error: data.error,
           linked_impacts: data.linked_impacts ?? [],
           category: data.category,
@@ -190,7 +193,7 @@ export function ReviewTabPane({
       sort,
       cursor: fileCursor,
       limit: 100,
-      ...(fileCursor > 0 && scopeState.snapshot_id
+      ...(fileCursor && scopeState.snapshot_id
         ? { snapshot_id: scopeState.snapshot_id }
         : {}),
       request_id: requestId,
@@ -209,7 +212,7 @@ export function ReviewTabPane({
 
   useEffect(() => {
     const socket = getSocket();
-    if (!socket || !selectedPath || !scopeState.snapshot_id) {
+    if (!socket || !selectedPath || !scopeState.snapshot_id || scopeState.status !== "ready") {
       setDiffState({ loading: false });
       return;
     }
@@ -225,6 +228,10 @@ export function ReviewTabPane({
           data.session_id !== sessionId
           || data.scope !== scope
           || data.path !== selectedPath
+          || data.snapshot_id !== scopeState.snapshot_id
+          || data.category !== category
+          || data.query !== query
+          || data.sort !== sort
         ) return;
         socket.removeEventListener("message", onMessage);
         setDiffState({
@@ -232,7 +239,7 @@ export function ReviewTabPane({
           path: selectedPath,
           diff: data.diff ?? "",
           diff_state: data.diff_state ?? "unavailable",
-          cursor: data.cursor ?? 0,
+          cursor: data.cursor ?? null,
           next_cursor: data.next_cursor,
           prev_cursor: data.prev_cursor,
           line_count: data.line_count,
@@ -321,8 +328,8 @@ export function ReviewTabPane({
               onClick={() => {
                 setScope(value);
                 setSelectedPath("");
-                setFileCursor(0);
-                setDiffCursor(0);
+                setFileCursor(null);
+                setDiffCursor(null);
                 setDiffHistory([]);
                 setScopeState((current) => ({ ...current, snapshot_id: undefined }));
               }}
@@ -332,6 +339,37 @@ export function ReviewTabPane({
             </button>
           ))}
         </div>
+        <input
+          className={styles.queryInput}
+          aria-label={text("Filter files", "筛选文件")}
+          placeholder={text("Filter files", "筛选文件")}
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setSelectedPath("");
+            setFileCursor(null);
+            setDiffCursor(null);
+            setDiffHistory([]);
+            setScopeState((current) => ({ ...current, snapshot_id: undefined }));
+          }}
+        />
+        <select
+          className={styles.sortSelect}
+          aria-label={text("Sort files", "排序文件")}
+          value={sort}
+          onChange={(event) => {
+            setSort(event.target.value as ReviewSort);
+            setSelectedPath("");
+            setFileCursor(null);
+            setDiffCursor(null);
+            setDiffHistory([]);
+            setScopeState((current) => ({ ...current, snapshot_id: undefined }));
+          }}
+        >
+          <option value="path">{text("Path", "路径")}</option>
+          <option value="category">{text("Category", "分类")}</option>
+          <option value="recent">{text("Recent", "最近")}</option>
+        </select>
         <div className={styles.totals} aria-label={text("Change totals", "修改统计")}>
           <b>{scopeState.file_count}</b>
           <span>{text("files", "个文件")}</span>
@@ -351,8 +389,8 @@ export function ReviewTabPane({
                 onClick={() => {
                   setCategory(value);
                   setSelectedPath("");
-                  setFileCursor(0);
-                  setDiffCursor(0);
+                  setFileCursor(null);
+                  setDiffCursor(null);
                   setDiffHistory([]);
                   setScopeState((current) => ({ ...current, snapshot_id: undefined }));
                 }}
@@ -374,7 +412,7 @@ export function ReviewTabPane({
               className={file.path === selectedPath ? styles.fileActive : styles.file}
               onClick={() => {
                 setSelectedPath(file.path);
-                setDiffCursor(0);
+                setDiffCursor(null);
                 setDiffHistory([]);
               }}
               title={file.path}
@@ -390,15 +428,15 @@ export function ReviewTabPane({
               <button
                 type="button"
                 disabled={scopeState.prev_cursor == null}
-                onClick={() => setFileCursor(scopeState.prev_cursor ?? 0)}
+                onClick={() => setFileCursor(scopeState.prev_cursor ?? null)}
               >
                 {text("Previous", "上一页")}
               </button>
-              <span>{Math.floor((scopeState.cursor ?? 0) / 100) + 1}</span>
+              <span>{scopeState.page ?? 1}</span>
               <button
                 type="button"
                 disabled={scopeState.next_cursor == null}
-                onClick={() => setFileCursor(scopeState.next_cursor ?? 0)}
+                onClick={() => setFileCursor(scopeState.next_cursor ?? null)}
               >
                 {text("Next", "下一页")}
               </button>
@@ -437,7 +475,7 @@ export function ReviewTabPane({
                   type="button"
                   disabled={diffHistory.length === 0 || diffState.loading}
                   onClick={() => {
-                    const prior = diffHistory[diffHistory.length - 1] ?? 0;
+                    const prior = diffHistory[diffHistory.length - 1] ?? null;
                     setDiffHistory((history) => history.slice(0, -1));
                     setDiffCursor(prior);
                   }}
@@ -448,8 +486,10 @@ export function ReviewTabPane({
                   type="button"
                   disabled={diffState.next_cursor == null || diffState.loading}
                   onClick={() => {
-                    setDiffHistory((history) => [...history, diffCursor]);
-                    setDiffCursor(diffState.next_cursor ?? 0);
+                    if (diffCursor) {
+                      setDiffHistory((history) => [...history, diffCursor]);
+                    }
+                    setDiffCursor(diffState.next_cursor ?? null);
                   }}
                 >
                   {text("Next", "下一页")}

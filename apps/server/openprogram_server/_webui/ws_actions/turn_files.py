@@ -7,9 +7,11 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import stat
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -24,11 +26,17 @@ _MAX_DIFF_LINE_BYTES = 64 * 1024
 _REVIEW_CATEGORIES = {"All", "Code", "Tests", "Docs", "Large"}
 _REVIEW_SORTS = {"path", "alpha", "category", "recent"}
 _MAX_REVIEW_SNAPSHOTS = 256
+_MAX_REVIEW_SNAPSHOT_BYTES = 16 * 1024 * 1024
+_MAX_REVIEW_SNAPSHOT_ITEMS = _MAX_SCOPE_FILES
+_REVIEW_SNAPSHOT_TTL = 5 * 60
+_MAX_REVIEW_CURSORS = 1024
 
 # Review snapshots are deliberately separate from the read cache.  They hold
 # the exact candidate set used by a page/diff request until its content is
 # invalidated by a fresh workspace comparison.
 _REVIEW_SNAPSHOTS: dict[str, dict] = {}
+_REVIEW_CURSORS: dict[str, dict] = {}
+_REVIEW_REGISTRY_LOCK = threading.RLock()
 
 
 class _OutputLimitError(OSError):
@@ -198,6 +206,82 @@ def _review_filter_files(
     return filtered
 
 
+def _review_value_bytes(value: Any) -> int:
+    if isinstance(value, bytes):
+        return len(value)
+    if isinstance(value, dict):
+        return sum(_review_value_bytes(key) + _review_value_bytes(item) for key, item in value.items())
+    if isinstance(value, (list, tuple)):
+        return sum(_review_value_bytes(item) for item in value)
+    return len(str(value).encode())
+
+
+def _expire_review_registry(now: float | None = None) -> None:
+    now = time.monotonic() if now is None else now
+    with _REVIEW_REGISTRY_LOCK:
+        expired = [
+            snapshot_id for snapshot_id, entry in _REVIEW_SNAPSHOTS.items()
+            if now - entry["created_at"] >= _REVIEW_SNAPSHOT_TTL
+        ]
+        for snapshot_id in expired:
+            del _REVIEW_SNAPSHOTS[snapshot_id]
+        expired_cursors = [
+            token for token, entry in _REVIEW_CURSORS.items()
+            if now - entry["created_at"] >= _REVIEW_SNAPSHOT_TTL
+        ]
+        for token in expired_cursors:
+            del _REVIEW_CURSORS[token]
+
+
+def _remember_review_snapshot(snapshot_id: str, entry: dict) -> bool:
+    size = _review_value_bytes(entry)
+    if len(entry.get("files", ())) > _MAX_REVIEW_SNAPSHOT_ITEMS or size > _MAX_REVIEW_SNAPSHOT_BYTES:
+        return False
+    now = time.monotonic()
+    with _REVIEW_REGISTRY_LOCK:
+        _expire_review_registry(now)
+        if snapshot_id in _REVIEW_SNAPSHOTS:
+            return True
+        _REVIEW_SNAPSHOTS[snapshot_id] = {
+            **entry, "created_at": now, "size": size,
+        }
+        while (
+            len(_REVIEW_SNAPSHOTS) > _MAX_REVIEW_SNAPSHOTS
+            or sum(item["size"] for item in _REVIEW_SNAPSHOTS.values()) > _MAX_REVIEW_SNAPSHOT_BYTES
+        ):
+            oldest = min(_REVIEW_SNAPSHOTS, key=lambda key: _REVIEW_SNAPSHOTS[key]["created_at"])
+            del _REVIEW_SNAPSHOTS[oldest]
+        return snapshot_id in _REVIEW_SNAPSHOTS
+
+
+def _get_review_snapshot(snapshot_id: str) -> dict | None:
+    if not snapshot_id:
+        return None
+    _expire_review_registry()
+    with _REVIEW_REGISTRY_LOCK:
+        return _REVIEW_SNAPSHOTS.get(snapshot_id)
+
+
+def _new_review_cursor(entry: dict) -> str:
+    token = "rc_" + secrets.token_urlsafe(18)
+    with _REVIEW_REGISTRY_LOCK:
+        _expire_review_registry()
+        _REVIEW_CURSORS[token] = {**entry, "created_at": time.monotonic()}
+        while len(_REVIEW_CURSORS) > _MAX_REVIEW_CURSORS:
+            oldest = min(_REVIEW_CURSORS, key=lambda key: _REVIEW_CURSORS[key]["created_at"])
+            del _REVIEW_CURSORS[oldest]
+    return token
+
+
+def _get_review_cursor(token: Any, kind: str) -> dict | None:
+    if not isinstance(token, str) or not token.startswith("rc_"):
+        return None
+    _expire_review_registry()
+    with _REVIEW_REGISTRY_LOCK:
+        entry = _REVIEW_CURSORS.get(token)
+        return entry if entry and entry.get("kind") == kind else None
+
+
 def _scope_payload(scope: str, source: str, files: list[dict], **extra) -> dict:
     snapshot_basis = extra.pop("_snapshot_basis", files)
     snapshot_owner = extra.pop("_snapshot_owner", {})
@@ -226,7 +310,14 @@ def _scope_payload(scope: str, source: str, files: list[dict], **extra) -> dict:
         "scope": scope,
         "source": source,
         "owner": snapshot_owner,
-        "files": snapshot_basis,
+        "basis": snapshot_basis,
+        "filtered": [
+            {
+                key: file.get(key)
+                for key in ("path", "rel", "op", "added", "removed", "binary", "diff_state", "recoverability")
+            }
+            for file in filtered
+        ],
         "category": category,
         "query": query,
         "sort": sort,
@@ -235,7 +326,7 @@ def _scope_payload(scope: str, source: str, files: list[dict], **extra) -> dict:
     payload["snapshot_id"] = "sha256:" + hashlib.sha256(
         json.dumps(snapshot_value, sort_keys=True, default=str).encode(),
     ).hexdigest()
-    _REVIEW_SNAPSHOTS[payload["snapshot_id"]] = {
+    snapshot_entry = {
         "scope": scope,
         "source": source,
         "owner": snapshot_owner,
@@ -246,22 +337,26 @@ def _scope_payload(scope: str, source: str, files: list[dict], **extra) -> dict:
         "payload": payload,
         **(snapshot_store or {}),
     }
-    while len(_REVIEW_SNAPSHOTS) > _MAX_REVIEW_SNAPSHOTS:
-        del _REVIEW_SNAPSHOTS[next(iter(_REVIEW_SNAPSHOTS))]
+    if not _remember_review_snapshot(payload["snapshot_id"], snapshot_entry):
+        payload["status"] = "unavailable"
+        payload["error"] = "REVIEW_SNAPSHOT_LIMIT"
     return payload
 
 
 def _page_scope(
-    result: dict, cursor: int, limit: int, snapshot_id: str = "",
+    result: dict, cursor: Any = "", limit: int = _SCOPE_PAGE_SIZE,
+    snapshot_id: str = "",
 ) -> dict:
     if result.get("status") != "ready":
         return result
-    if (
-        (cursor > 0 and not snapshot_id)
-        or (snapshot_id and (
-            snapshot_id != result.get("snapshot_id")
-            or snapshot_id not in _REVIEW_SNAPSHOTS
-        ))
+    current_id = result.get("snapshot_id") or ""
+    saved = _get_review_snapshot(current_id)
+    token = _get_review_cursor(cursor, "scope") if cursor else None
+    if cursor and (
+        token is None
+        or not snapshot_id
+        or token.get("snapshot_id") != snapshot_id
+        or snapshot_id != current_id
     ):
         return {
             "status": "stale",
@@ -276,17 +371,50 @@ def _page_scope(
             "added": 0,
             "removed": 0,
         }
-    files = result.get("files") or []
-    start = max(0, cursor)
-    size = max(1, min(limit, _SCOPE_PAGE_SIZE))
+    if snapshot_id and snapshot_id != current_id:
+        return {
+            "status": "stale", "scope": result.get("scope"),
+            "error": "STALE_SNAPSHOT", "snapshot_id": snapshot_id,
+            "files": [], "file_count": 0, "added": 0, "removed": 0,
+        }
+    if saved is None:
+        return {
+            "status": "stale", "scope": result.get("scope"),
+            "error": "STALE_SNAPSHOT", "snapshot_id": snapshot_id or current_id,
+            "files": [], "file_count": 0, "added": 0, "removed": 0,
+        }
+    start = token["offset"] if token else 0
+    size = token["limit"] if token else max(1, min(limit, _SCOPE_PAGE_SIZE))
+    files = saved.get("files") or []
+    base = {key: value for key, value in saved["payload"].items() if key != "files"}
+    next_offset = start + size
+    next_cursor = (
+        _new_review_cursor({
+            "kind": "scope", "snapshot_id": current_id,
+            "owner": saved.get("owner"), "category": saved.get("category"),
+            "query": saved.get("query"), "sort": saved.get("sort"),
+            "offset": next_offset, "limit": size,
+        })
+        if next_offset < len(files) else None
+    )
+    prev_cursor = (
+        _new_review_cursor({
+            "kind": "scope", "snapshot_id": current_id,
+            "owner": saved.get("owner"), "category": saved.get("category"),
+            "query": saved.get("query"), "sort": saved.get("sort"),
+            "offset": max(0, start - size), "limit": size,
+        })
+        if start > 0 else None
+    )
     page = files[start:start + size]
     return {
-        **result,
+        **base,
         "files": page,
-        "cursor": start,
-        "next_cursor": start + size if start + size < len(files) else None,
-        "prev_cursor": max(0, start - size) if start > 0 else None,
+        "cursor": cursor or None,
+        "next_cursor": next_cursor,
+        "prev_cursor": prev_cursor,
         "page_size": size,
+        "page": start // size + 1,
     }
 
 
@@ -892,7 +1020,8 @@ def _workspace_scope(
             "workspace_identity": _workspace_identity(root / rel),
         })
     try:
-        head_identity = _git_output(root, "rev-parse", "HEAD^{tree}").decode().strip()
+        head_identity = _git_output(root, "rev-parse", "HEAD").decode().strip()
+        head_tree_identity = _git_output(root, "rev-parse", "HEAD^{tree}").decode().strip()
         index_vector = _git_output(root, "ls-files", "--stage", "-z")
         index_identity = "sha256:" + hashlib.sha256(index_vector).hexdigest()
     except OSError as exc:
@@ -938,6 +1067,7 @@ def _workspace_scope(
         _snapshot_owner={"session_id": session_id, "root": str(root)},
         _snapshot_basis={
             "head_identity": head_identity,
+            "head_tree_identity": head_tree_identity,
             "index_identity": index_identity,
             "candidates": snapshot_basis,
         },
@@ -945,6 +1075,7 @@ def _workspace_scope(
             "workspace": {
                 "root": str(root),
                 "head_identity": head_identity,
+                "head_tree_identity": head_tree_identity,
                 "index_identity": index_identity,
                 "candidates": candidate_states,
             },
@@ -1265,6 +1396,49 @@ def _render_content_diff(
     return _page_diff_lines(lines, cursor)
 
 
+def _diff_blob_pair(member: dict) -> str:
+    return hashlib.sha256(json.dumps({
+        key: member.get(key)
+        for key in (
+            "path", "first_turn_id", "last_turn_id", "before", "after",
+            "base", "index", "worktree", "diff_state",
+        )
+    }, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def _resolve_diff_cursor(
+    cursor: Any, snapshot_id: str, path: str, member: dict, limit: int,
+) -> tuple[bool, int]:
+    if not cursor:
+        return True, 0
+    token = _get_review_cursor(cursor, "diff")
+    if token is None or any((
+        token.get("snapshot_id") != snapshot_id,
+        token.get("path") != path,
+        token.get("blob_pair") != _diff_blob_pair(member),
+        token.get("limit") != limit,
+    )):
+        return False, 0
+    return True, token.get("offset", 0)
+
+
+def _bind_diff_page(
+    result: dict, cursor: Any, snapshot_id: str, path: str, member: dict,
+    limit: int,
+) -> dict:
+    if result.get("diff_state") != "available":
+        return result
+    result = {**result, "cursor": cursor or None}
+    pair = _diff_blob_pair(member)
+    if isinstance(result.get("next_cursor"), int):
+        result["next_cursor"] = _new_review_cursor({
+            "kind": "diff", "snapshot_id": snapshot_id, "path": path,
+            "blob_pair": pair, "limit": limit,
+            "offset": result["next_cursor"],
+        })
+    return result
+
+
 def _workspace_file_diff(
     session_id: str,
     path: str,
@@ -1272,7 +1446,7 @@ def _workspace_file_diff(
     cursor: int = 0,
 ) -> dict:
     root = _project_root(session_id)
-    snapshot = _REVIEW_SNAPSHOTS.get(snapshot_id)
+    snapshot = _get_review_snapshot(snapshot_id)
     if root is None or snapshot is None:
         return {"diff": "", "diff_state": "unavailable", "error": "workspace unavailable"}
     root = Path(os.path.abspath(root))
@@ -1398,7 +1572,7 @@ async def handle_review_scope(ws, cmd: dict) -> None:
     session_id = (cmd.get("session_id") or "").strip()
     scope = (cmd.get("scope") or "turn").strip()
     turn_id = (cmd.get("assistant_msg_id") or "").strip()
-    cursor = int(cmd.get("cursor") or 0)
+    cursor = cmd.get("cursor") or ""
     limit = int(cmd.get("limit") or _SCOPE_PAGE_SIZE)
     category = (cmd.get("category") or "All").strip()
     query = str(cmd.get("query") or "")
@@ -1445,7 +1619,7 @@ async def handle_review_file_diff(ws, cmd: dict) -> None:
     category = (cmd.get("category") or "All").strip()
     query = str(cmd.get("query") or "")
     sort = (cmd.get("sort") or "path").strip()
-    cursor = int(cmd.get("cursor") or 0)
+    cursor = cmd.get("cursor") or ""
     if category not in _REVIEW_CATEGORIES or sort not in _REVIEW_SORTS:
         result = {"diff": "", "diff_state": "unavailable", "error": "invalid review filter"}
     elif not session_id or not path:
@@ -1466,7 +1640,7 @@ async def handle_review_file_diff(ws, cmd: dict) -> None:
             if scope == "workspace"
             else {"status": "error", "error": f"unknown review scope {scope!r}"}
         )
-        saved_snapshot = _REVIEW_SNAPSHOTS.get(snapshot_id)
+        saved_snapshot = _get_review_snapshot(snapshot_id)
         member = next(
             (row for row in current_scope.get("files", []) if row.get("path") == path),
             None,
@@ -1480,26 +1654,39 @@ async def handle_review_file_diff(ws, cmd: dict) -> None:
             or saved_snapshot.get("owner", {}).get("session_id") != session_id
         ):
             result = {"diff": "", "diff_state": "unavailable", "error": "STALE_SNAPSHOT"}
-        elif member is None:
+        elif member is None or saved_snapshot is None:
             result = {"diff": "", "diff_state": "unavailable", "error": "path is not in review scope"}
-        elif scope == "turn":
-            result = await _run(lambda: _turn_lineage_file_diff(
-                session_id, member, path, cursor,
-            ))
-        elif scope == "branch":
-            result = await _run(lambda: _branch_file_diff(
-                session_id, path, cursor,
-            ))
         else:
-            result = await _run(lambda: _workspace_file_diff(
-                session_id, path, snapshot_id, cursor,
-            ))
+            valid_cursor, diff_offset = _resolve_diff_cursor(
+                cursor, snapshot_id, path, member, _MAX_DIFF_LINES,
+            )
+            if not valid_cursor:
+                result = {
+                    "diff": "", "diff_state": "unavailable",
+                    "error": "STALE_CURSOR",
+                }
+            elif scope == "turn":
+                result = await _run(lambda: _turn_lineage_file_diff(
+                    session_id, member, path, diff_offset,
+                ))
+            elif scope == "branch":
+                result = await _run(lambda: _branch_file_diff(
+                    session_id, path, diff_offset,
+                ))
+            else:
+                result = await _run(lambda: _workspace_file_diff(
+                    session_id, path, snapshot_id, diff_offset,
+                ))
+            result = _bind_diff_page(
+                result, cursor, snapshot_id, path, member, _MAX_DIFF_LINES,
+            )
     await ws.send_text(json.dumps({
         "type": "review_file_diff_result",
         "data": {
             "session_id": session_id, "assistant_msg_id": turn_id,
             "request_id": cmd.get("request_id"),
-            "scope": scope, "path": path, "snapshot_id": snapshot_id, **result,
+            "scope": scope, "path": path, "snapshot_id": snapshot_id,
+            "category": category, "query": query, "sort": sort, **result,
         },
     }, default=str))
 

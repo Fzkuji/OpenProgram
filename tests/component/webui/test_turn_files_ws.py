@@ -605,14 +605,15 @@ def test_review_scope_pages_file_rows_and_echoes_request_id(store, tmp_path):
     ws = FakeWS()
     _run(tf.handle_review_scope(ws, {
         "session_id": session_id, "assistant_msg_id": msg_id,
-        "scope": "turn", "cursor": 0, "limit": 100,
+        "scope": "turn", "cursor": "", "limit": 100,
         "request_id": "scope-request",
     }))
 
     data = ws.sent[0]["data"]
     assert data["request_id"] == "scope-request"
     assert len(data["files"]) == 100
-    assert data["next_cursor"] == 100
+    assert isinstance(data["next_cursor"], str)
+    assert data["next_cursor"].startswith("rc_")
     assert data["file_count"] == 10_000
     assert len(json.dumps(data)) < 100_000
 
@@ -643,7 +644,7 @@ def test_review_scope_filters_before_paging_and_invalidates_filter_snapshot(stor
     _run(tf.handle_review_scope(first_ws, {
         "session_id": session_id, "assistant_msg_id": msg_id,
         "scope": "turn", "category": "Tests", "query": "test_",
-        "sort": "path", "cursor": 0, "limit": 20,
+        "sort": "path", "cursor": "", "limit": 20,
     }))
     first = first_ws.sent[0]["data"]
     assert first["status"] == "ready"
@@ -651,7 +652,7 @@ def test_review_scope_filters_before_paging_and_invalidates_filter_snapshot(stor
     assert first["added"] == sum(row["added"] for row in rows if row["rel"].startswith("tests/"))
     assert len(first["files"]) == 20
     assert all(row["rel"].startswith("tests/") for row in first["files"])
-    assert first["next_cursor"] == 20
+    assert first["next_cursor"].startswith("rc_")
 
     next_ws = FakeWS()
     _run(tf.handle_review_scope(next_ws, {
@@ -704,6 +705,164 @@ def test_workspace_review_snapshot_rejects_worktree_content_change(store, tmp_pa
     data = ws.sent[0]["data"]
     assert data["status"] == "stale"
     assert data["error"] == "STALE_SNAPSHOT"
+
+
+def test_review_scope_rejects_raw_offset_cursor(store, tmp_path):
+    session_id, msg_id = "s_raw_cursor", "u1_reply"
+    _seed(store, session_id, msg_id)
+    _git, index = store._open(session_id)
+    index.nodes_by_id[msg_id].metadata = {
+        **(index.nodes_by_id[msg_id].metadata or {}),
+        "turn_files": {"version": 2, "files": [{
+            "path": str(tmp_path / "one.py"), "rel": "one.py", "added": 1,
+            "removed": 0, "diff_state": "available",
+        }]},
+    }
+    ws = FakeWS()
+    _run(tf.handle_review_scope(ws, {
+        "session_id": session_id, "assistant_msg_id": msg_id,
+        "scope": "turn", "cursor": "20", "limit": 20,
+    }))
+    assert ws.sent[0]["data"]["status"] == "stale"
+    assert ws.sent[0]["data"]["error"] == "STALE_SNAPSHOT"
+
+
+def test_review_scope_snapshot_stales_when_recovery_blob_changes(store, tmp_path):
+    from openprogram.store.snapshot.checkpoint.paths import turn_backup_dir
+
+    session_id, msg_id = "s_blob_snapshot", "u1_reply"
+    _seed(store, session_id, msg_id)
+    target = tmp_path / "blob.py"
+    target.write_text("before\n", encoding="utf-8")
+    journal = CheckpointStore(store._session_dir(session_id))
+    journal.backup_before_edit(msg_id, str(target))
+    target.write_text("after\n", encoding="utf-8")
+    journal.commit_after_edit(msg_id, str(target), operation="edit")
+    first = tf._turn_scope(session_id, msg_id)
+    mutation = journal.list_mutations(msg_id)[0]
+    blob = turn_backup_dir(store._session_dir(session_id), msg_id) / mutation["after"]["blob_ref"]
+    blob.unlink()
+
+    ws = FakeWS()
+    _run(tf.handle_review_scope(ws, {
+        "session_id": session_id, "assistant_msg_id": msg_id,
+        "scope": "turn", "snapshot_id": first["snapshot_id"],
+    }))
+    assert ws.sent[0]["data"]["status"] == "stale"
+    assert ws.sent[0]["data"]["error"] == "STALE_SNAPSHOT"
+
+
+def test_review_scope_snapshot_ttl_invalidates_cursor(store, tmp_path, monkeypatch):
+    session_id, msg_id = "s_ttl_snapshot", "u1_reply"
+    _seed(store, session_id, msg_id)
+    _git, index = store._open(session_id)
+    index.nodes_by_id[msg_id].metadata = {
+        **(index.nodes_by_id[msg_id].metadata or {}),
+        "turn_files": {"version": 2, "files": [{
+            "path": str(tmp_path / f"{number}.py"), "rel": f"{number}.py",
+            "added": 1, "removed": 0,
+        } for number in range(120)]},
+    }
+    first_ws = FakeWS()
+    _run(tf.handle_review_scope(first_ws, {
+        "session_id": session_id, "assistant_msg_id": msg_id,
+        "scope": "turn", "cursor": "", "limit": 20,
+    }))
+    first = first_ws.sent[0]["data"]
+    monkeypatch.setattr(tf, "_REVIEW_SNAPSHOT_TTL", 0)
+    next_ws = FakeWS()
+    _run(tf.handle_review_scope(next_ws, {
+        "session_id": session_id, "assistant_msg_id": msg_id,
+        "scope": "turn", "cursor": first["next_cursor"], "limit": 20,
+        "snapshot_id": first["snapshot_id"],
+    }))
+    assert next_ws.sent[0]["data"]["status"] == "stale"
+    assert next_ws.sent[0]["data"]["error"] == "STALE_SNAPSHOT"
+
+
+def test_workspace_review_snapshot_detects_same_tree_new_head(store, tmp_path, monkeypatch):
+    root = tmp_path / "same-tree-repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "t@example.com"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "T"], check=True)
+    target = root / "tracked.py"
+    target.write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-qm", "base"], check=True)
+    target.write_text("after\n", encoding="utf-8")
+    monkeypatch.setattr(tf, "_project_root", lambda _session_id: root)
+    first = tf._workspace_scope("session")
+    subprocess.run(["git", "-C", str(root), "commit", "--allow-empty", "-qm", "same-tree"], check=True)
+
+    ws = FakeWS()
+    _run(tf.handle_review_scope(ws, {
+        "session_id": "session", "scope": "workspace",
+        "snapshot_id": first["snapshot_id"], "cursor": "", "limit": 100,
+    }))
+    assert ws.sent[0]["data"]["status"] == "stale"
+    assert ws.sent[0]["data"]["error"] == "STALE_SNAPSHOT"
+
+
+def test_review_diff_rejects_filter_mismatch_for_old_snapshot(store, tmp_path):
+    session_id, msg_id = "s_diff_filter", "u1_reply"
+    _seed(store, session_id, msg_id)
+    _git, index = store._open(session_id)
+    target = tmp_path / "tests" / "case.py"
+    index.nodes_by_id[msg_id].metadata = {
+        **(index.nodes_by_id[msg_id].metadata or {}),
+        "turn_files": {"version": 2, "files": [{
+            "path": str(target), "rel": "tests/case.py", "added": 1,
+            "removed": 0, "diff_state": "available",
+        }]},
+    }
+    scope = tf._turn_scope(session_id, msg_id, category="Tests")
+    ws = FakeWS()
+    _run(tf.handle_review_file_diff(ws, {
+        "session_id": session_id, "assistant_msg_id": msg_id, "scope": "turn",
+        "path": str(target), "category": "Docs", "query": "",
+        "sort": "path", "snapshot_id": scope["snapshot_id"],
+    }))
+    assert ws.sent[0]["data"]["error"] == "STALE_SNAPSHOT"
+
+
+def test_review_diff_uses_opaque_cursor_bound_to_snapshot_and_path(store, tmp_path):
+    session_id, msg_id = "s_opaque_diff", "u1_reply"
+    _seed(store, session_id, msg_id)
+    target = tmp_path / "many.py"
+    target.write_text("before\n", encoding="utf-8")
+    journal = CheckpointStore(store._session_dir(session_id))
+    journal.backup_before_edit(msg_id, str(target))
+    target.write_text("x\n" * 500, encoding="utf-8")
+    journal.commit_after_edit(msg_id, str(target), operation="edit")
+    scope = tf._turn_scope(session_id, msg_id)
+
+    first_ws = FakeWS()
+    _run(tf.handle_review_file_diff(first_ws, {
+        "session_id": session_id, "assistant_msg_id": msg_id, "scope": "turn",
+        "path": str(target), "snapshot_id": scope["snapshot_id"],
+        "category": "All", "query": "", "sort": "path",
+    }))
+    first = first_ws.sent[0]["data"]
+    assert first["next_cursor"].startswith("rc_")
+
+    second_ws = FakeWS()
+    _run(tf.handle_review_file_diff(second_ws, {
+        "session_id": session_id, "assistant_msg_id": msg_id, "scope": "turn",
+        "path": str(target), "snapshot_id": scope["snapshot_id"],
+        "category": "All", "query": "", "sort": "path",
+        "cursor": first["next_cursor"],
+    }))
+    assert "error" not in second_ws.sent[0]["data"]
+    assert second_ws.sent[0]["data"]["diff"]
+
+    forged_ws = FakeWS()
+    _run(tf.handle_review_file_diff(forged_ws, {
+        "session_id": session_id, "assistant_msg_id": msg_id, "scope": "turn",
+        "path": str(target), "snapshot_id": scope["snapshot_id"],
+        "category": "All", "query": "", "sort": "path", "cursor": "20",
+    }))
+    assert forged_ws.sent[0]["data"]["error"] == "STALE_CURSOR"
 
 
 def test_diff_page_mounts_at_most_two_hundred_lines(store, tmp_path):
