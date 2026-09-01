@@ -108,7 +108,7 @@ export function setSummaryExpanded(v: Record<string, boolean>): void {
 }
 
 
-// ── infinite-canvas view (see ../canvas.ts) ───────────────────────
+// ── infinite-canvas view (see ../interaction/canvas.ts) ──────────
 // Where the user has panned and zoomed to. Module state rather than
 // per-render state because the graph repaints on every capture and the
 // camera must not move when it does. ``_viewSession`` is what tells a

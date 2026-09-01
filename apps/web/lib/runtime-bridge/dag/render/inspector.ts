@@ -1,7 +1,7 @@
 /**
  * Renderer: the node verbs (and the raw-JSON layer they open).
  *
- * The node has ONE window — the card in ../tooltip.ts. Hover shows its
+ * The node has ONE window — the card in ../interaction/tooltip.ts. Hover shows its
  * brief state; right-click calls ``expandTooltip`` to deepen that same
  * card in place, and what THIS module contributes is the verb list
  * appended below the detail rows:
@@ -237,7 +237,7 @@ function _menuItem(label: string, onClick: () => void, muted = false): HTMLEleme
 }
 
 /** Expand the node's card with the verb list at its bottom. The card
- *  itself (rows, position, lifetime) is ../tooltip.ts's — this builds
+ *  itself (rows, position, lifetime) is ../interaction/tooltip.ts's — this builds
  *  only the verbs. */
 export function showNodeMenu(node: GNode, el: Element): void {
   const menu = document.createElement("div");

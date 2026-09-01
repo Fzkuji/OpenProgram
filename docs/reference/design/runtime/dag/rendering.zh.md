@@ -48,7 +48,7 @@
 | 在空白处拖拽 | 平移 |
 | 从节点上起手拖拽 | 归节点——单击、双击照常生效 |
 
-**滚轮分流**（`canvas.ts`）：ctrl/⌘ + 滚轮缩放——浏览器把触控板捏合投递成带
+**滚轮分流**（`interaction/canvas.ts`）：ctrl/⌘ + 滚轮缩放——浏览器把触控板捏合投递成带
 `ctrlKey` 的 wheel 事件，⌘+滚轮则是显式缩放和弦——速率按捏合细密连续的
 delta 调校。鼠标滚轮按滚轮速率缩放：鼠标没有捏合。macOS 的滚动加速让它的
 `deltaY` 变成小数且不定，判据用遗留字段 `wheelDeltaY`——Chromium/WebKit 把
@@ -73,7 +73,7 @@ fit。改面板尺寸永不重新 fit——用户看图的角度是他自己的�
 图例弹层，由 `dag-view.tsx` portal 进输入框的 `#dagHudSlot`，跟着输入框走、
 随它长高，只在 DAG 视角显示。缩放控件是一颗胶囊里的 − · 读数 · +：−/+ 每次
 步进恰好一个滚轮格（`ZOOM_STEP`），点读数本身重置 100%——按钮没有光标可锚，
-两者都以面板中心为锚。读数由 `canvas.ts` 在每次视角变化时命令式写入——把
+两者都以面板中心为锚。读数由 `interaction/canvas.ts` 在每次视角变化时命令式写入——把
 一次手势的每个 wheel 事件走 React state 会让整棵树每秒重绘六十次。
 
 HUD 不自带任何外观。胶囊列在输入框 env-pill 规则里
@@ -106,7 +106,7 @@ HUD 不自带任何外观。胶囊列在输入框 env-pill 规则里
 框拽到面板中间。
 
 画布在输入框底下一直铺到边——从输入框后面平移过去只是一个手势，fit 会把图
-居中在输入框上方的空间里（`canvas.ts::fitCanvas`），所以不需要预留 padding。
+居中在输入框上方的空间里（`interaction/canvas.ts::fitCanvas`），所以不需要预留 padding。
 
 ### 分支切换在图里
 
@@ -547,7 +547,7 @@ tooltip 和检查器里。
 没有窗口和展开抢画面。右栏 Details 仍然静默填充，用户想看随时打开。
 
 **右键 → 同一张卡原地展开**。不是第二个窗口：就是那一个卡片元素在原地加深
-（`tooltip.ts expandTooltip`）——所有字段、更长的预览、覆盖状态、上下文站
+（`interaction/tooltip.ts expandTooltip`）——所有字段、更长的预览、覆盖状态、上下文站
 位、id——动词接在卡底：checkout 到此分支 · 从此节点 fork · fork 并编辑此消
 息（仅用户轮）· 复制节点 id · 查看原始 JSON。两个状态共用一个行构建器
 （`renderNodeInfo`），不可能各说各话；覆盖行读的是节点绘制时已经戳好的 DOM
@@ -630,12 +630,12 @@ checkout 成活动分支——接管这个 agent 的对话。徽章永不压住�
 | 无限画布（平移 / 缩放 / fit / 点阵） | `dag/interaction/canvas.ts` 与 `styles/dag/canvas.css` 的 `.history-body`；视角状态在 `dag/store/globals.ts`；HUD 在 `components/chat/dag-view.tsx` |
 | 第一节 lane / tier / depth 布局 | `dag/layout/geometry.ts::computeGeometry`（链 lane 按 tier 打包并 lane 内归零、前序分行、场景3分叉行+间隔列、线程递归安放并下移后续链行、占用线程列）；格点性、无重叠、线程列行、分叉几何均由 `apps/web/scripts/check-dag-subagent.mjs` 真实执行并断言 |
 | 第二节 规则③ 字形占格 | 没有任何形状按文字定尺寸，画布上除肩上折叠数与胶囊注记外没有文字 |
-| 第四节 HEAD 呼吸光晕 | `render/nodes.ts` 戳 `data-head` 并把分支色写进 `color`；`dag-head-glow` 关键帧在 `styles/dag/nodes.css`（reduced-motion → 恒定光）；所有字形保持空心（`shapes.ts`）；HEAD 指向已归并回复时落到锚上（`pipeline.ts` 经 `threadModel.anchorOf`） |
+| 第四节 HEAD 呼吸光晕 | `render/nodes.ts` 戳 `data-head` 并把分支色写进 `color`；`dag-head-glow` 关键帧在 `styles/dag/nodes.css`（reduced-motion → 恒定光）；所有字形保持空心（`render/shapes.ts`）；HEAD 指向已归并回复时落到锚上（`pipeline.ts` 经 `threadModel.anchorOf`） |
 | 第〇节/第十二节 调用线程聚合 | `passes/thread.ts`（`buildThreadModel`：锚归并、事件归属、递归可见性）；`render/nodes.ts` 画肩上折叠数（`history-thread-count`）；`store/globals.ts` 的 `_threadOpen` |
-| 规则②推论（不画占位框） | `shapes.ts`：无 `square_outline`；task 渲染为普通方块 |
+| 规则②推论（不画占位框） | `render/shapes.ts`：无 `square_outline`；task 渲染为普通方块 |
 | 第四节 状态画在描边上 | `graph_builder` 下发 status；`nodes.ts` 画描边（running 虚线呼吸 / error 红+! / cancelled 灰化） |
 | 第五节 badge 锚定 | `render/badges.ts`：锚对话层末节点、锚位有竖线左偏半格、实测像素盒碰撞下移一行 |
-| 场景 8 merge 形状与连线 | `shapes.ts` `merge_dot`（◉）；`edges.ts` 汇入线 peer 色 2.4px 实线 |
+| 场景 8 merge 形状与连线 | `render/shapes.ts` `merge_dot`（◉）；`edges.ts` 汇入线 peer 色 2.4px 实线 |
 | 场景 8/10 attach 指针 | 后端 display=runtime 过滤 + `graph_builder` 把 ref 戳到嵌入位置（`attach_returns`），`edges.ts` 画回流长虚线 |
 | 第四节 跨会话 ↗ | `graph_builder` 打 `spawn_remote` 标（目标侧）；`nodes.ts` 画 ↗（源侧 `spawn_out` 渲染就绪，等数据源打标） |
 | 第一节 spawn 根 tier | `graph_layout`：tier=1 / depth 同行 / lane 开新分支；`task_followup` 无 attach 时挂回接收轮（`filter.py` 兜底） |
@@ -644,10 +644,10 @@ checkout 成活动分支——接管这个 agent 的对话。徽章永不压住�
 | 第八节 覆盖查询 | `routes/tree.py::_coverage_nodes` 填 `/context-range` 的 `nodes`；测试见 `tests/unit/context/test_context_range_coverage.py` |
 | 第八节 aged / spilled 绘制 | `render/nodes.ts`（stroke-opacity + `▤`），数据来自 `store/globals.ts` 的 `_coverageSet` |
 | 第九节 `covers_ids` 下发 | `webui/graph_builder.py` 把 `metadata.covers` 解析成 id；测试见 `tests/unit/dag/test_graph_builder_covers.py` |
-| 第九节 胶囊形状 | `shapes.ts` 的 `capsule`（按 `covers_ids` 判定，打 `data-shape` 标让 `_applyShapeSize` 别改它的几何） |
+| 第九节 胶囊形状 | `render/shapes.ts` 的 `capsule`（按 `covers_ids` 判定，打 `data-shape` 标让 `_applyShapeSize` 别改它的几何） |
 | 第九节 折叠 / 褶皱 / 幽灵 | `passes/fold-summaries.ts`（折叠）、`render/nodes.ts`（褶皱、`已压缩 · N 轮` 注记、幽灵描边）、`render/edges.ts`（幽灵虚线边）、`store/globals.ts` 的 `_summaryExpanded`；由 `apps/web/scripts/check-dag-summary.mjs` 实跑 |
 | 第十节 失败留档 | `render/nodes.ts::_isArchivedFailure`——`status=error` **且**离开 HEAD 链；灰覆盖第四节的红 |
 | 第十一节 一张卡两个状态 / fork 并编辑 | `dag/interaction/tooltip.ts`：`renderNodeInfo` 喂两个状态，`expandTooltip` 原地加深；`render/inspector.ts` 只构建动词列表（+ 原始 JSON 层），`interaction/nodes.ts` 接线；动作走 `POST /api/chat/checkout` |
 | 第十一节 图例 | `components/chat/dag-view.tsx` 的 `DagLegend`（挂在画布 HUD 里），`styles/dag/hud.css` 的 `.dag-legend` |
-| 第十二节 调用线程 + agent spawn | `shapes.ts`（spawn → 方块）、`passes/thread.ts`（模型）、`layout/geometry.ts`（递归安放）、`render/edges.ts`（线程点线、中心连线、场景3横桥）、`render/nodes.ts`（`data-thread*`、肩上折叠数）、`render/interaction.ts`（`toggleThreadOpen`）；由 `apps/web/scripts/check-dag-subagent.mjs` 实跑 |
+| 第十二节 调用线程 + agent spawn | `render/shapes.ts`（spawn → 方块）、`passes/thread.ts`（模型）、`layout/geometry.ts`（递归安放）、`render/edges.ts`（线程点线、中心连线、场景3横桥）、`render/nodes.ts`（`data-thread*`、肩上折叠数）、`interaction/nodes.ts`（`toggleThreadOpen`）；由 `apps/web/scripts/check-dag-subagent.mjs` 实跑 |
 | 第十二节 名字上线 | `task/runner.py::_update_attach_card` 从 task 戳出 `attach.label`；`ws_actions/session.py::_annotate_spawn_origin` 把它带到 spawn 根的 `spawned_from.label`；测试见 `tests/unit/test_task_attach_integration.py` |

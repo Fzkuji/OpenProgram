@@ -379,7 +379,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   const geom = computeGeometry(tree.byId, threadModel);
 
   // The SVG fills the pane; everything is drawn inside ``world``, which
-  // carries the user's pan and zoom (``./canvas.ts``). Nothing here is
+  // carries the user's pan and zoom (``./interaction/canvas.ts``). Nothing here is
   // sized to the content — an infinite canvas has no content size, and
   // the graph is reached by moving the camera, not by scrolling a box.
   const svg = _svg("svg", { class: "history-svg" });

@@ -67,7 +67,7 @@ export function _setVisibleSet(newSet: Record<string, boolean>): void {
   });
   setVisibleIds(newSet);
   // No auto-scroll: the canvas is a camera the user drives, not a scroll
-  // box (``../canvas.ts``). Yanking it to whatever the transcript last
+  // box (``../interaction/canvas.ts``). Yanking it to whatever the transcript last
   // highlighted would fight every pan.
 }
 

@@ -172,7 +172,7 @@ export function _installInteractionHandlers(rerender: () => void): void {
     // left over from a right-click would sit on top of the change.
     closeNodeLayers();
     // A click is the node's own ACTION, not an info request — info
-    // lives on the hover card (tooltip.ts), the one surface per node.
+    // lives on the hover card (interaction/tooltip.ts), the one surface per node.
     // The old click-opened inspector popover landed on top of the very
     // expansion the same click had just triggered. The right rail's
     // Details view still fills quietly, for whenever the user opens
