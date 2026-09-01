@@ -19,6 +19,8 @@ Chat Agent 可以直接调用搜索、创建、修订或具体 Workflow，但不
 
 运行已发布 package 不会修改或重新发布它。执行失败时，run 进入 `failed`，保留原错误和 checkpoint；修改 package 必须显式调用 `revise_workflow`。
 
+用户明确取消时，run 会把 `cancelled` 保存为终态。再次恢复该 `run_id` 只返回已保存的取消结果，不会重新执行。进程级 `KeyboardInterrupt` 则保存为 `interrupted`；后续调用可以复用该 run 保存的 artifact 和 checkpoint。这里的状态是 Workflow run 投影，不是 canonical Execution record。为恢复尝试分配新的 canonical `execution_id` 仍属于尚未完成的统一 Execution 接入。
+
 历史 `code.py` run 仍可兼容恢复，但 legacy 单模块格式不再接受新 authoring，也不会出现在 Workflow 搜索结果中。
 
 ## 自己编写 package

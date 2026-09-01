@@ -826,6 +826,123 @@ def test_resume_legacy_code_run_keeps_artifact_unchanged(
     assert _state(session_repo, "legacy")["result"] == "legacy ok"
 
 
+@pytest.mark.parametrize("artifact_kind", ["package", "legacy", "single"])
+@pytest.mark.parametrize(
+    ("exit_kind", "expected_status"),
+    [("cancelled", "cancelled"), ("interrupted", "interrupted")],
+)
+def test_resume_persists_control_exit_and_keeps_cancelled_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+    session_repo: Path,
+    artifact_kind: str,
+    exit_kind: str,
+    expected_status: str,
+) -> None:
+    from openprogram.agentic_programming.function import CancelledError
+
+    run_id = f"{artifact_kind}-{exit_kind}"
+    instance = session_repo / "workflows" / run_id
+    instance.mkdir(parents=True)
+    state = {
+        "run_id": run_id,
+        "task": "resume control exit",
+        "status": "interrupted",
+        "executions": 0,
+        "items": [],
+        "revisions": [],
+        "result": "",
+        "last_error": "",
+    }
+    attempts = 0
+    should_raise = True
+    exception_type = CancelledError if exit_kind == "cancelled" else KeyboardInterrupt
+
+    def execute(*_args, **_kwargs) -> str:
+        nonlocal attempts
+        attempts += 1
+        if should_raise:
+            raise exception_type("stop resume")
+        return "finished"
+
+    if artifact_kind == "package":
+        (instance / "snapshot").mkdir()
+        state["project_metadata"] = {}
+        monkeypatch.setattr(TL, "_execute_snapshot", execute)
+    elif artifact_kind == "legacy":
+        (instance / "code.py").write_text(
+            "def workflow():\n    return 'legacy'\n", encoding="utf-8"
+        )
+        monkeypatch.setattr(TL, "_execute_source", execute)
+    else:
+        (instance / "code.py").write_text("SINGLE\n", encoding="utf-8")
+        monkeypatch.setattr(TL, "_agent_function", lambda *_args: execute)
+    TL._save_state(instance / "state.json", state)
+    _summarizer(monkeypatch, "Completed resumed workflow.")
+
+    with pytest.raises(exception_type, match="stop resume"):
+        TL.resume_workflow(run_id)
+
+    exit_state = _state(session_repo, run_id)
+    assert exit_state["status"] == expected_status
+    assert exception_type.__name__ in exit_state["last_error"]
+    assert "stop resume" in exit_state["last_error"]
+    assert attempts == 1
+    exit_bytes = _dir_bytes(instance)
+    should_raise = False
+
+    if expected_status == "cancelled":
+        monkeypatch.setattr(
+            TL,
+            "_registered_agentic_functions",
+            lambda: pytest.fail("cancelled resume must not prepare execution"),
+        )
+
+    result = TL.resume_workflow(run_id)
+
+    if expected_status == "cancelled":
+        assert result["status"] == "cancelled"
+        assert attempts == 1
+        assert _dir_bytes(instance) == exit_bytes
+    else:
+        assert result["status"] == "completed"
+        assert attempts == 2
+        assert _state(session_repo, run_id)["last_error"] == ""
+
+
+def test_single_resume_persists_cancel_before_checkpoint_setup(
+    monkeypatch: pytest.MonkeyPatch, session_repo: Path,
+) -> None:
+    from openprogram.agentic_programming.function import CancelledError
+
+    run_id = "single-setup-cancelled"
+    instance = session_repo / "workflows" / run_id
+    instance.mkdir(parents=True)
+    (instance / "code.py").write_text("SINGLE\n", encoding="utf-8")
+    TL._save_state(instance / "state.json", {
+        "run_id": run_id,
+        "task": "resume before checkpoint setup",
+        "status": "interrupted",
+        "executions": 0,
+        "items": [],
+        "revisions": [],
+        "result": "",
+        "last_error": "",
+    })
+
+    def cancel_before_checkpoint(*_args):
+        raise CancelledError("stop setup")
+
+    monkeypatch.setattr(TL, "_agent_function", cancel_before_checkpoint)
+
+    with pytest.raises(CancelledError, match="stop setup"):
+        TL.resume_workflow(run_id)
+
+    state = _state(session_repo, run_id)
+    assert state["status"] == "cancelled"
+    assert "CancelledError: stop setup" in state["last_error"]
+    assert state["items"] == []
+
+
 def test_resume_without_snapshot_does_not_reselect_project(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
@@ -1675,6 +1792,8 @@ def test_cancel_signal_propagates_without_planner_rewrite(
         _run_task("cancel")
 
     assert len(prompts) == 1
+    run_id = next((session_repo / "workflows").iterdir()).name
+    assert _state(session_repo, run_id)["status"] == "cancelled"
 
 
 def test_generated_environment_excludes_runtime_and_agentic_function(
@@ -2888,7 +3007,7 @@ def test_auto_workflow_create_failure_persists_failed_run(
     assert not any(state["status"] == "running" for state in states)
 
 
-def test_auto_workflow_create_cancel_persists_interrupted_run(
+def test_auto_workflow_create_cancel_persists_cancelled_run(
     monkeypatch: pytest.MonkeyPatch, session_repo: Path,
 ) -> None:
     from openprogram.agentic_programming.function import CancelledError
@@ -2905,7 +3024,7 @@ def test_auto_workflow_create_cancel_persists_interrupted_run(
 
     states = _workflow_run_states(session_repo)
     assert len(states) == 1
-    assert states[0]["status"] == "interrupted"
+    assert states[0]["status"] == "cancelled"
     assert not any(state["status"] == "running" for state in states)
 
 

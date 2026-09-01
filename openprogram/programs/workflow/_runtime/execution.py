@@ -599,6 +599,7 @@ def _run_single(
         state_path = instance / "state.json"
         state = run_state._load_state(state_path)
         state["status"] = "running"
+        run_state._save_state(state_path, state)
         checkpoints = run_state._Checkpoints(state, state_path)
         checkpoints.begin_pass()
 
@@ -606,7 +607,7 @@ def _run_single(
         result = checkpoints.wrap(
             "agent", bindings._agent_function(session_id, spawn_caller)
         )(task)
-        state.update(status="completed", result=str(result))
+        state.update(status="completed", result=str(result), last_error="")
         state["handoff"] = run_state._summarize_workflow(state)
         run_state._save_state(state_path, state)
         return run_state._result(state, run_id)
@@ -621,49 +622,55 @@ def _execute_workflow(
     run_id: str,
 ) -> dict:
     """Resume one existing run from its original snapshot or legacy code."""
-    functions = bindings._registered_agentic_functions()
     instance = run_state._instance_dir(session_id, run_id)
     with _WORKFLOW_LOCK:
         state = run_state._load_state(instance / "state.json")
-        if (instance / "snapshot").exists():
-            state["status"] = "running"
-            run_state._save_state(instance / "state.json", state)
-            return _run_project_instance_locked(
-                instance,
-                state,
-                run_id=run_id,
-                session_id=session_id,
-                agent_id=agent_id,
-                spawn_caller=spawn_caller,
-                functions=functions,
-            )
-        code_path = instance / "code.py"
-        if code_path.exists():
-            source = code_path.read_text(encoding="utf-8")
-            if source.strip() == "SINGLE":
-                return _run_single(
+        if state.get("status") == "cancelled":
+            return run_state._result(state, run_id)
+        functions = bindings._registered_agentic_functions()
+        try:
+            if (instance / "snapshot").exists():
+                state["status"] = "running"
+                run_state._save_state(instance / "state.json", state)
+                return _run_project_instance_locked(
                     instance,
+                    state,
                     run_id=run_id,
                     session_id=session_id,
                     agent_id=agent_id,
                     spawn_caller=spawn_caller,
+                    functions=functions,
                 )
-            planner._validate_source(source)
-            state["status"] = "running"
-            run_state._save_state(instance / "state.json", state)
-            return _run_legacy_instance_locked(
-                instance,
-                state,
-                source,
-                run_id=run_id,
-                session_id=session_id,
-                agent_id=agent_id,
-                spawn_caller=spawn_caller,
-                functions=functions,
+            code_path = instance / "code.py"
+            if code_path.exists():
+                source = code_path.read_text(encoding="utf-8")
+                if source.strip() == "SINGLE":
+                    return _run_single(
+                        instance,
+                        run_id=run_id,
+                        session_id=session_id,
+                        agent_id=agent_id,
+                        spawn_caller=spawn_caller,
+                    )
+                planner._validate_source(source)
+                state["status"] = "running"
+                run_state._save_state(instance / "state.json", state)
+                return _run_legacy_instance_locked(
+                    instance,
+                    state,
+                    source,
+                    run_id=run_id,
+                    session_id=session_id,
+                    agent_id=agent_id,
+                    spawn_caller=spawn_caller,
+                    functions=functions,
+                )
+            raise InvalidWorkflow(
+                f"workflow run {run_id} has no snapshot or legacy code to resume"
             )
-        raise InvalidWorkflow(
-            f"workflow run {run_id} has no snapshot or legacy code to resume"
-        )
+        except (KeyboardInterrupt, CancelledError) as exc:
+            run_state._mark_run_exception(instance, state, exc)
+            raise
 
 
 def _run_published_workflow(

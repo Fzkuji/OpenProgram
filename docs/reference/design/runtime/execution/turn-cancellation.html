@@ -103,7 +103,7 @@
             <tr><td><code>owner_id</code></td><td>仅服务端生成或解析。</td><td>定位 async task、thread、process group 或 provider request；不返回可操作 PID。</td></tr>
           </tbody>
         </table></div>
-        <div class="callout good"><strong>同一规则覆盖直接运行和嵌套运行。</strong>后台 Job 可令 <code>execution_id == job_id</code>；Workflow 可令 <code>execution_id == run_id</code>；它们不需要再创建一个同义 cancellation ID。</div>
+        <div class="callout good"><strong>同一规则覆盖直接运行和嵌套运行。</strong>后台 Job 的单次执行可令 <code>execution_id == job_id</code>。Workflow 的 <code>run_id</code> 标识 artifact/checkpoint 容器；目标合同要求每次 resume 获得新的 <code>execution_id</code>，不能复用已终止尝试的 cancellation identity。当前内部 Workflow resume helper 尚未生成或持久化该 identity，统一 Execution 接入仍未完成。</div>
       </section>
 
       <section id="state">
@@ -128,6 +128,7 @@
             <rect x="46" y="350" width="988" height="58" rx="10" fill="#14181e" stroke="#303743"/><text x="70" y="375" fill="#c7cdd6" font-size="12">终态规则</text><text x="70" y="395" fill="#8f98a5" font-size="11">completed / failed / cancelled / interrupted 都是不可变终态。迟到的 cancel、owner exit 或 provider event 只能读取终态，不能覆盖终态。</text>
           </svg>
         </figure>
+        <div class="callout"><strong>Execution终态与Workflow run投影分层。</strong>上图的不可变终态约束作用于由 <code>execution_id</code> 标识的 canonical Execution DTO。Workflow <code>state.json</code> 由 <code>run_id</code> 标识，记录可复用 artifact/checkpoint 与最近一次尝试的组件投影；当前 helper 允许该投影从 <code>interrupted</code> 重新进入 <code>running</code>，但不会生成 canonical resume-attempt identity。目标集成必须用新的 <code>execution_id</code> 表示恢复尝试，并保持旧 execution 为 <code>interrupted</code>。<code>cancelled</code> run 不再执行，只返回已保存结果。</div>
         <ul>
           <li><code>cancelling</code> 是持久状态，不是前端临时 spinner。它表示取消请求已经接受，但至少一个 owner 或后代尚未完成终态确认。</li>
           <li><code>cancelled</code> 只在指定 execution 及取消范围内的所有 owner 已停止、组件状态已写入、资源 lease 已释放后写入。</li>
@@ -405,7 +406,7 @@
             <tr><td>协作取消</td><td><span class="tag partial">Partial</span></td><td>provider/agent/tool 路径已有 Event 与 <code>CancelledError</code> 传播设施；ACP <code>session/cancel</code> 与 MCP 的 prompt/request/connection cancellation 已调用对应的 <code>cancel_execution(execution_id)</code>，等待中的 question 只按 exact owner 关闭。</td><td>按 owner adapter 统一覆盖其他执行类型，并补齐统一审计与 finalization。</td></tr>
             <tr><td>宽限后终止</td><td><span class="tag partial">Partial</span></td><td>WebSocket stop 已有 4 秒宽限和子进程终止。</td><td>取消第二次点击/force 协议，按 exact execution owner 自动升级。</td></tr>
             <tr><td>持久 cancelling 状态</td><td><span class="tag remove">Not implemented</span></td><td>部分 UI 会发送临时 <code>stopping</code>。</td><td>canonical Execution Record、CAS、reload 与 restart recovery。</td></tr>
-            <tr><td>统一 finalization</td><td><span class="tag remove">Not implemented</span></td><td>现有 handler 和个别 Program 有局部补写逻辑。</td><td>父进程 owner adapter、所有组件投影和资源释放。</td></tr>
+            <tr><td>统一 finalization</td><td><span class="tag partial">Partial</span></td><td>Workflow <code>state.json</code> 已对 package snapshot、legacy <code>code.py</code> 和 <code>SINGLE</code> 统一保存控制退出：<code>CancelledError → cancelled</code>，<code>KeyboardInterrupt → interrupted</code>；再次 resume 不会覆盖 cancelled run，interrupted run 投影仍可复用 artifact/checkpoint。其他 handler 和个别 Program 仍只有局部补写逻辑。</td><td>恢复尝试的新 canonical <code>execution_id</code>、父进程 owner adapter、所有组件投影和资源释放。</td></tr>
             <tr><td>统一 surface 协议</td><td><span class="tag remove">Not implemented</span></td><td>App/Web/TUI 已有停止入口。</td><td><code>execution.cancel</code>、统一 DTO、同一文案和终态。</td></tr>
             <tr><td>完整验收</td><td><span class="tag remove">Pending</span></td><td>现有 turn cancellation component tests。</td><td>第 18 节全部场景和默认 App 可视验收。</td></tr>
           </tbody>

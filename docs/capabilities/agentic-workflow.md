@@ -19,6 +19,8 @@ A published Workflow is a multi-file Python package with its own Git history. Ev
 
 Running a published package never edits or republishes it. If execution fails, the run becomes `failed` and preserves the original error and checkpoints. Changing the package requires an explicit `revise_workflow` call.
 
+An explicit user cancellation stores `cancelled` as a terminal run state. Resuming that `run_id` returns the saved cancelled result without executing it again. A process-level `KeyboardInterrupt` stores `interrupted` instead; a later call can reuse that run's saved artifact and checkpoints. This status is the Workflow run projection, not the canonical Execution record. Assigning a new canonical `execution_id` to a resumed attempt remains part of the incomplete unified Execution integration.
+
 Legacy `code.py` runs can still be resumed for compatibility, but the legacy single-module format is not accepted for new authoring and is excluded from Workflow search.
 
 ## Writing a package yourself

@@ -248,7 +248,7 @@ Registry / Programs 展示的运行实体：
           <tbody>
             <tr><td>search</td><td>无持久run；只读结果</td><td>catalog损坏项被报告或跳过；不得改变项目。</td></tr>
             <tr><td>create / revise</td><td><code>running → completed | failed | cancelled</code></td><td>失败和取消不发布；candidate可回收，诊断写入run state。</td></tr>
-            <tr><td>workflow run</td><td><code>running → completed | failed | capped | cancelled</code></td><td>保留原错误和checkpoint；不自动改写已发布Workflow。</td></tr>
+            <tr><td>workflow run</td><td><code>running → completed | failed | capped | cancelled | interrupted</code></td><td>保留原错误和checkpoint；不自动改写已发布Workflow。</td></tr>
             <tr><td>auto</td><td>聚合子调用状态</td><td>任一子调用失败即停止；不得把部分结果标记为completed。</td></tr>
             <tr><td>resume</td><td>只恢复指定run</td><td>固定原snapshot/revision，不重新搜索或重新选择项目。</td></tr>
           </tbody>
@@ -331,7 +331,7 @@ Registry / Programs 展示的运行实体：
             <tr><td>运行失败</td><td>具体Workflow</td><td>状态failed、原错误保留、已发布源码和HEAD不变。</td></tr>
             <tr><td>取消或Stop</td><td>create/revise/auto/run</td><td>相关run最终为cancelled；没有repair、publish或遗留running。</td></tr>
             <tr><td>并发发布同一项目</td><td>两个revise调用</td><td>串行验证active revision；不丢失commit，不覆盖新HEAD。</td></tr>
-            <tr><td>旧run恢复</td><td><code>resume_workflow(run_id)</code></td><td>固定旧artifact只读执行；不创建新项目、不发布、不改旧snapshot。</td></tr>
+            <tr><td>旧run恢复</td><td>内部兼容恢复（<code>resume_workflow(run_id)</code>）</td><td>固定旧artifact只读执行；不创建新项目、不发布、不改旧snapshot。</td></tr>
           </tbody>
         </table>
         <div class="callout warn">最终完成不能只依据单元测试。必须通过默认 <code>/Applications/OpenProgram.app</code> 的真实表单和Chat路径，并在重新加载会话后核对DAG caller、运行状态、Workflow ref和catalog变化。</div>
@@ -352,6 +352,7 @@ Registry / Programs 展示的运行实体：
             <tr><td>发布前行为测试门</td><td>必须使用强制sandbox，不依赖用户profile；当前发布仍只做静态验证。</td><td><span class="tag target">Pending</span></td></tr>
             <tr><td>按 revision 执行与依赖 pin</td><td><code>_run_published_workflow</code> 通过 <code>git archive</code> 检出选定 revision；<code>workflow_dependencies</code> 随发布持久化并在执行时 pin，旧 revision 在新 HEAD 发布后仍可运行。</td><td><span class="tag current">Implemented</span></td></tr>
             <tr><td>legacy <code>code.py</code> resume</td><td><code>resume_workflow</code> 对 legacy run 只读重放 snapshot/<code>code.py</code>；失败返回 failed，不调用 planner、不改写 artifact。</td><td><span class="tag current">Implemented</span></td></tr>
+            <tr><td>Workflow取消终态</td><td>内部 <code>resume_workflow(run_id)</code> 直接回归覆盖 package snapshot、legacy <code>code.py</code> 和 <code>SINGLE</code>：<code>CancelledError</code> 持久化为不再执行的 <code>cancelled</code> run 投影，<code>KeyboardInterrupt</code> 持久化为允许后续调用复用 artifact/checkpoint 的 <code>interrupted</code> run 投影；两者均保留原异常传播。为恢复尝试生成并持久化新的 canonical <code>execution_id</code> 仍由统一 Execution 接入负责。</td><td><span class="tag current">Implemented</span></td></tr>
             <tr><td>停止新的 <code>agentic_workflow</code> 调用</td><td>旧入口不再注册；新 catalog、新 DAG 和新 run 不出现 <code>agentic_workflow</code>；<code>resume_workflow</code> 保留为内部函数。</td><td><span class="tag current">Completed</span></td></tr>
             <tr><td>分类目录与运行实体分离</td><td><code>workflow/</code> 仅作为分类；Programs按Registry展示四个公开函数，支持嵌套分类和多入口文件；调用图按所选函数及可达helper分析，目录和helper不参与运行身份。规格与质量复审均通过。</td><td><span class="tag current">Implemented</span></td></tr>
             <tr><td>默认App真实验收</td><td>代码与文档门禁已齐，等待默认 <code>/Applications/OpenProgram.app</code> 完成 direct / reuse / create / cancel / legacy resume 可视验收。</td><td><span class="tag target">Pending</span></td></tr>
