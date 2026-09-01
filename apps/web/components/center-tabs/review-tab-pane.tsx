@@ -12,6 +12,7 @@ import styles from "./review-tab-pane.module.css";
 type ReviewScope = "turn" | "branch" | "workspace";
 type ReviewCategory = "All" | "Code" | "Tests" | "Docs" | "Large";
 type ReviewSort = "path" | "alpha" | "category" | "recent";
+const REVIEW_REQUEST_TIMEOUT_MS = 10_000;
 
 interface ReviewFile {
   path: string;
@@ -101,6 +102,7 @@ export function ReviewTabPane({
   const query = "";
   const sort: ReviewSort = "path";
   const staleRecoveryRef = useRef<string | null>(null);
+  const diffCursorRecoveryRef = useRef<string | null>(null);
   const [scopeState, setScopeState] = useState<ScopeState>({
     loading: true,
     status: "loading",
@@ -137,6 +139,7 @@ export function ReviewTabPane({
 
   useEffect(() => {
     staleRecoveryRef.current = null;
+    diffCursorRecoveryRef.current = null;
     setScope(initialScope);
     setSelectedPath(initialPath ?? "");
     setFileCursor(null);
@@ -174,6 +177,21 @@ export function ReviewTabPane({
     }
     setScopeState((current) => ({ ...current, loading: true, error: undefined }));
     const requestId = crypto.randomUUID();
+    const finishScopeError = (error: string) => {
+      socket.removeEventListener("message", onMessage);
+      socket.removeEventListener("close", onClose);
+      window.clearTimeout(timeoutId);
+      setScopeState((current) => ({
+        ...current,
+        loading: false,
+        status: "error",
+        error,
+        category,
+        query,
+        sort,
+      }));
+    };
+    const onClose = () => finishScopeError(text("Review request disconnected", "审阅请求连接已断开"));
     const onMessage = (event: MessageEvent) => {
       try {
         const frame = JSON.parse(event.data);
@@ -184,6 +202,8 @@ export function ReviewTabPane({
         if (scope === "turn" && data.assistant_msg_id !== assistantMsgId) return;
         if (data.category !== category || data.query !== query || data.sort !== sort) return;
         socket.removeEventListener("message", onMessage);
+        socket.removeEventListener("close", onClose);
+        window.clearTimeout(timeoutId);
         const stale = data.status === "stale" || data.error === "STALE_SNAPSHOT";
         if (stale) {
           const recoveryKey = `${scope}\u0000${category}\u0000${query}\u0000${sort}\u0000${fileCursor ?? ""}`;
@@ -231,6 +251,11 @@ export function ReviewTabPane({
       }
     };
     socket.addEventListener("message", onMessage);
+    socket.addEventListener("close", onClose);
+    const timeoutId = window.setTimeout(
+      () => finishScopeError(text("Review request timed out", "审阅请求超时")),
+      REVIEW_REQUEST_TIMEOUT_MS,
+    );
     const sent = send({
       action: "review_scope",
       session_id: sessionId,
@@ -247,15 +272,13 @@ export function ReviewTabPane({
       request_id: requestId,
     });
     if (!sent) {
-      socket.removeEventListener("message", onMessage);
-      setScopeState((current) => ({
-        ...current,
-        loading: false,
-        status: "error",
-        error: text("Not connected", "连接已断开"),
-      }));
+      finishScopeError(text("Not connected", "连接已断开"));
     }
-    return () => socket.removeEventListener("message", onMessage);
+    return () => {
+      socket.removeEventListener("message", onMessage);
+      socket.removeEventListener("close", onClose);
+      window.clearTimeout(timeoutId);
+    };
   }, [assistantMsgId, category, clearReviewForStale, fileCursor, query, refreshNonce, scope, sessionId, sort, text]);
 
   useEffect(() => {
@@ -266,6 +289,13 @@ export function ReviewTabPane({
     }
     setDiffState({ loading: true, path: selectedPath });
     const requestId = crypto.randomUUID();
+    const finishDiffError = (error: string) => {
+      socket.removeEventListener("message", onMessage);
+      socket.removeEventListener("close", onClose);
+      window.clearTimeout(timeoutId);
+      setDiffState({ loading: false, path: selectedPath, error });
+    };
+    const onClose = () => finishDiffError(text("Diff request disconnected", "差异请求连接已断开"));
     const onMessage = (event: MessageEvent) => {
       try {
         const frame = JSON.parse(event.data);
@@ -282,6 +312,8 @@ export function ReviewTabPane({
           || data.sort !== sort
         ) return;
         socket.removeEventListener("message", onMessage);
+        socket.removeEventListener("close", onClose);
+        window.clearTimeout(timeoutId);
         if (data.error === "STALE_SNAPSHOT") {
           const recoveryKey = `${scope}\u0000${category}\u0000${query}\u0000${sort}\u0000${selectedPath}\u0000${diffCursor ?? ""}`;
           const retry = staleRecoveryRef.current !== recoveryKey;
@@ -298,6 +330,20 @@ export function ReviewTabPane({
           }
           return;
         }
+        if (data.error === "STALE_CURSOR") {
+          const recoveryKey = `${scope}\u0000${category}\u0000${query}\u0000${sort}\u0000${selectedPath}`;
+          const retry = diffCursorRecoveryRef.current !== recoveryKey;
+          diffCursorRecoveryRef.current = recoveryKey;
+          setDiffCursor(null);
+          setDiffHistory([]);
+          if (retry) {
+            setDiffState({ loading: true, path: selectedPath });
+          } else {
+            setDiffState({ loading: false, path: selectedPath, error: data.error });
+          }
+          return;
+        }
+        diffCursorRecoveryRef.current = null;
         setDiffState({
           loading: false,
           path: selectedPath,
@@ -314,6 +360,11 @@ export function ReviewTabPane({
       }
     };
     socket.addEventListener("message", onMessage);
+    socket.addEventListener("close", onClose);
+    const timeoutId = window.setTimeout(
+      () => finishDiffError(text("Diff request timed out", "差异请求超时")),
+      REVIEW_REQUEST_TIMEOUT_MS,
+    );
     if (!send({
       action: "review_file_diff",
       session_id: sessionId,
@@ -327,14 +378,13 @@ export function ReviewTabPane({
       snapshot_id: scopeState.snapshot_id,
       request_id: requestId,
     })) {
-      socket.removeEventListener("message", onMessage);
-      setDiffState({
-        loading: false,
-        path: selectedPath,
-        error: text("Not connected", "连接已断开"),
-      });
+      finishDiffError(text("Not connected", "连接已断开"));
     }
-    return () => socket.removeEventListener("message", onMessage);
+    return () => {
+      socket.removeEventListener("message", onMessage);
+      socket.removeEventListener("close", onClose);
+      window.clearTimeout(timeoutId);
+    };
   }, [
     assistantMsgId,
     category,

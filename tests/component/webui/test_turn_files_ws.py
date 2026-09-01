@@ -634,6 +634,36 @@ def test_review_scope_error_echoes_filter_context(store):
     assert data["snapshot_id"] == "snapshot-old"
 
 
+def test_review_scope_rejects_invalid_limit_and_cursor_with_context():
+    ws = FakeWS()
+    _run(tf.handle_review_scope(ws, {
+        "session_id": "session", "scope": "workspace", "category": "Code",
+        "query": "needle", "sort": "recent", "limit": "20", "cursor": 4,
+        "snapshot_id": "snapshot-old", "request_id": "invalid-request",
+    }))
+
+    data = ws.sent[0]["data"]
+    assert data["status"] == "error"
+    assert "limit must be an integer" in data["error"]
+    assert "cursor must be a string" in data["error"]
+    assert data["category"] == "Code"
+    assert data["query"] == "needle"
+    assert data["sort"] == "recent"
+    assert data["snapshot_id"] == "snapshot-old"
+
+
+def test_review_recent_sort_uses_mutation_sequence_then_turn_order():
+    files = [
+        {"path": "/z.py", "rel": "z.py", "latest_mutation_sequence": 2, "latest_turn_sequence": 9},
+        {"path": "/a.py", "rel": "a.py", "latest_mutation_sequence": 4, "latest_turn_sequence": 1},
+        {"path": "/m.py", "rel": "m.py", "latest_mutation_sequence": 4, "latest_turn_sequence": 3},
+    ]
+
+    assert [row["rel"] for row in tf._review_filter_files(files, "All", "", "recent")] == [
+        "m.py", "a.py", "z.py",
+    ]
+
+
 def test_review_scope_filters_before_paging_and_invalidates_filter_snapshot(store, tmp_path):
     session_id, msg_id = "s_filtered_scope", "u1_reply"
     _seed(store, session_id, msg_id)
@@ -720,7 +750,7 @@ def test_workspace_review_snapshot_rejects_worktree_content_change(store, tmp_pa
     _run(tf.handle_review_scope(ws, {
         "session_id": "session", "scope": "workspace", "category": "Code",
         "query": "tracked", "snapshot_id": first["snapshot_id"],
-        "cursor": 0, "limit": 100,
+        "cursor": "", "limit": 100,
     }))
     data = ws.sent[0]["data"]
     assert data["status"] == "stale"
@@ -763,6 +793,53 @@ def test_workspace_review_page_stales_after_workspace_change(store, tmp_path, mo
     assert data["sort"] == "path"
 
 
+def test_workspace_review_diff_includes_staged_and_unstaged_segments(store, tmp_path, monkeypatch):
+    root = tmp_path / "staged-worktree-repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "t@example.com"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "T"], check=True)
+    target = root / "tracked.py"
+    target.write_text("base\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-qm", "base"], check=True)
+    target.write_text("staged\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "tracked.py"], check=True)
+    target.write_text("unstaged\n", encoding="utf-8")
+    monkeypatch.setattr(tf, "_project_root", lambda _session_id: root)
+
+    scope = tf._workspace_scope("session")
+    row = scope["files"][0]
+    assert row["added"] == 1
+    assert row["removed"] == 1
+    diff = tf._workspace_file_diff("session", str(target), scope["snapshot_id"])
+    assert "base-to-index" in diff["diff"]
+    assert "index-to-worktree" in diff["diff"]
+    assert "staged" in diff["diff"]
+    assert "unstaged" in diff["diff"]
+
+
+def test_workspace_snapshot_stops_before_content_budget_overflow(store, tmp_path, monkeypatch):
+    root = tmp_path / "bounded-content-repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "t@example.com"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "T"], check=True)
+    target = root / "tracked.py"
+    target.write_text("base\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-qm", "base"], check=True)
+    target.write_text("changed\n", encoding="utf-8")
+    monkeypatch.setattr(tf, "_project_root", lambda _session_id: root)
+    monkeypatch.setattr(tf, "_MAX_REVIEW_SNAPSHOT_BYTES", 10)
+
+    result = tf._workspace_scope("session")
+
+    assert result["status"] == "unavailable"
+    assert result["error"] == "REVIEW_SNAPSHOT_LIMIT"
+    assert result["files"] == []
+
+
 def test_review_scope_rejects_raw_offset_cursor(store, tmp_path):
     session_id, msg_id = "s_raw_cursor", "u1_reply"
     _seed(store, session_id, msg_id)
@@ -779,8 +856,8 @@ def test_review_scope_rejects_raw_offset_cursor(store, tmp_path):
         "session_id": session_id, "assistant_msg_id": msg_id,
         "scope": "turn", "cursor": "20", "limit": 20,
     }))
-    assert ws.sent[0]["data"]["status"] == "stale"
-    assert ws.sent[0]["data"]["error"] == "STALE_SNAPSHOT"
+    assert ws.sent[0]["data"]["status"] == "error"
+    assert ws.sent[0]["data"]["error"] == "cursor must be an opaque review token"
 
 
 def test_review_scope_snapshot_stales_when_recovery_blob_changes(store, tmp_path):
@@ -834,6 +911,29 @@ def test_review_scope_snapshot_ttl_invalidates_cursor(store, tmp_path, monkeypat
     }))
     assert next_ws.sent[0]["data"]["status"] == "stale"
     assert next_ws.sent[0]["data"]["error"] == "STALE_SNAPSHOT"
+
+
+def test_evicted_snapshot_cursor_is_stale_after_same_hash_rebuild(monkeypatch):
+    tf._REVIEW_SNAPSHOTS.clear()
+    tf._REVIEW_CURSORS.clear()
+    tf._REVIEW_SNAPSHOT_EPOCHS.clear()
+    monkeypatch.setattr(tf, "_MAX_REVIEW_SNAPSHOTS", 1)
+    files = [
+        {"path": "/one.py", "rel": "one.py", "added": 1, "removed": 0},
+        {"path": "/two.py", "rel": "two.py", "added": 1, "removed": 0},
+    ]
+    first = tf._scope_payload("turn", "mutation_journal", files)
+    first_page = tf._page_scope(first, "", 1)
+    second = tf._scope_payload(
+        "turn", "mutation_journal",
+        [{"path": "/other.py", "rel": "other.py", "added": 1, "removed": 0}],
+    )
+    assert second["snapshot_id"] != first["snapshot_id"]
+    rebuilt = tf._scope_payload("turn", "mutation_journal", files)
+    stale = tf._page_scope(rebuilt, first_page["next_cursor"], 1, first["snapshot_id"])
+
+    assert stale["status"] == "stale"
+    assert stale["error"] == "STALE_SNAPSHOT"
 
 
 def test_workspace_review_snapshot_detects_same_tree_new_head(store, tmp_path, monkeypatch):
@@ -918,7 +1018,7 @@ def test_review_diff_uses_opaque_cursor_bound_to_snapshot_and_path(store, tmp_pa
         "path": str(target), "snapshot_id": scope["snapshot_id"],
         "category": "All", "query": "", "sort": "path", "cursor": "20",
     }))
-    assert forged_ws.sent[0]["data"]["error"] == "STALE_CURSOR"
+    assert forged_ws.sent[0]["data"]["error"] == "cursor must be an opaque review token"
 
 
 def test_diff_page_mounts_at_most_two_hundred_lines(store, tmp_path):
