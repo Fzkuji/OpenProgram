@@ -461,6 +461,31 @@ def test_query_path_nul_is_invalid_request(project_root):
         assert data[field] == []
 
 
+def test_zero_match_search_counts_full_candidate_basis_and_evicts_old_snapshot(
+    project_root, monkeypatch,
+):
+    with ws_files._QUERY_LOCK:
+        ws_files._QUERY_SNAPSHOTS.clear()
+        ws_files._QUERY_CURSORS.clear()
+        ws_files._QUERY_CURSOR_TOKENS.clear()
+    monkeypatch.setattr(ws_files, "_QUERY_MAX_TOTAL_ITEMS", 15_000)
+    monkeypatch.setattr(ws_files, "_QUERY_MAX_TOTAL_BYTES", 8 * 1024 * 1024)
+    for index in range(ws_files._QUERY_MAX_SNAPSHOT_ITEMS - 6):
+        (project_root / f"candidate-{index:05d}.txt").write_text(
+            "x", encoding="utf-8",
+        )
+    for query in ("zero-match-a", "zero-match-b"):
+        data = _run(ws_files.handle_project_file_search, {
+            "project_id": "p1", "path": "", "query": query,
+        })["data"]
+        assert data["error_code"] is None
+        assert data["results"] == []
+        items, bytes_used, _cursors = ws_files._snapshot_usage()
+        assert items > 0
+        assert items <= 15_000
+        assert bytes_used <= 8 * 1024 * 1024
+
+
 def test_tree_path_traversal_rejected(project_root):
     for bad in ("../outside", "src/../../outside", "/etc"):
         data = _run(ws_files.handle_project_file_tree,

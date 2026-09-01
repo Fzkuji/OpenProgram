@@ -200,10 +200,17 @@ def _query_error(project_id: str, path: str, *, code: str,
 
 
 def _snapshot_footprint(snapshot: _QuerySnapshot) -> tuple[int, int]:
-    return len(snapshot.rows), sum(
+    # ``basis`` is the complete candidate vector, while ``rows`` is only
+    # the filtered projection. Count each candidate once in the item quota;
+    # estimate bytes for both stored structures because both remain resident.
+    basis_bytes = len(json.dumps(
+        snapshot.basis, sort_keys=True, default=str, separators=(",", ":"),
+    ))
+    rows_bytes = sum(
         len(json.dumps(row, sort_keys=True, default=str, separators=(",", ":")))
         for row in snapshot.rows
     )
+    return max(len(snapshot.basis), len(snapshot.rows)), basis_bytes + rows_bytes
 
 
 def _snapshot_usage() -> tuple[int, int, int]:
