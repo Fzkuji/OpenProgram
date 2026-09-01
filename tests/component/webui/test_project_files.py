@@ -107,6 +107,127 @@ def test_tree_unknown_project(project_root):
     assert "unknown project" in data["error"]
 
 
+def test_tree_pages_use_opaque_stable_cursor(project_root):
+    for index in range(105):
+        (project_root / f"item-{index:03d}.txt").write_text("x", encoding="utf-8")
+
+    first = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 100,
+    })["data"]
+    assert len(first["entries"]) == 100
+    assert first["snapshot_id"]
+    assert isinstance(first["next_cursor"], str)
+    assert not first["next_cursor"].isdigit()
+
+    second = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "cursor": first["next_cursor"],
+        "page_size": 100,
+    })["data"]
+    assert second["snapshot_id"] == first["snapshot_id"]
+    assert [e["name"] for e in second["entries"]] == [
+        "item-096.txt", "item-097.txt", "item-098.txt", "item-099.txt",
+        "item-100.txt", "item-101.txt", "item-102.txt",
+        "item-103.txt", "item-104.txt", "sneaky_link", "zeta.txt",
+    ]
+    assert second["next_cursor"] is None
+
+
+def test_tree_cursor_rejects_directory_version_change(project_root):
+    first = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 1,
+    })["data"]
+    (project_root / "changed.txt").write_text("changed", encoding="utf-8")
+    stale = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "cursor": first["next_cursor"],
+        "page_size": 1,
+    })["data"]
+    assert stale["error_code"] == "STALE_SNAPSHOT"
+    assert stale["entries"] == []
+
+
+def test_tree_cursor_is_bound_to_project_and_path(project_root, monkeypatch):
+    other = project_root.parent / "other"
+    other.mkdir()
+    (other / "same.txt").write_text("other", encoding="utf-8")
+    original = project_store.get_project
+
+    def get_project(project_id):
+        if project_id == "p2":
+            return types.SimpleNamespace(id="p2", path=str(other), name="Other")
+        return original(project_id)
+
+    monkeypatch.setattr(project_store, "get_project", get_project)
+    first = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 1,
+    })["data"]
+    stale = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p2", "path": "", "cursor": first["next_cursor"],
+        "page_size": 1,
+    })["data"]
+    assert stale["error_code"] == "STALE_SNAPSHOT"
+    assert stale["entries"] == []
+
+
+def test_project_search_finds_unexpanded_nested_paths_and_ignores_build_dirs(project_root):
+    deep = project_root / "unexpanded" / "nested"
+    deep.mkdir(parents=True)
+    (deep / "needle.py").write_text("x", encoding="utf-8")
+    ignored = project_root / "node_modules" / "needle.js"
+    ignored.parent.mkdir()
+    ignored.write_text("x", encoding="utf-8")
+
+    data = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": "needle",
+        "page_size": 100,
+    })["data"]
+    assert data["error_code"] is None
+    assert [row["path"] for row in data["results"]] == [
+        "unexpanded/nested/needle.py",
+    ]
+    assert data["snapshot_id"]
+
+
+def test_project_search_cursor_is_stable_and_invalidated(project_root):
+    search_dir = project_root / "search"
+    search_dir.mkdir()
+    for index in range(3):
+        (search_dir / f"needle-{index}.txt").write_text("x", encoding="utf-8")
+    first = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": "needle",
+        "page_size": 1,
+    })["data"]
+    assert first["next_cursor"]
+    (search_dir / "needle-new.txt").write_text("x", encoding="utf-8")
+    stale = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": "needle",
+        "cursor": first["next_cursor"], "page_size": 1,
+    })["data"]
+    assert stale["error_code"] == "STALE_SNAPSHOT"
+    assert stale["results"] == []
+
+
+def test_project_queries_reject_arbitrary_root(project_root):
+    tree = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "root": "/etc",
+    })["data"]
+    search = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": "passwd", "root": "/etc",
+    })["data"]
+    assert tree["error_code"] == search["error_code"] == "INVALID_REQUEST"
+    assert tree["entries"] == [] and search["results"] == []
+
+
+def test_project_search_does_not_follow_symlink(project_root):
+    external = project_root.parent / "external-search"
+    external.mkdir()
+    (external / "needle.txt").write_text("secret", encoding="utf-8")
+    (project_root / "linked-dir").symlink_to(external, target_is_directory=True)
+    data = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": "needle",
+    })["data"]
+    assert data["results"] == []
+
+
 def test_tree_path_traversal_rejected(project_root):
     for bad in ("../outside", "src/../../outside", "/etc"):
         data = _run(ws_files.handle_project_file_tree,
