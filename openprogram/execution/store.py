@@ -301,7 +301,6 @@ class ExecutionStore:
                 kind=kind,
                 payload=payload,
                 actor=actor,
-                fingerprint_extra={},
             )
             return command
 
@@ -318,7 +317,7 @@ class ExecutionStore:
         reason_code: str | None = None,
         supersede_kinds: Collection[CommandKind] = (),
         supersede_code: str = "superseded",
-    ) -> tuple[ControlCommand, ExecutionRecord]:
+    ) -> tuple[ControlCommand, ExecutionRecord, bool]:
         with self._transaction() as connection:
             command, duplicate = self._accept_command(
                 connection,
@@ -328,14 +327,10 @@ class ExecutionStore:
                 kind=kind,
                 payload=payload,
                 actor=actor,
-                fingerprint_extra={
-                    "target": target.value,
-                    "reason_code": reason_code,
-                },
             )
             if duplicate:
                 execution = self._require_execution(connection, execution_id)
-                return command, execution
+                return command, execution, True
             execution = self._transition_execution(
                 connection,
                 execution_id,
@@ -374,7 +369,7 @@ class ExecutionStore:
                 expected_status=CommandStatus.ACCEPTED,
                 target=CommandStatus.APPLYING,
             )
-            return command, execution
+            return command, execution, False
 
     def get_command(self, command_id: str) -> ControlCommand | None:
         with closing(self._connect()) as connection:
@@ -458,7 +453,6 @@ class ExecutionStore:
         kind: CommandKind,
         payload: Mapping[str, Any],
         actor: Mapping[str, Any],
-        fingerprint_extra: Mapping[str, Any],
     ) -> tuple[ControlCommand, bool]:
         fingerprint = _fingerprint(
             {
@@ -467,7 +461,6 @@ class ExecutionStore:
                 "kind": kind.value,
                 "payload": dict(payload),
                 "actor": dict(actor),
-                **dict(fingerprint_extra),
             }
         )
         existing_row = connection.execute(

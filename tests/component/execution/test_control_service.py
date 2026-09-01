@@ -123,6 +123,38 @@ def test_pause_intent_is_durable_before_driver_notification(tmp_path) -> None:
     ]
 
 
+def test_retried_pause_command_is_not_redispatched(tmp_path) -> None:
+    executions, attempts, execution, attempt = _execution(tmp_path, active=True)
+    registry = DriverRegistry()
+    driver = RecordingDriver(executions)
+    _bind(registry, execution, attempt, driver)
+    service = RuntimeControlService(executions, attempts, registry)
+
+    first = asyncio.run(
+        service.request_pause(
+            command_id="pause_1",
+            execution_id=execution.execution_id,
+            expected_version=execution.status_version,
+            actor={"surface": "test"},
+        )
+    )
+    retry = asyncio.run(
+        service.request_pause(
+            command_id="pause_1",
+            execution_id=execution.execution_id,
+            expected_version=execution.status_version,
+            actor={"surface": "test"},
+        )
+    )
+
+    assert retry.command == first.command
+    assert retry.execution == first.execution
+    assert not retry.delivered
+    assert driver.observed == [
+        ("pause", ExecutionStatus.PAUSING, CommandStatus.APPLYING)
+    ]
+
+
 def test_pause_without_local_owner_remains_durable_and_recoverable(tmp_path) -> None:
     executions, attempts, execution, _ = _execution(tmp_path, active=True)
     service = RuntimeControlService(executions, attempts, DriverRegistry())
@@ -155,6 +187,17 @@ def test_queued_pause_and_cancel_finish_without_a_live_driver(tmp_path) -> None:
     )
     assert paused.execution.status is ExecutionStatus.PAUSED
     assert paused.command.status is CommandStatus.APPLIED
+    repeated_pause = asyncio.run(
+        service.request_pause(
+            command_id="pause_1",
+            execution_id=execution.execution_id,
+            expected_version=execution.status_version,
+            actor={"surface": "test"},
+        )
+    )
+    assert repeated_pause.command == paused.command
+    assert repeated_pause.execution == paused.execution
+    assert not repeated_pause.delivered
 
     cancelled = asyncio.run(
         service.request_cancel(
@@ -167,6 +210,18 @@ def test_queued_pause_and_cancel_finish_without_a_live_driver(tmp_path) -> None:
     )
     assert cancelled.execution.status is ExecutionStatus.CANCELLED
     assert cancelled.command.status is CommandStatus.APPLIED
+    repeated_cancel = asyncio.run(
+        service.request_cancel(
+            command_id="cancel_1",
+            execution_id=execution.execution_id,
+            expected_version=paused.execution.status_version,
+            actor={"surface": "test"},
+            reason_code="user_cancelled",
+        )
+    )
+    assert repeated_cancel.command == cancelled.command
+    assert repeated_cancel.execution == cancelled.execution
+    assert not repeated_cancel.delivered
 
 
 def test_cancel_supersedes_an_applying_pause(tmp_path) -> None:
@@ -196,6 +251,17 @@ def test_cancel_supersedes_an_applying_pause(tmp_path) -> None:
     assert pause_command.rejection_code == "superseded_by_cancel"
     assert cancelling.execution.status is ExecutionStatus.CANCELLING
     assert cancelling.command.status is CommandStatus.APPLYING
+    repeated_pause = asyncio.run(
+        service.request_pause(
+            command_id="pause_1",
+            execution_id=execution.execution_id,
+            expected_version=execution.status_version,
+            actor={"surface": "test"},
+        )
+    )
+    assert repeated_pause.command == pause_command
+    assert repeated_pause.execution == cancelling.execution
+    assert not repeated_pause.delivered
 
 
 def test_driver_failure_never_reverses_a_committed_cancel_intent(tmp_path) -> None:
@@ -220,6 +286,40 @@ def test_driver_failure_never_reverses_a_committed_cancel_intent(tmp_path) -> No
     assert not result.delivered
     assert result.issue_code == "driver_error"
     assert executions.get_execution(execution.execution_id) == result.execution
+
+
+def test_retried_cancel_command_is_not_redispatched(tmp_path) -> None:
+    executions, attempts, execution, attempt = _execution(tmp_path, active=True)
+    registry = DriverRegistry()
+    driver = RecordingDriver(executions)
+    _bind(registry, execution, attempt, driver)
+    service = RuntimeControlService(executions, attempts, registry)
+
+    first = asyncio.run(
+        service.request_cancel(
+            command_id="cancel_1",
+            execution_id=execution.execution_id,
+            expected_version=execution.status_version,
+            actor={"surface": "test"},
+            reason_code="user_cancelled",
+        )
+    )
+    retry = asyncio.run(
+        service.request_cancel(
+            command_id="cancel_1",
+            execution_id=execution.execution_id,
+            expected_version=execution.status_version,
+            actor={"surface": "test"},
+            reason_code="user_cancelled",
+        )
+    )
+
+    assert retry.command == first.command
+    assert retry.execution == first.execution
+    assert not retry.delivered
+    assert driver.observed == [
+        ("cancel", ExecutionStatus.CANCELLING, CommandStatus.APPLYING)
+    ]
 
 
 def test_pause_completes_only_after_checkpoint_and_attempt_finalization(

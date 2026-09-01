@@ -226,7 +226,7 @@ def test_accept_with_transition_persists_pause_intent_atomically(tmp_path) -> No
         target=ExecutionStatus.RUNNING,
     )
 
-    command, pausing = store.accept_command_with_transition(
+    command, pausing, duplicate = store.accept_command_with_transition(
         command_id="cmd_pause",
         execution_id=running.execution_id,
         expected_version=running.status_version,
@@ -238,6 +238,7 @@ def test_accept_with_transition_persists_pause_intent_atomically(tmp_path) -> No
     )
 
     assert command.status is CommandStatus.APPLYING
+    assert not duplicate
     assert pausing.status is ExecutionStatus.PAUSING
     assert pausing.status_version == running.status_version + 1
     assert store.get_command(command.command_id) == command

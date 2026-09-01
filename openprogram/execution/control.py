@@ -95,7 +95,7 @@ class RuntimeControlService:
             current.status is ExecutionStatus.QUEUED
             and current.current_attempt_id is None
         )
-        command, execution = self.executions.accept_command_with_transition(
+        command, execution, duplicate = self.executions.accept_command_with_transition(
             command_id=command_id,
             execution_id=execution_id,
             expected_version=expected_version,
@@ -104,6 +104,10 @@ class RuntimeControlService:
             payload={},
             actor=actor,
         )
+        if duplicate:
+            return ControlDispatch(
+                command=command, execution=execution, delivered=False
+            )
         if execution.status is ExecutionStatus.PAUSED:
             command = self._mark_applied(command, execution)
             return ControlDispatch(
@@ -120,7 +124,7 @@ class RuntimeControlService:
         actor: Mapping[str, Any],
         reason_code: str,
     ) -> ControlDispatch:
-        command, execution = self.executions.accept_command_with_transition(
+        command, execution, duplicate = self.executions.accept_command_with_transition(
             command_id=command_id,
             execution_id=execution_id,
             expected_version=expected_version,
@@ -132,6 +136,10 @@ class RuntimeControlService:
             supersede_kinds=_CANCEL_SUPERSEDES,
             supersede_code="superseded_by_cancel",
         )
+        if duplicate:
+            return ControlDispatch(
+                command=command, execution=execution, delivered=False
+            )
         if execution.current_attempt_id is None and not self.effects.list_unresolved(
             execution.execution_id
         ):
