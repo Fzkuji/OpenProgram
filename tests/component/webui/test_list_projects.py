@@ -8,6 +8,7 @@ import types
 
 import pytest
 
+from openprogram.agent.authority import owner_authority
 from openprogram.store.project import project_store
 from openprogram.webui.ws_actions import project as ws_project
 
@@ -15,6 +16,11 @@ from openprogram.webui.ws_actions import project as ws_project
 class _FakeWS:
     def __init__(self):
         self.sent = []
+        self.scope = {
+            "state": {
+                "authority": owner_authority("owner/install/0123456789abcdef"),
+            },
+        }
 
     async def send_text(self, text):
         self.sent.append(json.loads(text))

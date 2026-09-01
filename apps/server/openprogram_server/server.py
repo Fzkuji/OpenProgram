@@ -1394,6 +1394,54 @@ from openprogram.webui._chat_helpers import (
 # WebSocket handler (module-level to avoid FastAPI closure issues)
 # ---------------------------------------------------------------------------
 
+async def _send_operation_error(ws, cmd: object, *, code: str, exc=None) -> None:
+    """Persist one safe command failure before enqueueing its wire frame."""
+    from starlette.websockets import WebSocketDisconnect
+    from openprogram.webui.ws_errors import (
+        operation_error_frame,
+        persist_operation_error_frame,
+    )
+
+    frame = operation_error_frame(cmd, code=code)
+    metadata = frame["data"]
+    import logging
+    logger = logging.getLogger("openprogram.webui")
+    if exc is None:
+        logger.warning(
+            "[ws] command failed correlation_id=%s action=%r session_id=%r "
+            "code=%s",
+            metadata["correlation_id"],
+            metadata["action"],
+            metadata["session_id"],
+            metadata["code"],
+        )
+    else:
+        logger.error(
+            "[ws] action failed correlation_id=%s action=%r session_id=%r "
+            "error_type=%s",
+            metadata["correlation_id"],
+            metadata["action"],
+            metadata["session_id"],
+            type(exc).__name__,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+    try:
+        persist_operation_error_frame(ws, frame)
+    except Exception as store_exc:
+        logger.critical(
+            "[ws] user error persistence failed correlation_id=%s "
+            "error_type=%s",
+            metadata["correlation_id"],
+            type(store_exc).__name__,
+            exc_info=(type(store_exc), store_exc, store_exc.__traceback__),
+        )
+        try:
+            await ws.close(code=1011, reason="state_recovery_required")
+        except Exception:
+            pass
+        raise WebSocketDisconnect(1011) from store_exc
+    await ws.send_text(json.dumps(frame))
+
 async def _websocket_handler(ws):
     """WebSocket endpoint for real-time chat streaming."""
     from starlette.websockets import WebSocketDisconnect
@@ -1432,18 +1480,12 @@ async def _websocket_handler(ws):
                 except WebSocketDisconnect:
                     raise
                 except Exception as exc:
-                    from openprogram.webui.ws_errors import operation_error_frame
-
-                    frame = operation_error_frame(cmd, code="handler_error")
-                    metadata = frame["data"]
-                    import logging
-                    logging.getLogger("openprogram.webui").exception(
-                        "[ws] action failed action=%r session_id=%r error_type=%s",
-                        metadata["action"],
-                        metadata["session_id"],
-                        type(exc).__name__,
+                    await _send_operation_error(
+                        ws,
+                        cmd,
+                        code="handler_error",
+                        exc=exc,
                     )
-                    await ws.send_text(json.dumps(frame))
 
     except WebSocketDisconnect as e:
         # Normal client departure (refresh/close, codes 1000/1001/1005) —
@@ -1533,11 +1575,9 @@ WS_ACTIONS: dict = _build_ws_action_registry()
 
 async def _handle_ws_command(ws, cmd: dict):
     """Handle a WebSocket command from the client."""
-    from openprogram.webui.ws_errors import operation_error_frame
+    from openprogram.webui.ws_errors import safe_operation_metadata
 
-    unknown_frame = operation_error_frame(cmd, code="unknown_action")
-    metadata = unknown_frame["data"]
-    action = metadata["action"]
+    action = safe_operation_metadata(cmd.get("action"))
     print(f"[ws] command received: action={action}")
 
     h = WS_ACTIONS.get(action)
@@ -1556,8 +1596,7 @@ async def _handle_ws_command(ws, cmd: dict):
     # backend that is merely slow — no error, no log, no clue. Say so on
     # both channels. ``apps/web/scripts/check-ws-actions.mjs`` is the guard
     # that keeps this branch unreachable in practice.
-    _log(f"[ws] unknown action {action!r} — no handler registered")
-    await ws.send_text(json.dumps(unknown_frame))
+    await _send_operation_error(ws, cmd, code="unknown_action")
 
 # ---------------------------------------------------------------------------
 # FastAPI app

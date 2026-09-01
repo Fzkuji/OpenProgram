@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta
 import json
+import re
 import threading
 
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
+from openprogram.agent.authority import owner_authority
 from openprogram.programs.workflow.ask_user import ask_user, set_ask_user
 from openprogram.webui import server
 from openprogram.webui.ws_errors import operation_error_frame
@@ -18,6 +21,11 @@ class _SequenceWS:
         self.sent: list[dict] = []
         self.accepted = False
         self._focused_session_id = focused_session_id
+        self.scope = {
+            "state": {
+                "authority": owner_authority("owner/install/0123456789abcdef"),
+            },
+        }
 
     async def accept(self) -> None:
         self.accepted = True
@@ -48,6 +56,44 @@ def isolated_websocket_state(monkeypatch: pytest.MonkeyPatch):
         server._follow_up_queues.clear()
 
 
+def _assert_operation_error_data(
+    data: dict,
+    *,
+    action: str,
+    request_id: str,
+    code: str,
+    message: str,
+) -> None:
+    assert set(data) == {
+        "error_id",
+        "request_id",
+        "scope",
+        "code",
+        "message",
+        "action",
+        "session_id",
+        "operation_id",
+        "retryable",
+        "severity",
+        "correlation_id",
+        "occurred_at",
+    }
+    assert re.fullmatch(r"err_[0-9a-f]{32}", data["error_id"])
+    assert re.fullmatch(r"corr_[0-9a-f]{32}", data["correlation_id"])
+    assert data["occurred_at"].endswith("Z")
+    occurred_at = datetime.fromisoformat(data["occurred_at"].replace("Z", "+00:00"))
+    assert occurred_at.utcoffset() == timedelta(0)
+    assert data["action"] == action
+    assert data["session_id"] == "s1"
+    assert data["request_id"] == request_id
+    assert data["scope"] == "session"
+    assert data["code"] == code
+    assert data["message"] == message
+    assert data["operation_id"] is None
+    assert data["retryable"] is False
+    assert data["severity"] == "error"
+
+
 def test_handler_failure_isolated_and_next_ping_runs(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -72,14 +118,13 @@ def test_handler_failure_isolated_and_next_ping_runs(
     operation_error = next(
         frame for frame in ws.sent if frame["type"] == "operation_error"
     )
-    assert operation_error["data"] == {
-        "action": "bad",
-        "session_id": "s1",
-        "request_id": "request-1",
-        "code": "handler_error",
-        "message": "Action failed",
-        "retryable": False,
-    }
+    _assert_operation_error_data(
+        operation_error["data"],
+        action="bad",
+        request_id="request-1",
+        code="handler_error",
+        message="Action failed",
+    )
     assert ws.sent[-1] == {"type": "pong"}
     assert "do-not-echo" not in json.dumps(ws.sent)
     assert "private payload detail" not in json.dumps(ws.sent)
@@ -147,17 +192,14 @@ def test_unknown_action_returns_correlated_operation_error() -> None:
 
     asyncio.run(server._websocket_handler(ws))
 
-    assert ws.sent[-2] == {
-        "type": "operation_error",
-        "data": {
-            "action": "removed_action",
-            "session_id": "s1",
-            "request_id": "request-2",
-            "code": "unknown_action",
-            "message": "Unknown action",
-            "retryable": False,
-        },
-    }
+    assert ws.sent[-2]["type"] == "operation_error"
+    _assert_operation_error_data(
+        ws.sent[-2]["data"],
+        action="removed_action",
+        request_id="request-2",
+        code="unknown_action",
+        message="Unknown action",
+    )
     assert ws.sent[-1] == {"type": "pong"}
 
 

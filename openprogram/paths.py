@@ -196,6 +196,11 @@ def get_usage_db_path() -> Path:
     return get_state_dir() / "usage.db"
 
 
+def get_user_errors_db_path() -> Path:
+    """Bounded operational error records for the active profile."""
+    return get_state_dir() / "user_errors.db"
+
+
 def ensure_state_dir() -> Path:
     """Create the profile root and keep it readable only by its owner.
 
