@@ -116,6 +116,23 @@ def test_list_branches_keeps_parallel_top_program_leaves(db):
     assert tips == {"program-1", "program-2"}
 
 
+def test_list_branches_excludes_runtime_context_root(db):
+    """Primary-tip fallback cannot promote a non-conversation root."""
+    db.create_session("s1", agent_id="a")
+    writer = SessionNodeWriter(db, "s1")
+    writer.append(Call(
+        id="runtime-root", role=ROLE_CODE, name="context/system_prompt",
+        predecessor=None, caller="ROOT", created_at=time.time() - 1,
+        metadata={"display": "runtime"},
+    ))
+    _append(db, "s1", "u1", role="user")
+    _append(db, "s1", "a1", role="assistant", parent="u1")
+
+    tips = {b["head_msg_id"] for b in db.list_branches("s1")}
+
+    assert tips == {"a1"}
+
+
 def test_spawn_branch_register_head_false_keeps_head(db):
     """A same-session sub-agent spawn must not steal the session head
     (context/compaction.md §5) — the transcript follows the head, and a

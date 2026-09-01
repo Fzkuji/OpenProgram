@@ -1425,16 +1425,10 @@ class SessionStore:
                 node.role == ROLE_CODE
                 and (_node_caller(node) or "ROOT") == "ROOT"
                 and bool(node.name or md.get("function"))
-                and md.get("display") not in ("root", "runtime")
-                and md.get("function") != "attach"
-                and not str(node.name or "").startswith("context/")
             )
 
-        def _conv_child(kid_id: str) -> bool:
-            """Whether this predecessor child continues the conversation."""
-            child = idx.nodes_by_id.get(kid_id)
-            if child is None:
-                return False
+        def _conversation_node(child: Call) -> bool:
+            """Whether a node participates in the predecessor conversation."""
             md = child.metadata or {}
             if md.get("display") in ("root", "runtime"):
                 return False
@@ -1455,6 +1449,11 @@ class SessionStore:
                     return False
             return True
 
+        def _conv_child(kid_id: str) -> bool:
+            """Whether this predecessor child continues the conversation."""
+            child = idx.nodes_by_id.get(kid_id)
+            return child is not None and _conversation_node(child)
+
         # Identify the session's "main" tip — the leaf reached by
         # walking the earliest conv-root down its kids[0] primary
         # path. This matches the DAG lane-0 trunk exactly, so the
@@ -1462,9 +1461,9 @@ class SessionStore:
         # down the middle" gets the "main" label.
         roots = [
             n for n in idx.all_nodes()
-            if (not n.caller or n.caller == "ROOT")
+            if _conversation_node(n)
+            and (not n.caller or n.caller == "ROOT")
             and (_node_conv_predecessor(n) or "ROOT") == "ROOT"
-            and (n.metadata or {}).get("display") != "root"
             and not _is_spawn_root(n.metadata or {})
         ]
         # Pure predecessor-edge walk (dag/overview.md): from
@@ -1490,34 +1489,7 @@ class SessionStore:
         merged = self.merged_heads(session_id)
 
         for node in idx.all_nodes():
-            # Skip sub-call nodes — anything living INSIDE a function
-            # run. Two shapes: a tool/code node with a real caller
-            # (nested sub-call), and a user/llm node whose caller is a
-            # code node (the LLM replies a run makes internally). The
-            # old user/llm exemption assumed chat-world callers (a conv
-            # predecessor or ROOT); with function runs it surfaced every
-            # internal LLM leaf as a phantom "branch" in the panel.
-            caller = _node_caller(node)
-            if caller and caller != "ROOT":
-                if node.role not in (ROLE_USER, ROLE_LLM):
-                    continue
-                caller_node = idx.nodes_by_id.get(caller)
-                if caller_node is not None and caller_node.role not in (
-                    ROLE_USER, ROLE_LLM,
-                ):
-                    continue
-            if (node.metadata or {}).get("display") == "root":
-                continue
-            # ``context/*`` nodes (system_prompt, summary) are context
-            # machinery, never a branch you can check out — dag/overview.md
-            # §7 reserves the name and hides them from the chat views.
-            if str(node.name or "").startswith("context/"):
-                continue
-            # Attach-pointer rows ride the assistant role but are
-            # side-calls, not real branch tips. Old writes didn't
-            # populate Call.caller so the ``node.caller`` check
-            # above misses them — fall back to metadata.function.
-            if (node.metadata or {}).get("function") == "attach":
+            if not _conversation_node(node):
                 continue
             kids = idx.children_by_predecessor.get(node.id, [])
             if any(_conv_child(k) for k in kids):
