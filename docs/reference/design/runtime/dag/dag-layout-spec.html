@@ -55,7 +55,10 @@ execution child、runtime/attach 行与 context 行不延续 conversation，因�
 <b>明确排除：</b>lane、坐标、边、颜色、badge、相机、展开/收起和任何前端渲染调整。底层合同
 通过 focused/affected/full gate、独立规格审查、独立质量审查及默认实例真实会话验收后，才进入
 图结构设计阶段。<br>
-<b>实现状态：</b>合同已固定；实现与验证证据待阶段一完成后更新。
+<b>实现状态：</b>阶段一已实现统一 conversation-node predicate，successor 与 tip candidate
+使用同一语义；顺序顶层 Program 仅保留末端叶子，parallel siblings 分别保留，runtime/context、
+内部 execution child 与 merged head 均不会被 fallback 重新加入。公开入口 RED/GREEN、直接调用方、
+文档门禁、独立规格审查和独立质量审查已通过；前端图形代码尚未进入本阶段。
 </div>
 
 <div class="rule" style="margin-bottom:18px">
