@@ -6,14 +6,20 @@ import os
 import stat
 import time
 
+import pytest
+
 from openprogram.webui.user_errors import UserErrorRecord, UserErrorStore
 
 
 def _record(index: int, occurred_at_epoch: float) -> UserErrorRecord:
-    occurred_at = datetime.fromtimestamp(
-        occurred_at_epoch,
-        tz=timezone.utc,
-    ).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    occurred_at = (
+        datetime.fromtimestamp(
+            occurred_at_epoch,
+            tz=timezone.utc,
+        )
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
     return UserErrorRecord(
         principal_id="owner/install/test-owner",
         error_id=f"err_{index:04d}",
@@ -148,3 +154,148 @@ def test_user_error_store_default_path_tracks_active_profile(
     assert expected.exists()
     if os.name != "nt":
         assert stat.S_IMODE(expected.stat().st_mode) == 0o600
+
+
+def test_user_error_store_acknowledges_only_the_explicit_principal_record(
+    tmp_path,
+) -> None:
+    store = UserErrorStore(tmp_path / "user_errors.db")
+    now = time.time()
+    principal_id = "owner/install/test-owner"
+    other_principal_id = "owner/install/other-owner"
+    target = replace(
+        _record(1, now),
+        error_id="err_00000000000000000000000000000001",
+    )
+    sibling = replace(
+        _record(2, now + 1),
+        error_id="err_00000000000000000000000000000002",
+    )
+    other = replace(
+        _record(3, now + 2),
+        principal_id=other_principal_id,
+        error_id="err_00000000000000000000000000000003",
+    )
+    for record in (target, sibling, other):
+        store.record(record, now=now + 3)
+
+    acknowledged_at = (
+        datetime.fromtimestamp(now + 4, tz=timezone.utc)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
+    later_at = (
+        datetime.fromtimestamp(now + 5, tz=timezone.utc)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
+
+    assert (
+        store.acknowledge(
+            other_principal_id,
+            target.error_id,
+            acknowledged_at,
+            now + 4,
+        )
+        is None
+    )
+    assert (
+        store.acknowledge(
+            principal_id,
+            "err_ffffffffffffffffffffffffffffffff",
+            acknowledged_at,
+            now + 4,
+        )
+        is None
+    )
+
+    acknowledged = store.acknowledge(
+        principal_id,
+        target.error_id,
+        acknowledged_at,
+        now + 4,
+    )
+    assert acknowledged == replace(
+        target,
+        closed_at=acknowledged_at,
+        close_reason="acknowledged",
+    )
+    assert store.list_open(principal_id, now=now + 4).records == (sibling,)
+    assert store.list_open(other_principal_id, now=now + 4).records == (other,)
+
+    repeated = store.acknowledge(
+        principal_id,
+        target.error_id,
+        later_at,
+        now + 5,
+    )
+    assert repeated == acknowledged
+    assert store.get(principal_id, target.error_id, now=now + 5) == acknowledged
+
+
+def test_user_error_store_lists_open_records_newest_first_with_strict_cursor(
+    tmp_path,
+) -> None:
+    store = UserErrorStore(tmp_path / "user_errors.db")
+    now = time.time()
+    oldest = replace(
+        _record(1, now),
+        error_id="err_00000000000000000000000000000001",
+    )
+    tied_lower = replace(
+        _record(2, now + 1),
+        error_id="err_00000000000000000000000000000002",
+    )
+    tied_higher = replace(
+        _record(3, now + 1),
+        error_id="err_00000000000000000000000000000003",
+    )
+    newest = replace(
+        _record(4, now + 2),
+        error_id="err_00000000000000000000000000000004",
+    )
+    for record in (newest, oldest, tied_lower, tied_higher):
+        store.record(record, now=now + 3)
+
+    first = store.list_open(
+        "owner/install/test-owner",
+        limit=2,
+        now=now + 3,
+    )
+    assert first.records == (newest, tied_higher)
+    assert first.next_cursor is not None
+
+    second = store.list_open(
+        "owner/install/test-owner",
+        cursor=first.next_cursor,
+        limit=2,
+        now=now + 3,
+    )
+    assert second.records == (tied_lower, oldest)
+    assert second.next_cursor is None
+
+
+@pytest.mark.parametrize(
+    "cursor",
+    [
+        "",
+        "0",
+        "-1",
+        "+1",
+        "1.0",
+        " 1",
+        "not-a-cursor",
+        "v1:nan:err_00000000000000000000000000000001",
+        "v1:0x1p+9999999999:err_00000000000000000000000000000001",
+        "v1:0x1p+0:err_invalid",
+        "v2:0x1.0000000000000p+0:err_00000000000000000000000000000001",
+    ],
+)
+def test_user_error_store_rejects_invalid_cursor(
+    tmp_path,
+    cursor: str,
+) -> None:
+    store = UserErrorStore(tmp_path / "user_errors.db")
+
+    with pytest.raises(ValueError, match="cursor"):
+        store.list_open("owner/install/test-owner", cursor=cursor)

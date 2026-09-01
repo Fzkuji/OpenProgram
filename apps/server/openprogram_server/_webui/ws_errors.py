@@ -37,6 +37,7 @@ _WIRE_FIELDS = frozenset({
 })
 _MESSAGES = {
     "handler_error": "Action failed",
+    "invalid_request": "Invalid request",
     "unknown_action": "Unknown action",
 }
 
@@ -59,6 +60,24 @@ _ACTION_SCOPES = {
 }
 
 
+class OperationError(RuntimeError):
+    """Safe command failure metadata consumed by the public dispatcher."""
+
+    def __init__(
+        self,
+        code: str,
+        *,
+        scope: str,
+        retryable: bool = False,
+        severity: str = "error",
+    ) -> None:
+        super().__init__(code)
+        self.code = code
+        self.scope = scope
+        self.retryable = retryable
+        self.severity = severity
+
+
 def safe_operation_metadata(value: Any) -> str | None:
     """Accept only short printable identifiers from an untrusted command."""
     if not isinstance(value, str) or not value or len(value) > _MAX_METADATA_CHARS:
@@ -76,7 +95,7 @@ def _scope_for(action: str | None, session_id: str | None) -> str:
     return "system"
 
 
-def _utc_timestamp(epoch: float) -> str:
+def utc_timestamp(epoch: float) -> str:
     return (
         datetime.fromtimestamp(epoch, tz=timezone.utc)
         .isoformat(timespec="milliseconds")
@@ -157,7 +176,41 @@ def operation_error_frame(
             "retryable": bool(retryable),
             "severity": severity,
             "correlation_id": f"corr_{uuid.uuid4().hex}",
-            "occurred_at": _utc_timestamp(epoch),
+            "occurred_at": utc_timestamp(epoch),
+        },
+    }
+
+
+def is_error_id(value: object) -> bool:
+    return isinstance(value, str) and _ERROR_ID_RE.fullmatch(value) is not None
+
+
+def operation_recovered_frame(
+    error_id: str,
+    *,
+    scope: str,
+    operation_id: str | None,
+    occurred_at_epoch: float | None = None,
+) -> dict[str, object]:
+    """Build one exact-ID closure notification for every connected tab."""
+    if not is_error_id(error_id):
+        raise ValueError("operation recovery error ID is invalid")
+    if scope not in _SCOPES:
+        raise ValueError("operation recovery scope is invalid")
+    if operation_id is not None and safe_operation_metadata(operation_id) != operation_id:
+        raise ValueError("operation recovery operation ID is invalid")
+    epoch = time.time() if occurred_at_epoch is None else occurred_at_epoch
+    if isinstance(epoch, bool) or not isinstance(epoch, (int, float)):
+        raise TypeError("operation recovery timestamp must be numeric")
+    if not math.isfinite(epoch):
+        raise ValueError("operation recovery timestamp must be finite")
+    return {
+        "type": "operation_recovered",
+        "data": {
+            "error_ids": [error_id],
+            "scope": scope,
+            "operation_id": operation_id,
+            "occurred_at": utc_timestamp(epoch),
         },
     }
 

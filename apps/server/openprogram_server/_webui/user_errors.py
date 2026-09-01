@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import math
+import re
 import sqlite3
 import threading
 import time
@@ -13,7 +15,45 @@ from pathlib import Path
 MAX_RECORDS_PER_PRINCIPAL = 1_000
 RETENTION_SECONDS = 7 * 24 * 60 * 60
 MAX_PAGE_SIZE = 100
+MAX_CURSOR_LENGTH = 96
 _INITIALIZE_TIMEOUT_SECONDS = 5.0
+_CURSOR_PREFIX = "v1"
+_ERROR_ID_PATTERN = re.compile(r"err_[0-9a-f]{32}")
+
+
+def _encode_cursor(occurred_at_epoch: float, error_id: str) -> str:
+    return f"{_CURSOR_PREFIX}:{occurred_at_epoch.hex()}:{error_id}"
+
+
+def _decode_cursor(cursor: object) -> tuple[float, str]:
+    if (
+        not isinstance(cursor, str)
+        or not cursor
+        or len(cursor) > MAX_CURSOR_LENGTH
+        or not cursor.isascii()
+    ):
+        raise ValueError("user error cursor is invalid")
+    try:
+        prefix, encoded_epoch, error_id = cursor.split(":", 2)
+        occurred_at_epoch = float.fromhex(encoded_epoch)
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise ValueError("user error cursor is invalid") from exc
+    if (
+        prefix != _CURSOR_PREFIX
+        or not math.isfinite(occurred_at_epoch)
+        or _ERROR_ID_PATTERN.fullmatch(error_id) is None
+        or cursor != _encode_cursor(occurred_at_epoch, error_id)
+    ):
+        raise ValueError("user error cursor is invalid")
+    return occurred_at_epoch, error_id
+
+
+def is_user_error_cursor(value: object) -> bool:
+    try:
+        _decode_cursor(value)
+    except (OverflowError, ValueError):
+        return False
+    return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +185,11 @@ class UserErrorStore:
                 CREATE INDEX IF NOT EXISTS idx_user_errors_open
                     ON user_errors(principal_id, seq DESC)
                     WHERE closed_at IS NULL;
+                CREATE INDEX IF NOT EXISTS idx_user_errors_open_order_v2
+                    ON user_errors(
+                        principal_id, occurred_at_epoch DESC, error_id DESC
+                    )
+                    WHERE closed_at IS NULL;
                 CREATE INDEX IF NOT EXISTS idx_user_errors_open_session
                     ON user_errors(principal_id, session_id, seq DESC)
                     WHERE closed_at IS NULL;
@@ -185,7 +230,7 @@ class UserErrorStore:
         conn.execute(
             "DELETE FROM user_errors WHERE principal_id = ? AND seq NOT IN ("
             "SELECT seq FROM user_errors WHERE principal_id = ? "
-            "ORDER BY seq DESC LIMIT ?)",
+            "ORDER BY occurred_at_epoch DESC, error_id DESC LIMIT ?)",
             (
                 principal_id,
                 principal_id,
@@ -261,33 +306,48 @@ class UserErrorStore:
         now: float | None = None,
     ) -> UserErrorPage:
         self.initialize()
-        page_size = max(1, min(int(limit), MAX_PAGE_SIZE))
-        try:
-            before_seq = int(cursor) if cursor is not None else None
-        except (TypeError, ValueError):
-            before_seq = None
+        if isinstance(limit, bool) or not isinstance(limit, int):
+            raise ValueError("user error page limit must be an integer")
+        if not 1 <= limit <= MAX_PAGE_SIZE:
+            raise ValueError(
+                f"user error page limit must be between 1 and {MAX_PAGE_SIZE}"
+            )
+        page_size = limit
+        before = None if cursor is None else _decode_cursor(cursor)
         prune_now = time.time() if now is None else float(now)
         with self._lock, self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             self._prune(conn, principal_id, prune_now)
-            if before_seq is None:
+            if before is None:
                 rows = conn.execute(
                     "SELECT * FROM user_errors "
                     "WHERE principal_id = ? AND closed_at IS NULL "
-                    "ORDER BY seq DESC LIMIT ?",
+                    "ORDER BY occurred_at_epoch DESC, error_id DESC LIMIT ?",
                     (principal_id, page_size + 1),
                 ).fetchall()
             else:
+                before_epoch, before_error_id = before
                 rows = conn.execute(
                     "SELECT * FROM user_errors "
-                    "WHERE principal_id = ? AND closed_at IS NULL AND seq < ? "
-                    "ORDER BY seq DESC LIMIT ?",
-                    (principal_id, before_seq, page_size + 1),
+                    "WHERE principal_id = ? AND closed_at IS NULL AND ("
+                    "occurred_at_epoch < ? OR "
+                    "(occurred_at_epoch = ? AND error_id < ?)) "
+                    "ORDER BY occurred_at_epoch DESC, error_id DESC LIMIT ?",
+                    (
+                        principal_id,
+                        before_epoch,
+                        before_epoch,
+                        before_error_id,
+                        page_size + 1,
+                    ),
                 ).fetchall()
             conn.commit()
         visible = rows[:page_size]
         next_cursor = (
-            str(visible[-1]["seq"])
+            _encode_cursor(
+                float(visible[-1]["occurred_at_epoch"]),
+                str(visible[-1]["error_id"]),
+            )
             if len(rows) > page_size and visible
             else None
         )
@@ -295,6 +355,37 @@ class UserErrorStore:
             records=tuple(_record_from_row(row) for row in visible),
             next_cursor=next_cursor,
         )
+
+    def acknowledge(
+        self,
+        principal_id: str,
+        error_id: str,
+        occurred_at: str,
+        now: float | None = None,
+    ) -> UserErrorRecord | None:
+        """Idempotently close one exact record owned by ``principal_id``."""
+        self.initialize()
+        prune_now = time.time() if now is None else float(now)
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            self._prune(conn, principal_id, prune_now)
+            row = conn.execute(
+                "SELECT * FROM user_errors WHERE principal_id = ? AND error_id = ?",
+                (principal_id, error_id),
+            ).fetchone()
+            if row is not None and row["closed_at"] is None:
+                conn.execute(
+                    "UPDATE user_errors SET closed_at = ?, close_reason = ? "
+                    "WHERE principal_id = ? AND error_id = ? AND closed_at IS NULL",
+                    (occurred_at, "acknowledged", principal_id, error_id),
+                )
+                row = conn.execute(
+                    "SELECT * FROM user_errors "
+                    "WHERE principal_id = ? AND error_id = ?",
+                    (principal_id, error_id),
+                ).fetchone()
+            conn.commit()
+        return _record_from_row(row) if row is not None else None
 
 
 def _record_from_row(row: sqlite3.Row) -> UserErrorRecord:

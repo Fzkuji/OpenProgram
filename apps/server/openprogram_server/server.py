@@ -645,6 +645,31 @@ def _broadcast(msg: str):
         send_to_connection(ws, msg, _loop)
 
 
+def _broadcast_to_principal(
+    msg: str,
+    principal_id: str,
+    *,
+    exclude=None,
+) -> None:
+    """Send one owner-scoped state transition to matching connections."""
+    if not _ws_connections:
+        return
+    from openprogram.webui.ws_delivery import send_to_connection
+    from openprogram.webui.ws_errors import principal_id_for_websocket
+
+    with _ws_lock:
+        conns = list(_ws_connections)
+    for ws in conns:
+        if ws is exclude:
+            continue
+        try:
+            matches = principal_id_for_websocket(ws) == principal_id
+        except PermissionError:
+            matches = False
+        if matches:
+            send_to_connection(ws, msg, _loop)
+
+
 def _log(text: str):
     """Webui server log line.
 
@@ -1394,7 +1419,16 @@ from openprogram.webui._chat_helpers import (
 # WebSocket handler (module-level to avoid FastAPI closure issues)
 # ---------------------------------------------------------------------------
 
-async def _send_operation_error(ws, cmd: object, *, code: str, exc=None) -> None:
+async def _send_operation_error(
+    ws,
+    cmd: object,
+    *,
+    code: str,
+    retryable: bool = False,
+    scope: str | None = None,
+    severity: str = "error",
+    exc=None,
+) -> None:
     """Persist one safe command failure before enqueueing its wire frame."""
     from starlette.websockets import WebSocketDisconnect
     from openprogram.webui.ws_errors import (
@@ -1402,7 +1436,13 @@ async def _send_operation_error(ws, cmd: object, *, code: str, exc=None) -> None
         persist_operation_error_frame,
     )
 
-    frame = operation_error_frame(cmd, code=code)
+    frame = operation_error_frame(
+        cmd,
+        code=code,
+        retryable=retryable,
+        scope=scope,
+        severity=severity,
+    )
     metadata = frame["data"]
     import logging
     logger = logging.getLogger("openprogram.webui")
@@ -1445,6 +1485,7 @@ async def _send_operation_error(ws, cmd: object, *, code: str, exc=None) -> None
 async def _websocket_handler(ws):
     """WebSocket endpoint for real-time chat streaming."""
     from starlette.websockets import WebSocketDisconnect
+    from openprogram.webui.ws_errors import OperationError
 
     await ws.accept()
 
@@ -1474,11 +1515,34 @@ async def _websocket_handler(ws):
                 try:
                     cmd = json.loads(data)
                 except json.JSONDecodeError:
+                    await _send_operation_error(
+                        ws,
+                        {},
+                        code="invalid_request",
+                        scope="system",
+                    )
+                    continue
+                if not isinstance(cmd, dict):
+                    await _send_operation_error(
+                        ws,
+                        {},
+                        code="invalid_request",
+                        scope="system",
+                    )
                     continue
                 try:
                     await _handle_ws_command(ws, cmd)
                 except WebSocketDisconnect:
                     raise
+                except OperationError as operation_error:
+                    await _send_operation_error(
+                        ws,
+                        cmd,
+                        code=operation_error.code,
+                        retryable=operation_error.retryable,
+                        scope=operation_error.scope,
+                        severity=operation_error.severity,
+                    )
                 except Exception as exc:
                     await _send_operation_error(
                         ws,
@@ -1548,6 +1612,7 @@ def _build_ws_action_registry() -> dict:
         worktree as _ws_worktree,
         project as _ws_project,
         settings as _ws_settings,
+        user_error as _ws_user_error,
         webtab as _ws_webtab,
     )
     table: dict = {}
@@ -1566,6 +1631,7 @@ def _build_ws_action_registry() -> dict:
     table.update(_ws_worktree.ACTIONS)
     table.update(_ws_project.ACTIONS)
     table.update(_ws_settings.ACTIONS)
+    table.update(_ws_user_error.ACTIONS)
     table.update(_ws_webtab.ACTIONS)
     return table
 
@@ -1578,6 +1644,10 @@ async def _handle_ws_command(ws, cmd: dict):
     from openprogram.webui.ws_errors import safe_operation_metadata
 
     action = safe_operation_metadata(cmd.get("action"))
+    if action is None:
+        from openprogram.webui.ws_errors import OperationError
+
+        raise OperationError("invalid_request", scope="system")
     print(f"[ws] command received: action={action}")
 
     h = WS_ACTIONS.get(action)
