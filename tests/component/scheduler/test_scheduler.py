@@ -8,6 +8,7 @@ import hashlib
 import json
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -336,15 +337,17 @@ def test_worker_loop_recovers_from_one_transient_tick_failure(
 
     monkeypatch.setattr(worker, "_load_state", lambda: {})
     monkeypatch.setattr(worker, "_tick", tick)
-    monkeypatch.setattr(worker.dt, "datetime", NearMinute)
-
     def sleep(seconds):
         nonlocal elapsed
         sleeps.append(seconds)
         elapsed += seconds
 
-    monkeypatch.setattr(worker.time, "monotonic", lambda: elapsed)
-    monkeypatch.setattr(worker.time, "sleep", sleep)
+    monkeypatch.setattr(worker, "dt", SimpleNamespace(datetime=NearMinute))
+    monkeypatch.setattr(
+        worker,
+        "time",
+        SimpleNamespace(monotonic=lambda: elapsed, sleep=sleep),
+    )
 
     with caplog.at_level("WARNING", logger=worker.__name__):
         worker.run_forever(stop)
@@ -390,9 +393,12 @@ def test_worker_loop_rechecks_elapsed_time_after_oversleep(
 
     monkeypatch.setattr(worker, "_load_state", lambda: {})
     monkeypatch.setattr(worker, "_tick", tick)
-    monkeypatch.setattr(worker.dt, "datetime", StartOfMinute)
-    monkeypatch.setattr(worker.time, "monotonic", lambda: elapsed)
-    monkeypatch.setattr(worker.time, "sleep", sleep)
+    monkeypatch.setattr(worker, "dt", SimpleNamespace(datetime=StartOfMinute))
+    monkeypatch.setattr(
+        worker,
+        "time",
+        SimpleNamespace(monotonic=lambda: elapsed, sleep=sleep),
+    )
 
     worker.run_forever(stop)
 
