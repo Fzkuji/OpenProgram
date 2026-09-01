@@ -24,6 +24,14 @@ from .effects import (
     EffectStatus,
     EffectStore,
 )
+from .driver import (
+    DriverAck,
+    DriverBinding,
+    DriverRegistry,
+    ExecutionDriver,
+    RuntimeSnapshot,
+    TerminationReceipt,
+)
 from .store import ExecutionStore, default_store
 
 __all__ = [
@@ -46,5 +54,11 @@ __all__ = [
     "EffectRecord",
     "EffectStatus",
     "EffectStore",
+    "DriverAck",
+    "DriverBinding",
+    "DriverRegistry",
+    "ExecutionDriver",
+    "RuntimeSnapshot",
+    "TerminationReceipt",
     "default_store",
 ]

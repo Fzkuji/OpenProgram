@@ -15,6 +15,8 @@ Execution engines do not belong here. Chat, Agent, Workflow, Job, and tool
 drivers retain their own activation code and implement the driver contract
 defined by the unified execution-control design. They report safe points and
 outcomes to this control plane instead of writing lifecycle state directly.
+The process-local driver registry stores only exact attempt/generation bindings;
+it is not a lifecycle authority and cannot replace durable execution state.
 
 The normative design is
 [`docs/reference/design/runtime/execution/execution-control.html`](../../docs/reference/design/runtime/execution/execution-control.html).
