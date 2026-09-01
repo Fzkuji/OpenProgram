@@ -299,6 +299,23 @@ export interface ErrorEnvelope {
   data?: { message?: string };
 }
 
+export interface OperationErrorEnvelope {
+  type: 'operation_error';
+  data?: {
+    action?: unknown;
+    code?: unknown;
+    request_id?: unknown;
+    session_id?: unknown;
+    retryable?: unknown;
+    message?: unknown;
+  };
+}
+
+export interface LegacyActionErrorEnvelope {
+  type: 'action_error';
+  data?: OperationErrorEnvelope['data'];
+}
+
 /**
  * A complete inbound channel turn (user message + assistant reply) just
  * landed for some session. Emitted by the channels worker after it
@@ -416,6 +433,8 @@ export type WsEnvelope =
   | QrLoginEnvelope
   | SearchResultsEnvelope
   | ErrorEnvelope
+  | OperationErrorEnvelope
+  | LegacyActionErrorEnvelope
   | { type: 'jobs_list'; data: { session_id?: string | null; jobs: JobRow[] } }
   | { type: 'job'; data: { job: JobRow | null; error?: string } }
   | {

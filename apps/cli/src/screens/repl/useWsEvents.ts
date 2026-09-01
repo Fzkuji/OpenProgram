@@ -147,6 +147,44 @@ type RunningTaskEnvelopeCtx = Pick<
   'conversationId' | 'executionIdRef' | 'setStreaming'
 >;
 
+type OperationErrorEnvelopeCtx = Pick<
+  WsEventsCtx,
+  'conversationId' | 'finishTurn' | 'setCommitted'
+>;
+
+function safeOperationMetadata(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value || [...value].length > 128) return undefined;
+  return [...value].some((char) => char !== ' ' && /[\p{C}\p{Z}]/u.test(char))
+    ? undefined
+    : value;
+}
+
+export function handleOperationErrorEnvelope(
+  ev: WsEnvelope,
+  ctx: OperationErrorEnvelopeCtx,
+): boolean {
+  if (ev.type !== 'operation_error' && ev.type !== 'action_error') return false;
+  const rawSessionId = ev.data?.session_id;
+  const sessionId = safeOperationMetadata(rawSessionId);
+  if (sessionId && sessionId !== ctx.conversationId) return true;
+  const action = safeOperationMetadata(ev.data?.action) ?? '?';
+  const unknownAction = ev.data?.code === 'unknown_action'
+    || (ev.type === 'action_error' && !ev.data?.code);
+  const text = unknownAction
+    ? `error: unknown action ${action}`
+    : `error: action ${action} failed`;
+  ctx.setCommitted((turns) => [
+    ...turns,
+    { id: `e-${Date.now()}`, role: 'system', text },
+  ]);
+  const sessionMatches = sessionId !== undefined
+    ? sessionId === ctx.conversationId
+    : (rawSessionId === undefined || rawSessionId === null)
+      && ctx.conversationId === undefined;
+  if (action === 'chat' && sessionMatches) ctx.finishTurn();
+  return true;
+}
+
 export function handleRunningTaskEnvelope(
   ev: WsEnvelope,
   ctx: RunningTaskEnvelopeCtx,
@@ -177,6 +215,8 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         c.setSessionLiveByConv((m) => ({ ...m, [convId]: true }));
       };
       if (handleJobEnvelope(ev, c)) {
+        return;
+      } else if (handleOperationErrorEnvelope(ev, c)) {
         return;
       } else if (handleRunningTaskEnvelope(ev, c)) {
         return;
