@@ -253,12 +253,15 @@ includes the first answer.
   session.
 - **get_branch(session_id, head_id)**: walks the predecessor chain from head to
   its terminus and returns the linear history of that branch.
-- **list_branches(session_id)**: enumerates branch tips (conversation nodes
-  with no conversation child). The "main" tip is found by walking from the
-  earliest conversation root down the primary-child path — matching the lane-0
-  trunk the user visually identifies as main. Spawn roots never appear among
-  predecessor children (their predecessor is None), so no special-casing is
-  needed. Branch names live in the session meta under `branches: {head_id: name}`.
+- **list_branches(session_id)**: enumerates leaves in the conversation
+  predecessor graph. Conversation nodes include user and LLM turns plus
+  top-level Program actions whose caller is empty or `ROOT`. A node with any
+  such successor is an ancestor, not another branch tip. Internal execution
+  children, runtime/attach rows, and context rows do not continue the
+  conversation and therefore do not remove their owner's tip. Parallel
+  top-level Programs sharing one predecessor remain separate leaves. The
+  primary-tip walk applies the same successor predicate. Branch names live in
+  session meta under `branches: {head_id: name}`.
 
 ## 6. Context Rendering
 

@@ -210,10 +210,12 @@ HEAD 已经包含第一条的回答。
   head 会让分支行走不可达、会话渲染为空。
 - **get_branch(session_id, head_id)**：从 head 沿 predecessor 链走到终点，返回该分
   支的线性历史。
-- **list_branches(session_id)**：枚举分支末端（无对话子节点的对话节点）。"main"末
-  端由最早的对话根沿首子路径走到底得出——正好匹配用户视觉上认作主干的 lane-0 直
-  线。spawn 根从不出现在 predecessor 子节点表里（其 predecessor 为 None），无需特
-  判。分支名存在会话 meta 的 `branches: {head_id: name}`。
+- **list_branches(session_id)**：枚举 conversation predecessor 图中的叶子节点。
+  conversation 节点包括 user、llm，以及 caller 为空或 `ROOT` 的顶层 Program。节点只要
+  有任一此类 successor，就是祖先节点，不能再次作为 branch tip。内部 execution child、
+  runtime/attach 行与 context 行不延续 conversation，因此不取消其 owner 的 tip 身份。
+  共享同一 predecessor 的并行顶层 Program 仍是不同叶子。主路径 tip 行走使用同一套
+  successor 判定。分支名存在会话 meta 的 `branches: {head_id: name}`。
 
 ## 6. 上下文渲染
 

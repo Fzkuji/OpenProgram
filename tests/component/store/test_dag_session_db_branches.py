@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from openprogram.context.nodes import Call, ROLE_CODE
 from openprogram.store import SessionStore as DagSessionDB
+from openprogram.store import SessionNodeWriter
 
 
 @pytest.fixture
@@ -66,6 +68,52 @@ def test_list_branches_tip_survives_execution_children(db):
     })
     tips = {b["head_msg_id"] for b in db.list_branches("s1")}
     assert tips == {"n2", "a3"}
+
+
+@pytest.mark.parametrize("caller", ["", "ROOT"])
+@pytest.mark.parametrize("internal_predecessor", [None, "program-2"])
+def test_list_branches_collapses_sequential_top_program_runs(
+    db, caller, internal_predecessor,
+):
+    """Only the leaf of a predecessor-linked Program chain is a tip."""
+    db.create_session("s1", agent_id="a")
+    _append(db, "s1", "u1", role="user")
+    _append(db, "s1", "a1", role="assistant", parent="u1")
+    writer = SessionNodeWriter(db, "s1")
+    writer.append(Call(
+        id="program-1", role=ROLE_CODE, name="gui_agent",
+        predecessor="a1", caller=caller, created_at=time.time(),
+    ))
+    writer.append(Call(
+        id="program-2", role=ROLE_CODE, name="gui_agent",
+        predecessor="program-1", caller=caller, created_at=time.time() + 1,
+    ))
+    writer.append(Call(
+        id="internal-step", role=ROLE_CODE, name="inspect",
+        predecessor=internal_predecessor, caller="program-2",
+        created_at=time.time() + 2,
+    ))
+
+    tips = {b["head_msg_id"] for b in db.list_branches("s1")}
+
+    assert tips == {"program-2"}
+
+
+def test_list_branches_keeps_parallel_top_program_leaves(db):
+    """Programs sharing one predecessor are alternatives, not a chain."""
+    db.create_session("s1", agent_id="a")
+    _append(db, "s1", "u1", role="user")
+    _append(db, "s1", "a1", role="assistant", parent="u1")
+    writer = SessionNodeWriter(db, "s1")
+    for index in (1, 2):
+        writer.append(Call(
+            id=f"program-{index}", role=ROLE_CODE, name="gui_agent",
+            predecessor="a1", caller="", created_at=time.time() + index,
+        ))
+
+    tips = {b["head_msg_id"] for b in db.list_branches("s1")}
+
+    assert tips == {"program-1", "program-2"}
 
 
 def test_spawn_branch_register_head_false_keeps_head(db):

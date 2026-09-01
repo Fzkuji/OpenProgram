@@ -35,7 +35,7 @@ from typing import Any, Optional
 
 _log = logging.getLogger(__name__)
 
-from openprogram.context.nodes import Call, ROLE_USER, ROLE_LLM
+from openprogram.context.nodes import Call, ROLE_CODE, ROLE_USER, ROLE_LLM
 # Adapter functions (msg-dict <-> Call) — reused unchanged so SQLite-era
 # tests covering edge cases (sub-call routing, extra_json roundtrip) still hold.
 from ._msg_adapter import (
@@ -1417,6 +1417,44 @@ class SessionStore:
         # A branch tip is a conv node (no caller) with no conv-child.
         tips: list[dict[str, Any]] = []
         named = (idx.meta.get("branches") or {})
+
+        def _top_program_run(node: Call) -> bool:
+            """A caller-less Program is a conversation-layer action."""
+            md = node.metadata or {}
+            return (
+                node.role == ROLE_CODE
+                and (_node_caller(node) or "ROOT") == "ROOT"
+                and bool(node.name or md.get("function"))
+                and md.get("display") not in ("root", "runtime")
+                and md.get("function") != "attach"
+                and not str(node.name or "").startswith("context/")
+            )
+
+        def _conv_child(kid_id: str) -> bool:
+            """Whether this predecessor child continues the conversation."""
+            child = idx.nodes_by_id.get(kid_id)
+            if child is None:
+                return False
+            md = child.metadata or {}
+            if md.get("display") in ("root", "runtime"):
+                return False
+            if md.get("function") == "attach":
+                return False
+            if str(child.name or "").startswith("context/"):
+                return False
+            if _top_program_run(child):
+                return True
+            if child.role not in (ROLE_USER, ROLE_LLM):
+                return False
+            caller = _node_caller(child)
+            if caller and caller != "ROOT":
+                caller_node = idx.nodes_by_id.get(caller)
+                if caller_node is not None and caller_node.role not in (
+                    ROLE_USER, ROLE_LLM,
+                ):
+                    return False
+            return True
+
         # Identify the session's "main" tip — the leaf reached by
         # walking the earliest conv-root down its kids[0] primary
         # path. This matches the DAG lane-0 trunk exactly, so the
@@ -1440,39 +1478,16 @@ class SessionStore:
             seen: set[str] = set()
             while cur not in seen:
                 seen.add(cur)
-                kids = idx.children_by_predecessor.get(cur, [])
+                kids = [
+                    kid for kid in idx.children_by_predecessor.get(cur, [])
+                    if _conv_child(kid)
+                ]
                 if not kids:
                     break
                 cur = kids[0]
             main_tip_id = cur
 
         merged = self.merged_heads(session_id)
-
-        def _conv_child(kid_id: str) -> bool:
-            """A child that CONTINUES the conversation. Execution-layer
-            rows (attach pointers, runtime nodes, sub-call replies) and
-            context machinery register under ``children_by_predecessor``
-            too, but hanging one off a turn does not stop that turn
-            being the branch tip — counting them dropped a branch from
-            the panel the moment its head spawned a task."""
-            ch = idx.nodes_by_id.get(kid_id)
-            if ch is None:
-                return False
-            if ch.role not in (ROLE_USER, ROLE_LLM):
-                return False
-            md = ch.metadata or {}
-            if md.get("display") in ("root", "runtime"):
-                return False
-            if md.get("function") == "attach":
-                return False
-            if str(ch.name or "").startswith("context/"):
-                return False
-            c = _node_caller(ch)
-            if c and c != "ROOT":
-                cn = idx.nodes_by_id.get(c)
-                if cn is not None and cn.role not in (ROLE_USER, ROLE_LLM):
-                    return False
-            return True
 
         for node in idx.all_nodes():
             # Skip sub-call nodes — anything living INSIDE a function
