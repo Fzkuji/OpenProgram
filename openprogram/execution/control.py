@@ -60,7 +60,6 @@ _CANCEL_SUPERSEDES = (
 _PAUSE_SUPERSEDES = (
     CommandKind.CONTINUE,
     CommandKind.STEP,
-    CommandKind.STEER,
 )
 
 
@@ -264,6 +263,31 @@ class RuntimeControlService:
                 raise ExecutionConflict("checkpoint_required", "a published checkpoint is required")
             if checkpoint.execution_id != execution_id or checkpoint.revision_id != execution.revision_id:
                 raise ExecutionConflict("invalid_checkpoint", "checkpoint does not belong to the current execution revision")
+            steering_rows = connection.execute(
+                "SELECT * FROM commands WHERE execution_id = ? AND kind = ? "
+                "AND status IN (?, ?) ORDER BY submitted_at, command_id",
+                (
+                    execution_id,
+                    CommandKind.STEER.value,
+                    CommandStatus.ACCEPTED.value,
+                    CommandStatus.APPLYING.value,
+                ),
+            ).fetchall()
+            if steering_rows:
+                state_refs = dict(checkpoint.state_refs)
+                steering = list(state_refs.get("steering", ()))
+                steering.extend(
+                    {
+                        "command_id": str(row["command_id"]),
+                        "payload": dict(self.executions._command(row).payload),
+                    }
+                    for row in steering_rows
+                )
+                # This is an activation-only view.  The immutable stored
+                # checkpoint remains unchanged until the next safe point.
+                activation_refs = dict(state_refs)
+                activation_refs["steering"] = steering
+                checkpoint = replace(checkpoint, state_refs=activation_refs)
             unresolved = connection.execute(
                 "SELECT effect_id FROM effects WHERE execution_id = ? "
                 "AND status IN ('dispatched', 'uncertain') LIMIT 1",
@@ -509,81 +533,120 @@ class RuntimeControlService:
                 expected_execution_version=expected_execution_version,
                 fragment=fragment,
             )
-        if (
-            command is None
-            or command.execution_id != execution.execution_id
-            or command.kind is not CommandKind.PAUSE
-            or command.status is not CommandStatus.APPLYING
-        ):
-            raise AttemptConflict(
-                "command_mismatch",
-                "safe point does not match an applying pause command",
+        if command is not None and command.kind is CommandKind.PAUSE:
+            return self._arrive_pause_safe_point(
+                attempt_id=attempt_id,
+                generation=generation,
+                command_id=command_id,
+                expected_execution_version=expected_execution_version,
+                fragment=fragment,
             )
-        if fragment.safe_point_kind not in execution.capabilities.safe_point_kinds:
-            raise AttemptConflict(
-                "unsupported_safe_point",
-                "driver reported a safe point not declared by the execution",
-            )
-        steering_commands = self.executions.list_commands(
-            execution.execution_id,
-            statuses=(CommandStatus.ACCEPTED, CommandStatus.APPLYING),
-            kinds=(CommandKind.STEER,),
-        )
-        state_refs = dict(fragment.state_refs)
-        if steering_commands:
-            steering = list(state_refs.get("steering", ()))
-            steering.extend(
-                {"command_id": item.command_id, "payload": dict(item.payload)}
-                for item in steering_commands
-            )
-            state_refs["steering"] = steering
-        steering_ids = {item.command_id for item in steering_commands}
-        # A command that caused this checkpoint is applied, not pending at it.
-        pending = tuple(
-            item for item in dict.fromkeys(fragment.pending_command_ids)
-            if item != command.command_id and item not in steering_ids
-        )
-        checkpoint, checkpointed = self.checkpoints.publish(
-            execution.execution_id,
-            expected_version=expected_execution_version,
-            revision_id=execution.revision_id,
-            parent_checkpoint_id=execution.checkpoint_head_id,
-            frontier=fragment.frontier,
-            state_refs=state_refs,
-            completed_actions=fragment.completed_actions,
-            effect_receipts=fragment.effect_receipts,
-            child_frontier=fragment.child_frontier,
-            pending_command_ids=pending,
-            created_by_attempt_id=attempt_id,
-        )
-        ended, paused = self.attempts.finish(
-            attempt_id,
-            generation=generation,
-            expected_execution_version=checkpointed.status_version,
-            target=ExecutionStatus.PAUSED,
-            outcome="paused_at_safe_point",
-        )
-        safe_point = dict(checkpoint.frontier[-1]) if checkpoint.frontier else {
-            "kind": fragment.safe_point_kind
-        }
-        receipt = {"checkpoint_id": checkpoint.checkpoint_id, "safe_point": safe_point}
-        command = self._mark_applied(command, paused, receipt=receipt)
-        for steer in steering_commands:
-            if steer.status is CommandStatus.ACCEPTED:
-                steer = self.executions.transition_command(
-                    steer.command_id,
-                    expected_status=CommandStatus.ACCEPTED,
-                    target=CommandStatus.APPLYING,
+    def _arrive_pause_safe_point(
+        self,
+        *,
+        attempt_id: str,
+        generation: int,
+        command_id: str,
+        expected_execution_version: int,
+        fragment: CheckpointFragment,
+    ) -> SafePointCompletion:
+        """Commit checkpoint, steering receipts, and pause in one transaction."""
+        with self.executions._transaction() as connection:
+            attempt = self.attempts._require(connection, attempt_id)
+            self.attempts._validate_generation(attempt, generation)
+            execution = self.executions._require_execution(connection, attempt.execution_id)
+            command = self.executions._get_command(connection, command_id)
+            if (
+                execution.status_version != expected_execution_version
+                or command is None
+                or command.execution_id != execution.execution_id
+                or command.kind is not CommandKind.PAUSE
+                or command.status is not CommandStatus.APPLYING
+            ):
+                raise AttemptConflict("command_mismatch", "safe point does not match an applying pause command")
+            if fragment.safe_point_kind not in execution.capabilities.safe_point_kinds:
+                raise AttemptConflict("unsupported_safe_point", "driver reported an undeclared safe point")
+            steering_commands = [
+                self.executions._command(row)
+                for row in connection.execute(
+                    "SELECT * FROM commands WHERE execution_id = ? AND kind = ? "
+                    "AND status IN (?, ?) ORDER BY submitted_at, command_id",
+                    (
+                        execution.execution_id,
+                        CommandKind.STEER.value,
+                        CommandStatus.ACCEPTED.value,
+                        CommandStatus.APPLYING.value,
+                    ),
+                ).fetchall()
+            ]
+            state_refs = dict(fragment.state_refs)
+            if steering_commands:
+                steering = list(state_refs.get("steering", ()))
+                steering.extend(
+                    {"command_id": item.command_id, "payload": dict(item.payload)}
+                    for item in steering_commands
                 )
-            self.executions.transition_command(
-                steer.command_id,
+                state_refs["steering"] = steering
+            steering_ids = {item.command_id for item in steering_commands}
+            pending = tuple(
+                item
+                for item in dict.fromkeys(fragment.pending_command_ids)
+                if item != command_id and item not in steering_ids
+            )
+            checkpoint, checkpointed = self.checkpoints._publish_in_transaction(
+                connection,
+                execution_id=execution.execution_id,
+                expected_version=expected_execution_version,
+                revision_id=execution.revision_id,
+                parent_checkpoint_id=execution.checkpoint_head_id,
+                frontier=fragment.frontier,
+                state_refs=state_refs,
+                completed_actions=fragment.completed_actions,
+                effect_receipts=fragment.effect_receipts,
+                child_frontier=fragment.child_frontier,
+                pending_command_ids=pending,
+                created_by_attempt_id=attempt_id,
+            )
+            ended, paused = self.attempts._finish_in_transaction(
+                connection,
+                attempt_id,
+                generation=generation,
+                expected_execution_version=checkpointed.status_version,
+                target=ExecutionStatus.PAUSED,
+                outcome="paused_at_safe_point",
+            )
+            safe_point = dict(checkpoint.frontier[-1]) if checkpoint.frontier else {
+                "kind": fragment.safe_point_kind
+            }
+            receipt = {"checkpoint_id": checkpoint.checkpoint_id, "safe_point": safe_point}
+            command = self.executions._transition_command(
+                connection,
+                command_id,
                 expected_status=CommandStatus.APPLYING,
                 target=CommandStatus.APPLIED,
                 result_version=paused.status_version,
                 receipt=receipt,
             )
+            applied = [command]
+            for steer in steering_commands:
+                if steer.status is CommandStatus.ACCEPTED:
+                    steer = self.executions._transition_command(
+                        connection,
+                        steer.command_id,
+                        expected_status=CommandStatus.ACCEPTED,
+                        target=CommandStatus.APPLYING,
+                    )
+                steer = self.executions._transition_command(
+                    connection,
+                    steer.command_id,
+                    expected_status=CommandStatus.APPLYING,
+                    target=CommandStatus.APPLIED,
+                    result_version=paused.status_version,
+                    receipt=receipt,
+                )
+                applied.append(steer)
         self.registry.unbind(
-            paused.execution_id,
+            execution.execution_id,
             attempt_id=attempt_id,
             generation=generation,
         )
@@ -592,6 +655,7 @@ class RuntimeControlService:
             execution=paused,
             attempt=ended,
             checkpoint=checkpoint,
+            applied_commands=tuple(applied),
         )
 
     def arrive_step_safe_point(
@@ -900,11 +964,13 @@ class RuntimeControlService:
             command_kind: CommandKind | None = None
             apply_command = False
             reject_command = False
+            running_commands = False
             if execution.status in {ExecutionStatus.QUEUED, ExecutionStatus.PAUSED}:
                 target = execution.status
                 reason_code = "owner_lost_before_activation"
                 outcome = "owner_lost_before_activation"
             elif execution.status is ExecutionStatus.RUNNING:
+                running_commands = True
                 target = (
                     ExecutionStatus.RECONCILIATION_REQUIRED
                     if unresolved
@@ -970,9 +1036,30 @@ class RuntimeControlService:
                     created_at=attempt.updated_at,
                 )
 
-            command = self._applying_command(
-                connection, execution_id, command_kind
-            )
+            command = None
+            if running_commands:
+                rows = connection.execute(
+                    "SELECT * FROM commands WHERE execution_id = ? AND status = ? "
+                    "ORDER BY submitted_at, command_id",
+                    (execution_id, CommandStatus.APPLYING.value),
+                ).fetchall()
+                for row in rows:
+                    recovered_command = self.executions._transition_command(
+                        connection,
+                        str(row["command_id"]),
+                        expected_status=CommandStatus.APPLYING,
+                        target=CommandStatus.REJECTED,
+                        result_version=recovered.status_version,
+                        rejection_code=(
+                            "effect_reconciliation" if unresolved else "owner_lost"
+                        ),
+                    )
+                    if command is None or recovered_command.kind is CommandKind.STEP:
+                        command = recovered_command
+            else:
+                command = self._applying_command(
+                    connection, execution_id, command_kind
+                )
             if command is not None and apply_command:
                 command = self.executions._transition_command(
                     connection,
