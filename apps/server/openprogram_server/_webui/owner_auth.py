@@ -449,7 +449,9 @@ def _replace_header(
     headers.append((name, value))
 
 
-def _shell_content_security_policy(body: bytes = b"") -> bytes:
+def _shell_content_security_policy(
+    body: bytes = b"", *, allow_same_origin_frame: bool = False
+) -> bytes:
     hashes = []
     for match in _INLINE_SCRIPT_RE.finditer(body):
         if re.search(rb"\bsrc\s*=", match.group("attributes"), re.IGNORECASE):
@@ -459,13 +461,16 @@ def _shell_content_security_policy(body: bytes = b"") -> bytes:
         )
         hashes.append(f"'sha256-{digest}'")
     script_sources = " ".join(("'self'", *hashes))
+    frame_ancestors = "'self'" if allow_same_origin_frame else "'none'"
     return (
-        "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; "
+        f"object-src 'none'; base-uri 'none'; frame-ancestors {frame_ancestors}; "
         f"script-src {script_sources}; connect-src 'self'"
     ).encode("ascii")
 
 
-def _response_sender(send, *, no_store: bool, shell: bool):
+def _response_sender(
+    send, *, no_store: bool, shell: bool, allow_same_origin_frame: bool = False
+):
     pending_start = None
     html_body = bytearray()
 
@@ -476,7 +481,11 @@ def _response_sender(send, *, no_store: bool, shell: bool):
             if no_store:
                 _replace_header(headers, b"cache-control", b"no-store")
             if shell:
-                _replace_header(headers, b"x-frame-options", b"DENY")
+                _replace_header(
+                    headers,
+                    b"x-frame-options",
+                    b"SAMEORIGIN" if allow_same_origin_frame else b"DENY",
+                )
                 _replace_header(headers, b"referrer-policy", b"no-referrer")
                 _replace_header(headers, b"x-content-type-options", b"nosniff")
                 content_type = next(
@@ -493,7 +502,9 @@ def _response_sender(send, *, no_store: bool, shell: bool):
                 _replace_header(
                     headers,
                     b"content-security-policy",
-                    _shell_content_security_policy(),
+                    _shell_content_security_policy(
+                        allow_same_origin_frame=allow_same_origin_frame
+                    ),
                 )
             message = {**message, "headers": headers}
         elif pending_start is not None and message.get("type") == "http.response.body":
@@ -504,7 +515,10 @@ def _response_sender(send, *, no_store: bool, shell: bool):
             _replace_header(
                 headers,
                 b"content-security-policy",
-                _shell_content_security_policy(bytes(html_body)),
+                _shell_content_security_policy(
+                    bytes(html_body),
+                    allow_same_origin_frame=allow_same_origin_frame,
+                ),
             )
             await send({**pending_start, "headers": headers})
             pending_start = None
@@ -547,11 +561,17 @@ class OwnerAuthMiddleware:
             path == "/healthz" or _public_shell(scope)
         )
         if public:
+            embeddable_docs_html = path.startswith("/docs/") and path.endswith(
+                ".raw.html"
+            )
             await self.app(
                 scope,
                 receive,
                 _response_sender(
-                    send, no_store=path == "/healthz", shell=path != "/healthz"
+                    send,
+                    no_store=path == "/healthz",
+                    shell=path != "/healthz",
+                    allow_same_origin_frame=embeddable_docs_html,
                 ),
             )
             return
