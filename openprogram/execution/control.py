@@ -65,6 +65,13 @@ class ReconciliationCompletion:
     command: ControlCommand | None = None
 
 
+@dataclass(frozen=True)
+class RecoveryCompletion:
+    execution: ExecutionRecord
+    attempt: AttemptRecord | None = None
+    command: ControlCommand | None = None
+
+
 class RuntimeControlService:
     """The sole coordinator for canonical commands and live driver signals."""
 
@@ -281,6 +288,124 @@ class RuntimeControlService:
             command=command,
         )
 
+    def recover_owner_loss(self, execution_id: str) -> RecoveryCompletion:
+        """Durably finalize work whose physical owner is known to be gone."""
+        with self.executions._transaction() as connection:
+            execution = self.executions._require_execution(connection, execution_id)
+            if execution.status not in {
+                ExecutionStatus.RUNNING,
+                ExecutionStatus.PAUSING,
+                ExecutionStatus.CANCELLING,
+            }:
+                return RecoveryCompletion(execution=execution)
+
+            unresolved = connection.execute(
+                "SELECT 1 FROM effects WHERE execution_id = ? "
+                "AND status IN ('dispatched', 'uncertain') LIMIT 1",
+                (execution_id,),
+            ).fetchone() is not None
+            command_kind: CommandKind | None = None
+            apply_command = False
+            reject_command = False
+            if execution.status is ExecutionStatus.RUNNING:
+                target = (
+                    ExecutionStatus.RECONCILIATION_REQUIRED
+                    if unresolved
+                    else ExecutionStatus.INTERRUPTED
+                )
+                reason_code = "effect_reconciliation" if unresolved else "owner_lost"
+                outcome = "reconciliation_required" if unresolved else "owner_lost"
+            elif execution.status is ExecutionStatus.PAUSING:
+                command_kind = CommandKind.PAUSE
+                if execution.checkpoint_head_id is not None:
+                    target = ExecutionStatus.PAUSED
+                    reason_code = "owner_lost_after_checkpoint"
+                    outcome = "owner_lost_after_checkpoint"
+                    apply_command = True
+                elif unresolved:
+                    target = ExecutionStatus.RECONCILIATION_REQUIRED
+                    reason_code = "effect_reconciliation"
+                    outcome = "reconciliation_required"
+                else:
+                    target = ExecutionStatus.INTERRUPTED
+                    reason_code = "owner_lost_before_checkpoint"
+                    outcome = "owner_lost_before_checkpoint"
+                    reject_command = True
+            else:
+                command_kind = CommandKind.CANCEL
+                if unresolved:
+                    target = ExecutionStatus.RECONCILIATION_REQUIRED
+                    reason_code = "effect_reconciliation"
+                    outcome = "reconciliation_required"
+                else:
+                    target = ExecutionStatus.CANCELLED
+                    reason_code = execution.reason_code or "owner_lost"
+                    outcome = "owner_lost_during_cancel"
+                    apply_command = True
+
+            recovered = self.executions._transition_execution(
+                connection,
+                execution_id,
+                expected_version=execution.status_version,
+                target=target,
+                reason_code=reason_code,
+                clear_owner=True,
+            )
+            attempt = None
+            if execution.current_attempt_id is not None:
+                attempt = self.attempts._require(
+                    connection, execution.current_attempt_id
+                )
+                if attempt.execution_id != execution_id:
+                    raise AttemptConflict(
+                        "attempt_mismatch",
+                        "execution current attempt belongs to a different execution",
+                    )
+                attempt = self.attempts._end_for_owner_loss(
+                    connection, attempt, outcome=outcome
+                )
+                self.executions._append_event(
+                    connection,
+                    execution_id=execution_id,
+                    execution_version=recovered.status_version,
+                    kind="attempt.ended",
+                    payload={"attempt": attempt.to_dict()},
+                    created_at=attempt.updated_at,
+                )
+
+            command = self._applying_command(
+                connection, execution_id, command_kind
+            )
+            if command is not None and apply_command:
+                command = self.executions._transition_command(
+                    connection,
+                    command.command_id,
+                    expected_status=CommandStatus.APPLYING,
+                    target=CommandStatus.APPLIED,
+                    result_version=recovered.status_version,
+                )
+            elif command is not None and reject_command:
+                command = self.executions._transition_command(
+                    connection,
+                    command.command_id,
+                    expected_status=CommandStatus.APPLYING,
+                    target=CommandStatus.REJECTED,
+                    result_version=recovered.status_version,
+                    rejection_code="owner_lost_before_checkpoint",
+                )
+
+        if attempt is not None:
+            self.registry.unbind(
+                execution_id,
+                attempt_id=attempt.attempt_id,
+                generation=attempt.generation,
+            )
+        return RecoveryCompletion(
+            execution=recovered,
+            attempt=attempt,
+            command=command,
+        )
+
     def resolve_effect(
         self,
         *,
@@ -351,6 +476,21 @@ class RuntimeControlService:
             target=CommandStatus.APPLIED,
             result_version=execution.status_version,
         )
+
+    def _applying_command(
+        self,
+        connection,
+        execution_id: str,
+        kind: CommandKind | None,
+    ) -> ControlCommand | None:
+        if kind is None:
+            return None
+        row = connection.execute(
+            "SELECT * FROM commands WHERE execution_id = ? AND kind = ? "
+            "AND status = ? ORDER BY submitted_at, command_id LIMIT 1",
+            (execution_id, kind.value, CommandStatus.APPLYING.value),
+        ).fetchone()
+        return self.executions._command(row) if row is not None else None
 
     async def _dispatch(
         self,

@@ -491,3 +491,186 @@ def test_pause_command_is_applied_after_effect_reconciliation(tmp_path) -> None:
     assert reconciled.command is not None
     assert reconciled.command.command_id == "pause_1"
     assert reconciled.command.status is CommandStatus.APPLIED
+
+
+def test_owner_loss_interrupts_running_attempt_and_is_idempotent(tmp_path) -> None:
+    executions, attempts, execution, attempt = _execution(tmp_path, active=True)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+
+    recovered = service.recover_owner_loss(execution.execution_id)
+
+    assert recovered.execution.status is ExecutionStatus.INTERRUPTED
+    assert recovered.execution.current_attempt_id is None
+    assert recovered.attempt is not None
+    assert recovered.attempt.status.value == "ended"
+    assert recovered.attempt.outcome == "owner_lost"
+    assert recovered.command is None
+
+    repeated = service.recover_owner_loss(execution.execution_id)
+    assert repeated.execution == recovered.execution
+    assert attempts.get(attempt.attempt_id) == recovered.attempt
+
+
+def test_owner_loss_pausing_with_checkpoint_applies_pause(tmp_path) -> None:
+    executions, attempts, execution, attempt = _execution(tmp_path, active=True)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    _, checkpointed = service.checkpoints.publish(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        revision_id=execution.revision_id,
+        parent_checkpoint_id=None,
+        frontier=({"kind": "action.after", "step_id": "tool_1"},),
+        state_refs={"conversation": "blob:conversation-1"},
+        completed_actions=(),
+        effect_receipts=(),
+        child_frontier={},
+        pending_command_ids=(),
+        created_by_attempt_id=attempt.attempt_id,
+    )
+    pausing = asyncio.run(
+        service.request_pause(
+            command_id="pause_1",
+            execution_id=execution.execution_id,
+            expected_version=checkpointed.status_version,
+            actor={"surface": "test"},
+        )
+    )
+
+    recovered = service.recover_owner_loss(execution.execution_id)
+
+    assert pausing.execution.status is ExecutionStatus.PAUSING
+    assert recovered.execution.status is ExecutionStatus.PAUSED
+    assert recovered.execution.current_attempt_id is None
+    assert recovered.command is not None
+    assert recovered.command.status is CommandStatus.APPLIED
+    assert recovered.attempt is not None
+    assert recovered.attempt.outcome == "owner_lost_after_checkpoint"
+
+
+def test_owner_loss_pausing_without_checkpoint_rejects_pause(tmp_path) -> None:
+    executions, attempts, execution, _ = _execution(tmp_path, active=True)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    asyncio.run(
+        service.request_pause(
+            command_id="pause_1",
+            execution_id=execution.execution_id,
+            expected_version=execution.status_version,
+            actor={"surface": "test"},
+        )
+    )
+
+    recovered = service.recover_owner_loss(execution.execution_id)
+
+    assert recovered.execution.status is ExecutionStatus.INTERRUPTED
+    assert recovered.command is not None
+    assert recovered.command.status is CommandStatus.REJECTED
+    assert recovered.command.rejection_code == "owner_lost_before_checkpoint"
+
+    executions, attempts, execution, attempt = _execution(
+        tmp_path / "uncertain", active=True
+    )
+    effects = EffectStore(executions)
+    effect = effects.register(
+        effect_id="effect_1",
+        execution_id=execution.execution_id,
+        attempt_id=attempt.attempt_id,
+        action_id="send_message",
+        classification=EffectClassification.NONREPEATABLE,
+        idempotency_key=None,
+        metadata={},
+    )
+    effects.mark_dispatched(effect.effect_id, expected_status=effect.status)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    asyncio.run(
+        service.request_pause(
+            command_id="pause_1",
+            execution_id=execution.execution_id,
+            expected_version=execution.status_version,
+            actor={"surface": "test"},
+        )
+    )
+
+    reconciling = service.recover_owner_loss(execution.execution_id)
+
+    assert reconciling.execution.status is ExecutionStatus.RECONCILIATION_REQUIRED
+    assert reconciling.command is not None
+    assert reconciling.command.status is CommandStatus.APPLYING
+
+
+def test_owner_loss_cancelling_finishes_or_requires_reconciliation(tmp_path) -> None:
+    executions, attempts, execution, attempt = _execution(tmp_path, active=True)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    asyncio.run(
+        service.request_cancel(
+            command_id="cancel_1",
+            execution_id=execution.execution_id,
+            expected_version=execution.status_version,
+            actor={"surface": "test"},
+            reason_code="user_cancelled",
+        )
+    )
+
+    cancelled = service.recover_owner_loss(execution.execution_id)
+
+    assert cancelled.execution.status is ExecutionStatus.CANCELLED
+    assert cancelled.command is not None
+    assert cancelled.command.status is CommandStatus.APPLIED
+
+    executions, attempts, execution, attempt = _execution(
+        tmp_path / "uncertain", active=True
+    )
+    effects = EffectStore(executions)
+    effect = effects.register(
+        effect_id="effect_1",
+        execution_id=execution.execution_id,
+        attempt_id=attempt.attempt_id,
+        action_id="send_message",
+        classification=EffectClassification.NONREPEATABLE,
+        idempotency_key=None,
+        metadata={},
+    )
+    effects.mark_dispatched(effect.effect_id, expected_status=effect.status)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    asyncio.run(
+        service.request_cancel(
+            command_id="cancel_1",
+            execution_id=execution.execution_id,
+            expected_version=execution.status_version,
+            actor={"surface": "test"},
+            reason_code="user_cancelled",
+        )
+    )
+
+    reconciling = service.recover_owner_loss(execution.execution_id)
+
+    assert reconciling.execution.status is ExecutionStatus.RECONCILIATION_REQUIRED
+    assert reconciling.command is not None
+    assert reconciling.command.status is CommandStatus.APPLYING
+
+    repeated = service.recover_owner_loss(execution.execution_id)
+    assert repeated.execution == reconciling.execution
+
+
+def test_owner_loss_leaves_non_owner_states_unchanged(tmp_path) -> None:
+    executions, attempts, queued, _ = _execution(tmp_path, active=False)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+
+    recovered = service.recover_owner_loss(queued.execution_id)
+
+    assert recovered.execution == queued
+    assert recovered.attempt is None
+    assert recovered.command is None
+
+    paused = asyncio.run(
+        service.request_pause(
+            command_id="pause_1",
+            execution_id=queued.execution_id,
+            expected_version=queued.status_version,
+            actor={"surface": "test"},
+        )
+    )
+    repeated = service.recover_owner_loss(queued.execution_id)
+
+    assert repeated.execution == paused.execution
+    assert repeated.attempt is None
+    assert repeated.command is None

@@ -273,6 +273,24 @@ class AttemptStore:
         with closing(self.executions._connect()) as connection:
             return self._get(connection, attempt_id)
 
+    def _end_for_owner_loss(
+        self,
+        connection: sqlite3.Connection,
+        attempt: AttemptRecord,
+        *,
+        outcome: str,
+    ) -> AttemptRecord:
+        """Fence an attempt inside its execution recovery transaction."""
+        if attempt.status is AttemptStatus.ENDED:
+            return attempt
+        now = self._clock()
+        connection.execute(
+            "UPDATE attempts SET status = ?, outcome = ?, ended_at = ?, "
+            "updated_at = ? WHERE attempt_id = ?",
+            (AttemptStatus.ENDED.value, outcome, now, now, attempt.attempt_id),
+        )
+        return self._require(connection, attempt.attempt_id)
+
     @staticmethod
     def _validate_generation(attempt: AttemptRecord, generation: int) -> None:
         if attempt.generation != generation:
