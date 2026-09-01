@@ -17,7 +17,7 @@ import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
 import { findCenterTabGroup } from "@/lib/state/center-tab-groups";
 import { useSessionStore } from "@/lib/session-store";
 import { newSession } from "@/lib/runtime-bridge/conversations";
-import { fileDraftKey, fileDrafts } from "@/lib/state/files-shared";
+import { discardFileDraft } from "@/lib/state/files-shared";
 import { deleteAttachments } from "@/components/chat/composer/attach/attach-idb";
 import {
   draftChannelChoiceHost,
@@ -268,7 +268,7 @@ export function useTabLifecycle({
       // reopening the file starts from disk, not the "discarded" edit.
       for (const tab of tabsToClose) {
         if (tab.kind === "file" && tab.projectId && tab.path)
-          fileDrafts.delete(fileDraftKey(tab.projectId, tab.path));
+          void discardFileDraft(tab.projectId, tab.path);
       }
     }
     // Pin the survivors' widths for a mouse close (Chrome), so the next

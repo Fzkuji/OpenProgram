@@ -14,7 +14,7 @@
  * Cmd/Ctrl+S) calls ``project_file_write`` with the baseline read's
  * mtime, so a concurrent on-disk change surfaces as a conflict notice
  * + Reload instead of a silent clobber. Unsaved buffers survive tab
- * switches via the in-memory fileDrafts map (page reload loses them);
+ * switches via the shared fileDrafts map, which is mirrored to IndexedDB;
  * the tab strip guards dirty-tab close with a confirm.
  */
 import { useEffect, useRef, useState } from "react";
@@ -29,13 +29,18 @@ import {
 import { fileTabId, useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   type FileReadResult,
+  cacheFileRead,
+  canPersistFileDraft,
+  discardFileDraft,
   fileDraftKey,
   fileDrafts,
   filesWsRequest,
   invalidateFileRead,
-  latestFileMtime,
+  loadFileDraft,
+  noteFileMtime,
+  persistFileDraft,
   rawFileUrl,
-  readCache,
+  getCachedFileRead,
 } from "@/lib/state/files-shared";
 import { FileViewer, IMAGE_EXTS } from "@/components/files/file-viewer";
 import styles from "./center-tabs.module.css";
@@ -76,6 +81,8 @@ export function FileTabPane({
   const [saving, setSaving] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
+  const [draftHydrated, setDraftHydrated] = useState(false);
+  const [draftPersistError, setDraftPersistError] = useState<string | null>(null);
   // Keyed by the read's own path instead of being reset on path change:
   // on a cache hit the child viewer reports synchronously BEFORE this
   // component's effects would run, so path-keying makes stale entries
@@ -110,18 +117,31 @@ export function FileTabPane({
   // from the new file's read below; the old file's dirty draft is
   // already mirrored in fileDrafts).
   useEffect(() => {
+    draftGeneration.current += 1;
+    const generation = draftGeneration.current;
     setConflict(false);
     setSaveFailed(false);
+    setSaving(false);
     saveControllerRef.current?.abort();
     saveControllerRef.current = null;
-    return () => saveControllerRef.current?.abort();
+    setDraftPersistError(null);
+    setDraftHydrated(false);
+    setBuffer(null);
+    let alive = true;
+    void loadFileDraft(projectId, path).then(() => {
+      if (alive && generation === draftGeneration.current) setDraftHydrated(true);
+    });
+    return () => {
+      alive = false;
+      saveControllerRef.current?.abort();
+    };
   }, [projectId, path]);
 
   // Seed the buffer when a read lands: restore a surviving draft from
   // fileDrafts (keeping ITS baseline+mtime, so a save after an on-disk
   // change still conflicts correctly), else baseline = the fresh read.
   useEffect(() => {
-    if (!loadedForPath || loadedForPath.content === undefined || loadedForPath.truncated)
+    if (!draftHydrated || !loadedForPath || loadedForPath.content === undefined || loadedForPath.truncated)
       return;
     const saved = fileDrafts.get(fileDraftKey(projectId, path));
     setBuffer(
@@ -139,7 +159,7 @@ export function FileTabPane({
             baseMtime: loadedForPath.mtime,
           },
     );
-  }, [loadedForPath, projectId, path]);
+  }, [draftHydrated, loadedForPath, projectId, path]);
 
   // Mirror the buffer into the draft-survival map: dirty → upsert,
   // clean (typed back / reverted / saved) → drop. No unmount cleanup —
@@ -148,15 +168,28 @@ export function FileTabPane({
     if (!bufferForPath) return;
     const key = fileDraftKey(projectId, path);
     if (bufferForPath.draft !== bufferForPath.baseline) {
-      fileDrafts.set(key, {
+      const draft = {
         draft: bufferForPath.draft,
         baselineContent: bufferForPath.baseline,
         baselineMtime: bufferForPath.baseMtime,
+      };
+      if (!canPersistFileDraft(key, draft)) {
+        setDraftPersistError(text(
+          "Local draft storage is full — save, export, or discard another draft first.",
+          "本地草稿空间已满——请先保存、导出或丢弃其他草稿。",
+        ));
+        return;
+      }
+      void persistFileDraft(projectId, path, draft).then((result) => {
+        if (!result.ok) setDraftPersistError(result.message ?? text("Unable to save local draft.", "无法保存本地草稿。"))
+        else setDraftPersistError(null);
       });
     } else {
-      fileDrafts.delete(key);
+      void discardFileDraft(projectId, path).then((result) => {
+        if (!result.ok) setDraftPersistError(result.message ?? text("Unable to discard local draft.", "无法丢弃本地草稿。"));
+      });
     }
-  }, [bufferForPath, projectId, path]);
+  }, [bufferForPath, projectId, path, text]);
 
   // Mirror the unsaved-changes state into the tab strip's dirty dot.
   // NO unmount/path-change cleanup: the draft survives the pane (in
@@ -238,14 +271,14 @@ export function FileTabPane({
       );
       // Keep the shared read cache coherent (no remount/refetch): a
       // future viewer mount sees the saved content and fresh mtime.
-      const cached = readCache.get(fileDraftKey(projectId, path));
+      const cached = getCachedFileRead(projectId, path);
+      noteFileMtime(projectId, path, mtime);
       if (cached)
-        readCache.set(fileDraftKey(projectId, path), {
+        cacheFileRead({
           ...cached,
           content: buf.draft,
           mtime,
         });
-      latestFileMtime.set(path, mtime);
     } else if (res?.conflict || res?.status === "conflict") {
       setConflict(true);
     } else {
@@ -262,12 +295,33 @@ export function FileTabPane({
 
   /** Conflict recovery: drop the draft, refetch, re-baseline. */
   const reload = () => {
-    fileDrafts.delete(fileDraftKey(projectId, path));
+    void discardFileDraft(projectId, path);
     invalidateFileRead(projectId, path);
     setConflict(false);
     setSaveFailed(false);
     setViewerEpoch((e) => e + 1); // remount viewer → refetch → re-seed
   };
+
+  function updateDraft(value: string): void {
+    const current = bufferForPath;
+    if (!current) return;
+    if (value !== current.baseline) {
+      const candidate = {
+        draft: value,
+        baselineContent: current.baseline,
+        baselineMtime: current.baseMtime,
+      };
+      if (!canPersistFileDraft(fileDraftKey(projectId, path), candidate)) {
+        setDraftPersistError(text(
+          "Local draft storage is full — save, export, or discard another draft first.",
+          "本地草稿空间已满——请先保存、导出或丢弃其他草稿。",
+        ));
+        return;
+      }
+    }
+    setDraftPersistError(null);
+    setBuffer((prev) => prev && prev.path === path ? { ...prev, draft: value } : prev);
+  }
 
   // Cmd/Ctrl+S saves while this pane's tab is the ACTIVE tab and the
   // file is editable text; everywhere else (images/PDF/binary, other
@@ -372,6 +426,8 @@ export function FileTabPane({
           <div className={fileStyles.conflictNote}>
             {text("Save failed.", "保存失败。")}
           </div>
+        ) : draftPersistError ? (
+          <div className={fileStyles.conflictNote}>{draftPersistError}</div>
         ) : null}
         <div className={styles.viewerHost}>
         <FileViewer
@@ -382,10 +438,7 @@ export function FileTabPane({
           draft={bufferForPath?.draft}
           onDraftChange={
             bufferForPath
-              ? (value) =>
-                  setBuffer((prev) =>
-                    prev && prev.path === path ? { ...prev, draft: value } : prev,
-                  )
+              ? updateDraft
               : undefined
           }
           onLoaded={setLoaded}

@@ -134,6 +134,23 @@ export function filesWsRequest<T>(
  * listing) — lets the viewer cache invalidate on refetch. */
 export const latestFileMtime = new Map<string, number>();
 
+export const READ_CACHE_MAX_ENTRIES = 64;
+export const READ_CACHE_MAX_BYTES = 16 * 1024 * 1024;
+export const DRAFT_MAX_ENTRIES = 32;
+export const DRAFT_MAX_BYTES = 8 * 1024 * 1024;
+
+const utf8 = new TextEncoder();
+
+/** A project/path key is never shared with another project. */
+export function fileScopeKey(projectId: string, path: string): string {
+  return `${projectId}:${path}`;
+}
+
+/** Read cache revisions use mtime as the worker's content identity. */
+export function fileReadCacheKey(projectId: string, path: string, mtime: number): string {
+  return `${fileScopeKey(projectId, path)}:${mtime}`;
+}
+
 /** Wire shape of a ``project_file_read_result`` reply. */
 export interface FileReadResult {
   project_id: string;
@@ -147,16 +164,76 @@ export interface FileReadResult {
   error?: string;
 }
 
-/** Read-result cache keyed `${projectId}:${path}` — shared between the
- * viewer (fills it) and the editor (invalidates it after a save). */
-// ponytail: unbounded per-session cache; add LRU if memory ever matters.
+/** Read-result cache. Production writes use cacheFileRead to enforce bounds. */
 export const readCache = new Map<string, FileReadResult>();
+const readCacheBytes = new Map<string, number>();
+
+function readResultBytes(result: FileReadResult): number {
+  return result.content === undefined ? 0 : utf8.encode(result.content).byteLength;
+}
+
+function touchReadCache(key: string, value: FileReadResult): void {
+  readCache.delete(key);
+  readCache.set(key, value);
+}
+
+export function getCachedFileRead(projectId: string, path: string, mtime?: number): FileReadResult | undefined {
+  const scope = fileScopeKey(projectId, path);
+  const key = mtime === undefined
+    ? [...readCache.keys()].reverse().find((candidate) => candidate.startsWith(`${scope}:`))
+    : fileReadCacheKey(projectId, path, mtime);
+  if (!key) return undefined;
+  const value = readCache.get(key);
+  if (!value) return undefined;
+  touchReadCache(key, value);
+  return value;
+}
+
+export function cacheFileRead(result: FileReadResult): void {
+  if (result.error || result.content === undefined || result.truncated) return;
+  const key = fileReadCacheKey(result.project_id, result.path, result.mtime);
+  const bytes = readResultBytes(result);
+  if (bytes > READ_CACHE_MAX_BYTES) return;
+  readCache.delete(key);
+  readCacheBytes.delete(key);
+  let total = [...readCacheBytes.values()].reduce((sum, value) => sum + value, 0);
+  while (
+    (readCache.size >= READ_CACHE_MAX_ENTRIES || total + bytes > READ_CACHE_MAX_BYTES) &&
+    readCache.size > 0
+  ) {
+    const oldest = readCache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    total -= readCacheBytes.get(oldest) ?? 0;
+    readCacheBytes.delete(oldest);
+    readCache.delete(oldest);
+  }
+  if (readCache.size >= READ_CACHE_MAX_ENTRIES || total + bytes > READ_CACHE_MAX_BYTES) return;
+  readCache.set(key, result);
+  readCacheBytes.set(key, bytes);
+}
+
+export function noteFileMtime(projectId: string, path: string, mtime: number): void {
+  const scope = fileScopeKey(projectId, path);
+  const previous = latestFileMtime.get(scope);
+  latestFileMtime.set(scope, mtime);
+  if (previous === undefined || previous === mtime) return;
+  for (const key of [...readCache.keys()]) {
+    if (!key.startsWith(`${scope}:`)) continue;
+    readCache.delete(key);
+    readCacheBytes.delete(key);
+  }
+}
 
 /** Drop the cached read (and known mtime) for one file so the next
  * viewer mount refetches — called after a successful save. */
 export function invalidateFileRead(projectId: string, path: string): void {
-  readCache.delete(`${projectId}:${path}`);
-  latestFileMtime.delete(path);
+  const scope = fileScopeKey(projectId, path);
+  for (const key of [...readCache.keys()]) {
+    if (!key.startsWith(`${scope}:`)) continue;
+    readCache.delete(key);
+    readCacheBytes.delete(key);
+  }
+  latestFileMtime.delete(scope);
 }
 
 /** URL of the worker's raw-bytes endpoint (same origin — single port). */
@@ -189,18 +266,334 @@ export interface FileDraft {
   draft: string;
   baselineContent: string;
   baselineMtime: number;
+  baselineRevision?: string;
 }
 
 export function fileDraftKey(projectId: string, path: string): string {
-  return `${projectId}:${path}`;
+  return fileScopeKey(projectId, path);
 }
 
-/** Unsaved drafts surviving tab switches (the pane unmounts when its
- * tab loses focus). The pane mirrors its buffer in while dirty and
- * removes the entry on save / revert / confirmed discard.
- * ponytail: in-memory only — a page reload loses drafts (the strip's
- * persisted `dirty` flag is reset on restore for the same reason). */
+/** Unsaved drafts surviving tab switches. The pane mirrors dirty entries
+ * to IndexedDB and removes them only on save, revert, or explicit discard. */
 export const fileDrafts = new Map<string, FileDraft>();
+
+export type DraftPersistenceErrorCode = "DRAFT_QUOTA_EXCEEDED" | "DRAFT_PERSISTENCE_FAILED";
+
+export interface DraftPersistenceResult {
+  ok: boolean;
+  code?: DraftPersistenceErrorCode;
+  message?: string;
+}
+
+interface StoredDraft extends FileDraft {
+  key: string;
+  projectId: string;
+  path: string;
+  bytes: number;
+  updatedAt: number;
+}
+
+interface ProjectDraftIndex {
+  projectId: string;
+  keys: string[];
+  count: number;
+  bytes: number;
+}
+
+const DRAFT_DB_NAME = "openprogram-file-drafts";
+const DRAFT_DB_VERSION = 1;
+const DRAFT_STORE = "drafts";
+const DRAFT_INDEX_STORE = "project_index";
+let draftDbPromise: Promise<IDBDatabase | null> | null = null;
+let draftHydration: Promise<void> | null = null;
+let draftBytesByKey = new Map<string, number>();
+let draftIndexByProject = new Map<string, ProjectDraftIndex>();
+let draftClock = 0;
+let draftQueue: Promise<unknown> = Promise.resolve();
+
+function draftMetadataBytes(key: string, draft: FileDraft): number {
+  return utf8.encode(JSON.stringify({
+    key,
+    baselineMtime: draft.baselineMtime,
+    baselineRevision: draft.baselineRevision ?? null,
+  })).byteLength;
+}
+
+export function fileDraftBytes(key: string, draft: FileDraft): number {
+  return utf8.encode(draft.draft).byteLength
+    + utf8.encode(draft.baselineContent).byteLength
+    + draftMetadataBytes(key, draft);
+}
+
+function idbAvailable(): boolean {
+  return typeof indexedDB !== "undefined";
+}
+
+function openDraftDb(): Promise<IDBDatabase | null> {
+  if (!idbAvailable()) return Promise.resolve(null);
+  if (draftDbPromise) return draftDbPromise;
+  draftDbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(DRAFT_DB_NAME, DRAFT_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(DRAFT_STORE)) {
+        const store = db.createObjectStore(DRAFT_STORE, { keyPath: "key" });
+        store.createIndex("projectId", "projectId", { unique: false });
+      }
+      if (!db.objectStoreNames.contains(DRAFT_INDEX_STORE))
+        db.createObjectStore(DRAFT_INDEX_STORE, { keyPath: "projectId" });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("Unable to open draft store"));
+  }).catch(() => null);
+  return draftDbPromise!;
+}
+
+function idbRequest<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("IndexedDB request failed"));
+  });
+}
+
+function waitForTransaction(tx: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error("IndexedDB transaction failed"));
+    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
+  });
+}
+
+async function hydrateDraftState(): Promise<void> {
+  if (draftHydration) return draftHydration;
+  draftHydration = (async () => {
+    const db = await openDraftDb();
+    if (!db) return;
+    const tx = db.transaction([DRAFT_STORE, DRAFT_INDEX_STORE], "readonly");
+    const drafts = await idbRequest(tx.objectStore(DRAFT_STORE).getAll()) as StoredDraft[];
+    const indexes = await idbRequest(tx.objectStore(DRAFT_INDEX_STORE).getAll()) as ProjectDraftIndex[];
+    draftBytesByKey = new Map(drafts.map((entry) => [entry.key, entry.bytes ?? fileDraftBytes(entry.key, entry)]));
+    draftIndexByProject = new Map(indexes.map((entry) => [entry.projectId, entry]));
+    for (const entry of drafts) {
+      fileDrafts.set(entry.key, {
+        draft: entry.draft,
+        baselineContent: entry.baselineContent,
+        baselineMtime: entry.baselineMtime,
+        baselineRevision: entry.baselineRevision,
+      });
+      const index = draftIndexByProject.get(entry.projectId) ?? {
+        projectId: entry.projectId, keys: [], count: 0, bytes: 0,
+      };
+      if (!index.keys.includes(entry.key)) index.keys.push(entry.key);
+      index.count = index.keys.length;
+      index.bytes = index.keys.reduce((sum, key) => sum + (draftBytesByKey.get(key) ?? 0), 0);
+      draftIndexByProject.set(entry.projectId, index);
+      draftClock = Math.max(draftClock, entry.updatedAt ?? 0);
+    }
+    const repair = db.transaction(DRAFT_INDEX_STORE, "readwrite");
+    for (const index of draftIndexByProject.values()) repair.objectStore(DRAFT_INDEX_STORE).put(index);
+    await waitForTransaction(repair).catch(() => undefined);
+  })().catch(() => undefined);
+  return draftHydration;
+}
+
+function draftBytesTotal(): number {
+  let total = 0;
+  for (const bytes of draftBytesByKey.values()) total += bytes;
+  return total;
+}
+
+export function canPersistFileDraft(key: string, draft: FileDraft): boolean {
+  const bytes = fileDraftBytes(key, draft);
+  const previous = draftBytesByKey.get(key) ?? 0;
+  const count = draftBytesByKey.has(key) ? draftBytesByKey.size : draftBytesByKey.size + 1;
+  return count <= DRAFT_MAX_ENTRIES && draftBytesTotal() - previous + bytes <= DRAFT_MAX_BYTES;
+}
+
+function enqueueDraft<T>(operation: () => Promise<T>): Promise<T> {
+  const next = draftQueue.then(operation, operation);
+  draftQueue = next.catch(() => undefined);
+  return next;
+}
+
+export async function loadFileDraft(projectId: string, path: string): Promise<FileDraft | null> {
+  await hydrateDraftState();
+  const key = fileDraftKey(projectId, path);
+  const inMemory = fileDrafts.get(key);
+  if (inMemory) return structuredClone(inMemory);
+  const db = await openDraftDb();
+  if (!db) return null;
+  try {
+    const tx = db.transaction(DRAFT_STORE, "readonly");
+    const stored = await idbRequest(tx.objectStore(DRAFT_STORE).get(key)) as StoredDraft | undefined;
+    if (!stored) return null;
+    const value: FileDraft = {
+      draft: stored.draft,
+      baselineContent: stored.baselineContent,
+      baselineMtime: stored.baselineMtime,
+      baselineRevision: stored.baselineRevision,
+    };
+    fileDrafts.set(key, value);
+    return structuredClone(value);
+  } catch {
+    return null;
+  }
+}
+
+export function persistFileDraft(projectId: string, path: string, value: FileDraft): Promise<DraftPersistenceResult> {
+  const key = fileDraftKey(projectId, path);
+  return enqueueDraft(async () => {
+    await hydrateDraftState();
+    if (!canPersistFileDraft(key, value)) {
+      return { ok: false, code: "DRAFT_QUOTA_EXCEEDED", message: "Local dirty-draft storage is full; save, export, or discard a draft first." };
+    }
+    const db = await openDraftDb();
+    if (!db) return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message: "Local dirty-draft storage is unavailable." };
+    const previousBytes = draftBytesByKey.get(key) ?? 0;
+    const stored: StoredDraft = {
+      ...structuredClone(value), key, projectId, path,
+      bytes: fileDraftBytes(key, value), updatedAt: ++draftClock,
+    };
+    const previousIndex = draftIndexByProject.get(projectId) ?? { projectId, keys: [], count: 0, bytes: 0 };
+    const hasKey = previousIndex.keys.includes(key);
+    const index: ProjectDraftIndex = {
+      projectId,
+      keys: hasKey ? [...previousIndex.keys] : [...previousIndex.keys, key],
+      count: hasKey ? previousIndex.count : previousIndex.count + 1,
+      bytes: previousIndex.bytes - previousBytes + stored.bytes,
+    };
+    try {
+      const tx = db.transaction([DRAFT_STORE, DRAFT_INDEX_STORE], "readwrite");
+      tx.objectStore(DRAFT_STORE).put(stored);
+      tx.objectStore(DRAFT_INDEX_STORE).put(index);
+      await waitForTransaction(tx);
+      draftBytesByKey.set(key, stored.bytes);
+      draftIndexByProject.set(projectId, index);
+      fileDrafts.set(key, structuredClone(value));
+      return { ok: true };
+    } catch (error) {
+      const quota = typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "QuotaExceededError";
+      return {
+        ok: false,
+        code: quota ? "DRAFT_QUOTA_EXCEEDED" : "DRAFT_PERSISTENCE_FAILED",
+        message: quota ? "Local dirty-draft storage is full; the last saved draft was retained." : "Unable to persist the dirty draft; the last saved draft was retained.",
+      };
+    }
+  });
+}
+
+export function discardFileDraft(projectId: string, path: string): Promise<DraftPersistenceResult> {
+  const key = fileDraftKey(projectId, path);
+  return enqueueDraft(async () => {
+    await hydrateDraftState();
+    const db = await openDraftDb();
+    const previous = draftBytesByKey.get(key) ?? 0;
+    const oldIndex = draftIndexByProject.get(projectId);
+    if (!db) {
+      fileDrafts.delete(key);
+      draftBytesByKey.delete(key);
+      return { ok: true };
+    }
+    try {
+      const tx = db.transaction([DRAFT_STORE, DRAFT_INDEX_STORE], "readwrite");
+      tx.objectStore(DRAFT_STORE).delete(key);
+      if (oldIndex) {
+        const keys = oldIndex.keys.filter((candidate) => candidate !== key);
+        tx.objectStore(DRAFT_INDEX_STORE).put({ projectId, keys, count: keys.length, bytes: Math.max(0, oldIndex.bytes - previous) } satisfies ProjectDraftIndex);
+      }
+      await waitForTransaction(tx);
+      fileDrafts.delete(key);
+      draftBytesByKey.delete(key);
+      if (oldIndex) {
+        const keys = oldIndex.keys.filter((candidate) => candidate !== key);
+        draftIndexByProject.set(projectId, { projectId, keys, count: keys.length, bytes: Math.max(0, oldIndex.bytes - previous) });
+      }
+      return { ok: true };
+    } catch {
+      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message: "Unable to discard the local dirty draft." };
+    }
+  });
+}
+
+/** Move all draft keys below a renamed file or directory in one transaction. */
+export function moveFileDrafts(projectId: string, oldPath: string, newPath: string): Promise<DraftPersistenceResult> {
+  return enqueueDraft(async () => {
+    await hydrateDraftState();
+    const prefix = fileScopeKey(projectId, oldPath);
+    const entries = [...fileDrafts.entries()].filter(([key]) => key === prefix || key.startsWith(`${prefix}/`));
+    if (entries.length === 0) return { ok: true };
+    const db = await openDraftDb();
+    if (!db) {
+      for (const [key, value] of entries) {
+        const suffix = key === prefix ? "" : key.slice(prefix.length);
+        fileDrafts.set(fileDraftKey(projectId, newPath + suffix), value);
+        fileDrafts.delete(key);
+      }
+      return { ok: true };
+    }
+    try {
+      const tx = db.transaction([DRAFT_STORE, DRAFT_INDEX_STORE], "readwrite");
+      const index = draftIndexByProject.get(projectId);
+      for (const [key, value] of entries) {
+        const suffix = key === prefix ? "" : key.slice(prefix.length);
+        const nextPath = newPath + suffix;
+        const nextKey = fileDraftKey(projectId, nextPath);
+        tx.objectStore(DRAFT_STORE).put({ ...structuredClone(value), key: nextKey, projectId, path: nextPath, bytes: fileDraftBytes(nextKey, value), updatedAt: ++draftClock } satisfies StoredDraft);
+        tx.objectStore(DRAFT_STORE).delete(key);
+      }
+      if (index) tx.objectStore(DRAFT_INDEX_STORE).put({ ...index, keys: index.keys.map((key) => key === prefix || key.startsWith(`${prefix}/`) ? fileDraftKey(projectId, newPath + (key === prefix ? "" : key.slice(prefix.length))) : key) } satisfies ProjectDraftIndex);
+      await waitForTransaction(tx);
+      for (const [key, value] of entries) {
+        const suffix = key === prefix ? "" : key.slice(prefix.length);
+        const nextKey = fileDraftKey(projectId, newPath + suffix);
+        fileDrafts.set(nextKey, value);
+        const bytes = draftBytesByKey.get(key);
+        if (bytes !== undefined) draftBytesByKey.set(nextKey, bytes);
+        draftBytesByKey.delete(key);
+        fileDrafts.delete(key);
+      }
+      if (index) draftIndexByProject.set(projectId, { ...index, keys: index.keys.map((key) => key === prefix || key.startsWith(`${prefix}/`) ? fileDraftKey(projectId, newPath + (key === prefix ? "" : key.slice(prefix.length))) : key) });
+      return { ok: true };
+    } catch {
+      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message: "Unable to move the local dirty draft." };
+    }
+  });
+}
+
+export function dirtyDraftsForPath(projectId: string, path: string): string[] {
+  const prefix = fileDraftKey(projectId, path);
+  return [...fileDrafts.keys()].filter((key) => key === prefix || key.startsWith(`${prefix}/`));
+}
+
+export async function hasDirtyDraftsForPath(projectId: string, path: string): Promise<boolean> {
+  await hydrateDraftState();
+  const prefix = fileDraftKey(projectId, path);
+  return [...draftBytesByKey.keys()].some((key) => key === prefix || key.startsWith(`${prefix}/`));
+}
+
+export function clearProjectDrafts(projectId: string): Promise<DraftPersistenceResult> {
+  return enqueueDraft(async () => {
+    await hydrateDraftState();
+    const db = await openDraftDb();
+    const keys = [...draftBytesByKey.keys()].filter((key) => key.startsWith(`${projectId}:`));
+    if (!db) {
+      for (const key of keys) { fileDrafts.delete(key); draftBytesByKey.delete(key); }
+      draftIndexByProject.delete(projectId);
+      return { ok: true };
+    }
+    try {
+      const tx = db.transaction([DRAFT_STORE, DRAFT_INDEX_STORE], "readwrite");
+      for (const key of keys) tx.objectStore(DRAFT_STORE).delete(key);
+      tx.objectStore(DRAFT_INDEX_STORE).delete(projectId);
+      await waitForTransaction(tx);
+      for (const key of keys) { fileDrafts.delete(key); draftBytesByKey.delete(key); }
+      draftIndexByProject.delete(projectId);
+      return { ok: true };
+    } catch {
+      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message: "Unable to clear project dirty drafts." };
+    }
+  });
+}
 
 export interface FileDraftSnapshotEntry {
   key: string;

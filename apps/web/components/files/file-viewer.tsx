@@ -34,11 +34,12 @@ import { Markdown } from "@/lib/format-utils/markdown";
 import {
   absFileReadUrl,
   absRawFileUrl,
+  cacheFileRead,
   type FileReadResult,
   filesWsRequest,
+  getCachedFileRead,
   latestFileMtime,
   rawFileUrl,
-  readCache,
 } from "@/lib/state/files-shared";
 import styles from "./files-panel.module.css";
 
@@ -177,10 +178,9 @@ function TextViewer({
         cancelled = true;
       };
     }
-    const key = `${projectId}:${path}`;
-    const knownMtime = latestFileMtime.get(path);
-    const hit = readCache.get(key);
-    if (hit && (knownMtime === undefined || hit.mtime === knownMtime)) {
+    const knownMtime = latestFileMtime.get(`${projectId}:${path}`);
+    const hit = getCachedFileRead(projectId, path, knownMtime);
+    if (hit) {
       setData(hit);
       onLoadedRef.current?.(hit);
       return;
@@ -198,7 +198,7 @@ function TextViewer({
         onLoadedRef.current?.(null);
         return;
       }
-      readCache.set(key, res);
+      cacheFileRead(res);
       setData(res);
       onLoadedRef.current?.(res);
     });
