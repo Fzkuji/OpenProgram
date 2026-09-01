@@ -444,3 +444,50 @@ def test_uncertain_effect_requires_reconciliation_before_cancel_finishes(
     assert reconciled.execution.status is ExecutionStatus.CANCELLED
     assert reconciled.command is not None
     assert reconciled.command.status is CommandStatus.APPLIED
+
+
+def test_pause_command_is_applied_after_effect_reconciliation(tmp_path) -> None:
+    executions, attempts, execution, attempt = _execution(tmp_path, active=True)
+    effects = EffectStore(executions)
+    planned = effects.register(
+        effect_id="effect_1",
+        execution_id=execution.execution_id,
+        attempt_id=attempt.attempt_id,
+        action_id="send_message",
+        classification=EffectClassification.NONREPEATABLE,
+        idempotency_key=None,
+        metadata={},
+    )
+    effects.mark_dispatched(planned.effect_id, expected_status=planned.status)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    pausing = asyncio.run(
+        service.request_pause(
+            command_id="pause_1",
+            execution_id=execution.execution_id,
+            expected_version=execution.status_version,
+            actor={"surface": "test"},
+        )
+    )
+
+    awaiting = service.finish_attempt(
+        attempt_id=attempt.attempt_id,
+        generation=attempt.generation,
+        expected_execution_version=pausing.execution.status_version,
+        target=ExecutionStatus.COMPLETED,
+        outcome="completed",
+        command_id="pause_1",
+    )
+    assert awaiting.execution.status is ExecutionStatus.RECONCILIATION_REQUIRED
+    assert awaiting.command is not None
+    assert awaiting.command.status is CommandStatus.APPLYING
+
+    reconciled = service.resolve_effect(
+        effect_id="effect_1",
+        expected_status=EffectStatus.DISPATCHED,
+        outcome=EffectStatus.COMMITTED,
+        receipt={"provider_message_id": "message_1"},
+    )
+    assert reconciled.execution.status is ExecutionStatus.PAUSED
+    assert reconciled.command is not None
+    assert reconciled.command.command_id == "pause_1"
+    assert reconciled.command.status is CommandStatus.APPLIED

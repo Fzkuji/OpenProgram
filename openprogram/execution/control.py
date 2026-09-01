@@ -306,16 +306,18 @@ class RuntimeControlService:
         commands = self.executions.list_commands(
             execution.execution_id,
             statuses=(CommandStatus.APPLYING,),
-            kinds=(CommandKind.CANCEL,),
+            kinds=(CommandKind.CANCEL, CommandKind.PAUSE),
         )
         command = commands[0] if commands else None
-        if command is None:
+        if command is None or command.kind is CommandKind.PAUSE:
             execution = self.executions.transition_execution(
                 execution.execution_id,
                 expected_version=execution.status_version,
                 target=ExecutionStatus.PAUSED,
                 reason_code="effects_reconciled",
             )
+            if command is not None:
+                command = self._mark_applied(command, execution)
         else:
             execution = self.executions.transition_execution(
                 execution.execution_id,
