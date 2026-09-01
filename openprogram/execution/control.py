@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import inspect
+import uuid
+from dataclasses import dataclass, replace
 from threading import RLock
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from openprogram.paths import get_active_profile
 
-from .attempts import AttemptConflict, AttemptRecord, AttemptStore
+from .attempts import AttemptConflict, AttemptRecord, AttemptStatus, AttemptStore
 from .checkpoints import (
     CheckpointFragment,
     CheckpointManifest,
     ExecutionCheckpointStore,
 )
-from .driver import DriverAck, DriverRegistry, DriverRegistryConflict
+from .driver import DriverAck, DriverBinding, DriverRegistry, DriverRegistryConflict
 from .effects import EffectRecord, EffectStatus, EffectStore
 from .model import (
     CommandKind,
@@ -24,7 +26,7 @@ from .model import (
     ExecutionStatus,
     TERMINAL_EXECUTION_STATUSES,
 )
-from .store import ExecutionConflict, ExecutionStore, default_store
+from .store import ExecutionConflict, ExecutionStore, _json, default_store
 
 
 _default_control_services: dict[str, RuntimeControlService] = {}
@@ -55,6 +57,11 @@ _CANCEL_SUPERSEDES = (
     CommandKind.FORK,
     CommandKind.RETRY,
 )
+_PAUSE_SUPERSEDES = (
+    CommandKind.CONTINUE,
+    CommandKind.STEP,
+    CommandKind.STEER,
+)
 
 
 @dataclass(frozen=True)
@@ -71,7 +78,8 @@ class SafePointCompletion:
     command: ControlCommand
     execution: ExecutionRecord
     attempt: AttemptRecord
-    checkpoint: CheckpointManifest
+    checkpoint: CheckpointManifest | None
+    applied_commands: tuple[ControlCommand, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -103,6 +111,10 @@ class RuntimeControlService:
         executions: ExecutionStore,
         attempts: AttemptStore,
         registry: DriverRegistry,
+        *,
+        activator: Callable[..., Any] | None = None,
+        owner_id: str = "control-service",
+        lease_ttl_seconds: float = 30.0,
     ) -> None:
         self.executions = executions
         self.attempts = attempts
@@ -110,6 +122,277 @@ class RuntimeControlService:
         self.registry.set_owner_resolver(self._durable_owner)
         self.effects = EffectStore(executions)
         self.checkpoints = ExecutionCheckpointStore(executions)
+        self.activator = activator
+        self.owner_id = owner_id
+        self.lease_ttl_seconds = lease_ttl_seconds
+
+    async def request_continue(
+        self,
+        *,
+        command_id: str,
+        execution_id: str,
+        expected_version: int,
+        actor: Mapping[str, Any],
+        owner_id: str | None = None,
+        ttl_seconds: float | None = None,
+        activator: Callable[..., Any] | None = None,
+        driver: Any | None = None,
+    ) -> ControlDispatch:
+        """Resume a paused execution without changing its revision or identity."""
+        command, execution, attempt, checkpoint, duplicate = self._resume_transaction(
+            command_id=command_id,
+            execution_id=execution_id,
+            expected_version=expected_version,
+            actor=actor,
+            kind=CommandKind.CONTINUE,
+            owner_id=owner_id or self.owner_id,
+            ttl_seconds=ttl_seconds or self.lease_ttl_seconds,
+        )
+        if duplicate:
+            return ControlDispatch(command=command, execution=execution, delivered=False)
+        delivered, issue = await self._activate(
+            attempt, checkpoint, activator=activator, driver=driver
+        )
+        return ControlDispatch(
+            command=command,
+            execution=execution,
+            delivered=delivered,
+            issue_code=issue,
+        )
+
+    async def request_step(
+        self,
+        *,
+        command_id: str,
+        execution_id: str,
+        expected_version: int,
+        actor: Mapping[str, Any],
+        owner_id: str | None = None,
+        ttl_seconds: float | None = None,
+        activator: Callable[..., Any] | None = None,
+        driver: Any | None = None,
+    ) -> ControlDispatch:
+        """Create exactly one durable permit and activate a fresh attempt."""
+        command, execution, attempt, checkpoint, duplicate = self._resume_transaction(
+            command_id=command_id,
+            execution_id=execution_id,
+            expected_version=expected_version,
+            actor=actor,
+            kind=CommandKind.STEP,
+            owner_id=owner_id or self.owner_id,
+            ttl_seconds=ttl_seconds or self.lease_ttl_seconds,
+        )
+        if duplicate:
+            return ControlDispatch(command=command, execution=execution, delivered=False)
+        delivered, issue = await self._activate(
+            attempt, checkpoint, activator=activator, driver=driver
+        )
+        return ControlDispatch(
+            command=command,
+            execution=execution,
+            delivered=delivered,
+            issue_code=issue,
+        )
+
+    def request_steer(
+        self,
+        *,
+        command_id: str,
+        execution_id: str,
+        expected_version: int,
+        actor: Mapping[str, Any],
+        payload: Mapping[str, Any],
+    ) -> ControlDispatch:
+        """Persist steering input; application happens at a durable safe point."""
+        command = self.executions.accept_command(
+            command_id=command_id,
+            execution_id=execution_id,
+            expected_version=expected_version,
+            kind=CommandKind.STEER,
+            payload=payload,
+            actor=actor,
+        )
+        execution = self.executions.get_execution(execution_id)
+        assert execution is not None
+        # Paused steering is intentionally only accepted.  It is consumed by
+        # the first safe point of the next continue/step attempt.
+        return ControlDispatch(command=command, execution=execution, delivered=False)
+
+    def _resume_transaction(
+        self,
+        *,
+        command_id: str,
+        execution_id: str,
+        expected_version: int,
+        actor: Mapping[str, Any],
+        kind: CommandKind,
+        owner_id: str,
+        ttl_seconds: float,
+    ) -> tuple[
+        ControlCommand,
+        ExecutionRecord,
+        AttemptRecord | None,
+        CheckpointManifest | None,
+        bool,
+    ]:
+        if not owner_id or ttl_seconds <= 0:
+            raise AttemptConflict("invalid_lease", "owner_id and a positive ttl_seconds are required")
+        with self.executions._transaction() as connection:
+            command, duplicate = self.executions._accept_command(
+                connection,
+                command_id=command_id,
+                execution_id=execution_id,
+                expected_version=expected_version,
+                kind=kind,
+                payload={},
+                actor=actor,
+            )
+            execution = self.executions._require_execution(connection, execution_id)
+            if duplicate:
+                checkpoint = (
+                    self.checkpoints._get(connection, execution.checkpoint_head_id)
+                    if execution.checkpoint_head_id
+                    else None
+                )
+                return command, execution, None, checkpoint, True
+            checkpoint = (
+                self.checkpoints._get(connection, execution.checkpoint_head_id)
+                if execution.checkpoint_head_id
+                else None
+            )
+            if checkpoint is None:
+                raise ExecutionConflict("checkpoint_required", "a published checkpoint is required")
+            if checkpoint.execution_id != execution_id or checkpoint.revision_id != execution.revision_id:
+                raise ExecutionConflict("invalid_checkpoint", "checkpoint does not belong to the current execution revision")
+            unresolved = connection.execute(
+                "SELECT effect_id FROM effects WHERE execution_id = ? "
+                "AND status IN ('dispatched', 'uncertain') LIMIT 1",
+                (execution_id,),
+            ).fetchone()
+            if unresolved is not None:
+                raise ExecutionConflict(
+                    "unresolved_effect", f"effect requires resolution: {unresolved['effect_id']}"
+                )
+            generation = int(
+                connection.execute(
+                    "SELECT COALESCE(MAX(generation), 0) + 1 FROM attempts WHERE execution_id = ?",
+                    (execution_id,),
+                ).fetchone()[0]
+            )
+            now = self.attempts._clock()
+            attempt = AttemptRecord(
+                attempt_id=f"attempt_{uuid.uuid4().hex}",
+                execution_id=execution_id,
+                generation=generation,
+                status=AttemptStatus.LEASED,
+                owner_id=owner_id,
+                lease_expires_at=now + ttl_seconds,
+                leased_at=now,
+                updated_at=now,
+            )
+            self.attempts._insert(connection, attempt)
+            connection.execute(
+                "UPDATE executions SET current_attempt_id = ?, owner_lease_json = ?, updated_at = ? "
+                "WHERE execution_id = ? AND status_version = ?",
+                (
+                    attempt.attempt_id,
+                    _json({"owner_id": owner_id, "generation": generation}),
+                    now,
+                    execution_id,
+                    expected_version,
+                ),
+            )
+            reserved = self.executions._transition_execution(
+                connection,
+                execution_id,
+                expected_version=expected_version,
+                target=ExecutionStatus.RUNNING,
+                reason_code=None,
+            )
+            self.executions._append_event(
+                connection,
+                execution_id=execution_id,
+                execution_version=reserved.status_version,
+                kind="attempt.leased",
+                payload={"attempt": attempt.to_dict()},
+                created_at=now,
+            )
+            connection.execute(
+                "UPDATE attempts SET status = ?, activated_at = ?, updated_at = ? WHERE attempt_id = ?",
+                (AttemptStatus.ACTIVE.value, now, now, attempt.attempt_id),
+            )
+            active = self.attempts._require(connection, attempt.attempt_id)
+            self.executions._append_event(
+                connection,
+                execution_id=execution_id,
+                execution_version=reserved.status_version,
+                kind="attempt.active",
+                payload={"attempt": active.to_dict()},
+                created_at=now,
+            )
+            applying = self.executions._transition_command(
+                connection,
+                command_id,
+                expected_status=CommandStatus.ACCEPTED,
+                target=CommandStatus.APPLYING,
+            )
+            if kind is CommandKind.CONTINUE:
+                command = self.executions._transition_command(
+                    connection,
+                    command_id,
+                    expected_status=CommandStatus.APPLYING,
+                    target=CommandStatus.APPLIED,
+                    result_version=reserved.status_version,
+                )
+            else:
+                command = applying
+            return command, reserved, active, checkpoint, False
+
+    async def _activate(
+        self,
+        attempt: AttemptRecord | None,
+        checkpoint: CheckpointManifest | None,
+        *,
+        activator: Callable[..., Any] | None,
+        driver: Any | None = None,
+    ) -> tuple[bool, str | None]:
+        if attempt is None:
+            return False, None
+        callback = activator or self.activator
+        if callback is None and driver is not None:
+            callback = driver.activate
+        if callback is None:
+            return False, "activation_unavailable"
+        try:
+            result = callback(attempt, checkpoint)
+            if inspect.isawaitable(result):
+                result = await result
+            if isinstance(result, DriverBinding):
+                self.registry.bind(result)
+            elif isinstance(result, tuple) and len(result) == 2:
+                driver, handle = result
+                self.registry.bind(
+                    DriverBinding(
+                        execution_id=attempt.execution_id,
+                        attempt_id=attempt.attempt_id,
+                        generation=attempt.generation,
+                        driver=driver,
+                        handle=handle,
+                    )
+                )
+            elif driver is not None:
+                self.registry.bind(
+                    DriverBinding(
+                        execution_id=attempt.execution_id,
+                        attempt_id=attempt.attempt_id,
+                        generation=attempt.generation,
+                        driver=driver,
+                        handle=result,
+                    )
+                )
+            return True, None
+        except Exception:
+            return False, "activation_error"
 
     def _durable_owner(self, execution_id: str) -> tuple[str, int] | None:
         execution = self.executions.get_execution(execution_id)
@@ -143,6 +426,8 @@ class RuntimeControlService:
             target=(ExecutionStatus.PAUSED if immediate else ExecutionStatus.PAUSING),
             payload={},
             actor=actor,
+            supersede_kinds=_PAUSE_SUPERSEDES,
+            supersede_code="superseded_by_pause",
         )
         if duplicate:
             return ControlDispatch(
@@ -216,6 +501,14 @@ class RuntimeControlService:
         if execution is None:
             raise AttemptConflict("execution_not_found", "attempt execution is missing")
         command = self.executions.get_command(command_id)
+        if command is not None and command.kind is CommandKind.STEP:
+            return self._arrive_step_safe_point(
+                attempt_id=attempt_id,
+                generation=generation,
+                command_id=command_id,
+                expected_execution_version=expected_execution_version,
+                fragment=fragment,
+            )
         if (
             command is None
             or command.execution_id != execution.execution_id
@@ -231,8 +524,24 @@ class RuntimeControlService:
                 "unsupported_safe_point",
                 "driver reported a safe point not declared by the execution",
             )
+        steering_commands = self.executions.list_commands(
+            execution.execution_id,
+            statuses=(CommandStatus.ACCEPTED, CommandStatus.APPLYING),
+            kinds=(CommandKind.STEER,),
+        )
+        state_refs = dict(fragment.state_refs)
+        if steering_commands:
+            steering = list(state_refs.get("steering", ()))
+            steering.extend(
+                {"command_id": item.command_id, "payload": dict(item.payload)}
+                for item in steering_commands
+            )
+            state_refs["steering"] = steering
+        steering_ids = {item.command_id for item in steering_commands}
+        # A command that caused this checkpoint is applied, not pending at it.
         pending = tuple(
-            dict.fromkeys((*fragment.pending_command_ids, command.command_id))
+            item for item in dict.fromkeys(fragment.pending_command_ids)
+            if item != command.command_id and item not in steering_ids
         )
         checkpoint, checkpointed = self.checkpoints.publish(
             execution.execution_id,
@@ -240,7 +549,7 @@ class RuntimeControlService:
             revision_id=execution.revision_id,
             parent_checkpoint_id=execution.checkpoint_head_id,
             frontier=fragment.frontier,
-            state_refs=fragment.state_refs,
+            state_refs=state_refs,
             completed_actions=fragment.completed_actions,
             effect_receipts=fragment.effect_receipts,
             child_frontier=fragment.child_frontier,
@@ -254,7 +563,25 @@ class RuntimeControlService:
             target=ExecutionStatus.PAUSED,
             outcome="paused_at_safe_point",
         )
-        command = self._mark_applied(command, paused)
+        safe_point = dict(checkpoint.frontier[-1]) if checkpoint.frontier else {
+            "kind": fragment.safe_point_kind
+        }
+        receipt = {"checkpoint_id": checkpoint.checkpoint_id, "safe_point": safe_point}
+        command = self._mark_applied(command, paused, receipt=receipt)
+        for steer in steering_commands:
+            if steer.status is CommandStatus.ACCEPTED:
+                steer = self.executions.transition_command(
+                    steer.command_id,
+                    expected_status=CommandStatus.ACCEPTED,
+                    target=CommandStatus.APPLYING,
+                )
+            self.executions.transition_command(
+                steer.command_id,
+                expected_status=CommandStatus.APPLYING,
+                target=CommandStatus.APPLIED,
+                result_version=paused.status_version,
+                receipt=receipt,
+            )
         self.registry.unbind(
             paused.execution_id,
             attempt_id=attempt_id,
@@ -265,6 +592,232 @@ class RuntimeControlService:
             execution=paused,
             attempt=ended,
             checkpoint=checkpoint,
+        )
+
+    def arrive_step_safe_point(
+        self,
+        *,
+        attempt_id: str,
+        generation: int,
+        command_id: str,
+        expected_execution_version: int,
+        fragment: CheckpointFragment | None = None,
+        safe_point_kind: str = "control.step",
+        frontier: tuple[Mapping[str, Any], ...] = (),
+        state_refs: Mapping[str, Any] | None = None,
+        managed_action: Mapping[str, Any] | None = None,
+        control_step: Mapping[str, Any] | None = None,
+    ) -> SafePointCompletion:
+        """Report one step unit and atomically return the execution to paused."""
+        if fragment is None:
+            fragment = CheckpointFragment(
+                safe_point_kind=safe_point_kind,
+                frontier=frontier or ({"safe_point": safe_point_kind},),
+                state_refs=state_refs or {},
+                managed_action=managed_action,
+                control_step=control_step,
+            )
+        elif managed_action is not None or control_step is not None:
+            fragment = replace(
+                fragment,
+                managed_action=managed_action,
+                control_step=control_step,
+            )
+        return self._arrive_step_safe_point(
+            attempt_id=attempt_id,
+            generation=generation,
+            command_id=command_id,
+            expected_execution_version=expected_execution_version,
+            fragment=fragment,
+        )
+
+    def _arrive_step_safe_point(
+        self,
+        *,
+        attempt_id: str,
+        generation: int,
+        command_id: str,
+        expected_execution_version: int,
+        fragment: CheckpointFragment,
+    ) -> SafePointCompletion:
+        if (fragment.managed_action is None) == (fragment.control_step is None):
+            raise AttemptConflict(
+                "invalid_step_unit",
+                "step safe point must report exactly one managed_action or control_step",
+            )
+        if fragment.safe_point_kind == "" or fragment.safe_point_kind is None:
+            raise AttemptConflict("invalid_safe_point", "safe_point_kind is required")
+        with self.executions._transaction() as connection:
+            attempt = self.attempts._require(connection, attempt_id)
+            self.attempts._validate_generation(attempt, generation)
+            execution = self.executions._require_execution(connection, attempt.execution_id)
+            if execution.status_version != expected_execution_version:
+                raise AttemptConflict(
+                    "stale_version",
+                    f"expected execution version {expected_execution_version}, found {execution.status_version}",
+                )
+            command = self.executions._get_command(connection, command_id)
+            if (
+                command is None
+                or command.execution_id != execution.execution_id
+                or command.kind is not CommandKind.STEP
+                or command.status is not CommandStatus.APPLYING
+            ):
+                raise AttemptConflict("command_mismatch", "safe point does not match an applying step command")
+            if fragment.safe_point_kind not in execution.capabilities.safe_point_kinds:
+                raise AttemptConflict("unsupported_safe_point", "driver reported an undeclared safe point")
+
+            cancel = self._applying_command(connection, execution.execution_id, CommandKind.CANCEL)
+            pause = self._applying_command(connection, execution.execution_id, CommandKind.PAUSE)
+            if cancel is not None:
+                ended, cancelled = self.attempts._finish_in_transaction(
+                    connection,
+                    attempt_id,
+                    generation=generation,
+                    expected_execution_version=expected_execution_version,
+                    target=ExecutionStatus.CANCELLED,
+                    outcome="cancelled_at_step_safe_point",
+                    reason_code=cancel.payload.get("reason_code"),
+                )
+                command = self.executions._transition_command(
+                    connection,
+                    command_id,
+                    expected_status=CommandStatus.APPLYING,
+                    target=CommandStatus.REJECTED,
+                    result_version=cancelled.status_version,
+                    rejection_code="superseded_by_cancel",
+                )
+                cancel = self.executions._transition_command(
+                    connection,
+                    cancel.command_id,
+                    expected_status=CommandStatus.APPLYING,
+                    target=CommandStatus.APPLIED,
+                    result_version=cancelled.status_version,
+                )
+                self.registry.unbind(execution.execution_id, attempt_id=attempt_id, generation=generation)
+                return SafePointCompletion(command=command, execution=cancelled, attempt=ended, checkpoint=self.checkpoints._get(connection, execution.checkpoint_head_id) if execution.checkpoint_head_id else None)
+
+            checkpoint_version = expected_execution_version
+            if execution.status is ExecutionStatus.RUNNING:
+                execution = self.executions._transition_execution(
+                    connection,
+                    execution.execution_id,
+                    expected_version=expected_execution_version,
+                    target=ExecutionStatus.PAUSING,
+                    reason_code="step_at_safe_point",
+                )
+                checkpoint_version = execution.status_version
+            elif execution.status is not ExecutionStatus.PAUSING:
+                raise AttemptConflict(
+                    "invalid_state",
+                    f"step safe point arrived while execution is {execution.status.value}",
+                )
+
+            state_refs = dict(fragment.state_refs)
+            steering = list(state_refs.get("steering", ()))
+            steering_commands = connection.execute(
+                "SELECT * FROM commands WHERE execution_id = ? AND kind = ? "
+                "AND status IN (?, ?) ORDER BY submitted_at, command_id",
+                (
+                    execution.execution_id,
+                    CommandKind.STEER.value,
+                    CommandStatus.ACCEPTED.value,
+                    CommandStatus.APPLYING.value,
+                ),
+            ).fetchall()
+            for row in steering_commands:
+                steer = self.executions._command(row)
+                steering.append({"command_id": steer.command_id, "payload": dict(steer.payload)})
+            if steering_commands:
+                state_refs["steering"] = steering
+            unit = fragment.managed_action or fragment.control_step
+            completed = tuple(fragment.completed_actions) + ({"managed_action": dict(unit)} if fragment.managed_action is not None else {"control_step": dict(unit)},)
+            pending = tuple(
+                command_id
+                for command_id in fragment.pending_command_ids
+                if command_id != command.command_id
+                and command_id not in {str(row["command_id"]) for row in steering_commands}
+            )
+            # The checkpoint and all command/attempt lifecycle writes below are
+            # committed together; a crash cannot expose a half-applied step.
+            checkpoint, checkpointed = self.checkpoints._publish_in_transaction(
+                connection,
+                execution_id=execution.execution_id,
+                expected_version=checkpoint_version,
+                revision_id=execution.revision_id,
+                parent_checkpoint_id=execution.checkpoint_head_id,
+                frontier=fragment.frontier,
+                state_refs=state_refs,
+                completed_actions=completed,
+                effect_receipts=fragment.effect_receipts,
+                child_frontier=fragment.child_frontier,
+                pending_command_ids=pending,
+                created_by_attempt_id=attempt_id,
+            )
+            ended, paused = self.attempts._finish_in_transaction(
+                connection,
+                attempt_id,
+                generation=generation,
+                expected_execution_version=checkpointed.status_version,
+                target=ExecutionStatus.PAUSED,
+                outcome="step_at_safe_point",
+            )
+            safe_point = dict(checkpoint.frontier[-1]) if checkpoint.frontier else {"kind": fragment.safe_point_kind}
+            receipt = {"checkpoint_id": checkpoint.checkpoint_id, "safe_point": safe_point}
+            if pause is not None:
+                command = self.executions._transition_command(
+                    connection,
+                    command_id,
+                    expected_status=CommandStatus.APPLYING,
+                    target=CommandStatus.REJECTED,
+                    result_version=paused.status_version,
+                    rejection_code="superseded_by_pause",
+                )
+                applied = []
+                pause = self.executions._transition_command(
+                    connection,
+                    pause.command_id,
+                    expected_status=CommandStatus.APPLYING,
+                    target=CommandStatus.APPLIED,
+                    result_version=paused.status_version,
+                    receipt=receipt,
+                )
+                applied.append(pause)
+            else:
+                command = self.executions._transition_command(
+                    connection,
+                    command_id,
+                    expected_status=CommandStatus.APPLYING,
+                    target=CommandStatus.APPLIED,
+                    result_version=paused.status_version,
+                    receipt=receipt,
+                )
+                applied = [command]
+            for row in steering_commands:
+                steer = self.executions._command(row)
+                if steer.status is CommandStatus.ACCEPTED:
+                    steer = self.executions._transition_command(
+                        connection,
+                        steer.command_id,
+                        expected_status=CommandStatus.ACCEPTED,
+                        target=CommandStatus.APPLYING,
+                    )
+                steer = self.executions._transition_command(
+                    connection,
+                    steer.command_id,
+                    expected_status=CommandStatus.APPLYING,
+                    target=CommandStatus.APPLIED,
+                    result_version=paused.status_version,
+                    receipt=receipt,
+                )
+                applied.append(steer)
+        self.registry.unbind(execution.execution_id, attempt_id=attempt_id, generation=generation)
+        return SafePointCompletion(
+            command=command,
+            execution=paused,
+            attempt=ended,
+            checkpoint=checkpoint,
+            applied_commands=tuple(applied),
         )
 
     def finish_attempt(
@@ -526,6 +1079,8 @@ class RuntimeControlService:
         self,
         command: ControlCommand,
         execution: ExecutionRecord,
+        *,
+        receipt: Mapping[str, Any] | None = None,
     ) -> ControlCommand:
         if command.status is CommandStatus.APPLIED:
             return command
@@ -534,6 +1089,7 @@ class RuntimeControlService:
             expected_status=CommandStatus.APPLYING,
             target=CommandStatus.APPLIED,
             result_version=execution.status_version,
+            receipt=receipt,
         )
 
     def _applying_command(

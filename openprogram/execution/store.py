@@ -402,6 +402,7 @@ class ExecutionStore:
         target: CommandStatus,
         result_version: int | None = None,
         rejection_code: str | None = None,
+        receipt: Mapping[str, Any] | None = None,
     ) -> ControlCommand:
         with self._transaction() as connection:
             return self._transition_command(
@@ -411,6 +412,7 @@ class ExecutionStore:
                 target=target,
                 result_version=result_version,
                 rejection_code=rejection_code,
+                receipt=receipt,
             )
 
     def list_events(self, execution_id: str) -> list[ExecutionEvent]:
@@ -603,6 +605,7 @@ class ExecutionStore:
         target: CommandStatus,
         result_version: int | None = None,
         rejection_code: str | None = None,
+        receipt: Mapping[str, Any] | None = None,
     ) -> ControlCommand:
         current = self._get_command(connection, command_id)
         if current is None:
@@ -640,13 +643,16 @@ class ExecutionStore:
         )
         command = self._get_command(connection, command_id)
         assert command is not None
+        payload: dict[str, Any] = {"command": command.to_dict()}
+        if receipt is not None:
+            payload["receipt"] = dict(receipt)
         self._append_event(
             connection,
             execution_id=command.execution_id,
             execution_version=result_version,
             command_id=command_id,
             kind=f"command.{target.value}",
-            payload={"command": command.to_dict()},
+            payload=payload,
             created_at=now,
         )
         return command

@@ -271,6 +271,50 @@ class AttemptStore:
             )
             return ended, finished
 
+    def _finish_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        attempt_id: str,
+        *,
+        generation: int,
+        expected_execution_version: int,
+        target: ExecutionStatus,
+        outcome: str,
+        reason_code: str | None = None,
+    ) -> tuple[AttemptRecord, ExecutionRecord]:
+        """Finish an active attempt under a caller-owned SQLite transaction."""
+        attempt = self._require(connection, attempt_id)
+        self._validate_generation(attempt, generation)
+        if attempt.status is AttemptStatus.ENDED:
+            self._validate_not_fenced(attempt)
+            raise AttemptConflict("terminal", "attempt has ended")
+        now = self._clock()
+        self._validate_lease(attempt, now)
+        execution = self.executions._require_execution(connection, attempt.execution_id)
+        self._validate_owner(execution, attempt, expected_execution_version)
+        finished = self.executions._transition_execution(
+            connection,
+            attempt.execution_id,
+            expected_version=expected_execution_version,
+            target=target,
+            reason_code=reason_code,
+            clear_owner=True,
+        )
+        connection.execute(
+            "UPDATE attempts SET status = ?, outcome = ?, ended_at = ?, updated_at = ? WHERE attempt_id = ?",
+            (AttemptStatus.ENDED.value, outcome, now, now, attempt_id),
+        )
+        ended = self._require(connection, attempt_id)
+        self.executions._append_event(
+            connection,
+            execution_id=attempt.execution_id,
+            execution_version=finished.status_version,
+            kind="attempt.ended",
+            payload={"attempt": ended.to_dict()},
+            created_at=now,
+        )
+        return ended, finished
+
     def get(self, attempt_id: str) -> AttemptRecord | None:
         with closing(self.executions._connect()) as connection:
             return self._get(connection, attempt_id)
