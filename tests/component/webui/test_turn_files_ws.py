@@ -967,11 +967,49 @@ def test_expired_snapshot_rebuild_advances_epoch_for_scope_and_diff(monkeypatch)
         "/one.py", member, 200,
     )
 
-    assert rebuilt["snapshot_id"] == first["snapshot_id"]
-    assert rebuilt_entry["epoch"] == first_entry["epoch"] + 1
+    assert rebuilt["snapshot_id"] != first["snapshot_id"]
+    assert int(rebuilt["snapshot_id"].rsplit(":", 1)[1]) > int(first["snapshot_id"].rsplit(":", 1)[1])
     assert stale["status"] == "stale"
     assert stale["error"] == "STALE_SNAPSHOT"
     assert not valid_diff
+
+
+def test_expired_snapshot_id_rejects_no_cursor_diff_after_rebuild(store, tmp_path, monkeypatch):
+    session_id, msg_id = "s_ttl_diff_instance", "u1_reply"
+    _seed(store, session_id, msg_id)
+    target = tmp_path / "tracked.py"
+    _git, index = store._open(session_id)
+    index.nodes_by_id[msg_id].metadata = {
+        **(index.nodes_by_id[msg_id].metadata or {}),
+        "turn_files": {"version": 2, "files": [{
+            "path": str(target), "rel": "tracked.py", "added": 1,
+            "removed": 0, "diff_state": "available",
+        }]},
+    }
+    now = [100.0]
+    monkeypatch.setattr(tf.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(tf, "_REVIEW_SNAPSHOT_TTL", 5.0)
+    first_ws = FakeWS()
+    _run(tf.handle_review_scope(first_ws, {
+        "session_id": session_id, "assistant_msg_id": msg_id,
+        "scope": "turn", "cursor": "", "limit": 100,
+    }))
+    old_snapshot_id = first_ws.sent[0]["data"]["snapshot_id"]
+    now[0] += 10
+    rebuilt_ws = FakeWS()
+    _run(tf.handle_review_scope(rebuilt_ws, {
+        "session_id": session_id, "assistant_msg_id": msg_id,
+        "scope": "turn", "cursor": "", "limit": 100,
+    }))
+    assert rebuilt_ws.sent[0]["data"]["snapshot_id"] != old_snapshot_id
+
+    diff_ws = FakeWS()
+    _run(tf.handle_review_file_diff(diff_ws, {
+        "session_id": session_id, "assistant_msg_id": msg_id, "scope": "turn",
+        "path": str(target), "snapshot_id": old_snapshot_id,
+        "category": "All", "query": "", "sort": "path", "cursor": "",
+    }))
+    assert diff_ws.sent[0]["data"]["error"] == "STALE_SNAPSHOT"
 
 
 def test_workspace_review_snapshot_detects_same_tree_new_head(store, tmp_path, monkeypatch):

@@ -40,6 +40,7 @@ _MAX_REVIEW_TEXT_BYTES = 4096
 _REVIEW_SNAPSHOTS: dict[str, dict] = {}
 _REVIEW_CURSORS: dict[str, dict] = {}
 _REVIEW_SNAPSHOT_EPOCHS: dict[str, int] = {}
+_REVIEW_SNAPSHOT_NONCE = 0
 _REVIEW_REGISTRY_LOCK = threading.RLock()
 
 
@@ -255,6 +256,17 @@ def _tombstone_review_snapshot(snapshot_id: str, entry: dict) -> None:
         del _REVIEW_SNAPSHOT_EPOCHS[tombstone]
 
 
+def _snapshot_instance_id(basis_hash: str) -> str:
+    global _REVIEW_SNAPSHOT_NONCE
+    with _REVIEW_REGISTRY_LOCK:
+        _expire_review_registry()
+        for snapshot_id, entry in _REVIEW_SNAPSHOTS.items():
+            if entry.get("basis_hash") == basis_hash:
+                return snapshot_id
+        _REVIEW_SNAPSHOT_NONCE += 1
+        return f"sha256:{basis_hash}:{_REVIEW_SNAPSHOT_NONCE}"
+
+
 def _expire_review_registry(now: float | None = None) -> None:
     now = time.monotonic() if now is None else now
     with _REVIEW_REGISTRY_LOCK:
@@ -370,9 +382,10 @@ def _scope_payload(scope: str, source: str, files: list[dict], **extra) -> dict:
         "sort": sort,
         "head_id": extra.get("head_id"),
     }
-    payload["snapshot_id"] = "sha256:" + hashlib.sha256(
+    basis_hash = hashlib.sha256(
         json.dumps(snapshot_value, sort_keys=True, default=str).encode(),
     ).hexdigest()
+    payload["snapshot_id"] = _snapshot_instance_id(basis_hash)
     snapshot_entry = {
         "scope": scope,
         "source": source,
@@ -382,6 +395,7 @@ def _scope_payload(scope: str, source: str, files: list[dict], **extra) -> dict:
         "sort": sort,
         "files": filtered,
         "payload": payload,
+        "basis_hash": basis_hash,
         **(snapshot_store or {}),
     }
     if not _remember_review_snapshot(payload["snapshot_id"], snapshot_entry):
