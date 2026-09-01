@@ -1,6 +1,7 @@
 """agent tool — same-session spawn from inside a turn."""
 from __future__ import annotations
 
+import atexit
 from contextvars import copy_context
 
 import pytest
@@ -35,7 +36,16 @@ def store(tmp_path, monkeypatch):
         "timestamp": 0, "predecessor": "u1",
     })
     s.commit_turn("p1", "init")
-    return s
+    try:
+        yield s
+    finally:
+        timer = s._index_timer
+        try:
+            s._flush_index()
+        finally:
+            if timer is not None:
+                timer.join(timeout=1)
+            atexit.unregister(s._flush_index)
 
 
 @pytest.fixture

@@ -2,8 +2,20 @@
 import importlib
 import time
 
+import pytest
+
 agent_loop = importlib.import_module("openprogram.agent.agent_loop")
 from openprogram_server._webui.routes import running
+
+
+@pytest.fixture(autouse=True)
+def _runner_lifecycle():
+    """Close the singleton created while collecting the running snapshot."""
+    from openprogram.agent.job import runner as runner_mod
+
+    runner_mod.shutdown_runner()
+    yield
+    runner_mod.shutdown_runner()
 
 
 def test_collect_includes_running_tool_calls():
