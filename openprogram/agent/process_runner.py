@@ -39,7 +39,6 @@ import uuid
 from typing import Any, Callable, Optional
 
 from openprogram.agent.surface_context import (
-    PAGE_CLEANUP_HANDOFF as _PAGE_CLEANUP_HANDOFF,
     page_cleanup_failure as _page_cleanup_failure,
 )
 
@@ -119,6 +118,12 @@ def _desktop_window_registration(webtab, window_id: str, *, sole: bool = False):
 
 
 _WEBTAB_BRIDGE_MAX_TIMEOUT_SECONDS = 15.0
+# One open plus two ownership-rollbacks can each use the bridge timeout;
+# request_on_ws also has at most two seconds of bounded send overhead.
+_WEBTAB_FINALIZE_TIMEOUT_SECONDS = 3 * (
+    _WEBTAB_BRIDGE_MAX_TIMEOUT_SECONDS + 2.0
+) + 1.0
+_WEBTAB_DRAIN_STOP = "__op_webtab_drain_stop__"
 
 
 def _bounded_page_close(request: Callable[[], dict]) -> dict:
@@ -488,7 +493,8 @@ def _bridge_webtab_to_parent(
     command = data.get("command") if isinstance(data, dict) else None
     op = command.get("op") if isinstance(command, dict) else ""
     valid = op in {"open", "active", "capture_pages"} or (
-        op == "activate" and isinstance(command.get("binding_id"), str)
+        op in {"activate", "screenshot"}
+        and isinstance(command.get("binding_id"), str)
     ) or (
         op == "close" and any(
             isinstance(command.get(key), str)
@@ -509,7 +515,11 @@ def _bridge_webtab_to_parent(
             binding_authorized = (
                 allowed_bindings is None or binding_id in allowed_bindings
             )
-            if op in {"activate", "close"} and binding_id and not binding_authorized:
+            if (
+                op in {"activate", "screenshot", "close"}
+                and binding_id
+                and not binding_authorized
+            ):
                 result = {
                     "ok": False,
                     "reason_code": "page_context_stale",
@@ -519,6 +529,20 @@ def _bridge_webtab_to_parent(
                 result = webtab.request_bound_tab(
                     command["binding_id"],
                     url=command.get("url") or "",
+                    timeout=timeout,
+                    expected_page_revision=int(
+                        command.get("expected_page_revision") or 0
+                    ),
+                    expected_access_revision=int(
+                        command.get("expected_access_revision") or 0
+                    ),
+                    expected_geometry_revision=int(
+                        command.get("expected_geometry_revision") or 0
+                    ),
+                )
+            elif op == "screenshot":
+                result = webtab.request_bound_screenshot(
+                    command["binding_id"],
                     timeout=timeout,
                     expected_page_revision=int(
                         command.get("expected_page_revision") or 0
@@ -572,50 +596,57 @@ def _cleanup_bridged_webtabs(tracked_pages: dict[str, dict]) -> list[dict]:
     """Close child-created Pages and release every parent-owned binding."""
     from openprogram.webui.ws_actions import webtab
 
+    def failure(binding_id: str, page: dict, error: str) -> dict:
+        return {
+            "binding_id": binding_id,
+            "window_id": str(page.get("window_id") or ""),
+            "tab_id": str(page.get("tab_id") or ""),
+            "error": error,
+        }
+
     failures = []
     for binding_id, page in list(tracked_pages.items()):
         if page.get("close_on_exit") is True:
             if page.get("cleanup_exhausted") is True:
-                failures.append({
-                    "error": str(
+                failures.append(failure(
+                    binding_id,
+                    page,
+                    str(
                         page.get("cleanup_error")
                         or "Page close remained rejected after bounded retry"
                     ),
-                })
+                ))
                 continue
             try:
                 owner_ws = (
                     webtab.binding_connection(binding_id) or page.get("owner_ws")
                 )
             except Exception as exc:
-                failures.append({"error": f"{type(exc).__name__}: {exc}"})
+                failures.append(failure(
+                    binding_id, page, f"{type(exc).__name__}: {exc}",
+                ))
                 continue
             if owner_ws is None:
-                failures.append({"error": "Page owner is unavailable"})
+                failures.append(failure(
+                    binding_id, page, "Page owner is unavailable",
+                ))
                 continue
-            try:
-                close_result = webtab.request_on_ws(
-                    owner_ws,
-                    {
-                        "op": "close",
-                        "window_id": page.get("window_id"),
-                        "tab_id": page.get("tab_id"),
-                    },
-                    timeout=5.0,
+            close_result = _bounded_page_close(lambda: webtab.request_on_ws(
+                owner_ws,
+                {
+                    "op": "close",
+                    "window_id": page.get("window_id"),
+                    "tab_id": page.get("tab_id"),
+                },
+                timeout=5.0,
+            ))
+            if not close_result.get("ok"):
+                error = str(
+                    close_result.get("error") or "Page close was rejected"
                 )
-            except Exception as exc:
-                close_result = {
-                    "ok": False,
-                    "error": f"{type(exc).__name__}: {exc}",
-                }
-            if not isinstance(close_result, dict) or not close_result.get("ok"):
-                failures.append({
-                    "error": str(
-                        (close_result or {}).get("error")
-                        or "Page close was rejected"
-                    ) if isinstance(close_result, dict) else
-                    "desktop app returned an invalid Page close result",
-                })
+                page["cleanup_exhausted"] = True
+                page["cleanup_error"] = error
+                failures.append(failure(binding_id, page, error))
                 continue
         webtab.release_binding(binding_id)
         tracked_pages.pop(binding_id, None)
@@ -1171,15 +1202,14 @@ def run_agentic_in_subprocess(
     # Drain events from the queue and forward to parent's on_event
     # while the child runs. Stops when the child exits + the queue
     # drains.
-    stop_flag = threading.Event()
-    background_open_pending = threading.Event()
+    webtab_finalizing = threading.Event()
     # qids this subprocess has asked about, so kill/cleanup can decline
     # them (and their parent-side waiter threads exit).
     pending_qids: set[str] = set()
     pending_qids_lock = threading.Lock()
     tracked_webtabs: dict[str, dict] = {}
     webtab_cleanup_lock = threading.Lock()
-    final_webtab_cleanup_done = threading.Event()
+    bridge_cleanup_failures: list[dict] = []
     surface_snapshot = surface_context_snapshot or {}
     allowed_window_id = str(
         surface_snapshot.get("origin_window_id")
@@ -1200,40 +1230,32 @@ def run_agentic_in_subprocess(
     def _handle(env) -> None:
         if isinstance(env, dict) and env.get("__op_webtab__"):
             data = env.get("data") or {}
-            command = data.get("command") if isinstance(data, dict) else None
-            pending_background_open = (
-                isinstance(command, dict)
-                and command.get("op") == "open"
-                and command.get("background") is True
-            )
-            if pending_background_open:
-                background_open_pending.set()
-            try:
-                if (
-                    pending_background_open
-                    and stop_flag.is_set()
-                    and not p.is_alive()
-                ):
+            with webtab_cleanup_lock:
+                if webtab_finalizing.is_set():
+                    answer_queue.put({
+                        "__op_webtab_result__": True,
+                        "req_id": data.get("req_id"),
+                        "result": {
+                            "ok": False,
+                            "reason_code": "page_context_stale",
+                            "error": "agent subprocess already terminated",
+                        },
+                    })
                     return
-                _bridge_webtab_to_parent(
+                result = _bridge_webtab_to_parent(
                     data,
                     answer_queue,
                     tracked_webtabs,
                     allowed_window_id=allowed_window_id,
                     allowed_bindings=allowed_webtab_bindings,
                 )
-                if not p.is_alive():
-                    # If the main thread already completed its bounded cleanup,
-                    # this was a late renderer reply.  It owns the final retry;
-                    # otherwise the main thread will clean the recorded Page.
-                    with webtab_cleanup_lock:
-                        if final_webtab_cleanup_done.is_set():
-                            failures = _cleanup_bridged_webtabs(tracked_webtabs)
-                            if failures:
-                                _cleanup_bridged_webtabs(tracked_webtabs)
-            finally:
-                if pending_background_open:
-                    background_open_pending.clear()
+                if result.get("reason_code") == "page_cleanup_failed":
+                    bridge_cleanup_failures.append({
+                        "error": str(
+                            result.get("error")
+                            or "Page cleanup could not be confirmed"
+                        ),
+                    })
             return
         # Intercept the user-input bridge envelope: a question the child
         # raised via runtime.ask. Register it on the PARENT registry +
@@ -1260,19 +1282,15 @@ def run_agentic_in_subprocess(
             pass
 
     def _drain() -> None:
-        while not stop_flag.is_set():
+        while True:
             try:
                 env = event_queue.get(timeout=0.05)
             except Exception:
-                if not p.is_alive():
-                    # Drain any remaining items, then exit.
-                    while True:
-                        try:
-                            env2 = event_queue.get_nowait()
-                        except Exception:
-                            return
-                        _handle(env2)
+                if webtab_finalizing.is_set():
+                    return
                 continue
+            if isinstance(env, dict) and env.get(_WEBTAB_DRAIN_STOP):
+                return
             _handle(env)
 
     drain_thread = threading.Thread(target=_drain, daemon=True)
@@ -1294,7 +1312,14 @@ def run_agentic_in_subprocess(
                     p.kill()
                 p.join(timeout=5)
     finally:
-        stop_flag.set()
+        # No Page command may begin after this point. A command already waiting
+        # for the renderer holds ``webtab_cleanup_lock``; the bounded drain wait
+        # lets it publish its Page identity before exact final cleanup.
+        webtab_finalizing.set()
+        try:
+            event_queue.put({_WEBTAB_DRAIN_STOP: True}, block=False)
+        except Exception:
+            pass
         # Child is gone — decline any still-pending questions so their
         # parent-side waiter threads exit and any open frontend cards get
         # retracted (question.rejected). Nothing left to answer.
@@ -1302,34 +1327,31 @@ def run_agentic_in_subprocess(
             leftover = list(pending_qids)
         for _qid in leftover:
             _decline_bridged_question(_qid)
+        page_cleanup_failures = []
+        # Only this lock identifies a Page command already in flight. The
+        # drain thread also delivers ordinary events, so its liveness must not
+        # be reported as a Page cleanup failure.
+        cleanup_lock_acquired = webtab_cleanup_lock.acquire(
+            timeout=_WEBTAB_FINALIZE_TIMEOUT_SECONDS,
+        )
+        if cleanup_lock_acquired:
+            try:
+                # The in-flight bridge may have reported a cleanup failure
+                # while this thread was waiting for the lock.
+                page_cleanup_failures.extend(bridge_cleanup_failures)
+                page_cleanup_failures.extend(
+                    _cleanup_bridged_webtabs(tracked_webtabs)
+                )
+            finally:
+                webtab_cleanup_lock.release()
+        else:
+            page_cleanup_failures.append({
+                "error": "Page cleanup was still in progress",
+            })
         try:
             drain_thread.join(timeout=0.5)
         except Exception:
             pass
-        late_background_open = background_open_pending.is_set()
-        cleanup_lock_acquired = webtab_cleanup_lock.acquire(blocking=False)
-        if cleanup_lock_acquired:
-            try:
-                page_cleanup_failures = _cleanup_bridged_webtabs(tracked_webtabs)
-                if page_cleanup_failures:
-                    page_cleanup_failures = _cleanup_bridged_webtabs(
-                        tracked_webtabs,
-                    )
-                final_webtab_cleanup_done.set()
-            finally:
-                webtab_cleanup_lock.release()
-        else:
-            final_webtab_cleanup_done.set()
-            page_cleanup_failures = [{
-                "error": "Page cleanup was still in progress",
-            }]
-        if late_background_open:
-            page_cleanup_failures.append({
-                "error": (
-                    "background Page open was still pending after subprocess "
-                    "termination"
-                ),
-            })
         with _active_lock:
             if _active.get(eid) is p:
                 _active.pop(eid, None)
@@ -1369,16 +1391,11 @@ def run_agentic_in_subprocess(
         out.setdefault("killed", True)
         out.setdefault("signal", -p.exitcode)
     if page_cleanup_failures:
-        cleanup_result = {
-            "status": "infeasible",
-            "success": False,
-            "infeasible_declared": True,
-            "reason_code": "page_cleanup_failed",
-            "summary": (
-                "The agent-created background Page could not be confirmed closed."
-            ),
-            "handoff_instruction": _PAGE_CLEANUP_HANDOFF,
-        }
+        cleanup_result = _page_cleanup_failure(str(
+            page_cleanup_failures[0].get("error")
+            or "Page cleanup could not be confirmed"
+        ))
+        cleanup_result["cleanup_failures"] = page_cleanup_failures
         out.update(cleanup_result)
         out["page_cleanup_failed"] = True
         out["page_cleanup_result"] = cleanup_result

@@ -450,6 +450,35 @@ export function finalizeBoundWebTabActivation(
   };
 }
 
+function finalizeBoundWebTabScreenshot(
+  tabId: string,
+  startedGeometryRevision: number,
+  imageDataUrl: string | null,
+): Record<string, unknown> {
+  const tab = useCenterTabs.getState().tabs.find(
+    (item) => item.id === tabId && item.kind === "web",
+  );
+  const geometryRevision = webTabGeometryRevisions.get(tabId) ?? 0;
+  if (!tab || geometryRevision !== startedGeometryRevision) {
+    return {
+      ok: false,
+      error: "web tab changed during capture",
+      reason_code: "page_context_stale",
+      geometry_revision: geometryRevision,
+    };
+  }
+  if (!imageDataUrl) {
+    return { ok: false, error: "desktop web tab capture failed" };
+  }
+  return {
+    ok: true,
+    window_id: desktopBridge()?.windowId,
+    tab_id: tab.id,
+    geometry_revision: geometryRevision,
+    image_data_url: imageDataUrl,
+  };
+}
+
 export interface TurnSurfaceRef {
   version: 1;
   window_id: string;
@@ -838,7 +867,7 @@ export function installDesktopMenuHandlers(): void {
     const d = detail.data as
       | { op?: string; url?: string; window_id?: string; tab_id?: string; req_id?: string; background?: boolean; expected_geometry_revision?: number }
       | undefined;
-    if (!d?.req_id || !["open", "active", "activate", "preview", "list", "resolve", "close"].includes(d.op || "")) return;
+    if (!d?.req_id || !["open", "active", "activate", "preview", "screenshot", "list", "resolve", "close"].includes(d.op || "")) return;
     const ws = getSocket();
     if (ws?.readyState !== WebSocket.OPEN) return;
 
@@ -899,6 +928,67 @@ export function installDesktopMenuHandlers(): void {
         tab?.kind === "web" ? tab : { id: d.tab_id ?? "", url: "" },
         targetId,
       ));
+      return;
+    }
+
+    if (d.op === "screenshot") {
+      if (d.window_id && d.window_id !== bridge.windowId) {
+        ws.send(JSON.stringify({
+          action: "webtab_result",
+          req_id: d.req_id,
+          ok: false,
+          error: "requested web tab belongs to another window",
+        }));
+        return;
+      }
+      const tab = d.tab_id
+        ? useCenterTabs.getState().tabs.find(
+          (item) => item.id === d.tab_id && item.kind === "web",
+        )
+        : null;
+      if (!tab || !bridge.webTab.capture) {
+        ws.send(JSON.stringify({
+          action: "webtab_result",
+          req_id: d.req_id,
+          ok: false,
+          error: "requested web tab cannot be captured",
+        }));
+        return;
+      }
+      const geometryRevision = webTabGeometryRevisions.get(tab.id) ?? 0;
+      if (d.expected_geometry_revision
+          && d.expected_geometry_revision !== geometryRevision) {
+        ws.send(JSON.stringify({
+          action: "webtab_result",
+          req_id: d.req_id,
+          ok: false,
+          error: "web tab geometry changed",
+          reason_code: "page_context_stale",
+          geometry_revision: geometryRevision,
+        }));
+        return;
+      }
+      void bridge.webTab.capture(tab.id).then((imageDataUrl) => {
+        ws.send(JSON.stringify({
+          action: "webtab_result",
+          req_id: d.req_id,
+          ...finalizeBoundWebTabScreenshot(
+            tab.id,
+            geometryRevision,
+            imageDataUrl,
+          ),
+        }));
+      }).catch(() => {
+        ws.send(JSON.stringify({
+          action: "webtab_result",
+          req_id: d.req_id,
+          ...finalizeBoundWebTabScreenshot(
+            tab.id,
+            geometryRevision,
+            null,
+          ),
+        }));
+      });
       return;
     }
 

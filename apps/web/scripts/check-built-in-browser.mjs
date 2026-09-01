@@ -316,7 +316,7 @@ assert.match(main, /downloads:open/);
 assert.match(main, /downloads:show/);
 assert.match(main, /webtab:stop/);
 assert.match(main, /webtab:capture/);
-assert.match(main, /capturePage\(\)/);
+assert.match(main, /capturePage\([\s\S]*stayHidden:\s*true/);
 assert.match(main, /webtab:set-pip-zoom/);
 assert.match(main, /const PIP_VIRTUAL_WIDTH = 1920/);
 assert.match(main, /cookies:\s*result\.cookies/);

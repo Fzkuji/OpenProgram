@@ -658,11 +658,9 @@ def close_page(context: dict | None) -> dict:
     window_id = _text(surface.get("window_id") or value.get("window_id"), 160)
     tab_id = _text(surface.get("tab_id"), 512)
     if not window_id or not tab_id:
-        return {
-            "ok": False,
-            "reason_code": "page_context_stale",
-            "error": "Page context does not contain an exact window and tab",
-        }
+        return page_cleanup_failure(
+            "Page context does not contain an exact window and tab"
+        )
     command = {"op": "close", "window_id": window_id, "tab_id": tab_id}
     if os.environ.get("OPENPROGRAM_IN_AGENTIC_SUBPROCESS") == "1":
         result = webtab._request(command, 5.0)
@@ -673,20 +671,17 @@ def close_page(context: dict | None) -> dict:
             if candidate == window_id
         ), None)
         if owner_ws is None or owner_ws not in _server._ws_connections:
-            return {
-                "ok": False,
-                "reason_code": "desktop_unavailable",
-                "error": DESKTOP_UNAVAILABLE_ERROR,
-            }
+            return page_cleanup_failure(DESKTOP_UNAVAILABLE_ERROR)
         result = webtab.request_on_ws(owner_ws, command, timeout=5.0)
     if isinstance(result, dict) and result.get("ok"):
         release_bindings(value)
         return result
-    return result if isinstance(result, dict) else {
-        "ok": False,
-        "reason_code": "desktop_unavailable",
-        "error": "desktop app returned an invalid Page close result",
-    }
+    error = (
+        str(result.get("error") or "Page close was rejected")
+        if isinstance(result, dict)
+        else "desktop app returned an invalid Page close result"
+    )
+    return page_cleanup_failure(error)
 
 
 def capture_pages(context: dict | None = None) -> dict:

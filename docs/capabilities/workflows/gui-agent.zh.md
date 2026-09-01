@@ -16,7 +16,7 @@
 openprogram programs run gui_agent -a task="Open Firefox and go to google.com"
 ```
 
-Programs 卡片填写 `task` 和 `surface`。`desktop` 使用前台操作系统输入；`browser` 操作 OpenProgram 内置浏览器中的精确 Page。浏览器动作通过该 Page 的 DOM/CDP target 执行，不激活标签页、不置顶 OpenProgram 窗口，也不移动系统鼠标。GUI Agent 会复用提交消息或 Function 表单的 OpenProgram 窗口中已有的 Page。该窗口没有 Page 时，它才会创建一个初始地址为 `https://www.google.com/` 的后台 Page，在同一次函数运行中继续执行，并在运行结束时只关闭这个由 agent 创建的 Page；当前选中的标签页保持不变。如果没有可用的来源桌面窗口，结果会是带接手说明的 `infeasible`，而不是运行时异常。如果桌面端拒绝清理，结果同样是 `infeasible`，并要求用户手动关闭残留的后台 Page。
+Programs 卡片填写 `task` 和 `surface`。`desktop` 使用前台操作系统输入；`browser` 操作 OpenProgram 内置浏览器中的精确 Page。浏览器动作通过该 Page 的 DOM/CDP target 执行，不激活标签页、不置顶 OpenProgram 窗口，也不移动系统鼠标。ref 点击在 Page DOM 内触发，截图使用 Electron 的隐藏 Page capture，两者都不需要显示 Page。GUI Agent 会复用提交消息或 Function 表单的 OpenProgram 窗口中已有的 Page。该窗口没有 Page 时，它才会创建一个初始地址为 `https://www.google.com/` 的后台 Page，在同一次函数运行中继续执行，并在运行结束时只关闭这个由 agent 创建的 Page；当前选中的标签页保持不变。如果没有可用的来源桌面窗口，结果会是带接手说明的 `infeasible`，而不是运行时异常。如果桌面端拒绝清理，结果同样是 `infeasible`，并要求用户手动关闭残留的后台 Page。
 
 输入完整的已注册函数表达式，例如 `gui_agent(task="检查这个 Page", surface="browser")`，会使用与 Programs 表单相同的 Function dispatcher，不会作为普通聊天消息保存或执行。Retry 会重新运行该精确 Function 节点及其保存的来源窗口/Page 身份，不会改用点击 Retry 时当前选中的 Page。
 

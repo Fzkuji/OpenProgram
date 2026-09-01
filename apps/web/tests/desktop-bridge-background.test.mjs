@@ -48,6 +48,8 @@ const { useCenterTabs } = await import("../lib/state/center-tabs-store.ts");
 const { setSocket } = await import("../lib/runtime-bridge/state.ts");
 const {
   installDesktopMenuHandlers,
+  registerVisibleWebTabBounds,
+  removeVisibleWebTabBounds,
   setWebTabReady,
 } = await import("../lib/desktop-bridge.ts");
 
@@ -80,6 +82,7 @@ test("agent Page open reports cleanup failure and visible reuse ownership", asyn
   const activated = [];
   const shown = [];
   const destroyed = [];
+  const captured = [];
   let activationTarget = null;
   let resolveRejects = true;
   window.openprogramDesktop = {
@@ -96,6 +99,10 @@ test("agent Page open reports cleanup failure and visible reuse ownership", asyn
         return null;
       },
       preview: async () => null,
+      async capture(id) {
+        captured.push(id);
+        return "data:image/png;base64,cG5n";
+      },
       setBounds() {},
       show(id) { shown.push(id); },
       hide() {},
@@ -317,6 +324,99 @@ test("agent Page open reports cleanup failure and visible reuse ownership", asyn
     created: false,
     reused: true,
   }]);
+
+  // Exact screenshot capture stays hidden and does not activate the Page.
+  resetTabs();
+  const screenshotUrl = "https://background-screenshot.test/";
+  const screenshotId = useCenterTabs.getState().ensureWebTab(screenshotUrl);
+  sent.length = 0;
+  activated.length = 0;
+  shown.length = 0;
+  listeners.get("op:ws-message")({
+    detail: {
+      type: "webtab.command",
+      data: {
+        op: "screenshot",
+        tab_id: screenshotId,
+        req_id: "background-screenshot",
+        window_id: "main",
+      },
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(captured, [screenshotId]);
+  assert.deepEqual(activated, []);
+  assert.deepEqual(shown, []);
+  assert.equal(useCenterTabs.getState().activeId, "s:origin");
+  assert.deepEqual(sent, [{
+    action: "webtab_result",
+    req_id: "background-screenshot",
+    ok: true,
+    window_id: "main",
+    tab_id: screenshotId,
+    geometry_revision: 0,
+    image_data_url: "data:image/png;base64,cG5n",
+  }]);
+
+  // A resize while native capture is pending invalidates its pixels.
+  const resizedUrl = "https://background-screenshot-resized.test/";
+  const resizedId = useCenterTabs.getState().ensureWebTab(resizedUrl);
+  let resolveCapture;
+  window.openprogramDesktop.webTab.capture = (id) => {
+    captured.push(id);
+    return new Promise((resolve) => { resolveCapture = resolve; });
+  };
+  sent.length = 0;
+  listeners.get("op:ws-message")({
+    detail: {
+      type: "webtab.command",
+      data: {
+        op: "screenshot",
+        tab_id: resizedId,
+        req_id: "background-screenshot-resized",
+        window_id: "main",
+      },
+    },
+  });
+  await Promise.resolve();
+  registerVisibleWebTabBounds(window.openprogramDesktop, resizedId, {
+    x: 0, y: 0, width: 800, height: 600,
+  });
+  resolveCapture("data:image/png;base64,cG5n");
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].ok, false);
+  assert.equal(sent[0].reason_code, "page_context_stale");
+  assert.equal(sent[0].image_data_url, undefined);
+  removeVisibleWebTabBounds(window.openprogramDesktop, resizedId);
+  useCenterTabs.getState().closeTab(resizedId);
+
+  // Removing the exact Page while capture is pending also invalidates it.
+  const removedUrl = "https://background-screenshot-removed.test/";
+  const removedId = useCenterTabs.getState().ensureWebTab(removedUrl);
+  sent.length = 0;
+  listeners.get("op:ws-message")({
+    detail: {
+      type: "webtab.command",
+      data: {
+        op: "screenshot",
+        tab_id: removedId,
+        req_id: "background-screenshot-removed",
+        window_id: "main",
+      },
+    },
+  });
+  await Promise.resolve();
+  useCenterTabs.getState().closeTab(removedId);
+  resolveCapture("data:image/png;base64,cG5n");
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].ok, false);
+  assert.equal(sent[0].reason_code, "page_context_stale");
+  assert.equal(sent[0].image_data_url, undefined);
 });
 
 test("background Page resolve deadline never sends a late reply", async (t) => {

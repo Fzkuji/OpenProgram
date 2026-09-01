@@ -1291,6 +1291,17 @@ def test_registered_gui_agent_browser_surface_uses_default_backend(monkeypatch):
                 "reason_code": "desktop_unavailable",
                 "error": "the background Page could not be closed",
             },
+            "timeout",
+            False,
+            "infeasible",
+            False,
+        ),
+        (
+            {
+                "ok": False,
+                "reason_code": "desktop_unavailable",
+                "error": "the background Page could not be closed",
+            },
             "miss",
             False,
             "infeasible",
@@ -1478,8 +1489,12 @@ def test_registered_gui_agent_without_page_opens_background_page(
         "surface": "browser",
         "runtime": _Runtime(),
     }
-    if runtime_behavior == "screenshot_timeout":
-        ticks = iter((0.0, 0.0, 2.0))
+    if runtime_behavior in {"screenshot_timeout", "timeout"}:
+        ticks = iter(
+            (0.0, 0.0, 2.0)
+            if runtime_behavior == "screenshot_timeout" else
+            (0.0, 2.0)
+        )
         release_screenshot = browser_module._release_screenshot_payload
 
         def fail_after_screenshot_release(content, result):
@@ -1491,11 +1506,12 @@ def test_registered_gui_agent_without_page_opens_background_page(
             "time",
             SimpleNamespace(monotonic=lambda: next(ticks, 2.0)),
         )
-        monkeypatch.setattr(
-            browser_module,
-            "_release_screenshot_payload",
-            fail_after_screenshot_release,
-        )
+        if runtime_behavior == "screenshot_timeout":
+            monkeypatch.setattr(
+                browser_module,
+                "_release_screenshot_payload",
+                fail_after_screenshot_release,
+            )
         call_kwargs["max_seconds"] = 1
     if expected_status is None:
         expected_error = (
@@ -1524,6 +1540,21 @@ def test_registered_gui_agent_without_page_opens_background_page(
     if expected_success is False:
         assert result["reason_code"] == "page_cleanup_failed"
         assert result["infeasible_declared"] is True
+        previous_reason = {
+            "verify": "verified",
+            "miss": "tool_not_executed",
+            "raise": "runtime_error",
+            "observe_cancel": "cancelled",
+            "screenshot_timeout": "timeout",
+            "timeout": "timeout",
+            "cancel": "cancelled",
+        }[runtime_behavior]
+        expected_ending = (
+            "after the GUI task was verified"
+            if previous_reason == "verified" else
+            f"after the GUI task ended with {previous_reason}"
+        )
+        assert expected_ending in result["summary"]
         assert "Close the remaining background Page" in result[
             "handoff_instruction"
         ]

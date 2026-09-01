@@ -1,4 +1,6 @@
 import multiprocessing
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 from threading import Lock, Thread
@@ -76,6 +78,41 @@ def test_parent_webtab_bridge_result_crosses_process_queue(monkeypatch):
         replies.join_thread()
 
 
+def test_parent_webtab_bridge_forwards_exact_screenshot(monkeypatch):
+    from openprogram.agent import process_runner
+    from openprogram.webui.ws_actions import webtab
+
+    seen = []
+    monkeypatch.setattr(
+        webtab,
+        "request_bound_screenshot",
+        lambda binding_id, **kwargs: seen.append((binding_id, kwargs)) or {
+            "ok": True,
+            "image_data_url": "data:image/png;base64,cG5n",
+        },
+    )
+    replies = Queue()
+    process_runner._bridge_webtab_to_parent({
+        "req_id": "screenshot",
+        "command": {
+            "op": "screenshot",
+            "binding_id": "surface-1",
+            "expected_page_revision": 2,
+            "expected_access_revision": 3,
+            "expected_geometry_revision": 4,
+        },
+        "timeout": 2,
+    }, replies, allowed_bindings={"surface-1"})
+
+    assert replies.get(timeout=1)["result"]["ok"] is True
+    assert seen == [("surface-1", {
+        "timeout": 2,
+        "expected_page_revision": 2,
+        "expected_access_revision": 3,
+        "expected_geometry_revision": 4,
+    })]
+
+
 def test_parent_webtab_bridge_forwards_open_to_request_open_tab(monkeypatch):
     from openprogram.agent import process_runner
     from openprogram.webui.ws_actions import webtab
@@ -101,8 +138,14 @@ def test_parent_webtab_bridge_forwards_open_to_request_open_tab(monkeypatch):
     assert seen == [("https://example.com/", 2)]
 
 
-def test_parent_webtab_bridge_borrows_reused_visible_page(
-    monkeypatch,
+@pytest.mark.parametrize("ownership", [
+    {"created": False, "reused": True},
+    {},
+    {"created": True},
+    {"created": True, "reused": True},
+])
+def test_parent_webtab_bridge_borrows_visible_page_without_created_proof(
+    monkeypatch, ownership,
 ):
     from openprogram.agent import process_runner
     from openprogram.webui.ws_actions import webtab
@@ -118,8 +161,7 @@ def test_parent_webtab_bridge_borrows_reused_visible_page(
             "window_id": "window-1",
             "tab_id": "tab-visible",
             "target_id": "target-visible",
-            "created": False,
-            "reused": True,
+            **ownership,
         },
     )
     monkeypatch.setattr(
@@ -498,7 +540,11 @@ def test_parent_webtab_bridge_retries_rejected_identity_rollback(
         assert result["success"] is False
         assert result["infeasible_declared"] is True
         assert next(iter(tracked.values()))["cleanup_exhausted"] is True
-        assert process_runner._cleanup_bridged_webtabs(tracked) == [{
+        failures = process_runner._cleanup_bridged_webtabs(tracked)
+        assert failures == [{
+            "binding_id": next(iter(tracked)),
+            "window_id": "window-1",
+            "tab_id": "tab-unusable",
             "error": "close rejected",
         }]
     assert [call[0]["tab_id"] for call in close_calls] == [
@@ -970,9 +1016,152 @@ def test_parent_cleanup_preserves_identity_when_close_is_rejected(monkeypatch):
 
     failures = process_runner._cleanup_bridged_webtabs(tracked)
 
-    assert failures == [{"error": "close rejected"}]
+    assert failures == [{
+        "binding_id": "surface-background",
+        "window_id": "window-1",
+        "tab_id": "tab-background",
+        "error": "close rejected",
+    }]
     assert released == []
     assert set(tracked) == {"surface-background"}
+
+
+@pytest.mark.parametrize("open_timeout", [False, True])
+def test_timeout_waits_for_late_open_cleanup_failure(
+    monkeypatch, open_timeout,
+):
+    from openprogram.agent import process_runner
+    from openprogram.webui.ws_actions import webtab
+
+    owner = object()
+    open_started = threading.Event()
+    release_open = threading.Event()
+    closed_tabs = []
+
+    class FakeProcess:
+        pid = 4321
+        exitcode = -9
+
+        def __init__(self, *, target, args, daemon):
+            del target, daemon
+            self.alive = True
+            self.event_queue = args[6]
+
+        def start(self):
+            self.event_queue.put({
+                "__op_webtab__": True,
+                "data": {
+                    "req_id": "late-open",
+                    "command": {
+                        "op": "open",
+                        "url": "https://example.com/",
+                        "window_id": "window-1",
+                        "background": True,
+                    },
+                    "timeout": 2,
+                },
+            })
+
+        def join(self, timeout=None):
+            if self.alive and timeout != 5:
+                assert open_started.wait(1)
+
+        def is_alive(self):
+            return self.alive
+
+        def kill(self):
+            raise AssertionError("process-tree termination should succeed")
+
+    process = None
+
+    class FakeContext:
+        Queue = Queue
+
+        def Process(self, **kwargs):
+            nonlocal process
+            process = FakeProcess(**kwargs)
+            return process
+
+    def request_on_ws(_owner, command, timeout=5.0):
+        del timeout
+        if command["op"] == "open":
+            open_started.set()
+            assert release_open.wait(2)
+            if open_timeout:
+                return {
+                    "ok": False,
+                    "reason_code": webtab.RESPONSE_TIMEOUT_REASON_CODE,
+                    "error": "background open timed out",
+                }
+            return {
+                "ok": True,
+                "created": True,
+                "reused": False,
+                "window_id": "window-1",
+                "tab_id": "tab-late",
+                "target_id": "target-late",
+            }
+        closed_tabs.append(command["tab_id"])
+        return {"ok": False, "error": "close rejected"}
+
+    monkeypatch.setattr(process_runner.mp, "get_context", lambda _kind: FakeContext())
+    monkeypatch.setattr(
+        "openprogram._compat.kill_process_tree",
+        lambda _pid: setattr(process, "alive", False) or True,
+    )
+    monkeypatch.setattr(
+        webtab,
+        "registered_desktop_windows",
+        lambda: [(owner, "window-1", 7)],
+    )
+    monkeypatch.setattr(webtab, "request_on_ws", request_on_ws)
+    monkeypatch.setattr(
+        webtab,
+        "register_binding",
+        lambda *_args, **_kwargs: "surface-late",
+    )
+    monkeypatch.setattr(webtab, "binding_connection", lambda _binding_id: owner)
+    monkeypatch.setattr(webtab, "binding_page_key", lambda _binding_id: "page:late")
+    monkeypatch.setattr(webtab, "binding_revisions", lambda _binding_id: {})
+    monkeypatch.setattr(webtab, "release_binding", lambda _binding_id: None)
+
+    def release_late_open():
+        assert open_started.wait(1)
+        time.sleep(0.65)
+        release_open.set()
+
+    releaser = Thread(target=release_late_open, daemon=True)
+    releaser.start()
+    started_at = time.monotonic()
+    result = process_runner.run_agentic_in_subprocess(
+        tool_name="gui_agent",
+        kwargs={},
+        session_id="s-late-open",
+        anchor_msg_id="m",
+        timeout_seconds=0.1,
+        surface_context_snapshot={"origin_window_id": "window-1"},
+    )
+    elapsed = time.monotonic() - started_at
+
+    assert 0.6 <= elapsed < 3
+    assert closed_tabs == ([] if open_timeout else ["tab-late", "tab-late"])
+    assert result["reason_code"] == "page_cleanup_failed"
+    assert result["ok"] is False
+    assert result["success"] is False
+    assert result["infeasible_declared"] is True
+    assert result["page_cleanup_result"]["cleanup_failures"] == (
+        [{"error": "background open timed out"}]
+        if open_timeout else
+        [{
+            "binding_id": "surface-late",
+            "window_id": "window-1",
+            "tab_id": "tab-late",
+            "error": "close rejected",
+        }]
+    )
+    assert "Close the remaining background Page" in result[
+        "handoff_instruction"
+    ]
 
 
 def test_parent_cleanup_only_releases_borrowed_page_binding(monkeypatch):

@@ -168,6 +168,62 @@ def test_subprocess_timeout_kills_the_process_tree(monkeypatch):
     }
 
 
+def test_blocked_non_page_event_does_not_report_page_cleanup_failure(monkeypatch):
+    from openprogram.agent import process_runner
+
+    callback_started = threading.Event()
+    release_callback = threading.Event()
+
+    class FakeProcess:
+        exitcode = 0
+
+        def __init__(self, *, target, args, daemon):
+            del target, daemon
+            self.result_path = args[5]
+            self.event_queue = args[6]
+
+        def start(self):
+            with open(self.result_path, "wb") as stream:
+                pickle.dump({"status": "succeeded", "success": True}, stream)
+            self.event_queue.put({"type": "ordinary_progress"})
+
+        def join(self, timeout=None):
+            del timeout
+            assert callback_started.wait(1)
+
+        def is_alive(self):
+            return False
+
+    class FakeContext:
+        Queue = queue.Queue
+
+        def Process(self, **kwargs):
+            return FakeProcess(**kwargs)
+
+    def on_event(_event):
+        callback_started.set()
+        release_callback.wait(2)
+
+    monkeypatch.setattr(process_runner.mp, "get_context", lambda _kind: FakeContext())
+
+    started_at = time.monotonic()
+    try:
+        result = process_runner.run_agentic_in_subprocess(
+            tool_name="demo",
+            kwargs={},
+            session_id="s-event",
+            anchor_msg_id="m",
+            on_event=on_event,
+        )
+    finally:
+        elapsed = time.monotonic() - started_at
+        release_callback.set()
+
+    assert elapsed < 1.5
+    assert result == {"status": "succeeded", "success": True}
+    assert "page_cleanup_failed" not in result
+
+
 @pytest.mark.parametrize(
     "close_results",
     [
@@ -250,9 +306,15 @@ def test_subprocess_timeout_reports_late_background_page_cleanup(
         })}
 
     monkeypatch.setattr(process_runner.mp, "get_context", lambda _kind: FakeContext())
+
+    def kill_process_tree(_pid):
+        process_runner._active["s"].alive = False
+        release_open.set()
+        return True
+
     monkeypatch.setattr(
         "openprogram._compat.kill_process_tree",
-        lambda _pid: setattr(process_runner._active["s"], "alive", False) or True,
+        kill_process_tree,
     )
     monkeypatch.setattr(
         webtab,
@@ -267,30 +329,36 @@ def test_subprocess_timeout_reports_late_background_page_cleanup(
     monkeypatch.setattr(webtab, "release_binding", lambda _binding_id: None)
 
     started_at = time.monotonic()
-    try:
-        result = process_runner.run_agentic_in_subprocess(
-            tool_name="gui_agent",
-            kwargs={},
-            session_id="s",
-            anchor_msg_id="m",
-            timeout_seconds=0.1,
-            surface_context_snapshot={"origin_window_id": "window-1"},
-        )
-    finally:
-        elapsed = time.monotonic() - started_at
-        release_open.set()
+    result = process_runner.run_agentic_in_subprocess(
+        tool_name="gui_agent",
+        kwargs={},
+        session_id="s",
+        anchor_msg_id="m",
+        timeout_seconds=0.1,
+        surface_context_snapshot={"origin_window_id": "window-1"},
+    )
+    elapsed = time.monotonic() - started_at
 
     assert elapsed < 2.0
-    assert close_attempted.wait(2)
+    assert close_attempted.is_set()
     assert closed_tabs == ["tab-late", "tab-late"]
-    assert result["reason_code"] == "page_cleanup_failed"
-    assert result["success"] is False
-    assert result["infeasible_declared"] is True
-    assert result["page_cleanup_failed"] is True
-    assert result["page_cleanup_result"]["reason_code"] == "page_cleanup_failed"
-    assert "Close the remaining background Page" in result[
-        "handoff_instruction"
-    ]
+    if close_results[-1]:
+        assert result["timed_out"] is True
+        assert "page_cleanup_failed" not in result
+    else:
+        assert result["reason_code"] == "page_cleanup_failed"
+        assert result["success"] is False
+        assert result["infeasible_declared"] is True
+        assert result["page_cleanup_failed"] is True
+        assert result["page_cleanup_result"]["reason_code"] == (
+            "page_cleanup_failed"
+        )
+        assert result["page_cleanup_result"]["cleanup_failures"][0][
+            "tab_id"
+        ] == "tab-late"
+        assert "Close the remaining background Page" in result[
+            "handoff_instruction"
+        ]
 
 
 def test_child_entry_keeps_the_legacy_positional_payload_layout():

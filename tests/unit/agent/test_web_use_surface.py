@@ -1000,6 +1000,54 @@ def test_close_page_forwards_exact_identity_through_child_bridge(monkeypatch):
     }, 5.0)]
 
 
+@pytest.mark.parametrize("close_result", [
+    {"ok": False, "reason_code": "desktop_unavailable", "error": "rejected"},
+    None,
+])
+def test_close_page_standardizes_cleanup_failure(monkeypatch, close_result):
+    from openprogram.agent import surface_context
+    from openprogram.webui.ws_actions import webtab
+
+    monkeypatch.setenv("OPENPROGRAM_IN_AGENTIC_SUBPROCESS", "1")
+    monkeypatch.setattr(webtab, "_request", lambda *_args, **_kwargs: close_result)
+
+    result = surface_context.close_page({
+        "window_id": "window-1",
+        "surfaces": [{
+            "window_id": "window-1",
+            "tab_id": "tab-background",
+            "agent_owned": True,
+        }],
+    })
+
+    assert result["ok"] is False
+    assert result["status"] == "infeasible"
+    assert result["success"] is False
+    assert result["infeasible_declared"] is True
+    assert result["reason_code"] == "page_cleanup_failed"
+    assert "Close the remaining background Page" in result[
+        "handoff_instruction"
+    ]
+
+
+def test_close_page_missing_exact_identity_requires_manual_cleanup():
+    from openprogram.agent import surface_context
+
+    result = surface_context.close_page({
+        "window_id": "window-1",
+        "surfaces": [{"agent_owned": True}],
+    })
+
+    assert result["ok"] is False
+    assert result["status"] == "infeasible"
+    assert result["success"] is False
+    assert result["infeasible_declared"] is True
+    assert result["reason_code"] == "page_cleanup_failed"
+    assert "Close the remaining background Page" in result[
+        "handoff_instruction"
+    ]
+
+
 def test_close_page_only_releases_reused_page_binding(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.webui.ws_actions import webtab

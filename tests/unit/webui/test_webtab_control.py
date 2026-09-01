@@ -25,6 +25,7 @@ def _clean_pending():
 
 
 _ROUNDTRIP_WS = object()
+_PNG_DATA_URL = "data:image/png;base64,iVBORw0KGgo="
 
 
 def _install_roundtrip(monkeypatch, reply: dict):
@@ -218,6 +219,133 @@ def test_request_open_tab_registers_binding_on_success(monkeypatch):
         "w:https://example.com/",
         "target-opened",
     )
+
+
+def test_bound_screenshot_preserves_exact_page_without_activation(monkeypatch):
+    owner = object()
+    binding_id = webtab.register_binding(
+        owner,
+        "win-1",
+        "tab-1",
+        "target-1",
+        geometry_revision=9,
+        allow_background=True,
+    )
+    revisions = webtab.binding_revisions(binding_id)
+    sent = []
+    monkeypatch.setattr(
+        webtab,
+        "request_on_ws",
+        lambda ws, command, timeout=5.0: sent.append(
+            (ws, command, timeout)
+        ) or {
+            "ok": True,
+            "window_id": "win-1",
+            "tab_id": "tab-1",
+            "geometry_revision": 9,
+            "image_data_url": "data:image/png;base64,cG5n",
+        },
+    )
+
+    result = webtab.request_bound_screenshot(
+        binding_id,
+        expected_page_revision=revisions["page_revision"],
+        expected_access_revision=revisions["access_revision"],
+        expected_geometry_revision=9,
+    )
+
+    assert result["ok"] is True
+    assert result["image_data_url"] == "data:image/png;base64,cG5n"
+    assert sent == [(owner, {
+        "op": "screenshot",
+        "window_id": "win-1",
+        "tab_id": "tab-1",
+        "expected_geometry_revision": 9,
+    }, 5.0)]
+
+
+def test_bound_screenshot_roundtrip_preserves_validated_png(monkeypatch):
+    owner = object()
+    binding_id = webtab.register_binding(
+        owner,
+        "win-1",
+        "tab-1",
+        "target-1",
+        geometry_revision=9,
+        allow_background=True,
+    )
+    revisions = webtab.binding_revisions(binding_id)
+
+    def request_on_ws(ws, command, timeout=5.0):
+        def send(payload: str):
+            data = json.loads(payload)["data"]
+            asyncio.run(webtab.handle_webtab_result(ws, {
+                "req_id": data["req_id"],
+                "ok": True,
+                "window_id": "win-1",
+                "tab_id": "tab-1",
+                "geometry_revision": 9,
+                "image_data_url": _PNG_DATA_URL,
+            }))
+
+        return webtab._wait_for_reply(
+            command,
+            timeout,
+            expected_ws=ws,
+            send=send,
+        )
+
+    monkeypatch.setattr(webtab, "request_on_ws", request_on_ws)
+
+    result = webtab.request_bound_screenshot(
+        binding_id,
+        expected_page_revision=revisions["page_revision"],
+        expected_access_revision=revisions["access_revision"],
+        expected_geometry_revision=9,
+    )
+
+    assert result == {
+        "ok": True,
+        "error": None,
+        "window_id": "win-1",
+        "tab_id": "tab-1",
+        "image_data_url": _PNG_DATA_URL,
+        "geometry_revision": 9,
+    }
+
+
+@pytest.mark.parametrize("value", [
+    "data:image/jpeg;base64,iVBORw0KGgo=",
+    "data:image/png;base64,not-base64!",
+    "data:image/png;base64,cG5n",
+])
+def test_webtab_result_rejects_invalid_png_data_urls(value):
+    result = webtab._wait_for_reply(
+        {"op": "screenshot"},
+        0.1,
+        expected_ws=_ROUNDTRIP_WS,
+        send=lambda payload: asyncio.run(webtab.handle_webtab_result(
+            _ROUNDTRIP_WS,
+            {
+                "req_id": json.loads(payload)["data"]["req_id"],
+                "ok": True,
+                "image_data_url": value,
+            },
+        )),
+    )
+
+    assert result["ok"] is False
+    assert result["error"] == "invalid desktop web tab screenshot"
+    assert "image_data_url" not in result
+
+
+def test_png_data_url_size_is_bounded(monkeypatch):
+    monkeypatch.setattr(
+        webtab,
+        "_MAX_SCREENSHOT_DATA_URL_CHARS",
+        len(_PNG_DATA_URL) - 1,
+    )
+    assert webtab._validated_png_data_url(_PNG_DATA_URL) is None
 
 
 def test_open_url_close_respects_renderer_page_ownership(monkeypatch):

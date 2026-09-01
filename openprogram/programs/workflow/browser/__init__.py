@@ -107,8 +107,8 @@ _AGENT_CURSOR_SCRIPT = r"""
 armed => {
   const key = "__openprogramAgentCursor";
   let state = globalThis[key];
-  if (!state || state.version !== 1) {
-    state = {version: 1, armed: false};
+  if (!state || state.version !== 2) {
+    state = {version: 2, armed: false, show: null};
     try {
       Object.defineProperty(globalThis, key, {
         value: state, configurable: true,
@@ -116,9 +116,7 @@ armed => {
     } catch (_) {
       return false;
     }
-    addEventListener("pointerdown", event => {
-      if (!state.armed || !event.isTrusted) return;
-      state.armed = false;
+    state.show = (clientX, clientY) => {
       document.querySelectorAll("[data-openprogram-agent-cursor]")
         .forEach(node => node.remove());
 
@@ -127,8 +125,8 @@ armed => {
       host.setAttribute("aria-hidden", "true");
       Object.assign(host.style, {
         position: "fixed",
-        left: `${event.clientX}px`,
-        top: `${event.clientY}px`,
+        left: `${clientX}px`,
+        top: `${clientY}px`,
         width: "0",
         height: "0",
         zIndex: "2147483647",
@@ -176,10 +174,35 @@ armed => {
         ], {duration: 900, easing: "ease-out"});
       }
       setTimeout(() => host.remove(), reduced ? 240 : 900);
+    };
+    addEventListener("pointerdown", event => {
+      if (!state.armed || !event.isTrusted) return;
+      state.armed = false;
+      state.show(event.clientX, event.clientY);
     }, true);
   }
   state.armed = Boolean(armed);
   return true;
+}
+"""
+
+_BACKGROUND_REF_CLICK_SCRIPT = r"""
+element => {
+  const cursor = globalThis.__openprogramAgentCursor;
+  if (cursor?.armed && typeof cursor.show === "function") {
+    const rect = element.getBoundingClientRect();
+    cursor.armed = false;
+    cursor.show(rect.left + rect.width / 2, rect.top + rect.height / 2);
+  }
+  if (typeof element.click === "function") {
+    element.click();
+    return;
+  }
+  element.dispatchEvent(new MouseEvent("click", {
+    bubbles: true,
+    cancelable: true,
+    view: window,
+  }));
 }
 """
 
@@ -591,9 +614,14 @@ class BrowserPageController:
             actual = target.evaluate(_REF_SNAPSHOT_SCRIPT)
         except Exception:
             return None, "stale_observation"
-        if not isinstance(actual, dict) or not actual.get("connected") or any(
-            actual.get(field) != expected.get(field)
-            for field in ("tag", "role", "name", "disabled")
+        if (
+            not isinstance(actual, dict)
+            or not actual.get("connected")
+            or not actual.get("visible")
+            or any(
+                actual.get(field) != expected.get(field)
+                for field in ("tag", "role", "name", "disabled")
+            )
         ):
             return None, "stale_observation"
         return target, None
@@ -728,7 +756,36 @@ class BrowserPageController:
             # can be passed directly to Playwright mouse coordinates even on
             # Retina / device_scale_factor != 1 displays.
             before = page.evaluate(_VIEWPORT_SCRIPT)
-            image = page.screenshot(full_page=False, scale="css")
+            if self.binding_id:
+                from openprogram.webui.ws_actions.webtab import (
+                    request_bound_screenshot,
+                )
+
+                capture = request_bound_screenshot(
+                    self.binding_id,
+                    timeout=5.0,
+                    expected_page_revision=self.page_revision,
+                    expected_access_revision=self.access_revision,
+                    expected_geometry_revision=self.geometry_revision,
+                )
+                image_data_url = str(capture.get("image_data_url") or "")
+                if not capture.get("ok") or not image_data_url.startswith(
+                    "data:image/png;base64,"
+                ):
+                    return {
+                        "ok": False,
+                        "reason_code": str(
+                            capture.get("reason_code") or "screenshot_failed"
+                        ),
+                    }
+                try:
+                    image = base64.b64decode(
+                        image_data_url.split(",", 1)[1], validate=True,
+                    )
+                except (ValueError, TypeError):
+                    return {"ok": False, "reason_code": "screenshot_failed"}
+            else:
+                image = page.screenshot(full_page=False, scale="css")
             after = page.evaluate(_VIEWPORT_SCRIPT)
             if before != after or not self._fresh(expected_frame_id):
                 return self._invalidate_frame()
@@ -785,7 +842,14 @@ class BrowserPageController:
                 return self._invalidate_frame()
             return {"ok": False, "reason_code": ref_error}
         if action == "click":
-            self._agent_click(target.click)
+            if self._ref_meta.get((ref or "").lstrip("@"), {}).get("disabled"):
+                return {"ok": False, "reason_code": "target_disabled"}
+            if self.binding_id:
+                self._agent_click(
+                    lambda: target.evaluate(_BACKGROUND_REF_CLICK_SCRIPT)
+                )
+            else:
+                self._agent_click(target.click)
             return self._mutated(f"clicked {ref}")
         if action == "type":
             target.fill(text)
