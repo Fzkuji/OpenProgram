@@ -29,8 +29,8 @@ the transcript itself:
   tool looks the same.
 - There is no diff rendering; `/diff` prints raw `git diff` text.
 - Streaming text shows raw markdown source and jumps visually when the final
-  render lands (`Turn.tsx:123`); `renderMarkdown` is un-memoized under a
-  full-redraw renderer.
+  render lands (`Turn.tsx:123`). Committed text is memoized per mounted text
+  segment and terminal width under the full-redraw renderer.
 - `follow_up_question` and `approval_request` envelopes are typed in
   `ws/client.ts` but dropped without notice, so agent questions time out and
   the `ask` permission mode is unreachable (shift+tab only cycles
@@ -130,12 +130,15 @@ with the event-bus work.
 
 ## Appendix: Implementation Status
 
-Research is complete; implementation has not started. The intended landing
-order is:
+Research is complete; implementation is in progress. Markdown output is
+memoized by streaming state, text, and terminal width for each mounted text
+segment, so updates to a separate streaming turn do not parse unchanged
+committed text again while terminal resizes still re-render width-sensitive
+Markdown. The remaining work follows this order:
 
 - **P0 — transcript density** (pure TUI, no server changes): tool render
-  shell, 3-line truncation, the ctrl+o transcript screen, the diff
-  component, memoized `renderMarkdown`. Accepted when a run with mixed tools
+  shell, 3-line truncation, the ctrl+o transcript screen, and the diff
+  component remain. Accepted when a run with mixed tools
   reads as two-line entries, ctrl+o shows everything, an edit shows a
   colored diff, and long bash output folds with an accurate +N count.
 - **P1 — interaction**: queued messages with ↑ editing, the composite

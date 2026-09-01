@@ -21,8 +21,9 @@ BottomBar、命令面板（ctrl+k）、fish 风格自动建议、`@file` 补全�
   键位绑定，没有 verbose 模式。
 - 工具参数只有一行截断显示；没有按工具区分的渲染，每个工具看起来都一样。
 - 没有 diff 渲染；`/diff` 直接输出原始的 `git diff` 文本。
-- 流式文本显示原始 markdown 源码，等最终渲染落地时画面会跳动
-  （`Turn.tsx:123`）；`renderMarkdown` 在全量重绘的渲染器下未做 memoize。
+- 流式文本显示原始 markdown 源码，等最终渲染完成时画面会跳动
+  （`Turn.tsx:123`）。已提交文本在全量重绘的渲染器下按挂载的文本段和终端
+  列宽进行 memoize。
 - `follow_up_question` / `approval_request` 信封在 `ws/client.ts` 中已有类型
   定义，但被无声丢弃，导致 agent 的提问超时、`ask` permission mode 无法触达
   （shift+tab 只在 bypass↔auto 之间循环）。
@@ -104,10 +105,13 @@ REPL 的 picker 从 `pickerKind` 枚举迁移到 ModalProvider/Form 套件；该
 
 ## 附录：实现状态
 
-调研已完成，实现尚未开始。计划的落地顺序：
+调研已完成，实现正在进行。Markdown 输出按每个已挂载文本段的 streaming
+状态、文本和终端列宽进行 memoize，因此另一个流式 turn 更新时，不会再次解析
+未变化的已提交文本；终端尺寸变化时，依赖列宽的 Markdown 仍会重新渲染。其余
+工作按以下顺序进行：
 
 - **P0 —— 会话记录密度**（纯 TUI，无服务端改动）：工具渲染外壳、3 行截断、
-  ctrl+o 会话记录界面、diff 组件、memoize 的 `renderMarkdown`。验收标准是：
+  ctrl+o 会话记录界面和 diff 组件仍待实现。验收标准是：
   一次混合工具的运行读起来是一条条两行的条目，ctrl+o 显示全部内容，一次
   edit 显示带颜色的 diff，冗长的 bash 输出折叠并给出准确的 +N 计数。
 - **P1 —— 交互**：忙碌时排队的消息与 ↑ 编辑、复合 spinner/状态行、命令注册
