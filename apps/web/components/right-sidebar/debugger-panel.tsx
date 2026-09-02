@@ -1,0 +1,409 @@
+"use client";
+
+import { useMemo, useState, type ReactNode } from "react";
+import {
+  availableExecutionActions,
+  buildExecutionCommand,
+  newCommandId,
+  type CommandResult,
+  type CursorHealth,
+  type DurableWait,
+  type EventCursor,
+  type ExecutionCommand,
+  type ExecutionCommandAction,
+  type ExecutionSnapshot,
+  type RevisionDraft,
+} from "@/lib/execution-debugger";
+import styles from "./debugger-panel.module.css";
+
+export type DebuggerConnection = {
+  state: "connected" | "reconnecting" | "stale" | "gap" | "conflict";
+  cursor?: EventCursor | null;
+  expected_sequence?: number | null;
+  received_sequence?: number | null;
+  message?: string | null;
+};
+
+export type CheckpointInspector = {
+  checkpoint_id: string;
+  execution_id: string;
+  revision_id: string;
+  parent_checkpoint_id?: string | null;
+  status_version: number;
+  safe_point?: Record<string, unknown> | null;
+  frontier?: Array<{ step_id: string; status: string; contract_hash?: string }>;
+  pending_inputs?: string[];
+  effect_receipts?: Array<{ effect_id: string; status: string; kind?: string }>;
+};
+
+export type DebuggerPanelProps = {
+  executions: ExecutionSnapshot[];
+  selectedExecutionId?: string | null;
+  connection: DebuggerConnection;
+  checkpoints?: CheckpointInspector[];
+  waits?: DurableWait[];
+  drafts?: RevisionDraft[];
+  onSelectExecution?: (executionId: string) => void;
+  onCommand?: (command: ExecutionCommand) => Promise<CommandResult> | CommandResult | void;
+  onRespondWait?: (input: {
+    wait_id: string;
+    execution_id: string;
+    claim_generation: number;
+    outcome: "answer" | "decline";
+    value?: string;
+  }) => Promise<void> | void;
+  onUpdateDraft?: (draft: RevisionDraft, changes: RevisionDraft["changes"]) => Promise<void> | void;
+  onDraftAction?: (
+    draft: RevisionDraft,
+    action: "validate" | "approve" | "publish" | "fork",
+  ) => Promise<void> | void;
+  onRefresh?: () => void;
+};
+
+const ACTION_LABELS: Record<ExecutionCommandAction, string> = {
+  pause: "Pause",
+  continue: "Continue",
+  step: "Step",
+  steer: "Steer",
+  fork: "Fork",
+  retry: "Retry",
+  cancel: "Cancel",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  queued: "Queued",
+  running: "Running",
+  pausing: "Pausing",
+  paused: "Paused",
+  cancelling: "Cancelling",
+  reconciliation_required: "Needs reconciliation",
+  completed: "Completed",
+  failed: "Failed",
+  cancelled: "Cancelled",
+  interrupted: "Interrupted",
+};
+
+function shortId(value: string | null | undefined): string {
+  if (!value) return "—";
+  return value.length > 16 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
+}
+
+function statusClass(status: string): string {
+  if (status === "running" || status === "pausing") return styles.active;
+  if (status === "paused") return styles.paused;
+  if (status === "failed" || status === "reconciliation_required") return styles.danger;
+  if (["completed", "cancelled", "interrupted"].includes(status)) return styles.terminal;
+  return styles.queued;
+}
+
+function connectionCopy(connection: DebuggerConnection): { label: string; detail: string; className: string } {
+  if (connection.state === "connected") return { label: "Live", detail: "Canonical events current", className: styles.connectionGood };
+  if (connection.state === "reconnecting") return { label: "Reconnecting", detail: "Snapshot will be refreshed before replay", className: styles.connectionWarn };
+  if (connection.state === "gap") return { label: "Event gap", detail: connection.message || "Refresh required before applying more events", className: styles.connectionDanger };
+  if (connection.state === "stale") return { label: "Stale", detail: connection.message || "This view is behind the canonical snapshot", className: styles.connectionWarn };
+  return { label: "Conflict", detail: connection.message || "The server rejected an optimistic version", className: styles.connectionDanger };
+}
+
+function formatUnknown(value: unknown): string {
+  if (value == null || value === "") return "—";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function ResourceSummary({ resource }: { resource: Record<string, unknown> | null }) {
+  if (!resource) return <div className={styles.empty}>No resource snapshot published.</div>;
+  const queueWait = resource.queue_wait as Record<string, unknown> | null | undefined;
+  const usage = resource.usage as Record<string, unknown> | null | undefined;
+  return (
+    <div className={styles.resourceGrid}>
+      <div><span>State</span><strong>{formatUnknown(resource.resource_state)}</strong></div>
+      <div><span>Lease</span><strong>{formatUnknown(resource.resource_lease_generation)}</strong></div>
+      <div><span>Queue</span><strong>{queueWait ? formatUnknown(queueWait.position ?? queueWait.state) : "Not waiting"}</strong></div>
+      <div><span>Usage</span><strong>{usage ? formatUnknown(usage) : "—"}</strong></div>
+    </div>
+  );
+}
+
+function ExecutionTree({
+  executions,
+  selectedId,
+  onSelect,
+}: {
+  executions: ExecutionSnapshot[];
+  selectedId: string | null;
+  onSelect?: (id: string) => void;
+}) {
+  const children = useMemo(() => {
+    const grouped = new Map<string | null, ExecutionSnapshot[]>();
+    for (const execution of executions) {
+      const key = execution.parent_execution_id && executions.some((item) => item.execution_id === execution.parent_execution_id)
+        ? execution.parent_execution_id
+        : null;
+      grouped.set(key, [...(grouped.get(key) || []), execution]);
+    }
+    return grouped;
+  }, [executions]);
+
+  function renderBranch(parentId: string | null, depth = 0): ReactNode {
+    return (children.get(parentId) || []).map((execution) => (
+      <div key={execution.execution_id} className={styles.treeBranch}>
+        <button
+          type="button"
+          className={`${styles.executionItem} ${execution.execution_id === selectedId ? styles.selected : ""}`}
+          style={{ paddingLeft: `${12 + depth * 16}px` }}
+          onClick={() => onSelect?.(execution.execution_id)}
+          aria-current={execution.execution_id === selectedId ? "true" : undefined}
+        >
+          <span className={`${styles.statusDot} ${statusClass(execution.status)}`} aria-hidden="true" />
+          <span className={styles.executionText}>
+            <span className={styles.executionName}>{shortId(execution.execution_id)}</span>
+            <span className={styles.executionMeta}>{STATUS_LABELS[execution.status] || execution.status} · rev {shortId(execution.revision_id)}</span>
+          </span>
+          <span className={styles.version}>v{execution.status_version}</span>
+        </button>
+        {renderBranch(execution.execution_id, depth + 1)}
+      </div>
+    ));
+  }
+
+  return <div className={styles.executionTree}>{renderBranch(null)}</div>;
+}
+
+function ActionButton({
+  action,
+  snapshot,
+  pending,
+  payload = {},
+  ready = true,
+  onCommand,
+}: {
+  action: ExecutionCommandAction;
+  snapshot: ExecutionSnapshot;
+  pending: boolean;
+  payload?: Record<string, unknown>;
+  ready?: boolean;
+  onCommand?: (command: ExecutionCommand) => Promise<CommandResult> | CommandResult | void;
+}) {
+  const available = availableExecutionActions(snapshot).includes(action);
+  const disabled = !available || !ready || !onCommand || pending;
+  async function submit() {
+    if (disabled) return;
+    const command = buildExecutionCommand(snapshot, action, newCommandId(), payload);
+    await onCommand?.(command);
+  }
+  return (
+    <button
+      type="button"
+      className={`${styles.actionButton} ${action === "cancel" ? styles.cancelButton : ""}`}
+      onClick={() => void submit()}
+      disabled={disabled}
+      title={!onCommand ? "Control service is not connected" : !ready ? "A published reference is required" : undefined}
+    >
+      {pending ? "Submitting…" : ACTION_LABELS[action]}
+    </button>
+  );
+}
+
+function CommandNotice({ result }: { result: CommandResult | null }) {
+  if (!result) return null;
+  return (
+    <div className={`${styles.commandNotice} ${result.status === "rejected" ? styles.noticeDanger : ""}`} role="status">
+      <span>{result.status}</span>
+      <span>{result.rejection_code || `command ${shortId(result.command_id)}`}</span>
+    </div>
+  );
+}
+
+export function DebuggerPanel({
+  executions,
+  selectedExecutionId,
+  connection,
+  checkpoints = [],
+  waits = [],
+  drafts = [],
+  onSelectExecution,
+  onCommand,
+  onRespondWait,
+  onUpdateDraft,
+  onDraftAction,
+  onRefresh,
+}: DebuggerPanelProps) {
+  const [localSelectedId, setLocalSelectedId] = useState<string | null>(selectedExecutionId || executions[0]?.execution_id || null);
+  const [commandResults, setCommandResults] = useState<Record<string, CommandResult>>({});
+  const [pendingActions, setPendingActions] = useState<Set<string>>(new Set());
+  const [waitValue, setWaitValue] = useState("");
+  const [waitError, setWaitError] = useState<string | null>(null);
+  const [steerValue, setSteerValue] = useState("");
+  const [draftText, setDraftText] = useState("");
+  const selectedId = selectedExecutionId ?? localSelectedId;
+  const snapshot = executions.find((execution) => execution.execution_id === selectedId) || executions[0] || null;
+  const selectedCheckpoint = snapshot?.checkpoint_head_id
+    ? checkpoints.find((checkpoint) => checkpoint.checkpoint_id === snapshot.checkpoint_head_id)
+    : undefined;
+  const selectedWaits = snapshot ? waits.filter((wait) => wait.execution_id === snapshot.execution_id && ["open", "claimed"].includes(wait.status)) : [];
+  const selectedDraft = snapshot ? drafts.find((draft) => draft.source_execution_id === snapshot.execution_id) : undefined;
+  const connectionInfo = connectionCopy(connection);
+
+  function selectExecution(id: string) {
+    setLocalSelectedId(id);
+    onSelectExecution?.(id);
+  }
+
+  async function submitAction(command: ExecutionCommand): Promise<CommandResult | void> {
+    setPendingActions((current) => new Set(current).add(command.action));
+    try {
+      const result = await onCommand?.(command);
+      if (result) setCommandResults((current) => ({ ...current, [command.action]: result }));
+      return result;
+    } finally {
+      setPendingActions((current) => {
+        const next = new Set(current);
+        next.delete(command.action);
+        return next;
+      });
+    }
+  }
+
+  async function respondWait(wait: DurableWait, outcome: "answer" | "decline") {
+    if (!onRespondWait) return;
+    if (outcome === "answer" && !waitValue.trim()) {
+      setWaitError("Enter an answer before responding.");
+      return;
+    }
+    setWaitError(null);
+    await onRespondWait({
+      wait_id: wait.wait_id,
+      execution_id: wait.execution_id,
+      claim_generation: wait.claim_generation,
+      outcome,
+      value: outcome === "answer" ? waitValue.trim() : undefined,
+    });
+    setWaitValue("");
+  }
+
+  const actionPayloads: Partial<Record<ExecutionCommandAction, Record<string, unknown>>> = {
+    steer: steerValue.trim() ? { input_ref: steerValue.trim() } : undefined,
+    retry: snapshot.checkpoint_head_id ? { source_checkpoint_id: snapshot.checkpoint_head_id } : undefined,
+    fork: selectedDraft?.status === "published" && selectedDraft.manifest
+      ? { manifest_ref: selectedDraft.manifest.revision_id, source_checkpoint_id: snapshot.checkpoint_head_id }
+      : undefined,
+  };
+
+  const health: CursorHealth = connection.state === "connected"
+    ? "healthy"
+    : connection.state === "conflict" ? "stale" : connection.state;
+
+  if (!snapshot) {
+    return (
+      <section className={styles.panel} aria-label="Debugger">
+        <header className={styles.header}><div><p className={styles.kicker}>Runtime control</p><h2>Debugger</h2></div><span className={styles.connectionBadge}>{connectionInfo.label}</span></header>
+        <div className={styles.emptyState}><strong>No execution selected</strong><span>Open an execution from Running or a conversation node to inspect its canonical state.</span></div>
+      </section>
+    );
+  }
+
+  return (
+    <section className={styles.panel} aria-label="Debugger">
+      <header className={styles.header}>
+        <div><p className={styles.kicker}>Runtime control</p><h2>Debugger</h2></div>
+        <div className={`${styles.connectionBadge} ${connectionInfo.className}`} title={connectionInfo.detail}>
+          <span className={styles.connectionDot} aria-hidden="true" />{connectionInfo.label}
+        </div>
+      </header>
+      <div className={styles.connectionLine} data-health={health}>
+        <span>{connectionInfo.detail}</span>
+        <span>cursor {connection.cursor?.next_sequence ?? "—"}</span>
+        {onRefresh && <button type="button" className={styles.textButton} onClick={onRefresh}>Refresh snapshot</button>}
+      </div>
+
+      <div className={styles.layout}>
+        <aside className={styles.executionRail} aria-label="Executions">
+          <div className={styles.sectionTitle}><span>Executions</span><span>{executions.length}</span></div>
+          {executions.length ? <ExecutionTree executions={executions} selectedId={snapshot.execution_id} onSelect={selectExecution} /> : <div className={styles.empty}>No executions available.</div>}
+        </aside>
+
+        <div className={styles.content}>
+          <section className={styles.hero}>
+            <div className={styles.heroTop}>
+              <div>
+                <div className={styles.overline}>Execution</div>
+                <h3>{shortId(snapshot.execution_id)}</h3>
+                <p className={styles.muted}>Run {shortId(snapshot.run_id)} · revision {shortId(snapshot.revision_id)}</p>
+              </div>
+              <div className={`${styles.statusBadge} ${statusClass(snapshot.status)}`}><span className={styles.statusDot} />{STATUS_LABELS[snapshot.status] || snapshot.status}</div>
+            </div>
+            <div className={styles.identityGrid}>
+              <div><span>Version</span><strong>{snapshot.status_version}</strong></div>
+              <div><span>Attempt</span><strong>{shortId(snapshot.current_attempt_id)}</strong></div>
+              <div><span>Safe point</span><strong>{formatUnknown(snapshot.safe_point?.kind)}</strong></div>
+              <div><span>Checkpoint</span><strong>{shortId(snapshot.checkpoint_head_id)}</strong></div>
+            </div>
+            {snapshot.reason_code && <div className={styles.reason}>{snapshot.reason_code}</div>}
+            {availableExecutionActions(snapshot).includes("steer") && <label className={styles.steerInput}>Steer input ref<input value={steerValue} onChange={(event) => setSteerValue(event.target.value)} placeholder="Durable input reference" /></label>}
+            <div className={styles.actions}>
+              {(["pause", "continue", "step", "steer", "fork", "retry", "cancel"] as ExecutionCommandAction[]).map((action) => (
+                <ActionButton key={action} action={action} snapshot={snapshot} pending={pendingActions.has(`execution.${action}`)} payload={actionPayloads[action]} ready={(action !== "steer" || Boolean(steerValue.trim())) && (action !== "fork" || Boolean(actionPayloads.fork))} onCommand={onCommand ? submitAction : undefined} />
+              ))}
+            </div>
+            <div className={styles.commandStack}>
+              {Object.values(commandResults).map((result) => <CommandNotice key={result.command_id} result={result} />)}
+            </div>
+          </section>
+
+          <div className={styles.twoColumn}>
+            <section className={styles.card}>
+              <div className={styles.cardHeader}><h4>Resource wait</h4><span>{snapshot.resource?.resource_state ? String(snapshot.resource.resource_state) : "unavailable"}</span></div>
+              <ResourceSummary resource={snapshot.resource} />
+            </section>
+            <section className={styles.card}>
+              <div className={styles.cardHeader}><h4>Effects</h4><span>{formatUnknown(snapshot.effect_summary.unresolved)} unresolved</span></div>
+              <dl className={styles.definitionList}>
+                {Object.entries(snapshot.effect_summary).map(([key, value]) => <div key={key}><dt>{key.replaceAll("_", " ")}</dt><dd>{formatUnknown(value)}</dd></div>)}
+              </dl>
+            </section>
+          </div>
+
+          <section className={styles.card}>
+            <div className={styles.cardHeader}><h4>Checkpoint inspector</h4><span>{selectedCheckpoint ? "Published" : "Not selected"}</span></div>
+            {selectedCheckpoint ? (
+              <div className={styles.inspectorGrid}>
+                <div><span>ID</span><code>{selectedCheckpoint.checkpoint_id}</code></div>
+                <div><span>Revision</span><code>{selectedCheckpoint.revision_id}</code></div>
+                <div><span>Status version</span><code>{selectedCheckpoint.status_version}</code></div>
+                <div><span>Parent</span><code>{shortId(selectedCheckpoint.parent_checkpoint_id)}</code></div>
+                <div className={styles.inspectorWide}><span>Frontier</span><div className={styles.frontier}>{(selectedCheckpoint.frontier || []).map((item) => <span key={item.step_id} className={styles.frontierItem}>{item.step_id}<small>{item.status}</small></span>)}</div></div>
+                <div className={styles.inspectorWide}><span>Effect receipts</span><div className={styles.receipts}>{(selectedCheckpoint.effect_receipts || []).map((item) => <span key={item.effect_id}>{item.effect_id} · {item.status}</span>)}</div></div>
+              </div>
+            ) : <div className={styles.empty}>Only published checkpoint snapshots can be inspected.</div>}
+          </section>
+
+          <section className={styles.card}>
+            <div className={styles.cardHeader}><h4>Question and approval waits</h4><span>{selectedWaits.length} open</span></div>
+            {selectedWaits.length ? selectedWaits.map((wait) => (
+              <div className={styles.waitRow} key={wait.wait_id}>
+                <div><strong>{wait.kind}</strong><span>{shortId(wait.wait_id)} · generation {wait.claim_generation}</span><code>{wait.request_ref}</code></div>
+                <div className={styles.waitControls}><input aria-label={`${wait.kind} answer`} value={waitValue} onChange={(event) => setWaitValue(event.target.value)} placeholder="Answer ref or response" disabled={!onRespondWait} /><button type="button" onClick={() => void respondWait(wait, "answer")} disabled={!onRespondWait}>Answer</button><button type="button" onClick={() => void respondWait(wait, "decline")} disabled={!onRespondWait}>Decline</button></div>
+              </div>
+            )) : <div className={styles.empty}>No unresolved execution-owned waits.</div>}
+            {waitError && <div className={styles.formError} role="alert">{waitError}</div>}
+          </section>
+
+          <section className={styles.card}>
+            <div className={styles.cardHeader}><h4>Revision draft</h4><span>{selectedDraft ? selectedDraft.status : "No draft"}</span></div>
+            {selectedDraft ? (
+              <div className={styles.revisionEditor}>
+                <div className={styles.editorMeta}><span>Draft {shortId(selectedDraft.draft_id)}</span><span>source checkpoint {shortId(selectedDraft.source_checkpoint_id)}</span><span>base {shortId(selectedDraft.base_revision_id)}</span></div>
+                <label className={styles.editorLabel}>Supported changes <textarea value={draftText || JSON.stringify(selectedDraft.changes, null, 2)} onChange={(event) => setDraftText(event.target.value)} spellCheck={false} /></label>
+                <div className={styles.revisionActions}>
+                  {selectedDraft.status === "draft" && <button type="button" onClick={() => { try { const changes = JSON.parse(draftText) as RevisionDraft["changes"]; void onUpdateDraft?.(selectedDraft, changes); } catch { setDraftText("Invalid JSON change list"); } }} disabled={!onUpdateDraft}>Save draft</button>}
+                  {(["validate", "approve", "publish", "fork"] as const).map((action) => <button key={action} type="button" onClick={() => void onDraftAction?.(selectedDraft, action)} disabled={!onDraftAction || (action === "validate" ? selectedDraft.status !== "draft" : action === "approve" ? selectedDraft.status !== "validated" : action === "publish" ? selectedDraft.status !== "approved" : selectedDraft.status !== "published")}>{action[0].toUpperCase() + action.slice(1)}</button>)}
+                </div>
+                {selectedDraft.validation && <div className={styles.validation}><span>Report {shortId(selectedDraft.validation.report_ref)}</span><span>Reusable {selectedDraft.validation.reusable_steps.length}</span><span>Affected {selectedDraft.validation.affected_steps.length}</span>{selectedDraft.validation.error_code && <strong>{selectedDraft.validation.error_code}</strong>}</div>}
+              </div>
+            ) : <div className={styles.empty}>Create a draft through the revision service to edit future logic. This view never mutates the source execution.</div>}
+          </section>
+        </div>
+      </div>
+    </section>
+  );
+}

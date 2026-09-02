@@ -204,7 +204,7 @@ export function reduceExecutionEvent(
 }
 
 export function newCommandId(): string {
-  return typeof crypto?.randomUUID === "function"
-    ? crypto.randomUUID()
+  return typeof globalThis.crypto?.randomUUID === "function"
+    ? globalThis.crypto.randomUUID()
     : `cmd-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
