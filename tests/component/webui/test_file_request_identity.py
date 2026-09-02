@@ -99,6 +99,10 @@ def test_file_write_replay_collision_and_restart(project):
         **command, "path": "other.txt",
     })["data"]
     assert collision["error_code"] == "IDEMPOTENCY_KEY_CONFLICT"
+    content_collision = run(files.handle_project_file_write, {
+        **command, "content": "different",
+    })["data"]
+    assert content_collision["error_code"] == "IDEMPOTENCY_KEY_CONFLICT"
 
     # A fresh store handle observes the same durable completed record.
     from openprogram.store.file_operations import fingerprint
