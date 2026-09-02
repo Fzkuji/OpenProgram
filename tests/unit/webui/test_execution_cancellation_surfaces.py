@@ -61,7 +61,8 @@ def test_surfaces_send_execution_cancel_and_use_cancel_copy():
     assert "executionIdRef.current" in tui
     assert "execution.updated" in tui_events
     assert "ev.data.execution_id" in tui_events
-    assert 'f"/api/execution/{operation}"' in cli_cmd
+    assert '"cancel": "/api/execution/cancel"' in cli_cmd
+    assert "_EXECUTION_CONTROL_PATHS[operation]" in cli_cmd
     assert "from openprogram.agent.run_control import" not in cli_cmd
     assert "execution_id=resolved_execution_id" in forced
     route = (
@@ -79,7 +80,10 @@ def test_surfaces_send_execution_cancel_and_use_cancel_copy():
     lifecycle = (
         ROOT / "apps/server/openprogram_server/_webui/routes/lifecycle.py"
     ).read_text(encoding="utf-8")
-    assert 'for operation in ("pause", "continue", "step", "cancel")' in lifecycle
+    assert (
+        'for operation in ("pause", "continue", "step", "steer", "cancel", "fork", "retry")'
+        in lifecycle
+    )
     assert 'app.post(f"/api/execution/{operation}")(endpoint)' in lifecycle
     assert "submit_execution_control" in lifecycle
     assert "cancel_canonical_execution" not in lifecycle
