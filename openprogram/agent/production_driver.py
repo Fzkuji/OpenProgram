@@ -17,6 +17,7 @@ import logging
 import threading
 import time
 import uuid
+from concurrent.futures import Future
 from dataclasses import asdict, dataclass, fields, is_dataclass
 from types import SimpleNamespace
 from typing import Any, Callable, Mapping
@@ -43,6 +44,20 @@ from openprogram.execution.model import (
     TERMINAL_EXECUTION_STATUSES,
 )
 from openprogram.execution.store import ExecutionStore
+from openprogram.agent.continuation import (
+    AGENT_CHECKPOINT_SCHEMA_VERSION,
+    MAX_AGENT_CHECKPOINT_BYTES,
+    MAX_AGENT_DELTA_BYTES,
+    MAX_AGENT_PENDING_MESSAGES,
+    MAX_AGENT_REPEAT_FAILURES,
+    MAX_AGENT_STATE_BLOB_BYTES,
+    MAX_AGENT_STATE_REFS,
+    MAX_AGENT_TERMINAL_EFFECT_RECEIPTS,
+    AgentCheckpointError,
+    AgentCheckpointV1,
+    AgentContinuation,
+    canonical_json_bytes,
+)
 
 
 _log = logging.getLogger(__name__)
@@ -65,7 +80,19 @@ class AgentDriverHandle:
     generation: int
     session_id: str
     cancel_event: threading.Event
-    done: asyncio.Future[Any]
+    done: Any
+
+
+class _ThreadResultFuture(Future[Any]):
+    """A result future that remains awaitable from an activation loop.
+
+    Continue/step dispatch can be called by a short-lived WebSocket event
+    loop.  A continuation producer must outlive that command handler, so it
+    cannot be owned by that loop's ``asyncio.create_task``.
+    """
+
+    def __await__(self):
+        return asyncio.wrap_future(self).__await__()
 
 
 @dataclass(frozen=True)
@@ -89,14 +116,6 @@ TurnRunner = Callable[..., Any]
 
 AGENT_TURN_INPUT_VERSION = 1
 MAX_AGENT_TURN_INPUT_BYTES = 256 * 1024
-AGENT_CHECKPOINT_SCHEMA_VERSION = 1
-MAX_AGENT_CHECKPOINT_BYTES = 256 * 1024
-MAX_AGENT_STATE_BLOB_BYTES = 1024 * 1024
-MAX_AGENT_STATE_REFS = 32
-MAX_AGENT_PENDING_MESSAGES = 64
-MAX_AGENT_TERMINAL_EFFECT_RECEIPTS = 64
-MAX_AGENT_DELTA_BYTES = 64 * 1024
-MAX_AGENT_REPEAT_FAILURES = 16
 AGENT_SAFE_POINT_KINDS = (
     "agent.provider.decision.after",
     "agent.tool.action.after",
@@ -256,9 +275,9 @@ class AgentActivationService:
 class AgentProductionDriver:
     """Internal Agent execution driver with exact owner fencing.
 
-    The driver supports cancellation as a cooperative signal. It intentionally
-    advertises no pause, step, steer, fork, retry, or safe-point capability in
-    this first production slice.
+    Ordinary chat advertises provider-decision and tool-action safe points.
+    Cancellation remains a cooperative signal; forced-tool and nonordinary
+    entries retain their narrower capability contract.
     """
 
     def __init__(
@@ -281,9 +300,10 @@ class AgentProductionDriver:
         self.question_registry = question_registry
         self.event_sink = event_sink
         self.activation_observer = activation_observer
-        self._captured_safe_points: dict[tuple[str, str, int], dict[str, Any]] = {}
         self._handles: dict[tuple[str, str, int], AgentDriverHandle] = {}
         self._handles_lock = threading.RLock()
+        self._continuation_start_gates: dict[tuple[str, str, int], threading.Event] = {}
+        self._continuation_committed: set[tuple[str, str, int]] = set()
         self._finished: set[tuple[str, str, int]] = set()
         # Completion is an in-process durable outbox: releasing a driver
         # handle must not discard a terminal write that failed transiently.
@@ -403,13 +423,44 @@ class AgentProductionDriver:
                 "immutable Agent input does not match the execution session",
             )
         request = self._resolve_activation_input(record, activation)
+        continuation = None
+        if activation is not None and activation.checkpoint is not None:
+            if isinstance(request, ForcedToolActivation):
+                raise AgentDriverError(
+                    "unsupported_activation_state",
+                    "forced-tool activations do not support Agent checkpoints",
+                )
+            try:
+                continuation = AgentContinuation.from_checkpoint(
+                    store=self.executions,
+                    checkpoint=activation.checkpoint,
+                    request=request,
+                )
+                if (
+                    record.user_message_id != continuation.state.payload["turn"]["user_message_id"]
+                    or record.assistant_message_id != continuation.assistant_message_id
+                ):
+                    raise AgentDriverError(
+                        "checkpoint_schema_invalid",
+                        "Agent checkpoint branch anchors differ from immutable admission input",
+                    )
+            except AgentCheckpointError as exc:
+                raise AgentDriverError(exc.code, str(exc)) from exc
         if activation is not None and activation.checkpoint is not None and self.activation_observer is not None:
             self.activation_observer(activation)
         cancel_event = threading.Event()
-        task = asyncio.create_task(
-            self._run_attempt(attempt, request, cancel_event),
-            name=f"openprogram-agent-{attempt.execution_id}-{attempt.generation}",
-        )
+        # The command handler that activates a continuation may use a
+        # short-lived asyncio loop.  Keep resumed producers on an owned
+        # thread so closing that handler loop cannot cancel the fresh owner
+        # before it reaches its durable finish transition.
+        task: Any
+        if continuation is not None:
+            task = _ThreadResultFuture()
+        else:
+            task = asyncio.create_task(
+                self._run_attempt(attempt, request, cancel_event, continuation=None),
+                name=f"openprogram-agent-{attempt.execution_id}-{attempt.generation}",
+            )
         handle = AgentDriverHandle(
             execution_id=attempt.execution_id,
             attempt_id=attempt.attempt_id,
@@ -421,10 +472,41 @@ class AgentProductionDriver:
         key = self._key(handle)
         with self._handles_lock:
             if any(existing.execution_id == handle.execution_id for existing in self._handles.values()):
-                task.cancel()
+                if hasattr(task, "cancel"):
+                    task.cancel()
                 raise AgentDriverError("owner_exists", "execution already has a live Agent owner")
             self._handles[key] = handle
+            if continuation is not None:
+                self._continuation_start_gates[key] = threading.Event()
         task.add_done_callback(lambda _task: self._release(handle))
+        if continuation is not None:
+            def _run_continuation() -> None:
+                with self._handles_lock:
+                    gate = self._continuation_start_gates.get(key)
+                if gate is None:
+                    task.cancel()
+                    return
+                gate.wait()
+                with self._handles_lock:
+                    if key not in self._continuation_committed:
+                        task.cancel()
+                        return
+                try:
+                    result = asyncio.run(
+                        self._run_attempt(
+                            attempt, request, cancel_event, continuation=continuation,
+                        )
+                    )
+                except BaseException as exc:
+                    task.set_exception(exc)
+                else:
+                    task.set_result(result)
+
+            threading.Thread(
+                target=_run_continuation,
+                daemon=True,
+                name=f"openprogram-agent-{attempt.execution_id}-{attempt.generation}",
+            ).start()
         # Returning the binding lets RuntimeControlService register this
         # exact owner atomically in its live-handle registry. The binding is
         # also the only object accepted by the registry for later dispatch.
@@ -435,6 +517,25 @@ class AgentProductionDriver:
             driver=self,
             handle=handle,
         )
+
+    def activation_committed(self, binding: DriverBinding[AgentDriverHandle]) -> None:
+        """Release a continuation producer after registry fencing commits."""
+        key = self._key(binding.handle)
+        with self._handles_lock:
+            gate = self._continuation_start_gates.get(key)
+            if gate is None:
+                return
+            self._continuation_committed.add(key)
+            gate.set()
+
+    def activation_aborted(self, binding: DriverBinding[AgentDriverHandle]) -> None:
+        """Discard a continuation producer whose registry bind lost a fence."""
+        key = self._key(binding.handle)
+        with self._handles_lock:
+            gate = self._continuation_start_gates.pop(key, None)
+            self._continuation_committed.discard(key)
+        if gate is not None:
+            gate.set()
 
     async def request_pause(
         self, handle: AgentDriverHandle, command_id: str
@@ -534,6 +635,8 @@ class AgentProductionDriver:
         attempt: AttemptRecord,
         request: Any,
         cancel_event: threading.Event,
+        *,
+        continuation: AgentContinuation | None = None,
     ) -> Any:
         try:
             result = await asyncio.to_thread(
@@ -541,6 +644,7 @@ class AgentProductionDriver:
                 attempt,
                 request,
                 cancel_event,
+                continuation,
             )
         except asyncio.CancelledError:
             if cancel_event.is_set():
@@ -578,6 +682,7 @@ class AgentProductionDriver:
         attempt: AttemptRecord,
         request: Any,
         cancel_event: threading.Event,
+        continuation: AgentContinuation | None = None,
     ) -> Any:
         from openprogram.agent.run_control import (
             _current_token,
@@ -601,7 +706,20 @@ class AgentProductionDriver:
         bound = current_token(request.session_id, execution_id=attempt.execution_id)
         token_token = _current_token.set(bound) if bound is not None else None
         try:
-            if isinstance(request, ForcedToolActivation):
+            if continuation is not None:
+                from openprogram.agent.dispatcher import process_agent_continuation
+
+                result = process_agent_continuation(
+                    continuation,
+                    on_event=self.event_sink,
+                    cancel_event=cancel_event,
+                    execution_context={
+                        "safe_point_hook": self._safe_point_hook(
+                            attempt, request, cancel_event, continuation=continuation,
+                        ),
+                    },
+                )
+            elif isinstance(request, ForcedToolActivation):
                 from openprogram.agent.dispatcher import dispatch_forced_tool_call
 
                 result = dispatch_forced_tool_call(
@@ -640,16 +758,6 @@ class AgentProductionDriver:
                                 attempt, request, cancel_event,
                             ),
                         }
-                    if "on_safe_point" in parameters:
-                        def _captured(**value):
-                            phase = value.get("phase")
-                            for name, item in value.items():
-                                if name == "tool_call" and phase == "after_provider":
-                                    continue
-                                if callable(item):
-                                    item()
-                            self._captured_safe_points[(attempt.execution_id, attempt.attempt_id, attempt.generation)] = dict(value)
-                        runner_kwargs["on_safe_point"] = _captured
                 except (TypeError, ValueError):
                     pass
                 result = self.turn_runner(**runner_kwargs)
@@ -672,6 +780,8 @@ class AgentProductionDriver:
         attempt: AttemptRecord,
         request: Any,
         cancel_event: threading.Event,
+        *,
+        continuation: AgentContinuation | None = None,
     ) -> Callable[[str, Mapping[str, Any]], bool]:
         """Bind Agent-loop boundaries to the canonical execution owner.
 
@@ -679,17 +789,43 @@ class AgentProductionDriver:
         deliberately retains no provider stream, coroutine, tool object, or
         dispatcher-local state for a future attempt.
         """
-        from openprogram.execution.checkpoints import CheckpointFragment
         from openprogram.execution.effects import (
             EffectClassification, EffectStatus,
         )
         from openprogram.execution.model import CommandKind
 
-        pending: dict[str, tuple[str, str]] = {}
+        pending: dict[str, tuple[str, str, str]] = {}
+        prior_actions: list[dict[str, Any]] = []
+        prior_receipts: list[dict[str, Any]] = []
+        completed_tool_results: list[dict[str, Any]] = []
+        provider_action_id = ""
+        latest_assistant: dict[str, Any] | None = None
+        latest_snapshot: dict[str, Any] = {}
+        if continuation is not None:
+            prior_actions = [dict(item) for item in continuation.state.payload["completed_actions"]]
+            for item in continuation.state.payload["terminal_effect_receipts"]:
+                receipt = dict(item)
+                receipt_ref = receipt.pop("receipt_ref", None)
+                if not isinstance(receipt_ref, Mapping):
+                    raise AgentDriverError("checkpoint_schema_invalid", "terminal receipt ref is missing")
+                try:
+                    receipt["receipt"] = continuation.state.read_json_ref(
+                        self.executions, attempt.execution_id, receipt_ref,
+                    )
+                except AgentCheckpointError as exc:
+                    raise AgentDriverError(exc.code, str(exc)) from exc
+                prior_receipts.append(receipt)
+            completed_tool_results = [item.model_dump(mode="json") for item in continuation.tool_results]
+            provider_action_id = continuation.provider_action_id
+            latest_assistant = continuation.assistant_message.model_dump(mode="json")
+            latest_snapshot = dict(continuation.resolved_snapshot)
 
         def digest(*parts: str) -> str:
             value = "\x1f".join(parts).encode("utf-8")
             return hashlib.sha256(value).hexdigest()
+
+        def json_digest(value: Any) -> str:
+            return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
 
         def current_command(service, execution_id: str):
             commands = service.executions.list_commands(execution_id)
@@ -700,64 +836,144 @@ class AgentProductionDriver:
                         return command
             return None
 
-        def checkpoint_payload(kind: str, payload: Mapping[str, Any], effect_id: str, action_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        def checkpoint_payload(
+            kind: str,
+            payload: Mapping[str, Any],
+            effect_id: str,
+            action_id: str,
+            input_hash: str,
+            terminal_receipt: Mapping[str, Any],
+        ) -> AgentCheckpointV1:
             phase = "after_provider" if kind == "provider.after" else "after_tool"
             point_kind = (
                 "agent.provider.decision.after" if phase == "after_provider"
                 else "agent.tool.action.after"
             )
-            user_message_id = str(getattr(request, "user_msg_id", "") or "durable-user")
-            assistant_message_id = user_message_id + "_reply"
-            state = {
-                "schema_version": AGENT_CHECKPOINT_SCHEMA_VERSION,
-                "safe_point": {
-                    "kind": point_kind, "step_id": f"{phase}:{action_id}",
-                    "phase": phase, "sentinel": "resume-from-checkpoint",
+            execution = self._control_service().executions.get_execution(
+                attempt.execution_id
+            )
+            if execution is None:
+                raise AgentDriverError("execution_not_found", "execution disappeared at safe point")
+            raw_turn = payload.get("turn") if isinstance(payload.get("turn"), Mapping) else {}
+            user_message_id = str(
+                raw_turn.get("user_message_id")
+                or getattr(execution, "user_message_id", None)
+                or getattr(request, "user_msg_id", "")
+                or "durable-user"
+            )
+            assistant_message_id = str(
+                raw_turn.get("assistant_message_id")
+                or getattr(execution, "assistant_message_id", None)
+                or (continuation.assistant_message_id if continuation is not None else "")
+                or f"{user_message_id}_reply"
+            )
+            base_history_head_id = str(raw_turn.get("base_history_head_id") or user_message_id)
+            snapshot = payload.get("resolved_snapshot")
+            if not isinstance(snapshot, Mapping):
+                snapshot = latest_snapshot
+            if not isinstance(snapshot, Mapping) or not snapshot:
+                raise AgentDriverError("checkpoint_schema_invalid", "Agent safe point has no resolved snapshot")
+            if latest_assistant is None:
+                raise AgentDriverError("checkpoint_schema_invalid", "Agent safe point has no completed assistant message")
+            tool_call_ids = [
+                str(value) for value in payload.get("tool_call_ids", ())
+            ]
+            if not tool_call_ids:
+                tool_call_ids = [
+                    str(item.get("id"))
+                    for item in latest_assistant.get("content", [])
+                    if isinstance(item, Mapping) and item.get("type") == "toolCall"
+                ]
+            next_tool_index = payload.get("next_tool_index")
+            if not isinstance(next_tool_index, int):
+                next_tool_index = 0 if phase == "after_provider" else len(completed_tool_results)
+            action_values = [
+                *prior_actions,
+                {"action_id": action_id, "input_hash": input_hash},
+            ]
+            receipt_values = [
+                *prior_receipts,
+                {
+                    "effect_id": effect_id,
+                    "frontier_step_id": f"{phase}:{action_id}",
+                    "action_id": action_id,
+                    "outcome": "committed",
+                    "receipt": dict(terminal_receipt),
                 },
-                "frontier": [{"step_id": f"{phase}:{action_id}", "phase": phase, "branch_id": "main"}],
-                "turn": {
-                    "user_message_id": user_message_id,
-                    "assistant_message_id": assistant_message_id,
-                    "base_history_head_id": user_message_id,
-                },
-                "current_decision": {
-                    "provider_action_id": action_id if phase == "after_provider" else "",
-                    "assistant_message_ref": assistant_message_id,
-                    "tool_call_ids": sorted(str(value) for value in payload.get("tool_call_ids", ())),
-                },
-                "next_tool_index": 0,
-                "repeat_failures": 0,
-                "pending_messages": [], "completed_actions": [{"action_id": action_id}],
-                "terminal_effect_receipts": [{
-                    "effect_id": effect_id, "frontier_step_id": f"{phase}:{action_id}",
-                    "action_id": action_id, "outcome": "committed",
-                }],
-                "payload": dict(payload),
-            }
-            raw = json.dumps(state, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-            if len(raw.encode("utf-8")) > MAX_AGENT_CHECKPOINT_BYTES:
-                raise AgentDriverError("checkpoint_too_large", "Agent checkpoint exceeds the size limit")
-            return state, {
-                "safe_point_kind": point_kind,
-                "frontier": tuple(state["frontier"]),
-                "completed_actions": tuple(state["completed_actions"]),
-                "effect_receipts": tuple(state["terminal_effect_receipts"]),
-            }
+            ]
+            pending_commands = [
+                command.command_id
+                for command in self._control_service().executions.list_commands(attempt.execution_id)
+                if command.status not in {CommandStatus.APPLIED, CommandStatus.REJECTED}
+            ]
+            try:
+                return AgentCheckpointV1.build(
+                    safe_point={
+                        "kind": point_kind,
+                        "step_id": f"{phase}:{action_id}",
+                        "phase": phase,
+                        "sentinel": "resume-from-checkpoint",
+                    },
+                    frontier=[{
+                        "step_id": f"{phase}:{action_id}",
+                        "phase": phase,
+                        "branch_id": str(raw_turn.get("branch_id") or "main"),
+                    }],
+                    turn={
+                        "user_message_id": user_message_id,
+                        "assistant_message_id": assistant_message_id,
+                        "base_history_head_id": base_history_head_id,
+                    },
+                    assistant_message=latest_assistant,
+                    tool_results=completed_tool_results,
+                    resolved_snapshot=dict(snapshot),
+                    provider_action_id=provider_action_id,
+                    tool_call_ids=tool_call_ids,
+                    next_tool_index=next_tool_index,
+                    repeat_failures=dict(payload.get("repeat_failures") or {}),
+                    completed_actions=action_values,
+                    terminal_effect_receipts=receipt_values,
+                    pending_command_ids=pending_commands,
+                )
+            except AgentCheckpointError as exc:
+                raise AgentDriverError(exc.code, str(exc)) from exc
 
         def hook(kind: str, payload: Mapping[str, Any]) -> bool:
+            nonlocal provider_action_id, latest_assistant, latest_snapshot, completed_tool_results
             service = self._control_service()
             if kind.endswith(".before"):
-                normalized = json.dumps(dict(payload), ensure_ascii=False, sort_keys=True, default=str)
                 execution = service.executions.get_execution(attempt.execution_id)
                 if execution is None:
                     raise AgentDriverError("execution_not_found", "execution disappeared before effect")
-                # A restarted continuation must name the same logical action.
-                # Attempts/generations are leases, not action identity.
-                action_id = digest(
-                    attempt.execution_id, str(execution.revision_id),
-                    str(execution.checkpoint_head_id or "root"), kind, normalized,
-                    str(getattr(request, "provider", "")), str(getattr(request, "model", "")),
-                )
+                if execution.status is ExecutionStatus.CANCELLING or cancel_event.is_set():
+                    from openprogram.providers.utils.errors import ExecInterrupt
+                    raise ExecInterrupt("cancelled")
+                if kind == "provider.before":
+                    snapshot = payload.get("resolved_snapshot")
+                    if not isinstance(snapshot, Mapping):
+                        raise AgentDriverError("checkpoint_schema_invalid", "provider action has no resolved snapshot")
+                    latest_snapshot = dict(snapshot)
+                    context_hash = str(payload.get("normalized_context_hash") or json_digest(payload.get("context") or {}))
+                    action_id = digest(
+                        str(execution.revision_id),
+                        str(execution.checkpoint_head_id or "root"),
+                        context_hash,
+                        json_digest(latest_snapshot),
+                    )
+                    input_hash = context_hash
+                elif kind == "tool.before":
+                    tool_call_id = str(payload.get("tool_call_id") or "")
+                    if not provider_action_id or not tool_call_id:
+                        raise AgentDriverError("checkpoint_schema_invalid", "tool action has no provider decision")
+                    action_id = digest(
+                        str(execution.revision_id),
+                        provider_action_id,
+                        tool_call_id,
+                        json_digest(payload.get("arguments") or {}),
+                    )
+                    input_hash = json_digest(payload.get("arguments") or {})
+                else:
+                    raise AgentDriverError("invalid_safe_point", "unsupported Agent effect boundary")
                 effect_id = f"effect_{action_id[:32]}"
                 classification = (
                     EffectClassification.IDEMPOTENT if kind == "provider.before"
@@ -774,75 +990,70 @@ class AgentProductionDriver:
                     service.effects.mark_dispatched(
                         effect.effect_id, expected_status=EffectStatus.PLANNED,
                     )
-                pending[kind.rsplit(".", 1)[0]] = (effect_id, action_id)
+                pending[kind.rsplit(".", 1)[0]] = (
+                    effect_id, action_id, input_hash,
+                )
                 return False
 
             key = kind.rsplit(".", 1)[0]
-            effect_id, action_id = pending.pop(key)
+            try:
+                effect_id, action_id, input_hash = pending.pop(key)
+            except KeyError as exc:
+                raise AgentDriverError("effect_state_invalid", "Agent effect has no durable dispatch intent") from exc
             effect = service.effects.get(effect_id)
             if effect is None or effect.status is not EffectStatus.DISPATCHED:
                 raise AgentDriverError("effect_state_invalid", "Agent effect is not dispatchable")
-            state, fragment_data = checkpoint_payload(kind, payload, effect_id, action_id)
+            if kind == "provider.after":
+                message = payload.get("message")
+                if not isinstance(message, Mapping):
+                    raise AgentDriverError("checkpoint_schema_invalid", "provider receipt lacks AssistantMessage")
+                latest_assistant = dict(message)
+                provider_action_id = action_id
+                completed_tool_results = []
+                terminal_receipt = {
+                    "provider_request_id": payload.get("provider_request_id"),
+                    "usage": payload.get("usage"),
+                    "message_hash": json_digest(latest_assistant),
+                }
+            elif kind == "tool.after":
+                result = payload.get("result")
+                if not isinstance(result, Mapping):
+                    raise AgentDriverError("checkpoint_schema_invalid", "tool receipt lacks ToolResultMessage")
+                completed_tool_results.append(dict(result))
+                terminal_receipt = {
+                    "tool_call_id": payload.get("tool_call_id"),
+                    "is_error": bool(payload.get("is_error")),
+                    "result_hash": json_digest(result),
+                }
+            else:
+                raise AgentDriverError("invalid_safe_point", "unsupported Agent safe point")
             command = current_command(service, attempt.execution_id)
             if command is None:
                 service.effects.resolve(
                     effect_id, expected_status=EffectStatus.DISPATCHED,
-                    outcome=EffectStatus.COMMITTED, receipt={"payload": dict(payload)},
+                    outcome=EffectStatus.COMMITTED, receipt=terminal_receipt,
                     attempt_id=attempt.attempt_id, generation=attempt.generation,
                 )
                 return False
             current = service.executions.get_execution(attempt.execution_id)
             if current is None:
                 raise AgentDriverError("execution_not_found", "execution disappeared at safe point")
+            checkpoint = checkpoint_payload(
+                kind, payload, effect_id, action_id, input_hash, terminal_receipt,
+            )
             service.commit_agent_safe_point(
                 execution_id=attempt.execution_id, attempt_id=attempt.attempt_id,
                 generation=attempt.generation, expected_version=current.status_version,
-                safe_point_kind=fragment_data["safe_point_kind"], frontier=fragment_data["frontier"],
-                state_refs=state, effect_id=effect_id, terminal_receipt={"payload": dict(payload)},
-                receipt_blob=json.dumps(dict(payload), ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(),
-                checkpoint_state_blob=json.dumps(state, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(),
+                safe_point_kind=str(checkpoint.payload["safe_point"]["kind"]),
+                frontier=tuple(checkpoint.payload["frontier"]), state_refs={},
+                effect_id=effect_id, terminal_receipt=terminal_receipt,
+                receipt_blob=canonical_json_bytes(terminal_receipt),
+                agent_checkpoint=checkpoint,
                 command_id=command.command_id, managed_action_id=action_id,
             )
             return True
 
         return hook
-
-    async def publish_safe_point(self, binding, *, safe_point_kind: str, frontier):
-        from openprogram.execution.checkpoints import CheckpointFragment
-        execution = self.executions.get_execution(binding.execution_id)
-        if execution is None:
-            raise AgentDriverError("execution_not_found", "execution missing")
-        checkpoint, updated = self._control_service().checkpoints.publish(
-            binding.execution_id, expected_version=execution.status_version,
-            revision_id=execution.revision_id, parent_checkpoint_id=execution.checkpoint_head_id,
-            frontier=frontier, state_refs={"safe_point": {"kind": safe_point_kind, "phase": frontier[-1]["phase"], "sentinel": "resume-from-checkpoint"}},
-            completed_actions=(), effect_receipts=(), child_frontier={}, pending_command_ids=(),
-            created_by_attempt_id=binding.attempt_id,
-        )
-        with self.executions._transaction() as connection:
-            pausing = self.executions._transition_execution(
-                connection, updated.execution_id, expected_version=updated.status_version,
-                target=ExecutionStatus.PAUSING, reason_code=None,
-            )
-            paused = self.executions._transition_execution(
-                connection, pausing.execution_id, expected_version=pausing.status_version,
-                target=ExecutionStatus.PAUSED, reason_code=None, clear_owner=True,
-            )
-        # This helper is used by the production driver only for an explicit
-        # declared safe point.  End the old lease before another activation
-        # can claim the checkpoint.
-            current = self._control_service().attempts._require(connection, binding.attempt_id)
-            if current.status is AttemptStatus.ACTIVE:
-                self._control_service().attempts._end_for_owner_loss(
-                    connection, current, outcome="paused_at_safe_point"
-                )
-        return SimpleNamespace(checkpoint=checkpoint, execution=paused)
-
-    async def run_until_safe_point(self, binding, *, safe_point_kind: str):
-        await binding.handle.done
-        phase = safe_point_kind.rsplit(".", 1)[-1].replace("decision.after", "after_provider").replace("action.after", "after_tool")
-        phase = "after_provider" if "provider" in safe_point_kind else "after_tool"
-        return await self.publish_safe_point(binding, safe_point_kind=safe_point_kind, frontier=({"step_id": phase, "phase": phase},))
 
     def _finish_attempt(
         self,
@@ -853,7 +1064,7 @@ class AgentProductionDriver:
         failure_reason: str | None = None,
     ) -> None:
         key = (attempt.execution_id, attempt.attempt_id, attempt.generation)
-        if key in self._captured_safe_points:
+        if getattr(result, "_execution_safe_point_handoff", False):
             return
         with self._handles_lock:
             already_finished = (
@@ -869,6 +1080,15 @@ class AgentProductionDriver:
         execution = service.executions.get_execution(attempt.execution_id)
         if execution is None or execution.status in TERMINAL_EXECUTION_STATUSES:
             self._resolve_finish_retry(key)
+            return
+        if (
+            execution.status is ExecutionStatus.PAUSED
+            or execution.current_attempt_id != attempt.attempt_id
+            or execution.owner_lease.get("generation") != attempt.generation
+        ):
+            # A successful safe-point transaction ended this exact owner.
+            # Its producer may finish afterwards; that late return must not
+            # manufacture a terminal completion or repair record.
             return
         cancelled = cancel_event.is_set() or execution.status is ExecutionStatus.CANCELLING
         if cancelled and execution.status is not ExecutionStatus.CANCELLING:
@@ -1276,6 +1496,8 @@ class AgentProductionDriver:
         with self._handles_lock:
             if self._handles.get(key) is handle:
                 self._handles.pop(key, None)
+            self._continuation_start_gates.pop(key, None)
+            self._continuation_committed.discard(key)
             self._finished.discard(key)
             self._finish_repair_stalled.discard(key)
             self._cancel_commands.pop(key, None)

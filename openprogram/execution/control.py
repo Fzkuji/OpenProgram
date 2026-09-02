@@ -204,6 +204,7 @@ class RuntimeControlService:
         terminal_receipt: Mapping[str, Any],
         receipt_blob: bytes,
         checkpoint_state_blob: bytes | None = None,
+        agent_checkpoint: Any | None = None,
         command_id: str | None = None,
         managed_action_id: str | None = None,
         fault_at: str | None = None,
@@ -240,7 +241,59 @@ class RuntimeControlService:
                     media_type="application/json", schema_version=1,
                 )
                 refs = dict(state_refs)
-                if checkpoint_state_blob is not None:
+                if agent_checkpoint is not None:
+                    # The Agent serializer computes every descriptor before
+                    # this transaction.  Recompute nothing here: a mismatch
+                    # means the owner supplied content different from the
+                    # checkpoint it asked us to publish.
+                    from openprogram.agent.continuation import AgentCheckpointV1
+
+                    if not isinstance(agent_checkpoint, AgentCheckpointV1):
+                        raise AgentSafePointConflict(
+                            "checkpoint_schema_invalid",
+                            "Agent checkpoint must use AgentCheckpointV1",
+                        )
+                    try:
+                        agent_checkpoint.validate()
+                        for descriptor_ref, payload in agent_checkpoint.blob_payloads.items():
+                            descriptor = self.executions._put_state_blob_in_transaction(
+                                connection,
+                                execution_id=execution_id,
+                                payload=payload,
+                                media_type="application/json",
+                                schema_version=1,
+                            )
+                            if descriptor["ref"] != descriptor_ref:
+                                raise AgentSafePointConflict(
+                                    "state_ref_invalid",
+                                    "Agent checkpoint blob descriptor does not match payload",
+                                )
+                        checkpoint_descriptor = self.executions._put_state_blob_in_transaction(
+                            connection,
+                            execution_id=execution_id,
+                            payload=agent_checkpoint.to_bytes(),
+                            media_type="application/json",
+                            schema_version=1,
+                        )
+                    except AgentSafePointConflict:
+                        raise
+                    except Exception as exc:
+                        raise AgentSafePointConflict(
+                            getattr(exc, "code", "checkpoint_schema_invalid"), str(exc)
+                        ) from exc
+                    refs["agent_checkpoint"] = checkpoint_descriptor
+                    # The checkpoint payload itself is content-addressed.
+                    # Keep only a shallow manifest projection for existing
+                    # status readers; recovery always reloads and verifies
+                    # ``agent_checkpoint`` above.
+                    refs["agent_checkpoint_v1"] = {
+                        key: agent_checkpoint.payload[key]
+                        for key in (
+                            "safe_point", "frontier", "turn",
+                            "current_decision", "next_tool_index",
+                        )
+                    }
+                elif checkpoint_state_blob is not None:
                     refs["agent_checkpoint"] = self.executions._put_state_blob_in_transaction(
                         connection, execution_id=execution_id, payload=checkpoint_state_blob,
                         media_type="application/json", schema_version=1,
@@ -282,13 +335,13 @@ class RuntimeControlService:
                         )
                     pausing = self.executions._transition_execution(
                         connection, execution_id, expected_version=updated.status_version,
-                        target=ExecutionStatus.PAUSING,
+                        target=ExecutionStatus.PAUSING, reason_code="step_at_safe_point",
                     ) if updated.status is ExecutionStatus.RUNNING else updated
                     if pausing.status is not ExecutionStatus.PAUSING:
                         raise AgentSafePointConflict("execution_state_invalid", "Agent safe point must settle a pausing execution")
                     updated = self.executions._transition_execution(
                         connection, execution_id, expected_version=pausing.status_version,
-                        target=ExecutionStatus.PAUSED, clear_owner=True,
+                        target=ExecutionStatus.PAUSED, reason_code=None, clear_owner=True,
                     )
                     ended = self.attempts._end_for_owner_loss(connection, attempt, outcome="paused_at_safe_point")
                     self.executions._append_event(
@@ -299,7 +352,20 @@ class RuntimeControlService:
                         connection, command_id, expected_status=CommandStatus.APPLYING,
                         target=CommandStatus.APPLIED, result_version=updated.status_version,
                         receipt={"checkpoint_id": checkpoint.checkpoint_id, "safe_point": checkpoint.safe_point, "managed_action_id": managed_action_id},
+                        result_json=(
+                            {"managed_action_id": managed_action_id}
+                            if stored.kind is CommandKind.STEP
+                            else None
+                        ),
                     )
+                    if stored.kind is CommandKind.STEP:
+                        self.executions._append_event(
+                            connection, execution_id=execution_id,
+                            execution_version=updated.status_version,
+                            kind="agent.action.completed",
+                            payload={"action_id": managed_action_id, "command_id": command_id},
+                            created_at=now,
+                        )
                 return SafePointCompletion(command=command, execution=updated, attempt=attempt, checkpoint=checkpoint)
         except AgentSafePointConflict:
             raise

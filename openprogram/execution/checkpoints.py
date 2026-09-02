@@ -115,6 +115,9 @@ class CheckpointManifest:
         # manifest.  Mirror its durable routing fields for transports and
         # diagnostics without adding a second checkpoint schema or store.
         state = _thaw_json(self.state_refs)
+        agent_state = state.get("agent_checkpoint_v1")
+        if isinstance(agent_state, Mapping):
+            state = agent_state
         for key in ("safe_point", "turn", "current_decision", "next_tool_index"):
             if key in state:
                 value[key] = state[key]
