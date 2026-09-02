@@ -481,12 +481,17 @@ def test_idle_activity_is_tracked_per_same_session_job(
         # Run the same monitor pass synchronously so CI scheduling load cannot
         # delay the expiry check beyond the terminal wait timeout.
         runner._budget_tick()
-        idle_final = _await_canonical_terminal(runner, idle)
-        assert idle_final.status.value == "cancelled"
-        assert idle_final.reason_code == "budget.idle_exhausted"
+        with runner._lock:
+            idle_cancel = runner._jobs[idle]["event"]
+            active_cancel = runner._jobs[active]["event"]
+        assert idle_cancel.is_set()
+        assert not active_cancel.is_set()
         assert _canonical_execution(runner, active).status.value == "running"
 
         fake_worker[1].set()
+        idle_final = _await_canonical_terminal(runner, idle, timeout=10.0)
+        assert idle_final.status.value == "cancelled"
+        assert idle_final.reason_code == "budget.idle_exhausted"
         assert _await_canonical_terminal(runner, active).status.value == "completed"
     finally:
         fake_worker[1].set()
