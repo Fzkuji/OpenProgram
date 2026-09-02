@@ -1115,7 +1115,7 @@ def test_spawned_child_resource_view_uses_persisted_ancestor_limits(
                 "effective": value,
                 "source": "parent",
             }
-            assert view.limits["limits"][name] == {
+            assert view.resource["limits"]["limits"][name] == {
                 "configured": value,
                 "effective": value,
                 "source": "parent",
