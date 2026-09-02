@@ -14,8 +14,8 @@
   <div class="eyebrow">OpenProgram Runtime · normative architecture</div>
   <h1>统一运行控制：暂停、继续、单步、调整与取消</h1>
   <p class="lead">本页是 OpenProgram 运行控制的唯一权威设计。它固定执行标识、持久状态、命令协议、安全点、检查点、owner 合同、恢复规则和未来逻辑修改方式。Chat、Agent、Workflow、后台 Job、工具与子进程共享这一控制模型；各界面不再维护自己的 stop、pause 或 resume 语义。</p>
-  <div class="meta"><span class="pill target">状态：目标架构已固定 · Core Fork/Retry 已实现</span><span class="pill scope">范围：Runtime / App / Web / TUI / CLI / ACP / MCP</span><span class="pill">唯一目标：execution_id</span><span class="pill">迁移策略：一次切换，不长期兼容</span></div>
-  <nav class="toc" aria-label="页内导航"><a href="#decision">结论</a><a href="#current">现状</a><a href="#reference">参考</a><a href="#identity">标识</a><a href="#record">记录</a><a href="#state">状态机</a><a href="#commands">命令</a><a href="#safe-point">安全点</a><a href="#checkpoint">检查点</a><a href="#effects">副作用</a><a href="#revision">修改逻辑</a><a href="#driver">Owner</a><a href="#recovery">恢复</a><a href="#cutover">切换</a><a href="#acceptance">验收</a><a href="#status">实现状态</a></nav>
+  <div class="meta"><span class="pill target">状态：Agent/Job public cutover 与 exact cancel 已集成 · Agent safe point brief 进行中</span><span class="pill scope">范围：Runtime / App / Web / TUI / CLI / ACP / MCP</span><span class="pill">唯一目标：execution_id</span><span class="pill">迁移策略：一次切换，不长期兼容</span></div>
+  <nav class="toc" aria-label="页内导航"><a href="#decision">结论</a><a href="#current">现状</a><a href="#reference">参考</a><a href="#identity">标识</a><a href="#record">记录</a><a href="#state">状态机</a><a href="#commands">命令</a><a href="#safe-point">安全点</a><a href="#checkpoint">检查点</a><a href="#effects">副作用</a><a href="#revision">修改逻辑</a><a href="#driver">Owner</a><a href="#recovery">恢复</a><a href="#cutover">切换</a><a href="#acceptance">验收</a><a href="#status">实现状态</a><a href="#agent-safe-point">Agent safe point brief</a></nav>
 </header>
 <main>
 <article>
@@ -32,7 +32,7 @@
 
 <section id="current">
   <h2>2. 当前实现与必须移除的分歧</h2>
-  <p>当前代码包含可复用的取消、checkpoint、rewind 和 steering 能力，但还没有统一运行控制。下列入口只作为迁移证据，不是目标合同。</p>
+  <p>当前代码已经把 Agent/Job public admission 与 exact cancellation 接入 canonical execution；仍可复用已有的 checkpoint、rewind 和 steering 基础，但实际 Agent safe point 尚未公开。下列入口只作为迁移证据，不是目标合同。</p>
   <div class="table-wrap"><table>
     <thead><tr><th>当前实现</th><th>实际行为</th><th>目标处理</th></tr></thead>
     <tbody>
@@ -331,10 +331,10 @@ runtime.finish_attempt(attempt_id, outcome)</code></pre>
   <div class="table-wrap"><table>
     <thead><tr><th>目标能力</th><th>状态</th><th>可复用基础</th><th>缺口</th></tr></thead>
     <tbody>
-      <tr><td>Canonical Store</td><td><span class="tag partial">Partial</span></td><td><code>openprogram.execution</code> 已定义最终 identity、capability、状态机和 profile-aware SQLite authority；已实现 run/revision/execution/command/attempt/checkpoint/effect records、append-only events、materialized execution、version CAS、幂等 command、原子 intent transition、lease fencing、stale-attempt 拒绝、async Driver contract、exact live-binding registry、pause/cancel/continue/step/steer/fork/retry command handler，以及启动扫描、owner-loss recovery、旧 owner fencing、恢复失败阻止服务启动、canonical admission 的 immutable input 和四类 projection outbox。fork/retry child 在同一事务内复制 parent immutable input，保留可信 user/assistant message IDs。固定 dag/job/workflow/ui consumer 以幂等事件历史和当前快照写入只读模型；每个 execution store 同时只登记一个 worker，启动在受限工作窗口内重放，余下积压由 worker 继续处理，运行期 canonical event 提交后唤醒该 worker，失败项保持 pending 并延后重试；启动恢复和 worker 使用独立 claim owner。worker 每轮只领取一个受时间限制的批次，停止后不再领取新项并释放未处理 claim。ui 帧带 event_sequence 与可信 user/assistant message IDs；页面将最高序号、终态栅栏和关联消息写入现有会话状态，终态后拒绝迟到非终态帧；仅删除关联转录时清理对应记录，会话重置清理全部记录，不按数量淘汰活跃 execution。读取 event 和快照均按 execution 与 sequence 定点查询；Running 读取 ui 快照。Agent driver 从 strict versioned、bounded 的 <code>chat</code>/<code>forced_tool</code> admission input 构造 dispatcher turn，绑定精确 attempt generation，处理 exact cancel/question wake，并通过 Control Service 收口 terminal；WS chat（包括 query、<code>/spawn</code>、<code>/merge</code>）、REST function 和 WS retry_function 统一先 admission 再 ack/启动，forced-tool 不再自行写 canonical terminal。execution_id 由 admission 随机生成，<code>msg_id</code> 与 DAG node 只用于关联和 provenance。</td><td>Job、Session DAG 和 Workflow 仍保留各自的投影与内容状态；授权和控制界面仍待迁入。Agent driver 明确不声明 pause、step、steer、fork、retry 或 safe-point 能力，直到存在 durable checkpoint、effect receipt 和 wait 恢复条件。</td></tr>
+      <tr><td>Canonical Store</td><td><span class="tag partial">Partial</span></td><td><code>openprogram.execution</code> 已定义最终 identity、capability、状态机和 profile-aware SQLite authority；已实现 run/revision/execution/command/attempt/checkpoint/effect records、append-only events、materialized execution、version CAS、幂等 command、原子 intent transition、lease fencing、stale-attempt 拒绝、async Driver contract、exact live-binding registry、pause/cancel/continue/step/steer/fork/retry command handler，以及启动扫描、owner-loss recovery、旧 owner fencing、恢复失败阻止服务启动、canonical admission 的 immutable input 和四类 projection outbox。fork/retry child 在同一事务内复制 parent immutable input，保留可信 user/assistant message IDs。固定 dag/job/workflow/ui consumer 以幂等事件历史和当前快照写入只读模型；每个 execution store 同时只登记一个 worker，启动在受限工作窗口内重放，余下积压由 worker 继续处理，运行期 canonical event 提交后唤醒该 worker，失败项保持 pending 并延后重试；启动恢复和 worker 使用独立 claim owner。worker 每轮只领取一个受时间限制的批次，停止后不再领取新项并释放未处理 claim。ui 帧带 event_sequence 与可信 user/assistant message IDs；页面将最高序号、终态栅栏和关联消息写入现有会话状态，终态后拒绝迟到非终态帧；仅删除关联转录时清理对应记录，会话重置清理全部记录，不按数量淘汰活跃 execution。读取 event 和快照均按 execution 与 sequence 定点查询；Running 读取 ui 快照。Agent driver 从 strict versioned、bounded 的 <code>chat</code>/<code>forced_tool</code> admission input 构造 dispatcher turn，绑定精确 attempt generation，处理 exact cancel/question wake，并通过 Control Service 收口 terminal；真实公共 WS <code>chat</code> action 由 <code>apps/server/openprogram_server/_webui/ws_actions/chat.py::handle_chat</code> 进入同一 admission，Web query、<code>/spawn</code>、<code>/merge</code>、REST function 和 WS retry_function 也先 admission 再 ack/启动，forced-tool 不再自行写 canonical terminal。execution_id 由 admission 随机生成，<code>msg_id</code> 与 DAG node 只用于关联和 provenance。</td><td>Job、Session DAG 和 Workflow 仍保留各自的投影与内容状态；授权和控制界面仍待迁入。Agent driver 明确不声明 pause、step、steer、fork、retry 或 safe-point 能力，直到 durable checkpoint、effect receipt 和 wait 恢复条件完成。</td></tr>
       <tr><td>Job Driver</td><td><span class="tag partial">Bridge only</span></td><td>内部 <code>JobDriver</code> 已将 Job 的 <code>execution_id</code>、canonical attempt lease/activate/finish 和 fenced registry 连接到现有 worker cancellation event；Job capability 全部关闭且不声明 safe point，owner 丢失时没有 checkpoint 的 execution 进入 interrupted。</td><td>JobStore 仍只等待 projection consumer 接入，不能作为 execution lifecycle 的事实源；spawn/merge 的 DAG 内容语义由 canonical chat runner 调用现有专用实现，但 Job 本身仍不是 Agent execution 的 lifecycle 事实源。</td></tr>
-      <tr><td>公开 Job 入口</td><td><span class="tag partial">Partial</span></td><td><code>job_id == execution_id</code>。公开 spawn（包括 deferred、resume 和 borrowed child）写入 immutable input 与 queued execution；dispatcher/inline borrowed path 领取 canonical attempt，JobStore 仅作为现有 UI/resource projection。预算耗尽、父级取消和用户取消统一提交 exact <code>execution.cancel</code> command，worker 只响应对应 attempt 的 cancel signal；startup 先执行 canonical recovery。</td><td>resource ledger 与 canonical admission 仍跨两个 SQLite authority，旧 JobStore 状态更新仍用于 projection 写入；pause、continue、step、steer、fork、retry 与 safe-point capability 暂不公开。强制终止只接受 worker 返回的真实 <code>TerminationReceipt</code>，不得由控制面伪造。</td></tr>
-      <tr><td>Exact cancellation</td><td><span class="tag partial">Partial</span></td><td>execution token/owner、intent 顺序、终态保护、resource admission、宽限终止和 startup wake 的部分实现。Job owner 会重新读取持久化的 <code>execution.cancel</code>，按 <code>(execution_id, attempt_id, generation)</code> 经本地 registry 精确投递；跨进程 caller 的 cooperative、自然完成竞态和强制终止均收敛到同一 canonical、JobStore 和 admission 终态，并保留首个 cancel reason。</td><td>迁入 command/driver；删除 session fallback、alias 和局部 finalizer。</td></tr>
+      <tr><td>公开 Job 入口</td><td><span class="tag partial">Partial</span></td><td>public spawn cutover 已集成，且 <code>job_id == execution_id</code>。公开 spawn（包括 deferred、resume 和 borrowed child）写入 immutable input 与 queued execution；dispatcher/inline borrowed path 领取 canonical attempt，JobStore 仅作为现有 UI/resource projection。预算耗尽、父级取消和用户取消统一提交 exact <code>execution.cancel</code> command，worker 只响应对应 attempt 的 cancel signal；startup 先执行 canonical recovery。</td><td>resource ledger 与 canonical admission 仍跨两个 SQLite authority，旧 JobStore 状态更新仍用于 projection 写入；Job pause、continue、step、steer、fork、retry 与 safe-point capability 暂不公开。强制终止只接受 worker 返回的真实 <code>TerminationReceipt</code>，不得由控制面伪造。</td></tr>
+      <tr><td>Exact cancellation</td><td><span class="tag target">Integrated</span></td><td>Agent 与 Job 都先写 exact <code>execution.cancel</code> durable intent，再按 <code>(execution_id, attempt_id, generation)</code> 投递到当前 owner；Job owner 可在跨进程 caller 场景重新消费 pending command，cooperative、自然完成竞态和宽限终止都收敛到同一 canonical terminal。首个 cancel reason 保留，terminal command 会在 restart/reconciler 中完成，JobStore 与 resource admission 只作为投影并释放匹配 reservation。</td><td>其他 execution kind 尚未接入真实 driver；内部旧 helper 不能成为 public fallback。Agent safe-point slice 只复用该 exact cancel 边界。</td></tr>
       <tr><td>Pause / Continue / Step</td><td><span class="tag partial">Partial</span></td><td>Exact pause 先持久化 intent，再通知匹配 attempt；continue 从原始 checkpoint 创建新 generation attempt；step 使用唯一 durable permit，并把一次 managed action、checkpoint、attempt 结束、paused 与 command applied 放在同一事务。启动与 owner-loss recovery 会收敛未完成 command，effect 未解决时优先进入 reconciliation。</td><td>各实际 Driver 接入和 surface 切换，并删除旧全局 pause、session fallback 与分散 controls。</td></tr>
       <tr><td>Durable steering</td><td><span class="tag partial">Partial</span></td><td>Exact execution steer 已使用持久 command payload、稳定 FIFO、独立 ActivationInput 和 safe-point checkpoint receipt；running、pausing 与 paused 后续 activation 均有原子应用、幂等重试、owner fencing、cancel/pause 优先级和 owner-loss rejection。</td><td>各实际 Driver 接入和 surface 切换，并删除旧 session file inbox 与兼容 ack 路径。</td></tr>
       <tr><td>Checkpoint / Effect</td><td><span class="tag partial">Partial</span></td><td>统一内容寻址 manifest、revision/frontier、checkpoint head CAS、effect 分类与 terminal receipt 已落到 canonical store；只有当前未过期 attempt 可以发布或 dispatch，unresolved dispatch 阻止 checkpoint、terminal finalization 和自动恢复。Control Service 在 receipts 完整后继续 cancel finalization，非 cancel execution 回到 paused。</td><td>各 Driver 生成完整 state refs/receipts、专用外部查询/人工 reconciler 和旧 Workflow/mutation 数据切换。</td></tr>
@@ -347,12 +347,105 @@ runtime.finish_attempt(attempt_id, outcome)</code></pre>
 
 <section id="agent-public-cutover">
   <h2>Public Agent entry contract</h2>
-  <p>Every public Agent turn enters through the transport-neutral canonical adapter. ACP, Channels, MCP prompt service, scheduler prompts, web chat/query, <code>/spawn</code>, <code>/merge</code>, fn-form, and retry first construct a strict version-1 bounded payload with <code>kind=chat</code> or <code>kind=forced_tool</code>, admit it, and only then persist user/DAG content or acknowledge the request. Admission mints a random <code>execution_id</code>; message and DAG identifiers are provenance only.</p>
+  <p>Every public Agent turn enters through the transport-neutral canonical adapter. The real public WebSocket chat entry is <code>apps/server/openprogram_server/_webui/ws_actions/chat.py::handle_chat</code>; it constructs a bounded <code>TurnRequest</code>, calls <code>CanonicalAgentAdapter.admit</code>, and sends <code>chat_ack</code> only after admission returns the random <code>execution_id</code>. ACP, Channels, MCP prompt service, scheduler prompts, web query, <code>/spawn</code>, <code>/merge</code>, fn-form, and retry use the same boundary. Each first constructs a strict version-1 bounded payload with <code>kind=chat</code> or <code>kind=forced_tool</code>, admits it, and only then persists user/DAG content or acknowledges the request. Message and DAG identifiers are provenance only.</p>
   <p>The adapter leases and activates the exact attempt generation. The Agent driver reconstructs <code>TurnRequest</code> or <code>ForcedToolActivation</code>, and the driver alone records completion, failure, or cancellation through Control Service. Startup failures after admission are terminalized for that same execution. Forced-tool dispatch receives the exact execution, attempt, generation, and cancellation binding. No public entry derives ownership from <code>msg_id</code>, claims a <code>run_control</code> token, or falls back to a legacy finalizer. Global pause/resume and session stop routes are removed; WS/TUI steer requests return <code>unsupported_capability</code>. Pause, continue, step, and steer remain unavailable until durable checkpoint, effect, and wait recovery state exists.</p>
 </section>
 
+<section id="agent-safe-point">
+  <h2>21. Agent durable safe point / checkpoint implementation brief</h2>
+  <div class="decision"><strong>下一独立切片只为 Agent driver 接入 durable safe point。</strong>它沿用已经集成的 canonical Agent admission 与 exact cancel；不修改 public WS chat 入口的 identity 合同，不给 Job 打开 pause，也不新增第二套 dispatcher、checkpoint 或 control API。第一版只支持两类可验证边界：provider decision 和 tool action。</div>
+  <h3>Safe-point 单位</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>safe point kind</th><th>进入与离开条件</th><th>step 消费单位</th></tr></thead>
+    <tbody>
+      <tr><td><code>provider_decision</code></td><td>provider 请求发送前先确认没有更高优先级命令；完整 response、usage、tool-call decision 和对应 assistant/message provenance 持久化后，才发布离开边界。</td><td>一次 provider decision。部分 stream、未提交 response 或内存中的 provider object 不能作为 checkpoint。</td></tr>
+      <tr><td><code>tool_action</code></td><td>tool dispatch 前写入 action/effect intent；tool result 与 receipt 持久化后才离开。等待 approval/question 时停在 durable wait state。</td><td>一次 managed tool action。未完成 action 不被伪造为 completed。</td></tr>
+    </tbody>
+  </table></div>
+  <p>Agent 不保存任意 Python 指令地址、调用栈、线程、锁、生成器、async task、provider stream、闭包、PID、socket 或对象地址。暂停只在上述边界生效；continue/step 由 checkpoint frontier 重新激活新的 attempt，不能依赖原进程的内存状态。</p>
+
+  <h3>AgentCheckpointV1</h3>
+  <p>本切片定义唯一的 Agent checkpoint payload schema <code>v1</code>。它作为现有内容寻址 <code>CheckpointManifest</code> 的 Agent state payload 写入；外层 manifest 的存储、CAS、parent head 和 attempt fence 仍由 <code>openprogram/execution/checkpoints.py</code> 负责。不得同时接受未版本化 payload 或另一个兼容 schema。</p>
+<pre><code>AgentCheckpointV1 {
+  schema_version: 1,
+  execution_id, revision_id, parent_checkpoint_id,
+  source_execution_version,
+  safe_point: {kind: provider_decision | tool_action,
+               step_id, phase},
+  frontier: [{step_id, phase, branch_id}],
+  state_refs: {name: {ref, sha256, byte_length,
+                      media_type, schema_version}},
+  pending_messages: [{message_id, sequence, content_ref,
+                       input_hash, status}],
+  completed_actions: [{action_id, input_hash, result_ref}],
+  pending_tool_receipts: [{effect_id, action_id,
+                           classification, status, receipt_ref}],
+  wait_state: {status, request_ids, state_ref},
+  pending_command_ids, created_by_attempt_id,
+  content_hash
+}</code></pre>
+  <div class="grid2">
+    <div class="card"><h3>有界 state refs</h3><p>每个 ref 只允许内容寻址标识、SHA-256、字节数、媒体类型和 schema 版本；manifest、ref 数量、单个 blob、pending message、receipt 与 wait payload 都使用实现文件中声明的固定上限。超限在 admission/publish 前拒绝，不能截断后继续。</p></div>
+    <div class="card"><h3>不可变发布</h3><p>先写并验证 payload/blobs，再以 <code>parent_checkpoint_id + source_execution_version</code> 做 CAS，最后更新 checkpoint head。只有当前未过期 attempt 能发布；旧 owner、未发布对象和内容 hash 冲突均拒绝。</p></div>
+  </div>
+
+  <h3>Pending data 与 effect receipt</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>数据</th><th>持久化合同</th><th>恢复行为</th></tr></thead>
+    <tbody>
+      <tr><td>Pending messages</td><td>每条消息有稳定 <code>message_id</code>、单调 sequence、content ref/hash、source 和 applied/rejected 状态；消息内容不依赖原进程内存。</td><td>checkpoint 与 execution record 保存未应用 message IDs；新 attempt 按 sequence 读取并只应用一次，迟到消息不能写回旧 frontier。</td></tr>
+      <tr><td>Tool receipts</td><td>每个 action 先在 Effect Ledger 注册 <code>effect_id</code> 与 classification，再记录 <code>planned → dispatched → terminal</code>；receipt 是内容寻址 ref，不把完整秘密或任意返回对象塞进 manifest。</td><td>terminal receipt 可复用；<code>dispatched</code>/<code>uncertain</code> 在确认前阻止 checkpoint、continue、step 与 retry。</td></tr>
+      <tr><td>Question / approval wait</td><td>请求、schema、prompt ref、execution_id、request IDs、expires_at 和 outcome 写入 durable resource；checkpoint 的 <code>wait_state</code> 只引用该记录。</td><td>continue 时新 attempt 重新订阅 unresolved request；answer/decline/timeout/cancel 通过 durable transition claim-once 收口，不能依赖进程内 <code>Event</code>。</td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout danger"><strong>nonrepeatable effect 的顺序不可改变：</strong>先持久化 effect intent，再 dispatch；返回后持久化 receipt。dispatch 已发生但 receipt 未落盘时标记 <code>uncertain</code>，进入 <code>reconciliation_required</code>，禁止自动再次调用。只有外部查询或明确人工/Program reconciliation 将其变为 committed、not_committed 或 compensated 后，execution 才能继续。</div>
+
+  <h3>命令优先级与 owner recovery</h3>
+  <p>本切片沿用统一优先级 <code>cancel &gt; pause &gt; step/continue &gt; steer</code>。Agent 只新增 pause、continue、step 的真实 capability；steer 仍关闭。cancel intent 一旦持久化就解除 wait、阻止新的 provider/tool dispatch，并优先完成 cancel finalization；pause 只关闭 admission gate，已 dispatch action 继续到结果、超时或 cancel。</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>情况</th><th>owner-loss / restart 处理</th></tr></thead>
+    <tbody>
+      <tr><td>边界前丢失</td><td>旧 lease 增加 generation 并 fencing；保留 immutable input 与最近合法 checkpoint。没有 dispatched/uncertain effect 时，新 attempt 从 frontier 恢复。</td></tr>
+      <tr><td>provider/tool 已 dispatch</td><td>不猜测结果、不重放；保存 pending effect 并进入 reconciliation_required，直到 receipt terminal。</td></tr>
+      <tr><td>等待 question/approval</td><td>保留 durable wait；新 owner 重新订阅未解决 request。cancel 关闭 request 并写 cancelled outcome。</td></tr>
+      <tr><td>旧 owner 迟到写入</td><td>所有 checkpoint、receipt、command 和 terminal 写入校验 <code>execution_id + attempt_id + generation + status_version</code>；失败只记录 stale owner 事件。</td></tr>
+      <tr><td>已有 cancel intent</td><td>startup 继续 cancel delivery/finalization，不恢复 Agent 业务逻辑；terminal command 与 Job/resource projection 按现有 reconciler 收口。</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>实现文件、RED/GREEN 与 gates</h3>
+  <p>这是下一代码切片的精确文件边界；本次文档提交不修改这些文件，也不创建兼容入口。</p>
+<pre><code>Production:
+  openprogram/agent/production_driver.py
+  openprogram/agent/dispatcher/loop_runner.py
+  openprogram/agent/dispatcher/forced_tool.py
+  openprogram/agent/questions.py
+  openprogram/execution/checkpoints.py
+  openprogram/execution/effects.py
+  openprogram/execution/control.py
+  openprogram/execution/store.py
+
+Public-entry regression (reuse, no new route):
+  apps/server/openprogram_server/_webui/ws_actions/chat.py
+
+Tests:
+  tests/component/agent/test_agent_durable_safe_point.py
+  tests/component/agent/test_production_driver.py
+  tests/component/execution/test_checkpoint_store.py
+  tests/component/execution/test_effect_store.py
+  tests/component/execution/test_continue_step_steer.py
+  tests/component/webui/test_webui_head_mirror_and_run_guard.py
+  tests/component/agent/test_canonical_job_entry.py</code></pre>
+  <ol>
+    <li><strong>RED：</strong>在干净 base 上先运行 <code>uv run --locked --extra dev python -m pytest -q tests/component/agent/test_agent_durable_safe_point.py</code>，必须通过真实 public Agent activation 边界证明当前 Agent capability 为空、无 checkpoint/wait recovery，且不能用 message-derived identity 绕过 WS chat admission。</li>
+    <li><strong>GREEN：</strong>实现后先运行该 Agent 测试与 <code>tests/component/execution/test_checkpoint_store.py tests/component/execution/test_effect_store.py tests/component/execution/test_continue_step_steer.py</code>；再运行 <code>tests/component/webui/test_webui_head_mirror_and_run_guard.py tests/component/agent/test_canonical_job_entry.py</code>，确认现有 WS chat、Job public cutover 与 exact cancel 不回归。</li>
+    <li><strong>Gate：</strong><code>uv run --locked --extra dev python -m pytest -q tests/contracts</code>、受影响层测试、完整仓库测试，以及共享 execution/state 变更要求的三轮 <code>-n 4</code> contracts/unit/component/integration/e2e；再执行文档构建、<code>python -m scripts.docs_site.checklinks</code>、<code>git diff --check</code> 和最终 clean-worktree 检查。Agent capability 只有在两类 safe point、schema v1 bounded refs、effect reconciliation、wait restart 和 owner fencing 的公开边界全部通过后才可标为 implemented。</li>
+  </ol>
+  <div class="callout warn"><strong>本切片排除：</strong>不公开 Job pause/continue/step/safe point；不增加 fork/retry UI；不增加 debugger UI；不保存任意栈；不保留旧 stop、session fallback、message-derived ownership、schema 双读或任何双写路径。</div>
+</section>
+
 <section id="related">
-  <h2>21. 相关设计</h2>
+  <h2>22. 相关设计</h2>
   <ul><li><a href="async-job-lifecycle.html">Async Job lifecycle</a>：持久 Job 的队列、worker 与恢复。</li><li><a href="../dag/overview.html">DAG status vocabulary</a>：execution history 与关系投影。</li><li><a href="../agent-resource-governance.html">Agent resource governance</a>：admission、lease、budget 和资源释放。</li><li><a href="../operations/user-input-requests.html">User input requests</a>：durable question/approval。</li><li><a href="../../error-handling.html">Error handling</a>：cancelled、interrupted 与 failed 的边界。</li></ul>
 </section>
 </article>
