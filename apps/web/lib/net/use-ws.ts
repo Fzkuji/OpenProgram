@@ -283,6 +283,11 @@ export function useWS(): void {
             event_sequence?: number;
           } }).execution || d;
           if (!execution?.execution_id) return true;
+          const eventCursor = (msg as { event_cursor?: unknown }).event_cursor
+            ?? (d as { event_cursor?: unknown } | undefined)?.event_cursor;
+          window.dispatchEvent(new CustomEvent("op:execution-update", {
+            detail: { execution, event_cursor: eventCursor },
+          }));
           const eid = String(execution.execution_id);
           const eventSequence = (d as { event_sequence?: number } | undefined)?.event_sequence
             ?? execution.event_sequence;
@@ -378,6 +383,9 @@ export function useWS(): void {
           const snapshot = replay?.snapshot;
           if (snapshot && typeof snapshot.execution_id === "string") {
             recordExecutionCursor(replay?.event_cursor);
+            window.dispatchEvent(new CustomEvent("op:execution-update", {
+              detail: { execution: snapshot, event_cursor: replay?.event_cursor },
+            }));
             return dispatch({ type: "execution.updated", execution: snapshot, data: snapshot } as never);
           }
           return true;

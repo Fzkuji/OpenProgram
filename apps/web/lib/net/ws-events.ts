@@ -13,6 +13,8 @@
  * because the payload arrives as untrusted JSON off the socket.
  */
 
+import type { EventCursor, ExecutionSnapshot } from "@/lib/execution-debugger";
+
 /** `openprogram/webui/ws_actions/session.py:_broadcast_permission_rules` */
 export interface PermissionRulesDetail {
   project_id?: string;
@@ -115,6 +117,11 @@ export interface JobStatusDetail {
   resource?: JobResourceView | null;
 }
 
+export interface ExecutionUpdateDetail {
+  execution?: ExecutionSnapshot;
+  event_cursor?: EventCursor;
+}
+
 /**
  * Reply-envelope shape shared by `op:job-message` and the
  * `op:ws-message` catch-all: the original frame's `type` plus its
@@ -132,6 +139,7 @@ declare global {
     "op:job-status": CustomEvent<JobStatusDetail>;
     "op:job-message": CustomEvent<WsEnvelopeDetail>;
     "op:ws-message": CustomEvent<WsEnvelopeDetail>;
+    "op:execution-update": CustomEvent<ExecutionUpdateDetail>;
   }
 }
 

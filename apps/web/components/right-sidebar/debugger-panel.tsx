@@ -235,6 +235,7 @@ export function DebuggerPanel({
   const [waitError, setWaitError] = useState<string | null>(null);
   const [steerValue, setSteerValue] = useState("");
   const [draftText, setDraftText] = useState("");
+  const [draftError, setDraftError] = useState<string | null>(null);
   const selectedId = selectedExecutionId ?? localSelectedId;
   const snapshot = executions.find((execution) => execution.execution_id === selectedId) || executions[0] || null;
   const selectedCheckpoint = snapshot?.checkpoint_head_id
@@ -255,6 +256,16 @@ export function DebuggerPanel({
       const result = await onCommand?.(command);
       if (result) setCommandResults((current) => ({ ...current, [command.action]: result }));
       return result;
+    } catch (error) {
+      setCommandResults((current) => ({
+        ...current,
+        [command.action]: {
+          command_id: command.command_id,
+          status: "rejected",
+          rejection_code: error instanceof Error ? error.message : "command_failed",
+        },
+      }));
+      return undefined;
     } finally {
       setPendingActions((current) => {
         const next = new Set(current);
@@ -271,21 +282,29 @@ export function DebuggerPanel({
       return;
     }
     setWaitError(null);
-    await onRespondWait({
-      wait_id: wait.wait_id,
-      execution_id: wait.execution_id,
-      claim_generation: wait.claim_generation,
-      outcome,
-      value: outcome === "answer" ? waitValue.trim() : undefined,
-    });
-    setWaitValue("");
+    try {
+      await onRespondWait({
+        wait_id: wait.wait_id,
+        execution_id: wait.execution_id,
+        claim_generation: wait.claim_generation,
+        outcome,
+        value: outcome === "answer" ? waitValue.trim() : undefined,
+      });
+      setWaitValue("");
+    } catch (error) {
+      setWaitError(error instanceof Error ? error.message : "Wait response failed.");
+    }
   }
 
   const actionPayloads: Partial<Record<ExecutionCommandAction, Record<string, unknown>>> = {
-    steer: steerValue.trim() ? { input_ref: steerValue.trim() } : undefined,
-    retry: snapshot.checkpoint_head_id ? { source_checkpoint_id: snapshot.checkpoint_head_id } : undefined,
-    fork: selectedDraft?.status === "published" && selectedDraft.manifest
-      ? { manifest_ref: selectedDraft.manifest.revision_id, source_checkpoint_id: snapshot.checkpoint_head_id }
+    steer: steerValue.trim() ? { message: steerValue.trim() } : undefined,
+    retry: snapshot.checkpoint_head_id ? { checkpoint_id: snapshot.checkpoint_head_id } : undefined,
+    fork: selectedDraft?.status === "published" && selectedDraft.manifest && selectedDraft.validation?.report_hash
+      ? {
+        manifest_id: selectedDraft.manifest.revision_id,
+        checkpoint_id: snapshot.checkpoint_head_id,
+        proof_hash: selectedDraft.validation?.report_hash,
+      }
       : undefined,
   };
 
@@ -395,9 +414,10 @@ export function DebuggerPanel({
                 <div className={styles.editorMeta}><span>Draft {shortId(selectedDraft.draft_id)}</span><span>source checkpoint {shortId(selectedDraft.source_checkpoint_id)}</span><span>base {shortId(selectedDraft.base_revision_id)}</span></div>
                 <label className={styles.editorLabel}>Supported changes <textarea value={draftText || JSON.stringify(selectedDraft.changes, null, 2)} onChange={(event) => setDraftText(event.target.value)} spellCheck={false} /></label>
                 <div className={styles.revisionActions}>
-                  {selectedDraft.status === "draft" && <button type="button" onClick={() => { try { const changes = JSON.parse(draftText) as RevisionDraft["changes"]; void onUpdateDraft?.(selectedDraft, changes); } catch { setDraftText("Invalid JSON change list"); } }} disabled={!onUpdateDraft}>Save draft</button>}
-                  {(["validate", "approve", "publish", "fork"] as const).map((action) => <button key={action} type="button" onClick={() => void onDraftAction?.(selectedDraft, action)} disabled={!onDraftAction || (action === "validate" ? selectedDraft.status !== "draft" : action === "approve" ? selectedDraft.status !== "validated" : action === "publish" ? selectedDraft.status !== "approved" : selectedDraft.status !== "published")}>{action[0].toUpperCase() + action.slice(1)}</button>)}
+                  {selectedDraft.status === "draft" && <button type="button" onClick={() => { try { const changes = JSON.parse(draftText) as RevisionDraft["changes"]; setDraftError(null); void Promise.resolve(onUpdateDraft?.(selectedDraft, changes)).catch((error) => setDraftError(error instanceof Error ? error.message : "Draft update failed.")); } catch { setDraftText("Invalid JSON change list"); } }} disabled={!onUpdateDraft}>Save draft</button>}
+                  {(["validate", "approve", "publish", "fork"] as const).map((action) => <button key={action} type="button" onClick={() => { setDraftError(null); void Promise.resolve(onDraftAction?.(selectedDraft, action)).catch((error) => setDraftError(error instanceof Error ? error.message : "Revision action failed.")); }} disabled={!onDraftAction || (action === "validate" ? selectedDraft.status !== "draft" : action === "approve" ? selectedDraft.status !== "validated" : action === "publish" ? selectedDraft.status !== "approved" : selectedDraft.status !== "published")}>{action[0].toUpperCase() + action.slice(1)}</button>)}
                 </div>
+                {draftError && <div className={styles.formError} role="alert">{draftError}</div>}
                 {selectedDraft.validation && <div className={styles.validation}><span>Report {shortId(selectedDraft.validation.report_ref)}</span><span>Reusable {selectedDraft.validation.reusable_steps.length}</span><span>Affected {selectedDraft.validation.affected_steps.length}</span>{selectedDraft.validation.error_code && <strong>{selectedDraft.validation.error_code}</strong>}</div>}
               </div>
             ) : <div className={styles.empty}>Create a draft through the revision service to edit future logic. This view never mutates the source execution.</div>}

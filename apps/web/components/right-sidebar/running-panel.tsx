@@ -35,7 +35,13 @@ function formatElapsed(seconds: number): string {
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
 }
 
-export function RunningPanel({ active }: { active: boolean }) {
+export function RunningPanel({
+  active,
+  onOpenExecution,
+}: {
+  active: boolean;
+  onOpenExecution?: (executionId: string) => void;
+}) {
   const { text } = useTranslation();
   const conversations = useSessionStore((s) => s.conversations);
   const [items, setItems] = useState<RunningItem[]>([]);
@@ -191,6 +197,28 @@ export function RunningPanel({ active }: { active: boolean }) {
               : elapsed || ""}
           </span>
         </div>
+        {item.execution_id && onOpenExecution ? (
+          <button
+            type="button"
+            onClick={() => onOpenExecution(item.execution_id as string)}
+            style={{
+              width: "100%",
+              minHeight: 28,
+              marginTop: 5,
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              background: "var(--bg-tertiary)",
+              color: "var(--text)",
+              cursor: "pointer",
+              font: "inherit",
+              fontSize: 11,
+              textAlign: "left",
+            }}
+            aria-label={text("Open execution debugger", "打开执行调试器")}
+          >
+            {text("Open debugger", "打开调试器")}
+          </button>
+        ) : null}
       </div>
     );
   };
