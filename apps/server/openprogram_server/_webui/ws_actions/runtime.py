@@ -217,6 +217,11 @@ def trusted_runtime_actor(scope) -> dict | None:
     actor = normalize_authority(authority)
     if not actor or actor.get("authority_tier") != "owner":
         return None
+    if isinstance(authority, dict):
+        for field in ("project_ids", "session_ids", "execution_actions"):
+            value = authority.get(field)
+            if isinstance(value, (list, tuple, frozenset, set)):
+                actor[field] = tuple(str(item) for item in value)
     return actor
 
 
@@ -459,7 +464,8 @@ async def submit_execution_control(
 
     from openprogram.agent.authority import has_capability, normalize_authority
 
-    actor = normalize_authority(actor)
+    raw_actor = dict(actor) if isinstance(actor, dict) else {}
+    actor = normalize_authority(raw_actor)
     validation_error = validate_execution_command_request(cmd, operation)
     execution_id = cmd.get("execution_id")
     command_id = cmd.get("command_id")
@@ -477,7 +483,7 @@ async def submit_execution_control(
         }
     try:
         _authorize_execution(
-            actor, _PUBLIC_COMMAND_ACTIONS[operation], execution,
+            raw_actor, _PUBLIC_COMMAND_ACTIONS[operation], execution,
             bound_session=bound_session,
         )
     except Exception:

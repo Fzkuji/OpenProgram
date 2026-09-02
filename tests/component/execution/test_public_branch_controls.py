@@ -167,6 +167,19 @@ def test_public_branch_commands_use_control_service_and_exact_session_scope(tmp_
     assert rejected["rejection_code"] == "not_found"
     assert latest["execution_id"] == source.execution_id
 
+    scoped_out, _latest = asyncio.run(submit_execution_control(
+        {
+            "type": "execution.command", "action": "execution.retry",
+            "command_id": "retry-scoped-out", "execution_id": source.execution_id,
+            "expected_version": source.status_version,
+            "payload": {},
+        },
+        "retry",
+        actor={**actor, "session_ids": ["another-session"]},
+        bound_session=None,
+    ))
+    assert scoped_out["rejection_code"] == "not_found"
+
 
 def test_rest_branch_command_returns_the_canonical_snapshot_and_cursor(tmp_path, monkeypatch) -> None:
     from fastapi import FastAPI
