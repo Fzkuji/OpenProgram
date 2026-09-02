@@ -74,11 +74,6 @@ class _View:
                 "status_version": 0,
                 "resource": resource,
             },
-            legacy={
-                "resource_state": "active",
-                "reason_code": None,
-                "retryable": False,
-            },
         ).to_dict()
 
 

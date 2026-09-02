@@ -115,7 +115,7 @@ def _collect() -> list[dict]:
                     canonical = execution_snapshot(
                         execution,
                         store=default_store(),
-                        resource=view.to_dict() if view is not None else None,
+                        resource=view.resource if view is not None else None,
                         job_id=job.id,
                         job=job,
                     ).to_dict()

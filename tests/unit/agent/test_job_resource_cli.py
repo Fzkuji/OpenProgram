@@ -25,13 +25,6 @@ def _view(
             },
         },
     }
-    capacity = {
-        "scheduler_capacity": 4,
-        "session_live": {"used": 1, "limit": 2},
-        "session_queued": {"used": 0, "limit": 3},
-        "session_jobs": {"used": 2, "limit": 10},
-        "queue_position": None,
-    }
     budget = {
         "scope": "job_with_shared_ancestors",
         "tokens": {"actual": 10, "reserved": 5, "limit": 100},
@@ -92,21 +85,11 @@ def _view(
             "session_id": "session-1",
             "status": status,
             "status_version": 3,
+            "reason_code": reason_code,
             "resource": {
                 "admission_id": "admission-job-1",
                 "resource_state": resource_state,
             },
-        },
-        legacy={
-            "resource_state": resource_state,
-            "reason_code": reason_code,
-            "reason_key": (
-                f"resource.reason.{reason_code}" if reason_code else None
-            ),
-            "retryable": False,
-            "limits": limits,
-            "capacity": capacity,
-            "budget": budget,
         },
     ).to_dict()
 
@@ -221,8 +204,7 @@ def test_execution_control_sends_canonical_command_and_cursor(
         "command_id": f"cmd-{operation}",
         "execution_id": "job-1",
         "expected_version": 3,
-        "payload": {"reason_code": "cancel.user"}
-        if operation == "cancel" else {},
+        "payload": {},
     }
     assert canonical["event_cursor"] == {
         "execution_id": "job-1",
@@ -231,7 +213,7 @@ def test_execution_control_sends_canonical_command_and_cursor(
     }
 
 
-def test_subagent_human_view_shows_capacity_unknown_cost_and_reason(
+def test_subagent_human_view_shows_canonical_resource_payload(
     monkeypatch: pytest.MonkeyPatch, capsys,
 ) -> None:
     runner = _Runner(_view())
@@ -241,12 +223,9 @@ def test_subagent_human_view_shows_capacity_unknown_cost_and_reason(
     assert _cmd_subagent_show("job-1", as_json=False) == 0
     output = capsys.readouterr().out
 
-    assert "Session 1/2 live" in output
-    assert "Tokens: 70" in output
-    assert "Cost: Unknown (1 event)" in output
-    assert "Runtime: 45s" in output
-    assert "Idle: 15s" in output
-    assert "Reason: budget.idle_exhausted" in output
+    assert "Resource state: live" in output
+    assert '"limits"' in output
+    assert '"usage"' in output
 
 
 def test_subagent_human_view_treats_missing_resource_as_unmetered(
@@ -257,9 +236,13 @@ def test_subagent_human_view_treats_missing_resource_as_unmetered(
             assert job_id == "job-1"
             return None
 
+        def get_job(self, job_id: str):
+            assert job_id == "job-1"
+            return SimpleNamespace(id=job_id, status="running")
+
     runner = LegacyRunner(_view())
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
     from openprogram.cli.commands.subagent import _cmd_subagent_show
 
     assert _cmd_subagent_show("job-1", as_json=False) == 0
-    assert "Unmetered" in capsys.readouterr().out
+    assert "Resource state: untracked" in capsys.readouterr().out

@@ -22,7 +22,10 @@ def _execution_payload(execution):
         from openprogram.agent.job import get_runner
 
         view = get_runner().get_job_resource_view(execution.execution_id)
-        resource = view.to_dict() if view is not None else None
+        # ExecutionSnapshot.resource is the resource projection itself.  The
+        # surrounding JobResourceDTO is a separate public view and must not
+        # be nested into the snapshot resource field.
+        resource = view.resource if view is not None else None
     except Exception:
         pass
     return execution_snapshot(

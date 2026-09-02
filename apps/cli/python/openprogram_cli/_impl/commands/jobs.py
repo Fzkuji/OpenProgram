@@ -25,15 +25,16 @@ def job_resource_payload(
 
 
 def _format_view(view: dict) -> str:
-    capacity = view.get("capacity") or {}
-    budget = view.get("budget") or {}
+    resource = view.get("resource") or {}
+    execution = view.get("execution") or {}
+    limits = resource.get("limits") or {}
+    usage = resource.get("usage") or {}
     lines = [
         f"{view.get('execution_id') or view.get('job_id', '?')}  {view.get('status', '?')}  "
-        f"resource={view.get('resource_state', '?')}",
-        f"  reason={view.get('reason_code') or '-'} "
-        f"retryable={str(bool(view.get('retryable'))).lower()}",
-        f"  capacity={json.dumps(capacity, ensure_ascii=False, sort_keys=True)}",
-        f"  budget={json.dumps(budget, ensure_ascii=False, sort_keys=True)}",
+        f"resource={resource.get('resource_state', '?')}",
+        f"  reason={execution.get('reason_code') or '-'}",
+        f"  limits={json.dumps(limits, ensure_ascii=False, sort_keys=True)}",
+        f"  usage={json.dumps(usage, ensure_ascii=False, sort_keys=True)}",
         f"  cursor={json.dumps(view.get('event_cursor') or {}, ensure_ascii=False, sort_keys=True)}",
     ]
     return "\n".join(lines)

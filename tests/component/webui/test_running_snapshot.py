@@ -1,11 +1,12 @@
 """GET /api/running snapshot — in-flight tool calls show up as kind=tool."""
 import importlib
 import time
+from types import SimpleNamespace
 
 import pytest
 
 agent_loop = importlib.import_module("openprogram.agent.agent_loop")
-from openprogram_server._webui.routes import running
+from openprogram_server._webui.routes import lifecycle, running
 
 
 @pytest.fixture(autouse=True)
@@ -68,6 +69,74 @@ def test_collect_includes_canonical_ui_projection(monkeypatch):
         "status": "running",
         "started_at": 123.0,
     }
+
+
+def test_collect_embeds_only_the_nested_job_resource(monkeypatch):
+    from openprogram.agent.job.types import JobStatus
+
+    resource = {"resource_state": "active", "usage": {"tokens": {"actual": 1}}}
+    job = SimpleNamespace(
+        id="job-resource",
+        parent_session_id="session-resource",
+        status=JobStatus.RUNNING,
+        subject="subject",
+        prompt="prompt",
+        label="label",
+        started_at=123.0,
+        queued_at=None,
+        created_at=123.0,
+    )
+    view = SimpleNamespace(resource=resource)
+    runner = SimpleNamespace(
+        list_jobs=lambda *_args, **_kwargs: [job],
+        get_job_resource_view=lambda _job_id: view,
+    )
+    execution = SimpleNamespace(execution_id=job.id)
+    monkeypatch.setattr("openprogram.agent.job.runner.get_runner", lambda: runner)
+    monkeypatch.setattr(
+        "openprogram.execution.default_store",
+        lambda: SimpleNamespace(get_execution=lambda _execution_id: execution),
+    )
+
+    def fake_snapshot(_execution, **kwargs):
+        assert kwargs["resource"] is resource
+        return SimpleNamespace(to_dict=lambda: {
+            "execution_id": job.id,
+            "status": "running",
+            "resource": kwargs["resource"],
+            "capabilities": {},
+            "event_sequence": 1,
+            "status_version": 1,
+        })
+
+    monkeypatch.setattr(
+        "openprogram.execution.public.execution_snapshot", fake_snapshot,
+    )
+
+    item = next(item for item in running._collect() if item["id"] == job.id)
+    assert item["snapshot"]["resource"] == resource
+    assert "job_id" not in item["snapshot"]["resource"]
+
+
+def test_execution_payload_embeds_only_the_nested_job_resource(monkeypatch):
+    resource = {"resource_state": "active"}
+    execution = SimpleNamespace(execution_id="job-resource")
+    view = SimpleNamespace(resource=resource)
+    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: SimpleNamespace(
+        get_job_resource_view=lambda _job_id: view,
+    ))
+    monkeypatch.setattr(
+        "openprogram.execution.default_store", lambda: SimpleNamespace(),
+    )
+
+    def fake_snapshot(_execution, **kwargs):
+        assert kwargs["resource"] is resource
+        return SimpleNamespace(to_dict=lambda: {"resource": kwargs["resource"]})
+
+    monkeypatch.setattr(
+        "openprogram.execution.public.execution_snapshot", fake_snapshot,
+    )
+    assert lifecycle._execution_payload(execution) == {"resource": resource}
 
 
 def test_tool_call_label_prefers_description_then_command():
