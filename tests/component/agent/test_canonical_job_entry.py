@@ -350,6 +350,74 @@ def test_cancel_projection_failure_returns_recovery_required_and_blocks_dispatch
         runner.shutdown()
 
 
+def test_cancel_conflict_records_exact_barrier_and_recovers_deferred_dispatch(
+    tmp_path, store_fixture, fake_worker, monkeypatch,
+):
+    import openprogram.agent.job.runner as runner_module
+    from openprogram.agent import run_control
+    from openprogram.agent.job.runner import JobRunner
+    from openprogram.agent.resource_governance import ResourceGovernor
+    from openprogram.execution.store import ExecutionConflict
+    from openprogram.usage.ledger import UsageLedger
+
+    execution_db = tmp_path / "execution.sqlite3"
+    monkeypatch.setattr(
+        "openprogram.paths.get_execution_db_path", lambda: execution_db,
+    )
+    ledger = UsageLedger(tmp_path / "usage.db")
+    runner = JobRunner(max_workers=1, governor=ResourceGovernor(ledger))
+    monkeypatch.setattr(runner_module, "_runner", runner)
+    original_accept = runner._execution_control.executions.accept_command_with_transition
+
+    try:
+        job_id = runner.spawn_job(
+            session_id="p1", prompt="cancel conflict", agent_id="main",
+            defer_dispatch=True,
+        )
+
+        def conflict(**_kwargs):
+            row = ledger.connection().execute(
+                "SELECT state, dispatch_ready, terminal_blocked, "
+                "terminal_block_command_id, terminal_block_phase "
+                "FROM job_admissions WHERE job_id = ?", (job_id,),
+            ).fetchone()
+            assert tuple(row) == (
+                "queued", 0, 1, f"execution-cancel:{job_id}", "prepared",
+            )
+            raise ExecutionConflict("stale_version", "canonical changed")
+
+        monkeypatch.setattr(
+            runner._execution_control.executions,
+            "accept_command_with_transition", conflict,
+        )
+        result = run_control.cancel_execution(job_id)
+        assert result["recovery_required"] is True
+        barrier = ledger.connection().execute(
+            "SELECT dispatch_ready, terminal_blocked, terminal_block_command_id, "
+            "terminal_block_phase, terminal_block_prior_dispatch_ready "
+            "FROM job_admissions WHERE job_id = ?", (job_id,),
+        ).fetchone()
+        assert tuple(barrier) == (
+            0, 1, f"execution-cancel:{job_id}", "recovery", 0,
+        )
+
+        monkeypatch.setattr(
+            runner._execution_control.executions,
+            "accept_command_with_transition", original_accept,
+        )
+        runner._reconcile_terminal_dispatch_barriers()
+        assert tuple(ledger.connection().execute(
+            "SELECT dispatch_ready, terminal_blocked FROM job_admissions "
+            "WHERE job_id = ?", (job_id,),
+        ).fetchone()) == (0, 0)
+        assert runner._governor.claim_next(
+            owner_instance_id=runner._instance_id,
+        ) is None
+    finally:
+        fake_worker[1].set()
+        runner.shutdown()
+
+
 def test_force_termination_releases_exact_owner_after_background_escalation(
     tmp_path, store_fixture, fake_worker, monkeypatch,
 ):

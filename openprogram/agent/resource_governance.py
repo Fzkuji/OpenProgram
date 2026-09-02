@@ -1817,17 +1817,22 @@ class ResourceGovernor:
                            terminal_block_command_id, ?
                        ),
                        terminal_block_phase = CASE
-                           WHEN terminal_blocked = 1 THEN terminal_block_phase
+                           WHEN terminal_blocked = 1
+                           THEN COALESCE(terminal_block_phase, ?)
                            ELSE ? END,
                        terminal_block_expires_at = CASE
                            WHEN terminal_blocked = 1
-                           THEN terminal_block_expires_at
+                           THEN COALESCE(terminal_block_expires_at, ?)
                            ELSE ? END,
                        terminal_block_prior_dispatch_ready = COALESCE(
-                           terminal_block_prior_dispatch_ready, dispatch_ready
+                           terminal_block_prior_dispatch_ready,
+                           CASE WHEN terminal_blocked = 1 THEN 0
+                                ELSE dispatch_ready END
                        )
                    WHERE job_id = ? AND state != 'released'""",
-                (command_id, phase, now + 30.0, job_id),
+                (
+                    command_id, phase, phase, now + 30.0, now + 30.0, job_id,
+                ),
             ).rowcount == 1
 
     def mark_terminal_dispatch_recovery(

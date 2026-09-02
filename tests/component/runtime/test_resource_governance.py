@@ -1580,6 +1580,30 @@ def test_terminal_barrier_identity_and_expiry_gate_claim_recovery(tmp_path):
     )
 
 
+def test_terminal_barrier_expiry_is_clock_driven(tmp_path, monkeypatch):
+    import openprogram.agent.resource_governance as governance_module
+
+    clock = [100.0]
+    monkeypatch.setattr(
+        governance_module, "time", SimpleNamespace(time=lambda: clock[0]),
+    )
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _job: resolved)
+    job = Job(id="expiry", parent_session_id="s1", prompt="p", agent_id="a")
+    governor.admit_job(job, persist=lambda _job: None)
+    assert governor.block_dispatch(
+        job.id, command_id="cancel-expiry", phase="prepared",
+    )
+    assert not governor.unblock_terminal_dispatch(
+        job.id, expected_lease_generation=0,
+    )
+    clock[0] = 131.0
+    assert governor.unblock_terminal_dispatch(
+        job.id, expected_lease_generation=0,
+    )
+
+
 def test_terminal_barrier_preserves_deferred_dispatch_ready_and_cleans_on_release(
     tmp_path,
 ):
@@ -1640,6 +1664,51 @@ def test_legacy_admission_schema_migrates_terminal_barrier_columns(tmp_path):
     assert "terminal_block_phase" in columns
     assert "terminal_block_expires_at" in columns
     assert "terminal_block_prior_dispatch_ready" in columns
+
+
+def test_legacy_blocked_admission_is_recoverable_after_migration(tmp_path):
+    path = tmp_path / "legacy-blocked.db"
+    conn = sqlite3.connect(path)
+    conn.execute(
+        """CREATE TABLE job_admissions (
+            admission_id TEXT PRIMARY KEY, job_id TEXT UNIQUE NOT NULL,
+            session_id TEXT NOT NULL, parent_job_id TEXT,
+            caller_session_id TEXT, caller_turn_id TEXT,
+            creates_agent INTEGER NOT NULL, request_fingerprint TEXT NOT NULL,
+            budget_scope_id TEXT NOT NULL, dispatch_ready INTEGER NOT NULL DEFAULT 0,
+            terminal_blocked INTEGER NOT NULL DEFAULT 1,
+            borrowed_parent_job_id TEXT, resume_parent_msg_id TEXT,
+            state TEXT NOT NULL, admitted_seq INTEGER NOT NULL,
+            owner_instance_id TEXT, lease_generation INTEGER NOT NULL DEFAULT 0,
+            lease_expires_at REAL, created_at REAL NOT NULL, started_at REAL,
+            last_activity_at REAL, released_at REAL, reason_code TEXT
+        )"""
+    )
+    conn.execute(
+        """INSERT INTO job_admissions (
+            admission_id, job_id, session_id, creates_agent,
+            request_fingerprint, budget_scope_id, state, admitted_seq, created_at
+        ) VALUES ('a', 'blocked', 's1', 0, 'f', 'scope', 'queued', 1, 1)"""
+    )
+    conn.commit()
+    conn.close()
+    ledger = UsageLedger(path)
+    row = ledger.connection().execute(
+        "SELECT terminal_blocked, terminal_block_phase, "
+        "terminal_block_expires_at, terminal_block_prior_dispatch_ready "
+        "FROM job_admissions WHERE job_id = 'blocked'"
+    ).fetchone()
+    assert row[0] == 1
+    assert row[1] == "recovery"
+    assert row[2] > time.time()
+    assert row[3] == 0
+    governor = ResourceGovernor(ledger)
+    assert governor.unblock_terminal_dispatch(
+        "blocked", expected_lease_generation=0,
+    )
+    assert ledger.connection().execute(
+        "SELECT dispatch_ready FROM job_admissions WHERE job_id = 'blocked'"
+    ).fetchone()[0] == 0
 
 
 def test_borrowed_pending_finalization_blocks_direct_and_orphan_release(

@@ -834,7 +834,7 @@ class JobRunner:
                 admission = admission_state(execution.execution_id)
                 if admission is None or not admission[3]:
                     continue
-                state, owner, lease_generation, _blocked = admission
+                state, owner, lease_generation, _blocked, *_barrier = admission
                 if (
                     execution.status.value == "queued"
                     and execution.current_attempt_id is None

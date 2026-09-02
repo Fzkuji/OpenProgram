@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -376,7 +377,20 @@ class UsageLedger:
                 "lease_generation INTEGER NOT NULL DEFAULT 0"
             )
             changed = True
-        if changed:
+        if existing:
+            migrated = conn.execute(
+                """UPDATE job_admissions
+                   SET terminal_block_phase = 'recovery',
+                       terminal_block_expires_at = ?,
+                       terminal_block_prior_dispatch_ready = COALESCE(
+                           terminal_block_prior_dispatch_ready, 0
+                       )
+                   WHERE terminal_blocked = 1
+                     AND terminal_block_phase IS NULL""",
+                (time.time() + 30.0,),
+            )
+            changed = changed or migrated.rowcount > 0
+        if changed or existing:
             conn.commit()
 
     def connection(self) -> sqlite3.Connection:
