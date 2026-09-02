@@ -361,12 +361,14 @@ class JobRunner:
         )
         self._instance_id = f"worker_{os.getpid()}_{uuid.uuid4().hex}"
         from openprogram.execution.resource_saga import ResourceSaga
+        from openprogram.execution.waits import DurableWaitStore
 
         self._resource_saga = ResourceSaga(
             self._execution_store,
             self._governor,
             owner_id=self._instance_id,
         )
+        self._execution_waits = DurableWaitStore(self._execution_store)
         # Every canonical terminal transition, including a transport-neutral
         # cancel command, must converge the JobStore projection and release
         # its admission.  The observer is attached before startup recovery so
@@ -2422,6 +2424,7 @@ class JobRunner:
         return AgentProductionDriver(
             self._execution_store,
             control_service=self._execution_control,
+            event_sink=_broadcast,
             job_resume_resolver=self._governor.continuation_parent_msg_id,
         )
 
@@ -3073,6 +3076,7 @@ class JobRunner:
                 )
 
     def _reconcile_resources(self) -> None:
+        self._reconcile_execution_waits()
         # Canonical terminal state may have committed immediately before a
         # projection write failed.  Retry it before admission reconciliation;
         # failures are persisted by _project_canonical_terminal for the next
@@ -3182,6 +3186,24 @@ class JobRunner:
             or result.released_worker_lost
         ):
             self._dispatch_wake.set()
+
+    def _reconcile_execution_waits(self) -> None:
+        """Expire and recover durable waits during the worker lifetime.
+
+        Startup recovery handles records left by a previous process.  A
+        running worker must also settle waits whose deadlines pass while it
+        is serving requests, then submit the canonical continuation through
+        the existing Job resource queue.
+        """
+        try:
+            self._execution_waits.reclaim_expired_claims()
+            self._execution_waits.reclaim_orphaned_claims()
+            expired = self._execution_waits.expire_due()
+            recovered = asyncio.run(self._execution_control.recover_wait_outcomes())
+            if expired or recovered:
+                self._dispatch_wake.set()
+        except Exception:
+            _log.exception("failed to reconcile durable execution waits")
 
     def _recover_deferred_resumes(self) -> None:
         """Publish a staged resume if the Job target save was durable."""
