@@ -521,13 +521,13 @@ def test_real_restart_after_provider_or_tool_does_not_repeat_user_finalize_or_da
         "agent.provider.decision.after",
         "agent.tool.action.after",
     }
-    first_binding = asyncio.run(driver.activate(active, None))
-    first = asyncio.run(
-        driver.run_until_safe_point(
-            first_binding,
-            safe_point_kind=f"agent.{safe_point.replace('_', '.')}",
+    async def _start_to_safe_point():
+        binding = await driver.activate(active, None)
+        return await driver.run_until_safe_point(
+            binding, safe_point_kind=f"agent.{safe_point.replace('_', '.')}"
         )
-    )
+
+    first = asyncio.run(_start_to_safe_point())
     assert first.checkpoint.safe_point["phase"] == safe_point
 
     reopened = ExecutionStore(store.path)
@@ -545,7 +545,7 @@ def test_real_restart_after_provider_or_tool_does_not_repeat_user_finalize_or_da
         )
     )
     assert continuation.delivered is True
-    assert continuation.execution.current_attempt_id != running.attempt_id
+    assert continuation.execution.current_attempt_id != active.attempt_id
     assert calls == {
         "provider": provider_calls,
         "tool": tool_calls,
@@ -558,18 +558,21 @@ def test_real_restart_after_provider_or_tool_does_not_repeat_user_finalize_or_da
 
 def test_continue_reopens_store_binds_new_production_driver_with_checkpoint_fence(tmp_path):
     store, attempts, active, running = _admitted_agent_execution(tmp_path)
-    from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.agent.production_driver import AgentDriverError, AgentProductionDriver
     from openprogram.execution import ActivationInput
 
-    driver = AgentProductionDriver(store, turn_runner=lambda **_: {"ok": True})
-    first_binding = asyncio.run(driver.activate(active, None))
-    checkpoint = asyncio.run(
-        driver.publish_safe_point(
-            first_binding,
-            safe_point_kind="agent.provider.decision.after",
+    def turn_runner(*, on_safe_point, **_):
+        on_safe_point(phase="after_provider")
+
+    driver = AgentProductionDriver(store, turn_runner=turn_runner)
+    async def _publish():
+        binding = await driver.activate(active, None)
+        return await driver.publish_safe_point(
+            binding, safe_point_kind="agent.provider.decision.after",
             frontier=({"step_id": "provider-1", "phase": "after_provider"},),
         )
-    )
+
+    checkpoint = asyncio.run(_publish())
     reopened = ExecutionStore(store.path)
     control = RuntimeControlService(reopened, AttemptStore(reopened), DriverRegistry())
     seen: list[ActivationInput] = []
@@ -591,7 +594,7 @@ def test_continue_reopens_store_binds_new_production_driver_with_checkpoint_fenc
     assert result.delivered is True
     assert seen and seen[0].checkpoint.checkpoint_id == checkpoint.checkpoint.checkpoint_id
     assert seen[0].checkpoint.execution_id == running.execution_id
-    assert seen[0].checkpoint.created_by_attempt_id == running.attempt_id
+    assert seen[0].checkpoint.created_by_attempt_id == active.attempt_id
     assert result.execution.owner_lease["generation"] > running.owner_lease["generation"]
 
     with pytest.raises(AgentDriverError) as stale:
@@ -605,16 +608,29 @@ def test_continue_reopens_store_binds_new_production_driver_with_checkpoint_fenc
 
 
 def test_two_tool_step_duplicate_command_consumes_exactly_one_permit(tmp_path):
-    store, _attempts, _active, paused = _admitted_agent_execution(tmp_path)
+    store, _attempts, active, running = _admitted_agent_execution(tmp_path)
     from openprogram.execution.safe_points import AgentSafePointConflict
+    from openprogram.agent.production_driver import AgentProductionDriver
 
     control = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    def turn_runner(*, on_safe_point, **_):
+        on_safe_point(phase="after_provider")
+
+    driver = AgentProductionDriver(store, control_service=control, turn_runner=turn_runner)
+    async def _pause():
+        binding = await driver.activate(active, None)
+        return await driver.publish_safe_point(
+            binding, safe_point_kind="agent.provider.decision.after",
+            frontier=({"step_id": "provider-1", "phase": "after_provider"},),
+        )
+
+    paused = asyncio.run(_pause()).execution
     first = asyncio.run(
         control.request_step(
             command_id="step-tool-once",
             execution_id=paused.execution_id,
             expected_version=paused.status_version,
-            actor={"subject": "agent-owner"},
+            actor={"subject": "agent-owner"}, driver=driver,
         )
     )
     duplicate = asyncio.run(
@@ -622,11 +638,16 @@ def test_two_tool_step_duplicate_command_consumes_exactly_one_permit(tmp_path):
             command_id="step-tool-once",
             execution_id=paused.execution_id,
             expected_version=paused.status_version,
-            actor={"subject": "agent-owner"},
+            actor={"subject": "agent-owner"}, driver=driver,
         )
     )
     assert duplicate.command == first.command
     assert duplicate.execution.current_attempt_id == first.execution.current_attempt_id
+    control.consume_agent_step_permit(
+        execution_id=paused.execution_id,
+        command_id="step-tool-once",
+        action_id="tool-action-1",
+    )
     with pytest.raises(AgentSafePointConflict) as second_permit:
         control.consume_agent_step_permit(
             execution_id=paused.execution_id,
@@ -643,15 +664,15 @@ def test_question_and_approval_wait_stays_pausing_without_checkpoint_or_restart_
     store, attempts, active, running = _admitted_agent_execution(tmp_path)
     from openprogram.agent.production_driver import AgentProductionDriver
 
-    driver = AgentProductionDriver(store, control_service=RuntimeControlService(store, attempts, DriverRegistry()))
-    binding = asyncio.run(driver.activate(active, None))
-    waiting = asyncio.run(
-        driver.enter_wait(
-            binding,
-            kind=wait_kind,
-            request_id=f"{wait_kind}-request-1",
-        )
-    )
+    def turn_runner(*, on_safe_point, **_):
+        on_safe_point(phase="waiting")
+
+    driver = AgentProductionDriver(store, control_service=RuntimeControlService(store, attempts, DriverRegistry()), turn_runner=turn_runner)
+    async def _enter_wait():
+        binding = await driver.activate(active, None)
+        return binding, await driver.enter_wait(binding, kind=wait_kind, request_id=f"{wait_kind}-request-1")
+
+    binding, waiting = asyncio.run(_enter_wait())
     assert waiting.execution.status is ExecutionStatus.RUNNING
     paused = asyncio.run(
         driver.request_pause_at_wait(

@@ -649,7 +649,10 @@ class AgentProductionDriver:
                         }
                     if "on_safe_point" in parameters:
                         def _captured(**value):
-                            for item in value.values():
+                            phase = value.get("phase")
+                            for name, item in value.items():
+                                if name == "tool_call" and phase == "after_provider":
+                                    continue
                                 if callable(item):
                                     item()
                             self._captured_safe_points[(attempt.execution_id, attempt.attempt_id, attempt.generation)] = dict(value)
@@ -828,8 +831,23 @@ class AgentProductionDriver:
             completed_actions=(), effect_receipts=(), child_frontier={}, pending_command_ids=(),
             created_by_attempt_id=binding.attempt_id,
         )
-        pausing = self.executions.transition_execution(updated.execution_id, expected_version=updated.status_version, target=ExecutionStatus.PAUSING)
-        paused = self.executions.transition_execution(pausing.execution_id, expected_version=pausing.status_version, target=ExecutionStatus.PAUSED)
+        with self.executions._transaction() as connection:
+            pausing = self.executions._transition_execution(
+                connection, updated.execution_id, expected_version=updated.status_version,
+                target=ExecutionStatus.PAUSING, reason_code=None,
+            )
+            paused = self.executions._transition_execution(
+                connection, pausing.execution_id, expected_version=pausing.status_version,
+                target=ExecutionStatus.PAUSED, reason_code=None, clear_owner=True,
+            )
+        # This helper is used by the production driver only for an explicit
+        # declared safe point.  End the old lease before another activation
+        # can claim the checkpoint.
+            current = self._control_service().attempts._require(connection, binding.attempt_id)
+            if current.status is AttemptStatus.ACTIVE:
+                self._control_service().attempts._end_for_owner_loss(
+                    connection, current, outcome="paused_at_safe_point"
+                )
         return SimpleNamespace(checkpoint=checkpoint, execution=paused)
 
     async def run_until_safe_point(self, binding, *, safe_point_kind: str):
