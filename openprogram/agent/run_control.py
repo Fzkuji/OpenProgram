@@ -1084,8 +1084,16 @@ def _ensure_grace_watch(execution_id: str) -> None:
 def _grace_then_terminate(execution_id: str, generation: int) -> None:
     def finalize_or_retry() -> bool:
         try:
-            _try_finalize(execution_id)
-            return True
+            if _try_finalize(execution_id):
+                return True
+            # A false result can be a transient ownership/finalizer race.
+            # Stop only when the durable record no longer needs cancellation;
+            # otherwise keep the bounded retry loop alive.
+            from openprogram.agent.session_db import default_db
+
+            found = _find_execution(default_db(), execution_id)
+            if found is None or _node_status(found[1]) != "cancelling":
+                return True
         except Exception:
             owner = _owners.get(execution_id)
             if owner is not None and owner.generation == generation:

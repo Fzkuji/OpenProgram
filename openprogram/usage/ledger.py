@@ -32,6 +32,9 @@ _COLUMNS = [
     "schema_version", "job_id", "budget_scope_id", "reservation_id",
 ]
 
+_BOOTSTRAP_BUSY_TIMEOUT_MS = 2_000
+_BOOTSTRAP_RETRIES = 8
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS usage_events (
     event_id        TEXT PRIMARY KEY,
@@ -160,6 +163,17 @@ _GROUP_EXPR = {
 }
 
 
+def _is_sqlite_busy(error: sqlite3.Error) -> bool:
+    """Return whether SQLite reported a retryable lock contention."""
+    code = getattr(error, "sqlite_errorcode", None)
+    if isinstance(code, int) and code & 0xFF in {
+        sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED,
+    }:
+        return True
+    message = str(error).lower()
+    return "database is locked" in message or "database table is locked" in message
+
+
 @dataclass
 class AggregateRow:
     """One grouped aggregate. ``keys`` maps each requested group_by field to
@@ -199,17 +213,41 @@ class UsageLedger:
             return self._conn
         path = self._path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(path), timeout=5.0, check_same_thread=False)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        self._migrate_legacy_job_schema(conn)
-        self._migrate_usage_columns(conn)
-        conn.executescript(_SCHEMA)
-        self._migrate_job_admission_columns(conn)
-        conn.row_factory = sqlite3.Row
-        self._conn = conn
-        self._conn_pid = os.getpid()
-        return conn
+        for attempt in range(_BOOTSTRAP_RETRIES):
+            conn = sqlite3.connect(
+                str(path), timeout=_BOOTSTRAP_BUSY_TIMEOUT_MS / 1000,
+                check_same_thread=False,
+            )
+            try:
+                # Set this before WAL/schema work.  journal_mode=WAL and
+                # BEGIN IMMEDIATE both acquire locks during bootstrap.
+                conn.execute(
+                    f"PRAGMA busy_timeout={_BOOTSTRAP_BUSY_TIMEOUT_MS}"
+                )
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")
+                self._migrate_legacy_job_schema(conn)
+                self._migrate_usage_columns(conn)
+                conn.executescript(_SCHEMA)
+                self._migrate_job_admission_columns(conn)
+            except sqlite3.Error as exc:
+                try:
+                    conn.rollback()
+                finally:
+                    conn.close()
+                if not _is_sqlite_busy(exc) or attempt + 1 >= _BOOTSTRAP_RETRIES:
+                    raise
+                time.sleep(min(0.25, 0.01 * (2**attempt)))
+                continue
+            except Exception:
+                conn.rollback()
+                conn.close()
+                raise
+            conn.row_factory = sqlite3.Row
+            self._conn = conn
+            self._conn_pid = os.getpid()
+            return conn
+        raise RuntimeError("SQLite bootstrap retries exhausted")
 
     @staticmethod
     def _migrate_legacy_job_schema(conn: sqlite3.Connection) -> None:
