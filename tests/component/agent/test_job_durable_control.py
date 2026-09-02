@@ -343,6 +343,165 @@ def test_resource_shortage_accepts_continue_and_exposes_queue_wait(durable_job):
         assert frame["command"]["status"] in {"applying", "applied"}
 
 
+def test_second_continue_for_same_paused_version_is_rejected_without_claim_intent(
+    durable_job, monkeypatch,
+):
+    """Only one continuation command may reserve a paused execution version."""
+    runner, _ledger, execution_store, _db = durable_job
+    job_id, execution = _execution(runner, execution_store)
+    ws = _WS("p1")
+    _run_runtime_action("execution.pause", ws, {
+        "type": "execution.command", "action": "execution.pause",
+        "command_id": "cmd-duplicate-pause", "execution_id": job_id,
+        "expected_version": execution.status_version, "payload": {},
+    })
+    paused = execution_store().get_execution(job_id)
+    assert paused is not None and paused.status.value == "paused"
+
+    # Keep the accepted continuation in its durable pre-activation state so
+    # the second public request observes the exact same paused version.
+    monkeypatch.setattr(runner._dispatch_wake, "set", lambda: None)
+    _run_runtime_action("execution.continue", ws, {
+        "type": "execution.command", "action": "execution.continue",
+        "command_id": "cmd-first-continue", "execution_id": job_id,
+        "expected_version": paused.status_version, "payload": {},
+    })
+    _run_runtime_action("execution.step", ws, {
+        "type": "execution.command", "action": "execution.step",
+        "command_id": "cmd-second-step", "execution_id": job_id,
+        "expected_version": paused.status_version, "payload": {},
+    })
+
+    second = _command_frame(ws)
+    assert second["command"]["command_id"] == "cmd-second-step"
+    assert second["command"]["status"] == "rejected"
+    assert second["command"]["rejection_code"] == "continuation_pending"
+    assert execution_store().get_command("cmd-second-step") is None
+    claim_intents = [
+        intent for intent in execution_store().list_resource_intents(execution_id=job_id)
+        if intent["kind"] == "resource.claim.intent"
+    ]
+    assert len(claim_intents) == 1
+    assert claim_intents[0]["payload"]["command_id"] == "cmd-first-continue"
+
+
+def test_resource_claim_and_release_pairs_are_atomic_and_idempotent(durable_job):
+    """Each resource claim/release hand-off has both authority records once."""
+    runner, _ledger, execution_store, _db = durable_job
+    job_id, _execution_record = _execution(runner, execution_store)
+    job = runner._canonical_job(job_id)
+    assert job is not None and job.admission_id
+
+    runner._resource_saga.request_claim(
+        job_id, admission_id=job.admission_id, command_id="cmd-paired-claim",
+    )
+    runner._resource_saga.request_claim(
+        job_id, admission_id=job.admission_id, command_id="cmd-paired-claim",
+    )
+    runner._resource_saga.request_release(
+        job_id, admission_id=job.admission_id, reason_code="pause.queued",
+    )
+    runner._resource_saga.request_release(
+        job_id, admission_id=job.admission_id, reason_code="pause.queued",
+    )
+    intents = execution_store().list_resource_intents(execution_id=job_id)
+    assert {intent["kind"] for intent in intents} >= {
+        "execution.claim.intent", "resource.claim.intent",
+        "execution.release.intent", "resource.release.intent",
+    }
+    assert sum(intent["kind"] == "execution.claim.intent" for intent in intents) == 1
+    assert sum(intent["kind"] == "resource.claim.intent" for intent in intents) == 1
+    assert sum(intent["kind"] == "execution.release.intent" for intent in intents) == 1
+    assert sum(intent["kind"] == "resource.release.intent" for intent in intents) == 1
+
+
+def test_resource_saga_repairs_a_legacy_one_sided_release_intent(durable_job):
+    """Startup reconciliation completes a pair left by an interrupted writer."""
+    runner, _ledger, execution_store, _db = durable_job
+    job_id, _execution_record = _execution(runner, execution_store)
+    job = runner._canonical_job(job_id)
+    assert job is not None and job.admission_id
+    payload = {"reason_code": "pause.repair", "terminal_version": None}
+    execution_store().enqueue_resource_intent(
+        job_id,
+        kind="execution.release.intent",
+        idempotency_key="execution:release:legacy-half-pair",
+        fingerprint=runner._resource_saga._fingerprint(payload),
+        admission_id=job.admission_id,
+        payload=payload,
+    )
+    assert not any(
+        intent["idempotency_key"] == "resource:release:legacy-half-pair"
+        for intent in execution_store().list_resource_intents(execution_id=job_id)
+    )
+    runner._resource_saga.reconcile()
+    repaired = next(
+        intent for intent in execution_store().list_resource_intents(execution_id=job_id)
+        if intent["idempotency_key"] == "resource:release:legacy-half-pair"
+    )
+    assert repaired["kind"] == "resource.release.intent"
+
+
+def test_restart_requeues_claimed_resume_before_attempt_without_error_projection(
+    durable_job, monkeypatch,
+):
+    """An expired resource claim cannot turn a paused canonical Job into errored."""
+    runner, ledger, execution_store, _db = durable_job
+    job_id, execution = _execution(runner, execution_store)
+    actor = {"authority_tier": "owner", "surface": "test"}
+    asyncio.run(runner._execution_control.request_pause(
+        command_id="cmd-recovery-pause", execution_id=job_id,
+        expected_version=execution.status_version, actor=actor,
+    ))
+    paused = execution_store().get_execution(job_id)
+    assert paused is not None and paused.status.value == "paused"
+    job = runner._canonical_job(job_id)
+    assert job is not None and job.admission_id
+    from openprogram.execution import CommandKind
+
+    command = execution_store().accept_command(
+        command_id="cmd-recovery-continue", execution_id=job_id,
+        expected_version=paused.status_version,
+        kind=CommandKind.CONTINUE,
+        payload={}, actor=actor,
+    )
+    runner._resource_saga.request_claim(
+        job_id, admission_id=job.admission_id, command_id=command.command_id,
+    )
+    runner._resource_saga.reconcile()
+    claim = runner._governor.claim_execution(
+        job_id, owner_instance_id=runner._instance_id,
+        admission_id=job.admission_id, command_id=command.command_id,
+    )
+    assert claim is not None
+    with ledger.immediate() as connection:
+        connection.execute(
+            "UPDATE job_admissions SET owner_instance_id = ?, lease_expires_at = 0 WHERE job_id = ?",
+            ("worker_999999_dead", job_id),
+        )
+    from openprogram.agent.job.runner import JobRunner
+    from openprogram.agent.resource_governance import ResourceGovernor
+
+    monkeypatch.setattr(ResourceGovernor, "claim_next", lambda self, **_kwargs: None)
+    runner.shutdown()
+    restarted = JobRunner(max_workers=1, governor=ResourceGovernor(ledger))
+    try:
+        monkeypatch.setattr(restarted, "_owner_holds_worker_lock", lambda _owner: False)
+        restarted._reconcile_resources()
+        recovered = execution_store().get_execution(job_id)
+        assert recovered is not None and recovered.status.value == "paused"
+        assert execution_store().get_command(command.command_id).status.value == "accepted"
+        row = ledger.connection().execute(
+            "SELECT state, resume_command_id FROM job_admissions WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+        assert tuple(row) == ("queued", command.command_id)
+        projection = restarted.get_job(job_id)
+        assert projection is not None and projection.status.value != "errored"
+    finally:
+        restarted.shutdown()
+
+
 def test_claimed_continue_creates_a_new_canonical_attempt(durable_job):
     """A resource claim resumes the paused execution instead of invalidating it."""
     runner, _ledger, execution_store, _db = durable_job
