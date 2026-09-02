@@ -45,22 +45,13 @@ class CanonicalSessionDB(FakeSessionDB):
 
 class FakeQuestions:
     def __init__(self) -> None:
-        self.resolved: list[tuple] = []
-        self.cancelled: list[tuple[str, str]] = []
         self.pending: dict[str, str] = {}
-
-    def resolve(self, question_id, outcome, value=None):
-        self.resolved.append((question_id, outcome, value))
-        return True
 
     def list_pending(self, session_id):
         return [
-            SimpleNamespace(id=qid, execution_id=execution_id)
+            SimpleNamespace(id=qid, execution_id=execution_id, wait_generation=0)
             for qid, execution_id in self.pending.items()
         ]
-
-    def cancel_execution(self, session_id, execution_id):
-        self.cancelled.append((session_id, execution_id))
 
 
 def _context(client_id="0123456789abcdef"):
@@ -75,6 +66,39 @@ def _payload(result):
 def _active(service):
     with service._active_lock:
         return tuple(service._active_by_request.values())
+
+
+def _patch_wait_decline(
+    monkeypatch, calls, *, started=None, release=None,
+):
+    import openprogram.execution as execution_module
+
+    actual_store = execution_module.default_store()
+
+    class FakeExecutionStore:
+        def get_execution(self, execution_id):
+            execution = actual_store.get_execution(execution_id)
+            return execution or SimpleNamespace(
+                execution_id=execution_id, status_version=11,
+            )
+
+        def __getattr__(self, name):
+            return getattr(actual_store, name)
+
+    async def submit_wait_command(_control_service, **kwargs):
+        calls.append(dict(kwargs))
+        if started is not None:
+            started.set()
+        if release is not None:
+            await asyncio.to_thread(release.wait, 2)
+        return SimpleNamespace(command=SimpleNamespace(status=CommandStatus.APPLIED))
+
+    monkeypatch.setattr(
+        execution_module, "default_store", lambda: FakeExecutionStore(),
+    )
+    monkeypatch.setattr(
+        "openprogram.execution.submit_wait_command", submit_wait_command,
+    )
 
 
 def _service(
@@ -572,8 +596,6 @@ def test_prompt_cancel_owned_request_performs_complete_idempotent_cleanup() -> N
             },
         )
     )
-    assert questions.resolved == []
-    assert questions.cancelled == [("existing", record.execution_id)]
     assert len(audit) == 1
     assert audit[0].payload == {
         "request_id": "r1",
@@ -708,7 +730,6 @@ def test_prompt_cancel_service_failure_preserves_live_turn(error) -> None:
         assert _payload(normal)["text"] == "normal"
 
     asyncio.run(scenario())
-    assert questions.cancelled == []
     assert audit == []
 
 
@@ -749,7 +770,6 @@ def test_prompt_cancel_not_found_allows_only_verified_pre_placeholder() -> None:
         return record
 
     record = asyncio.run(scenario())
-    assert questions.cancelled == []
     assert audit == []
 
 
@@ -797,7 +817,6 @@ def test_prompt_cancel_not_found_guards(lookup) -> None:
         await task
 
     asyncio.run(scenario())
-    assert questions.cancelled == []
 
 
 def test_abandoned_outer_cancel_keeps_owner_until_late_worker_returns() -> None:
@@ -937,8 +956,6 @@ def test_two_services_cannot_share_or_cross_cancel_one_process_session() -> None
 
         assert _payload(await service_a.prompt_cancel(session_id))["cancelled"] is True
         assert record_a.thread_cancel.is_set()
-        assert questions_a.cancelled == [(session_id, record_a.execution_id)]
-        assert questions_b.cancelled == []
         assert cleanup == [("a", "cancel", record_a.execution_id)]
         release["a"].set()
         with pytest.raises(asyncio.CancelledError):
@@ -953,7 +970,6 @@ def test_two_services_cannot_share_or_cross_cancel_one_process_session() -> None
         await service_a.aclose()
         assert not record_b.thread_cancel.is_set()
         assert not record_b.tool_cancel.is_set()
-        assert questions_b.cancelled == []
         assert cleanup == [("a", "cancel", record_a.execution_id)]
 
         assert _payload(await service_b.prompt_cancel(session_id))["cancelled"] is True
@@ -1058,8 +1074,10 @@ def test_old_owner_cleanup_cannot_cross_concurrent_session_handover(operation) -
         service.close()
 
 
-def test_question_events_decline_only_current_service_active_request() -> None:
+def test_question_events_decline_only_current_service_active_request(monkeypatch) -> None:
     bus = create_event_bus()
+    wait_calls = []
+    _patch_wait_decline(monkeypatch, wait_calls)
     own_questions = FakeQuestions()
     foreign_questions = FakeQuestions()
     entered = {"existing": threading.Event(), "second": threading.Event()}
@@ -1090,14 +1108,14 @@ def test_question_events_decline_only_current_service_active_request() -> None:
         own_questions.pending["q-sibling"] = foreign_record.execution_id
         own_questions.pending["q-ownerless"] = ""
         foreign_questions.pending["q-foreign"] = foreign_record.execution_id
-        bus.emit(
+        await asyncio.to_thread(bus.emit,
             make_event(
                 "question.asked",
                 "agent",
                 {"id": "q-own", "session_id": "existing"},
             )
         )
-        bus.emit(
+        await asyncio.to_thread(bus.emit,
             make_event(
                 "question.asked",
                 "agent",
@@ -1105,18 +1123,21 @@ def test_question_events_decline_only_current_service_active_request() -> None:
             )
         )
         for question_id in ("q-sibling", "q-ownerless"):
-            bus.emit(
+            await asyncio.to_thread(
+                bus.emit,
                 make_event(
                     "question.asked",
                     "agent",
                     {"id": question_id, "session_id": "existing"},
                 )
             )
-        bus.emit(make_event("question.asked", "agent", {"bad": "event"}))
+        await asyncio.to_thread(
+            bus.emit, make_event("question.asked", "agent", {"bad": "event"})
+        )
         release["existing"].set()
         release["second"].set()
         await asyncio.gather(own_task, foreign_task)
-        bus.emit(
+        await asyncio.to_thread(bus.emit,
             make_event(
                 "question.asked",
                 "agent",
@@ -1126,12 +1147,14 @@ def test_question_events_decline_only_current_service_active_request() -> None:
 
     asyncio.run(scenario())
 
-    assert own_questions.resolved == [("q-own", "declined", None)]
-    assert foreign_questions.resolved == [("q-foreign", "declined", None)]
+    assert [call["wait_id"] for call in wait_calls] == ["q-own", "q-foreign"]
+    assert all(call["action"] == "execution.wait.decline" for call in wait_calls)
 
 
-def test_question_event_requires_registry_exact_owner() -> None:
+def test_question_event_requires_registry_exact_owner(monkeypatch) -> None:
     bus = create_event_bus()
+    wait_calls = []
+    _patch_wait_decline(monkeypatch, wait_calls)
     questions = FakeQuestions()
     entered = threading.Event()
     release = threading.Event()
@@ -1151,17 +1174,17 @@ def test_question_event_requires_registry_exact_owner() -> None:
         execution_id = _active(service)[0].execution_id
 
         questions.pending["q-ownerless"] = ""
-        bus.emit(make_event("question.asked", "agent", {
+        await asyncio.to_thread(bus.emit, make_event("question.asked", "agent", {
             "id": "q-ownerless", "session_id": "existing",
             "execution_id": execution_id,
         }))
         questions.pending["q-conflict"] = execution_id
-        bus.emit(make_event("question.asked", "agent", {
+        await asyncio.to_thread(bus.emit, make_event("question.asked", "agent", {
             "id": "q-conflict", "session_id": "existing",
             "execution_id": "other-execution_reply",
         }))
         questions.pending.pop("q-missing", None)
-        bus.emit(make_event("question.asked", "agent", {
+        await asyncio.to_thread(bus.emit, make_event("question.asked", "agent", {
             "id": "q-missing", "session_id": "existing",
             "execution_id": execution_id,
         }))
@@ -1169,32 +1192,36 @@ def test_question_event_requires_registry_exact_owner() -> None:
         questions.list_pending = lambda _session_id: (_ for _ in ()).throw(
             RuntimeError("registry unavailable")
         )
-        bus.emit(make_event("question.asked", "agent", {
+        await asyncio.to_thread(bus.emit, make_event("question.asked", "agent", {
             "id": "q-registry-failure", "session_id": "existing",
             "execution_id": execution_id,
         }))
         questions.list_pending = original_list_pending
         questions.pending["q-valid-payload"] = execution_id
-        bus.emit(make_event("question.asked", "agent", {
+        await asyncio.to_thread(bus.emit, make_event("question.asked", "agent", {
             "id": "q-valid-payload", "session_id": "existing",
             "execution_id": execution_id,
         }))
         questions.pending["q-valid-registry"] = execution_id
-        bus.emit(make_event("question.asked", "agent", {
+        await asyncio.to_thread(bus.emit, make_event("question.asked", "agent", {
             "id": "q-valid-registry", "session_id": "existing",
         }))
         release.set()
         await task
 
     asyncio.run(scenario())
-    assert questions.resolved == [
-        ("q-valid-payload", "declined", None),
-        ("q-valid-registry", "declined", None),
+    assert [call["wait_id"] for call in wait_calls] == [
+        "q-valid-payload", "q-valid-registry",
     ]
+    assert all(call["action"] == "execution.wait.decline" for call in wait_calls)
 
 
-def test_question_event_resolves_same_registry_instance_used_for_ownership() -> None:
+def test_question_event_declines_using_same_registry_instance_used_for_ownership(
+    monkeypatch,
+) -> None:
     bus = create_event_bus()
+    wait_calls = []
+    _patch_wait_decline(monkeypatch, wait_calls)
     owner_registry = FakeQuestions()
     other_registry = FakeQuestions()
     entered = threading.Event()
@@ -1221,7 +1248,7 @@ def test_question_event_resolves_same_registry_instance_used_for_ownership() -> 
         await asyncio.to_thread(entered.wait, 1)
         execution_id = _active(service)[0].execution_id
         owner_registry.pending["q-exact"] = execution_id
-        bus.emit(make_event("question.asked", "agent", {
+        await asyncio.to_thread(bus.emit, make_event("question.asked", "agent", {
             "id": "q-exact", "session_id": "existing",
         }))
         release.set()
@@ -1229,22 +1256,19 @@ def test_question_event_resolves_same_registry_instance_used_for_ownership() -> 
 
     asyncio.run(scenario())
     assert getter_calls == [True]
-    assert owner_registry.resolved == [("q-exact", "declined", None)]
-    assert other_registry.resolved == []
+    assert [call["wait_id"] for call in wait_calls] == ["q-exact"]
+    assert wait_calls[0]["action"] == "execution.wait.decline"
+    assert other_registry.pending == {}
 
 
-def test_question_claim_and_cancellation_coordinate_on_active_ownership() -> None:
+def test_question_claim_and_cancellation_coordinate_on_active_ownership(
+    monkeypatch,
+) -> None:
     question_entered = threading.Event()
     release_question = threading.Event()
     turn_entered = threading.Event()
     release_turn = threading.Event()
     cancel_done = threading.Event()
-
-    class BlockingQuestions(FakeQuestions):
-        def resolve(self, question_id, outcome, value=None):
-            question_entered.set()
-            release_question.wait(2)
-            return super().resolve(question_id, outcome, value)
 
     def process(req, *, cancel_event):
         turn_entered.set()
@@ -1252,7 +1276,11 @@ def test_question_claim_and_cancellation_coordinate_on_active_ownership() -> Non
         return TurnResult("late", "u", "a")
 
     bus = create_event_bus()
-    questions = BlockingQuestions()
+    wait_calls = []
+    _patch_wait_decline(
+        monkeypatch, wait_calls, started=question_entered, release=release_question,
+    )
+    questions = FakeQuestions()
     service = _service(bus=bus, questions=questions, process=process)
 
     async def scenario():
@@ -1288,14 +1316,14 @@ def test_question_claim_and_cancellation_coordinate_on_active_ownership() -> Non
             await task
 
     asyncio.run(scenario())
-    assert questions.resolved == [("q-race", "declined", None)]
+    assert [call["wait_id"] for call in wait_calls] == ["q-race"]
+    assert wait_calls[0]["action"] == "execution.wait.decline"
 
 
 def test_close_unsubscribes_once_and_cleans_only_owned_requests() -> None:
     bus = create_event_bus()
     questions = FakeQuestions()
     calls = []
-    captured_execution_ids = []
     entered = threading.Event()
     release = threading.Event()
 
@@ -1311,7 +1339,6 @@ def test_close_unsubscribes_once_and_cleans_only_owned_requests() -> None:
             service.prompt_send("prompt", session_id="existing", request_id="r1")
         )
         await asyncio.to_thread(entered.wait, 1)
-        captured_execution_ids.append(_active(service)[0].execution_id)
         await service.aclose()
         await service.aclose()
         release.set()
@@ -1319,7 +1346,6 @@ def test_close_unsubscribes_once_and_cleans_only_owned_requests() -> None:
             await task
 
     asyncio.run(scenario())
-    execution_id = captured_execution_ids[0]
     bus.emit(
         make_event(
             "question.asked",
@@ -1329,8 +1355,6 @@ def test_close_unsubscribes_once_and_cleans_only_owned_requests() -> None:
     )
 
     assert _active(service) == ()
-    assert questions.cancelled == [("existing", execution_id)]
-    assert questions.resolved == []
     assert [name for name, _ in calls].count("cancel") == 1
 
 
