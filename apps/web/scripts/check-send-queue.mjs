@@ -254,7 +254,11 @@ assert.equal(useSendQueue.getState().queues[A], undefined);
 /* --- 11. stop-now drains the queue at 0ms (Claude Code) ----------- */
 sent.length = 0;
 useSendQueue.setState({ queues: {} });
-run(A);
+store.setRunningTaskFor(A, {
+  session_id: A,
+  msg_id: "m",
+  execution_id: "m_reply",
+});
 const stoppedId = enqueueMessage(A, draft("send-after-stop"));
 promoteToHead(A, stoppedId);
 const stopFrames = [];
