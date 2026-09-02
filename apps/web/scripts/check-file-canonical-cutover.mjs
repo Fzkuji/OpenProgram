@@ -9,6 +9,7 @@ const pane = read("components/center-tabs/file-tab-pane.tsx");
 const review = read("components/center-tabs/review-tab-pane.tsx");
 const ws = read("lib/net/ws-request.ts");
 const turnFiles = readFileSync(new URL("../../server/openprogram_server/_webui/ws_actions/turn_files.py", import.meta.url), "utf8");
+const server = readFileSync(new URL("../../server/openprogram_server/server.py", import.meta.url), "utf8");
 
 assert.doesNotMatch(shared, /filesWsRequest/);
 assert.doesNotMatch(viewer, /filesWsRequest/);
@@ -18,5 +19,6 @@ assert.doesNotMatch(review, /getSocket|registerWsRequest|\.send\(/);
 assert.doesNotMatch(ws, /filesWsRequest|list_turn_files|turn_file_diff/);
 assert.doesNotMatch(turnFiles, /def _list_files\b|def handle_list_turn_files\b|def handle_turn_file_diff\b|def _turn_lineage_file_diff\b/);
 assert.doesNotMatch(turnFiles, /"list_turn_files"\s*:|"turn_file_diff"\s*:/);
+assert.doesNotMatch(server, /"list_turn_files"|"turn_file_diff"/);
 
 console.log("canonical file entry-point cutover contracts: ok");
