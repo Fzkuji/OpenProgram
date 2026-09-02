@@ -34,6 +34,7 @@ globalThis.WebSocket = { OPEN: 1 };
 
 const {
   READ_CACHE_MAX_ENTRIES,
+  LATEST_MTIME_MAX_ENTRIES,
   cacheFileRead,
   fileReadCacheKey,
   getCachedFileRead,
@@ -80,6 +81,17 @@ test("read cache is project-scoped, mtime-scoped, and LRU bounded", () => {
   noteFileMtime("project-a", "same.txt", 2);
   assert.equal(getCachedFileRead("project-a", "same.txt", 1), undefined);
   assert.equal(getCachedFileRead("project-b", "same.txt", 1)?.content, "other");
+});
+
+test("latest mtimes are project-scoped and LRU bounded", () => {
+  latestFileMtime.clear();
+  for (let i = 0; i <= LATEST_MTIME_MAX_ENTRIES; i += 1)
+    noteFileMtime("project-mtime", `file-${i}.txt`, i);
+  assert.equal(latestFileMtime.size, LATEST_MTIME_MAX_ENTRIES);
+  assert.equal(latestFileMtime.has("project-mtime:file-0.txt"), false);
+  noteFileMtime("project-mtime", "file-1.txt", 999);
+  assert.equal(latestFileMtime.get("project-mtime:file-1.txt"), 999);
+  assert.equal(latestFileMtime.size, LATEST_MTIME_MAX_ENTRIES);
 });
 
 test("rename/delete cache invalidation is project-scoped and clears descendants", () => {
@@ -246,6 +258,18 @@ test("rename preflight blocks the server when the target metadata exceeds quota"
   assert.equal(result.code, "DRAFT_QUOTA_EXCEEDED");
   assert.equal(serverCalls, 0);
   assert.equal(store.drafts.has("p:old.txt"), true);
+});
+
+test("rename target dirty draft is an explicit conflict and both records remain", async () => {
+  const store = new MemoryDraftStore();
+  setDraftStoreAdapterForTests(store);
+  const draft = (value) => ({ draft: value, baselineContent: "base", baselineMtime: 1 });
+  await persistFileDraft("p", "old.txt", draft("old"));
+  await persistFileDraft("p", "new.txt", draft("new"));
+  const result = await moveFileDrafts("p", "old.txt", "new.txt");
+  assert.equal(result.code, "DRAFT_CONFLICT");
+  assert.equal((await loadFileDraft("p", "old.txt")).draft, "old");
+  assert.equal((await loadFileDraft("p", "new.txt")).draft, "new");
 });
 
 test("server rename uses structured status and retains old draft on rejection", async () => {

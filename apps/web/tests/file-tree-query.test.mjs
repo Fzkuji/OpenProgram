@@ -44,6 +44,13 @@ test("file changes invalidate only the owning project tree", () => {
   assert.match(source, /invalidateFileRead\(projectId, String\(payload\.path/);
 });
 
+test("file changes do not abort durable mutation requests", () => {
+  assert.match(source, /const mutationControllers = useRef\(new Set<AbortController>\(\)\)/);
+  assert.match(source, /mutationControllers\.current\.add\(operationController\)/);
+  assert.match(source, /signal,\n\s+mutationControllers\.current/);
+  assert.match(source, /Durable mutations must keep their own request lifecycle/);
+});
+
 test("Filter and Highlight preserve their existing tree semantics", () => {
   assert.match(source, /filter\.trim\(\) && searchMode === "filter"/);
   assert.match(source, /searchMode === "highlight"/);

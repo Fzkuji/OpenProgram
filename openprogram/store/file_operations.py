@@ -17,6 +17,13 @@ from typing import Any, Mapping
 
 _PROCESS_INSTANCE_ID = uuid.uuid4().hex
 
+# Terminal receipts are retained long enough for normal idempotent replay,
+# while the journal cannot grow without bound. In-flight and recovery records
+# are intentionally excluded from both limits.
+FILE_OPERATION_TERMINAL_TTL_SECONDS = 7 * 24 * 60 * 60
+FILE_OPERATION_MAX_TERMINAL_RECORDS = 1024
+_TERMINAL_STATUSES = ("completed", "conflict", "error")
+
 
 def process_start_identity(pid: int | None = None) -> str | None:
     """Return a PID-reuse-resistant process start token when available."""
@@ -100,6 +107,7 @@ class FileOperationStore:
             self.path.chmod(0o600)
         except OSError:
             pass
+        self.compact()
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(str(self.path), timeout=5.0)
@@ -157,6 +165,42 @@ class FileOperationStore:
                 "SELECT * FROM file_operations WHERE operation_id=?", (operation_id,)
             ).fetchone()
         return dict(row) if row is not None else None
+
+    def compact(self, *, now: float | None = None) -> int:
+        """Remove only old/excess terminal receipts.
+
+        Recovery and in-flight rows remain durable regardless of age or
+        journal size, so compaction cannot erase state that still needs
+        operator or retry action.
+        """
+        cutoff = (time.time() if now is None else now) - FILE_OPERATION_TERMINAL_TTL_SECONDS
+        placeholders = ",".join("?" for _ in _TERMINAL_STATUSES)
+        deleted = 0
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            cursor = db.execute(
+                f"DELETE FROM file_operations WHERE status IN ({placeholders}) AND updated_at < ?",
+                (*_TERMINAL_STATUSES, cutoff),
+            )
+            deleted += cursor.rowcount if cursor.rowcount > 0 else 0
+            count = db.execute(
+                f"SELECT COUNT(*) FROM file_operations WHERE status IN ({placeholders})",
+                _TERMINAL_STATUSES,
+            ).fetchone()[0]
+            excess = max(0, count - FILE_OPERATION_MAX_TERMINAL_RECORDS)
+            if excess:
+                rows = db.execute(
+                    f"SELECT operation_id FROM file_operations WHERE status IN ({placeholders}) "
+                    "ORDER BY updated_at ASC, operation_id ASC LIMIT ?",
+                    (*_TERMINAL_STATUSES, excess),
+                ).fetchall()
+                for row in rows:
+                    cursor = db.execute(
+                        "DELETE FROM file_operations WHERE operation_id=?", (row[0],)
+                    )
+                    if cursor.rowcount > 0:
+                        deleted += cursor.rowcount
+        return deleted
 
     def claim_recovery(self, operation_id: str) -> bool:
         instance_id, owner_pid, process_start = current_owner_identity()

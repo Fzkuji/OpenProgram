@@ -159,6 +159,7 @@ function forgetMutationKey(key: string): void {
 export interface WsMutationOptions {
   signal?: AbortSignal;
   maxAttempts?: number;
+  deadlineMs?: number;
 }
 
 function mutationIsTerminal(value: unknown): boolean {
@@ -179,10 +180,13 @@ export function wsMutationRequest<T>(
     options.maxAttempts ?? MAX_MUTATION_ATTEMPTS,
     MAX_MUTATION_ATTEMPTS,
   ));
+  const deadlineMs = Math.max(0, options.deadlineMs ?? 4000);
   const run = (async () => {
     let result: T | null = null;
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    let attempt = 0;
+    while (attempt < maxAttempts) {
       if (options.signal?.aborted) break;
+      attempt += 1;
       const requestController = new AbortController();
       const onAbort = () => requestController.abort();
       options.signal?.addEventListener("abort", onAbort, { once: true });
@@ -201,9 +205,58 @@ export function wsMutationRequest<T>(
         if (pending) pending.operationId = operationId;
       }
       if (mutationIsTerminal(result) || options.signal?.aborted) break;
+      const status = result && typeof result === "object"
+        ? (result as Record<string, unknown>).status
+        : undefined;
+      if (status === "in_progress" || status === "pending") {
+        const deadline = Date.now() + deadlineMs;
+        while (!options.signal?.aborted && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, Math.min(100, deadline - Date.now())));
+          if (options.signal?.aborted) break;
+          const pollController = new AbortController();
+          const onPollAbort = () => pollController.abort();
+          options.signal?.addEventListener("abort", onPollAbort, { once: true });
+          try {
+            const next = await send(pollController.signal);
+            // A lost poll response is transport uncertainty, not evidence
+            // that the durable operation disappeared. Keep the last known
+            // in-progress receipt so the deadline still yields recovery_required.
+            if (next !== null) result = next;
+          } catch {
+            // Preserve the last known receipt until the deadline.
+          } finally {
+            options.signal?.removeEventListener("abort", onPollAbort);
+          }
+          const nextOperationId = result && typeof result === "object"
+            ? (result as Record<string, unknown>).operation_id
+            : undefined;
+          if (typeof nextOperationId === "string") {
+            const pending = pendingMutations.get(key);
+            if (pending) pending.operationId = nextOperationId;
+          }
+          if (mutationIsTerminal(result)) break;
+        }
+        break;
+      }
+    }
+    if (result && typeof result === "object") {
+      const status = (result as Record<string, unknown>).status;
+      if ((status === "in_progress" || status === "pending")
+        && !options.signal?.aborted) {
+        result = {
+          ...(result as Record<string, unknown>),
+          status: "recovery_required",
+          error_code: "RECOVERY_REQUIRED",
+          error: "The file operation did not reach a terminal receipt before the deadline.",
+        } as T;
+      }
     }
     const terminal = mutationIsTerminal(result);
-    if (terminal) forgetMutationKey(key);
+    const unresolved = result && typeof result === "object"
+      && ["in_progress", "pending", "recovery_required"].includes(
+        (result as Record<string, unknown>).status as string,
+      );
+    if (terminal && !unresolved) forgetMutationKey(key);
     else {
       for (const entry of mutationKeys.values()) {
         if (entry.key === key) entry.terminal = false;

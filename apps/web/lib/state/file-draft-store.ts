@@ -70,7 +70,7 @@ export class IndexedDbDraftStore implements DraftStoreAdapter {
 
   private open(): Promise<IDBDatabase> {
     if (this.dbPromise) return this.dbPromise;
-    this.dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+    const opening = new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open(IndexedDbDraftStore.databaseName, 1);
       request.onupgradeneeded = () => {
         const db = request.result;
@@ -83,6 +83,12 @@ export class IndexedDbDraftStore implements DraftStoreAdapter {
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error ?? new Error("Unable to open draft store"));
+    });
+    // A rejected open must not poison this store instance forever. A later
+    // load/save can retry after the browser has recovered storage access.
+    this.dbPromise = opening.catch((error) => {
+      this.dbPromise = null;
+      throw error;
     });
     return this.dbPromise;
   }

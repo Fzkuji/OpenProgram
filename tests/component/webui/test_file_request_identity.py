@@ -5,6 +5,7 @@ import asyncio
 import concurrent.futures
 import json
 import threading
+import time
 import types
 import uuid
 from pathlib import Path
@@ -213,6 +214,40 @@ def test_inflight_before_image_is_retried_under_the_lock(project):
     assert result["status"] == "ready"
     assert result["operation_id"] == row["operation_id"]
     assert (project / "source.txt").read_text(encoding="utf-8") == "retry"
+
+
+def test_file_operation_compaction_has_explicit_safe_retention(tmp_path):
+    from openprogram.store.file_operations import (
+        FILE_OPERATION_MAX_TERMINAL_RECORDS,
+        FILE_OPERATION_TERMINAL_TTL_SECONDS,
+        FileOperationStore,
+        fingerprint,
+    )
+
+    db_path = tmp_path / "state" / "file_operations.db"
+    store = FileOperationStore(db_path)
+    rows = []
+    for index, status in enumerate(("completed", "conflict", "error", "in_flight", "recovery_required")):
+        row, owner = store.begin("p", "action", f"key-{index}", fingerprint({"index": index}))
+        assert owner
+        if status != "in_flight":
+            store.finish(row["operation_id"], {"status": status}, status=status, phase=status)
+        rows.append(row["operation_id"])
+    old = time.time() - FILE_OPERATION_TERMINAL_TTL_SECONDS - 1
+    with store._connect() as db:
+        db.execute("UPDATE file_operations SET updated_at=? WHERE status IN ('completed','conflict','error')", (old,))
+    assert store.compact(now=time.time()) == 3
+    assert store.get(rows[3]) is not None
+    assert store.get(rows[4]) is not None
+
+    # The max-entry policy is explicit and does not count protected states.
+    for index in range(FILE_OPERATION_MAX_TERMINAL_RECORDS + 1):
+        row, owner = store.begin("p", "max", f"key-{index}", fingerprint({"max": index}))
+        assert owner
+        store.finish(row["operation_id"], {"status": "completed"})
+    assert store.compact(now=time.time()) >= 1
+    assert store.get(rows[3]) is not None
+    assert store.get(rows[4]) is not None
 
 
 def test_large_mutation_witness_is_bounded(project, monkeypatch):

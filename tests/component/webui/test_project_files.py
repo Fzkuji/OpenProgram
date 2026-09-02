@@ -406,6 +406,22 @@ def test_tree_limit_stops_after_maximum_entry_probe(project_root):
     assert data["snapshot_id"] is None
 
 
+def test_cursor_basis_enforces_snapshot_item_limit(project_root, monkeypatch):
+    for index in range(3):
+        (project_root / f"cursor-limit-{index}.txt").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(ws_files, "_QUERY_MAX_SNAPSHOT_ITEMS", 10)
+    first = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 1,
+    })["data"]
+    assert first["next_cursor"]
+    monkeypatch.setattr(ws_files, "_QUERY_MAX_SNAPSHOT_ITEMS", 2)
+    second = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "cursor": first["next_cursor"],
+        "page_size": 1,
+    })["data"]
+    assert second["error_code"] == "LIMIT_EXCEEDED"
+
+
 def test_search_closes_sibling_directory_fds_under_low_nofile_limit(project_root):
     soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
     if hard < 256 or soft <= 256:
@@ -532,6 +548,42 @@ def test_read_too_large_flag(project_root):
     assert data["too_large"] is True
     assert "content" not in data
     assert data["size"] == 1_000_001
+
+
+def test_read_growth_is_bounded_after_initial_stat(project_root, monkeypatch):
+    target = project_root / "growing.txt"
+    target.write_bytes(b"a" * 8_192)
+    original_open = open
+
+    class GrowingReader:
+        def __init__(self, stream):
+            self.stream = stream
+            self.did_grow = False
+
+        def __enter__(self):
+            self.stream.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def read(self, size=-1):
+            data = self.stream.read(size)
+            if not self.did_grow:
+                self.did_grow = True
+                target.write_bytes(b"a" * (ws_files._READ_MAX_BYTES + 1))
+            return data
+
+    def growing_open(path, *args, **kwargs):
+        stream = original_open(path, *args, **kwargs)
+        return GrowingReader(stream) if os.fspath(path) == os.fspath(target) else stream
+
+    monkeypatch.setattr(ws_files, "open", growing_open, raising=False)
+    data = _run(ws_files.handle_project_file_read, {
+        "project_id": "p1", "path": "growing.txt",
+    })["data"]
+    assert data["too_large"] is True
+    assert "content" not in data
 
 
 def test_read_unknown_project(project_root):

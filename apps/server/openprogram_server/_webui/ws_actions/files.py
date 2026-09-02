@@ -827,6 +827,8 @@ def _directory_basis_fd(fd: int) -> tuple:
     basis = []
     with os.scandir(fd) as iterator:
         for entry in iterator:
+            if len(basis) >= _QUERY_MAX_SNAPSHOT_ITEMS:
+                raise _QueryLimitError
             stat_result = entry.stat(follow_symlinks=False)
             basis.append((
                 entry.name,
@@ -1266,7 +1268,14 @@ def _read_file(project_id: str, path: str) -> dict:
             if stat.st_size > _READ_MAX_BYTES:
                 result["too_large"] = True
                 return result
-            raw = head + f.read()
+            # Read at most limit+1 bytes after the initial stat. The file can
+            # grow between stat() and read(); an unbounded read would turn
+            # that TOCTOU window into an allocation proportional to growth.
+            remaining = _READ_MAX_BYTES + 1 - len(head)
+            raw = head + f.read(max(0, remaining))
+            if len(raw) > _READ_MAX_BYTES:
+                result["too_large"] = True
+                return result
     except OSError as e:
         return {"error": f"{type(e).__name__}: {e}"}
     result["content"] = raw.decode("utf-8", errors="replace")

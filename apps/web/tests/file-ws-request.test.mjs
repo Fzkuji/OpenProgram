@@ -185,7 +185,7 @@ test("large payload summaries stay bounded and in-progress keys remain stable", 
     await wsMutationRequest(key, async () => ({
       status: "in_progress",
       operation_id: `op-${key}`,
-    }), { maxAttempts: 1 });
+    }), { maxAttempts: 1, deadlineMs: 0 });
     assert.equal(idempotencyKeyFor("project_file_write", payload), key);
   }
   const after = mutationRegistryStats();
@@ -209,7 +209,7 @@ test("registry refuses unfinished operations at capacity without growing", async
       await wsMutationRequest(key, async () => ({
         status: "in_progress",
         operation_id: `op-${key}`,
-      }), { maxAttempts: 1 });
+      }), { maxAttempts: 1, deadlineMs: 0 });
     } catch (error) {
       assert.ok(error instanceof MutationRegistryCapacityError);
       refused = true;
@@ -223,4 +223,18 @@ test("registry refuses unfinished operations at capacity without growing", async
   assert.equal(after.pending, 0);
   assert.ok(after.entries >= before.entries);
   assert.ok(keys.length + before.entries <= 128);
+});
+
+test("in-progress mutation reaches recovery_required at its deadline", async () => {
+  // Reuse the first retained identity from the preceding capacity test so
+  // the test does not need to allocate another registry entry.
+  const payload = { project_id: "project-capacity", path: "file-0.txt", content: "pending" };
+  const key = idempotencyKeyFor("project_file_write", payload);
+  const result = await wsMutationRequest(key, async () => ({
+    status: "in_progress", operation_id: "op-deadline",
+  }), { maxAttempts: 1, deadlineMs: 0 });
+  assert.equal(result?.status, "recovery_required");
+  assert.equal(result?.error_code, "RECOVERY_REQUIRED");
+  assert.equal(result?.operation_id, "op-deadline");
+  assert.equal(idempotencyKeyFor("project_file_write", payload), key);
 });

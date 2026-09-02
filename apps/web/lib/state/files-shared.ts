@@ -4,7 +4,7 @@
  * to the worker's project-file actions. (Was part of the v1
  * files-panel store; the tab state moved to center-tabs-store.)
  */
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { wsRequest, type WsRequestOptions } from "@/lib/net/ws-request";
 import { useSessionStore } from "@/lib/session-store";
@@ -106,8 +106,15 @@ export function useCurrentProject(): Project | null | undefined {
     s.activeChatKey ? s.pendingProjectsByChat[s.activeChatKey] ?? null : null,
   );
   const [project, setProject] = useState<Project | null | undefined>(undefined);
+  const resolveGeneration = useRef(0);
+  const resolveController = useRef<AbortController | null>(null);
 
   const resolve = useCallback(async (): Promise<boolean> => {
+    const generation = ++resolveGeneration.current;
+    resolveController.current?.abort();
+    const controller = new AbortController();
+    resolveController.current = controller;
+    setProject(undefined);
     const data = await wsRequest<ProjectListResponse>(
       "list_projects",
       { session_id: sessionId ?? "" },
@@ -118,7 +125,10 @@ export function useCurrentProject(): Project | null | undefined {
       // 这里误回落到默认项目——右栏文件树被钉死在默认根目录。后端会
       // 回显请求的 session_id（空串回显 null），据此只认自己那条。
       (d) => (d.session_id ?? null) === (sessionId || null),
+      4000,
+      { signal: controller.signal },
     );
+    if (generation !== resolveGeneration.current || controller.signal.aborted) return false;
     if (!data || data.status === "error" || !Array.isArray(data.projects)) return false;
     const projects = data.projects;
     const wantId =
@@ -149,6 +159,9 @@ export function useCurrentProject(): Project | null | undefined {
     window.addEventListener("project-changed", onChanged);
     return () => {
       cancelled = true;
+      resolveGeneration.current += 1;
+      resolveController.current?.abort();
+      resolveController.current = null;
       window.removeEventListener("project-changed", onChanged);
     };
   }, [resolve]);
@@ -180,6 +193,7 @@ export function filesWsRequest<T>(
 /** Last mtime seen per project-relative file path (fed by the tree
  * listing) — lets the viewer cache invalidate on refetch. */
 export const latestFileMtime = new Map<string, number>();
+export const LATEST_MTIME_MAX_ENTRIES = 256;
 
 export const READ_CACHE_MAX_ENTRIES = 64;
 export const READ_CACHE_MAX_BYTES = 16 * 1024 * 1024;
@@ -263,7 +277,13 @@ export function cacheFileRead(result: FileReadResult): void {
 export function noteFileMtime(projectId: string, path: string, mtime: number): void {
   const scope = fileScopeKey(projectId, path);
   const previous = latestFileMtime.get(scope);
+  latestFileMtime.delete(scope);
   latestFileMtime.set(scope, mtime);
+  while (latestFileMtime.size > LATEST_MTIME_MAX_ENTRIES) {
+    const oldest = latestFileMtime.keys().next().value as string | undefined;
+    if (!oldest) break;
+    latestFileMtime.delete(oldest);
+  }
   if (previous === undefined || previous === mtime) return;
   for (const key of [...readCache.keys()]) {
     if (!key.startsWith(`${scope}:`)) continue;
@@ -326,7 +346,7 @@ export function fileDraftKey(projectId: string, path: string): string {
  * to IndexedDB and removes them only on save, revert, or explicit discard. */
 export const fileDrafts = new Map<string, FileDraft>();
 
-export type DraftPersistenceErrorCode = "DRAFT_QUOTA_EXCEEDED" | "DRAFT_PERSISTENCE_FAILED";
+export type DraftPersistenceErrorCode = "DRAFT_QUOTA_EXCEEDED" | "DRAFT_PERSISTENCE_FAILED" | "DRAFT_CONFLICT";
 
 export interface DraftPersistenceResult {
   ok: boolean;
@@ -362,6 +382,13 @@ let draftStorePromise: Promise<DraftStoreAdapter | null> | null = null;
 /** Bytes of the latest live buffer, including a buffer whose IDB write failed. */
 const liveDraftBytesByKey = new Map<string, number>();
 let draftStoreOverride: DraftStoreAdapter | null | undefined;
+
+class DraftStoreConflictError extends Error {
+  constructor() {
+    super("A dirty draft already exists at the rename target.");
+    this.name = "DraftConflictError";
+  }
+}
 
 function getDraftStore(): Promise<DraftStoreAdapter | null> {
   if (draftStoreOverride !== undefined) return Promise.resolve(draftStoreOverride);
@@ -685,6 +712,11 @@ async function moveFileDraftsInternal(projectId: string, oldPath: string, newPat
     notifyDraftErrorListeners();
     return { ok: true };
   } catch (error) {
+    if (error instanceof DraftStoreConflictError) {
+      const message = "A dirty draft already exists at the rename target; the rename was not applied.";
+      reportDraftPersistenceError(projectId, message);
+      return { ok: false, code: "DRAFT_CONFLICT", status: "conflict", error_code: "DRAFT_CONFLICT", message };
+    }
     const quota = error instanceof DraftStoreQuotaError
       || (typeof error === "object" && error !== null && "name" in error && error.name === "QuotaExceededError");
     const message = quota
@@ -746,9 +778,11 @@ function buildMovedDraftSnapshot(
     });
   if (moved.length === 0) return { snapshot: current, movedKeys };
   const movedKeySet = new Set(movedKeys);
-  const targetKeySet = new Set(moved.map((entry) => entry.key));
+  const existingKeys = new Set([...records.map((entry) => entry.key), ...liveKeys]);
+  if (moved.some((entry) => existingKeys.has(entry.key) && !movedKeySet.has(entry.key)))
+    throw new DraftStoreConflictError();
   const drafts = [
-    ...records.filter((entry) => !movedKeySet.has(entry.key) && !targetKeySet.has(entry.key)),
+    ...records.filter((entry) => !movedKeySet.has(entry.key)),
     ...moved,
   ];
   return { snapshot: { drafts, indexes: rebuildDraftIndexes({ drafts, indexes: current.indexes }) }, movedKeys };
@@ -776,6 +810,11 @@ async function preflightMoveFileDraftsInternal(
     });
     return { ok: true };
   } catch (error) {
+    if (error instanceof DraftStoreConflictError) {
+      const message = "A dirty draft already exists at the rename target; the rename was not applied.";
+      reportDraftPersistenceError(projectId, message);
+      return { ok: false, code: "DRAFT_CONFLICT", status: "conflict", error_code: "DRAFT_CONFLICT", message };
+    }
     const quota = error instanceof DraftStoreQuotaError
       || (typeof error === "object" && error !== null && "name" in error && error.name === "QuotaExceededError");
     const message = quota

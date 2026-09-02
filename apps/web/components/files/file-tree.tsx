@@ -307,6 +307,7 @@ export function FileTree({
   const rootRef = useRef<HTMLDivElement>(null);
   const directoryPagesRef = useRef<Record<string, DirectoryPage>>({});
   const queryControllers = useRef(new Set<AbortController>());
+  const mutationControllers = useRef(new Set<AbortController>());
   const queryGeneration = useRef(0);
   const searchGeneration = useRef(0);
   const searchCursor = useRef<string | null>(null);
@@ -541,7 +542,6 @@ export function FileTree({
     payload: Record<string, unknown>,
     refreshDirs: string[],
   ): Promise<FileOperationResult> {
-    const generation = queryGeneration.current;
     const operationPayload = { project_id: projectId, ...payload };
     let operationKey: string;
     try {
@@ -553,7 +553,7 @@ export function FileTree({
       return { status: "error", error_code: "MUTATION_REGISTRY_CAPACITY" };
     }
     const operationController = new AbortController();
-    queryControllers.current.add(operationController);
+    mutationControllers.current.add(operationController);
     let data: FileOperationResult | null = null;
     try {
       data = await wsMutationRequest<FileOperationResult>(
@@ -562,15 +562,19 @@ export function FileTree({
           `project_file_${op}`,
           { ...operationPayload, idempotency_key: operationKey },
           `project_file_${op}_result`,
-          () => generation === queryGeneration.current,
+          // Durable mutations must keep their own request lifecycle. A
+          // project-files-changed event invalidates query generations, but it
+          // cannot cancel a mutation receipt that may still be in progress.
+          () => true,
           signal,
+          mutationControllers.current,
         ),
         { signal: operationController.signal },
       );
     } catch {
       data = null;
     } finally {
-      queryControllers.current.delete(operationController);
+      mutationControllers.current.delete(operationController);
     }
     const result: FileOperationResult = data
       ? { ...data, status: data.status ?? (data.ok ? "ready" : "error") }
