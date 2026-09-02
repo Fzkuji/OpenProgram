@@ -162,6 +162,7 @@ def test_ws_public_command_requires_exact_wait_generation(monkeypatch, tmp_path)
     monkeypatch.setattr(execution_module, "default_store", lambda: executions)
     monkeypatch.setattr(execution_module, "default_control_service", lambda: service)
     from openprogram.webui.ws_actions.runtime import submit_execution_control
+    from openprogram.agent.authority import owner_authority
 
     command, updated = asyncio.run(submit_execution_control(
         {
@@ -170,7 +171,9 @@ def test_ws_public_command_requires_exact_wait_generation(monkeypatch, tmp_path)
             "expected_version": execution.status_version,
             "payload": {"wait_id": wait.wait_id, "generation": wait.claim_generation, "answer": "yes"},
         },
-        "wait_answer", actor={"surface": "test"}, bound_session="session_wait",
+        "wait_answer",
+        actor=owner_authority("owner/install/0123456789abcdef"),
+        bound_session="session_wait",
     ))
     assert command.kind is CommandKind.WAIT_ANSWER
     assert command.status.value == "applied"
