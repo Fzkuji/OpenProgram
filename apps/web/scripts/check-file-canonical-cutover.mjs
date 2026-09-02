@@ -14,6 +14,7 @@ const turnFiles = readFileSync(new URL("../../server/openprogram_server/_webui/w
 const server = readFileSync(new URL("../../server/openprogram_server/server.py", import.meta.url), "utf8");
 
 assert.doesNotMatch(shared, /filesWsRequest/);
+assert.doesNotMatch(shared, /export\s+\*/);
 assert.doesNotMatch(viewer, /filesWsRequest/);
 assert.doesNotMatch(tree, /filesWsRequest/);
 assert.doesNotMatch(pane, /filesWsRequest/);

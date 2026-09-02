@@ -507,8 +507,7 @@ def _query_page(snapshot: _QuerySnapshot, offset: int, page_size: int,
         next_cursor = None
         try:
             if offset + len(rows) < len(snapshot.rows):
-                from . import files as owner
-                next_cursor = owner._new_cursor(
+                next_cursor = _new_cursor(
                     snapshot.snapshot_id, offset + len(rows),
                 )
                 if _QUERY_SNAPSHOTS.get(snapshot.snapshot_id) is not snapshot:

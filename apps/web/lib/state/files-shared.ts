@@ -16,7 +16,18 @@ import {
   type Project,
 } from "./file-state-shared";
 
-export * from "./file-state-shared";
+export {
+  DRAFT_MAX_BYTES,
+  DRAFT_MAX_ENTRIES,
+  draftPersistenceErrors,
+  fileResponseMatchesOwner,
+  fileScopeKey,
+  getDraftPersistenceError,
+  notifyDraftErrorListeners,
+  reportDraftPersistenceError,
+  subscribeDraftPersistenceErrors,
+} from "./file-state-shared";
+export type { FileReadResult, Project } from "./file-state-shared";
 
 interface ProjectListResponse {
   projects: Project[] | null;
@@ -232,7 +243,34 @@ export function absFileReadUrl(absPath: string, sessionId?: string): string {
   return `/api/file-read?path=${encodeURIComponent(absPath)}${sid}`;
 }
 
-export * from "./file-drafts";
+export {
+  canPersistFileDraft,
+  clearFileDraftsForPath,
+  clearProjectDrafts,
+  collectDirtyFileTabs,
+  dirtyDraftsForPath,
+  discardFileDraft,
+  discardFileDraftsBeforeClose,
+  fileDraftBytes,
+  fileDraftKey,
+  fileDrafts,
+  hasDirtyDraftsForPath,
+  loadFileDraft,
+  loadFileDraftsForPath,
+  moveFileDrafts,
+  persistFileDraft,
+  runServerRenameWithDrafts,
+  setDraftStoreAdapterForTests,
+  snapshotFileDrafts,
+  applyFileDraftSnapshot,
+} from "./file-drafts";
+export type {
+  DraftPersistenceErrorCode,
+  DraftPersistenceResult,
+  FileDraft,
+  FileDraftSnapshotEntry,
+  ServerRenameResult,
+} from "./file-drafts";
 
 /* ---- Unsaved editor drafts ---------------------------------------- */
 

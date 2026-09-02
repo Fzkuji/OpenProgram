@@ -459,17 +459,19 @@ def test_global_snapshot_quota_bounds_items_bytes_and_cursors(project_root, monk
 
 
 def test_query_page_barrier_does_not_return_cursor_for_evicted_snapshot(project_root, monkeypatch):
+    from openprogram.webui.ws_actions import files_query
+
     first = _run(ws_files.handle_project_file_tree, {
         "project_id": "p1", "path": "", "page_size": 1,
     })["data"]
     snapshot = ws_files._QUERY_SNAPSHOTS[first["snapshot_id"]]
-    original_new_cursor = ws_files._new_cursor
+    original_new_cursor = files_query._new_cursor
 
     def evict_before_return(snapshot_id, offset):
-        ws_files._evict_snapshot(snapshot_id)
+        files_query._evict_snapshot(snapshot_id)
         return original_new_cursor(snapshot_id, offset)
 
-    monkeypatch.setattr(ws_files, "_new_cursor", evict_before_return)
+    monkeypatch.setattr(files_query, "_new_cursor", evict_before_return)
     page = ws_files._query_page(snapshot, 0, 1, "entries")
     assert page["error_code"] == "STALE_SNAPSHOT"
 
