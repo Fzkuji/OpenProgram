@@ -239,15 +239,15 @@ def test_cancel_delivery_dedupe_is_cleared_after_terminal_and_recovery(
     remote = RuntimeControlService(executions, attempts, DriverRegistry())
 
     pending = asyncio.run(
-        remote.request_cancel(
-            command_id=f"execution-cancel:{execution.execution_id}",
+        owner.request_cancel(
+            command_id="cancel_1",
             execution_id=execution.execution_id,
             expected_version=execution.status_version,
-            actor={"surface": "remote"},
+            actor={"surface": "local"},
             reason_code="cancel.remote",
         )
     )
-    assert pending.issue_code == "owner_not_local"
+    assert pending.delivered
     delivered = asyncio.run(
         owner.deliver_pending_cancel(
             execution_id=execution.execution_id,
@@ -262,16 +262,18 @@ def test_cancel_delivery_dedupe_is_cleared_after_terminal_and_recovery(
             generation=attempt.generation,
         )
     )
-    assert delivered is not None and delivered.delivered
+    assert pending.delivered
+    assert delivered is not None and not delivered.delivered
     assert repeated is not None and not repeated.delivered
+    assert len(owner_driver.observed) == 1
     assert len(owner._delivered_cancel_commands) == 1
     finished = owner.finish_attempt(
         attempt_id=attempt.attempt_id,
         generation=attempt.generation,
-        expected_execution_version=delivered.execution.status_version,
+        expected_execution_version=pending.execution.status_version,
         target=ExecutionStatus.CANCELLED,
         outcome="cooperative_cancel",
-        command_id=delivered.command.command_id,
+        command_id=pending.command.command_id,
         reason_code="cancel.remote",
     )
     assert finished.execution.status is ExecutionStatus.CANCELLED
@@ -304,7 +306,7 @@ def test_cancel_delivery_dedupe_is_cleared_after_terminal_and_recovery(
     _bind(owner_registry, running, second_attempt, owner_driver)
     pending = asyncio.run(
         remote.request_cancel(
-            command_id=f"execution-cancel:{second.execution_id}",
+            command_id="cancel_2",
             execution_id=second.execution_id,
             expected_version=running.status_version,
             actor={"surface": "remote"},

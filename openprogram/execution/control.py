@@ -177,13 +177,46 @@ class RuntimeControlService:
         self._terminal_recovery: Callable[..., object] | None = None
         self._cancel_delivery_lock = RLock()
         self._delivered_cancel_commands: set[str] = set()
+        self._cancel_delivery_by_execution: dict[str, set[str]] = {}
 
-    def _forget_cancel_delivery(self, execution_id: str) -> None:
+    def _remember_cancel_delivery(
+        self, execution_id: str, command_id: str,
+    ) -> None:
+        with self._cancel_delivery_lock:
+            self._delivered_cancel_commands.add(command_id)
+            self._cancel_delivery_by_execution.setdefault(
+                execution_id, set(),
+            ).add(command_id)
+
+    def _forget_cancel_delivery(
+        self, execution_id: str, command_id: str | None = None,
+    ) -> None:
         """Release the transient dedupe marker after cancellation settles."""
         with self._cancel_delivery_lock:
-            self._delivered_cancel_commands.discard(
-                f"execution-cancel:{execution_id}",
+            if command_id is None:
+                command_ids = self._cancel_delivery_by_execution.pop(
+                    execution_id, set(),
+                )
+                self._delivered_cancel_commands.difference_update(command_ids)
+                return
+            self._delivered_cancel_commands.discard(command_id)
+            command_ids = self._cancel_delivery_by_execution.get(execution_id)
+            if command_ids is None:
+                return
+            command_ids.discard(command_id)
+            if not command_ids:
+                self._cancel_delivery_by_execution.pop(execution_id, None)
+
+    def _prune_cancel_delivery(self, execution_id: str) -> None:
+        """Drop markers whose persisted commands are already terminal."""
+        with self._cancel_delivery_lock:
+            command_ids = tuple(
+                self._cancel_delivery_by_execution.get(execution_id, ()),
             )
+        for command_id in command_ids:
+            command = self.executions.get_command(command_id)
+            if command is None or command.status in TERMINAL_COMMAND_STATUSES:
+                self._forget_cancel_delivery(execution_id, command_id)
 
     def set_terminal_observer(
         self, observer: Callable[[ExecutionRecord], object] | None,
@@ -1111,8 +1144,9 @@ class RuntimeControlService:
             )
         dispatch = await self._dispatch(command, execution, operation="cancel")
         if dispatch.delivered:
-            with self._cancel_delivery_lock:
-                self._delivered_cancel_commands.add(command.command_id)
+            self._remember_cancel_delivery(
+                execution_id, command.command_id,
+            )
         return dispatch
 
     async def deliver_pending_cancel(
@@ -1126,9 +1160,13 @@ class RuntimeControlService:
         execution = self.executions.get_execution(execution_id)
         if execution is None:
             return None
-        command = self.executions.get_command(
-            f"execution-cancel:{execution_id}",
+        self._prune_cancel_delivery(execution_id)
+        pending = self.executions.list_commands(
+            execution_id,
+            statuses=(CommandStatus.APPLYING,),
+            kinds=(CommandKind.CANCEL,),
         )
+        command = pending[0] if pending else None
         if command is None or (
             command.kind is not CommandKind.CANCEL
             or command.status is not CommandStatus.APPLYING
@@ -1137,7 +1175,10 @@ class RuntimeControlService:
                 execution.status in TERMINAL_EXECUTION_STATUSES
                 or command is not None and command.status in TERMINAL_COMMAND_STATUSES
             ):
-                self._forget_cancel_delivery(execution_id)
+                self._forget_cancel_delivery(
+                    execution_id,
+                    command.command_id if command is not None else None,
+                )
             return None
         if (
             execution.current_attempt_id != attempt_id
@@ -1161,7 +1202,9 @@ class RuntimeControlService:
                 command, execution, operation="cancel",
             )
             if dispatch.delivered:
-                self._delivered_cancel_commands.add(command.command_id)
+                self._remember_cancel_delivery(
+                    execution_id, command.command_id,
+                )
             return dispatch
 
     def _record_terminal_recovery(
@@ -2384,7 +2427,9 @@ class RuntimeControlService:
             )
         if command.status is CommandStatus.APPLIED:
             if command.kind is CommandKind.CANCEL:
-                self._forget_cancel_delivery(command.execution_id)
+                self._forget_cancel_delivery(
+                    command.execution_id, command.command_id,
+                )
             return command
         applied = self.executions.transition_command(
             command.command_id,
@@ -2394,7 +2439,9 @@ class RuntimeControlService:
             receipt=receipt,
         )
         if command.kind is CommandKind.CANCEL:
-            self._forget_cancel_delivery(command.execution_id)
+            self._forget_cancel_delivery(
+                command.execution_id, command.command_id,
+            )
         return applied
 
     def _applying_command(
