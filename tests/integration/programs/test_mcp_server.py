@@ -683,9 +683,10 @@ def test_real_sdk_in_memory_maps_all_six_wrappers_and_method_errors():
         return json_result({"prompt": prompt, "session_id": kwargs["session_id"]})
 
     service.prompt_send = prompt_send
-    service.prompt_cancel = lambda session_id: json_result(
-        {"session_id": session_id, "cancelled": False}
-    )
+    async def prompt_cancel(session_id):
+        return json_result({"session_id": session_id, "cancelled": False})
+
+    service.prompt_cancel = prompt_cancel
     service.tools_list = lambda: json_result([])
 
     async def tool_call(name, arguments, **kwargs):
@@ -1237,7 +1238,7 @@ def test_protocol_prompt_cancel_is_same_connection_only_and_completed_is_false()
 
     try:
         same = asyncio.run(asyncio.wait_for(scenario(), 5))
-        completed = service.prompt_cancel("shared")
+        completed = asyncio.run(service.prompt_cancel("shared"))
     finally:
         release.set()
         service.close()

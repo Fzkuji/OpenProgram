@@ -133,21 +133,10 @@ def _default_release_cancel_cleanup(session_id, event) -> None:
     del session_id, event
 
 
-def _default_cancel_execution(execution_id: str) -> Any:
+async def _default_cancel_execution(execution_id: str) -> Any:
     from openprogram.agent.production_driver import cancel_canonical_execution
 
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(cancel_canonical_execution(execution_id))
-    return loop.create_task(cancel_canonical_execution(execution_id))
-
-
-def _consume_cancel_task(task: asyncio.Task[Any]) -> None:
-    try:
-        task.result()
-    except BaseException:
-        pass
+    return await cancel_canonical_execution(execution_id)
 
 
 def _default_question_registry():
@@ -615,7 +604,7 @@ class MCPService:
         )
         _best_effort(self._event_bus.emit, event)
 
-    def _cancel_record(self, record: ActiveMCPRequest, *, reason: str) -> bool:
+    async def _cancel_record(self, record: ActiveMCPRequest, *, reason: str) -> bool:
         with self._active_lock:
             if (
                 self._active_by_request.get(record.request_id) is not record
@@ -644,20 +633,7 @@ class MCPService:
             try:
                 result = self._cancel_execution(execution_id)
                 if inspect.isawaitable(result):
-                    try:
-                        asyncio.get_running_loop()
-                    except RuntimeError:
-                        result = asyncio.run(result)
-                    else:
-                        if isinstance(result, asyncio.Task):
-                            # Request cancellation already has a scheduled
-                            # canonical intent on this loop. The caller cannot
-                            # block the loop to await it; retain the established
-                            # cooperative signal path and consume task failures.
-                            result.add_done_callback(_consume_cancel_task)
-                        else:
-                            result.close() if hasattr(result, "close") else None
-                            return False
+                    result = await result
             except Exception:
                 return False
 
@@ -720,37 +696,57 @@ class MCPService:
             with self._active_lock:
                 self._cleaning_sessions.discard(record.session_id)
 
-    def cancel_request(self, request_id: str, *, reason: str) -> None:
+    async def cancel_request(self, request_id: str, *, reason: str) -> bool:
         with self._active_lock:
             record = self._active_by_request.get(request_id)
-        if record is not None:
-            self._cancel_record(record, reason=reason)
+        return bool(
+            record is not None and await self._cancel_record(record, reason=reason)
+        )
 
-    def prompt_cancel(self, session_id: str) -> AgentToolResult:
+    async def prompt_cancel(self, session_id: str) -> AgentToolResult:
         with self._active_lock:
             request_id = self._request_by_session.get(session_id)
             record = self._active_by_request.get(request_id) if request_id else None
         cancelled = bool(
-            record is not None and self._cancel_record(record, reason="prompt_cancel")
+            record is not None
+            and await self._cancel_record(record, reason="prompt_cancel")
         )
         return json_result({"session_id": session_id, "cancelled": cancelled})
 
-    def close(self) -> None:
+    def _begin_close(self) -> tuple[str, ...]:
         with self._active_lock:
             if self._closed:
-                return
+                return ()
             self._closed = True
             unsubscribe = self._unsubscribe_questions
             self._unsubscribe_questions = None
             request_ids = tuple(self._active_by_request)
         if unsubscribe is not None:
             _best_effort(unsubscribe)
-        for request_id in request_ids:
+        return request_ids
+
+    async def _finish_close(self, request_ids: tuple[str, ...]) -> None:
+        await asyncio.gather(*(
             self.cancel_request(request_id, reason="connection_closed")
+            for request_id in request_ids
+        ))
         _best_effort(
             self._web_use_release_owner,
             self._web_use_owner_id,
         )
+
+    async def aclose(self) -> None:
+        request_ids = self._begin_close()
+        await self._finish_close(request_ids)
+
+    def close(self) -> None:
+        request_ids = self._begin_close()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(self._finish_close(request_ids))
+        else:
+            loop.create_task(self._finish_close(request_ids))
 
     async def web_use_call(
         self,
@@ -974,7 +970,9 @@ class MCPService:
             )
         except asyncio.CancelledError:
             record.outer_abandoned.set()
-            self.cancel_request(request_id, reason="request_cancelled")
+            await asyncio.shield(
+                self.cancel_request(request_id, reason="request_cancelled")
+            )
             raise
         except Exception:
             failure = json_result({"error": "prompt execution failed"}, is_error=True)

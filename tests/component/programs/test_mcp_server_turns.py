@@ -254,7 +254,7 @@ def test_cancel_barrier_before_admission_never_activates_prompt(monkeypatch) -> 
             service.prompt_send("prompt", session_id="existing", request_id="r1")
         )
         await asyncio.to_thread(admitted.wait, 1)
-        assert service.prompt_cancel("existing").content[0].text == (
+        assert (await service.prompt_cancel("existing")).content[0].text == (
             '{"cancelled":true,"session_id":"existing"}'
         )
         release.set()
@@ -310,7 +310,7 @@ def test_pre_admission_cancel_cleans_guard_before_next_prompt(monkeypatch) -> No
             service.prompt_send("first", session_id="existing", request_id="first")
         )
         await asyncio.to_thread(first_admit.wait, 1)
-        assert _payload(service.prompt_cancel("existing"))["cancelled"] is True
+        assert _payload(await service.prompt_cancel("existing"))["cancelled"] is True
         release_first.set()
         with pytest.raises(asyncio.CancelledError):
             await first
@@ -321,7 +321,7 @@ def test_pre_admission_cancel_cleans_guard_before_next_prompt(monkeypatch) -> No
             service.prompt_send("second", session_id="existing", request_id="second")
         )
         await asyncio.to_thread(second_active.wait, 1)
-        assert _payload(service.prompt_cancel("existing"))["cancelled"] is True
+        assert _payload(await service.prompt_cancel("existing"))["cancelled"] is True
         release_second.set()
         with pytest.raises(asyncio.CancelledError):
             await second
@@ -470,9 +470,9 @@ def test_prompt_cancel_owned_request_performs_complete_idempotent_cleanup() -> N
         )
         await asyncio.to_thread(entered.wait, 1)
         record = _active(service)[0]
-        first = service.prompt_cancel("existing")
-        second = service.prompt_cancel("existing")
-        service.cancel_request("r1", reason="secret-repeat")
+        first = await service.prompt_cancel("existing")
+        second = await service.prompt_cancel("existing")
+        await service.cancel_request("r1", reason="secret-repeat")
         release.set()
         with pytest.raises(asyncio.CancelledError):
             await task
@@ -539,10 +539,8 @@ def test_prompt_cancel_waits_for_async_canonical_cancel_before_cleanup() -> None
         )
         await asyncio.to_thread(process_started.wait, 1)
         record = _active(service)[0]
-        cancel_task = asyncio.create_task(
-            asyncio.to_thread(service.prompt_cancel, "existing")
-        )
-        await asyncio.to_thread(cancel_started.wait, 1)
+        cancel_task = asyncio.create_task(service.prompt_cancel("existing"))
+        assert await asyncio.to_thread(cancel_started.wait, 1)
         assert not record.thread_cancel.is_set()
         cancel_release.set()
         result = await cancel_task
@@ -556,6 +554,42 @@ def test_prompt_cancel_waits_for_async_canonical_cancel_before_cleanup() -> None
     result = asyncio.run(scenario())
     assert _payload(result)["cancelled"] is True
     assert calls[0][0] == "start" and calls[-1][0] == "done"
+
+
+def test_external_prompt_cancellation_waits_for_async_canonical_cancel() -> None:
+    process_started = threading.Event()
+    process_release = threading.Event()
+    cancel_started = threading.Event()
+    cancel_release = threading.Event()
+
+    async def cancel(execution_id):
+        cancel_started.set()
+        await asyncio.to_thread(cancel_release.wait, 2)
+        return SimpleNamespace(execution=SimpleNamespace(status="cancelling"))
+
+    def process(req, *, cancel_event):
+        process_started.set()
+        process_release.wait(2)
+        return TurnResult("late", "u", "a")
+
+    service = _service(process=process, cancel=cancel)
+
+    async def scenario():
+        prompt = asyncio.create_task(
+            service.prompt_send("prompt", session_id="existing", request_id="r1")
+        )
+        await asyncio.to_thread(process_started.wait, 1)
+        record = _active(service)[0]
+        prompt.cancel()
+        assert await asyncio.to_thread(cancel_started.wait, 1)
+        assert not record.thread_cancel.is_set()
+        cancel_release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await prompt
+        assert record.thread_cancel.is_set()
+        process_release.set()
+
+    asyncio.run(scenario())
 
 
 @pytest.mark.parametrize("error", ["terminal", "unexpected"])
@@ -591,7 +625,7 @@ def test_prompt_cancel_service_failure_preserves_live_turn(error) -> None:
         )
         await asyncio.to_thread(entered.wait, 1)
         record = _active(service)[0]
-        result = service.prompt_cancel("existing")
+        result = await service.prompt_cancel("existing")
         assert _payload(result) == {"session_id": "existing", "cancelled": False}
         assert not record.thread_cancel.is_set()
         assert not record.tool_cancel.is_set()
@@ -634,7 +668,7 @@ def test_prompt_cancel_not_found_allows_only_verified_pre_placeholder() -> None:
         )
         await asyncio.to_thread(entered.wait, 1)
         record = _active(service)[0]
-        result = service.prompt_cancel("existing")
+        result = await service.prompt_cancel("existing")
         assert _payload(result)["cancelled"] is False
         assert not record.thread_cancel.is_set()
         release.set()
@@ -682,7 +716,7 @@ def test_prompt_cancel_not_found_guards(lookup) -> None:
             service._current_cancel_event = (
                 lambda _session_id, *, execution_id: None
             )
-        result = service.prompt_cancel("existing")
+        result = await service.prompt_cancel("existing")
         assert _payload(result) == {"session_id": "existing", "cancelled": False}
         assert not record.thread_cancel.is_set()
         assert _active(service) == (record,)
@@ -762,8 +796,8 @@ def test_prompt_cancel_foreign_completed_and_stale_records_have_no_effect() -> N
         )
         await asyncio.to_thread(entered.wait, 1)
         record = _active(foreign)[0]
-        assert _payload(own.prompt_cancel("existing"))["cancelled"] is False
-        assert _payload(own.prompt_cancel("unknown"))["cancelled"] is False
+        assert _payload(await own.prompt_cancel("existing"))["cancelled"] is False
+        assert _payload(await own.prompt_cancel("unknown"))["cancelled"] is False
         assert not record.thread_cancel.is_set() and not record.tool_cancel.is_set()
         assert len(_active(foreign)) == 1
         release.set()
@@ -823,7 +857,7 @@ def test_two_services_cannot_share_or_cross_cancel_one_process_session() -> None
         assert _payload(result_b) == {"error": "prompt execution failed"}
         assert not entered["b"].is_set()
 
-        assert _payload(service_a.prompt_cancel(session_id))["cancelled"] is True
+        assert _payload(await service_a.prompt_cancel(session_id))["cancelled"] is True
         assert record_a.thread_cancel.is_set()
         assert questions_a.cancelled == [(session_id, record_a.execution_id)]
         assert questions_b.cancelled == []
@@ -844,7 +878,7 @@ def test_two_services_cannot_share_or_cross_cancel_one_process_session() -> None
         assert questions_b.cancelled == []
         assert cleanup == [("a", "cancel", record_a.execution_id)]
 
-        assert _payload(service_b.prompt_cancel(session_id))["cancelled"] is True
+        assert _payload(await service_b.prompt_cancel(session_id))["cancelled"] is True
         release["b"].set()
         with pytest.raises(asyncio.CancelledError):
             await task_b
@@ -909,7 +943,7 @@ def test_old_owner_cleanup_cannot_cross_concurrent_session_handover(operation) -
 
         def cancel_old_owner():
             if operation == "prompt_cancel":
-                result["value"] = _payload(service.prompt_cancel(session_id))
+                result["value"] = _payload(asyncio.run(service.prompt_cancel(session_id)))
             else:
                 service.close()
 
@@ -1157,7 +1191,7 @@ def test_question_claim_and_cancellation_coordinate_on_active_ownership() -> Non
         await asyncio.to_thread(question_entered.wait, 1)
 
         def cancel():
-            service.prompt_cancel("existing")
+            asyncio.run(service.prompt_cancel("existing"))
             cancel_done.set()
 
         cancel_thread = threading.Thread(target=cancel)
@@ -1267,7 +1301,7 @@ def test_cancelled_late_worker_exception_cannot_publish_result(operation) -> Non
         )
         await asyncio.to_thread(entered.wait, 1)
         if operation == "prompt_cancel":
-            assert _payload(service.prompt_cancel("existing"))["cancelled"] is True
+            assert _payload(await service.prompt_cancel("existing"))["cancelled"] is True
         else:
             service.close()
         release.set()
@@ -1296,7 +1330,7 @@ def test_cancelled_late_worker_cannot_remove_reused_request_record() -> None:
             service.prompt_send("old", session_id="existing", request_id="reused")
         )
         await asyncio.to_thread(entered["old"].wait, 1)
-        assert _payload(service.prompt_cancel("existing"))["cancelled"] is True
+        assert _payload(await service.prompt_cancel("existing"))["cancelled"] is True
         new = asyncio.create_task(
             service.prompt_send("new", session_id="existing", request_id="reused")
         )
@@ -1348,7 +1382,7 @@ def test_new_same_session_request_is_rejected_until_old_cleanup_finishes() -> No
         )
         await asyncio.to_thread(old_entered.wait, 1)
         cancel_thread = threading.Thread(
-            target=lambda: service.prompt_cancel("existing")
+            target=lambda: asyncio.run(service.prompt_cancel("existing"))
         )
         cancel_thread.start()
         await asyncio.to_thread(cleanup_entered.wait, 1)
@@ -1466,7 +1500,7 @@ def test_cancel_request_cleanup_callback_failures_do_not_retain_ownership() -> N
             service.prompt_send("prompt", session_id="existing", request_id="r1")
         )
         await asyncio.to_thread(entered.wait, 1)
-        service.cancel_request("r1", reason="secret-caller-reason")
+        await service.cancel_request("r1", reason="secret-caller-reason")
         assert _active(service)
         assert not service._active_by_request["r1"].thread_cancel.is_set()
         release.set()
