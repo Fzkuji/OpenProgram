@@ -587,7 +587,6 @@ def test_activation_uses_the_durable_agent_turn_payload_by_default(tmp_path):
         generation=attempt.generation,
         expected_execution_version=leased.status_version,
     )
-
     async def run():
         binding = await driver.activate(active, activation=None)
         driver.activation_committed(binding)
@@ -658,9 +657,11 @@ def test_internal_canonical_entry_admits_before_activation_with_exact_identity(t
     assert completed.status is ExecutionStatus.COMPLETED
 
 
-def test_cancel_targets_exact_handle_and_releases_its_question_wait(tmp_path):
+def test_cancel_targets_exact_handle_and_releases_its_question_wait(tmp_path, monkeypatch):
+    import openprogram.execution as execution_module
     from openprogram.agent.production_driver import AgentProductionDriver
     from openprogram.agent.questions import PendingQuestion, QuestionRegistry
+    from openprogram.execution.waits import DurableWaitStore
 
     store, execution = _admitted(tmp_path)
     registry = QuestionRegistry()
@@ -709,31 +710,42 @@ def test_cancel_targets_exact_handle_and_releases_its_question_wait(tmp_path):
         generation=attempt.generation,
         expected_execution_version=leased.status_version,
     )
+    monkeypatch.setattr(execution_module, "default_store", lambda: store)
+    from openprogram.execution.control import RuntimeControlService
+    from openprogram.execution.driver import DriverRegistry
+    control = RuntimeControlService(store, attempts, DriverRegistry())
+    wait = DurableWaitStore(store).open_wait(
+        wait_id="q-agent-1", execution_id=execution.execution_id,
+        attempt_id=active.attempt_id, generation=active.generation,
+        kind="ask",
+        request={
+            "prompt": "continue?", "options": [], "multi": False,
+            "allow_custom": True, "detail": "", "schema": {}, "questions": [],
+        },
+        policy_snapshot={"version": 1}, expires_at=time.time() + 60,
+    )
     async def run():
         binding = await driver.activate(active, activation=None)
-        driver.activation_committed(binding)
+        control._bind_driver(binding)
         handle = binding.handle
         assert await asyncio.to_thread(entered.wait, 2)
         current = store.get_execution(execution.execution_id)
         assert current is not None
-        store.accept_command_with_transition(
+        dispatch = await control.request_cancel(
             command_id="cancel-agent-1",
             execution_id=execution.execution_id,
             expected_version=current.status_version,
-            kind=CommandKind.CANCEL,
-            target=ExecutionStatus.CANCELLING,
-            payload={"reason_code": "cancel.user"},
             actor={"surface": "test"},
             reason_code="cancel.user",
         )
-        ack = await driver.request_cancel(handle, "cancel-agent-1")
         await handle.done
         await asyncio.sleep(0)
-        return ack
+        return dispatch
 
-    ack = asyncio.run(run())
-    assert ack.command_id == "cancel-agent-1"
-    assert ack.attempt_id == active.attempt_id
+    dispatch = asyncio.run(run())
+    assert dispatch.command.command_id == "cancel-agent-1"
+    assert dispatch.ack is not None
+    assert dispatch.ack.attempt_id == active.attempt_id
     assert released.is_set()
     assert registry.consume("q-agent-1") == ("cancelled", None)
     assert not driver._finished

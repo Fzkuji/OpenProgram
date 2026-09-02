@@ -15,8 +15,11 @@ from openprogram.agent.questions import (
     PendingQuestion,
     get_question_registry,
 )
-from openprogram.agentic_programming.function import CancelledError
 from openprogram.context.nodes import Call, ROLE_CODE
+from openprogram.execution import AttemptStore, CapabilitySet, ExecutionStore
+from openprogram.execution.control import RuntimeControlService
+from openprogram.execution.driver import DriverRegistry
+from openprogram.execution.waits import DurableWaitStore
 from openprogram.store import SessionNodeWriter
 from openprogram.store.session.session_store import SessionStore
 
@@ -66,9 +69,7 @@ def clean_runtime_control():
     run_control.clear_turn_context()
     run_control.CANCEL_GRACE_S = 0.05
     registry = get_question_registry()
-    registry._pending.clear()
     registry._events.clear()
-    registry._results.clear()
     yield
     _drain_runtime_control()
     run_control.CANCEL_GRACE_S = 4.0
@@ -105,15 +106,52 @@ def _wait_status(store, session_id, execution_id, wanted, timeout=2.0):
     return _node(store, session_id, execution_id).metadata["status"]
 
 
-def test_token_trips_and_question_wait_is_cancelled_not_denied(store):
+def _canonical_running_execution(tmp_path, monkeypatch, execution_id="exec-1"):
+    import openprogram.execution as execution_module
+
+    canonical = ExecutionStore(tmp_path / "execution.sqlite3")
+    revision = canonical.create_revision(manifest={"entrypoint": "agent"})
+    execution = canonical.create_execution(
+        execution_id=execution_id,
+        run_id=f"run-{execution_id}",
+        session_id="question-cancel",
+        revision_id=revision.revision_id,
+        capabilities=CapabilitySet(),
+    )
+    attempts = AttemptStore(canonical)
+    leased, reserved = attempts.lease(
+        execution_id, expected_version=execution.status_version,
+        owner_id="question-owner", ttl_seconds=30,
+    )
+    _active, running = attempts.activate(
+        leased.attempt_id, generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    service = RuntimeControlService(canonical, attempts, DriverRegistry())
+    monkeypatch.setattr(execution_module, "default_store", lambda: canonical)
+    monkeypatch.setattr(execution_module, "default_control_service", lambda: service)
+    return canonical, running
+
+
+def test_token_trips_and_durable_question_wait_is_cancelled(tmp_path, monkeypatch):
     session_id = "question-cancel"
-    _append_execution(store, session_id, "exec-1")
+    canonical, running = _canonical_running_execution(tmp_path, monkeypatch)
     event = threading.Event()
     run_control.register_cancel_event(
         session_id, event, execution_id="exec-1",
     )
     run_control.set_current_session_id(session_id)
     run_control.set_current_execution_id("exec-1")
+    wait = DurableWaitStore(canonical).open_wait(
+        wait_id="q1", execution_id=running.execution_id,
+        attempt_id=running.current_attempt_id,
+        generation=running.owner_lease["generation"], kind="ask",
+        request={
+            "prompt": "continue?", "options": [], "multi": False,
+            "allow_custom": True, "detail": "", "schema": {}, "questions": [],
+        },
+        policy_snapshot={"version": 1}, expires_at=time.time() + 60,
+    )
     question = PendingQuestion(
         id="q1",
         session_id=session_id,
@@ -121,7 +159,8 @@ def test_token_trips_and_question_wait_is_cancelled_not_denied(store):
         prompt="continue?",
         execution_id="exec-1",
     )
-    waiter = get_question_registry().register(question)
+    registry = get_question_registry()
+    waiter = registry.register(question)
     outcomes: list[str] = []
 
     def blocked() -> None:
@@ -131,7 +170,11 @@ def test_token_trips_and_question_wait_is_cancelled_not_denied(store):
 
     thread = threading.Thread(target=blocked)
     thread.start()
-    record = run_control.cancel_execution("exec-1")
+    run_control.mark_cancelled(session_id, execution_id="exec-1")
+    record = canonical.get_execution("exec-1")
+    assert record is not None
+    record = record.to_dict()
+    registry.wake(wait.wait_id)
     thread.join(2)
 
     assert event.is_set()
@@ -140,30 +183,17 @@ def test_token_trips_and_question_wait_is_cancelled_not_denied(store):
     assert record["reason_code"] == "cancel.user"
 
 
-def test_ask_raises_cancelled_error_instead_of_declined(store, monkeypatch):
+def test_ask_requires_declared_durable_wait(store):
     from openprogram.agentic_programming.runtime import Runtime
+    from openprogram.agent.questions import DurableWaitSafePointRequired
 
     session_id = "ask-cancelled"
     _append_execution(store, session_id, "exec-1")
-    event = threading.Event()
-    run_control.register_cancel_event(
-        session_id, event, execution_id="exec-1",
-    )
     run_control.set_current_session_id(session_id)
     run_control.set_current_execution_id("exec-1")
     runtime = Runtime()
-
-    def cancel_soon() -> None:
-        time.sleep(0.05)
-        run_control.cancel_execution("exec-1")
-
-    thread = threading.Thread(target=cancel_soon)
-    thread.start()
-    with pytest.raises(CancelledError):
+    with pytest.raises(DurableWaitSafePointRequired):
         runtime.ask("continue?", timeout=2)
-    thread.join(2)
-    from openprogram.agent.questions import UserDeclined
-    assert not isinstance(CancelledError, UserDeclined)
 
 
 def test_grace_terminates_only_that_execution_owner(store):

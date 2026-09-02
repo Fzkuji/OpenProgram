@@ -85,6 +85,7 @@ def test_ws_execution_cancel_returns_canonical_status_and_releases_occupancy(
 
     asyncio.run(runtime.ACTIONS["execution.cancel"](
         ws, {
+            "type": "execution.command",
             "action": "execution.cancel",
             "command_id": "cancel-web-1",
             "execution_id": record.execution_id,
@@ -105,6 +106,7 @@ def test_ws_execution_cancel_returns_canonical_status_and_releases_occupancy(
     # Repeating the exact cancel is idempotent after the terminal transition.
     asyncio.run(runtime.ACTIONS["execution.cancel"](
         ws, {
+            "type": "execution.command",
             "action": "execution.cancel",
             "command_id": "cancel-web-1",
             "execution_id": record.execution_id,
@@ -115,6 +117,7 @@ def test_ws_execution_cancel_returns_canonical_status_and_releases_occupancy(
 
     asyncio.run(runtime.ACTIONS["execution.cancel"](
         ws, {
+            "type": "execution.command",
             "action": "execution.cancel",
             "command_id": "cancel-web-stale",
             "execution_id": record.execution_id,
@@ -148,6 +151,8 @@ def test_http_execution_cancel_returns_canonical_status_and_body(
     lifecycle.register(app)
     response = TestClient(app).post(
         "/api/execution/cancel", json={
+            "type": "execution.command",
+            "action": "execution.cancel",
             "command_id": "cancel-http-1",
             "execution_id": record.execution_id,
             "expected_version": record.status_version,
@@ -163,6 +168,8 @@ def test_http_execution_cancel_returns_canonical_status_and_body(
     assert released == [record.execution_id]
     repeated = TestClient(app).post(
         "/api/execution/cancel", json={
+            "type": "execution.command",
+            "action": "execution.cancel",
             "command_id": "cancel-http-1",
             "execution_id": record.execution_id,
             "expected_version": record.status_version,
@@ -173,6 +180,8 @@ def test_http_execution_cancel_returns_canonical_status_and_body(
 
     stale = TestClient(app).post(
         "/api/execution/cancel", json={
+            "type": "execution.command",
+            "action": "execution.cancel",
             "command_id": "cancel-http-stale",
             "execution_id": record.execution_id,
             "expected_version": 999,

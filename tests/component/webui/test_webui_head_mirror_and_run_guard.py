@@ -628,6 +628,7 @@ def test_chat_ack_exposes_only_a_durable_cancellable_execution(
     control_ws = _ControlWS()
     from openprogram.webui.ws_actions import runtime
     asyncio.run(runtime.ACTIONS["execution.cancel"](control_ws, {
+        "type": "execution.command",
         "action": "execution.cancel",
         "command_id": "chat-ack-stop",
         "execution_id": running_frames[-1]["data"]["execution_id"],
