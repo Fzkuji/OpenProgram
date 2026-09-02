@@ -1974,6 +1974,7 @@ class RuntimeControlService:
                 continue
             outcome = str(repair["outcome"])
             reason_code = repair.get("reason_code")
+            command_id = repair.get("command_id")
             if execution.status is ExecutionStatus.CANCELLING:
                 target = ExecutionStatus.CANCELLED
                 outcome = "cancelled"
@@ -1985,6 +1986,7 @@ class RuntimeControlService:
                     expected_execution_version=execution.status_version,
                     target=target,
                     outcome=outcome,
+                    command_id=(str(command_id) if command_id else None),
                     reason_code=reason_code,
                 )
             except (AttemptConflict, ExecutionConflict):

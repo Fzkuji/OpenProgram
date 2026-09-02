@@ -267,8 +267,9 @@ class AgentProductionDriver:
         self._finished: set[tuple[str, str, int]] = set()
         # Completion is an in-process durable outbox: releasing a driver
         # handle must not discard a terminal write that failed transiently.
-        self._pending_finishes: dict[tuple[str, str, int], tuple[AttemptRecord, int, ExecutionStatus, str, str | None]] = {}
+        self._pending_finishes: dict[tuple[str, str, int], tuple[AttemptRecord, int, ExecutionStatus, str, str | None, str | None]] = {}
         self._finish_retry_threads: set[tuple[str, str, int]] = set()
+        self._cancel_commands: dict[tuple[str, str, int], str] = {}
 
     def _resolve_durable_input(self, record: Any) -> Mapping[str, Any]:
         if self.executions is None:
@@ -385,6 +386,13 @@ class AgentProductionDriver:
         self, handle: AgentDriverHandle, command_id: str
     ) -> DriverAck:
         self._require_live(handle)
+        try:
+            command = self._control_service().executions.get_command(command_id)
+        except Exception:
+            command = None
+        if command is not None:
+            with self._handles_lock:
+                self._cancel_commands[self._key(handle)] = command_id
         handle.cancel_event.set()
         registry = self.question_registry
         if registry is None:
@@ -597,6 +605,8 @@ class AgentProductionDriver:
             self._delete_persisted_finish(key)
             with self._handles_lock:
                 self._finished.add(key)
+                self._pending_finishes.pop(key, None)
+                self._cancel_commands.pop(key, None)
             return
         cancelled = cancel_event.is_set() or execution.status is ExecutionStatus.CANCELLING
         if cancelled and execution.status is not ExecutionStatus.CANCELLING:
@@ -628,6 +638,8 @@ class AgentProductionDriver:
             if failed
             else None
         )
+        with self._handles_lock:
+            cancel_command_id = self._cancel_commands.get(key)
         try:
             service.finish_attempt(
                 attempt_id=attempt.attempt_id,
@@ -635,6 +647,7 @@ class AgentProductionDriver:
                 expected_execution_version=execution.status_version,
                 target=target,
                 outcome=outcome,
+                command_id=cancel_command_id,
                 reason_code=reason_code,
             )
         except Exception:
@@ -647,6 +660,7 @@ class AgentProductionDriver:
                 target,
                 outcome,
                 reason_code,
+                cancel_command_id,
             )
             return
         with self._handles_lock:
@@ -660,11 +674,13 @@ class AgentProductionDriver:
         target: ExecutionStatus,
         outcome: str,
         reason_code: str | None,
+        command_id: str | None,
     ) -> None:
         key = (attempt.execution_id, attempt.attempt_id, attempt.generation)
         with self._handles_lock:
             self._pending_finishes[key] = (
-                attempt, expected_execution_version, target, outcome, reason_code
+                attempt, expected_execution_version, target, outcome, reason_code,
+                command_id,
             )
             if key in self._finish_retry_threads:
                 return
@@ -679,6 +695,7 @@ class AgentProductionDriver:
                     target=target.value,
                     outcome=outcome,
                     reason_code=reason_code,
+                    command_id=command_id,
                 )
             except Exception:
                 # The in-process item remains retryable; a later successful
@@ -705,7 +722,10 @@ class AgentProductionDriver:
                     pending = self._pending_finishes.get(key)
                     if pending is None or key in self._finished:
                         return
-                attempt, _expected_version, target, outcome, reason_code = pending
+                (
+                    attempt, _expected_version, target, outcome, reason_code,
+                    command_id,
+                ) = pending
                 try:
                     service = self._control_service()
                     execution = service.executions.get_execution(attempt.execution_id)
@@ -750,6 +770,7 @@ class AgentProductionDriver:
                         expected_execution_version=execution.status_version,
                         target=retry_target,
                         outcome=retry_outcome,
+                        command_id=command_id,
                         reason_code=retry_reason,
                     )
                 except AttemptConflict:
@@ -778,6 +799,7 @@ class AgentProductionDriver:
         with self._handles_lock:
             self._pending_finishes.pop(key, None)
             self._finished.add(key)
+            self._cancel_commands.pop(key, None)
 
     def _delete_persisted_finish(self, key: tuple[str, str, int]) -> None:
         execution_id, attempt_id, generation = key
@@ -1057,21 +1079,42 @@ async def cancel_canonical_execution(
     execution_id: str, *, reason_code: str = "cancel.user",
 ) -> Any | None:
     """Cancel one canonical execution through the control service."""
+    from types import SimpleNamespace
+
     from openprogram.agent.authority import local_owner_authority
     from openprogram.execution import default_control_service, default_store
+    from openprogram.execution.attempts import AttemptConflict
+    from openprogram.execution.store import ExecutionConflict
 
     store = default_store()
-    execution = store.get_execution(execution_id)
-    if execution is None:
-        return None
     service = default_control_service()
-    return await service.request_cancel(
-        command_id=f"cancel_{uuid.uuid4().hex}",
-        execution_id=execution_id,
-        expected_version=execution.status_version,
-        actor=local_owner_authority(),
-        reason_code=reason_code,
-    )
+    for attempt_number in range(2):
+        execution = store.get_execution(execution_id)
+        if execution is None:
+            return None
+        if execution.status in TERMINAL_EXECUTION_STATUSES or execution.status is ExecutionStatus.CANCELLING:
+            return SimpleNamespace(execution=execution)
+        try:
+            return await service.request_cancel(
+                command_id=f"cancel_{uuid.uuid4().hex}",
+                execution_id=execution_id,
+                expected_version=execution.status_version,
+                actor=local_owner_authority(),
+                reason_code=reason_code,
+            )
+        except (AttemptConflict, ExecutionConflict):
+            latest = store.get_execution(execution_id)
+            if latest is None:
+                return None
+            if (
+                latest.status in TERMINAL_EXECUTION_STATUSES
+                or latest.status is ExecutionStatus.CANCELLING
+            ):
+                return SimpleNamespace(execution=latest)
+            if attempt_number == 0:
+                continue
+            raise
+    return None
 
 
 __all__ = [

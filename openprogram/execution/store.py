@@ -403,6 +403,7 @@ class ExecutionStore:
         target: str,
         outcome: str,
         reason_code: str | None,
+        command_id: str | None = None,
     ) -> None:
         """Persist a terminal write for bounded retry and startup replay."""
         now = time.time()
@@ -411,18 +412,20 @@ class ExecutionStore:
                 """
                 INSERT INTO execution_finish_repairs (
                     execution_id, attempt_id, generation, expected_version,
-                    target, outcome, reason_code, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    target, outcome, reason_code, created_at, updated_at,
+                    command_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(execution_id, attempt_id, generation) DO UPDATE SET
                     expected_version = excluded.expected_version,
                     target = excluded.target,
                     outcome = excluded.outcome,
                     reason_code = excluded.reason_code,
+                    command_id = excluded.command_id,
                     updated_at = excluded.updated_at
                 """,
                 (
                     execution_id, attempt_id, generation, expected_version,
-                    target, outcome, reason_code, now, now,
+                    target, outcome, reason_code, now, now, command_id,
                 ),
             )
 

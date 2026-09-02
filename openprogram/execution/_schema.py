@@ -330,6 +330,7 @@ def _create_finish_repair_schema(connection: sqlite3.Connection) -> None:
             target TEXT NOT NULL,
             outcome TEXT NOT NULL,
             reason_code TEXT,
+            command_id TEXT,
             created_at REAL NOT NULL,
             updated_at REAL NOT NULL,
             PRIMARY KEY(execution_id, attempt_id, generation),
@@ -342,6 +343,7 @@ def _create_finish_repair_schema(connection: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS execution_finish_repairs_updated "
         "ON execution_finish_repairs(updated_at, execution_id)"
     )
+    _add_column_if_missing(connection, "execution_finish_repairs", "command_id TEXT")
 
 
 def _migrate_v6(connection: sqlite3.Connection) -> None:

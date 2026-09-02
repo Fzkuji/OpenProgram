@@ -91,6 +91,12 @@ def test_ws_execution_cancel_returns_canonical_status_and_releases_occupancy(
     assert released == [record.execution_id]
     assert not any(frame["type"] == "error" for frame in ws.frames)
 
+    # Repeating the exact cancel is idempotent after the terminal transition.
+    asyncio.run(runtime.ACTIONS["execution.cancel"](
+        ws, {"action": "execution.cancel", "execution_id": record.execution_id},
+    ))
+    assert not any(frame["type"] == "error" for frame in ws.frames)
+
 
 def test_http_execution_cancel_returns_canonical_status_and_body(
     tmp_path, monkeypatch,
@@ -118,6 +124,11 @@ def test_http_execution_cancel_returns_canonical_status_and_body(
     assert body["execution_id"] == record.execution_id
     assert body["status"] == "cancelled"
     assert released == [record.execution_id]
+    repeated = TestClient(app).post(
+        "/api/execution/cancel", json={"execution_id": record.execution_id},
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["execution"]["status"] == "cancelled"
 
 
 def test_session_reload_preserves_cancelling_execution_status(

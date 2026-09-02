@@ -617,22 +617,19 @@ class MCPService:
             ):
                 return False
             self._cleaning_sessions.add(record.session_id)
+            execution_id = record.execution_id
+            if not execution_id:
+                # Register the pending intent while holding the same lock as
+                # worker admission publishes execution_id. This makes the
+                # empty-identity window atomic with the worker's barrier.
+                record.cancel_requested = True
+                record.cancel_reason = reason
+                record.thread_cancel.set()
+                record.tool_cancel.set()
+                return True
         try:
             try:
-                if not record.execution_id:
-                    # The request is accepted before the worker can finish
-                    # canonical admission. Record the cancel intent under
-                    # the same ownership lock; the worker consumes it after
-                    # admission and before activation.
-                    with self._active_lock:
-                        if self._active_by_request.get(record.request_id) is not record:
-                            return False
-                        record.cancel_requested = True
-                        record.cancel_reason = reason
-                        record.thread_cancel.set()
-                        record.tool_cancel.set()
-                    return True
-                result = self._cancel_execution(record.execution_id)
+                result = self._cancel_execution(execution_id)
                 if isinstance(result, asyncio.Task):
                     # The task will signal the live AgentDriver handle; the
                     # local cooperative events are set below immediately.
