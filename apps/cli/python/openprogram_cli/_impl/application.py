@@ -678,7 +678,7 @@ def main():
         return
 
     if args.command == "execution":
-        from openprogram.cli.commands.execution import _cmd_execution_control
+        from openprogram.cli.commands.execution import _cmd_execution_control, _cmd_execution_wait
 
         verb = getattr(args, "execution_verb", None)
         if verb in {"pause", "continue", "step", "steer", "cancel", "fork", "retry"}:
@@ -699,6 +699,13 @@ def main():
                 expected_version=args.expected_version,
                 command_id=args.command_id,
                 payload=payload,
+            ))
+        if verb in {"wait-answer", "wait-decline"}:
+            sys.exit(_cmd_execution_wait(
+                verb.replace("-", "_"), args.execution_id,
+                expected_version=args.expected_version, command_id=args.command_id,
+                wait_id=args.wait_id, generation=args.generation,
+                value=args.wait_value,
             ))
         _need_subcommand(args._cmd_parser)
 

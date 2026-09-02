@@ -454,6 +454,18 @@ def build_parser() -> argparse.ArgumentParser:
         elif _verb == "retry":
             _parser.add_argument("--checkpoint-id", default=None, help="Optional published source checkpoint id")
 
+    for _verb, _help in (
+        ("wait-answer", "Answer one durable question or approval"),
+        ("wait-decline", "Decline one durable question or approval"),
+    ):
+        _parser = execution_sub.add_parser(_verb, help=_help)
+        _parser.add_argument("execution_id", help="Execution id")
+        _parser.add_argument("wait_id", help="Exact durable wait id")
+        _parser.add_argument("generation", type=int, help="Observed wait generation")
+        _parser.add_argument("--expected-version", required=True, type=int, help="Exact execution status_version observed by the caller")
+        _parser.add_argument("--command-id", default=None, help="Caller command id for idempotent retry")
+        _parser.add_argument("--answer-json" if _verb == "wait-answer" else "--reason", dest="wait_value", default=None, help="JSON answer" if _verb == "wait-answer" else "Optional decline reason")
+
     # ---- jobs -------------------------------------------------------------
     p_jobs = sub.add_parser(
         "jobs", help="Inspect canonical resource state for background jobs",

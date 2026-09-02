@@ -178,7 +178,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       ? pendingDecision
       : null;
   const activeDecision = askDecision ? null : pendingDecision;
-  // goal 挂起：answeredKey = 乐观收起（经 question_reply 回答对应提问后
+  // goal 挂起：answeredKey = 乐观收起（经 canonical wait answer 回答对应提问后
   // 立即收，不等 goal_update 把 status 翻走）；按「会话:提问时刻:轮数:问题」
   // 记 key。有效回答会把 turns_used 归零，同一句再问时靠 last_question_at
   // 区分；离开 waiting_user 时清掉 key。刷新后水合仍是 waiting_user → 面板重现。
@@ -193,6 +193,17 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     if (goal?.status !== "waiting_user") setGoalAnsweredKey(null);
   }, [goal?.status]);
   const send = wsSend;
+  const sendWaitCommand = useCallback((decision: NonNullable<typeof pendingDecision>, action: "execution.wait.answer" | "execution.wait.decline", value?: unknown) => {
+    if (!decision.executionId || !Number.isInteger(decision.expectedVersion)) return;
+    send({
+      type: "execution.command", action,
+      command_id: `web-wait-${crypto.randomUUID()}`,
+      execution_id: decision.executionId, expected_version: decision.expectedVersion,
+      payload: action === "execution.wait.answer"
+        ? { wait_id: decision.id, generation: decision.waitGeneration, answer: value }
+        : { wait_id: decision.id, generation: decision.waitGeneration, reason: value },
+    });
+  }, [send]);
 
   const isRunning = runningTask !== null;
   const isCancelling = Boolean(runningTask?.cancelling);
@@ -276,7 +287,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   });
   const { unattended, toggleUnattended } = useUnattendedMode(
     currentSessionId,
-    send,
+    sendWaitCommand,
   );
   const { sandbox, sandboxAvailable, sandboxReason, toggleSandbox } =
     useSandboxToggle(activeChatKey ?? currentSessionId);
@@ -367,7 +378,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     boundSessionId: bound,
     input,
     textareaRef,
-    send,
+    sendWaitCommand,
     openContextPanel: () => setContextPanelOpen(true),
   });
 
@@ -411,17 +422,13 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
 
   // 顶部提问面板在场时的提交改道（唯一允许改输入框提交行为的地方，样式
   // 不动）：ask / confirm —— 含 goal waiting_user 经 runtime.ask 发来的
-  // 提问 —— 输入文本作为答案走 question_reply（回答后端阻塞的 PendingQuestion，
+  // 提问 —— 输入文本作为答案走 canonical wait command（回答后端阻塞的等待，
   // 普通聊天解不开它）。goal 面板独立出现（question.asked 尚未到达 / 已丢失）
   // 时拿不到 qid，此时不把文本当聊天发出去 —— 等 question.asked 到达。
   const submitWithPanel = useCallback(async () => {
     const trimmed = input.trim();
     if (askDecision && trimmed && askDecision.allow_custom) {
-      send({
-        action: "question_reply",
-        id: askDecision.id,
-        answer: askDecision.multi ? [trimmed] : trimmed,
-      });
+      sendWaitCommand(askDecision, "execution.wait.answer", askDecision.multi ? [trimmed] : trimmed);
       dequeueDecision(askDecision.id);
       setComposerInputFor(activeChatKey ?? currentSessionId, "");
       // goal 的提问经同一通道回答后，乐观收起 goal 面板（不等 goal_update
@@ -503,17 +510,13 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // 这个圆形按钮，所以这里只管 fn-form / 普通聊天两种。
   const onSendButtonClick = fnFormActive ? submitFnForm : submitWithPanel;
 
-  // 拒绝/取消当前的系统决定 —— 走左上角 ✕。发 question_reject 并即时出队
-  // （后端 _resolve_question 收口 + 广播）。
+  // 拒绝/取消当前的系统决定 —— 走左上角 ✕。提交 canonical wait decline 并即时出队。
   const rejectDecision = useCallback(() => {
     const d = activeDecision;
     if (!d) return;
-    const sock = getSocket();
-    if (sock && sock.readyState === WebSocket.OPEN) {
-      sock.send(JSON.stringify({ action: "question_reject", id: d.id }));
-    }
+    sendWaitCommand(d, "execution.wait.decline");
     dequeueDecision(d.id);
-  }, [activeDecision, dequeueDecision]);
+  }, [activeDecision, dequeueDecision, sendWaitCommand]);
 
   // 顶部提问面板的内容（真 ask 优先；morphed 时不叠面板 —— approval/form
   // 占着输入区，答完再出）。点 pill = 立即提交（点击即时反馈）。
@@ -529,11 +532,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
         options: askDecision.options.map((label) => ({ label })),
         disabled: false,
         onPick: (label: string) => {
-          send({
-            action: "question_reply",
-            id: askDecision.id,
-            answer: askDecision.multi ? [label] : label,
-          });
+          sendWaitCommand(askDecision, "execution.wait.answer", askDecision.multi ? [label] : label);
           dequeueDecision(askDecision.id);
           // goal 的提问也走这里回答 —— 乐观收起 goal 面板。
           if (goalKey) setGoalAnsweredKey(goalKey);
@@ -542,7 +541,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     : goalWaiting && !morphed
     ? {
         // goal 面板独立出现 = 对应的 question.asked 还没到达（或已丢失），
-        // 没有 qid 可以 question_reply，选项先禁用，等 askDecision 到达后
+        // 没有 wait id 时选项禁用，等 askDecision 到达后
         // 上面的分支接管（真 ask 优先）。
         badge: (
           <>

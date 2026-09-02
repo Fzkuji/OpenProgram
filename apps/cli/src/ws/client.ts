@@ -26,7 +26,7 @@ export type WsRequest =
   | ChatRequest
   | { action: 'stats' }
   | {
-      action: 'execution.pause' | 'execution.continue' | 'execution.step' | 'execution.steer' | 'execution.cancel' | 'execution.fork' | 'execution.retry';
+      action: 'execution.pause' | 'execution.continue' | 'execution.step' | 'execution.steer' | 'execution.cancel' | 'execution.fork' | 'execution.retry' | 'execution.wait.answer' | 'execution.wait.decline';
       type: 'execution.command';
       command_id: string;
       execution_id: string;
@@ -71,12 +71,6 @@ export type WsRequest =
   | { action: 'detach_session'; channel: string; account_id: string; peer: string }
   | { action: 'get_settings'; session_id?: string }
   | { action: 'set_setting'; key: string; value: unknown }
-  // runtime.ask / confirm / approval reply. answer is a string (single
-  // choice / confirm / free text) or string[] (multi). Mirrors the web
-  // composer's question_reply / question_reject (question-mode.tsx) so
-  // both surfaces resolve through the same backend _resolve_question.
-  | { action: 'question_reply'; id: string; answer: string | string[]; scope?: 'always' }
-  | { action: 'question_reject'; id: string; reason?: string }
   | { action: 'sandbox'; session_id?: string }
   | { action: 'context'; session_id?: string }
   | { action: 'compact'; session_id: string }
@@ -175,6 +169,9 @@ export interface ChatResponse {
     attempts?: number;
     issues?: Array<{ code: string; path?: string; schema_path?: string; message?: string }>;
     session_id?: string;
+    execution_id?: string;
+    wait_generation?: number;
+    expected_version?: number;
     msg_id?: string;
     [k: string]: unknown;
   };

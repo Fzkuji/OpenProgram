@@ -490,6 +490,9 @@ export function useWS(): void {
             useSessionStore.getState().enqueueDecision({
               id: String(dd.id),
               sessionId: String(dd.session_id || ""),
+              executionId: String(dd.execution_id || ""),
+              waitGeneration: Number(dd.wait_generation || 0),
+              expectedVersion: Number(dd.expected_version || 0),
               kind: (dd.kind as "ask" | "confirm" | "approval" | "form" | "ask_many") || "ask",
               prompt: String(dd.prompt || ""),
               options: Array.isArray(dd.options) ? (dd.options as string[]) : [],
@@ -652,6 +655,9 @@ export function useWS(): void {
                       store.enqueueDecision({
                         id: String(dd.id),
                         sessionId: String(dd.session_id || sid),
+                        executionId: String(dd.execution_id || ""),
+                        waitGeneration: Number(dd.wait_generation || 0),
+                        expectedVersion: Number(dd.expected_version || 0),
                         kind: (dd.kind as PendingDecision["kind"]) || "ask",
                         prompt: String(dd.prompt || ""),
                         options: Array.isArray(dd.options) ? (dd.options as string[]) : [],

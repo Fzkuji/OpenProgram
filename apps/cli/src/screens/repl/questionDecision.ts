@@ -16,6 +16,9 @@ export function decisionFromFrame(
   if (!data?.id) return null;
   return {
     id: String(data.id),
+    executionId: String(data.execution_id ?? ''),
+    waitGeneration: Number(data.wait_generation ?? 0),
+    expectedVersion: Number(data.expected_version ?? 0),
     kind: (data.kind as 'ask' | 'confirm' | 'approval' | 'form' | 'ask_many') || 'ask',
     prompt: String(data.prompt ?? ''),
     options: Array.isArray(data.options) ? data.options.map(String) : [],
@@ -46,16 +49,22 @@ export function enqueueDecision(
  *  also persists a project-level allow rule for the tool server-side
  *  (mirrors the web's 总是允许; permission-model.md §6.3). */
 export function replyAction(
-  id: string, answer: string | string[], scope?: 'always',
+  decision: PendingDecision, answer: unknown,
 ): WsRequest {
-  return scope
-    ? { action: 'question_reply', id, answer, scope }
-    : { action: 'question_reply', id, answer };
+  return {
+    type: 'execution.command', action: 'execution.wait.answer',
+    command_id: `tui-wait-${Math.random().toString(36).slice(2)}`,
+    execution_id: decision.executionId, expected_version: decision.expectedVersion,
+    payload: { wait_id: decision.id, generation: decision.waitGeneration, answer },
+  };
 }
 
 /** The WS reject for a declined question. */
-export function rejectAction(id: string, reason?: string): WsRequest {
-  return reason
-    ? { action: 'question_reject', id, reason }
-    : { action: 'question_reject', id };
+export function rejectAction(decision: PendingDecision, reason?: string): WsRequest {
+  return {
+    type: 'execution.command', action: 'execution.wait.decline',
+    command_id: `tui-wait-${Math.random().toString(36).slice(2)}`,
+    execution_id: decision.executionId, expected_version: decision.expectedVersion,
+    payload: { wait_id: decision.id, generation: decision.waitGeneration, ...(reason ? { reason } : {}) },
+  };
 }

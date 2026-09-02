@@ -17,6 +17,8 @@ _EXECUTION_CONTROL_PATHS = {
     "cancel": "/api/execution/cancel",
     "fork": "/api/execution/fork",
     "retry": "/api/execution/retry",
+    "wait_answer": "/api/execution/wait/answer",
+    "wait_decline": "/api/execution/wait/decline",
 }
 
 
@@ -76,12 +78,15 @@ def _cmd_execution_control(
     command_id: str | None,
     payload: Optional[dict] = None,
 ) -> int:
+    action = "execution.wait.answer" if operation == "wait_answer" else (
+        "execution.wait.decline" if operation == "wait_decline" else f"execution.{operation}"
+    )
     status, payload = _worker_request(
         "POST",
         _EXECUTION_CONTROL_PATHS[operation],
         {
             "type": "execution.command",
-            "action": f"execution.{operation}",
+            "action": action,
             "command_id": command_id or f"cli-{operation}-{uuid.uuid4().hex}",
             "execution_id": execution_id,
             "expected_version": expected_version,
@@ -104,6 +109,27 @@ def _cmd_execution_control(
         return 1
     print(f"status={record.get('status')} reason_code={record.get('reason_code')}")
     return 0 if status < 400 else 1
+
+
+def _cmd_execution_wait(
+    operation: str, execution_id: str, *, expected_version: int,
+    command_id: str | None, wait_id: str, generation: int,
+    value: str | None = None,
+) -> int:
+    if operation == "wait_answer":
+        try:
+            payload = {"wait_id": wait_id, "generation": generation, "answer": json.loads(value or "null")}
+        except json.JSONDecodeError:
+            print("answer must be valid JSON", file=sys.stderr)
+            return 2
+    else:
+        payload = {"wait_id": wait_id, "generation": generation}
+        if value is not None:
+            payload["reason"] = value
+    return _cmd_execution_control(
+        operation, execution_id, expected_version=expected_version,
+        command_id=command_id, payload=payload,
+    )
 
 
 def _cmd_execution_cancel(execution_id: str, *, expected_version: int,

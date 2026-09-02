@@ -8,8 +8,8 @@
  *   - text / number type to edit; Backspace deletes
  *   - boolean       Space toggles
  *   - enum          ←→ cycles the choices
- *   - Enter         submit all fields → question_reply { answer: {…} }
- *   - Esc           question_reject
+ *   - Enter         submit all fields through execution.wait.answer
+ *   - Esc           execution.wait.decline
  *
  * Mirrors apps/web/components/chat/composer/modes/question/form-mode.tsx so
  * both surfaces resolve runtime.form identically.
@@ -64,13 +64,13 @@ export function FormPicker({ client, decision: q, onResolve }: FormPickerProps):
         answer[n] = v;
       }
     }
-    client.send(replyAction(q.id, answer as never));
+    client.send(replyAction(q, answer));
     onResolve(q.id);
   };
 
   useInput((input, key) => {
     if (key.escape) {
-      client.send(rejectAction(q.id));
+      client.send(rejectAction(q));
       onResolve(q.id);
       return;
     }
