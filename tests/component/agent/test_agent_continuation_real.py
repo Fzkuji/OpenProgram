@@ -500,8 +500,15 @@ def test_cancel_wakes_real_question_wait_with_exact_reason(real_agent_chat):
 
     from openprogram.webui.ws_actions import runtime
 
+    current = real_agent_chat.store.get_execution(execution.execution_id)
+    assert current is not None
     asyncio.run(runtime.ACTIONS["execution.cancel"](
-        _WebSocket(), {"execution_id": execution.execution_id},
+        _WebSocket(), {
+            "action": "execution.cancel",
+            "command_id": "cancel-real-question-wait",
+            "execution_id": execution.execution_id,
+            "expected_version": current.status_version,
+        },
     ))
     final = _wait(lambda: (
         item
