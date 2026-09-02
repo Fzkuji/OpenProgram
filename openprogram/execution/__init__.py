@@ -69,6 +69,14 @@ from .projections import (
 )
 from .startup import StartupRecoveryResult, recover_execution_startup
 from .resource_saga import ResourceSaga, recover_resource_saga
+from .revisions import (
+    RevisionApproval,
+    RevisionArtifact,
+    RevisionControlService,
+    RevisionDraft,
+    RevisionManifest,
+    RevisionValidation,
+)
 
 __all__ = [
     "CommandKind",
@@ -127,4 +135,10 @@ __all__ = [
     "recover_execution_startup",
     "ResourceSaga",
     "recover_resource_saga",
+    "RevisionArtifact",
+    "RevisionDraft",
+    "RevisionValidation",
+    "RevisionApproval",
+    "RevisionManifest",
+    "RevisionControlService",
 ]

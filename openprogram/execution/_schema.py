@@ -9,7 +9,7 @@ import sqlite3
 from .model import CapabilitySet
 
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 _LEGACY_SCHEMA_VERSION = 1
 _PREVIOUS_SCHEMA_VERSION = 2
 _FORK_RETRY_SCHEMA_VERSION = 3
@@ -20,6 +20,7 @@ _FINISH_REPAIR_SLOT_SCHEMA_VERSION = 7
 _AGENT_STATE_BLOB_SCHEMA_VERSION = 8
 _AGENT_STATE_BLOB_REFERENCE_SCHEMA_VERSION = 9
 _RESOURCE_SAGA_SCHEMA_VERSION = 10
+_REVISION_CONTROL_SCHEMA_VERSION = 11
 _FINISH_REPAIR_SLOT_LIMIT = 4096
 
 # These are the only projections emitted by the canonical execution store.
@@ -61,6 +62,8 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
         _migrate_v9(connection)
     elif current == _RESOURCE_SAGA_SCHEMA_VERSION:
         _migrate_v10(connection)
+    elif current == _REVISION_CONTROL_SCHEMA_VERSION:
+        _migrate_v11(connection)
     elif current == SCHEMA_VERSION:
         _create_current_schema(connection)
     else:
@@ -221,6 +224,107 @@ def _create_current_schema(connection: sqlite3.Connection) -> None:
     _create_agent_state_blob_schema(connection)
     _create_agent_state_blob_reference_schema(connection)
     _create_resource_saga_schema(connection)
+    _create_revision_control_schema(connection)
+
+
+def _create_revision_control_schema(connection: sqlite3.Connection) -> None:
+    """Create the immutable draft-validation-publication authority."""
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS revision_artifacts (
+            artifact_ref TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            content_hash TEXT UNIQUE NOT NULL,
+            content_json TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            CHECK(kind IN (
+                'workflow', 'prompt', 'tool_contract', 'model_policy',
+                'output_schema', 'program_artifact', 'runtime_contract'
+            ))
+        );
+
+        CREATE TABLE IF NOT EXISTS revision_drafts (
+            draft_id TEXT PRIMARY KEY,
+            project_binding_json TEXT NOT NULL,
+            source_execution_id TEXT NOT NULL,
+            base_revision_id TEXT NOT NULL,
+            base_revision_hash TEXT NOT NULL,
+            source_checkpoint_id TEXT NOT NULL,
+            changes_json TEXT NOT NULL,
+            frontier_mapping_json TEXT NOT NULL,
+            requested_by_json TEXT NOT NULL,
+            draft_version INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            published_manifest_id TEXT UNIQUE,
+            FOREIGN KEY(source_execution_id) REFERENCES executions(execution_id),
+            FOREIGN KEY(base_revision_id) REFERENCES revisions(revision_id),
+            FOREIGN KEY(source_checkpoint_id) REFERENCES checkpoints(checkpoint_id),
+            CHECK(status IN ('draft', 'published', 'discarded'))
+        );
+        CREATE INDEX IF NOT EXISTS revision_drafts_source_status
+            ON revision_drafts(source_execution_id, status, created_at);
+
+        CREATE TABLE IF NOT EXISTS revision_validations (
+            validation_id TEXT PRIMARY KEY,
+            draft_id TEXT NOT NULL,
+            draft_version INTEGER NOT NULL,
+            report_hash TEXT UNIQUE NOT NULL,
+            report_json TEXT NOT NULL,
+            compatible_checkpoint_id TEXT NOT NULL,
+            proof_hash TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            FOREIGN KEY(draft_id) REFERENCES revision_drafts(draft_id),
+            FOREIGN KEY(compatible_checkpoint_id) REFERENCES checkpoints(checkpoint_id),
+            UNIQUE(draft_id, draft_version),
+            CHECK(status = 'valid')
+        );
+
+        CREATE TABLE IF NOT EXISTS revision_approvals (
+            approval_id TEXT PRIMARY KEY,
+            draft_id TEXT NOT NULL,
+            draft_version INTEGER NOT NULL,
+            validation_id TEXT NOT NULL,
+            validation_report_hash TEXT NOT NULL,
+            project_binding_json TEXT NOT NULL,
+            policy_version TEXT NOT NULL,
+            status TEXT NOT NULL,
+            actor_json TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            FOREIGN KEY(draft_id) REFERENCES revision_drafts(draft_id),
+            FOREIGN KEY(validation_id) REFERENCES revision_validations(validation_id),
+            UNIQUE(draft_id, draft_version),
+            CHECK(status IN ('not_required', 'approved'))
+        );
+
+        CREATE TABLE IF NOT EXISTS revision_manifests (
+            manifest_id TEXT PRIMARY KEY,
+            revision_id TEXT UNIQUE NOT NULL,
+            source_execution_id TEXT NOT NULL,
+            source_checkpoint_id TEXT NOT NULL,
+            compatible_checkpoint_id TEXT NOT NULL,
+            parent_revision_id TEXT NOT NULL,
+            content_hash TEXT UNIQUE NOT NULL,
+            manifest_json TEXT NOT NULL,
+            validation_id TEXT NOT NULL,
+            approval_id TEXT NOT NULL,
+            proof_hash TEXT NOT NULL,
+            created_by_json TEXT NOT NULL,
+            published_at REAL NOT NULL,
+            FOREIGN KEY(revision_id) REFERENCES revisions(revision_id),
+            FOREIGN KEY(source_execution_id) REFERENCES executions(execution_id),
+            FOREIGN KEY(source_checkpoint_id) REFERENCES checkpoints(checkpoint_id),
+            FOREIGN KEY(compatible_checkpoint_id) REFERENCES checkpoints(checkpoint_id),
+            FOREIGN KEY(parent_revision_id) REFERENCES revisions(revision_id),
+            FOREIGN KEY(validation_id) REFERENCES revision_validations(validation_id),
+            FOREIGN KEY(approval_id) REFERENCES revision_approvals(approval_id)
+        );
+        CREATE INDEX IF NOT EXISTS revision_manifests_source_checkpoint
+            ON revision_manifests(source_execution_id, compatible_checkpoint_id);
+        """
+    )
 
 
 def _create_resource_saga_schema(connection: sqlite3.Connection) -> None:
@@ -697,6 +801,21 @@ def _migrate_v10(connection: sqlite3.Connection) -> None:
     try:
         connection.execute("BEGIN")
         _create_resource_saga_schema(connection)
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+
+
+def _migrate_v11(connection: sqlite3.Connection) -> None:
+    if connection.in_transaction:
+        raise UnsupportedSchema(
+            _REVISION_CONTROL_SCHEMA_VERSION,
+            "cannot migrate revision control inside an active transaction",
+        )
+    try:
+        connection.execute("BEGIN")
+        _create_revision_control_schema(connection)
         connection.commit()
     except BaseException:
         connection.rollback()

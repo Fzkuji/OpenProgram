@@ -15,12 +15,55 @@ from openprogram.execution import (
     DriverRegistry,
     ExecutionStatus,
     RuntimeControlService,
+    RevisionControlService,
 )
 from openprogram.execution.effects import EffectClassification, EffectStatus
 from openprogram.execution.model import CommandStatus
 from openprogram.execution._schema import initialize_schema
 from openprogram.execution._schema import SCHEMA_VERSION
 from openprogram.execution.store import ExecutionConflict, ExecutionStore
+
+
+def _hash(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _frontier() -> dict[str, object]:
+    return {
+        "step_id": "first", "action_id": "action:first",
+        "contract_hash": _hash("contract:first"), "branch_path": ["root"],
+        "input_schema_hash": _hash("input:first"), "output_schema_hash": _hash("output:first"),
+        "dependency_hash": _hash("dependency:first"), "effect_contract_hash": _hash("effect:first"),
+    }
+
+
+def _published_manifest(store, source, checkpoint, frontier):
+    revisions = RevisionControlService(store)
+    artifact = revisions.put_artifact(
+        kind="program_artifact",
+        content={"entrypoint": "workflow.fork", "source_hash": _hash("fork")},
+    )
+    draft = revisions.create_draft(
+        project_binding={"project_id": "project", "worktree_id": "worktree", "root_identity": "root", "source_commit": _hash("commit")},
+        source_execution_id=source.execution_id, base_revision_id=source.revision_id,
+        source_checkpoint_id=checkpoint.checkpoint_id,
+        changes=({"kind": "program_artifact", "target": "workflow", "before_hash": _hash("before"), "after_ref": artifact.artifact_ref, "rationale": "fork"},),
+        frontier_mapping=({"old_step_id": "first", "new_step_id": "first", "relation": "preserved", "old_contract_hash": frontier["contract_hash"], "new_contract_hash": frontier["contract_hash"]},),
+        requested_by={"subject": "author"},
+    )
+    validation = revisions.validate_draft(draft_id=draft.draft_id, expected_draft_version=draft.draft_version)
+    approval = revisions.approve_draft(draft_id=draft.draft_id, expected_draft_version=draft.draft_version, validation_id=validation.validation_id, actor={"subject": "reviewer"}, policy_version="policy-v1")
+    return revisions.publish_draft(draft_id=draft.draft_id, expected_draft_version=draft.draft_version, validation_id=validation.validation_id, approval_id=approval.approval_id, actor={"subject": "publisher"})
+
+
+def _fork(service, store, source, checkpoint, frontier, *, command_id="fork"):
+    manifest = _published_manifest(store, source, checkpoint, frontier)
+    return service.request_fork(
+        command_id=command_id, execution_id=source.execution_id,
+        expected_version=source.status_version, actor={"subject": "owner"},
+        manifest_id=manifest.manifest_id, checkpoint_id=checkpoint.checkpoint_id,
+        proof_hash=manifest.proof_hash,
+    )
 
 
 def _source(
@@ -50,6 +93,12 @@ def _source(
     leased, reserved = attempts.lease(source.execution_id, expected_version=1, owner_id="owner", ttl_seconds=30)
     active, running = attempts.activate(leased.attempt_id, generation=1, expected_execution_version=reserved.status_version)
     service = RuntimeControlService(store, attempts, DriverRegistry())
+    completed = (_frontier(),) if frontier else None
+    receipt_ref = store.put_state_blob(source.execution_id, '{"receipt":"first"}')["ref"]
+    receipts = ({
+        "effect_id": "effect-first", "frontier_step_id": "first", "action_id": "action:first",
+        "outcome": "committed", "receipt_ref": receipt_ref,
+    },)
     if status is ExecutionStatus.PAUSED:
         paused = __import__("asyncio").run(service.request_pause(
             command_id="pause", execution_id=source.execution_id,
@@ -60,8 +109,9 @@ def _source(
             expected_execution_version=paused.execution.status_version,
             fragment=CheckpointFragment(
                 safe_point_kind="after", frontier=({"step_id": "first"},),
-                completed_frontier=((({"step_id": "first", "contract_hash": "h"},)) if frontier else None),
+                completed_frontier=completed,
                 state_refs={},
+                effect_receipts=receipts,
             ),
         )
         checkpoint, source = completion.checkpoint, completion.execution
@@ -72,8 +122,8 @@ def _source(
             revision_id=source.revision_id,
             parent_checkpoint_id=None,
             frontier=({"step_id": "first"},),
-            completed_frontier=((({"step_id": "first", "contract_hash": "h"},)) if frontier else None),
-            state_refs={}, completed_actions=(), effect_receipts=(), child_frontier={},
+            completed_frontier=completed,
+            state_refs={}, completed_actions=(), effect_receipts=receipts, child_frontier={},
             pending_command_ids=(), created_by_attempt_id=active.attempt_id,
         )
         if unresolved is not None:
@@ -102,15 +152,7 @@ def _source(
 
 def test_fork_validates_prefix_and_persists_a_queued_child(tmp_path):
     store, attempts, service, source, checkpoint = _source(tmp_path)
-    result = service.request_fork(
-        command_id="fork",
-        execution_id=source.execution_id,
-        expected_version=source.status_version,
-        actor={"subject": "owner"},
-        checkpoint_id=checkpoint.checkpoint_id,
-        revision_manifest={"entrypoint": "edited"},
-        compatible_prefix=[{"step_id": "first", "contract_hash": "h"}],
-    )
+    result = _fork(service, store, source, checkpoint, _frontier())
     assert result.command.result_json["child_execution_id"] == result.child.execution_id
     assert result.child.status is ExecutionStatus.QUEUED
     assert result.child.parent_execution_id == source.execution_id
@@ -120,52 +162,16 @@ def test_fork_validates_prefix_and_persists_a_queued_child(tmp_path):
     assert result.execution == source
 
 
-@pytest.mark.parametrize("bad_prefix", [
-    [{"step_id": "first", "contract_hash": "h"}, {"step_id": "first", "contract_hash": "h2"}],
-    [{"step_id": "z", "contract_hash": "h"}, {"step_id": "a", "contract_hash": "h"}],
-    [{"step_id": "first", "contract_hash": "different"}],
-])
-def test_fork_rejects_incomplete_duplicate_unsorted_or_mismatched_prefix(tmp_path, bad_prefix):
-    store, attempts, service, source, checkpoint = _source(tmp_path)
-    with pytest.raises(ExecutionConflict):
-        service.request_fork(
-            command_id="fork",
-            execution_id=source.execution_id,
-            expected_version=source.status_version,
-            actor={}, checkpoint_id=checkpoint.checkpoint_id,
-            revision_manifest={"entrypoint": "edited"}, compatible_prefix=bad_prefix,
-        )
-    assert store.get_command("fork") is None
-
-
-def test_fork_rejects_non_mapping_prefix_entries(tmp_path):
-    store, attempts, service, source, checkpoint = _source(tmp_path)
-
-    with pytest.raises(ExecutionConflict) as invalid:
-        service.request_fork(
-            command_id="fork",
-            execution_id=source.execution_id,
-            expected_version=source.status_version,
-            actor={},
-            checkpoint_id=checkpoint.checkpoint_id,
-            revision_manifest={"entrypoint": "edited"},
-            compatible_prefix=["not-a-mapping"],
-        )
-
-    assert invalid.value.code == "invalid_compatible_prefix"
-    assert store.get_command("fork") is None
-
-
-def test_fork_requires_nonlegacy_completed_frontier_and_own_checkpoint(tmp_path):
+def test_fork_requires_published_manifest_and_structured_frontier(tmp_path):
     store, attempts, service, source, checkpoint = _source(tmp_path, frontier=False)
     with pytest.raises(ExecutionConflict) as missing:
         service.request_fork(
             command_id="fork", execution_id=source.execution_id,
-            expected_version=source.status_version, actor={},
-            checkpoint_id=checkpoint.checkpoint_id, revision_manifest={"x": 1},
-            compatible_prefix=[],
+            expected_version=source.status_version, actor={"subject": "owner"},
+            checkpoint_id=checkpoint.checkpoint_id, manifest_id="manifest_missing",
+            proof_hash=_hash("proof"),
         )
-    assert missing.value.code == "checkpoint_frontier_required"
+    assert missing.value.code == "revision_manifest_not_found"
 
 
 def test_retry_allows_legacy_frontier_and_uses_same_revision(tmp_path):
@@ -192,15 +198,7 @@ def test_branch_children_inherit_immutable_input_for_ui_projection(tmp_path, bra
         tmp_path, status=status, frontier=branch_kind == "fork"
     )
     if branch_kind == "fork":
-        result = service.request_fork(
-            command_id="fork-input",
-            execution_id=source.execution_id,
-            expected_version=source.status_version,
-            actor={},
-            checkpoint_id=checkpoint.checkpoint_id,
-            revision_manifest={"entrypoint": "forked"},
-            compatible_prefix=[{"step_id": "first", "contract_hash": "h"}],
-        )
+        result = _fork(service, store, source, checkpoint, _frontier(), command_id="fork-input")
     else:
         result = service.request_retry(
             command_id="retry-input",
@@ -250,15 +248,10 @@ def test_retry_command_idempotency_returns_the_same_child(tmp_path):
 @pytest.mark.parametrize("effect_status", [EffectStatus.DISPATCHED, EffectStatus.UNCERTAIN])
 def test_fork_and_retry_reject_unresolved_effects(tmp_path, effect_status):
     store, attempts, service, source, checkpoint = _source(
-        tmp_path, status=ExecutionStatus.FAILED, frontier=False, unresolved=effect_status
+        tmp_path, status=ExecutionStatus.FAILED, frontier=True, unresolved=effect_status
     )
     with pytest.raises(ExecutionConflict) as fork:
-        service.request_fork(
-            command_id="fork", execution_id=source.execution_id,
-            expected_version=source.status_version, actor={},
-            checkpoint_id=checkpoint.checkpoint_id, revision_manifest={"x": 1},
-            compatible_prefix=[],
-        )
+        _published_manifest(store, source, checkpoint, _frontier())
     assert fork.value.code == "unresolved_effect"
     with pytest.raises(ExecutionConflict) as retry:
         service.request_retry(
@@ -272,12 +265,7 @@ def test_fork_and_retry_reject_unresolved_effects(tmp_path, effect_status):
 
 def test_first_child_activation_uses_source_checkpoint_and_starts_a_new_chain(tmp_path):
     store, attempts, service, source, checkpoint = _source(tmp_path)
-    branch = service.request_fork(
-        command_id="fork", execution_id=source.execution_id,
-        expected_version=source.status_version, actor={},
-        checkpoint_id=checkpoint.checkpoint_id, revision_manifest={"x": 1},
-        compatible_prefix=[{"step_id": "first", "contract_hash": "h"}],
-    )
+    branch = _fork(service, store, source, checkpoint, _frontier())
     leased, reserved = attempts.lease(
         branch.child.execution_id, expected_version=branch.child.status_version,
         owner_id="child-owner", ttl_seconds=30,
@@ -465,7 +453,8 @@ def test_v3_migration_rebuilds_source_checkpoint_foreign_key(tmp_path):
 
 def test_branch_command_is_idempotent_but_distinct_commands_create_distinct_children(tmp_path):
     store, attempts, service, source, checkpoint = _source(tmp_path)
-    args = dict(execution_id=source.execution_id, expected_version=source.status_version, actor={}, checkpoint_id=checkpoint.checkpoint_id, revision_manifest={"x": 1}, compatible_prefix=[{"step_id": "first", "contract_hash": "h"}])
+    manifest = _published_manifest(store, source, checkpoint, _frontier())
+    args = dict(execution_id=source.execution_id, expected_version=source.status_version, actor={"subject": "owner"}, checkpoint_id=checkpoint.checkpoint_id, manifest_id=manifest.manifest_id, proof_hash=manifest.proof_hash)
     one = service.request_fork(command_id="one", **args)
     repeat = service.request_fork(command_id="one", **args)
     two = service.request_fork(command_id="two", **args)
@@ -473,32 +462,30 @@ def test_branch_command_is_idempotent_but_distinct_commands_create_distinct_chil
     assert two.child.execution_id != one.child.execution_id
 
 
-def test_fork_transaction_rolls_back_command_revision_and_child(tmp_path, monkeypatch):
+def test_fork_transaction_rolls_back_command_and_child(tmp_path, monkeypatch):
     store, attempts, service, source, checkpoint = _source(tmp_path)
-    with closing(store._connect()) as connection:
-        before_revisions = {
-            row[0] for row in connection.execute("SELECT revision_id FROM revisions")
-        }
-    original = store._create_revision_in_transaction
-    def fail(*args, **kwargs):
-        original(*args, **kwargs)
-        raise RuntimeError("fault")
-    monkeypatch.setattr(store, "_create_revision_in_transaction", fail)
+    manifest = _published_manifest(store, source, checkpoint, _frontier())
+    original = store._insert_execution
+    def fail(connection, record):
+        if record.execution_id != source.execution_id:
+            raise RuntimeError("fault")
+        return original(connection, record)
+    monkeypatch.setattr(store, "_insert_execution", fail)
     with pytest.raises(RuntimeError):
         service.request_fork(
             command_id="fork", execution_id=source.execution_id,
-            expected_version=source.status_version, actor={}, checkpoint_id=checkpoint.checkpoint_id,
-            revision_manifest={"x": 1}, compatible_prefix=[{"step_id": "first", "contract_hash": "h"}],
+            expected_version=source.status_version, actor={"subject": "owner"}, checkpoint_id=checkpoint.checkpoint_id,
+            manifest_id=manifest.manifest_id, proof_hash=manifest.proof_hash,
         )
     assert store.get_command("fork") is None
     assert store.get_execution(source.execution_id) == source
     with sqlite3.connect(store.path) as connection:
-        assert {row[0] for row in connection.execute("SELECT revision_id FROM revisions")} == before_revisions
         assert connection.execute("SELECT COUNT(*) FROM executions").fetchone()[0] == 1
 
 
 def test_fork_rolls_back_when_child_insert_fails(tmp_path, monkeypatch):
     store, attempts, service, source, checkpoint = _source(tmp_path)
+    manifest = _published_manifest(store, source, checkpoint, _frontier())
     original = store._insert_execution
     def fail_child(connection, record):
         if record.execution_id != source.execution_id:
@@ -508,8 +495,8 @@ def test_fork_rolls_back_when_child_insert_fails(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError):
         service.request_fork(
             command_id="fork", execution_id=source.execution_id,
-            expected_version=source.status_version, actor={}, checkpoint_id=checkpoint.checkpoint_id,
-            revision_manifest={"x": 1}, compatible_prefix=[{"step_id": "first", "contract_hash": "h"}],
+            expected_version=source.status_version, actor={"subject": "owner"}, checkpoint_id=checkpoint.checkpoint_id,
+            manifest_id=manifest.manifest_id, proof_hash=manifest.proof_hash,
         )
     assert store.get_command("fork") is None
     with sqlite3.connect(store.path) as connection:
@@ -518,6 +505,7 @@ def test_fork_rolls_back_when_child_insert_fails(tmp_path, monkeypatch):
 
 def test_fork_rolls_back_when_final_command_transition_fails(tmp_path, monkeypatch):
     store, attempts, service, source, checkpoint = _source(tmp_path)
+    manifest = _published_manifest(store, source, checkpoint, _frontier())
     original = store._transition_command
     def fail_final(connection, command_id, **kwargs):
         if command_id == "fork" and kwargs.get("target") is CommandStatus.APPLIED:
@@ -527,8 +515,8 @@ def test_fork_rolls_back_when_final_command_transition_fails(tmp_path, monkeypat
     with pytest.raises(RuntimeError):
         service.request_fork(
             command_id="fork", execution_id=source.execution_id,
-            expected_version=source.status_version, actor={}, checkpoint_id=checkpoint.checkpoint_id,
-            revision_manifest={"x": 1}, compatible_prefix=[{"step_id": "first", "contract_hash": "h"}],
+            expected_version=source.status_version, actor={"subject": "owner"}, checkpoint_id=checkpoint.checkpoint_id,
+            manifest_id=manifest.manifest_id, proof_hash=manifest.proof_hash,
         )
     assert store.get_command("fork") is None
     with sqlite3.connect(store.path) as connection:

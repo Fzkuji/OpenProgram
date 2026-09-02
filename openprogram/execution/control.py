@@ -906,36 +906,12 @@ class RuntimeControlService:
         execution_id: str,
         expected_version: int,
         actor: Mapping[str, Any],
-        revision_manifest: Mapping[str, Any] | None = None,
-        compatible_prefix: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]] | None = None,
-        checkpoint_id: str | None = None,
-        revision_id: str | None = None,
-        child_execution_id: str | None = None,
-        manifest: Mapping[str, Any] | None = None,
-        source_checkpoint_id: str | None = None,
+        manifest_id: str,
+        checkpoint_id: str,
+        proof_hash: str,
     ) -> BranchCompletion:
-        """Create a queued child with a new immutable revision atomically."""
-        if revision_manifest is None:
-            revision_manifest = manifest
-        if checkpoint_id is None:
-            checkpoint_id = source_checkpoint_id
-        if revision_manifest is None:
-            raise ExecutionConflict("revision_manifest_required", "fork requires a revision manifest")
-        if compatible_prefix is None:
-            raise ExecutionConflict("compatible_prefix_required", "fork requires a compatible prefix")
-        normalized_prefix = self._validate_compatible_prefix(compatible_prefix)
-        payload = {
-            "checkpoint_id": checkpoint_id,
-            "revision_manifest": dict(revision_manifest),
-            "compatible_prefix": [
-                {"step_id": step_id, "contract_hash": contract_hash}
-                for step_id, contract_hash in normalized_prefix
-            ],
-        }
-        if revision_id is not None:
-            payload["revision_id"] = revision_id
-        if child_execution_id is not None:
-            payload["child_execution_id"] = child_execution_id
+        """Fork only from an already published, bound RevisionManifestV1."""
+        payload = {"manifest_id": manifest_id, "checkpoint_id": checkpoint_id, "proof_hash": proof_hash}
         return self._request_branch(
             command_id=command_id,
             execution_id=execution_id,
@@ -943,11 +919,9 @@ class RuntimeControlService:
             actor=actor,
             kind=CommandKind.FORK,
             payload=payload,
-            manifest=revision_manifest,
-            compatible_prefix=compatible_prefix,
+            manifest_id=manifest_id,
             checkpoint_id=checkpoint_id,
-            revision_id=revision_id,
-            child_execution_id=child_execution_id,
+            child_execution_id=None,
         )
 
     def request_retry(
@@ -971,10 +945,8 @@ class RuntimeControlService:
             actor=actor,
             kind=CommandKind.RETRY,
             payload=command_payload,
-            manifest=None,
-            compatible_prefix=None,
+            manifest_id=None,
             checkpoint_id=None,
-            revision_id=None,
             child_execution_id=child_execution_id,
         )
 
@@ -987,10 +959,8 @@ class RuntimeControlService:
         actor: Mapping[str, Any],
         kind: CommandKind,
         payload: Mapping[str, Any],
-        manifest: Mapping[str, Any] | None,
-        compatible_prefix: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]] | None,
+        manifest_id: str | None,
         checkpoint_id: str | None,
-        revision_id: str | None,
         child_execution_id: str | None,
     ) -> BranchCompletion:
         with self.executions._transaction() as connection:
@@ -1020,8 +990,20 @@ class RuntimeControlService:
                     raise ExecutionConflict("branch_result_missing", "branch result references missing records")
                 return BranchCompletion(command, source, child, revision, checkpoint)
 
-            if kind is CommandKind.FORK and checkpoint_id is None:
-                raise ExecutionConflict("checkpoint_required", "fork requires an explicit checkpoint")
+            manifest = None
+            if kind is CommandKind.FORK:
+                if checkpoint_id is None or manifest_id is None:
+                    raise ExecutionConflict("revision_manifest_required", "fork requires a published revision manifest")
+                from .revisions import RevisionControlService
+                manifest = RevisionControlService(self.executions).require_fork_manifest(
+                    connection,
+                    manifest_id=manifest_id,
+                    source_execution_id=source.execution_id,
+                    checkpoint_id=checkpoint_id,
+                    proof_hash=str(payload.get("proof_hash", "")),
+                )
+                if manifest.parent_revision_id != source.revision_id:
+                    raise ExecutionConflict("revision_manifest_base_mismatch", "revision manifest base does not match source")
             checkpoint_id = checkpoint_id or source.checkpoint_head_id
             if checkpoint_id is None:
                 raise ExecutionConflict("checkpoint_required", "a published checkpoint is required")
@@ -1037,12 +1019,9 @@ class RuntimeControlService:
             if unresolved is not None:
                 raise ExecutionConflict("unresolved_effect", "source execution has an unresolved effect")
             if kind is CommandKind.FORK:
-                if checkpoint.completed_frontier is None:
-                    raise ExecutionConflict("checkpoint_frontier_required", "fork requires a completed frontier")
-                normalized = self._validate_compatible_prefix(compatible_prefix)
-                source_prefix = self._validate_compatible_prefix(checkpoint.completed_frontier)
-                if normalized != source_prefix:
-                    raise ExecutionConflict("incompatible_prefix", "compatible prefix does not match the checkpoint")
+                assert manifest is not None
+                if checkpoint.checkpoint_id != manifest.compatible_checkpoint_id:
+                    raise ExecutionConflict("revision_manifest_checkpoint_mismatch", "revision manifest checkpoint does not match")
             command = self.executions._transition_command(
                 connection,
                 command_id,
@@ -1050,13 +1029,10 @@ class RuntimeControlService:
                 target=CommandStatus.APPLYING,
             )
             if kind is CommandKind.FORK:
-                revision = self.executions._create_revision_in_transaction(
-                    connection,
-                    manifest=manifest or {},
-                    revision_id=revision_id,
-                    requested_id=revision_id,
-                    parent_revision_id=source.revision_id,
-                )
+                assert manifest is not None
+                revision = self.executions._get_revision(connection, manifest.revision_id)
+                if revision is None:
+                    raise ExecutionConflict("revision_manifest_invalid", "revision manifest revision is missing")
             else:
                 revision = self.executions._get_revision(connection, source.revision_id)
                 if revision is None:
@@ -1119,35 +1095,10 @@ class RuntimeControlService:
                     "child_execution_id": child.execution_id,
                     "revision_id": revision.revision_id,
                     "checkpoint_id": checkpoint.checkpoint_id,
+                    **({"manifest_id": manifest_id} if kind is CommandKind.FORK else {}),
                 },
             )
             return BranchCompletion(command, source, child, revision, checkpoint)
-
-    @staticmethod
-    def _validate_compatible_prefix(
-        prefix: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]] | None,
-    ) -> tuple[tuple[str, str], ...]:
-        if prefix is None:
-            raise ExecutionConflict("compatible_prefix_required", "compatible prefix is required")
-        values: list[tuple[str, str]] = []
-        for item in prefix:
-            if not isinstance(item, Mapping):
-                raise ExecutionConflict(
-                    "invalid_compatible_prefix",
-                    "prefix entries must be mappings",
-                )
-            if set(item) != {"step_id", "contract_hash"}:
-                raise ExecutionConflict("invalid_compatible_prefix", "prefix entries must contain step_id and contract_hash")
-            step_id = item["step_id"]
-            contract_hash = item["contract_hash"]
-            if not isinstance(step_id, str) or not isinstance(contract_hash, str):
-                raise ExecutionConflict("invalid_compatible_prefix", "prefix fields must be strings")
-            values.append((step_id, contract_hash))
-        if len({step_id for step_id, _ in values}) != len(values):
-            raise ExecutionConflict("invalid_compatible_prefix", "compatible prefix contains duplicate steps")
-        if values != sorted(values):
-            raise ExecutionConflict("invalid_compatible_prefix", "compatible prefix must be sorted")
-        return tuple(values)
 
     def _resume_transaction(
         self,
