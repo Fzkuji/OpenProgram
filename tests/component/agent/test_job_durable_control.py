@@ -150,7 +150,7 @@ def test_background_spawn_has_one_canonical_execution_and_no_inner_exec_identity
     assert identities <= {job_id}
 
 
-def test_job_negotiates_the_two_agent_safe_points(durable_job):
+def test_job_negotiates_the_agent_safe_points(durable_job):
     runner, _ledger, execution_store, _db = durable_job
     job_id, execution = _execution(runner, execution_store)
 
@@ -163,6 +163,7 @@ def test_job_negotiates_the_two_agent_safe_points(durable_job):
         "safe_point_kinds": [
             "agent.provider.decision.after",
             "agent.tool.action.after",
+            "agent.wait.before_tool",
         ],
         "state_schema_version": 1,
     }
