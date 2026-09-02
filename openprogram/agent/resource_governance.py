@@ -1748,6 +1748,15 @@ class ResourceGovernor:
             )
         return True
 
+    def block_dispatch(self, job_id: str) -> bool:
+        """Keep a queued admission undispatchable while projection recovers."""
+        with self.ledger.immediate() as conn:
+            return conn.execute(
+                """UPDATE job_admissions SET dispatch_ready = 0
+                   WHERE job_id = ? AND state IN ('preparing', 'queued')""",
+                (job_id,),
+            ).rowcount == 1
+
     def _complete_ownerless_projection(
         self, job_id: str, *, lease_generation: int,
         fields_json: str, reason_code: str | None,

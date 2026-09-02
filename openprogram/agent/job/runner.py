@@ -650,13 +650,14 @@ class JobRunner:
             return
         job = _store_load(execution.session_id, execution.execution_id)
         if job is not None and not is_terminal(job.status):
+            projection_fields = terminal_fields or _terminal_fields(
+                status, execution.reason_code or status.value,
+            )
             try:
                 _store_write_terminal(
                     execution.session_id,
                     execution.execution_id,
-                    terminal_fields or _terminal_fields(
-                        status, execution.reason_code or status.value,
-                    ),
+                    projection_fields,
                 )
             except ValueError:
                 pass
@@ -664,13 +665,24 @@ class JobRunner:
                 enqueue = getattr(
                     self._governor, "enqueue_terminal_projection", None,
                 )
-                if enqueue is None or not enqueue(
-                    execution.execution_id,
-                    terminal_fields or _terminal_fields(
-                        status, execution.reason_code or status.value,
-                    ),
-                ):
-                    raise
+                persisted = False
+                if enqueue is not None:
+                    try:
+                        persisted = bool(enqueue(
+                            execution.execution_id, projection_fields,
+                        ))
+                    except Exception:
+                        _log.exception(
+                            "failed to persist terminal projection intent for %s",
+                            execution.execution_id,
+                        )
+                if not persisted:
+                    block_dispatch = getattr(self._governor, "block_dispatch", None)
+                    if block_dispatch is not None:
+                        block_dispatch(execution.execution_id)
+                    raise RuntimeError(
+                        "terminal projection recovery required",
+                    )
                 # The ledger intent is durable; the next reconciliation pass
                 # retries the JobStore write before releasing admission.
                 self._dispatch_wake.set()

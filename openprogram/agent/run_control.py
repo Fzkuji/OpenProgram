@@ -1498,10 +1498,28 @@ def _run_control_awaitable(awaitable):
 def _cancel_canonical_execution(execution, *, reason_code: str | None = None):
     """Submit one canonical cancel command for every canonical public surface."""
     from openprogram.execution.model import TERMINAL_EXECUTION_STATUSES
+    from openprogram.execution.control import ProjectionRecoveryRequired
 
     if execution.status in TERMINAL_EXECUTION_STATUSES:
         if execution.status.value == "cancelled":
-            return execution.to_dict()
+            current = execution
+            try:
+                command = _canonical_control_service(
+                    execution.execution_id,
+                ).executions.get_command(
+                    f"execution-cancel:{execution.execution_id}",
+                )
+            except Exception:
+                command = None
+            if (
+                command is not None
+                and command.rejection_code == ProjectionRecoveryRequired.code
+            ):
+                result = current.to_dict()
+                result["issue_code"] = ProjectionRecoveryRequired.code
+                result["recovery_required"] = True
+                return result
+            return current.to_dict()
         raise ExecutionNotCancellable(execution.execution_id, execution.to_dict())
     reason_code = reason_code or _cancel_reason.get() or "cancel.user"
     try:
@@ -1530,6 +1548,11 @@ def _cancel_canonical_execution(execution, *, reason_code: str | None = None):
         from openprogram.execution.store import ExecutionConflict
 
         current = _canonical_execution(execution.execution_id)
+        if isinstance(exc, ProjectionRecoveryRequired):
+            result = (current or execution).to_dict()
+            result["issue_code"] = ProjectionRecoveryRequired.code
+            result["recovery_required"] = True
+            return result
         if current is not None and current.status.value == "cancelled":
             return current.to_dict()
         if current is not None and current.status.value == "cancelling":
@@ -1549,7 +1572,11 @@ def _cancel_canonical_execution(execution, *, reason_code: str | None = None):
         )
     except Exception:
         pass
-    return dispatch.execution.to_dict()
+    result = dispatch.execution.to_dict()
+    if dispatch.command.rejection_code == ProjectionRecoveryRequired.code:
+        result["issue_code"] = ProjectionRecoveryRequired.code
+        result["recovery_required"] = True
+    return result
 
 
 def _canonical_control_service(execution_id: str):

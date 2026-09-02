@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 import sqlite3
 import time
 import uuid
@@ -46,6 +47,13 @@ from .store import (
 
 
 Activator = Callable[[AttemptRecord, ActivationInput], Any]
+_log = logging.getLogger(__name__)
+
+
+class ProjectionRecoveryRequired(RuntimeError):
+    """Canonical terminal state exists but its legacy projection needs repair."""
+
+    code = "projection_recovery_required"
 
 
 _default_control_services: dict[str, RuntimeControlService] = {}
@@ -1021,8 +1029,27 @@ class RuntimeControlService:
                 target=ExecutionStatus.CANCELLED,
                 reason_code=reason_code,
             )
+            try:
+                self._observe_terminal(execution)
+            except Exception as exc:
+                try:
+                    command = self.executions.transition_command(
+                        command.command_id,
+                        expected_status=CommandStatus.APPLYING,
+                        target=CommandStatus.REJECTED,
+                        result_version=execution.status_version,
+                        rejection_code=ProjectionRecoveryRequired.code,
+                        receipt={"error": str(exc)},
+                    )
+                except Exception:
+                    _log.exception(
+                        "failed to persist projection recovery command state for %s",
+                        execution.execution_id,
+                    )
+                raise ProjectionRecoveryRequired(
+                    execution.execution_id,
+                ) from exc
             command = self._mark_applied(command, execution)
-            self._observe_terminal(execution)
             return ControlDispatch(
                 command=command, execution=execution, delivered=False
             )
