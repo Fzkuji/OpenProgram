@@ -380,12 +380,15 @@ def run_loop_blocking(
 
     safe_point_callback = (execution_context or {}).get("safe_point_hook")
 
-    async def _safe_point_hook(kind: str, payload: dict) -> None:
+    async def _safe_point_hook(kind: str, payload: dict) -> bool:
         if safe_point_callback is None:
-            return
+            return False
         result = safe_point_callback(kind, payload)
         if inspect.isawaitable(result):
-            await result
+            result = await result
+        # AgentLoop treats a true result as an ownership hand-off.  Preserve
+        # it verbatim so no later tool, persistence, or finalize stage runs.
+        return bool(result)
 
     config = AgentLoopConfig(
         model=model,

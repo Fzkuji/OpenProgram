@@ -227,6 +227,8 @@ class EffectStore:
         expected_status: EffectStatus,
         outcome: EffectStatus,
         receipt: Mapping[str, Any],
+        attempt_id: str | None = None,
+        generation: int | None = None,
     ) -> EffectRecord:
         if outcome not in TERMINAL_EFFECT_STATUSES:
             raise EffectConflict(
@@ -244,6 +246,8 @@ class EffectStore:
             expected_status=expected_status,
             target=outcome,
             receipt=receipt,
+            owner_attempt_id=attempt_id,
+            owner_generation=generation,
         )
 
     def get(self, effect_id: str) -> EffectRecord | None:
@@ -271,6 +275,8 @@ class EffectStore:
         target: EffectStatus,
         receipt: Mapping[str, Any] | None = None,
         require_current_attempt: bool = False,
+        owner_attempt_id: str | None = None,
+        owner_generation: int | None = None,
     ) -> EffectRecord:
         with self.executions._transaction() as connection:
             current = self._require(connection, effect_id)
@@ -284,6 +290,22 @@ class EffectStore:
                     f"expected effect status {expected_status.value}, "
                     f"found {current.status.value}",
                 )
+            if (owner_attempt_id is None) != (owner_generation is None):
+                raise EffectConflict("invalid_owner", "effect resolution requires both attempt and generation")
+            if owner_attempt_id is not None:
+                execution = self.executions._require_execution(connection, current.execution_id)
+                row = connection.execute(
+                    "SELECT generation, status, lease_expires_at FROM attempts WHERE attempt_id = ?",
+                    (owner_attempt_id,),
+                ).fetchone()
+                if (
+                    current.attempt_id != owner_attempt_id
+                    or execution.current_attempt_id != owner_attempt_id
+                    or execution.owner_lease.get("generation") != owner_generation
+                    or row is None or int(row["generation"]) != owner_generation
+                    or row["status"] != "active" or float(row["lease_expires_at"]) <= self._clock()
+                ):
+                    raise EffectConflict("stale_attempt", "effect resolution owner is stale")
             now = self._clock()
             execution = None
             if target is EffectStatus.DISPATCHED:
@@ -316,6 +338,29 @@ class EffectStore:
             )
             resolved_at = now if target in TERMINAL_EFFECT_STATUSES else None
             receipt_value = dict(receipt or current.receipt)
+            try:
+                encoded_receipt = _json(receipt_value)
+            except (TypeError, ValueError) as exc:
+                raise EffectConflict("receipt_invalid", "effect receipt must be JSON") from exc
+            if len(encoded_receipt.encode("utf-8")) > 1024 * 1024:
+                raise EffectConflict("receipt_too_large", "effect receipt exceeds the size limit")
+            refs: set[str] = set()
+            self.executions._collect_state_refs(receipt_value, refs)
+            for ref in refs:
+                blob = connection.execute(
+                    "SELECT sha256, payload, byte_length, media_type, schema_version "
+                    "FROM execution_state_blobs WHERE execution_id = ? AND ref = ?",
+                    (current.execution_id, ref),
+                ).fetchone()
+                if blob is None:
+                    raise EffectConflict("receipt_ref_invalid", "effect receipt references missing or foreign state")
+                payload = bytes(blob["payload"])
+                if (
+                    hashlib.sha256(payload).hexdigest() != blob["sha256"]
+                    or len(payload) != int(blob["byte_length"])
+                    or not blob["media_type"] or int(blob["schema_version"]) < 1
+                ):
+                    raise EffectConflict("receipt_ref_invalid", "effect receipt references corrupt state")
             connection.execute(
                 "UPDATE effects SET status = ?, receipt_json = ?, "
                 "dispatched_at = ?, updated_at = ?, resolved_at = ? "

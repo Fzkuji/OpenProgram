@@ -9,7 +9,7 @@ import sqlite3
 from .model import CapabilitySet
 
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 _LEGACY_SCHEMA_VERSION = 1
 _PREVIOUS_SCHEMA_VERSION = 2
 _FORK_RETRY_SCHEMA_VERSION = 3
@@ -18,6 +18,7 @@ _PROJECTION_OUTBOX_SCHEMA_VERSION = 5
 _PROJECTION_READ_SCHEMA_VERSION = 6
 _FINISH_REPAIR_SLOT_SCHEMA_VERSION = 7
 _AGENT_STATE_BLOB_SCHEMA_VERSION = 8
+_AGENT_STATE_BLOB_REFERENCE_SCHEMA_VERSION = 9
 _FINISH_REPAIR_SLOT_LIMIT = 4096
 
 # These are the only projections emitted by the canonical execution store.
@@ -55,6 +56,8 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
         _migrate_v7(connection)
     elif current == _AGENT_STATE_BLOB_SCHEMA_VERSION:
         _migrate_v8(connection)
+    elif current == _AGENT_STATE_BLOB_REFERENCE_SCHEMA_VERSION:
+        _migrate_v9(connection)
     elif current == SCHEMA_VERSION:
         _create_current_schema(connection)
     else:
@@ -213,6 +216,7 @@ def _create_current_schema(connection: sqlite3.Connection) -> None:
     _create_agent_input_schema(connection)
     _create_finish_repair_schema(connection)
     _create_agent_state_blob_schema(connection)
+    _create_agent_state_blob_reference_schema(connection)
 
 
 def _create_projection_schema(connection: sqlite3.Connection) -> None:
@@ -402,6 +406,24 @@ def _create_agent_state_blob_schema(connection: sqlite3.Connection) -> None:
             CHECK(ref GLOB 'execstate://sha256/[0-9a-f]*'),
             CHECK(byte_length >= 0),
             CHECK(schema_version >= 1)
+        )
+        """
+    )
+
+
+def _create_agent_state_blob_reference_schema(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS execution_state_blob_refs (
+            execution_id TEXT NOT NULL,
+            ref TEXT NOT NULL,
+            name TEXT NOT NULL,
+            reference_kind TEXT NOT NULL,
+            reference_id TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            PRIMARY KEY(execution_id, ref, reference_kind, reference_id),
+            FOREIGN KEY(execution_id, ref)
+              REFERENCES execution_state_blobs(execution_id, ref)
         )
         """
     )
@@ -600,6 +622,20 @@ def _migrate_v8(connection: sqlite3.Connection) -> None:
     try:
         connection.execute("BEGIN")
         _create_agent_state_blob_schema(connection)
+        _create_agent_state_blob_reference_schema(connection)
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+
+
+def _migrate_v9(connection: sqlite3.Connection) -> None:
+    if connection.in_transaction:
+        raise UnsupportedSchema(_AGENT_STATE_BLOB_REFERENCE_SCHEMA_VERSION, "cannot migrate state refs inside an active transaction")
+    try:
+        connection.execute("BEGIN")
+        _create_agent_state_blob_schema(connection)
+        _create_agent_state_blob_reference_schema(connection)
         connection.commit()
     except BaseException:
         connection.rollback()

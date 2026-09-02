@@ -45,6 +45,8 @@ from .store import (
     _json,
     default_store,
 )
+from .state_blobs import ExecutionStateBlobStore
+from .safe_points import AgentSafePointConflict
 
 
 Activator = Callable[[AttemptRecord, ActivationInput], Any]
@@ -168,6 +170,7 @@ class RuntimeControlService:
         self.registry = registry
         self.registry.set_owner_resolver(self._durable_owner)
         self.effects = EffectStore(executions)
+        self.state_blobs = ExecutionStateBlobStore(executions)
         self.checkpoints = ExecutionCheckpointStore(executions)
         self.activator = activator
         self.owner_id = owner_id
@@ -178,6 +181,126 @@ class RuntimeControlService:
         self._cancel_delivery_lock = RLock()
         self._delivered_cancel_commands: set[str] = set()
         self._cancel_delivery_by_execution: dict[str, set[str]] = {}
+
+    def commit_agent_safe_point(
+        self,
+        *,
+        execution_id: str,
+        attempt_id: str,
+        generation: int,
+        expected_version: int,
+        safe_point_kind: str,
+        frontier: tuple[Mapping[str, Any], ...],
+        state_refs: Mapping[str, Any],
+        effect_id: str,
+        terminal_receipt: Mapping[str, Any],
+        receipt_blob: bytes,
+        checkpoint_state_blob: bytes | None = None,
+        command_id: str | None = None,
+        fault_at: str | None = None,
+    ) -> SafePointCompletion:
+        """Atomically terminalize one effect and publish its Agent frontier."""
+        if safe_point_kind not in {"agent.provider.decision.after", "agent.tool.action.after"}:
+            raise AgentSafePointConflict("invalid_safe_point", "unsupported Agent safe point")
+        try:
+            with self.executions._transaction() as connection:
+                attempt = self.attempts._require(connection, attempt_id)
+                self.attempts._validate_generation(attempt, generation)
+                execution = self.executions._require_execution(connection, execution_id)
+                if (
+                    attempt.execution_id != execution_id
+                    or execution.current_attempt_id != attempt_id
+                    or attempt.status is not AttemptStatus.ACTIVE
+                    or execution.owner_lease.get("generation") != generation
+                    or attempt.lease_expires_at <= time.time()
+                ):
+                    raise AgentSafePointConflict("stale_attempt", "Agent safe point owner is stale")
+                if execution.status_version != expected_version:
+                    raise AgentSafePointConflict("stale_version", "Agent safe point has a stale execution version")
+                effect = self.effects._require(connection, effect_id)
+                if effect.execution_id != execution_id or effect.attempt_id != attempt_id or effect.status is not EffectStatus.DISPATCHED:
+                    raise AgentSafePointConflict("effect_state_invalid", "Agent effect is not dispatched by this owner")
+                try:
+                    receipt_json = _json(dict(terminal_receipt))
+                except (TypeError, ValueError) as exc:
+                    raise AgentSafePointConflict("receipt_invalid", "terminal receipt must be JSON") from exc
+                if len(receipt_json.encode("utf-8")) > 1024 * 1024:
+                    raise AgentSafePointConflict("receipt_too_large", "terminal receipt exceeds the size limit")
+                receipt_ref = self.executions._put_state_blob_in_transaction(
+                    connection, execution_id=execution_id, payload=receipt_blob,
+                    media_type="application/json", schema_version=1,
+                )
+                refs = dict(state_refs)
+                if checkpoint_state_blob is not None:
+                    refs["agent_checkpoint"] = self.executions._put_state_blob_in_transaction(
+                        connection, execution_id=execution_id, payload=checkpoint_state_blob,
+                        media_type="application/json", schema_version=1,
+                    )
+                now = time.time()
+                connection.execute(
+                    "UPDATE effects SET status = ?, receipt_json = ?, updated_at = ?, resolved_at = ? WHERE effect_id = ?",
+                    (EffectStatus.COMMITTED.value, _json({**dict(terminal_receipt), "receipt_ref": receipt_ref}), now, now, effect_id),
+                )
+                effect = self.effects._require(connection, effect_id)
+                self.effects._append_event(connection, execution.status_version, effect, now)
+                if fault_at == "after_receipt_blob":
+                    raise AgentSafePointConflict("injected_failure", "injected failure after terminal receipt blob")
+                checkpoint, updated = self.checkpoints._publish_in_transaction(
+                    connection, execution_id=execution_id, expected_version=expected_version,
+                    revision_id=execution.revision_id, parent_checkpoint_id=execution.checkpoint_head_id,
+                    frontier=frontier, state_refs={**refs, "terminal_receipt": receipt_ref},
+                    completed_actions=({"action_id": effect.action_id},),
+                    effect_receipts=({"effect_id": effect_id, "outcome": "committed", "receipt_ref": receipt_ref},),
+                    child_frontier={}, pending_command_ids=(), created_by_attempt_id=attempt_id,
+                )
+                command = ControlCommand(
+                        command_id="", execution_id=execution_id, expected_version=expected_version,
+                        kind=CommandKind.PAUSE, payload={}, actor={}, status=CommandStatus.APPLIED,
+                        submitted_at=now, updated_at=now,
+                    )
+                if command_id is not None:
+                    stored = self.executions._get_command(connection, command_id)
+                    if stored is None or stored.execution_id != execution_id or stored.status is not CommandStatus.APPLYING:
+                        raise AgentSafePointConflict("command_state_invalid", "safe point command is no longer applying")
+                    if stored.kind not in {CommandKind.PAUSE, CommandKind.STEP}:
+                        raise AgentSafePointConflict("command_state_invalid", "only pause or step can consume Agent safe point")
+                    pausing = self.executions._transition_execution(
+                        connection, execution_id, expected_version=updated.status_version,
+                        target=ExecutionStatus.PAUSING,
+                    ) if updated.status is ExecutionStatus.RUNNING else updated
+                    if pausing.status is not ExecutionStatus.PAUSING:
+                        raise AgentSafePointConflict("execution_state_invalid", "Agent safe point must settle a pausing execution")
+                    updated = self.executions._transition_execution(
+                        connection, execution_id, expected_version=pausing.status_version,
+                        target=ExecutionStatus.PAUSED, clear_owner=True,
+                    )
+                    ended = self.attempts._end_for_owner_loss(connection, attempt, outcome="paused_at_safe_point")
+                    self.executions._append_event(
+                        connection, execution_id=execution_id, execution_version=updated.status_version,
+                        kind="attempt.ended", payload={"attempt": ended.to_dict()}, created_at=ended.updated_at,
+                    )
+                    command = self.executions._transition_command(
+                        connection, command_id, expected_status=CommandStatus.APPLYING,
+                        target=CommandStatus.APPLIED, result_version=updated.status_version,
+                        receipt={"checkpoint_id": checkpoint.checkpoint_id, "safe_point": checkpoint.safe_point},
+                    )
+                return SafePointCompletion(command=command, execution=updated, attempt=attempt, checkpoint=checkpoint)
+        except AgentSafePointConflict:
+            raise
+        except (ExecutionConflict, AttemptConflict) as exc:
+            raise AgentSafePointConflict(getattr(exc, "code", "safe_point_failed"), str(exc)) from exc
+
+    def consume_agent_step_permit(self, *, execution_id: str, command_id: str, action_id: str) -> None:
+        with self.executions._transaction() as connection:
+            command = self.executions._get_command(connection, command_id)
+            if command is None or command.execution_id != execution_id or command.kind is not CommandKind.STEP:
+                raise AgentSafePointConflict("step_permit_missing", "step permit is not active")
+            if command.status is not CommandStatus.APPLYING or command.result_json.get("managed_action_id"):
+                raise AgentSafePointConflict("step_permit_consumed", "step permit was already consumed")
+            connection.execute(
+                "UPDATE commands SET result_json = ?, updated_at = ? WHERE command_id = ? AND status = ?",
+                (_json({"managed_action_id": action_id}), time.time(), command_id, CommandStatus.APPLYING.value),
+            )
 
     def _remember_cancel_delivery(
         self, execution_id: str, command_id: str,
@@ -319,6 +442,16 @@ class RuntimeControlService:
         driver: Any | None = None,
     ) -> ControlDispatch:
         """Resume a paused execution without changing its revision or identity."""
+        current = self.executions.get_execution(execution_id)
+        input_record = self.executions.get_execution_input(execution_id) if current is not None else None
+        if (
+            current is not None
+            and input_record is not None
+            and input_record.entrypoint == "openprogram.agent.production_driver:AgentProductionDriver"
+            and not current.capabilities.pause
+            and activator is None and driver is None and self.activator is None
+        ):
+            raise AgentSafePointConflict("activation_unavailable", "Agent continuation requires a production activation owner")
         command, execution, attempt, checkpoint, steer_inputs, duplicate = self._resume_transaction(
             command_id=command_id,
             execution_id=execution_id,

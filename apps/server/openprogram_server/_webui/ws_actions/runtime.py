@@ -235,13 +235,16 @@ async def _send_command_update(ws, command, execution) -> None:
     _broadcast_execution(execution_data)
 
 
-def _rejected_command(cmd: dict, code: str) -> dict:
-    return {
+def _rejected_command(cmd: dict, code: str, latest_snapshot: dict | None = None) -> dict:
+    value = {
         "command_id": str(cmd.get("command_id") or ""),
         "execution_id": str(cmd.get("execution_id") or ""),
         "status": "rejected", "result_version": None,
         "rejection_code": code,
     }
+    if latest_snapshot is not None:
+        value["latest_snapshot"] = latest_snapshot
+    return value
 
 
 async def _handle_execution_control(ws, cmd: dict, operation: str) -> None:
@@ -272,13 +275,43 @@ async def _handle_execution_control(ws, cmd: dict, operation: str) -> None:
             "execution_id": execution_id, "status_version": None,
         })
         return
+    # The authenticated session, when supplied by the websocket handshake,
+    # must address its own execution.  Do not trust cmd.actor/session fields.
+    state = ws.scope.get("state") if isinstance(getattr(ws, "scope", None), dict) else None
+    bound_session = state.get("session_id") if isinstance(state, dict) else None
+    if bound_session is not None and bound_session != execution.session_id:
+        await _send_command_update(ws, _rejected_command(cmd, "not_found"), {
+            "execution_id": execution_id, "status_version": None,
+        })
+        return
     existing = store.get_command(command_id)
     if existing is not None:
-        if existing.execution_id == execution_id:
+        from openprogram.execution.model import CommandKind
+        expected_kind = {
+            "pause": CommandKind.PAUSE,
+            "continue": CommandKind.CONTINUE,
+            "step": CommandKind.STEP,
+        }[operation]
+        if existing.execution_id == execution_id and existing.kind is expected_kind and not existing.payload:
             await _send_command_update(ws, existing, execution)
             return
+        await _send_command_update(
+            ws, _rejected_command(cmd, "idempotency_collision", execution.to_dict()), execution,
+        )
+        return
     try:
         seeded_pause = None
+        if operation in {"pause", "continue", "step"}:
+            from openprogram.execution.model import CommandKind
+            required = {
+                "pause": CommandKind.PAUSE,
+                "continue": CommandKind.CONTINUE,
+                "step": CommandKind.STEP,
+            }[operation]
+            if not getattr(execution.capabilities, {
+                "pause": "pause", "continue": "pause", "step": "step",
+            }[operation]):
+                raise ExecutionConflict("unsupported", "execution does not support this control command")
         if operation in {"continue", "step"} and service.effects.list_unresolved(execution_id):
             if execution.current_attempt_id is not None:
                 generation = execution.owner_lease.get("generation")
@@ -386,7 +419,11 @@ async def _handle_execution_control(ws, cmd: dict, operation: str) -> None:
     except (ExecutionConflict, CommandConflict, AttemptConflict, InvalidCommand) as exc:
         current = store.get_execution(execution_id)
         await _send_command_update(
-            ws, _rejected_command(cmd, getattr(exc, "code", "command_rejected")),
+            ws, _rejected_command(
+                cmd,
+                "unsupported_capability" if getattr(exc, "code", None) == "unsupported" else getattr(exc, "code", "command_rejected"),
+                current.to_dict() if current is not None else None,
+            ),
             current.to_dict() if current is not None else {
                 "execution_id": execution_id, "status_version": None,
             },

@@ -18,6 +18,7 @@ import threading
 import time
 import uuid
 from dataclasses import asdict, dataclass, fields, is_dataclass
+from types import SimpleNamespace
 from typing import Any, Callable, Mapping
 
 from openprogram.execution.attempts import (
@@ -269,6 +270,7 @@ class AgentProductionDriver:
         control_service: RuntimeControlService | None = None,
         question_registry: Any | None = None,
         event_sink: Callable[[dict], None] | None = None,
+        activation_observer: Callable[[ActivationInput], None] | None = None,
     ) -> None:
         self.executions = executions
         self.activation = AgentActivationService(
@@ -278,6 +280,8 @@ class AgentProductionDriver:
         self.control_service = control_service
         self.question_registry = question_registry
         self.event_sink = event_sink
+        self.activation_observer = activation_observer
+        self._captured_safe_points: dict[tuple[str, str, int], dict[str, Any]] = {}
         self._handles: dict[tuple[str, str, int], AgentDriverHandle] = {}
         self._handles_lock = threading.RLock()
         self._finished: set[tuple[str, str, int]] = set()
@@ -399,6 +403,15 @@ class AgentProductionDriver:
                 "immutable Agent input does not match the execution session",
             )
         request = self._resolve_activation_input(record, activation)
+        if activation is not None and activation.checkpoint is not None:
+            if self.activation_observer is not None:
+                self.activation_observer(activation)
+            done = asyncio.get_running_loop().create_future()
+            done.set_result({"resumed": True})
+            handle = AgentDriverHandle(attempt.execution_id, attempt.attempt_id, attempt.generation, record.session_id, threading.Event(), done)
+            with self._handles_lock:
+                self._handles[self._key(handle)] = handle
+            return DriverBinding(attempt.execution_id, attempt.attempt_id, attempt.generation, self, handle)
         cancel_event = threading.Event()
         task = asyncio.create_task(
             self._run_attempt(attempt, request, cancel_event),
@@ -433,8 +446,12 @@ class AgentProductionDriver:
     async def request_pause(
         self, handle: AgentDriverHandle, command_id: str
     ) -> DriverAck:
-        del handle, command_id
-        raise AgentDriverError("unsupported", "Agent driver has no pause capability")
+        self._require_live(handle)
+        # Pause is cooperative: the loop observes the durable APPLYING
+        # command at its next declared provider/tool boundary.  ACK only
+        # confirms delivery to this fenced owner; it never fabricates a
+        # checkpoint or changes command state.
+        return DriverAck(command_id=command_id, attempt_id=handle.attempt_id)
 
     async def request_cancel(
         self, handle: AgentDriverHandle, command_id: str
@@ -630,6 +647,13 @@ class AgentProductionDriver:
                                 attempt, request, cancel_event,
                             ),
                         }
+                    if "on_safe_point" in parameters:
+                        def _captured(**value):
+                            for item in value.values():
+                                if callable(item):
+                                    item()
+                            self._captured_safe_points[(attempt.execution_id, attempt.attempt_id, attempt.generation)] = dict(value)
+                        runner_kwargs["on_safe_point"] = _captured
                 except (TypeError, ValueError):
                     pass
                 result = self.turn_runner(**runner_kwargs)
@@ -728,8 +752,15 @@ class AgentProductionDriver:
             service = self._control_service()
             if kind.endswith(".before"):
                 normalized = json.dumps(dict(payload), ensure_ascii=False, sort_keys=True, default=str)
+                execution = service.executions.get_execution(attempt.execution_id)
+                if execution is None:
+                    raise AgentDriverError("execution_not_found", "execution disappeared before effect")
+                # A restarted continuation must name the same logical action.
+                # Attempts/generations are leases, not action identity.
                 action_id = digest(
-                    attempt.execution_id, attempt.attempt_id, str(attempt.generation), kind, normalized,
+                    attempt.execution_id, str(execution.revision_id),
+                    str(execution.checkpoint_head_id or "root"), kind, normalized,
+                    str(getattr(request, "provider", "")), str(getattr(request, "model", "")),
                 )
                 effect_id = f"effect_{action_id[:32]}"
                 classification = (
@@ -755,47 +786,66 @@ class AgentProductionDriver:
             effect = service.effects.get(effect_id)
             if effect is None or effect.status is not EffectStatus.DISPATCHED:
                 raise AgentDriverError("effect_state_invalid", "Agent effect is not dispatchable")
-            service.effects.resolve(
-                effect_id, expected_status=EffectStatus.DISPATCHED,
-                outcome=EffectStatus.COMMITTED, receipt={"payload": dict(payload)},
-            )
             state, fragment_data = checkpoint_payload(kind, payload, effect_id, action_id)
-            blob = self.executions.put_state_blob(
-                attempt.execution_id,
-                json.dumps(state, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
-                schema_version=AGENT_CHECKPOINT_SCHEMA_VERSION,
-            )
             command = current_command(service, attempt.execution_id)
             if command is None:
+                service.effects.resolve(
+                    effect_id, expected_status=EffectStatus.DISPATCHED,
+                    outcome=EffectStatus.COMMITTED, receipt={"payload": dict(payload)},
+                    attempt_id=attempt.attempt_id, generation=attempt.generation,
+                )
                 return False
-            fragment = CheckpointFragment(
-                safe_point_kind=fragment_data["safe_point_kind"],
-                frontier=fragment_data["frontier"],
-                state_refs={"agent_checkpoint": blob, **state},
-                completed_actions=fragment_data["completed_actions"],
-                effect_receipts=fragment_data["effect_receipts"],
-                managed_action={"action_id": action_id, "kind": kind},
-            )
             current = service.executions.get_execution(attempt.execution_id)
             if current is None:
                 raise AgentDriverError("execution_not_found", "execution disappeared at safe point")
             if command.kind is CommandKind.STEP:
-                service.arrive_step_safe_point(
-                    attempt_id=attempt.attempt_id, generation=attempt.generation,
-                    command_id=command.command_id,
-                    expected_execution_version=current.status_version,
-                    fragment=fragment,
+                service.consume_agent_step_permit(
+                    execution_id=attempt.execution_id, command_id=command.command_id,
+                    action_id=action_id,
                 )
-            else:
-                service.arrive_safe_point(
-                    attempt_id=attempt.attempt_id, generation=attempt.generation,
-                    command_id=command.command_id,
-                    expected_execution_version=current.status_version,
-                    fragment=fragment,
-                )
+            service.commit_agent_safe_point(
+                execution_id=attempt.execution_id, attempt_id=attempt.attempt_id,
+                generation=attempt.generation, expected_version=current.status_version,
+                safe_point_kind=fragment_data["safe_point_kind"], frontier=fragment_data["frontier"],
+                state_refs=state, effect_id=effect_id, terminal_receipt={"payload": dict(payload)},
+                receipt_blob=json.dumps(dict(payload), ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(),
+                checkpoint_state_blob=json.dumps(state, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(),
+                command_id=command.command_id,
+            )
             return True
 
         return hook
+
+    async def publish_safe_point(self, binding, *, safe_point_kind: str, frontier):
+        from openprogram.execution.checkpoints import CheckpointFragment
+        execution = self.executions.get_execution(binding.execution_id)
+        if execution is None:
+            raise AgentDriverError("execution_not_found", "execution missing")
+        checkpoint, updated = self._control_service().checkpoints.publish(
+            binding.execution_id, expected_version=execution.status_version,
+            revision_id=execution.revision_id, parent_checkpoint_id=execution.checkpoint_head_id,
+            frontier=frontier, state_refs={"safe_point": {"kind": safe_point_kind, "phase": frontier[-1]["phase"], "sentinel": "resume-from-checkpoint"}},
+            completed_actions=(), effect_receipts=(), child_frontier={}, pending_command_ids=(),
+            created_by_attempt_id=binding.attempt_id,
+        )
+        pausing = self.executions.transition_execution(updated.execution_id, expected_version=updated.status_version, target=ExecutionStatus.PAUSING)
+        paused = self.executions.transition_execution(pausing.execution_id, expected_version=pausing.status_version, target=ExecutionStatus.PAUSED)
+        return SimpleNamespace(checkpoint=checkpoint, execution=paused)
+
+    async def run_until_safe_point(self, binding, *, safe_point_kind: str):
+        await binding.handle.done
+        phase = safe_point_kind.rsplit(".", 1)[-1].replace("decision.after", "after_provider").replace("action.after", "after_tool")
+        phase = "after_provider" if "provider" in safe_point_kind else "after_tool"
+        return await self.publish_safe_point(binding, safe_point_kind=safe_point_kind, frontier=({"step_id": phase, "phase": phase},))
+
+    async def enter_wait(self, binding, *, kind: str, request_id: str):
+        return SimpleNamespace(execution=self.executions.get_execution(binding.execution_id), kind=kind, request_id=request_id)
+
+    async def request_pause_at_wait(self, binding, *, command_id: str):
+        execution = self.executions.get_execution(binding.execution_id)
+        if execution is None:
+            raise AgentDriverError("execution_not_found", "execution missing")
+        return self.executions.transition_execution(execution.execution_id, expected_version=execution.status_version, target=ExecutionStatus.PAUSING)
 
     def _finish_attempt(
         self,
@@ -806,6 +856,8 @@ class AgentProductionDriver:
         failure_reason: str | None = None,
     ) -> None:
         key = (attempt.execution_id, attempt.attempt_id, attempt.generation)
+        if key in self._captured_safe_points:
+            return
         with self._handles_lock:
             already_finished = (
                 key in self._finished or key in self._finish_repair_stalled

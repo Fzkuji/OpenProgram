@@ -58,6 +58,11 @@ class CheckpointManifest:
     created_at: float
     completed_frontier: tuple[Mapping[str, Any], ...] | None = None
 
+    @property
+    def safe_point(self) -> Mapping[str, Any]:
+        """The declared frontier boundary, never a live runtime object."""
+        return _thaw_json(self.frontier[-1]) if self.frontier else {}
+
     def __post_init__(self) -> None:
         object.__setattr__(
             self, "frontier", tuple(_freeze_json(item) for item in self.frontier)
@@ -269,6 +274,29 @@ class ExecutionCheckpointStore:
             if parent is None or parent.execution_id != execution_id:
                 raise CheckpointConflict("parent_not_found", "parent checkpoint does not belong to this execution")
 
+        # References are execution-owned immutable blobs.  Validate all
+        # schemas before writing either checkpoint row or head pointer so a
+        # malformed Agent checkpoint cannot leave a half-published frontier.
+        refs: set[str] = set()
+        self.executions._collect_state_refs(dict(state_refs), refs)
+        self.executions._collect_state_refs(list(effect_receipts), refs)
+        for ref in refs:
+            row = connection.execute(
+                "SELECT sha256, payload, byte_length, media_type, schema_version "
+                "FROM execution_state_blobs WHERE execution_id = ? AND ref = ?",
+                (execution_id, ref),
+            ).fetchone()
+            if row is None:
+                raise CheckpointConflict("state_ref_invalid", "checkpoint references a missing or foreign state blob")
+            payload = bytes(row["payload"])
+            if (
+                hashlib.sha256(payload).hexdigest() != row["sha256"]
+                or len(payload) != int(row["byte_length"])
+                or not row["media_type"]
+                or int(row["schema_version"]) < 1
+            ):
+                raise CheckpointConflict("state_blob_corrupt", "checkpoint state blob metadata is invalid")
+
         checkpoint = CheckpointManifest(
             checkpoint_id=checkpoint_id,
             execution_id=execution_id,
@@ -292,6 +320,13 @@ class ExecutionCheckpointStore:
             created_at=now,
         )
         self._insert(connection, checkpoint)
+        for ref in refs:
+            connection.execute(
+                "INSERT OR IGNORE INTO execution_state_blob_refs "
+                "(execution_id, ref, name, reference_kind, reference_id, created_at) "
+                "VALUES (?, ?, ?, 'checkpoint', ?, ?)",
+                (execution_id, ref, "checkpoint", checkpoint.checkpoint_id, now),
+            )
         safe_point = _thaw_json(checkpoint.frontier[-1]) if checkpoint.frontier else {}
         updated = connection.execute(
             "UPDATE executions SET checkpoint_head_id = ?, safe_point_json = ?, status_version = ?, updated_at = ? WHERE execution_id = ? AND status_version = ?",

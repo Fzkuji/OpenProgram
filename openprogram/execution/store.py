@@ -494,6 +494,13 @@ class ExecutionStore:
 
     @classmethod
     def _collect_state_refs(cls, value: Any, refs: set[str]) -> None:
+        # AgentCheckpointV1 uses bare refs for well-known durable fields;
+        # effect receipts use ``receipt_ref``.  Treat every valid-looking
+        # execstate string as a reference, regardless of surrounding shape.
+        if isinstance(value, str) and value.startswith(_STATE_REF_PREFIX):
+            cls._validate_state_ref(value)
+            refs.add(value)
+            return
         if isinstance(value, Mapping):
             ref = value.get("ref")
             if isinstance(ref, str) and ref.startswith(_STATE_REF_PREFIX):
@@ -504,6 +511,11 @@ class ExecutionStore:
         elif isinstance(value, list):
             for item in value:
                 cls._collect_state_refs(item, refs)
+
+    def get_agent_wait(self, execution_id: str, kind: str) -> None:
+        """Agent P0 does not persist waits; this explicit query stays empty."""
+        self.get_execution(execution_id)
+        return None
 
     @staticmethod
     def _validate_state_ref(ref: str) -> None:
