@@ -37,6 +37,7 @@ def _stdio_subprocess_environment(tmp_path, *, client: str = "a"):
 import json
 import os
 import threading
+import time
 from pathlib import Path
 
 from openprogram.agent.dispatcher import TurnResult
@@ -87,15 +88,49 @@ permission_module.load_merged_rules = lambda _session_id: PermissionRules(
 
 from openprogram.agent import dispatcher
 from openprogram.agent.run_control import get_current_execution_id
-from types import SimpleNamespace
+from openprogram.execution import default_store
+from openprogram.execution.waits import DurableWaitStore
+
 def process_user_turn(request, *, cancel_event):
     record("turn", session_id=request.session_id, prompt=request.user_text,
            speaker_id=request.speaker_id)
     execution_id = get_current_execution_id()
-    questions.pending["fixture-question"] = execution_id
+    execution = default_store().get_execution(execution_id)
+    if execution is None or not execution.current_attempt_id:
+        raise RuntimeError("fixture execution is not active")
+    generation = int(execution.owner_lease["generation"])
+    wait = DurableWaitStore(default_store()).open_wait(
+            execution_id=execution_id,
+            attempt_id=execution.current_attempt_id,
+            generation=generation,
+            kind="ask",
+            request={
+                "prompt": "fixture-question",
+                "options": [],
+                "multi": False,
+                "allow_custom": True,
+                "detail": "",
+                "schema": {},
+                "questions": [],
+            },
+            policy_snapshot={
+                "version": 1,
+                "on_answer": "continue",
+                "on_decline": "fail",
+                "on_timeout": "fail",
+            },
+            expires_at=time.time() + 60,
+            wait_id="fixture-question",
+    )
     get_event_bus().emit(make_event("question.asked", "agent", {
-        "id": "fixture-question", "session_id": request.session_id,
+        "id": wait.wait_id, "session_id": request.session_id,
         "execution_id": execution_id,
+        "kind": wait.kind, "prompt": wait.request["prompt"],
+        "options": wait.request["options"], "multi": False,
+        "allow_custom": True, "detail": "", "schema": {},
+        "questions": [], "wait_generation": wait.claim_generation,
+        "expected_version": execution.status_version,
+        "expires_at": wait.expires_at,
     }))
     if request.user_text == "wait-for-cancel":
         record("entered", session_id=request.session_id)
@@ -105,19 +140,9 @@ def process_user_turn(request, *, cancel_event):
     return TurnResult("fixture-result", "fixture-user", "fixture-assistant")
 dispatcher.process_user_turn = process_user_turn
 
-class Questions:
-    pending = {}
-
-    def list_pending(self, session_id):
-        return [SimpleNamespace(id=qid, execution_id=execution_id,
-                                wait_generation=0)
-                for qid, execution_id in self.pending.items()]
-
-questions = Questions()
-import openprogram.agent.questions as question_module
-question_module.get_question_registry = lambda: questions
 import openprogram.execution as execution_module
-async def submit_wait_command(**kwargs):
+async def submit_wait_command(service, **kwargs):
+    del service
     record("question", question_id=kwargs["wait_id"], outcome="declined",
            action=kwargs["action"], execution_id=kwargs["execution_id"],
            generation=kwargs["generation"], actor=dict(kwargs["actor"]))
