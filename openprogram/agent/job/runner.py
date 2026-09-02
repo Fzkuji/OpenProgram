@@ -794,6 +794,13 @@ class JobRunner:
             if execution is not None and execution.status.value in {
                 "completed", "cancelled", "failed", "interrupted",
             }:
+                try:
+                    self._execution_control.reconcile_terminal_cancel(execution)
+                except Exception:
+                    _log.exception(
+                        "failed to reconcile terminal cancel command for %s",
+                        execution.execution_id,
+                    )
                 fence = getattr(self._governor, "admission_fence", None)
                 owner_generation = fence(job.id) if fence is not None else None
                 self._project_canonical_terminal(
@@ -3174,16 +3181,29 @@ class JobRunner:
                 # finalization intent exists, so reconcile still owns the
                 # "terminal write staged but not persisted" case.
                 cur = _store_load(session_id, job_id)
+                canonical = self._execution_store.get_execution(job_id)
+                canonical_reason = (
+                    canonical.reason_code
+                    if canonical is not None
+                    and canonical.status.value in {
+                        "completed", "cancelled", "failed", "interrupted",
+                    }
+                    else None
+                )
                 if cur is None or not is_terminal(cur.status):
-                    _log.warning(
-                        "job %s ended without a persisted terminal state; "
-                        "releasing admission with no reason code", job_id,
-                    )
+                    if canonical_reason is None:
+                        _log.warning(
+                            "job %s ended without a persisted terminal state; "
+                            "releasing admission with no reason code", job_id,
+                        )
                     cur = None
+                projection_reason = (
+                    self._canonical_cancel_reason(job_id)
+                    if cur is not None and is_terminal(cur.status) else None
+                )
                 self._governor.release_job(
                     job_id,
-                    self._canonical_cancel_reason(job_id)
-                    if cur is not None and is_terminal(cur.status) else None,
+                    canonical_reason or projection_reason,
                     owner_instance_id=self._instance_id,
                     lease_generation=lease_generation,
                 )

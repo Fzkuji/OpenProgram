@@ -270,6 +270,13 @@ class RuntimeControlService:
                     receipt=receipt,
                 )
 
+    def reconcile_terminal_cancel(self, execution: ExecutionRecord) -> None:
+        """Durably settle cancel commands after a terminal execution write."""
+        if execution.status not in TERMINAL_EXECUTION_STATUSES:
+            return
+        self._reconcile_terminal_cancel(execution)
+        self._forget_cancel_delivery(execution.execution_id)
+
     def set_terminal_observer(
         self, observer: Callable[[ExecutionRecord], object] | None,
     ) -> None:

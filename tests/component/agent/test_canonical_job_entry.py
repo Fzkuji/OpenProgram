@@ -135,6 +135,82 @@ def test_public_cross_process_cancel_is_consumed_by_owner_worker(
         runner.shutdown()
 
 
+def test_public_job_reconciler_recovers_cancel_command_after_apply_failure(
+    tmp_path, store_fixture, fake_worker, monkeypatch,
+):
+    import openprogram.agent.job.runner as runner_module
+    from openprogram.agent import run_control
+    from openprogram.agent.job.runner import JobRunner
+    from openprogram.agent.job.types import JobStatus
+    from openprogram.agent.resource_governance import ResourceGovernor
+    from openprogram.execution import CommandStatus, default_store as default_execution_store
+    from openprogram.usage.ledger import UsageLedger
+    from tests.support.waiting import wait_until
+
+    execution_db = tmp_path / "execution.sqlite3"
+    monkeypatch.setattr(
+        "openprogram.paths.get_execution_db_path", lambda: execution_db,
+    )
+    import openprogram.execution.control as control_module
+    control_module._default_control_services.clear()
+    ledger = UsageLedger(tmp_path / "usage.db")
+    runner = JobRunner(max_workers=1, governor=ResourceGovernor(ledger))
+    original_transition = runner._execution_store._transition_command
+    fail_apply = True
+    job_id: str | None = None
+
+    def fail_first_terminal_cancel_apply(connection, command_id, **kwargs):
+        nonlocal fail_apply
+        terminal = (
+            connection.execute(
+                "SELECT status FROM executions WHERE execution_id = ?", (job_id,),
+            ).fetchone()
+            if job_id is not None else None
+        )
+        if (
+            fail_apply
+            and command_id == f"execution-cancel:{job_id}"
+            and kwargs.get("target") is CommandStatus.APPLIED
+            and terminal is not None
+            and terminal[0] == "cancelled"
+        ):
+            fail_apply = False
+            raise RuntimeError("injected cancel apply failure")
+        return original_transition(connection, command_id, **kwargs)
+
+    monkeypatch.setattr(
+        runner._execution_store, "_transition_command", fail_first_terminal_cancel_apply,
+    )
+    try:
+        job_id = runner.spawn_job(
+            session_id="p1", prompt="reconcile cancel command", agent_id="main",
+        )
+        assert fake_worker[3].wait(3)
+        monkeypatch.setattr(runner_module, "_runner", None)
+        result = run_control.cancel_execution(job_id)
+        assert result["status"] == "cancelling"
+        assert fake_worker[2].wait(2)
+
+        assert wait_until(
+            lambda: runner.get_job(job_id) is not None
+            and runner.get_job(job_id).status is JobStatus.CANCELLED,
+            timeout=8,
+        )
+        command = default_execution_store().get_command(
+            f"execution-cancel:{job_id}",
+        )
+        assert command is not None and command.status is CommandStatus.APPLIED
+        assert runner._execution_control._delivered_cancel_commands == set()
+        assert runner._execution_control._cancel_delivery_by_execution == {}
+        assert tuple(ledger.connection().execute(
+            "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()) == ("released", "cancel.user")
+    finally:
+        fake_worker[1].set()
+        runner.shutdown()
+
+
 def test_cross_process_cancel_wins_natural_completion_race(
     tmp_path, store_fixture, monkeypatch,
 ):
