@@ -1262,7 +1262,8 @@ def _read_file(project_id: str, path: str) -> dict:
 
 
 def _write_file(project_id: str, path: str, content: str,
-                expected_mtime: float | None) -> dict:
+                expected_mtime: float | None,
+                expected_revision: str | None = None) -> dict:
     target, error = _resolve(project_id, path)
     if error:
         return {"error": error}
@@ -1281,6 +1282,11 @@ def _write_file(project_id: str, path: str, content: str,
             if os.stat(target).st_mtime != expected_mtime:
                 return {"conflict": True}
         except OSError:
+            return {"conflict": True}
+    if expected_revision is not None:
+        # mtime can be restored by another writer or have insufficient
+        # resolution. The content digest is the durable baseline identity.
+        if _file_digest(target) != expected_revision:
             return {"conflict": True}
     try:
         # 原子替换：先写同目录临时文件再 os.replace——中途崩溃/磁盘满
@@ -1512,16 +1518,24 @@ async def handle_project_file_write(ws, cmd: dict) -> None:
     expected_mtime = cmd.get("expected_mtime")
     if not isinstance(expected_mtime, (int, float)):
         expected_mtime = None
+    expected_revision = cmd.get("baseline_revision")
+    if not isinstance(expected_revision, str) or not expected_revision:
+        expected_revision = None
     if not isinstance(content, str):
         result: dict = {"error": "content must be a string"}
     else:
         loop = asyncio.get_event_loop()
+        mutation_payload = {"path": path, "content": content,
+                            "expected_mtime": expected_mtime}
+        if expected_revision is not None:
+            mutation_payload["baseline_revision"] = expected_revision
         result = await loop.run_in_executor(
             None, lambda: _durable_file_action(
                 project_id, "project_file_write", cmd.get("idempotency_key"),
-                {"path": path, "content": content,
-                 "expected_mtime": expected_mtime},
-                lambda: _write_file(project_id, path, content, expected_mtime),
+                mutation_payload,
+                lambda: _write_file(
+                    project_id, path, content, expected_mtime, expected_revision,
+                ),
             ),
         )
     payload = {"project_id": project_id, "path": path,

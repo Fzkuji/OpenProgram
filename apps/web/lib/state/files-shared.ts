@@ -549,6 +549,24 @@ export async function loadFileDraft(projectId: string, path: string): Promise<Fi
   return value ? structuredClone(value) : null;
 }
 
+/** Load every dirty draft at a file path or below a directory path. The
+ * durable index and failed-write overlay are both authoritative here. */
+export async function loadFileDraftsForPath(
+  projectId: string,
+  path: string,
+): Promise<Array<{ path: string; draft: FileDraft }>> {
+  await hydrateDraftState();
+  const prefix = fileDraftKey(projectId, path);
+  const keys = [...new Set([...draftBytesByKey.keys(), ...liveDraftBytesByKey.keys()])]
+    .filter((key) => key === prefix || key.startsWith(`${prefix}/`))
+    .sort();
+  return keys.flatMap((key) => {
+    const value = fileDrafts.get(key);
+    if (!value) return [];
+    return [{ path: splitDraftKey(key).path, draft: structuredClone(value) }];
+  });
+}
+
 export function persistFileDraft(projectId: string, path: string, value: FileDraft): Promise<DraftPersistenceResult> {
   const key = fileDraftKey(projectId, path);
   return enqueueDraft(async () => {

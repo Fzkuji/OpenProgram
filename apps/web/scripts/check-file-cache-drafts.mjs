@@ -29,6 +29,7 @@ assert.match(shared, /setDraftStoreAdapterForTests/);
 assert.match(shared, /useSyncExternalStore/);
 assert.match(shared, /subscribeDraftPersistenceErrors/);
 assert.match(shared, /runServerRenameWithDrafts/);
+assert.match(shared, /loadFileDraftsForPath/);
 assert.match(shared, /export type ServerRenameResult/);
 assert.match(shared, /preflightMoveFileDraftsInternal/);
 assert.match(shared, /serverResult\.status !== "ready"/);
@@ -69,6 +70,8 @@ assert.match(tree, /noteFileMtime\(projectId, joinPath\(path, e\.name\), e\.mtim
 assert.match(tree, /runServerRenameWithDrafts/);
 assert.match(tree, /operation_id/);
 assert.match(tree, /save, export, or discard/);
+assert.match(tree, /loadFileDraftsForPath/);
+assert.match(tree, /for \(const entry of drafts\)/);
 assert.match(tree, /await clearFileDraftsForPath\(projectId, path\)/);
 assert.doesNotMatch(tree, /latestFileMtime/);
 

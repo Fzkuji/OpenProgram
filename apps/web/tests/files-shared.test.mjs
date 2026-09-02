@@ -47,6 +47,7 @@ const {
   discardFileDraft,
   moveFileDrafts,
   loadFileDraft,
+  loadFileDraftsForPath,
   setDraftStoreAdapterForTests,
   getDraftPersistenceError,
   DRAFT_MAX_BYTES,
@@ -151,6 +152,18 @@ test("legacy draft records hydrate with an explicit persisted status", async () 
   const restored = await loadFileDraft("p", "legacy.txt");
   assert.equal(restored.save_status, "persisted");
   assert.equal(store.drafts.get("p:legacy.txt").save_status, "persisted");
+});
+
+test("directory delete preparation enumerates every nested dirty draft", async () => {
+  const store = new MemoryDraftStore();
+  setDraftStoreAdapterForTests(store);
+  const draft = (value) => ({ draft: value, baselineContent: "基线", baselineMtime: 1 });
+  await persistFileDraft("p", "dir/a.txt", draft("A"));
+  await persistFileDraft("p", "dir/nested/b.txt", draft("B"));
+  assert.deepEqual(
+    (await loadFileDraftsForPath("p", "dir")).map((entry) => [entry.path, entry.draft.draft]),
+    [["dir/a.txt", "A"], ["dir/nested/b.txt", "B"]],
+  );
 });
 
 test("discarding a failed live expansion preserves the exact A+C index", async () => {

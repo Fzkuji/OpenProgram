@@ -104,6 +104,25 @@ def test_file_write_replay_collision_and_restart(project):
     assert not owner and store.replay(row)["operation_id"] == first["operation_id"]
 
 
+def test_file_write_baseline_revision_is_part_of_durable_identity(project):
+    read = run(files.handle_project_file_read, {
+        "project_id": "p1", "path": "source.txt",
+    })["data"]
+    command = {
+        "project_id": "p1", "path": "source.txt", "content": "after-revision",
+        "expected_mtime": read["mtime"], "baseline_revision": read["revision"],
+        "idempotency_key": "write-revision", "request_id": str(uuid.uuid4()),
+    }
+    first = run(files.handle_project_file_write, command)["data"]
+    assert first["status"] == "ready"
+    collision = run(files.handle_project_file_write, {
+        **command, "baseline_revision": "0" * 64,
+        "request_id": str(uuid.uuid4()),
+    })["data"]
+    assert collision["status"] == "conflict"
+    assert collision["error_code"] == "IDEMPOTENCY_KEY_CONFLICT"
+
+
 def test_copy_replay_and_terminal_recovery_are_durable(project, tmp_path):
     request_id = str(uuid.uuid4())
     command = {

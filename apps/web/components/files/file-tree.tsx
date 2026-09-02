@@ -27,9 +27,8 @@ import { useTranslation } from "@/lib/i18n";
 import {
   clearFileDraftsForPath,
   filesWsRequest,
-  hasDirtyDraftsForPath,
   invalidateFileRead,
-  loadFileDraft,
+  loadFileDraftsForPath,
   noteFileMtime,
   runServerRenameWithDrafts,
   type Project,
@@ -790,32 +789,38 @@ export function FileTree({
   }
 
   async function doDelete(path: string) {
-    const hasDraft = await hasDirtyDraftsForPath(projectId, path);
+    const drafts = await loadFileDraftsForPath(projectId, path);
+    const hasDraft = drafts.length > 0;
     if (hasDraft) {
       const choice = window.prompt(text(
         "Unsaved changes: type save, export, or discard to continue deleting.",
         "存在未保存修改：请输入 save（保存）、export（导出保留）或 discard（丢弃）后继续删除。",
       ), "discard")?.trim().toLowerCase();
       if (choice === "save") {
-        const draft = await loadFileDraft(projectId, path);
-        if (!draft) return;
-        const saved = await fileOp("write", {
-          path,
-          content: draft.draft,
-          expected_mtime: draft.baselineMtime,
-          baseline_revision: draft.baselineRevision,
-        }, [parentOf(path)]);
-        if (saved.status !== "ready") return;
+        for (const entry of drafts) {
+          const saved = await fileOp("write", {
+            path: entry.path,
+            content: entry.draft.draft,
+            expected_mtime: entry.draft.baselineMtime,
+            baseline_revision: entry.draft.baselineRevision,
+          }, [parentOf(entry.path)]);
+          if (saved.status !== "ready") return;
+        }
       } else if (choice === "export") {
-        const draft = await loadFileDraft(projectId, path);
-        if (!draft) return;
-        const blob = new Blob([draft.draft], { type: "text/plain;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = baseOf(path);
-        anchor.click();
-        URL.revokeObjectURL(url);
+        try {
+          for (const entry of drafts) {
+            const blob = new Blob([entry.draft.draft], { type: "text/plain;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = entry.path.replaceAll("/", "__");
+            anchor.click();
+            URL.revokeObjectURL(url);
+          }
+        } catch {
+          window.alert(text("Unable to export every local draft; deletion was cancelled.", "无法导出全部本地草稿；已取消删除。"));
+          return;
+        }
       } else if (choice !== "discard") {
         return;
       }

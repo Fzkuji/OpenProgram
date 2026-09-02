@@ -595,6 +595,22 @@ def test_write_roundtrip(project_root):
     assert again["mtime"] == data["mtime"]
 
 
+def test_write_rejects_content_drift_when_mtime_is_restored(project_root):
+    read = _run(ws_files.handle_project_file_read, {
+        "project_id": "p1", "path": "apple.txt",
+    })["data"]
+    target = project_root / "apple.txt"
+    target.write_text("external\n", encoding="utf-8")
+    os.utime(target, (read["mtime"], read["mtime"]))
+    result = _run(ws_files.handle_project_file_write, {
+        "project_id": "p1", "path": "apple.txt", "content": "local\n",
+        "expected_mtime": read["mtime"],
+        "baseline_revision": read["revision"],
+    })["data"]
+    assert result["conflict"] is True
+    assert target.read_text(encoding="utf-8") == "external\n"
+
+
 def test_write_conflict_does_not_write(project_root):
     stale = os.stat(project_root / "apple.txt").st_mtime - 100
     data = _write({"project_id": "p1", "path": "apple.txt",
