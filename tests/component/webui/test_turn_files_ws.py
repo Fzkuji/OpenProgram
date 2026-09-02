@@ -287,7 +287,7 @@ def test_revert_turn_action_reports_error(store):
 def test_actions_registered():
     assert set(tf.ACTIONS) == {
         "list_turn_files", "turn_file_diff", "review_scope", "review_file_diff",
-        "turn_history_state", "revert_turn", "reapply_turn",
+        "turn_history_state", "turn_operation_status", "revert_turn", "reapply_turn",
     }
 
 
