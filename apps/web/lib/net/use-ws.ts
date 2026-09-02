@@ -270,11 +270,16 @@ export function useWS(): void {
           const eid = String(execution.execution_id);
           const eventSequence = (d as { event_sequence?: number } | undefined)?.event_sequence
             ?? execution.event_sequence;
+          const input = (d as { input?: {
+            user_message_id?: unknown;
+            assistant_message_id?: unknown;
+          } } | undefined)?.input;
           if (!useSessionStore.getState().acceptExecutionUpdate(
             eid,
             eventSequence,
             execution.status,
             execution.session_id,
+            [input?.user_message_id, input?.assistant_message_id],
           )) return true;
           import("@/lib/session-store").then(({ useSessionStore }) => {
             const store = useSessionStore.getState();

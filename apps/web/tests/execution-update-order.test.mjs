@@ -6,12 +6,19 @@ import {
   removeExecutionUpdateOrders,
 } from "../lib/net/execution-update-order.ts";
 
-function accept(orders, executionId, eventSequence, status = "running") {
+function accept(
+  orders,
+  executionId,
+  eventSequence,
+  status = "running",
+  messageIds = ["msg-user", "msg-assistant"],
+) {
   const result = decideExecutionUpdateOrder(
     orders[executionId],
     eventSequence,
     status,
     "session-1",
+    messageIds,
   );
   if (result.next) orders[executionId] = result.next;
   return result.accepted;
@@ -44,6 +51,7 @@ test("terminal ordering blocks delayed nonterminal frames until trusted cleanup"
     sequence: 9,
     terminal: true,
     sessionId: "session-1",
+    messageIds: ["msg-user", "msg-assistant"],
   });
 
   const reset = removeExecutionUpdateOrders(orders, ["exec-terminal"]);
@@ -52,5 +60,25 @@ test("terminal ordering blocks delayed nonterminal frames until trusted cleanup"
     sequence: 9,
     terminal: true,
     sessionId: "session-1",
+    messageIds: ["msg-user", "msg-assistant"],
   });
+});
+
+test("transcript cleanup removes only executions linked to removed messages", () => {
+  const orders = {};
+  assert.equal(accept(orders, "exec-rewind", 9, "completed", ["msg-rewind"]), true);
+  assert.equal(accept(orders, "exec-kept", 11, "completed", ["msg-kept"]), true);
+
+  const afterTruncate = removeExecutionUpdateOrders(orders, ["msg-rewind"]);
+  assert.equal(afterTruncate["exec-rewind"], undefined);
+  assert.deepEqual(afterTruncate["exec-kept"], {
+    sequence: 11,
+    terminal: true,
+    sessionId: "session-1",
+    messageIds: ["msg-kept"],
+  });
+  assert.equal(
+    decideExecutionUpdateOrder(afterTruncate["exec-kept"], 10, "running").accepted,
+    false,
+  );
 });

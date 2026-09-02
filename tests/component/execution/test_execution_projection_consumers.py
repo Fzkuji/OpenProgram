@@ -49,6 +49,11 @@ def test_fixed_consumers_materialize_idempotent_projection_history_and_running_v
     assert dispatcher.dispatch_once(owner_id="projection-worker").delivered == 4
     assert frames[0]["type"] == "execution.updated"
     assert frames[0]["data"]["execution"]["execution_id"] == execution.execution_id
+    assert frames[0]["data"]["input"] == {
+        "entrypoint": "workflow.run",
+        "user_message_id": "msg-1",
+        "assistant_message_id": None,
+    }
     first = model.get_current("ui", execution.execution_id)
     assert first is not None
     assert first.payload["execution"]["status"] == "queued"

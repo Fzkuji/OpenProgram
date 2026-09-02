@@ -211,6 +211,7 @@ interface ConvState {
     eventSequence: unknown,
     status: unknown,
     sessionId?: unknown,
+    messageIds?: Iterable<unknown>,
   ) => boolean;
   appendMessage: (sessionId: string, msg: ChatMsg) => void;
   updateMessage: (sessionId: string, msgId: string, patch: Partial<ChatMsg>) => void;
@@ -752,7 +753,7 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
       };
     }),
 
-  acceptExecutionUpdate: (executionId, eventSequence, status, sessionId) => {
+  acceptExecutionUpdate: (executionId, eventSequence, status, sessionId, messageIds) => {
     let accepted = false;
     set((s) => {
       const decision = decideExecutionUpdateOrder(
@@ -760,6 +761,7 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
         eventSequence,
         status,
         sessionId,
+        messageIds,
       );
       if (!decision.accepted) return {};
       accepted = true;
