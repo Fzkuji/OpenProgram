@@ -77,7 +77,7 @@ class ExecutionProjectionReadModel:
                     event.created_at,
                 ),
             )
-            connection.execute(
+            current_write = connection.execute(
                 "INSERT INTO execution_projection_current "
                 "(projection_kind, execution_id, event_sequence, session_id, status, "
                 "payload_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) "
@@ -96,7 +96,8 @@ class ExecutionProjectionReadModel:
                     event.created_at,
                 ),
             )
-        if item.projection_kind == "ui":
+            current_advanced = current_write.rowcount == 1
+        if item.projection_kind == "ui" and current_advanced:
             # The durable snapshot above remains the reconnect source of
             # truth.  This frame only updates already-connected clients.
             from openprogram.events import emit_ws_frame
@@ -149,21 +150,15 @@ class ExecutionProjectionReadModel:
     def _snapshot_at_event(
         self, item: ProjectionOutboxRecord
     ) -> tuple[ExecutionEvent, ExecutionRecord]:
-        record = None
-        event_at_sequence = None
-        for event in self.store.list_events(item.execution_id):
-            if event.sequence > item.event_sequence:
-                break
-            if event.kind in {"execution.created", "execution.updated"}:
-                record = ExecutionRecord.from_dict(event.payload["record"])
-            if event.sequence == item.event_sequence:
-                event_at_sequence = event
-                break
-        if event_at_sequence is None:
+        event = self.store.get_event(item.execution_id, item.event_sequence)
+        if event is None:
             raise ValueError("projection outbox event is missing")
+        record = self.store.execution_snapshot_at(
+            item.execution_id, item.event_sequence
+        )
         if record is None:
             raise ValueError("projection event has no canonical execution snapshot")
-        return event_at_sequence, record
+        return event, record
 
     def _payload(
         self,

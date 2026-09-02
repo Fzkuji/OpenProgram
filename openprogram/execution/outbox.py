@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Mapping
@@ -105,6 +106,8 @@ class ProjectionDispatcher:
         owner_id: str,
         limit: int = 100,
         lease_ttl_seconds: float = 30.0,
+        max_batches: int = 10,
+        max_seconds: float = 1.0,
     ) -> ProjectionDispatchResult:
         """Reclaim abandoned leases, then replay ready projections."""
         self.store.reclaim_projection_outbox()
@@ -116,6 +119,8 @@ class ProjectionDispatcher:
             owner_id=owner_id,
             limit=limit,
             lease_ttl_seconds=lease_ttl_seconds,
+            max_batches=max_batches,
+            max_seconds=max_seconds,
         )
 
     def drain(
@@ -124,13 +129,20 @@ class ProjectionDispatcher:
         owner_id: str,
         limit: int = 100,
         lease_ttl_seconds: float = 30.0,
+        max_batches: int | None = None,
+        max_seconds: float | None = None,
     ) -> ProjectionDispatchResult:
         """Deliver bounded batches until caught up or one batch fails.
 
         A failed delivery stays pending.  Stopping at that batch prevents a
         permanently failing consumer from spinning its own retry loop.
         """
-        claimed = delivered = failed = 0
+        if max_batches is not None and max_batches <= 0:
+            raise ValueError("max_batches must be positive")
+        if max_seconds is not None and max_seconds <= 0:
+            raise ValueError("max_seconds must be positive")
+        claimed = delivered = failed = batches = 0
+        deadline = time.monotonic() + max_seconds if max_seconds is not None else None
         while True:
             result = self.dispatch_once(
                 owner_id=owner_id,
@@ -140,7 +152,13 @@ class ProjectionDispatcher:
             claimed += result.claimed
             delivered += result.delivered
             failed += result.failed
-            if result.claimed < limit or result.failed:
+            batches += 1
+            if (
+                result.claimed < limit
+                or result.failed
+                or (max_batches is not None and batches >= max_batches)
+                or (deadline is not None and time.monotonic() >= deadline)
+            ):
                 return ProjectionDispatchResult(
                     claimed=claimed, delivered=delivered, failed=failed
                 )

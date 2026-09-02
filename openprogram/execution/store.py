@@ -837,19 +837,34 @@ class ExecutionStore:
                 "ORDER BY sequence",
                 (execution_id,),
             )
-            return [
-                ExecutionEvent(
-                    sequence=int(row["sequence"]),
-                    execution_id=str(row["execution_id"]),
-                    execution_version=row["execution_version"],
-                    command_id=row["command_id"],
-                    kind=str(row["kind"]),
-                    payload=_object(row["payload_json"]),
-                    created_at=float(row["created_at"]),
-                    schema_version=int(row["schema_version"]),
-                )
-                for row in rows
-            ]
+            return [self._event(row) for row in rows]
+
+    def get_event(self, execution_id: str, sequence: int) -> ExecutionEvent | None:
+        """Return one event by its global sequence within the exact execution."""
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT * FROM execution_events WHERE execution_id = ? AND sequence = ?",
+                (execution_id, sequence),
+            ).fetchone()
+        return self._event(row) if row is not None else None
+
+    def execution_snapshot_at(
+        self, execution_id: str, sequence: int
+    ) -> ExecutionRecord | None:
+        """Read the nearest persisted execution snapshot at or before an event."""
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT payload_json FROM execution_events "
+                "WHERE execution_id = ? AND sequence <= ? "
+                "AND kind IN ('execution.created', 'execution.updated') "
+                "ORDER BY sequence DESC LIMIT 1",
+                (execution_id, sequence),
+            ).fetchone()
+        return (
+            ExecutionRecord.from_dict(_object(row["payload_json"])["record"])
+            if row is not None
+            else None
+        )
 
     def rebuild_execution(self, execution_id: str) -> ExecutionRecord | None:
         record = None
@@ -857,6 +872,19 @@ class ExecutionStore:
             if event.kind in {"execution.created", "execution.updated"}:
                 record = ExecutionRecord.from_dict(event.payload["record"])
         return record
+
+    @staticmethod
+    def _event(row: sqlite3.Row) -> ExecutionEvent:
+        return ExecutionEvent(
+            sequence=int(row["sequence"]),
+            execution_id=str(row["execution_id"]),
+            execution_version=row["execution_version"],
+            command_id=row["command_id"],
+            kind=str(row["kind"]),
+            payload=_object(row["payload_json"]),
+            created_at=float(row["created_at"]),
+            schema_version=int(row["schema_version"]),
+        )
 
     def _accept_command(
         self,

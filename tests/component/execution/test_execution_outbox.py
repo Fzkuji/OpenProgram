@@ -243,6 +243,31 @@ def test_startup_recovery_drains_more_than_one_bounded_projection_batch(tmp_path
     assert len(seen) == 104
 
 
+def test_startup_drain_stops_at_its_bound_and_normal_drain_finishes_backlog(tmp_path):
+    store = _store(tmp_path)
+    for index in range(51):
+        _admit(
+            store,
+            execution_id=f"bounded-exec-{index}",
+            run_id=f"bounded-run-{index}",
+            revision_id=f"bounded-revision-{index}",
+            entrypoint=f"openprogram.programs.workflow:bounded-{index}",
+        )
+    seen = []
+    dispatcher = ProjectionDispatcher(
+        store, {kind: lambda item: seen.append(item.outbox_id) for kind in PROJECTION_KINDS}
+    )
+
+    startup = dispatcher.recover_startup(
+        owner_id="startup-worker", limit=100, max_batches=1, max_seconds=10
+    )
+    continued = dispatcher.drain(owner_id="runtime-worker", limit=100)
+
+    assert startup == type(startup)(claimed=100, delivered=100, failed=0)
+    assert continued == type(continued)(claimed=104, delivered=104, failed=0)
+    assert len(seen) == 204
+
+
 def test_startup_drain_stops_after_a_failed_batch(tmp_path):
     store = _store(tmp_path)
     _admit(store)
