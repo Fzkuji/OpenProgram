@@ -1642,6 +1642,46 @@ class JobRunner:
             _log.exception("failed to persist canonical cancel for job %s", job_id)
             raise
 
+    def _consume_pending_canonical_cancel(
+        self,
+        job_id: str,
+        attempt_id: str,
+        generation: int,
+        cancel_event: threading.Event,
+    ) -> bool:
+        """Consume a durable cancel command in the owning worker process."""
+        try:
+            dispatch = self._run_control(
+                self._execution_control.deliver_pending_cancel(
+                    execution_id=job_id,
+                    attempt_id=attempt_id,
+                    generation=generation,
+                )
+            )
+        except Exception:
+            _log.exception("failed to consume canonical cancel for %s", job_id)
+            return False
+        if dispatch is None or not dispatch.delivered:
+            # In particular, owner_not_local is not a delivery confirmation.
+            return False
+        cancel_event.set()
+        reason_code = dispatch.command.payload.get("reason_code")
+        if not isinstance(reason_code, str) or not reason_code:
+            reason_code = self._canonical_cancel_reason(job_id) or "cancel.user"
+        with self._lock:
+            entry = self._jobs.get(job_id)
+            admission_lease_generation = (
+                entry.get("lease_generation") if entry is not None else None
+            )
+        self._schedule_canonical_termination(
+            job_id,
+            attempt_id,
+            generation,
+            reason_code,
+            admission_lease_generation,
+        )
+        return True
+
     @staticmethod
     def _run_control(awaitable):
         """Run a control coroutine from sync code, including an event loop thread."""
@@ -2158,13 +2198,6 @@ class JobRunner:
         **fields: Any,
     ) -> Optional[Job]:
         terminal: dict[str, Job] = {}
-        terminal_fields = _terminal_fields(
-            status,
-            reason_code,
-            head_id=fields.get("head_id"),
-            result_text=fields.get("result_text"),
-            error=fields.get("error"),
-        )
         canonical_completion = None
         if attempt_id is not None and attempt_generation is not None:
             try:
@@ -2177,6 +2210,16 @@ class JobRunner:
                 )
             except Exception:
                 return None
+            if canonical_completion.execution.status.value == "cancelled":
+                status = JobStatus.CANCELLED
+                reason_code = self._canonical_cancel_reason(job_id) or reason_code
+        terminal_fields = _terminal_fields(
+            status,
+            reason_code,
+            head_id=fields.get("head_id"),
+            result_text=fields.get("result_text"),
+            error=fields.get("error"),
+        )
         try:
             self._governor.finalize_job(
                 job_id, reason_code,
@@ -2216,12 +2259,25 @@ class JobRunner:
         execution = self._execution_store.get_execution(job_id)
         if execution is None:
             raise RuntimeError(f"canonical execution {job_id!r} is missing")
+        command_id = None
+        cancel_command = self._execution_store.get_command(
+            f"execution-cancel:{job_id}",
+        )
+        if (
+            cancel_command is not None
+            and cancel_command.status.value == "applying"
+            and execution.status.value == "cancelling"
+        ):
+            target = ExecutionStatus.CANCELLED
+            reason_code = cancel_command.payload.get("reason_code") or reason_code
+            command_id = cancel_command.command_id
         return self._execution_control.finish_attempt(
             attempt_id=attempt_id,
             generation=attempt_generation,
             expected_execution_version=execution.status_version,
             target=target,
             outcome=reason_code,
+            command_id=command_id,
             reason_code=reason_code,
         )
 
@@ -2693,6 +2749,12 @@ class JobRunner:
                     entry["execution_version"] = canonical_running.status_version
                     entry["driver"] = canonical_driver
                     entry["budget_cancelled"] = False
+                self._consume_pending_canonical_cancel(
+                    claim.job_id,
+                    canonical_attempt.attempt_id,
+                    canonical_attempt.generation,
+                    cancel_ev,
+                )
                 try:
                     future: Future = self._pool.submit(
                         ctx.run, self._run_one, claim.job_id, claim.session_id,
@@ -3396,8 +3458,23 @@ class JobRunner:
         while not self._shutdown_event.wait(self._budget_poll_seconds):
             now = self._monotonic()
             expired: list[tuple[str, str]] = []
+            pending_cancels: list[tuple[str, str, int, threading.Event]] = []
             with self._lock:
                 for job_id, entry in self._jobs.items():
+                    attempt_id = entry.get("attempt_id")
+                    attempt_generation = entry.get("attempt_generation")
+                    if (
+                        attempt_id is not None
+                        and isinstance(attempt_generation, int)
+                    ):
+                        pending_cancels.append(
+                            (
+                                job_id,
+                                attempt_id,
+                                attempt_generation,
+                                entry["event"],
+                            )
+                        )
                     started = entry.get("started_monotonic")
                     if started is None or entry.get("budget_cancelled"):
                         continue
@@ -3418,6 +3495,10 @@ class JobRunner:
                     if reason_code is not None:
                         entry["budget_cancelled"] = True
                         expired.append((job_id, reason_code))
+            for job_id, attempt_id, generation, cancel_event in pending_cancels:
+                self._consume_pending_canonical_cancel(
+                    job_id, attempt_id, generation, cancel_event,
+                )
             for job_id, reason_code in expired:
                 try:
                     self._cancel_cascade(

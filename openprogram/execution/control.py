@@ -174,6 +174,8 @@ class RuntimeControlService:
         self._terminal_observer: Callable[[ExecutionRecord], object] | None = None
         self._terminal_preparer: Callable[..., object] | None = None
         self._terminal_recovery: Callable[..., object] | None = None
+        self._cancel_delivery_lock = RLock()
+        self._delivered_cancel_commands: set[str] = set()
 
     def set_terminal_observer(
         self, observer: Callable[[ExecutionRecord], object] | None,
@@ -1099,7 +1101,55 @@ class RuntimeControlService:
             return ControlDispatch(
                 command=command, execution=execution, delivered=False
             )
-        return await self._dispatch(command, execution, operation="cancel")
+        dispatch = await self._dispatch(command, execution, operation="cancel")
+        if dispatch.delivered:
+            with self._cancel_delivery_lock:
+                self._delivered_cancel_commands.add(command.command_id)
+        return dispatch
+
+    async def deliver_pending_cancel(
+        self,
+        *,
+        execution_id: str,
+        attempt_id: str,
+        generation: int,
+    ) -> ControlDispatch | None:
+        """Deliver a persisted cancel command to this exact local owner."""
+        execution = self.executions.get_execution(execution_id)
+        if execution is None:
+            return None
+        command = self.executions.get_command(
+            f"execution-cancel:{execution_id}",
+        )
+        if command is None or (
+            command.kind is not CommandKind.CANCEL
+            or command.status is not CommandStatus.APPLYING
+        ):
+            return None
+        if (
+            execution.current_attempt_id != attempt_id
+            or execution.owner_lease.get("generation") != generation
+        ):
+            return ControlDispatch(
+                command=command,
+                execution=execution,
+                delivered=False,
+                issue_code="stale_owner",
+            )
+        with self._cancel_delivery_lock:
+            if command.command_id in self._delivered_cancel_commands:
+                return ControlDispatch(
+                    command=command,
+                    execution=execution,
+                    delivered=False,
+                    issue_code="already_delivered",
+                )
+            dispatch = await self._dispatch(
+                command, execution, operation="cancel",
+            )
+            if dispatch.delivered:
+                self._delivered_cancel_commands.add(command.command_id)
+            return dispatch
 
     def _record_terminal_recovery(
         self, execution: ExecutionRecord, command_id: str,
