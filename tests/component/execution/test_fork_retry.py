@@ -303,6 +303,37 @@ def test_v2_to_v4_migration_preserves_legacy_rows_and_revision_identity(tmp_path
     assert legacy is not None and legacy.content_hash == legacy_hash
     with sqlite3.connect(path) as migrated:
         assert migrated.execute("PRAGMA user_version").fetchone()[0] == 4
+        table_sql = migrated.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'executions'"
+        ).fetchone()[0]
+        assert "CHECK(parent_execution_id IS NOT NULL OR source_checkpoint_id IS NULL)" in table_sql
+        assert "REFERENCES checkpoints(checkpoint_id)" in table_sql
+        with pytest.raises(sqlite3.IntegrityError):
+            migrated.execute(
+                "INSERT INTO executions ("
+                "execution_id, run_id, session_id, parent_execution_id, "
+                "source_checkpoint_id, revision_id, status, status_version, "
+                "owner_lease_json, safe_point_json, capabilities_json, "
+                "effect_summary_json, created_at, updated_at) VALUES ("
+                "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "invalid-root",
+                    "run-invalid",
+                    "session-invalid",
+                    None,
+                    "checkpoint-invalid",
+                    "revision-invalid",
+                    "queued",
+                    1,
+                    "{}",
+                    "{}",
+                    "{}",
+                    "{}",
+                    1.0,
+                    1.0,
+                ),
+            )
         names = {row[1] for row in migrated.execute("PRAGMA table_info(executions)")}
         assert "source_checkpoint_id" in names
         assert any(

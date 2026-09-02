@@ -216,6 +216,9 @@ def _migrate_v2(connection: sqlite3.Connection) -> None:
         "completed_frontier_json TEXT",
     )
     _create_current_schema(connection)
+    # v1/v2 executions already exist, so CREATE TABLE IF NOT EXISTS cannot
+    # add the v4 source-checkpoint FK and root invariant to that table.
+    _migrate_v3(connection)
 
 
 def _migrate_v3(connection: sqlite3.Connection) -> None:

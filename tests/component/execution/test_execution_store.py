@@ -51,6 +51,40 @@ def _execution(store: ExecutionStore, **overrides):
     return store.create_execution(**values)
 
 
+def _assert_root_source_constraint(connection: sqlite3.Connection) -> None:
+    sql = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' "
+        "AND name = 'executions'"
+    ).fetchone()[0]
+    assert "CHECK(parent_execution_id IS NOT NULL OR source_checkpoint_id IS NULL)" in sql
+    assert "REFERENCES checkpoints(checkpoint_id)" in sql
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(
+            "INSERT INTO executions ("
+            "execution_id, run_id, session_id, parent_execution_id, "
+            "source_checkpoint_id, revision_id, status, status_version, "
+            "owner_lease_json, safe_point_json, capabilities_json, "
+            "effect_summary_json, created_at, updated_at) VALUES ("
+            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "invalid-root",
+                "run-invalid",
+                "session-invalid",
+                None,
+                "checkpoint-invalid",
+                "revision-invalid",
+                "queued",
+                1,
+                "{}",
+                "{}",
+                "{}",
+                "{}",
+                1.0,
+                1.0,
+            ),
+        )
+
+
 def test_revision_is_content_addressed_immutable_and_durable(tmp_path) -> None:
     path = tmp_path / "runtime" / "executions.sqlite3"
     store = ExecutionStore(path)
@@ -270,6 +304,7 @@ def test_v1_store_migrates_legacy_capabilities_in_executions_and_events(
     }
     with sqlite3.connect(path) as connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+        _assert_root_source_constraint(connection)
         assert json.loads(
             connection.execute(
                 "SELECT capabilities_json FROM executions WHERE execution_id = ?",
