@@ -224,16 +224,62 @@ def _trusted_runtime_actor(ws) -> dict | None:
     return trusted_runtime_actor(getattr(ws, "scope", None))
 
 
+def _public_execution_snapshot(execution) -> tuple[dict, dict]:
+    """Return the one snapshot shape shared by command and reconnect paths."""
+    execution_data = execution.to_dict() if hasattr(execution, "to_dict") else dict(execution)
+    cursor = {
+        "next_sequence": (execution_data.get("status_version") or 0) + 1,
+        "snapshot_status_version": execution_data.get("status_version"),
+    }
+    try:
+        from openprogram.agent.job.runner import runner_for_execution_store
+        from openprogram.execution import default_store
+
+        runner = runner_for_execution_store(default_store())
+        view = runner.get_job_resource_view(execution_data["execution_id"]) if runner else None
+        if view is not None:
+            dto = view.to_dict()
+            execution_data.update({
+                "job_id": dto["job_id"],
+                "resource": dto["resource"],
+                "capabilities": dto["capabilities"],
+                "checkpoint_head_id": dto["checkpoint_head_id"],
+                "event_sequence": cursor["next_sequence"] - 1,
+            })
+            cursor = dict(dto["event_cursor"])
+            cursor["snapshot_status_version"] = execution_data.get("status_version")
+    except Exception:
+        pass
+    return execution_data, cursor
+
+
 async def _send_command_update(ws, command, execution) -> None:
     command_data = command.to_dict() if hasattr(command, "to_dict") else dict(command)
-    execution_data = execution.to_dict() if hasattr(execution, "to_dict") else dict(execution)
+    if command_data.get("kind") == "execution.step":
+        checkpoint_id = getattr(execution, "checkpoint_head_id", None)
+        if checkpoint_id:
+            try:
+                from openprogram.execution import ExecutionCheckpointStore, default_store
+
+                checkpoint = ExecutionCheckpointStore(default_store()).get(checkpoint_id)
+                command_data["managed_action_count"] = len(
+                    checkpoint.completed_actions if checkpoint is not None else (),
+                )
+            except Exception:
+                command_data["managed_action_count"] = 0
+        else:
+            command_data["managed_action_count"] = 0
+    execution_data, cursor = _public_execution_snapshot(execution)
     await ws.send_text(json.dumps({
         "type": "execution.command.updated", "command": command_data,
-        "data": {"command": command_data},
+        "execution": execution_data, "event_cursor": cursor,
+        "data": {"command": command_data, "execution": execution_data,
+                 "event_cursor": cursor},
     }, default=str))
     await ws.send_text(json.dumps({
         "type": "execution.updated", "execution": execution_data,
-        "data": {"execution": execution_data},
+        "event_cursor": cursor,
+        "data": {"execution": execution_data, "event_cursor": cursor},
     }, default=str))
     _broadcast_execution(execution_data)
 
@@ -288,6 +334,10 @@ async def submit_execution_control(
             "execution_id": execution_id, "status_version": None,
         }
     try:
+        from openprogram.agent.job.runner import runner_for_execution_store
+
+        job_runner = runner_for_execution_store(store)
+        is_job = job_runner is not None and store.get_job_agent_input(execution_id) is not None
         if operation in {"pause", "continue", "step"}:
             from openprogram.execution.model import CommandKind
             required = {
@@ -308,6 +358,15 @@ async def submit_execution_control(
                         generation=generation,
                     )
             raise ExecutionConflict("unresolved_effect", "execution has an unresolved external effect")
+        if is_job and operation in {"continue", "step"}:
+            command, latest = job_runner.queue_job_resume(
+                command_id=command_id,
+                execution_id=execution_id,
+                expected_version=expected_version,
+                actor=actor,
+                step=operation == "step",
+            )
+            return command, latest
         if operation == "pause":
             dispatch = await service.request_pause(
                 command_id=command_id, execution_id=execution_id,
@@ -354,6 +413,26 @@ async def _handle_execution_control(ws, cmd: dict, operation: str) -> None:
         actor=_trusted_runtime_actor(ws),
         bound_session=bound_session if isinstance(bound_session, str) else None,
     )
+    command_status = (
+        command.status.value
+        if hasattr(getattr(command, "status", None), "value")
+        else command.get("status")
+    )
+    if operation == "pause" and command_status == "applied":
+        try:
+            from openprogram.agent.job.runner import runner_for_execution_store
+            from openprogram.execution import default_store
+
+            runner = runner_for_execution_store(default_store())
+            if runner is not None and getattr(execution, "status", None).value == "paused":
+                runner.release_paused_job_resource(
+                    execution.execution_id, reason_code="pause.queued",
+                )
+        except Exception:
+            # The release intent is durable once recorded; a later runner
+            # reconciliation retries it.  A transport response never rolls
+            # back the canonical pause.
+            pass
     await _send_command_update(ws, command, execution)
     execution_data = execution.to_dict() if hasattr(execution, "to_dict") else dict(execution)
     if operation == "cancel" and execution_data.get("status") in {"cancelling", "cancelled"}:

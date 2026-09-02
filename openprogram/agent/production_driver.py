@@ -501,18 +501,11 @@ class AgentProductionDriver:
         if activation is not None and activation.checkpoint is not None and self.activation_observer is not None:
             self.activation_observer(activation)
         cancel_event = threading.Event()
-        # The command handler that activates a continuation may use a
-        # short-lived asyncio loop.  Keep resumed producers on an owned
-        # thread so closing that handler loop cannot cancel the fresh owner
-        # before it reaches its durable finish transition.
-        task: Any
-        if continuation is not None:
-            task = _ThreadResultFuture()
-        else:
-            task = asyncio.create_task(
-                self._run_attempt(attempt, request, cancel_event, continuation=None),
-                name=f"openprogram-agent-{attempt.execution_id}-{attempt.generation}",
-            )
+        # Activation is often initiated by a short-lived transport loop.  An
+        # execution owner must not inherit that loop's cancellation lifetime,
+        # including the initial Job attempt.  The driver owns a thread-backed
+        # completion future for both initial and resumed activations.
+        task: Any = _ThreadResultFuture()
         handle = AgentDriverHandle(
             execution_id=attempt.execution_id,
             attempt_id=attempt.attempt_id,
@@ -528,37 +521,35 @@ class AgentProductionDriver:
                     task.cancel()
                 raise AgentDriverError("owner_exists", "execution already has a live Agent owner")
             self._handles[key] = handle
-            if continuation is not None:
-                self._continuation_start_gates[key] = threading.Event()
+            self._continuation_start_gates[key] = threading.Event()
         task.add_done_callback(lambda _task: self._release(handle))
-        if continuation is not None:
-            def _run_continuation() -> None:
-                with self._handles_lock:
-                    gate = self._continuation_start_gates.get(key)
-                if gate is None:
+        def _run_owned_attempt() -> None:
+            with self._handles_lock:
+                gate = self._continuation_start_gates.get(key)
+            if gate is None:
+                task.cancel()
+                return
+            gate.wait()
+            with self._handles_lock:
+                if key not in self._continuation_committed:
                     task.cancel()
                     return
-                gate.wait()
-                with self._handles_lock:
-                    if key not in self._continuation_committed:
-                        task.cancel()
-                        return
-                try:
-                    result = asyncio.run(
-                        self._run_attempt(
-                            attempt, request, cancel_event, continuation=continuation,
-                        )
+            try:
+                result = asyncio.run(
+                    self._run_attempt(
+                        attempt, request, cancel_event, continuation=continuation,
                     )
-                except BaseException as exc:
-                    task.set_exception(exc)
-                else:
-                    task.set_result(result)
+                )
+            except BaseException as exc:
+                task.set_exception(exc)
+            else:
+                task.set_result(result)
 
-            threading.Thread(
-                target=_run_continuation,
-                daemon=True,
-                name=f"openprogram-agent-{attempt.execution_id}-{attempt.generation}",
-            ).start()
+        threading.Thread(
+            target=_run_owned_attempt,
+            daemon=True,
+            name=f"openprogram-agent-{attempt.execution_id}-{attempt.generation}",
+        ).start()
         # Returning the binding lets RuntimeControlService register this
         # exact owner atomically in its live-handle registry. The binding is
         # also the only object accepted by the registry for later dispatch.
@@ -571,7 +562,7 @@ class AgentProductionDriver:
         )
 
     def activation_committed(self, binding: DriverBinding[AgentDriverHandle]) -> None:
-        """Release a continuation producer after registry fencing commits."""
+        """Release a driver-owned producer after registry fencing commits."""
         key = self._key(binding.handle)
         with self._handles_lock:
             gate = self._continuation_start_gates.get(key)
@@ -581,7 +572,7 @@ class AgentProductionDriver:
             gate.set()
 
     def activation_aborted(self, binding: DriverBinding[AgentDriverHandle]) -> None:
-        """Discard a continuation producer whose registry bind lost a fence."""
+        """Discard a producer whose registry bind lost a fence."""
         key = self._key(binding.handle)
         with self._handles_lock:
             gate = self._continuation_start_gates.pop(key, None)

@@ -24,7 +24,7 @@ from openprogram.execution.model import CapabilitySet
 
 
 @dataclass
-class JobDriverHandle:
+class _JobDriverHandle:
     """Process-local cancellation handle for one canonical Job attempt."""
 
     execution_id: str
@@ -46,7 +46,7 @@ class _WorkerBinding:
     terminate_callback: Callable[[JobDriverHandle, str], TerminationReceipt] | None = None
 
 
-class JobDriver:
+class _JobDriver:
     """ExecutionDriver adapter for a Job's current physical attempt.
 
     Jobs intentionally expose no pause, step, steer, fork, retry, or safe
@@ -334,13 +334,19 @@ class JobDriver:
             self._workers.pop(
                 (handle.execution_id, handle.attempt_id, handle.generation), None
             )
-            return True
+        return True
+
+
+# Compatibility aliases remain for isolated historical tests only.  JobRunner
+# no longer imports this module or uses it as an execution lifecycle owner.
+JobDriverHandle = _JobDriverHandle
+JobDriver = _JobDriver
 
 
 class JobActivationBridge:
     """Adapt ``JobDriver.activate`` to RuntimeControlService's callback form."""
 
-    def __init__(self, driver: JobDriver) -> None:
+    def __init__(self, driver: "JobDriver") -> None:
         self.driver = driver
 
     async def activate(

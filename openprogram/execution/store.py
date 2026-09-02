@@ -31,7 +31,7 @@ from .model import (
     _json,
     _snapshot_json,
 )
-from .state_machine import validate_command, validate_transition
+from .state_machine import InvalidCommand, validate_command, validate_transition
 
 
 _log = logging.getLogger(__name__)
@@ -1500,6 +1500,40 @@ class ExecutionStore:
             )
             return command
 
+    def accept_initial_job_step(
+        self,
+        *,
+        command_id: str,
+        execution_id: str,
+        expected_version: int,
+        payload: Mapping[str, Any],
+        actor: Mapping[str, Any],
+    ) -> ControlCommand:
+        """Accept the Job-only queued initial-step exception.
+
+        Generic executions still reject ``step`` while queued.  A Job is
+        identified by its immutable, strict ``JobAgentInputV1`` record before
+        this exception is admitted; a resource claimant later creates the
+        attempt that consumes the one provider decision.
+        """
+        from openprogram.agent.job.input import JobAgentInputV1
+        raw_input = self.get_job_agent_input(execution_id)
+        if raw_input is None:
+            raise InvalidCommand("invalid_state", "initial step requires a Job execution")
+        JobAgentInputV1.parse(raw_input)
+        with self._transaction() as connection:
+            command, _ = self._accept_command(
+                connection,
+                command_id=command_id,
+                execution_id=execution_id,
+                expected_version=expected_version,
+                kind=CommandKind.STEP,
+                payload=payload,
+                actor=actor,
+                allow_queued_initial_step=True,
+            )
+            return command
+
     def accept_command_with_transition(
         self,
         *,
@@ -1688,6 +1722,7 @@ class ExecutionStore:
         kind: CommandKind,
         payload: Mapping[str, Any],
         actor: Mapping[str, Any],
+        allow_queued_initial_step: bool = False,
     ) -> tuple[ControlCommand, bool]:
         fingerprint = _fingerprint(
             {
@@ -1716,7 +1751,13 @@ class ExecutionStore:
                 f"expected execution version {expected_version}, "
                 f"found {execution.status_version}",
             )
-        validate_command(kind, execution.status, execution.capabilities)
+        if not (
+            allow_queued_initial_step
+            and kind is CommandKind.STEP
+            and execution.status is ExecutionStatus.QUEUED
+            and execution.capabilities.step
+        ):
+            validate_command(kind, execution.status, execution.capabilities)
         now = time.time()
         command = ControlCommand(
             command_id=command_id,

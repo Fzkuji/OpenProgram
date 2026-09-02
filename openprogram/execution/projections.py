@@ -77,26 +77,33 @@ class ExecutionProjectionReadModel:
                     event.created_at,
                 ),
             )
-            current_write = connection.execute(
-                "INSERT INTO execution_projection_current "
-                "(projection_kind, execution_id, event_sequence, session_id, status, "
-                "payload_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) "
-                "ON CONFLICT(projection_kind, execution_id) DO UPDATE SET "
-                "event_sequence = excluded.event_sequence, session_id = excluded.session_id, "
-                "status = excluded.status, payload_json = excluded.payload_json, "
-                "updated_at = excluded.updated_at "
-                "WHERE excluded.event_sequence > execution_projection_current.event_sequence",
-                (
-                    item.projection_kind,
-                    execution.execution_id,
-                    event.sequence,
-                    execution.session_id,
-                    execution.status.value,
-                    encoded,
-                    event.created_at,
-                ),
-            )
-            current_advanced = current_write.rowcount == 1
+            # Resource intents are durable replay facts, but do not alter the
+            # canonical execution snapshot.  Keeping the current projection
+            # at the last execution.created/updated event prevents an outbox
+            # retry from presenting an intent sequence as a newer lifecycle
+            # version.
+            current_advanced = False
+            if event.kind in {"execution.created", "execution.updated"}:
+                current_write = connection.execute(
+                    "INSERT INTO execution_projection_current "
+                    "(projection_kind, execution_id, event_sequence, session_id, status, "
+                    "payload_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(projection_kind, execution_id) DO UPDATE SET "
+                    "event_sequence = excluded.event_sequence, session_id = excluded.session_id, "
+                    "status = excluded.status, payload_json = excluded.payload_json, "
+                    "updated_at = excluded.updated_at "
+                    "WHERE excluded.event_sequence > execution_projection_current.event_sequence",
+                    (
+                        item.projection_kind,
+                        execution.execution_id,
+                        event.sequence,
+                        execution.session_id,
+                        execution.status.value,
+                        encoded,
+                        event.created_at,
+                    ),
+                )
+                current_advanced = current_write.rowcount == 1
         if item.projection_kind == "ui" and current_advanced:
             # The durable snapshot above remains the reconnect source of
             # truth.  This frame only updates already-connected clients.
@@ -170,6 +177,10 @@ class ExecutionProjectionReadModel:
         entrypoint = source.entrypoint if source is not None else None
         payload: dict[str, Any] = {
             "event_sequence": event.sequence,
+            "event_cursor": {
+                "next_sequence": execution.status_version + 1,
+                "replay_from_sequence": execution.status_version + 1,
+            },
             "event": {
                 "sequence": event.sequence,
                 "kind": event.kind,

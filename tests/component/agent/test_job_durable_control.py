@@ -37,6 +37,7 @@ def durable_job(tmp_path, store_fixture, monkeypatch):
     """Create a real JobRunner with isolated execution and resource stores."""
 
     from openprogram.agent.job.runner import JobRunner
+    from openprogram.agent.production_driver import AgentProductionDriver
     from openprogram.agent.resource_governance import ResourceGovernor
     from openprogram.execution import default_store as execution_store
     from openprogram.usage.ledger import UsageLedger
@@ -46,7 +47,50 @@ def durable_job(tmp_path, store_fixture, monkeypatch):
         "openprogram.paths.get_execution_db_path", lambda: execution_db,
     )
     ledger = UsageLedger(tmp_path / "usage.sqlite3")
-    runner = JobRunner(max_workers=1, governor=ResourceGovernor(ledger))
+    class _SafePointResult:
+        _execution_safe_point_handoff = True
+        failed = False
+        error = None
+
+    def one_provider_action(*, request, execution_context, **_kwargs):
+        hook = execution_context["safe_point_hook"]
+        snapshot = {
+            "contract_version": 1,
+            "model": {
+                "id": "test-model", "api": "test", "provider": "test",
+                "base_url": "https://test.invalid", "endpoint": "responses",
+            },
+            "system_prompt": "",
+            "tools": [],
+            "structured_output": {},
+            "toolset": {},
+            "request_semantics": {
+                "_execution_revision_id": request._execution_revision_id,
+                "execution_location": {},
+            },
+        }
+        hook("provider.before", {
+            "resolved_snapshot": snapshot,
+            "context": {"fixture": "durable-job"},
+            "supports_idempotency_key": True,
+        })
+        assert hook("provider.after", {
+            "resolved_snapshot": snapshot,
+            "message": {
+                "api": "test", "provider": "test", "model": "test",
+                "content": [],
+            },
+            "usage": {},
+        })
+        return _SafePointResult()
+
+    runner = JobRunner(
+        max_workers=1,
+        governor=ResourceGovernor(ledger),
+        agent_driver_factory=lambda store, control: AgentProductionDriver(
+            store, control_service=control, turn_runner=one_provider_action,
+        ),
+    )
     try:
         yield runner, ledger, execution_store, execution_db
     finally:
@@ -78,7 +122,10 @@ def _run_runtime_action(action: str, ws: _WS, envelope: dict) -> None:
 
 
 def _command_frame(ws: _WS) -> dict:
-    return next(frame for frame in ws.frames if frame["type"] == "execution.command.updated")
+    return next(
+        frame for frame in reversed(ws.frames)
+        if frame["type"] == "execution.command.updated"
+    )
 
 
 def test_background_spawn_has_one_canonical_execution_and_no_inner_exec_identity(

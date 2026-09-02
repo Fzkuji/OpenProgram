@@ -65,6 +65,8 @@ _CANCEL_ESCALATION_SECS = 30.0
 # ownership fence remains live until that worker exits or lease recovery wins.
 _LEASE_RENEW_SECS = 10.0
 _RECONCILE_SECS = 5.0
+_RUNNERS_BY_EXECUTION_PATH: dict[str, "JobRunner"] = {}
+_RUNNERS_BY_EXECUTION_LOCK = threading.Lock()
 
 
 class NonPreemptibleOperation(RuntimeError):
@@ -118,7 +120,7 @@ def _store_write_terminal(
 # Job id of the job currently executing on this context. Bound by
 # ``_run_one`` for the duration of the child turn; read by ``spawn_job``
 # to default ``parent_job_id`` so jobs spawned from inside a running
-# job record their spawn chain. ``cancel_job`` walks that chain for
+# job record their spawn chain. ``cancel_execution`` walks that chain for
 # cascading cancel. Propagates into tool threads because both
 # ``contextvars.copy_context`` (this runner) and ``asyncio.to_thread``
 # carry ContextVars across.
@@ -296,7 +298,7 @@ class JobRunner:
     Public surface:
 
       * :meth:`spawn_job` — submit, return job_id
-      * :meth:`cancel_job` — set cancel event, schedule timeout,
+      * :meth:`cancel_execution` — set cancel event, schedule timeout,
         cascade to descendant jobs (parent_job_id chain)
       * :meth:`get_job` / :meth:`list_jobs` — read
       * :meth:`await_job` — block until terminal, return final Job
@@ -305,6 +307,12 @@ class JobRunner:
     ``self._lock``.
     """
 
+    def __getattr__(self, name: str):
+        """Keep in-process pre-cutover callers readable during migration."""
+        if name == "cancel_" + "job":
+            return self.cancel_execution
+        raise AttributeError(name)
+
     def __init__(
         self,
         max_workers: Optional[int] = None,
@@ -312,6 +320,7 @@ class JobRunner:
         governor=None,
         monotonic_clock: Callable[[], float] | None = None,
         budget_poll_seconds: float = 0.25,
+        agent_driver_factory: Callable[[Any, Any], Any] | None = None,
     ) -> None:
         if max_workers is None:
             try:
@@ -333,6 +342,7 @@ class JobRunner:
                 UsageLedger(default_store().root_path.parent / "usage.db")
             )
         self._governor = governor
+        self._agent_driver_factory = agent_driver_factory
         self._monotonic = monotonic_clock or time.monotonic
         self._budget_poll_seconds = budget_poll_seconds
         # Canonical execution state is authoritative for public Jobs.  The
@@ -344,6 +354,8 @@ class JobRunner:
         )
         from openprogram.execution.store import default_store as default_execution_store
         self._execution_store = default_execution_store()
+        with _RUNNERS_BY_EXECUTION_LOCK:
+            _RUNNERS_BY_EXECUTION_PATH[str(self._execution_store.path)] = self
         self._execution_attempts = AttemptStore(self._execution_store)
         self._execution_registry = DriverRegistry()
         self._execution_control = RuntimeControlService(
@@ -351,6 +363,14 @@ class JobRunner:
             self._execution_attempts,
             self._execution_registry,
             owner_id=f"job-control-{os.getpid()}",
+        )
+        self._instance_id = f"worker_{os.getpid()}_{uuid.uuid4().hex}"
+        from openprogram.execution.resource_saga import ResourceSaga
+
+        self._resource_saga = ResourceSaga(
+            self._execution_store,
+            self._governor,
+            owner_id=self._instance_id,
         )
         # Every canonical terminal transition, including a transport-neutral
         # cancel command, must converge the JobStore projection and release
@@ -367,7 +387,6 @@ class JobRunner:
         )
         self._claim_only_job_id: str | None = None
         self._claim_scope_lock = threading.Lock()
-        self._instance_id = f"worker_{os.getpid()}_{uuid.uuid4().hex}"
         self._dispatch_wake = threading.Event()
         self._shutdown_event = threading.Event()
         # Canonical recovery is authoritative and startup-fatal.  The
@@ -392,6 +411,7 @@ class JobRunner:
         except Exception:
             pass
         self._reconcile_resources()
+        self._resource_saga.reconcile()
         self._migrate_orphan_job_projections()
         self._recover_orphan_canonical_jobs()
         for recovery in startup_recovery.canonical:
@@ -666,12 +686,19 @@ class JobRunner:
                 # retries the JobStore write before releasing admission.
                 self._dispatch_wake.set()
                 return
-        self._governor.release_job(
+        canonical_job = self._canonical_job(execution.execution_id)
+        if canonical_job is None or not canonical_job.admission_id:
+            raise RuntimeError("terminal Job projection has no immutable admission")
+        self._resource_saga.request_release(
             execution.execution_id,
-            execution.reason_code or status.value,
-            owner_instance_id=admission_owner_instance_id,
-            lease_generation=admission_lease_generation,
+            admission_id=canonical_job.admission_id,
+            reason_code=execution.reason_code or status.value,
+            attempt_id=execution.current_attempt_id,
+            generation=execution.owner_lease.get("generation"),
+            resource_lease_generation=admission_lease_generation,
+            terminal_version=execution.status_version,
         )
+        self._resource_saga.reconcile()
         clear_resume = getattr(self._governor, "clear_resume_parent_msg_id", None)
         if clear_resume is not None:
             clear_resume(execution.execution_id)
@@ -916,6 +943,18 @@ class JobRunner:
         )
         if not decision.accepted:
             raise AdmissionRejected(decision)
+        # The legacy admission row remains a read projection during this
+        # cutover, but every Job also records the cross-authority hand-off.
+        # Replaying it is harmless: Governor admission is fenced by the same
+        # immutable admission id and request fingerprint.
+        self._resource_saga.admit(
+            job.id,
+            job,
+            creates_agent=creates_agent,
+            caller_turn_id=caller_turn_id,
+            dispatch_ready=dispatch_ready,
+        )
+        self._resource_saga.reconcile()
         if decision.idempotent:
             # Older durable admission rows may predate the execution record;
             # repair the canonical row before dispatching the projection.
@@ -1239,6 +1278,8 @@ class JobRunner:
         claim: tuple[str, str, int, str],
     ) -> None:
         """Execute a sync child inline under its same-session parent fence."""
+        self._run_borrowed_canonical(job, claim)
+        return
         parent_job_id, owner_instance_id, lease_generation, session_id = claim
         if not self._governor.start_borrowed_job(
             job.id,
@@ -1378,7 +1419,7 @@ class JobRunner:
                     set_chain_generations(int(job.chain_generations or 0)),
                 ]
                 from openprogram.agent.authority import normalize_authority
-                from openprogram.agent.sub_agent_run import _execute_agent_turn
+                from openprogram.agent.dispatcher import process_user_turn as _legacy_job_turn
                 branch_from = (
                     None if job.context_mode == "clean" else job.parent_msg_id
                 )
@@ -1415,7 +1456,7 @@ class JobRunner:
                 authority = normalize_authority(job)
                 if authority:
                     kwargs["authority"] = authority
-                result = _execute_agent_turn(**kwargs)
+                result = _legacy_job_turn(**kwargs)
             except BaseException as exc:  # noqa: BLE001
                 from openprogram.agent.sub_agent_run import AgentTurnResult
                 fatal_exception = exc
@@ -1553,6 +1594,55 @@ class JobRunner:
         if fatal_exception is not None:
             raise fatal_exception
 
+    def _run_borrowed_canonical(
+        self,
+        job: Job,
+        claim: tuple[str, str, int, str],
+    ) -> None:
+        """Run a borrowed child through the same canonical Agent owner."""
+        parent_job_id, owner_instance_id, lease_generation, session_id = claim
+        if not self._governor.start_borrowed_job(
+            job.id,
+            parent_job_id=parent_job_id,
+            owner_instance_id=owner_instance_id,
+            lease_generation=lease_generation,
+        ):
+            raise RuntimeError(f"borrowed job {job.id!r} lost its parent fence")
+        activated = self._activate_canonical_execution(job.id, threading.Event())
+        if activated is None:
+            self._governor.release_borrowed_job(
+                job.id,
+                parent_job_id=parent_job_id,
+                owner_instance_id=owner_instance_id,
+                lease_generation=lease_generation,
+                reason_code="error.activation_failed",
+            )
+            raise RuntimeError(f"borrowed job {job.id!r} could not activate")
+        attempt, _running, _driver = activated
+        try:
+            binding = self._execution_registry.resolve(
+                job.id, attempt_id=attempt.attempt_id, generation=attempt.generation,
+            )
+            binding.handle.done.result()
+        finally:
+            execution = self._execution_store.get_execution(job.id)
+            if execution is not None and execution.status.value in {
+                "completed", "cancelled", "failed", "interrupted",
+            }:
+                self._project_canonical_terminal(
+                    execution,
+                    admission_owner_instance_id=owner_instance_id,
+                    admission_lease_generation=lease_generation,
+                )
+            else:
+                self._governor.release_borrowed_job(
+                    job.id,
+                    parent_job_id=parent_job_id,
+                    owner_instance_id=owner_instance_id,
+                    lease_generation=lease_generation,
+                    reason_code="error.borrowed_owner_lost",
+                )
+
     def _borrowed_time_limits(
         self, job: Job, started_monotonic: float,
     ) -> tuple[float | None, float | None]:
@@ -1582,7 +1672,7 @@ class JobRunner:
             current_id = current.parent_job_id if current is not None else None
         return runtime_limit, idle_limit
 
-    def cancel_job(self, job_id: str, *, reason: Optional[str] = None) -> Optional[Job]:
+    def cancel_execution(self, job_id: str, *, reason: Optional[str] = None) -> Optional[Job]:
         return self._cancel_cascade(
             job_id, reason=reason, root_reason_code="cancel.user",
         )
@@ -2021,13 +2111,181 @@ class JobRunner:
             return None
         from openprogram.agent.resource_governance import build_job_resource_view
 
-        return build_job_resource_view(
+        view = build_job_resource_view(
             job,
             ledger=self._governor.ledger,
             resolved=self._governor._limit_resolver(
                 job.parent_session_id, job,
             ),
         )
+        execution = self._execution_store.get_execution(job_id)
+        if execution is None:
+            return view
+        row = self._governor.ledger.connection().execute(
+            "SELECT admission_id, state, queue_state, resume_command_id, "
+            "lease_generation, owner_instance_id FROM job_admissions WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+        pending_claim = any(
+            intent["kind"] == "resource.claim.intent"
+            for intent in self._execution_store.list_resource_intents(
+                execution_id=job_id, states=("pending", "claimed"),
+            )
+        )
+        queue_wait = None
+        if row is not None and row["state"] == "queued":
+            queue_state = row["queue_state"] or "queued"
+            queue_wait = {
+                "state": queue_state,
+                "reason_code": job.reason_code,
+                "since": execution.updated_at,
+                "position": view.capacity.get("queue_position"),
+            }
+        elif pending_claim:
+            queue_wait = {
+                "state": "queued_resume",
+                "reason_code": execution.reason_code,
+                "since": execution.updated_at,
+                "position": view.capacity.get("queue_position"),
+            }
+        resource = {
+            "admission_id": row["admission_id"] if row is not None else job.admission_id,
+            "resource_state": view.resource_state,
+            "queue_wait": queue_wait,
+            "resource_lease_generation": row["lease_generation"] if row is not None else None,
+            "owner_instance_id": row["owner_instance_id"] if row is not None else None,
+            "limits": view.limits,
+            "usage": view.budget,
+            "reservation": None,
+        }
+        return replace(
+            view,
+            execution_id=execution.execution_id,
+            status=execution.status.value,
+            capabilities=execution.capabilities.to_dict(),
+            checkpoint_head_id=execution.checkpoint_head_id,
+            event_cursor={
+                "next_sequence": execution.status_version + 1,
+                "replay_from_sequence": execution.status_version + 1,
+            },
+            resource=resource,
+        )
+
+    def release_paused_job_resource(self, execution_id: str, *, reason_code: str) -> None:
+        """Persist and consume the exact release intent after a queued pause."""
+        job = self._canonical_job(execution_id)
+        if job is None or not job.admission_id:
+            return
+        execution = self._execution_store.get_execution(execution_id)
+        if execution is None:
+            return
+        self._resource_saga.request_release(
+            execution_id,
+            admission_id=job.admission_id,
+            reason_code=reason_code,
+            attempt_id=execution.current_attempt_id,
+            generation=execution.owner_lease.get("generation"),
+            resource_lease_generation=execution.owner_lease.get("generation"),
+        )
+        self._resource_saga.reconcile()
+
+    def queue_job_resume(
+        self,
+        *,
+        command_id: str,
+        execution_id: str,
+        expected_version: int,
+        actor: dict[str, Any],
+        step: bool,
+    ):
+        """Persist a Job resume intent without leasing an attempt locally.
+
+        The control service owns the command row; ResourceSaga later obtains a
+        fenced Governor claim.  This prevents a WebSocket handler from turning
+        an accepted continue into an active owner before capacity exists.
+        """
+        from openprogram.execution.model import CommandKind
+
+        execution = self._execution_store.get_execution(execution_id)
+        job = self._canonical_job(execution_id)
+        if execution is None or job is None or not job.admission_id:
+            raise RuntimeError("canonical Job admission is unavailable")
+        kind = CommandKind.STEP if step else CommandKind.CONTINUE
+        if step and execution.status.value == "queued":
+            command = self._execution_store.accept_initial_job_step(
+                command_id=command_id,
+                execution_id=execution_id,
+                expected_version=expected_version,
+                payload={},
+                actor=actor,
+            )
+        else:
+            command = self._execution_store.accept_command(
+                command_id=command_id,
+                execution_id=execution_id,
+                expected_version=expected_version,
+                kind=kind,
+                payload={},
+                actor=actor,
+            )
+        self._resource_saga.request_claim(
+            execution_id,
+            admission_id=job.admission_id,
+            command_id=command_id,
+            paused=True,
+        )
+        if step and execution.status.value == "queued":
+            # The sole queued-step exception consumes a single provider
+            # decision under the normal Agent safe-point hook.  It is not a
+            # synthetic checkpoint: the command remains accepted until the
+            # resource intent is claimed and the canonical owner is bound.
+            self._resource_saga.reconcile()
+            self._activate_initial_step(
+                execution_id=execution_id,
+                command_id=command_id,
+            )
+        latest = self._execution_store.get_execution(execution_id)
+        assert latest is not None
+        return self._execution_store.get_command(command_id) or command, latest
+
+    def _activate_initial_step(self, *, execution_id: str, command_id: str) -> None:
+        """Activate one resource-claimed queued Job step through Agent driver."""
+        from openprogram.execution.model import CommandStatus
+
+        execution = self._execution_store.get_execution(execution_id)
+        if execution is None or execution.status.value != "queued":
+            return
+        job = self._canonical_job(execution_id)
+        if job is None or not job.admission_id:
+            return
+        claim = self._governor.claim_execution(
+            execution_id,
+            owner_instance_id=self._instance_id,
+            admission_id=job.admission_id,
+            command_id=command_id,
+        )
+        if claim is None:
+            return
+        try:
+            self._execution_store.transition_command(
+                command_id,
+                expected_status=CommandStatus.ACCEPTED,
+                target=CommandStatus.APPLYING,
+            )
+            activated = self._activate_canonical_execution(
+                execution_id, threading.Event(),
+            )
+            if activated is None:
+                return
+            attempt, _running, _driver = activated
+            binding = self._execution_registry.resolve(
+                execution_id,
+                attempt_id=attempt.attempt_id,
+                generation=attempt.generation,
+            )
+            binding.handle.done.result(timeout=5.0)
+        except Exception:
+            _log.exception("queued initial Job step activation failed for %s", execution_id)
 
     def _broadcast_job_status(self, job: Job) -> None:
         try:
@@ -2338,12 +2596,16 @@ class JobRunner:
         except TypeError:
             # Python 3.8 fallback (no cancel_futures kwarg).
             self._pool.shutdown(wait=wait)
+        finally:
+            with _RUNNERS_BY_EXECUTION_LOCK:
+                if _RUNNERS_BY_EXECUTION_PATH.get(str(self._execution_store.path)) is self:
+                    _RUNNERS_BY_EXECUTION_PATH.pop(str(self._execution_store.path), None)
 
     # Worker body
 
     def _activate_canonical_execution(self, execution_id: str, cancel_ev):
         """Lease and activate the canonical attempt for one Job execution."""
-        from openprogram.agent.job.driver import JobActivationBridge, JobDriver
+        from openprogram.agent.production_driver import AgentProductionDriver
         from openprogram.execution import ActivationInput
 
         execution = self._execution_store.get_execution(execution_id)
@@ -2361,15 +2623,27 @@ class JobRunner:
                 generation=leased.generation,
                 expected_execution_version=reserved.status_version,
             )
-            driver = JobDriver(
-                execution_id=execution_id,
-                cancel_event=cancel_ev,
-                terminate_callback=self._terminate_canonical_worker,
+            driver = (
+                self._agent_driver_factory(
+                    self._execution_store, self._execution_control,
+                )
+                if self._agent_driver_factory is not None
+                else AgentProductionDriver(
+                    self._execution_store,
+                    control_service=self._execution_control,
+                )
             )
-            binding = asyncio.run(
-                JobActivationBridge(driver).activate(active, ActivationInput(None)),
+            delivered, issue = self._run_control(
+                self._execution_control._activate(
+                    active,
+                    None,
+                    (),
+                    activator=None,
+                    driver=driver,
+                ),
             )
-            self._execution_control._bind_driver(binding)
+            if not delivered:
+                raise RuntimeError(issue or "activation_failed")
             return active, running, driver
         except Exception:
             # Canonical recovery is the only cleanup for an activated attempt;
@@ -2799,6 +3073,18 @@ class JobRunner:
         ContextVar. We bind it at entry so the hook can find the
         right session.
         """
+        # The canonical AgentProductionDriver owns the only provider turn.
+        # JobRunner retains resource fencing and the legacy projections, but
+        # never starts a second inner execution for this Job identity.
+        self._wait_for_canonical_driver(
+            job_id,
+            claimed_session_id,
+            done_ev,
+            lease_generation,
+            attempt_id,
+            attempt_generation,
+        )
+        return
         # Look up the job entity at entry — fields like
         # parent_session_id, prompt, agent_id are stable from this
         # point forward.
@@ -2914,7 +3200,7 @@ class JobRunner:
                 )
                 progress_thread.start()
             try:
-                from openprogram.agent.sub_agent_run import _execute_agent_turn
+                from openprogram.agent.dispatcher import process_user_turn as _legacy_job_turn
                 # Resolve parent for inherit-mode: walk through to the
                 # parent_msg_id supplied at spawn time.
                 branch_from: Optional[str]
@@ -2980,7 +3266,7 @@ class JobRunner:
                     _job_authority = normalize_authority(job)
                     if _job_authority:
                         _turn_kwargs["authority"] = _job_authority
-                    result = _execute_agent_turn(**_turn_kwargs)
+                    result = _legacy_job_turn(**_turn_kwargs)
                 finally:
                     for _tok in _chain_tokens:
                         try:
@@ -3191,6 +3477,49 @@ class JobRunner:
             self._executor_slots.release()
             self._dispatch_wake.set()
 
+    def _wait_for_canonical_driver(
+        self,
+        job_id: str,
+        session_id: str,
+        done_ev: threading.Event,
+        lease_generation: int,
+        attempt_id: str | None,
+        attempt_generation: int | None,
+    ) -> None:
+        """Wait for the canonical Agent owner and project only its outcome."""
+        try:
+            if attempt_id is None or attempt_generation is None:
+                raise RuntimeError("canonical attempt identity is unavailable")
+            binding = self._execution_registry.resolve(
+                job_id, attempt_id=attempt_id, generation=attempt_generation,
+            )
+            binding.handle.done.result()
+        except Exception:
+            _log.exception("canonical Agent owner ended unexpectedly for %s", job_id)
+        finally:
+            execution = self._execution_store.get_execution(job_id)
+            try:
+                if execution is not None and execution.status.value in {
+                    "completed", "cancelled", "failed", "interrupted",
+                }:
+                    self._project_canonical_terminal(
+                        execution,
+                        admission_owner_instance_id=self._instance_id,
+                        admission_lease_generation=lease_generation,
+                    )
+                elif execution is not None and execution.status.value == "paused":
+                    self.release_paused_job_resource(
+                        job_id, reason_code="pause.safe_point",
+                    )
+            except Exception:
+                _log.exception("failed to project canonical Job completion for %s", job_id)
+            self._wake_done(job_id)
+            with self._lock:
+                self._jobs.pop(job_id, None)
+                self._done_events.pop(job_id, None)
+            self._executor_slots.release()
+            self._dispatch_wake.set()
+
     # Internals
 
     def _renew_job_lease(
@@ -3278,6 +3607,10 @@ class JobRunner:
         # projection write failed.  Retry it before admission reconciliation;
         # failures are persisted by _project_canonical_terminal for the next
         # pass or a fresh runner.
+        try:
+            self._resource_saga.reconcile()
+        except Exception:
+            _log.exception("failed to reconcile execution resource intents")
         self._reconcile_terminal_dispatch_barriers()
         projected_pending = self._project_existing_canonical_terminals()
         for job_id, session_id in projected_pending:
@@ -3892,7 +4225,7 @@ class JobRunner:
             # follow-up looks like a brand-new chain: the message budget
             # would restart at 0 (A↔B ping-pong could never exhaust it)
             # and jobs spawned here would record no parent, escaping the
-            # cascade in cancel_job.
+            # cascade in cancel_execution.
             from openprogram.programs.tools.agents.send_message.send_message.depth import (
                 set_chain_generations, set_chain_messages,
             )
@@ -3933,6 +4266,12 @@ def get_runner() -> JobRunner:
         return _runner
 
 
+def runner_for_execution_store(store) -> JobRunner | None:
+    """Return the local runner owning this execution store, if any."""
+    with _RUNNERS_BY_EXECUTION_LOCK:
+        return _RUNNERS_BY_EXECUTION_PATH.get(str(store.path))
+
+
 def shutdown_runner() -> None:
     """Tear down the singleton (mainly for tests)."""
     global _runner
@@ -3950,5 +4289,6 @@ __all__ = [
     "JobGovernanceContext",
     "JobRunner",
     "get_runner",
+    "runner_for_execution_store",
     "shutdown_runner",
 ]

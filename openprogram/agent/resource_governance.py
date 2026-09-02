@@ -294,9 +294,26 @@ class JobResourceView:
     limits: dict[str, Any]
     capacity: dict[str, Any]
     budget: dict[str, Any]
+    execution_id: str | None = None
+    capabilities: dict[str, Any] | None = None
+    checkpoint_head_id: str | None = None
+    event_cursor: dict[str, Any] | None = None
+    resource: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        value = asdict(self)
+        if self.resource is None:
+            value["resource"] = {
+                "admission_id": None,
+                "resource_state": self.resource_state,
+                "queue_wait": None,
+                "resource_lease_generation": None,
+                "owner_instance_id": None,
+                "limits": self.limits,
+                "usage": self.budget,
+                "reservation": None,
+            }
+        return value
 
 
 @dataclass(frozen=True)
