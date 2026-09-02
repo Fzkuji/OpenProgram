@@ -13,6 +13,11 @@ const resource = {
   reason_code: 'budget.idle_exhausted',
   reason_key: 'resource.reason.budget.idle_exhausted',
   retryable: false,
+  event_cursor: {
+    execution_id: 'job-1',
+    next_sequence: 3,
+    snapshot_status_version: 2,
+  },
   limits: { scheduler_capacity: 4, limits: {} },
   capacity: {
     scheduler_capacity: 4,
@@ -43,9 +48,22 @@ const resource = {
 
 const job = {
   id: 'job-1',
+  execution_id: 'job-1',
+  project_id: 'default',
+  session_id: 'session-1',
+  parent_execution_id: null,
   subject: 'Research limits',
   status: 'running',
+  status_version: 2,
   parent_session_id: 'session-1',
+  capabilities: {
+    pause: true, step: true, steer: false, fork: false, retry: false,
+    safe_point_kinds: [], state_schema_version: 1,
+  },
+  checkpoint_head_id: null,
+  event_cursor: {
+    execution_id: 'job-1', next_sequence: 3, snapshot_status_version: 2,
+  },
   resource,
 };
 
@@ -57,14 +75,32 @@ const apply = <T,>(previous: T, value: T | ((previous: T) => T)): T =>
 
 
 describe('job resource WebSocket contract', () => {
-  it('uses the server list/get/cancel requests and real response envelopes', async () => {
+  it('uses canonical execution commands and real response envelopes', async () => {
     const requests: WsRequest[] = [
-      { action: 'list_jobs', session_id: 'session-1' },
-      { action: 'get_job', job_id: 'job-1' },
-      { action: 'cancel_job', job_id: 'job-1', reason: 'cancel.user' },
+      {
+        type: 'execution.command', action: 'execution.pause',
+        command_id: 'cmd-pause', execution_id: 'job-1', expected_version: 2,
+        payload: {},
+      },
+      {
+        type: 'execution.command', action: 'execution.continue',
+        command_id: 'cmd-continue', execution_id: 'job-1', expected_version: 2,
+        payload: {},
+      },
+      {
+        type: 'execution.command', action: 'execution.step',
+        command_id: 'cmd-step', execution_id: 'job-1', expected_version: 2,
+        payload: {},
+      },
+      {
+        type: 'execution.command', action: 'execution.cancel',
+        command_id: 'cmd-cancel', execution_id: 'job-1', expected_version: 2,
+        payload: { reason_code: 'cancel.user' },
+      },
     ];
     expect(requests.map((request) => request.action)).toEqual([
-      'list_jobs', 'get_job', 'cancel_job',
+      'execution.pause', 'execution.continue', 'execution.step',
+      'execution.cancel',
     ]);
 
     const module = await import('../src/screens/repl/useWsEvents.js');
@@ -85,35 +121,60 @@ describe('job resource WebSocket contract', () => {
     const frames: WsEnvelope[] = [
       { type: 'jobs_list', data: { session_id: 'session-1', jobs: [job] } },
       { type: 'job', data: { job } },
-      {
-        type: 'job_status',
-        data: { job_id: 'job-1', session_id: 'session-1', status: 'running' },
-      },
     ];
 
     for (const frame of frames) handleJobEnvelope(frame, ctx);
     expect(selected).toMatchObject({ resource });
 
+    const canonicalResource = {
+      admission_id: 'job-1',
+      resource_state: 'active',
+      queue_wait: null,
+      resource_lease_generation: 1,
+      owner_instance_id: 'worker-1',
+      limits: {},
+      usage: {},
+      reservation: null,
+    };
+    const cursor = {
+      execution_id: 'job-1',
+      next_sequence: 4,
+      snapshot_status_version: 3,
+    };
     const terminalFrames: WsEnvelope[] = [
       {
-        type: 'job_status',
-        data: { job_id: 'job-1', session_id: 'session-1', status: 'running', resource },
-      },
-      {
-        type: 'cancel_job_result',
-        data: { job_id: 'job-1', status: 'cancelled', resource: { ...resource, status: 'cancelled' } },
+        type: 'execution.command.updated',
+        data: {
+          command: {
+            command_id: 'cmd-cancel', execution_id: 'job-1', status: 'applied',
+          },
+          execution: {
+            execution_id: 'job-1', status: 'cancelled', status_version: 3,
+            resource: canonicalResource,
+          },
+          event_cursor: cursor,
+        },
       },
     ];
 
     for (const frame of terminalFrames) handleJobEnvelope(frame, ctx);
 
     expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      execution_id: 'job-1',
+      status: 'cancelled',
+      status_version: 3,
+      event_cursor: cursor,
+      resource: canonicalResource,
+    });
     expect(selected).toMatchObject({ id: 'job-1', status: 'cancelled' });
     expect(picker).toBe('job_detail');
-    // Only the explicit list / detail views print; cancel stays silent and
-    // nothing is ever dumped as raw JSON.
+    // Only the explicit list / detail views print; command updates stay
+    // silent while the explicit views include the canonical cursor.
     expect(systemLines).toHaveLength(2);
-    expect(systemLines.join('\n')).not.toContain('{');
+    expect(systemLines.join('\n')).toContain(
+      'event_cursor={"execution_id":"job-1","next_sequence":3,"snapshot_status_version":2}',
+    );
   });
 });
 
@@ -185,9 +246,13 @@ describe('job resource picker and formatter', () => {
     detail.props.onSelect(detail.props.items.find(
       (item: { value: string }) => item.value === 'stop',
     ));
-    expect(send).toHaveBeenCalledWith({
-      action: 'cancel_job', job_id: 'job-1', reason: 'cancel.user',
-    });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'execution.command',
+      action: 'execution.cancel',
+      execution_id: 'job-1',
+      expected_version: 2,
+      payload: { reason_code: 'cancel.user' },
+    }));
   });
 
   it('/jobs requests the current session and opens the list picker', () => {
