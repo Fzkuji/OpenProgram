@@ -299,16 +299,19 @@ class JobResourceView:
     checkpoint_head_id: str | None = None
     event_cursor: dict[str, Any] | None = None
     resource: dict[str, Any] | None = None
+    admission_id: str | None = None
+    resource_lease_generation: int | None = None
+    owner_instance_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)
         if self.resource is None:
             value["resource"] = {
-                "admission_id": None,
+                "admission_id": self.admission_id,
                 "resource_state": self.resource_state,
                 "queue_wait": None,
-                "resource_lease_generation": None,
-                "owner_instance_id": None,
+                "resource_lease_generation": self.resource_lease_generation,
+                "owner_instance_id": self.owner_instance_id,
                 "limits": self.limits,
                 "usage": self.budget,
                 "reservation": None,

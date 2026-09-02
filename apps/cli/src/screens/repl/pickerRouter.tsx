@@ -30,7 +30,7 @@ import {
   type JobResourceView,
   type JobRow,
 } from '../../ws/client.js';
-import { tsToDate } from './helpers.js';
+import { randomLocalId, tsToDate } from './helpers.js';
 import { buildChannelPicker } from './pickers/channel.js';
 import { buildRegisterPicker } from './pickers/register.js';
 import { buildQuestionPicker } from './pickers/question.js';
@@ -219,6 +219,9 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
     if (!selectedJob) return null;
     const rows: PickerItem<string>[] = [
       { label: 'Status', description: selectedJob.status, value: 'info' },
+      ...(selectedJob.resource?.event_cursor
+        ? [{ label: 'Cursor', description: String(selectedJob.resource.event_cursor.next_sequence), value: 'info' }]
+        : []),
       ...formatJobResource(selectedJob.resource).map((line) => {
         const split = line.indexOf(':');
         return split < 0
@@ -236,7 +239,19 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
         items={rows}
         onSelect={(item) => {
           if (item.value === 'stop') {
-            client.send({ action: 'cancel_job', job_id: selectedJob.id, reason: 'cancel.user' });
+            const executionId = selectedJob.execution_id
+              ?? selectedJob.resource?.execution_id
+              ?? selectedJob.id;
+            client.send({
+              type: 'execution.command',
+              action: 'execution.cancel',
+              command_id: `tui-${randomLocalId()}`,
+              execution_id: executionId,
+              expected_version: selectedJob.status_version
+                ?? selectedJob.resource?.status_version
+                ?? 0,
+              payload: { reason_code: 'cancel.user' },
+            });
           } else if (item.value === 'back') {
             setSelectedJob(null);
             setPickerKind('jobs');

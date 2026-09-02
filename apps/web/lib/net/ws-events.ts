@@ -33,6 +33,28 @@ export type JobResourceLimitName =
 
 export interface JobResourceView {
   job_id: string;
+  execution_id?: string;
+  project_id?: string;
+  session_id?: string;
+  parent_execution_id?: string | null;
+  status_version?: number;
+  capabilities?: {
+    pause: boolean;
+    step: boolean;
+    steer: boolean;
+    fork: boolean;
+    retry: boolean;
+    safe_point_kinds: string[];
+    state_schema_version: number | null;
+  };
+  checkpoint_head_id?: string | null;
+  event_cursor?: {
+    execution_id: string;
+    next_sequence: number;
+    snapshot_status_version: number;
+  };
+  execution?: Record<string, unknown>;
+  resource?: Record<string, unknown> | null;
   status: string;
   resource_state: string;
   reason_code: string | null;

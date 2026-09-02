@@ -678,11 +678,12 @@ def main():
         return
 
     if args.command == "execution":
-        from openprogram.cli.commands.execution import _cmd_execution_cancel
+        from openprogram.cli.commands.execution import _cmd_execution_control
 
         verb = getattr(args, "execution_verb", None)
-        if verb == "cancel":
-            sys.exit(_cmd_execution_cancel(
+        if verb in {"pause", "continue", "step", "cancel"}:
+            sys.exit(_cmd_execution_control(
+                verb,
                 args.execution_id,
                 expected_version=args.expected_version,
                 command_id=args.command_id,
@@ -1032,8 +1033,6 @@ def main():
             sys.exit(_cmd_subagent_list(args.session, as_json=args.json))
         if verb == "show":
             sys.exit(_cmd_subagent_show(args.job_id, as_json=args.json))
-        if verb == "cancel":
-            sys.exit(_cmd_subagent_cancel(args.job_id, as_json=args.json))
         _need_subcommand(args._cmd_parser)
 
     if args.command in ("scheduler-worker", "cron-worker"):
@@ -1119,7 +1118,6 @@ from openprogram.cli.commands.browser import (  # noqa: E402,F401
     _cmd_browser_rm,
 )
 from openprogram.cli.commands.subagent import (  # noqa: E402,F401
-    _cmd_subagent_cancel,
     _cmd_subagent_list,
     _cmd_subagent_spawn,
     _cmd_subagent_show,

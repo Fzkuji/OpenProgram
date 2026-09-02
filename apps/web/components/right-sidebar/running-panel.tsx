@@ -13,7 +13,7 @@ import { useSessionStore } from "@/lib/session-store";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 
 type RunningItem = {
-  kind: "tool" | "job" | "process" | "run";
+  kind: "execution" | "tool" | "job" | "process" | "run";
   id: string;
   session_id?: string | null;
   execution_id?: string | null;
@@ -21,6 +21,9 @@ type RunningItem = {
   status: string;
   started_at: number | null;
   pid?: number;
+  capabilities?: { pause?: boolean; step?: boolean };
+  event_cursor?: { next_sequence?: number };
+  snapshot?: Record<string, unknown>;
 };
 
 const POLL_MS = 3000;
@@ -82,7 +85,9 @@ export function RunningPanel({ active }: { active: boolean }) {
   };
 
   const kindLabel = (kind: RunningItem["kind"]) =>
-    kind === "tool"
+    kind === "execution"
+      ? text("Execution", "执行")
+      : kind === "tool"
       ? text("Tool", "工具")
       : kind === "job"
         ? text("Job", "任务")

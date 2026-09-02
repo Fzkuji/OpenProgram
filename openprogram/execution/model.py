@@ -330,3 +330,130 @@ class ExecutionInputRecord:
             "config_snapshot_ref": self.config_snapshot_ref,
             "created_at": self.created_at,
         }
+
+
+@dataclass(frozen=True)
+class EventCursor:
+    """Replay position for one canonical execution."""
+
+    execution_id: str
+    next_sequence: int
+    snapshot_status_version: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "execution_id": self.execution_id,
+            "next_sequence": self.next_sequence,
+            "snapshot_status_version": self.snapshot_status_version,
+        }
+
+
+@dataclass(frozen=True)
+class ExecutionSnapshot:
+    """Complete public projection of an execution.
+
+    ``ExecutionRecord`` remains the storage value.  This read model adds the
+    project binding, resource view and event cursor required by every public
+    transport without allowing transports to assemble partial snapshots.
+    """
+
+    execution_id: str
+    job_id: str
+    run_id: str
+    parent_execution_id: str | None
+    project_id: str
+    session_id: str
+    revision_id: str
+    status: str
+    status_version: int
+    reason_code: str | None
+    current_attempt_id: str | None
+    owner_lease: Mapping[str, Any] | None
+    resource: Mapping[str, Any] | None
+    checkpoint_head_id: str | None
+    safe_point: Mapping[str, Any] | None
+    capabilities: Mapping[str, Any]
+    pending_command_ids: tuple[str, ...]
+    active_child_ids: tuple[str, ...]
+    effect_summary: Mapping[str, Any]
+    terminal_at: float | None
+    updated_at: float
+    event_sequence: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "execution_id": self.execution_id,
+            "job_id": self.job_id,
+            "run_id": self.run_id,
+            "parent_execution_id": self.parent_execution_id,
+            "project_id": self.project_id,
+            "session_id": self.session_id,
+            "revision_id": self.revision_id,
+            "status": self.status,
+            "status_version": self.status_version,
+            "reason_code": self.reason_code,
+            "current_attempt_id": self.current_attempt_id,
+            "owner_lease": _snapshot_json(self.owner_lease) if self.owner_lease else None,
+            "resource": _snapshot_json(self.resource) if self.resource else None,
+            "checkpoint_head_id": self.checkpoint_head_id,
+            "safe_point": _snapshot_json(self.safe_point) if self.safe_point else None,
+            "capabilities": _snapshot_json(self.capabilities),
+            "pending_command_ids": list(self.pending_command_ids),
+            "active_child_ids": list(self.active_child_ids),
+            "effect_summary": _snapshot_json(self.effect_summary),
+            "terminal_at": self.terminal_at,
+            "updated_at": self.updated_at,
+            "event_sequence": self.event_sequence,
+        }
+
+
+@dataclass(frozen=True)
+class JobResourceDTO:
+    """Canonical resource API returned by spawn/list/read surfaces."""
+
+    job_id: str
+    execution_id: str
+    project_id: str
+    session_id: str
+    parent_execution_id: str | None
+    label: str
+    subject: str
+    prompt_summary: str
+    relation: str
+    origin_turn_id: str | None
+    status: str
+    status_version: int
+    capabilities: Mapping[str, Any]
+    checkpoint_head_id: str | None
+    resource: Mapping[str, Any] | None
+    event_cursor: EventCursor
+    execution: Mapping[str, Any]
+    # Existing resource counters remain available to old renderers.  They are
+    # projections of ``resource`` and are not lifecycle authorities.
+    legacy: Mapping[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        value = {
+            "job_id": self.job_id,
+            "execution_id": self.execution_id,
+            "project_id": self.project_id,
+            "session_id": self.session_id,
+            "parent_execution_id": self.parent_execution_id,
+            "label": self.label,
+            "subject": self.subject,
+            "prompt_summary": self.prompt_summary,
+            "relation": self.relation,
+            "origin_turn_id": self.origin_turn_id,
+            "status": self.status,
+            "status_version": self.status_version,
+            "capabilities": _snapshot_json(self.capabilities),
+            "checkpoint_head_id": self.checkpoint_head_id,
+            "resource": _snapshot_json(self.resource) if self.resource else None,
+            "event_cursor": {
+                "next_sequence": self.event_cursor.next_sequence,
+                "replay_from_sequence": self.event_cursor.next_sequence,
+            },
+            "execution": _snapshot_json(self.execution),
+        }
+        value.update(_snapshot_json(self.legacy))
+        return value

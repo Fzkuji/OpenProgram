@@ -207,6 +207,8 @@ class Job:
     effective_limits: Optional[dict[str, Any]] = None
     resolved_limits_snapshot: Optional[dict[str, Any]] = None
     reason_code: Optional[str] = None
+    # Frozen admission project binding used by public projections/auth.
+    project_id: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -232,4 +234,22 @@ __all__ = [
     "is_terminal",
     "can_transition",
     "mint_job_id",
+    "ExecutionSnapshot",
+    "EventCursor",
+    "JobResourceDTO",
 ]
+
+
+def __getattr__(name: str):
+    """Lazy aliases for the canonical public execution DTOs."""
+    if name in {"ExecutionSnapshot", "EventCursor", "JobResourceDTO"}:
+        from openprogram.execution.model import (
+            EventCursor, ExecutionSnapshot, JobResourceDTO,
+        )
+
+        return {
+            "ExecutionSnapshot": ExecutionSnapshot,
+            "EventCursor": EventCursor,
+            "JobResourceDTO": JobResourceDTO,
+        }[name]
+    raise AttributeError(name)

@@ -396,8 +396,8 @@ export function useWS(): void {
         case "spawn_job_result":
         case "jobs_list":
         case "job":
-        case "cancel_job_result": {
-          // Replies to the four job WS actions. We let the
+        {
+          // Replies to resource actions. We let the
           // requester correlate via the original send/await pattern
           // (no global handler needed). Surface as a window event
           // so a panel that did issue the request can match by

@@ -370,7 +370,6 @@ _NETWORK_TOOLS = {
 _REPLY_LOCAL_TOOLS = {
     "todo_create", "todo_update", "todo_list", "enter_plan_mode",
     "exit_plan_mode", "clarify", "skill", "tool_search", "job_output",
-    "job_stop",
 }
 
 

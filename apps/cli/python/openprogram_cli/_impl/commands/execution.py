@@ -1,4 +1,4 @@
-"""Cancel one execution through the default worker."""
+"""Control one execution through the default worker."""
 from __future__ import annotations
 
 import json
@@ -57,7 +57,8 @@ def _worker_request(method: str, path: str,
         sys.exit(1)
 
 
-def _cmd_execution_cancel(
+def _cmd_execution_control(
+    operation: str,
     execution_id: str,
     *,
     expected_version: int,
@@ -65,11 +66,14 @@ def _cmd_execution_cancel(
 ) -> int:
     status, payload = _worker_request(
         "POST",
-        "/api/execution/cancel",
+        f"/api/execution/{operation}",
         {
-            "command_id": command_id or f"cli-cancel-{uuid.uuid4().hex}",
+            "type": "execution.command",
+            "action": f"execution.{operation}",
+            "command_id": command_id or f"cli-{operation}-{uuid.uuid4().hex}",
             "execution_id": execution_id,
             "expected_version": expected_version,
+            "payload": {"reason_code": "cancel.user"} if operation == "cancel" else {},
         },
     )
     record = payload.get("execution") if isinstance(payload, dict) else None
@@ -86,8 +90,13 @@ def _cmd_execution_cancel(
         detail = payload.get("error") if isinstance(payload, dict) else payload
         print(f"execution {execution_id}: {detail or f'worker returned {status}'}")
         return 1
-    print(
-        f"status={record.get('status')} "
-        f"reason_code={record.get('reason_code')}"
-    )
+    print(f"status={record.get('status')} reason_code={record.get('reason_code')}")
     return 0 if status < 400 else 1
+
+
+def _cmd_execution_cancel(execution_id: str, *, expected_version: int,
+                          command_id: str | None) -> int:
+    return _cmd_execution_control(
+        "cancel", execution_id,
+        expected_version=expected_version, command_id=command_id,
+    )

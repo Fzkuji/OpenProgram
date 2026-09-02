@@ -165,10 +165,7 @@ DEFERRED_DEFAULT_TOOLS: set = {
 RESIDENT_TOOLS: set = (
     (set(DEFAULT_TOOLS) - DEFERRED_DEFAULT_TOOLS)
     | {"web_use", "tool_search"}
-    # `agent` 是常驻的，而它自己的返回文本会写 "Call job_output(job_id=…) to
-    # retrieve result, or job_stop(job_id) to cancel"。这两个 defer 掉，模型
-    # 照着提示调用就撞 InputValidationError，得先 tool_search 才能接上，白费一轮。
-    | {"job_output", "job_stop"}
+    | {"job_output"}
 )
 
 

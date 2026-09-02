@@ -26,16 +26,29 @@ def _collect() -> list[dict]:
         for projection in list_running_execution_projections():
             payload = projection.payload
             execution = payload.get("execution") or {}
+            snapshot = payload.get("snapshot") or execution
             ui = payload.get("ui") or {}
-            items.append({
+            item = {
                 "kind": "execution",
                 "id": projection.execution_id,
                 "execution_id": projection.execution_id,
                 "session_id": projection.session_id,
                 "label": ui.get("label") or "execution",
                 "status": projection.status,
-                "started_at": execution.get("created_at"),
-            })
+                "started_at": snapshot.get("created_at"),
+            }
+            if payload.get("snapshot"):
+                item.update({
+                    "snapshot": snapshot,
+                    "capabilities": snapshot.get("capabilities") or {},
+                    "resource": snapshot.get("resource"),
+                    "event_cursor": payload.get("event_cursor") or {
+                        "execution_id": projection.execution_id,
+                        "next_sequence": projection.event_sequence + 1,
+                        "snapshot_status_version": snapshot.get("status_version"),
+                    },
+                })
+            items.append(item)
     except Exception:
         pass
 
@@ -46,6 +59,9 @@ def _collect() -> list[dict]:
         with _srv._running_tasks_lock:
             tasks = {sid: dict(t) for sid, t in _srv._running_tasks.items()}
         for sid, task in tasks.items():
+            execution_id = task.get("execution_id")
+            if execution_id and any(i.get("execution_id") == execution_id for i in items):
+                continue
             items.append({
                 "kind": "run",
                 "id": task.get("execution_id") or "",
@@ -86,8 +102,46 @@ def _collect() -> list[dict]:
             JobStatus.PENDING, JobStatus.QUEUED, JobStatus.RUNNING,
         })
         for job in jobs:
+            if any(i.get("execution_id") == job.id for i in items):
+                continue
+            canonical = None
+            try:
+                from openprogram.execution import default_store
+                from openprogram.execution.public import execution_snapshot
+
+                execution = default_store().get_execution(job.id)
+                if execution is not None:
+                    view = get_runner().get_job_resource_view(job.id)
+                    canonical = execution_snapshot(
+                        execution,
+                        store=default_store(),
+                        resource=view.to_dict() if view is not None else None,
+                        job_id=job.id,
+                        job=job,
+                    ).to_dict()
+            except Exception:
+                canonical = None
+            if canonical is not None:
+                items.append({
+                    "kind": "execution",
+                    "id": job.id,
+                    "execution_id": job.id,
+                    "session_id": job.parent_session_id,
+                    "label": job.label or job.subject or (job.prompt or "")[:80],
+                    "status": canonical.get("status", job.status.value),
+                    "started_at": job.started_at or job.queued_at or job.created_at,
+                    "snapshot": canonical,
+                    "capabilities": canonical.get("capabilities") or {},
+                    "resource": canonical.get("resource"),
+                    "event_cursor": {
+                        "execution_id": job.id,
+                        "next_sequence": int(canonical.get("event_sequence") or 0) + 1,
+                        "snapshot_status_version": canonical.get("status_version"),
+                    },
+                })
+                continue
             items.append({
-                "kind": "job",
+                "kind": "execution",
                 "id": job.id,
                 "session_id": job.parent_session_id,
                 "label": job.label or job.subject or (job.prompt or "")[:80],

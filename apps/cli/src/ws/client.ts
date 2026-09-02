@@ -26,10 +26,12 @@ export type WsRequest =
   | ChatRequest
   | { action: 'stats' }
   | {
-      action: 'execution.cancel';
+      action: 'execution.pause' | 'execution.continue' | 'execution.step' | 'execution.cancel';
+      type: 'execution.command';
       command_id: string;
       execution_id: string;
       expected_version: number;
+      payload?: Record<string, unknown>;
     }
   | { action: 'set_attended'; session_id: string; attended: boolean }
   | { action: 'browser'; verb: string; args?: Record<string, unknown> }
@@ -89,10 +91,23 @@ export type WsRequest =
   | { action: 'delete_branch'; session_id: string; head_msg_id?: string }
   | { action: 'list_jobs'; session_id: string }
   | { action: 'get_job'; job_id: string }
-  | { action: 'cancel_job'; job_id: string; reason?: string };
+  | { action: 'execution.replay'; execution_id: string; after_sequence: number };
 
 export interface JobResourceView {
   job_id: string;
+  execution_id?: string;
+  project_id?: string;
+  session_id?: string;
+  parent_execution_id?: string | null;
+  status_version?: number;
+  capabilities?: {
+    pause: boolean; step: boolean; steer: boolean; fork: boolean; retry: boolean;
+    safe_point_kinds: string[]; state_schema_version: number | null;
+  };
+  checkpoint_head_id?: string | null;
+  event_cursor?: { execution_id: string; next_sequence: number; snapshot_status_version: number };
+  execution?: Record<string, unknown>;
+  resource?: Record<string, unknown> | null;
   status: string;
   resource_state: string;
   reason_code: string | null;
@@ -128,6 +143,7 @@ export interface JobResourceView {
 
 export interface JobRow {
   id: string;
+  execution_id?: string;
   status: string;
   subject?: string;
   parent_session_id?: string;
@@ -456,11 +472,12 @@ export type WsEnvelope =
       };
     }
   | {
-      type: 'cancel_job_result';
+      type: 'execution.replay';
       data: {
-        job_id: string;
-        status: string | null;
-        resource?: JobResourceView;
+        execution_id: string;
+        snapshot?: Record<string, unknown>;
+        events?: Array<Record<string, unknown>>;
+        event_cursor?: { execution_id: string; next_sequence: number; snapshot_status_version: number };
         error?: string;
       };
     }
@@ -500,6 +517,8 @@ export type WsEnvelope =
         status?: string;
         latest_snapshot?: { execution_id?: string; status_version?: number };
       };
+      execution?: Record<string, unknown>;
+      event_cursor?: { execution_id?: string; next_sequence?: number; snapshot_status_version?: number };
       data?: {
         command?: {
           command_id?: string;
@@ -507,6 +526,8 @@ export type WsEnvelope =
           status?: string;
           latest_snapshot?: { execution_id?: string; status_version?: number };
         };
+        execution?: Record<string, unknown>;
+        event_cursor?: { execution_id?: string; next_sequence?: number; snapshot_status_version?: number };
       };
     }
   | { type: 'spawn_job_result'; data: Record<string, unknown> }

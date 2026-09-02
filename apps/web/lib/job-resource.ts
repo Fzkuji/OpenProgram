@@ -5,6 +5,17 @@ export type JobResourceDetail = {
   value: string;
 };
 
+export function canonicalExecutionId(
+  resource: JobResourceView | undefined,
+): string | undefined {
+  return resource?.execution_id
+    ?? (resource?.execution?.execution_id as string | undefined);
+}
+
+export function nextReplaySequence(resource: JobResourceView | undefined): number | undefined {
+  return resource?.event_cursor?.next_sequence;
+}
+
 function capacityValue(value: { used: number; limit: number | null }): string {
   return `${value.used}/${value.limit ?? "∞"}`;
 }

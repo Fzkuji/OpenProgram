@@ -1,4 +1,3 @@
-"""job_stop tool — self-registers via @function on import."""
-from .job_stop import job_stop
+"""Retired legacy package; canonical execution controls live in runtime."""
 
-__all__ = ["job_stop"]
+__all__: list[str] = []

@@ -22,9 +22,8 @@ the same session (``caller=null``). It sees only the prompt.
 Result lands as an independent DAG tree alongside the original
 conversation.
 
-Legacy action name ``spawn_sub_agent`` (and the ``mode`` /
-``detached`` parameter) remain mapped here so older clients keep
-working — they all route into the same ``run_agent_turn`` now.
+The legacy action name and parameter aliases are intentionally not accepted;
+new background work is represented by the canonical Job resource API.
 """
 from __future__ import annotations
 
@@ -66,10 +65,8 @@ async def handle_spawn_agent(ws, cmd: dict) -> None:
     label = cmd.get("label")
     if isinstance(label, str):
         label = label.strip() or None
-    # Accept both the new ``context`` field and the legacy ``mode``
-    # field. Legacy "detached" maps to "clean", "inline" to "inherit".
-    raw = (cmd.get("context") or cmd.get("mode") or "inherit").strip().lower()
-    if raw in ("detached", "clean"):
+    raw = (cmd.get("context") or "inherit").strip().lower()
+    if raw == "clean":
         context = "clean"
     else:
         context = "inherit"
@@ -116,6 +113,4 @@ async def handle_spawn_agent(ws, cmd: dict) -> None:
 
 ACTIONS = {
     "spawn_agent": handle_spawn_agent,
-    # Legacy alias — old clients still send these. Treat identically.
-    "spawn_sub_agent": handle_spawn_agent,
 }

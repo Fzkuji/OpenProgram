@@ -421,25 +421,27 @@ def build_parser() -> argparse.ArgumentParser:
     # ---- execution --------------------------------------------------------
     p_execution = sub.add_parser(
         "execution",
-        help="Inspect or cancel a single execution",
+        help="Control a single execution",
     )
     execution_sub = p_execution.add_subparsers(
         dest="execution_verb", metavar="verb",
     )
-    p_execution_cancel = execution_sub.add_parser(
-        "cancel", help="Cancel one execution by id",
-    )
-    p_execution_cancel.add_argument(
-        "execution_id", help="Execution id to cancel",
-    )
-    p_execution_cancel.add_argument(
-        "--expected-version", required=True, type=int,
-        help="Exact execution status_version observed by the caller",
-    )
-    p_execution_cancel.add_argument(
-        "--command-id", default=None,
-        help="Caller command id for idempotent retry",
-    )
+    for _verb, _help in (
+        ("pause", "Pause at the next safe point"),
+        ("continue", "Continue a paused execution"),
+        ("step", "Apply exactly one managed action"),
+        ("cancel", "Cancel one execution"),
+    ):
+        _parser = execution_sub.add_parser(_verb, help=_help)
+        _parser.add_argument("execution_id", help="Execution id")
+        _parser.add_argument(
+            "--expected-version", required=True, type=int,
+            help="Exact execution status_version observed by the caller",
+        )
+        _parser.add_argument(
+            "--command-id", default=None,
+            help="Caller command id for idempotent retry",
+        )
 
     # ---- jobs -------------------------------------------------------------
     p_jobs = sub.add_parser(
@@ -461,7 +463,7 @@ def build_parser() -> argparse.ArgumentParser:
     # and ``openprogram/agent/_merge.py`` for the model. These commands run
     # against the in-process SessionStore singleton — no WS, no webui.
     p_subagent = sub.add_parser("subagent",
-        help="Spawn, inspect, cancel, or merge subagent sessions.")
+        help="Spawn, inspect, or merge subagent sessions.")
     subagent_sub = p_subagent.add_subparsers(
         dest="subagent_verb", metavar="verb",
     )
@@ -522,12 +524,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show one job's resource view.")
     p_sa_show.add_argument("job_id", help="Job id to inspect")
     p_sa_show.add_argument("--json", action="store_true",
-        help="Print the canonical job resource view as JSON")
-
-    p_sa_cancel = subagent_sub.add_parser("cancel",
-        help="Cancel one job and show its updated resource view.")
-    p_sa_cancel.add_argument("job_id", help="Job id to cancel")
-    p_sa_cancel.add_argument("--json", action="store_true",
         help="Print the canonical job resource view as JSON")
 
     # ---- web --------------------------------------------------------------

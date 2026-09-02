@@ -1807,7 +1807,7 @@ class JobRunner:
         )
         execution = self._execution_store.get_execution(job_id)
         if execution is None:
-            return view
+            return None
         row = self._governor.ledger.connection().execute(
             "SELECT admission_id, state, queue_state, resume_command_id, "
             "lease_generation, owner_instance_id FROM job_admissions WHERE job_id = ?",
@@ -1845,17 +1845,13 @@ class JobRunner:
             "usage": view.budget,
             "reservation": None,
         }
-        return replace(
-            view,
-            execution_id=execution.execution_id,
-            status=execution.status.value,
-            capabilities=execution.capabilities.to_dict(),
-            checkpoint_head_id=execution.checkpoint_head_id,
-            event_cursor={
-                "next_sequence": execution.status_version + 1,
-                "replay_from_sequence": execution.status_version + 1,
-            },
+        from openprogram.execution.public import job_resource_dto
+
+        return job_resource_dto(
+            job,
+            execution=execution,
             resource=resource,
+            store=self._execution_store,
         )
 
     def release_paused_job_resource(self, execution_id: str, *, reason_code: str) -> None:

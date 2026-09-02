@@ -157,22 +157,6 @@ def _cmd_subagent_show(job_id: str, *, as_json: bool = False) -> int:
     return 0
 
 
-def _cmd_subagent_cancel(job_id: str, *, as_json: bool = False) -> int:
-    from openprogram.agent.job import get_runner
-
-    runner = get_runner()
-    job = runner.cancel_job(job_id, reason="cancel.user")
-    if job is None:
-        _print({"error": f"unknown job: {job_id}"}, as_json=as_json)
-        return 2
-    payload = _resource_payload(runner, job_id)
-    if payload is None:
-        _print({"error": f"unknown job: {job_id}"}, as_json=as_json)
-        return 2
-    _print(payload, as_json=as_json)
-    return 0
-
-
 def _cmd_subagent_spawn(
     session: str,
     prompt: str,

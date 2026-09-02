@@ -123,7 +123,36 @@ export function handleJobEnvelope(ev: WsEnvelope, ctx: JobEnvelopeCtx): boolean 
     ctx.pushSystem(formatJobResourceMessage('job', ev.data));
     return true;
   }
-  if (ev.type !== 'job_status' && ev.type !== 'cancel_job_result') return false;
+  if (ev.type !== 'job_status' && ev.type !== 'execution.command.updated') return false;
+
+  if (ev.type === 'execution.command.updated') {
+    const data = ev.data ?? ev;
+    const execution = data.execution as Record<string, unknown> | undefined;
+    const command = data.command as Record<string, unknown> | undefined;
+    const event_cursor = data.event_cursor as { next_sequence?: number } | undefined;
+    const executionId = String(
+      execution?.execution_id ?? command?.execution_id ?? '',
+    );
+    if (!executionId) return true;
+    ctx.setJobsList((rows) => rows.map((job) => (
+      (job.execution_id ?? job.id) === executionId
+        ? {
+            ...job,
+            execution_id: executionId,
+            status: String(execution?.status ?? job.status),
+            status_version: execution?.status_version,
+            event_cursor,
+            resource: execution?.resource as JobRow['resource'],
+          }
+        : job
+    )));
+    ctx.setSelectedJob((job) => (
+      job && (job.execution_id ?? job.id) === executionId
+        ? { ...job, status: String(execution?.status ?? job.status), status_version: execution?.status_version }
+        : job
+    ));
+    return true;
+  }
 
   const patch: Partial<JobRow> = {
     status: ev.data.status ?? 'unknown',
@@ -134,11 +163,7 @@ export function handleJobEnvelope(ev: WsEnvelope, ctx: JobEnvelopeCtx): boolean 
     job.id === ev.data.job_id ? { ...job, ...patch } : job
   )));
   ctx.setSelectedJob((job) => (
-    job?.id === ev.data.job_id
-      ? { ...job, ...patch }
-      : ev.type === 'cancel_job_result'
-        ? { id: ev.data.job_id, ...patch } as JobRow
-        : job
+    job?.id === ev.data.job_id ? { ...job, ...patch } : job
   ));
   return true;
 }

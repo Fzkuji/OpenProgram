@@ -63,6 +63,11 @@ def _session_lock_for(session_key: str) -> threading.Lock:
         return lock
 
 
+def execution_mapping(session_id: str, execution_id: str | None) -> dict[str, str | None]:
+    """Keep channel turn identity explicit for control/replay adapters."""
+    return {"session_id": session_id, "execution_id": execution_id}
+
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
@@ -314,6 +319,9 @@ def _run_session_turn(
             config_snapshot_ref=f"channel:{channel}",
         )
         _active, result = asyncio.run(adapter.activate(admission))
+        # Preserve the exact channel turn -> canonical execution association
+        # for reconnect/control adapters; do not infer it from peer ids.
+        execution = execution_mapping(session_key, admission.execution_id)
     except Exception as e:  # noqa: BLE001
         err_text = f"[error] {type(e).__name__}: {e}"
         if progress_handle is not None:

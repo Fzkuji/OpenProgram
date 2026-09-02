@@ -178,8 +178,9 @@ class ExecutionProjectionReadModel:
         payload: dict[str, Any] = {
             "event_sequence": event.sequence,
             "event_cursor": {
-                "next_sequence": execution.status_version + 1,
-                "replay_from_sequence": execution.status_version + 1,
+                "execution_id": execution.execution_id,
+                "next_sequence": event.sequence + 1,
+                "snapshot_status_version": execution.status_version,
             },
             "event": {
                 "sequence": event.sequence,
