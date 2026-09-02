@@ -637,8 +637,7 @@ class JobRunner:
         pending_lookup = getattr(self._governor, "pending_finalization", None)
         pending = pending_lookup(execution.execution_id) if pending_lookup else None
         if pending is not None:
-            if self._project_pending_canonical_terminal(pending):
-                self._execution_control.reconcile_terminal_cancel(execution)
+            self._project_pending_canonical_terminal(pending)
             return
         job = _store_load(execution.session_id, execution.execution_id)
         if job is not None and not is_terminal(job.status):
@@ -703,7 +702,6 @@ class JobRunner:
             terminal_version=execution.status_version,
         )
         self._resource_saga.reconcile()
-        self._execution_control.reconcile_terminal_cancel(execution)
         clear_resume = getattr(self._governor, "clear_resume_parent_msg_id", None)
         if clear_resume is not None:
             clear_resume(execution.execution_id)
@@ -2931,6 +2929,7 @@ class JobRunner:
                         admission_owner_instance_id=self._instance_id,
                         admission_lease_generation=lease_generation,
                     )
+                    self._execution_control.reconcile_terminal_cancel(execution)
                 elif execution is not None and execution.status.value == "paused":
                     self.release_paused_job_resource(
                         job_id, reason_code="pause.safe_point",
