@@ -12,7 +12,7 @@ test("revision client uses the single canonical REST route family", () => {
     const canonical = action === "replace" || action === "discard" ? `revision.draft.${action}` : `revision.${action}`;
     assert.match(client, new RegExp(canonical.replaceAll(".", "\\.")));
   }
-  assert.match(client, /input\.action === "revision\.draft\.replace" \? "PUT"/);
+  assert.match(client, /"revision\.draft\.replace": \{ path: "replace", method: "PUT" \}/);
   assert.match(client, /input\.action === "revision\.draft\.create"/);
   assert.doesNotMatch(client, /\/api\/revision\/drafts/);
 });

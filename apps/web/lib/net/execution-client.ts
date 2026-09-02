@@ -145,6 +145,15 @@ type RevisionStateResponse = {
   data?: RevisionStateResponse;
 };
 
+const REVISION_ROUTES: Partial<Record<RevisionAction, { path: string; method: "POST" | "PUT" }>> = {
+  "revision.draft.create": { path: "/api/execution/revision/draft", method: "POST" },
+  "revision.draft.replace": { path: "replace", method: "PUT" },
+  "revision.draft.discard": { path: "discard", method: "POST" },
+  "revision.validate": { path: "validate", method: "POST" },
+  "revision.approve": { path: "approve", method: "POST" },
+  "revision.publish": { path: "publish", method: "POST" },
+};
+
 function revisionState(body: RevisionStateResponse): RevisionDraft {
   const state = body.draft ? body : body.data?.draft ? body.data : body;
   const draft = state.draft;
@@ -204,12 +213,17 @@ export async function postRevisionDraftCommand(input: {
     );
     return revisionState(body);
   }
-  const path = input.action === "revision.draft.create"
-    ? "/api/execution/revision/draft"
-    : `/api/execution/revision/draft/${draftId}/${input.action === "revision.draft.replace" ? "replace" : input.action === "revision.draft.discard" ? "discard" : input.action === "revision.validate" ? "validate" : input.action === "revision.approve" ? "approve" : "publish"}`;
   if (input.action !== "revision.draft.create" && !draftId) {
     throw new ExecutionApiError(400, "invalid_command", "A draft id is required.");
   }
+  if (input.action !== "revision.draft.create" && input.expected_draft_version == null) {
+    throw new ExecutionApiError(400, "invalid_draft_version", "A draft version is required.");
+  }
+  const route = REVISION_ROUTES[input.action];
+  if (!route) throw new ExecutionApiError(400, "invalid_command", "The revision action is invalid.");
+  const path = route.path.startsWith("/")
+    ? route.path
+    : `/api/execution/revision/draft/${draftId}/${route.path}`;
   const command = {
     type: "revision.draft" as const,
     action: input.action,
@@ -219,7 +233,7 @@ export async function postRevisionDraftCommand(input: {
     payload: input.payload ?? {},
   };
   const body = await request<RevisionStateResponse>(path, {
-    method: input.action === "revision.draft.replace" ? "PUT" : "POST",
+    method: route.method,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(command),
   });
