@@ -9,10 +9,15 @@ import sqlite3
 from .model import CapabilitySet
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 _LEGACY_SCHEMA_VERSION = 1
 _PREVIOUS_SCHEMA_VERSION = 2
 _FORK_RETRY_SCHEMA_VERSION = 3
+_EXECUTION_CONTROL_SCHEMA_VERSION = 4
+
+# These are the only projections emitted by the canonical execution store.
+# Adding a projection is a schema/design change, not a caller-defined label.
+PROJECTION_KINDS = ("dag", "job", "workflow", "ui")
 
 
 class UnsupportedSchema(RuntimeError):
@@ -35,6 +40,8 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
         _migrate_v2(connection)
     elif current == _FORK_RETRY_SCHEMA_VERSION:
         _migrate_v3(connection)
+    elif current == _EXECUTION_CONTROL_SCHEMA_VERSION:
+        _migrate_v4(connection)
     elif current == SCHEMA_VERSION:
         _create_current_schema(connection)
     else:
@@ -185,8 +192,97 @@ def _create_current_schema(connection: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS checkpoints_execution_created
             ON checkpoints(execution_id, created_at);
+
         """
     )
+    _create_projection_schema(connection)
+
+
+def _create_projection_schema(connection: sqlite3.Connection) -> None:
+    """Create v5 projection tables without forcing a transaction boundary."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS execution_inputs (
+            execution_id TEXT PRIMARY KEY,
+            input_ref TEXT NOT NULL,
+            input_hash TEXT NOT NULL,
+            entrypoint TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            user_message_id TEXT,
+            assistant_message_id TEXT,
+            trusted_actor_json TEXT NOT NULL,
+            config_snapshot_ref TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            FOREIGN KEY(execution_id) REFERENCES executions(execution_id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS execution_projection_outbox (
+            outbox_id TEXT PRIMARY KEY,
+            event_sequence INTEGER NOT NULL,
+            execution_id TEXT NOT NULL,
+            projection_kind TEXT NOT NULL,
+            dedupe_key TEXT NOT NULL,
+            payload_ref TEXT NOT NULL,
+            state TEXT NOT NULL,
+            claim_owner TEXT,
+            claim_expires_at REAL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            available_at REAL NOT NULL,
+            delivered_at REAL,
+            last_error TEXT,
+            UNIQUE(event_sequence, projection_kind),
+            UNIQUE(dedupe_key),
+            FOREIGN KEY(event_sequence) REFERENCES execution_events(sequence),
+            FOREIGN KEY(execution_id) REFERENCES executions(execution_id),
+            CHECK(projection_kind IN ('dag', 'job', 'workflow', 'ui')),
+            CHECK(state IN ('pending', 'claimed', 'delivered'))
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS execution_projection_outbox_ready "
+        "ON execution_projection_outbox(state, available_at, outbox_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS execution_projection_outbox_execution "
+        "ON execution_projection_outbox(execution_id, event_sequence)"
+    )
+
+
+def _backfill_projection_outbox(connection: sqlite3.Connection) -> None:
+    """Materialize one pending projection per historical canonical event."""
+    for projection_kind in PROJECTION_KINDS:
+        connection.execute(
+            "INSERT OR IGNORE INTO execution_projection_outbox ("
+            "outbox_id, event_sequence, execution_id, projection_kind, "
+            "dedupe_key, payload_ref, state, attempts, available_at) "
+            "SELECT 'outbox_' || sequence || '_' || ?, sequence, execution_id, ?, "
+            "'execution-event:' || sequence || ':' || ?, "
+            "'execution-event:' || sequence, 'pending', 0, created_at "
+            "FROM execution_events",
+            (projection_kind, projection_kind, projection_kind),
+        )
+
+
+def _migrate_v4(connection: sqlite3.Connection) -> None:
+    """Upgrade a real v4 store and backfill its historical event projections atomically."""
+    if connection.in_transaction:
+        raise UnsupportedSchema(
+            _EXECUTION_CONTROL_SCHEMA_VERSION,
+            "cannot migrate projection outbox inside an active transaction",
+        )
+    try:
+        connection.execute("BEGIN")
+        _create_projection_schema(connection)
+        _backfill_projection_outbox(connection)
+        connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
 
 
 def _migrate_v1(connection: sqlite3.Connection) -> None:
@@ -332,6 +428,7 @@ def _migrate_v3(connection: sqlite3.Connection) -> None:
             "PRAGMA foreign_keys = "
             f"{'ON' if previous_foreign_keys else 'OFF'}"
         )
+    _backfill_projection_outbox(connection)
 
 
 def _execution_table_sql(table_name: str) -> str:

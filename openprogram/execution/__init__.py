@@ -11,6 +11,7 @@ from .model import (
     CommandStatus,
     ControlCommand,
     ExecutionEvent,
+    ExecutionInputRecord,
     ExecutionRecord,
     ExecutionStatus,
     RevisionRecord,
@@ -46,7 +47,14 @@ from .control import (
     SafePointCompletion,
     default_control_service,
 )
-from .store import ExecutionStore, default_store
+from .store import ExecutionStore, ProjectionConflict, default_store
+from .outbox import (
+    ProjectionDispatchResult,
+    ProjectionDispatcher,
+    ProjectionOutboxRecord,
+    ProjectionOutboxState,
+)
+from .startup import StartupRecoveryResult, recover_execution_startup
 
 __all__ = [
     "CommandKind",
@@ -54,6 +62,7 @@ __all__ = [
     "CommandStatus",
     "ControlCommand",
     "ExecutionEvent",
+    "ExecutionInputRecord",
     "ExecutionRecord",
     "ExecutionStatus",
     "RevisionRecord",
@@ -84,4 +93,11 @@ __all__ = [
     "ReconciliationCompletion",
     "default_control_service",
     "default_store",
+    "ProjectionConflict",
+    "ProjectionDispatchResult",
+    "ProjectionDispatcher",
+    "ProjectionOutboxRecord",
+    "ProjectionOutboxState",
+    "StartupRecoveryResult",
+    "recover_execution_startup",
 ]

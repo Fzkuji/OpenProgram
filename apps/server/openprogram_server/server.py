@@ -1694,14 +1694,20 @@ def _web_config() -> dict:
 
 
 async def _recover_execution_control() -> None:
-    """Recover canonical executions before legacy DAG reconciliation."""
-    from openprogram.execution import default_control_service
+    """Recover canonical executions and projections before legacy reconciliation."""
+    from openprogram.execution import recover_execution_startup
 
-    recovered = await asyncio.to_thread(
-        default_control_service().recover_startup
+    result = await asyncio.to_thread(
+        recover_execution_startup,
+        projection_owner_id="server-execution-startup",
     )
-    if recovered:
-        _log(f"[startup] recovered {len(recovered)} canonical execution(s)")
+    if result.canonical:
+        _log(f"[startup] recovered {len(result.canonical)} canonical execution(s)")
+    if result.projections.failed:
+        _log(
+            f"[startup] projection replay deferred for "
+            f"{result.projections.failed} item(s)"
+        )
 
 
 def create_app(*, owner_auth=None, port: int = 18100):

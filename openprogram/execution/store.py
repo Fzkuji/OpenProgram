@@ -12,13 +12,14 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Collection, Iterator, Mapping
 
-from ._schema import SCHEMA_VERSION, UnsupportedSchema, initialize_schema
+from ._schema import PROJECTION_KINDS, SCHEMA_VERSION, UnsupportedSchema, initialize_schema
 from .model import (
     CapabilitySet,
     CommandKind,
     CommandStatus,
     ControlCommand,
     ExecutionEvent,
+    ExecutionInputRecord,
     ExecutionRecord,
     ExecutionStatus,
     RevisionRecord,
@@ -42,6 +43,10 @@ class ExecutionConflict(ExecutionStoreError):
 
 
 class CommandConflict(ExecutionStoreError):
+    pass
+
+
+class ProjectionConflict(ExecutionStoreError):
     pass
 
 
@@ -108,6 +113,32 @@ class ExecutionStore:
         source_checkpoint_id: str | None = None,
         capabilities: CapabilitySet = CapabilitySet(),
     ) -> ExecutionRecord:
+        with self._transaction() as connection:
+            return self._create_execution_in_transaction(
+                connection,
+                session_id=session_id,
+                revision_id=revision_id,
+                run_id=run_id,
+                execution_id=execution_id,
+                parent_execution_id=parent_execution_id,
+                source_checkpoint_id=source_checkpoint_id,
+                capabilities=capabilities,
+                emit_created_event=True,
+            )
+
+    def _create_execution_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        session_id: str,
+        revision_id: str,
+        run_id: str | None = None,
+        execution_id: str | None = None,
+        parent_execution_id: str | None = None,
+        source_checkpoint_id: str | None = None,
+        capabilities: CapabilitySet = CapabilitySet(),
+        emit_created_event: bool = True,
+    ) -> ExecutionRecord:
         execution_id = execution_id or f"exec_{uuid.uuid4().hex}"
         if not session_id or not revision_id:
             raise ExecutionConflict(
@@ -118,66 +149,66 @@ class ExecutionStore:
                 "invalid_checkpoint",
                 "root execution cannot have a source checkpoint",
             )
-        with self._transaction() as connection:
-            if self._get_revision(connection, revision_id) is None:
-                raise ExecutionConflict(
-                    "revision_not_found", f"revision not found: {revision_id}"
-                )
-            if parent_execution_id is not None:
-                parent = self._get_execution(connection, parent_execution_id)
-                if parent is None:
-                    raise ExecutionConflict(
-                        "parent_not_found", "parent execution does not exist"
-                    )
-                if run_id is None:
-                    run_id = parent.run_id
-                if parent.run_id != run_id or parent.session_id != session_id:
-                    raise ExecutionConflict(
-                        "parent_identity_mismatch",
-                        "child execution must share its parent's run and session",
-                    )
-                if source_checkpoint_id is not None:
-                    checkpoint = connection.execute(
-                        "SELECT execution_id FROM checkpoints WHERE checkpoint_id = ?",
-                        (source_checkpoint_id,),
-                    ).fetchone()
-                    if checkpoint is None or checkpoint["execution_id"] != parent_execution_id:
-                        raise ExecutionConflict(
-                            "invalid_checkpoint",
-                            "source checkpoint does not belong to the parent execution",
-                        )
-            run_id = run_id or f"run_{uuid.uuid4().hex}"
-            now = time.time()
-            run = self._get_run(connection, run_id)
-            if run is None:
-                connection.execute(
-                    "INSERT INTO runs (run_id, session_id, created_at) VALUES (?, ?, ?)",
-                    (run_id, session_id, now),
-                )
-            elif run.session_id != session_id:
-                raise ExecutionConflict(
-                    "run_identity_mismatch",
-                    "run_id is already bound to a different session",
-                )
-            record = ExecutionRecord(
-                execution_id=execution_id,
-                run_id=run_id,
-                session_id=session_id,
-                revision_id=revision_id,
-                parent_execution_id=parent_execution_id,
-                source_checkpoint_id=source_checkpoint_id,
-                status=ExecutionStatus.QUEUED,
-                status_version=1,
-                capabilities=capabilities,
-                created_at=now,
-                updated_at=now,
+        if self._get_revision(connection, revision_id) is None:
+            raise ExecutionConflict(
+                "revision_not_found", f"revision not found: {revision_id}"
             )
-            try:
-                self._insert_execution(connection, record)
-            except sqlite3.IntegrityError as exc:
+        if parent_execution_id is not None:
+            parent = self._get_execution(connection, parent_execution_id)
+            if parent is None:
                 raise ExecutionConflict(
-                    "execution_exists", f"execution already exists: {execution_id}"
-                ) from exc
+                    "parent_not_found", "parent execution does not exist"
+                )
+            if run_id is None:
+                run_id = parent.run_id
+            if parent.run_id != run_id or parent.session_id != session_id:
+                raise ExecutionConflict(
+                    "parent_identity_mismatch",
+                    "child execution must share its parent's run and session",
+                )
+            if source_checkpoint_id is not None:
+                checkpoint = connection.execute(
+                    "SELECT execution_id FROM checkpoints WHERE checkpoint_id = ?",
+                    (source_checkpoint_id,),
+                ).fetchone()
+                if checkpoint is None or checkpoint["execution_id"] != parent_execution_id:
+                    raise ExecutionConflict(
+                        "invalid_checkpoint",
+                        "source checkpoint does not belong to the parent execution",
+                    )
+        run_id = run_id or f"run_{uuid.uuid4().hex}"
+        now = time.time()
+        run = self._get_run(connection, run_id)
+        if run is None:
+            connection.execute(
+                "INSERT INTO runs (run_id, session_id, created_at) VALUES (?, ?, ?)",
+                (run_id, session_id, now),
+            )
+        elif run.session_id != session_id:
+            raise ExecutionConflict(
+                "run_identity_mismatch",
+                "run_id is already bound to a different session",
+            )
+        record = ExecutionRecord(
+            execution_id=execution_id,
+            run_id=run_id,
+            session_id=session_id,
+            revision_id=revision_id,
+            parent_execution_id=parent_execution_id,
+            source_checkpoint_id=source_checkpoint_id,
+            status=ExecutionStatus.QUEUED,
+            status_version=1,
+            capabilities=capabilities,
+            created_at=now,
+            updated_at=now,
+        )
+        try:
+            self._insert_execution(connection, record)
+        except sqlite3.IntegrityError as exc:
+            raise ExecutionConflict(
+                "execution_exists", f"execution already exists: {execution_id}"
+            ) from exc
+        if emit_created_event:
             self._append_event(
                 connection,
                 execution_id=execution_id,
@@ -187,6 +218,305 @@ class ExecutionStore:
                 created_at=now,
             )
         return record
+
+    def admit_execution(
+        self,
+        *,
+        session_id: str,
+        revision_id: str,
+        input_ref: str,
+        input_hash: str,
+        entrypoint: str,
+        trusted_actor: Mapping[str, Any],
+        config_snapshot_ref: str,
+        user_message_id: str | None = None,
+        assistant_message_id: str | None = None,
+        run_id: str | None = None,
+        execution_id: str | None = None,
+        parent_execution_id: str | None = None,
+        source_checkpoint_id: str | None = None,
+        capabilities: CapabilitySet = CapabilitySet(),
+    ) -> ExecutionRecord:
+        """Admit one execution and its immutable input in one transaction."""
+        if not input_ref or not input_hash or not entrypoint or not config_snapshot_ref:
+            raise ExecutionConflict(
+                "invalid_input", "input_ref, input_hash, entrypoint and config_snapshot_ref are required"
+            )
+        if not isinstance(trusted_actor, Mapping):
+            raise ExecutionConflict("invalid_actor", "trusted_actor must be an object")
+        actor_snapshot = _snapshot_json(trusted_actor)
+        with self._transaction() as connection:
+            record = self._create_execution_in_transaction(
+                connection,
+                session_id=session_id,
+                revision_id=revision_id,
+                run_id=run_id,
+                execution_id=execution_id,
+                parent_execution_id=parent_execution_id,
+                source_checkpoint_id=source_checkpoint_id,
+                capabilities=capabilities,
+                emit_created_event=False,
+            )
+            try:
+                connection.execute(
+                    "INSERT INTO execution_inputs ("
+                    "execution_id, input_ref, input_hash, entrypoint, session_id, "
+                    "user_message_id, assistant_message_id, trusted_actor_json, "
+                    "config_snapshot_ref, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        record.execution_id,
+                        input_ref,
+                        input_hash,
+                        entrypoint,
+                        session_id,
+                        user_message_id,
+                        assistant_message_id,
+                        _json(actor_snapshot),
+                        config_snapshot_ref,
+                        record.created_at,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise ExecutionConflict(
+                    "execution_input_exists", f"input already exists: {record.execution_id}"
+                ) from exc
+            self._append_event(
+                connection,
+                execution_id=record.execution_id,
+                execution_version=record.status_version,
+                kind="execution.created",
+                payload={"record": record.to_dict()},
+                created_at=record.created_at,
+            )
+        return record
+
+    def get_execution_input(self, execution_id: str) -> ExecutionInputRecord | None:
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT * FROM execution_inputs WHERE execution_id = ?", (execution_id,)
+            ).fetchone()
+            return self._execution_input(row) if row is not None else None
+
+    def get_projection_outbox(self, outbox_id: str):
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT * FROM execution_projection_outbox WHERE outbox_id = ?",
+                (outbox_id,),
+            ).fetchone()
+            return self._projection_outbox(row) if row is not None else None
+
+    def list_projection_outbox(
+        self,
+        *,
+        execution_id: str | None = None,
+        states: Collection[str] = (),
+        limit: int | None = None,
+    ):
+        query = "SELECT * FROM execution_projection_outbox WHERE 1 = 1"
+        values: list[Any] = []
+        if execution_id is not None:
+            query += " AND execution_id = ?"
+            values.append(execution_id)
+        if states:
+            query += " AND state IN (" + ",".join("?" for _ in states) + ")"
+            values.extend(
+                getattr(state, "value", state)
+                for state in states
+            )
+        query += " ORDER BY event_sequence, projection_kind"
+        if limit is not None:
+            if limit <= 0:
+                raise ProjectionConflict("invalid_limit", "limit must be positive")
+            query += " LIMIT ?"
+            values.append(limit)
+        with closing(self._connect()) as connection:
+            return [
+                self._projection_outbox(row)
+                for row in connection.execute(query, values)
+            ]
+
+    def claim_projection_outbox(
+        self,
+        *,
+        owner_id: str,
+        limit: int = 100,
+        lease_ttl_seconds: float = 30.0,
+        allowed_kinds: Collection[str] | None = None,
+    ):
+        from .outbox import ProjectionOutboxState
+
+        if not owner_id or limit <= 0 or lease_ttl_seconds <= 0:
+            raise ProjectionConflict(
+                "invalid_claim", "owner_id, positive limit and lease are required"
+            )
+        kinds = (
+            tuple(getattr(kind, "value", kind) for kind in allowed_kinds)
+            if allowed_kinds is not None
+            else PROJECTION_KINDS
+        )
+        if any(kind not in PROJECTION_KINDS for kind in kinds):
+            raise ProjectionConflict("invalid_projection_kind", "unknown projection kind")
+        if allowed_kinds is not None and not kinds:
+            return []
+        now = time.time()
+        with self._transaction() as connection:
+            self._reclaim_projection_outbox_in_transaction(connection, now=now)
+            kind_placeholders = ",".join("?" for _ in kinds)
+            rows = connection.execute(
+                "SELECT * FROM execution_projection_outbox "
+                "WHERE state = ? AND available_at <= ? "
+                f"AND projection_kind IN ({kind_placeholders}) "
+                "ORDER BY event_sequence, projection_kind LIMIT ?",
+                (ProjectionOutboxState.PENDING.value, now, *kinds, limit),
+            ).fetchall()
+            expires = now + lease_ttl_seconds
+            claimed = []
+            for row in rows:
+                updated = connection.execute(
+                    "UPDATE execution_projection_outbox SET state = ?, "
+                    "claim_owner = ?, claim_expires_at = ?, attempts = attempts + 1 "
+                    "WHERE outbox_id = ? AND state = ?",
+                    (
+                        ProjectionOutboxState.CLAIMED.value,
+                        owner_id,
+                        expires,
+                        row["outbox_id"],
+                        ProjectionOutboxState.PENDING.value,
+                    ),
+                )
+                if updated.rowcount == 1:
+                    claimed_row = connection.execute(
+                        "SELECT * FROM execution_projection_outbox WHERE outbox_id = ?",
+                        (row["outbox_id"],),
+                    ).fetchone()
+                    claimed.append(self._projection_outbox(claimed_row))
+            return claimed
+
+    def ack_projection_outbox(self, outbox_id: str, *, owner_id: str):
+        from .outbox import ProjectionOutboxState
+
+        with self._transaction() as connection:
+            row = connection.execute(
+                "SELECT * FROM execution_projection_outbox WHERE outbox_id = ?",
+                (outbox_id,),
+            ).fetchone()
+            if row is None:
+                raise ProjectionConflict("not_found", f"outbox item not found: {outbox_id}")
+            if row["state"] == ProjectionOutboxState.DELIVERED.value:
+                return self._projection_outbox(row)
+            now = time.time()
+            updated = connection.execute(
+                "UPDATE execution_projection_outbox SET state = ?, claim_owner = NULL, "
+                "claim_expires_at = NULL, delivered_at = ?, last_error = NULL "
+                "WHERE outbox_id = ? AND state = ? AND claim_owner = ? "
+                "AND claim_expires_at IS NOT NULL AND claim_expires_at > ?",
+                (
+                    ProjectionOutboxState.DELIVERED.value,
+                    now,
+                    outbox_id,
+                    ProjectionOutboxState.CLAIMED.value,
+                    owner_id,
+                    now,
+                ),
+            )
+            if updated.rowcount != 1:
+                latest = connection.execute(
+                    "SELECT * FROM execution_projection_outbox WHERE outbox_id = ?",
+                    (outbox_id,),
+                ).fetchone()
+                assert latest is not None
+                self._raise_projection_claim_conflict(latest, owner_id, now)
+            return self._projection_outbox(
+                connection.execute(
+                    "SELECT * FROM execution_projection_outbox WHERE outbox_id = ?",
+                    (outbox_id,),
+                ).fetchone()
+            )
+
+    def fail_projection_outbox(
+        self,
+        outbox_id: str,
+        *,
+        owner_id: str,
+        error: str,
+        retry_at: float | None = None,
+    ):
+        from .outbox import ProjectionOutboxState
+
+        if not error:
+            raise ProjectionConflict("invalid_error", "projection failure must include an error")
+        with self._transaction() as connection:
+            row = connection.execute(
+                "SELECT * FROM execution_projection_outbox WHERE outbox_id = ?",
+                (outbox_id,),
+            ).fetchone()
+            if row is None:
+                raise ProjectionConflict("not_found", f"outbox item not found: {outbox_id}")
+            now = time.time()
+            updated = connection.execute(
+                "UPDATE execution_projection_outbox SET state = ?, claim_owner = NULL, "
+                "claim_expires_at = NULL, available_at = ?, last_error = ? "
+                "WHERE outbox_id = ? AND state = 'claimed' AND claim_owner = ? "
+                "AND claim_expires_at IS NOT NULL AND claim_expires_at > ?",
+                (
+                    ProjectionOutboxState.PENDING.value,
+                    now if retry_at is None else retry_at,
+                    error[:2000],
+                    outbox_id,
+                    owner_id,
+                    now,
+                ),
+            )
+            if updated.rowcount != 1:
+                latest = connection.execute(
+                    "SELECT * FROM execution_projection_outbox WHERE outbox_id = ?",
+                    (outbox_id,),
+                ).fetchone()
+                assert latest is not None
+                self._raise_projection_claim_conflict(latest, owner_id, now)
+            return self._projection_outbox(
+                connection.execute(
+                    "SELECT * FROM execution_projection_outbox WHERE outbox_id = ?",
+                    (outbox_id,),
+                ).fetchone()
+            )
+
+    def reclaim_projection_outbox(self, *, now: float | None = None) -> int:
+        with self._transaction() as connection:
+            return self._reclaim_projection_outbox_in_transaction(
+                connection, now=time.time() if now is None else now
+            )
+
+    @staticmethod
+    def _reclaim_projection_outbox_in_transaction(
+        connection: sqlite3.Connection, *, now: float
+    ) -> int:
+        from .outbox import ProjectionOutboxState
+
+        updated = connection.execute(
+            "UPDATE execution_projection_outbox SET state = ?, claim_owner = NULL, "
+            "claim_expires_at = NULL WHERE state = ? AND claim_expires_at IS NOT NULL "
+            "AND claim_expires_at <= ?",
+            (
+                ProjectionOutboxState.PENDING.value,
+                ProjectionOutboxState.CLAIMED.value,
+                now,
+            ),
+        )
+        return updated.rowcount
+
+    @staticmethod
+    def _raise_projection_claim_conflict(
+        row: sqlite3.Row, owner_id: str, now: float
+    ) -> None:
+        from .outbox import ProjectionOutboxState
+
+        if row["state"] != ProjectionOutboxState.CLAIMED.value:
+            raise ProjectionConflict("invalid_state", f"outbox item is {row['state']}")
+        if not owner_id or row["claim_owner"] != owner_id:
+            raise ProjectionConflict("claim_owner_mismatch", "outbox claim belongs to another owner")
+        if row["claim_expires_at"] is None or float(row["claim_expires_at"]) <= now:
+            raise ProjectionConflict("claim_expired", "outbox claim has expired")
 
     def create_revision(
         self,
@@ -742,8 +1072,8 @@ class ExecutionStore:
         created_at: float,
         execution_version: int | None = None,
         command_id: str | None = None,
-    ) -> None:
-        connection.execute(
+    ) -> int:
+        cursor = connection.execute(
             "INSERT INTO execution_events "
             "(execution_id, execution_version, command_id, kind, payload_json, "
             "created_at, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -757,6 +1087,27 @@ class ExecutionStore:
                 SCHEMA_VERSION,
             ),
         )
+        sequence = int(cursor.lastrowid)
+        # Every canonical event is fanned out to the fixed projection set in
+        # the same SQLite transaction.  Consumers are independently retryable.
+        for projection_kind in PROJECTION_KINDS:
+            connection.execute(
+                "INSERT INTO execution_projection_outbox ("
+                "outbox_id, event_sequence, execution_id, projection_kind, "
+                "dedupe_key, payload_ref, state, claim_owner, claim_expires_at, "
+                "attempts, available_at, delivered_at, last_error) VALUES "
+                "(?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, 0, ?, NULL, NULL)",
+                (
+                    f"outbox_{sequence}_{projection_kind}",
+                    sequence,
+                    execution_id,
+                    projection_kind,
+                    f"execution-event:{sequence}:{projection_kind}",
+                    f"execution-event:{sequence}",
+                    created_at,
+                ),
+            )
+        return sequence
 
     @staticmethod
     def _insert_execution(
@@ -815,6 +1166,47 @@ class ExecutionStore:
             terminal_at=(
                 float(row["terminal_at"]) if row["terminal_at"] is not None else None
             ),
+        )
+
+    @staticmethod
+    def _execution_input(row: sqlite3.Row) -> ExecutionInputRecord:
+        return ExecutionInputRecord(
+            execution_id=str(row["execution_id"]),
+            input_ref=str(row["input_ref"]),
+            input_hash=str(row["input_hash"]),
+            entrypoint=str(row["entrypoint"]),
+            session_id=str(row["session_id"]),
+            user_message_id=row["user_message_id"],
+            assistant_message_id=row["assistant_message_id"],
+            trusted_actor=_object(row["trusted_actor_json"]),
+            config_snapshot_ref=str(row["config_snapshot_ref"]),
+            created_at=float(row["created_at"]),
+        )
+
+    @staticmethod
+    def _projection_outbox(row: sqlite3.Row):
+        from .outbox import ProjectionOutboxRecord, ProjectionOutboxState
+
+        return ProjectionOutboxRecord(
+            outbox_id=str(row["outbox_id"]),
+            event_sequence=int(row["event_sequence"]),
+            execution_id=str(row["execution_id"]),
+            projection_kind=str(row["projection_kind"]),
+            dedupe_key=str(row["dedupe_key"]),
+            payload_ref=str(row["payload_ref"]),
+            state=ProjectionOutboxState(str(row["state"])),
+            claim_owner=row["claim_owner"],
+            claim_expires_at=(
+                float(row["claim_expires_at"])
+                if row["claim_expires_at"] is not None
+                else None
+            ),
+            attempts=int(row["attempts"]),
+            available_at=float(row["available_at"]),
+            delivered_at=(
+                float(row["delivered_at"]) if row["delivered_at"] is not None else None
+            ),
+            last_error=row["last_error"],
         )
 
     @staticmethod

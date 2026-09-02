@@ -19,6 +19,7 @@ from openprogram.execution import (
 from openprogram.execution.effects import EffectClassification, EffectStatus
 from openprogram.execution.model import CommandStatus
 from openprogram.execution._schema import initialize_schema
+from openprogram.execution._schema import SCHEMA_VERSION
 from openprogram.execution.store import ExecutionConflict, ExecutionStore
 
 
@@ -302,7 +303,7 @@ def test_v2_to_v4_migration_preserves_legacy_rows_and_revision_identity(tmp_path
     legacy = store.get_revision("legacy-revision")
     assert legacy is not None and legacy.content_hash == legacy_hash
     with sqlite3.connect(path) as migrated:
-        assert migrated.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert migrated.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
         table_sql = migrated.execute(
             "SELECT sql FROM sqlite_master WHERE type = 'table' "
             "AND name = 'executions'"
@@ -390,7 +391,7 @@ def test_v3_migration_rebuilds_source_checkpoint_foreign_key(tmp_path):
     ExecutionStore(path)
 
     with sqlite3.connect(path) as migrated:
-        assert migrated.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert migrated.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
         foreign_keys = migrated.execute(
             "PRAGMA foreign_key_list(executions)"
         ).fetchall()

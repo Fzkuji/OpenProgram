@@ -18,6 +18,12 @@ outcomes to this control plane instead of writing lifecycle state directly.
 The process-local driver registry stores only exact attempt/generation bindings;
 it is not a lifecycle authority and cannot replace durable execution state.
 
+Admission stores an immutable input snapshot with the queued execution. Every
+canonical event creates one durable delivery item for each fixed projection
+(`dag`, `job`, `workflow`, and `ui`) in the same SQLite transaction. Projection
+workers claim, acknowledge, retry, and reclaim those items independently; a
+projection failure never changes canonical execution state.
+
 `RuntimeControlService` commits pause and cancel intent before notifying a live
 driver. Missing or failing local delivery leaves the durable command applying
 for recovery. A pause becomes applied only after the current attempt publishes

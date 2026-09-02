@@ -297,3 +297,36 @@ class ExecutionEvent:
     execution_version: int | None = None
     command_id: str | None = None
     schema_version: int = 1
+
+
+@dataclass(frozen=True)
+class ExecutionInputRecord:
+    """Immutable input snapshot captured when an execution is admitted."""
+
+    execution_id: str
+    input_ref: str
+    input_hash: str
+    entrypoint: str
+    session_id: str
+    trusted_actor: Mapping[str, Any]
+    config_snapshot_ref: str
+    created_at: float
+    user_message_id: str | None = None
+    assistant_message_id: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "trusted_actor", _snapshot_json(self.trusted_actor))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "execution_id": self.execution_id,
+            "input_ref": self.input_ref,
+            "input_hash": self.input_hash,
+            "entrypoint": self.entrypoint,
+            "session_id": self.session_id,
+            "user_message_id": self.user_message_id,
+            "assistant_message_id": self.assistant_message_id,
+            "trusted_actor": _snapshot_json(self.trusted_actor),
+            "config_snapshot_ref": self.config_snapshot_ref,
+            "created_at": self.created_at,
+        }
