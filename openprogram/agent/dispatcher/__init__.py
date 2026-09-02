@@ -194,87 +194,29 @@ def process_user_turn(
         return _process_turn_once(
             req, on_event=on_event, cancel_event=cancel_event,
             execution_context=execution_context)
-    # Canonical executions use execution-scoped durable steer commands.  They
-    # must not enter the historical session inbox or drain it at turn end.
+    # Canonical executions own all runtime steering.  Non-canonical callers
+    # may still run an ordinary turn, but they never enter a session-scoped
+    # steering inbox.  This keeps the public control surface at the
+    # execution-command boundary and prevents a second delivery path.
     if (execution_context or {}).get("canonical_execution"):
         return _process_turn_once(
             req, on_event=on_event, cancel_event=cancel_event,
             execution_context=execution_context)
-    from openprogram.agent import steering
-
-    steering.begin_accepting(req.session_id)
-    accepting = True
+    result = _process_turn_once(
+        req, on_event=on_event, cancel_event=cancel_event,
+        execution_context=execution_context)
+    # Hooks may deny the stop and force ordinary continuation turns.  They
+    # remain available to direct non-canonical callers, but queued steering
+    # is no longer drained from a session-local inbox.
     try:
-        result = _process_turn_once(
-            req, on_event=on_event, cancel_event=cancel_event,
-            execution_context=execution_context)
-        # Hooks may deny the stop and force ordinary continuation turns.
-        try:
-            from openprogram.agent.dispatcher.stop_hook import (
-                continue_stop_hook_turns,
-            )
-            result = continue_stop_hook_turns(
-                req, result, run_turn=_process_turn_once,
-                on_event=on_event, cancel_event=cancel_event)
-        except Exception:
-            _log.warning("turn.stop hook continuation failed for session %s",
-                         req.session_id, exc_info=True)
-
-        def _run_queued(messages: list[str]) -> None:
-            for message in messages:
-                next_req = replace(
-                    req,
-                    user_text=message,
-                    user_msg_id=None,
-                    user_already_persisted=False,
-                    branch_from=INHERIT_PARENT,
-                    history_override=None,
-                    attachments=None,
-                    spawn_caller=None,
-                )
-                queued_cancel = cancel_event
-                if cancel_event is not None and cancel_event.is_set():
-                    queued_cancel = None
-                queued_result = _process_turn_once(
-                    next_req,
-                    on_event=on_event,
-                    cancel_event=queued_cancel,
-                )
-                try:
-                    from openprogram.agent.dispatcher.stop_hook import (
-                        continue_stop_hook_turns,
-                    )
-                    continue_stop_hook_turns(
-                        next_req,
-                        queued_result,
-                        run_turn=_process_turn_once,
-                        on_event=on_event,
-                        cancel_event=queued_cancel,
-                    )
-                except Exception:
-                    _log.warning(
-                        "turn.stop hook continuation failed for queued input in %s",
-                        req.session_id,
-                        exc_info=True,
-                    )
-
-        # A steer can land after the loop's final poll. Keep consuming finite
-        # remainders while the follow-up turns are themselves accepting steer.
-        pending = steering.drain(req.session_id)
-        while pending:
-            _run_queued(pending)
-            pending = steering.drain(req.session_id)
-
-        # Close acceptance and take the last remainder under the same session
-        # lock. Any later WS steer now receives not_running and stays in the
-        # frontend queue instead of creating an orphan file.
-        pending = steering.close_and_drain(req.session_id)
-        accepting = False
-        _run_queued(pending)
+        from openprogram.agent.dispatcher.stop_hook import continue_stop_hook_turns
+        return continue_stop_hook_turns(
+            req, result, run_turn=_process_turn_once,
+            on_event=on_event, cancel_event=cancel_event)
+    except Exception:
+        _log.warning("turn.stop hook continuation failed for session %s",
+                     req.session_id, exc_info=True)
         return result
-    finally:
-        if accepting:
-            steering.end_accepting(req.session_id)
 
 
 def process_agent_continuation(

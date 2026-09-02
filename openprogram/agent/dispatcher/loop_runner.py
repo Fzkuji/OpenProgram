@@ -349,28 +349,21 @@ def run_loop_blocking(
     durable_steer_consumed_ids = (execution_context or {}).get("steer_consumed_ids")
 
     async def _get_steering_messages():
-        # Same-session spawned turns are side-branch machinery. Let the
-        # foreground chat turn remain the only consumer of its session inbox.
-        if req.source == "agent_spawn":
+        # Runtime steering is available only to a canonical execution and is
+        # consumed from its durable execution command queue at a safe point.
+        # Session-local inboxes are not a second steering transport.
+        if req.source == "agent_spawn" or not canonical_execution:
             return []
-        command_id = None
-        if canonical_execution:
-            if not isinstance(durable_steer_inputs, list) or not durable_steer_inputs:
-                return []
-            item = durable_steer_inputs.pop(0)
-            payload = item.get("payload") if isinstance(item, Mapping) else None
-            text = payload.get("message") if isinstance(payload, Mapping) else None
-            command_id = item.get("command_id") if isinstance(item, Mapping) else None
-            if not isinstance(text, str) or not text.strip():
-                return []
-            if isinstance(durable_steer_consumed_ids, set) and isinstance(command_id, str):
-                durable_steer_consumed_ids.add(command_id)
-        else:
-            from openprogram.agent import steering
-
-            text = steering.pop(req.session_id)
-            if text is None:
-                return []
+        if not isinstance(durable_steer_inputs, list) or not durable_steer_inputs:
+            return []
+        item = durable_steer_inputs.pop(0)
+        payload = item.get("payload") if isinstance(item, Mapping) else None
+        text = payload.get("message") if isinstance(payload, Mapping) else None
+        command_id = item.get("command_id") if isinstance(item, Mapping) else None
+        if not isinstance(text, str) or not text.strip():
+            return []
+        if isinstance(durable_steer_consumed_ids, set) and isinstance(command_id, str):
+            durable_steer_consumed_ids.add(command_id)
         from openprogram.context.nodes import Call, ROLE_USER
         from openprogram.providers.types import TextContent, UserMessage
         from openprogram.store import SessionNodeWriter
@@ -408,13 +401,10 @@ def run_loop_blocking(
         except Exception:
             # Persistence is part of acceptance. Put the text back so the
             # turn-end sweep can deliver it as an ordinary next turn.
-            if canonical_execution:
-                if isinstance(durable_steer_inputs, list):
-                    durable_steer_inputs.insert(0, item)
-                if isinstance(durable_steer_consumed_ids, set) and isinstance(command_id, str):
-                    durable_steer_consumed_ids.discard(command_id)
-            else:
-                steering.push(req.session_id, text)
+            if isinstance(durable_steer_inputs, list):
+                durable_steer_inputs.insert(0, item)
+            if isinstance(durable_steer_consumed_ids, set) and isinstance(command_id, str):
+                durable_steer_consumed_ids.discard(command_id)
             _log.warning(
                 "failed to persist steering for session %s",
                 req.session_id,
