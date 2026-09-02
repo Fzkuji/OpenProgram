@@ -785,6 +785,22 @@ class JobRunner:
                 )
         return completed
 
+    def _reconcile_terminal_dispatch_barriers(self) -> None:
+        """Release pre-cancel fences when canonical cancellation did not win."""
+        unblock = getattr(self._governor, "unblock_terminal_dispatch", None)
+        if unblock is None:
+            return
+        for execution in self._execution_store.list_nonterminal():
+            if execution.status.value != "queued" or execution.current_attempt_id:
+                continue
+            try:
+                unblock(execution.execution_id)
+            except Exception:
+                _log.exception(
+                    "failed to reconcile terminal dispatch barrier for %s",
+                    execution.execution_id,
+                )
+
     def _governance_context(self, job: Job) -> JobGovernanceContext:
         ledger = self._governor.ledger
         canonical_limits = getattr(self._governor, "canonical_limits", None)
@@ -2316,6 +2332,37 @@ class JobRunner:
                     or canonical.status.value != "queued"
                     or canonical_job is None
                 ):
+                    if canonical is not None and canonical.status.value in {
+                        "completed", "cancelled", "failed", "interrupted",
+                    }:
+                        try:
+                            self._project_canonical_terminal(
+                                canonical,
+                                admission_owner_instance_id=self._instance_id,
+                                admission_lease_generation=claim.lease_generation,
+                            )
+                        except Exception:
+                            _log.exception(
+                                "failed to project terminal claim for %s",
+                                claim.job_id,
+                            )
+                            # Keep the durable admission fenced while the
+                            # projection is repaired, then return the slot.
+                            try:
+                                self._governor.block_dispatch(claim.job_id)
+                                self._governor.requeue_job(
+                                    claim.job_id,
+                                    owner_instance_id=self._instance_id,
+                                    lease_generation=claim.lease_generation,
+                                )
+                            except Exception:
+                                _log.exception(
+                                    "failed to park terminal claim for %s",
+                                    claim.job_id,
+                                )
+                        self._executor_slots.release()
+                        self._dispatch_wake.set()
+                        continue
                     reason_code = (
                         canonical.reason_code
                         if canonical is not None and canonical.reason_code
@@ -2331,8 +2378,11 @@ class JobRunner:
                                 error="canonical execution admission is missing",
                                 reason_code=reason_code,
                             )
-                        except ValueError:
-                            pass
+                        except Exception:
+                            _log.exception(
+                                "failed to terminalize invalid claim projection for %s",
+                                claim.job_id,
+                            )
                     try:
                         released = self._governor.release_job(
                             claim.job_id,
@@ -3077,6 +3127,7 @@ class JobRunner:
         # projection write failed.  Retry it before admission reconciliation;
         # failures are persisted by _project_canonical_terminal for the next
         # pass or a fresh runner.
+        self._reconcile_terminal_dispatch_barriers()
         projected_pending = self._project_existing_canonical_terminals()
         for job_id, session_id in projected_pending:
             job = _store_load(session_id, job_id)

@@ -1011,7 +1011,7 @@ class ResourceGovernor:
                        last_activity_at = ?, lease_expires_at = ?,
                        lease_generation = lease_generation + 1
                    WHERE job_id = ? AND state = 'queued'
-                     AND dispatch_ready = 1
+                     AND dispatch_ready = 1 AND terminal_blocked = 0
                      AND NOT EXISTS (
                          SELECT 1 FROM job_finalizations
                          WHERE job_finalizations.job_id = job_admissions.job_id
@@ -1036,6 +1036,7 @@ class ResourceGovernor:
             queued = conn.execute(
                 """SELECT job_id, session_id FROM job_admissions
                    WHERE state = 'queued' AND dispatch_ready = 1
+                     AND terminal_blocked = 0
                      AND NOT EXISTS (
                          SELECT 1 FROM job_finalizations
                          WHERE job_finalizations.job_id = job_admissions.job_id
@@ -1069,7 +1070,8 @@ class ResourceGovernor:
                        SET state = 'live', owner_instance_id = ?, started_at = ?,
                            last_activity_at = ?, lease_expires_at = ?,
                            lease_generation = lease_generation + 1
-                       WHERE job_id = ? AND state = 'queued'""",
+                       WHERE job_id = ? AND state = 'queued'
+                         AND dispatch_ready = 1 AND terminal_blocked = 0""",
                     (
                         owner_instance_id, now, now, now + 30.0,
                         candidate["job_id"],
@@ -1128,6 +1130,7 @@ class ResourceGovernor:
                    SET dispatch_ready = 1
                    WHERE job_id = ? AND admission_id = ?
                      AND state = 'queued' AND dispatch_ready = 0
+                     AND terminal_blocked = 0
                      AND resume_parent_msg_id = ?
                      AND borrowed_parent_job_id IS NULL""",
                 (job_id, admission_id, parent_msg_id),
@@ -1211,6 +1214,7 @@ class ResourceGovernor:
                 """UPDATE job_admissions SET dispatch_ready = 1
                    WHERE job_id = ? AND admission_id = ?
                      AND state = 'queued' AND dispatch_ready = 0
+                     AND terminal_blocked = 0
                      AND resume_parent_msg_id IS NULL
                      AND borrowed_parent_job_id IS NULL""",
                 (job_id, admission_id),
@@ -1285,7 +1289,8 @@ class ResourceGovernor:
                 return False
             return conn.execute(
                 """UPDATE job_admissions
-                   SET state = 'released', released_at = ?, reason_code = ?,
+                   SET state = 'released', terminal_blocked = 0,
+                       released_at = ?, reason_code = ?,
                        lease_expires_at = NULL, resume_parent_msg_id = NULL
                    WHERE job_id = ? AND state = 'queued'
                      AND borrowed_parent_job_id = ?
@@ -1406,7 +1411,8 @@ class ResourceGovernor:
             for row in rows:
                 conn.execute(
                     """UPDATE job_admissions
-                       SET state = 'released', released_at = ?,
+                       SET state = 'released', terminal_blocked = 0,
+                           released_at = ?,
                            resume_parent_msg_id = NULL,
                            reason_code = 'error.borrowed_parent_lost'
                        WHERE job_id = ? AND state = 'queued'
@@ -1506,6 +1512,9 @@ class ResourceGovernor:
                             AND owner_instance_id IS NOT NULL THEN state
                        WHEN state IN ('preparing','queued') THEN 'released'
                        ELSE state END,
+                       terminal_blocked = CASE
+                           WHEN state IN ('preparing','queued') THEN 0
+                           ELSE terminal_blocked END,
                        reason_code = ?,
                        released_at = CASE
                            WHEN state IN ('preparing','queued')
@@ -1530,7 +1539,8 @@ class ResourceGovernor:
         with self.ledger.immediate() as conn:
             return conn.execute(
                 """UPDATE job_admissions
-                   SET state = 'released', released_at = ?, lease_expires_at = NULL,
+                   SET state = 'released', terminal_blocked = 0,
+                       released_at = ?, lease_expires_at = NULL,
                        resume_parent_msg_id = NULL,
                        reason_code = COALESCE(?, reason_code)
                    WHERE job_id = ? AND state != 'released'
@@ -1682,7 +1692,8 @@ class ResourceGovernor:
             placeholders = ",".join("?" for _ in eligible_states)
             changed = conn.execute(
                 f"""UPDATE job_admissions
-                    SET state = 'released', released_at = ?, lease_expires_at = NULL,
+                    SET state = 'released', terminal_blocked = 0,
+                        released_at = ?, lease_expires_at = NULL,
                         resume_parent_msg_id = NULL,
                         reason_code = COALESCE(?, reason_code)
                     WHERE job_id = ? AND owner_instance_id = ?
@@ -1724,7 +1735,8 @@ class ResourceGovernor:
             # together.  This closes the queued-admission race with
             # claim_next while the canonical database remains separate.
             conn.execute(
-                """UPDATE job_admissions SET dispatch_ready = 0
+                """UPDATE job_admissions
+                   SET dispatch_ready = 0, terminal_blocked = 1
                    WHERE job_id = ? AND state != 'released'""",
                 (job_id,),
             )
@@ -1752,8 +1764,25 @@ class ResourceGovernor:
         """Fence an admission before canonical terminal transition."""
         with self.ledger.immediate() as conn:
             return conn.execute(
-                """UPDATE job_admissions SET dispatch_ready = 0
+                """UPDATE job_admissions
+                   SET dispatch_ready = 0, terminal_blocked = 1
                    WHERE job_id = ? AND state != 'released'""",
+                (job_id,),
+            ).rowcount == 1
+
+    def unblock_terminal_dispatch(self, job_id: str) -> bool:
+        """Restore a queued admission after a pre-transition CAS failed."""
+        with self.ledger.immediate() as conn:
+            return conn.execute(
+                """UPDATE job_admissions
+                   SET dispatch_ready = 1, terminal_blocked = 0
+                   WHERE job_id = ? AND state = 'queued'
+                     AND terminal_blocked = 1
+                     AND NOT EXISTS (
+                         SELECT 1 FROM job_finalizations
+                         WHERE job_finalizations.job_id = job_admissions.job_id
+                           AND job_finalizations.state = 'pending'
+                     )""",
                 (job_id,),
             ).rowcount == 1
 
@@ -1786,7 +1815,8 @@ class ResourceGovernor:
             if admission["state"] != "released":
                 changed = conn.execute(
                     """UPDATE job_admissions
-                       SET state = 'released', released_at = ?,
+                       SET state = 'released', terminal_blocked = 0,
+                           released_at = ?,
                            lease_expires_at = NULL,
                            resume_parent_msg_id = NULL,
                            reason_code = COALESCE(?, reason_code)
@@ -2039,7 +2069,8 @@ class ResourceGovernor:
                     with self.ledger.immediate() as conn:
                         changed = conn.execute(
                             """UPDATE job_admissions
-                               SET state = 'released', reason_code = 'error.job_missing',
+                               SET state = 'released', terminal_blocked = 0,
+                                   reason_code = 'error.job_missing',
                                    resume_parent_msg_id = NULL,
                                    released_at = ?
                                WHERE admission_id = ? AND state = 'queued'""",
@@ -2050,7 +2081,8 @@ class ResourceGovernor:
                     with self.ledger.immediate() as conn:
                         changed = conn.execute(
                             """UPDATE job_admissions
-                               SET state = 'released', released_at = ?,
+                               SET state = 'released', terminal_blocked = 0,
+                                   released_at = ?,
                                    resume_parent_msg_id = NULL,
                                    reason_code = COALESCE(?, reason_code)
                                WHERE admission_id = ? AND state = 'queued'""",
@@ -2092,7 +2124,8 @@ class ResourceGovernor:
             with self.ledger.immediate() as conn:
                 changed = conn.execute(
                     """UPDATE job_admissions
-                       SET state = 'released', released_at = ?, lease_expires_at = NULL,
+                       SET state = 'released', terminal_blocked = 0,
+                           released_at = ?, lease_expires_at = NULL,
                            resume_parent_msg_id = NULL
                        WHERE admission_id = ? AND state = 'stopping'
                          AND owner_instance_id IS NULL

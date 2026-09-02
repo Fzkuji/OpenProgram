@@ -985,6 +985,23 @@ class RuntimeControlService:
         actor: Mapping[str, Any],
         reason_code: str,
     ) -> ControlDispatch:
+        current = self.executions.get_execution(execution_id)
+        if current is None:
+            raise ExecutionConflict("not_found", f"execution not found: {execution_id}")
+        prepared_before_accept = False
+        terminal_candidate = (
+            current.status is ExecutionStatus.QUEUED
+            and current.current_attempt_id is None
+            and not self.effects.list_unresolved(execution_id)
+        )
+        if terminal_candidate and self._terminal_preparer is not None:
+            try:
+                prepared = self._terminal_preparer(current)
+                if prepared is False:
+                    raise RuntimeError("terminal dispatch barrier unavailable")
+            except Exception as exc:
+                raise ProjectionRecoveryRequired(execution_id) from exc
+            prepared_before_accept = True
         try:
             command, execution, duplicate = self.executions.accept_command_with_transition(
                 command_id=command_id,
@@ -1010,19 +1027,26 @@ class RuntimeControlService:
                 or existing.kind is not CommandKind.CANCEL
                 or getattr(exc, "code", None) != "idempotency_collision"
             ):
+                if prepared_before_accept:
+                    raise ProjectionRecoveryRequired(execution_id) from exc
                 raise
-            command, execution, duplicate = self.executions.accept_command_with_transition(
-                command_id=command_id,
-                execution_id=execution_id,
-                expected_version=existing.expected_version,
-                kind=CommandKind.CANCEL,
-                target=ExecutionStatus.CANCELLING,
-                payload=existing.payload,
-                actor=existing.actor,
-                reason_code=existing.payload.get("reason_code") or reason_code,
-                supersede_kinds=_CANCEL_SUPERSEDES,
-                supersede_code="superseded_by_cancel",
-            )
+            try:
+                command, execution, duplicate = self.executions.accept_command_with_transition(
+                    command_id=command_id,
+                    execution_id=execution_id,
+                    expected_version=existing.expected_version,
+                    kind=CommandKind.CANCEL,
+                    target=ExecutionStatus.CANCELLING,
+                    payload=existing.payload,
+                    actor=existing.actor,
+                    reason_code=existing.payload.get("reason_code") or reason_code,
+                    supersede_kinds=_CANCEL_SUPERSEDES,
+                    supersede_code="superseded_by_cancel",
+                )
+            except CommandConflict as retry_exc:
+                if prepared_before_accept:
+                    raise ProjectionRecoveryRequired(execution_id) from retry_exc
+                raise
         if duplicate:
             return ControlDispatch(
                 command=command, execution=execution, delivered=False
@@ -1030,29 +1054,6 @@ class RuntimeControlService:
         if execution.current_attempt_id is None and not self.effects.list_unresolved(
             execution.execution_id
         ):
-            try:
-                if self._terminal_preparer is not None:
-                    prepared = self._terminal_preparer(execution)
-                    if prepared is False:
-                        raise RuntimeError("terminal dispatch barrier unavailable")
-            except Exception as exc:
-                try:
-                    command = self.executions.transition_command(
-                        command.command_id,
-                        expected_status=CommandStatus.APPLYING,
-                        target=CommandStatus.REJECTED,
-                        result_version=execution.status_version,
-                        rejection_code=ProjectionRecoveryRequired.code,
-                        receipt={"error": str(exc)},
-                    )
-                except Exception:
-                    _log.exception(
-                        "failed to persist terminal barrier command state for %s",
-                        execution.execution_id,
-                    )
-                raise ProjectionRecoveryRequired(
-                    execution.execution_id,
-                ) from exc
             execution = self.executions.transition_execution(
                 execution.execution_id,
                 expected_version=execution.status_version,

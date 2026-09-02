@@ -79,6 +79,8 @@ CREATE TABLE IF NOT EXISTS job_admissions (
     budget_scope_id TEXT NOT NULL,
     dispatch_ready INTEGER NOT NULL DEFAULT 1
         CHECK (dispatch_ready IN (0, 1)),
+    terminal_blocked INTEGER NOT NULL DEFAULT 0
+        CHECK (terminal_blocked IN (0, 1)),
     borrowed_parent_job_id TEXT,
     resume_parent_msg_id TEXT,
     state TEXT NOT NULL CHECK (state IN ('preparing','queued','live','stopping','released')),
@@ -331,6 +333,12 @@ class UsageLedger:
             conn.execute(
                 "ALTER TABLE job_admissions ADD COLUMN "
                 "dispatch_ready INTEGER NOT NULL DEFAULT 1"
+            )
+            changed = True
+        if existing and "terminal_blocked" not in existing:
+            conn.execute(
+                "ALTER TABLE job_admissions ADD COLUMN "
+                "terminal_blocked INTEGER NOT NULL DEFAULT 0"
             )
             changed = True
         if existing and "borrowed_parent_job_id" not in existing:
