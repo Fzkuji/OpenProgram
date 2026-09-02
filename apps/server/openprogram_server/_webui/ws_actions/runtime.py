@@ -401,7 +401,7 @@ async def _send_command_update(ws, command, execution) -> None:
             store = default_store()
             latest_command = store.get_command(command_data.get("command_id", ""))
             latest_execution = store.get_execution(command_data.get("execution_id", ""))
-            if latest_command is not None:
+            if latest_command is not None and command_data.get("status") != "rejected":
                 command = latest_command
                 command_data = latest_command.to_dict()
             if latest_execution is not None:

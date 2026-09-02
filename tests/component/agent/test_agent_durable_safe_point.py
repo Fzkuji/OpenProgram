@@ -13,6 +13,7 @@ import hashlib
 import json
 import sqlite3
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -215,6 +216,11 @@ def _run_action(action: str, ws: FakeWS, envelope: dict) -> None:
 
     from openprogram.webui.ws_actions import runtime
 
+    envelope = {
+        "type": "execution.command",
+        "payload": {},
+        **envelope,
+    }
     handler = runtime.ACTIONS[action]
     asyncio.run(handler(ws, envelope))
 
@@ -707,7 +713,7 @@ def test_approval_wait_hands_off_before_tool_effect_and_resumes_from_checkpoint(
         command_id="answer-approval", execution_id=running.execution_id,
         expected_version=paused.status_version, actor={"surface": "test"},
         wait_id=waits[0].wait_id, generation=waits[0].claim_generation,
-        answer="允许",
+        answer={"answer": "允许", "scope": "once"},
     ))
     assert dispatch.execution.status is ExecutionStatus.RUNNING
     assert activations == [paused.checkpoint_head_id]
@@ -1006,6 +1012,9 @@ def test_chat_ack_pause_before_initial_activation_continues_the_admitted_turn_on
         activator=driver.activate,
     ))
     assert continued.command.status is CommandStatus.APPLIED
+    deadline = time.monotonic() + 2.0
+    while not provider_starts and time.monotonic() < deadline:
+        threading.Event().wait(0.01)
     assert provider_starts == [("initial-pause-session", False)]
     with sqlite3.connect(store.path) as connection:
         assert connection.execute(
@@ -1025,7 +1034,6 @@ def test_public_cancel_uses_a_durable_exact_command_envelope(public_chat):
             "command_id": "cancel-envelope-1",
             "execution_id": ack["data"]["execution_id"],
             "expected_version": execution.status_version,
-            "actor": {"subject": "spoofed-client"},
         },
     )
     command = _command_payload(_command_frame(cancel_ws))
@@ -1213,7 +1221,6 @@ def test_commands_have_cas_actor_and_idempotent_outcomes(public_chat):
         "command_id": "pause-idempotent-1",
         "execution_id": ack["data"]["execution_id"],
         "expected_version": execution.status_version,
-        "actor": {"subject": "spoofed-client"},
     }
     _run_action("execution.pause", first_ws, envelope)
     first = _command_payload(_command_frame(first_ws))

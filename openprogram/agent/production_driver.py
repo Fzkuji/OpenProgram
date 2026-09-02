@@ -1187,74 +1187,75 @@ class AgentProductionDriver:
                 if existing is not None:
                     if existing.status is WaitStatus.RESOLVED:
                         payload["preapproved_wait_id"] = wait_id
-                        return False
-                    # Decline/timeout/cancel policies settle the execution
-                    # before a replacement attempt can reach this boundary.
-                    # Do not dispatch the protected tool from an unresolved
-                    # or non-approved record.
-                    return True
-                checkpoint = checkpoint_payload("wait.before_tool", payload)
-                current = service.executions.get_execution(attempt.execution_id)
-                if current is None:
-                    raise AgentDriverError("execution_not_found", "execution disappeared before wait")
-                request_metadata = pre_wait.get("request_metadata", {})
-                if not isinstance(request_metadata, Mapping):
-                    raise AgentDriverError("invalid_wait", "wait request metadata is invalid")
-                wait_request = {
-                    "prompt": str(pre_wait.get("prompt") or ""),
-                    "options": list(pre_wait.get("options") or ()),
-                    "multi": bool(pre_wait.get("multi", False)),
-                    "allow_custom": bool(pre_wait.get("allow_custom", True)),
-                    "detail": str(pre_wait.get("detail") or ""),
-                    "schema": dict(pre_wait.get("schema") or {}),
-                    "questions": list(pre_wait.get("questions") or []),
-                }
-                reserved = set(wait_request).intersection(request_metadata)
-                if reserved:
-                    raise AgentDriverError("invalid_wait", "wait metadata cannot replace presentation fields")
-                wait_request.update(dict(request_metadata))
-                timeout = pre_wait.get("timeout", 300.0)
-                if type(timeout) not in {int, float} or timeout <= 0:
-                    raise AgentDriverError("invalid_wait", "approval wait timeout is invalid")
-                policy = pre_wait.get("policy_snapshot")
-                if not isinstance(policy, Mapping):
-                    raise AgentDriverError("invalid_wait_policy", "approval wait policy is invalid")
-                suspension = service.open_wait_at_safe_point(
-                    execution_id=attempt.execution_id,
-                    attempt_id=attempt.attempt_id,
-                    generation=attempt.generation,
-                    expected_version=current.status_version,
-                    fragment=CheckpointFragment(
-                        safe_point_kind="agent.wait.before_tool",
-                        frontier=tuple(checkpoint.payload["frontier"]),
-                        state_refs={},
-                        completed_actions=tuple(), effect_receipts=tuple(),
-                        pending_command_ids=tuple(checkpoint.payload["pending_command_ids"]),
-                    ),
-                    kind=wait_kind, request=wait_request,
-                    policy_snapshot=dict(policy), expires_at=time.time() + float(timeout),
-                    wait_id=wait_id, agent_checkpoint=checkpoint,
-                )
-                try:
-                    if self.event_sink is None:
+                    else:
+                        # Decline/timeout/cancel policies settle the execution
+                        # before a replacement attempt can reach this boundary.
+                        # Do not dispatch the protected tool from an unresolved
+                        # or non-approved record.
                         return True
-                    self.event_sink({"type": "question.asked", "data": {
-                        "id": suspension.wait.wait_id,
-                        "session_id": request.session_id,
-                        "kind": wait_kind, "prompt": wait_request["prompt"],
-                        "options": wait_request["options"], "multi": wait_request["multi"],
-                        "allow_custom": wait_request["allow_custom"], "detail": wait_request["detail"],
-                        "schema": wait_request["schema"], "questions": wait_request["questions"],
-                        "tool": wait_request.get("tool"), "args": wait_request.get("args"),
-                        "risk_level": wait_request.get("risk_level"),
-                        "execution_id": attempt.execution_id,
-                        "wait_generation": suspension.wait.claim_generation,
-                        "expected_version": suspension.execution.status_version,
-                        "expires_at": suspension.wait.expires_at,
-                    }})
-                except Exception:
-                    _log.exception("failed to publish durable approval wait")
-                return True
+                else:
+                    checkpoint = checkpoint_payload("wait.before_tool", payload)
+                    current = service.executions.get_execution(attempt.execution_id)
+                    if current is None:
+                        raise AgentDriverError("execution_not_found", "execution disappeared before wait")
+                    request_metadata = pre_wait.get("request_metadata", {})
+                    if not isinstance(request_metadata, Mapping):
+                        raise AgentDriverError("invalid_wait", "wait request metadata is invalid")
+                    wait_request = {
+                        "prompt": str(pre_wait.get("prompt") or ""),
+                        "options": list(pre_wait.get("options") or ()),
+                        "multi": bool(pre_wait.get("multi", False)),
+                        "allow_custom": bool(pre_wait.get("allow_custom", True)),
+                        "detail": str(pre_wait.get("detail") or ""),
+                        "schema": dict(pre_wait.get("schema") or {}),
+                        "questions": list(pre_wait.get("questions") or []),
+                    }
+                    reserved = set(wait_request).intersection(request_metadata)
+                    if reserved:
+                        raise AgentDriverError("invalid_wait", "wait metadata cannot replace presentation fields")
+                    wait_request.update(dict(request_metadata))
+                    timeout = pre_wait.get("timeout", 300.0)
+                    if type(timeout) not in {int, float} or timeout <= 0:
+                        raise AgentDriverError("invalid_wait", "approval wait timeout is invalid")
+                    policy = pre_wait.get("policy_snapshot")
+                    if not isinstance(policy, Mapping):
+                        raise AgentDriverError("invalid_wait_policy", "approval wait policy is invalid")
+                    suspension = service.open_wait_at_safe_point(
+                        execution_id=attempt.execution_id,
+                        attempt_id=attempt.attempt_id,
+                        generation=attempt.generation,
+                        expected_version=current.status_version,
+                        fragment=CheckpointFragment(
+                            safe_point_kind="agent.wait.before_tool",
+                            frontier=tuple(checkpoint.payload["frontier"]),
+                            state_refs={},
+                            completed_actions=tuple(), effect_receipts=tuple(),
+                            pending_command_ids=tuple(checkpoint.payload["pending_command_ids"]),
+                        ),
+                        kind=wait_kind, request=wait_request,
+                        policy_snapshot=dict(policy), expires_at=time.time() + float(timeout),
+                        wait_id=wait_id, agent_checkpoint=checkpoint,
+                    )
+                    try:
+                        if self.event_sink is None:
+                            return True
+                        self.event_sink({"type": "question.asked", "data": {
+                            "id": suspension.wait.wait_id,
+                            "session_id": request.session_id,
+                            "kind": wait_kind, "prompt": wait_request["prompt"],
+                            "options": wait_request["options"], "multi": wait_request["multi"],
+                            "allow_custom": wait_request["allow_custom"], "detail": wait_request["detail"],
+                            "schema": wait_request["schema"], "questions": wait_request["questions"],
+                            "tool": wait_request.get("tool"), "args": wait_request.get("args"),
+                            "risk_level": wait_request.get("risk_level"),
+                            "execution_id": attempt.execution_id,
+                            "wait_generation": suspension.wait.claim_generation,
+                            "expected_version": suspension.execution.status_version,
+                            "expires_at": suspension.wait.expires_at,
+                        }})
+                    except Exception:
+                        _log.exception("failed to publish durable approval wait")
+                    return True
             if kind.endswith(".before"):
                 execution = service.executions.get_execution(attempt.execution_id)
                 if execution is None:
