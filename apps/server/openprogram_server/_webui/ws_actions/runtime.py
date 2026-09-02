@@ -280,10 +280,10 @@ def validate_execution_command_request(cmd: dict, operation: str) -> str | None:
     if operation == "fork":
         return (
             None
-            if set(payload) == {"checkpoint_id", "revision_manifest", "compatible_prefix"}
+            if set(payload) == {"manifest_id", "checkpoint_id", "proof_hash"}
+            and isinstance(payload.get("manifest_id"), str) and payload["manifest_id"]
             and isinstance(payload.get("checkpoint_id"), str) and payload["checkpoint_id"]
-            and isinstance(payload.get("revision_manifest"), dict)
-            and isinstance(payload.get("compatible_prefix"), list)
+            and isinstance(payload.get("proof_hash"), str) and payload["proof_hash"]
             else "invalid_payload"
         )
     return "invalid_command"
@@ -478,9 +478,9 @@ async def submit_execution_control(
             branch = service.request_fork(
                 command_id=command_id, execution_id=execution_id,
                 expected_version=expected_version, actor=actor,
+                manifest_id=cmd["payload"]["manifest_id"],
                 checkpoint_id=cmd["payload"]["checkpoint_id"],
-                revision_manifest=cmd["payload"]["revision_manifest"],
-                compatible_prefix=cmd["payload"]["compatible_prefix"],
+                proof_hash=cmd["payload"]["proof_hash"],
             )
             return branch.command, branch.execution
         elif operation == "retry":

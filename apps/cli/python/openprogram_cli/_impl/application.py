@@ -682,25 +682,16 @@ def main():
 
         verb = getattr(args, "execution_verb", None)
         if verb in {"pause", "continue", "step", "steer", "cancel", "fork", "retry"}:
-            import json
             payload = {}
             if verb == "steer":
                 payload = {"message": args.message}
             elif verb == "retry" and args.checkpoint_id:
                 payload = {"checkpoint_id": args.checkpoint_id}
             elif verb == "fork":
-                try:
-                    with open(args.revision_manifest, encoding="utf-8") as file:
-                        manifest = json.load(file)
-                    with open(args.compatible_prefix, encoding="utf-8") as file:
-                        prefix = json.load(file)
-                except (OSError, ValueError) as exc:
-                    print(f"invalid fork JSON input: {exc}", file=sys.stderr)
-                    sys.exit(2)
                 payload = {
+                    "manifest_id": args.manifest_id,
                     "checkpoint_id": args.checkpoint_id,
-                    "revision_manifest": manifest,
-                    "compatible_prefix": prefix,
+                    "proof_hash": args.proof_hash,
                 }
             sys.exit(_cmd_execution_control(
                 verb,

@@ -449,8 +449,8 @@ def build_parser() -> argparse.ArgumentParser:
             _parser.add_argument("--message", required=True, help="Bounded steering instruction")
         elif _verb == "fork":
             _parser.add_argument("--checkpoint-id", required=True, help="Published source checkpoint id")
-            _parser.add_argument("--revision-manifest", required=True, help="Path to the published revision manifest JSON")
-            _parser.add_argument("--compatible-prefix", required=True, help="Path to compatible-prefix proof JSON")
+            _parser.add_argument("--manifest-id", required=True, help="Published revision manifest id")
+            _parser.add_argument("--proof-hash", required=True, help="Validated revision frontier proof hash")
         elif _verb == "retry":
             _parser.add_argument("--checkpoint-id", default=None, help="Optional published source checkpoint id")
 

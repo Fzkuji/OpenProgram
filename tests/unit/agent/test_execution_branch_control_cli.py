@@ -13,11 +13,13 @@ def test_execution_branch_commands_have_strict_cli_arguments() -> None:
 
     fork = build_parser().parse_args([
         "execution", "fork", "exec-1", "--expected-version", "3",
-        "--checkpoint-id", "checkpoint-1", "--revision-manifest", "manifest.json",
-        "--compatible-prefix", "prefix.json",
+        "--checkpoint-id", "checkpoint-1", "--manifest-id", "manifest-1",
+        "--proof-hash", "proof-hash-1",
     ])
     assert fork.execution_verb == "fork"
     assert fork.checkpoint_id == "checkpoint-1"
+    assert fork.manifest_id == "manifest-1"
+    assert fork.proof_hash == "proof-hash-1"
 
     retry = build_parser().parse_args([
         "execution", "retry", "exec-1", "--expected-version", "3",

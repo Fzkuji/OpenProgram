@@ -208,19 +208,13 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
 
     case 'fork': {
       if (args.length !== 3) {
-        ctx.pushSystem('Usage: /fork <checkpoint-id> <revision-manifest-json> <compatible-prefix-json>');
+        ctx.pushSystem('Usage: /fork <checkpoint-id> <manifest-id> <proof-hash>');
         return true;
       }
-      try {
-        const revision_manifest = JSON.parse(args[1]!);
-        const compatible_prefix = JSON.parse(args[2]!);
-        if (!ctx.submitExecutionCommand?.('fork', {
-          checkpoint_id: args[0]!, revision_manifest, compatible_prefix,
-        })) {
-          ctx.pushSystem('Fork unavailable: no current execution version.');
-        }
-      } catch {
-        ctx.pushSystem('Fork requires valid revision-manifest and compatible-prefix JSON.');
+      if (!ctx.submitExecutionCommand?.('fork', {
+        checkpoint_id: args[0]!, manifest_id: args[1]!, proof_hash: args[2]!,
+      })) {
+        ctx.pushSystem('Fork unavailable: no current execution version.');
       }
       return true;
     }

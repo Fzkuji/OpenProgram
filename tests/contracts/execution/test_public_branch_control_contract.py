@@ -21,6 +21,21 @@ def test_public_envelope_rejects_spoofed_scope_and_invalid_branch_payloads() -> 
     assert validate(
         {
             "type": "execution.command",
+            "action": "execution.fork",
+            "command_id": "fork-valid",
+            "execution_id": "exec-1",
+            "expected_version": 7,
+            "payload": {
+                "manifest_id": "manifest-1",
+                "checkpoint_id": "checkpoint-1",
+                "proof_hash": "proof-1",
+            },
+        },
+        "fork",
+    ) is None
+    assert validate(
+        {
+            "type": "execution.command",
             "action": "execution.steer",
             "command_id": "steer-1",
             "execution_id": "exec-1",
@@ -50,6 +65,21 @@ def test_public_envelope_rejects_spoofed_scope_and_invalid_branch_payloads() -> 
             "execution_id": "exec-1",
             "expected_version": 7,
             "payload": {"checkpoint_id": "checkpoint-1"},
+        },
+        "fork",
+    ) == "invalid_payload"
+    assert validate(
+        {
+            "type": "execution.command",
+            "action": "execution.fork",
+            "command_id": "fork-inline",
+            "execution_id": "exec-1",
+            "expected_version": 7,
+            "payload": {
+                "checkpoint_id": "checkpoint-1",
+                "revision_manifest": {"entrypoint": "inline"},
+                "compatible_prefix": [],
+            },
         },
         "fork",
     ) == "invalid_payload"

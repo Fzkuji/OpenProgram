@@ -72,7 +72,7 @@ describe('handleSlash', () => {
     expect(handleSlash('/steer prefer the approved source', ctx)).toBe(true);
     expect(handleSlash('/retry checkpoint-1', ctx)).toBe(true);
     expect(handleSlash(
-      '/fork checkpoint-1 {"entrypoint":"edited"} [{"step_id":"first","contract_hash":"h"}]',
+      '/fork checkpoint-1 manifest-1 proof-hash-1',
       ctx,
     )).toBe(true);
 
@@ -83,8 +83,8 @@ describe('handleSlash', () => {
       2, 'retry', { checkpoint_id: 'checkpoint-1' },
     );
     expect(submitExecutionCommand).toHaveBeenNthCalledWith(3, 'fork', {
-      checkpoint_id: 'checkpoint-1', revision_manifest: { entrypoint: 'edited' },
-      compatible_prefix: [{ step_id: 'first', contract_hash: 'h' }],
+      checkpoint_id: 'checkpoint-1', manifest_id: 'manifest-1',
+      proof_hash: 'proof-hash-1',
     });
   });
 
