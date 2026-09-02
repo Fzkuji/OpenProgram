@@ -16,11 +16,14 @@ from typing import Any, Collection, Iterator, Mapping
 
 from ._schema import PROJECTION_KINDS, SCHEMA_VERSION, UnsupportedSchema, initialize_schema
 from .model import (
+    AuditEvent,
     CapabilitySet,
     CommandKind,
     CommandStatus,
     ControlCommand,
     ExecutionEvent,
+    EventCursor,
+    EventReplay,
     ExecutionInputRecord,
     ExecutionRecord,
     ExecutionStatus,
@@ -1665,6 +1668,62 @@ class ExecutionStore:
             )
             return [self._event(row) for row in rows]
 
+    def read_event_replay(
+        self, execution_id: str, *, after_sequence: int
+    ) -> EventReplay:
+        """Read one exact execution's contiguous public event stream.
+
+        SQLite event ids are global because the projection outbox references
+        them.  Public cursors instead use ``execution_sequence`` so activity
+        in a different execution cannot manufacture a false gap.
+        """
+        if type(after_sequence) is not int or after_sequence < 0:
+            raise ExecutionConflict("invalid_cursor", "after_sequence must be a non-negative integer")
+        with closing(self._connect()) as connection:
+            bounds = connection.execute(
+                "SELECT MIN(execution_sequence) AS first_sequence, "
+                "MAX(execution_sequence) AS last_sequence "
+                "FROM execution_events WHERE execution_id = ?",
+                (execution_id,),
+            ).fetchone()
+            if bounds is None or bounds["last_sequence"] is None:
+                raise ExecutionConflict("not_found", "execution does not exist")
+            first = int(bounds["first_sequence"])
+            last = int(bounds["last_sequence"])
+            recovery = None
+            if after_sequence > last:
+                recovery = "cursor_ahead"
+                rows = ()
+            elif after_sequence < first - 1:
+                recovery = "cursor_expired"
+                rows = ()
+            else:
+                rows = connection.execute(
+                    "SELECT * FROM execution_events WHERE execution_id = ? "
+                    "AND execution_sequence > ? ORDER BY execution_sequence",
+                    (execution_id, after_sequence),
+                ).fetchall()
+                expected = after_sequence + 1
+                for row in rows:
+                    if int(row["execution_sequence"]) != expected:
+                        recovery = "cursor_gap"
+                        rows = ()
+                        break
+                    expected += 1
+        execution = self.get_execution(execution_id)
+        if execution is None:
+            raise ExecutionConflict("not_found", "execution does not exist")
+        return EventReplay(
+            execution_id=execution_id,
+            events=tuple(self._event(row) for row in rows),
+            cursor=EventCursor(
+                execution_id=execution_id,
+                next_sequence=last + 1,
+                snapshot_status_version=execution.status_version,
+            ),
+            recovery=recovery,
+        )
+
     def get_event(self, execution_id: str, sequence: int) -> ExecutionEvent | None:
         """Return one event by its global sequence within the exact execution."""
         with closing(self._connect()) as connection:
@@ -1710,6 +1769,103 @@ class ExecutionStore:
             payload=_object(row["payload_json"]),
             created_at=float(row["created_at"]),
             schema_version=int(row["schema_version"]),
+            execution_sequence=int(row["execution_sequence"]),
+        )
+
+    def append_audit_event(
+        self,
+        *,
+        execution_id: str,
+        actor: Mapping[str, Any],
+        action: str,
+        result: str,
+        surface: str,
+        payload: Mapping[str, Any] | None = None,
+        command_id: str | None = None,
+        draft_id: str | None = None,
+        wait_id: str | None = None,
+        correlation_id: str | None = None,
+        source_version: int | None = None,
+        checkpoint_id: str | None = None,
+        reason_code: str | None = None,
+        evidence_refs: Collection[str] = (),
+        project_binding: Mapping[str, Any] | None = None,
+    ) -> AuditEvent:
+        """Append a redacted audit record; the ledger is never updated."""
+        with self._transaction() as connection:
+            execution = self._require_execution(connection, execution_id)
+            binding = dict(project_binding or self._project_binding(execution))
+            return self._append_audit_event(
+                connection,
+                execution=execution,
+                actor=actor,
+                action=action,
+                result=result,
+                surface=surface,
+                payload=payload,
+                command_id=command_id,
+                draft_id=draft_id,
+                wait_id=wait_id,
+                correlation_id=correlation_id,
+                source_version=source_version,
+                checkpoint_id=checkpoint_id,
+                reason_code=reason_code,
+                evidence_refs=evidence_refs,
+                project_binding=binding,
+            )
+
+    def list_audit_events(
+        self, execution_id: str, *, actor: Mapping[str, Any]
+    ) -> list[AuditEvent]:
+        execution = self.get_execution(execution_id)
+        if execution is None:
+            from .authorization import ExecutionAuthorizationError
+            raise ExecutionAuthorizationError("execution is not visible")
+        from .authorization import authorize_execution_action
+
+        authorize_execution_action(
+            actor, "audit.read", execution, self._project_binding(execution)
+        )
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT * FROM execution_audit_events WHERE execution_id = ? "
+                "ORDER BY sequence",
+                (execution_id,),
+            ).fetchall()
+        return [self._audit_event(row) for row in rows]
+
+    @staticmethod
+    def _project_binding(execution: ExecutionRecord) -> dict[str, str]:
+        try:
+            from openprogram.store.project import project_for_session
+            project = project_for_session(execution.session_id)
+            project_id = project.id if project is not None else "default"
+        except Exception:
+            project_id = "default"
+        return {"project_id": project_id, "session_id": execution.session_id}
+
+    @staticmethod
+    def _audit_event(row: sqlite3.Row) -> AuditEvent:
+        return AuditEvent(
+            audit_id=str(row["audit_id"]),
+            sequence=int(row["sequence"]),
+            execution_id=str(row["execution_id"]),
+            command_id=row["command_id"],
+            draft_id=row["draft_id"],
+            wait_id=row["wait_id"],
+            correlation_id=row["correlation_id"],
+            actor_binding=_object(row["actor_json"]),
+            surface=str(row["surface"]),
+            action=str(row["action"]),
+            policy_version=str(row["policy_version"]),
+            project_binding=_object(row["project_binding_json"]),
+            source_version=row["source_version"],
+            checkpoint_id=row["checkpoint_id"],
+            result=str(row["result"]),
+            reason_code=row["reason_code"],
+            redacted_payload=_object(row["redacted_payload_json"]),
+            evidence_refs=tuple(json.loads(str(row["evidence_refs_json"]))),
+            created_at=float(row["created_at"]),
         )
 
     def _accept_command(
@@ -1800,6 +1956,24 @@ class ExecutionStore:
             kind="command.accepted",
             payload={"command": command.to_dict()},
             created_at=now,
+        )
+        self._append_audit_event(
+            connection,
+            execution=execution,
+            actor=command.actor,
+            action=command.kind.value,
+            result=command.status.value,
+            surface=str(command.actor.get("surface") or "runtime"),
+            payload=command.payload,
+            command_id=command.command_id,
+            draft_id=None,
+            wait_id=None,
+            correlation_id=command.command_id,
+            source_version=execution.status_version,
+            checkpoint_id=execution.checkpoint_head_id,
+            reason_code=None,
+            evidence_refs=(),
+            project_binding=self._project_binding(execution),
         )
         return command, False
 
@@ -1947,6 +2121,25 @@ class ExecutionStore:
             payload=payload,
             created_at=now,
         )
+        execution = self._require_execution(connection, command.execution_id)
+        self._append_audit_event(
+            connection,
+            execution=execution,
+            actor=command.actor,
+            action=command.kind.value,
+            result=command.status.value,
+            surface=str(command.actor.get("surface") or "runtime"),
+            payload=command.payload,
+            command_id=command.command_id,
+            draft_id=None,
+            wait_id=None,
+            correlation_id=command.command_id,
+            source_version=result_version,
+            checkpoint_id=execution.checkpoint_head_id,
+            reason_code=rejection_code,
+            evidence_refs=(),
+            project_binding=self._project_binding(execution),
+        )
         return command
 
     @staticmethod
@@ -1960,12 +2153,18 @@ class ExecutionStore:
         execution_version: int | None = None,
         command_id: str | None = None,
     ) -> int:
+        execution_sequence = int(connection.execute(
+            "SELECT COALESCE(MAX(execution_sequence), 0) + 1 "
+            "FROM execution_events WHERE execution_id = ?",
+            (execution_id,),
+        ).fetchone()[0])
         cursor = connection.execute(
             "INSERT INTO execution_events "
-            "(execution_id, execution_version, command_id, kind, payload_json, "
-            "created_at, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(execution_id, execution_sequence, execution_version, command_id, kind, payload_json, "
+            "created_at, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 execution_id,
+                execution_sequence,
                 execution_version,
                 command_id,
                 kind,
@@ -1996,6 +2195,73 @@ class ExecutionStore:
                 ),
             )
         return sequence
+
+    @staticmethod
+    def _append_audit_event(
+        connection: sqlite3.Connection,
+        *,
+        execution: ExecutionRecord,
+        actor: Mapping[str, Any],
+        action: str,
+        result: str,
+        surface: str,
+        payload: Mapping[str, Any] | None,
+        command_id: str | None,
+        draft_id: str | None,
+        wait_id: str | None,
+        correlation_id: str | None,
+        source_version: int | None,
+        checkpoint_id: str | None,
+        reason_code: str | None,
+        evidence_refs: Collection[str],
+        project_binding: Mapping[str, Any],
+    ) -> AuditEvent:
+        from .audit import redact_audit_payload
+        from .authorization import POLICY_VERSION
+        from openprogram.agent.authority import normalize_authority
+
+        actor_binding = normalize_authority(actor)
+        if not actor_binding:
+            actor_binding = {"authority_tier": "runtime", "speaker_id": "runtime/internal"}
+        audit_id = f"audit_{uuid.uuid4().hex}"
+        now = time.time()
+        redacted_payload = redact_audit_payload(payload)
+        refs = tuple(str(ref) for ref in evidence_refs)
+        cursor = connection.execute(
+            "INSERT INTO execution_audit_events ("
+            "audit_id, execution_id, command_id, draft_id, wait_id, correlation_id, "
+            "actor_json, surface, action, policy_version, project_binding_json, "
+            "source_version, checkpoint_id, result, reason_code, redacted_payload_json, "
+            "evidence_refs_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                audit_id, execution.execution_id, command_id, draft_id, wait_id,
+                correlation_id, _json(actor_binding), str(surface), str(action),
+                POLICY_VERSION, _json(dict(project_binding)), source_version,
+                checkpoint_id, str(result), reason_code, _json(redacted_payload),
+                _json(list(refs)), now,
+            ),
+        )
+        return AuditEvent(
+            audit_id=audit_id,
+            sequence=int(cursor.lastrowid),
+            execution_id=execution.execution_id,
+            command_id=command_id,
+            draft_id=draft_id,
+            wait_id=wait_id,
+            correlation_id=correlation_id,
+            actor_binding=actor_binding,
+            surface=str(surface),
+            action=str(action),
+            policy_version=POLICY_VERSION,
+            project_binding=dict(project_binding),
+            source_version=source_version,
+            checkpoint_id=checkpoint_id,
+            result=str(result),
+            reason_code=reason_code,
+            redacted_payload=redacted_payload,
+            evidence_refs=refs,
+            created_at=now,
+        )
 
     @staticmethod
     def _insert_execution(

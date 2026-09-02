@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Mapping
 
 from .model import (
@@ -13,6 +14,9 @@ from .model import (
 )
 
 
+_log = logging.getLogger(__name__)
+
+
 def project_id_for_session(session_id: str) -> str:
     """Resolve the frozen project binding without trusting transport input."""
     try:
@@ -22,7 +26,7 @@ def project_id_for_session(session_id: str) -> str:
         if project is not None:
             return project.id
     except Exception:
-        return "default"
+        _log.debug("project lookup failed for execution snapshot", exc_info=True)
     # Existing ad-hoc sessions use the default project.  A future admission
     # path may reject an unbound session; public reads remain non-authoritative.
     return "default"
@@ -32,9 +36,9 @@ def _event_sequence(store: Any, execution_id: str, fallback: int) -> int:
     try:
         events = store.list_events(execution_id)
         if events:
-            return max(int(event.sequence) for event in events)
+            return max(int(event.execution_sequence) for event in events)
     except Exception:
-        return fallback
+        _log.debug("event sequence lookup failed for execution snapshot", exc_info=True)
     return fallback
 
 

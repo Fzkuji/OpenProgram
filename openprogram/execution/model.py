@@ -289,6 +289,14 @@ class ControlCommand:
 
 @dataclass(frozen=True)
 class ExecutionEvent:
+    """One canonical event.
+
+    ``sequence`` is the SQLite event identity used by projection foreign
+    keys.  ``execution_sequence`` is the public, contiguous cursor for this
+    exact execution.  Keeping the two identities separate prevents events
+    from unrelated executions from creating false reconnect gaps.
+    """
+
     sequence: int
     execution_id: str
     kind: str
@@ -297,6 +305,65 @@ class ExecutionEvent:
     execution_version: int | None = None
     command_id: str | None = None
     schema_version: int = 1
+    execution_sequence: int = 0
+
+
+@dataclass(frozen=True)
+class EventReplay:
+    """Authorized replay result for one execution cursor."""
+
+    execution_id: str
+    events: tuple[ExecutionEvent, ...]
+    cursor: "EventCursor"
+    recovery: str | None = None
+
+
+@dataclass(frozen=True)
+class AuditEvent:
+    """Append-only, redacted audit record for an execution action."""
+
+    audit_id: str
+    sequence: int
+    execution_id: str
+    command_id: str | None
+    draft_id: str | None
+    wait_id: str | None
+    correlation_id: str | None
+    actor_binding: Mapping[str, Any]
+    surface: str
+    action: str
+    policy_version: str
+    project_binding: Mapping[str, Any]
+    source_version: int | None
+    checkpoint_id: str | None
+    result: str
+    reason_code: str | None
+    redacted_payload: Mapping[str, Any]
+    evidence_refs: tuple[str, ...]
+    created_at: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "audit_id": self.audit_id,
+            "sequence": self.sequence,
+            "execution_id": self.execution_id,
+            "command_id": self.command_id,
+            "draft_id": self.draft_id,
+            "wait_id": self.wait_id,
+            "correlation_id": self.correlation_id,
+            "actor_binding": _snapshot_json(self.actor_binding),
+            "surface": self.surface,
+            "action": self.action,
+            "policy_version": self.policy_version,
+            "project_binding": _snapshot_json(self.project_binding),
+            "source_version": self.source_version,
+            "checkpoint_id": self.checkpoint_id,
+            "result": self.result,
+            "reason_code": self.reason_code,
+            "redacted_payload": _snapshot_json(self.redacted_payload),
+            "evidence_refs": list(self.evidence_refs),
+            "created_at": self.created_at,
+        }
 
 
 @dataclass(frozen=True)

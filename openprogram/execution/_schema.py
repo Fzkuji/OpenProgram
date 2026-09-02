@@ -9,7 +9,7 @@ import sqlite3
 from .model import CapabilitySet
 
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 _LEGACY_SCHEMA_VERSION = 1
 _PREVIOUS_SCHEMA_VERSION = 2
 _FORK_RETRY_SCHEMA_VERSION = 3
@@ -20,7 +20,8 @@ _FINISH_REPAIR_SLOT_SCHEMA_VERSION = 7
 _AGENT_STATE_BLOB_SCHEMA_VERSION = 8
 _AGENT_STATE_BLOB_REFERENCE_SCHEMA_VERSION = 9
 _RESOURCE_SAGA_SCHEMA_VERSION = 10
-_REVISION_CONTROL_SCHEMA_VERSION = 11
+_JOB_DURABLE_SCHEMA_VERSION = 11
+_PARTIAL_RUNTIME_CONTROL_SCHEMA_VERSION = 12
 _FINISH_REPAIR_SLOT_LIMIT = 4096
 
 # These are the only projections emitted by the canonical execution store.
@@ -62,7 +63,10 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
         _migrate_v9(connection)
     elif current == _RESOURCE_SAGA_SCHEMA_VERSION:
         _migrate_v10(connection)
-    elif current == _REVISION_CONTROL_SCHEMA_VERSION:
+    elif current in {
+        _JOB_DURABLE_SCHEMA_VERSION,
+        _PARTIAL_RUNTIME_CONTROL_SCHEMA_VERSION,
+    }:
         _migrate_v11(connection)
     elif current == SCHEMA_VERSION:
         _create_current_schema(connection)
@@ -73,6 +77,18 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
 
 
 def _create_current_schema(connection: sqlite3.Connection) -> None:
+    # Existing schemas are upgraded in-place.  Add this column before the
+    # CREATE INDEX statements below so v1/v2 bootstraps do not reference a
+    # column their historical table did not have yet.
+    if connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'execution_events'"
+    ).fetchone() is not None:
+        _add_column_if_missing(
+            connection,
+            "execution_events",
+            "execution_sequence INTEGER NOT NULL DEFAULT 0",
+        )
+        _backfill_execution_sequences(connection)
     connection.executescript(
         """
         CREATE TABLE IF NOT EXISTS runs (
@@ -141,6 +157,7 @@ def _create_current_schema(connection: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS execution_events (
             sequence INTEGER PRIMARY KEY AUTOINCREMENT,
             execution_id TEXT NOT NULL,
+            execution_sequence INTEGER NOT NULL,
             execution_version INTEGER,
             command_id TEXT,
             kind TEXT NOT NULL,
@@ -150,7 +167,9 @@ def _create_current_schema(connection: sqlite3.Connection) -> None:
             FOREIGN KEY(execution_id) REFERENCES executions(execution_id)
         );
         CREATE INDEX IF NOT EXISTS events_execution_sequence
-            ON execution_events(execution_id, sequence);
+            ON execution_events(execution_id, execution_sequence);
+        CREATE UNIQUE INDEX IF NOT EXISTS events_execution_cursor_unique
+            ON execution_events(execution_id, execution_sequence);
 
         CREATE TABLE IF NOT EXISTS attempts (
             attempt_id TEXT PRIMARY KEY,
@@ -222,6 +241,7 @@ def _create_current_schema(connection: sqlite3.Connection) -> None:
     _create_agent_input_schema(connection)
     _create_finish_repair_schema(connection)
     _create_agent_state_blob_schema(connection)
+    _create_audit_schema(connection)
     _create_agent_state_blob_reference_schema(connection)
     _create_resource_saga_schema(connection)
     _create_revision_control_schema(connection)
@@ -586,6 +606,40 @@ def _create_agent_state_blob_reference_schema(connection: sqlite3.Connection) ->
     )
 
 
+def _create_audit_schema(connection: sqlite3.Connection) -> None:
+    """Create the immutable, redacted execution audit ledger."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS execution_audit_events (
+            sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+            audit_id TEXT UNIQUE NOT NULL,
+            execution_id TEXT NOT NULL,
+            command_id TEXT,
+            draft_id TEXT,
+            wait_id TEXT,
+            correlation_id TEXT,
+            actor_json TEXT NOT NULL,
+            surface TEXT NOT NULL,
+            action TEXT NOT NULL,
+            policy_version TEXT NOT NULL,
+            project_binding_json TEXT NOT NULL,
+            source_version INTEGER,
+            checkpoint_id TEXT,
+            result TEXT NOT NULL,
+            reason_code TEXT,
+            redacted_payload_json TEXT NOT NULL,
+            evidence_refs_json TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            FOREIGN KEY(execution_id) REFERENCES executions(execution_id)
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS execution_audit_execution_sequence "
+        "ON execution_audit_events(execution_id, sequence)"
+    )
+
+
 def _backfill_finish_repair_slots(connection: sqlite3.Connection) -> None:
     """Reserve one slot for every nonterminal admitted Agent execution."""
     rows = connection.execute(
@@ -801,6 +855,22 @@ def _migrate_v10(connection: sqlite3.Connection) -> None:
     try:
         connection.execute("BEGIN")
         _create_resource_saga_schema(connection)
+        _create_revision_control_schema(connection)
+        _add_column_if_missing(
+            connection,
+            "execution_events",
+            "execution_sequence INTEGER NOT NULL DEFAULT 0",
+        )
+        _backfill_execution_sequences(connection)
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS events_execution_cursor_unique "
+            "ON execution_events(execution_id, execution_sequence)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS events_execution_sequence "
+            "ON execution_events(execution_id, execution_sequence)"
+        )
+        _create_audit_schema(connection)
         connection.commit()
     except BaseException:
         connection.rollback()
@@ -808,14 +878,30 @@ def _migrate_v10(connection: sqlite3.Connection) -> None:
 
 
 def _migrate_v11(connection: sqlite3.Connection) -> None:
+    """Complete both revision and cursor/audit additions from any partial v12."""
     if connection.in_transaction:
         raise UnsupportedSchema(
-            _REVISION_CONTROL_SCHEMA_VERSION,
-            "cannot migrate revision control inside an active transaction",
+            _JOB_DURABLE_SCHEMA_VERSION,
+            "cannot migrate runtime control schema inside an active transaction",
         )
     try:
         connection.execute("BEGIN")
         _create_revision_control_schema(connection)
+        _add_column_if_missing(
+            connection,
+            "execution_events",
+            "execution_sequence INTEGER NOT NULL DEFAULT 0",
+        )
+        _backfill_execution_sequences(connection)
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS events_execution_cursor_unique "
+            "ON execution_events(execution_id, execution_sequence)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS events_execution_sequence "
+            "ON execution_events(execution_id, execution_sequence)"
+        )
+        _create_audit_schema(connection)
         connection.commit()
     except BaseException:
         connection.rollback()
@@ -829,6 +915,22 @@ def _migrate_v1(connection: sqlite3.Connection) -> None:
     _migrate_v1_capabilities(connection)
     _migrate_v1_runs(connection)
     _migrate_v1_revisions(connection)
+    _backfill_execution_sequences(connection)
+    _create_audit_schema(connection)
+
+
+def _backfill_execution_sequences(connection: sqlite3.Connection) -> None:
+    counters: dict[str, int] = {}
+    for row in connection.execute(
+        "SELECT sequence, execution_id FROM execution_events ORDER BY sequence"
+    ):
+        execution_id = str(row["execution_id"])
+        next_sequence = counters.get(execution_id, 0) + 1
+        counters[execution_id] = next_sequence
+        connection.execute(
+            "UPDATE execution_events SET execution_sequence = ? WHERE sequence = ?",
+            (next_sequence, row["sequence"]),
+        )
 
 
 def _migrate_v2(connection: sqlite3.Connection) -> None:

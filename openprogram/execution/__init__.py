@@ -7,10 +7,12 @@ directly.
 
 from .model import (
     CapabilitySet,
+    AuditEvent,
     CommandKind,
     CommandStatus,
     ControlCommand,
     ExecutionEvent,
+    EventReplay,
     ExecutionInputRecord,
     ExecutionSnapshot,
     EventCursor,
@@ -81,9 +83,11 @@ from .revisions import (
 __all__ = [
     "CommandKind",
     "CapabilitySet",
+    "AuditEvent",
     "CommandStatus",
     "ControlCommand",
     "ExecutionEvent",
+    "EventReplay",
     "ExecutionInputRecord",
     "ExecutionSnapshot",
     "EventCursor",

@@ -176,14 +176,14 @@ class ExecutionProjectionReadModel:
         source = self.store.get_execution_input(execution.execution_id)
         entrypoint = source.entrypoint if source is not None else None
         payload: dict[str, Any] = {
-            "event_sequence": event.sequence,
+            "event_sequence": event.execution_sequence,
             "event_cursor": {
                 "execution_id": execution.execution_id,
-                "next_sequence": event.sequence + 1,
+                "next_sequence": event.execution_sequence + 1,
                 "snapshot_status_version": execution.status_version,
             },
             "event": {
-                "sequence": event.sequence,
+                "sequence": event.execution_sequence,
                 "kind": event.kind,
                 "execution_version": event.execution_version,
                 "command_id": event.command_id,

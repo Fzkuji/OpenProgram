@@ -8,6 +8,7 @@ import time
 import pytest
 
 from openprogram.execution import AttemptStore, CapabilitySet, ExecutionStore
+from openprogram.execution._schema import SCHEMA_VERSION
 from openprogram.execution.model import CommandKind, CommandStatus, ExecutionStatus
 
 
@@ -87,7 +88,7 @@ def test_v7_migration_backfills_agent_finish_slots_idempotently(tmp_path):
         rows = connection.execute(
             "SELECT execution_id FROM execution_finish_repair_slots"
         ).fetchall()
-    assert version == 10
+    assert version == SCHEMA_VERSION
     assert rows == [(execution.execution_id,)]
 
     reopened = ExecutionStore(store.path)
