@@ -67,6 +67,7 @@ _AGENT_TURN_INPUT_KEYS = frozenset({
 })
 _STATE_REF_PREFIX = "execstate://sha256/"
 _STATE_HASH_LENGTH = 64
+MAX_AGENT_STATE_BLOB_BYTES = 1024 * 1024
 
 
 def _validate_agent_turn_payload(payload: Mapping[str, Any]) -> None:
@@ -462,6 +463,48 @@ class ExecutionStore:
             "schema_version": int(row["schema_version"]), "payload": payload,
         }
 
+    def gc_state_blobs(self, execution_id: str) -> int:
+        """Remove only terminal, unreferenced state owned by this execution."""
+        with self._transaction() as connection:
+            execution = self._require_execution(connection, execution_id)
+            if execution.status not in TERMINAL_EXECUTION_STATUSES:
+                raise ExecutionConflict("state_gc_not_terminal", "state blobs remain while execution is nonterminal")
+            referenced: set[str] = set()
+            for row in connection.execute(
+                "SELECT state_refs_json, effect_receipts_json FROM checkpoints WHERE execution_id = ?",
+                (execution_id,),
+            ):
+                for raw in (row["state_refs_json"], row["effect_receipts_json"]):
+                    self._collect_state_refs(json.loads(raw), referenced)
+            for row in connection.execute(
+                "SELECT receipt_json FROM effects WHERE execution_id = ?", (execution_id,),
+            ):
+                self._collect_state_refs(json.loads(row["receipt_json"]), referenced)
+            if referenced:
+                placeholders = ",".join("?" for _ in referenced)
+                result = connection.execute(
+                    f"DELETE FROM execution_state_blobs WHERE execution_id = ? AND ref NOT IN ({placeholders})",
+                    (execution_id, *sorted(referenced)),
+                )
+            else:
+                result = connection.execute(
+                    "DELETE FROM execution_state_blobs WHERE execution_id = ?", (execution_id,)
+                )
+            return int(result.rowcount)
+
+    @classmethod
+    def _collect_state_refs(cls, value: Any, refs: set[str]) -> None:
+        if isinstance(value, Mapping):
+            ref = value.get("ref")
+            if isinstance(ref, str) and ref.startswith(_STATE_REF_PREFIX):
+                cls._validate_state_ref(ref)
+                refs.add(ref)
+            for item in value.values():
+                cls._collect_state_refs(item, refs)
+        elif isinstance(value, list):
+            for item in value:
+                cls._collect_state_refs(item, refs)
+
     @staticmethod
     def _validate_state_ref(ref: str) -> None:
         if (
@@ -487,6 +530,8 @@ class ExecutionStore:
             payload = payload.encode("utf-8")
         if not isinstance(payload, bytes):
             raise ExecutionConflict("state_ref_invalid", "state blob payload must be bytes or UTF-8 text")
+        if len(payload) > MAX_AGENT_STATE_BLOB_BYTES:
+            raise ExecutionConflict("state_blob_too_large", "Agent state blob exceeds the size limit")
         if not media_type or not isinstance(media_type, str) or type(schema_version) is not int or schema_version < 1:
             raise ExecutionConflict("state_ref_invalid", "state blob media type and schema version are required")
         self._require_execution(connection, execution_id)
