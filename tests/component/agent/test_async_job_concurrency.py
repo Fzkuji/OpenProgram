@@ -450,7 +450,10 @@ def test_idle_activity_is_tracked_per_same_session_job(
             limit_resolver=lambda _sid, _job: resolved,
         ),
         monotonic_clock=clock,
-        budget_poll_seconds=0.01,
+        # This test drives the monitor explicitly below. Keep the background
+        # loop parked so it cannot claim the expiry between the fake-clock
+        # advance and the deterministic tick.
+        budget_poll_seconds=60,
     )
     try:
         active = runner.spawn_job(
