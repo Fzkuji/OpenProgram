@@ -37,6 +37,7 @@ def test_public_envelope_rejects_spoofed_scope_and_invalid_branch_payloads() -> 
             "execution_id": "exec-1",
             "expected_version": 7,
             "session_id": "forged",
+            "project_id": "forged-project",
             "payload": {"message": "x"},
         },
         "steer",
