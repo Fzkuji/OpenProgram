@@ -938,6 +938,7 @@ class CheckpointStore:
             ] if committed else [],
             "conflicts": intent.get("conflicts", []),
             "unavailable": intent.get("unavailable", []),
+            "error_code": intent.get("error_code"),
             "error": intent.get("error"),
         }
 
@@ -1111,6 +1112,7 @@ class CheckpointStore:
             if not isinstance(intent, dict) or intent.get("status") not in {"prepared", "applying"}:
                 continue
             intent["status"] = "recovery_required"
+            intent["error_code"] = "RECOVERY_REQUIRED"
             intent["error"] = "incomplete history intent requires explicit recovery"
             manifest.save(path, intent)
             results.append(self._intent_result(intent))

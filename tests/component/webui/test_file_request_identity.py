@@ -338,6 +338,7 @@ def test_turn_operation_status_reads_history_intent_by_turn_and_key(tmp_path, mo
 
 
 def test_history_intent_crash_is_terminalized_on_restart(tmp_path, monkeypatch):
+    from openprogram.store.session import session_store
     from openprogram.store.snapshot.checkpoint import manifest
     from openprogram.store.snapshot.checkpoint import store as checkpoint_store
     from openprogram.store.snapshot.checkpoint import CheckpointStore
@@ -367,7 +368,24 @@ def test_history_intent_crash_is_terminalized_on_restart(tmp_path, monkeypatch):
     recovered = journal.recover_history_intents()
     assert len(recovered) == 1
     assert recovered[0]["status"] == "recovery_required"
-    assert journal.read_history_intent("turn-1", "revert", "crash-key")["status"] == "recovery_required"
+    recovered_intent = journal.read_history_intent("turn-1", "revert", "crash-key")
+    assert recovered_intent["status"] == "recovery_required"
+    assert recovered_intent["error_code"] == "RECOVERY_REQUIRED"
+
+    class FakeStore:
+        def _session_dir(self, session_id):
+            assert session_id == "session-a"
+            return session_dir
+
+    monkeypatch.setattr(session_store, "default_store", lambda: FakeStore())
+    status = run(turn_files.handle_turn_operation_status, {
+        "session_id": "session-a", "msg_id": "turn-1",
+        "operation_action": "revert_turn", "idempotency_key": "crash-key",
+        "operation_id": recovered_intent["transaction_id"],
+        "request_id": str(uuid.uuid4()),
+    })["data"]
+    assert status["status"] == "recovery_required"
+    assert status["error_code"] == "RECOVERY_REQUIRED"
 
 
 def test_file_operation_compaction_has_explicit_safe_retention(tmp_path):
