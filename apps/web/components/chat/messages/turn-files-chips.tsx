@@ -10,6 +10,7 @@ import {
 import { useTranslation } from "@/lib/i18n";
 import {
   idempotencyKeyFor,
+  MutationRegistryCapacityError,
   wsMutationRequest,
   wsRequest,
 } from "@/lib/net/ws-request";
@@ -166,7 +167,16 @@ export function TurnFilesChips({
       ? "revert_turn_result"
       : "reapply_turn_result";
     const operationPayload = { session_id: sessionId, msg_id: assistantMsgId };
-    const operationKey = idempotencyKeyFor(`${action}:${sessionId}`, operationPayload);
+    let operationKey: string;
+    try {
+      operationKey = idempotencyKeyFor(`${action}:${sessionId}`, operationPayload);
+    } catch (error) {
+      setBusy(null);
+      if (error instanceof MutationRegistryCapacityError) {
+        showToast(text("Too many file operations are still pending.", "仍有太多文件操作未完成。"));
+      }
+      return;
+    }
     void wsMutationRequest<{ session_id?: string; msg_id?: string; status?: string; errors?: string[]; error?: string; error_code?: string; request_id?: string }>(
       operationKey,
       (signal) => wsRequest(

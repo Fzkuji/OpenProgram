@@ -57,6 +57,8 @@ const { setSocket } = await import("../lib/runtime-bridge/state.ts");
 const {
   idempotencyKeyFor,
   isWsRequestPending,
+  mutationRegistryStats,
+  MutationRegistryCapacityError,
   wsMutationRequest,
   wsRequest,
 } = await import("../lib/net/ws-request.ts");
@@ -167,4 +169,58 @@ test("mutation retries keep one key until a terminal receipt", async () => {
   assert.equal(result?.operation_id, "op-1");
   assert.equal(attempts, 2);
   assert.notEqual(idempotencyKeyFor("project_file_write", payload), key);
+});
+
+test("large payload summaries stay bounded and in-progress keys remain stable", async () => {
+  const content = "x".repeat(5 * 1024 * 1024);
+  const before = mutationRegistryStats();
+  const payloads = Array.from({ length: 4 }, (_, index) => ({
+    project_id: "project-large",
+    path: `notes-${index}.txt`,
+    content,
+  }));
+  for (const payload of payloads) {
+    const key = idempotencyKeyFor("project_file_write", payload);
+    assert.equal(idempotencyKeyFor("project_file_write", payload), key);
+    await wsMutationRequest(key, async () => ({
+      status: "in_progress",
+      operation_id: `op-${key}`,
+    }), { maxAttempts: 1 });
+    assert.equal(idempotencyKeyFor("project_file_write", payload), key);
+  }
+  const after = mutationRegistryStats();
+  assert.ok(after.entries - before.entries <= 4);
+  assert.ok(after.bytes - before.bytes < 64 * 1024);
+  assert.equal(after.pending, 0);
+});
+
+test("registry refuses unfinished operations at capacity without growing", async () => {
+  const before = mutationRegistryStats();
+  const keys = [];
+  let refused = false;
+  for (let index = 0; index < 256; index += 1) {
+    try {
+      const key = idempotencyKeyFor("project_file_write", {
+        project_id: "project-capacity",
+        path: `file-${index}.txt`,
+        content: "pending",
+      });
+      keys.push(key);
+      await wsMutationRequest(key, async () => ({
+        status: "in_progress",
+        operation_id: `op-${key}`,
+      }), { maxAttempts: 1 });
+    } catch (error) {
+      assert.ok(error instanceof MutationRegistryCapacityError);
+      refused = true;
+      break;
+    }
+  }
+  assert.equal(refused, true);
+  const after = mutationRegistryStats();
+  assert.ok(after.entries <= 128);
+  assert.ok(after.bytes <= 64 * 1024);
+  assert.equal(after.pending, 0);
+  assert.ok(after.entries >= before.entries);
+  assert.ok(keys.length + before.entries <= 128);
 });

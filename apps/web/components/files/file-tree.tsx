@@ -32,6 +32,7 @@ import {
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   idempotencyKeyFor,
+  MutationRegistryCapacityError,
   wsMutationRequest,
   wsRequest,
 } from "@/lib/net/ws-request";
@@ -499,7 +500,15 @@ export function FileTree({
   ): Promise<boolean> {
     const generation = queryGeneration.current;
     const operationPayload = { project_id: projectId, ...payload };
-    const operationKey = idempotencyKeyFor(`project_file_${op}`, operationPayload);
+    let operationKey: string;
+    try {
+      operationKey = idempotencyKeyFor(`project_file_${op}`, operationPayload);
+    } catch (error) {
+      if (error instanceof MutationRegistryCapacityError) {
+        window.alert(text("Too many file operations are still pending.", "仍有太多文件操作未完成。"));
+      }
+      return false;
+    }
     const operationController = new AbortController();
     queryControllers.current.add(operationController);
     const data = await wsMutationRequest<{

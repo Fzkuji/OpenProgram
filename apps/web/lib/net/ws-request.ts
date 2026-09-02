@@ -9,39 +9,118 @@
 import { getSocket } from "@/lib/runtime-bridge/state";
 
 const pendingRequestIds = new Map<string, string>();
-const mutationKeys = new Map<string, { key: string; touchedAt: number }>();
+const mutationKeys = new Map<string, {
+  key: string;
+  touchedAt: number;
+  bytes: number;
+  terminal: boolean;
+}>();
 const pendingMutations = new Map<string, {
   promise: Promise<unknown>;
   operationId?: string;
 }>();
 const MAX_MUTATION_KEYS = 128;
+const MAX_MUTATION_REGISTRY_BYTES = 64 * 1024;
 const MAX_MUTATION_ATTEMPTS = 3;
+const MAX_MUTATION_VALUE_SAMPLE = 4096;
 
-function stableMutationValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stableMutationValue);
+export class MutationRegistryCapacityError extends Error {
+  constructor() {
+    super("file mutation registry is full; retry the existing operation");
+    this.name = "MutationRegistryCapacityError";
+  }
+}
+
+function hashText(value: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function boundedMutationValue(value: unknown, depth = 0): unknown {
+  if (typeof value === "string") {
+    if (value.length <= MAX_MUTATION_VALUE_SAMPLE) return value;
+    return {
+      type: "string",
+      length: value.length,
+      hash: hashText(value),
+      head: value.slice(0, 64),
+      tail: value.slice(-64),
+    };
+  }
+  if (depth >= 4) return typeof value;
+  if (Array.isArray(value)) {
+    const items = value.length <= 64
+      ? value
+      : [...value.slice(0, 32), ...value.slice(-32)];
+    return {
+      type: "array",
+      length: value.length,
+      items: items.map((item) => boundedMutationValue(item, depth + 1)),
+    };
+  }
   if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, item]) => [key, stableMutationValue(item)]),
-    );
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right));
+    const selected = entries.length <= 64
+      ? entries
+      : [...entries.slice(0, 32), ...entries.slice(-32)];
+    return {
+      type: "object",
+      keys: entries.length,
+      values: Object.fromEntries(
+        selected
+          .map(([key, item]) => [key, boundedMutationValue(item, depth + 1)]),
+      ),
+    };
   }
   return value;
 }
 
 function mutationIdentity(scope: string, payload: Record<string, unknown>): string {
-  return `${scope}:${JSON.stringify(stableMutationValue(payload))}`;
+  const summary = JSON.stringify(boundedMutationValue(payload));
+  return `${scope.slice(0, 128)}:${summary.length}:${hashText(summary)}`;
+}
+
+function registryBytes(identity: string, key: string): number {
+  return identity.length + key.length;
+}
+
+function currentRegistryBytes(): number {
+  let bytes = 0;
+  for (const entry of mutationKeys.values()) bytes += entry.bytes;
+  return bytes;
 }
 
 function pruneMutationKeys(): void {
-  if (mutationKeys.size < MAX_MUTATION_KEYS) return;
+  const bytes = currentRegistryBytes();
+  if (mutationKeys.size < MAX_MUTATION_KEYS && bytes < MAX_MUTATION_REGISTRY_BYTES) return;
   const candidates = [...mutationKeys.entries()]
-    .filter(([, entry]) => !pendingMutations.has(entry.key))
+    .filter(([, entry]) => entry.terminal && !pendingMutations.has(entry.key))
     .sort(([, left], [, right]) => left.touchedAt - right.touchedAt);
-  while (mutationKeys.size >= MAX_MUTATION_KEYS && candidates.length) {
+  while (
+    (mutationKeys.size >= MAX_MUTATION_KEYS
+      || currentRegistryBytes() >= MAX_MUTATION_REGISTRY_BYTES)
+    && candidates.length
+  ) {
     const [identity] = candidates.shift()!;
     mutationKeys.delete(identity);
   }
+}
+
+export function mutationRegistryStats(): {
+  entries: number;
+  bytes: number;
+  pending: number;
+} {
+  return {
+    entries: mutationKeys.size,
+    bytes: currentRegistryBytes(),
+    pending: pendingMutations.size,
+  };
 }
 
 /** Return the stable idempotency key for one logical UI operation. */
@@ -56,8 +135,18 @@ export function idempotencyKeyFor(
     return existing.key;
   }
   pruneMutationKeys();
+  const keyBytes = registryBytes(identity, "00000000-0000-0000-0000-000000000000");
+  if (mutationKeys.size >= MAX_MUTATION_KEYS
+    || currentRegistryBytes() + keyBytes > MAX_MUTATION_REGISTRY_BYTES) {
+    throw new MutationRegistryCapacityError();
+  }
   const key = requestId();
-  mutationKeys.set(identity, { key, touchedAt: Date.now() });
+  mutationKeys.set(identity, {
+    key,
+    touchedAt: Date.now(),
+    bytes: registryBytes(identity, key),
+    terminal: false,
+  });
   return key;
 }
 
@@ -113,7 +202,13 @@ export function wsMutationRequest<T>(
       }
       if (mutationIsTerminal(result) || options.signal?.aborted) break;
     }
-    if (mutationIsTerminal(result)) forgetMutationKey(key);
+    const terminal = mutationIsTerminal(result);
+    if (terminal) forgetMutationKey(key);
+    else {
+      for (const entry of mutationKeys.values()) {
+        if (entry.key === key) entry.terminal = false;
+      }
+    }
     return result;
   })();
   pendingMutations.set(key, { promise: run });

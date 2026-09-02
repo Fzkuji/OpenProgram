@@ -21,7 +21,11 @@ import { useEffect, useRef, useState } from "react";
 import { Download } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
-import { idempotencyKeyFor, wsMutationRequest } from "@/lib/net/ws-request";
+import {
+  idempotencyKeyFor,
+  MutationRegistryCapacityError,
+  wsMutationRequest,
+} from "@/lib/net/ws-request";
 import { fileTabId, useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   type FileReadResult,
@@ -194,7 +198,17 @@ export function FileTabPane({
       content: buf.draft,
       expected_mtime: buf.baseMtime,
     };
-    const operationKey = idempotencyKeyFor("project_file_write", operationPayload);
+    let operationKey: string;
+    try {
+      operationKey = idempotencyKeyFor("project_file_write", operationPayload);
+    } catch (error) {
+      setSaving(false);
+      setSaveFailed(true);
+      if (error instanceof MutationRegistryCapacityError) {
+        window.alert(text("Too many file operations are still pending.", "仍有太多文件操作未完成。"));
+      }
+      return;
+    }
     const res = await wsMutationRequest<WriteResult>(
       operationKey,
       (signal) => filesWsRequest<WriteResult>(
