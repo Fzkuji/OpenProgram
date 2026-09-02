@@ -239,22 +239,41 @@ def _public_execution_snapshot(execution) -> tuple[dict, dict]:
         view = runner.get_job_resource_view(execution_data["execution_id"]) if runner else None
         if view is not None:
             dto = view.to_dict()
-            execution_data.update({
-                "job_id": dto["job_id"],
-                "resource": dto["resource"],
-                "capabilities": dto["capabilities"],
-                "checkpoint_head_id": dto["checkpoint_head_id"],
-                "event_sequence": cursor["next_sequence"] - 1,
-            })
+            execution_data = dict(dto["execution"])
             cursor = dict(dto["event_cursor"])
-            cursor["snapshot_status_version"] = execution_data.get("status_version")
     except Exception:
         pass
     return execution_data, cursor
 
 
 async def _send_command_update(ws, command, execution) -> None:
+    # Job activation is asynchronous and may finish between command acceptance
+    # and transport serialization.  Refresh the command and execution together
+    # until the command status is stable, so a response never combines an old
+    # accepted command with a newer terminal resource snapshot.
     command_data = command.to_dict() if hasattr(command, "to_dict") else dict(command)
+    execution_data, cursor = _public_execution_snapshot(execution)
+    for _ in range(3):
+        try:
+            from openprogram.execution import default_store
+
+            store = default_store()
+            latest_command = store.get_command(command_data.get("command_id", ""))
+            latest_execution = store.get_execution(command_data.get("execution_id", ""))
+            if latest_command is not None:
+                command = latest_command
+                command_data = latest_command.to_dict()
+            if latest_execution is not None:
+                execution = latest_execution
+        except Exception:
+            break
+        execution_data, cursor = _public_execution_snapshot(execution)
+        current = store.get_command(command_data.get("command_id", ""))
+        if current is None or current.to_dict() == command_data:
+            break
+        command = current
+    else:
+        execution_data, cursor = _public_execution_snapshot(execution)
     if command_data.get("kind") == "execution.step":
         checkpoint_id = getattr(execution, "checkpoint_head_id", None)
         if checkpoint_id:
@@ -269,7 +288,6 @@ async def _send_command_update(ws, command, execution) -> None:
                 command_data["managed_action_count"] = 0
         else:
             command_data["managed_action_count"] = 0
-    execution_data, cursor = _public_execution_snapshot(execution)
     await ws.send_text(json.dumps({
         "type": "execution.command.updated", "command": command_data,
         "execution": execution_data, "event_cursor": cursor,

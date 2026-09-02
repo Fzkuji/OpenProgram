@@ -1819,6 +1819,19 @@ class JobRunner:
                 execution_id=job_id, states=("pending", "claimed"),
             )
         )
+        from openprogram.execution.model import CommandKind, CommandStatus
+
+        pending_resume = next(
+            (
+                command
+                for command in self._execution_store.list_commands(
+                    job_id,
+                    statuses=(CommandStatus.ACCEPTED, CommandStatus.APPLYING),
+                )
+                if command.kind in {CommandKind.CONTINUE, CommandKind.STEP}
+            ),
+            None,
+        )
         queue_wait = None
         if row is not None and row["state"] == "queued":
             queue_state = row["queue_state"] or "queued"
@@ -1835,9 +1848,23 @@ class JobRunner:
                 "since": execution.updated_at,
                 "position": view.capacity.get("queue_position"),
             }
+        elif pending_resume is not None and execution.status.value in {"paused", "queued"}:
+            # The execution command and resource admission live in separate
+            # durable stores.  If reconciliation moves between the two reads,
+            # the accepted command is the stable proof that this execution is
+            # still waiting for claim/activation rather than simply released.
+            queue_wait = {
+                "state": "paused_waiting_claim",
+                "reason_code": execution.reason_code,
+                "since": execution.updated_at,
+                "position": view.capacity.get("queue_position"),
+            }
+        resource_state = view.resource_state
+        if resource_state == "released" and queue_wait is not None:
+            resource_state = queue_wait["state"]
         resource = {
             "admission_id": row["admission_id"] if row is not None else job.admission_id,
-            "resource_state": view.resource_state,
+            "resource_state": resource_state,
             "queue_wait": queue_wait,
             "resource_lease_generation": row["lease_generation"] if row is not None else None,
             "owner_instance_id": row["owner_instance_id"] if row is not None else None,
