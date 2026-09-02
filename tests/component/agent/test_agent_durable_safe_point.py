@@ -9,7 +9,9 @@ reach the control service directly from a transport test.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import sqlite3
 import threading
 from types import SimpleNamespace
 
@@ -214,6 +216,207 @@ def _run_action(action: str, ws: FakeWS, envelope: dict) -> None:
 
     handler = runtime.ACTIONS[action]
     asyncio.run(handler(ws, envelope))
+
+
+def _agent_execution(
+    tmp_path, *, execution_id: str = "exec-state-1", store: ExecutionStore | None = None
+):
+    """Create a canonical Agent execution and one active owner attempt."""
+
+    store = store or ExecutionStore(tmp_path / "agent-state.sqlite3")
+    revision = store.create_revision(
+        revision_id=f"revision-{execution_id}", manifest={"entrypoint": "agent"}
+    )
+    execution = store.create_execution(
+        execution_id=execution_id,
+        run_id=f"run-{execution_id}",
+        session_id=f"session-{execution_id}",
+        revision_id=revision.revision_id,
+        capabilities=CapabilitySet(
+            pause=True,
+            step=True,
+            safe_point_kinds=(
+                "agent.provider.decision.after",
+                "agent.tool.action.after",
+            ),
+            state_schema_version=1,
+        ),
+    )
+    attempts = AttemptStore(store)
+    leased, reserved = attempts.lease(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        owner_id="agent-state-owner",
+        ttl_seconds=30,
+        attempt_id=f"attempt-{execution_id}",
+    )
+    _active, running = attempts.activate(
+        leased.attempt_id,
+        generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    return store, attempts, running
+
+
+def test_agent_state_blob_enforces_caps_and_content_addressed_metadata(tmp_path):
+    """Agent state refs must be bounded, canonical, and self-describing."""
+
+    store, _attempts, execution = _agent_execution(tmp_path)
+    from openprogram.execution.state_blobs import (
+        MAX_AGENT_STATE_BLOB_BYTES,
+        ExecutionStateBlobStore,
+        StateBlobConflict,
+    )
+
+    blobs = ExecutionStateBlobStore(store)
+    payload = b'{"answer":"persisted"}'
+    record = blobs.put(
+        execution_id=execution.execution_id,
+        attempt_id=execution.current_attempt_id,
+        name="assistant-message",
+        payload=payload,
+        media_type="application/json",
+        schema_version=1,
+    )
+    expected_digest = hashlib.sha256(payload).hexdigest()
+    assert record.ref == f"execstate://sha256/{expected_digest}"
+    assert record.sha256 == expected_digest
+    assert record.byte_length == len(payload)
+    assert record.media_type == "application/json"
+    assert record.schema_version == 1
+
+    with pytest.raises(StateBlobConflict) as too_large:
+        blobs.put(
+            execution_id=execution.execution_id,
+            attempt_id=execution.current_attempt_id,
+            name="oversized",
+            payload=b"x" * (MAX_AGENT_STATE_BLOB_BYTES + 1),
+            media_type="application/octet-stream",
+            schema_version=1,
+        )
+    assert too_large.value.code == "state_blob_too_large"
+
+    with pytest.raises(StateBlobConflict) as invalid_ref:
+        blobs.attach_ref(
+            execution_id=execution.execution_id,
+            ref="execstate://sha256/not-a-lowercase-64-hex-digest",
+            name="bad-ref",
+        )
+    assert invalid_ref.value.code == "state_ref_invalid"
+
+
+def test_agent_state_blob_ownership_and_gc_preserve_published_references(tmp_path):
+    """GC must use durable references, never an in-memory registry."""
+
+    store, _attempts, first = _agent_execution(tmp_path, execution_id="exec-owner-1")
+    _other_attempts, _ignored, second = _agent_execution(
+        tmp_path, execution_id="exec-owner-2", store=store
+    )
+    from openprogram.execution.state_blobs import ExecutionStateBlobStore
+
+    blobs = ExecutionStateBlobStore(store)
+    payload = b'{"shared":true}'
+    first_blob = blobs.put(
+        execution_id=first.execution_id,
+        attempt_id=first.current_attempt_id,
+        name="shared",
+        payload=payload,
+        media_type="application/json",
+        schema_version=1,
+    )
+    second_blob = blobs.put(
+        execution_id=second.execution_id,
+        attempt_id=second.current_attempt_id,
+        name="shared",
+        payload=payload,
+        media_type="application/json",
+        schema_version=1,
+    )
+    assert second_blob.ref == first_blob.ref
+    assert {
+        first.execution_id,
+        second.execution_id,
+    } == blobs.owners(first_blob.ref)
+
+    blobs.attach_ref(
+        execution_id=first.execution_id,
+        ref=first_blob.ref,
+        name="checkpoint.state_refs.shared",
+        reference_kind="checkpoint",
+        reference_id="ckpt-owner-1",
+    )
+    blobs.gc(execution_id=first.execution_id)
+    assert blobs.get(first_blob.ref, execution_id=first.execution_id) is not None
+
+    blobs.detach_ref(
+        execution_id=first.execution_id,
+        ref=first_blob.ref,
+        reference_kind="checkpoint",
+        reference_id="ckpt-owner-1",
+    )
+    blobs.gc(execution_id=first.execution_id)
+    assert blobs.get(first_blob.ref, execution_id=first.execution_id) is None
+    assert blobs.get(second_blob.ref, execution_id=second.execution_id) is not None
+
+
+@pytest.mark.parametrize(
+    ("safe_point_kind", "action_id"),
+    [
+        ("agent.provider.decision.after", "provider-action-1"),
+        ("agent.tool.action.after", "tool-action-1"),
+    ],
+)
+def test_agent_terminal_receipt_blob_checkpoint_frontier_roll_back_atomically(
+    tmp_path, safe_point_kind, action_id
+):
+    """A fault after receipt persistence must roll back the whole safe point."""
+
+    store, _attempts, execution = _agent_execution(tmp_path)
+    control = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    from openprogram.execution.effects import EffectClassification
+    from openprogram.execution.safe_points import AgentSafePointConflict
+
+    effect = control.effects.register(
+        effect_id=f"effect-{action_id}",
+        execution_id=execution.execution_id,
+        attempt_id=execution.current_attempt_id,
+        action_id=action_id,
+        classification=EffectClassification.IDEMPOTENT,
+        idempotency_key=f"{execution.execution_id}:{action_id}",
+        metadata={"kind": safe_point_kind},
+    )
+    control.effects.mark_dispatched(effect.effect_id, expected_status=effect.status)
+    before = store.get_execution(execution.execution_id)
+    assert before is not None
+    before_events = store.list_events(execution.execution_id)
+
+    with pytest.raises(AgentSafePointConflict) as injected:
+        control.commit_agent_safe_point(
+            execution_id=execution.execution_id,
+            attempt_id=execution.current_attempt_id,
+            generation=execution.owner_lease["generation"],
+            expected_version=before.status_version,
+            safe_point_kind=safe_point_kind,
+            frontier=({"step_id": action_id, "phase": "after_provider" if "provider" in safe_point_kind else "after_tool"},),
+            state_refs={},
+            effect_id=effect.effect_id,
+            terminal_receipt={"provider_request_id": f"request-{action_id}"},
+            receipt_blob=b'{"receipt":"terminal"}',
+            fault_at="after_receipt_blob",
+        )
+    assert injected.value.code == "injected_failure"
+
+    after = store.get_execution(execution.execution_id)
+    assert after is not None
+    assert after.status_version == before.status_version
+    assert after.checkpoint_head_id is None
+    assert control.effects.get(effect.effect_id).status.value == "dispatched"
+    assert store.list_events(execution.execution_id) == before_events
+    with sqlite3.connect(store.path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM checkpoints WHERE execution_id = ?",
+            (execution.execution_id,),
+        ).fetchone()[0] == 0
 
 
 def test_chat_ack_execution_id_drives_provider_pause_and_checkpoint(public_chat):
