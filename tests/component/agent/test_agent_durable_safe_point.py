@@ -225,7 +225,8 @@ def _agent_execution(
 
     store = store or ExecutionStore(tmp_path / "agent-state.sqlite3")
     revision = store.create_revision(
-        revision_id=f"revision-{execution_id}", manifest={"entrypoint": "agent"}
+        revision_id=f"revision-{execution_id}",
+        manifest={"entrypoint": "agent", "execution_id": execution_id},
     )
     execution = store.create_execution(
         execution_id=execution_id,
@@ -250,18 +251,18 @@ def _agent_execution(
         ttl_seconds=30,
         attempt_id=f"attempt-{execution_id}",
     )
-    _active, running = attempts.activate(
+    active, running = attempts.activate(
         leased.attempt_id,
         generation=leased.generation,
         expected_execution_version=reserved.status_version,
     )
-    return store, attempts, running
+    return store, attempts, active, running
 
 
 def test_agent_state_blob_enforces_caps_and_content_addressed_metadata(tmp_path):
     """Agent state refs must be bounded, canonical, and self-describing."""
 
-    store, _attempts, execution = _agent_execution(tmp_path)
+    store, _attempts, _active, execution = _agent_execution(tmp_path)
     from openprogram.execution.state_blobs import (
         MAX_AGENT_STATE_BLOB_BYTES,
         ExecutionStateBlobStore,
@@ -308,8 +309,8 @@ def test_agent_state_blob_enforces_caps_and_content_addressed_metadata(tmp_path)
 def test_agent_state_blob_ownership_and_gc_preserve_published_references(tmp_path):
     """GC must use durable references, never an in-memory registry."""
 
-    store, _attempts, first = _agent_execution(tmp_path, execution_id="exec-owner-1")
-    _other_attempts, _ignored, second = _agent_execution(
+    store, _attempts, _active, first = _agent_execution(tmp_path, execution_id="exec-owner-1")
+    _other_attempts, _ignored, _other_active, second = _agent_execution(
         tmp_path, execution_id="exec-owner-2", store=store
     )
     from openprogram.execution.state_blobs import ExecutionStateBlobStore
@@ -355,6 +356,17 @@ def test_agent_state_blob_ownership_and_gc_preserve_published_references(tmp_pat
         reference_id="ckpt-owner-1",
     )
     blobs.gc(execution_id=first.execution_id)
+    assert blobs.get(first_blob.ref, execution_id=first.execution_id) is not None
+    control = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    finished = control.finish_attempt(
+        attempt_id=first.current_attempt_id,
+        generation=first.owner_lease["generation"],
+        expected_execution_version=first.status_version,
+        target=ExecutionStatus.COMPLETED,
+        outcome="completed",
+    )
+    assert finished.execution.status is ExecutionStatus.COMPLETED
+    blobs.gc(execution_id=first.execution_id)
     assert blobs.get(first_blob.ref, execution_id=first.execution_id) is None
     assert blobs.get(second_blob.ref, execution_id=second.execution_id) is not None
 
@@ -371,7 +383,7 @@ def test_agent_terminal_receipt_blob_checkpoint_frontier_roll_back_atomically(
 ):
     """A fault after receipt persistence must roll back the whole safe point."""
 
-    store, _attempts, execution = _agent_execution(tmp_path)
+    store, _attempts, _active, execution = _agent_execution(tmp_path)
     control = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
     from openprogram.execution.effects import EffectClassification
     from openprogram.execution.safe_points import AgentSafePointConflict
@@ -389,6 +401,11 @@ def test_agent_terminal_receipt_blob_checkpoint_frontier_roll_back_atomically(
     before = store.get_execution(execution.execution_id)
     assert before is not None
     before_events = store.list_events(execution.execution_id)
+    terminal_receipt = (
+        {"provider_request_id": f"request-{action_id}"}
+        if "provider" in safe_point_kind
+        else {"tool_invocation_id": f"invocation-{action_id}", "result": "ok"}
+    )
 
     with pytest.raises(AgentSafePointConflict) as injected:
         control.commit_agent_safe_point(
@@ -400,7 +417,7 @@ def test_agent_terminal_receipt_blob_checkpoint_frontier_roll_back_atomically(
             frontier=({"step_id": action_id, "phase": "after_provider" if "provider" in safe_point_kind else "after_tool"},),
             state_refs={},
             effect_id=effect.effect_id,
-            terminal_receipt={"provider_request_id": f"request-{action_id}"},
+            terminal_receipt=terminal_receipt,
             receipt_blob=b'{"receipt":"terminal"}',
             fault_at="after_receipt_blob",
         )
@@ -412,11 +429,313 @@ def test_agent_terminal_receipt_blob_checkpoint_frontier_roll_back_atomically(
     assert after.checkpoint_head_id is None
     assert control.effects.get(effect.effect_id).status.value == "dispatched"
     assert store.list_events(execution.execution_id) == before_events
+    assert not control.state_blobs.list(execution.execution_id)
     with sqlite3.connect(store.path) as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM checkpoints WHERE execution_id = ?",
             (execution.execution_id,),
         ).fetchone()[0] == 0
+
+
+def _admitted_agent_execution(tmp_path, *, execution_id: str = "exec-restart-1"):
+    store = ExecutionStore(tmp_path / "admitted-agent.sqlite3")
+    revision = store.create_revision(
+        revision_id=f"revision-{execution_id}", manifest={"entrypoint": "agent"}
+    )
+    execution = store.admit_execution(
+        execution_id=execution_id,
+        run_id=f"run-{execution_id}",
+        session_id=f"session-{execution_id}",
+        revision_id=revision.revision_id,
+        input_ref=f"input:{execution_id}",
+        input_hash=f"hash:{execution_id}",
+        entrypoint="openprogram.agent.production_driver:AgentProductionDriver",
+        trusted_actor={"subject": "agent-owner"},
+        config_snapshot_ref=f"config:{execution_id}",
+        user_message_id=f"user:{execution_id}",
+        capabilities=CapabilitySet(
+            pause=True,
+            step=True,
+            safe_point_kinds=(
+                "agent.provider.decision.after",
+                "agent.tool.action.after",
+            ),
+            state_schema_version=1,
+        ),
+        agent_turn_payload={
+            "version": 1,
+            "kind": "chat",
+            "request": {
+                "user_text": "resume exactly once",
+                "agent_id": "main",
+                "source": "component",
+            },
+        },
+    )
+    attempts = AttemptStore(store)
+    leased, reserved = attempts.lease(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        owner_id=f"owner-{execution_id}",
+        ttl_seconds=30,
+    )
+    active, running = attempts.activate(
+        leased.attempt_id,
+        generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    return store, attempts, active, running
+
+
+@pytest.mark.parametrize(
+    ("safe_point", "provider_calls", "tool_calls"),
+    [
+        ("after_provider", 1, 0),
+        ("after_tool", 1, 1),
+    ],
+)
+def test_real_restart_after_provider_or_tool_does_not_repeat_user_finalize_or_dag(
+    tmp_path, safe_point, provider_calls, tool_calls
+):
+    """Restart resumes from the frontier and does not replay committed work."""
+
+    store, attempts, active, running = _admitted_agent_execution(tmp_path)
+    from openprogram.agent.production_driver import AgentDriverError, AgentProductionDriver
+
+    calls = {"provider": 0, "tool": 0, "user": 0, "placeholder": 0, "finalize": 0, "dag": 0}
+
+    def turn_runner(*, request, cancel_event, on_safe_point):
+        del request, cancel_event
+        on_safe_point(
+            phase=safe_point,
+            provider_call=lambda: calls.__setitem__("provider", calls["provider"] + 1),
+            tool_call=lambda: calls.__setitem__("tool", calls["tool"] + 1),
+            user_message=lambda: calls.__setitem__("user", calls["user"] + 1),
+            placeholder=lambda: calls.__setitem__("placeholder", calls["placeholder"] + 1),
+            finalize=lambda: calls.__setitem__("finalize", calls["finalize"] + 1),
+            dag_write=lambda: calls.__setitem__("dag", calls["dag"] + 1),
+        )
+
+    driver = AgentProductionDriver(store, turn_runner=turn_runner)
+    assert set(driver.capabilities().safe_point_kinds) == {
+        "agent.provider.decision.after",
+        "agent.tool.action.after",
+    }
+    first_binding = asyncio.run(driver.activate(active, None))
+    first = asyncio.run(
+        driver.run_until_safe_point(
+            first_binding,
+            safe_point_kind=f"agent.{safe_point.replace('_', '.')}",
+        )
+    )
+    assert first.checkpoint.safe_point["phase"] == safe_point
+
+    reopened = ExecutionStore(store.path)
+    reopened_control = RuntimeControlService(
+        reopened, AttemptStore(reopened), DriverRegistry()
+    )
+    restarted = AgentProductionDriver(reopened, control_service=reopened_control, turn_runner=turn_runner)
+    continuation = asyncio.run(
+        reopened_control.request_continue(
+            command_id="continue-after-restart",
+            execution_id=running.execution_id,
+            expected_version=first.execution.status_version,
+            actor={"subject": "agent-owner"},
+            driver=restarted,
+        )
+    )
+    assert continuation.delivered is True
+    assert continuation.execution.current_attempt_id != running.attempt_id
+    assert calls == {
+        "provider": provider_calls,
+        "tool": tool_calls,
+        "user": 1,
+        "placeholder": 1,
+        "finalize": 1,
+        "dag": 1,
+    }
+
+
+def test_continue_reopens_store_binds_new_production_driver_with_checkpoint_fence(tmp_path):
+    store, attempts, active, running = _admitted_agent_execution(tmp_path)
+    from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.execution import ActivationInput
+
+    driver = AgentProductionDriver(store, turn_runner=lambda **_: {"ok": True})
+    first_binding = asyncio.run(driver.activate(active, None))
+    checkpoint = asyncio.run(
+        driver.publish_safe_point(
+            first_binding,
+            safe_point_kind="agent.provider.decision.after",
+            frontier=({"step_id": "provider-1", "phase": "after_provider"},),
+        )
+    )
+    reopened = ExecutionStore(store.path)
+    control = RuntimeControlService(reopened, AttemptStore(reopened), DriverRegistry())
+    seen: list[ActivationInput] = []
+    restarted = AgentProductionDriver(
+        reopened,
+        control_service=control,
+        turn_runner=lambda **_: {"ok": True},
+        activation_observer=seen.append,
+    )
+    result = asyncio.run(
+        control.request_continue(
+            command_id="continue-with-fenced-driver",
+            execution_id=running.execution_id,
+            expected_version=checkpoint.execution.status_version,
+            actor={"subject": "agent-owner"},
+            driver=restarted,
+        )
+    )
+    assert result.delivered is True
+    assert seen and seen[0].checkpoint.checkpoint_id == checkpoint.checkpoint.checkpoint_id
+    assert seen[0].checkpoint.execution_id == running.execution_id
+    assert seen[0].checkpoint.created_by_attempt_id == running.attempt_id
+    assert result.execution.owner_lease["generation"] > running.owner_lease["generation"]
+
+    with pytest.raises(AgentDriverError) as stale:
+        asyncio.run(
+            restarted.activate(
+                active,
+                ActivationInput(checkpoint=checkpoint.checkpoint),
+            )
+        )
+    assert getattr(stale.value, "code", None) == "stale_attempt"
+
+
+def test_two_tool_step_duplicate_command_consumes_exactly_one_permit(tmp_path):
+    store, _attempts, _active, paused = _admitted_agent_execution(tmp_path)
+    from openprogram.execution.safe_points import AgentSafePointConflict
+
+    control = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    first = asyncio.run(
+        control.request_step(
+            command_id="step-tool-once",
+            execution_id=paused.execution_id,
+            expected_version=paused.status_version,
+            actor={"subject": "agent-owner"},
+        )
+    )
+    duplicate = asyncio.run(
+        control.request_step(
+            command_id="step-tool-once",
+            execution_id=paused.execution_id,
+            expected_version=paused.status_version,
+            actor={"subject": "agent-owner"},
+        )
+    )
+    assert duplicate.command == first.command
+    assert duplicate.execution.current_attempt_id == first.execution.current_attempt_id
+    with pytest.raises(AgentSafePointConflict) as second_permit:
+        control.consume_agent_step_permit(
+            execution_id=paused.execution_id,
+            command_id="step-tool-once",
+            action_id="tool-action-2",
+        )
+    assert second_permit.value.code == "step_permit_consumed"
+
+
+@pytest.mark.parametrize("wait_kind", ["question", "approval"])
+def test_question_and_approval_wait_stays_pausing_without_checkpoint_or_restart_wait(
+    tmp_path, wait_kind
+):
+    store, attempts, active, running = _admitted_agent_execution(tmp_path)
+    from openprogram.agent.production_driver import AgentProductionDriver
+
+    driver = AgentProductionDriver(store, control_service=RuntimeControlService(store, attempts, DriverRegistry()))
+    binding = asyncio.run(driver.activate(active, None))
+    waiting = asyncio.run(
+        driver.enter_wait(
+            binding,
+            kind=wait_kind,
+            request_id=f"{wait_kind}-request-1",
+        )
+    )
+    assert waiting.execution.status is ExecutionStatus.RUNNING
+    paused = asyncio.run(
+        driver.request_pause_at_wait(
+            binding,
+            command_id=f"pause-{wait_kind}",
+        )
+    )
+    assert paused.status is ExecutionStatus.PAUSING
+    assert paused.checkpoint_head_id is None
+    reopened = ExecutionStore(store.path)
+    assert reopened.get_execution(running.execution_id).checkpoint_head_id is None
+    assert reopened.get_agent_wait(running.execution_id, wait_kind) is None
+
+
+def test_stale_continue_and_step_return_latest_snapshot_without_mutating_newer_state(public_chat):
+    _ws, ack, execution, store, _control = _chat_ack(public_chat)
+    first_ws = FakeWS()
+    _run_action(
+        "execution.pause",
+        first_ws,
+        {
+            "action": "execution.pause",
+            "command_id": "pause-for-stale",
+            "execution_id": ack["data"]["execution_id"],
+            "expected_version": execution.status_version,
+        },
+    )
+    current = store.get_execution(execution.execution_id)
+    assert current is not None
+    events_before = store.list_events(execution.execution_id)
+    stale_ws = FakeWS()
+    _run_action(
+        "execution.step",
+        stale_ws,
+        {
+            "action": "execution.step",
+            "command_id": "step-stale",
+            "execution_id": execution.execution_id,
+            "expected_version": execution.status_version,
+        },
+    )
+    command = _command_payload(_command_frame(stale_ws))
+    assert command["status"] == CommandStatus.REJECTED.value
+    assert command["rejection_code"] == "stale_version"
+    assert command["latest_snapshot"]["status_version"] == current.status_version
+    assert store.get_execution(execution.execution_id) == current
+    assert store.list_events(execution.execution_id) == events_before
+
+
+def test_unsupported_handler_and_missing_activation_are_rejected_without_mutation(public_chat):
+    _ws, ack, execution, store, _control = _chat_ack(public_chat, text="/forced_tool")
+    before = store.get_execution(execution.execution_id)
+    assert before is not None
+    action_ws = FakeWS()
+    _run_action(
+        "execution.pause",
+        action_ws,
+        {
+            "action": "execution.pause",
+            "command_id": "pause-unsupported",
+            "execution_id": ack["data"]["execution_id"],
+            "expected_version": before.status_version,
+        },
+    )
+    rejected = _command_payload(_command_frame(action_ws))
+    assert rejected["status"] == CommandStatus.REJECTED.value
+    assert rejected["rejection_code"] == "unsupported_capability"
+    assert store.get_execution(execution.execution_id) == before
+
+    from openprogram.execution.safe_points import AgentSafePointConflict
+    control = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    with pytest.raises(AgentSafePointConflict) as unavailable:
+        asyncio.run(
+            control.request_continue(
+                command_id="continue-without-activator",
+                execution_id=execution.execution_id,
+                expected_version=before.status_version,
+                actor={"subject": "owner-1"},
+                activator=None,
+                driver=None,
+            )
+        )
+    assert unavailable.value.code == "activation_unavailable"
+    assert store.get_execution(execution.execution_id) == before
 
 
 def test_chat_ack_execution_id_drives_provider_pause_and_checkpoint(public_chat):
