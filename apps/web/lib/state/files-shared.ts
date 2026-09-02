@@ -239,11 +239,21 @@ function touchReadCache(key: string, value: FileReadResult): void {
   readCache.set(key, value);
 }
 
+function dropReadCacheScope(scope: string): void {
+  for (const key of [...readCache.keys()]) {
+    if (!key.startsWith(`${scope}:`)) continue;
+    readCache.delete(key);
+    readCacheBytes.delete(key);
+  }
+}
+
 export function getCachedFileRead(projectId: string, path: string, mtime?: number): FileReadResult | undefined {
   const scope = fileScopeKey(projectId, path);
-  const key = mtime === undefined
-    ? [...readCache.keys()].reverse().find((candidate) => candidate.startsWith(`${scope}:`))
-    : fileReadCacheKey(projectId, path, mtime);
+  // Without a current tree mtime, a cached read has no verifiable identity.
+  // Never return it merely because it is the newest entry for this path.
+  const knownMtime = mtime ?? latestFileMtime.get(scope);
+  if (knownMtime === undefined) return undefined;
+  const key = fileReadCacheKey(projectId, path, knownMtime);
   if (!key) return undefined;
   const value = readCache.get(key);
   if (!value) return undefined;
@@ -283,13 +293,10 @@ export function noteFileMtime(projectId: string, path: string, mtime: number): v
     const oldest = latestFileMtime.keys().next().value as string | undefined;
     if (!oldest) break;
     latestFileMtime.delete(oldest);
+    dropReadCacheScope(oldest);
   }
   if (previous === undefined || previous === mtime) return;
-  for (const key of [...readCache.keys()]) {
-    if (!key.startsWith(`${scope}:`)) continue;
-    readCache.delete(key);
-    readCacheBytes.delete(key);
-  }
+  dropReadCacheScope(scope);
 }
 
 /** Drop the cached read (and known mtime) for one file so the next

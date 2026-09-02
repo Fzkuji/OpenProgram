@@ -85,10 +85,18 @@ test("read cache is project-scoped, mtime-scoped, and LRU bounded", () => {
 
 test("latest mtimes are project-scoped and LRU bounded", () => {
   latestFileMtime.clear();
+  readCache.clear();
+  const result = (project_id, path, mtime, content = "x") => ({
+    project_id, path, mtime, size: content.length, content,
+  });
+  cacheFileRead(result("project-mtime", "file-0.txt", 0));
   for (let i = 0; i <= LATEST_MTIME_MAX_ENTRIES; i += 1)
     noteFileMtime("project-mtime", `file-${i}.txt`, i);
   assert.equal(latestFileMtime.size, LATEST_MTIME_MAX_ENTRIES);
   assert.equal(latestFileMtime.has("project-mtime:file-0.txt"), false);
+  assert.equal(getCachedFileRead("project-mtime", "file-0.txt"), undefined);
+  cacheFileRead(result("project-mtime", "file-1.txt", 1));
+  assert.equal(getCachedFileRead("project-mtime", "file-1.txt")?.content, "x");
   noteFileMtime("project-mtime", "file-1.txt", 999);
   assert.equal(latestFileMtime.get("project-mtime:file-1.txt"), 999);
   assert.equal(latestFileMtime.size, LATEST_MTIME_MAX_ENTRIES);

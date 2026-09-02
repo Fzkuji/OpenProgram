@@ -170,9 +170,16 @@ def _file_digest(target: str) -> str | None:
             return None
         with open(target, "rb") as stream:
             digest = hashlib.sha256()
-            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            total = 0
+            while total <= _READ_DIGEST_MAX_BYTES:
+                chunk = stream.read(min(1024 * 1024, _READ_DIGEST_MAX_BYTES + 1 - total))
+                if not chunk:
+                    return digest.hexdigest()
                 digest.update(chunk)
-            return digest.hexdigest()
+                total += len(chunk)
+                if total > _READ_DIGEST_MAX_BYTES:
+                    return None
+            return None
     except OSError:
         return None
 

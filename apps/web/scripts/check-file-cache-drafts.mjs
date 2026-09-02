@@ -12,7 +12,7 @@ const browserTest = readFileSync(new URL("../../../tests/e2e/web/test_file_draft
 
 assert.match(shared, /READ_CACHE_MAX_ENTRIES\s*=\s*64/);
 assert.match(shared, /READ_CACHE_MAX_BYTES\s*=\s*16 \* 1024 \* 1024/);
-assert.match(shared, /fileReadCacheKey\(projectId, path, mtime\)/);
+assert.match(shared, /fileReadCacheKey\(projectId, path, knownMtime\)/);
 assert.match(shared, /LATEST_MTIME_MAX_ENTRIES\s*=\s*256/);
 assert.match(shared, /while \([\s\S]*readCache\.size >= READ_CACHE_MAX_ENTRIES/);
 assert.match(shared, /TextEncoder/);

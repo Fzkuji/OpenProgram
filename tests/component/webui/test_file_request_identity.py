@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import json
+import os
 import threading
 import time
 import types
@@ -259,6 +260,38 @@ def test_large_mutation_witness_is_bounded(project, monkeypatch):
     identity = files._identity("p1", "large.bin")
     assert identity["size"] == files._IDENTITY_DIGEST_MAX_BYTES + 1
     assert "digest" not in identity
+
+
+def test_file_digest_stops_at_bound_when_file_grows_during_read(project, monkeypatch):
+    target = project / "growing-digest.txt"
+    target.write_bytes(b"a" * 8192)
+    original_open = open
+
+    class GrowingReader:
+        def __init__(self, stream):
+            self.stream = stream
+            self.did_grow = False
+
+        def __enter__(self):
+            self.stream.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def read(self, size=-1):
+            data = self.stream.read(size)
+            if not self.did_grow:
+                self.did_grow = True
+                target.write_bytes(b"a" * (files._READ_DIGEST_MAX_BYTES + 1))
+            return data
+
+    def growing_open(path, *args, **kwargs):
+        stream = original_open(path, *args, **kwargs)
+        return GrowingReader(stream) if os.fspath(path) == os.fspath(target) else stream
+
+    monkeypatch.setattr(files, "open", growing_open, raising=False)
+    assert files._file_digest(str(target)) is None
 
 
 def test_owner_process_start_identity_rejects_pid_reuse(project):
