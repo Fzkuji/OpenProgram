@@ -952,26 +952,63 @@ async def handle_chat(ws, cmd: dict):
         _s._release_run_reservation(session_id, msg_id)
         raise
 
-    execution_id = f"{msg_id}_reply"
-    from openprogram.agent.internals._turn_lifecycle import insert_placeholder
-    from openprogram.agent.session_db import default_db
-    if not insert_placeholder(
-        default_db(),
-        session_id,
-        execution_id,
-        msg_id,
-        "web",
-        authority=_local_authority,
-    ):
-        # insert_placeholder documents a False return as "fall back to
-        # the legacy append-on-finish path". Blocking dispatch here
-        # dropped structured-output chat on a store that could not
-        # write the placeholder (tests, headless hosts).
-        pass
-
-    def _mark_setup_interrupted() -> None:
-        from openprogram.agent.run_control import mark_execution_terminal
-        mark_execution_terminal(execution_id, "interrupted")
+    # Admission is the sole source of execution identity. The message id is
+    # retained only as transport/DAG provenance and never becomes ownership.
+    from openprogram.agent.production_driver import (
+        AGENT_TURN_INPUT_VERSION,
+        AgentProductionDriver,
+        CanonicalAgentEntry,
+    )
+    from openprogram.execution import default_control_service, default_store
+    _execution_store = default_store()
+    _driver = AgentProductionDriver(
+        _execution_store,
+        control_service=default_control_service(),
+        event_sink=(
+            lambda env: _s._broadcast_envelope(env)
+            if hasattr(_s, "_broadcast_envelope")
+            else _s._broadcast(json.dumps(env, default=str))
+        ),
+    )
+    _entry = CanonicalAgentEntry(_execution_store, _driver)
+    from openprogram.agent.session_config import tools_override_from_config
+    _response_format_payload = (
+        response_format.model_dump(mode="json")
+        if hasattr(response_format, "model_dump") else response_format
+    )
+    _request_payload = {
+        "session_id": session_id,
+        "user_text": parsed.get("raw") or text,
+        "agent_id": _db_agent_id(session_id),
+        "source": "web",
+        "permission_mode": run_cfg.permission_mode or "ask",
+        "thinking_effort": run_cfg.thinking_effort,
+        "service_tier": service_tier,
+        "response_format": _response_format_payload,
+        "tools_override": tools_override_from_config(run_cfg),
+        "attachments": attachments,
+        "user_msg_id": msg_id,
+        "user_already_persisted": True,
+        "surface_context": surface_ref,
+        "additional_working_dirs": getattr(run_cfg, "additional_working_dirs", []),
+    }
+    try:
+        _admission = _entry.admit(
+            session_id=session_id,
+            turn_payload={
+                "version": AGENT_TURN_INPUT_VERSION,
+                "kind": "chat",
+                "request": _request_payload,
+            },
+            trusted_actor=_local_authority,
+            user_message_id=msg_id,
+            assistant_message_id=None,
+            config_snapshot_ref=f"session:{session_id}",
+        )
+    except Exception:
+        _s._release_run_reservation(session_id, msg_id)
+        raise
+    execution_id = _admission.execution_id
 
     # chat.before_send on the bus — plugin subscribers observe the
     # message about to enter the runtime. emit_safe swallows failures
@@ -1039,63 +1076,40 @@ async def handle_chat(ws, cmd: dict):
         try:
             return threading.Thread(**kwargs)
         except BaseException:
-            _mark_setup_interrupted()
             _s._release_run_reservation(session_id, msg_id)
             raise
 
-    if parsed["action"] in ("query", "chat", "run"):
-        run_thread = _make_run_thread(
-            target=_s._execute_in_context,
-            args=(session_id, msg_id, "query"),
-            kwargs={"query": parsed["raw"],
-                    "thinking_effort": run_cfg.thinking_effort,
-                    "tools_flag": tools_flag,
-                    "permission_mode": run_cfg.permission_mode,
-                    "service_tier": service_tier,
-                    "response_format": response_format,
-                    "attachments": attachments,
-                    "surface_ref": surface_ref,
-                    "surface_ws": ws},
-            daemon=True,
-        )
-    elif parsed["action"] == "spawn":
-        run_thread = _make_run_thread(
-            target=_s._execute_in_context,
-            args=(session_id, msg_id, "spawn"),
-            kwargs={"kwargs": {
-                "prompt": parsed.get("prompt") or "",
-                "label": parsed.get("label") or "",
-                # New same-session multi-agent: "inherit" (default,
-                # fork off this turn) or "clean" (new root in the
-                # same session). Slash parser strips --clean /
-                # --inherit and surfaces them here.
-                "context": parsed.get("context") or "inherit",
-                # wait=False (default for /task --async): submit to
-                # JobRunner, return immediately. wait=True (default)
-                # blocks like the historical /task path.
-                "wait": parsed.get("wait", True),
-            }},
-            daemon=True,
-        )
-    elif parsed["action"] == "merge":
-        run_thread = _make_run_thread(
-            target=_s._execute_in_context,
-            args=(session_id, msg_id, "merge"),
-            kwargs={"kwargs": {
-                "sub_sessions": parsed.get("sub_sessions") or [],
-                "message": parsed.get("message") or "",
-            }},
-            daemon=True,
-        )
-    else:
-        _mark_setup_interrupted()
-        _s._release_run_reservation(session_id, msg_id)
-        raise RuntimeError(f"unsupported chat action: {parsed['action']}")
+    def _run_canonical(**_thread_options):
+        async def _activate():
+            active = await _entry.activate(_admission)
+            handle = _driver._handles[
+                (active.admission.execution_id, active.attempt_id, active.generation)
+            ]
+            return await handle.done
+
+        try:
+            asyncio.run(_activate())
+        finally:
+            try:
+                if _s._finish_owned_run(session_id, msg_id):
+                    _s._emit_running_task_event(
+                        session_id,
+                        cleared_msg_id=msg_id,
+                        cleared_execution_id=execution_id,
+                    )
+            except Exception:
+                pass
+
+    run_thread = _make_run_thread(
+        target=_run_canonical,
+        args=(),
+        kwargs={"response_format": response_format},
+        daemon=True,
+    )
 
     try:
         run_thread.start()
     except BaseException:
-        _mark_setup_interrupted()
         _s._release_run_reservation(session_id, msg_id)
         raise
 

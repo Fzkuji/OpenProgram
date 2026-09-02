@@ -12,6 +12,7 @@ finalize_turn → _maybe_auto_title.
 """
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 import uuid
@@ -419,6 +420,7 @@ def run_agentic_function_call(
     # session head). Mirror the @agentic_function wrapper's resolution so
     # the pre-created node is byte-identical to what the child would write.
     _forced_node_id = None
+    _canonical_anchor_msg_id = anchor_msg_id or ""
     _pending_nid = uuid.uuid4().hex[:12]
     _precreate_error = None
     for _attempt in range(2):
@@ -503,7 +505,60 @@ def run_agentic_function_call(
             "status_code": 500,
         }
 
-    execution_id = _forced_node_id or f"{msg_id}_reply"
+    # The DAG code node is content provenance only. Lifecycle identity is
+    # admitted separately and is always a random canonical execution id.
+    try:
+        from openprogram.agent.authority import local_owner_authority
+        from openprogram.agent.production_driver import (
+            AGENT_TURN_INPUT_VERSION,
+            CanonicalAgentEntry,
+            AgentProductionDriver,
+        )
+        from openprogram.execution import default_store, default_control_service
+
+        _execution_store = default_store()
+        _response_format_payload = (
+            response_format.model_dump(mode="json")
+            if hasattr(response_format, "model_dump") else response_format
+        )
+        _driver = AgentProductionDriver(
+            _execution_store,
+            control_service=default_control_service(),
+            event_sink=(
+                lambda env: _s._broadcast_envelope(env)
+                if hasattr(_s, "_broadcast_envelope")
+                else _s._broadcast(__import__("json").dumps(env, default=str))
+            ),
+        )
+        _entry = CanonicalAgentEntry(_execution_store, _driver)
+        _admission = _entry.admit(
+            session_id=session_id,
+            turn_payload={
+                "version": AGENT_TURN_INPUT_VERSION,
+                "kind": "forced_tool",
+                "tool_name": name,
+                "tool_input": kwargs,
+                "anchor_msg_id": _canonical_anchor_msg_id,
+                "work_dir": work_dir,
+                "agent_id": agent_id,
+                "source": "fn-form",
+                "provider": provider,
+                "model": model,
+                "response_format": _response_format_payload,
+            },
+            trusted_actor=local_owner_authority(),
+            user_message_id=msg_id,
+            assistant_message_id=_forced_node_id,
+            config_snapshot_ref=f"provider:{provider or ''}/model:{model or ''}",
+        )
+        execution_id = _admission.execution_id
+    except Exception as exc:
+        _s._release_run_reservation(session_id, msg_id)
+        return {
+            "error": f"failed to persist the execution record: {type(exc).__name__}: {exc}",
+            "code": "execution_record_failed",
+            "status_code": 500,
+        }
     with _s._running_tasks_lock:
         _reserved_task = _s._running_tasks.get(session_id)
         if _reserved_task and _reserved_task.get("msg_id") == msg_id:
@@ -543,42 +598,19 @@ def run_agentic_function_call(
     def _run():
         try:
             try:
-                from openprogram.agent.dispatcher import dispatch_forced_tool_call
-                surface_snapshot = None
-                if origin_window_id:
-                    from openprogram.agent.surface_context import window_context
+                async def _activate():
+                    active = await _entry.activate(_admission)
+                    handle = _driver._handles[
+                        (active.admission.execution_id, active.attempt_id, active.generation)
+                    ]
+                    return await handle.done
 
-                    preferred_tab_id = (
-                        str(surface_ref.get("tab_id") or "")
-                        if isinstance(surface_ref, dict)
-                        and surface_ref.get("window_id") == origin_window_id
-                        else ""
-                    )
-                    surface_snapshot = window_context(
-                        origin_window_id,
-                        preferred_tab_id=preferred_tab_id,
-                    )
-                out = dispatch_forced_tool_call(
-                    session_id=session_id,
-                    anchor_msg_id=anchor_msg_id,
-                    tool_name=name,
-                    tool_input=kwargs,
-                    work_dir=work_dir,
-                    agent_id=agent_id,
-                    source="fn-form",
-                    provider=provider,
-                    model=model,
-                    response_format=response_format,
-                    execution_id=_forced_node_id,
-                    surface_context_snapshot=surface_snapshot,
-                    on_event=lambda env: _s._broadcast_envelope(env)
-                        if hasattr(_s, "_broadcast_envelope")
-                        else _s._broadcast(__import__("json").dumps(env, default=str)),
-                )
+                out = asyncio.run(_activate())
+                if isinstance(out, dict):
+                    out = {"ok": not bool(out.get("error") or out.get("killed")), **out}
+                else:
+                    out = {"ok": True, "result": out}
             except Exception as e:  # noqa: BLE001
-                if _forced_node_id:
-                    from openprogram.agent.run_control import mark_execution_terminal
-                    mark_execution_terminal(_forced_node_id, "error")
                 _s._broadcast_chat_response(session_id, msg_id, {
                     "type": "error",
                     "content": f"function call failed: {type(e).__name__}: {e}",
@@ -616,9 +648,6 @@ def run_agentic_function_call(
         worker = threading.Thread(target=_run, daemon=True)
     except BaseException as exc:
         _s._release_run_reservation(session_id, msg_id)
-        if _forced_node_id:
-            from openprogram.agent.run_control import mark_execution_terminal
-            mark_execution_terminal(_forced_node_id, "error")
         return {
             "error": f"failed to create function execution: {type(exc).__name__}: {exc}",
             "code": "function_start_failed",
@@ -626,9 +655,6 @@ def run_agentic_function_call(
         }
 
     if not _s._activate_run_reservation(session_id, msg_id, worker):
-        if _forced_node_id:
-            from openprogram.agent.run_control import mark_execution_terminal
-            mark_execution_terminal(_forced_node_id, "error")
         return {
             "error": "function execution reservation was lost before startup",
             "code": "function_start_failed",
@@ -639,12 +665,6 @@ def run_agentic_function_call(
     try:
         worker.start()
     except BaseException as exc:  # thread creation/start must roll back occupancy
-        if _forced_node_id:
-            try:
-                from openprogram.agent.run_control import mark_execution_terminal
-                mark_execution_terminal(_forced_node_id, "error")
-            except Exception:
-                pass
         if _s._finish_owned_run(session_id, msg_id):
             _s._emit_running_task_event(
                 session_id,
@@ -671,5 +691,5 @@ def run_agentic_function_call(
     return {
         "session_id": session_id,
         "msg_id": msg_id,
-        "execution_id": _forced_node_id,
+        "execution_id": execution_id,
     }

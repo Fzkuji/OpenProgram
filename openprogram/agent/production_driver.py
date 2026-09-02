@@ -16,7 +16,7 @@ import inspect
 import json
 import threading
 import uuid
-from dataclasses import dataclass, fields
+from dataclasses import asdict, dataclass, fields, is_dataclass
 from typing import Any, Callable, Mapping
 
 from openprogram.execution.attempts import AttemptRecord, AttemptStatus, AttemptStore
@@ -79,9 +79,19 @@ _PAYLOAD_ENVELOPE_KEYS = frozenset({"version", "kind", "request", "tool_name", "
 
 def _json_payload(value: Any) -> str:
     try:
-        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return json.dumps(_json_safe(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     except (TypeError, ValueError) as exc:
         raise AgentDriverError("invalid_input", "Agent admission input must be JSON serializable") from exc
+
+
+def _json_safe(value: Any) -> Any:
+    if is_dataclass(value) and not isinstance(value, type):
+        return _json_safe(asdict(value))
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
 
 
 def normalize_agent_turn_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -100,7 +110,7 @@ def normalize_agent_turn_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         request = value.get("request")
         if not isinstance(request, Mapping):
             raise AgentDriverError("invalid_input", "chat input requires a request object")
-        request = copy.deepcopy(dict(request))
+        request = _json_safe(copy.deepcopy(dict(request)))
         from openprogram.agent.dispatcher.types import TurnRequest
 
         request_fields = frozenset(field.name for field in fields(TurnRequest))
@@ -115,7 +125,8 @@ def normalize_agent_turn_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
             raise AgentDriverError("invalid_input", "forced_tool input requires tool_name")
         if not isinstance(value.get("tool_input", {}), Mapping):
             raise AgentDriverError("invalid_input", "forced_tool input requires an object tool_input")
-        value["tool_input"] = copy.deepcopy(dict(value["tool_input"]))
+        value["tool_input"] = _json_safe(copy.deepcopy(dict(value["tool_input"])))
+    value = _json_safe(value)
     encoded = _json_payload(value)
     if len(encoded.encode("utf-8")) > MAX_AGENT_TURN_INPUT_BYTES:
         raise AgentDriverError("input_too_large", "Agent admission input exceeds the size limit")
@@ -221,6 +232,7 @@ class AgentProductionDriver:
         turn_runner: TurnRunner | None = None,
         control_service: RuntimeControlService | None = None,
         question_registry: Any | None = None,
+        event_sink: Callable[[dict], None] | None = None,
     ) -> None:
         self.executions = executions
         self.activation = AgentActivationService(
@@ -229,6 +241,7 @@ class AgentProductionDriver:
         self.turn_runner = turn_runner or self._default_turn_runner
         self.control_service = control_service
         self.question_registry = question_registry
+        self.event_sink = event_sink
         self._handles: dict[tuple[str, str, int], AgentDriverHandle] = {}
         self._handles_lock = threading.RLock()
         self._finished: set[tuple[str, str, int]] = set()
@@ -466,6 +479,7 @@ class AgentProductionDriver:
                     provider=request.provider,
                     model=request.model,
                     response_format=request.response_format,
+                    on_event=self.event_sink,
                     execution_id=attempt.execution_id,
                     attempt_id=attempt.attempt_id,
                     generation=attempt.generation,
@@ -638,26 +652,21 @@ class CanonicalAgentEntry:
         config_snapshot_ref: str,
     ) -> CanonicalAgentAdmission:
         raw_payload = copy.deepcopy(dict(turn_payload))
-        # Request-shaped chat inputs are normalized once at this boundary.
-        # Discriminated inputs must already contain the complete envelope.
-        if "kind" in raw_payload or "version" in raw_payload:
-            payload = normalize_agent_turn_payload(raw_payload)
-            if payload["kind"] == "chat":
-                supplied_session = payload["request"].get("session_id")
-            else:
-                supplied_session = None
-        else:
+        if "kind" not in raw_payload and "version" not in raw_payload:
+            # Existing internal callers may still admit a request-shaped
+            # record. Public transports use the explicit envelope below.
             supplied_session = raw_payload.pop("session_id", None)
-            # Internal callers that predate the public cutover may still
-            # provide a request-shaped payload. The public transports always
-            # pass the explicit envelope; retaining this narrow adapter keeps
-            # already-admitted internal executions readable during rollout.
             payload = normalize_agent_turn_payload({
                 "version": AGENT_TURN_INPUT_VERSION,
                 "kind": "chat",
                 "request": raw_payload,
             })
-            storage_payload = raw_payload
+        else:
+            payload = normalize_agent_turn_payload(raw_payload)
+            supplied_session = (
+                payload["request"].get("session_id")
+                if payload["kind"] == "chat" else None
+            )
         if supplied_session is not None and supplied_session != session_id:
             raise AgentDriverError(
                 "input_session_mismatch", "Agent admission input belongs to another session"
@@ -678,7 +687,7 @@ class CanonicalAgentEntry:
             user_message_id=user_message_id,
             assistant_message_id=assistant_message_id,
             capabilities=self.driver.capabilities(),
-            agent_turn_payload=(storage_payload if "storage_payload" in locals() else payload),
+            agent_turn_payload=(raw_payload if "kind" not in raw_payload and "version" not in raw_payload else payload),
         )
         return CanonicalAgentAdmission(
             execution_id=record.execution_id,
