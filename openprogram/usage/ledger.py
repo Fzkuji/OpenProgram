@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS job_admissions (
     borrowed_parent_job_id TEXT,
     resume_parent_msg_id TEXT,
     state TEXT NOT NULL CHECK (state IN ('preparing','queued','live','stopping','released')),
+    queue_state TEXT NOT NULL DEFAULT 'queued',
+    resume_command_id TEXT,
     admitted_seq INTEGER NOT NULL,
     owner_instance_id TEXT,
     lease_generation INTEGER NOT NULL DEFAULT 0,
@@ -404,6 +406,8 @@ class UsageLedger:
                     add_column(name, definition)
                 add_column("borrowed_parent_job_id", "TEXT")
                 add_column("resume_parent_msg_id", "TEXT")
+                add_column("queue_state", "TEXT NOT NULL DEFAULT 'queued'")
+                add_column("resume_command_id", "TEXT")
                 add_column(
                     "lease_generation", "INTEGER NOT NULL DEFAULT 0"
                 )
@@ -572,7 +576,7 @@ class UsageLedger:
                 (session_id,),
             ).fetchone()
             row = conn.execute(
-                "SELECT state, admitted_seq FROM job_admissions WHERE job_id = ?",
+                "SELECT state, queue_state, resume_command_id, admitted_seq FROM job_admissions WHERE job_id = ?",
                 (job_id,),
             ).fetchone()
             queue_position = None
@@ -590,7 +594,11 @@ class UsageLedger:
                 (job_id,),
             ).fetchone()
         return {
-            "resource_state": row["state"] if row is not None else "untracked",
+            "resource_state": (
+                row["queue_state"] if row is not None and row["state"] == "queued"
+                else row["state"] if row is not None else "untracked"
+            ),
+            "resume_command_id": row["resume_command_id"] if row is not None else None,
             "session_live": {"used": int(counts[0] or 0), "limit": None},
             "session_queued": {"used": int(counts[1] or 0), "limit": None},
             "session_jobs": {"used": int(counts[2] or 0), "limit": None},

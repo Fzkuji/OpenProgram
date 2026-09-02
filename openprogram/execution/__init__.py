@@ -65,6 +65,7 @@ from .projections import (
     wake_projection_worker,
 )
 from .startup import StartupRecoveryResult, recover_execution_startup
+from .resource_saga import ResourceSaga, recover_resource_saga
 
 __all__ = [
     "CommandKind",
@@ -118,4 +119,6 @@ __all__ = [
     "list_running_execution_projections",
     "StartupRecoveryResult",
     "recover_execution_startup",
+    "ResourceSaga",
+    "recover_resource_saga",
 ]

@@ -9,7 +9,7 @@ import sqlite3
 from .model import CapabilitySet
 
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 _LEGACY_SCHEMA_VERSION = 1
 _PREVIOUS_SCHEMA_VERSION = 2
 _FORK_RETRY_SCHEMA_VERSION = 3
@@ -19,6 +19,7 @@ _PROJECTION_READ_SCHEMA_VERSION = 6
 _FINISH_REPAIR_SLOT_SCHEMA_VERSION = 7
 _AGENT_STATE_BLOB_SCHEMA_VERSION = 8
 _AGENT_STATE_BLOB_REFERENCE_SCHEMA_VERSION = 9
+_RESOURCE_SAGA_SCHEMA_VERSION = 10
 _FINISH_REPAIR_SLOT_LIMIT = 4096
 
 # These are the only projections emitted by the canonical execution store.
@@ -58,6 +59,8 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
         _migrate_v8(connection)
     elif current == _AGENT_STATE_BLOB_REFERENCE_SCHEMA_VERSION:
         _migrate_v9(connection)
+    elif current == _RESOURCE_SAGA_SCHEMA_VERSION:
+        _migrate_v10(connection)
     elif current == SCHEMA_VERSION:
         _create_current_schema(connection)
     else:
@@ -217,6 +220,52 @@ def _create_current_schema(connection: sqlite3.Connection) -> None:
     _create_finish_repair_schema(connection)
     _create_agent_state_blob_schema(connection)
     _create_agent_state_blob_reference_schema(connection)
+    _create_resource_saga_schema(connection)
+
+
+def _create_resource_saga_schema(connection: sqlite3.Connection) -> None:
+    """Create the execution-owned outbox for resource authority intents."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS execution_resource_intents (
+            intent_id TEXT PRIMARY KEY,
+            execution_id TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            fingerprint TEXT NOT NULL,
+            admission_id TEXT,
+            attempt_id TEXT,
+            generation INTEGER,
+            resource_lease_generation INTEGER,
+            payload_json TEXT NOT NULL,
+            state TEXT NOT NULL,
+            claim_owner TEXT,
+            claim_expires_at REAL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            result_json TEXT NOT NULL DEFAULT '{}',
+            last_error TEXT,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            completed_at REAL,
+            UNIQUE(execution_id, idempotency_key),
+            FOREIGN KEY(execution_id) REFERENCES executions(execution_id),
+            CHECK(kind IN (
+                'execution.admission.intent', 'resource.admission.intent',
+                'execution.claim.intent', 'resource.claim.intent',
+                'execution.release.intent', 'resource.release.intent'
+            )),
+            CHECK(state IN ('pending', 'claimed', 'applied', 'failed'))
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS execution_resource_intents_ready "
+        "ON execution_resource_intents(state, claim_expires_at, created_at)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS execution_resource_intents_execution "
+        "ON execution_resource_intents(execution_id, created_at)"
+    )
 
 
 def _create_projection_schema(connection: sqlite3.Connection) -> None:
@@ -636,6 +685,18 @@ def _migrate_v9(connection: sqlite3.Connection) -> None:
         connection.execute("BEGIN")
         _create_agent_state_blob_schema(connection)
         _create_agent_state_blob_reference_schema(connection)
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+
+
+def _migrate_v10(connection: sqlite3.Connection) -> None:
+    if connection.in_transaction:
+        raise UnsupportedSchema(_RESOURCE_SAGA_SCHEMA_VERSION, "cannot migrate resource saga inside an active transaction")
+    try:
+        connection.execute("BEGIN")
+        _create_resource_saga_schema(connection)
         connection.commit()
     except BaseException:
         connection.rollback()

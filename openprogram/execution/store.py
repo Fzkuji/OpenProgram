@@ -68,6 +68,11 @@ _AGENT_TURN_INPUT_KEYS = frozenset({
 _STATE_REF_PREFIX = "execstate://sha256/"
 _STATE_HASH_LENGTH = 64
 MAX_AGENT_STATE_BLOB_BYTES = 1024 * 1024
+RESOURCE_INTENT_KINDS = frozenset({
+    "execution.admission.intent", "resource.admission.intent",
+    "execution.claim.intent", "resource.claim.intent",
+    "execution.release.intent", "resource.release.intent",
+})
 
 
 def _validate_agent_turn_payload(payload: Mapping[str, Any]) -> None:
@@ -948,6 +953,141 @@ class ExecutionStore:
                 (outbox_id,),
             ).fetchone()
             return self._projection_outbox(row) if row is not None else None
+
+    def enqueue_resource_intent(
+        self,
+        execution_id: str,
+        *,
+        kind: str,
+        idempotency_key: str,
+        fingerprint: str,
+        admission_id: str | None = None,
+        attempt_id: str | None = None,
+        generation: int | None = None,
+        resource_lease_generation: int | None = None,
+        payload: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Persist one execution-owned cross-authority intent.
+
+        This transaction deliberately does not call ResourceGovernor.  The
+        resulting row is the durable hand-off between the two SQLite files.
+        """
+        if kind not in RESOURCE_INTENT_KINDS:
+            raise ExecutionConflict("invalid_resource_intent", f"unsupported resource intent: {kind}")
+        if not idempotency_key or not fingerprint:
+            raise ExecutionConflict("invalid_resource_intent", "idempotency_key and fingerprint are required")
+        encoded = _json(dict(payload or {}))
+        now = time.time()
+        with self._transaction() as connection:
+            execution = self._require_execution(connection, execution_id)
+            existing = connection.execute(
+                "SELECT * FROM execution_resource_intents WHERE execution_id = ? AND idempotency_key = ?",
+                (execution_id, idempotency_key),
+            ).fetchone()
+            if existing is not None:
+                if (
+                    existing["kind"] != kind
+                    or existing["fingerprint"] != fingerprint
+                    or existing["payload_json"] != encoded
+                ):
+                    raise ExecutionConflict("resource_intent_collision", "resource idempotency key was reused with different content")
+                return self._resource_intent(existing)
+            intent_id = f"resource-intent-{uuid.uuid4().hex}"
+            connection.execute(
+                "INSERT INTO execution_resource_intents (intent_id, execution_id, kind, idempotency_key, fingerprint, admission_id, attempt_id, generation, resource_lease_generation, payload_json, state, claim_owner, claim_expires_at, attempts, result_json, last_error, created_at, updated_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, 0, '{}', NULL, ?, ?, NULL)",
+                (intent_id, execution_id, kind, idempotency_key, fingerprint, admission_id, attempt_id, generation, resource_lease_generation, encoded, now, now),
+            )
+            row = connection.execute(
+                "SELECT * FROM execution_resource_intents WHERE intent_id = ?", (intent_id,)
+            ).fetchone()
+            assert row is not None
+            intent = self._resource_intent(row)
+            self._append_event(
+                connection,
+                execution_id=execution_id,
+                execution_version=execution.status_version,
+                kind=kind,
+                payload={"intent": intent},
+                created_at=now,
+            )
+            return intent
+
+    def list_resource_intents(
+        self, *, execution_id: str | None = None, states: Collection[str] = (), limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        query = "SELECT * FROM execution_resource_intents WHERE 1 = 1"
+        values: list[Any] = []
+        if execution_id is not None:
+            query += " AND execution_id = ?"
+            values.append(execution_id)
+        if states:
+            query += " AND state IN (" + ",".join("?" for _ in states) + ")"
+            values.extend(states)
+        query += " ORDER BY created_at, intent_id"
+        if limit is not None:
+            if limit <= 0:
+                raise ExecutionConflict("invalid_limit", "limit must be positive")
+            query += " LIMIT ?"
+            values.append(limit)
+        with closing(self._connect()) as connection:
+            return [self._resource_intent(row) for row in connection.execute(query, values)]
+
+    def claim_resource_intents(
+        self, *, owner_id: str, limit: int = 100, lease_ttl_seconds: float = 30.0, now: float | None = None,
+    ) -> list[dict[str, Any]]:
+        if not owner_id or limit <= 0 or lease_ttl_seconds <= 0:
+            raise ExecutionConflict("invalid_resource_claim", "owner_id, limit and lease_ttl_seconds must be positive")
+        current = time.time() if now is None else now
+        with self._transaction() as connection:
+            connection.execute(
+                "UPDATE execution_resource_intents SET state = 'pending', claim_owner = NULL, claim_expires_at = NULL, updated_at = ? WHERE state = 'claimed' AND claim_expires_at <= ?",
+                (current, current),
+            )
+            rows = connection.execute(
+                "SELECT intent_id FROM execution_resource_intents WHERE state = 'pending' ORDER BY created_at, intent_id LIMIT ?", (limit,)
+            ).fetchall()
+            claimed: list[dict[str, Any]] = []
+            for row in rows:
+                changed = connection.execute(
+                    "UPDATE execution_resource_intents SET state = 'claimed', claim_owner = ?, claim_expires_at = ?, attempts = attempts + 1, updated_at = ? WHERE intent_id = ? AND state = 'pending'",
+                    (owner_id, current + lease_ttl_seconds, current, row["intent_id"]),
+                ).rowcount
+                if changed:
+                    claimed_row = connection.execute(
+                        "SELECT * FROM execution_resource_intents WHERE intent_id = ?", (row["intent_id"],)
+                    ).fetchone()
+                    assert claimed_row is not None
+                    claimed.append(self._resource_intent(claimed_row))
+            return claimed
+
+    def complete_resource_intent(
+        self, intent_id: str, *, owner_id: str, result: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        now = time.time()
+        with self._transaction() as connection:
+            row = connection.execute(
+                "SELECT * FROM execution_resource_intents WHERE intent_id = ?", (intent_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            if row["state"] == "applied":
+                return self._resource_intent(row)
+            if row["state"] != "claimed" or row["claim_owner"] != owner_id:
+                return None
+            connection.execute(
+                "UPDATE execution_resource_intents SET state = 'applied', claim_owner = NULL, claim_expires_at = NULL, result_json = ?, updated_at = ?, completed_at = ? WHERE intent_id = ?",
+                (_json(dict(result or {})), now, now, intent_id),
+            )
+            return self._resource_intent(connection.execute(
+                "SELECT * FROM execution_resource_intents WHERE intent_id = ?", (intent_id,)
+            ).fetchone())
+
+    def retry_resource_intent(self, intent_id: str, *, owner_id: str, error: str) -> bool:
+        with self._transaction() as connection:
+            return connection.execute(
+                "UPDATE execution_resource_intents SET state = 'pending', claim_owner = NULL, claim_expires_at = NULL, last_error = ?, updated_at = ? WHERE intent_id = ? AND state = 'claimed' AND claim_owner = ?",
+                (error[:1024], time.time(), intent_id, owner_id),
+            ).rowcount == 1
 
     def list_projection_outbox(
         self,
@@ -1915,6 +2055,32 @@ class ExecutionStore:
             ),
             last_error=row["last_error"],
         )
+
+    @staticmethod
+    def _resource_intent(row: sqlite3.Row | None) -> dict[str, Any]:
+        if row is None:
+            raise ExecutionConflict("not_found", "resource intent not found")
+        return {
+            "intent_id": str(row["intent_id"]),
+            "execution_id": str(row["execution_id"]),
+            "kind": str(row["kind"]),
+            "idempotency_key": str(row["idempotency_key"]),
+            "fingerprint": str(row["fingerprint"]),
+            "admission_id": row["admission_id"],
+            "attempt_id": row["attempt_id"],
+            "generation": row["generation"],
+            "resource_lease_generation": row["resource_lease_generation"],
+            "payload": _object(row["payload_json"]),
+            "state": str(row["state"]),
+            "claim_owner": row["claim_owner"],
+            "claim_expires_at": row["claim_expires_at"],
+            "attempts": int(row["attempts"]),
+            "result": _object(row["result_json"]),
+            "last_error": row["last_error"],
+            "created_at": float(row["created_at"]),
+            "updated_at": float(row["updated_at"]),
+            "completed_at": row["completed_at"],
+        }
 
     @staticmethod
     def _command(row: sqlite3.Row) -> ControlCommand:

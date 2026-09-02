@@ -733,7 +733,7 @@ class ResourceGovernor:
                 usage=usage,
             )
         fingerprint = _job_fingerprint(job)
-        admission_id = "adm_" + uuid.uuid4().hex
+        admission_id = job.admission_id or "adm_" + uuid.uuid4().hex
         scope_id = "budget_" + uuid.uuid4().hex
         session_scope_id = "session_" + hashlib.sha256(
             job.parent_session_id.encode("utf-8")
@@ -1086,6 +1086,112 @@ class ResourceGovernor:
                         candidate["job_id"], candidate["session_id"], generation,
                     )
             return None
+
+    def reserve_admission(
+        self,
+        job: Job,
+        *,
+        persist: Callable[[Job], Any],
+        creates_agent: bool = True,
+        caller_session_id: str | None = None,
+        caller_turn_id: str | None = None,
+        dispatch_ready: bool = True,
+    ) -> AdmissionDecision:
+        """Idempotently consume an execution admission intent in this ledger."""
+        return self.admit_job(
+            job,
+            persist=persist,
+            creates_agent=creates_agent,
+            caller_session_id=caller_session_id,
+            caller_turn_id=caller_turn_id,
+            dispatch_ready=dispatch_ready,
+        )
+
+    def queue_resume(
+        self,
+        job_id: str,
+        *,
+        admission_id: str,
+        command_id: str,
+        paused: bool = True,
+    ) -> bool:
+        """Idempotently put an existing admission back in the claim queue."""
+        queue_state = "paused_waiting_claim" if paused else "queued_resume"
+        with self.ledger.immediate() as conn:
+            row = conn.execute(
+                "SELECT state, queue_state, resume_command_id FROM job_admissions WHERE job_id = ? AND admission_id = ?",
+                (job_id, admission_id),
+            ).fetchone()
+            if row is None:
+                return False
+            if row["state"] == "live":
+                return row["resume_command_id"] == command_id
+            if row["state"] == "queued" and row["resume_command_id"] not in (None, command_id):
+                return False
+            return conn.execute(
+                "UPDATE job_admissions SET state = 'queued', queue_state = ?, resume_command_id = ?, dispatch_ready = 1, owner_instance_id = NULL, lease_expires_at = NULL WHERE job_id = ? AND admission_id = ? AND state IN ('queued', 'released')",
+                (queue_state, command_id, job_id, admission_id),
+            ).rowcount == 1
+
+    def reclaim_paused(self, job_id: str, *, admission_id: str, command_id: str) -> bool:
+        """Public name for the paused continuation claim queue transition."""
+        return self.queue_resume(
+            job_id, admission_id=admission_id, command_id=command_id, paused=True,
+        )
+
+    def claim_execution(
+        self,
+        job_id: str,
+        *,
+        owner_instance_id: str,
+        admission_id: str,
+        command_id: str | None = None,
+    ) -> DispatchClaim | None:
+        """Claim exactly one admission, returning an existing same-owner claim."""
+        with self.ledger.connection() as conn:
+            row = conn.execute(
+                "SELECT session_id, state, owner_instance_id, lease_generation, admission_id FROM job_admissions WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+        if row is None or row["admission_id"] != admission_id:
+            return None
+        if row["state"] == "live" and row["owner_instance_id"] == owner_instance_id:
+            return DispatchClaim(job_id, str(row["session_id"]), int(row["lease_generation"]))
+        claim = self.claim_next(owner_instance_id=owner_instance_id, only_job_id=job_id)
+        if claim is None:
+            return None
+        with self.ledger.immediate() as conn:
+            conn.execute(
+                "UPDATE job_admissions SET queue_state = 'live', resume_command_id = ? WHERE job_id = ? AND owner_instance_id = ? AND lease_generation = ?",
+                (command_id, job_id, owner_instance_id, claim.lease_generation),
+            )
+        return claim
+
+    def release_execution(
+        self,
+        job_id: str,
+        reason_code: str,
+        *,
+        admission_id: str,
+        owner_instance_id: str | None = None,
+        resource_lease_generation: int | None = None,
+    ) -> bool:
+        """Fenced, idempotent resource release for a canonical execution."""
+        with self.ledger.connection() as conn:
+            row = conn.execute(
+                "SELECT state, admission_id, owner_instance_id, lease_generation FROM job_admissions WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+        if row is None or row["admission_id"] != admission_id:
+            return False
+        if row["state"] == "released":
+            return True
+        return self.release_job(
+            job_id,
+            reason_code,
+            owner_instance_id=owner_instance_id,
+            lease_generation=resource_lease_generation,
+        )
 
     def stage_deferred_resume(
         self,
@@ -1454,7 +1560,7 @@ class ResourceGovernor:
         with self.ledger.immediate() as conn:
             return conn.execute(
                 """UPDATE job_admissions
-                   SET state = 'queued', owner_instance_id = NULL,
+                   SET state = 'queued', queue_state = 'queued', owner_instance_id = NULL,
                        lease_expires_at = NULL, started_at = NULL,
                        last_activity_at = NULL
                    WHERE job_id = ? AND state = 'live'
@@ -1560,7 +1666,7 @@ class ResourceGovernor:
         with self.ledger.immediate() as conn:
             return conn.execute(
                 """UPDATE job_admissions
-                   SET state = 'released', terminal_blocked = 0,
+                   SET state = 'released', queue_state = 'released', terminal_blocked = 0,
                        terminal_block_command_id = NULL,
                        terminal_block_phase = NULL,
                        terminal_block_expires_at = NULL,
