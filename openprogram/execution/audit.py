@@ -8,8 +8,8 @@ from typing import Any, Mapping
 
 
 _SENSITIVE_PARTS = frozenset({
-    "answer", "authorization", "credential", "environment", "env", "output",
-    "password", "prompt", "secret", "token", "checkpoint",
+    "answer", "authorization", "checkpoint", "cookie", "credential", "environment",
+    "env", "key", "output", "password", "private", "prompt", "secret", "token",
 })
 
 
