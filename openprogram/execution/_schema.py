@@ -9,7 +9,7 @@ import sqlite3
 from .model import CapabilitySet
 
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 _LEGACY_SCHEMA_VERSION = 1
 _PREVIOUS_SCHEMA_VERSION = 2
 _FORK_RETRY_SCHEMA_VERSION = 3
@@ -17,6 +17,7 @@ _EXECUTION_CONTROL_SCHEMA_VERSION = 4
 _PROJECTION_OUTBOX_SCHEMA_VERSION = 5
 _PROJECTION_READ_SCHEMA_VERSION = 6
 _FINISH_REPAIR_SLOT_SCHEMA_VERSION = 7
+_AGENT_STATE_BLOB_SCHEMA_VERSION = 8
 _FINISH_REPAIR_SLOT_LIMIT = 4096
 
 # These are the only projections emitted by the canonical execution store.
@@ -52,6 +53,8 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
         _migrate_v6(connection)
     elif current == _FINISH_REPAIR_SLOT_SCHEMA_VERSION:
         _migrate_v7(connection)
+    elif current == _AGENT_STATE_BLOB_SCHEMA_VERSION:
+        _migrate_v8(connection)
     elif current == SCHEMA_VERSION:
         _create_current_schema(connection)
     else:
@@ -209,6 +212,7 @@ def _create_current_schema(connection: sqlite3.Connection) -> None:
     _create_projection_read_schema(connection)
     _create_agent_input_schema(connection)
     _create_finish_repair_schema(connection)
+    _create_agent_state_blob_schema(connection)
 
 
 def _create_projection_schema(connection: sqlite3.Connection) -> None:
@@ -379,6 +383,34 @@ def _create_finish_repair_schema(connection: sqlite3.Connection) -> None:
     )
 
 
+def _create_agent_state_blob_schema(connection: sqlite3.Connection) -> None:
+    """Store execution-owned content-addressed Agent checkpoint state."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS execution_state_blobs (
+            execution_id TEXT NOT NULL,
+            ref TEXT NOT NULL,
+            sha256 TEXT NOT NULL,
+            payload BLOB NOT NULL,
+            byte_length INTEGER NOT NULL,
+            media_type TEXT NOT NULL,
+            schema_version INTEGER NOT NULL,
+            created_at REAL NOT NULL,
+            PRIMARY KEY(execution_id, ref),
+            UNIQUE(execution_id, sha256),
+            FOREIGN KEY(execution_id) REFERENCES executions(execution_id),
+            CHECK(ref GLOB 'execstate://sha256/[0-9a-f]*'),
+            CHECK(byte_length >= 0),
+            CHECK(schema_version >= 1)
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS execution_state_blobs_execution_created "
+        "ON execution_state_blobs(execution_id, created_at)"
+    )
+
+
 def _backfill_finish_repair_slots(connection: sqlite3.Connection) -> None:
     """Reserve one slot for every nonterminal admitted Agent execution."""
     rows = connection.execute(
@@ -465,6 +497,7 @@ def _migrate_v7(connection: sqlite3.Connection) -> None:
         connection.execute("BEGIN")
         _create_agent_input_schema(connection)
         _create_finish_repair_schema(connection)
+        _create_agent_state_blob_schema(connection)
         _backfill_finish_repair_slots(connection)
         connection.commit()
     except BaseException:
@@ -483,6 +516,7 @@ def _migrate_v6(connection: sqlite3.Connection) -> None:
         connection.execute("BEGIN")
         _create_agent_input_schema(connection)
         _create_finish_repair_schema(connection)
+        _create_agent_state_blob_schema(connection)
         _backfill_finish_repair_slots(connection)
         connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         connection.commit()
@@ -503,6 +537,7 @@ def _migrate_v5(connection: sqlite3.Connection) -> None:
         _create_projection_read_schema(connection)
         _create_agent_input_schema(connection)
         _create_finish_repair_schema(connection)
+        _create_agent_state_blob_schema(connection)
         _backfill_finish_repair_slots(connection)
         # v5 had no durable consumers.  Requeue its fixed delivery set so the
         # new idempotent handlers materialize every historical event.
@@ -545,9 +580,26 @@ def _migrate_v4(connection: sqlite3.Connection) -> None:
         _create_projection_read_schema(connection)
         _create_agent_input_schema(connection)
         _create_finish_repair_schema(connection)
+        _create_agent_state_blob_schema(connection)
         _backfill_finish_repair_slots(connection)
         _backfill_projection_outbox(connection)
         connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+
+
+def _migrate_v8(connection: sqlite3.Connection) -> None:
+    """Add state blobs without interpreting historic checkpoints."""
+    if connection.in_transaction:
+        raise UnsupportedSchema(
+            _AGENT_STATE_BLOB_SCHEMA_VERSION,
+            "cannot migrate Agent state blobs inside an active transaction",
+        )
+    try:
+        connection.execute("BEGIN")
+        _create_agent_state_blob_schema(connection)
         connection.commit()
     except BaseException:
         connection.rollback()

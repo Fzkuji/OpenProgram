@@ -88,6 +88,18 @@ TurnRunner = Callable[..., Any]
 
 AGENT_TURN_INPUT_VERSION = 1
 MAX_AGENT_TURN_INPUT_BYTES = 256 * 1024
+AGENT_CHECKPOINT_SCHEMA_VERSION = 1
+MAX_AGENT_CHECKPOINT_BYTES = 256 * 1024
+MAX_AGENT_STATE_BLOB_BYTES = 1024 * 1024
+MAX_AGENT_STATE_REFS = 32
+MAX_AGENT_PENDING_MESSAGES = 64
+MAX_AGENT_TERMINAL_EFFECT_RECEIPTS = 64
+MAX_AGENT_DELTA_BYTES = 64 * 1024
+MAX_AGENT_REPEAT_FAILURES = 16
+AGENT_SAFE_POINT_KINDS = (
+    "agent.provider.decision.after",
+    "agent.tool.action.after",
+)
 FINISH_RETRY_LIMIT = 8
 FINISH_RETRY_MAX_DELAY = 1.0
 FINISH_REPAIR_RETRY_TIMER_DELAY = 30.0
@@ -329,8 +341,38 @@ class AgentProductionDriver:
             surface_context_snapshot=envelope.get("surface_context_snapshot"),
         )
 
+    @staticmethod
+    def capabilities_for_payload(payload: Mapping[str, Any]) -> CapabilitySet:
+        """Return the admitted capability contract, never a transport guess."""
+        envelope = normalize_agent_turn_payload(payload)
+        if envelope["kind"] != "chat":
+            return CapabilitySet()
+        request = envelope["request"]
+        text = str(request.get("user_text") or "").lstrip()
+        if (
+            request.get("interaction") in {"spawn", "merge"}
+            or text.startswith(("/forced_tool", "/spawn", "/merge"))
+        ):
+            return CapabilitySet()
+        return CapabilitySet(
+            pause=True,
+            step=True,
+            safe_point_kinds=AGENT_SAFE_POINT_KINDS,
+            state_schema_version=AGENT_CHECKPOINT_SCHEMA_VERSION,
+        )
+
     def capabilities(self) -> CapabilitySet:
-        return CapabilitySet()
+        """Default driver capability used only by direct internal callers.
+
+        Admission uses ``capabilities_for_payload`` so a forced tool cannot
+        inherit ordinary-chat controls from a mutable driver instance.
+        """
+        return CapabilitySet(
+            pause=True,
+            step=True,
+            safe_point_kinds=AGENT_SAFE_POINT_KINDS,
+            state_schema_version=AGENT_CHECKPOINT_SCHEMA_VERSION,
+        )
 
     async def activate(
         self,
@@ -1112,7 +1154,7 @@ class CanonicalAgentEntry:
             config_snapshot_ref=config_snapshot_ref,
             user_message_id=user_message_id,
             assistant_message_id=assistant_message_id,
-            capabilities=self.driver.capabilities(),
+            capabilities=self.driver.capabilities_for_payload(payload),
             agent_turn_payload=payload,
         )
         return CanonicalAgentAdmission(

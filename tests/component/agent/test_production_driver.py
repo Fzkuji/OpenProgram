@@ -87,7 +87,7 @@ def test_v7_migration_backfills_agent_finish_slots_idempotently(tmp_path):
         rows = connection.execute(
             "SELECT execution_id FROM execution_finish_repair_slots"
         ).fetchall()
-    assert version == 8
+    assert version == 9
     assert rows == [(execution.execution_id,)]
 
     reopened = ExecutionStore(store.path)

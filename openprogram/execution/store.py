@@ -65,6 +65,8 @@ _AGENT_TURN_INPUT_KEYS = frozenset({
     "anchor_msg_id", "work_dir", "agent_id", "source", "provider", "model",
     "response_format", "surface_context_snapshot",
 })
+_STATE_REF_PREFIX = "execstate://sha256/"
+_STATE_HASH_LENGTH = 64
 
 
 def _validate_agent_turn_payload(payload: Mapping[str, Any]) -> None:
@@ -419,6 +421,99 @@ class ExecutionStore:
             raise ExecutionConflict("invalid_agent_input", "stored Agent turn input must be an object")
         _validate_agent_turn_payload(payload)
         return _snapshot_json(payload)
+
+    def put_state_blob(
+        self,
+        execution_id: str,
+        payload: bytes | str,
+        *,
+        media_type: str = "application/json",
+        schema_version: int = 1,
+    ) -> dict[str, Any]:
+        """Persist one execution-owned immutable state blob."""
+        with self._transaction() as connection:
+            return self._put_state_blob_in_transaction(
+                connection,
+                execution_id=execution_id,
+                payload=payload,
+                media_type=media_type,
+                schema_version=schema_version,
+            )
+
+    def get_state_blob(self, execution_id: str, ref: str) -> dict[str, Any] | None:
+        self._validate_state_ref(ref)
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT ref, sha256, payload, byte_length, media_type, schema_version "
+                "FROM execution_state_blobs WHERE execution_id = ? AND ref = ?",
+                (execution_id, ref),
+            ).fetchone()
+        if row is None:
+            return None
+        payload = bytes(row["payload"])
+        digest = hashlib.sha256(payload).hexdigest()
+        if digest != row["sha256"] or len(payload) != int(row["byte_length"]):
+            raise ExecutionStoreError(
+                "state_blob_corrupt", "stored state blob failed integrity validation"
+            )
+        return {
+            "ref": str(row["ref"]), "sha256": digest,
+            "byte_length": len(payload), "media_type": str(row["media_type"]),
+            "schema_version": int(row["schema_version"]), "payload": payload,
+        }
+
+    @staticmethod
+    def _validate_state_ref(ref: str) -> None:
+        if (
+            not isinstance(ref, str)
+            or not ref.startswith(_STATE_REF_PREFIX)
+            or len(ref) != len(_STATE_REF_PREFIX) + _STATE_HASH_LENGTH
+            or any(char not in "0123456789abcdef" for char in ref[len(_STATE_REF_PREFIX):])
+        ):
+            raise ExecutionConflict(
+                "state_ref_invalid", "state ref must be an execstate sha256 reference"
+            )
+
+    def _put_state_blob_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        execution_id: str,
+        payload: bytes | str,
+        media_type: str,
+        schema_version: int,
+    ) -> dict[str, Any]:
+        if isinstance(payload, str):
+            payload = payload.encode("utf-8")
+        if not isinstance(payload, bytes):
+            raise ExecutionConflict("state_ref_invalid", "state blob payload must be bytes or UTF-8 text")
+        if not media_type or not isinstance(media_type, str) or type(schema_version) is not int or schema_version < 1:
+            raise ExecutionConflict("state_ref_invalid", "state blob media type and schema version are required")
+        self._require_execution(connection, execution_id)
+        digest = hashlib.sha256(payload).hexdigest()
+        ref = f"{_STATE_REF_PREFIX}{digest}"
+        row = connection.execute(
+            "SELECT sha256, payload, byte_length, media_type, schema_version "
+            "FROM execution_state_blobs WHERE execution_id = ? AND ref = ?",
+            (execution_id, ref),
+        ).fetchone()
+        if row is None:
+            connection.execute(
+                "INSERT INTO execution_state_blobs "
+                "(execution_id, ref, sha256, payload, byte_length, media_type, schema_version, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (execution_id, ref, digest, payload, len(payload), media_type, schema_version, time.time()),
+            )
+        elif (
+            row["sha256"] != digest or bytes(row["payload"]) != payload
+            or int(row["byte_length"]) != len(payload)
+            or row["media_type"] != media_type or int(row["schema_version"]) != schema_version
+        ):
+            raise ExecutionConflict("state_ref_invalid", "state blob reference collides with different content")
+        return {
+            "ref": ref, "sha256": digest, "byte_length": len(payload),
+            "media_type": media_type, "schema_version": schema_version,
+        }
 
     def upsert_finish_repair(
         self,
