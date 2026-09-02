@@ -5,6 +5,7 @@ import json
 import os
 import threading
 import multiprocessing
+import sqlite3
 import time
 from types import SimpleNamespace
 
@@ -1542,6 +1543,103 @@ def test_terminal_barrier_reconciles_queued_admission_to_exact_owner(tmp_path):
         "SELECT state, owner_instance_id, lease_generation, terminal_blocked "
         "FROM job_admissions WHERE job_id = ?", (job.id,),
     ).fetchone()) == ("live", "canonical-owner", 4, 0)
+
+
+def test_terminal_barrier_identity_and_expiry_gate_claim_recovery(tmp_path):
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _job: resolved)
+    job = Job(id="job", parent_session_id="s1", prompt="p", agent_id="a")
+    governor.admit_job(job, persist=lambda _job: None)
+    assert governor.block_dispatch(
+        job.id, command_id="cancel-1", phase="prepared",
+    )
+    assert governor.claim_next(owner_instance_id="worker") is None
+    assert not governor.unblock_terminal_dispatch(job.id)
+    assert not governor.mark_terminal_dispatch_recovery(
+        job.id, command_id="cancel-wrong",
+    )
+    assert governor.mark_terminal_dispatch_recovery(
+        job.id, command_id="cancel-1",
+    )
+    assert not governor.unblock_terminal_dispatch(
+        job.id, expected_lease_generation=99,
+    )
+    assert governor.unblock_terminal_dispatch(
+        job.id,
+        expected_state="queued",
+        expected_owner_instance_id=None,
+        expected_lease_generation=0,
+    )
+    claim = governor.claim_next(owner_instance_id="worker")
+    assert claim is not None
+    assert governor.release_job(
+        job.id,
+        owner_instance_id="worker",
+        lease_generation=claim.lease_generation,
+    )
+
+
+def test_terminal_barrier_preserves_deferred_dispatch_ready_and_cleans_on_release(
+    tmp_path,
+):
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _job: resolved)
+    job = Job(id="deferred", parent_session_id="s1", prompt="p", agent_id="a")
+    governor.admit_job(job, persist=lambda _job: None, dispatch_ready=False)
+    assert governor.block_dispatch(
+        job.id, command_id="cancel-deferred", phase="recovery",
+    )
+    assert governor.unblock_terminal_dispatch(
+        job.id, expected_lease_generation=0,
+    )
+    assert tuple(ledger.connection().execute(
+        "SELECT dispatch_ready, terminal_blocked FROM job_admissions "
+        "WHERE job_id = ?", (job.id,),
+    ).fetchone()) == (0, 0)
+    assert governor.claim_next(owner_instance_id="worker") is None
+    assert governor.block_dispatch(
+        job.id, command_id="cancel-deferred", phase="recovery",
+    )
+    assert governor.release_job(job.id)
+    assert tuple(ledger.connection().execute(
+        "SELECT state, terminal_blocked, terminal_block_command_id, "
+        "terminal_block_phase, terminal_block_expires_at, "
+        "terminal_block_prior_dispatch_ready FROM job_admissions "
+        "WHERE job_id = ?", (job.id,),
+    ).fetchone()) == ("released", 0, None, None, None, None)
+
+
+def test_legacy_admission_schema_migrates_terminal_barrier_columns(tmp_path):
+    path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(path)
+    conn.execute(
+        """CREATE TABLE job_admissions (
+            admission_id TEXT PRIMARY KEY, job_id TEXT UNIQUE NOT NULL,
+            session_id TEXT NOT NULL, parent_job_id TEXT,
+            caller_session_id TEXT, caller_turn_id TEXT,
+            creates_agent INTEGER NOT NULL, request_fingerprint TEXT NOT NULL,
+            budget_scope_id TEXT NOT NULL, dispatch_ready INTEGER NOT NULL DEFAULT 1,
+            borrowed_parent_job_id TEXT, resume_parent_msg_id TEXT,
+            state TEXT NOT NULL, admitted_seq INTEGER NOT NULL,
+            owner_instance_id TEXT, lease_generation INTEGER NOT NULL DEFAULT 0,
+            lease_expires_at REAL, created_at REAL NOT NULL, started_at REAL,
+            last_activity_at REAL, released_at REAL, reason_code TEXT
+        )"""
+    )
+    conn.commit()
+    conn.close()
+    ledger = UsageLedger(path)
+    columns = {
+        row[1]: row[4]
+        for row in ledger.connection().execute("PRAGMA table_info(job_admissions)")
+    }
+    assert columns["terminal_blocked"] == "0"
+    assert "terminal_block_command_id" in columns
+    assert "terminal_block_phase" in columns
+    assert "terminal_block_expires_at" in columns
+    assert "terminal_block_prior_dispatch_ready" in columns
 
 
 def test_borrowed_pending_finalization_blocks_direct_and_orphan_release(
