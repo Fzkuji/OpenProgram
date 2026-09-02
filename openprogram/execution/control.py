@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 import sqlite3
 import time
 import uuid
 from dataclasses import dataclass, replace
-from threading import RLock
+from threading import RLock, Timer
 from typing import Any, Callable, Mapping
 
 from openprogram.paths import get_active_profile
@@ -325,6 +326,7 @@ class RuntimeControlService:
         activator: Activator | None = None,
         owner_id: str = "control-service",
         lease_ttl_seconds: float = 30.0,
+        cancel_grace_seconds: float = 30.0,
     ) -> None:
         self.executions = executions
         self.attempts = attempts
@@ -336,12 +338,14 @@ class RuntimeControlService:
         self.activator = activator
         self.owner_id = owner_id
         self.lease_ttl_seconds = lease_ttl_seconds
+        self.cancel_grace_seconds = max(0.0, float(cancel_grace_seconds))
         self._terminal_observer: Callable[[ExecutionRecord], object] | None = None
         self._terminal_preparer: Callable[..., object] | None = None
         self._terminal_recovery: Callable[..., object] | None = None
         self._cancel_delivery_lock = RLock()
         self._delivered_cancel_commands: set[str] = set()
         self._cancel_delivery_by_execution: dict[str, set[str]] = {}
+        self._cancel_escalations: dict[str, Timer] = {}
 
     def commit_agent_safe_point(
         self,
@@ -556,14 +560,82 @@ class RuntimeControlService:
                     execution_id, set(),
                 )
                 self._delivered_cancel_commands.difference_update(command_ids)
+                for pending_id in command_ids:
+                    timer = self._cancel_escalations.pop(pending_id, None)
+                    if timer is not None:
+                        timer.cancel()
                 return
             self._delivered_cancel_commands.discard(command_id)
+            timer = self._cancel_escalations.pop(command_id, None)
+            if timer is not None:
+                timer.cancel()
             command_ids = self._cancel_delivery_by_execution.get(execution_id)
             if command_ids is None:
                 return
             command_ids.discard(command_id)
             if not command_ids:
                 self._cancel_delivery_by_execution.pop(execution_id, None)
+
+    def _schedule_cancel_escalation(
+        self, command: ControlCommand, execution: ExecutionRecord,
+    ) -> None:
+        attempt_id = execution.current_attempt_id
+        generation = execution.owner_lease.get("generation")
+        if attempt_id is None or not isinstance(generation, int):
+            return
+        with self._cancel_delivery_lock:
+            if command.command_id in self._cancel_escalations:
+                return
+            timer = Timer(
+                self.cancel_grace_seconds,
+                self._escalate_cancel,
+                args=(
+                    command.command_id,
+                    execution.execution_id,
+                    attempt_id,
+                    generation,
+                    str(command.payload.get("reason_code") or "cancelled"),
+                ),
+            )
+            timer.daemon = True
+            self._cancel_escalations[command.command_id] = timer
+            timer.start()
+
+    def _escalate_cancel(
+        self,
+        command_id: str,
+        execution_id: str,
+        attempt_id: str,
+        generation: int,
+        reason: str,
+    ) -> None:
+        with self._cancel_delivery_lock:
+            self._cancel_escalations.pop(command_id, None)
+        execution = self.executions.get_execution(execution_id)
+        if execution is None or (
+            execution.status is not ExecutionStatus.CANCELLING
+            or execution.current_attempt_id != attempt_id
+            or execution.owner_lease.get("generation") != generation
+        ):
+            return
+        try:
+            receipt = asyncio.run(self.terminate_attempt(
+                execution_id=execution_id,
+                attempt_id=attempt_id,
+                generation=generation,
+                reason=reason,
+            ))
+            if not receipt.terminated:
+                return
+            recovery = self.recover_owner_loss(
+                execution_id,
+                attempt_id=attempt_id,
+                generation=generation,
+            )
+            if recovery.execution.status in TERMINAL_EXECUTION_STATUSES:
+                self._observe_terminal(recovery.execution)
+        except Exception:
+            _log.exception("cancel escalation failed for %s", execution_id)
 
     def _prune_cancel_delivery(self, execution_id: str) -> None:
         """Drop markers whose persisted commands are already terminal."""
@@ -1602,6 +1674,7 @@ class RuntimeControlService:
             self._remember_cancel_delivery(
                 execution_id, command.command_id,
             )
+            self._schedule_cancel_escalation(command, execution)
         return dispatch
 
     async def deliver_pending_cancel(
@@ -1664,6 +1737,7 @@ class RuntimeControlService:
                 self._remember_cancel_delivery(
                     execution_id, command.command_id,
                 )
+                self._schedule_cancel_escalation(command, execution)
             return dispatch
 
     def _record_terminal_recovery(

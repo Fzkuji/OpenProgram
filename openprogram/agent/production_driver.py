@@ -629,9 +629,32 @@ class AgentProductionDriver:
 
             registry = get_question_registry()
         registry.cancel_execution(handle.session_id, handle.execution_id)
+        killed = False
+        try:
+            from openprogram.agent.process_runner import kill_active_subprocess
+
+            killed = kill_active_subprocess(
+                handle.session_id, execution_id=handle.execution_id,
+            )
+        except Exception:
+            _log.exception(
+                "failed to terminate Agent subprocess for %s",
+                handle.execution_id,
+            )
+        try:
+            from openprogram.agent.run_control import kill_active_runtime
+
+            kill_active_runtime(
+                handle.session_id, execution_id=handle.execution_id,
+            )
+        except Exception:
+            _log.exception(
+                "failed to terminate Agent runtime for %s",
+                handle.execution_id,
+            )
         return TerminationReceipt(
             attempt_id=handle.attempt_id,
-            terminated=handle.done.done(),
+            terminated=killed or handle.done.done(),
             reason=reason,
         )
 
@@ -1216,7 +1239,7 @@ class AgentProductionDriver:
         if failed and failure_reason is None:
             failure_reason = "agent_runner_error"
         reason_code = (
-            "cancelled"
+            execution.reason_code or "cancelled"
             if cancelled
             else failure_reason
             if failed

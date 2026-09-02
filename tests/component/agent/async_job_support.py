@@ -57,12 +57,12 @@ def fake_worker(monkeypatch):
     cancel_seen = threading.Event()  # set inside fake when ev fires
     entered = threading.Event()  # set once the worker is INSIDE fake_run
 
-    def fake_run(*, session_id, prompt, agent_id, branch_from=None, label=None, spawn_caller=None, advance_head=True):
+    def fake_run(*, request, cancel_event, **_kwargs):
         from openprogram.agent.sub_agent_run import AgentTurnResult
-        from openprogram.agent.run_control import is_cancelled
         calls.append({
-            "session_id": session_id, "prompt": prompt,
-            "agent_id": agent_id, "branch_from": branch_from, "label": label,
+            "session_id": request.session_id, "prompt": request.user_text,
+            "agent_id": request.agent_id, "branch_from": request.branch_from,
+            "label": None,
         })
         # Signal "worker is past the pending→running transition and
         # actually executing fake_run". Tests that want to cancel
@@ -72,7 +72,7 @@ def fake_worker(monkeypatch):
         entered.set()
         # Hold until the test releases the barrier or this job is cancelled.
         while not barrier.is_set():
-            if is_cancelled(session_id):
+            if cancel_event.is_set():
                 cancel_seen.set()
                 return AgentTurnResult(head_id="head_x", final_text="",
                                        failed=True, error="cancelled")
@@ -82,7 +82,8 @@ def fake_worker(monkeypatch):
 
     import openprogram.agent.job.runner as runner_mod
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_run),
     )
     yield calls, barrier, cancel_seen, entered
     # Cleanup any singleton runner so the next test gets a fresh pool.

@@ -1036,7 +1036,7 @@ def _finalize_projections(
         if runner is not None:
             job = runner.get_job(execution_id)
             if job is not None and not is_terminal(job.status):
-                cancelled = runner.cancel_job(
+                cancelled = runner.cancel_execution(
                     execution_id, reason="execution cancelled",
                 )
                 if cancelled is None or not is_terminal(cancelled.status):
@@ -1592,17 +1592,19 @@ def _canonical_control_service(execution_id: str):
     from openprogram.execution import default_control_service
 
     try:
-        from openprogram.agent.job.runner import _runner
+        from openprogram.agent.job.runner import _runner, runner_for_execution_store
+        from openprogram.execution import default_store
 
-        if _runner is not None:
-            canonical = _runner._execution_store.get_execution(execution_id)
-            input_record = _runner._execution_store.get_execution_input(execution_id)
+        runner = _runner or runner_for_execution_store(default_store())
+        if runner is not None:
+            canonical = runner._execution_store.get_execution(execution_id)
+            input_record = runner._execution_store.get_execution_input(execution_id)
             if (
                 canonical is not None
                 and input_record is not None
                 and input_record.input_ref.startswith("job-input-v1:")
             ):
-                return _runner._execution_control
+                return runner._execution_control
     except Exception:
         pass
     return default_control_service()

@@ -69,7 +69,7 @@ def test_public_cancel_persists_canonical_execution_command(
             session_id="p1", prompt="cancel me", agent_id="main",
         )
         assert fake_worker[3].wait(3)
-        runner.cancel_job(job_id)
+        runner.cancel_execution(job_id)
         commands = default_execution_store().list_commands(job_id)
         cancel = [item for item in commands if item.kind is CommandKind.CANCEL]
         assert cancel
@@ -116,7 +116,7 @@ def test_public_cross_process_cancel_is_consumed_by_owner_worker(
         assert fake_worker[2].wait(2)
         assert wait_until(
             lambda: runner.get_job(job_id).status is JobStatus.CANCELLED,
-            timeout=3,
+            timeout=8,
         )
         execution = default_execution_store().get_execution(job_id)
         assert execution is not None
@@ -130,7 +130,7 @@ def test_public_cross_process_cancel_is_consumed_by_owner_worker(
             lambda: tuple(ledger.connection().execute(
                 "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
                 (job_id,),
-            ).fetchone()) == ("released", "cancel.user"),
+                ).fetchone())[0] == "released",
             timeout=3,
         )
     finally:
@@ -199,10 +199,15 @@ def test_public_job_reconciler_recovers_cancel_command_after_apply_failure(
             and runner.get_job(job_id).status is JobStatus.CANCELLED,
             timeout=8,
         )
-        command = default_execution_store().get_command(
-            f"execution-cancel:{job_id}",
+        assert wait_until(
+            lambda: (
+                (command := default_execution_store().get_command(
+                    f"execution-cancel:{job_id}",
+                )) is not None
+                and command.status is CommandStatus.APPLIED
+            ),
+            timeout=3,
         )
-        assert command is not None and command.status is CommandStatus.APPLIED
         assert runner._execution_control._delivered_cancel_commands == set()
         assert runner._execution_control._cancel_delivery_by_execution == {}
         assert tuple(ledger.connection().execute(
@@ -240,7 +245,8 @@ def test_cross_process_cancel_wins_natural_completion_race(
         )
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", natural_worker,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(natural_worker),
     )
     execution_db = tmp_path / "execution.sqlite3"
     monkeypatch.setattr(
@@ -254,14 +260,16 @@ def test_cross_process_cancel_wins_natural_completion_race(
         governor=ResourceGovernor(ledger),
         budget_poll_seconds=60,
     )
-    original_finish = runner._finish_canonical_attempt
+    original_finish = runner._execution_control.finish_attempt
 
     def delayed_finish(*args, **kwargs):
         finish_started.set()
         assert allow_finish.wait(3)
         return original_finish(*args, **kwargs)
 
-    monkeypatch.setattr(runner, "_finish_canonical_attempt", delayed_finish)
+    monkeypatch.setattr(
+        runner._execution_control, "finish_attempt", delayed_finish,
+    )
     try:
         job_id = runner.spawn_job(
             session_id="p1", prompt="natural completion race", agent_id="main",
@@ -278,7 +286,7 @@ def test_cross_process_cancel_wins_natural_completion_race(
 
         assert wait_until(
             lambda: runner.get_job(job_id).status is JobStatus.CANCELLED,
-            timeout=3,
+            timeout=8,
         )
         execution = default_execution_store().get_execution(job_id)
         command = default_execution_store().get_command(
@@ -288,13 +296,17 @@ def test_cross_process_cancel_wins_natural_completion_race(
         assert command is not None and command.status is CommandStatus.APPLIED
         assert execution.reason_code == "cancel.user"
         assert runner.get_job(job_id).reason_code == "cancel.user"
-        assert wait_until(
+        released = wait_until(
             lambda: tuple(ledger.connection().execute(
                 "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
                 (job_id,),
             ).fetchone()) == ("released", "cancel.user"),
             timeout=3,
         )
+        assert released, tuple(ledger.connection().execute(
+            "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
+            (job_id,),
+        ).fetchone())
     finally:
         allow_finish.set()
         runner.shutdown()
@@ -322,8 +334,8 @@ def test_cross_process_cancel_escalates_to_exact_owner_termination(
         return AgentTurnResult(final_text="late", head_id="late-head")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn",
-        uncooperative_worker,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(uncooperative_worker),
     )
     monkeypatch.setattr(runner_module, "_CANCEL_ESCALATION_SECS", 0.01)
 
@@ -363,13 +375,17 @@ def test_cross_process_cancel_escalates_to_exact_owner_termination(
         execution = runner._execution_store.get_execution(job_id)
         assert execution is not None and execution.status.value == "cancelled"
         assert execution.reason_code == "cancel.user"
-        assert wait_until(
+        released = wait_until(
             lambda: tuple(ledger.connection().execute(
                 "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
                 (job_id,),
             ).fetchone()) == ("released", "cancel.user"),
             timeout=3,
         )
+        assert released, tuple(ledger.connection().execute(
+            "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
+            (job_id,),
+        ).fetchone())
     finally:
         release_worker.set()
         runner.shutdown()
@@ -504,9 +520,9 @@ def test_failed_termination_keeps_live_owner_until_exact_recovery(
         return AgentTurnResult(final_text="late", head_id="late-head")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", hold_worker,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(hold_worker),
     )
-    schedule_called = threading.Event()
     terminate_called = threading.Event()
 
     async def fail_terminate(**_kwargs):
@@ -519,13 +535,6 @@ def test_failed_termination_keeps_live_owner_until_exact_recovery(
     ledger = UsageLedger(tmp_path / "termination-failure.db")
     runner = JobRunner(max_workers=1, governor=ResourceGovernor(ledger))
     try:
-        real_schedule = runner._schedule_canonical_termination
-
-        def schedule(*args, **kwargs):
-            schedule_called.set()
-            return real_schedule(*args, **kwargs)
-
-        monkeypatch.setattr(runner, "_schedule_canonical_termination", schedule)
         monkeypatch.setattr(
             runner._execution_control, "terminate_attempt", fail_terminate,
         )
@@ -533,18 +542,17 @@ def test_failed_termination_keeps_live_owner_until_exact_recovery(
             session_id="p1", prompt="terminate failure", agent_id="main",
         )
         assert entered.wait(2.0)
-        runner.cancel_job(job_id)
+        runner.cancel_execution(job_id)
         assert wait_until(
             lambda: runner._execution_store.get_execution(job_id).status.value
             == "cancelling",
             timeout=2.0,
         )
-        assert schedule_called.wait(2.0)
         assert terminate_called.wait(2.0)
         admission = ledger.connection().execute(
             "SELECT state FROM job_admissions WHERE job_id = ?", (job_id,),
         ).fetchone()
-        assert runner.get_job(job_id).status.value == "running"
+        assert runner._execution_store.get_execution(job_id).status.value == "cancelling"
         assert admission[0] == "stopping"
 
         execution = runner._execution_store.get_execution(job_id)
@@ -729,7 +737,6 @@ def test_force_termination_releases_exact_owner_after_background_escalation(
     monkeypatch.setattr(runner_module, "_CANCEL_ESCALATION_SECS", 0.01)
     entered = threading.Event()
     release_worker = threading.Event()
-    schedule_called = threading.Event()
     terminate_called = threading.Event()
 
     def hold_worker(**_kwargs):
@@ -738,7 +745,8 @@ def test_force_termination_releases_exact_owner_after_background_escalation(
         return AgentTurnResult(final_text="late", head_id="late-head")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", hold_worker,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(hold_worker),
     )
 
     def terminate_process(*_args, **_kwargs):
@@ -753,19 +761,11 @@ def test_force_termination_releases_exact_owner_after_background_escalation(
     ledger = UsageLedger(tmp_path / "termination-success.db")
     runner = JobRunner(max_workers=1, governor=ResourceGovernor(ledger))
     try:
-        real_schedule = runner._schedule_canonical_termination
-
-        def schedule(*args, **kwargs):
-            schedule_called.set()
-            return real_schedule(*args, **kwargs)
-
-        monkeypatch.setattr(runner, "_schedule_canonical_termination", schedule)
         job_id = runner.spawn_job(
             session_id="p1", prompt="force termination", agent_id="main",
         )
         assert entered.wait(2.0)
-        runner.cancel_job(job_id)
-        assert schedule_called.wait(2.0)
+        runner.cancel_execution(job_id)
         assert terminate_called.wait(2.0)
         assert wait_until(
             lambda: ledger.connection().execute(

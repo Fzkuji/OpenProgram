@@ -277,7 +277,7 @@ def clear(session_id: str, *, reason: str = "the target session was stopped") ->
         if tid:
             try:
                 from openprogram.agent.job import get_runner
-                get_runner().cancel_job(str(tid), reason=f"withdrawn: {reason}")
+                get_runner().cancel_execution(str(tid), reason=f"withdrawn: {reason}")
             except Exception:
                 pass
     return len(entries)
