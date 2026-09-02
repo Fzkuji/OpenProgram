@@ -552,12 +552,6 @@ export function isWsRequestPending(requestIdValue: unknown, action?: unknown): b
     && pendingRequestIds.get(requestIdValue) === action;
 }
 
-/** Register a manually-dispatched request (Review keeps snapshot handling local). */
-export function registerWsRequest(requestIdValue: string, action: string): () => void {
-  pendingRequestIds.set(requestIdValue, action);
-  return () => pendingRequestIds.delete(requestIdValue);
-}
-
 export interface WsRequestOptions {
   signal?: AbortSignal;
   requestId?: boolean;

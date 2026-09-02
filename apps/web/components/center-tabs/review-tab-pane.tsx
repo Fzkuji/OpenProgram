@@ -5,78 +5,20 @@ import { FileText } from "lucide-react";
 
 import { FeatherIcon } from "@/components/animated-icons";
 import { useTranslation } from "@/lib/i18n";
-import { wsRequest } from "@/lib/net/ws-request";
 import { UnifiedDiff } from "@/components/chat/messages/unified-diff";
 import styles from "./review-tab-pane.module.css";
 
-type ReviewScope = "turn" | "branch" | "workspace";
-type ReviewCategory = "All" | "Code" | "Tests" | "Docs" | "Large";
-type ReviewSort = "path" | "alpha" | "category" | "recent";
-const REVIEW_REQUEST_TIMEOUT_MS = 10_000;
-
-interface ReviewFile {
-  path: string;
-  rel: string;
-  op: string;
-  added: number | null;
-  removed: number | null;
-  binary?: boolean;
-  diff_state?: string;
-  turn_ids?: string[];
-  producer_turn_id?: string;
-  origin_turn_id?: string;
-  actor_id?: string;
-  actor_ids?: string[];
-  job_id?: string | null;
-  job_ids?: string[];
-}
-
-interface LinkedImpact {
-  job_id?: string;
-  relation?: string;
-  status?: string;
-  origin_turn_id?: string;
-  worktree_id?: string | null;
-}
-
-interface ScopeState {
-  loading: boolean;
-  status: string;
-  source?: string;
-  files: ReviewFile[];
-  file_count: number;
-  added: number | null;
-  removed: number | null;
-  snapshot_id?: string;
-  cursor?: string | null;
-  next_cursor?: string | null;
-  prev_cursor?: string | null;
-  page?: number;
-  error?: string;
-  linked_impacts: LinkedImpact[];
-  category?: ReviewCategory;
-  query?: string;
-  sort?: ReviewSort;
-}
-
-interface DiffState {
-  loading: boolean;
-  path?: string;
-  diff?: string;
-  diff_state?: string;
-  cursor?: string | null;
-  next_cursor?: string | null;
-  prev_cursor?: string | null;
-  line_count?: number;
-  error?: string;
-}
-
-export function ReviewTabPane({
-  sessionId,
-  assistantMsgId,
-  initialScope = "turn",
-  initialPath,
-}: {
+import type {
+  DiffState,
+  LinkedImpact,
+  ReviewCategory,
+  ReviewFile,
+  ReviewScope,
+  ReviewSort,
+  ScopeState,
+} from "./review-tab-types";
+import { requestReviewScope } from "./use-review-scope";
+import { requestReviewDiff } from "./use-review-diff";
   sessionId: string;
   assistantMsgId?: string;
   initialScope?: ReviewScope;
@@ -170,31 +112,17 @@ export function ReviewTabPane({
     setScopeState((current) => ({ ...current, loading: true, error: undefined }));
     const controller = new AbortController();
     void (async () => {
-      const data = await wsRequest<ScopeState & Record<string, unknown>>(
-        "review_scope",
-        {
-          session_id: sessionId,
-          assistant_msg_id: assistantMsgId,
-          scope,
-          category,
-          query,
-          sort,
-          cursor: fileCursor,
-          limit: 100,
-          ...(fileCursor && scopeState.snapshot_id
-            ? { snapshot_id: scopeState.snapshot_id }
-            : {}),
-        },
-        "review_scope_result",
-        (value) => value.session_id === sessionId
-          && value.scope === scope
-          && (scope !== "turn" || value.assistant_msg_id === assistantMsgId)
-          && value.category === category
-          && value.query === query
-          && value.sort === sort,
-        REVIEW_REQUEST_TIMEOUT_MS,
-        { signal: controller.signal },
-      );
+const data = await requestReviewScope({
+        sessionId,
+        assistantMsgId,
+        scope,
+        category,
+        query,
+        sort,
+        cursor: fileCursor,
+        snapshotId: scopeState.snapshot_id,
+        signal: controller.signal,
+      });
       if (controller.signal.aborted) return;
       if (!data) {
         setScopeState((current) => ({
@@ -264,30 +192,18 @@ export function ReviewTabPane({
     setDiffState({ loading: true, path: selectedPath });
     const controller = new AbortController();
     void (async () => {
-      const data = await wsRequest<DiffState & Record<string, unknown>>(
-        "review_file_diff",
-        {
-          session_id: sessionId,
-          assistant_msg_id: assistantMsgId,
-          scope,
-          category,
-          query,
-          sort,
-          path: selectedPath,
-          cursor: diffCursor,
-          snapshot_id: scopeState.snapshot_id,
-        },
-        "review_file_diff_result",
-        (value) => value.session_id === sessionId
-          && value.scope === scope
-          && value.path === selectedPath
-          && value.snapshot_id === scopeState.snapshot_id
-          && value.category === category
-          && value.query === query
-          && value.sort === sort,
-        REVIEW_REQUEST_TIMEOUT_MS,
-        { signal: controller.signal },
-      );
+      const data = await requestReviewDiff({
+        sessionId,
+        assistantMsgId,
+        scope,
+        category,
+        query,
+        sort,
+        path: selectedPath,
+        cursor: diffCursor,
+        snapshotId: scopeState.snapshot_id,
+        signal: controller.signal,
+      });
       if (controller.signal.aborted) return;
       if (!data) {
         setDiffState({

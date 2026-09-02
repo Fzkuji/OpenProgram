@@ -12,11 +12,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   File,
-  FileCode,
-  FileImage,
-  FileJson,
   FilePlus,
-  FileText,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -32,7 +28,6 @@ import {
   noteFileMtime,
   runServerRenameWithDrafts,
   type Project,
-  type ServerRenameResult,
 } from "@/lib/state/files-shared";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
@@ -63,6 +58,9 @@ import {
   matchingIndexes,
   visibleSearchPaths,
 } from "./explorer-search";
+import { baseOf, joinPath, parentOf } from "./file-tree-query";
+import { asServerRenameResult, type FileOperationResult } from "./file-tree-operation";
+import { FileGlyph, InlineNameInput } from "./file-tree-render";
 import styles from "./files-panel.module.css";
 
 export interface TreeEntry {
@@ -88,34 +86,6 @@ interface SearchResult extends TreeEntry {
   project_name?: string;
 }
 
-interface FileOperationResult {
-  project_id?: string;
-  path?: string;
-  status: "ready" | "error" | "conflict" | "recovery_required" | "in_progress";
-  ok?: boolean;
-  error_code?: string;
-  error?: string;
-  idempotency_key?: string;
-  operation_id?: string;
-}
-
-function asServerRenameResult(
-  result: FileOperationResult,
-  failureStatus: "error" | "recovery_required" = "error",
-): ServerRenameResult {
-  return {
-    status: result.status === "ready"
-      ? "ready"
-      : result.status === "recovery_required"
-        ? "recovery_required"
-        : failureStatus,
-    error_code: result.error_code,
-    error: result.error,
-    idempotency_key: result.idempotency_key,
-    operation_id: result.operation_id,
-  };
-}
-
 interface DirectoryPage {
   snapshotId: string | null;
   nextCursor: string | null;
@@ -135,18 +105,6 @@ interface SearchResultPayload {
 const DIM_DIRS = new Set([".git", "node_modules", ".venv", "__pycache__"]);
 const MAX_SEARCH_RESULTS = 500;
 
-function joinPath(dir: string, name: string): string {
-  return dir ? `${dir}/${name}` : name;
-}
-
-function parentOf(path: string): string {
-  const i = path.lastIndexOf("/");
-  return i > 0 ? path.slice(0, i) : "";
-}
-
-function baseOf(path: string): string {
-  return path.split("/").pop() || path;
-}
 
 /** Absolute project root per project id — fetched once via
  *  ``list_projects`` (the tree itself only knows the project id). */
@@ -175,88 +133,6 @@ const TREE_BASE_PAD = EXPLORER_BASE_PAD;
 const TREE_LABEL_OFFSET = 44;
 
 /** Extension bucket → icon + colour (existing accent tokens only). */
-const ICON_BUCKETS: [Set<string>, typeof File, string | undefined][] = [
-  [
-    new Set(["ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "rs", "go", "c", "cpp", "h", "hpp", "java", "sh"]),
-    FileCode,
-    "var(--accent-cyan)",
-  ],
-  [new Set(["json", "yaml", "yml", "toml", "csv"]), FileJson, "var(--accent-yellow)"],
-  [new Set(["md", "markdown", "txt", "rst", "log"]), FileText, undefined],
-  [new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "ico"]), FileImage, "var(--accent-purple)"],
-  [new Set(["pdf"]), FileText, "var(--accent-red)"],
-];
-
-function FileGlyph({ name }: { name: string }) {
-  const dot = name.lastIndexOf(".");
-  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
-  for (const [exts, Icon, color] of ICON_BUCKETS) {
-    if (exts.has(ext)) {
-      return (
-        <Icon size={15} className={styles.treeIcon} style={color ? { color } : undefined} />
-      );
-    }
-  }
-  return <File size={15} className={styles.treeIcon} />;
-}
-
-/** Editable row label for inline create / rename (VS Code style):
- *  Enter commits, Escape or blur cancels. Name validation (non-empty,
- *  no "/") happens here — an invalid Enter just keeps the input open. */
-function InlineNameInput({
-  initial,
-  onCommit,
-  onCancel,
-}: {
-  initial: string;
-  onCommit: (name: string) => void;
-  onCancel: () => void;
-}) {
-  const [value, setValue] = useState(initial);
-  const ref = useRef<HTMLInputElement>(null);
-  // Guards the Enter-then-blur double fire: committing unmounts the
-  // input, which fires a native blur that must not also cancel.
-  const done = useRef(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.focus();
-    const dot = initial.lastIndexOf(".");
-    el.setSelectionRange(0, dot > 0 ? dot : initial.length);
-  }, [initial]);
-
-  const finish = (fn: () => void) => {
-    if (done.current) return;
-    done.current = true;
-    fn();
-  };
-
-  return (
-    <input
-      ref={ref}
-      className={styles.treeInput}
-      value={value}
-      spellCheck={false}
-      onChange={(e) => setValue(e.target.value)}
-      onClick={(e) => e.stopPropagation()}
-      onBlur={() => finish(onCancel)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          const v = value.trim();
-          if (!v) return finish(onCancel);
-          if (v.includes("/")) return;
-          finish(() => onCommit(v));
-        } else if (e.key === "Escape") {
-          e.preventDefault();
-          finish(onCancel);
-        }
-      }}
-    />
-  );
-}
-
 type DirState = TreeEntry[] | "loading" | "error";
 
 export function FileTree({
