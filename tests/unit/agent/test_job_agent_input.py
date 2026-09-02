@@ -64,7 +64,9 @@ def test_job_input_caps_chain_and_resource_numbers():
         JobAgentInputV1.parse(invalid)
 
 
-def test_existing_job_activation_reads_the_outer_input_without_minting_identity(tmp_path):
+def test_existing_job_activation_reads_the_outer_input_without_minting_identity(
+    tmp_path, monkeypatch,
+):
     store = ExecutionStore(tmp_path / "execution.sqlite3")
     payload = JobAgentInputV1.parse(_payload()).to_dict()
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -78,6 +80,29 @@ def test_existing_job_activation_reads_the_outer_input_without_minting_identity(
         capabilities=AgentProductionDriver.capabilities_for_payload({
             "version": 1, "kind": "chat", "request": payload["turn_request"],
         }), job_agent_payload=payload,
+    )
+    # The production Job path installs both the canonical Job projection and
+    # its worktree before entering the Agent turn.  Keep this unit test small
+    # while providing those two runtime-owned dependencies; otherwise the
+    # driver correctly stops before invoking the injected turn runner.
+    job = JobAgentInputV1.parse(payload).to_job(
+        execution_id="j_existing", session_id="session-1",
+    )
+    job_runner = SimpleNamespace(
+        _canonical_job=lambda _execution_id: job,
+        _governance_context=lambda _job: SimpleNamespace(job_id=job.id),
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.job.runner.runner_for_execution_store",
+        lambda _store: job_runner,
+    )
+    monkeypatch.setattr(
+        "openprogram.worktree.manager.get_manager",
+        lambda: SimpleNamespace(
+            get_worktree=lambda _worktree_id: SimpleNamespace(
+                worktree_path=str(tmp_path),
+            ),
+        ),
     )
     seen = {}
 
