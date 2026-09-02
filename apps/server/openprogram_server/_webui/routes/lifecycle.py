@@ -55,6 +55,14 @@ def register(app):
                 content={"error": "no active execution"},
                 status_code=404,
             )
+        from openprogram.agent.production_driver import cancel_canonical_execution
+        canonical = await cancel_canonical_execution(execution_id)
+        if canonical is not None:
+            execution = canonical.execution.to_dict()
+            emit_ws_frame({"type": "execution.updated", "execution": execution})
+            from openprogram.webui import server as _s
+            _s._release_session_occupancy_for_execution(execution)
+            return JSONResponse(content={"execution": execution})
         try:
             execution = run_control.cancel_execution(execution_id)
         except run_control.ExecutionNotFound:
@@ -93,6 +101,14 @@ def register(app):
                 content={"error": "missing execution_id"},
                 status_code=400,
             )
+        from openprogram.agent.production_driver import cancel_canonical_execution
+        canonical = await cancel_canonical_execution(execution_id)
+        if canonical is not None:
+            execution = canonical.execution.to_dict()
+            emit_ws_frame({"type": "execution.updated", "execution": execution})
+            from openprogram.webui import server as _s
+            _s._release_session_occupancy_for_execution(execution)
+            return JSONResponse(content={"execution": execution})
         try:
             execution = run_control.cancel_execution(execution_id)
         except run_control.ExecutionNotFound:

@@ -234,6 +234,14 @@ async def handle_stop(ws, cmd: dict):
             },
         }))
         return
+    from openprogram.agent.production_driver import cancel_canonical_execution
+    canonical = await cancel_canonical_execution(execution_id)
+    if canonical is not None:
+        execution = canonical.execution.to_dict()
+        _broadcast_execution(execution)
+        from openprogram.webui import server as _s
+        _s._release_session_occupancy_for_execution(execution)
+        return
     try:
         execution = run_control.cancel_execution(execution_id)
     except (
@@ -265,6 +273,13 @@ async def handle_execution_cancel(ws, cmd: dict):
             "type": "error",
             "data": {"message": "Missing execution_id"},
         }))
+        return
+    from openprogram.agent.production_driver import cancel_canonical_execution
+    canonical = await cancel_canonical_execution(execution_id)
+    if canonical is not None:
+        execution = canonical.execution.to_dict()
+        _broadcast_execution(execution)
+        _s._release_session_occupancy_for_execution(execution)
         return
     try:
         execution = run_control.cancel_execution(execution_id)

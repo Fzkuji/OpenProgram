@@ -379,6 +379,20 @@ def run_agentic_function_call(
             (_rc_db2().get_session(session_id) or {}).get("agent_id")
             or _s._default_agent_id()
         )
+        surface_snapshot = None
+        if origin_window_id:
+            from openprogram.agent.surface_context import window_context
+
+            preferred_tab_id = (
+                str(surface_ref.get("tab_id") or "")
+                if isinstance(surface_ref, dict)
+                and surface_ref.get("window_id") == origin_window_id
+                else ""
+            )
+            surface_snapshot = window_context(
+                origin_window_id,
+                preferred_tab_id=preferred_tab_id,
+            )
     except Exception as exc:
         _s._release_run_reservation(session_id, msg_id)
         return {
@@ -538,13 +552,17 @@ def run_agentic_function_call(
                 "kind": "forced_tool",
                 "tool_name": name,
                 "tool_input": kwargs,
-                "anchor_msg_id": _canonical_anchor_msg_id,
+                # The node suffix is DAG provenance used to reuse the
+                # pre-created top-level code node. It is not lifecycle
+                # identity; execution_id remains the canonical owner.
+                "anchor_msg_id": anchor_msg_id or _canonical_anchor_msg_id,
                 "work_dir": work_dir,
                 "agent_id": agent_id,
                 "source": "fn-form",
                 "provider": provider,
                 "model": model,
                 "response_format": _response_format_payload,
+                "surface_context_snapshot": surface_snapshot,
             },
             trusted_actor=local_owner_authority(),
             user_message_id=msg_id,
@@ -647,6 +665,9 @@ def run_agentic_function_call(
     try:
         worker = threading.Thread(target=_run, daemon=True)
     except BaseException as exc:
+        _driver.fail_admission(
+            _admission, reason_code="agent_runner_error",
+        )
         _s._release_run_reservation(session_id, msg_id)
         return {
             "error": f"failed to create function execution: {type(exc).__name__}: {exc}",
@@ -665,6 +686,9 @@ def run_agentic_function_call(
     try:
         worker.start()
     except BaseException as exc:  # thread creation/start must roll back occupancy
+        _driver.fail_admission(
+            _admission, reason_code="agent_runner_error",
+        )
         if _s._finish_owned_run(session_id, msg_id):
             _s._emit_running_task_event(
                 session_id,

@@ -26,10 +26,14 @@ def _admitted(tmp_path, *, execution_id="exec-agent-1"):
         trusted_actor={"subject": "user-1", "session_id": "session-agent-1"},
         config_snapshot_ref="config:agent-1",
         agent_turn_payload={
-            "user_text": "durable agent turn",
-            "agent_id": "default",
-            "source": "web",
-            "permission_mode": "ask",
+            "version": 1,
+            "kind": "chat",
+            "request": {
+                "user_text": "durable agent turn",
+                "agent_id": "default",
+                "source": "web",
+                "permission_mode": "ask",
+            },
         },
     )
     return store, execution
@@ -39,10 +43,14 @@ def test_admission_persists_a_replayable_agent_turn_payload(tmp_path):
     store, execution = _admitted(tmp_path)
 
     assert store.get_agent_turn_input(execution.execution_id) == {
-        "user_text": "durable agent turn",
-        "agent_id": "default",
-        "source": "web",
-        "permission_mode": "ask",
+        "version": 1,
+        "kind": "chat",
+        "request": {
+            "user_text": "durable agent turn",
+            "agent_id": "default",
+            "source": "web",
+            "permission_mode": "ask",
+        },
     }
 
 
@@ -86,10 +94,14 @@ def test_activation_builds_existing_turn_from_immutable_input(tmp_path):
     def resolve(record):
         seen["record"] = record
         return {
-            "user_text": "continue the existing turn",
-            "agent_id": "default",
-            "source": "canonical-agent",
-            "permission_mode": "bypass",
+            "version": 1,
+            "kind": "chat",
+            "request": {
+                "user_text": "continue the existing turn",
+                "agent_id": "default",
+                "source": "canonical-agent",
+                "permission_mode": "bypass",
+            },
         }
 
     def run_turn(*, request, cancel_event):
@@ -191,10 +203,14 @@ def test_internal_canonical_entry_admits_before_activation_with_exact_identity(t
     admission = entry.admit(
         session_id="session-entry",
         turn_payload={
-            "user_text": "canonical public turn",
-            "agent_id": "default",
-            "source": "web",
-            "permission_mode": "ask",
+            "version": 1,
+            "kind": "chat",
+            "request": {
+                "user_text": "canonical public turn",
+                "agent_id": "default",
+                "source": "web",
+                "permission_mode": "ask",
+            },
         },
         trusted_actor={"subject": "user-1"},
         user_message_id="msg-user",
@@ -206,7 +222,7 @@ def test_internal_canonical_entry_admits_before_activation_with_exact_identity(t
     assert queued.status is ExecutionStatus.QUEUED
     assert admission.execution_id.startswith("exec_")
     assert admission.execution_id != "msg-user_reply"
-    assert store.get_agent_turn_input(admission.execution_id)["user_text"] == "canonical public turn"
+    assert store.get_agent_turn_input(admission.execution_id)["request"]["user_text"] == "canonical public turn"
 
     async def run():
         active = await entry.activate(admission)
@@ -252,9 +268,13 @@ def test_cancel_targets_exact_handle_and_releases_its_question_wait(tmp_path):
     driver = AgentProductionDriver(
         executions=store,
         input_resolver=lambda _record: {
-            "user_text": "ask",
-            "agent_id": "default",
-            "source": "canonical-agent",
+            "version": 1,
+            "kind": "chat",
+            "request": {
+                "user_text": "ask",
+                "agent_id": "default",
+                "source": "canonical-agent",
+            },
         },
         turn_runner=run_turn,
         question_registry=registry,
@@ -306,9 +326,13 @@ def test_cancel_rejects_a_handle_from_another_attempt(tmp_path):
     driver = AgentProductionDriver(
         executions=store,
         input_resolver=lambda _record: {
-            "user_text": "run",
-            "agent_id": "default",
-            "source": "canonical-agent",
+            "version": 1,
+            "kind": "chat",
+            "request": {
+                "user_text": "run",
+                "agent_id": "default",
+                "source": "canonical-agent",
+            },
         },
         turn_runner=lambda **_kwargs: type(
             "Result", (), {"failed": False, "error": None}
@@ -350,9 +374,13 @@ def test_runner_exception_finishes_as_failed(tmp_path):
     driver = AgentProductionDriver(
         executions=store,
         input_resolver=lambda _record: {
-            "user_text": "run",
-            "agent_id": "default",
-            "source": "canonical-agent",
+            "version": 1,
+            "kind": "chat",
+            "request": {
+                "user_text": "run",
+                "agent_id": "default",
+                "source": "canonical-agent",
+            },
         },
         turn_runner=run_turn,
     )

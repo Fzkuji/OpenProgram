@@ -58,20 +58,40 @@ class ProjectionConflict(ExecutionStoreError):
 _AGENT_TURN_INPUT_VERSION = 1
 _AGENT_TURN_INPUT_MAX_BYTES = 256 * 1024
 _AGENT_TURN_INPUT_KINDS = frozenset({"chat", "forced_tool"})
+_AGENT_TURN_INPUT_KEYS = frozenset({
+    "version", "kind", "request", "tool_name", "tool_input",
+    "anchor_msg_id", "work_dir", "agent_id", "source", "provider", "model",
+    "response_format", "surface_context_snapshot",
+})
 
 
 def _validate_agent_turn_payload(payload: Mapping[str, Any]) -> None:
     """Validate the durable Agent envelope without importing Agent runtime."""
     if not isinstance(payload, Mapping):
         raise ExecutionConflict("invalid_agent_input", "Agent turn input must be an object")
-    if "kind" not in payload and "version" not in payload:
-        return  # pre-cutover internal execution records
     if payload.get("version") != _AGENT_TURN_INPUT_VERSION:
         raise ExecutionConflict("invalid_agent_input_version", "unsupported Agent turn input version")
     kind = payload.get("kind")
     if kind not in _AGENT_TURN_INPUT_KINDS:
         raise ExecutionConflict("invalid_agent_input_kind", "Agent turn input kind must be chat or forced_tool")
-    encoded = _json(payload)
+    if set(payload) - _AGENT_TURN_INPUT_KEYS:
+        raise ExecutionConflict("invalid_agent_input", "Agent turn input has unknown fields")
+    if kind == "chat":
+        request = payload.get("request")
+        if not isinstance(request, Mapping):
+            raise ExecutionConflict("invalid_agent_input", "chat input requires a request object")
+        for required in ("user_text", "agent_id", "source"):
+            if not isinstance(request.get(required), str) or not request[required]:
+                raise ExecutionConflict("invalid_agent_input", f"chat input requires {required}")
+    else:
+        if not isinstance(payload.get("tool_name"), str) or not payload["tool_name"]:
+            raise ExecutionConflict("invalid_agent_input", "forced_tool input requires tool_name")
+        if not isinstance(payload.get("tool_input", {}), Mapping):
+            raise ExecutionConflict("invalid_agent_input", "forced_tool input requires an object tool_input")
+    try:
+        encoded = _json(payload)
+    except (TypeError, ValueError) as exc:
+        raise ExecutionConflict("invalid_agent_input", "Agent turn input must be JSON serializable") from exc
     if len(encoded.encode("utf-8")) > _AGENT_TURN_INPUT_MAX_BYTES:
         raise ExecutionConflict("agent_input_too_large", "Agent turn input exceeds the size limit")
 

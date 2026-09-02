@@ -29,7 +29,7 @@ import time
 import traceback
 
 
-def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> None:
+def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> bool:
     """User-initiated ``/spawn`` — runs another agent in the same
     session and lands the reply as a branch (or a new root) in the
     same DAG.
@@ -83,7 +83,7 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
             "content": "/spawn requires a prompt — usage: /spawn label: prompt text",
             "display": "chat",
         })
-        return
+        return False
 
     if not wait:
         # Async path: write a placeholder attach card with
@@ -96,7 +96,7 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
             context=context,
             chosen_agent=chosen_agent,
         )
-        return
+        return True
 
     try:
         from openprogram.agent.sub_agent_run import run_agent_turn
@@ -113,7 +113,7 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
             "content": f"spawn failed: {type(e).__name__}: {e}",
             "display": "chat",
         })
-        return
+        return False
 
     body = (
         result.final_text
@@ -237,6 +237,7 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
         "function": "agent",
         "display": "runtime",
     })
+    return not bool(result.failed or result.error)
 
 
 def _run_spawn_async(
@@ -414,7 +415,7 @@ def _run_spawn_async(
     })
 
 
-def _run_merge(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> None:
+def _run_merge(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> bool:
     """User-initiated ``/merge`` — runs ``process_merge_turn`` and
     broadcasts the result text into this (target) session.
 
@@ -436,7 +437,7 @@ def _run_merge(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
             ),
             "display": "chat",
         })
-        return
+        return False
 
     peers: list[dict] = []
     base_peer: int | None = None
@@ -475,7 +476,7 @@ def _run_merge(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
             "content": f"merge failed: {type(e).__name__}: {e}",
             "display": "chat",
         })
-        return
+        return False
 
     if result.failed:
         _s._broadcast_chat_response(session_id, msg_id, {
@@ -483,7 +484,7 @@ def _run_merge(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
             "content": result.error or "merge failed (no error message)",
             "display": "chat",
         })
-        return
+        return False
 
     # process_merge_turn advanced the store HEAD to the merge reply, but
     # the webui mirror (conv["head_id"] / conv["messages"]) is still on
@@ -507,6 +508,7 @@ def _run_merge(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
         "function": "merge",
         "display": "runtime",
     })
+    return True
 
 
 def execute_in_context(

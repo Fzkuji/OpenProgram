@@ -448,7 +448,8 @@ def test_handle_chat_starts_turn_when_ack_socket_is_gone(monkeypatch):
 def test_chat_ack_exposes_only_a_durable_cancellable_execution(
     monkeypatch, tmp_path,
 ):
-    from openprogram.agent import run_control
+    from openprogram.agent.production_driver import cancel_canonical_execution
+    from openprogram.execution import default_store
     from openprogram.store.session.session_store import SessionStore
     from openprogram.webui import server as _s
     from openprogram.webui.ws_actions import chat as chat_actions
@@ -500,10 +501,10 @@ def test_chat_ack_exposes_only_a_durable_cancellable_execution(
                 return
             execution_id = frame["data"]["execution_id"]
             observed["execution_id"] = execution_id
-            observed["record_exists"] = store.message_exists(
-                session_id, execution_id,
-            )
-            observed["cancel"] = run_control.cancel_execution(execution_id)
+            observed["record_exists"] = default_store().get_execution(execution_id) is not None
+            observed["cancel"] = (
+                await cancel_canonical_execution(execution_id)
+            ).execution.to_dict()
 
     try:
         asyncio.run(handle_chat(

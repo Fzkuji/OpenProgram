@@ -298,6 +298,44 @@ def _process_turn_once(
     user_msg_id = req.user_msg_id or uuid.uuid4().hex[:12]
     req.user_msg_id = user_msg_id
 
+    # User slash actions are still durable Agent turns. Keep their existing
+    # DAG-specific behavior behind the same dispatcher/driver lifecycle so
+    # public transports do not re-enter the legacy execute_in_context thread.
+    if req.interaction in {"spawn", "merge"}:
+        try:
+            from openprogram.webui._execute import _run_merge, _run_spawn
+
+            action_payload = dict(req.structured_output or {})
+            if req.interaction == "spawn":
+                action_ok = _run_spawn(
+                    session_id=req.session_id,
+                    msg_id=user_msg_id,
+                    kwargs=action_payload,
+                    agent_id=req.agent_id,
+                )
+            else:
+                action_ok = _run_merge(
+                    session_id=req.session_id,
+                    msg_id=user_msg_id,
+                    kwargs=action_payload,
+                    agent_id=req.agent_id,
+                )
+            return TurnResult(
+                final_text="",
+                user_msg_id=user_msg_id,
+                assistant_msg_id="",
+                failed=action_ok is False,
+                error=(f"{req.interaction} failed" if action_ok is False else ""),
+            )
+        except Exception as exc:
+            return TurnResult(
+                final_text="",
+                user_msg_id=user_msg_id,
+                assistant_msg_id="",
+                failed=True,
+                error=f"{req.interaction} failed: {type(exc).__name__}: {exc}",
+            )
+
     # Usage metering: label every LLM call in this turn with its source.
     # Default to "chat", but DON'T clobber a source an outer scope already
     # set (an @agentic_function runtime / subagent wraps the turn in

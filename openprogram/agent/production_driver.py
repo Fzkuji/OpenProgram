@@ -1,10 +1,9 @@
 """Internal production driver for canonical Agent executions.
 
-This module is deliberately not wired into the public turn entry points yet.
-It provides the first safe activation boundary: an immutable admission input is
-resolved into the existing dispatcher request, a live owner is bound to one
-attempt generation, and completion is written through the canonical control
-service only.
+This module provides the Agent activation boundary: an immutable, versioned
+admission input is resolved into the existing dispatcher request, a live owner
+is bound to one attempt generation, and completion is written through the
+canonical control service only.
 """
 
 from __future__ import annotations
@@ -116,6 +115,11 @@ def normalize_agent_turn_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         request_fields = frozenset(field.name for field in fields(TurnRequest))
         if set(request) - request_fields:
             raise AgentDriverError("invalid_input", "chat input has unknown request fields")
+        for required in ("user_text", "agent_id", "source"):
+            if not isinstance(request.get(required), str) or not request[required]:
+                raise AgentDriverError(
+                    "invalid_input", f"chat input requires {required}"
+                )
         value = {"version": AGENT_TURN_INPUT_VERSION, "kind": kind, "request": request}
     else:
         allowed = {"version", "kind", "tool_name", "tool_input", "anchor_msg_id", "work_dir", "agent_id", "source", "provider", "model", "response_format", "surface_context_snapshot"}
@@ -179,20 +183,13 @@ class AgentActivationService:
         # to a cache or transport object cannot alter the admitted turn.
         from openprogram.agent.dispatcher.types import TurnRequest
 
-        # Canonical entries carry an explicit envelope. Keep accepting the
-        # pre-cutover raw request shape for internal callers that already
-        # persisted an execution, but never infer forced-tool dispatch from a
-        # missing discriminator.
-        if "kind" in payload or "version" in payload:
-            envelope = normalize_agent_turn_payload(payload)
-            if envelope["kind"] != "chat":
-                raise AgentDriverError(
-                    "wrong_input_kind",
-                    "forced_tool input must be activated by the forced-tool runner",
-                )
-            values = envelope["request"]
-        else:
-            values = copy.deepcopy(dict(payload))
+        envelope = normalize_agent_turn_payload(payload)
+        if envelope["kind"] != "chat":
+            raise AgentDriverError(
+                "wrong_input_kind",
+                "forced_tool input must be activated by the forced-tool runner",
+            )
+        values = envelope["request"]
 
         request_fields = frozenset(field.name for field in fields(TurnRequest))
         unknown = set(values) - request_fields
@@ -398,6 +395,43 @@ class AgentProductionDriver:
             reason=reason,
         )
 
+    def fail_admission(
+        self, admission: CanonicalAgentAdmission, *, reason_code: str,
+    ) -> None:
+        """Finish an admitted turn that could not create a live owner.
+
+        Thread/process startup failures happen before ``activate`` can bind a
+        handle. This driver-owned path still leases the exact attempt and
+        records the failure through Control Service, without allowing a
+        transport or DAG helper to write execution lifecycle state.
+        """
+        service = self._control_service()
+        try:
+            attempt, leased = service.attempts.lease(
+                admission.execution_id,
+                expected_version=admission.status_version,
+                owner_id=f"agent-failure-{uuid.uuid4().hex}",
+                ttl_seconds=30,
+            )
+            active, running = service.attempts.activate(
+                attempt.attempt_id,
+                generation=attempt.generation,
+                expected_execution_version=leased.status_version,
+            )
+            service.finish_attempt(
+                attempt_id=active.attempt_id,
+                generation=active.generation,
+                expected_execution_version=running.status_version,
+                target=ExecutionStatus.FAILED,
+                outcome="failed",
+                reason_code=reason_code,
+            )
+        except Exception:
+            # The durable record may already have been handled by another
+            # owner or recovery pass. Never replace that state from a
+            # transport startup exception.
+            return
+
     async def _run_attempt(
         self,
         attempt: AttemptRecord,
@@ -543,6 +577,8 @@ class AgentProductionDriver:
             else ExecutionStatus.COMPLETED
         )
         outcome = "cancelled" if cancelled else "failed" if failed else "completed"
+        if failed and failure_reason is None:
+            failure_reason = "agent_runner_error"
         try:
             service.finish_attempt(
                 attempt_id=attempt.attempt_id,
@@ -627,8 +663,8 @@ class AgentProductionDriver:
 class CanonicalAgentEntry:
     """Internal durable admission and activation boundary for Agent turns.
 
-    Public transports do not use this class until every Agent entry point can
-    switch together.  It has no fallback to a message-derived execution id.
+    Public transports use this class for admission before acknowledgement or
+    activation. It has no fallback to a message-derived execution id.
     """
 
     _ENTRYPOINT = "openprogram.agent.production_driver:AgentProductionDriver"
@@ -651,22 +687,11 @@ class CanonicalAgentEntry:
         assistant_message_id: str | None,
         config_snapshot_ref: str,
     ) -> CanonicalAgentAdmission:
-        raw_payload = copy.deepcopy(dict(turn_payload))
-        if "kind" not in raw_payload and "version" not in raw_payload:
-            # Existing internal callers may still admit a request-shaped
-            # record. Public transports use the explicit envelope below.
-            supplied_session = raw_payload.pop("session_id", None)
-            payload = normalize_agent_turn_payload({
-                "version": AGENT_TURN_INPUT_VERSION,
-                "kind": "chat",
-                "request": raw_payload,
-            })
-        else:
-            payload = normalize_agent_turn_payload(raw_payload)
-            supplied_session = (
-                payload["request"].get("session_id")
-                if payload["kind"] == "chat" else None
-            )
+        payload = normalize_agent_turn_payload(turn_payload)
+        supplied_session = (
+            payload["request"].get("session_id")
+            if payload["kind"] == "chat" else None
+        )
         if supplied_session is not None and supplied_session != session_id:
             raise AgentDriverError(
                 "input_session_mismatch", "Agent admission input belongs to another session"
@@ -687,7 +712,7 @@ class CanonicalAgentEntry:
             user_message_id=user_message_id,
             assistant_message_id=assistant_message_id,
             capabilities=self.driver.capabilities(),
-            agent_turn_payload=(raw_payload if "kind" not in raw_payload and "version" not in raw_payload else payload),
+            agent_turn_payload=payload,
         )
         return CanonicalAgentAdmission(
             execution_id=record.execution_id,
@@ -732,6 +757,31 @@ class CanonicalAgentEntry:
         )
 
 
+async def cancel_canonical_execution(
+    execution_id: str, *, reason_code: str = "cancel.user",
+) -> Any | None:
+    """Cancel a canonical Agent execution through the control service.
+
+    ``None`` means the id belongs to the legacy DAG namespace; callers may
+    then apply their non-Agent compatibility behavior where still required.
+    """
+    from openprogram.agent.authority import local_owner_authority
+    from openprogram.execution import default_control_service, default_store
+
+    store = default_store()
+    execution = store.get_execution(execution_id)
+    if execution is None:
+        return None
+    service = default_control_service()
+    return await service.request_cancel(
+        command_id=f"cancel_{uuid.uuid4().hex}",
+        execution_id=execution_id,
+        expected_version=execution.status_version,
+        actor=local_owner_authority(),
+        reason_code=reason_code,
+    )
+
+
 __all__ = [
     "AgentActivationService",
     "AgentDriverError",
@@ -743,5 +793,6 @@ __all__ = [
     "AGENT_TURN_INPUT_VERSION",
     "MAX_AGENT_TURN_INPUT_BYTES",
     "normalize_agent_turn_payload",
+    "cancel_canonical_execution",
     "AgentProductionDriver",
 ]

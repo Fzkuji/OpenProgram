@@ -561,7 +561,7 @@ def test_forced_tool_passes_canonical_execution_id(monkeypatch):
         execution_id="forcednode",
     )
     assert captured["execution_id"] == "forcednode"
-    assert terminal[-1] == ("forcednode", "completed")
+    assert terminal == []
 
     captured.clear()
     forced_tool.dispatch_forced_tool_call(
@@ -570,8 +570,7 @@ def test_forced_tool_passes_canonical_execution_id(monkeypatch):
         tool_name="wc",
         tool_input={"text": "hi"},
     )
-    assert captured["execution_id"] == "fromanchor"
-    assert terminal[-1] == ("fromanchor", "completed")
+    assert captured["execution_id"] is None
 
     _Tool.name = "gui_agent"
     captured.clear()
@@ -606,7 +605,7 @@ def test_forced_tool_passes_canonical_execution_id(monkeypatch):
         tool_name="wc",
         tool_input={},
     )
-    assert terminal[-1] == ("unexpected", "interrupted")
+    assert terminal == []
 
     runner_out.clear()
     runner_out.update({
@@ -620,7 +619,7 @@ def test_forced_tool_passes_canonical_execution_id(monkeypatch):
         tool_name="wc",
         tool_input={},
     )
-    assert terminal[-1] == ("timedout", "error")
+    assert terminal == []
 
     records["requested"] = {
         "status": "cancelling",
@@ -634,7 +633,7 @@ def test_forced_tool_passes_canonical_execution_id(monkeypatch):
         tool_name="wc",
         tool_input={},
     )
-    assert terminal[-1] == ("requested", "cancelled")
+    assert terminal == []
 
 
 def test_forced_tool_exit_does_not_retire_successor_token(monkeypatch):

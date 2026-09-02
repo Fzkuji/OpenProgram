@@ -1336,22 +1336,27 @@ def run_agentic_in_subprocess(
         timeout = None if timeout_seconds is None else max(0.1, float(timeout_seconds))
         started = time.monotonic()
         cancel_sent = False
-        while p.is_alive():
-            p.join(0.05)
-            if cancel_event is not None and cancel_event.is_set() and not cancel_sent:
-                try:
-                    stop_queue.put("cancel", block=False)
-                except Exception:
-                    pass
-                cancel_sent = True
-            if timeout is not None and time.monotonic() - started >= timeout:
-                timed_out = True
-                from openprogram._compat import kill_process_tree
+        if cancel_event is None and timeout is None:
+            # Preserve the blocking process contract for callers that do not
+            # opt into canonical cancellation or a timeout.
+            p.join()
+        else:
+            while p.is_alive():
+                p.join(0.05)
+                if cancel_event is not None and cancel_event.is_set() and not cancel_sent:
+                    try:
+                        stop_queue.put("cancel", block=False)
+                    except Exception:
+                        pass
+                    cancel_sent = True
+                if timeout is not None and time.monotonic() - started >= timeout:
+                    timed_out = True
+                    from openprogram._compat import kill_process_tree
 
-                if not kill_process_tree(p.pid):
-                    p.kill()
-                p.join(timeout=5)
-                break
+                    if not kill_process_tree(p.pid):
+                        p.kill()
+                    p.join(timeout=5)
+                    break
     finally:
         # No Page command may begin after this point. A command already waiting
         # for the renderer holds ``webtab_cleanup_lock``; the bounded drain wait

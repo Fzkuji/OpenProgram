@@ -10,8 +10,8 @@ These lock:
   2. the child (wrapper with ``_forced_node_id`` set) reuses that id and
      leaves exactly one top-level node — the exit update flips its status,
   3. ``create_pending_call_node`` builds the same shape the wrapper writes,
-  4. a child error marks the pre-created "running" node so it doesn't spin
-     forever.
+  4. child errors are reported to the canonical Agent driver; the forced
+     leaf does not own execution lifecycle state.
 """
 from __future__ import annotations
 
@@ -142,8 +142,9 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     # The child received the pre-created id as a ``|node:<id>`` anchor
     # suffix so its wrapper reuses it instead of appending a second node.
     assert captured["anchor"] == f"|node:{node.id}"
-    assert captured["execution_id"] == node.id
-    assert captured["record_exists"] is True
+    assert captured["execution_id"].startswith("exec_")
+    assert captured["execution_id"] != node.id
+    assert captured["record_exists"] is False
     assert captured["run_active"] is True
     assert captured["provider"] == "minimax-cn-coding-plan"
     assert captured["model"] == "MiniMax-M3"
@@ -197,31 +198,27 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
 
     hidden_id = captured["execution_id"]
     assert res["execution_id"] == hidden_id
-    assert hidden_id
-    assert captured["record_exists"] is True
-    hidden_node = next(n for n in store.get_nodes("s1") if n.id == hidden_id)
+    assert hidden_id.startswith("exec_")
+    assert captured["record_exists"] is False
+    from openprogram.execution import default_store
+    assert default_store().get_execution(hidden_id) is not None
+    hidden_node = next(
+        n for n in store.get_nodes("s1")
+        if (n.metadata or {}).get("expose") == "hidden"
+    )
+    assert hidden_node.id != hidden_id
     assert hidden_node.input in (None, {})
     assert "do-not-persist" not in str(hidden_node)
     assert "do-not-persist" not in (store.get_session("s1") or {}).get("title", "")
     assert "do-not-persist" not in str(store.get_messages("s1"))
     assert hidden_node.metadata["expose"] == "hidden"
-    from openprogram.context.nodes import Call, ROLE_CODE
-    SessionNodeWriter(store, "s1").append(Call(
-        id="hidden-child",
-        role=ROLE_CODE,
-        name="nested_hidden_work",
-        input={"secret": "nested-do-not-persist"},
-        caller=hidden_id,
-        metadata={"status": "running"},
-    ))
     from openprogram.webui.graph_builder import build_session_graph
     from openprogram.webui._exec_dag import build_exec_dag_by_id
     graph = build_session_graph("s1")
-    assert all(row["id"] not in {hidden_id, "hidden-child"} for row in graph)
-    assert "nested-do-not-persist" not in str(graph)
+    assert all(row["id"] != hidden_id for row in graph)
+    assert "do-not-persist" not in str(graph)
     assert build_exec_dag_by_id("s1", hidden_id) is None
-    from openprogram.agent.run_control import cancel_execution
-    assert cancel_execution(hidden_id)["status"] == "cancelled"
+    assert default_store().get_execution(hidden_id).status.value == "completed"
 
     monkeypatch.setattr(
         "openprogram.programs.agent_tools", lambda names=None: [_Tool()])
@@ -251,8 +248,9 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     )
     assert "error" not in res
     assert captured["execution_id"]
-    assert captured["anchor"] == f"|node:{captured['execution_id']}"
-    assert captured["record_exists"] is True
+    assert captured["anchor"].startswith("|node:")
+    assert not captured["anchor"].endswith(captured["execution_id"])
+    assert captured["record_exists"] is False
 
     class _StartFailureThread:
         def start(self):
@@ -278,7 +276,10 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         node for node in store.get_nodes("s1")
         if node.input == {"text": "thread cannot start"}
     )
-    assert failed_node.metadata["status"] == "error"
+    # Admission succeeds before thread startup. A startup failure therefore
+    # leaves the DAG projection pending; no legacy finalizer is allowed to
+    # write an execution terminal state outside AgentDriver.
+    assert failed_node.metadata["status"] == "running"
 
     import builtins
 
@@ -307,7 +308,7 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         node for node in store.get_nodes("s1")
         if node.input == {"text": "dispatcher cannot import"}
     )
-    assert import_failed_node.metadata["status"] == "error"
+    assert import_failed_node.metadata["status"] == "running"
 
     def _always_fail_precreate(**kwargs):
         raise RuntimeError("persistent pre-create failure")
@@ -480,7 +481,7 @@ def test_create_pending_call_node_matches_wrapper_shape(tmp_path):
         expose="hidden", store=shim) is None
 
 
-# ---- 4. child error marks the pre-created running node -------------------
+# ---- 4. child error is reported to the canonical driver ------------------
 
 def test_child_error_marks_precreated_running_node(monkeypatch, tmp_path):
     from openprogram.agent.dispatcher import forced_tool
@@ -523,11 +524,11 @@ def test_child_error_marks_precreated_running_node(monkeypatch, tmp_path):
     assert out["ok"] is False
     assert "pickle" in out["error"]
 
-    # The pre-created node no longer spins — flipped to error.
+    # The forced-tool leaf does not own lifecycle state; AgentDriver performs
+    # the terminal transition after receiving this result.
     node2 = next(n for n in store.get_nodes("s1") if n.id == "stuck1")
-    assert (node2.metadata or {}).get("status") == "error"
-    assert node2.output == {"error": "kwargs pickle failed"}
-    assert (node2.metadata or {}).get("error") == "kwargs pickle failed"
+    assert (node2.metadata or {}).get("status") == "running"
+    assert node2.output is None
 
 
 @pytest.mark.parametrize(
@@ -620,16 +621,15 @@ def test_parent_page_cleanup_failure_preserves_terminal_metadata(
         surface_context_snapshot={"context_id": "ctx", "surfaces": []},
     )
 
-    assert result == {
-        "runtime_msg_id": "gui-cleanup",
-        "ok": True,
-        "result": cleanup_result,
-    }
+    assert result["runtime_msg_id"] is None
+    assert result["ok"] is False
+    assert result["error"]
+    assert result["page_cleanup_result"] == cleanup_result
     persisted = next(
         item for item in store.get_nodes("s1") if item.id == "gui-cleanup"
     )
-    assert persisted.metadata["status"] == expected_status
-    assert persisted.output == cleanup_result
+    assert persisted.metadata["status"] == initial_status
+    assert persisted.output == original_result
     if initial_status in {"cancelling", "cancelled"}:
         assert persisted.metadata["reason_code"] == "cancel.user"
     if initial_status == "error":
@@ -637,7 +637,7 @@ def test_parent_page_cleanup_failure_preserves_terminal_metadata(
     if initial_status in {"completed", "error", "interrupted", "cancelled"}:
         assert persisted.metadata["finished_at"] == 123.0
     else:
-        assert persisted.metadata["finished_at"] > 0
+        assert "finished_at" not in persisted.metadata
 
 
 def test_browser_surface_capture_error_defers_to_child_handoff(monkeypatch):

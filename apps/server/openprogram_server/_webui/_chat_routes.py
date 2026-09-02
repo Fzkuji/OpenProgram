@@ -22,6 +22,7 @@ from __future__ import annotations
 import threading
 import time
 import uuid
+import json
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -143,23 +144,87 @@ def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | N
 
     _srv._save_session(session_id)
 
-    # Kick off the run against the new user message. Same dispatch
-    # logic as the WS ``chat`` action.
-    parsed = _srv._parse_chat_input(new_user["content"] or "")
-    # @agentic_function dispatch left the chat parser — retries always
-    # route through the LLM ``query`` path now. Direct function calls
-    # use POST /api/function/{name} explicitly.
-    threading.Thread(
-        target=_srv._execute_in_context,
-        args=(session_id, new_msg_id, "query"),
-        kwargs={"query": parsed["raw"]},
-        daemon=True,
-    ).start()
+    if not _srv._try_reserve_run(session_id, new_msg_id):
+        return {"__error__": (
+            "a run is currently active — wait for it to finish or stop it first",
+            409,
+        )}
+
+    # Retry/edit uses the same durable Agent admission as WS chat. The
+    # forked message id is transport/DAG provenance only; execution_id is
+    # minted by the canonical store and returned after admission.
+    try:
+        from openprogram.agent.authority import local_owner_authority
+        from openprogram.agent.production_driver import (
+            AGENT_TURN_INPUT_VERSION,
+            AgentProductionDriver,
+            CanonicalAgentEntry,
+        )
+        from openprogram.execution import default_control_service, default_store
+
+        execution_store = default_store()
+        driver = AgentProductionDriver(
+            execution_store,
+            control_service=default_control_service(),
+            event_sink=lambda env: _srv._broadcast(json.dumps(env, default=str)),
+        )
+        entry = CanonicalAgentEntry(execution_store, driver)
+        admission = entry.admit(
+            session_id=session_id,
+            turn_payload={
+                "version": AGENT_TURN_INPUT_VERSION,
+                "kind": "chat",
+                "request": {
+                    "session_id": session_id,
+                    "user_text": str(new_user.get("content") or ""),
+                    "agent_id": (new_user.get("agent_id") or "main"),
+                    "source": "web",
+                    "user_msg_id": new_msg_id,
+                    "user_already_persisted": True,
+                },
+            },
+            trusted_actor=local_owner_authority(),
+            user_message_id=new_msg_id,
+            assistant_message_id=None,
+            config_snapshot_ref=f"session:{session_id}",
+        )
+    except Exception as exc:
+        _srv._release_run_reservation(session_id, new_msg_id)
+        return {"__error__": (f"retry admission failed: {type(exc).__name__}: {exc}", 500)}
+
+    with _srv._running_tasks_lock:
+        task = _srv._running_tasks.get(session_id)
+        if task and task.get("msg_id") == new_msg_id:
+            task["execution_id"] = admission.execution_id
+
+    def _run_canonical():
+        async def _activate():
+            active = await entry.activate(admission)
+            handle = driver._handles[
+                (active.admission.execution_id, active.attempt_id, active.generation)
+            ]
+            return await handle.done
+
+        import asyncio
+        try:
+            asyncio.run(_activate())
+        finally:
+            _srv._finish_owned_run(session_id, new_msg_id)
+
+    try:
+        threading.Thread(target=_run_canonical, args=(), kwargs={}, daemon=True).start()
+    except Exception as exc:
+        driver.fail_admission(
+            admission, reason_code="agent_runner_error",
+        )
+        _srv._release_run_reservation(session_id, new_msg_id)
+        return {"__error__": (f"retry activation failed: {type(exc).__name__}: {exc}", 500)}
 
     return {
         "session_id": session_id,
         "msg_id": new_msg_id,
         "forked_from": src_user.get("id"),
+        "execution_id": admission.execution_id,
     }
 
 

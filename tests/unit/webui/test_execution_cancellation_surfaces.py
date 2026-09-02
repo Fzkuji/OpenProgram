@@ -56,9 +56,11 @@ def test_surfaces_send_execution_cancel_and_use_cancel_copy():
     assert "/api/execution/cancel" in cli_cmd
     assert "from openprogram.agent.run_control import" not in cli_cmd
     assert "execution_id=resolved_execution_id" in forced
-    assert "execution_id=_forced_node_id" in (
+    route = (
         ROOT / "apps/server/openprogram_server/_webui/routes/chat.py"
     ).read_text(encoding="utf-8")
+    assert '"kind": "forced_tool"' in route
+    assert '"execution_id": execution_id' in route
     assert 'dest="execution_verb"' in parser
     assert '"cancel", help="Cancel one execution by id"' in parser
     assert "execution_id" in parser

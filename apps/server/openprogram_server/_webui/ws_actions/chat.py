@@ -924,6 +924,10 @@ async def handle_chat(ws, cmd: dict):
         "content": text,
         "timestamp": time.time(),
         "source": "web",
+        "interaction": (
+            "spawn" if parsed.get("action") == "spawn"
+            else "merge" if parsed.get("action") == "merge" else None
+        ),
         **_local_authority,
     }
     if parsed["action"] == "spawn":
@@ -990,6 +994,19 @@ async def handle_chat(ws, cmd: dict):
         "user_msg_id": msg_id,
         "user_already_persisted": True,
         "surface_context": surface_ref,
+        "structured_output": (
+            {
+                "prompt": parsed.get("prompt") or "",
+                "label": parsed.get("label") or "",
+                "context": parsed.get("context") or "inherit",
+                "wait": parsed.get("wait", True),
+            }
+            if parsed.get("action") == "spawn" else {
+                "sub_sessions": parsed.get("sub_sessions") or [],
+                "message": parsed.get("message") or "",
+            }
+            if parsed.get("action") == "merge" else None
+        ),
         "additional_working_dirs": getattr(run_cfg, "additional_working_dirs", []),
     }
     try:
