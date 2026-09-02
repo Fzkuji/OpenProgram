@@ -102,6 +102,9 @@ def _service(
         for key, event in current_events.items():
             if key[1] == execution_id:
                 event.set()
+        return SimpleNamespace(
+            execution=SimpleNamespace(status="cancelling"),
+        )
 
     def acquire_cleanup(session_id, event):
         if (
@@ -303,7 +306,9 @@ def test_pre_admission_cancel_cleans_guard_before_next_prompt(monkeypatch) -> No
     monkeypatch.setattr(
         "openprogram.agent.production_driver.CanonicalAgentAdapter", Adapter,
     )
-    service = _service(cancel=lambda _execution_id: None)
+    service = _service(cancel=lambda _execution_id: SimpleNamespace(
+        execution=SimpleNamespace(status="cancelling")
+    ))
 
     async def scenario():
         first = asyncio.create_task(
@@ -329,6 +334,46 @@ def test_pre_admission_cancel_cleans_guard_before_next_prompt(monkeypatch) -> No
     asyncio.run(scenario())
     assert admissions == 2
     assert _active(service) == ()
+
+
+def test_prompt_cancel_without_canonical_result_does_not_cleanup() -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    def process(req, *, cancel_event):
+        entered.set()
+        release.wait(2)
+        return TurnResult("normal", "u", "a")
+
+    service = _service(process=process, cancel=lambda _execution_id: None)
+
+    async def scenario():
+        task = asyncio.create_task(
+            service.prompt_send("prompt", session_id="existing", request_id="r1")
+        )
+        await asyncio.to_thread(entered.wait, 1)
+        record = _active(service)[0]
+        result = await service.prompt_cancel("existing")
+        assert _payload(result) == {"session_id": "existing", "cancelled": False}
+        assert not record.thread_cancel.is_set()
+        assert _active(service) == (record,)
+        release.set()
+        return await task
+
+    result = asyncio.run(scenario())
+    assert _payload(result)["text"] == "normal"
+
+
+def test_sync_mcp_close_requires_async_lifecycle_inside_running_loop() -> None:
+    service = _service()
+
+    async def scenario():
+        with pytest.raises(RuntimeError, match="requires await aclose"):
+            service.close()
+        assert service._closed is False
+        await service.aclose()
+
+    asyncio.run(scenario())
 
 
 @pytest.mark.parametrize("session_id", ["unknown", "malformed"])
@@ -394,7 +439,7 @@ def test_rejected_omitted_session_does_not_create_orphan(rejection) -> None:
     async def scenario():
         first = None
         if rejection == "closed":
-            service.close()
+            await service.aclose()
         else:
             first = asyncio.create_task(
                 service.prompt_send("first", session_id="existing", request_id="same")
@@ -830,8 +875,11 @@ def test_two_services_cannot_share_or_cross_cancel_one_process_session() -> None
             _context(client_id),
             session_db=db,
             process_user_turn=process(label),
-            cancel_execution=lambda execution_id: cleanup.append(
-                (label, "cancel", execution_id)
+            cancel_execution=lambda execution_id: (
+                cleanup.append((label, "cancel", execution_id))
+                or SimpleNamespace(
+                    execution=SimpleNamespace(status="cancelling")
+                )
             ),
             question_registry_getter=lambda: questions,
             event_bus_getter=create_event_bus,
@@ -872,7 +920,7 @@ def test_two_services_cannot_share_or_cross_cancel_one_process_session() -> None
         await asyncio.to_thread(entered["b"].wait, 1)
         record_b = _active(service_b)[0]
 
-        service_a.close()
+        await service_a.aclose()
         assert not record_b.thread_cancel.is_set()
         assert not record_b.tool_cancel.is_set()
         assert questions_b.cancelled == []
@@ -922,8 +970,11 @@ def test_old_owner_cleanup_cannot_cross_concurrent_session_handover(operation) -
         process_user_turn=process,
         acquire_cancel_cleanup=acquire_cleanup,
         release_cancel_cleanup=lambda selected_session_id, event: None,
-        cancel_execution=lambda execution_id: cleanup.append(
-            ("cancel", execution_id)
+        cancel_execution=lambda execution_id: (
+            cleanup.append(("cancel", execution_id))
+            or SimpleNamespace(
+                execution=SimpleNamespace(status="cancelling")
+            )
         ),
         question_registry_getter=lambda: questions,
         event_bus_getter=create_event_bus,
@@ -961,7 +1012,7 @@ def test_old_owner_cleanup_cannot_cross_concurrent_session_handover(operation) -
         assert not foreign_event.is_set()
         assert cleanup == [("cancel", record.execution_id)]
 
-        service.close()
+        await service.aclose()
 
         release_turn.set()
         with pytest.raises(asyncio.CancelledError):
@@ -1229,8 +1280,8 @@ def test_close_unsubscribes_once_and_cleans_only_owned_requests() -> None:
         )
         await asyncio.to_thread(entered.wait, 1)
         captured_execution_ids.append(_active(service)[0].execution_id)
-        service.close()
-        service.close()
+        await service.aclose()
+        await service.aclose()
         release.set()
         with pytest.raises(asyncio.CancelledError):
             await task
@@ -1303,7 +1354,7 @@ def test_cancelled_late_worker_exception_cannot_publish_result(operation) -> Non
         if operation == "prompt_cancel":
             assert _payload(await service.prompt_cancel("existing"))["cancelled"] is True
         else:
-            service.close()
+            await service.aclose()
         release.set()
         with pytest.raises(asyncio.CancelledError):
             await task
@@ -1373,6 +1424,9 @@ def test_new_same_session_request_is_rejected_until_old_cleanup_finishes() -> No
     def blocking_cancel(_execution_id):
         cleanup_entered.set()
         cleanup_release.wait(2)
+        return SimpleNamespace(
+            execution=SimpleNamespace(status="cancelling"),
+        )
 
     service._cancel_execution = blocking_cancel
 

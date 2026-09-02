@@ -298,7 +298,7 @@ def test_connection_close_sweeps_web_use_session_created_by_late_dispatch(
             cancel_event=asyncio.Event(),
         ))
         assert await asyncio.to_thread(started.wait, 2)
-        service.close()
+        await service.aclose()
         finish.set()
         result = await task
         assert result.is_error is True

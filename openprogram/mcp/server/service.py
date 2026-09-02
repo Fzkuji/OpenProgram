@@ -637,6 +637,8 @@ class MCPService:
             except Exception:
                 return False
 
+            if result is None:
+                return False
             execution = getattr(result, "execution", None)
             status = getattr(execution, "status", None)
             if isinstance(status, ExecutionStatus):
@@ -645,6 +647,8 @@ class MCPService:
                 ExecutionStatus.CANCELLING.value,
                 ExecutionStatus.CANCELLED.value,
             }:
+                return False
+            if status is None:
                 return False
 
             with self._active_lock:
@@ -736,17 +740,19 @@ class MCPService:
         )
 
     async def aclose(self) -> None:
+        """Await canonical cancellation before releasing MCP-owned state."""
         request_ids = self._begin_close()
         await self._finish_close(request_ids)
 
     def close(self) -> None:
-        request_ids = self._begin_close()
+        """Synchronously close only when no event loop is running."""
         try:
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
         except RuntimeError:
+            request_ids = self._begin_close()
             asyncio.run(self._finish_close(request_ids))
         else:
-            loop.create_task(self._finish_close(request_ids))
+            raise RuntimeError("MCPService.close() requires await aclose()")
 
     async def web_use_call(
         self,
