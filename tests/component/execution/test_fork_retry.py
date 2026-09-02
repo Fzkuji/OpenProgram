@@ -130,6 +130,24 @@ def test_fork_rejects_incomplete_duplicate_unsorted_or_mismatched_prefix(tmp_pat
     assert store.get_command("fork") is None
 
 
+def test_fork_rejects_non_mapping_prefix_entries(tmp_path):
+    store, attempts, service, source, checkpoint = _source(tmp_path)
+
+    with pytest.raises(ExecutionConflict) as invalid:
+        service.request_fork(
+            command_id="fork",
+            execution_id=source.execution_id,
+            expected_version=source.status_version,
+            actor={},
+            checkpoint_id=checkpoint.checkpoint_id,
+            revision_manifest={"entrypoint": "edited"},
+            compatible_prefix=["not-a-mapping"],
+        )
+
+    assert invalid.value.code == "invalid_compatible_prefix"
+    assert store.get_command("fork") is None
+
+
 def test_fork_requires_nonlegacy_completed_frontier_and_own_checkpoint(tmp_path):
     store, attempts, service, source, checkpoint = _source(tmp_path, frontier=False)
     with pytest.raises(ExecutionConflict) as missing:
@@ -227,11 +245,45 @@ def test_first_child_activation_uses_source_checkpoint_and_starts_a_new_chain(tm
     assert child_running.checkpoint_head_id == child_checkpoint.checkpoint_id
 
 
-def test_v2_to_v3_migration_preserves_legacy_rows_and_revision_identity(tmp_path):
+def test_v2_to_v4_migration_preserves_legacy_rows_and_revision_identity(tmp_path):
     path = tmp_path / "legacy.db"
     connection = sqlite3.connect(path)
     initialize_schema(connection)
-    connection.execute("ALTER TABLE executions DROP COLUMN source_checkpoint_id")
+    connection.execute("PRAGMA foreign_keys = OFF")
+    connection.execute("DROP INDEX executions_session_status")
+    connection.execute("DROP INDEX executions_run_parent")
+    connection.execute(
+        """
+        CREATE TABLE executions_v2 (
+            execution_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            parent_execution_id TEXT,
+            revision_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            status_version INTEGER NOT NULL,
+            reason_code TEXT,
+            current_attempt_id TEXT,
+            owner_lease_json TEXT NOT NULL,
+            checkpoint_head_id TEXT,
+            safe_point_json TEXT NOT NULL,
+            capabilities_json TEXT NOT NULL,
+            effect_summary_json TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            terminal_at REAL
+        )
+        """
+    )
+    connection.execute(
+        "INSERT INTO executions_v2 SELECT execution_id, run_id, session_id, "
+        "parent_execution_id, revision_id, status, status_version, reason_code, "
+        "current_attempt_id, owner_lease_json, checkpoint_head_id, "
+        "safe_point_json, capabilities_json, effect_summary_json, created_at, "
+        "updated_at, terminal_at FROM executions"
+    )
+    connection.execute("DROP TABLE executions")
+    connection.execute("ALTER TABLE executions_v2 RENAME TO executions")
     connection.execute("ALTER TABLE commands DROP COLUMN result_json")
     connection.execute("ALTER TABLE checkpoints DROP COLUMN completed_frontier_json")
     manifest = {"entrypoint": "legacy"}
@@ -250,7 +302,7 @@ def test_v2_to_v3_migration_preserves_legacy_rows_and_revision_identity(tmp_path
     legacy = store.get_revision("legacy-revision")
     assert legacy is not None and legacy.content_hash == legacy_hash
     with sqlite3.connect(path) as migrated:
-        assert migrated.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert migrated.execute("PRAGMA user_version").fetchone()[0] == 4
         names = {row[1] for row in migrated.execute("PRAGMA table_info(executions)")}
         assert "source_checkpoint_id" in names
         assert any(
@@ -262,6 +314,62 @@ def test_v2_to_v3_migration_preserves_legacy_rows_and_revision_identity(tmp_path
     reused = store.create_revision(manifest=manifest, parent_revision_id=None)
     assert reused.revision_id == "legacy-revision"
     assert reused.content_hash == legacy_hash
+
+
+def test_v3_migration_rebuilds_source_checkpoint_foreign_key(tmp_path):
+    path = tmp_path / "v3.db"
+    connection = sqlite3.connect(path)
+    initialize_schema(connection)
+    connection.execute("PRAGMA foreign_keys = OFF")
+    connection.execute("DROP INDEX executions_session_status")
+    connection.execute("DROP INDEX executions_run_parent")
+    connection.execute(
+        """
+        CREATE TABLE executions_v3 (
+            execution_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            parent_execution_id TEXT,
+            source_checkpoint_id TEXT,
+            revision_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            status_version INTEGER NOT NULL,
+            reason_code TEXT,
+            current_attempt_id TEXT,
+            owner_lease_json TEXT NOT NULL,
+            checkpoint_head_id TEXT,
+            safe_point_json TEXT NOT NULL,
+            capabilities_json TEXT NOT NULL,
+            effect_summary_json TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            terminal_at REAL
+        )
+        """
+    )
+    connection.execute(
+        "INSERT INTO executions_v3 SELECT * FROM executions"
+    )
+    connection.execute("DROP TABLE executions")
+    connection.execute("ALTER TABLE executions_v3 RENAME TO executions")
+    connection.execute("PRAGMA user_version = 3")
+    connection.commit()
+    connection.close()
+
+    ExecutionStore(path)
+
+    with sqlite3.connect(path) as migrated:
+        assert migrated.execute("PRAGMA user_version").fetchone()[0] == 4
+        foreign_keys = migrated.execute(
+            "PRAGMA foreign_key_list(executions)"
+        ).fetchall()
+        assert any(
+            row[2] == "checkpoints"
+            and row[3] == "source_checkpoint_id"
+            and row[4] == "checkpoint_id"
+            for row in foreign_keys
+        )
+        assert migrated.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
 def test_branch_command_is_idempotent_but_distinct_commands_create_distinct_children(tmp_path):

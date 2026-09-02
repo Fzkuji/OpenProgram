@@ -9,9 +9,10 @@ import sqlite3
 from .model import CapabilitySet
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 _LEGACY_SCHEMA_VERSION = 1
 _PREVIOUS_SCHEMA_VERSION = 2
+_FORK_RETRY_SCHEMA_VERSION = 3
 
 
 class UnsupportedSchema(RuntimeError):
@@ -32,6 +33,8 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
         _migrate_v1(connection)
     elif current == _PREVIOUS_SCHEMA_VERSION:
         _migrate_v2(connection)
+    elif current == _FORK_RETRY_SCHEMA_VERSION:
+        _migrate_v3(connection)
     elif current == SCHEMA_VERSION:
         _create_current_schema(connection)
     else:
@@ -79,6 +82,7 @@ def _create_current_schema(connection: sqlite3.Connection) -> None:
             created_at REAL NOT NULL,
             updated_at REAL NOT NULL,
             terminal_at REAL,
+            CHECK(parent_execution_id IS NOT NULL OR source_checkpoint_id IS NULL),
             FOREIGN KEY(parent_execution_id) REFERENCES executions(execution_id)
         );
         CREATE INDEX IF NOT EXISTS executions_session_status
@@ -212,6 +216,146 @@ def _migrate_v2(connection: sqlite3.Connection) -> None:
         "completed_frontier_json TEXT",
     )
     _create_current_schema(connection)
+
+
+def _migrate_v3(connection: sqlite3.Connection) -> None:
+    """Rebuild historical v3 executions with the source-checkpoint FK.
+
+    v3 databases may have acquired ``source_checkpoint_id`` with an ALTER
+    TABLE that did not leave the intended constraint in the schema.  SQLite
+    cannot add a table constraint in place, so copy the rows into the
+    canonical table definition.  References from other tables continue to
+    name ``executions`` because the old table is dropped before the temporary
+    table is renamed.
+    """
+    _create_current_schema(connection)
+    columns = {
+        str(row[1]) for row in connection.execute("PRAGMA table_info(executions)")
+    }
+    required = {
+        "execution_id",
+        "run_id",
+        "session_id",
+        "parent_execution_id",
+        "source_checkpoint_id",
+        "revision_id",
+        "status",
+        "status_version",
+        "reason_code",
+        "current_attempt_id",
+        "owner_lease_json",
+        "checkpoint_head_id",
+        "safe_point_json",
+        "capabilities_json",
+        "effect_summary_json",
+        "created_at",
+        "updated_at",
+        "terminal_at",
+    }
+    if not required.issubset(columns):
+        missing = ", ".join(sorted(required - columns))
+        raise UnsupportedSchema(
+            _FORK_RETRY_SCHEMA_VERSION,
+            f"cannot migrate missing executions columns: {missing}",
+        )
+    orphan = connection.execute(
+        "SELECT execution_id, source_checkpoint_id FROM executions "
+        "WHERE source_checkpoint_id IS NOT NULL AND NOT EXISTS ("
+        "SELECT 1 FROM checkpoints WHERE checkpoints.checkpoint_id = "
+        "executions.source_checkpoint_id) LIMIT 1"
+    ).fetchone()
+    if orphan is not None:
+        raise UnsupportedSchema(
+            _FORK_RETRY_SCHEMA_VERSION,
+            "cannot migrate execution with missing source checkpoint "
+            f"{orphan[1]}",
+        )
+    invalid_root = connection.execute(
+        "SELECT execution_id FROM executions "
+        "WHERE parent_execution_id IS NULL AND source_checkpoint_id IS NOT NULL "
+        "LIMIT 1"
+    ).fetchone()
+    if invalid_root is not None:
+        raise UnsupportedSchema(
+            _FORK_RETRY_SCHEMA_VERSION,
+            "cannot migrate root execution with a source checkpoint "
+            f"{invalid_root[0]}",
+        )
+
+    previous_foreign_keys = bool(
+        connection.execute("PRAGMA foreign_keys").fetchone()[0]
+    )
+    if connection.in_transaction:
+        raise UnsupportedSchema(
+            _FORK_RETRY_SCHEMA_VERSION,
+            "cannot migrate executions inside an active transaction",
+        )
+    connection.execute("PRAGMA foreign_keys = OFF")
+    try:
+        connection.execute("BEGIN")
+        connection.execute(_execution_table_sql("executions_v4_new"))
+        connection.execute(
+            "INSERT INTO executions_v4_new ("
+            "execution_id, run_id, session_id, parent_execution_id, "
+            "source_checkpoint_id, revision_id, status, status_version, "
+            "reason_code, current_attempt_id, owner_lease_json, "
+            "checkpoint_head_id, safe_point_json, capabilities_json, "
+            "effect_summary_json, created_at, updated_at, terminal_at) "
+            "SELECT execution_id, run_id, session_id, parent_execution_id, "
+            "source_checkpoint_id, revision_id, status, status_version, "
+            "reason_code, current_attempt_id, owner_lease_json, "
+            "checkpoint_head_id, safe_point_json, capabilities_json, "
+            "effect_summary_json, created_at, updated_at, terminal_at "
+            "FROM executions"
+        )
+        connection.execute("DROP TABLE executions")
+        connection.execute(
+            "ALTER TABLE executions_v4_new RENAME TO executions"
+        )
+        connection.execute(
+            "CREATE INDEX executions_session_status "
+            "ON executions(session_id, status, updated_at)"
+        )
+        connection.execute(
+            "CREATE INDEX executions_run_parent "
+            "ON executions(run_id, parent_execution_id, created_at)"
+        )
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+    finally:
+        connection.execute(
+            "PRAGMA foreign_keys = "
+            f"{'ON' if previous_foreign_keys else 'OFF'}"
+        )
+
+
+def _execution_table_sql(table_name: str) -> str:
+    return f"""
+        CREATE TABLE {table_name} (
+            execution_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            parent_execution_id TEXT,
+            source_checkpoint_id TEXT REFERENCES checkpoints(checkpoint_id),
+            revision_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            status_version INTEGER NOT NULL,
+            reason_code TEXT,
+            current_attempt_id TEXT,
+            owner_lease_json TEXT NOT NULL,
+            checkpoint_head_id TEXT,
+            safe_point_json TEXT NOT NULL,
+            capabilities_json TEXT NOT NULL,
+            effect_summary_json TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            terminal_at REAL,
+            CHECK(parent_execution_id IS NOT NULL OR source_checkpoint_id IS NULL),
+            FOREIGN KEY(parent_execution_id) REFERENCES executions(execution_id)
+        )
+    """
 
 
 def _add_column_if_missing(

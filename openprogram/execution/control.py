@@ -275,10 +275,14 @@ class RuntimeControlService:
             raise ExecutionConflict("revision_manifest_required", "fork requires a revision manifest")
         if compatible_prefix is None:
             raise ExecutionConflict("compatible_prefix_required", "fork requires a compatible prefix")
+        normalized_prefix = self._validate_compatible_prefix(compatible_prefix)
         payload = {
             "checkpoint_id": checkpoint_id,
             "revision_manifest": dict(revision_manifest),
-            "compatible_prefix": [dict(item) for item in compatible_prefix],
+            "compatible_prefix": [
+                {"step_id": step_id, "contract_hash": contract_hash}
+                for step_id, contract_hash in normalized_prefix
+            ],
         }
         if revision_id is not None:
             payload["revision_id"] = revision_id
@@ -402,6 +406,7 @@ class RuntimeControlService:
                     connection,
                     manifest=manifest or {},
                     revision_id=revision_id,
+                    requested_id=revision_id,
                     parent_revision_id=source.revision_id,
                 )
             else:
@@ -472,6 +477,11 @@ class RuntimeControlService:
             raise ExecutionConflict("compatible_prefix_required", "compatible prefix is required")
         values: list[tuple[str, str]] = []
         for item in prefix:
+            if not isinstance(item, Mapping):
+                raise ExecutionConflict(
+                    "invalid_compatible_prefix",
+                    "prefix entries must be mappings",
+                )
             if set(item) != {"step_id", "contract_hash"}:
                 raise ExecutionConflict("invalid_compatible_prefix", "prefix entries must contain step_id and contract_hash")
             step_id = item["step_id"]

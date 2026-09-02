@@ -113,6 +113,11 @@ class ExecutionStore:
             raise ExecutionConflict(
                 "invalid_identity", "session_id and revision_id are required"
             )
+        if parent_execution_id is None and source_checkpoint_id is not None:
+            raise ExecutionConflict(
+                "invalid_checkpoint",
+                "root execution cannot have a source checkpoint",
+            )
         with self._transaction() as connection:
             if self._get_revision(connection, revision_id) is None:
                 raise ExecutionConflict(
@@ -240,6 +245,12 @@ class ExecutionStore:
         ):
             legacy = self._revision(row)
             if legacy.manifest == manifest_value:
+                if requested_id is not None and legacy.revision_id != requested_id:
+                    raise ExecutionConflict(
+                        "revision_id_collision",
+                        "explicit revision_id conflicts with existing content: "
+                        f"{requested_id}",
+                    )
                 return legacy
         by_content_row = connection.execute(
             "SELECT * FROM revisions WHERE content_hash = ?", (content_hash,)
@@ -247,6 +258,12 @@ class ExecutionStore:
         if by_content_row is not None:
             by_content = self._revision(by_content_row)
             if by_content.parent_revision_id == parent_revision_id:
+                if requested_id is not None and by_content.revision_id != requested_id:
+                    raise ExecutionConflict(
+                        "revision_id_collision",
+                        "explicit revision_id conflicts with existing content: "
+                        f"{requested_id}",
+                    )
                 return by_content
             raise ExecutionConflict(
                 "revision_content_exists",

@@ -75,6 +75,21 @@ def test_revision_is_content_addressed_immutable_and_durable(tmp_path) -> None:
     assert collision.value.code == "revision_id_collision"
 
 
+def test_explicit_revision_id_cannot_be_ignored_for_existing_identity(tmp_path) -> None:
+    store = _store(tmp_path)
+    created = store.create_revision(
+        revision_id="explicit-one", manifest={"entrypoint": "workflow"}
+    )
+
+    with pytest.raises(ExecutionConflict) as collision:
+        store.create_revision(
+            revision_id="explicit-two", manifest={"entrypoint": "workflow"}
+        )
+
+    assert created.revision_id == "explicit-one"
+    assert collision.value.code == "revision_id_collision"
+
+
 def test_revision_snapshots_nested_manifest_from_caller_mutation(tmp_path) -> None:
     path = tmp_path / "runtime" / "executions.sqlite3"
     manifest = {"entrypoint": {"steps": [{"id": "collect"}]}}
@@ -97,6 +112,22 @@ def test_execution_requires_a_registered_revision(tmp_path) -> None:
             revision_id="rev_missing",
         )
     assert missing.value.code == "revision_not_found"
+
+
+def test_root_execution_cannot_reference_a_source_checkpoint(tmp_path) -> None:
+    store = _store(tmp_path)
+    revision = store.create_revision(manifest={"entrypoint": "workflow"})
+
+    with pytest.raises(ExecutionConflict) as invalid:
+        store.create_execution(
+            execution_id="root-with-source",
+            run_id="run_1",
+            session_id="session_1",
+            revision_id=revision.revision_id,
+            source_checkpoint_id="checkpoint-1",
+        )
+
+    assert invalid.value.code == "invalid_checkpoint"
 
 
 def test_run_identity_is_bound_to_one_session(tmp_path) -> None:
