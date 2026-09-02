@@ -26,6 +26,7 @@ The Runtime layer composes these to build whatever agent behavior is needed.
 - **`agent_loop.py`** — Agent loop
 - **`attended.py`** — Attended / unattended mode
 - **`authority.py`** — Runtime-owned speaker attribution and two-tier authorization
+- **`continuation.py`** — Durable Agent checkpoint payloads and resumable loop input
 - **`exec.py`** — Shared subprocess execution utilities
 - **`history_ownership.py`** — Resolve owned child change sets for file-history operations
 - **`inbox.py`** — Per-session send_message inbox
