@@ -725,7 +725,7 @@ def test_invalid_limits_rejection_fails_closed_when_usage_read_fails(
         ),
     )
     monkeypatch.setattr(
-        ledger, "connection",
+        ledger, "read",
         lambda: (_ for _ in ()).throw(OSError("ledger unavailable")),
     )
 

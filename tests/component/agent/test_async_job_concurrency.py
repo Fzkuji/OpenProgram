@@ -461,6 +461,16 @@ def test_idle_activity_is_tracked_per_same_session_job(
         )
         assert wait_until(lambda: len(fake_worker[0]) >= 2, timeout=2.0)
         assert len(fake_worker[0]) == 2
+        def monitor_ready():
+            with runner._lock:
+                entries = [runner._jobs.get(job_id, {}) for job_id in (active, idle)]
+                return all(
+                    entry.get("started_monotonic") is not None
+                    and entry.get("attempt_id") is not None
+                    for entry in entries
+                )
+
+        assert wait_until(monitor_ready, timeout=2.0)
 
         clock.advance(0.75)
         assert runner.record_job_activity(active, "provider_data")
