@@ -263,6 +263,7 @@ def _run_session_turn(
             pass
 
     # ---- canonical Agent admission + stream event 监听 ------------------
+    from openprogram.agent.authority import paired_channel_authority
     from openprogram.agent.dispatcher import TurnRequest
     from openprogram.agent.production_driver import CanonicalAgentAdapter
 
