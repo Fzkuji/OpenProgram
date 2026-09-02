@@ -229,7 +229,7 @@ def test_queued_pause_and_cancel_finish_without_a_live_driver(tmp_path) -> None:
 
 
 def test_cancel_delivery_dedupe_is_cleared_after_terminal_and_recovery(
-    tmp_path,
+    tmp_path, monkeypatch,
 ) -> None:
     executions, attempts, execution, attempt = _execution(tmp_path, active=True)
     owner_registry = DriverRegistry()
@@ -267,17 +267,44 @@ def test_cancel_delivery_dedupe_is_cleared_after_terminal_and_recovery(
     assert repeated is not None and not repeated.delivered
     assert len(owner_driver.observed) == 1
     assert len(owner._delivered_cancel_commands) == 1
-    finished = owner.finish_attempt(
-        attempt_id=attempt.attempt_id,
-        generation=attempt.generation,
-        expected_execution_version=pending.execution.status_version,
-        target=ExecutionStatus.CANCELLED,
-        outcome="cooperative_cancel",
-        command_id=pending.command.command_id,
-        reason_code="cancel.remote",
+    original_transition_command = executions._transition_command
+
+    def fail_cancel_apply(connection, command_id, **kwargs):
+        if kwargs.get("target") is CommandStatus.APPLIED:
+            raise RuntimeError("injected cancel apply failure")
+        return original_transition_command(connection, command_id, **kwargs)
+
+    monkeypatch.setattr(
+        executions, "_transition_command", fail_cancel_apply,
     )
-    assert finished.execution.status is ExecutionStatus.CANCELLED
+    with pytest.raises(RuntimeError, match="injected cancel apply failure"):
+        owner.finish_attempt(
+            attempt_id=attempt.attempt_id,
+            generation=attempt.generation,
+            expected_execution_version=pending.execution.status_version,
+            target=ExecutionStatus.CANCELLED,
+            outcome="cooperative_cancel",
+            command_id=pending.command.command_id,
+            reason_code="cancel.remote",
+        )
+    monkeypatch.setattr(
+        executions, "_transition_command", original_transition_command,
+    )
+    assert executions.get_execution(execution.execution_id).status is ExecutionStatus.CANCELLED
     assert owner._delivered_cancel_commands == set()
+    assert owner._cancel_delivery_by_execution == {}
+    assert asyncio.run(
+        owner.deliver_pending_cancel(
+            execution_id=execution.execution_id,
+            attempt_id=attempt.attempt_id,
+            generation=attempt.generation,
+        )
+    ) is None
+    assert owner.recover_owner_loss(
+        execution.execution_id,
+    ).execution.status is ExecutionStatus.CANCELLED
+    assert owner._delivered_cancel_commands == set()
+    assert owner._cancel_delivery_by_execution == {}
 
     revision = executions.create_revision(manifest={"entrypoint": "chat-2"})
     second = executions.create_execution(
@@ -330,6 +357,7 @@ def test_cancel_delivery_dedupe_is_cleared_after_terminal_and_recovery(
     )
     assert recovered.execution.status is ExecutionStatus.CANCELLED
     assert owner._delivered_cancel_commands == set()
+    assert owner._cancel_delivery_by_execution == {}
 
 
 def test_queued_pause_apply_is_atomic_and_recovery_converges(tmp_path, monkeypatch) -> None:

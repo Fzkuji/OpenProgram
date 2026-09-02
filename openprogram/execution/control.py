@@ -1160,6 +1160,9 @@ class RuntimeControlService:
         execution = self.executions.get_execution(execution_id)
         if execution is None:
             return None
+        if execution.status in TERMINAL_EXECUTION_STATUSES:
+            self._forget_cancel_delivery(execution_id)
+            return None
         self._prune_cancel_delivery(execution_id)
         pending = self.executions.list_commands(
             execution_id,
@@ -1958,10 +1961,12 @@ class RuntimeControlService:
             attempt_id=attempt_id,
             generation=generation,
         )
-        if command is not None and execution.status in TERMINAL_EXECUTION_STATUSES:
-            command = self._mark_applied(command, execution)
-        if execution.status in TERMINAL_EXECUTION_STATUSES:
-            self._forget_cancel_delivery(execution.execution_id)
+        try:
+            if command is not None and execution.status in TERMINAL_EXECUTION_STATUSES:
+                command = self._mark_applied(command, execution)
+        finally:
+            if execution.status in TERMINAL_EXECUTION_STATUSES:
+                self._forget_cancel_delivery(execution.execution_id)
         return AttemptCompletion(
             execution=execution,
             attempt=ended,
@@ -2021,6 +2026,7 @@ class RuntimeControlService:
                 ExecutionStatus.PAUSED,
                 ExecutionStatus.CANCELLING,
             }:
+                self._forget_cancel_delivery(execution_id)
                 return RecoveryCompletion(execution=execution)
             if (
                 execution.status in {ExecutionStatus.QUEUED, ExecutionStatus.PAUSED}
