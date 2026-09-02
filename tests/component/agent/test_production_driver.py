@@ -1300,7 +1300,11 @@ def test_finish_repair_stalls_after_bounded_attempts_until_manual_reconcile(
     deadline = time.monotonic() + 2
     while time.monotonic() < deadline:
         rows = store.list_finish_repairs()
-        if rows and rows[0]["reason_code"] == "finish_repair_stalled":
+        if (
+            rows
+            and rows[0]["reason_code"] == "finish_repair_stalled"
+            and driver._finish_retry_timer is not None
+        ):
             break
         time.sleep(0.01)
     rows = store.list_finish_repairs()

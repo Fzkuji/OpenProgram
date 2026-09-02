@@ -364,7 +364,10 @@ def test_second_continue_for_same_paused_version_is_rejected_without_claim_inten
     assert paused is not None and paused.status.value == "paused"
 
     # Keep the accepted continuation in its durable pre-activation state so
-    # the second public request observes the exact same paused version.
+    # the second public request observes the exact same paused version.  The
+    # dispatcher also polls every 500 ms, so disabling only its wake signal
+    # still permits it to reconcile the claim between these two requests.
+    monkeypatch.setattr(runner._resource_saga, "reconcile", lambda: 0)
     monkeypatch.setattr(runner._dispatch_wake, "set", lambda: None)
     _run_runtime_action("execution.continue", ws, {
         "type": "execution.command", "action": "execution.continue",

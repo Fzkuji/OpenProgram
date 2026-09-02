@@ -456,24 +456,40 @@ def test_idle_activity_is_tracked_per_same_session_job(
         budget_poll_seconds=60,
     )
     try:
+        submitted = threading.Event()
+        submit_count = 0
+        submit_lock = threading.Lock()
+        original_submit = runner._pool.submit
+
+        def submit_with_lifecycle_signal(*args, **kwargs):
+            nonlocal submit_count
+            future = original_submit(*args, **kwargs)
+            with submit_lock:
+                submit_count += 1
+                if submit_count >= 2:
+                    submitted.set()
+            return future
+
+        # JobRunner writes monitor metadata before handing the future to the
+        # executor. Synchronize on that lifecycle boundary instead of
+        # inferring it from the fake provider thread's scheduling.
+        monkeypatch.setattr(runner._pool, "submit", submit_with_lifecycle_signal)
         active = runner.spawn_job(
             session_id="p1", prompt="active", agent_id="main",
         )
         idle = runner.spawn_job(
             session_id="p1", prompt="idle", agent_id="main",
         )
+        assert submitted.wait(10.0)
         assert wait_until(lambda: len(fake_worker[0]) >= 2, timeout=10.0)
         assert len(fake_worker[0]) == 2
-        def monitor_ready():
-            with runner._lock:
-                entries = [runner._jobs.get(job_id, {}) for job_id in (active, idle)]
-                return all(
-                    entry.get("started_monotonic") is not None
-                    and entry.get("attempt_id") is not None
-                    for entry in entries
-                )
-
-        assert wait_until(monitor_ready, timeout=10.0)
+        with runner._lock:
+            entries = [runner._jobs[job_id] for job_id in (active, idle)]
+            assert all(
+                entry.get("started_monotonic") is not None
+                and entry.get("attempt_id") is not None
+                for entry in entries
+            )
 
         clock.advance(0.75)
         assert runner.record_job_activity(active, "provider_data")
