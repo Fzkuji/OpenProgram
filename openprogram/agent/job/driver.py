@@ -214,6 +214,11 @@ class JobDriver:
                     None,
                 )
 
+    def binding_unbound(self, binding: DriverBinding[JobDriverHandle]) -> None:
+        """Retire the exact local handle when its canonical binding ends."""
+        if binding.driver is self:
+            self.retire(binding.handle)
+
     def _require_known(self, handle: JobDriverHandle) -> None:
         with self._lock:
             current = self._active.get(handle.execution_id)

@@ -123,6 +123,31 @@ def test_cancel_signals_only_the_exact_active_attempt(tmp_path) -> None:
     assert completion.execution.status is ExecutionStatus.CANCELLED
 
 
+def test_finish_retires_driver_handle_and_worker_hooks(tmp_path) -> None:
+    store, attempts, service, driver, active, running, handle, worker_cancel = _activate(tmp_path)
+
+    completion = service.finish_attempt(
+        attempt_id=active.attempt_id,
+        generation=active.generation,
+        expected_execution_version=running.status_version,
+        target=ExecutionStatus.COMPLETED,
+        outcome="completed",
+    )
+
+    assert completion.execution.status is ExecutionStatus.COMPLETED
+    assert service.registry.snapshot() == ()
+    assert driver.handle_for(active.attempt_id, active.generation) is None
+    assert driver._active == {}
+    assert driver._workers == {}
+    with pytest.raises(DriverRegistryConflict) as cancel:
+        asyncio.run(driver.request_cancel(handle, "cancel-after-finish"))
+    with pytest.raises(DriverRegistryConflict) as terminate:
+        asyncio.run(driver.terminate(handle, "terminate-after-finish"))
+    assert cancel.value.code == "stale_attempt"
+    assert terminate.value.code == "stale_attempt"
+    assert worker_cancel.is_set() is False
+
+
 def test_stale_activation_cannot_replace_owner_before_registry_fencing(tmp_path) -> None:
     store, attempts, service, driver, active, running, handle, worker_cancel = _activate(tmp_path)
     stale = replace(active, attempt_id="attempt-stale", generation=active.generation + 1)
@@ -297,6 +322,27 @@ def test_owner_loss_without_checkpoint_becomes_interrupted(tmp_path) -> None:
         generation=leased.generation,
         expected_execution_version=reserved.status_version,
     )
+    worker_cancel = threading.Event()
+    driver = JobDriver(
+        execution_id=execution.execution_id,
+        cancel_event=worker_cancel,
+        terminate_callback=lambda handle, reason: TerminationReceipt(
+            attempt_id=handle.attempt_id,
+            terminated=True,
+            reason=reason,
+        ),
+    )
+    delivered, issue = asyncio.run(
+        service._activate(
+            active,
+            None,
+            (),
+            activator=JobActivationBridge(driver).activate,
+        )
+    )
+    assert delivered and issue is None
+    handle = driver.handle_for(active.attempt_id, active.generation)
+    assert handle is not None
 
     recovered = service.recover_owner_loss(execution.execution_id)
 
@@ -305,3 +351,13 @@ def test_owner_loss_without_checkpoint_becomes_interrupted(tmp_path) -> None:
     assert recovered.execution.current_attempt_id is None
     assert recovered.attempt is not None
     assert recovered.attempt.attempt_id == active.attempt_id
+    assert service.registry.snapshot() == ()
+    assert driver.handle_for(active.attempt_id, active.generation) is None
+    assert driver._active == {}
+    assert driver._workers == {}
+    with pytest.raises(DriverRegistryConflict) as cancel:
+        asyncio.run(driver.request_cancel(handle, "cancel-after-recovery"))
+    with pytest.raises(DriverRegistryConflict) as terminate:
+        asyncio.run(driver.terminate(handle, "terminate-after-recovery"))
+    assert cancel.value.code == "stale_attempt"
+    assert terminate.value.code == "stale_attempt"

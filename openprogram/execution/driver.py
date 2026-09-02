@@ -161,6 +161,7 @@ class DriverRegistry:
                     current.attempt_id,
                     current.generation,
                 ):
+                    self._notify_unbound(current)
                     self._bindings[binding.execution_id] = binding
                     if on_bound is not None:
                         try:
@@ -183,6 +184,13 @@ class DriverRegistry:
                         del self._bindings[binding.execution_id]
                     raise
             return binding
+
+    @staticmethod
+    def _notify_unbound(binding: DriverBinding[Any]) -> None:
+        """Release a driver's exact local handle with the registry binding."""
+        hook = getattr(binding.driver, "binding_unbound", None)
+        if hook is not None:
+            hook(binding)
 
     def resolve(
         self,
@@ -223,6 +231,7 @@ class DriverRegistry:
             if binding.attempt_id != attempt_id or binding.generation != generation:
                 return False
             del self._bindings[execution_id]
+            self._notify_unbound(binding)
             return True
 
     def snapshot(self) -> tuple[DriverBinding[Any], ...]:
