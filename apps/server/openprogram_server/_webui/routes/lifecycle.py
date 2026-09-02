@@ -38,7 +38,7 @@ def _actor_and_session(request: Request):
 
     state = request.scope.get("state") if isinstance(request.scope, dict) else None
     bound_session = state.get("session_id") if isinstance(state, dict) else None
-    actor = trusted_runtime_actor(request.scope)
+    actor = trusted_runtime_actor(request.scope, surface="rest")
     if actor is None:
         auth_state = getattr(request.app.state, "owner_auth", None)
         actor = getattr(auth_state, "authority", None)
@@ -106,6 +106,7 @@ def register(app):
             operation,
             actor=actor,
             bound_session=bound_session,
+            surface="rest",
         )
         command_data = command.to_dict() if hasattr(command, "to_dict") else dict(command)
         execution_data = (

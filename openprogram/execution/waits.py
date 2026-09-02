@@ -33,6 +33,9 @@ _TERMINAL_WAIT_STATUSES = frozenset({
 _WAIT_KINDS = frozenset({"ask", "confirm", "approval", "form", "ask_many"})
 _MAX_WAIT_REQUEST_BYTES = 256 * 1024
 _MAX_WAIT_ANSWER_BYTES = 64 * 1024
+_APPROVAL_ANSWERS = frozenset({"approve", "allow", "允许", "yes", "是"})
+_APPROVAL_SCOPES = frozenset({"once", "always", "always_path"})
+_CONFIRM_ANSWERS = frozenset({"确认", "取消", "yes", "no", "y", "n", "true", "false", "ok" , "是", "否"})
 
 
 @dataclass(frozen=True)
@@ -217,6 +220,106 @@ class DurableWaitStore:
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ExecutionConflict("wait_payload_invalid", "wait payload is invalid") from exc
 
+    @staticmethod
+    def _invalid_answer(message: str) -> ExecutionConflict:
+        return ExecutionConflict("invalid_wait_answer", message)
+
+    @classmethod
+    def _validate_choice(cls, value: Any, question: Mapping[str, Any], *, label: str) -> None:
+        options = question.get("options", [])
+        multi = question.get("multi", False)
+        allow_custom = question.get("allow_custom", True)
+        if not isinstance(options, list) or not all(isinstance(item, str) for item in options):
+            raise cls._invalid_answer(f"{label} options are invalid")
+        if type(multi) is not bool or type(allow_custom) is not bool:
+            raise cls._invalid_answer(f"{label} selection policy is invalid")
+        values = value if multi else [value]
+        if multi and not isinstance(value, list):
+            raise cls._invalid_answer(f"{label} must be a list")
+        if not multi and not isinstance(value, str):
+            raise cls._invalid_answer(f"{label} must be a string")
+        if not all(isinstance(item, str) and item for item in values):
+            raise cls._invalid_answer(f"{label} contains an invalid choice")
+        if not allow_custom and any(item not in options for item in values):
+            raise cls._invalid_answer(f"{label} contains a custom choice")
+
+    @classmethod
+    def _validate_form(cls, answer: Any, request: Mapping[str, Any]) -> None:
+        schema = request.get("schema", {})
+        if not isinstance(schema, Mapping) or not isinstance(answer, Mapping):
+            raise cls._invalid_answer("form answer must match its schema")
+        for name, value in answer.items():
+            if name not in schema or not isinstance(name, str):
+                raise cls._invalid_answer("form answer contains an unknown field")
+            field = schema[name]
+            if not isinstance(field, Mapping):
+                raise cls._invalid_answer("form field schema is invalid")
+            field_type = field.get("type")
+            valid = {
+                "string": isinstance(value, str),
+                "integer": type(value) is int,
+                "number": type(value) in {int, float},
+                "boolean": type(value) is bool,
+            }.get(field_type, False)
+            if not valid:
+                raise cls._invalid_answer(f"form field {name!r} has the wrong type")
+            enum = field.get("enum")
+            if enum is not None and (not isinstance(enum, list) or value not in enum):
+                raise cls._invalid_answer(f"form field {name!r} is outside its enum")
+        for name, field in schema.items():
+            if isinstance(field, Mapping) and field.get("required") is True and name not in answer:
+                raise cls._invalid_answer(f"required form field {name!r} is missing")
+
+    @classmethod
+    def _validate_policy(cls, *, kind: str, policy: Mapping[str, Any]) -> None:
+        if policy.get("kind") is not None and policy.get("kind") != kind:
+            raise cls._invalid_answer("wait policy kind does not match the request")
+        if policy.get("version") != 1:
+            raise cls._invalid_answer("wait policy version is invalid")
+        for field in ("on_answer", "on_decline", "on_timeout"):
+            disposition = policy.get(field)
+            if disposition is not None and disposition not in {"continue", "fail", "cancel"}:
+                raise cls._invalid_answer(f"wait policy {field} is invalid")
+
+    @classmethod
+    def _validate_answer(
+        cls, *, kind: str, request: Mapping[str, Any], policy: Mapping[str, Any], answer: Any,
+    ) -> None:
+        cls._validate_policy(kind=kind, policy=policy)
+        if kind == "approval":
+            if not isinstance(answer, Mapping) or set(answer) != {"answer", "scope"}:
+                raise cls._invalid_answer("approval answer must contain answer and scope")
+            if answer.get("answer") not in _APPROVAL_ANSWERS:
+                raise cls._invalid_answer("approval answer is not an explicit approval")
+            allowed_scopes = policy.get("allowed_scopes", ["once"])
+            if (
+                not isinstance(allowed_scopes, (list, tuple, set, frozenset))
+                or not all(isinstance(scope, str) and scope in _APPROVAL_SCOPES for scope in allowed_scopes)
+                or answer.get("scope") not in allowed_scopes
+            ):
+                raise cls._invalid_answer("approval scope is not allowed by policy")
+            return
+        if kind == "ask":
+            cls._validate_choice(answer, request, label="ask")
+            return
+        if kind == "confirm":
+            if not (type(answer) is bool or (isinstance(answer, str) and answer.strip() in _CONFIRM_ANSWERS)):
+                raise cls._invalid_answer("confirm answer is invalid")
+            return
+        if kind == "form":
+            cls._validate_form(answer, request)
+            return
+        if kind == "ask_many":
+            questions = request.get("questions")
+            if not isinstance(questions, list) or not isinstance(answer, list) or len(answer) != len(questions):
+                raise cls._invalid_answer("ask_many answer does not match its questions")
+            for index, question in enumerate(questions):
+                if not isinstance(question, Mapping):
+                    raise cls._invalid_answer("ask_many question is invalid")
+                cls._validate_choice(answer[index], question, label=f"ask_many[{index}]")
+            return
+        raise cls._invalid_answer("unsupported wait kind")
+
     def _record(self, row) -> WaitRecord:
         request = self._decode_ref(str(row["execution_id"]), str(row["request_ref"]))
         policy = self._decode_ref(str(row["execution_id"]), str(row["policy_snapshot_ref"]))
@@ -376,6 +479,8 @@ class DurableWaitStore:
             answer_bytes = self._encode(answer, limit=_MAX_WAIT_ANSWER_BYTES, field="answer")
         else:
             if answer is not None:
+                if not isinstance(answer, str):
+                    raise ExecutionConflict("invalid_wait_answer", "decline reason must be a string")
                 payload["reason"] = answer
             answer_bytes = self._encode(answer, limit=_MAX_WAIT_ANSWER_BYTES, field="decline reason") if answer is not None else None
         now = time.time()
@@ -402,6 +507,17 @@ class DurableWaitStore:
                 elif row["status"] != WaitStatus.OPEN.value or int(row["claim_generation"]) != generation:
                     raise ExecutionConflict("wait_generation", "wait is not open at this generation")
                 else:
+                    request_value = self._decode_ref(execution_id, str(row["request_ref"]))
+                    policy_value = self._decode_ref(execution_id, str(row["policy_snapshot_ref"]))
+                    if not isinstance(request_value, Mapping) or not isinstance(policy_value, Mapping):
+                        raise ExecutionConflict("wait_payload_invalid", "wait request and policy must be objects")
+                    if kind is CommandKind.WAIT_ANSWER:
+                        self._validate_answer(
+                            kind=str(row["kind"]), request=request_value,
+                            policy=policy_value, answer=answer,
+                        )
+                    else:
+                        self._validate_policy(kind=str(row["kind"]), policy=policy_value)
                     self.executions._transition_command(connection, command_id, expected_status=CommandStatus.ACCEPTED, target=CommandStatus.APPLYING)
                     answer_ref = None
                     if answer_bytes is not None:

@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from typing import Any
 
 # WELCOME_STATS_SESSION_LIMIT lives on the server module — we read it lazily.
 
@@ -208,7 +209,7 @@ def _broadcast_execution(execution: dict) -> None:
     }, default=str))
 
 
-def trusted_runtime_actor(scope) -> dict | None:
+def trusted_runtime_actor(scope, *, surface: str | None = None) -> dict | None:
     """Resolve runtime-control authority from authenticated transport state."""
     from openprogram.agent.authority import normalize_authority
 
@@ -222,11 +223,13 @@ def trusted_runtime_actor(scope) -> dict | None:
             value = authority.get(field)
             if isinstance(value, (list, tuple, frozenset, set)):
                 actor[field] = tuple(str(item) for item in value)
+    if surface is not None:
+        actor["surface"] = surface
     return actor
 
 
 def _trusted_runtime_actor(ws) -> dict | None:
-    return trusted_runtime_actor(getattr(ws, "scope", None))
+    return trusted_runtime_actor(getattr(ws, "scope", None), surface="ws")
 
 
 _PUBLIC_COMMAND_ACTIONS = {
@@ -320,7 +323,7 @@ def _authorize_execution(
     execution,
     *,
     bound_session: str | None = None,
-) -> None:
+) -> Any:
     """Authorize one exact target without exposing cross-scope existence."""
     from openprogram.execution.authorization import authorize_execution_action
     from openprogram.execution.public import project_id_for_session
@@ -328,7 +331,7 @@ def _authorize_execution(
     if bound_session is not None and bound_session != execution.session_id:
         from openprogram.execution.authorization import ExecutionAuthorizationError
         raise ExecutionAuthorizationError("execution is not visible")
-    authorize_execution_action(
+    return authorize_execution_action(
         actor or {}, action, execution,
         {"project_id": project_id_for_session(execution.session_id),
          "session_id": execution.session_id},
@@ -455,6 +458,7 @@ async def submit_execution_control(
     *,
     actor: dict | None,
     bound_session: str | None = None,
+    surface: str | None = None,
 ):
     """Submit one authenticated exact command through RuntimeControlService."""
     from openprogram.execution import default_control_service, default_store
@@ -482,10 +486,22 @@ async def submit_execution_control(
             "execution_id": execution_id, "status_version": None,
         }
     try:
-        _authorize_execution(
+        authorization = _authorize_execution(
             raw_actor, _PUBLIC_COMMAND_ACTIONS[operation], execution,
             bound_session=bound_session,
         )
+        # Command and audit records retain only transport-trusted control
+        # metadata.  The execution binding is resolved by the server and is
+        # stored explicitly so later audit readers can reconstruct the exact
+        # authorization decision without trusting command input.
+        if actor:
+            for field in ("project_ids", "session_ids", "execution_actions"):
+                value = raw_actor.get(field)
+                if isinstance(value, (list, tuple, frozenset, set)):
+                    actor[field] = tuple(str(item) for item in value)
+            actor["resolved_project_id"] = authorization.project_binding["project_id"]
+            actor["resolved_session_id"] = authorization.project_binding["session_id"]
+            actor["surface"] = surface if surface is not None else str(raw_actor.get("surface") or "runtime")
     except Exception:
         return _rejected_command(cmd, "not_found"), {
             "execution_id": execution_id, "status_version": None,
@@ -617,6 +633,7 @@ async def _handle_execution_control(ws, cmd: dict, operation: str) -> None:
         operation,
         actor=_trusted_runtime_actor(ws),
         bound_session=bound_session if isinstance(bound_session, str) else None,
+        surface="ws",
     )
     await _send_command_update(ws, command, execution)
     execution_data = execution.to_dict() if hasattr(execution, "to_dict") else dict(execution)

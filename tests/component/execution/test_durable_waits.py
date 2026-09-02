@@ -99,6 +99,45 @@ def test_answer_uses_exact_generation_and_is_idempotent(tmp_path) -> None:
     assert raised.value.code == "wait_generation"
 
 
+def test_wait_answers_are_checked_against_request_and_approval_policy(tmp_path) -> None:
+    executions, attempts, execution, attempt = _active_execution(tmp_path)
+    waits = DurableWaitStore(executions)
+    approval = waits.open_wait(
+        execution_id=execution.execution_id, attempt_id=attempt.attempt_id,
+        generation=attempt.generation, kind="approval",
+        request={"prompt": "Allow?", "options": ["允许", "拒绝"], "allow_custom": False},
+        policy_snapshot={"version": 1, "kind": "approval", "allowed_scopes": ["once"]},
+        expires_at=9_999_999_999,
+    )
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+
+    for command_id, invalid in (("approval-bool", True), ("approval-scope", {"answer": "approve", "scope": "root"}), ("approval-shape", {"scope": "once"})):
+        with pytest.raises(ExecutionConflict) as raised:
+            asyncio.run(service.request_wait_answer(
+                command_id=command_id, execution_id=execution.execution_id,
+                expected_version=execution.status_version, actor={"surface": "test"},
+                wait_id=approval.wait_id, generation=approval.claim_generation,
+                answer=invalid,
+            ))
+        assert raised.value.code == "invalid_wait_answer"
+    assert waits.get_wait(approval.wait_id).status is WaitStatus.OPEN
+
+    choice = waits.open_wait(
+        execution_id=execution.execution_id, attempt_id=attempt.attempt_id,
+        generation=attempt.generation, kind="ask",
+        request={"prompt": "Pick", "options": ["a"], "multi": False, "allow_custom": False},
+        policy_snapshot={"version": 1, "kind": "ask"}, expires_at=9_999_999_999,
+    )
+    with pytest.raises(ExecutionConflict) as raised:
+        waits.resolve_with_command(
+            command_id="choice-custom", execution_id=execution.execution_id,
+            expected_version=execution.status_version, actor={"surface": "test"},
+            kind=CommandKind.WAIT_ANSWER, wait_id=choice.wait_id,
+            generation=choice.claim_generation, answer="custom",
+        )
+    assert raised.value.code == "invalid_wait_answer"
+
+
 def test_reclaim_expired_claim_then_cancel_is_durable(tmp_path) -> None:
     executions, _attempts, execution, attempt = _active_execution(tmp_path)
     waits = DurableWaitStore(executions)

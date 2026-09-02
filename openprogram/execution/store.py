@@ -2090,7 +2090,7 @@ class ExecutionStore:
             payload=command.payload,
             command_id=command.command_id,
             draft_id=None,
-            wait_id=None,
+            wait_id=(command.payload.get("wait_id") if isinstance(command.payload, Mapping) else None),
             correlation_id=command.command_id,
             source_version=execution.status_version,
             checkpoint_id=execution.checkpoint_head_id,
@@ -2255,7 +2255,7 @@ class ExecutionStore:
             payload=command.payload,
             command_id=command.command_id,
             draft_id=None,
-            wait_id=None,
+            wait_id=(command.payload.get("wait_id") if isinstance(command.payload, Mapping) else None),
             correlation_id=command.command_id,
             source_version=result_version,
             checkpoint_id=execution.checkpoint_head_id,
@@ -2346,6 +2346,25 @@ class ExecutionStore:
         actor_binding = normalize_authority(actor)
         if not actor_binding:
             actor_binding = {"authority_tier": "runtime", "speaker_id": "runtime/internal"}
+        else:
+            # Authority normalization intentionally keeps the stable identity
+            # fields only.  Control records additionally carry trusted
+            # transport/scope metadata so an audit reader can reconstruct the
+            # authorization decision.  Copy only the fixed safe fields;
+            # arbitrary actor data (including secrets) never enters the audit.
+            trusted_surface = actor.get("surface")
+            if isinstance(trusted_surface, str) and trusted_surface:
+                actor_binding["surface"] = trusted_surface
+            for field in ("project_ids", "session_ids", "execution_actions"):
+                value = actor.get(field)
+                if isinstance(value, (list, tuple, frozenset, set)) and all(
+                    isinstance(item, str) and item for item in value
+                ):
+                    actor_binding[field] = tuple(str(item) for item in value)
+            for field in ("resolved_project_id", "resolved_session_id"):
+                value = actor.get(field)
+                if isinstance(value, str) and value:
+                    actor_binding[field] = value
         audit_id = f"audit_{uuid.uuid4().hex}"
         now = time.time()
         redacted_payload = redact_audit_payload(payload)

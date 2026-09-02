@@ -141,6 +141,13 @@ def test_public_branch_commands_use_control_service_and_exact_session_scope(tmp_
         "interaction": "interactive",
     }
     fork_payload = _fork_payload(store, source, checkpoint)
+    fork_actor = {
+        **actor,
+        "project_ids": ["default"],
+        "session_ids": ["session-1"],
+        "execution_actions": ["execution.fork"],
+        "secret": "must-not-persist",
+    }
 
     command, snapshot = asyncio.run(submit_execution_control(
         {
@@ -149,11 +156,29 @@ def test_public_branch_commands_use_control_service_and_exact_session_scope(tmp_
             "expected_version": source.status_version,
             "payload": fork_payload,
         },
-        "fork", actor=actor, bound_session="session-1",
+        "fork", actor=fork_actor, bound_session="session-1",
+        surface="ws",
     ))
     assert command.status.value == "applied"
     assert command.result_json["child_execution_id"] != source.execution_id
     assert snapshot.execution_id == source.execution_id
+    assert command.actor["surface"] == "ws"
+    assert command.actor["resolved_project_id"] == "default"
+    assert command.actor["resolved_session_id"] == "session-1"
+    assert command.actor["project_ids"] == ["default"]
+    assert command.actor["session_ids"] == ["session-1"]
+    assert command.actor["execution_actions"] == ["execution.fork"]
+    assert "secret" not in command.actor
+    audits = [
+        event for event in store.list_audit_events(source.execution_id, actor=actor)
+        if event.command_id == "fork-1"
+    ]
+    assert audits and all(event.surface == "ws" for event in audits)
+    assert all(event.actor_binding["surface"] == "ws" for event in audits)
+    assert all(event.actor_binding["resolved_session_id"] == "session-1" for event in audits)
+    assert all(event.actor_binding["project_ids"] == ["default"] for event in audits)
+    assert all(event.actor_binding["session_ids"] == ["session-1"] for event in audits)
+    assert all("secret" not in event.actor_binding for event in audits)
 
     rejected, latest = asyncio.run(submit_execution_control(
         {
