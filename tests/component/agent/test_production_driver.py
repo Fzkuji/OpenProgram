@@ -124,7 +124,9 @@ def test_v7_migration_marks_overflow_nonterminal_agents_for_reconciliation(
         },
     )
     with sqlite3.connect(store.path) as connection:
-        connection.execute("DROP TABLE execution_finish_repair_slots")
+        assert connection.execute(
+            "SELECT COUNT(*) FROM execution_finish_repair_slots"
+        ).fetchone()[0] == 2
         connection.execute("PRAGMA user_version = 7")
         connection.commit()
 

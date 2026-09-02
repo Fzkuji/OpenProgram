@@ -404,6 +404,37 @@ def _backfill_finish_repair_slots(connection: sqlite3.Connection) -> None:
         ("completed", "failed", "cancelled", "interrupted"),
     ).fetchall()
     selected = rows[:_FINISH_REPAIR_SLOT_LIMIT]
+    # A v7 store may already contain slots for every live Agent execution.
+    # Reconcile that state before inserting the bounded selection so overflow
+    # executions do not continue to consume admission capacity.
+    connection.execute(
+        """
+        DELETE FROM execution_finish_repair_slots
+        WHERE execution_id NOT IN (
+            SELECT e.execution_id
+            FROM executions AS e
+            JOIN execution_agent_turn_inputs AS i
+              ON i.execution_id = e.execution_id
+            WHERE e.status NOT IN (?, ?, ?, ?)
+            ORDER BY EXISTS(
+                         SELECT 1 FROM execution_finish_repairs AS r
+                         WHERE r.execution_id = e.execution_id
+                     ) DESC,
+                     EXISTS(
+                         SELECT 1 FROM attempts AS a
+                         WHERE a.execution_id = e.execution_id
+                           AND a.attempt_id = e.current_attempt_id
+                           AND a.status = 'active'
+                     ) DESC,
+                     e.created_at, e.execution_id
+            LIMIT ?
+        )
+        """,
+        (
+            "completed", "failed", "cancelled", "interrupted",
+            _FINISH_REPAIR_SLOT_LIMIT,
+        ),
+    )
     connection.executemany(
         "INSERT OR IGNORE INTO execution_finish_repair_slots "
         "(execution_id, reserved_at, updated_at, state) VALUES (?, ?, ?, 'reserved')",
