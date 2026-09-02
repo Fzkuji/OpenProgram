@@ -57,196 +57,6 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-# ---------------------------------------------------------------- list
-
-def test_list_turn_files_uses_committed_journal_not_shadow(store, tmp_path):
-    session_id, msg_id = "s_list", "u1_reply"
-    _seed(store, session_id, msg_id)
-
-    project = tmp_path / "proj"
-    project.mkdir()
-    target = project / "foo.py"
-    target.write_text("a\nb\n")
-
-    journal = CheckpointStore(store._session_dir(session_id))
-    journal.backup_before_edit(msg_id, str(target))
-    target.write_text("a\nb\nc\nd\n")
-    journal.commit_after_edit(msg_id, str(target), operation="edit")
-    _git, index = store._open(session_id)
-    index.nodes_by_id[msg_id].metadata = {
-        **(index.nodes_by_id[msg_id].metadata or {}),
-        "shadow_git": {"repo": str(project), "before": "bad", "after": "bad"},
-    }
-
-    ws = FakeWS()
-    _run(tf.handle_list_turn_files(ws, {
-        "action": "list_turn_files",
-        "session_id": session_id,
-        "assistant_msg_id": msg_id,
-    }))
-
-    assert ws.sent[0]["type"] == "list_turn_files_result"
-    data = ws.sent[0]["data"]
-    assert data["paths"] == [str(target)]
-    row = data["files"][0]
-    assert {"path", "rel", "op", "added", "removed"} <= set(row)
-    assert row["rel"] == "foo.py"
-    assert row["op"] == "modify"
-    assert row["added"] == 2
-    assert row["removed"] == 0
-
-
-def test_list_turn_files_reads_exact_journal_stats(store, tmp_path):
-    session_id, msg_id = "s_fallback", "u1_reply"
-    _seed(store, session_id, msg_id)
-
-    target = tmp_path / "bar.py"
-    target.write_text("one\ntwo\n")
-    journal = CheckpointStore(store._session_dir(session_id))
-    journal.backup_before_edit(msg_id, str(target))
-    target.write_text("one\ntwo\nthree\n")
-    journal.commit_after_edit(msg_id, str(target), operation="edit")
-
-    ws = FakeWS()
-    _run(tf.handle_list_turn_files(ws, {
-        "session_id": session_id, "assistant_msg_id": msg_id,
-    }))
-
-    row = ws.sent[0]["data"]["files"][0]
-    assert row["op"] == "modify"
-    assert row["added"] == 1
-    assert row["removed"] == 0
-
-
-def test_list_turn_files_marks_created_file_as_add(store, tmp_path):
-    session_id, msg_id = "s_add", "u1_reply"
-    _seed(store, session_id, msg_id)
-
-    target = tmp_path / "new.py"  # does not exist at turn start
-    journal = CheckpointStore(store._session_dir(session_id))
-    journal.backup_before_edit(msg_id, str(target))
-    target.write_text("fresh\n")
-    journal.commit_after_edit(msg_id, str(target), operation="add")
-
-    ws = FakeWS()
-    _run(tf.handle_list_turn_files(ws, {
-        "session_id": session_id, "assistant_msg_id": msg_id,
-    }))
-
-    row = ws.sent[0]["data"]["files"][0]
-    assert row["op"] == "add"
-    assert row["added"] == 1
-
-
-def test_list_turn_files_reports_reverted_turn(store, tmp_path):
-    """After an undo, the list says so — that's what keeps the card
-    showing "Reverted" instead of offering Undo again after a reload."""
-    session_id, msg_id = "s_reverted", "u1_reply"
-    _seed(store, session_id, msg_id)
-
-    target = tmp_path / "foo.py"
-    target.write_text("original\n")
-    CheckpointStore(store._session_dir(session_id)).backup_before_edit(
-        msg_id, str(target))
-    target.write_text("changed\n")
-    CheckpointStore(store._session_dir(session_id)).commit_after_edit(
-        msg_id, str(target), operation="edit",
-    )
-
-    ws = FakeWS()
-    _run(tf.handle_list_turn_files(ws, {
-        "session_id": session_id, "assistant_msg_id": msg_id,
-    }))
-    assert ws.sent[0]["data"]["reverted"] is False
-
-    _run(tf.handle_revert_turn(ws, {
-        "session_id": session_id, "msg_id": msg_id,
-    }))
-
-    ws2 = FakeWS()
-    _run(tf.handle_list_turn_files(ws2, {
-        "session_id": session_id, "assistant_msg_id": msg_id,
-    }))
-    assert ws2.sent[0]["data"]["reverted"] is True
-
-
-def test_list_turn_files_requires_args(store):
-    ws = FakeWS()
-    _run(tf.handle_list_turn_files(ws, {"session_id": "", "assistant_msg_id": ""}))
-    data = ws.sent[0]["data"]
-    assert data["files"] == []
-    assert "required" in data["error"]
-
-
-# ---------------------------------------------------------------- diff
-
-def test_turn_file_diff_uses_exact_before_and_after_blobs(store, tmp_path):
-    session_id, msg_id = "s_diff", "u1_reply"
-    _seed(store, session_id, msg_id)
-
-    project = tmp_path / "proj"
-    project.mkdir()
-    target = project / "foo.py"
-    target.write_text("keep\n")
-    journal = CheckpointStore(store._session_dir(session_id))
-    journal.backup_before_edit(msg_id, str(target))
-    target.write_text("keep\nadded line\n")
-    journal.commit_after_edit(msg_id, str(target), operation="edit")
-    target.write_text("later external edit\n")
-
-    ws = FakeWS()
-    _run(tf.handle_turn_file_diff(ws, {
-        "session_id": session_id, "assistant_msg_id": msg_id,
-        "path": str(target),
-    }))
-
-    data = ws.sent[0]["data"]
-    assert ws.sent[0]["type"] == "turn_file_diff_result"
-    assert data["approximate"] is False
-    assert "+added line" in data["diff"]
-
-
-def test_turn_file_diff_without_shadow_is_still_exact(store, tmp_path):
-    session_id, msg_id = "s_diff_fb", "u1_reply"
-    _seed(store, session_id, msg_id)
-
-    target = tmp_path / "baz.py"
-    target.write_text("old\n")
-    journal = CheckpointStore(store._session_dir(session_id))
-    journal.backup_before_edit(msg_id, str(target))
-    target.write_text("new\n")
-    journal.commit_after_edit(msg_id, str(target), operation="edit")
-
-    ws = FakeWS()
-    _run(tf.handle_turn_file_diff(ws, {
-        "session_id": session_id, "assistant_msg_id": msg_id,
-        "path": str(target),
-    }))
-
-    data = ws.sent[0]["data"]
-    assert data["approximate"] is False
-    assert "-old" in data["diff"]
-    assert "+new" in data["diff"]
-
-
-def test_turn_file_diff_unknown_path_errors(store, tmp_path):
-    session_id, msg_id = "s_diff_missing", "u1_reply"
-    _seed(store, session_id, msg_id)
-
-    ws = FakeWS()
-    _run(tf.handle_turn_file_diff(ws, {
-        "session_id": session_id, "assistant_msg_id": msg_id,
-        "path": str(tmp_path / "never.py"),
-    }))
-    assert "not recorded" in ws.sent[0]["data"]["error"]
-
-
-def test_turn_file_diff_requires_args(store):
-    ws = FakeWS()
-    _run(tf.handle_turn_file_diff(ws, {"session_id": "s", "path": ""}))
-    assert "required" in ws.sent[0]["data"]["error"]
-
-
 # -------------------------------------------------------------- revert
 
 def test_revert_turn_action_restores_and_reports(store, tmp_path):
@@ -286,7 +96,7 @@ def test_revert_turn_action_reports_error(store):
 
 def test_actions_registered():
     assert set(tf.ACTIONS) == {
-        "list_turn_files", "turn_file_diff", "review_scope", "review_file_diff",
+        "review_scope", "review_file_diff",
         "turn_history_state", "turn_operation_status", "revert_turn", "reapply_turn",
     }
 
@@ -435,22 +245,6 @@ def test_workspace_scope_excludes_gitignored_files(store, tmp_path, monkeypatch)
     assert result["ignored_policy"] == "exclude_standard"
 
 
-def test_exact_diff_payload_is_bounded(store, tmp_path):
-    session_id, msg_id = "s_large_diff", "u1_reply"
-    _seed(store, session_id, msg_id)
-    target = tmp_path / "large.txt"
-    target.write_text("before\n", encoding="utf-8")
-    journal = CheckpointStore(store._session_dir(session_id))
-    journal.backup_before_edit(msg_id, str(target))
-    target.write_text("x" * (tf._MAX_DIFF_BYTES + 1), encoding="utf-8")
-    journal.commit_after_edit(msg_id, str(target), operation="edit")
-
-    result = tf._turn_file_diff(session_id, msg_id, str(target))
-
-    assert result["diff"] == ""
-    assert result["diff_state"] == "large"
-
-
 def test_workspace_diff_rejects_ignored_path_not_in_scope(store, tmp_path, monkeypatch):
     root = tmp_path / "repo-secret"
     root.mkdir()
@@ -495,48 +289,6 @@ def test_workspace_diff_rejects_ignored_path_not_in_scope(store, tmp_path, monke
     assert "not a regular file" in link_result["error"]
     assert direct_secret["diff"] == ""
     assert "SECRET=hidden" not in json.dumps([link_result, direct_secret])
-
-
-def test_turn_diff_rejects_escaping_or_corrupt_blob(store, tmp_path):
-    from openprogram.store.snapshot.checkpoint import manifest
-    from openprogram.store.snapshot.checkpoint.paths import (
-        turn_backup_dir,
-        turn_manifest_path,
-    )
-
-    session_id, msg_id = "s_bad_blob", "u1_reply"
-    _seed(store, session_id, msg_id)
-    target = tmp_path / "safe.py"
-    target.write_text("before\n", encoding="utf-8")
-    journal = CheckpointStore(store._session_dir(session_id))
-    journal.backup_before_edit(msg_id, str(target))
-    target.write_text("after\n", encoding="utf-8")
-    journal.commit_after_edit(msg_id, str(target), operation="edit")
-    manifest_path = turn_manifest_path(store._session_dir(session_id), msg_id)
-    value = manifest.load(manifest_path)
-    entry = next(iter(value["files"].values()))
-    original_ref = entry["after"]["blob_ref"]
-    entry["after"]["blob_ref"] = "../../outside.txt"
-    manifest.save(manifest_path, value)
-    escaped = tf._turn_file_diff(session_id, msg_id, str(target))
-    assert escaped["diff_state"] == "unavailable"
-    assert "unsafe recovery blob" in escaped["error"]
-
-    value = manifest.load(manifest_path)
-    entry = next(iter(value["files"].values()))
-    entry["after"]["blob_ref"] = original_ref
-    manifest.save(manifest_path, value)
-    (turn_backup_dir(store._session_dir(session_id), msg_id) / original_ref).write_text(
-        "tampered\n", encoding="utf-8",
-    )
-    corrupt = tf._turn_file_diff(session_id, msg_id, str(target))
-    assert corrupt["diff_state"] == "unavailable"
-    assert "mismatch" in corrupt["error"]
-    unsafe_turn = tf._turn_file_diff(
-        session_id, "../../../outside", str(target),
-    )
-    assert unsafe_turn["diff_state"] == "unavailable"
-    assert "unsafe turn" in unsafe_turn["error"]
 
 
 def test_branch_scope_reports_net_zero_as_no_change(store, tmp_path):
@@ -1097,28 +849,6 @@ def test_review_diff_uses_opaque_cursor_bound_to_snapshot_and_path(store, tmp_pa
     assert forged_ws.sent[0]["data"]["error"] == "cursor must be an opaque review token"
 
 
-def test_diff_page_mounts_at_most_two_hundred_lines(store, tmp_path):
-    session_id, msg_id = "s_line_page", "u1_reply"
-    _seed(store, session_id, msg_id)
-    target = tmp_path / "many-lines.txt"
-    target.write_text("", encoding="utf-8")
-    journal = CheckpointStore(store._session_dir(session_id))
-    journal.backup_before_edit(msg_id, str(target))
-    target.write_text("x\n" * 100_000, encoding="utf-8")
-    journal.commit_after_edit(msg_id, str(target), operation="edit")
-
-    first = tf._turn_file_diff(session_id, msg_id, str(target))
-    second = tf._turn_file_diff(
-        session_id, msg_id, str(target), first["next_cursor"],
-    )
-
-    assert first["line_count"] <= 200
-    assert first["next_cursor"] is not None
-    assert second["line_count"] <= 200
-    assert second["diff"].startswith("@@")
-    assert second["prev_cursor"] is None
-
-
 def test_latest_file_turn_remains_undo_after_later_chat_only_reply(store, tmp_path):
     session_id = "s_latest_file"
     _seed(store, session_id, "a1")
@@ -1158,24 +888,6 @@ def test_history_action_hidden_when_current_digest_changed(store, tmp_path):
     assert result["status"] == "blocked"
     assert result["action"] is None
     assert result["conflicts"] == [str(target)]
-
-
-def test_card_file_expansion_is_capped_at_twenty(store, tmp_path):
-    session_id, msg_id = "s_card_cap", "u1_reply"
-    _seed(store, session_id, msg_id)
-    journal = CheckpointStore(store._session_dir(session_id))
-    for number in range(21):
-        target = tmp_path / f"card-{number}.py"
-        target.write_text("before\n", encoding="utf-8")
-        journal.backup_before_edit(msg_id, str(target))
-        target.write_text("after\n", encoding="utf-8")
-        journal.commit_after_edit(msg_id, str(target), operation="edit")
-
-    result = tf._list_files(session_id, msg_id)
-
-    assert result["file_count"] == 21
-    assert len(result["files"]) == 20
-    assert result["truncated"] is True
 
 
 def test_branch_net_stats_declines_large_repetitive_line_sets(store):

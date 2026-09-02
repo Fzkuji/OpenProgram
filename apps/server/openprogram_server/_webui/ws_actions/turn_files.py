@@ -484,32 +484,6 @@ def _page_scope(
     }
 
 
-def _list_files(session_id: str, assistant_msg_id: str) -> dict:
-    opened = _open_session(session_id)
-    if opened is None:
-        return {"files": [], "paths": [], "error": f"unknown session {session_id!r}"}
-    _store, _git, index, session_dir = opened
-    root = _project_root(session_id)
-    mutations = _manifest_mutations(session_dir, assistant_msg_id)
-    result = (
-        {
-            "files": [_normalise_file(row, root) for row in mutations],
-            "file_count": len(mutations),
-            "reverted": bool((index.nodes_by_id.get(assistant_msg_id).metadata or {}).get("reverted"))
-                if index.nodes_by_id.get(assistant_msg_id) else False,
-        }
-        if mutations
-        else _turn_summary(index, session_dir, assistant_msg_id, root)
-    )
-    return {
-        **result,
-        "files": result["files"][:20],
-        "paths": [row["path"] for row in result["files"][:20]],
-        "file_count": result.get("file_count", len(result["files"])),
-        "truncated": result.get("file_count", len(result["files"])) > 20,
-    }
-
-
 def _history_eligibility(session_id: str, turn_id: str) -> dict:
     opened = _open_session(session_id)
     if opened is None:
@@ -1420,39 +1394,13 @@ def _page_diff_lines(lines, cursor: int = 0) -> dict:
     }
 
 
-def _turn_file_diff(
-    session_id: str, turn_id: str, path: str, cursor: int = 0,
-) -> dict:
-    opened = _open_session(session_id)
-    if opened is None:
-        return {"diff": "", "diff_state": "unavailable", "error": "unknown session"}
-    _store, _git, index, session_dir = opened
-    if not _valid_turn_id(turn_id) or turn_id not in index.nodes_by_id:
-        return {"diff": "", "diff_state": "unavailable", "error": "unknown or unsafe turn"}
-    mutation = next(
-        (row for row in _manifest_mutations(session_dir, turn_id) if row.get("path") == path),
-        None,
-    )
-    if mutation is None:
-        return {"diff": "", "diff_state": "unavailable", "error": f"{path!r} not recorded for this turn"}
-    return _render_diff(
-        session_dir, turn_id, mutation.get("before") or {},
-        turn_id, mutation.get("after") or {}, path, cursor,
-    )
-
-
-def _turn_lineage_file_diff(
+def _review_turn_file_diff(
     session_id: str, member: dict, path: str, cursor: int = 0,
 ) -> dict:
     first_turn = str(member.get("first_turn_id") or "")
     last_turn = str(member.get("last_turn_id") or "")
     if not first_turn or not last_turn:
-        return _turn_file_diff(
-            session_id,
-            str(member.get("producer_turn_id") or ""),
-            path,
-            cursor,
-        )
+        return {"diff": "", "diff_state": "unavailable", "error": "turn lineage is unavailable"}
     opened = _open_session(session_id)
     if opened is None:
         return {"diff": "", "diff_state": "unavailable", "error": "unknown session"}
@@ -1869,51 +1817,6 @@ def _review_request_values(cmd: dict, *, include_path: bool = False) -> tuple[di
     return values, "; ".join(errors) if errors else None
 
 
-async def handle_list_turn_files(ws, cmd: dict) -> None:
-    session_id = (cmd.get("session_id") or "").strip()
-    turn_id = (cmd.get("assistant_msg_id") or "").strip()
-    result = (
-        await _run(lambda: _list_files(session_id, turn_id))
-        if session_id and turn_id
-        else {"files": [], "paths": [], "error": "session_id and assistant_msg_id are required"}
-    )
-    result = _stable_file_result(result)
-    await ws.send_text(json.dumps({
-        "type": "list_turn_files_result",
-        "data": {"session_id": session_id, "assistant_msg_id": turn_id,
-                 "request_id": cmd.get("request_id"), **result, "action": "list_turn_files"},
-    }, default=str))
-
-
-async def handle_turn_file_diff(ws, cmd: dict) -> None:
-    session_id = (cmd.get("session_id") or "").strip()
-    turn_id = (cmd.get("assistant_msg_id") or "").strip()
-    path = (cmd.get("path") or "").strip()
-    raw_cursor = cmd.get("cursor")
-    cursor_invalid = False
-    try:
-        cursor = int(raw_cursor or 0)
-    except (TypeError, ValueError):
-        cursor = 0
-        cursor_invalid = True
-    result = (
-        await _run(lambda: _turn_file_diff(session_id, turn_id, path, cursor))
-        if session_id and turn_id and path
-        else {"diff": "", "diff_state": "unavailable", "error": "session_id, assistant_msg_id and path are required"}
-    )
-    if cursor_invalid:
-        result = {"diff": "", "diff_state": "unavailable", "error": "cursor must be an integer"}
-    result = _stable_file_result(result)
-    await ws.send_text(json.dumps({
-        "type": "turn_file_diff_result",
-        "data": {
-            "session_id": session_id, "assistant_msg_id": turn_id, "path": path,
-            "request_id": cmd.get("request_id"), "approximate": False,
-            **result, "action": "turn_file_diff",
-        },
-    }, default=str))
-
-
 async def handle_review_scope(ws, cmd: dict) -> None:
     values, validation_error = _review_request_values(cmd)
     session_id = values["session_id"]
@@ -2038,7 +1941,7 @@ async def handle_review_file_diff(ws, cmd: dict) -> None:
                         "error": "STALE_CURSOR",
                     }
                 elif scope == "turn":
-                    result = await _run(lambda: _turn_lineage_file_diff(
+                    result = await _run(lambda: _review_turn_file_diff(
                         session_id, member, path, diff_offset,
                     ))
                 elif scope == "branch":
@@ -2155,8 +2058,6 @@ async def handle_reapply_turn(ws, cmd: dict) -> None:
 
 
 ACTIONS = {
-    "list_turn_files": handle_list_turn_files,
-    "turn_file_diff": handle_turn_file_diff,
     "review_scope": handle_review_scope,
     "review_file_diff": handle_review_file_diff,
     "turn_history_state": handle_turn_history_state,

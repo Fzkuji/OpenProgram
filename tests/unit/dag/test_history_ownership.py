@@ -295,7 +295,7 @@ def test_owned_sibling_completion_order_does_not_override_mutation_order(
     from openprogram.webui.ws_actions.turn_files import (
         _branch_file_diff,
         _branch_scope,
-        _turn_lineage_file_diff,
+        _review_turn_file_diff,
         _turn_scope,
     )
 
@@ -303,7 +303,7 @@ def test_owned_sibling_completion_order_does_not_override_mutation_order(
     assert turn_scope["file_count"] == 1
     assert turn_scope["files"][0]["turn_ids"] == ["a1", "c1-a", "c2-a"]
     assert set(turn_scope["files"][0]["actor_ids"]) == {"main"}
-    turn_diff = _turn_lineage_file_diff(
+    turn_diff = _review_turn_file_diff(
         "s", turn_scope["files"][0], str(target), 0,
     )
     assert turn_diff["diff_state"] == "available"
