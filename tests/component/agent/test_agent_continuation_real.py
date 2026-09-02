@@ -588,10 +588,26 @@ def test_after_tool_continue_runs_only_the_unfinished_tool(real_agent_chat):
     duplicate = _command(real_agent_chat, "execution.step", paused, "step-second")
     assert step["status"] in {"accepted", "applying", "applied"}, step
     assert duplicate["command_id"] == step["command_id"]
-    paused_after_step = _wait(lambda: (
-        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.PAUSED
-        and item.status_version > paused.status_version else None
-    ))
+    paused_after_step = _wait(
+        lambda: (
+            item
+            if (
+                (item := real_agent_chat.store.get_execution(execution.execution_id)).status
+                is ExecutionStatus.PAUSED
+                and item.status_version > paused.status_version
+                and real_agent_chat.store.get_command("step-second").status
+                is CommandStatus.APPLIED
+            )
+            else None
+        ),
+        timeout=10.0,
+        detail=lambda: {
+            "execution": real_agent_chat.store.get_execution(execution.execution_id).to_dict(),
+            "step_command": real_agent_chat.store.get_command("step-second").to_dict(),
+            "calls": real_agent_chat.tools.calls,
+            "outcomes": [getattr(item, "error", repr(item)) for item in real_agent_chat.outcomes],
+        },
+    )
     assert paused_after_step.safe_point["phase"] == "after_tool"
     assert real_agent_chat.tools.calls == ["first", "second"]
     assert real_agent_chat.store.get_command("step-second").result_json["managed_action_id"]
