@@ -61,6 +61,8 @@ class ProjectionDispatcher:
         lease_ttl_seconds: float = 30.0,
         should_stop: Callable[[], bool] | None = None,
     ) -> ProjectionDispatchResult:
+        if should_stop is not None and should_stop():
+            return ProjectionDispatchResult(claimed=0, delivered=0, failed=0)
         claimed = self.store.claim_projection_outbox(
             owner_id=owner_id,
             limit=limit,
@@ -69,8 +71,12 @@ class ProjectionDispatcher:
         )
         delivered = 0
         failed = 0
-        for item in claimed:
+        for index, item in enumerate(claimed):
             if should_stop is not None and should_stop():
+                self.store.release_projection_outbox(
+                    [pending.outbox_id for pending in claimed[index:]],
+                    owner_id=owner_id,
+                )
                 break
             handler = self.handlers.get(item.projection_kind)
             if handler is None:

@@ -502,6 +502,35 @@ class ExecutionStore:
                 ).fetchone()
             )
 
+    def release_projection_outbox(
+        self, outbox_ids: Collection[str], *, owner_id: str
+    ) -> int:
+        """Return this owner's unprocessed live claims to pending without retry cost."""
+        from .outbox import ProjectionOutboxState
+
+        ids = tuple(dict.fromkeys(outbox_ids))
+        if not owner_id:
+            raise ProjectionConflict("invalid_claim", "owner_id is required")
+        if not ids:
+            return 0
+        placeholders = ",".join("?" for _ in ids)
+        now = time.time()
+        with self._transaction() as connection:
+            updated = connection.execute(
+                "UPDATE execution_projection_outbox SET state = ?, claim_owner = NULL, "
+                "claim_expires_at = NULL WHERE state = ? AND claim_owner = ? "
+                "AND claim_expires_at IS NOT NULL AND claim_expires_at > ? "
+                f"AND outbox_id IN ({placeholders})",
+                (
+                    ProjectionOutboxState.PENDING.value,
+                    ProjectionOutboxState.CLAIMED.value,
+                    owner_id,
+                    now,
+                    *ids,
+                ),
+            )
+            return updated.rowcount
+
     def reclaim_projection_outbox(self, *, now: float | None = None) -> int:
         with self._transaction() as connection:
             return self._reclaim_projection_outbox_in_transaction(

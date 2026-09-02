@@ -218,6 +218,70 @@ def test_projection_worker_stop_is_bounded_and_stops_new_claims(tmp_path):
     assert calls == ["outbox_1_dag"]
 
 
+def test_stopping_a_batched_worker_releases_unprocessed_claims_for_restart(tmp_path):
+    from openprogram.execution.projections import ExecutionProjectionWorker
+
+    store = _store(tmp_path)
+    _admit(store)
+    handler_started = threading.Event()
+    release_handler = threading.Event()
+    first_calls = []
+
+    def slow_dag(item):
+        first_calls.append(item.projection_kind)
+        handler_started.set()
+        assert release_handler.wait(2)
+
+    worker = ExecutionProjectionWorker(store, batch_size=4, idle_wait_seconds=30)
+    worker._dispatcher = ProjectionDispatcher(
+        store,
+        {
+            "dag": slow_dag,
+            "job": lambda _item: None,
+            "ui": lambda _item: None,
+            "workflow": lambda _item: None,
+        },
+    )
+    worker.start()
+    assert handler_started.wait(2)
+    assert worker.stop(timeout=0.01) is False
+    release_handler.set()
+    assert worker.stop(timeout=1) is True
+    assert first_calls == ["dag"]
+
+    entries = store.list_projection_outbox()
+    assert [item.state.value for item in entries if item.projection_kind != "dag"] == [
+        "pending",
+        "pending",
+        "pending",
+    ]
+    assert all(
+        item.claim_owner is None and item.claim_expires_at is None and item.last_error is None
+        for item in entries
+        if item.projection_kind != "dag"
+    )
+
+    resumed = threading.Event()
+    resumed_calls = []
+
+    def resume(item):
+        resumed_calls.append(item.projection_kind)
+        if len(resumed_calls) == 3:
+            resumed.set()
+
+    restarted = ExecutionProjectionWorker(store, batch_size=4, idle_wait_seconds=30)
+    restarted._dispatcher = ProjectionDispatcher(
+        store, {"job": resume, "ui": resume, "workflow": resume}
+    )
+    restarted.start()
+    try:
+        assert resumed.wait(2)
+    finally:
+        assert restarted.stop(timeout=1) is True
+    assert resumed_calls == ["job", "ui", "workflow"]
+    assert all(item.state.value == "delivered" for item in store.list_projection_outbox())
+
+
 def test_projection_snapshot_lookup_does_not_scan_the_execution_event_history(
     tmp_path, monkeypatch
 ):
