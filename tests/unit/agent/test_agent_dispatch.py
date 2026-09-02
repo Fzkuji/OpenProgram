@@ -261,6 +261,66 @@ def test_to_busy_target_precreates_task_and_queues(parent_turn, monkeypatch):
     assert not parent_turn.async_calls
 
 
+def test_busy_inbox_failure_cancels_canonical_admission(
+    parent_turn, monkeypatch,
+):
+    """A failed inbox write must cancel the admitted execution itself."""
+    calls: list[tuple[str, str | None]] = []
+
+    class _Runner:
+        def admit_job_entity(self, *args, **kwargs):
+            return None
+
+        def cancel_execution(self, execution_id, *, reason=None):
+            calls.append((execution_id, reason))
+            return None
+
+    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: _Runner())
+    monkeypatch.setattr(
+        "openprogram.agent.run_control.is_turn_running",
+        lambda sid: sid == "p2",
+    )
+
+    def fail_enqueue(*args, **kwargs):
+        raise OSError("inbox unavailable")
+
+    monkeypatch.setattr("openprogram.agent.inbox.enqueue", fail_enqueue)
+    out = _agent_impl("audit", to="p2:a9")
+
+    assert "inbox unavailable" in out
+    assert len(calls) == 1
+    assert calls[0][0]
+    assert "inbox enqueue failed" in (calls[0][1] or "")
+
+
+def test_busy_duplicate_cancels_duplicate_admission(
+    parent_turn, monkeypatch,
+):
+    """A duplicate inbox result must not leave its admission runnable."""
+    calls: list[tuple[str, str | None]] = []
+
+    class _Runner:
+        def admit_job_entity(self, *args, **kwargs):
+            return None
+
+        def cancel_execution(self, execution_id, *, reason=None):
+            calls.append((execution_id, reason))
+            return None
+
+    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: _Runner())
+    monkeypatch.setattr(
+        "openprogram.agent.run_control.is_turn_running",
+        lambda sid: sid == "p2",
+    )
+    monkeypatch.setattr("openprogram.agent.inbox.enqueue", lambda *a, **k: "duplicate")
+    out = _agent_impl("audit", to="p2:a9")
+
+    assert "duplicate dispatch ignored" in out
+    assert len(calls) == 1
+    assert calls[0][0]
+    assert calls[0][1] == "duplicate dispatch"
+
+
 # --- inbox drain of tracked entries ---
 
 def test_drain_delivers_tracked_entry_with_task_header(parent_turn, monkeypatch):

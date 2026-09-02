@@ -33,15 +33,14 @@ def handle_goal_command(session_id: str, raw_args: str) -> dict:
         goal["status"] = "cleared"
         _goal.save_goal(session_id, goal)
         _goal._emit_goal_update(None, session_id, goal)
-        try:
-            from openprogram.agent.run_control import mark_cancelled
+        execution_id = str(goal.get("execution_id") or "")
+        if execution_id:
+            try:
+                from openprogram.agent.run_control import mark_cancelled
 
-            mark_cancelled(
-                session_id,
-                execution_id=str(goal.get("execution_id") or "") or None,
-            )
-        except Exception:
-            pass
+                mark_cancelled(session_id, execution_id=execution_id)
+            except Exception:
+                pass
         return {"text": "Goal cleared.", "send_text": None}
 
     return {

@@ -48,25 +48,32 @@ def test_clear_turn_context_drops_all_bound_identifiers():
 
 def test_no_turn_means_nothing_to_cancel():
     """Between turns a stop is a no-op, not a flag that poisons what runs next."""
-    ps.mark_cancelled("s1")
+    ps.mark_cancelled("s1", execution_id="missing")
     assert ps.is_cancelled("s1") is False
 
 
+def test_cancel_requires_an_exact_execution_id():
+    with pytest.raises(TypeError):
+        ps.mark_cancelled("s1")
+    with pytest.raises(ValueError, match="execution_id is required"):
+        ps.mark_cancelled("s1", execution_id="")
+
+
 def test_cancel_trips_the_running_turn():
-    token = ps.begin_turn("s1")
-    ps.mark_cancelled("s1")
+    token = ps.begin_turn("s1", "e1")
+    ps.mark_cancelled("s1", execution_id="e1")
     assert token.is_cancelled() is True
-    assert ps.is_cancelled("s1") is True
+    assert ps.current_token("s1", execution_id="e1").is_cancelled() is True
 
 
 def test_stop_does_not_leak_into_the_next_turn():
     """The regression this design exists to prevent."""
-    first = ps.begin_turn("s1")
-    ps.mark_cancelled("s1")
+    first = ps.begin_turn("s1", "e1")
+    ps.mark_cancelled("s1", execution_id="e1")
     assert first.is_cancelled() is True
 
     ps.end_turn("s1", first)
-    second = ps.begin_turn("s1")
+    second = ps.begin_turn("s1", "e2")
 
     assert second.is_cancelled() is False
     assert ps.is_cancelled("s1") is False
@@ -74,10 +81,10 @@ def test_stop_does_not_leak_into_the_next_turn():
 
 def test_late_stop_cannot_reach_a_finished_turn():
     """A stop racing turn teardown lands on a retired token and dies there."""
-    token = ps.begin_turn("s1")
+    token = ps.begin_turn("s1", "e1")
     ps.end_turn("s1", token)
 
-    ps.mark_cancelled("s1")
+    ps.mark_cancelled("s1", execution_id="e1")
 
     assert token.is_cancelled() is False
     assert token.retired is True
@@ -112,9 +119,9 @@ def test_end_turn_does_not_retire_a_successor():
 
 
 def test_sessions_are_independent():
-    a = ps.begin_turn("sA")
-    b = ps.begin_turn("sB")
-    ps.mark_cancelled("sA")
+    a = ps.begin_turn("sA", "eA")
+    b = ps.begin_turn("sB", "eB")
+    ps.mark_cancelled("sA", execution_id="eA")
 
     assert a.is_cancelled() is True
     assert b.is_cancelled() is False
@@ -126,12 +133,12 @@ def test_sessions_are_independent():
 def test_registered_event_is_the_token_event():
     """Call sites owning an Event still get one token everything shares."""
     ev = threading.Event()
-    ps.register_cancel_event("s1", ev)
+    ps.register_cancel_event("s1", ev, execution_id="e1")
 
-    ps.mark_cancelled("s1")
+    ps.mark_cancelled("s1", execution_id="e1")
 
     assert ev.is_set() is True, "the LLM call / tool layer waits on this Event"
-    assert ps.is_cancelled("s1") is True
+    assert ps.current_token("s1", execution_id="e1").is_cancelled() is True
 
 
 def test_exact_cancel_without_persisted_execution_still_trips_token():
@@ -186,15 +193,15 @@ def test_exact_cancel_rejected_as_terminal_does_not_trip_stale_token(
 
 def test_tripping_the_event_directly_is_visible_as_cancelled():
     ev = threading.Event()
-    ps.register_cancel_event("s1", ev)
+    ps.register_cancel_event("s1", ev, execution_id="e1")
     ev.set()
-    assert ps.is_cancelled("s1") is True
+    assert ps.current_token("s1", execution_id="e1").is_cancelled() is True
 
 
 def test_clear_cancel_retires_rather_than_resets():
     ev = threading.Event()
-    ps.register_cancel_event("s1", ev)
-    ps.mark_cancelled("s1")
+    ps.register_cancel_event("s1", ev, execution_id="e1")
+    ps.mark_cancelled("s1", execution_id="e1")
 
     ps.clear_cancel("s1")
 
@@ -213,33 +220,33 @@ def test_unregister_with_event_leaves_newer_turn_alone():
     """
     ev_task = threading.Event()
     ev_chat = threading.Event()
-    ps.register_cancel_event("s1", ev_task)
-    ps.register_cancel_event("s1", ev_chat)
+    ps.register_cancel_event("s1", ev_task, execution_id="e1")
+    ps.register_cancel_event("s1", ev_chat, execution_id="e2")
 
-    ps.unregister_cancel_event("s1", ev_task)  # task ends late
+    ps.unregister_cancel_event("s1", ev_task, execution_id="e1")  # task ends late
 
-    token = ps.current_token("s1")
+    token = ps.current_token("s1", execution_id="e2")
     assert token is not None, "chat turn's registration was popped"
-    ps.mark_cancelled("s1")
+    ps.mark_cancelled("s1", execution_id="e2")
     assert ev_chat.is_set() is True, "Stop no longer reaches the chat turn"
     assert ev_task.is_set() is False
 
 
 def test_unregister_with_matching_event_pops_own_registration():
     ev = threading.Event()
-    ps.register_cancel_event("s1", ev)
+    ps.register_cancel_event("s1", ev, execution_id="e1")
 
     ps.unregister_cancel_event("s1", ev)
 
     assert ps.current_token("s1") is None
-    ps.mark_cancelled("s1")  # no-op between turns
+    ps.mark_cancelled("s1", execution_id="missing")  # no-op between turns
     assert ev.is_set() is False
 
 
 def test_unregister_without_event_keeps_force_clear_semantics():
     """Internal cleanup may explicitly clear the current registration."""
     ev = threading.Event()
-    ps.register_cancel_event("s1", ev)
+    ps.register_cancel_event("s1", ev, execution_id="e1")
 
     ps.unregister_cancel_event("s1")
 
@@ -271,11 +278,11 @@ def test_exact_cleanup_lease_rejects_handover_until_release():
 
 def test_cancel_hook_raises_inside_a_cancelled_turn():
     """@agentic_function entry and Runtime.exec go through this hook."""
-    ps.begin_turn("s1")
+    ps.begin_turn("s1", "e1")
     tok = ps.set_current_session_id("s1")
     try:
         ps._cancel_hook()  # not cancelled yet → no raise
-        ps.mark_cancelled("s1")
+        ps.mark_cancelled("s1", execution_id="e1")
         with pytest.raises(CancelledError):
             ps._cancel_hook()
     finally:
@@ -284,10 +291,10 @@ def test_cancel_hook_raises_inside_a_cancelled_turn():
 
 def test_check_cancelled_matches_the_hook():
     """Long-running tool bodies poll this between heavy stages."""
-    ps.begin_turn("s1")
+    ps.begin_turn("s1", "e1")
     tok = ps.set_current_session_id("s1")
     try:
-        ps.mark_cancelled("s1")
+        ps.mark_cancelled("s1", execution_id="e1")
         with pytest.raises(CancelledError):
             ps.check_cancelled()
     finally:
@@ -296,10 +303,10 @@ def test_check_cancelled_matches_the_hook():
 
 def test_hook_is_silent_after_the_turn_ends():
     """Work continuing past turn end is not killed by that turn's stop."""
-    token = ps.begin_turn("s1")
+    token = ps.begin_turn("s1", "e1")
     tok = ps.set_current_session_id("s1")
     try:
-        ps.mark_cancelled("s1")
+        ps.mark_cancelled("s1", execution_id="e1")
         ps.end_turn("s1", token)
         ps.check_cancelled()  # must not raise
     finally:
@@ -317,14 +324,14 @@ def test_context_bound_token_wins_over_the_registry():
     Cancelling the frame's own turn must stop that frame even though the
     session registry has already moved on to a newer turn.
     """
-    mine = ps.begin_turn("s1")
-    ps.mark_cancelled("s1")  # stop aimed at THIS turn
+    mine = ps.begin_turn("s1", "e1")
+    ps.mark_cancelled("s1", execution_id="e1")  # stop aimed at THIS turn
 
     tok_t = ps._current_token.set(mine)
     tok_s = ps.set_current_session_id("s1")
     try:
         # The session hands over to a fresh turn while this frame is live.
-        ps.begin_turn("s1")
+        ps.begin_turn("s1", "e2")
         assert ps.is_cancelled("s1") is False, "registry moved to a clean turn"
 
         # The frame still belongs to the cancelled turn, so it must abort.
@@ -337,12 +344,12 @@ def test_context_bound_token_wins_over_the_registry():
 
 def test_a_new_turn_does_not_cancel_a_frame_of_the_old_one():
     """The mirror case: an uncancelled frame stays uncancelled."""
-    mine = ps.begin_turn("s1")
+    mine = ps.begin_turn("s1", "e1")
     tok_t = ps._current_token.set(mine)
     tok_s = ps.set_current_session_id("s1")
     try:
-        ps.begin_turn("s1")
-        ps.mark_cancelled("s1")  # stops the NEW turn, not this frame
+        ps.begin_turn("s1", "e2")
+        ps.mark_cancelled("s1", execution_id="e2")  # stops the NEW turn, not this frame
         ps.check_cancelled()  # must not raise
     finally:
         ps.reset_current_session_id(tok_s)

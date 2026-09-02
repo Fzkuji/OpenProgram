@@ -357,7 +357,6 @@ def _dispatch_to_existing(
             from openprogram.agent import inbox
             from openprogram.agent.job.runner import _current_job_id
             from openprogram.agent.job import get_runner
-            from openprogram.agent.job.store import update_job_status
             from openprogram.agent.job.types import Job, JobStatus, mint_job_id
             job = Job(
                 id=mint_job_id(),
@@ -406,23 +405,35 @@ def _dispatch_to_existing(
                 )
             except Exception as e:  # noqa: BLE001
                 try:
-                    update_job_status(
-                        run_session, job.id, JobStatus.ERRORED,
-                        error=f"enqueue failed: {e}",
+                    # The Job was admitted canonically before touching the
+                    # session inbox. If delivery fails, cancel that exact
+                    # execution through RuntimeControlService so the command
+                    # log, Job projection, owner signal, and resource
+                    # admission converge on one outcome.
+                    runner.cancel_execution(
+                        job.id, reason=f"inbox enqueue failed: {e}",
                     )
-                    runner._governor.release_job(job.id, "error.inbox_enqueue")
-                except Exception:
-                    pass
+                except Exception as cancel_error:  # noqa: BLE001
+                    return (
+                        f"[agent error] {type(e).__name__}: {e}; "
+                        "canonical cleanup failed: "
+                        f"{type(cancel_error).__name__}: {cancel_error}"
+                    )
                 return f"[agent error] {type(e).__name__}: {e}"
             if q == "duplicate":
                 try:
-                    update_job_status(
-                        run_session, job.id, JobStatus.CANCELLED,
-                        error="duplicate dispatch",
+                    # Duplicate admission is also an exact canonical
+                    # cancellation. Do not terminalize only the projection;
+                    # otherwise the accepted execution and its resource
+                    # admission remain authoritative and can be picked up.
+                    runner.cancel_execution(
+                        job.id, reason="duplicate dispatch",
                     )
-                    runner._governor.release_job(job.id, "cancel.duplicate")
-                except Exception:
-                    pass
+                except Exception as cancel_error:  # noqa: BLE001
+                    return (
+                        "[agent error] duplicate dispatch cleanup failed: "
+                        f"{type(cancel_error).__name__}: {cancel_error}"
+                    )
                 return (
                     "[agent] duplicate dispatch ignored — an identical "
                     "task from you is already queued for this target "

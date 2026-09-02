@@ -427,19 +427,17 @@ def is_turn_running(session_id: str) -> bool:
         return any(key[0] == session_id for key in _current_tokens)
 
 
-def mark_cancelled(session_id: str, *, execution_id: str | None = None) -> None:
-    """Signal the exact in-process token when no canonical record is present.
+def mark_cancelled(session_id: str, *, execution_id: str) -> None:
+    """Cancel one exact execution through the canonical control path.
 
-    Public transports never call this session-scoped helper; they submit an
-    exact canonical execution command. Internal legacy DAG/workflow cleanup
-    still uses it for a best-effort local token signal.
+    ``session_id`` remains in the internal call signature so callers can
+    retain their session context, but it is never used to infer a foreground
+    token or to cancel another execution. A missing execution id is a caller
+    error; session-scoped cancellation belongs to the canonical session
+    control command and is not implemented by this helper.
     """
     if not execution_id:
-        with _cancel_flags_lock:
-            token = _current_tokens.get((session_id, None))
-        if token is not None:
-            token.cancel()
-        return
+        raise ValueError("execution_id is required for exact cancellation")
     with _cancel_flags_lock:
         token = _current_tokens.get((session_id, execution_id))
     try:
@@ -447,6 +445,9 @@ def mark_cancelled(session_id: str, *, execution_id: str | None = None) -> None:
     except ExecutionNotCancellable:
         return
     except ExecutionNotFound:
+        # The execution may be registered before its durable record is
+        # visible. Signal only the exact registered execution token; never
+        # infer or touch a session foreground token.
         if token is not None:
             token.cancel()
         return
@@ -460,11 +461,6 @@ def mark_cancelled(session_id: str, *, execution_id: str | None = None) -> None:
     )
     if token is not None and status not in _TERMINAL_STATUSES:
         token.cancel()
-    if _session_index.get(session_id):
-        try:
-            cancel_session_executions(session_id)
-        except Exception:
-            pass
 
 
 def _execution_dto(session_id: str, node: Any) -> dict[str, Any]:
