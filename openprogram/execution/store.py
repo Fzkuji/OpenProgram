@@ -55,6 +55,10 @@ class ProjectionConflict(ExecutionStoreError):
     pass
 
 
+class FinishRepairCapacity(ExecutionStoreError):
+    """The bounded finish-repair table cannot accept another actionable row."""
+
+
 _AGENT_TURN_INPUT_VERSION = 1
 _AGENT_TURN_INPUT_MAX_BYTES = 256 * 1024
 _AGENT_TURN_INPUT_KINDS = frozenset({"chat", "forced_tool"})
@@ -409,29 +413,61 @@ class ExecutionStore:
         """Persist a terminal write for bounded retry and startup replay."""
         now = time.time()
         with self._transaction() as connection:
-            # Terminal repairs are no longer actionable. Remove them before
-            # admitting a new repair, and keep this recovery table bounded
-            # even if a process repeatedly loses ownership.
-            connection.execute(
-                "DELETE FROM execution_finish_repairs "
-                "WHERE execution_id IN ("
-                "SELECT execution_id FROM executions WHERE status IN (?, ?, ?, ?)"
-                ")",
-                tuple(status.value for status in TERMINAL_EXECUTION_STATUSES),
-            )
+            # Only terminal or stale rows may be collected. An actionable
+            # repair is retained even when the bounded table is full.
+            rows = connection.execute(
+                """
+                SELECT r.execution_id, r.attempt_id, r.generation,
+                       e.status AS execution_status,
+                       e.current_attempt_id AS current_attempt_id,
+                       e.owner_lease_json AS owner_lease_json,
+                       a.execution_id AS attempt_execution_id,
+                       a.generation AS attempt_generation,
+                       a.status AS attempt_status
+                FROM execution_finish_repairs AS r
+                LEFT JOIN executions AS e ON e.execution_id = r.execution_id
+                LEFT JOIN attempts AS a ON a.attempt_id = r.attempt_id
+                """
+            ).fetchall()
+            terminal_values = {status.value for status in TERMINAL_EXECUTION_STATUSES}
+            stale_keys = []
+            for row in rows:
+                try:
+                    owner_lease = json.loads(row["owner_lease_json"] or "{}")
+                except (TypeError, ValueError):
+                    owner_lease = {}
+                if (
+                    row["execution_status"] is None
+                    or row["execution_status"] in terminal_values
+                    or row["current_attempt_id"] != row["attempt_id"]
+                    or row["attempt_execution_id"] != row["execution_id"]
+                    or row["attempt_generation"] != row["generation"]
+                    or row["attempt_status"] != "active"
+                    or owner_lease.get("generation") != row["generation"]
+                ):
+                    stale_keys.append(
+                        (row["execution_id"], row["attempt_id"], row["generation"])
+                    )
+            for stale_key in stale_keys:
+                connection.execute(
+                    "DELETE FROM execution_finish_repairs "
+                    "WHERE execution_id = ? AND attempt_id = ? AND generation = ?",
+                    stale_key,
+                )
             count = int(
                 connection.execute(
                     "SELECT COUNT(*) FROM execution_finish_repairs"
                 ).fetchone()[0]
             )
-            if count >= _FINISH_REPAIR_MAX_ROWS:
-                connection.execute(
-                    "DELETE FROM execution_finish_repairs WHERE rowid IN ("
-                    "SELECT rowid FROM execution_finish_repairs "
-                    "ORDER BY updated_at, execution_id, attempt_id "
-                    "LIMIT ?"
-                    ")",
-                    (count - _FINISH_REPAIR_MAX_ROWS + 1,),
+            existing = connection.execute(
+                "SELECT 1 FROM execution_finish_repairs "
+                "WHERE execution_id = ? AND attempt_id = ? AND generation = ?",
+                (execution_id, attempt_id, generation),
+            ).fetchone()
+            if existing is None and count >= _FINISH_REPAIR_MAX_ROWS:
+                raise FinishRepairCapacity(
+                    "finish_repair_capacity",
+                    "actionable finish repair table is at capacity",
                 )
             connection.execute(
                 """
@@ -456,17 +492,21 @@ class ExecutionStore:
 
     def list_finish_repairs(
         self, *, limit: int = 256, offset: int = 0,
+        include_stalled: bool = True,
     ) -> list[dict[str, Any]]:
         if type(limit) is not int or not 0 < limit <= _FINISH_REPAIR_MAX_ROWS:
             raise ValueError("finish repair limit is out of bounds")
         if type(offset) is not int or offset < 0:
             raise ValueError("finish repair offset must be non-negative")
+        if type(include_stalled) is not bool:
+            raise ValueError("include_stalled must be a bool")
         with closing(self._connect()) as connection:
             rows = connection.execute(
                 "SELECT * FROM execution_finish_repairs "
+                "WHERE (? OR reason_code IS NULL OR reason_code != ?) "
                 "ORDER BY updated_at, execution_id, attempt_id "
                 "LIMIT ? OFFSET ?",
-                (limit, offset),
+                (include_stalled, "finish_repair_stalled", limit, offset),
             ).fetchall()
         return [dict(row) for row in rows]
 

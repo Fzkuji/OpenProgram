@@ -13,6 +13,7 @@ import copy
 import hashlib
 import inspect
 import json
+import logging
 import threading
 import time
 import uuid
@@ -40,7 +41,10 @@ from openprogram.execution.model import (
     ExecutionStatus,
     TERMINAL_EXECUTION_STATUSES,
 )
-from openprogram.execution.store import ExecutionStore
+from openprogram.execution.store import ExecutionStore, FinishRepairCapacity
+
+
+_log = logging.getLogger(__name__)
 
 
 class AgentDriverError(RuntimeError):
@@ -277,6 +281,13 @@ class AgentProductionDriver:
         self._finish_retry_worker_active = False
         self._finish_retry_timer: threading.Timer | None = None
         self._cancel_commands: dict[tuple[str, str, int], str] = {}
+        self._finish_repair_stalled: set[tuple[str, str, int]] = set()
+        self._finish_repair_metrics = {
+            "persisted": 0,
+            "backpressure": 0,
+            "write_errors": 0,
+            "stalled": 0,
+        }
 
     def _resolve_durable_input(self, record: Any) -> Mapping[str, Any]:
         if self.executions is None:
@@ -603,7 +614,9 @@ class AgentProductionDriver:
     ) -> None:
         key = (attempt.execution_id, attempt.attempt_id, attempt.generation)
         with self._handles_lock:
-            already_finished = key in self._finished
+            already_finished = (
+                key in self._finished or key in self._finish_repair_stalled
+            )
         if already_finished:
             # A duplicate completion can arrive after the durable transition
             # succeeded. It must also resolve any in-process or persisted
@@ -700,8 +713,7 @@ class AgentProductionDriver:
         while True:
             retries += 1
             if retries > FINISH_RETRY_LIMIT:
-                # Keep the item in the in-process outbox for an explicit
-                # later retry, but never leave an unbounded daemon loop.
+                self._stall_finish_retry(key)
                 return
             with self._handles_lock:
                 pending = self._pending_finishes.get(key)
@@ -816,9 +828,9 @@ class AgentProductionDriver:
         outcome: str,
         reason_code: str | None,
         command_id: str | None,
-    ) -> None:
+    ) -> bool:
         if self.executions is None:
-            return
+            return False
         try:
             self.executions.upsert_finish_repair(
                 execution_id=attempt.execution_id,
@@ -830,11 +842,55 @@ class AgentProductionDriver:
                 reason_code=reason_code,
                 command_id=command_id,
             )
+            with self._handles_lock:
+                self._finish_repair_metrics["persisted"] += 1
+            return True
+        except FinishRepairCapacity:
+            with self._handles_lock:
+                self._finish_repair_metrics["backpressure"] += 1
+            _log.error(
+                "finish repair persistence backpressure for %s/%s/%s; "
+                "actionable repairs were retained",
+                attempt.execution_id,
+                attempt.attempt_id,
+                attempt.generation,
+            )
+            return False
         except Exception:
             # The bounded retry keeps the intent in memory and retries this
             # write on every pass; the single repair worker continues after
             # the initial eight attempts without creating one thread per key.
-            pass
+            with self._handles_lock:
+                self._finish_repair_metrics["write_errors"] += 1
+            return False
+
+    def _stall_finish_retry(self, key: tuple[str, str, int]) -> None:
+        with self._handles_lock:
+            pending = self._pending_finishes.get(key)
+        if pending is None:
+            return
+        attempt, expected_version, target, outcome, _reason_code, command_id = pending
+        persisted = self._persist_finish_retry(
+            attempt,
+            expected_version,
+            target,
+            outcome,
+            "finish_repair_stalled",
+            command_id,
+        )
+        with self._handles_lock:
+            self._pending_finishes.pop(key, None)
+            self._finish_repair_stalled.add(key)
+            self._finished.add(key)
+            self._finish_repair_metrics["stalled"] += 1
+        if not persisted:
+            _log.error(
+                "finish repair %s/%s/%s entered in-memory dead-letter; "
+                "manual recovery is required",
+                attempt.execution_id,
+                attempt.attempt_id,
+                attempt.generation,
+            )
 
     def _schedule_finish_retry_worker(self) -> None:
         with self._handles_lock:
@@ -874,6 +930,7 @@ class AgentProductionDriver:
         self._delete_persisted_finish(key)
         with self._handles_lock:
             self._pending_finishes.pop(key, None)
+            self._finish_repair_stalled.discard(key)
             self._finished.add(key)
             self._cancel_commands.pop(key, None)
 

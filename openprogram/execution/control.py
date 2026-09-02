@@ -1911,8 +1911,18 @@ class RuntimeControlService:
         terminalizes that record instead of leaving it queued forever.
         """
         self.replay_finish_repairs()
+        stalled_repairs = {
+            str(repair["execution_id"])
+            for repair in self.executions.list_finish_repairs(limit=4096)
+            if repair.get("reason_code") == "finish_repair_stalled"
+        }
         recoveries = []
         for execution in self.executions.list_nonterminal():
+            if execution.execution_id in stalled_repairs:
+                # A bounded in-process retry explicitly dead-lettered this
+                # finish. Keep its owner state visible for manual reconcile;
+                # startup owner-loss recovery must not overwrite the repair.
+                continue
             if execution.status in {
                 ExecutionStatus.RUNNING,
                 ExecutionStatus.PAUSING,
@@ -1941,87 +1951,103 @@ class RuntimeControlService:
                 recoveries.append(RecoveryCompletion(execution=recovered))
         return tuple(recoveries)
 
-    def replay_finish_repairs(self) -> int:
+    def replay_finish_repairs(self, *, include_stalled: bool = False) -> int:
         """Replay durable Agent finish intents with current fencing state."""
         repaired = 0
-        for repair in self.executions.list_finish_repairs():
-            execution_id = str(repair["execution_id"])
-            attempt_id = str(repair["attempt_id"])
-            generation = int(repair["generation"])
-            execution = self.executions.get_execution(execution_id)
-            attempt = self.attempts.get(attempt_id)
-            if (
-                execution is None
-                or attempt is None
-                or execution.status in TERMINAL_EXECUTION_STATUSES
-                or execution.current_attempt_id != attempt_id
-                or execution.owner_lease.get("generation") != generation
-                or attempt.generation != generation
-                or attempt.status is not AttemptStatus.ACTIVE
-            ):
-                self.executions.delete_finish_repair(
-                    execution_id, attempt_id, generation,
-                )
-                repaired += 1
-                continue
-            try:
-                target = ExecutionStatus(str(repair["target"]))
-            except ValueError:
-                self.executions.delete_finish_repair(
-                    execution_id, attempt_id, generation,
-                )
-                repaired += 1
-                continue
-            outcome = str(repair["outcome"])
-            reason_code = repair.get("reason_code")
-            command_id = repair.get("command_id")
-            if execution.status is ExecutionStatus.CANCELLING:
-                target = ExecutionStatus.CANCELLED
-                outcome = "cancelled"
-                reason_code = execution.reason_code or "cancelled"
-                applying_cancels = self.executions.list_commands(
-                    execution_id,
-                    statuses=(CommandStatus.APPLYING,),
-                    kinds=(CommandKind.CANCEL,),
-                )
-                command_id = (
-                    applying_cancels[0].command_id
-                    if applying_cancels
-                    else None
-                )
-                if command_id is None:
-                    # A cancelling execution with an active attempt must be
-                    # completed through its applying cancel command. Keep the
-                    # repair durable until that command is visible.
-                    continue
-                self.executions.upsert_finish_repair(
-                    execution_id=execution_id,
-                    attempt_id=attempt_id,
-                    generation=generation,
-                    expected_version=execution.status_version,
-                    target=target.value,
-                    outcome=outcome,
-                    reason_code=reason_code,
-                    command_id=command_id,
-                )
-            try:
-                self.finish_attempt(
-                    attempt_id=attempt_id,
-                    generation=generation,
-                    expected_execution_version=execution.status_version,
-                    target=target,
-                    outcome=outcome,
-                    command_id=(str(command_id) if command_id else None),
-                    reason_code=reason_code,
-                )
-            except (AttemptConflict, ExecutionConflict):
-                continue
-            except Exception:
-                continue
-            self.executions.delete_finish_repair(
-                execution_id, attempt_id, generation,
+        while True:
+            repairs = self.executions.list_finish_repairs(
+                limit=256, include_stalled=include_stalled,
             )
-            repaired += 1
+            if not repairs:
+                break
+            batch_repaired = 0
+            for repair in repairs:
+                if (
+                    repair.get("reason_code") == "finish_repair_stalled"
+                    and not include_stalled
+                ):
+                    continue
+                execution_id = str(repair["execution_id"])
+                attempt_id = str(repair["attempt_id"])
+                generation = int(repair["generation"])
+                execution = self.executions.get_execution(execution_id)
+                attempt = self.attempts.get(attempt_id)
+                if (
+                    execution is None
+                    or attempt is None
+                    or execution.status in TERMINAL_EXECUTION_STATUSES
+                    or execution.current_attempt_id != attempt_id
+                    or execution.owner_lease.get("generation") != generation
+                    or attempt.generation != generation
+                    or attempt.status is not AttemptStatus.ACTIVE
+                ):
+                    self.executions.delete_finish_repair(
+                        execution_id, attempt_id, generation,
+                    )
+                    repaired += 1
+                    batch_repaired += 1
+                    continue
+                try:
+                    target = ExecutionStatus(str(repair["target"]))
+                except ValueError:
+                    self.executions.delete_finish_repair(
+                        execution_id, attempt_id, generation,
+                    )
+                    repaired += 1
+                    batch_repaired += 1
+                    continue
+                outcome = str(repair["outcome"])
+                reason_code = repair.get("reason_code")
+                command_id = repair.get("command_id")
+                if execution.status is ExecutionStatus.CANCELLING:
+                    target = ExecutionStatus.CANCELLED
+                    outcome = "cancelled"
+                    reason_code = execution.reason_code or "cancelled"
+                    applying_cancels = self.executions.list_commands(
+                        execution_id,
+                        statuses=(CommandStatus.APPLYING,),
+                        kinds=(CommandKind.CANCEL,),
+                    )
+                    command_id = (
+                        applying_cancels[0].command_id
+                        if applying_cancels
+                        else None
+                    )
+                    if command_id is None:
+                        # A cancelling execution with an active attempt must
+                        # be completed through its applying cancel command.
+                        continue
+                    self.executions.upsert_finish_repair(
+                        execution_id=execution_id,
+                        attempt_id=attempt_id,
+                        generation=generation,
+                        expected_version=execution.status_version,
+                        target=target.value,
+                        outcome=outcome,
+                        reason_code=reason_code,
+                        command_id=command_id,
+                    )
+                try:
+                    self.finish_attempt(
+                        attempt_id=attempt_id,
+                        generation=generation,
+                        expected_execution_version=execution.status_version,
+                        target=target,
+                        outcome=outcome,
+                        command_id=(str(command_id) if command_id else None),
+                        reason_code=reason_code,
+                    )
+                except (AttemptConflict, ExecutionConflict):
+                    continue
+                except Exception:
+                    continue
+                self.executions.delete_finish_repair(
+                    execution_id, attempt_id, generation,
+                )
+                repaired += 1
+                batch_repaired += 1
+            if batch_repaired == 0:
+                break
         return repaired
 
     def resolve_effect(

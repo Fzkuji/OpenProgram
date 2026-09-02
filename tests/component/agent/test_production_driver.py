@@ -13,6 +13,7 @@ from openprogram.execution.model import CommandKind, CommandStatus, ExecutionSta
 
 def _admitted(tmp_path, *, execution_id="exec-agent-1"):
     store = ExecutionStore(tmp_path / "executions.sqlite3")
+    attempts = AttemptStore(store)
     revision = store.create_revision(
         revision_id="revision-agent-1", manifest={"entrypoint": "agent"}
     )
@@ -642,6 +643,182 @@ def test_finish_repair_replay_binds_current_cancel_command(tmp_path):
     command = store.get_command("cancel-replay")
     assert current is not None and current.status is ExecutionStatus.CANCELLED
     assert command is not None and command.status is CommandStatus.APPLIED
+    assert store.list_finish_repairs() == []
+
+
+def test_finish_repair_capacity_preserves_actionable_rows(tmp_path, monkeypatch):
+    from openprogram.execution.store import FinishRepairCapacity
+
+    monkeypatch.setattr("openprogram.execution.store._FINISH_REPAIR_MAX_ROWS", 1)
+    store, first = _admitted(tmp_path, execution_id="exec-repair-capacity-1")
+    attempts = AttemptStore(store)
+    first_attempt, first_leased = attempts.lease(
+        first.execution_id,
+        expected_version=first.status_version,
+        owner_id="owner-1",
+        ttl_seconds=30,
+    )
+    first_active, first_running = attempts.activate(
+        first_attempt.attempt_id,
+        generation=first_attempt.generation,
+        expected_execution_version=first_leased.status_version,
+    )
+    store.upsert_finish_repair(
+        execution_id=first.execution_id,
+        attempt_id=first_active.attempt_id,
+        generation=first_active.generation,
+        expected_version=first_running.status_version,
+        target=ExecutionStatus.COMPLETED.value,
+        outcome="completed",
+        reason_code=None,
+    )
+    revision = store.create_revision(
+        revision_id="revision-repair-capacity-2", manifest={"entrypoint": "agent", "slot": 2}
+    )
+    second = store.admit_execution(
+        execution_id="exec-repair-capacity-2",
+        run_id="run-repair-capacity-2",
+        session_id="session-repair-capacity-2",
+        revision_id=revision.revision_id,
+        input_ref="input:repair-capacity-2",
+        input_hash="input-hash-2",
+        entrypoint="openprogram.agent.dispatcher:process_user_turn",
+        trusted_actor={"subject": "user-2"},
+        config_snapshot_ref="config:repair-capacity-2",
+        agent_turn_payload={
+            "version": 1,
+            "kind": "chat",
+            "request": {"user_text": "run", "agent_id": "default", "source": "test"},
+        },
+    )
+    second_attempt, second_leased = attempts.lease(
+        second.execution_id,
+        expected_version=second.status_version,
+        owner_id="owner-2",
+        ttl_seconds=30,
+    )
+    second_active, second_running = attempts.activate(
+        second_attempt.attempt_id,
+        generation=second_attempt.generation,
+        expected_execution_version=second_leased.status_version,
+    )
+    with pytest.raises(FinishRepairCapacity):
+        store.upsert_finish_repair(
+            execution_id=second.execution_id,
+            attempt_id=second_active.attempt_id,
+            generation=second_active.generation,
+            expected_version=second_running.status_version,
+            target=ExecutionStatus.COMPLETED.value,
+            outcome="completed",
+            reason_code=None,
+        )
+    rows = store.list_finish_repairs(limit=1)
+    assert len(rows) == 1
+    assert rows[0]["execution_id"] == first.execution_id
+
+
+def test_finish_repair_replay_processes_more_than_one_page(tmp_path):
+    from openprogram.execution.control import RuntimeControlService
+    from openprogram.execution.driver import DriverRegistry
+
+    store = ExecutionStore(tmp_path / "executions.sqlite3")
+    revision = store.create_revision(
+        revision_id="revision-many-repairs", manifest={"entrypoint": "agent"}
+    )
+    attempts = AttemptStore(store)
+    for index in range(260):
+        execution = store.admit_execution(
+            execution_id=f"exec-many-repairs-{index}",
+            run_id=f"run-many-repairs-{index}",
+            session_id=f"session-many-repairs-{index}",
+            revision_id=revision.revision_id,
+            input_ref=f"input:many-repairs-{index}",
+            input_hash=f"input-hash-{index}",
+            entrypoint="openprogram.agent.dispatcher:process_user_turn",
+            trusted_actor={"subject": "test"},
+            config_snapshot_ref="config:many-repairs",
+            agent_turn_payload={
+                "version": 1,
+                "kind": "chat",
+                "request": {"user_text": "run", "agent_id": "default", "source": "test"},
+            },
+        )
+        leased_attempt, leased_execution = attempts.lease(
+            execution.execution_id,
+            expected_version=execution.status_version,
+            owner_id=f"owner-{index}",
+            ttl_seconds=30,
+        )
+        active_attempt, running_execution = attempts.activate(
+            leased_attempt.attempt_id,
+            generation=leased_attempt.generation,
+            expected_execution_version=leased_execution.status_version,
+        )
+        store.upsert_finish_repair(
+            execution_id=execution.execution_id,
+            attempt_id=active_attempt.attempt_id,
+            generation=active_attempt.generation,
+            expected_version=running_execution.status_version,
+            target=ExecutionStatus.COMPLETED.value,
+            outcome="completed",
+            reason_code=None,
+        )
+    service = RuntimeControlService(store, attempts, DriverRegistry())
+    assert service.replay_finish_repairs() == 260
+    assert store.list_finish_repairs() == []
+
+
+def test_finish_repair_stalls_after_bounded_attempts_until_manual_reconcile(
+    tmp_path, monkeypatch,
+):
+    from openprogram.agent.production_driver import AgentProductionDriver
+
+    monkeypatch.setattr(
+        "openprogram.agent.production_driver.FINISH_RETRY_LIMIT", 0,
+    )
+    store, execution = _admitted(tmp_path, execution_id="exec-repair-stalled")
+    attempts = AttemptStore(store)
+    attempt, leased = attempts.lease(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        owner_id="owner-stalled",
+        ttl_seconds=30,
+    )
+    active, _running = attempts.activate(
+        attempt.attempt_id,
+        generation=attempt.generation,
+        expected_execution_version=leased.status_version,
+    )
+    driver = AgentProductionDriver(
+        executions=store,
+        input_resolver=lambda _record: {},
+        turn_runner=lambda **_kwargs: None,
+    )
+    service = driver._control_service()
+    original_finish = service.finish_attempt
+
+    def fail_finish(*_args, **_kwargs):
+        raise OSError("persistent failure")
+
+    service.finish_attempt = fail_finish
+    driver._finish_attempt(
+        active,
+        type("Result", (), {"failed": False, "error": None})(),
+        threading.Event(),
+    )
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        rows = store.list_finish_repairs()
+        if rows and rows[0]["reason_code"] == "finish_repair_stalled":
+            break
+        time.sleep(0.01)
+    rows = store.list_finish_repairs()
+    assert rows and rows[0]["reason_code"] == "finish_repair_stalled"
+    assert driver._pending_finishes == {}
+    assert driver._finish_retry_timer is None
+    service.finish_attempt = original_finish
+    assert service.replay_finish_repairs(include_stalled=True) == 1
+    assert store.get_execution(execution.execution_id).status is ExecutionStatus.COMPLETED
     assert store.list_finish_repairs() == []
 
 
