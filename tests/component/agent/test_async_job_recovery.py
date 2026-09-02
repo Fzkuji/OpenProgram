@@ -206,7 +206,10 @@ def test_sync_child_inside_governed_worker_borrows_parent_live_claim(
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
     calls: list[str] = []
 
-    def fake_execute(*, session_id, prompt, agent_id, **_kwargs):
+    def fake_execute(*, request, **_kwargs):
+        session_id = request.session_id
+        prompt = request.user_text
+        agent_id = request.agent_id
         calls.append(prompt)
         if prompt == "parent":
             child = run_agent_turn(
@@ -226,7 +229,8 @@ def test_sync_child_inside_governed_worker_borrows_parent_live_claim(
         return AgentTurnResult(head_id="child_head", final_text="child done")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_execute,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_execute),
     )
     parent_id = runner.spawn_job(
         session_id="p1", prompt="parent", agent_id="main", parent_msg_id="a1",
@@ -242,7 +246,7 @@ def test_sync_child_inside_governed_worker_borrows_parent_live_claim(
             if job.status not in {
                 JobStatus.COMPLETED, JobStatus.CANCELLED, JobStatus.ERRORED,
             }:
-                runner.cancel_job(job.id, reason="test cleanup")
+                runner.cancel_execution(job.id, reason="test cleanup")
         runner.shutdown(wait=False)
 
 def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
@@ -280,7 +284,10 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
     process = FatalProcess()
     observed: dict = {}
 
-    def fake_execute(*, session_id, prompt, agent_id, **_kwargs):
+    def fake_execute(*, request, **_kwargs):
+        session_id = request.session_id
+        prompt = request.user_text
+        agent_id = request.agent_id
         if prompt == "parent-fatal":
             try:
                 run_agent_turn(
@@ -332,7 +339,8 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
         raise SystemExit("child fatal")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_execute,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_execute),
     )
     parent_id = runner.spawn_job(
         session_id="p1", prompt="parent-fatal", agent_id="main",
@@ -389,8 +397,8 @@ def test_durable_worker_baseexception_persists_terminal_before_release(
         "openprogram.agent.job.runner._broadcast", broadcasts.append,
     )
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn",
-        lambda **_kwargs: (_ for _ in ()).throw(SystemExit("fatal")),
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(lambda **_kwargs: (_ for _ in ()).throw(SystemExit("fatal"))),
     )
     ledger = UsageLedger(tmp_path / "fatal-worker.db")
     runner = JobRunner(max_workers=1, governor=ResourceGovernor(ledger))
@@ -481,8 +489,8 @@ def test_running_status_write_failure_reconciles_terminal_and_releases(
         assert broadcasts == []
         from openprogram.agent.sub_agent_run import AgentTurnResult
         monkeypatch.setattr(
-            "openprogram.agent.sub_agent_run._execute_agent_turn",
-            lambda **_kwargs: AgentTurnResult(final_text="ok"),
+            "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+            staticmethod(lambda **_kwargs: AgentTurnResult(final_text="ok")),
         )
         next_id = runner.spawn_job(
             session_id="p1", prompt="next", agent_id="main", parent_msg_id="a1",
@@ -543,8 +551,8 @@ def test_vanished_job_row_releases_admission_instead_of_leaking_it(
         vanish = False
         from openprogram.agent.sub_agent_run import AgentTurnResult
         monkeypatch.setattr(
-            "openprogram.agent.sub_agent_run._execute_agent_turn",
-            lambda **_kwargs: AgentTurnResult(final_text="ok"),
+            "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+            staticmethod(lambda **_kwargs: AgentTurnResult(final_text="ok")),
         )
         next_id = runner.spawn_job(
             session_id="p1", prompt="next", agent_id="main", parent_msg_id="a1",
@@ -594,7 +602,10 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
     )
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
 
-    def fake_execute(*, session_id, prompt, agent_id, **_kwargs):
+    def fake_execute(*, request, **_kwargs):
+        session_id = request.session_id
+        prompt = request.user_text
+        agent_id = request.agent_id
         if prompt == "parent-runtime":
             child = run_agent_turn(
                 session_id=session_id,
@@ -617,7 +628,8 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
         return AgentTurnResult(head_id="child-head", final_text="released")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_execute,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_execute),
     )
 
     original_request_cancel = runner._execution_control.request_cancel
@@ -679,7 +691,7 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
 
         def cancel_again_as_user() -> None:
             try:
-                runner.cancel_job(child_id, reason="concurrent user cancel")
+                runner.cancel_execution(child_id, reason="concurrent user cancel")
             except BaseException as exc:  # noqa: BLE001
                 concurrent_cancel_errors.append(exc)
             finally:
@@ -769,7 +781,10 @@ def test_borrowed_child_activity_refreshes_child_and_parent_idle(
     )
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
 
-    def fake_execute(*, session_id, prompt, agent_id, **_kwargs):
+    def fake_execute(*, request, **_kwargs):
+        session_id = request.session_id
+        prompt = request.user_text
+        agent_id = request.agent_id
         if prompt == "parent-idle":
             run_agent_turn(
                 session_id=session_id,
@@ -796,7 +811,8 @@ def test_borrowed_child_activity_refreshes_child_and_parent_idle(
         return AgentTurnResult(head_id="child-head", final_text="child done")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_execute,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_execute),
     )
     parent_id = runner.spawn_job(
         session_id="p1", prompt="parent-idle", agent_id="main",
@@ -865,7 +881,10 @@ def test_borrowed_child_timeout_uses_child_and_ancestor_remaining_budget(
     )
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
 
-    def fake_execute(*, session_id, prompt, agent_id, **_kwargs):
+    def fake_execute(*, request, **_kwargs):
+        session_id = request.session_id
+        prompt = request.user_text
+        agent_id = request.agent_id
         if prompt == "parent-timeout":
             clock.advance(7.0)
             run_agent_turn(
@@ -883,7 +902,8 @@ def test_borrowed_child_timeout_uses_child_and_ancestor_remaining_budget(
         return AgentTurnResult(head_id="child-head", final_text="done")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_execute,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_execute),
     )
     parent_id = runner.spawn_job(
         session_id="p1", prompt="parent-timeout", agent_id="main",
@@ -917,7 +937,10 @@ def test_explicit_cancel_of_borrowed_child_is_job_keyed_and_cleans_up(
     )
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
 
-    def fake_execute(*, session_id, prompt, agent_id, **_kwargs):
+    def fake_execute(*, request, **_kwargs):
+        session_id = request.session_id
+        prompt = request.user_text
+        agent_id = request.agent_id
         if prompt == "parent-cancel":
             run_agent_turn(
                 session_id=session_id,
@@ -936,7 +959,8 @@ def test_explicit_cancel_of_borrowed_child_is_job_keyed_and_cleans_up(
         return AgentTurnResult(head_id="child-head", final_text="late")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_execute,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_execute),
     )
     parent_id = runner.spawn_job(
         session_id="p1", prompt="parent-cancel", agent_id="main",
@@ -950,7 +974,7 @@ def test_explicit_cancel_of_borrowed_child_is_job_keyed_and_cleans_up(
         parent_token = run_control.current_token("p1", execution_id=parent_id)
         assert child_token is not None
         assert parent_token is not None
-        runner.cancel_job(child_id, reason="cancel child only")
+        runner.cancel_execution(child_id, reason="cancel child only")
         assert child_token.event.is_set()
         assert not parent_token.event.is_set()
         release_child.set()
