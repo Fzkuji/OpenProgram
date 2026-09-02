@@ -208,8 +208,9 @@ def test_resource_dto_contains_canonical_snapshot_and_reconnect_cursor(durable_j
     assert dto["checkpoint_head_id"] is None
     assert dto["resource"]["admission_id"]
     assert dto["event_cursor"] == {
-        "next_sequence": execution.status_version + 1,
-        "replay_from_sequence": execution.status_version + 1,
+        "execution_id": execution.execution_id,
+        "next_sequence": dto["execution"]["event_sequence"] + 1,
+        "snapshot_status_version": execution.status_version,
     }
 
 

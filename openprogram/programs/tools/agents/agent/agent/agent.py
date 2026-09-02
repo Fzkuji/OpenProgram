@@ -267,8 +267,8 @@ def _dispatch_to_existing(
     No branch is created: the task runs as the target branch's next
     turn (send_message's addressing + delivery path), but unlike a
     message it is a formal task — a Task entity is created, the
-    dispatcher gets a job_id (``job_output`` waits, ``job_stop``
-    withdraws/cancels), and the result flows back like a spawn's.
+    dispatcher gets a job_id (``job_output`` waits, while the canonical
+    execution control surface cancels), and the result flows back like a spawn's.
     Busy target → the task queues in the target's inbox and runs when
     its current turn ends. Always asynchronous.
     """
@@ -441,7 +441,7 @@ def _dispatch_to_existing(
                 f"target={run_session}:{target_tip} — the target is busy "
                 "running a turn; your task runs when it ends and the "
                 "result comes back automatically. job_output(job_id) "
-                "waits for it; job_stop(job_id) withdraws it."
+                "waits for it; the execution cancel control withdraws it."
             )
 
     from openprogram.events import emit_safe
@@ -479,7 +479,7 @@ def _dispatch_to_existing(
         f"target={run_session}:{target_tip}\n"
         "The target branch is running your task as its next turn; the "
         "result comes back to you automatically. job_output(job_id) "
-        "waits for it; job_stop(job_id) cancels it."
+        "waits for it; the execution cancel control cancels it."
     )
 
 
@@ -633,7 +633,7 @@ def _agent_impl(
 
     if run_in_background:
         # Background path: submit and return the job_id. Caller can
-        # invoke job_output / job_stop / get_task. The runner is
+        # invoke job_output / get_task or the execution controls. The runner is
         # responsible for state transitions + attach card update.
         try:
             from openprogram.agent.sub_agent_run import (
@@ -717,7 +717,7 @@ def _agent_impl(
         return (
             f"[agent spawned async] job_id={job_id}\n"
             f"Call job_output(job_id={job_id!r}) to retrieve result, "
-            f"or job_stop(job_id={job_id!r}) to stop it."
+            f"or cancel execution {job_id!r} through the execution control surface."
         )
 
     # Announce the spawn BEFORE running it: a synchronous spawn blocks
@@ -878,8 +878,8 @@ def agent(
     Without ``to``: spawns a new agent. ``run_in_background=False``
     (default) blocks until it finishes and returns its final reply;
     ``run_in_background=True`` returns immediately with a job_id;
-    call :func:`job_output` to retrieve the result, or
-    :func:`job_stop` to stop it.
+    call :func:`job_output` to retrieve the result, or use the canonical
+    execution control surface to stop it.
 
     With ``to``: no agent is created — the task is dispatched to the
     named EXISTING branch and runs as its next turn. Always

@@ -20,7 +20,6 @@ def _source(path: str) -> str:
 def test_legacy_job_lifecycle_controls_are_removed_from_public_surfaces() -> None:
     public_sources = (
         "openprogram/agent/job/runner.py",
-        "openprogram/agent/job/driver.py",
         "openprogram/programs/tools/agents/agent/job_stop/job_stop.py",
         "openprogram/programs/tools/agents/agent/agent/agent.py",
         "apps/server/openprogram_server/_webui/ws_actions/job.py",
@@ -38,7 +37,7 @@ def test_job_runner_delegates_activation_to_agent_production_driver() -> None:
     runner = _source("openprogram/agent/job/runner.py")
     assert "AgentProductionDriver" in runner
     assert "_execute_agent_turn" not in runner
-    assert "class JobDriver" not in _source("openprogram/agent/job/driver.py")
+    assert not (ROOT / "openprogram/agent/job/driver.py").exists()
 
 
 def test_execution_cli_declares_the_four_canonical_control_verbs() -> None:

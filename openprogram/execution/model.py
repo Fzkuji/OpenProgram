@@ -449,10 +449,7 @@ class JobResourceDTO:
             "capabilities": _snapshot_json(self.capabilities),
             "checkpoint_head_id": self.checkpoint_head_id,
             "resource": _snapshot_json(self.resource) if self.resource else None,
-            "event_cursor": {
-                "next_sequence": self.event_cursor.next_sequence,
-                "replay_from_sequence": self.event_cursor.next_sequence,
-            },
+            "event_cursor": self.event_cursor.to_dict(),
             "execution": _snapshot_json(self.execution),
         }
         value.update(_snapshot_json(self.legacy))
