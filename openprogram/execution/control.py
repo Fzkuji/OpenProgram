@@ -34,6 +34,7 @@ from .model import (
     ExecutionRecord,
     ExecutionStatus,
     RevisionRecord,
+    TERMINAL_COMMAND_STATUSES,
     TERMINAL_EXECUTION_STATUSES,
     _thaw_json,
 )
@@ -176,6 +177,13 @@ class RuntimeControlService:
         self._terminal_recovery: Callable[..., object] | None = None
         self._cancel_delivery_lock = RLock()
         self._delivered_cancel_commands: set[str] = set()
+
+    def _forget_cancel_delivery(self, execution_id: str) -> None:
+        """Release the transient dedupe marker after cancellation settles."""
+        with self._cancel_delivery_lock:
+            self._delivered_cancel_commands.discard(
+                f"execution-cancel:{execution_id}",
+            )
 
     def set_terminal_observer(
         self, observer: Callable[[ExecutionRecord], object] | None,
@@ -1125,6 +1133,11 @@ class RuntimeControlService:
             command.kind is not CommandKind.CANCEL
             or command.status is not CommandStatus.APPLYING
         ):
+            if (
+                execution.status in TERMINAL_EXECUTION_STATUSES
+                or command is not None and command.status in TERMINAL_COMMAND_STATUSES
+            ):
+                self._forget_cancel_delivery(execution_id)
             return None
         if (
             execution.current_attempt_id != attempt_id
@@ -1904,6 +1917,8 @@ class RuntimeControlService:
         )
         if command is not None and execution.status in TERMINAL_EXECUTION_STATUSES:
             command = self._mark_applied(command, execution)
+        if execution.status in TERMINAL_EXECUTION_STATUSES:
+            self._forget_cancel_delivery(execution.execution_id)
         return AttemptCompletion(
             execution=execution,
             attempt=ended,
@@ -2104,6 +2119,8 @@ class RuntimeControlService:
                 attempt_id=attempt.attempt_id,
                 generation=attempt.generation,
             )
+        if recovered.status in TERMINAL_EXECUTION_STATUSES:
+            self._forget_cancel_delivery(execution_id)
         return RecoveryCompletion(
             execution=recovered,
             attempt=attempt,
@@ -2366,14 +2383,19 @@ class RuntimeControlService:
                 "command belongs to another execution",
             )
         if command.status is CommandStatus.APPLIED:
+            if command.kind is CommandKind.CANCEL:
+                self._forget_cancel_delivery(command.execution_id)
             return command
-        return self.executions.transition_command(
+        applied = self.executions.transition_command(
             command.command_id,
             expected_status=CommandStatus.APPLYING,
             target=CommandStatus.APPLIED,
             result_version=execution.status_version,
             receipt=receipt,
         )
+        if command.kind is CommandKind.CANCEL:
+            self._forget_cancel_delivery(command.execution_id)
+        return applied
 
     def _applying_command(
         self,

@@ -228,6 +228,108 @@ def test_queued_pause_and_cancel_finish_without_a_live_driver(tmp_path) -> None:
     assert not repeated_cancel.delivered
 
 
+def test_cancel_delivery_dedupe_is_cleared_after_terminal_and_recovery(
+    tmp_path,
+) -> None:
+    executions, attempts, execution, attempt = _execution(tmp_path, active=True)
+    owner_registry = DriverRegistry()
+    owner_driver = RecordingDriver(executions)
+    _bind(owner_registry, execution, attempt, owner_driver)
+    owner = RuntimeControlService(executions, attempts, owner_registry)
+    remote = RuntimeControlService(executions, attempts, DriverRegistry())
+
+    pending = asyncio.run(
+        remote.request_cancel(
+            command_id=f"execution-cancel:{execution.execution_id}",
+            execution_id=execution.execution_id,
+            expected_version=execution.status_version,
+            actor={"surface": "remote"},
+            reason_code="cancel.remote",
+        )
+    )
+    assert pending.issue_code == "owner_not_local"
+    delivered = asyncio.run(
+        owner.deliver_pending_cancel(
+            execution_id=execution.execution_id,
+            attempt_id=attempt.attempt_id,
+            generation=attempt.generation,
+        )
+    )
+    repeated = asyncio.run(
+        owner.deliver_pending_cancel(
+            execution_id=execution.execution_id,
+            attempt_id=attempt.attempt_id,
+            generation=attempt.generation,
+        )
+    )
+    assert delivered is not None and delivered.delivered
+    assert repeated is not None and not repeated.delivered
+    assert len(owner._delivered_cancel_commands) == 1
+    finished = owner.finish_attempt(
+        attempt_id=attempt.attempt_id,
+        generation=attempt.generation,
+        expected_execution_version=delivered.execution.status_version,
+        target=ExecutionStatus.CANCELLED,
+        outcome="cooperative_cancel",
+        command_id=delivered.command.command_id,
+        reason_code="cancel.remote",
+    )
+    assert finished.execution.status is ExecutionStatus.CANCELLED
+    assert owner._delivered_cancel_commands == set()
+
+    revision = executions.create_revision(manifest={"entrypoint": "chat-2"})
+    second = executions.create_execution(
+        execution_id="exec_2",
+        run_id="run_2",
+        session_id="session_1",
+        revision_id=revision.revision_id,
+        capabilities=CapabilitySet(
+            pause=True,
+            safe_point_kinds=("action.after",),
+            state_schema_version=1,
+        ),
+    )
+    leased, reserved = attempts.lease(
+        second.execution_id,
+        expected_version=second.status_version,
+        owner_id="worker_2",
+        ttl_seconds=30,
+        attempt_id="attempt_2",
+    )
+    second_attempt, running = attempts.activate(
+        leased.attempt_id,
+        generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    _bind(owner_registry, running, second_attempt, owner_driver)
+    pending = asyncio.run(
+        remote.request_cancel(
+            command_id=f"execution-cancel:{second.execution_id}",
+            execution_id=second.execution_id,
+            expected_version=running.status_version,
+            actor={"surface": "remote"},
+            reason_code="cancel.recovered",
+        )
+    )
+    assert pending.issue_code == "owner_not_local"
+    delivered = asyncio.run(
+        owner.deliver_pending_cancel(
+            execution_id=second.execution_id,
+            attempt_id=second_attempt.attempt_id,
+            generation=second_attempt.generation,
+        )
+    )
+    assert delivered is not None and delivered.delivered
+    assert len(owner._delivered_cancel_commands) == 1
+    recovered = owner.recover_owner_loss(
+        second.execution_id,
+        attempt_id=second_attempt.attempt_id,
+        generation=second_attempt.generation,
+    )
+    assert recovered.execution.status is ExecutionStatus.CANCELLED
+    assert owner._delivered_cancel_commands == set()
+
+
 def test_queued_pause_apply_is_atomic_and_recovery_converges(tmp_path, monkeypatch) -> None:
     executions, attempts, queued, _ = _execution(tmp_path, active=False)
     service = RuntimeControlService(executions, attempts, DriverRegistry())
