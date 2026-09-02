@@ -556,6 +556,15 @@ export function FileTree({
   ): Promise<FileOperationResult> {
     const lifecycleGeneration = mutationLifecycleGeneration.current;
     const operationPayload = { project_id: projectId, ...payload };
+    if (op === "reveal") {
+      const data = await fileQuery<FileOperationResult>(
+        "project_file_reveal", operationPayload, "project_file_reveal_result",
+        () => true,
+      );
+      return data
+        ? { ...data, status: data.status ?? (data.ok ? "ready" : "error") }
+        : { status: "error", error_code: "TRANSPORT_ERROR" };
+    }
     let operationKey: string;
     try {
       operationKey = idempotencyKeyFor(`project_file_${op}`, operationPayload);

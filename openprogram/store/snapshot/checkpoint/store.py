@@ -1090,6 +1090,32 @@ class CheckpointStore:
                 ))
         return results
 
+    def recover_history_intents(self) -> list[dict]:
+        """Terminalize ordinary history intents left during a crash.
+
+        A single-turn intent has no separate recovery coordinator.  Startup
+        therefore preserves its manifest and records an explicit recovery
+        state instead of exposing it forever as an in-progress operation.
+        """
+        results = []
+        roots = (
+            session_backup_root(self.session_dir),
+            Path(self.session_dir) / "file_backups",
+        )
+        paths = sorted({path for root in roots for path in root.glob("*/intents/*.json")})
+        for path in paths:
+            try:
+                intent = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(intent, dict) or intent.get("status") not in {"prepared", "applying"}:
+                continue
+            intent["status"] = "recovery_required"
+            intent["error"] = "incomplete history intent requires explicit recovery"
+            manifest.save(path, intent)
+            results.append(self._intent_result(intent))
+        return results
+
     def _validate_custom_history_actions(self, actions: list[dict]) -> dict:
         conflicts = []
         unavailable = []

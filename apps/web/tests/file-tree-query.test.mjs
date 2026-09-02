@@ -51,6 +51,13 @@ test("file changes do not abort durable mutation requests", () => {
   assert.match(source, /Durable mutations must keep their own request lifecycle/);
 });
 
+test("reveal uses an ordinary request without a durable mutation key", () => {
+  const revealBranch = source.match(/if \(op === "reveal"\) \{([\s\S]*?)\n    \}/)?.[1] ?? "";
+  assert.match(revealBranch, /project_file_reveal/);
+  assert.match(revealBranch, /fileQuery/);
+  assert.doesNotMatch(revealBranch, /idempotencyKeyFor|wsMutationRequest/);
+});
+
 test("FileTree teardown aborts requests but retains durable mutation keys", () => {
   assert.match(source, /function abortMutationRequests\(\)/);
   assert.doesNotMatch(source, /forgetWsMutation/);

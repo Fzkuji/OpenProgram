@@ -108,6 +108,8 @@ def _valid_turn_id(turn_id: str) -> bool:
     return bool(
         turn_id
         and turn_id not in {".", ".."}
+        and not any(ord(char) < 32 or 0x7f <= ord(char) <= 0x9f for char in turn_id)
+        and not Path(turn_id).is_absolute()
         and Path(turn_id).name == turn_id
         and "/" not in turn_id
         and "\\" not in turn_id

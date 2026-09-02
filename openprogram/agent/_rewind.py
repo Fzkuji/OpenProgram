@@ -65,12 +65,13 @@ def recover_session_rewinds(session_id: str, *, store=None) -> list[dict]:
     if store._open(session_id) is None:
         return []
     journal = CheckpointStore(store._session_dir(session_id))
-    return journal.recover_rewind_intents(
+    recovered = journal.recover_rewind_intents(
         get_head=lambda: _head(store, session_id),
         compare_and_set_head=lambda intent, expected, target: _cas_for_intent(
             store, session_id, intent, expected, target,
         ),
     )
+    return recovered + journal.recover_history_intents()
 
 
 def recover_all_rewinds() -> int:

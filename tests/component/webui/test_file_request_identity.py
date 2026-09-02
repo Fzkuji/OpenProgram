@@ -320,6 +320,14 @@ def test_turn_operation_status_reads_history_intent_by_turn_and_key(tmp_path, mo
     assert unsafe["status"] == "error"
     assert unsafe["error_code"] == "INVALID_REQUEST"
 
+    control = run(turn_files.handle_turn_operation_status, {
+        "session_id": "session-a", "msg_id": "turn-1\x00",
+        "operation_action": "revert_turn", "idempotency_key": "turn-key",
+        "request_id": str(uuid.uuid4()),
+    })["data"]
+    assert control["status"] == "error"
+    assert control["error_code"] == "INVALID_REQUEST"
+
     global_terminal = run(turn_files.handle_turn_operation_status, {
         "session_id": "session-a", "msg_id": "turn-2",
         "operation_action": "revert_turn", "idempotency_key": "closure-key",
@@ -327,6 +335,39 @@ def test_turn_operation_status_reads_history_intent_by_turn_and_key(tmp_path, mo
     })["data"]
     assert global_terminal["status"] == "ready"
     assert global_terminal["operation_id"] == closure["transaction_id"]
+
+
+def test_history_intent_crash_is_terminalized_on_restart(tmp_path, monkeypatch):
+    from openprogram.store.snapshot.checkpoint import manifest
+    from openprogram.store.snapshot.checkpoint import store as checkpoint_store
+    from openprogram.store.snapshot.checkpoint import CheckpointStore
+
+    session_dir = tmp_path / "session"
+    journal = CheckpointStore(session_dir)
+    target = tmp_path / "history.txt"
+    target.write_text("before", encoding="utf-8")
+    journal.backup_before_edit("turn-1", str(target))
+    target.write_text("after", encoding="utf-8")
+    journal.commit_after_edit("turn-1", str(target), operation="edit")
+    original_save = manifest.save
+    saves = 0
+
+    def crash_after_applying(path, value):
+        nonlocal saves
+        saves += 1
+        original_save(path, value)
+        if saves == 2:
+            raise RuntimeError("simulated restart")
+
+    monkeypatch.setattr(checkpoint_store.manifest, "save", crash_after_applying)
+    with pytest.raises(RuntimeError, match="simulated restart"):
+        journal.apply_history_operation("turn-1", "revert", idempotency_key="crash-key")
+
+    monkeypatch.setattr(checkpoint_store.manifest, "save", original_save)
+    recovered = journal.recover_history_intents()
+    assert len(recovered) == 1
+    assert recovered[0]["status"] == "recovery_required"
+    assert journal.read_history_intent("turn-1", "revert", "crash-key")["status"] == "recovery_required"
 
 
 def test_file_operation_compaction_has_explicit_safe_retention(tmp_path):
