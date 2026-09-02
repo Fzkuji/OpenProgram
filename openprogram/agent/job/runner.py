@@ -3313,60 +3313,64 @@ class JobRunner:
 
     def _budget_loop(self) -> None:
         while not self._shutdown_event.wait(self._budget_poll_seconds):
-            now = self._monotonic()
-            expired: list[tuple[str, str]] = []
-            pending_cancels: list[tuple[str, str, int, threading.Event]] = []
-            with self._lock:
-                for job_id, entry in self._jobs.items():
-                    attempt_id = entry.get("attempt_id")
-                    attempt_generation = entry.get("attempt_generation")
-                    if (
-                        attempt_id is not None
-                        and isinstance(attempt_generation, int)
-                    ):
-                        pending_cancels.append(
-                            (
-                                job_id,
-                                attempt_id,
-                                attempt_generation,
-                                entry["event"],
-                            )
+            self._budget_tick()
+
+    def _budget_tick(self) -> None:
+        """Process one deterministic runtime/idle budget-monitor pass."""
+        now = self._monotonic()
+        expired: list[tuple[str, str]] = []
+        pending_cancels: list[tuple[str, str, int, threading.Event]] = []
+        with self._lock:
+            for job_id, entry in self._jobs.items():
+                attempt_id = entry.get("attempt_id")
+                attempt_generation = entry.get("attempt_generation")
+                if (
+                    attempt_id is not None
+                    and isinstance(attempt_generation, int)
+                ):
+                    pending_cancels.append(
+                        (
+                            job_id,
+                            attempt_id,
+                            attempt_generation,
+                            entry["event"],
                         )
-                    started = entry.get("started_monotonic")
-                    if started is None or entry.get("budget_cancelled"):
-                        continue
-                    runtime_limit, idle_limit = entry.get(
-                        "time_limits", (None, None),
                     )
-                    reason_code = None
-                    if (
-                        runtime_limit is not None
-                        and now - started >= float(runtime_limit)
-                    ):
-                        reason_code = "budget.runtime_exhausted"
-                    elif (
-                        idle_limit is not None
-                        and now - entry["last_activity_monotonic"] >= float(idle_limit)
-                    ):
-                        reason_code = "budget.idle_exhausted"
-                    if reason_code is not None:
-                        entry["budget_cancelled"] = True
-                        expired.append((job_id, reason_code))
-            for job_id, attempt_id, generation, cancel_event in pending_cancels:
-                self._consume_pending_canonical_cancel(
-                    job_id, attempt_id, generation, cancel_event,
+                started = entry.get("started_monotonic")
+                if started is None or entry.get("budget_cancelled"):
+                    continue
+                runtime_limit, idle_limit = entry.get(
+                    "time_limits", (None, None),
                 )
-            for job_id, reason_code in expired:
-                try:
-                    self._cancel_cascade(
-                        job_id,
-                        reason=reason_code.replace(".", " "),
-                        root_reason_code=reason_code,
-                    )
-                except Exception:
-                    _log.exception(
-                        "failed to cancel job %s after budget expiry", job_id,
-                    )
+                reason_code = None
+                if (
+                    runtime_limit is not None
+                    and now - started >= float(runtime_limit)
+                ):
+                    reason_code = "budget.runtime_exhausted"
+                elif (
+                    idle_limit is not None
+                    and now - entry["last_activity_monotonic"] >= float(idle_limit)
+                ):
+                    reason_code = "budget.idle_exhausted"
+                if reason_code is not None:
+                    entry["budget_cancelled"] = True
+                    expired.append((job_id, reason_code))
+        for job_id, attempt_id, generation, cancel_event in pending_cancels:
+            self._consume_pending_canonical_cancel(
+                job_id, attempt_id, generation, cancel_event,
+            )
+        for job_id, reason_code in expired:
+            try:
+                self._cancel_cascade(
+                    job_id,
+                    reason=reason_code.replace(".", " "),
+                    root_reason_code=reason_code,
+                )
+            except Exception:
+                _log.exception(
+                    "failed to cancel job %s after budget expiry", job_id,
+                )
 
     def _wake_done(self, job_id: str) -> None:
         with self._lock:
