@@ -21,6 +21,25 @@ def _collect() -> list[dict]:
     items: list[dict] = []
 
     try:
+        from openprogram.execution.projections import list_running_execution_projections
+
+        for projection in list_running_execution_projections():
+            payload = projection.payload
+            execution = payload.get("execution") or {}
+            ui = payload.get("ui") or {}
+            items.append({
+                "kind": "execution",
+                "id": projection.execution_id,
+                "execution_id": projection.execution_id,
+                "session_id": projection.session_id,
+                "label": ui.get("label") or "execution",
+                "status": projection.status,
+                "started_at": execution.get("created_at"),
+            })
+    except Exception:
+        pass
+
+    try:
         # 进行中的 chat 轮次（含每个会话分支的后台 execution）。这是
         # "正在运行的程序" 的顶层视角；tool/process 是它的细粒度补充。
         from openprogram.webui import server as _srv

@@ -33,7 +33,9 @@ def recover_execution_startup(
     canonical = tuple(control_service.recover_startup())
     if projection_dispatcher is None:
         from .store import default_store
+        from .projections import projection_handlers
 
-        projection_dispatcher = ProjectionDispatcher(default_store(), {})
+        store = default_store()
+        projection_dispatcher = ProjectionDispatcher(store, projection_handlers(store))
     projections = projection_dispatcher.recover_startup(owner_id=projection_owner_id)
     return StartupRecoveryResult(canonical=canonical, projections=projections)

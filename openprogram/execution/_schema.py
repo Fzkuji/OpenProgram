@@ -9,11 +9,12 @@ import sqlite3
 from .model import CapabilitySet
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 _LEGACY_SCHEMA_VERSION = 1
 _PREVIOUS_SCHEMA_VERSION = 2
 _FORK_RETRY_SCHEMA_VERSION = 3
 _EXECUTION_CONTROL_SCHEMA_VERSION = 4
+_PROJECTION_OUTBOX_SCHEMA_VERSION = 5
 
 # These are the only projections emitted by the canonical execution store.
 # Adding a projection is a schema/design change, not a caller-defined label.
@@ -42,6 +43,8 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
         _migrate_v3(connection)
     elif current == _EXECUTION_CONTROL_SCHEMA_VERSION:
         _migrate_v4(connection)
+    elif current == _PROJECTION_OUTBOX_SCHEMA_VERSION:
+        _migrate_v5(connection)
     elif current == SCHEMA_VERSION:
         _create_current_schema(connection)
     else:
@@ -196,6 +199,7 @@ def _create_current_schema(connection: sqlite3.Connection) -> None:
         """
     )
     _create_projection_schema(connection)
+    _create_projection_read_schema(connection)
 
 
 def _create_projection_schema(connection: sqlite3.Connection) -> None:
@@ -252,6 +256,71 @@ def _create_projection_schema(connection: sqlite3.Connection) -> None:
     )
 
 
+def _create_projection_read_schema(connection: sqlite3.Connection) -> None:
+    """Create only read-model tables; canonical lifecycle remains separate."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS execution_projection_events (
+            projection_kind TEXT NOT NULL,
+            event_sequence INTEGER NOT NULL,
+            execution_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            PRIMARY KEY(projection_kind, event_sequence),
+            FOREIGN KEY(event_sequence) REFERENCES execution_events(sequence),
+            FOREIGN KEY(execution_id) REFERENCES executions(execution_id),
+            CHECK(projection_kind IN ('dag', 'job', 'workflow', 'ui'))
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS execution_projection_current (
+            projection_kind TEXT NOT NULL,
+            execution_id TEXT NOT NULL,
+            event_sequence INTEGER NOT NULL,
+            session_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            updated_at REAL NOT NULL,
+            PRIMARY KEY(projection_kind, execution_id),
+            FOREIGN KEY(event_sequence) REFERENCES execution_events(sequence),
+            FOREIGN KEY(execution_id) REFERENCES executions(execution_id),
+            CHECK(projection_kind IN ('dag', 'job', 'workflow', 'ui'))
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS execution_projection_current_running "
+        "ON execution_projection_current(projection_kind, status, session_id, updated_at)"
+    )
+
+
+def _migrate_v5(connection: sqlite3.Connection) -> None:
+    """Install replayable read models and replay every fixed projection once."""
+    if connection.in_transaction:
+        raise UnsupportedSchema(
+            _PROJECTION_OUTBOX_SCHEMA_VERSION,
+            "cannot migrate projection read models inside an active transaction",
+        )
+    try:
+        connection.execute("BEGIN")
+        _create_projection_read_schema(connection)
+        # v5 had no durable consumers.  Requeue its fixed delivery set so the
+        # new idempotent handlers materialize every historical event.
+        connection.execute(
+            "UPDATE execution_projection_outbox SET state = 'pending', "
+            "claim_owner = NULL, claim_expires_at = NULL, delivered_at = NULL"
+        )
+        connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+
+
 def _backfill_projection_outbox(connection: sqlite3.Connection) -> None:
     """Materialize one pending projection per historical canonical event."""
     for projection_kind in PROJECTION_KINDS:
@@ -268,7 +337,7 @@ def _backfill_projection_outbox(connection: sqlite3.Connection) -> None:
 
 
 def _migrate_v4(connection: sqlite3.Connection) -> None:
-    """Upgrade a real v4 store and backfill its historical event projections atomically."""
+    """Upgrade a real v4 store and backfill all current projection storage."""
     if connection.in_transaction:
         raise UnsupportedSchema(
             _EXECUTION_CONTROL_SCHEMA_VERSION,
@@ -277,6 +346,7 @@ def _migrate_v4(connection: sqlite3.Connection) -> None:
     try:
         connection.execute("BEGIN")
         _create_projection_schema(connection)
+        _create_projection_read_schema(connection)
         _backfill_projection_outbox(connection)
         connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         connection.commit()

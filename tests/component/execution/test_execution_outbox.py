@@ -245,7 +245,7 @@ def test_startup_entrypoint_recovers_canonical_before_projection_replay():
     assert result.canonical == ("recovered",)
 
 
-def test_schema_migrates_v4_to_v5(tmp_path):
+def test_schema_migrates_v4_to_current(tmp_path):
     path = tmp_path / "legacy.sqlite3"
     store = ExecutionStore(path)
     _admit(store)
@@ -257,7 +257,7 @@ def test_schema_migrates_v4_to_v5(tmp_path):
     ExecutionStore(path)
     with sqlite3.connect(path) as connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-        assert SCHEMA_VERSION == 5
+        assert SCHEMA_VERSION == 6
         tables = {
             row[0]
             for row in connection.execute(
