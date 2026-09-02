@@ -13,7 +13,6 @@ const mutationKeys = new Map<string, {
   key: string;
   action: string;
   projectId: string | undefined;
-  payload: unknown;
   touchedAt: number;
   bytes: number;
   terminal: boolean;
@@ -30,7 +29,11 @@ const MAX_MUTATION_VALUE_SAMPLE = 4096;
 const MUTATION_RECONCILE_INTERVAL_MS = 250;
 const MUTATION_RECONCILE_RETRY_MS = 5000;
 const MUTATION_RECONCILE_DEADLINE_MS = 30000;
-const mutationReconciliations = new Map<string, Promise<void>>();
+const mutationReconciliations = new Map<string, {
+  promise: Promise<void>;
+  controller: AbortController;
+}>();
+const mutationReconcileRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export class MutationRegistryCapacityError extends Error {
   constructor() {
@@ -93,8 +96,8 @@ function mutationIdentity(scope: string, payload: Record<string, unknown>): stri
   return `${scope.slice(0, 128)}:${summary.length}:${hashText(summary)}`;
 }
 
-function registryBytes(identity: string, key: string, payload: unknown): number {
-  return identity.length + key.length + JSON.stringify(payload).length;
+function registryBytes(identity: string, key: string): number {
+  return identity.length + key.length;
 }
 
 function currentRegistryBytes(): number {
@@ -148,9 +151,8 @@ export function idempotencyKeyFor(
     existing.touchedAt = Date.now();
     return existing.key;
   }
-  const payloadSummary = boundedMutationValue(payload);
   pruneMutationKeys();
-  const keyBytes = registryBytes(identity, "00000000-0000-0000-0000-000000000000", payloadSummary);
+  const keyBytes = registryBytes(identity, "00000000-0000-0000-0000-000000000000");
   if (mutationKeys.size >= MAX_MUTATION_KEYS
     || currentRegistryBytes() + keyBytes > MAX_MUTATION_REGISTRY_BYTES) {
     reconcileMutationRegistryBeforeRejecting();
@@ -160,10 +162,11 @@ export function idempotencyKeyFor(
   mutationKeys.set(identity, {
     key,
     action: scope,
-    projectId: typeof payload.project_id === "string" ? payload.project_id : undefined,
-    payload: payloadSummary,
+    projectId: typeof payload.project_id === "string"
+      ? payload.project_id
+      : typeof payload.session_id === "string" ? payload.session_id : undefined,
     touchedAt: Date.now(),
-    bytes: registryBytes(identity, key, payloadSummary),
+    bytes: registryBytes(identity, key),
     terminal: false,
   });
   return key;
@@ -179,12 +182,42 @@ export interface WsMutationOptions {
   signal?: AbortSignal;
   maxAttempts?: number;
   deadlineMs?: number;
+  reconcile?: boolean;
 }
 
 function mutationIsTerminal(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   const status = (value as Record<string, unknown>).status;
   return status !== "in_progress" && status !== "pending";
+}
+
+function subscribeMutation<T>(shared: Promise<T | null>, signal?: AbortSignal): Promise<T | null> {
+  if (!signal) return shared;
+  if (signal.aborted) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    let detached = false;
+    const onAbort = () => {
+      if (detached) return;
+      detached = true;
+      signal.removeEventListener("abort", onAbort);
+      resolve(null);
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    shared.then(
+      (value) => {
+        if (detached) return;
+        detached = true;
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      () => {
+        if (detached) return;
+        detached = true;
+        signal.removeEventListener("abort", onAbort);
+        resolve(null);
+      },
+    );
+  });
 }
 
 /** Retry transient transport/in-progress replies with one idempotency key.
@@ -197,7 +230,7 @@ export function wsMutationRequest<T>(
   options: WsMutationOptions = {},
 ): Promise<T | null> {
   const existing = pendingMutations.get(key);
-  if (existing) return existing.promise as Promise<T | null>;
+  if (existing) return subscribeMutation(existing.promise as Promise<T | null>, options.signal);
   const maxAttempts = Math.max(1, Math.min(
     options.maxAttempts ?? MAX_MUTATION_ATTEMPTS,
     MAX_MUTATION_ATTEMPTS,
@@ -231,7 +264,7 @@ export function wsMutationRequest<T>(
       if (status === "in_progress" || status === "pending") {
         const deadline = Date.now() + deadlineMs;
         while (Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, Math.min(100, deadline - Date.now())));
+          await waitForMutationReconcile(Math.min(100, deadline - Date.now()));
           const pollController = new AbortController();
           try {
             const next = await send(pollController.signal);
@@ -284,12 +317,23 @@ export function wsMutationRequest<T>(
   })();
   pendingMutations.set(key, { promise: run });
   void run.then(
+    (value) => {
+      if (pendingMutations.get(key)?.promise === run) pendingMutations.delete(key);
+      if (options.reconcile !== false) {
+        // The caller may have detached, but the server receipt still needs
+        // reconciliation. Never resend a write payload from this path.
+        const status = value && typeof value === "object"
+          ? (value as Record<string, unknown>).status : undefined;
+        if (!value || ["in_progress", "pending", "recovery_required"].includes(status as string))
+          reconcileWsMutation(key);
+      }
+    },
     () => {
       if (pendingMutations.get(key)?.promise === run) pendingMutations.delete(key);
+      if (options.reconcile !== false) reconcileWsMutation(key);
     },
-    () => { if (pendingMutations.get(key)?.promise === run) pendingMutations.delete(key); },
   );
-  return run;
+  return subscribeMutation(run, options.signal);
 }
 
 function mutationEntryForKey(key: string) {
@@ -299,8 +343,30 @@ function mutationEntryForKey(key: string) {
   return undefined;
 }
 
-function waitForMutationReconcile(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function waitForMutationReconcile(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const onAbort = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    };
+    timer = setTimeout(onAbort, ms);
+    unrefTimer(timer);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+  });
+}
+
+// Browser timers are numeric handles; Node timers expose `unref`. Keeping
+// reconciliation timers unreferenced prevents a test/SSR process from being
+// held open by a best-effort background retry while preserving browser use.
+function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
+  const nodeTimer = timer as unknown as { unref?: () => void };
+  nodeTimer.unref?.();
 }
 
 /** Reconcile an aborted UI request without replaying a write payload. The
@@ -315,44 +381,95 @@ export function reconcileWsMutation(key: string): void {
     return;
   }
   if (mutationReconciliations.has(key)) return;
+  const controller = new AbortController();
   const run = (async () => {
     const deadline = Date.now() + MUTATION_RECONCILE_DEADLINE_MS;
-    while (Date.now() < deadline) {
+    while (!controller.signal.aborted && Date.now() < deadline) {
       const entry = mutationEntryForKey(key);
       if (!entry) return;
       if (pendingMutations.has(key)) return;
-      const result = await wsRequest<Record<string, unknown>>(
-        "project_file_operation_status",
-        {
-          project_id: entry.projectId ?? "",
-          operation_action: entry.action,
-          idempotency_key: key,
-          ...(entry.operationId ? { operation_id: entry.operationId } : {}),
-        },
-        "project_file_operation_status_result",
-        (data) => data.project_id === entry.projectId
-          && data.operation_action === entry.action
-          && data.idempotency_key === key,
-        Math.min(4000, Math.max(1, deadline - Date.now())),
-        { requestId: true },
-      );
+      let result: Record<string, unknown> | null = null;
+      try {
+        result = await wsRequest<Record<string, unknown>>(
+          "project_file_operation_status",
+          {
+            project_id: entry.projectId ?? "",
+            operation_action: entry.action,
+            idempotency_key: key,
+            ...(entry.operationId ? { operation_id: entry.operationId } : {}),
+          },
+          "project_file_operation_status_result",
+          (data) => data.project_id === entry.projectId
+            && data.operation_action === entry.action
+            && data.idempotency_key === key,
+          Math.min(4000, Math.max(1, deadline - Date.now())),
+          { requestId: true, signal: controller.signal },
+        );
+      } catch {
+        // Request setup/handler failures are uncertainty, not evidence that
+        // the durable operation is gone. Keep the key and retry this bounded
+        // round; the outer retry timer handles later reconnects.
+        await waitForMutationReconcile(MUTATION_RECONCILE_INTERVAL_MS, controller.signal);
+        continue;
+      }
       const status = result?.status;
-      if (result && typeof result.operation_id === "string") entry.operationId = result.operation_id;
-      if (typeof status === "string" && !["in_progress", "pending"].includes(status)) {
+      const expectedOperationId = entry.operationId;
+      const returnedOperationId = typeof result?.operation_id === "string"
+        ? result.operation_id : undefined;
+      if (returnedOperationId
+        && (!expectedOperationId || expectedOperationId === returnedOperationId)) {
+        entry.operationId = returnedOperationId;
+      }
+      const identifiedRecovery = status === "recovery_required"
+        && result?.project_id === entry.projectId
+        && result?.operation_action === entry.action
+        && result?.idempotency_key === key;
+      const identifiedTerminal = typeof returnedOperationId === "string"
+        && (!expectedOperationId || expectedOperationId === returnedOperationId)
+        && (status !== "error" || result?.durable_receipt === true);
+      if (typeof status === "string" && !["in_progress", "pending"].includes(status)
+        && (identifiedRecovery || identifiedTerminal)) {
         forgetMutationKey(key);
         return;
       }
-      await waitForMutationReconcile(MUTATION_RECONCILE_INTERVAL_MS);
+      await waitForMutationReconcile(MUTATION_RECONCILE_INTERVAL_MS, controller.signal);
     }
+    if (controller.signal.aborted) return;
     // Keep the key for safe future replay, but start a later bounded round so
     // reconnects can observe a server operation that outlives this deadline.
-    setTimeout(() => reconcileWsMutation(key), MUTATION_RECONCILE_RETRY_MS);
+    const retryTimer = setTimeout(() => {
+      mutationReconcileRetryTimers.delete(key);
+      reconcileWsMutation(key);
+    }, MUTATION_RECONCILE_RETRY_MS);
+    unrefTimer(retryTimer);
+    mutationReconcileRetryTimers.set(key, retryTimer);
   })();
-  mutationReconciliations.set(key, run);
+  const state = { promise: run, controller };
+  mutationReconciliations.set(key, state);
   void run.then(
-    () => { if (mutationReconciliations.get(key) === run) mutationReconciliations.delete(key); },
-    () => { if (mutationReconciliations.get(key) === run) mutationReconciliations.delete(key); },
+    () => {
+      if (mutationReconciliations.get(key) === state) mutationReconciliations.delete(key);
+    },
+    () => {
+      if (mutationReconciliations.get(key) === state) mutationReconciliations.delete(key);
+    },
   );
+}
+
+/** Stop one registry-owned reconciler without releasing its durable key. */
+export function stopWsMutationReconciliation(key: string): void {
+  mutationReconciliations.get(key)?.controller.abort();
+  const timer = mutationReconcileRetryTimers.get(key);
+  if (timer !== undefined) clearTimeout(timer);
+  mutationReconcileRetryTimers.delete(key);
+}
+
+/** Test/process teardown hook: stop background status polling, retain keys. */
+export function resetWsMutationReconciliation(): void {
+  for (const key of new Set([
+    ...mutationReconciliations.keys(),
+    ...mutationReconcileRetryTimers.keys(),
+  ])) stopWsMutationReconciliation(key);
 }
 
 /** Used by the shared WS dispatcher to avoid toasting a request-local error. */
@@ -472,5 +589,6 @@ export function wsRequest<T = unknown>(
     timeout = setTimeout(() => {
       finish(null);
     }, timeoutMs);
+    unrefTimer(timeout);
   });
 }

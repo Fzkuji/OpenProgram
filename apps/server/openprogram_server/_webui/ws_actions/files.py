@@ -1547,12 +1547,15 @@ async def handle_project_file_operation_status(ws, cmd: dict) -> None:
     operation_id = cmd.get("operation_id")
     result: dict
     if (not project_id or not isinstance(operation_action, str)
-            or operation_action not in {
-                "project_file_write", "project_file_create", "project_file_rename",
-                "project_file_copy", "project_file_delete",
-            } or not isinstance(key, str) or not key):
+            or not isinstance(key, str) or not key):
         result = {"status": "error", "error_code": "INVALID_REQUEST",
                   "error": "project_id, operation_action, and idempotency_key are required"}
+    elif not operation_action.startswith("project_file_"):
+        # Other shared mutation callers do not use the file-operation journal.
+        # Return an identity-bound recovery receipt instead of treating this
+        # status query failure as a successful terminal operation.
+        result = {"status": "recovery_required", "error_code": "RECOVERY_REQUIRED",
+                  "error": "this mutation has no queryable file-operation receipt"}
     else:
         from openprogram.store.file_operations import default_file_operation_store
         store = default_file_operation_store()
@@ -1562,6 +1565,9 @@ async def handle_project_file_operation_status(ws, cmd: dict) -> None:
                       "error": "durable file operation receipt is unavailable"}
         else:
             result = store.replay(row)
+            # This marker distinguishes a journaled terminal operation from
+            # an error produced while handling the status query itself.
+            result["durable_receipt"] = True
             result.setdefault("status", "in_progress")
             if row.get("status") == "in_flight":
                 result["status"] = "in_progress"

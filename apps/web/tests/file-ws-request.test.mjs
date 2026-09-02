@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { after } from "node:test";
 import { existsSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -60,12 +60,15 @@ const {
   mutationRegistryStats,
   MutationRegistryCapacityError,
   reconcileWsMutation,
+  resetWsMutationReconciliation,
   wsMutationRequest,
   wsRequest,
 } = await import("../lib/net/ws-request.ts");
 const { filesWsRequest, fileResponseMatchesOwner } = await import(
   "../lib/state/files-shared.ts"
 );
+
+after(() => resetWsMutationReconciliation());
 
 test("stale cursor response is accepted after unrelated same-type frame", async () => {
   const socket = new FakeSocket();
@@ -186,7 +189,7 @@ test("large payload summaries stay bounded and in-progress keys remain stable", 
     await wsMutationRequest(key, async () => ({
       status: "in_progress",
       operation_id: `op-${key}`,
-    }), { maxAttempts: 1, deadlineMs: 0 });
+    }), { maxAttempts: 1, deadlineMs: 0, reconcile: false });
     assert.equal(idempotencyKeyFor("project_file_write", payload), key);
   }
   const after = mutationRegistryStats();
@@ -212,7 +215,7 @@ test("registry refuses unfinished operations at capacity without growing", async
       await wsMutationRequest(key, async () => ({
         status: "in_progress",
         operation_id: `op-${key}`,
-      }), { maxAttempts: 1, deadlineMs: 0 });
+      }), { maxAttempts: 1, deadlineMs: 0, reconcile: false });
     } catch (error) {
       assert.ok(error instanceof MutationRegistryCapacityError);
       refused = true;
@@ -255,7 +258,7 @@ test("in-progress mutation reaches recovery_required at its deadline", async () 
   const key = idempotencyKeyFor("project_file_write", payload);
   const result = await wsMutationRequest(key, async () => ({
     status: "in_progress", operation_id: "op-deadline",
-  }), { maxAttempts: 1, deadlineMs: 0 });
+  }), { maxAttempts: 1, deadlineMs: 0, reconcile: false });
   assert.equal(result?.status, "recovery_required");
   assert.equal(result?.error_code, "RECOVERY_REQUIRED");
   assert.equal(result?.operation_id, "op-deadline");
@@ -278,9 +281,10 @@ test("aborting a request retains its key for a later durable replay", async () =
     serverCalls += 1;
     return { status: "ready", operation_id: "unexpected-second-call" };
   }, { maxAttempts: 1 });
-  assert.equal(first, second, "same-key callers share one durable operation promise");
+  assert.notEqual(first, second, "each caller receives its own subscription promise");
   firstController.abort();
   release({ status: "ready", operation_id: "op-abort-replay" });
+  assert.equal(await first, null);
   const replay = await second;
   assert.equal(replay?.operation_id, "op-abort-replay");
   assert.equal(serverCalls, 1);
@@ -322,6 +326,154 @@ test("reconciliation polls a retained key without replaying write content", asyn
       idempotency_key: key,
       status: "ready",
       operation_id: "op-reconcile",
+    },
+  }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.notEqual(idempotencyKeyFor("project_file_write", payload), key);
+});
+
+test("status query errors retain the key until an identified terminal receipt", async () => {
+  const payload = { project_id: "project-status-error", path: "pending.txt", content: "v1" };
+  const key = idempotencyKeyFor("project_file_write", payload);
+  const socket = new FakeSocket();
+  setSocket(socket);
+  reconcileWsMutation(key);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  let frame = socket.sent.at(-1);
+  socket.emit("message", JSON.stringify({
+    type: "project_file_operation_status_result",
+    data: {
+      request_id: frame.request_id,
+      action: "project_file_operation_status",
+      project_id: payload.project_id,
+      operation_action: "project_file_write",
+      idempotency_key: key,
+      status: "error",
+      error_code: "AUTH_REQUIRED",
+    },
+  }));
+  assert.equal(idempotencyKeyFor("project_file_write", payload), key);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  frame = socket.sent.at(-1);
+  socket.emit("message", JSON.stringify({
+    type: "project_file_operation_status_result",
+    data: {
+      request_id: frame.request_id,
+      action: "project_file_operation_status",
+      project_id: payload.project_id,
+      operation_action: "project_file_write",
+      idempotency_key: key,
+      status: "ready",
+      operation_id: "op-status-error",
+    },
+  }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.notEqual(idempotencyKeyFor("project_file_write", payload), key);
+});
+
+test("reconciliation rejects a terminal receipt for another operation", async () => {
+  const payload = { project_id: "project-operation-mismatch", path: "same.txt", content: "v1" };
+  const key = idempotencyKeyFor("project_file_write", payload);
+  const socket = new FakeSocket();
+  setSocket(socket);
+  reconcileWsMutation(key);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const firstFrame = socket.sent.at(-1);
+  socket.emit("message", JSON.stringify({
+    type: "project_file_operation_status_result",
+    data: {
+      request_id: firstFrame.request_id,
+      action: "project_file_operation_status",
+      project_id: payload.project_id,
+      operation_action: "project_file_write",
+      idempotency_key: key,
+      status: "in_progress",
+      operation_id: "op-expected",
+    },
+  }));
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const secondFrame = socket.sent.at(-1);
+  socket.emit("message", JSON.stringify({
+    type: "project_file_operation_status_result",
+    data: {
+      request_id: secondFrame.request_id,
+      action: "project_file_operation_status",
+      project_id: payload.project_id,
+      operation_action: "project_file_write",
+      idempotency_key: key,
+      status: "ready",
+      operation_id: "op-other",
+    },
+  }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(idempotencyKeyFor("project_file_write", payload), key);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const thirdFrame = socket.sent.at(-1);
+  socket.emit("message", JSON.stringify({
+    type: "project_file_operation_status_result",
+    data: {
+      request_id: thirdFrame.request_id,
+      action: "project_file_operation_status",
+      project_id: payload.project_id,
+      operation_action: "project_file_write",
+      idempotency_key: key,
+      status: "ready",
+      operation_id: "op-expected",
+    },
+  }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.notEqual(idempotencyKeyFor("project_file_write", payload), key);
+});
+
+test("all shared callers detach independently while one receipt completes", async () => {
+  const payload = { project_id: "project-shared", path: "same.txt", content: "v1" };
+  const key = idempotencyKeyFor("project_file_write", payload);
+  let release;
+  let sends = 0;
+  const callers = [];
+  const controllers = [];
+  callers.push(wsMutationRequest(key, async () => new Promise((resolve) => {
+    sends += 1;
+    release = resolve;
+  }), { maxAttempts: 1 }));
+  for (let index = 1; index < 128; index += 1) {
+    const controller = new AbortController();
+    controllers.push(controller);
+    callers.push(wsMutationRequest(key, async () => {
+      sends += 1;
+      return { status: "ready", operation_id: "unexpected" };
+    }, { signal: controller.signal }));
+  }
+  for (const controller of controllers) controller.abort();
+  release({ status: "ready", operation_id: "op-shared" });
+  const results = await Promise.all(callers);
+  assert.equal(results.filter((result) => result?.status === "ready").length, 1);
+  assert.equal(results.filter((result) => result === null).length, 127);
+  assert.equal(sends, 1);
+});
+
+test("wsMutationRequest automatically starts status reconciliation", async () => {
+  const payload = { project_id: "project-auto-reconcile", path: "same.txt", content: "v1" };
+  const key = idempotencyKeyFor("project_file_write", payload);
+  const socket = new FakeSocket();
+  setSocket(socket);
+  const result = await wsMutationRequest(key, async () => ({
+    status: "in_progress", operation_id: "op-auto",
+  }), { maxAttempts: 1, deadlineMs: 0 });
+  assert.equal(result?.status, "recovery_required");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const frame = socket.sent.at(-1);
+  assert.equal(frame.action, "project_file_operation_status");
+  socket.emit("message", JSON.stringify({
+    type: "project_file_operation_status_result",
+    data: {
+      request_id: frame.request_id,
+      action: "project_file_operation_status",
+      project_id: payload.project_id,
+      operation_action: "project_file_write",
+      idempotency_key: key,
+      status: "ready",
+      operation_id: "op-auto",
     },
   }));
   await new Promise((resolve) => setTimeout(resolve, 0));

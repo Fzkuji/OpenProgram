@@ -583,6 +583,7 @@ export function FileTree({
           signal,
           mutationRequestControllers.current,
         ),
+        { signal: operationController.signal },
       );
     } catch {
       data = null;
