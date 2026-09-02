@@ -12,6 +12,8 @@ from mcp.shared.exceptions import McpError
 from openprogram.agent.authority import mcp_client_authority
 from openprogram.agent.dispatcher import TurnResult
 from openprogram.events import create_event_bus, make_event
+from openprogram.execution.control import ObservedCancelSubmission
+from openprogram.execution.model import CommandStatus
 from openprogram.mcp.server.service import MCPClientContext, MCPService
 
 
@@ -97,13 +99,39 @@ def _service(
         if current_events.get((session_id, execution_id)) is event:
             current_events.pop((session_id, execution_id), None)
 
-    def cancel_execution(execution_id):
+    def cancel_execution(execution_id, **_kwargs):
         record("cancel", execution_id)
         for key, event in current_events.items():
             if key[1] == execution_id:
                 event.set()
-        return SimpleNamespace(
+        return ObservedCancelSubmission(
+            command=SimpleNamespace(status=CommandStatus.APPLYING),
             execution=SimpleNamespace(status="cancelling"),
+            accepted=True,
+        )
+
+    supplied_cancel = cancel
+
+    def submit_cancel(execution_id, **kwargs):
+        if supplied_cancel is None:
+            return cancel_execution(execution_id, **kwargs)
+        result = supplied_cancel(execution_id)
+        if asyncio.iscoroutine(result):
+            async def normalize():
+                value = await result
+                return _normalize_cancel(value)
+            return normalize()
+        return _normalize_cancel(result)
+
+    def _normalize_cancel(value):
+        if isinstance(value, ObservedCancelSubmission):
+            return value
+        execution = getattr(value, "execution", None)
+        status = getattr(execution, "status", None)
+        return ObservedCancelSubmission(
+            command=SimpleNamespace(status=CommandStatus.APPLYING),
+            execution=execution,
+            accepted=status in {"cancelling", "cancelled"},
         )
 
     def acquire_cleanup(session_id, event):
@@ -134,7 +162,7 @@ def _service(
         ),
         acquire_cancel_cleanup=acquire_cleanup,
         release_cancel_cleanup=release_cleanup,
-        cancel_execution=cancel or cancel_execution,
+        cancel_execution=submit_cancel,
         question_registry_getter=lambda: questions,
         event_bus_getter=lambda: bus,
     )
@@ -266,7 +294,7 @@ def test_cancel_barrier_before_admission_never_activates_prompt(monkeypatch) -> 
 
     asyncio.run(scenario())
     assert activated.is_set() is False
-    assert failed == [("exec-barrier", "prompt_cancel")]
+    assert failed == []
     assert _active(service) == ()
     with service._active_lock:
         assert service._cleaning_sessions == set()
@@ -875,10 +903,12 @@ def test_two_services_cannot_share_or_cross_cancel_one_process_session() -> None
             _context(client_id),
             session_db=db,
             process_user_turn=process(label),
-            cancel_execution=lambda execution_id: (
+            cancel_execution=lambda execution_id, **_kwargs: (
                 cleanup.append((label, "cancel", execution_id))
-                or SimpleNamespace(
-                    execution=SimpleNamespace(status="cancelling")
+                or ObservedCancelSubmission(
+                    command=SimpleNamespace(status=CommandStatus.APPLYING),
+                    execution=SimpleNamespace(status="cancelling"),
+                    accepted=True,
                 )
             ),
             question_registry_getter=lambda: questions,
@@ -970,12 +1000,14 @@ def test_old_owner_cleanup_cannot_cross_concurrent_session_handover(operation) -
         process_user_turn=process,
         acquire_cancel_cleanup=acquire_cleanup,
         release_cancel_cleanup=lambda selected_session_id, event: None,
-        cancel_execution=lambda execution_id: (
-            cleanup.append(("cancel", execution_id))
-            or SimpleNamespace(
-                execution=SimpleNamespace(status="cancelling")
-            )
-        ),
+            cancel_execution=lambda execution_id, **_kwargs: (
+                cleanup.append(("cancel", execution_id))
+                or ObservedCancelSubmission(
+                    command=SimpleNamespace(status=CommandStatus.APPLYING),
+                    execution=SimpleNamespace(status="cancelling"),
+                    accepted=True,
+                )
+            ),
         question_registry_getter=lambda: questions,
         event_bus_getter=create_event_bus,
     )
@@ -1421,11 +1453,13 @@ def test_new_same_session_request_is_rejected_until_old_cleanup_finishes() -> No
 
     service = _service(process=process)
 
-    def blocking_cancel(_execution_id):
+    def blocking_cancel(_execution_id, **_kwargs):
         cleanup_entered.set()
         cleanup_release.wait(2)
-        return SimpleNamespace(
+        return ObservedCancelSubmission(
+            command=SimpleNamespace(status=CommandStatus.APPLYING),
             execution=SimpleNamespace(status="cancelling"),
+            accepted=True,
         )
 
     service._cancel_execution = blocking_cancel

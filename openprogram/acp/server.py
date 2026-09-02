@@ -50,7 +50,7 @@ from openprogram.acp.jsonrpc import (
     Connection,
     RPCError,
 )
-from openprogram.execution.model import ExecutionStatus
+from openprogram.execution.control import ObservedCancelSubmission, submit_observed_cancel
 
 _log = logging.getLogger(__name__)
 
@@ -130,11 +130,14 @@ class _Session:
         self.cwd = cwd
         self.cancel_event = threading.Event()
         self.execution_id: str | None = None
+        self.execution_status_version: int | None = None
         # Cancellation may arrive while durable admission is in progress,
         # before the execution identity can be published to the session.
         self.prompt_pending = False
         self.cancel_requested = False
         self.cancel_reason = ""
+        self.cancel_command_id = ""
+        self.cancel_in_flight = False
         # Question ids forwarded to the client and still unanswered — a
         # cancel must resolve them or the tool gate sits on its Event for
         # the full 300s timeout.
@@ -260,34 +263,52 @@ class ACPServer:
                 if not sess.prompt_pending:
                     return None
                 sess.cancel_requested = True
-                sess.cancel_reason = "prompt_cancel"
-                sess.cancel_event.set()
+                if not sess.cancel_reason:
+                    sess.cancel_reason = "prompt_cancel"
+                if not sess.cancel_command_id:
+                    sess.cancel_command_id = f"acp-cancel:{uuid.uuid4().hex}"
                 return None
+            if sess.cancel_in_flight:
+                return None
+            sess.cancel_requested = True
+            sess.cancel_reason = sess.cancel_reason or "prompt_cancel"
+            if not sess.cancel_command_id:
+                sess.cancel_command_id = f"acp-cancel:{uuid.uuid4().hex}"
+            expected_version = sess.execution_status_version
+            command_id = sess.cancel_command_id
+            reason_code = sess.cancel_reason
+            sess.cancel_in_flight = True
         try:
-            from openprogram.agent.production_driver import cancel_canonical_execution
-            cancelled = asyncio.run(cancel_canonical_execution(execution_id))
-            if cancelled is None:
+            if expected_version is None:
                 return None
+            from openprogram.agent.authority import local_owner_authority
+            from openprogram.execution import default_control_service
+
+            submitted = asyncio.run(submit_observed_cancel(
+                default_control_service(),
+                command_id=command_id,
+                execution_id=execution_id,
+                expected_version=expected_version,
+                actor=local_owner_authority(),
+                reason_code=reason_code,
+            ))
         except Exception:
             # Notifications have no error response; leave the live prompt
             # untouched and surface infrastructure failures in the log.
             _log.warning("ACP execution cancellation failed for %s",
                          execution_id, exc_info=True)
             return None
-        canonical_execution = getattr(cancelled, "execution", None)
-        canonical_status = getattr(canonical_execution, "status", None)
-        if isinstance(canonical_status, ExecutionStatus):
-            canonical_status = canonical_status.value
-        if canonical_status is not None and canonical_status not in {
-            ExecutionStatus.CANCELLING.value,
-            ExecutionStatus.CANCELLED.value,
-        }:
+        finally:
+            with sess.lock:
+                sess.cancel_in_flight = False
+        if not isinstance(submitted, ObservedCancelSubmission) or not submitted.accepted:
             return None
         # The service call can race prompt teardown and a successor prompt.
         # Revalidate the identity before touching local event/question state.
         with sess.lock:
             if (
                 sess.execution_id != execution_id
+                or sess.cancel_command_id != command_id
             ):
                 return None
             sess.cancel_event.set()
@@ -346,6 +367,7 @@ class ACPServer:
             sess.prompt_pending = True
             sess.cancel_requested = False
             sess.cancel_reason = ""
+            sess.cancel_command_id = ""
             sess.cancel_event.clear()
         try:
             admission = adapter.admit(
@@ -361,26 +383,24 @@ class ACPServer:
         execution_id = admission.execution_id
         with sess.lock:
             cancelled_before_activation = sess.cancel_requested
-            cancel_reason = sess.cancel_reason or "prompt_cancel"
-            if not cancelled_before_activation:
-                sess.prompt_pending = False
-                sess.execution_id = execution_id
+            sess.prompt_pending = False
+            sess.execution_id = execution_id
+            sess.execution_status_version = admission.status_version
         if cancelled_before_activation:
-            adapter.fail_admission(
-                admission, reason_code=cancel_reason,
-                target=ExecutionStatus.CANCELLED,
-            )
-            with sess.lock:
-                sess.prompt_pending = False
-                sess.cancel_requested = False
-                sess.cancel_reason = ""
-            return {"stopReason": "cancelled"}
+            self._session_cancel({"sessionId": sess.id})
+            if sess.cancel_event.is_set():
+                with sess.lock:
+                    if sess.execution_id == execution_id:
+                        sess.execution_id = None
+                        sess.execution_status_version = None
+                return {"stopReason": "cancelled"}
         try:
             _active, result = asyncio.run(adapter.activate(admission))
         finally:
             with sess.lock:
                 if sess.execution_id == execution_id:
                     sess.execution_id = None
+                    sess.execution_status_version = None
 
         if sess.cancel_event.is_set():
             return {"stopReason": "cancelled"}

@@ -7,7 +7,7 @@ import pytest
 
 from openprogram.execution.attempts import AttemptConflict, AttemptStore
 from openprogram.execution.checkpoints import CheckpointFragment
-from openprogram.execution.control import RuntimeControlService
+from openprogram.execution.control import RuntimeControlService, submit_observed_cancel
 from openprogram.execution.driver import (
     DriverAck,
     DriverBinding,
@@ -176,6 +176,80 @@ def test_pause_without_local_owner_remains_durable_and_recoverable(tmp_path) -> 
     assert result.command.status is CommandStatus.APPLYING
     assert not result.delivered
     assert result.issue_code == "owner_not_local"
+
+
+def test_protocol_cancel_retries_one_stale_observation_with_same_intent_id(
+    tmp_path,
+) -> None:
+    executions, attempts, observed, attempt = _execution(tmp_path, active=True)
+    registry = DriverRegistry()
+    driver = RecordingDriver(executions)
+    _bind(registry, observed, attempt, driver)
+    service = RuntimeControlService(executions, attempts, registry)
+
+    # The protocol observed the queued record before owner activation.
+    stale_version = observed.status_version - 2
+    result = asyncio.run(submit_observed_cancel(
+        service,
+        command_id="mcp-cancel-intent",
+        execution_id=observed.execution_id,
+        expected_version=stale_version,
+        actor={"surface": "mcp"},
+        reason_code="request_cancelled",
+    ))
+
+    assert result.accepted
+    assert result.retried_stale_observation
+    assert result.command is not None
+    assert result.command.command_id == "mcp-cancel-intent"
+    assert result.command.expected_version == observed.status_version
+    assert result.execution is not None
+    assert result.execution.status is ExecutionStatus.CANCELLING
+    assert driver.observed == [
+        ("cancel", ExecutionStatus.CANCELLING, CommandStatus.APPLYING)
+    ]
+
+
+def test_protocol_cancel_replay_and_late_terminal_cancel_do_not_create_local_intents(
+    tmp_path,
+) -> None:
+    executions, attempts, execution, _ = _execution(tmp_path, active=False)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+
+    first = asyncio.run(submit_observed_cancel(
+        service,
+        command_id="acp-cancel-intent",
+        execution_id=execution.execution_id,
+        expected_version=execution.status_version,
+        actor={"surface": "acp"},
+        reason_code="prompt_cancel",
+    ))
+    replay = asyncio.run(submit_observed_cancel(
+        service,
+        command_id="acp-cancel-intent",
+        execution_id=execution.execution_id,
+        expected_version=execution.status_version,
+        actor={"surface": "acp"},
+        reason_code="prompt_cancel",
+    ))
+    late = asyncio.run(submit_observed_cancel(
+        service,
+        command_id="acp-late-cancel-intent",
+        execution_id=execution.execution_id,
+        expected_version=first.execution.status_version,
+        actor={"surface": "acp"},
+        reason_code="prompt_cancel",
+    ))
+
+    assert first.accepted and replay.accepted
+    assert replay.command == first.command
+    assert late.accepted is False
+    assert late.command is None
+    assert late.execution is not None
+    assert late.execution.status is ExecutionStatus.CANCELLED
+    assert [item.command_id for item in executions.list_commands(execution.execution_id)] == [
+        "acp-cancel-intent"
+    ]
 
 
 def test_queued_pause_and_cancel_finish_without_a_live_driver(tmp_path) -> None:

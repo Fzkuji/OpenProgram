@@ -1795,34 +1795,6 @@ class CanonicalAgentAdapter:
         )
 
 
-async def cancel_canonical_execution(
-    execution_id: str,
-    *,
-    reason_code: str = "cancel.user",
-    command_id: str | None = None,
-) -> Any | None:
-    """Cancel one canonical execution through its durable command ledger."""
-    from types import SimpleNamespace
-
-    from openprogram.agent.authority import local_owner_authority
-    from openprogram.execution import default_control_service, default_store
-
-    store = default_store()
-    service = default_control_service()
-    execution = store.get_execution(execution_id)
-    if execution is None:
-        return None
-    if execution.status in TERMINAL_EXECUTION_STATUSES or execution.status is ExecutionStatus.CANCELLING:
-        return SimpleNamespace(execution=execution)
-    return await service.request_cancel(
-        command_id=command_id or f"canonical-cancel:{execution_id}",
-        execution_id=execution_id,
-        expected_version=execution.status_version,
-        actor=local_owner_authority(),
-        reason_code=reason_code,
-    )
-
-
 __all__ = [
     "AgentActivationService",
     "AgentDriverError",
@@ -1835,6 +1807,5 @@ __all__ = [
     "AGENT_TURN_INPUT_VERSION",
     "MAX_AGENT_TURN_INPUT_BYTES",
     "normalize_agent_turn_payload",
-    "cancel_canonical_execution",
     "AgentProductionDriver",
 ]

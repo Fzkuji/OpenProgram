@@ -26,7 +26,7 @@ from openprogram.agent.authority import (
 )
 from openprogram.agent.session_db import SessionDB, default_db
 from openprogram.agent.types import AgentTool, AgentToolResult
-from openprogram.execution.model import ExecutionStatus
+from openprogram.execution.control import ObservedCancelSubmission, submit_observed_cancel
 from openprogram.mcp.server.tools import json_result, prompt_result, to_mcp_content
 from openprogram.providers.types import TextContent
 
@@ -51,9 +51,11 @@ class ActiveMCPRequest:
     thread_cancel: threading.Event
     tool_cancel: asyncio.Event
     execution_id: str = ""
+    execution_status_version: int | None = None
     question_registry: Any | None = None
     cancel_requested: bool = False
     cancel_reason: str = ""
+    cancel_command_id: str = ""
     activation_started: bool = False
     worker_done: threading.Event = field(default_factory=threading.Event)
     outer_abandoned: threading.Event = field(default_factory=threading.Event)
@@ -133,10 +135,25 @@ def _default_release_cancel_cleanup(session_id, event) -> None:
     del session_id, event
 
 
-async def _default_cancel_execution(execution_id: str) -> Any:
-    from openprogram.agent.production_driver import cancel_canonical_execution
+async def _default_cancel_execution(
+    execution_id: str,
+    *,
+    command_id: str,
+    expected_version: int,
+    actor: Mapping[str, Any],
+    reason_code: str,
+) -> ObservedCancelSubmission:
+    """Submit an MCP intent directly to the canonical control service."""
+    from openprogram.execution import default_control_service
 
-    return await cancel_canonical_execution(execution_id)
+    return await submit_observed_cancel(
+        default_control_service(),
+        command_id=command_id,
+        execution_id=execution_id,
+        expected_version=expected_version,
+        actor=actor,
+        reason_code=reason_code,
+    )
 
 
 def _default_question_registry():
@@ -620,9 +637,17 @@ class MCPService:
                 # worker admission publishes execution_id. This makes the
                 # empty-identity window atomic with the worker's barrier.
                 record.cancel_requested = True
-                record.cancel_reason = reason
-                record.thread_cancel.set()
-                record.tool_cancel.set()
+                if not record.cancel_reason:
+                    record.cancel_reason = reason
+                if not record.cancel_command_id:
+                    record.cancel_command_id = f"mcp-cancel:{uuid.uuid4().hex}"
+            elif not record.cancel_command_id:
+                record.cancel_requested = True
+                record.cancel_reason = record.cancel_reason or reason
+                record.cancel_command_id = f"mcp-cancel:{uuid.uuid4().hex}"
+            expected_version = record.execution_status_version
+            command_id = record.cancel_command_id
+            reason_code = record.cancel_reason or reason
         try:
             if not execution_id:
                 # Keep the pending intent, but always pass through the
@@ -631,24 +656,23 @@ class MCPService:
                 self._audit_cancellation(record, reason)
                 return True
             try:
-                result = self._cancel_execution(execution_id)
+                if expected_version is None or not command_id:
+                    return False
+                result = self._cancel_execution(
+                    execution_id,
+                    command_id=command_id,
+                    expected_version=expected_version,
+                    actor=dict(self.context.authority),
+                    reason_code=reason_code,
+                )
                 if inspect.isawaitable(result):
                     result = await result
             except Exception:
                 return False
 
-            if result is None:
+            if not isinstance(result, ObservedCancelSubmission):
                 return False
-            execution = getattr(result, "execution", None)
-            status = getattr(execution, "status", None)
-            if isinstance(status, ExecutionStatus):
-                status = status.value
-            if status is not None and status not in {
-                ExecutionStatus.CANCELLING.value,
-                ExecutionStatus.CANCELLED.value,
-            }:
-                return False
-            if status is None:
+            if not result.accepted:
                 return False
 
             with self._active_lock:
@@ -1019,6 +1043,7 @@ class MCPService:
             )
             with self._active_lock:
                 record.execution_id = admission.execution_id
+                record.execution_status_version = admission.status_version
                 cancel_requested = record.cancel_requested
                 cancel_reason = record.cancel_reason or "request_cancelled"
                 if not cancel_requested:
@@ -1027,12 +1052,14 @@ class MCPService:
                     # point is a normal exact execution cancellation.
                     record.activation_started = True
             if cancel_requested:
-                adapter.fail_admission(
-                    admission,
-                    reason_code=cancel_reason,
-                    target=ExecutionStatus.CANCELLED,
-                )
-                return None
+                if asyncio.run(self._cancel_record(record, reason=cancel_reason)):
+                    return None
+                # The durable cancellation was rejected or unavailable.  Do
+                # not fabricate a local cancellation; continue the admitted
+                # turn until a later protocol intent succeeds.
+                with self._active_lock:
+                    if self._active_by_request.get(record.request_id) is record:
+                        record.activation_started = True
             self._register_cancel_event(
                 record.session_id,
                 record.thread_cancel,

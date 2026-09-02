@@ -29,6 +29,8 @@ from openprogram.acp.server import (
 )
 from openprogram.agent import dispatcher as D
 from openprogram.agent.session_db import SessionDB
+from openprogram.execution.control import ObservedCancelSubmission
+from openprogram.execution.model import CommandStatus
 from openprogram.providers.types import (
     AssistantMessage,
     AssistantMessageEvent,
@@ -369,6 +371,14 @@ def test_cancel_during_admission_is_not_lost(tmp_db, client, tmp_path, monkeypat
     monkeypatch.setattr(
         "openprogram.agent.production_driver.CanonicalAgentAdapter", Adapter,
     )
+    async def _submitted(*_args, **_kwargs):
+        return ObservedCancelSubmission(
+            command=SimpleNamespace(status=CommandStatus.APPLIED),
+            execution=SimpleNamespace(status="cancelled"),
+            accepted=True,
+        )
+
+    monkeypatch.setattr("openprogram.acp.server.submit_observed_cancel", _submitted)
     result: dict = {}
 
     def prompt() -> None:
@@ -386,7 +396,7 @@ def test_cancel_during_admission_is_not_lost(tmp_db, client, tmp_path, monkeypat
     assert not thread.is_alive()
     assert result["value"]["stopReason"] == "cancelled"
     assert not activated.is_set()
-    assert failed == [("acp-barrier", "prompt_cancel")]
+    assert failed == []
     assert c.server._sessions[sid].execution_id is None
 
 
@@ -444,8 +454,6 @@ def test_cancel_does_not_override_completed_prompt(
     tmp_db, client, tmp_path, monkeypatch,
 ) -> None:
     """A terminal cancellation rejection leaves the prompt's result intact."""
-    import openprogram.agent.production_driver as production_driver
-
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
     sid = c.call("session/new", {
@@ -453,13 +461,15 @@ def test_cancel_does_not_override_completed_prompt(
     })["sessionId"]
     sess = c.server._sessions[sid]
     sess.open_questions["q-completed"] = ""
-    async def _canonical_cancel(execution_id):
-        return SimpleNamespace(
+    async def _submitted(*_args, **_kwargs):
+        return ObservedCancelSubmission(
+            command=SimpleNamespace(status=CommandStatus.REJECTED),
             execution=SimpleNamespace(status="completed"),
+            accepted=False,
         )
 
     monkeypatch.setattr(
-        production_driver, "cancel_canonical_execution", _canonical_cancel,
+        "openprogram.acp.server.submit_observed_cancel", _submitted,
     )
     monkeypatch.setattr(
         "openprogram.agent.questions.resolve_question_and_broadcast",

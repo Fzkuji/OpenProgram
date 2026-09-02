@@ -45,6 +45,7 @@ from .store import (
     _json,
     default_store,
 )
+from .state_machine import InvalidCommand
 from .state_blobs import ExecutionStateBlobStore
 from .safe_points import AgentSafePointConflict
 
@@ -113,6 +114,103 @@ class ControlDispatch:
     delivered: bool
     ack: DriverAck | None = None
     issue_code: str | None = None
+
+
+@dataclass(frozen=True)
+class ObservedCancelSubmission:
+    """Outcome of one protocol cancel intent submitted from an observation.
+
+    Protocol transports keep their original command identity and observed
+    version.  A stale observation may obtain one newer snapshot before its
+    first durable write; it must not manufacture a second intent locally.
+    """
+
+    command: ControlCommand | None
+    execution: ExecutionRecord | None
+    accepted: bool
+    retried_stale_observation: bool = False
+
+
+async def submit_observed_cancel(
+    service: "RuntimeControlService",
+    *,
+    command_id: str,
+    execution_id: str,
+    expected_version: int,
+    actor: Mapping[str, Any],
+    reason_code: str,
+) -> ObservedCancelSubmission:
+    """Submit one exact cancel using a transport's saved observation.
+
+    The initial request never reads a fresher version.  Only an unaccepted
+    ``stale_version`` conflict permits one retry, using the newly observed
+    snapshot but retaining the same command id, actor, and reason.
+    """
+
+    observed_version = expected_version
+    retried = False
+    while True:
+        try:
+            dispatch = await service.request_cancel(
+                command_id=command_id,
+                execution_id=execution_id,
+                expected_version=observed_version,
+                actor=actor,
+                reason_code=reason_code,
+            )
+        except ExecutionConflict as exc:
+            latest = service.executions.get_execution(execution_id)
+            if exc.code != "stale_version" or retried or latest is None:
+                return ObservedCancelSubmission(
+                    command=service.executions.get_command(command_id),
+                    execution=latest,
+                    accepted=False,
+                    retried_stale_observation=retried,
+                )
+            if latest.status in TERMINAL_EXECUTION_STATUSES:
+                return ObservedCancelSubmission(
+                    command=service.executions.get_command(command_id),
+                    execution=latest,
+                    accepted=False,
+                    retried_stale_observation=True,
+                )
+            observed_version = latest.status_version
+            retried = True
+            continue
+        except ProjectionRecoveryRequired:
+            latest = service.executions.get_execution(execution_id)
+            return ObservedCancelSubmission(
+                command=service.executions.get_command(command_id),
+                execution=latest,
+                accepted=False,
+                retried_stale_observation=retried,
+            )
+        except InvalidCommand:
+            # A late terminal cancel has no new command row. Return the
+            # current canonical snapshot and leave the protocol's local task
+            # untouched rather than translating terminal rejection into a
+            # second cancellation.
+            return ObservedCancelSubmission(
+                command=service.executions.get_command(command_id),
+                execution=service.executions.get_execution(execution_id),
+                accepted=False,
+                retried_stale_observation=retried,
+            )
+
+        latest = service.executions.get_execution(execution_id) or dispatch.execution
+        command = service.executions.get_command(command_id) or dispatch.command
+        accepted = command.status in {
+            CommandStatus.APPLYING,
+            CommandStatus.APPLIED,
+        }
+        # REJECTED is intentionally not treated as a local cancellation even
+        # if another owner has already changed the execution snapshot.
+        return ObservedCancelSubmission(
+            command=command,
+            execution=latest,
+            accepted=accepted,
+            retried_stale_observation=retried,
+        )
 
 
 @dataclass(frozen=True)

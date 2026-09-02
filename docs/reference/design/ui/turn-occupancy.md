@@ -8,7 +8,8 @@ Related: [`interaction-feedback.md`](interaction-feedback.md) (0ms UI),
 [`send-queue-reliability.html`](send-queue-reliability.html) (queue
 mechanics). Code: `use-chat-submit.ts` (`stopSession`),
 `server.py` (`_finish_owned_run` / `_try_reserve_run`),
-`production_driver.py` (`cancel_canonical_execution`, `CANCEL_GRACE_S`),
+`execution/control.py` (`RuntimeControlService.request_cancel`),
+`run_control.py` (`CANCEL_GRACE_S`),
 `providers/utils/cancelable_stream.py`.
 
 ## Invariants (from Codex CLI and Claude Code)
