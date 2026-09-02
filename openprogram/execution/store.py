@@ -257,6 +257,7 @@ class ExecutionStore:
         parent_execution_id: str | None = None,
         source_checkpoint_id: str | None = None,
         capabilities: CapabilitySet = CapabilitySet(),
+        agent_turn_payload: Mapping[str, Any] | None = None,
     ) -> ExecutionRecord:
         """Admit one execution and its immutable input in one transaction."""
         if not input_ref or not input_hash or not entrypoint or not config_snapshot_ref:
@@ -266,6 +267,11 @@ class ExecutionStore:
         if not isinstance(trusted_actor, Mapping):
             raise ExecutionConflict("invalid_actor", "trusted_actor must be an object")
         actor_snapshot = _snapshot_json(trusted_actor)
+        if agent_turn_payload is not None and not isinstance(agent_turn_payload, Mapping):
+            raise ExecutionConflict("invalid_agent_input", "Agent turn input must be an object")
+        agent_payload_json = (
+            _json(dict(agent_turn_payload)) if agent_turn_payload is not None else None
+        )
         with self._transaction() as connection:
             record = self._create_execution_in_transaction(
                 connection,
@@ -294,6 +300,18 @@ class ExecutionStore:
                         created_at=record.created_at,
                     ),
                 )
+                if agent_payload_json is not None:
+                    connection.execute(
+                        "INSERT INTO execution_agent_turn_inputs "
+                        "(execution_id, payload_json, content_hash, created_at) "
+                        "VALUES (?, ?, ?, ?)",
+                        (
+                            record.execution_id,
+                            agent_payload_json,
+                            hashlib.sha256(agent_payload_json.encode("utf-8")).hexdigest(),
+                            record.created_at,
+                        ),
+                    )
             except sqlite3.IntegrityError as exc:
                 raise ExecutionConflict(
                     "execution_input_exists", f"input already exists: {record.execution_id}"
@@ -314,6 +332,19 @@ class ExecutionStore:
                 "SELECT * FROM execution_inputs WHERE execution_id = ?", (execution_id,)
             ).fetchone()
             return self._execution_input(row) if row is not None else None
+
+    def get_agent_turn_input(self, execution_id: str) -> Mapping[str, Any] | None:
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT payload_json FROM execution_agent_turn_inputs WHERE execution_id = ?",
+                (execution_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        payload = json.loads(str(row["payload_json"]))
+        if not isinstance(payload, dict):
+            raise ExecutionConflict("invalid_agent_input", "stored Agent turn input must be an object")
+        return _snapshot_json(payload)
 
     def _copy_execution_input_in_transaction(
         self,

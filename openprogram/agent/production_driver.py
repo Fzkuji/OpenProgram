@@ -119,19 +119,32 @@ class AgentProductionDriver:
         self,
         executions: ExecutionStore | None,
         *,
-        input_resolver: InputResolver,
+        input_resolver: InputResolver | None = None,
         turn_runner: TurnRunner | None = None,
         control_service: RuntimeControlService | None = None,
         question_registry: Any | None = None,
     ) -> None:
         self.executions = executions
-        self.activation = AgentActivationService(input_resolver)
+        self.activation = AgentActivationService(
+            input_resolver or self._resolve_durable_input
+        )
         self.turn_runner = turn_runner or self._default_turn_runner
         self.control_service = control_service
         self.question_registry = question_registry
         self._handles: dict[tuple[str, str, int], AgentDriverHandle] = {}
         self._handles_lock = threading.RLock()
         self._finished: set[tuple[str, str, int]] = set()
+
+    def _resolve_durable_input(self, record: Any) -> Mapping[str, Any]:
+        if self.executions is None:
+            raise AgentDriverError("store_required", "Agent activation requires an execution store")
+        payload = self.executions.get_agent_turn_input(record.execution_id)
+        if payload is None:
+            raise AgentDriverError(
+                "input_not_found",
+                f"durable Agent turn input is missing for {record.execution_id}",
+            )
+        return payload
 
     def capabilities(self) -> CapabilitySet:
         return CapabilitySet()

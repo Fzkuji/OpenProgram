@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 import threading
 
 import pytest
@@ -24,8 +25,43 @@ def _admitted(tmp_path, *, execution_id="exec-agent-1"):
         entrypoint="openprogram.agent.dispatcher:process_user_turn",
         trusted_actor={"subject": "user-1", "session_id": "session-agent-1"},
         config_snapshot_ref="config:agent-1",
+        agent_turn_payload={
+            "user_text": "durable agent turn",
+            "agent_id": "default",
+            "source": "web",
+            "permission_mode": "ask",
+        },
     )
     return store, execution
+
+
+def test_admission_persists_a_replayable_agent_turn_payload(tmp_path):
+    store, execution = _admitted(tmp_path)
+
+    assert store.get_agent_turn_input(execution.execution_id) == {
+        "user_text": "durable agent turn",
+        "agent_id": "default",
+        "source": "web",
+        "permission_mode": "ask",
+    }
+
+
+def test_v6_migration_adds_durable_agent_turn_inputs(tmp_path):
+    store, execution = _admitted(tmp_path)
+    with sqlite3.connect(store.path) as connection:
+        connection.execute("DROP TABLE execution_agent_turn_inputs")
+        connection.execute("PRAGMA user_version = 6")
+        connection.commit()
+
+    migrated = ExecutionStore(store.path)
+
+    assert migrated.get_agent_turn_input(execution.execution_id) is None
+    with sqlite3.connect(migrated.path) as connection:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+    assert "execution_agent_turn_inputs" in tables
 
 
 def test_agent_driver_has_no_pause_or_safe_point_capabilities():
@@ -96,6 +132,40 @@ def test_activation_builds_existing_turn_from_immutable_input(tmp_path):
     completed = store.get_execution(execution.execution_id)
     assert completed is not None
     assert completed.status is ExecutionStatus.COMPLETED
+
+
+def test_activation_uses_the_durable_agent_turn_payload_by_default(tmp_path):
+    from openprogram.agent.production_driver import AgentProductionDriver
+
+    store, execution = _admitted(tmp_path)
+    seen = {}
+
+    def run_turn(*, request, cancel_event):
+        seen["request"] = request
+        assert cancel_event is not None
+        return type("Result", (), {"failed": False, "error": None})()
+
+    driver = AgentProductionDriver(executions=store, turn_runner=run_turn)
+    attempts = AttemptStore(store)
+    attempt, leased = attempts.lease(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        owner_id="agent-owner",
+        ttl_seconds=30,
+    )
+    active, _running = attempts.activate(
+        attempt.attempt_id,
+        generation=attempt.generation,
+        expected_execution_version=leased.status_version,
+    )
+
+    async def run():
+        binding = await driver.activate(active, activation=None)
+        await binding.handle.done
+
+    asyncio.run(run())
+    assert seen["request"].user_text == "durable agent turn"
+    assert seen["request"].source == "web"
 
 
 def test_cancel_targets_exact_handle_and_releases_its_question_wait(tmp_path):

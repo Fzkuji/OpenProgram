@@ -9,12 +9,13 @@ import sqlite3
 from .model import CapabilitySet
 
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 _LEGACY_SCHEMA_VERSION = 1
 _PREVIOUS_SCHEMA_VERSION = 2
 _FORK_RETRY_SCHEMA_VERSION = 3
 _EXECUTION_CONTROL_SCHEMA_VERSION = 4
 _PROJECTION_OUTBOX_SCHEMA_VERSION = 5
+_PROJECTION_READ_SCHEMA_VERSION = 6
 
 # These are the only projections emitted by the canonical execution store.
 # Adding a projection is a schema/design change, not a caller-defined label.
@@ -45,6 +46,8 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
         _migrate_v4(connection)
     elif current == _PROJECTION_OUTBOX_SCHEMA_VERSION:
         _migrate_v5(connection)
+    elif current == _PROJECTION_READ_SCHEMA_VERSION:
+        _migrate_v6(connection)
     elif current == SCHEMA_VERSION:
         _create_current_schema(connection)
     else:
@@ -200,6 +203,7 @@ def _create_current_schema(connection: sqlite3.Connection) -> None:
     )
     _create_projection_schema(connection)
     _create_projection_read_schema(connection)
+    _create_agent_input_schema(connection)
 
 
 def _create_projection_schema(connection: sqlite3.Connection) -> None:
@@ -298,6 +302,38 @@ def _create_projection_read_schema(connection: sqlite3.Connection) -> None:
     )
 
 
+def _create_agent_input_schema(connection: sqlite3.Connection) -> None:
+    """Persist the complete immutable Agent turn payload for activation."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS execution_agent_turn_inputs (
+            execution_id TEXT PRIMARY KEY,
+            payload_json TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            FOREIGN KEY(execution_id) REFERENCES execution_inputs(execution_id)
+        )
+        """
+    )
+
+
+def _migrate_v6(connection: sqlite3.Connection) -> None:
+    """Add durable Agent activation payloads without rewriting executions."""
+    if connection.in_transaction:
+        raise UnsupportedSchema(
+            _PROJECTION_READ_SCHEMA_VERSION,
+            "cannot migrate agent inputs inside an active transaction",
+        )
+    try:
+        connection.execute("BEGIN")
+        _create_agent_input_schema(connection)
+        connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+
+
 def _migrate_v5(connection: sqlite3.Connection) -> None:
     """Install replayable read models and replay every fixed projection once."""
     if connection.in_transaction:
@@ -308,6 +344,7 @@ def _migrate_v5(connection: sqlite3.Connection) -> None:
     try:
         connection.execute("BEGIN")
         _create_projection_read_schema(connection)
+        _create_agent_input_schema(connection)
         # v5 had no durable consumers.  Requeue its fixed delivery set so the
         # new idempotent handlers materialize every historical event.
         connection.execute(
