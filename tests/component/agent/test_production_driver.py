@@ -159,6 +159,7 @@ def test_cancel_targets_exact_handle_and_releases_its_question_wait(tmp_path):
         )
         ack = await driver.request_cancel(handle, "cancel-agent-1")
         await handle.done
+        await asyncio.sleep(0)
         return ack
 
     ack = asyncio.run(run())
@@ -166,6 +167,7 @@ def test_cancel_targets_exact_handle_and_releases_its_question_wait(tmp_path):
     assert ack.attempt_id == active.attempt_id
     assert released.is_set()
     assert registry.consume("q-agent-1") == ("cancelled", None)
+    assert not driver._finished
     cancelled = store.get_execution(execution.execution_id)
     assert cancelled is not None
     assert cancelled.status is ExecutionStatus.CANCELLED
@@ -210,7 +212,7 @@ def test_cancel_rejects_a_handle_from_another_attempt(tmp_path):
     assert stale.value.code == "stale_handle"
 
 
-def test_owner_loss_without_checkpoint_recovers_as_interrupted(tmp_path):
+def test_runner_exception_finishes_as_failed(tmp_path):
     from openprogram.agent.production_driver import AgentProductionDriver
 
     store, execution = _admitted(tmp_path)
@@ -250,8 +252,8 @@ def test_owner_loss_without_checkpoint_recovers_as_interrupted(tmp_path):
     asyncio.run(run())
     recovered = store.get_execution(execution.execution_id)
     assert recovered is not None
-    assert recovered.status is ExecutionStatus.INTERRUPTED
-    assert recovered.reason_code == "owner_lost"
+    assert recovered.status is ExecutionStatus.FAILED
+    assert recovered.reason_code == "agent_runner_error"
 
 
 def test_late_owner_loss_cannot_recover_a_new_attempt(tmp_path):

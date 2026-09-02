@@ -257,11 +257,28 @@ class AgentProductionDriver:
                 request,
                 cancel_event,
             )
-        except BaseException:
+        except asyncio.CancelledError:
             if cancel_event.is_set():
                 self._finish_attempt(attempt, None, cancel_event)
             else:
                 self._recover_owner_loss(attempt)
+            return None
+        except Exception:
+            if cancel_event.is_set():
+                self._finish_attempt(attempt, None, cancel_event)
+            else:
+                self._finish_attempt(
+                    attempt,
+                    type("RunnerFailure", (), {"failed": True})(),
+                    cancel_event,
+                    failure_reason="agent_runner_error",
+                )
+            return None
+        except BaseException:
+            # Process-level termination and other non-Exception failures do
+            # not provide a trustworthy runner outcome. Let canonical owner
+            # recovery decide the terminal state under the exact owner fence.
+            self._recover_owner_loss(attempt)
             return None
         self._finish_attempt(attempt, result, cancel_event)
         return result
@@ -314,6 +331,8 @@ class AgentProductionDriver:
         attempt: AttemptRecord,
         result: Any,
         cancel_event: threading.Event,
+        *,
+        failure_reason: str | None = None,
     ) -> None:
         key = (attempt.execution_id, attempt.attempt_id, attempt.generation)
         with self._handles_lock:
@@ -348,7 +367,13 @@ class AgentProductionDriver:
                 expected_execution_version=execution.status_version,
                 target=target,
                 outcome=outcome,
-                reason_code=("cancelled" if cancelled else None),
+                reason_code=(
+                    "cancelled"
+                    if cancelled
+                    else failure_reason
+                    if failed
+                    else None
+                ),
             )
         except Exception:
             # The canonical service owns the retry/recovery decision. A stale
@@ -403,6 +428,7 @@ class AgentProductionDriver:
         with self._handles_lock:
             if self._handles.get(key) is handle:
                 self._handles.pop(key, None)
+            self._finished.discard(key)
 
     @staticmethod
     def _key(handle: AgentDriverHandle) -> tuple[str, str, int]:
