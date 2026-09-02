@@ -1151,6 +1151,9 @@ def run_agentic_in_subprocess(
     on_event: Optional[Callable[[dict], None]] = None,
     parent_call_id: Optional[str] = None,
     execution_id: Optional[str] = None,
+    attempt_id: Optional[str] = None,
+    generation: Optional[int] = None,
+    cancel_event: Optional[threading.Event] = None,
     authority: Optional[dict] = None,
     permission_rules_snapshot: Optional[dict] = None,
     surface_context_snapshot: Optional[dict] = None,
@@ -1199,6 +1202,10 @@ def run_agentic_in_subprocess(
         else response_format
     )
 
+    if (attempt_id is None) != (generation is None):
+        raise ValueError("attempt_id and generation must be supplied together")
+    if attempt_id is not None and not execution_id:
+        raise ValueError("exact execution_id is required with attempt binding")
     eid = execution_id or parent_call_id or session_id
     p = ctx.Process(
         target=_child_entry,
@@ -1326,18 +1333,25 @@ def run_agentic_in_subprocess(
     timed_out = False
     page_cleanup_failures: list[dict] = []
     try:
-        if timeout_seconds is None:
-            p.join()
-        else:
-            timeout = max(0.1, float(timeout_seconds))
-            p.join(timeout)
-            if p.is_alive():
+        timeout = None if timeout_seconds is None else max(0.1, float(timeout_seconds))
+        started = time.monotonic()
+        cancel_sent = False
+        while p.is_alive():
+            p.join(0.05)
+            if cancel_event is not None and cancel_event.is_set() and not cancel_sent:
+                try:
+                    stop_queue.put("cancel", block=False)
+                except Exception:
+                    pass
+                cancel_sent = True
+            if timeout is not None and time.monotonic() - started >= timeout:
                 timed_out = True
                 from openprogram._compat import kill_process_tree
 
                 if not kill_process_tree(p.pid):
                     p.kill()
                 p.join(timeout=5)
+                break
     finally:
         # No Page command may begin after this point. A command already waiting
         # for the renderer holds ``webtab_cleanup_lock``; the bounded drain wait

@@ -55,6 +55,27 @@ class ProjectionConflict(ExecutionStoreError):
     pass
 
 
+_AGENT_TURN_INPUT_VERSION = 1
+_AGENT_TURN_INPUT_MAX_BYTES = 256 * 1024
+_AGENT_TURN_INPUT_KINDS = frozenset({"chat", "forced_tool"})
+
+
+def _validate_agent_turn_payload(payload: Mapping[str, Any]) -> None:
+    """Validate the durable Agent envelope without importing Agent runtime."""
+    if not isinstance(payload, Mapping):
+        raise ExecutionConflict("invalid_agent_input", "Agent turn input must be an object")
+    if "kind" not in payload and "version" not in payload:
+        return  # pre-cutover internal execution records
+    if payload.get("version") != _AGENT_TURN_INPUT_VERSION:
+        raise ExecutionConflict("invalid_agent_input_version", "unsupported Agent turn input version")
+    kind = payload.get("kind")
+    if kind not in _AGENT_TURN_INPUT_KINDS:
+        raise ExecutionConflict("invalid_agent_input_kind", "Agent turn input kind must be chat or forced_tool")
+    encoded = _json(payload)
+    if len(encoded.encode("utf-8")) > _AGENT_TURN_INPUT_MAX_BYTES:
+        raise ExecutionConflict("agent_input_too_large", "Agent turn input exceeds the size limit")
+
+
 def _object(raw: str | None) -> dict[str, Any]:
     if not raw:
         return {}
@@ -269,6 +290,8 @@ class ExecutionStore:
         actor_snapshot = _snapshot_json(trusted_actor)
         if agent_turn_payload is not None and not isinstance(agent_turn_payload, Mapping):
             raise ExecutionConflict("invalid_agent_input", "Agent turn input must be an object")
+        if agent_turn_payload is not None:
+            _validate_agent_turn_payload(agent_turn_payload)
         agent_payload_json = (
             _json(dict(agent_turn_payload)) if agent_turn_payload is not None else None
         )
@@ -336,14 +359,18 @@ class ExecutionStore:
     def get_agent_turn_input(self, execution_id: str) -> Mapping[str, Any] | None:
         with closing(self._connect()) as connection:
             row = connection.execute(
-                "SELECT payload_json FROM execution_agent_turn_inputs WHERE execution_id = ?",
+                "SELECT payload_json, content_hash FROM execution_agent_turn_inputs WHERE execution_id = ?",
                 (execution_id,),
             ).fetchone()
         if row is None:
             return None
-        payload = json.loads(str(row["payload_json"]))
+        payload_raw = str(row["payload_json"])
+        if hashlib.sha256(payload_raw.encode("utf-8")).hexdigest() != str(row["content_hash"]):
+            raise ExecutionConflict("agent_input_hash_mismatch", "stored Agent turn input failed integrity validation")
+        payload = json.loads(payload_raw)
         if not isinstance(payload, dict):
             raise ExecutionConflict("invalid_agent_input", "stored Agent turn input must be an object")
+        _validate_agent_turn_payload(payload)
         return _snapshot_json(payload)
 
     def _copy_execution_input_in_transaction(

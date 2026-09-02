@@ -71,6 +71,71 @@ class CanonicalAgentActivation:
 InputResolver = Callable[[Any], Mapping[str, Any]]
 TurnRunner = Callable[..., Any]
 
+AGENT_TURN_INPUT_VERSION = 1
+MAX_AGENT_TURN_INPUT_BYTES = 256 * 1024
+_PAYLOAD_KINDS = frozenset({"chat", "forced_tool"})
+_PAYLOAD_ENVELOPE_KEYS = frozenset({"version", "kind", "request", "tool_name", "tool_input", "anchor_msg_id", "work_dir", "agent_id", "source", "provider", "model", "response_format", "surface_context_snapshot"})
+
+
+def _json_payload(value: Any) -> str:
+    try:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError) as exc:
+        raise AgentDriverError("invalid_input", "Agent admission input must be JSON serializable") from exc
+
+
+def normalize_agent_turn_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate the bounded, versioned durable Agent input envelope."""
+    if not isinstance(payload, Mapping):
+        raise AgentDriverError("invalid_input", "Agent admission input must be an object")
+    value = copy.deepcopy(dict(payload))
+    if value.get("version") != AGENT_TURN_INPUT_VERSION:
+        raise AgentDriverError("invalid_input_version", "unsupported Agent admission input version")
+    kind = value.get("kind")
+    if kind not in _PAYLOAD_KINDS:
+        raise AgentDriverError("invalid_input_kind", "Agent admission input kind must be chat or forced_tool")
+    if set(value) - _PAYLOAD_ENVELOPE_KEYS:
+        raise AgentDriverError("invalid_input", "Agent admission input has unknown fields")
+    if kind == "chat":
+        request = value.get("request")
+        if not isinstance(request, Mapping):
+            raise AgentDriverError("invalid_input", "chat input requires a request object")
+        request = copy.deepcopy(dict(request))
+        from openprogram.agent.dispatcher.types import TurnRequest
+
+        request_fields = frozenset(field.name for field in fields(TurnRequest))
+        if set(request) - request_fields:
+            raise AgentDriverError("invalid_input", "chat input has unknown request fields")
+        value = {"version": AGENT_TURN_INPUT_VERSION, "kind": kind, "request": request}
+    else:
+        allowed = {"version", "kind", "tool_name", "tool_input", "anchor_msg_id", "work_dir", "agent_id", "source", "provider", "model", "response_format", "surface_context_snapshot"}
+        if set(value) - allowed:
+            raise AgentDriverError("invalid_input", "forced_tool input has unknown fields")
+        if not isinstance(value.get("tool_name"), str) or not value["tool_name"]:
+            raise AgentDriverError("invalid_input", "forced_tool input requires tool_name")
+        if not isinstance(value.get("tool_input", {}), Mapping):
+            raise AgentDriverError("invalid_input", "forced_tool input requires an object tool_input")
+        value["tool_input"] = copy.deepcopy(dict(value["tool_input"]))
+    encoded = _json_payload(value)
+    if len(encoded.encode("utf-8")) > MAX_AGENT_TURN_INPUT_BYTES:
+        raise AgentDriverError("input_too_large", "Agent admission input exceeds the size limit")
+    return value
+
+
+@dataclass(frozen=True)
+class ForcedToolActivation:
+    session_id: str
+    tool_name: str
+    tool_input: Mapping[str, Any]
+    anchor_msg_id: str = ""
+    work_dir: str | None = None
+    agent_id: str = "main"
+    source: str = "web"
+    provider: str | None = None
+    model: str | None = None
+    response_format: Any = None
+    surface_context_snapshot: Mapping[str, Any] | None = None
+
 
 class AgentActivationService:
     """Resolve one immutable admission input into an existing Agent turn."""
@@ -101,8 +166,22 @@ class AgentActivationService:
         # The resolver is an external durable-input boundary. Copy the full
         # payload before constructing the mutable TurnRequest so later changes
         # to a cache or transport object cannot alter the admitted turn.
-        values = copy.deepcopy(dict(payload))
         from openprogram.agent.dispatcher.types import TurnRequest
+
+        # Canonical entries carry an explicit envelope. Keep accepting the
+        # pre-cutover raw request shape for internal callers that already
+        # persisted an execution, but never infer forced-tool dispatch from a
+        # missing discriminator.
+        if "kind" in payload or "version" in payload:
+            envelope = normalize_agent_turn_payload(payload)
+            if envelope["kind"] != "chat":
+                raise AgentDriverError(
+                    "wrong_input_kind",
+                    "forced_tool input must be activated by the forced-tool runner",
+                )
+            values = envelope["request"]
+        else:
+            values = copy.deepcopy(dict(payload))
 
         request_fields = frozenset(field.name for field in fields(TurnRequest))
         unknown = set(values) - request_fields
@@ -165,6 +244,36 @@ class AgentProductionDriver:
             )
         return payload
 
+    def _resolve_activation_input(
+        self, record: Any, activation: ActivationInput | None,
+    ) -> Any:
+        payload = self.activation._input_resolver(record)
+        if not isinstance(payload, Mapping):
+            raise AgentDriverError("invalid_input", "Agent admission input must resolve to an object")
+        if "kind" not in payload and "version" not in payload:
+            return self.activation.build_request(record, activation)
+        envelope = normalize_agent_turn_payload(payload)
+        if envelope["kind"] == "chat":
+            return self.activation.build_request(record, activation)
+        if activation is not None and (activation.checkpoint is not None or activation.steer_inputs):
+            raise AgentDriverError(
+                "unsupported_activation_state",
+                "Agent driver does not support checkpoint or steering activation",
+            )
+        return ForcedToolActivation(
+            session_id=record.session_id,
+            tool_name=envelope["tool_name"],
+            tool_input=envelope["tool_input"],
+            anchor_msg_id=str(envelope.get("anchor_msg_id") or ""),
+            work_dir=envelope.get("work_dir"),
+            agent_id=str(envelope.get("agent_id") or "main"),
+            source=str(envelope.get("source") or "web"),
+            provider=envelope.get("provider"),
+            model=envelope.get("model"),
+            response_format=envelope.get("response_format"),
+            surface_context_snapshot=envelope.get("surface_context_snapshot"),
+        )
+
     def capabilities(self) -> CapabilitySet:
         return CapabilitySet()
 
@@ -199,7 +308,7 @@ class AgentProductionDriver:
                 "input_session_mismatch",
                 "immutable Agent input does not match the execution session",
             )
-        request = self.activation.build_request(record, activation)
+        request = self._resolve_activation_input(record, activation)
         cancel_event = threading.Event()
         task = asyncio.create_task(
             self._run_attempt(attempt, request, cancel_event),
@@ -343,7 +452,31 @@ class AgentProductionDriver:
         bound = current_token(request.session_id, execution_id=attempt.execution_id)
         token_token = _current_token.set(bound) if bound is not None else None
         try:
-            result = self.turn_runner(request=request, cancel_event=cancel_event)
+            if isinstance(request, ForcedToolActivation):
+                from openprogram.agent.dispatcher import dispatch_forced_tool_call
+
+                result = dispatch_forced_tool_call(
+                    session_id=request.session_id,
+                    anchor_msg_id=request.anchor_msg_id,
+                    tool_name=request.tool_name,
+                    tool_input=dict(request.tool_input),
+                    work_dir=request.work_dir,
+                    agent_id=request.agent_id,
+                    source=request.source,
+                    provider=request.provider,
+                    model=request.model,
+                    response_format=request.response_format,
+                    execution_id=attempt.execution_id,
+                    attempt_id=attempt.attempt_id,
+                    generation=attempt.generation,
+                    cancel_event=cancel_event,
+                    surface_context_snapshot=(
+                        dict(request.surface_context_snapshot)
+                        if request.surface_context_snapshot is not None else None
+                    ),
+                )
+            else:
+                result = self.turn_runner(request=request, cancel_event=cancel_event)
             if inspect.isawaitable(result):
                 raise AgentDriverError("invalid_runner", "Agent turn runner must be synchronous")
             return result
@@ -384,6 +517,10 @@ class AgentProductionDriver:
             self._recover_owner_loss(attempt)
             return
         failed = bool(getattr(result, "failed", False))
+        if isinstance(result, Mapping):
+            failed = failed or bool(
+                result.get("error") or result.get("killed") or result.get("page_cleanup_failed")
+            )
         target = (
             ExecutionStatus.CANCELLED
             if cancelled
@@ -500,20 +637,32 @@ class CanonicalAgentEntry:
         assistant_message_id: str | None,
         config_snapshot_ref: str,
     ) -> CanonicalAgentAdmission:
-        payload = copy.deepcopy(dict(turn_payload))
-        supplied_session = payload.pop("session_id", None)
+        raw_payload = copy.deepcopy(dict(turn_payload))
+        # Request-shaped chat inputs are normalized once at this boundary.
+        # Discriminated inputs must already contain the complete envelope.
+        if "kind" in raw_payload or "version" in raw_payload:
+            payload = normalize_agent_turn_payload(raw_payload)
+            if payload["kind"] == "chat":
+                supplied_session = payload["request"].get("session_id")
+            else:
+                supplied_session = None
+        else:
+            supplied_session = raw_payload.pop("session_id", None)
+            # Internal callers that predate the public cutover may still
+            # provide a request-shaped payload. The public transports always
+            # pass the explicit envelope; retaining this narrow adapter keeps
+            # already-admitted internal executions readable during rollout.
+            payload = normalize_agent_turn_payload({
+                "version": AGENT_TURN_INPUT_VERSION,
+                "kind": "chat",
+                "request": raw_payload,
+            })
+            storage_payload = raw_payload
         if supplied_session is not None and supplied_session != session_id:
             raise AgentDriverError(
                 "input_session_mismatch", "Agent admission input belongs to another session"
             )
-        for required in ("user_text", "agent_id", "source"):
-            if not payload.get(required):
-                raise AgentDriverError(
-                    "invalid_input", f"Agent admission input requires {required}"
-                )
-        encoded = json.dumps(
-            payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-        )
+        encoded = _json_payload(payload)
         content_hash = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
         revision = self.store.create_revision(manifest=self._REVISION_MANIFEST)
         record = self.store.admit_execution(
@@ -529,7 +678,7 @@ class CanonicalAgentEntry:
             user_message_id=user_message_id,
             assistant_message_id=assistant_message_id,
             capabilities=self.driver.capabilities(),
-            agent_turn_payload=payload,
+            agent_turn_payload=(storage_payload if "storage_payload" in locals() else payload),
         )
         return CanonicalAgentAdmission(
             execution_id=record.execution_id,
@@ -553,6 +702,17 @@ class CanonicalAgentEntry:
             active, None, (), activator=self.driver.activate
         )
         if not delivered:
+            # Activation failure is a durable owner loss. Let the control
+            # service release the exact lease and classify the execution;
+            # the public entry never writes lifecycle rows directly.
+            try:
+                self.control.recover_owner_loss(
+                    active.execution_id,
+                    attempt_id=active.attempt_id,
+                    generation=active.generation,
+                )
+            except Exception:
+                pass
             raise AgentDriverError(
                 issue or "activation_failed", "canonical Agent activation failed"
             )
@@ -570,5 +730,9 @@ __all__ = [
     "CanonicalAgentActivation",
     "CanonicalAgentAdmission",
     "CanonicalAgentEntry",
+    "ForcedToolActivation",
+    "AGENT_TURN_INPUT_VERSION",
+    "MAX_AGENT_TURN_INPUT_BYTES",
+    "normalize_agent_turn_payload",
     "AgentProductionDriver",
 ]
