@@ -82,3 +82,21 @@ test("transcript cleanup removes only executions linked to removed messages", ()
     false,
   );
 });
+
+test("fork and retry children share only their parent's trusted transcript links", () => {
+  const orders = {};
+  const parentMessages = ["msg-parent-user", "msg-parent-assistant"];
+  assert.equal(accept(orders, "exec-parent", 9, "completed", parentMessages), true);
+  assert.equal(accept(orders, "exec-fork-child", 4, "completed", parentMessages), true);
+  assert.equal(accept(orders, "exec-retry-child", 5, "completed", parentMessages), true);
+  assert.equal(accept(orders, "exec-sibling", 8, "completed", ["msg-sibling"]), true);
+
+  const afterParentRemoval = removeExecutionUpdateOrders(orders, ["msg-parent-user"]);
+  assert.equal(afterParentRemoval["exec-parent"], undefined);
+  assert.equal(afterParentRemoval["exec-fork-child"], undefined);
+  assert.equal(afterParentRemoval["exec-retry-child"], undefined);
+  assert.equal(
+    decideExecutionUpdateOrder(afterParentRemoval["exec-sibling"], 7, "running").accepted,
+    false,
+  );
+});

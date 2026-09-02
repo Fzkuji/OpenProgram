@@ -32,11 +32,18 @@ def _source(
 ):
     store = ExecutionStore(tmp_path / "executions.db")
     revision = store.create_revision(manifest={"entrypoint": "workflow"})
-    source = store.create_execution(
+    source = store.admit_execution(
         execution_id="source",
         run_id="run",
         session_id="session",
         revision_id=revision.revision_id,
+        input_ref="blob:source-input",
+        input_hash="source-input-hash",
+        entrypoint="workflow",
+        trusted_actor={"subject": "owner"},
+        config_snapshot_ref="blob:source-config",
+        user_message_id="msg-user",
+        assistant_message_id="msg-assistant",
         capabilities=CapabilitySet(fork=True, retry=True, pause=True, safe_point_kinds=("after",)),
     )
     attempts = AttemptStore(store)
@@ -170,6 +177,58 @@ def test_retry_allows_legacy_frontier_and_uses_same_revision(tmp_path):
     assert result.revision == store.get_revision(source.revision_id)
     assert result.child.revision_id == source.revision_id
     assert result.child.source_checkpoint_id == checkpoint.checkpoint_id
+
+
+@pytest.mark.parametrize("branch_kind", ["fork", "retry"])
+def test_branch_children_inherit_immutable_input_for_ui_projection(tmp_path, branch_kind):
+    from openprogram.execution.outbox import ProjectionDispatcher
+    from openprogram.execution.projections import (
+        ExecutionProjectionReadModel,
+        projection_handlers,
+    )
+
+    status = ExecutionStatus.PAUSED if branch_kind == "fork" else ExecutionStatus.FAILED
+    store, _attempts, service, source, checkpoint = _source(
+        tmp_path, status=status, frontier=branch_kind == "fork"
+    )
+    if branch_kind == "fork":
+        result = service.request_fork(
+            command_id="fork-input",
+            execution_id=source.execution_id,
+            expected_version=source.status_version,
+            actor={},
+            checkpoint_id=checkpoint.checkpoint_id,
+            revision_manifest={"entrypoint": "forked"},
+            compatible_prefix=[{"step_id": "first", "contract_hash": "h"}],
+        )
+    else:
+        result = service.request_retry(
+            command_id="retry-input",
+            execution_id=source.execution_id,
+            expected_version=source.status_version,
+            actor={},
+        )
+
+    source_input = store.get_execution_input(source.execution_id)
+    child_input = store.get_execution_input(result.child.execution_id)
+    assert source_input is not None
+    assert child_input is not None
+    assert child_input.execution_id == result.child.execution_id
+    assert child_input.input_ref == source_input.input_ref
+    assert child_input.user_message_id == "msg-user"
+    assert child_input.assistant_message_id == "msg-assistant"
+
+    dispatcher = ProjectionDispatcher(store, projection_handlers(store))
+    dispatcher.drain(owner_id="projection-worker")
+    projection = ExecutionProjectionReadModel(store).get_current(
+        "ui", result.child.execution_id
+    )
+    assert projection is not None
+    assert projection.payload["input"] == {
+        "entrypoint": "workflow",
+        "user_message_id": "msg-user",
+        "assistant_message_id": "msg-assistant",
+    }
 
 
 def test_retry_command_idempotency_returns_the_same_child(tmp_path):

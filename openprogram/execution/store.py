@@ -279,22 +279,19 @@ class ExecutionStore:
                 emit_created_event=False,
             )
             try:
-                connection.execute(
-                    "INSERT INTO execution_inputs ("
-                    "execution_id, input_ref, input_hash, entrypoint, session_id, "
-                    "user_message_id, assistant_message_id, trusted_actor_json, "
-                    "config_snapshot_ref, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        record.execution_id,
-                        input_ref,
-                        input_hash,
-                        entrypoint,
-                        session_id,
-                        user_message_id,
-                        assistant_message_id,
-                        _json(actor_snapshot),
-                        config_snapshot_ref,
-                        record.created_at,
+                self._insert_execution_input(
+                    connection,
+                    ExecutionInputRecord(
+                        execution_id=record.execution_id,
+                        input_ref=input_ref,
+                        input_hash=input_hash,
+                        entrypoint=entrypoint,
+                        session_id=session_id,
+                        user_message_id=user_message_id,
+                        assistant_message_id=assistant_message_id,
+                        trusted_actor=actor_snapshot,
+                        config_snapshot_ref=config_snapshot_ref,
+                        created_at=record.created_at,
                     ),
                 )
             except sqlite3.IntegrityError as exc:
@@ -317,6 +314,62 @@ class ExecutionStore:
                 "SELECT * FROM execution_inputs WHERE execution_id = ?", (execution_id,)
             ).fetchone()
             return self._execution_input(row) if row is not None else None
+
+    def _copy_execution_input_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        source_execution_id: str,
+        child_execution_id: str,
+        created_at: float,
+    ) -> ExecutionInputRecord:
+        row = connection.execute(
+            "SELECT * FROM execution_inputs WHERE execution_id = ?",
+            (source_execution_id,),
+        ).fetchone()
+        if row is None:
+            raise ExecutionConflict(
+                "execution_input_missing",
+                "branch source must have an immutable execution input",
+            )
+        source = self._execution_input(row)
+        child = ExecutionInputRecord(
+            execution_id=child_execution_id,
+            input_ref=source.input_ref,
+            input_hash=source.input_hash,
+            entrypoint=source.entrypoint,
+            session_id=source.session_id,
+            user_message_id=source.user_message_id,
+            assistant_message_id=source.assistant_message_id,
+            trusted_actor=source.trusted_actor,
+            config_snapshot_ref=source.config_snapshot_ref,
+            created_at=created_at,
+        )
+        self._insert_execution_input(connection, child)
+        return child
+
+    @staticmethod
+    def _insert_execution_input(
+        connection: sqlite3.Connection, record: ExecutionInputRecord
+    ) -> None:
+        connection.execute(
+            "INSERT INTO execution_inputs ("
+            "execution_id, input_ref, input_hash, entrypoint, session_id, "
+            "user_message_id, assistant_message_id, trusted_actor_json, "
+            "config_snapshot_ref, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                record.execution_id,
+                record.input_ref,
+                record.input_hash,
+                record.entrypoint,
+                record.session_id,
+                record.user_message_id,
+                record.assistant_message_id,
+                _json(record.trusted_actor),
+                record.config_snapshot_ref,
+                record.created_at,
+            ),
+        )
 
     def get_projection_outbox(self, outbox_id: str):
         with closing(self._connect()) as connection:

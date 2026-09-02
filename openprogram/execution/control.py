@@ -433,6 +433,12 @@ class RuntimeControlService:
                 self.executions._insert_execution(connection, child)
             except sqlite3.IntegrityError as exc:
                 raise ExecutionConflict("execution_exists", f"execution already exists: {child_id}") from exc
+            self.executions._copy_execution_input_in_transaction(
+                connection,
+                source_execution_id=source.execution_id,
+                child_execution_id=child.execution_id,
+                created_at=now,
+            )
             self.executions._append_event(
                 connection,
                 execution_id=child.execution_id,

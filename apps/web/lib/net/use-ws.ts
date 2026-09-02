@@ -274,12 +274,16 @@ export function useWS(): void {
             user_message_id?: unknown;
             assistant_message_id?: unknown;
           } } | undefined)?.input;
+          const messageIds = [input?.user_message_id, input?.assistant_message_id]
+            .filter((messageId): messageId is string => (
+              typeof messageId === "string" && Boolean(messageId)
+            ));
           if (!useSessionStore.getState().acceptExecutionUpdate(
             eid,
             eventSequence,
             execution.status,
             execution.session_id,
-            [input?.user_message_id, input?.assistant_message_id],
+            messageIds,
           )) return true;
           import("@/lib/session-store").then(({ useSessionStore }) => {
             const store = useSessionStore.getState();
