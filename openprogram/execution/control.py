@@ -1673,10 +1673,36 @@ class RuntimeControlService:
             command=command,
         )
 
-    def recover_owner_loss(self, execution_id: str) -> RecoveryCompletion:
-        """Durably finalize work whose physical owner is known to be gone."""
+    def recover_owner_loss(
+        self,
+        execution_id: str,
+        *,
+        attempt_id: str | None = None,
+        generation: int | None = None,
+    ) -> RecoveryCompletion:
+        """Durably finalize work whose physical owner is known to be gone.
+
+        A physical owner reports its own loss with the exact attempt identity.
+        The check is performed inside the same write transaction as recovery,
+        so a late report from an older owner cannot recover a newer attempt.
+        Startup recovery omits the identity because it is the authority that
+        discovers abandoned owners.
+        """
+        if (attempt_id is None) != (generation is None):
+            raise AttemptConflict(
+                "invalid_owner",
+                "attempt_id and generation must be supplied together",
+            )
         with self.executions._transaction() as connection:
             execution = self.executions._require_execution(connection, execution_id)
+            if attempt_id is not None and (
+                execution.current_attempt_id != attempt_id
+                or execution.owner_lease.get("generation") != generation
+            ):
+                raise AttemptConflict(
+                    "stale_owner",
+                    "owner-loss report does not match the current execution owner",
+                )
             if (
                 execution.status is ExecutionStatus.PAUSED
                 and execution.current_attempt_id is None

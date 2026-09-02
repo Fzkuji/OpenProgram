@@ -252,3 +252,49 @@ def test_owner_loss_without_checkpoint_recovers_as_interrupted(tmp_path):
     assert recovered is not None
     assert recovered.status is ExecutionStatus.INTERRUPTED
     assert recovered.reason_code == "owner_lost"
+
+
+def test_late_owner_loss_cannot_recover_a_new_attempt(tmp_path):
+    from openprogram.execution.control import RuntimeControlService
+    from openprogram.execution.driver import DriverRegistry
+    from openprogram.execution.attempts import AttemptConflict
+
+    store, execution = _admitted(tmp_path)
+    attempts = AttemptStore(store)
+    attempt_a, _recovered_before_activation = attempts.lease(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        owner_id="owner-a",
+        ttl_seconds=30,
+    )
+    service = RuntimeControlService(store, attempts, DriverRegistry())
+
+    # A loses ownership before activation. Recovery keeps the queued
+    # execution reusable, but clears A's exact lease.
+    recovered = service.recover_owner_loss(
+        execution.execution_id,
+        attempt_id=attempt_a.attempt_id,
+        generation=attempt_a.generation,
+    )
+    attempt_b, running = attempts.lease(
+        execution.execution_id,
+        expected_version=recovered.execution.status_version,
+        owner_id="owner-b",
+        ttl_seconds=30,
+    )
+    assert attempt_b.generation > attempt_a.generation
+    before = store.get_execution(execution.execution_id)
+    assert before is not None
+
+    with pytest.raises(AttemptConflict) as stale:
+        service.recover_owner_loss(
+            execution.execution_id,
+            attempt_id=attempt_a.attempt_id,
+            generation=attempt_a.generation,
+        )
+
+    after = store.get_execution(execution.execution_id)
+    assert stale.value.code == "stale_owner"
+    assert after == before
+    assert after.current_attempt_id == attempt_b.attempt_id
+    assert after.status is ExecutionStatus.QUEUED

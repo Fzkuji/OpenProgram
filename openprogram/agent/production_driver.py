@@ -357,7 +357,11 @@ class AgentProductionDriver:
 
     def _recover_owner_loss(self, attempt: AttemptRecord) -> None:
         try:
-            self._control_service().recover_owner_loss(attempt.execution_id)
+            self._control_service().recover_owner_loss(
+                attempt.execution_id,
+                attempt_id=attempt.attempt_id,
+                generation=attempt.generation,
+            )
         except Exception:
             return
 
