@@ -1640,6 +1640,7 @@ WS_ACTIONS: dict = _build_ws_action_registry()
 
 _FILE_REQUEST_ACTIONS = frozenset({
     "project_file_tree", "project_file_search", "project_file_read",
+    "project_file_operation_status",
     "project_file_write", "project_file_create", "project_file_rename",
     "project_file_copy", "project_file_delete", "project_file_reveal",
     "list_turn_files", "turn_file_diff", "review_scope", "review_file_diff",

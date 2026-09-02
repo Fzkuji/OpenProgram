@@ -166,6 +166,15 @@ class FileOperationStore:
             ).fetchone()
         return dict(row) if row is not None else None
 
+    def find(self, project_id: str, action: str, key: str) -> dict[str, Any] | None:
+        """Read a receipt by its idempotency identity without creating one."""
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT * FROM file_operations WHERE project_id=? AND action=? "
+                "AND idempotency_key=?", (project_id, action, key),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
     def compact(self, *, now: float | None = None) -> int:
         """Remove only old/excess terminal receipts.
 

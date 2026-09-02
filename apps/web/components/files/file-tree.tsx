@@ -38,6 +38,7 @@ import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   idempotencyKeyFor,
   MutationRegistryCapacityError,
+  reconcileWsMutation,
   wsMutationRequest,
   wsRequest,
 } from "@/lib/net/ws-request";
@@ -308,6 +309,8 @@ export function FileTree({
   const directoryPagesRef = useRef<Record<string, DirectoryPage>>({});
   const queryControllers = useRef(new Set<AbortController>());
   const mutationControllers = useRef(new Set<AbortController>());
+  const mutationRequestControllers = useRef(new Set<AbortController>());
+  const mutationKeys = useRef(new Set<string>());
   const queryGeneration = useRef(0);
   const mutationLifecycleGeneration = useRef(0);
   const searchGeneration = useRef(0);
@@ -330,6 +333,7 @@ export function FileTree({
 
   function abortMutationRequests(): void {
     for (const controller of mutationControllers.current) controller.abort();
+    for (const key of mutationKeys.current) reconcileWsMutation(key);
     mutationControllers.current.clear();
   }
 
@@ -562,6 +566,7 @@ export function FileTree({
       return { status: "error", error_code: "MUTATION_REGISTRY_CAPACITY" };
     }
     const operationController = new AbortController();
+    mutationKeys.current.add(operationKey);
     mutationControllers.current.add(operationController);
     let data: FileOperationResult | null = null;
     try {
@@ -576,14 +581,14 @@ export function FileTree({
           // cannot cancel a mutation receipt that may still be in progress.
           () => true,
           signal,
-          mutationControllers.current,
+          mutationRequestControllers.current,
         ),
-        { signal: operationController.signal },
       );
     } catch {
       data = null;
     } finally {
       mutationControllers.current.delete(operationController);
+      mutationKeys.current.delete(operationKey);
     }
     const result: FileOperationResult = data
       ? { ...data, status: data.status ?? (data.ok ? "ready" : "error") }
@@ -591,7 +596,8 @@ export function FileTree({
     // The server may still have accepted the durable operation after this
     // component was replaced. Keep its idempotency key for replay, but do not
     // let the old component alert or broadcast into the new project view.
-    if (lifecycleGeneration !== mutationLifecycleGeneration.current) return result;
+    if (operationController.signal.aborted
+      || lifecycleGeneration !== mutationLifecycleGeneration.current) return result;
     if (!data || data.project_id !== projectId || data.path !== payload.path
       || result.error || result.status === "conflict" || result.status === "recovery_required"
       || result.status === "error" || result.status === "in_progress") {

@@ -1540,6 +1540,47 @@ async def handle_project_file_read(ws, cmd: dict) -> None:
     }, default=str))
 
 
+async def handle_project_file_operation_status(ws, cmd: dict) -> None:
+    project_id = (cmd.get("project_id") or "").strip()
+    operation_action = cmd.get("operation_action")
+    key = cmd.get("idempotency_key")
+    operation_id = cmd.get("operation_id")
+    result: dict
+    if (not project_id or not isinstance(operation_action, str)
+            or operation_action not in {
+                "project_file_write", "project_file_create", "project_file_rename",
+                "project_file_copy", "project_file_delete",
+            } or not isinstance(key, str) or not key):
+        result = {"status": "error", "error_code": "INVALID_REQUEST",
+                  "error": "project_id, operation_action, and idempotency_key are required"}
+    else:
+        from openprogram.store.file_operations import default_file_operation_store
+        store = default_file_operation_store()
+        row = store.find(project_id, operation_action, key)
+        if row is None:
+            result = {"status": "recovery_required", "error_code": "RECOVERY_REQUIRED",
+                      "error": "durable file operation receipt is unavailable"}
+        else:
+            result = store.replay(row)
+            result.setdefault("status", "in_progress")
+            if row.get("status") == "in_flight":
+                result["status"] = "in_progress"
+            if isinstance(operation_id, str) and operation_id != row.get("operation_id"):
+                result["error_code"] = "OPERATION_ID_MISMATCH"
+                result["status"] = "recovery_required"
+    payload = {
+        "project_id": project_id,
+        "operation_action": operation_action,
+        "idempotency_key": key,
+        "action": "project_file_operation_status",
+        "request_id": _request_id(cmd),
+        **result,
+    }
+    await ws.send_text(json.dumps({
+        "type": "project_file_operation_status_result", "data": payload,
+    }, default=str))
+
+
 async def handle_project_file_write(ws, cmd: dict) -> None:
     project_id = (cmd.get("project_id") or "").strip()
     path = cmd.get("path") or ""  # no .strip() — see handle_project_file_tree
@@ -1678,6 +1719,7 @@ ACTIONS = {
     "project_file_tree": handle_project_file_tree,
     "project_file_search": handle_project_file_search,
     "project_file_read": handle_project_file_read,
+    "project_file_operation_status": handle_project_file_operation_status,
     "project_file_write": handle_project_file_write,
     "project_file_create": handle_project_file_create,
     "project_file_rename": handle_project_file_rename,

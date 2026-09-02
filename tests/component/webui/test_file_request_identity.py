@@ -217,6 +217,32 @@ def test_inflight_before_image_is_retried_under_the_lock(project):
     assert (project / "source.txt").read_text(encoding="utf-8") == "retry"
 
 
+def test_operation_status_reconciles_inflight_to_terminal(project):
+    from openprogram.store.file_operations import default_file_operation_store, fingerprint
+
+    store = default_file_operation_store()
+    row, owner = store.begin(
+        "p1", "project_file_write", "status-key", fingerprint({"path": "source.txt"}),
+        payload={"path": "source.txt"},
+    )
+    assert owner
+    request_id = str(uuid.uuid4())
+    pending = run(files.handle_project_file_operation_status, {
+        "project_id": "p1", "operation_action": "project_file_write",
+        "idempotency_key": "status-key", "operation_id": row["operation_id"],
+        "request_id": request_id,
+    })["data"]
+    assert pending["status"] == "in_progress"
+    assert pending["operation_id"] == row["operation_id"]
+    store.finish(row["operation_id"], {"status": "ready"})
+    terminal = run(files.handle_project_file_operation_status, {
+        "project_id": "p1", "operation_action": "project_file_write",
+        "idempotency_key": "status-key", "operation_id": row["operation_id"],
+        "request_id": str(uuid.uuid4()),
+    })["data"]
+    assert terminal["status"] == "ready"
+
+
 def test_file_operation_compaction_has_explicit_safe_retention(tmp_path):
     from openprogram.store.file_operations import (
         FILE_OPERATION_MAX_TERMINAL_RECORDS,

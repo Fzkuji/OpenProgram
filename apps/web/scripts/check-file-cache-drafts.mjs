@@ -73,6 +73,7 @@ assert.match(projectMenu, /project-draft-error/);
 assert.match(tree, /noteFileMtime\(projectId, joinPath\(path, e\.name\), e\.mtime\)/);
 assert.match(tree, /runServerRenameWithDrafts/);
 assert.match(tree, /mutationControllers/);
+assert.match(tree, /reconcileWsMutation/);
 assert.match(tree, /operation_id/);
 assert.match(tree, /save, export, or discard/);
 assert.match(tree, /loadFileDraftsForPath/);

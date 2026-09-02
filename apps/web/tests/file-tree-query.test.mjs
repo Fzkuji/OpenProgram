@@ -47,7 +47,7 @@ test("file changes invalidate only the owning project tree", () => {
 test("file changes do not abort durable mutation requests", () => {
   assert.match(source, /const mutationControllers = useRef\(new Set<AbortController>\(\)\)/);
   assert.match(source, /mutationControllers\.current\.add\(operationController\)/);
-  assert.match(source, /signal,\n\s+mutationControllers\.current/);
+  assert.match(source, /signal,\n\s+mutationRequestControllers\.current/);
   assert.match(source, /Durable mutations must keep their own request lifecycle/);
 });
 
@@ -58,6 +58,7 @@ test("FileTree teardown aborts requests but retains durable mutation keys", () =
   assert.match(source, /lifecycleGeneration !== mutationLifecycleGeneration\.current/);
   assert.match(source, /abortMutationRequests\(\);\n\s+queryGeneration\.current \+= 1/);
   assert.match(source, /mutationLifecycleGeneration\.current \+= 1/);
+  assert.match(source, /reconcileWsMutation\(key\)/);
 });
 
 test("Filter and Highlight preserve their existing tree semantics", () => {

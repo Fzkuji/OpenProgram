@@ -11,9 +11,13 @@ import { getSocket } from "@/lib/runtime-bridge/state";
 const pendingRequestIds = new Map<string, string>();
 const mutationKeys = new Map<string, {
   key: string;
+  action: string;
+  projectId: string | undefined;
+  payload: unknown;
   touchedAt: number;
   bytes: number;
   terminal: boolean;
+  operationId?: string;
 }>();
 const pendingMutations = new Map<string, {
   promise: Promise<unknown>;
@@ -23,6 +27,10 @@ const MAX_MUTATION_KEYS = 128;
 const MAX_MUTATION_REGISTRY_BYTES = 64 * 1024;
 const MAX_MUTATION_ATTEMPTS = 3;
 const MAX_MUTATION_VALUE_SAMPLE = 4096;
+const MUTATION_RECONCILE_INTERVAL_MS = 250;
+const MUTATION_RECONCILE_RETRY_MS = 5000;
+const MUTATION_RECONCILE_DEADLINE_MS = 30000;
+const mutationReconciliations = new Map<string, Promise<void>>();
 
 export class MutationRegistryCapacityError extends Error {
   constructor() {
@@ -85,8 +93,8 @@ function mutationIdentity(scope: string, payload: Record<string, unknown>): stri
   return `${scope.slice(0, 128)}:${summary.length}:${hashText(summary)}`;
 }
 
-function registryBytes(identity: string, key: string): number {
-  return identity.length + key.length;
+function registryBytes(identity: string, key: string, payload: unknown): number {
+  return identity.length + key.length + JSON.stringify(payload).length;
 }
 
 function currentRegistryBytes(): number {
@@ -108,6 +116,12 @@ function pruneMutationKeys(): void {
   ) {
     const [identity] = candidates.shift()!;
     mutationKeys.delete(identity);
+  }
+}
+
+function reconcileMutationRegistryBeforeRejecting(): void {
+  for (const entry of mutationKeys.values()) {
+    if (!entry.terminal) reconcileWsMutation(entry.key);
   }
 }
 
@@ -134,17 +148,22 @@ export function idempotencyKeyFor(
     existing.touchedAt = Date.now();
     return existing.key;
   }
+  const payloadSummary = boundedMutationValue(payload);
   pruneMutationKeys();
-  const keyBytes = registryBytes(identity, "00000000-0000-0000-0000-000000000000");
+  const keyBytes = registryBytes(identity, "00000000-0000-0000-0000-000000000000", payloadSummary);
   if (mutationKeys.size >= MAX_MUTATION_KEYS
     || currentRegistryBytes() + keyBytes > MAX_MUTATION_REGISTRY_BYTES) {
+    reconcileMutationRegistryBeforeRejecting();
     throw new MutationRegistryCapacityError();
   }
   const key = requestId();
   mutationKeys.set(identity, {
     key,
+    action: scope,
+    projectId: typeof payload.project_id === "string" ? payload.project_id : undefined,
+    payload: payloadSummary,
     touchedAt: Date.now(),
-    bytes: registryBytes(identity, key),
+    bytes: registryBytes(identity, key, payloadSummary),
     terminal: false,
   });
   return key;
@@ -168,7 +187,10 @@ function mutationIsTerminal(value: unknown): boolean {
   return status !== "in_progress" && status !== "pending";
 }
 
-/** Retry transient transport/in-progress replies with one idempotency key. */
+/** Retry transient transport/in-progress replies with one idempotency key.
+ * `signal` belongs to the caller subscription; it never cancels this shared
+ * durable operation, because another view may still be consuming the same
+ * receipt. */
 export function wsMutationRequest<T>(
   key: string,
   send: (signal: AbortSignal) => Promise<T | null>,
@@ -185,17 +207,12 @@ export function wsMutationRequest<T>(
     let result: T | null = null;
     let attempt = 0;
     while (attempt < maxAttempts) {
-      if (options.signal?.aborted) break;
       attempt += 1;
       const requestController = new AbortController();
-      const onAbort = () => requestController.abort();
-      options.signal?.addEventListener("abort", onAbort, { once: true });
       try {
         result = await send(requestController.signal);
       } catch {
         result = null;
-      } finally {
-        options.signal?.removeEventListener("abort", onAbort);
       }
       const operationId = result && typeof result === "object"
         ? (result as Record<string, unknown>).operation_id
@@ -203,19 +220,19 @@ export function wsMutationRequest<T>(
       if (typeof operationId === "string") {
         const pending = pendingMutations.get(key);
         if (pending) pending.operationId = operationId;
+        for (const entry of mutationKeys.values()) {
+          if (entry.key === key) entry.operationId = operationId;
+        }
       }
-      if (mutationIsTerminal(result) || options.signal?.aborted) break;
+      if (mutationIsTerminal(result)) break;
       const status = result && typeof result === "object"
         ? (result as Record<string, unknown>).status
         : undefined;
       if (status === "in_progress" || status === "pending") {
         const deadline = Date.now() + deadlineMs;
-        while (!options.signal?.aborted && Date.now() < deadline) {
+        while (Date.now() < deadline) {
           await new Promise((resolve) => setTimeout(resolve, Math.min(100, deadline - Date.now())));
-          if (options.signal?.aborted) break;
           const pollController = new AbortController();
-          const onPollAbort = () => pollController.abort();
-          options.signal?.addEventListener("abort", onPollAbort, { once: true });
           try {
             const next = await send(pollController.signal);
             // A lost poll response is transport uncertainty, not evidence
@@ -224,8 +241,6 @@ export function wsMutationRequest<T>(
             if (next !== null) result = next;
           } catch {
             // Preserve the last known receipt until the deadline.
-          } finally {
-            options.signal?.removeEventListener("abort", onPollAbort);
           }
           const nextOperationId = result && typeof result === "object"
             ? (result as Record<string, unknown>).operation_id
@@ -233,6 +248,9 @@ export function wsMutationRequest<T>(
           if (typeof nextOperationId === "string") {
             const pending = pendingMutations.get(key);
             if (pending) pending.operationId = nextOperationId;
+            for (const entry of mutationKeys.values()) {
+              if (entry.key === key) entry.operationId = nextOperationId;
+            }
           }
           if (mutationIsTerminal(result)) break;
         }
@@ -242,7 +260,7 @@ export function wsMutationRequest<T>(
     if (result && typeof result === "object") {
       const status = (result as Record<string, unknown>).status;
       if ((status === "in_progress" || status === "pending")
-        && !options.signal?.aborted) {
+      ) {
         result = {
           ...(result as Record<string, unknown>),
           status: "recovery_required",
@@ -266,10 +284,75 @@ export function wsMutationRequest<T>(
   })();
   pendingMutations.set(key, { promise: run });
   void run.then(
-    () => pendingMutations.delete(key),
-    () => pendingMutations.delete(key),
+    () => {
+      if (pendingMutations.get(key)?.promise === run) pendingMutations.delete(key);
+    },
+    () => { if (pendingMutations.get(key)?.promise === run) pendingMutations.delete(key); },
   );
   return run;
+}
+
+function mutationEntryForKey(key: string) {
+  for (const entry of mutationKeys.values()) {
+    if (entry.key === key) return entry;
+  }
+  return undefined;
+}
+
+function waitForMutationReconcile(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Reconcile an aborted UI request without replaying a write payload. The
+ * durable server receipt is queried with fresh request ids at a bounded rate;
+ * connection loss simply causes the next scheduled round to try again. */
+export function reconcileWsMutation(key: string): void {
+  // The shared durable request still owns the receipt; defer reconciliation
+  // until that promise settles so status polling never races its request.
+  const pending = pendingMutations.get(key);
+  if (pending) {
+    void pending.promise.then(() => reconcileWsMutation(key));
+    return;
+  }
+  if (mutationReconciliations.has(key)) return;
+  const run = (async () => {
+    const deadline = Date.now() + MUTATION_RECONCILE_DEADLINE_MS;
+    while (Date.now() < deadline) {
+      const entry = mutationEntryForKey(key);
+      if (!entry) return;
+      if (pendingMutations.has(key)) return;
+      const result = await wsRequest<Record<string, unknown>>(
+        "project_file_operation_status",
+        {
+          project_id: entry.projectId ?? "",
+          operation_action: entry.action,
+          idempotency_key: key,
+          ...(entry.operationId ? { operation_id: entry.operationId } : {}),
+        },
+        "project_file_operation_status_result",
+        (data) => data.project_id === entry.projectId
+          && data.operation_action === entry.action
+          && data.idempotency_key === key,
+        Math.min(4000, Math.max(1, deadline - Date.now())),
+        { requestId: true },
+      );
+      const status = result?.status;
+      if (result && typeof result.operation_id === "string") entry.operationId = result.operation_id;
+      if (typeof status === "string" && !["in_progress", "pending"].includes(status)) {
+        forgetMutationKey(key);
+        return;
+      }
+      await waitForMutationReconcile(MUTATION_RECONCILE_INTERVAL_MS);
+    }
+    // Keep the key for safe future replay, but start a later bounded round so
+    // reconnects can observe a server operation that outlives this deadline.
+    setTimeout(() => reconcileWsMutation(key), MUTATION_RECONCILE_RETRY_MS);
+  })();
+  mutationReconciliations.set(key, run);
+  void run.then(
+    () => { if (mutationReconciliations.get(key) === run) mutationReconciliations.delete(key); },
+    () => { if (mutationReconciliations.get(key) === run) mutationReconciliations.delete(key); },
+  );
 }
 
 /** Used by the shared WS dispatcher to avoid toasting a request-local error. */
@@ -297,6 +380,7 @@ function requestId(): string {
 
 const CORRELATED_ACTIONS = new Set([
   "project_file_tree", "project_file_search", "project_file_read",
+  "project_file_operation_status",
   "project_file_write", "project_file_create", "project_file_rename",
   "project_file_copy", "project_file_delete", "project_file_reveal",
   "list_turn_files", "turn_file_diff", "review_scope", "review_file_diff",
