@@ -435,6 +435,12 @@ class UsageLedger:
             return self._connect()
 
     @contextmanager
+    def read(self):
+        """Serialize a read without letting sqlite's context manager commit."""
+        with self._lock:
+            yield self._connect()
+
+    @contextmanager
     def immediate(self):
         """Serialize one short cross-process accounting transaction."""
         with self._lock:

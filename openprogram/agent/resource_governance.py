@@ -453,20 +453,21 @@ class ReconcileResult:
 def _durable_job_time_limits(
     ledger: UsageLedger, job_id: str,
 ) -> tuple[int | None, int | None]:
-    row = ledger.connection().execute(
-        """WITH RECURSIVE ancestors AS (
-               SELECT b.* FROM job_admissions a
-               JOIN budget_scopes b ON b.budget_scope_id = a.budget_scope_id
-               WHERE a.job_id = ?
-               UNION ALL
-               SELECT parent.* FROM budget_scopes parent
-               JOIN ancestors child
-                 ON child.parent_scope_id = parent.budget_scope_id
-           )
-           SELECT MIN(max_runtime_seconds), MIN(idle_timeout_seconds)
-           FROM ancestors WHERE scope_kind = 'job'""",
-        (job_id,),
-    ).fetchone()
+    with ledger.read() as conn:
+        row = conn.execute(
+            """WITH RECURSIVE ancestors AS (
+                   SELECT b.* FROM job_admissions a
+                   JOIN budget_scopes b ON b.budget_scope_id = a.budget_scope_id
+                   WHERE a.job_id = ?
+                   UNION ALL
+                   SELECT parent.* FROM budget_scopes parent
+                   JOIN ancestors child
+                     ON child.parent_scope_id = parent.budget_scope_id
+               )
+               SELECT MIN(max_runtime_seconds), MIN(idle_timeout_seconds)
+               FROM ancestors WHERE scope_kind = 'job'""",
+            (job_id,),
+        ).fetchone()
     return (None, None) if row is None else (row[0], row[1])
 
 
@@ -736,9 +737,8 @@ class ResourceGovernor:
         except ResourceLimitError:
             fallback = resolve_resource_limits(ResourceLimits())
             try:
-                usage = self._session_usage(
-                    self.ledger.connection(), job.parent_session_id,
-                )
+                with self.ledger.read() as conn:
+                    usage = self._session_usage(conn, job.parent_session_id)
             except Exception:
                 return self._denied(
                     "quota.accounting_unavailable",
@@ -1168,7 +1168,7 @@ class ResourceGovernor:
         command_id: str | None = None,
     ) -> DispatchClaim | None:
         """Claim exactly one admission, returning an existing same-owner claim."""
-        with self.ledger.connection() as conn:
+        with self.ledger.read() as conn:
             row = conn.execute(
                 "SELECT session_id, state, owner_instance_id, lease_generation, admission_id FROM job_admissions WHERE job_id = ?",
                 (job_id,),
@@ -1197,7 +1197,7 @@ class ResourceGovernor:
         resource_lease_generation: int | None = None,
     ) -> bool:
         """Fenced, idempotent resource release for a canonical execution."""
-        with self.ledger.connection() as conn:
+        with self.ledger.read() as conn:
             row = conn.execute(
                 "SELECT state, admission_id, owner_instance_id, lease_generation FROM job_admissions WHERE job_id = ?",
                 (job_id,),
@@ -1264,7 +1264,7 @@ class ResourceGovernor:
 
     def continuation_parent_msg_id(self, job_id: str) -> str | None:
         """Return the durable deferred-resume target for canonical input."""
-        with self.ledger.connection() as conn:
+        with self.ledger.read() as conn:
             row = conn.execute(
                 "SELECT resume_parent_msg_id FROM job_admissions "
                 "WHERE job_id = ?",
@@ -1274,7 +1274,7 @@ class ResourceGovernor:
 
     def admission_exists(self, job_id: str) -> bool:
         """Check whether the resource ledger owns an admission for a Job."""
-        with self.ledger.connection() as conn:
+        with self.ledger.read() as conn:
             return conn.execute(
                 "SELECT 1 FROM job_admissions WHERE job_id = ? LIMIT 1",
                 (job_id,),
@@ -1282,7 +1282,7 @@ class ResourceGovernor:
 
     def budget_scope_id(self, job_id: str) -> str | None:
         """Return the authoritative budget scope for a canonical Job."""
-        with self.ledger.connection() as conn:
+        with self.ledger.read() as conn:
             row = conn.execute(
                 "SELECT budget_scope_id FROM job_admissions WHERE job_id = ?",
                 (job_id,),
@@ -1291,7 +1291,7 @@ class ResourceGovernor:
 
     def canonical_limits(self, job_id: str) -> dict[str, int | float | None]:
         """Read the active Job budget from the authoritative ledger row."""
-        with self.ledger.connection() as conn:
+        with self.ledger.read() as conn:
             rows = conn.execute(
                 """WITH RECURSIVE ancestors AS (
                        SELECT b.*, 0 AS depth
@@ -2181,7 +2181,7 @@ class ResourceGovernor:
 
     def pending_finalization(self, job_id: str):
         """Return the immutable pending terminal intent, if one exists."""
-        with self.ledger.connection() as conn:
+        with self.ledger.read() as conn:
             row = conn.execute(
                 """SELECT job_id, session_id, owner_instance_id, lease_generation,
                           fields_json, state
@@ -2193,7 +2193,7 @@ class ResourceGovernor:
 
     def pending_finalizations(self) -> list[tuple[str, str, str, int, str, str]]:
         """Return all pending terminal intents for projection recovery."""
-        with self.ledger.connection() as conn:
+        with self.ledger.read() as conn:
             rows = conn.execute(
                 """SELECT job_id, session_id, owner_instance_id,
                           lease_generation, fields_json, state
@@ -2205,7 +2205,7 @@ class ResourceGovernor:
 
     def admission_fence(self, job_id: str) -> tuple[str | None, int] | None:
         """Return the current admission owner fence for a projection."""
-        with self.ledger.connection() as conn:
+        with self.ledger.read() as conn:
             row = conn.execute(
                 """SELECT owner_instance_id, lease_generation
                    FROM job_admissions WHERE job_id = ?""",
@@ -2217,7 +2217,7 @@ class ResourceGovernor:
         self, job_id: str,
     ) -> tuple[str, str | None, int, bool, str | None, float | None, str | None, int | None] | None:
         """Return state and fence fields needed for canonical recovery."""
-        with self.ledger.connection() as conn:
+        with self.ledger.read() as conn:
             row = conn.execute(
                 """SELECT state, owner_instance_id, lease_generation,
                           terminal_blocked, terminal_block_phase,
@@ -2330,12 +2330,13 @@ class ResourceGovernor:
     ) -> ReconcileResult:
         """Reconcile durable admissions without spanning job-store I/O."""
         current_time = time.time() if now is None else now
-        pending = self.ledger.connection().execute(
-            """SELECT job_id, session_id, owner_instance_id, lease_generation,
-                      fields_json
-               FROM job_finalizations WHERE state = 'pending'
-               ORDER BY created_at"""
-        ).fetchall()
+        with self.ledger.read() as conn:
+            pending = conn.execute(
+                """SELECT job_id, session_id, owner_instance_id, lease_generation,
+                          fields_json
+                   FROM job_finalizations WHERE state = 'pending'
+                   ORDER BY created_at"""
+            ).fetchall()
         pending_job_ids = {str(row["job_id"]) for row in pending}
         finalization_conflicts = 0
         completed_pending: list[tuple[str, str]] = []
@@ -2387,12 +2388,13 @@ class ResourceGovernor:
             )
             if completed:
                 completed_pending.append((intent["job_id"], intent["session_id"]))
-        rows = self.ledger.connection().execute(
-            """SELECT admission_id, job_id, session_id, budget_scope_id,
-                      state, owner_instance_id, lease_generation, lease_expires_at
-               FROM job_admissions WHERE state != 'released'
-               ORDER BY admitted_seq"""
-        ).fetchall()
+        with self.ledger.read() as conn:
+            rows = conn.execute(
+                """SELECT admission_id, job_id, session_id, budget_scope_id,
+                          state, owner_instance_id, lease_generation, lease_expires_at
+                   FROM job_admissions WHERE state != 'released'
+                   ORDER BY admitted_seq"""
+            ).fetchall()
         finalized = rolled_back = released_missing = released_lost = 0
         worker_lost: list[tuple[str, str]] = []
         for row in rows:
@@ -2875,23 +2877,23 @@ class ResourceGovernor:
 
 
 def _shared_remaining(ledger: UsageLedger, job_id: str) -> dict[str, Any]:
-    conn = ledger.connection()
-    scopes = conn.execute(
-        """WITH RECURSIVE ancestors AS (
-               SELECT parent.* FROM job_admissions admission
-               JOIN budget_scopes current
-                 ON current.budget_scope_id = admission.budget_scope_id
-               JOIN budget_scopes parent
-                 ON parent.budget_scope_id = current.parent_scope_id
-               WHERE admission.job_id = ?
-               UNION ALL
-               SELECT parent.* FROM budget_scopes parent
-               JOIN ancestors child
-                 ON child.parent_scope_id = parent.budget_scope_id
-           )
-           SELECT * FROM ancestors""",
-        (job_id,),
-    ).fetchall()
+    with ledger.read() as conn:
+        scopes = conn.execute(
+            """WITH RECURSIVE ancestors AS (
+                   SELECT parent.* FROM job_admissions admission
+                   JOIN budget_scopes current
+                     ON current.budget_scope_id = admission.budget_scope_id
+                   JOIN budget_scopes parent
+                     ON parent.budget_scope_id = current.parent_scope_id
+                   WHERE admission.job_id = ?
+                   UNION ALL
+                   SELECT parent.* FROM budget_scopes parent
+                   JOIN ancestors child
+                     ON child.parent_scope_id = parent.budget_scope_id
+               )
+               SELECT * FROM ancestors""",
+            (job_id,),
+        ).fetchall()
     token_remaining: list[int] = []
     cost_remaining: list[int] = []
     unknown_cost_events = 0
@@ -2988,16 +2990,17 @@ def build_job_resource_view(
     local_token_limit: int | None = None
     local_cost_limit: str | None = None
     if not legacy:
-        timing = ledger.connection().execute(
-            """SELECT admission.state, admission.started_at,
-                      admission.last_activity_at, admission.released_at,
-                      scope.max_total_tokens, scope.max_cost_microusd
-               FROM job_admissions admission
-               JOIN budget_scopes scope
-                 ON scope.budget_scope_id = admission.budget_scope_id
-               WHERE admission.job_id = ?""",
-            (job.id,),
-        ).fetchone()
+        with ledger.read() as conn:
+            timing = conn.execute(
+                """SELECT admission.state, admission.started_at,
+                          admission.last_activity_at, admission.released_at,
+                          scope.max_total_tokens, scope.max_cost_microusd
+                   FROM job_admissions admission
+                   JOIN budget_scopes scope
+                     ON scope.budget_scope_id = admission.budget_scope_id
+                   WHERE admission.job_id = ?""",
+                (job.id,),
+            ).fetchone()
         if timing is not None:
             local_token_limit = timing["max_total_tokens"]
             if timing["max_cost_microusd"] is not None:
