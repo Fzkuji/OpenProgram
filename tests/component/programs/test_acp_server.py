@@ -248,7 +248,6 @@ def bind_durable_question_execution(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
 def _open_acp_question(store, execution, attempt, *, wait_id, kind="approval",
                        prompt="允许执行 bash？", options=None, detail=""):
-    from openprogram.agent.questions import PendingQuestion, get_question_registry
     from openprogram.execution.waits import DurableWaitStore
 
     wait = DurableWaitStore(store).open_wait(
@@ -258,15 +257,12 @@ def _open_acp_question(store, execution, attempt, *, wait_id, kind="approval",
             "prompt": prompt, "options": list(options or []),
             "multi": False, "allow_custom": False, "detail": detail,
             "schema": {}, "questions": [], "tool": "bash", "args": {},
-        }, policy_snapshot={"version": 1}, expires_at=time.time() + 60,
+        }, policy_snapshot={
+            "version": 1, "kind": kind,
+            **({"allowed_scopes": ["once", "always", "always_path"]}
+               if kind == "approval" else {}),
+        }, expires_at=time.time() + 60,
     )
-    get_question_registry().register(PendingQuestion(
-        id=wait.wait_id, session_id=execution.session_id, kind=kind,
-        prompt=prompt, execution_id=execution.execution_id,
-        options=list(options or []), detail=detail,
-        wait_generation=wait.claim_generation,
-        execution_version=execution.status_version,
-    ))
     return wait
 
 
@@ -1086,8 +1082,6 @@ def test_permission_request_is_forwarded_and_answered(
 ) -> None:
     """An approval question raised by the tool gate becomes an ACP
     session/request_permission, and the client's choice resolves it."""
-    from openprogram.agent.questions import get_question_registry
-
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
     sid = c.call("session/new",
@@ -1110,10 +1104,10 @@ def test_permission_request_is_forwarded_and_answered(
         "wait_generation": 0,
     }))
     assert c.pump(lambda: waits.get_wait("wait_acp_allow") is not None and waits.get_wait("wait_acp_allow").status.value == "resolved"), "the gate's question was never answered"
-    outcome, value = get_question_registry().consume("wait_acp_allow")
-    assert outcome == "answered"
+    resolved = waits.get_wait("wait_acp_allow")
+    assert resolved is not None
     # "always" is what makes the gate persist an allow rule.
-    assert value == {"answer": "允许", "scope": "always"}
+    assert resolved.answer == {"answer": "允许", "scope": "always"}
 
     req = c.permission_requests[0]
     assert req["sessionId"] == sid
@@ -1127,8 +1121,6 @@ def test_permission_request_is_forwarded_and_answered(
 def test_permission_reject_declines_the_question(
     tmp_db, client, tmp_path, bind_durable_question_execution,
 ) -> None:
-    from openprogram.agent.questions import get_question_registry
-
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
     sid = c.call("session/new",
@@ -1147,7 +1139,8 @@ def test_permission_reject_declines_the_question(
         "wait_generation": 0,
     }))
     assert c.pump(lambda: waits.get_wait("wait_acp_decline") is not None and waits.get_wait("wait_acp_decline").status.value == "declined")
-    assert get_question_registry().consume("wait_acp_decline")[0] == "declined"
+    declined = waits.get_wait("wait_acp_decline")
+    assert declined is not None and declined.outcome == "declined"
 
 
 def test_non_approval_questions_are_not_forwarded(
@@ -1155,8 +1148,6 @@ def test_non_approval_questions_are_not_forwarded(
 ) -> None:
     """runtime.ask has no ACP equivalent, so it must not be mistaken for a
     permission prompt."""
-    from openprogram.agent.questions import PendingQuestion, get_question_registry
-
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
     sid = c.call("session/new",

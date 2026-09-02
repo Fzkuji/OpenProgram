@@ -16,7 +16,7 @@ What this catches that test_dispatcher_integration.py doesn't:
   * ToolCall → registry lookup wiring (was broken before — dispatcher
     used to import ``openprogram.programs.registry`` which doesn't exist)
   * tool_use / tool_result envelope shape (TUI/web depend on these)
-  * approval gate blocking (5-min timer + ApprovalRegistry)
+  * approval gate consumes a typed durable wait outcome
   * char-cap truncation and persist_full disk-write actually firing
   * cancel_event surfacing into the tool's ``cancel`` kwarg
 """
@@ -205,6 +205,82 @@ def _patched_run_loop(stream_fn):
                     cancel_event=cancel_event, stream_fn=stream_fn)
 
     return _wrap
+
+
+def _durable_approval_wait(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                           *, wait_id: str):
+    """Create the durable approval safe point consumed by the wrapper."""
+    import openprogram.execution as execution_module
+    from openprogram.execution import RuntimeControlService
+    from openprogram.execution.attempts import AttemptStore
+    from openprogram.execution.driver import DriverRegistry
+    from openprogram.execution.model import CapabilitySet
+    from openprogram.execution.store import ExecutionStore
+    from openprogram.execution.waits import DurableWaitStore
+
+    store = ExecutionStore(tmp_path / f"{wait_id}.db")
+    monkeypatch.setattr(execution_module, "default_store", lambda: store)
+    revision = store.create_revision(manifest={"entrypoint": "dispatcher-test"})
+    execution = store.create_execution(
+        execution_id=f"exec_{wait_id}", run_id=f"run_{wait_id}", session_id="c1",
+        revision_id=revision.revision_id,
+        capabilities=CapabilitySet(
+            pause=True, safe_point_kinds=("agent.wait.before_tool",),
+        ),
+    )
+    attempts = AttemptStore(store)
+    leased, reserved = attempts.lease(
+        execution.execution_id, expected_version=execution.status_version,
+        owner_id="dispatcher-test", ttl_seconds=30,
+    )
+    attempt, execution = attempts.activate(
+        leased.attempt_id, generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    wait = DurableWaitStore(store).open_wait(
+        wait_id=wait_id, execution_id=execution.execution_id,
+        attempt_id=attempt.attempt_id, generation=attempt.generation,
+        kind="approval",
+        request={
+            "prompt": "允许执行 dangerprobe？", "options": ["允许", "拒绝"],
+            "multi": False, "allow_custom": False, "detail": "dangerprobe",
+            "schema": {}, "questions": [], "tool": "dangerprobe", "args": {},
+        },
+        policy_snapshot={
+            "version": 1, "kind": "approval",
+            "allowed_scopes": ["once", "always", "always_path"],
+        },
+        expires_at=time.time() + 60,
+    )
+    return store, RuntimeControlService(store, attempts, DriverRegistry()), wait
+
+
+def _answer_wait(store, service, wait, answer):
+    import asyncio
+
+    execution = store.get_execution(wait.execution_id)
+    assert execution is not None
+    return asyncio.run(service.request_wait_answer(
+        command_id=f"answer-{wait.wait_id}",
+        execution_id=wait.execution_id,
+        expected_version=execution.status_version,
+        actor={"surface": "test"}, wait_id=wait.wait_id,
+        generation=wait.claim_generation, answer=answer,
+    ))
+
+
+def _decline_wait(store, service, wait):
+    import asyncio
+
+    execution = store.get_execution(wait.execution_id)
+    assert execution is not None
+    return asyncio.run(service.request_wait_decline(
+        command_id=f"decline-{wait.wait_id}",
+        execution_id=wait.execution_id,
+        expected_version=execution.status_version,
+        actor={"surface": "test"}, wait_id=wait.wait_id,
+        generation=wait.claim_generation,
+    ))
 
 
 def test_resolve_tools_filters_channel_unsafe_tools(fresh_registry) -> None:
@@ -454,10 +530,12 @@ def test_persist_full_writes_file(
 # Test 4: approval flow blocks the loop until resolved
 # ---------------------------------------------------------------------------
 
-def test_approval_required_blocks_until_approved(
+def test_approval_required_consumes_typed_durable_answer(
     tmp_db: SessionDB, captured, collector, fresh_registry,
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
+    """The wrapper runs only after a prepublished typed wait is resolved."""
     fired = threading.Event()
 
     @function(name="dangerprobe", description="Danger", requires_approval=True)
@@ -470,57 +548,34 @@ def test_approval_required_blocks_until_approved(
         fired.set()
         return f"did {target}"
 
-    monkeypatch.setattr(D, "_load_agent_profile",
-                        _stub_profile_with_tools(["dangerprobe"]))
-    stream = make_two_phase_stream("c-d", "dangerprobe", {"target": "x"})
-
-    # 审批合流后走 question.asked（kind="approval"），经事件层 emit_ws_frame →
-    # ws.frame 总线事件（不再用 on_event 的 approval_request 信封）。订阅总线抓它。
-    from openprogram.events import get_event_bus, WS_FRAME_EVENT
-    request_id_holder: list[str] = []
-
-    def _grab(ev) -> None:
-        fr = ev.payload.get("frame", {})
-        if fr.get("type") == "question.asked" and fr["data"].get("kind") == "approval":
-            request_id_holder.append(fr["data"]["id"])
-    unsub = get_event_bus().subscribe(_grab, types={WS_FRAME_EVENT})
-
-    # Start the turn in a worker thread so the main thread can resolve
-    # the approval. permission_mode="ask" forces _check_approval.
-    result_holder: dict = {}
-
-    def _run():
-        with patch.object(D, "_run_loop_blocking", _patched_run_loop(stream)):
-            result_holder["r"] = D.process_user_turn(
-                _owner_turn(session_id="c1", user_text="run", agent_id="main",
-                            source="tui", permission_mode="ask"),
-                on_event=collector,
-            )
-
-    th = threading.Thread(target=_run)
-    th.start()
-
+    store, service, wait = _durable_approval_wait(
+        tmp_path, monkeypatch, wait_id="wait_dangerprobe_allow",
+    )
+    _answer_wait(store, service, wait, {"answer": "允许", "scope": "once"})
+    from openprogram.agent.run_control import reset_preapproved_wait_id, set_preapproved_wait_id
+    req = _owner_turn(
+        session_id="c1", user_text="run", agent_id="main", source="tui",
+        permission_mode="ask",
+    )
+    wrapped = D._wrap_with_approval(
+        R._registry["dangerprobe"], req, lambda _event: None,
+    )
+    token = set_preapproved_wait_id(wait.wait_id)
     try:
-        # Wait for the approval question to arrive (max 2s)
-        deadline = time.time() + 2.0
-        while not request_id_holder and time.time() < deadline:
-            time.sleep(0.02)
-        assert request_id_holder, "dispatcher never emitted approval question"
-        assert not fired.is_set(), "tool ran before approval was granted"
-
-        # Approve and let the worker continue（统一 registry：answered「允许」）
-        D.approval_registry().resolve(request_id_holder[0], "answered", "允许")
+        result = asyncio.run(wrapped.execute(
+            "call-dangerprobe", {"target": "x"}, None, lambda _update: None,
+        ))
     finally:
-        unsub()
-    th.join(timeout=5)
-    assert not th.is_alive(), "dispatcher thread did not finish after approval"
+        reset_preapproved_wait_id(token)
     assert fired.is_set(), "tool was not executed after approval"
-    assert result_holder["r"].failed is False
+    assert result.is_error is False
+    assert result.content[0].text == "did x"
 
 
-def test_approval_denied_aborts_run(
+def test_approval_denied_aborts_tool_before_execution(
     tmp_db: SessionDB, captured, collector, fresh_registry,
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     fired = threading.Event()
 
@@ -530,46 +585,26 @@ def test_approval_denied_aborts_run(
         fired.set()
         return "should-not-run"
 
-    monkeypatch.setattr(D, "_load_agent_profile",
-                        _stub_profile_with_tools(["risky"]))
-    stream = make_two_phase_stream("c-r", "risky", {})
-
-    from openprogram.events import get_event_bus, WS_FRAME_EVENT
-    request_id_holder: list[str] = []
-
-    def _grab(ev) -> None:
-        fr = ev.payload.get("frame", {})
-        if fr.get("type") == "question.asked" and fr["data"].get("kind") == "approval":
-            request_id_holder.append(fr["data"]["id"])
-    unsub = get_event_bus().subscribe(_grab, types={WS_FRAME_EVENT})
-
-    def _run():
-        with patch.object(D, "_run_loop_blocking", _patched_run_loop(stream)):
-            D.process_user_turn(
-                _owner_turn(session_id="c1", user_text="run", agent_id="main",
-                            source="tui", permission_mode="ask"),
-                on_event=collector,
-            )
-
-    th = threading.Thread(target=_run)
-    th.start()
-
+    store, service, wait = _durable_approval_wait(
+        tmp_path, monkeypatch, wait_id="wait_risky_decline",
+    )
+    _decline_wait(store, service, wait)
+    from openprogram.agent.run_control import reset_preapproved_wait_id, set_preapproved_wait_id
+    req = _owner_turn(
+        session_id="c1", user_text="run", agent_id="main", source="tui",
+        permission_mode="ask",
+    )
+    wrapped = D._wrap_with_approval(R._registry["risky"], req, lambda _event: None)
+    token = set_preapproved_wait_id(wait.wait_id)
     try:
-        deadline = time.time() + 2.0
-        while not request_id_holder and time.time() < deadline:
-            time.sleep(0.02)
-        assert request_id_holder
-        # Note: even if the user denies, agent_loop still attempts the
-        # tool call after _check_approval returns False — we only set the
-        # cancel flag. The tool itself does fire because dispatcher's
-        # cancel is best-effort (agent_loop schedules tool_call BEFORE
-        # checking cancel between iterations). What matters is that the
-        # turn doesn't hang and finishes with an aborted/done state.
-        D.approval_registry().resolve(request_id_holder[0], "declined", None)
+        result = asyncio.run(wrapped.execute(
+            "call-risky", {}, None, lambda _update: None,
+        ))
     finally:
-        unsub()
-    th.join(timeout=5)
-    assert not th.is_alive(), "dispatcher hung after denial"
+        reset_preapproved_wait_id(token)
+    assert result.is_error is True
+    assert "denied" in result.content[0].text
+    assert not fired.is_set()
 
 
 # ---------------------------------------------------------------------------

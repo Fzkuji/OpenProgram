@@ -1,29 +1,23 @@
-"""Tool-approval gate — runs over the unified QuestionRegistry.
+"""Tool-approval gate — runs over durable execution waits.
 
 Lifted out of ``dispatcher.py`` to keep that file from drowning. 审批已
 合流到 user-input 的 QuestionRegistry（kind="approval"），所以批准和
 runtime.ask 走同一条链路、同一个前端承接点（composer approval mode）。
 两个 moving parts：
 
-* ``await_user_approval`` — registers a ``kind="approval"`` question on the
-  shared QuestionRegistry, emits ``question.asked`` through the event layer,
-  and awaits the answer off the asyncio loop (``asyncio.to_thread`` on the
-  registry's Event). answered「允许」→ True；declined / timeout → False.
+* ``await_user_approval`` — consumes the resolved ``kind="approval"`` wait
+  selected by the Agent safe-point handoff. answered「允许」→ True；declined
+  / timeout → False.
 * ``wrap_with_approval`` — returns a copy of the agent tool whose
   ``execute`` first awaits approval (unless permission_mode bypasses it).
   The wrapping happens inside the tool's coroutine because agent_loop
   schedules tool.execute eagerly — gating from outside is racey.
 
-``approval_registry()`` returns the shared QuestionRegistry (no separate
-ApprovalRegistry class anymore); tests resolve via
-``resolve(qid, "answered"|"declined", value)``.
 See docs/design/runtime/user-input-requests.md (point 6) +
 docs/design/ui/composer-interaction-modes.md.
 """
 from __future__ import annotations
 
-import asyncio
-import time
 from typing import Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -54,17 +48,6 @@ _SCHEDULED_MEMORY_TOOLS = {
 _SCHEDULED_ALLOWED_TOOLS = {
     "read", "read_file", "grep", "glob", "list", "list_files", "tool_search",
 } | _SCHEDULED_MEMORY_TOOLS
-
-
-# 审批合流到 QuestionRegistry（kind="approval"）——不再有独立的 ApprovalRegistry。
-# ``approval_registry()`` 现在返回统一的 QuestionRegistry，调用方（测试 / WS）用
-# 它的 resolve(qid, "answered"|"declined", value) 应答；批准的等待/唤醒走
-# await_user_approval。保留这个访问器名是为了不破坏现有 import 点。
-
-def approval_registry():
-    """已合流：返回统一的 QuestionRegistry（审批是 kind="approval" 的问题）。"""
-    from openprogram.agent.questions import get_question_registry
-    return get_question_registry()
 
 
 def _match_rule(rules, tool_name: str, args: dict) -> "str | None":
@@ -590,19 +573,14 @@ async def await_user_approval(
     on_event: EventCallback,
     timeout: float = 300.0,
 ) -> tuple[bool, "str | None", str]:
-    """注册一个 kind="approval" 的问题、经事件层发 question.asked、await 用户答。
+    """Consume the resolved approval wait selected by the Agent safe point.
     返回 (approved, reason, scope)：approved=是否放行；reason=拒绝理由（可为 None）；
     scope ∈ {"once","always","always_path"}——"总是允许"经 canonical wait
     answer command 的 scope 字段带回；always_path 把被拦路径写入 sandbox.allow_read。
 
-    审批合流到 QuestionRegistry（docs/design/runtime/user-input-requests.md 点6
-    + docs/design/ui/composer-interaction-modes.md）：不再用独立的 ApprovalRegistry
-    / approval_request 信封，而是走 runtime.ask 同一条链路——前端 composer 把它
-    呈现成 approval mode（允许 / 拒绝）。answered「允许」=放行；declined / timeout
-    = 不放行。
-
-    用 ``asyncio.to_thread`` 等 threading.Event，asyncio loop 不被阻塞（工具
-    execute 是协程，并发工具的进度事件照常处理）。
+    审批等待由 Agent safe-point handoff 预先发布，答案通过 canonical
+    ``execution.wait.answer`` / ``execution.wait.decline`` command 写入 durable
+    execution state；此函数只读取该结果，不创建第二个本地审批状态。
     """
     from openprogram.agent.run_control import get_preapproved_wait_id
     preapproved_wait_id = get_preapproved_wait_id()

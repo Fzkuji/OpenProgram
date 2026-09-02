@@ -9,7 +9,7 @@ the seam so we can assert:
   * `chat_response` envelopes hit ``on_event`` in the right order
   * Errors get surfaced as a ``system`` message + ``error`` envelope,
     not a raw exception
-  * Approval flow blocks until ApprovalRegistry.resolve() fires
+  * Approval consumes a typed answer from a durable wait
 """
 from __future__ import annotations
 
@@ -228,6 +228,71 @@ def _grab_approval_frames() -> tuple[list[dict], "callable"]:
     return frames, get_event_bus().subscribe(_grab, types={WS_FRAME_EVENT})
 
 
+def _durable_approval_wait(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                           *, wait_id: str = "wait_dispatcher_approval"):
+    """Create the pre-published approval safe point used by these tests."""
+    import openprogram.execution as execution_module
+    from openprogram.execution import RuntimeControlService
+    from openprogram.execution.attempts import AttemptStore
+    from openprogram.execution.driver import DriverRegistry
+    from openprogram.execution.model import CapabilitySet
+    from openprogram.execution.store import ExecutionStore
+    from openprogram.execution.waits import DurableWaitStore
+
+    store = ExecutionStore(tmp_path / "dispatcher-executions.db")
+    monkeypatch.setattr(execution_module, "default_store", lambda: store)
+    revision = store.create_revision(manifest={"entrypoint": "dispatcher-test"})
+    execution = store.create_execution(
+        execution_id="exec_dispatcher_approval",
+        run_id="run_dispatcher_approval",
+        session_id="c1",
+        revision_id=revision.revision_id,
+        capabilities=CapabilitySet(
+            pause=True, safe_point_kinds=("agent.wait.before_tool",),
+        ),
+    )
+    attempts = AttemptStore(store)
+    leased, reserved = attempts.lease(
+        execution.execution_id, expected_version=execution.status_version,
+        owner_id="dispatcher-test", ttl_seconds=30,
+    )
+    attempt, execution = attempts.activate(
+        leased.attempt_id, generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    wait = DurableWaitStore(store).open_wait(
+        wait_id=wait_id, execution_id=execution.execution_id,
+        attempt_id=attempt.attempt_id, generation=attempt.generation,
+        kind="approval",
+        request={
+            "prompt": "允许执行 bash？", "options": ["允许", "拒绝"],
+            "multi": False, "allow_custom": False, "detail": "bash",
+            "schema": {}, "questions": [], "tool": "bash", "args": {},
+        },
+        policy_snapshot={
+            "version": 1, "kind": "approval",
+            "allowed_scopes": ["once", "always", "always_path"],
+        },
+        expires_at=time.time() + 60,
+    )
+    service = RuntimeControlService(store, attempts, DriverRegistry())
+    return store, service, execution, attempt, wait
+
+
+def _resolve_approval_wait(service, store, wait, answer):
+    import asyncio
+
+    execution = store.get_execution(wait.execution_id)
+    assert execution is not None
+    return asyncio.run(service.request_wait_answer(
+        command_id=f"answer-{wait.wait_id}",
+        execution_id=wait.execution_id,
+        expected_version=execution.status_version,
+        actor={"surface": "test"}, wait_id=wait.wait_id,
+        generation=wait.claim_generation, answer=answer,
+    ))
+
+
 def test_approval_bypass_skips_check(tmp_db, captured, collector) -> None:
     """permission_mode=bypass should never emit an approval question."""
     frames, unsub = _grab_approval_frames()
@@ -244,55 +309,64 @@ def test_approval_bypass_skips_check(tmp_db, captured, collector) -> None:
     assert not frames
 
 
-def test_approval_registry_resolves(tmp_db) -> None:
-    """审批合流：统一 QuestionRegistry 的 register/resolve/consume（kind=approval）。"""
-    from openprogram.agent.questions import PendingQuestion
-    reg = D.approval_registry()  # 现在是 QuestionRegistry
-    q = PendingQuestion(id="test_req_1", session_id="c1", kind="approval",
-                        prompt="允许执行 bash？", options=["允许", "拒绝"])
+def test_approval_wait_resolves_through_canonical_command(tmp_path, monkeypatch) -> None:
+    """Approval answers are durable typed command results, not registry state."""
+    from openprogram.agent.questions import PendingQuestion, QuestionRegistry
+
+    store, service, execution, _attempt, wait = _durable_approval_wait(
+        tmp_path, monkeypatch,
+    )
+    reg = QuestionRegistry()
+    q = PendingQuestion(id=wait.wait_id, session_id="c1", kind="approval",
+                        prompt="允许执行 bash？", execution_id=execution.execution_id,
+                        options=["允许", "拒绝"])
     waiter = reg.register(q)
 
-    def _resolve():
-        time.sleep(0.05)
-        reg.resolve("test_req_1", "answered", "允许")
-    threading.Thread(target=_resolve).start()
+    _resolve_approval_wait(
+        service, store, wait, {"answer": "允许", "scope": "once"},
+    )
+    reg.wake(wait.wait_id)
     assert waiter.wait(timeout=1.0) is True
-    assert reg.consume("test_req_1") == ("answered", "允许")
+    assert reg.consume(wait.wait_id) == (
+        "answered", {"answer": "允许", "scope": "once"},
+    )
 
 
-def test_approval_registry_unknown_id(tmp_db) -> None:
-    reg = D.approval_registry()
-    # Resolve before register: returns False
-    assert reg.resolve("missing", "answered", "允许") is False
+def test_unknown_approval_wait_is_rejected_by_canonical_command(tmp_path, monkeypatch) -> None:
+    import asyncio
+    from openprogram.execution.store import ExecutionConflict
+
+    _store, service, execution, _attempt, _wait = _durable_approval_wait(
+        tmp_path, monkeypatch, wait_id="known-wait",
+    )
+    with pytest.raises(ExecutionConflict) as raised:
+        asyncio.run(service.request_wait_answer(
+            command_id="answer-missing", execution_id=execution.execution_id,
+            expected_version=execution.status_version, actor={"surface": "test"},
+            wait_id="missing", generation=0,
+            answer={"answer": "允许", "scope": "once"},
+        ))
+    assert raised.value.code == "wait_not_found"
 
 
 # ---------------------------------------------------------------------------
 # Approval flow integrated with dispatcher
 # ---------------------------------------------------------------------------
 
-def test_await_user_approval_emits_question_and_resolves() -> None:
-    """``await_user_approval`` 必须 (a) 经事件层发一个 kind="approval" 的
-    question.asked 帧（带 tool/args/session_id）、(b) 用户在统一 registry 答
-    「允许」后解除。这是 permission_mode="ask" 时 per-tool wrapper 调的底层原语。"""
+def test_await_user_approval_consumes_typed_prepublished_wait(tmp_path, monkeypatch) -> None:
+    """The approval primitive only consumes a resolved safe-point wait."""
     import asyncio
-    from openprogram.agent.questions import QuestionRegistry
-    import openprogram.agent.questions as Q
-
-    Q._registry = QuestionRegistry()  # 干净 registry
-    frames, unsub = _grab_approval_frames()
+    from openprogram.agent.run_control import reset_preapproved_wait_id, set_preapproved_wait_id
 
     req = D.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
                         source="tui", permission_mode="ask")
-
-    def _resolver():
-        reg = Q.get_question_registry()
-        for _ in range(100):
-            time.sleep(0.02)
-            pend = reg.list_pending()
-            if pend:
-                reg.resolve(pend[0].id, "answered", "允许")
-                return
-    threading.Thread(target=_resolver, daemon=True).start()
+    store, service, _execution, _attempt, wait = _durable_approval_wait(
+        tmp_path, monkeypatch,
+    )
+    _resolve_approval_wait(
+        service, store, wait, {"answer": "允许", "scope": "always"},
+    )
+    token = set_preapproved_wait_id(wait.wait_id)
 
     async def _drive():
         return await D._await_user_approval(
@@ -302,41 +376,17 @@ def test_await_user_approval_emits_question_and_resolves() -> None:
     try:
         approved, reason, scope = asyncio.run(_drive())
     finally:
-        unsub()
+        reset_preapproved_wait_id(token)
 
     assert approved is True
     assert reason is None
-    assert len(frames) == 1
-    assert frames[0]["tool"] == "bash"
-    assert frames[0]["args"] == {"command": "ls"}
-    assert frames[0]["session_id"] == "c1"
-    assert frames[0]["kind"] == "approval"
+    assert scope == "always"
 
 
-def test_await_user_approval_emits_execution_owner() -> None:
+def test_await_user_approval_requires_prepublished_safe_point() -> None:
     import asyncio
-    from openprogram.agent.questions import QuestionRegistry
-    from openprogram.agent.run_control import (
-        reset_current_execution_id, set_current_execution_id,
-    )
-    import openprogram.agent.questions as Q
-
-    Q._registry = QuestionRegistry()
-    frames, unsub = _grab_approval_frames()
-    execution_token = set_current_execution_id("approval-execution")
     req = D.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
                         source="tui", permission_mode="ask")
-
-    def _resolver():
-        reg = Q.get_question_registry()
-        for _ in range(100):
-            time.sleep(0.02)
-            pend = reg.list_pending()
-            if pend:
-                reg.resolve(pend[0].id, "answered", "允许")
-                return
-
-    threading.Thread(target=_resolver, daemon=True).start()
 
     async def _drive():
         return await D._await_user_approval(
@@ -344,9 +394,5 @@ def test_await_user_approval_emits_execution_owner() -> None:
             on_event=lambda e: None, timeout=5.0,
         )
 
-    try:
-        assert asyncio.run(_drive())[0] is True
-    finally:
-        reset_current_execution_id(execution_token)
-        unsub()
-    assert frames[0]["execution_id"] == "approval-execution"
+    with pytest.raises(RuntimeError, match="pre-dispatch durable wait"):
+        asyncio.run(_drive())

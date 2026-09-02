@@ -88,16 +88,11 @@ from openprogram.agent.dispatcher.loop_runner import (
 
 
 # ---------------------------------------------------------------------------
-# Approval registry — used by the "ask" permission flow
+# Approval gate — used by the "ask" permission flow
 # ---------------------------------------------------------------------------
 
-# Approval gate lives in _approval.py — re-exported here so callers
-# (tests, server.py WS handler) can keep using
-# ``dispatcher.approval_registry()``. 审批已合流到 QuestionRegistry，
-# ``approval_registry()`` 返回统一的 QuestionRegistry（不再有 ApprovalRegistry 类）。
 from openprogram.agent import plan_mode as _plan_mode
 from openprogram.agent.internals._approval import (
-    approval_registry,
     wrap_with_approval as _wrap_with_approval,
     await_user_approval as _await_user_approval,
 )
