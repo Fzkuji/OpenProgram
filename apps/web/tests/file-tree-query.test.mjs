@@ -51,6 +51,14 @@ test("file changes do not abort durable mutation requests", () => {
   assert.match(source, /Durable mutations must keep their own request lifecycle/);
 });
 
+test("FileTree teardown aborts and forgets its own pending mutations", () => {
+  assert.match(source, /const mutationKeys = useRef\(new Set<string>\(\)\)/);
+  assert.match(source, /function abortMutationRequests\(\)/);
+  assert.match(source, /for \(const key of mutationKeys\.current\) forgetWsMutation\(key\)/);
+  assert.match(source, /abortMutationRequests\(\);\n\s+queryGeneration\.current \+= 1/);
+  assert.match(source, /mutationKeys\.current\.add\(operationKey\)/);
+});
+
 test("Filter and Highlight preserve their existing tree semantics", () => {
   assert.match(source, /filter\.trim\(\) && searchMode === "filter"/);
   assert.match(source, /searchMode === "highlight"/);

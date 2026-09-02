@@ -37,6 +37,7 @@ import {
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   idempotencyKeyFor,
+  forgetWsMutation,
   MutationRegistryCapacityError,
   wsMutationRequest,
   wsRequest,
@@ -308,6 +309,7 @@ export function FileTree({
   const directoryPagesRef = useRef<Record<string, DirectoryPage>>({});
   const queryControllers = useRef(new Set<AbortController>());
   const mutationControllers = useRef(new Set<AbortController>());
+  const mutationKeys = useRef(new Set<string>());
   const queryGeneration = useRef(0);
   const searchGeneration = useRef(0);
   const searchCursor = useRef<string | null>(null);
@@ -325,6 +327,13 @@ export function FileTree({
   function abortSearchQueries(): void {
     for (const controller of searchControllers.current) controller.abort();
     searchControllers.current.clear();
+  }
+
+  function abortMutationRequests(): void {
+    for (const controller of mutationControllers.current) controller.abort();
+    for (const key of mutationKeys.current) forgetWsMutation(key);
+    mutationControllers.current.clear();
+    mutationKeys.current.clear();
   }
 
   useEffect(() => {
@@ -450,6 +459,7 @@ export function FileTree({
     void load("");
     return () => {
       for (const controller of queryControllers.current) controller.abort();
+      abortMutationRequests();
       queryGeneration.current += 1;
     };
   }, [load]);
@@ -553,6 +563,7 @@ export function FileTree({
       return { status: "error", error_code: "MUTATION_REGISTRY_CAPACITY" };
     }
     const operationController = new AbortController();
+    mutationKeys.current.add(operationKey);
     mutationControllers.current.add(operationController);
     let data: FileOperationResult | null = null;
     try {
@@ -575,6 +586,7 @@ export function FileTree({
       data = null;
     } finally {
       mutationControllers.current.delete(operationController);
+      mutationKeys.current.delete(operationKey);
     }
     const result: FileOperationResult = data
       ? { ...data, status: data.status ?? (data.ok ? "ready" : "error") }
