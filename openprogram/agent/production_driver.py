@@ -41,7 +41,7 @@ from openprogram.execution.model import (
     ExecutionStatus,
     TERMINAL_EXECUTION_STATUSES,
 )
-from openprogram.execution.store import ExecutionStore, FinishRepairCapacity
+from openprogram.execution.store import ExecutionStore
 
 
 _log = logging.getLogger(__name__)
@@ -845,17 +845,6 @@ class AgentProductionDriver:
             with self._handles_lock:
                 self._finish_repair_metrics["persisted"] += 1
             return True
-        except FinishRepairCapacity:
-            with self._handles_lock:
-                self._finish_repair_metrics["backpressure"] += 1
-            _log.error(
-                "finish repair persistence backpressure for %s/%s/%s; "
-                "actionable repairs were retained",
-                attempt.execution_id,
-                attempt.attempt_id,
-                attempt.generation,
-            )
-            return False
         except Exception:
             # The bounded retry keeps the intent in memory and retries this
             # write on every pass; the single repair worker continues after
@@ -1019,6 +1008,7 @@ class AgentProductionDriver:
             if self._handles.get(key) is handle:
                 self._handles.pop(key, None)
             self._finished.discard(key)
+            self._finish_repair_stalled.discard(key)
             self._cancel_commands.pop(key, None)
 
     @staticmethod

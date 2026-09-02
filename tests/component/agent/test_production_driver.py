@@ -647,9 +647,9 @@ def test_finish_repair_replay_binds_current_cancel_command(tmp_path):
 
 
 def test_finish_repair_capacity_preserves_actionable_rows(tmp_path, monkeypatch):
-    from openprogram.execution.store import FinishRepairCapacity
+    from openprogram.execution.store import ExecutionConflict
 
-    monkeypatch.setattr("openprogram.execution.store._FINISH_REPAIR_MAX_ROWS", 1)
+    monkeypatch.setattr("openprogram.execution.store._FINISH_REPAIR_HIGH_WATERMARK", 1)
     store, first = _admitted(tmp_path, execution_id="exec-repair-capacity-1")
     attempts = AttemptStore(store)
     first_attempt, first_leased = attempts.lease(
@@ -672,6 +672,24 @@ def test_finish_repair_capacity_preserves_actionable_rows(tmp_path, monkeypatch)
         outcome="completed",
         reason_code=None,
     )
+    with pytest.raises(ExecutionConflict) as rejected:
+        store.admit_execution(
+            execution_id="exec-repair-capacity-agent",
+            run_id="run-repair-capacity-agent",
+            session_id="session-repair-capacity-agent",
+            revision_id=first.revision_id,
+            input_ref="input:repair-capacity-agent",
+            input_hash="input-hash-agent",
+            entrypoint="openprogram.agent.dispatcher:process_user_turn",
+            trusted_actor={"subject": "user-2"},
+            config_snapshot_ref="config:repair-capacity-agent",
+            agent_turn_payload={
+                "version": 1,
+                "kind": "chat",
+                "request": {"user_text": "run", "agent_id": "default", "source": "test"},
+            },
+        )
+    assert rejected.value.code == "finish_repair_capacity"
     revision = store.create_revision(
         revision_id="revision-repair-capacity-2", manifest={"entrypoint": "agent", "slot": 2}
     )
@@ -685,11 +703,7 @@ def test_finish_repair_capacity_preserves_actionable_rows(tmp_path, monkeypatch)
         entrypoint="openprogram.agent.dispatcher:process_user_turn",
         trusted_actor={"subject": "user-2"},
         config_snapshot_ref="config:repair-capacity-2",
-        agent_turn_payload={
-            "version": 1,
-            "kind": "chat",
-            "request": {"user_text": "run", "agent_id": "default", "source": "test"},
-        },
+        agent_turn_payload=None,
     )
     second_attempt, second_leased = attempts.lease(
         second.execution_id,
@@ -702,22 +716,54 @@ def test_finish_repair_capacity_preserves_actionable_rows(tmp_path, monkeypatch)
         generation=second_attempt.generation,
         expected_execution_version=second_leased.status_version,
     )
-    with pytest.raises(FinishRepairCapacity):
-        store.upsert_finish_repair(
-            execution_id=second.execution_id,
-            attempt_id=second_active.attempt_id,
-            generation=second_active.generation,
-            expected_version=second_running.status_version,
-            target=ExecutionStatus.COMPLETED.value,
-            outcome="completed",
-            reason_code=None,
-        )
-    rows = store.list_finish_repairs(limit=1)
-    assert len(rows) == 1
-    assert rows[0]["execution_id"] == first.execution_id
+    store.upsert_finish_repair(
+        execution_id=second.execution_id,
+        attempt_id=second_active.attempt_id,
+        generation=second_active.generation,
+        expected_version=second_running.status_version,
+        target=ExecutionStatus.COMPLETED.value,
+        outcome="completed",
+        reason_code=None,
+    )
+    rows = store.list_finish_repairs(limit=2)
+    assert {row["execution_id"] for row in rows} == {
+        first.execution_id, second.execution_id,
+    }
+    attempts.finish(
+        first_active.attempt_id,
+        generation=first_active.generation,
+        expected_execution_version=first_running.status_version,
+        target=ExecutionStatus.COMPLETED,
+        outcome="completed",
+    )
+    attempts.finish(
+        second_active.attempt_id,
+        generation=second_active.generation,
+        expected_execution_version=second_running.status_version,
+        target=ExecutionStatus.COMPLETED,
+        outcome="completed",
+    )
+    recovered = store.admit_execution(
+        execution_id="exec-repair-capacity-recovered",
+        run_id="run-repair-capacity-recovered",
+        session_id="session-repair-capacity-recovered",
+        revision_id=first.revision_id,
+        input_ref="input:repair-capacity-recovered",
+        input_hash="input-hash-recovered",
+        entrypoint="openprogram.agent.dispatcher:process_user_turn",
+        trusted_actor={"subject": "user-3"},
+        config_snapshot_ref="config:repair-capacity-recovered",
+        agent_turn_payload={
+            "version": 1,
+            "kind": "chat",
+            "request": {"user_text": "run", "agent_id": "default", "source": "test"},
+        },
+    )
+    assert recovered.status is ExecutionStatus.QUEUED
 
 
 def test_finish_repair_replay_processes_more_than_one_page(tmp_path):
+    from openprogram.execution.attempts import AttemptConflict
     from openprogram.execution.control import RuntimeControlService
     from openprogram.execution.driver import DriverRegistry
 
@@ -726,11 +772,12 @@ def test_finish_repair_replay_processes_more_than_one_page(tmp_path):
         revision_id="revision-many-repairs", manifest={"entrypoint": "agent"}
     )
     attempts = AttemptStore(store)
+    blocked_attempt_ids = set()
     for index in range(260):
         execution = store.admit_execution(
-            execution_id=f"exec-many-repairs-{index}",
-            run_id=f"run-many-repairs-{index}",
-            session_id=f"session-many-repairs-{index}",
+            execution_id=f"exec-many-repairs-{index:03d}",
+            run_id=f"run-many-repairs-{index:03d}",
+            session_id=f"session-many-repairs-{index:03d}",
             revision_id=revision.revision_id,
             input_ref=f"input:many-repairs-{index}",
             input_hash=f"input-hash-{index}",
@@ -754,6 +801,8 @@ def test_finish_repair_replay_processes_more_than_one_page(tmp_path):
             generation=leased_attempt.generation,
             expected_execution_version=leased_execution.status_version,
         )
+        if index < 256:
+            blocked_attempt_ids.add(active_attempt.attempt_id)
         store.upsert_finish_repair(
             execution_id=execution.execution_id,
             attempt_id=active_attempt.attempt_id,
@@ -764,8 +813,16 @@ def test_finish_repair_replay_processes_more_than_one_page(tmp_path):
             reason_code=None,
         )
     service = RuntimeControlService(store, attempts, DriverRegistry())
-    assert service.replay_finish_repairs() == 260
-    assert store.list_finish_repairs() == []
+    original_finish = service.finish_attempt
+
+    def block_first_page(*args, **kwargs):
+        if kwargs["attempt_id"] in blocked_attempt_ids:
+            raise AttemptConflict("blocked", "test blocked head")
+        return original_finish(*args, **kwargs)
+
+    service.finish_attempt = block_first_page
+    assert service.replay_finish_repairs() == 4
+    assert len(store.list_finish_repairs()) == 256
 
 
 def test_finish_repair_stalls_after_bounded_attempts_until_manual_reconcile(

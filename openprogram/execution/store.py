@@ -55,14 +55,11 @@ class ProjectionConflict(ExecutionStoreError):
     pass
 
 
-class FinishRepairCapacity(ExecutionStoreError):
-    """The bounded finish-repair table cannot accept another actionable row."""
-
-
 _AGENT_TURN_INPUT_VERSION = 1
 _AGENT_TURN_INPUT_MAX_BYTES = 256 * 1024
 _AGENT_TURN_INPUT_KINDS = frozenset({"chat", "forced_tool"})
-_FINISH_REPAIR_MAX_ROWS = 4096
+_FINISH_REPAIR_HIGH_WATERMARK = 4096
+_FINISH_REPAIR_PAGE_LIMIT = 4096
 _AGENT_TURN_INPUT_KEYS = frozenset({
     "version", "kind", "request", "tool_name", "tool_input",
     "anchor_msg_id", "work_dir", "agent_id", "source", "provider", "model",
@@ -321,6 +318,28 @@ class ExecutionStore:
             _json(dict(agent_turn_payload)) if agent_turn_payload is not None else None
         )
         with self._transaction() as connection:
+            if agent_payload_json is not None:
+                actionable_repairs = int(
+                    connection.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM execution_finish_repairs AS r
+                        JOIN executions AS e ON e.execution_id = r.execution_id
+                        JOIN attempts AS a ON a.attempt_id = r.attempt_id
+                        WHERE e.status NOT IN (?, ?, ?, ?)
+                          AND e.current_attempt_id = a.attempt_id
+                          AND a.execution_id = r.execution_id
+                          AND a.generation = r.generation
+                          AND a.status = 'active'
+                        """,
+                        tuple(status.value for status in TERMINAL_EXECUTION_STATUSES),
+                    ).fetchone()[0]
+                )
+                if actionable_repairs >= _FINISH_REPAIR_HIGH_WATERMARK:
+                    raise ExecutionConflict(
+                        "finish_repair_capacity",
+                        "Agent admission is paused while finish repairs drain",
+                    )
             record = self._create_execution_in_transaction(
                 connection,
                 session_id=session_id,
@@ -454,21 +473,6 @@ class ExecutionStore:
                     "WHERE execution_id = ? AND attempt_id = ? AND generation = ?",
                     stale_key,
                 )
-            count = int(
-                connection.execute(
-                    "SELECT COUNT(*) FROM execution_finish_repairs"
-                ).fetchone()[0]
-            )
-            existing = connection.execute(
-                "SELECT 1 FROM execution_finish_repairs "
-                "WHERE execution_id = ? AND attempt_id = ? AND generation = ?",
-                (execution_id, attempt_id, generation),
-            ).fetchone()
-            if existing is None and count >= _FINISH_REPAIR_MAX_ROWS:
-                raise FinishRepairCapacity(
-                    "finish_repair_capacity",
-                    "actionable finish repair table is at capacity",
-                )
             connection.execute(
                 """
                 INSERT INTO execution_finish_repairs (
@@ -493,20 +497,55 @@ class ExecutionStore:
     def list_finish_repairs(
         self, *, limit: int = 256, offset: int = 0,
         include_stalled: bool = True,
+        after: tuple[float, str, str, int] | None = None,
     ) -> list[dict[str, Any]]:
-        if type(limit) is not int or not 0 < limit <= _FINISH_REPAIR_MAX_ROWS:
+        if type(limit) is not int or not 0 < limit <= _FINISH_REPAIR_PAGE_LIMIT:
             raise ValueError("finish repair limit is out of bounds")
         if type(offset) is not int or offset < 0:
             raise ValueError("finish repair offset must be non-negative")
         if type(include_stalled) is not bool:
             raise ValueError("include_stalled must be a bool")
+        if after is not None and (
+            type(after) is not tuple
+            or len(after) != 4
+            or type(after[0]) not in {int, float}
+            or not all(type(value) is str for value in after[1:3])
+            or type(after[3]) is not int
+        ):
+            raise ValueError("finish repair cursor is invalid")
         with closing(self._connect()) as connection:
+            where = "(? OR reason_code IS NULL OR reason_code != ?)"
+            values: list[Any] = [include_stalled, "finish_repair_stalled"]
+            if after is not None:
+                where += (
+                    " AND (created_at > ? OR "
+                    "(created_at = ? AND execution_id > ?) OR "
+                    "(created_at = ? AND execution_id = ? AND attempt_id > ?) OR "
+                    "(created_at = ? AND execution_id = ? AND attempt_id = ? "
+                    "AND generation > ?))"
+                )
+                created_at, execution_id, attempt_id, generation = after
+                values.extend(
+                    [
+                        created_at,
+                        created_at,
+                        execution_id,
+                        created_at,
+                        execution_id,
+                        attempt_id,
+                        created_at,
+                        execution_id,
+                        attempt_id,
+                        generation,
+                    ]
+                )
+            values.extend([limit, offset])
             rows = connection.execute(
                 "SELECT * FROM execution_finish_repairs "
-                "WHERE (? OR reason_code IS NULL OR reason_code != ?) "
-                "ORDER BY updated_at, execution_id, attempt_id "
+                f"WHERE {where} "
+                "ORDER BY created_at, execution_id, attempt_id, generation "
                 "LIMIT ? OFFSET ?",
-                (include_stalled, "finish_repair_stalled", limit, offset),
+                values,
             ).fetchall()
         return [dict(row) for row in rows]
 

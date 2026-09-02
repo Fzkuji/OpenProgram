@@ -1911,6 +1911,11 @@ class RuntimeControlService:
         terminalizes that record instead of leaving it queued forever.
         """
         self.replay_finish_repairs()
+        # A stalled repair is a durable, explicit recovery item. Startup may
+        # retry it once through the same fenced path; if it remains blocked,
+        # the marker below prevents generic owner-loss recovery from changing
+        # its desired outcome.
+        self.replay_finish_repairs(include_stalled=True)
         stalled_repairs = {
             str(repair["execution_id"])
             for repair in self.executions.list_finish_repairs(limit=4096)
@@ -1954,14 +1959,22 @@ class RuntimeControlService:
     def replay_finish_repairs(self, *, include_stalled: bool = False) -> int:
         """Replay durable Agent finish intents with current fencing state."""
         repaired = 0
+        cursor = None
         while True:
             repairs = self.executions.list_finish_repairs(
-                limit=256, include_stalled=include_stalled,
+                limit=256,
+                include_stalled=include_stalled,
+                after=cursor,
             )
             if not repairs:
                 break
-            batch_repaired = 0
             for repair in repairs:
+                cursor = (
+                    float(repair["created_at"]),
+                    str(repair["execution_id"]),
+                    str(repair["attempt_id"]),
+                    int(repair["generation"]),
+                )
                 if (
                     repair.get("reason_code") == "finish_repair_stalled"
                     and not include_stalled
@@ -1985,7 +1998,6 @@ class RuntimeControlService:
                         execution_id, attempt_id, generation,
                     )
                     repaired += 1
-                    batch_repaired += 1
                     continue
                 try:
                     target = ExecutionStatus(str(repair["target"]))
@@ -1994,7 +2006,6 @@ class RuntimeControlService:
                         execution_id, attempt_id, generation,
                     )
                     repaired += 1
-                    batch_repaired += 1
                     continue
                 outcome = str(repair["outcome"])
                 reason_code = repair.get("reason_code")
@@ -2045,9 +2056,6 @@ class RuntimeControlService:
                     execution_id, attempt_id, generation,
                 )
                 repaired += 1
-                batch_repaired += 1
-            if batch_repaired == 0:
-                break
         return repaired
 
     def resolve_effect(
