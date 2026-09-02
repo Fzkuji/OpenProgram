@@ -86,6 +86,7 @@ interface ChatAckData {
   session_id?: string;
   msg_id?: string;
   execution_id?: string;
+  status_version?: number;
   /** Effective permission mode the backend adopted for this turn. */
   permission_mode?: string;
   /** Set by a function dispatch (retry_function) whose top-level code node
@@ -171,6 +172,7 @@ export function wsHandleChatAck(data: ChatAckData): void {
         session_id: sid,
         msg_id: data.msg_id || "",
         execution_id: data.execution_id,
+        status_version: data.status_version,
       });
     if (isActive) {
       void loadAgentSettings();

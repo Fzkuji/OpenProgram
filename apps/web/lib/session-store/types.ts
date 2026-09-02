@@ -341,6 +341,7 @@ export interface RunningTask {
   func_name?: string;
   started_at?: number;
   execution_id?: string;
+  status_version?: number;
   cancelling?: boolean;
 }
 

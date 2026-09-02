@@ -930,10 +930,42 @@ class RuntimeControlService:
                 if (execution.checkpoint_head_id or execution.source_checkpoint_id)
                 else None
             )
-            if checkpoint is None:
+            # A queued execution may be paused before its initial activation.
+            # It has no checkpoint because no provider or tool action has run,
+            # but continue may still claim its first owner and run the durable
+            # admission input.  Any previous attempt without a checkpoint is
+            # owner loss, not a resumable root state.
+            initial_activation = (
+                checkpoint is None
+                and kind is CommandKind.CONTINUE
+                and connection.execute(
+                    "SELECT COUNT(*) FROM attempts WHERE execution_id = ?",
+                    (execution_id,),
+                ).fetchone()[0] == 0
+            )
+            if checkpoint is None and not initial_activation:
                 raise ExecutionConflict("checkpoint_required", "a published checkpoint is required")
-            if checkpoint.execution_id != execution_id or checkpoint.revision_id != execution.revision_id:
+            if (
+                checkpoint is not None
+                and (
+                    checkpoint.execution_id != execution_id
+                    or checkpoint.revision_id != execution.revision_id
+                )
+            ):
                 raise ExecutionConflict("invalid_checkpoint", "checkpoint does not belong to the current execution revision")
+            if (
+                kind is CommandKind.STEP
+                and self._agent_step_has_no_next_action(checkpoint)
+            ):
+                rejected = self.executions._transition_command(
+                    connection,
+                    command.command_id,
+                    expected_status=CommandStatus.ACCEPTED,
+                    target=CommandStatus.REJECTED,
+                    result_version=execution.status_version,
+                    rejection_code="no_next_action",
+                )
+                return rejected, execution, None, checkpoint, (), True
             steering_rows = connection.execute(
                 "SELECT * FROM commands WHERE execution_id = ? AND kind = ? "
                 "AND status IN (?, ?) ORDER BY submitted_at, command_id",
@@ -1025,6 +1057,28 @@ class RuntimeControlService:
             )
             command = applying
             return command, reserved, active, checkpoint, steer_inputs, False
+
+    @staticmethod
+    def _agent_step_has_no_next_action(checkpoint: CheckpointManifest | None) -> bool:
+        """Recognize a terminal provider checkpoint before issuing STEP.
+
+        An after-provider decision without tool calls has already completed
+        the turn.  Starting an attempt solely to manufacture a STEP event
+        would leave its permit APPLYING, so reject it durably instead.
+        """
+        if checkpoint is None:
+            return False
+        state = checkpoint.state_refs.get("agent_checkpoint_v1")
+        if not isinstance(state, Mapping):
+            return False
+        safe_point = state.get("safe_point")
+        decision = state.get("current_decision")
+        return (
+            isinstance(safe_point, Mapping)
+            and safe_point.get("phase") == "after_provider"
+            and isinstance(decision, Mapping)
+            and not decision.get("tool_call_ids")
+        )
 
     def _finish_activation(
         self,
@@ -1347,40 +1401,6 @@ class RuntimeControlService:
                 supersede_kinds=_CANCEL_SUPERSEDES,
                 supersede_code="superseded_by_cancel",
             )
-        except CommandConflict as exc:
-            # Every transport uses the same command identity.  If another
-            # cancellation won the race, adopt its durable payload/actor and
-            # retry as the same idempotent command; the first reason remains
-            # authoritative instead of becoming an idempotency error.
-            existing = self.executions.get_command(command_id)
-            if (
-                existing is None
-                or existing.execution_id != execution_id
-                or existing.kind is not CommandKind.CANCEL
-                or getattr(exc, "code", None) != "idempotency_collision"
-            ):
-                if prepared_before_accept:
-                    self._record_terminal_recovery(current, command_id)
-                    raise ProjectionRecoveryRequired(execution_id) from exc
-                raise
-            try:
-                command, execution, duplicate = self.executions.accept_command_with_transition(
-                    command_id=command_id,
-                    execution_id=execution_id,
-                    expected_version=existing.expected_version,
-                    kind=CommandKind.CANCEL,
-                    target=ExecutionStatus.CANCELLING,
-                    payload=existing.payload,
-                    actor=existing.actor,
-                    reason_code=existing.payload.get("reason_code") or reason_code,
-                    supersede_kinds=_CANCEL_SUPERSEDES,
-                    supersede_code="superseded_by_cancel",
-                )
-            except CommandConflict as retry_exc:
-                if prepared_before_accept:
-                    self._record_terminal_recovery(current, command_id)
-                    raise ProjectionRecoveryRequired(execution_id) from retry_exc
-                raise
         except Exception as exc:
             if prepared_before_accept:
                 self._record_terminal_recovery(current, command_id)

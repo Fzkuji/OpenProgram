@@ -284,21 +284,6 @@ async def _handle_execution_control(ws, cmd: dict, operation: str) -> None:
             "execution_id": execution_id, "status_version": None,
         })
         return
-    existing = store.get_command(command_id)
-    if existing is not None:
-        from openprogram.execution.model import CommandKind
-        expected_kind = {
-            "pause": CommandKind.PAUSE,
-            "continue": CommandKind.CONTINUE,
-            "step": CommandKind.STEP,
-        }[operation]
-        if existing.execution_id == execution_id and existing.kind is expected_kind and not existing.payload:
-            await _send_command_update(ws, existing, execution)
-            return
-        await _send_command_update(
-            ws, _rejected_command(cmd, "idempotency_collision", execution.to_dict()), execution,
-        )
-        return
     try:
         if operation in {"pause", "continue", "step"}:
             from openprogram.execution.model import CommandKind
@@ -324,6 +309,15 @@ async def _handle_execution_control(ws, cmd: dict, operation: str) -> None:
             dispatch = await service.request_pause(
                 command_id=command_id, execution_id=execution_id,
                 expected_version=expected_version, actor=actor,
+            )
+        elif operation == "cancel":
+            # ``reason_code`` is server policy, not caller-controlled input.
+            # The first accepted cancel command retains this exact reason if
+            # another cancellation races with it.
+            dispatch = await service.request_cancel(
+                command_id=command_id, execution_id=execution_id,
+                expected_version=expected_version, actor=actor,
+                reason_code="cancel.user",
             )
         else:
             request = (
@@ -362,30 +356,8 @@ async def handle_execution_step(ws, cmd: dict):
 
 
 async def handle_execution_cancel(ws, cmd: dict):
-    """Cancel one execution and broadcast its canonical record."""
-    from openprogram.webui import server as _s
-
-    execution_id = (cmd.get("execution_id") or "").strip()
-    if not execution_id:
-        await ws.send_text(json.dumps({
-            "type": "error",
-            "data": {"message": "Missing execution_id"},
-        }))
-        return
-    from openprogram.agent.production_driver import cancel_canonical_execution
-    canonical = await cancel_canonical_execution(execution_id)
-    if canonical is None:
-        await ws.send_text(json.dumps({
-            "type": "error",
-            "data": {
-                "code": "ExecutionNotFound",
-                "message": "execution not found",
-            },
-        }))
-        return
-    execution = canonical.execution.to_dict()
-    _broadcast_execution(execution)
-    _s._release_session_occupancy_for_execution(execution)
+    """Submit an exact durable cancellation command."""
+    await _handle_execution_control(ws, cmd, "cancel")
 
 
 async def handle_stats(ws, cmd: dict):

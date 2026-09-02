@@ -633,7 +633,10 @@ assert.doesNotMatch(
   /cancelling:\s*true/,
   "optimistic cancel must not leave cancelling:true on the running task",
 );
-assert.match(composer, /action: "execution.cancel", execution_id: executionId/);
+assert.match(
+  composer,
+  /action: "execution.cancel",[\s\S]*command_id: crypto\.randomUUID\(\),[\s\S]*execution_id: executionId,[\s\S]*expected_version: expectedVersion/,
+);
 assert.match(composer, /text\("Cancel execution", "取消运行"\)/);
 const wsSendBody = composer.slice(
   composer.indexOf("function wsSend("),

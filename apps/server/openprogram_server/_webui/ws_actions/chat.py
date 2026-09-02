@@ -1079,6 +1079,7 @@ async def handle_chat(ws, cmd: dict):
                 "msg_id": msg_id,
                 "text": text,
                 "execution_id": execution_id,
+                "status_version": _admission.status_version,
                 "permission_mode": effective_permission,
             },
         }))

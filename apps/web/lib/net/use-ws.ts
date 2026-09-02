@@ -263,6 +263,7 @@ export function useWS(): void {
             execution_id?: string;
             session_id?: string;
             status?: string;
+            status_version?: number;
             reason_code?: string;
             event_sequence?: number;
           } }).execution || d;
@@ -303,6 +304,16 @@ export function useWS(): void {
               }
             }
             const task = sid ? store.runningTasks[sid] : undefined;
+            if (
+              task
+              && task.execution_id === eid
+              && typeof execution.status_version === "number"
+            ) {
+              store.setRunningTaskFor(sid, {
+                ...task,
+                status_version: execution.status_version,
+              }, "never");
+            }
             const matches = Boolean(
               task && (
                 task.execution_id === eid

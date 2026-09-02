@@ -285,9 +285,15 @@ export function stopSession(
   const store = useSessionStore.getState();
   const task = store.runningTasks[targetSessionId];
   const executionId = task?.execution_id || "";
+  const expectedVersion = task?.status_version;
   // 1. Tell the server first so the model HTTP stream can abort.
-  if (executionId) {
-    send({ action: "execution.cancel", execution_id: executionId });
+  if (executionId && typeof expectedVersion === "number") {
+    send({
+      action: "execution.cancel",
+      command_id: crypto.randomUUID(),
+      execution_id: executionId,
+      expected_version: expectedVersion,
+    });
   }
   // 2. Patch the live assistant to cancelled. Keep streamed text.
   //    Only the server-issued execution identity can identify the exact

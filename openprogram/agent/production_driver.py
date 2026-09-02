@@ -1587,7 +1587,22 @@ class CanonicalAgentEntry:
             status_version=record.status_version,
         )
 
-    async def activate(self, admission: CanonicalAgentAdmission) -> CanonicalAgentActivation:
+    async def activate(self, admission: CanonicalAgentAdmission) -> CanonicalAgentActivation | None:
+        # chat_ack precedes thread startup.  If a pause wins while that
+        # thread is pending, its queued -> paused transition is the only
+        # initial-activation handoff: this stale starter exits without
+        # creating an attempt or a synthetic checkpoint.  A later continue
+        # activates the same immutable admission input exactly once.
+        current = self.store.get_execution(admission.execution_id)
+        if (
+            current is not None
+            and current.status is ExecutionStatus.PAUSED
+            and current.checkpoint_head_id is None
+            and current.current_attempt_id is None
+            and current.reason_code is None
+            and current.status_version == admission.status_version + 1
+        ):
+            return None
         attempt, leased = self.control.attempts.lease(
             admission.execution_id,
             expected_version=admission.status_version,
@@ -1701,6 +1716,8 @@ class CanonicalAgentAdapter:
 
     async def activate(self, admission: CanonicalAgentAdmission) -> Any:
         active = await self.entry.activate(admission)
+        if active is None:
+            return None
         handle = self.driver._handles[
             (active.admission.execution_id, active.attempt_id, active.generation)
         ]

@@ -487,7 +487,7 @@ def _admitted_agent_execution(tmp_path, *, execution_id: str = "exec-restart-1")
     return store, attempts, active, running
 
 
-def _real_provider_safe_point(tmp_path):
+def _real_provider_safe_point(tmp_path, *, tool_calls=True):
     """Create a checkpoint only through provider before/after callbacks."""
 
     store, attempts, active, running = _admitted_agent_execution(tmp_path)
@@ -519,10 +519,14 @@ def _real_provider_safe_point(tmp_path):
         actor={"subject": "agent-owner"},
     )
     assert duplicate is False
+    tool_content = (
+        [{"type": "toolCall", "id": "tool-1", "name": "echo", "arguments": {}}]
+        if tool_calls else [{"type": "text", "text": "terminal"}]
+    )
+    tool_call_ids = ["tool-1"] if tool_calls else []
     assert hook("provider.after", {
         "message": {
-            "role": "assistant",
-            "content": [{"type": "toolCall", "id": "tool-1", "name": "echo", "arguments": {}}],
+            "role": "assistant", "content": tool_content,
             "api": "openai-completions", "provider": "openai", "model": "fake", "timestamp": 1,
         },
         "resolved_snapshot": snapshot,
@@ -530,7 +534,7 @@ def _real_provider_safe_point(tmp_path):
             "user_message_id": "user-anchor", "assistant_message_id": "assistant-anchor",
             "base_history_head_id": "user-anchor", "branch_id": "main",
         },
-        "tool_call_ids": ["tool-1"],
+        "tool_call_ids": tool_call_ids,
         "next_tool_index": 0,
     }) is True
     paused = store.get_execution(running.execution_id)
@@ -646,6 +650,136 @@ def test_step_commits_one_real_tool_callback_and_consumes_the_permit_atomically(
     assert command is not None and command.status is CommandStatus.APPLIED
     assert current is not None and current.status is ExecutionStatus.PAUSED
     assert command.result_json.get("managed_action_id")
+
+
+def test_step_rejects_terminal_provider_checkpoint_without_leaving_a_permit_applying(tmp_path):
+    store, control, _active, paused, _checkpoint, _command = _real_provider_safe_point(
+        tmp_path, tool_calls=False,
+    )
+
+    dispatched = asyncio.run(control.request_step(
+        command_id="step-terminal-provider",
+        execution_id=paused.execution_id,
+        expected_version=paused.status_version,
+        actor={"subject": "agent-owner"},
+        activator=lambda *_args: pytest.fail("terminal STEP must not activate an owner"),
+    ))
+
+    command = store.get_command("step-terminal-provider")
+    current = store.get_execution(paused.execution_id)
+    assert dispatched.delivered is False
+    assert command is not None
+    assert command.status is CommandStatus.REJECTED
+    assert command.rejection_code == "no_next_action"
+    assert current == paused
+    with sqlite3.connect(store.path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM attempts WHERE execution_id = ?",
+            (paused.execution_id,),
+        ).fetchone()[0] == 1
+
+
+def test_chat_ack_pause_before_initial_activation_continues_the_admitted_turn_once(tmp_path):
+    from openprogram.agent.production_driver import (
+        AgentProductionDriver, CanonicalAgentEntry,
+    )
+
+    store = ExecutionStore(tmp_path / "initial-pause.sqlite3")
+    control = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    provider_starts = []
+
+    def run_turn(*, request, cancel_event):
+        provider_starts.append((request.session_id, cancel_event.is_set()))
+        return SimpleNamespace(failed=False)
+
+    driver = AgentProductionDriver(
+        store, control_service=control, turn_runner=run_turn,
+    )
+    entry = CanonicalAgentEntry(store, driver)
+    admission = entry.admit(
+        session_id="initial-pause-session",
+        turn_payload={
+            "version": 1, "kind": "chat",
+            "request": {"user_text": "pause before start", "agent_id": "main", "source": "component"},
+        },
+        trusted_actor={"subject": "agent-owner"},
+        user_message_id="user-initial", assistant_message_id="assistant-initial",
+        config_snapshot_ref="config:initial",
+    )
+    queued = store.get_execution(admission.execution_id)
+    assert queued is not None
+    paused = asyncio.run(control.request_pause(
+        command_id="pause-before-initial-activation",
+        execution_id=queued.execution_id,
+        expected_version=queued.status_version,
+        actor={"subject": "agent-owner"},
+    ))
+    assert paused.execution.status is ExecutionStatus.PAUSED
+    assert paused.execution.checkpoint_head_id is None
+    assert asyncio.run(entry.activate(admission)) is None
+    assert provider_starts == []
+
+    continued = asyncio.run(control.request_continue(
+        command_id="continue-after-initial-pause",
+        execution_id=paused.execution.execution_id,
+        expected_version=paused.execution.status_version,
+        actor={"subject": "agent-owner"},
+        activator=driver.activate,
+    ))
+    assert continued.command.status is CommandStatus.APPLIED
+    assert provider_starts == [("initial-pause-session", False)]
+    with sqlite3.connect(store.path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM attempts WHERE execution_id = ?",
+            (admission.execution_id,),
+        ).fetchone()[0] == 1
+
+
+def test_public_cancel_uses_a_durable_exact_command_envelope(public_chat):
+    _ws, ack, execution, store, _control = _chat_ack(public_chat)
+    cancel_ws = FakeWS()
+    _run_action(
+        "execution.cancel",
+        cancel_ws,
+        {
+            "action": "execution.cancel",
+            "command_id": "cancel-envelope-1",
+            "execution_id": ack["data"]["execution_id"],
+            "expected_version": execution.status_version,
+            "actor": {"subject": "spoofed-client"},
+        },
+    )
+    command = _command_payload(_command_frame(cancel_ws))
+    current = store.get_execution(execution.execution_id)
+    assert command["status"] == CommandStatus.APPLIED.value
+    assert command["execution_id"] == execution.execution_id
+    assert current is not None and current.status is ExecutionStatus.CANCELLED
+    stored = store.get_command("cancel-envelope-1")
+    assert stored is not None and stored.actor.get("subject") != "spoofed-client"
+
+    retry_ws = FakeWS()
+    _run_action(
+        "execution.cancel", retry_ws,
+        {
+            "action": "execution.cancel", "command_id": "cancel-envelope-1",
+            "execution_id": execution.execution_id,
+            "expected_version": execution.status_version,
+        },
+    )
+    assert _command_payload(_command_frame(retry_ws))["status"] == CommandStatus.APPLIED.value
+
+    collision_ws = FakeWS()
+    _run_action(
+        "execution.cancel", collision_ws,
+        {
+            "action": "execution.cancel", "command_id": "cancel-envelope-1",
+            "execution_id": execution.execution_id,
+            "expected_version": execution.status_version + 1,
+        },
+    )
+    collision = _command_payload(_command_frame(collision_ws))
+    assert collision["status"] == CommandStatus.REJECTED.value
+    assert collision["rejection_code"] == "idempotency_collision"
 
 
 @pytest.mark.parametrize("wait_kind", ["question", "approval"])
