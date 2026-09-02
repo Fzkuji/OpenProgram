@@ -74,12 +74,23 @@ def fake_dispatcher(monkeypatch):
         s = default_db()
         u_id = "u_" + str(len(captured))
         a_id = "a_" + str(len(captured))
-        s.append_message(req.session_id, {
-            "id": u_id, "role": "user", "content": req.user_text,
-            "timestamp": 0, "predecessor": req.branch_from,
-            "source": req.source,
-            "agent_id": req.agent_id,
-        })
+        if req.branch_from is None and req.spawn_caller:
+            s.spawn_branch(
+                req.session_id,
+                req.spawn_caller,
+                source=req.source,
+                node_id=u_id,
+                prompt=req.user_text,
+                created_at=0,
+                register_head=req.advance_head,
+            )
+        else:
+            s.append_message(req.session_id, {
+                "id": u_id, "role": "user", "content": req.user_text,
+                "timestamp": 0, "predecessor": req.branch_from,
+                "source": req.source,
+                "agent_id": req.agent_id,
+            })
         s.append_message(req.session_id, {
             "id": a_id, "role": "assistant", "content": "(spawned reply)",
             "timestamp": 0, "predecessor": u_id,

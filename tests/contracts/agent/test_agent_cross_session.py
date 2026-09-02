@@ -107,19 +107,16 @@ def test_cross_session_async_spawn_finalizes_both_session_provenance(
     target_head_before = (store.get_session("target") or {})["head_id"]
     executed: dict = {}
 
-    def fake_execute(
-        *,
-        session_id,
-        prompt,
-        agent_id,
-        branch_from=None,
-        label=None,
-        spawn_caller=None,
-        advance_head=True,
-        spawned_from_session=None,
-        **_kwargs,
-    ):
+    def fake_execute(*, request, **_kwargs):
         from openprogram.agent.sub_agent_run import AgentTurnResult
+
+        session_id = request.session_id
+        prompt = request.user_text
+        agent_id = request.agent_id
+        branch_from = request.branch_from
+        spawn_caller = request.spawn_caller
+        advance_head = request.advance_head
+        spawned_from_session = request.spawned_from_session
 
         executed.update({
             "session_id": session_id,
@@ -187,8 +184,10 @@ def test_cross_session_async_spawn_finalizes_both_session_provenance(
             final_text="remote result",
         )
 
+    from openprogram.agent.production_driver import AgentProductionDriver
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_execute,
+        AgentProductionDriver, "_default_turn_runner",
+        staticmethod(fake_execute),
     )
 
     from openprogram.agent.run_control import _current_session_id
@@ -210,7 +209,7 @@ def test_cross_session_async_spawn_finalizes_both_session_provenance(
             _current_session_id.reset(session_token)
 
     output = copy_context().run(invoke_agent)
-    match = re.search(r"job_id=([^\s]+)", output)
+    match = re.search(r"execution_id=([^\s]+)", output)
     assert match is not None, output
     job_id = match.group(1)
 
@@ -707,12 +706,14 @@ def test_job_execution_waits_for_accepted_side_effect(
     callback_done = threading.Event()
     execution_started = threading.Event()
 
-    def fake_execute(**_kwargs):
+    def fake_execute(*, request, **_kwargs):
         execution_started.set()
         return AgentTurnResult(head_id="race_head", final_text="done")
 
+    from openprogram.agent.production_driver import AgentProductionDriver
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_execute,
+        AgentProductionDriver, "_default_turn_runner",
+        staticmethod(fake_execute),
     )
 
     def accepted(_job):

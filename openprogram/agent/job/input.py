@@ -202,6 +202,11 @@ class JobAgentInputV1:
             "source": "job_runner",
             "permission_mode": "ask",
             "branch_from": job.parent_msg_id,
+            # A clean Job starts from an empty context. Persist that choice
+            # in the canonical request instead of relying on a dispatcher
+            # branch inference, so replay and alternate runners see the same
+            # input contract.
+            "history_override": [] if job.context_mode == "clean" else None,
             "tools_override": copy.deepcopy(job.tools_override),
             "model_override": job.model_override,
             "thinking_effort": job.thinking_effort,
