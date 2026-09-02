@@ -89,22 +89,23 @@ def test_runner_updates_attach_card_on_completion(isolated_store, monkeypatch):
     isolated_store.commit_turn("p1", "spawn async placeholder")
 
     # 2. Fake run_agent_turn so the worker finishes in milliseconds.
-    def fake_run(*, session_id, prompt, agent_id, branch_from=None, label=None, spawn_caller=None, advance_head=True):
+    def fake_run(*, request, cancel_event, **_kwargs):
         from openprogram.agent.sub_agent_run import AgentTurnResult
         # Write the assistant_msg the dispatcher would have written.
-        isolated_store.append_message(session_id, {
+        isolated_store.append_message(request.session_id, {
             "id": "head_alpha", "role": "assistant",
             "content": "final answer",
-            "predecessor": branch_from, "timestamp": time.time(),
+            "predecessor": request.branch_from, "timestamp": time.time(),
         })
-        isolated_store.commit_turn(session_id, "fake turn")
+        isolated_store.commit_turn(request.session_id, "fake turn")
         return AgentTurnResult(
             head_id="head_alpha", final_text="final answer",
             failed=False, error=None,
         )
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_run),
     )
 
     # 3. Submit through the runner with attach_pointer_id wired in.
@@ -164,18 +165,18 @@ def test_attach_card_carries_the_subagent_name(isolated_store, monkeypatch):
     })
     isolated_store.commit_turn("p1", "spawn async placeholder")
 
-    def fake_run(*, session_id, prompt, agent_id, branch_from=None,
-                 label=None, spawn_caller=None, advance_head=True):
+    def fake_run(*, request, cancel_event, **_kwargs):
         from openprogram.agent.sub_agent_run import AgentTurnResult
-        isolated_store.append_message(session_id, {
+        isolated_store.append_message(request.session_id, {
             "id": "head_named", "role": "assistant", "content": "done",
-            "predecessor": branch_from, "timestamp": time.time(),
+            "predecessor": request.branch_from, "timestamp": time.time(),
         })
-        isolated_store.commit_turn(session_id, "fake turn")
+        isolated_store.commit_turn(request.session_id, "fake turn")
         return AgentTurnResult(head_id="head_named", final_text="done")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_run),
     )
 
     from openprogram.agent.job import get_runner
