@@ -14,8 +14,8 @@
   <div class="eyebrow">OpenProgram Runtime · normative architecture</div>
   <h1>统一运行控制：暂停、继续、单步、调整与取消</h1>
   <p class="lead">本页是 OpenProgram 运行控制的唯一权威设计。它固定执行标识、持久状态、命令协议、安全点、检查点、owner 合同、恢复规则和未来逻辑修改方式。Chat、Agent、Workflow、后台 Job、工具与子进程共享这一控制模型；各界面不再维护自己的 stop、pause 或 resume 语义。</p>
-  <div class="meta"><span class="pill target">状态：Agent/Job public cutover 与 exact cancel 已集成 · Agent safe point brief 进行中</span><span class="pill scope">范围：Runtime / App / Web / TUI / CLI / ACP / MCP</span><span class="pill">唯一目标：execution_id</span><span class="pill">迁移策略：一次切换，不长期兼容</span></div>
-  <nav class="toc" aria-label="页内导航"><a href="#decision">结论</a><a href="#current">现状</a><a href="#reference">参考</a><a href="#identity">标识</a><a href="#record">记录</a><a href="#state">状态机</a><a href="#commands">命令</a><a href="#safe-point">安全点</a><a href="#checkpoint">检查点</a><a href="#effects">副作用</a><a href="#revision">修改逻辑</a><a href="#driver">Owner</a><a href="#recovery">恢复</a><a href="#cutover">切换</a><a href="#acceptance">验收</a><a href="#status">实现状态</a><a href="#agent-safe-point">Agent safe point brief</a></nav>
+  <div class="meta"><span class="pill target">状态：Agent/Job canonical identity 与 exact cancel 已集成 · Job durable control brief ready</span><span class="pill scope">范围：Runtime / App / Web / TUI / CLI / ACP / MCP</span><span class="pill">唯一目标：execution_id（Job 中 job_id == execution_id）</span><span class="pill">迁移策略：一次切换，不长期兼容</span></div>
+  <nav class="toc" aria-label="页内导航"><a href="#decision">结论</a><a href="#current">现状</a><a href="#reference">参考</a><a href="#identity">标识</a><a href="#record">记录</a><a href="#state">状态机</a><a href="#commands">命令</a><a href="#safe-point">安全点</a><a href="#checkpoint">检查点</a><a href="#effects">副作用</a><a href="#revision">修改逻辑</a><a href="#driver">Owner</a><a href="#recovery">恢复</a><a href="#cutover">切换</a><a href="#acceptance">验收</a><a href="#status">实现状态</a><a href="#agent-safe-point">Agent safe point brief</a><a href="#job-durable-control">Job durable control brief</a></nav>
 </header>
 <main>
 <article>
@@ -37,10 +37,10 @@
     <thead><tr><th>当前实现</th><th>实际行为</th><th>目标处理</th></tr></thead>
     <tbody>
       <tr><td>旧全局 pause/resume 与 session stop</td><td>曾按进程或 session 推断控制目标，没有精确 execution identity。</td><td>已删除。公开 surface 只提交带 canonical <code>execution_id</code> 的 <code>execution.cancel</code>；pause/continue 仍由 capability 关闭。</td></tr>
-      <tr><td><code>mark_cancelled(..., execution_id=None)</code> 与 token alias</td><td>迁移期入口允许调用者绕过 canonical command。</td><td>取消公共导出；owner 只响应已经持久化的命令。</td></tr>
+      <tr><td><code>mark_cancelled(..., execution_id=None)</code>、<code>cancel_job</code> 与 token alias</td><td>迁移期入口允许调用者绕过 canonical command，Job runner 仍直接维护取消和终态。</td><td>一次切换中删除公共导出、<code>cancel_job</code> 和 token alias；owner 只响应已经持久化的 exact execution command。</td></tr>
       <tr><td>session-scoped steering inbox</td><td>消息按会话落盘，接收 execution 由运行中状态推断。</td><td>改为 execution-scoped durable command，并记录 accepted/applied/rejected。</td></tr>
       <tr><td>Workflow 函数名、调用序号、参数 hash checkpoint</td><td>可复用已完成结果，但不能稳定表达 revision、step identity、attempt 和外部副作用。</td><td>迁入正式 Checkpoint Manifest。</td></tr>
-      <tr><td>DAG、Job、Workflow 和 UI 本地状态</td><td>分别保存或推断 lifecycle，局部 finalizer 补写部分终态。</td><td>全部成为 Execution Record 投影；只有 Control Service 写 canonical lifecycle。</td></tr>
+      <tr><td>DAG、Job、Workflow 和 UI 本地状态</td><td>Execution 已是 Agent/Job admission 的 canonical record，但 JobRunner、<code>jobs.json</code>、DAG 与 UI 仍各自保留 lifecycle 字段或由本地运行表推断状态。</td><td>JobStore/<code>jobs.json</code>/DAG/Job card/Running 只消费 canonical snapshot 与 event projection；只有 Control Service 和 AgentProductionDriver 写 execution lifecycle。</td></tr>
     </tbody>
   </table></div>
   <div class="callout danger">目标架构不增加“旧 stop 调新 cancel”“session pause 转 exact pause”一类长期适配层。存量数据使用明确 schema migration 一次转换；旧代码入口在切换提交中一起删除。</div>
@@ -332,17 +332,17 @@ runtime.finish_attempt(attempt_id, outcome)</code></pre>
     <thead><tr><th>目标能力</th><th>状态</th><th>可复用基础</th><th>缺口</th></tr></thead>
     <tbody>
       <tr><td>Canonical Store</td><td><span class="tag partial">Partial</span></td><td><code>openprogram.execution</code> 已定义最终 identity、capability、状态机和 profile-aware SQLite authority；已实现 run/revision/execution/command/attempt/checkpoint/effect records、append-only events、materialized execution、version CAS、幂等 command、原子 intent transition、lease fencing、stale-attempt 拒绝、async Driver contract、exact live-binding registry、pause/cancel/continue/step/steer/fork/retry command handler，以及启动扫描、owner-loss recovery、旧 owner fencing、恢复失败阻止服务启动、canonical admission 的 immutable input 和四类 projection outbox。fork/retry child 在同一事务内复制 parent immutable input，保留可信 user/assistant message IDs。固定 dag/job/workflow/ui consumer 以幂等事件历史和当前快照写入只读模型；每个 execution store 同时只登记一个 worker，启动在受限工作窗口内重放，余下积压由 worker 继续处理，运行期 canonical event 提交后唤醒该 worker，失败项保持 pending 并延后重试；启动恢复和 worker 使用独立 claim owner。worker 每轮只领取一个受时间限制的批次，停止后不再领取新项并释放未处理 claim。ui 帧带 event_sequence 与可信 user/assistant message IDs；页面将最高序号、终态栅栏和关联消息写入现有会话状态，终态后拒绝迟到非终态帧；仅删除关联转录时清理对应记录，会话重置清理全部记录，不按数量淘汰活跃 execution。读取 event 和快照均按 execution 与 sequence 定点查询；Running 读取 ui 快照。Agent driver 从 strict versioned、bounded 的 <code>chat</code>/<code>forced_tool</code> admission input 构造 dispatcher turn，绑定精确 attempt generation，处理 exact cancel/question wake，并通过 Control Service 收口 terminal；真实公共 WS <code>chat</code> action 由 <code>apps/server/openprogram_server/_webui/ws_actions/chat.py::handle_chat</code> 进入同一 admission，Web query、<code>/spawn</code>、<code>/merge</code>、REST function 和 WS retry_function 也先 admission 再 ack/启动，forced-tool 不再自行写 canonical terminal。execution_id 由 admission 随机生成，<code>msg_id</code> 与 DAG node 只用于关联和 provenance。</td><td>Job、Session DAG 和 Workflow 仍保留各自的投影与内容状态；授权和控制界面仍待迁入。P0 将仅为 ordinary chat 开放 pause、step、continue 及两类 Agent safe point；forced_tool、spawn、merge 仍 cancel-only。durable question/approval wait 与 restart subscription 是后续独立 slice，不是 P0 capability 的前置条件。</td></tr>
-      <tr><td>Job Driver</td><td><span class="tag partial">Bridge only</span></td><td>内部 <code>JobDriver</code> 已将 Job 的 <code>execution_id</code>、canonical attempt lease/activate/finish 和 fenced registry 连接到现有 worker cancellation event；Job capability 全部关闭且不声明 safe point，owner 丢失时没有 checkpoint 的 execution 进入 interrupted。</td><td>JobStore 仍只等待 projection consumer 接入，不能作为 execution lifecycle 的事实源；spawn/merge 的 DAG 内容语义由 canonical chat runner 调用现有专用实现，但 Job 本身仍不是 Agent execution 的 lifecycle 事实源。</td></tr>
-      <tr><td>公开 Job 入口</td><td><span class="tag partial">Partial</span></td><td>public spawn cutover 已集成，且 <code>job_id == execution_id</code>。公开 spawn（包括 deferred、resume 和 borrowed child）写入 immutable input 与 queued execution；dispatcher/inline borrowed path 领取 canonical attempt，JobStore 仅作为现有 UI/resource projection。预算耗尽、父级取消和用户取消统一提交 exact <code>execution.cancel</code> command，worker 只响应对应 attempt 的 cancel signal；startup 先执行 canonical recovery。</td><td>resource ledger 与 canonical admission 仍跨两个 SQLite authority，旧 JobStore 状态更新仍用于 projection 写入；Job pause、continue、step、steer、fork、retry 与 safe-point capability 暂不公开。强制终止只接受 worker 返回的真实 <code>TerminationReceipt</code>，不得由控制面伪造。</td></tr>
+      <tr><td>Job Driver</td><td><span class="tag remove">Remove at cutover</span></td><td>当前 <code>JobDriver</code> 只把 canonical Job attempt 映射到 process-local cancellation hook，<code>capabilities()</code> 返回空集合；JobRunner 的 dispatcher 领取 ResourceGovernor claim 后创建该 bridge，再由 <code>_run_one</code> 直接调用 Agent turn。</td><td>它不是目标 lifecycle owner。删除 outer <code>JobDriver</code>、其 handle/registry 与随机 <code>exec_*</code> 生成；Job attempt 直接由 <code>AgentProductionDriver</code> 在同一 <code>(execution_id, attempt_id, generation)</code> 上激活和收口。</td></tr>
+      <tr><td>公开 Job 入口</td><td><span class="tag partial">Canonical admission integrated</span></td><td>public spawn cutover 已集成，且 <code>job_id == execution_id</code>。公开 spawn（包括 deferred、resume 和 borrowed child）写入 immutable input 与 queued execution；ResourceGovernor 领取资源 claim，当前 runner 再激活 canonical attempt。预算耗尽、父级取消和用户取消统一提交 exact <code>execution.cancel</code> command，startup 先执行 canonical recovery。</td><td>当前 runner 仍承担执行和 JobStore terminal 写入；Job pause、continue、step 尚未接入 AgentProductionDriver，resource lease 也尚未按 PAUSED 释放并在 continue/step 时重新 claim。旧 Job DTO 仍来自 <code>jobs.json</code>，不是最终 canonical DTO。</td></tr>
       <tr><td>Exact cancellation</td><td><span class="tag target">Integrated</span></td><td>Agent 与 Job 都先写 exact <code>execution.cancel</code> durable intent，再按 <code>(execution_id, attempt_id, generation)</code> 投递到当前 owner；Job owner 可在跨进程 caller 场景重新消费 pending command，cooperative、自然完成竞态和宽限终止都收敛到同一 canonical terminal。首个 cancel reason 保留，terminal command 会在 restart/reconciler 中完成，JobStore 与 resource admission 只作为投影并释放匹配 reservation。</td><td>其他 execution kind 尚未接入真实 driver；内部旧 helper 不能成为 public fallback。Agent safe-point slice 只复用该 exact cancel 边界。</td></tr>
-      <tr><td>Pause / Continue / Step</td><td><span class="tag partial">Partial</span></td><td>Exact pause 先持久化 intent，再通知匹配 attempt；continue 从原始 checkpoint 创建新 generation attempt；step 使用唯一 durable permit，并把一次 managed action、checkpoint、attempt 结束、paused 与 command applied 放在同一事务。启动与 owner-loss recovery 会收敛未完成 command，effect 未解决时优先进入 reconciliation。</td><td>各实际 Driver 接入和 surface 切换，并删除旧全局 pause、session fallback 与分散 controls。</td></tr>
+      <tr><td>Pause / Continue / Step</td><td><span class="tag partial">Agent core; Job pending</span></td><td>Exact pause、continue、step 的 command handler、AgentCheckpointV1、provider/tool safe point、effect receipt、activator 和 fencing 原语已存在；AgentProductionDriver 可从 durable checkpoint 建立新 attempt。</td><td>Job 尚未复用这些原语；需要删除 JobDriver lifecycle、让 ResourceGovernor 只做 admission/queue/lease，并完成 Job public cutover、projection/reconnect 与 queued initial handoff。</td></tr>
       <tr><td>Durable steering</td><td><span class="tag partial">Partial</span></td><td>Exact execution steer 已使用持久 command payload、稳定 FIFO、独立 ActivationInput 和 safe-point checkpoint receipt；running、pausing 与 paused 后续 activation 均有原子应用、幂等重试、owner fencing、cancel/pause 优先级和 owner-loss rejection。</td><td>各实际 Driver 接入和 surface 切换，并删除旧 session file inbox 与兼容 ack 路径。</td></tr>
       <tr><td>Checkpoint / Effect</td><td><span class="tag partial">Partial</span></td><td>统一内容寻址 manifest、revision/frontier、checkpoint head CAS、effect 分类与 terminal receipt 已落到 canonical store；只有当前未过期 attempt 可以发布或 dispatch，unresolved dispatch 阻止 checkpoint、terminal finalization 和自动恢复。Control Service 在 receipts 完整后继续 cancel finalization，非 cancel execution 回到 paused。</td><td>各 Driver 生成完整 state refs/receipts、专用外部查询/人工 reconciler 和旧 Workflow/mutation 数据切换。</td></tr>
       <tr><td>Revision / Fork / Retry</td><td><span class="tag target">Core implemented</span></td><td>revision 使用 <code>{parent_revision_id, manifest}</code> 内容寻址；fork/retry 在单一 SQLite transaction 中持久化 command、revision、queued child 和 branch events。child 继承 run、session、capabilities，并记录 source checkpoint。</td><td>transport/UI 接入、Driver activation wiring、legacy DAG projection。</td></tr>
       <tr><td>Debugger surface</td><td><span class="tag remove">Not implemented</span></td><td>Execution/DAG 展示与现有 controls。</td><td>inspector、capability controls、command progress 和 branch view。</td></tr>
     </tbody>
   </table></div>
-  <div class="callout warn">上表是当前代码事实，前十九节是稳定目标合同。后续可以补充 Driver capability 和具体 checkpoint schema，但不得重新引入 session-target control、双写状态、长期兼容入口、原地 revision 修改或任意内存栈恢复。</div>
+  <div class="callout warn">上表是当前代码事实，前面的章节和第 22 节是稳定目标合同。后续可以补充 Driver capability 和具体 checkpoint schema，但不得重新引入 session-target control、双写状态、长期兼容入口、原地 revision 修改或任意内存栈恢复。</div>
 </section>
 
 <section id="agent-public-cutover">
@@ -498,11 +498,190 @@ Tests:
     <li><strong>GREEN：</strong>实现后先运行该 Agent 测试与 <code>tests/component/agent/test_production_driver.py tests/component/execution/test_checkpoint_store.py tests/component/execution/test_effect_store.py tests/component/execution/test_continue_step_steer.py</code>；再运行 <code>tests/component/webui/test_webui_head_mirror_and_run_guard.py tests/component/agent/test_canonical_job_entry.py</code>，确认真实 WS chat、Job public cutover 与 exact cancel 不回归。</li>
     <li><strong>Gate：</strong><code>uv run --locked --extra dev python -m pytest -q tests/contracts</code>、受影响层测试、完整仓库测试，以及共享 execution/state 变更要求的三轮 <code>-n 4</code> contracts/unit/component/integration/e2e；再执行文档构建、<code>python -m scripts.docs_site.checklinks</code>、<code>git diff --check</code> 和最终 clean-worktree 检查。P0 gate 只验收两类 safe point、schema v1 bounded refs、effect receipt transaction、pause/continue/step/cancel 优先级和 owner fencing；不把 restart wait 标为通过，durable wait 另立切片。</li>
   </ol>
-  <div class="callout warn"><strong>本切片排除：</strong>不公开 Job pause/continue/step/safe point；不增加 fork/retry UI；不增加 debugger UI；不保存任意栈；不保留旧 stop、session fallback、message-derived ownership、schema 双读或任何双写路径。</div>
+  <div class="callout warn"><strong>Agent safe-point 本切片排除：</strong>不在该 Agent slice 内实现 Job durable control（Job 由第 22 节单独实施）；不增加 fork/retry UI；不增加 debugger UI；不保存任意栈；不保留旧 stop、session fallback、message-derived ownership、schema 双读或任何双写路径。</div>
+</section>
+
+<section id="job-durable-control">
+  <h2>22. Job durable control：最终设计与实施 brief</h2>
+  <div class="decision"><strong>Background Agent Job 是一种 Agent execution。</strong>一个 Job 只有一个 canonical execution，且 <code>job_id == execution_id</code>。<code>ResourceGovernor</code> 只负责 admission、queue、resource reservation 和 lease claim/release；claim 成功后由 <code>AgentProductionDriver</code> 在同一个 execution、attempt 和 generation 上运行。不存在 outer <code>JobDriver</code> lifecycle owner，也不存在 Job 路径内部生成的第二个随机 <code>exec_*</code> identity。</div>
+  <p>本节是 Job 控制实现的最终 brief。它复用本页已定义的 Execution command、<code>AgentCheckpointV1</code>、provider/tool safe point、effect receipt、activator、fence、immutable input/runtime contract 和 projection 规则。Job 不建立第二套 pause、resume、step、cancel、checkpoint 或资源协议。</p>
+
+  <h3>22.1 当前事实与目标边界</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>当前 checkout 中的事实</th><th>目标实现</th></tr></thead>
+    <tbody>
+      <tr><td><code>JobRunner.spawn_job</code> 已创建 <code>job_id</code> 对应的 canonical execution，并把 Job row 写入 <code>jobs.json</code>；public spawn、deferred、resume 和 borrowed child 都使用这一 identity。</td><td>Job admission 一次提交 immutable <code>Agent</code> input、execution record 和 resource admission。Job row 只由 canonical events 投影，不再参与 lifecycle 决策。</td></tr>
+      <tr><td><code>JobRunner._dispatch_loop</code> 领取 ResourceGovernor claim 后通过 <code>JobDriver</code> 绑定 cancellation hook，<code>_run_one</code> 再直接调用 <code>_execute_agent_turn</code>。</td><td>Governor claim 只产生可验证的 resource lease；同一 claim 通过 <code>AgentProductionDriver.activate</code> 绑定同一 attempt/generation，并由该 driver 运行、checkpoint、finish 和 cancel。</td></tr>
+      <tr><td><code>openprogram.agent.job.driver:JobDriver</code> 的 capability 为空，只支持 cancel bridge；Job status、terminal projection 和 worker map 仍由 runner 协调。</td><td>删除 outer JobDriver lifecycle owner、handle registry 和 Job 专属终态路径。Control Service 负责 canonical CAS/fence，AgentProductionDriver 负责 Agent action 边界，Governor 负责资源，projection consumer 负责 Job/DAG/UI read model。</td></tr>
+      <tr><td>AgentProductionDriver 已实现 provider/tool durable continuation、<code>AgentCheckpointV1</code>、effect 分类、activator 和 exact attempt fencing；这些能力尚未接到 background Job。</td><td>Job 直接使用同一 checkpoint/effect/activation contract。Job capability 由 admitted immutable input 和 driver capability 协商决定，不由 session、JobStore row、message id 或 transport 推断。</td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout danger">JobStore、<code>jobs.json</code> 和 DAG 是 projection，不是 execution lifecycle、cancel truth、resource truth 或 owner registry。它们可以保存用户界面需要的 canonical DTO 字段，但任何直接修改这些文件或对象来 pause、continue、step、cancel、claim、release、finish 的路径都在切换中删除。</div>
+
+  <h3>22.2 单一 owner 与数据流</h3>
+  <pre><code>public spawn / scheduler / channel / protocol
+        │  strict Agent input + trusted project/session actor
+        ▼
+Canonical admission transaction
+  execution_id = job_id · immutable input · revision · queued execution
+  ResourceGovernor admission reservation · Job/DAG/UI projection intent
+        │
+        ▼
+ResourceGovernor.claim(execution_id)  ── resource lease only
+        │
+        ├─ AttemptStore.lease/activate(execution_id, attempt_id, generation)
+        └─ AgentProductionDriver.activate(attempt, ActivationInput)
+                 │ exact activator + fence + immutable runtime contract
+                 ▼
+        provider decision / tool action → effect receipt → AgentCheckpointV1
+                 │
+                 └─ Control Service CAS/event → projections and reconnect cursor</code></pre>
+  <ul>
+    <li>Admission 失败不创建可运行 Job；资源不足不把 accepted request 变成 rejected，保持 durable queue 状态并等待 claim。</li>
+    <li>Governor 不写 execution status、checkpoint、effect、terminal 或 Job/DAG content；它只原子维护 admission、queue、lease、budget/usage reservation 和 release reason。</li>
+    <li>AgentProductionDriver 不自行 claim 第二份资源、不生成 Job execution id、不写 <code>jobs.json</code> lifecycle；它只使用已经 claim 的同一 execution/attempt。</li>
+    <li>projection consumer 按 execution event sequence 幂等地生成 Job DTO、DAG node、Job card、Running snapshot 和 UI frame；projection failure 保留 outbox，不回写 canonical state。</li>
+  </ul>
+
+  <h3>22.3 Job 状态、pause/continue/step 与资源 lease</h3>
+  <p>用户观察的是 canonical Execution status；resource ledger 的 <code>queued/live/stopping/released</code> 是 admission 状态，不能代替 execution status。Job 使用 <code>queued → running → pausing → paused</code> 与既有 terminal/reconciliation 状态。一个 Job 同时最多一个 active attempt 和一个 live resource lease。</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>操作</th><th>canonical transition</th><th>resource lease</th><th>command result</th></tr></thead>
+    <tbody>
+      <tr><td>queued pause</td><td>持久化 pause intent，queued 直接进入 paused；没有 attempt、owner 或 checkpoint，不伪造 checkpoint。</td><td>queued reservation 变为 released；没有 live lease。</td><td><code>accepted</code> 后在 CAS 完成时 <code>applied</code>。后续 continue 使用 initial handoff。</td></tr>
+      <tr><td>running pause</td><td>进入 pausing，关闭新的 action dispatch；当前 provider/tool action 只能完成、超时、收到 cancel，或在合法 safe point 发布 <code>AgentCheckpointV1</code> 后进入 paused。</td><td>当前 owner 完成 safe-point transaction 且不再有活动 action 后释放 live lease。不能在 owner 仍可能写入时提前 release。</td><td>在 checkpoint head 与 paused status 同一 transaction 提交后 <code>applied</code>。</td></tr>
+      <tr><td>paused continue</td><td>使用当前 checkpoint；无 checkpoint 的 queued pause 使用 immutable initial input。先保持 command <code>accepted</code>，直到新 attempt 被 claim、activate 和 fence。</td><td>重新向 Governor claim。资源不足继续 accepted/queued-wait；claim 成功后绑定 live lease。</td><td>新 owner 的 activation commit 后才 <code>applied</code>，并进入 running；没有 activator 不得报告 delivered。</td></tr>
+      <tr><td>paused step</td><td>与 continue 相同地重新 claim/activate，但只消费一个 durable step permit。恰好一个 provider decision 或 tool action 到达下一个合法 safe point，checkpoint、permit 消费、attempt 结束和 paused 在同一 transaction 提交。</td><td>资源不足保持 accepted/queued-wait；claim 后才开始这一个 action。step 不持有永久 lease。</td><td>activation 后进入 applying；完成唯一 action 和 checkpoint 后才 <code>applied</code> 并再次 paused。重复 command 不得再消费 permit。</td></tr>
+      <tr><td>cancel race</td><td>cancel intent 优先级高于 pause、continue 和 step。Control Service 先写 cancelling/fence，再向精确 attempt 发送 cooperative cancel；late activation 只完成 cancel recovery，不得恢复业务或报告 continue/step applied。</td><td>只释放匹配的 <code>(job_id, admission_owner, lease_generation)</code>；旧 owner、迟到 claim 和 projection retry 不能释放新 owner 的 lease。</td><td>单一 terminal CAS 为 cancelled；首个 cancel reason 保留，重复 command 返回原结果。</td></tr>
+    </tbody>
+  </table></div>
+  <p>资源不足时，pause/continue/step command 仍可被授权并 durable-accepted。accepted 表示 intent 已落盘，不表示已激活；只有 claim、attempt activation 和 driver binding 成功后才标记 activated/applied。超出排队上限或 admission policy 的新请求才返回 <code>quota.queue_full</code>、<code>quota.jobs_exhausted</code> 等 rejection。</p>
+
+  <h3>22.4 Safe point、AgentCheckpointV1 与 effect</h3>
+  <p>Job 不定义 JobCheckpoint。background Agent Job 声明与 ordinary Agent 相同的两个 safe point：<code>agent.provider.decision.after</code> 和 <code>agent.tool.action.after</code>。checkpoint 使用第 21 节的 <code>AgentCheckpointV1</code>，外层 manifest 固定 <code>execution_id</code>、<code>revision_id</code>、parent、attempt、generation、content hash 和 schema；Job input 不可变，resume 只能从已发布 manifest 恢复。</p>
+  <ul>
+    <li>provider request 前注册 effect intent，并在完整 AssistantMessage delta、usage、request id、current decision、next tool index 和 resolved model/system/tool contract 可验证后提交 provider safe point。</li>
+    <li>tool dispatch 前注册 action/effect，并在完整 ToolResult delta 与 terminal receipt 可验证后提交 tool safe point。部分 stream、async task、Python stack、provider object 和 socket 不能进入 checkpoint。</li>
+    <li><code>dispatched</code>/<code>uncertain</code> effect 禁止 checkpoint、continue、step 和 retry；必须进入 <code>reconciliation_required</code>，直到外部查询或明确 reconciliation 写入 terminal receipt。</li>
+    <li>state blob 使用同一 execution SQLite 的 content-addressed store；沿用 <code>MAX_AGENT_CHECKPOINT_BYTES=262144</code>、<code>MAX_AGENT_STATE_BLOB_BYTES=1048576</code>、<code>MAX_AGENT_STATE_REFS=32</code>、<code>MAX_AGENT_PENDING_MESSAGES=64</code>、<code>MAX_AGENT_TERMINAL_EFFECT_RECEIPTS=64</code>、<code>MAX_AGENT_DELTA_BYTES=65536</code>、<code>MAX_AGENT_REPEAT_FAILURES=16</code>。超限返回稳定错误码，不截断并继续。</li>
+    <li>未发布 blob 只能由创建 attempt 清理；已被 manifest、effect receipt、pending message 或 terminal record 引用的 blob 不得清理。Job terminal 且 execution-local 引用为零后才 GC，GC 不跨 execution，也不依据 process-local registry。</li>
+  </ul>
+  <p>continue/step 激活前逐字段验证 immutable runtime contract（model id/API/provider/endpoint/config、system prompt、tool JSON Schema、permission/approval、structured output 和 implementation descriptor）。解析失败或任一字段变化返回 <code>continuation_contract_mismatch</code>，保留 paused checkpoint，不派发 provider/tool。</p>
+  <p>Job 控制面只返回稳定的 machine-readable codes：<code>not_found</code>、<code>stale_version</code>、<code>unsupported_capability</code>、<code>activation_unavailable</code>、<code>continuation_contract_mismatch</code>、<code>checkpoint_schema_invalid</code>、<code>checkpoint_too_large</code>、<code>state_blob_too_large</code>、<code>state_ref_limit</code>、<code>state_ref_invalid</code>、<code>quota.queue_full</code>、<code>quota.jobs_exhausted</code>、<code>quota.token_exhausted</code>、<code>quota.cost_exhausted</code>、<code>quota.accounting_unavailable</code>、<code>error.worker_lost</code>、<code>error.dispatch_failed</code>、<code>error.canonical_unavailable</code> 和 <code>reconciliation_required</code>。客户端根据 code 和 canonical snapshot 更新显示，不解析异常文本。</p>
+
+  <h3>22.5 Public cutover：精确 envelope 与 capability negotiation</h3>
+  <p>WS、REST、CLI、TUI、Job card 和 Running snapshot 只使用同一 transport-neutral envelope。命令目标字段是 <code>execution_id</code>；Job resource DTO 可以同时返回 <code>job_id</code>，但它必须逐字等于 <code>execution_id</code>，不能作为另一种 identity。</p>
+  <pre><code>ExecutionCommandRequest {
+  "type": "execution.command",
+  "action": "execution.pause | execution.continue |
+             execution.step | execution.cancel",
+  "command_id": "cmd_&lt;global unique idempotency key&gt;",
+  "execution_id": "&lt;job_id&gt;",
+  "expected_version": 42,
+  "payload": {"reason_code": "cancel.user"}
+}
+
+ExecutionCommandUpdate {
+  "type": "execution.command.updated",
+  "command": {"command_id": "cmd_...", "execution_id": "job_...",
+               "status": "accepted | applying | applied | rejected",
+               "result_version": 43, "rejection_code": null},
+  "execution": {"execution_id": "job_...", "job_id": "job_...",
+                "status": "paused", "status_version": 43,
+                "capabilities": {"pause": true, "continue": true,
+                                 "step": true, "safe_point_kinds": [...]},
+                "checkpoint_head_id": "..."},
+  "event_cursor": {"next_sequence": 44}
+}</code></pre>
+  <p>服务端从 authenticated project/session connection 生成 trusted actor、session 和 authorization；忽略客户端伪造的 actor、project、session、attempt、generation、lease、capability、Job row 或 checkpoint。跨 project/session 或不存在的 execution 统一返回 <code>not_found</code>。过期 <code>expected_version</code> 返回 <code>stale_version</code> 和最新 snapshot，不覆盖新状态；重复 <code>command_id</code> 返回第一次 command 的当前状态。</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Surface</th><th>切换后的唯一行为</th><th>删除项</th></tr></thead>
+    <tbody>
+      <tr><td>WS / REST</td><td><code>execution.pause|continue|step|cancel</code> 只调用 Control Service；返回上述 command update 和 canonical snapshot。</td><td><code>cancel_job</code> action、session stop、JobStore direct mutation、PID/token control。</td></tr>
+      <tr><td>CLI / TUI</td><td><code>openprogram execution pause|continue|step|cancel &lt;execution_id&gt;</code> 使用同一 request；<code>spawn/list/read</code> 作为 resource API 返回 canonical Job DTO。</td><td><code>cancel_job</code> client message、按 Job row 猜状态、为 TUI 单独维护 control state。</td></tr>
+      <tr><td>Job card / Running</td><td>仅渲染 <code>ExecutionCommandUpdate.execution</code>、capability、resource view、event cursor；按钮 disabled 原因来自 capability/rejection code。</td><td>从 <code>jobs.json</code>、DAG node、session running flag 或 process-local task map 推断 pause/continue/step。</td></tr>
+      <tr><td>ACP / MCP / Channels / Scheduler</td><td>入口在 admission/activation 前协商 capability set 和 safe-point kinds，保存 request/turn → execution 精确映射；控制仍提交同一 envelope。</td><td>根据 session、Job kind、message id、channel peer、scheduler task 或 MCP request id 推断 capability/owner；<code>spawn_sub_agent</code> 及旧 aliases。</td></tr>
+    </tbody>
+  </table></div>
+  <p>capability 是 canonical admitted execution 的字段：普通 background Agent Job 在 driver 提供两类 safe point 时声明 pause/continue/step/cancel；forced-tool、不可 checkpoint 的 action 或没有对应 activator 的 execution 只声明 cancel。协商结果必须逐 execution 保存并随 snapshot 返回，不能按 session 或 Job 类型全局推断。</p>
+
+  <h3>22.6 Projection、reconnect、auth 与 owner crash</h3>
+  <ul>
+    <li>读取先按 authorized <code>(project_id, session_id, execution_id)</code> 获取 canonical snapshot，再以 <code>event_cursor.next_sequence</code> 订阅事件。cursor gap、连接重建或发现新 terminal version 时重新取 snapshot；不依赖本地 event buffer 补齐事实。</li>
+    <li>Job/DAG/UI projection 按 <code>(execution_id, event_sequence)</code> 幂等消费；重复 event 不重复写，迟到非终态 event 不能覆盖 terminal snapshot。Job card 与 Running 读取同一 Job resource DTO + execution snapshot envelope。</li>
+    <li>owner 在 safe point 前崩溃：旧 attempt fencing，保留最近合法 checkpoint，若无 unresolved effect 则可重新 claim/activate。provider/tool dispatch 后 receipt 前崩溃：写 <code>reconciliation_required</code>，禁止自动重放。</li>
+    <li>queued pause 没有 attempt/checkpoint 时保持 paused；continue 的 initial handoff 从 admitted immutable Job input 激活首次 AgentProductionDriver，不创建 synthetic checkpoint。paused execution 不由 startup 自动运行。</li>
+    <li>cancel intent 已持久化时，startup/reconciler 只继续 exact cancel delivery/finalization；不重新激活 Agent 业务。旧 owner 的写入均以 execution/attempt/generation/status_version 校验并记录 stale-owner event。</li>
+    <li>ResourceGovernor 启动恢复未完成 claim：释放或重置同一 admission fence；只在确认 owner 已结束后释放 live lease。terminal projection 重试不重复 release 新 generation 的 lease。</li>
+  </ul>
+
+  <h3>22.7 一次迁移与删除清单</h3>
+  <p>迁移只执行一次，采用最终 schema 和最终命令名，没有长期 compat、双读、双写或 alias。旧 Job row 能映射到 canonical execution 的，按 <code>job_id == execution_id</code> 生成 projection；缺少 canonical identity、immutable input 或 admission fence 的 row 进入 <code>error.canonical_unavailable</code> terminal projection，并释放已验证的 resource reservation。迁移不会把旧 Job 状态提升为 canonical lifecycle。</p>
+  <div class="grid2">
+    <div class="card"><h3>删除</h3><p>outer <code>JobDriver</code> lifecycle owner、<code>JobDriverHandle</code>、Job 专属 driver registry、Job 路径内部随机 <code>exec_*</code> identity、<code>cancel_job</code> 与 <code>spawn_sub_agent</code> aliases、session/token fallback、直接 JobStore control、按 message/session 猜 owner 的代码。</p></div>
+    <div class="card"><h3>保留为 resource API</h3><p><code>spawn</code>、<code>list</code>、<code>read</code>/<code>get_job</code> 可以保留名称作为资源读写入口，但只能创建 admission 或读取 canonical DTO。它们不得写 lifecycle、cancel、checkpoint、lease 或 terminal fields；返回值必须包含 canonical <code>execution_id</code> 与 capability/resource/snapshot cursor。</p></div>
+  </div>
+  <p>迁移后新增 Job 只由 canonical admission 分配一次 id；Job continuation、pause/continue/step、terminal retry 和 projection recovery 均不重新 mint execution id。其他 execution kind 可以保留自身 admission identity，但不得在 Job 适配路径中生成或映射第二个 <code>exec_*</code>。</p>
+
+  <h3>22.8 精确生产文件边界与验收</h3>
+  <pre><code>Production / canonical owner:
+  openprogram/agent/job/runner.py                 # admission/queue/projection adapter only
+  openprogram/agent/job/driver.py                 # delete outer JobDriver lifecycle
+  openprogram/agent/job/store.py                  # projection/resource read only
+  openprogram/agent/job/types.py                  # DTO/projection schema only
+  openprogram/agent/production_driver.py          # Job activation + Agent loop owner
+  openprogram/agent/continuation.py               # AgentCheckpointV1 validation/resume
+  openprogram/agent/resource_governance.py        # admission/queue/lease only
+  openprogram/execution/{control,attempts,checkpoints,effects,
+                         state_blobs,store,projections,model}.py
+
+Public transports and read models:
+  apps/server/openprogram_server/_webui/ws_actions/{runtime,job,chat}.py
+  apps/server/openprogram_server/_webui/routes/{lifecycle,running}.py
+  apps/cli/python/openprogram_cli/_impl/commands/{execution,jobs}.py
+  apps/cli/src/ws/client.ts
+  apps/cli/src/commands/jobResource.ts
+  apps/cli/src/screens/repl/{pickerRouter.tsx,wsHandlers,useWsEvents.ts}
+  apps/web/components/right-sidebar/{branches/index.tsx,branches/branch-item.tsx,
+                                     running-panel.tsx}
+  apps/web/lib/{job-resource.ts,net/ws-events.ts,net/execution-update-order.ts}
+  openprogram/channels/_conversation.py
+  openprogram/acp/{jsonrpc.py,server.py}
+  openprogram/scheduler/service.py
+
+Tests / checks:
+  tests/component/agent/test_job_durable_control.py
+  tests/component/agent/test_canonical_job_entry.py
+  tests/component/agent/test_production_driver.py
+  tests/component/execution/{test_checkpoint_store.py,test_effect_store.py,
+                             test_continue_step_steer.py}
+  tests/component/runtime/{test_resource_governance.py,test_resource_fault_injection.py}
+  tests/component/webui/test_execution_cancellation.py
+  apps/cli/tests/job-resources.test.tsx
+  apps/web/scripts/check-job-resources.mjs
+  apps/web/scripts/check-job-resource-view.mjs</code></pre>
+  <ol>
+    <li><strong>RED：</strong>先新增 <code>tests/component/agent/test_job_durable_control.py</code>，从真实 public spawn/WS/REST entry 获取 <code>job_id == execution_id</code>，再通过 runtime action registry 发送完整 envelope。基线必须失败于 Job capability 为空、JobDriver bridge ownership、Job 不能从 queued pause initial handoff continue、资源 lease 不在 paused release/continue reclaim、step 无法 exactly-one 和 projection DTO 缺少 canonical snapshot/cursor；测试不能直连 Control Service 作为唯一入口。</li>
+    <li><strong>GREEN：</strong>实现后运行该测试、<code>tests/component/agent/test_canonical_job_entry.py tests/component/agent/test_production_driver.py tests/component/execution/test_checkpoint_store.py tests/component/execution/test_effect_store.py tests/component/execution/test_continue_step_steer.py</code>、resource governance/fault tests、Web cancellation、CLI resource tests 和对应 JavaScript checks。重点覆盖资源不足 accepted wait、claim 后 applied、pause/cancel race、late owner fencing、dispatch 后 uncertain effect、restart/reconnect snapshot 和 unauthorized project/session。</li>
+    <li><strong>Full gate：</strong><code>uv run --locked --extra dev python -m pytest -q tests/contracts</code>、affected suites、完整仓库测试及 shared execution/state 变更要求的三轮 <code>-n 4</code> contracts/unit/component/integration/e2e；再运行 docs build、<code>python -m scripts.docs_site.checklinks</code>、HTML parser、<code>git diff --check</code>、public symbol/alias 扫描和 clean-worktree 检查。代码实现完成并通过两轮独立 review 前，不更新实现状态为 integrated，不提交或 push。</li>
+  </ol>
+  <div class="callout warn">Job brief 的排除项：不保存任意线程栈或 provider stream；不增加 Job 专属 checkpoint；不公开 force/PID/token；不把 durable question/approval restart subscription 作为本 slice 的隐式前置条件；不保留旧 cancel/spawn aliases；不通过 JobStore、DAG、session running flag 或 transport request id 推断 canonical owner。</div>
+
+  <h3>22.9 实现状态附录</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>能力</th><th>当前状态（本 checkout）</th><th>完成条件</th></tr></thead>
+    <tbody>
+      <tr><td>Job identity/admission</td><td><span class="tag partial">Partial</span> public spawn 已建立 <code>job_id == execution_id</code>，但 resource admission 与 execution lifecycle 仍由两个 owner 协调。</td><td>一个 admission transaction；唯一 execution identity；Governor 只做 admission/queue/lease；Job/DAG 为 projection。</td></tr>
+      <tr><td>AgentProductionDriver owner</td><td><span class="tag partial">Pending Job wiring</span> Agent driver 与 safe-point contract 已存在，Job 仍通过 JobDriver/runner 执行。</td><td>删除 JobDriver lifecycle；同一 execution/attempt/generation 由 AgentProductionDriver 激活、运行和 finish。</td></tr>
+      <tr><td>Job pause/continue/step</td><td><span class="tag partial">Not public</span> 当前 Job capability 为空，尚未按 PAUSED 释放和重新 claim resource lease。</td><td>queued pause 无 checkpoint initial handoff；provider/tool safe points；continue/step accepted wait、activation applied；step exactly one。</td></tr>
+      <tr><td>Cancel/projection/reconnect</td><td><span class="tag partial">Exact cancel integrated</span> canonical cancel 与 terminal projection 已有基础，Job card/Running 仍需统一 DTO/envelope/cursor。</td><td>cancel race 单一 CAS；旧 owner fencing；snapshot + event cursor；project/session auth；删除旧 aliases/direct control。</td></tr>
+      <tr><td>Release</td><td><span class="tag partial">Brief only</span> 本次只修改设计文档，未修改 production/test 文件，未运行实现 RED/GREEN，未提交代码。</td><td>production、affected/full gates、spec/quality review、doc/static checks、精确实现 commit 和 clean worktree 全部有证据。</td></tr>
+    </tbody>
+  </table></div>
 </section>
 
 <section id="related">
-  <h2>22. 相关设计</h2>
+  <h2>23. 相关设计</h2>
   <ul><li><a href="async-job-lifecycle.html">Async Job lifecycle</a>：持久 Job 的队列、worker 与恢复。</li><li><a href="../dag/overview.html">DAG status vocabulary</a>：execution history 与关系投影。</li><li><a href="../agent-resource-governance.html">Agent resource governance</a>：admission、lease、budget 和资源释放。</li><li><a href="../operations/user-input-requests.html">User input requests</a>：durable question/approval。</li><li><a href="../../error-handling.html">Error handling</a>：cancelled、interrupted 与 failed 的边界。</li></ul>
 </section>
 </article>
