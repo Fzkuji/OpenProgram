@@ -35,12 +35,16 @@ def _stdio_subprocess_environment(tmp_path, *, client: str = "a"):
     (fixture_path / "sitecustomize.py").write_text(
         """
 import json
+import hashlib
 import os
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 from openprogram.agent.dispatcher import TurnResult
+from openprogram.agent.authority import mcp_client_authority
+from openprogram.agent.questions import get_question_registry
 from openprogram.agent.types import AgentTool, AgentToolResult
 from openprogram.events import get_event_bus, make_event
 from openprogram.programs._runtime import register
@@ -58,6 +62,7 @@ def web_use_dispatch(arguments, *, owner_id):
     return {"ok": True, "owner_bound": owner_id.startswith("mcp:")}
 
 mcp_service_module._default_web_use_dispatch = web_use_dispatch
+mcp_service_module._default_question_registry = get_question_registry
 
 async def execute(call_id, arguments, cancel_event, on_update):
     record("execute", call_id=call_id, arguments=arguments,
@@ -91,6 +96,8 @@ from openprogram.agent.run_control import get_current_execution_id
 from openprogram.execution import default_store
 from openprogram.execution.waits import DurableWaitStore
 
+wait_expectation = {}
+
 def process_user_turn(request, *, cancel_event):
     record("turn", session_id=request.session_id, prompt=request.user_text,
            speaker_id=request.speaker_id)
@@ -122,6 +129,11 @@ def process_user_turn(request, *, cancel_event):
             expires_at=time.time() + 60,
             wait_id="fixture-question",
     )
+    wait_expectation.update({
+        "execution_id": execution_id,
+        "wait_id": wait.wait_id,
+        "generation": wait.claim_generation,
+    })
     get_event_bus().emit(make_event("question.asked", "agent", {
         "id": wait.wait_id, "session_id": request.session_id,
         "execution_id": execution_id,
@@ -143,6 +155,21 @@ dispatcher.process_user_turn = process_user_turn
 import openprogram.execution as execution_module
 async def submit_wait_command(service, **kwargs):
     del service
+    expected_execution_id = wait_expectation.get("execution_id")
+    expected_actor = dict(mcp_client_authority(
+        hashlib.sha256(os.environ["OPENPROGRAM_MCP_TOKEN"].encode("ascii"))
+        .hexdigest()[:16]
+    ))
+    expected_actor.update({
+        "project_ids": ["default"],
+        "session_ids": ["fixture-session"],
+        "execution_actions": ["execution.wait.decline"],
+    })
+    assert kwargs["action"] == "execution.wait.decline"
+    assert kwargs["execution_id"] == expected_execution_id
+    assert kwargs["wait_id"] == wait_expectation["wait_id"]
+    assert kwargs["generation"] == wait_expectation["generation"]
+    assert kwargs["actor"] == expected_actor
     record("question", question_id=kwargs["wait_id"], outcome="declined",
            action=kwargs["action"], execution_id=kwargs["execution_id"],
            generation=kwargs["generation"], actor=dict(kwargs["actor"]))
