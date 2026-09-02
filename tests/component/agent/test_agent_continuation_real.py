@@ -68,6 +68,10 @@ class _Tools:
         self.started: dict[str, threading.Event] = {}
         self.release: dict[str, threading.Event] = {}
         self.blocked: set[str] = set()
+        self.wait_kind: str | None = None
+        self.wait_timeout = 5.0
+        self.wait_started = threading.Event()
+        self.wait_finished = threading.Event()
 
     def tool(self, name: str):
         from openprogram.agent.types import AgentTool, AgentToolResult
@@ -79,6 +83,33 @@ class _Tools:
         async def execute(_call_id, _args, _cancel_event, _on_update):
             self.calls.append(name)
             self.started[name].set()
+            if name == "first" and self.wait_kind is not None:
+                self.wait_started.set()
+                try:
+                    if self.wait_kind == "ask":
+                        from openprogram.agentic_programming.runtime import Runtime
+
+                        Runtime().ask(
+                            "Which answer?", options=["answer"], timeout=self.wait_timeout,
+                        )
+                    elif self.wait_kind == "approval":
+                        from openprogram.agent.dispatcher.types import TurnRequest
+                        from openprogram.agent.internals._approval import (
+                            await_user_approval,
+                        )
+
+                        await await_user_approval(
+                            req=TurnRequest(
+                                session_id="agent-continuation",
+                                user_text="continue safely",
+                                agent_id="main", source="web",
+                                permission_mode="ask",
+                            ),
+                            tool_name="first", args={}, on_event=lambda _event: None,
+                            timeout=self.wait_timeout,
+                        )
+                finally:
+                    self.wait_finished.set()
             while name in self.blocked and not self.release[name].is_set():
                 await asyncio.sleep(0)
             return AgentToolResult(content=[TextContent(text=f"{name}:ok")])
@@ -185,7 +216,7 @@ def real_agent_chat(tmp_path, monkeypatch):
     harness = SimpleNamespace(
         store=store, control=control, sessions=sessions, session_id=session_id,
         provider=provider, tools=tools, server=server, outcomes=outcomes,
-        activation_errors=activation_errors,
+        activation_errors=activation_errors, registry=registry, execution_id=None,
     )
     try:
         yield harness
@@ -220,6 +251,7 @@ def _chat(harness):
     }))
     ack = next(frame for frame in ws.frames if frame.get("type") == "chat_ack")
     execution_id = ack["data"]["execution_id"]
+    harness.execution_id = execution_id
     return _wait(lambda: (
         item
         if (item := harness.store.get_execution(execution_id)).status is not ExecutionStatus.QUEUED
@@ -238,6 +270,28 @@ def _command(harness, action: str, execution, command_id: str):
     }))
     frame = next(frame for frame in ws.frames if frame.get("type") == "execution.command.updated")
     return frame.get("command") or frame["data"]["command"]
+
+
+def _pending_question(harness, *, kind: str):
+    return _wait(
+        lambda: next(
+            (question for question in harness.registry.list_pending(harness.session_id)
+             if question.kind == kind),
+            None,
+        ),
+        detail=lambda: {
+            "execution": harness.store.get_execution(harness.execution_id).to_dict()
+            if harness.execution_id else None,
+            "pending": [question.kind for question in harness.registry.list_pending()],
+        },
+    )
+
+
+def _question_action(harness, action: str, question_id: str, **payload):
+    from openprogram.webui.ws_actions import session as session_actions
+
+    ws = _WebSocket()
+    asyncio.run(session_actions.ACTIONS[action](ws, {"id": question_id, **payload}))
 
 
 def test_provider_pause_resume_reuses_saved_terminal_answer(real_agent_chat):
@@ -360,3 +414,150 @@ def test_after_tool_continue_runs_only_the_unfinished_tool(real_agent_chat):
     ]
     assert len(completed_events) == 1
     assert real_agent_chat.store.get_command("step-second").status is CommandStatus.APPLIED
+
+
+@pytest.mark.parametrize(
+    ("wait_kind", "resolution"),
+    [
+        ("ask", "reply"),
+        ("ask", "reject"),
+        ("ask", "timeout"),
+        ("approval", "reply"),
+        ("approval", "reject"),
+        ("approval", "timeout"),
+    ],
+)
+def test_wait_is_not_a_safe_point_until_public_resolution_reaches_tool_boundary(
+    real_agent_chat, wait_kind, resolution,
+):
+    """P0 excludes unresolved question/approval waits from checkpoints."""
+    from openprogram.execution.model import CommandStatus
+
+    real_agent_chat.tools.wait_kind = wait_kind
+    if resolution == "timeout":
+        real_agent_chat.tools.wait_timeout = 0.3
+    from tests.component.providers.scripted_provider import ScriptedToolCall
+
+    real_agent_chat.provider.add_response(ScriptedToolCall("first", {}, "call-wait"))
+    execution = _chat(real_agent_chat)
+    assert real_agent_chat.tools.wait_started.wait(timeout=4.0)
+    question = _pending_question(real_agent_chat, kind=wait_kind)
+    original_attempt_id = execution.current_attempt_id
+    original_generation = execution.owner_lease["generation"]
+
+    command = _command(real_agent_chat, "execution.pause", execution, "pause-wait")
+    assert command["status"] == CommandStatus.APPLYING.value
+    pending = real_agent_chat.store.get_execution(execution.execution_id)
+    assert pending is not None
+    assert pending.status is ExecutionStatus.PAUSING
+    assert pending.checkpoint_head_id is None
+    assert real_agent_chat.tools.wait_finished.is_set() is False
+
+    if resolution == "reply":
+        _question_action(
+            real_agent_chat,
+            "question_reply",
+            question.id,
+            answer="answer" if wait_kind == "ask" else "允许",
+        )
+    elif resolution == "reject":
+        _question_action(real_agent_chat, "question_reject", question.id)
+    else:
+        _wait(lambda: not real_agent_chat.registry.list_pending(real_agent_chat.session_id))
+
+    paused = _wait(
+        lambda: (
+            item
+            if (item := real_agent_chat.store.get_execution(execution.execution_id)).status
+            is ExecutionStatus.PAUSED
+            else None
+        ),
+        detail=lambda: real_agent_chat.store.get_execution(execution.execution_id).to_dict(),
+    )
+    assert paused.checkpoint_head_id is not None
+    checkpoint = real_agent_chat.control.checkpoints.get(paused.checkpoint_head_id)
+    assert checkpoint is not None
+    active_events = [
+        event.payload["attempt"]
+        for event in real_agent_chat.store.list_events(execution.execution_id)
+        if event.kind == "attempt.active"
+    ]
+    assert len(active_events) == 1
+    assert active_events[0]["attempt_id"] == original_attempt_id
+    assert active_events[0]["generation"] == original_generation
+    assert checkpoint.created_by_attempt_id == active_events[0]["attempt_id"]
+    assert paused.owner_lease == {}
+
+
+def test_cancel_wakes_real_question_wait_with_exact_reason(real_agent_chat):
+    from tests.component.providers.scripted_provider import ScriptedToolCall
+
+    real_agent_chat.tools.wait_kind = "ask"
+    real_agent_chat.provider.add_response(ScriptedToolCall("first", {}, "call-cancel-wait"))
+    execution = _chat(real_agent_chat)
+    assert real_agent_chat.tools.wait_started.wait(timeout=4.0)
+    question = _pending_question(real_agent_chat, kind="ask")
+
+    from openprogram.webui.ws_actions import runtime
+
+    asyncio.run(runtime.ACTIONS["execution.cancel"](
+        _WebSocket(), {"execution_id": execution.execution_id},
+    ))
+    final = _wait(lambda: (
+        item
+        if (item := real_agent_chat.store.get_execution(execution.execution_id)).status
+        in {ExecutionStatus.CANCELLED, ExecutionStatus.RECONCILIATION_REQUIRED}
+        else None
+    ), detail=lambda: {
+        "execution": real_agent_chat.store.get_execution(execution.execution_id).to_dict(),
+        "commands": [command.to_dict() for command in real_agent_chat.store.list_commands(execution.execution_id)],
+        "outcomes": [getattr(item, "error", repr(item)) for item in real_agent_chat.outcomes],
+    })
+    cancel_command = next(
+        command for command in real_agent_chat.store.list_commands(execution.execution_id)
+        if command.kind.value == "execution.cancel"
+    )
+    assert cancel_command.payload["reason_code"] == "cancel.user"
+    assert real_agent_chat.registry.list_pending(real_agent_chat.session_id) == []
+    assert real_agent_chat.tools.wait_finished.wait(timeout=2.0)
+    assert final.checkpoint_head_id is None
+    assert question.execution_id == execution.execution_id
+
+
+def test_crash_during_real_question_registration_never_publishes_wait_checkpoint(
+    real_agent_chat,
+):
+    from tests.component.providers.scripted_provider import ScriptedToolCall
+
+    real_agent_chat.tools.wait_kind = "ask"
+    real_agent_chat.provider.add_response(ScriptedToolCall("first", {}, "call-crash-wait"))
+
+    execution = _chat(real_agent_chat)
+    assert real_agent_chat.tools.wait_started.wait(timeout=4.0)
+    question = _pending_question(real_agent_chat, kind="ask")
+    active_attempt = execution.current_attempt_id
+    generation = execution.owner_lease["generation"]
+    assert active_attempt is not None
+    real_agent_chat.control.recover_owner_loss(
+        execution.execution_id,
+        attempt_id=active_attempt,
+        generation=generation,
+    )
+    interrupted = _wait(lambda: (
+        item
+        if (item := real_agent_chat.store.get_execution(execution.execution_id)).status
+        in {
+            ExecutionStatus.INTERRUPTED,
+            ExecutionStatus.FAILED,
+            ExecutionStatus.RECONCILIATION_REQUIRED,
+        }
+        else None
+    ), detail=lambda: real_agent_chat.store.get_execution(execution.execution_id).to_dict())
+    assert interrupted.checkpoint_head_id is None
+    assert interrupted.status is not ExecutionStatus.PAUSED
+    assert interrupted.owner_lease == {}
+    assert real_agent_chat.control.checkpoints.get(interrupted.checkpoint_head_id) is None
+    assert real_agent_chat.store.get_agent_wait(execution.execution_id, question.kind) is None
+    # The process-local registry entry is not durable P0 state.  Resolve it
+    # through the public question handler so the real waiter can unwind.
+    _question_action(real_agent_chat, "question_reject", question.id)

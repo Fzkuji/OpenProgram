@@ -881,19 +881,6 @@ def test_public_cancel_uses_a_durable_exact_command_envelope(public_chat):
     collision = _command_payload(_command_frame(collision_ws))
     assert collision["status"] == CommandStatus.REJECTED.value
     assert collision["rejection_code"] == "idempotency_collision"
-
-
-@pytest.mark.parametrize("wait_kind", ["question", "approval"])
-def test_question_and_approval_wait_stays_pausing_without_checkpoint_or_restart_wait(
-    tmp_path, wait_kind
-):
-    store, _attempts, _active, running = _admitted_agent_execution(tmp_path)
-    # P0 deliberately has no durable Question/approval resource.  A restart
-    # cannot synthesize an answer or turn the wait into an Agent checkpoint.
-    assert store.get_agent_wait(running.execution_id, wait_kind) is None
-    assert running.checkpoint_head_id is None
-
-
 def test_stale_step_without_a_live_owner_returns_latest_snapshot_without_mutation(public_chat):
     _ws, ack, execution, store, _control = _chat_ack(public_chat)
     first_ws = FakeWS()
@@ -1156,14 +1143,3 @@ def test_nonordinary_agent_entries_do_not_claim_pause_step_or_durable_wait(
     assert capabilities.safe_point_kinds == ()
     assert "execution.pause" not in capabilities
     assert "execution.step" not in capabilities
-
-
-def test_question_or_approval_wait_is_excluded_from_p0_restart_contract(public_chat):
-    _ws, ack, execution, store, _control = _chat_ack(public_chat, text="ask before continuing")
-    assert ack["data"]["execution_id"] == execution.execution_id
-    assert execution.status not in {
-        ExecutionStatus.PAUSED,
-        ExecutionStatus.RECONCILIATION_REQUIRED,
-    }
-    assert execution.checkpoint_head_id is None
-    assert store.list_events(execution.execution_id)
