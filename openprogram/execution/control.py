@@ -836,10 +836,10 @@ class RuntimeControlService:
                         "invalid_binding",
                         "activation returned a binding for a different attempt",
                     )
-                self.registry.bind(result)
+                self._bind_driver(result)
             elif isinstance(result, tuple) and len(result) == 2:
                 driver, handle = result
-                self.registry.bind(
+                self._bind_driver(
                     DriverBinding(
                         execution_id=attempt.execution_id,
                         attempt_id=attempt.attempt_id,
@@ -849,7 +849,7 @@ class RuntimeControlService:
                     )
                 )
             elif driver is not None:
-                self.registry.bind(
+                self._bind_driver(
                     DriverBinding(
                         execution_id=attempt.execution_id,
                         attempt_id=attempt.attempt_id,
@@ -861,6 +861,31 @@ class RuntimeControlService:
             return True, None
         except Exception:
             return False, "activation_failed"
+
+    def _bind_driver(self, binding: DriverBinding[Any]) -> None:
+        """Commit driver-local activation only after durable registry fencing."""
+        try:
+            self.registry.bind(binding)
+        except Exception:
+            aborted = getattr(binding.driver, "activation_aborted", None)
+            if callable(aborted):
+                aborted(binding)
+            raise
+        committed = getattr(binding.driver, "activation_committed", None)
+        if not callable(committed):
+            return
+        try:
+            committed(binding)
+        except Exception:
+            self.registry.unbind(
+                binding.execution_id,
+                attempt_id=binding.attempt_id,
+                generation=binding.generation,
+            )
+            aborted = getattr(binding.driver, "activation_aborted", None)
+            if callable(aborted):
+                aborted(binding)
+            raise
 
     def _durable_owner(self, execution_id: str) -> tuple[str, int] | None:
         execution = self.executions.get_execution(execution_id)
