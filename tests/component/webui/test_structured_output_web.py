@@ -49,6 +49,8 @@ def test_invalid_schema_is_rejected_before_web_dispatch(monkeypatch):
 def test_web_chat_threads_normalized_response_format_to_existing_dispatch(
     monkeypatch,
 ):
+    from openprogram.webui import server as web_server
+
     ws = FakeWebSocket()
     captured = {}
 
@@ -60,6 +62,7 @@ def test_web_chat_threads_normalized_response_format_to_existing_dispatch(
             return None
 
     monkeypatch.setattr("openprogram.webui.ws_actions.chat.threading.Thread", Thread)
+    monkeypatch.setattr(web_server, "_running_tasks", {})
     monkeypatch.setattr("openprogram.webui.server._is_run_active", lambda _sid: False)
     monkeypatch.setattr("openprogram.webui.server._append_msg", lambda *args: None)
     monkeypatch.setattr("openprogram.webui.server._emit_running_task_event", lambda *args: None)
