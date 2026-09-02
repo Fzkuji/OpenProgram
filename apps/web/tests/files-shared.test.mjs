@@ -180,25 +180,91 @@ test("rename quota failure retains the old draft transactionally", async () => {
   assert.equal(store.drafts.has("p:old.txt"), true);
 });
 
-test("server rename failure compensates the draft move, with recovery on failed compensation", async () => {
+test("rename preflight blocks the server when the target metadata exceeds quota", async () => {
+  const store = new MemoryDraftStore();
+  setDraftStoreAdapterForTests(store);
+  const large = { draft: "x".repeat(DRAFT_MAX_BYTES - 500), baselineContent: "", baselineMtime: 1 };
+  await persistFileDraft("p", "old.txt", large);
+  let serverCalls = 0;
+  const result = await runServerRenameWithDrafts(
+    "p", "old.txt", `${"n".repeat(1000)}.txt`,
+    async () => { serverCalls += 1; return { status: "ready" }; },
+    async () => ({ status: "ready" }),
+  );
+  assert.equal(result.code, "DRAFT_QUOTA_EXCEEDED");
+  assert.equal(serverCalls, 0);
+  assert.equal(store.drafts.has("p:old.txt"), true);
+});
+
+test("server rename uses structured status and retains old draft on rejection", async () => {
   const store = new MemoryDraftStore();
   setDraftStoreAdapterForTests(store);
   const draft = { draft: "dirty", baselineContent: "base", baselineMtime: 1 };
   await persistFileDraft("p", "old.txt", draft);
-  const failed = await runServerRenameWithDrafts("p", "old.txt", "new.txt", async () => false);
+  let reverseCalls = 0;
+  const failed = await runServerRenameWithDrafts(
+    "p", "old.txt", "new.txt",
+    async () => ({ status: "error", code: "SERVER_RENAME_REJECTED" }),
+    async () => { reverseCalls += 1; return { status: "ready" }; },
+  );
   assert.equal(failed.ok, false);
   assert.equal(store.drafts.has("p:old.txt"), true);
   assert.equal(store.drafts.has("p:new.txt"), false);
+  assert.equal(reverseCalls, 0);
+});
 
+test("server rename exception and recovery status retain old draft", async () => {
+  const store = new MemoryDraftStore();
+  setDraftStoreAdapterForTests(store);
+  const draft = { draft: "dirty", baselineContent: "base", baselineMtime: 1 };
+  await persistFileDraft("p", "old.txt", draft);
+  for (const serverRename of [
+    async () => { throw new Error("timeout"); },
+    async () => ({ status: "recovery_required", message: "uncertain" }),
+  ]) {
+    const result = await runServerRenameWithDrafts(
+      "p", "old.txt", "new.txt", serverRename, async () => ({ status: "ready" }),
+    );
+    assert.equal(result.ok, false);
+    assert.equal(store.drafts.has("p:old.txt"), true);
+    assert.equal(store.drafts.has("p:new.txt"), false);
+  }
+});
+
+test("local rename failure compensates the ready server rename", async () => {
+  const store = new MemoryDraftStore();
+  setDraftStoreAdapterForTests(store);
+  await persistFileDraft("p", "old.txt", { draft: "dirty", baselineContent: "base", baselineMtime: 1 });
   store.failNextWrite = false;
-  const compensated = await runServerRenameWithDrafts("p", "old.txt", "new.txt", async () => {
-    store.failNextWrite = true;
-    return false;
-  });
-  assert.equal(compensated.ok, false);
-  assert.equal(store.drafts.has("p:old.txt"), false);
-  assert.equal(store.drafts.has("p:new.txt"), true);
-  assert.equal(await hasDirtyDraftsForPath("p", "new.txt"), true);
+  let reverseCalls = 0;
+  const result = await runServerRenameWithDrafts(
+    "p", "old.txt", "new.txt",
+    async () => { store.failNextWrite = true; return { status: "ready", idempotency_key: "rename-1" }; },
+    async (serverResult) => {
+      reverseCalls += 1;
+      assert.equal(serverResult.idempotency_key, "rename-1");
+      return { status: "ready", idempotency_key: "rename-1-reverse" };
+    },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(reverseCalls, 1);
+  assert.equal(store.drafts.has("p:old.txt"), true);
+  assert.equal(store.drafts.has("p:new.txt"), false);
+});
+
+test("failed compensation reports recovery and never creates an orphan", async () => {
+  const store = new MemoryDraftStore();
+  setDraftStoreAdapterForTests(store);
+  await persistFileDraft("p", "old.txt", { draft: "dirty", baselineContent: "base", baselineMtime: 1 });
+  const result = await runServerRenameWithDrafts(
+    "p", "old.txt", "new.txt",
+    async () => { store.failNextWrite = true; return { status: "ready" }; },
+    async () => ({ status: "recovery_required", message: "reverse timeout" }),
+  );
+  assert.equal(result.ok, false);
+  assert.equal(store.drafts.has("p:old.txt"), true);
+  assert.equal(store.drafts.has("p:new.txt"), false);
+  assert.match(getDraftPersistenceError("p"), /recovery is required/);
 });
 
 test("failed expansion stays in the live overlay until explicit discard", async () => {
@@ -213,4 +279,20 @@ test("failed expansion stays in the live overlay until explicit discard", async 
   assert.equal((await discardFileDraft("p", "a.txt")).ok, true);
   assert.equal(await loadFileDraft("p", "a.txt"), null);
   assert.equal((await loadFileDraft("p", "c.txt")).draft, "C");
+});
+
+test("rename uses the failed live overlay instead of the stale persisted record", async () => {
+  const store = new MemoryDraftStore();
+  setDraftStoreAdapterForTests(store);
+  const draft = (value) => ({ draft: value, baselineContent: "base", baselineMtime: 1 });
+  await persistFileDraft("p", "old.txt", draft("A"));
+  store.failNextWrite = true;
+  assert.equal((await persistFileDraft("p", "old.txt", draft("B"))).ok, false);
+  const moved = await runServerRenameWithDrafts(
+    "p", "old.txt", "new.txt",
+    async () => ({ status: "ready" }),
+    async () => ({ status: "ready" }),
+  );
+  assert.equal(moved.ok, true);
+  assert.equal((await loadFileDraft("p", "new.txt")).draft, "B");
 });

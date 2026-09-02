@@ -32,6 +32,7 @@ import {
   runAfterServerFileOperation,
   runServerRenameWithDrafts,
   type Project,
+  type ServerRenameResult,
 } from "@/lib/state/files-shared";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
@@ -692,7 +693,12 @@ export function FileTree({
       projectId,
       oldPath,
       newPath,
-      () => fileOp("rename", { path: oldPath, new_path: newPath }, [dir]),
+      async (): Promise<ServerRenameResult> => (await fileOp("rename", { path: oldPath, new_path: newPath }, [dir]))
+        ? { status: "ready" }
+        : { status: "error", code: "SERVER_RENAME_REJECTED", message: "The server rejected the rename." },
+      async (): Promise<ServerRenameResult> => (await fileOp("rename", { path: newPath, new_path: oldPath }, [dir]))
+        ? { status: "ready" }
+        : { status: "recovery_required", code: "SERVER_RENAME_COMPENSATION_FAILED", message: "The server rename could not be compensated." },
     );
     if (result.ok) retargetOpenTabs(oldPath, newPath);
     else if (result.message) window.alert(result.message);
@@ -716,11 +722,20 @@ export function FileTree({
         projectId,
         clip.path,
         dest,
-        () => fileOp(
+        async (): Promise<ServerRenameResult> => (await fileOp(
           "rename",
           { path: clip.path, new_path: dest },
           [parentOf(clip.path), targetDir],
-        ),
+        ))
+          ? { status: "ready" }
+          : { status: "error", code: "SERVER_RENAME_REJECTED", message: "The server rejected the rename." },
+        async (): Promise<ServerRenameResult> => (await fileOp(
+          "rename",
+          { path: dest, new_path: clip.path },
+          [parentOf(clip.path), targetDir],
+        ))
+          ? { status: "ready" }
+          : { status: "recovery_required", code: "SERVER_RENAME_COMPENSATION_FAILED", message: "The server rename could not be compensated." },
       );
       if (result.ok) {
         treeClipboard.current = null;

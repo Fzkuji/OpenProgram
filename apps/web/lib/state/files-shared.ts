@@ -633,89 +633,189 @@ export function moveFileDrafts(projectId: string, oldPath: string, newPath: stri
 }
 
 async function moveFileDraftsInternal(projectId: string, oldPath: string, newPath: string): Promise<DraftPersistenceResult> {
-    await hydrateDraftState();
-    const prefix = fileScopeKey(projectId, oldPath);
-    const store = await getDraftStore();
-    if (!store) {
-      const message = "Unable to move the local dirty draft because storage is unavailable.";
-      reportDraftPersistenceError(projectId, message);
-      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
+  await hydrateDraftState();
+  const store = await getDraftStore();
+  if (!store) {
+    const message = "Unable to move the local dirty draft because storage is unavailable.";
+    reportDraftPersistenceError(projectId, message);
+    return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
+  }
+  try {
+    let movedKeys: string[] = [];
+    const result = await store.mutate((snapshot) => {
+      const plan = buildMovedDraftSnapshot(snapshot, projectId, oldPath, newPath);
+      movedKeys = plan.movedKeys;
+      assertDraftSnapshotWithinQuota(plan.snapshot);
+      return plan.snapshot;
+    });
+    if (movedKeys.length === 0) return { ok: true };
+    // Remove the old live overlay before applying the moved persisted
+    // snapshot; otherwise applyDraftStoreSnapshot would restore it at the
+    // old key.
+    for (const oldKey of movedKeys) liveDraftBytesByKey.delete(oldKey);
+    applyDraftStoreSnapshot(result);
+    for (const oldKey of movedKeys) {
+      const nextPath = newPath + splitDraftKey(oldKey).path.slice(oldPath.length);
+      const nextKey = fileDraftKey(projectId, nextPath);
+      draftPersistenceErrors.delete(oldKey);
+      draftPersistenceErrors.delete(nextKey);
     }
-    try {
-      let movedKeys: string[] = [];
-      const result = await store.mutate((snapshot) => {
-        const current = normalizedStoreSnapshot(snapshot);
-        const records = [...current.drafts];
-        for (const [key, value] of fileDrafts) {
-          if (!liveDraftBytesByKey.has(key) || records.some((entry) => entry.key === key)) continue;
-          records.push({
-            ...structuredClone(value), key, projectId,
-            path: splitDraftKey(key).path,
-            bytes: fileDraftBytes(key, value, ++draftClock), updatedAt: draftClock,
-          });
-        }
-        const moved = records.filter((entry) => entry.key === prefix || entry.key.startsWith(`${prefix}/`)).map((entry) => {
-          const suffix = entry.key === prefix ? "" : entry.key.slice(prefix.length);
-          const nextKey = fileDraftKey(projectId, newPath + suffix);
-          movedKeys.push(entry.key);
-          return {
-            ...entry,
-            key: nextKey,
-            path: newPath + suffix,
-            bytes: fileDraftBytes(nextKey, entry, ++draftClock),
-            updatedAt: draftClock,
-          };
-        });
-        if (moved.length === 0) return current;
-        const drafts = [...records.filter((entry) => !movedKeys.includes(entry.key)), ...moved];
-        const next = { drafts, indexes: rebuildDraftIndexes({ drafts, indexes: current.indexes }) };
-        if (next.drafts.length > DRAFT_MAX_ENTRIES || snapshotStorageBytes(next) > DRAFT_MAX_BYTES)
-          throw new DraftStoreQuotaError();
-        return next;
-      });
-      if (movedKeys.length === 0) return { ok: true };
-      // Remove the old live overlay before applying the moved persisted
-      // snapshot; otherwise applyDraftStoreSnapshot would restore it at the
-      // old key.
-      for (const oldKey of movedKeys) liveDraftBytesByKey.delete(oldKey);
-      applyDraftStoreSnapshot(result);
-      for (const oldKey of movedKeys) {
-        const nextPath = newPath + splitDraftKey(oldKey).path.slice(oldPath.length);
-        const nextKey = fileDraftKey(projectId, nextPath);
-        draftPersistenceErrors.delete(oldKey);
-        draftPersistenceErrors.delete(nextKey);
-      }
-      notifyDraftErrorListeners();
-      return { ok: true };
-    } catch (error) {
-      const quota = error instanceof DraftStoreQuotaError
-        || (typeof error === "object" && error !== null && "name" in error && error.name === "QuotaExceededError");
-      const message = quota
-        ? "Local dirty-draft storage is full; the rename was not applied."
-        : "Unable to move the local dirty draft.";
-      reportDraftPersistenceError(projectId, message);
-      return { ok: false, code: quota ? "DRAFT_QUOTA_EXCEEDED" : "DRAFT_PERSISTENCE_FAILED", message };
-    }
+    notifyDraftErrorListeners();
+    return { ok: true };
+  } catch (error) {
+    const quota = error instanceof DraftStoreQuotaError
+      || (typeof error === "object" && error !== null && "name" in error && error.name === "QuotaExceededError");
+    const message = quota
+      ? "Local dirty-draft storage is full; the rename was not applied."
+      : "Unable to move the local dirty draft.";
+    reportDraftPersistenceError(projectId, message);
+    return { ok: false, code: quota ? "DRAFT_QUOTA_EXCEEDED" : "DRAFT_PERSISTENCE_FAILED", message };
+  }
 }
 
-/** Reserve the local draft move while the server rename runs. The same
- * draft queue covers the forward move, server operation, and compensation,
- * so another local save cannot interleave between those phases. */
+interface DraftMovePlan {
+  snapshot: DraftStoreSnapshot;
+  movedKeys: string[];
+}
+
+function assertDraftSnapshotWithinQuota(snapshot: DraftStoreSnapshot): void {
+  if (snapshot.drafts.length > DRAFT_MAX_ENTRIES || snapshotStorageBytes(snapshot) > DRAFT_MAX_BYTES)
+    throw new DraftStoreQuotaError();
+}
+
+/** Build a move from the persisted snapshot plus live failed-write overlays.
+ * A live entry replaces the persisted record at the same key, so a failed
+ * newer buffer cannot be replaced by an older durable value. */
+function buildMovedDraftSnapshot(
+  snapshot: DraftStoreSnapshot,
+  projectId: string,
+  oldPath: string,
+  newPath: string,
+): DraftMovePlan {
+  const current = normalizedStoreSnapshot(snapshot);
+  const liveKeys = new Set(liveDraftBytesByKey.keys());
+  const records = current.drafts.filter((entry) => !liveKeys.has(entry.key));
+  for (const key of liveKeys) {
+    const value = fileDrafts.get(key);
+    if (!value) continue;
+    const parsed = splitDraftKey(key);
+    const updatedAt = ++draftClock;
+    records.push({
+      ...structuredClone(value), key, projectId: parsed.projectId, path: parsed.path,
+      bytes: fileDraftBytes(key, value, updatedAt), updatedAt,
+    });
+  }
+  const prefix = fileScopeKey(projectId, oldPath);
+  const movedKeys: string[] = [];
+  const moved = records
+    .filter((entry) => entry.key === prefix || entry.key.startsWith(`${prefix}/`))
+    .map((entry) => {
+      const suffix = entry.key === prefix ? "" : entry.key.slice(prefix.length);
+      const nextKey = fileDraftKey(projectId, newPath + suffix);
+      movedKeys.push(entry.key);
+      const updatedAt = ++draftClock;
+      return {
+        ...entry,
+        key: nextKey,
+        path: newPath + suffix,
+        bytes: fileDraftBytes(nextKey, entry, updatedAt),
+        updatedAt,
+      };
+    });
+  if (moved.length === 0) return { snapshot: current, movedKeys };
+  const movedKeySet = new Set(movedKeys);
+  const targetKeySet = new Set(moved.map((entry) => entry.key));
+  const drafts = [
+    ...records.filter((entry) => !movedKeySet.has(entry.key) && !targetKeySet.has(entry.key)),
+    ...moved,
+  ];
+  return { snapshot: { drafts, indexes: rebuildDraftIndexes({ drafts, indexes: current.indexes }) }, movedKeys };
+}
+
+/** Check the complete post-rename record and index in an adapter transaction,
+ * but return the current snapshot so no local move is committed yet. */
+async function preflightMoveFileDraftsInternal(
+  projectId: string,
+  oldPath: string,
+  newPath: string,
+): Promise<DraftPersistenceResult> {
+  await hydrateDraftState();
+  const store = await getDraftStore();
+  if (!store) {
+    const message = "Unable to validate the local dirty draft because storage is unavailable.";
+    reportDraftPersistenceError(projectId, message);
+    return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
+  }
+  try {
+    await store.mutate((snapshot) => {
+      const plan = buildMovedDraftSnapshot(snapshot, projectId, oldPath, newPath);
+      assertDraftSnapshotWithinQuota(plan.snapshot);
+      return normalizedStoreSnapshot(snapshot);
+    });
+    return { ok: true };
+  } catch (error) {
+    const quota = error instanceof DraftStoreQuotaError
+      || (typeof error === "object" && error !== null && "name" in error && error.name === "QuotaExceededError");
+    const message = quota
+      ? "Local dirty-draft storage is full; the rename was not applied."
+      : "Unable to validate the local dirty draft rename.";
+    reportDraftPersistenceError(projectId, message);
+    return { ok: false, code: quota ? "DRAFT_QUOTA_EXCEEDED" : "DRAFT_PERSISTENCE_FAILED", message };
+  }
+}
+
+export type ServerRenameResult = {
+  status: "ready" | "error" | "recovery_required";
+  code?: string;
+  message?: string;
+  idempotency_key?: string;
+};
+
+/** Validate local quota, perform the structured server rename, then commit
+ * the local move. A failed local commit invokes an idempotent reverse server
+ * operation; local old-path records remain intact throughout. */
 export function runServerRenameWithDrafts(
   projectId: string,
   oldPath: string,
   newPath: string,
-  serverRename: () => Promise<boolean>,
+  serverRename: () => Promise<ServerRenameResult>,
+  reverseRename: (serverResult: ServerRenameResult) => Promise<ServerRenameResult>,
 ): Promise<DraftPersistenceResult> {
   return enqueueDraft(async () => {
-    const moved = await moveFileDraftsInternal(projectId, oldPath, newPath);
-    if (!moved.ok) return moved;
-    if (await serverRename()) return moved;
-    const rollback = await moveFileDraftsInternal(projectId, newPath, oldPath);
-    if (rollback.ok) return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message: "Server rename failed; the local draft was restored." };
-    const message = "Server rename failed and local draft compensation failed; the draft remains available for recovery.";
-    reportDraftPersistenceError(projectId, message);
-    return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
+    try {
+      const preflight = await preflightMoveFileDraftsInternal(projectId, oldPath, newPath);
+      if (!preflight.ok) return preflight;
+      let serverResult: ServerRenameResult;
+      try {
+        serverResult = await serverRename();
+      } catch {
+        const message = "The server rename could not be confirmed; the local draft was retained.";
+        reportDraftPersistenceError(projectId, message);
+        return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
+      }
+      if (!serverResult || serverResult.status !== "ready") {
+        const message = serverResult?.status === "recovery_required"
+          ? "The server rename requires recovery; the local draft was retained."
+          : serverResult?.message ?? "The server rejected the rename; the local draft was retained.";
+        reportDraftPersistenceError(projectId, message);
+        return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
+      }
+      const moved = await moveFileDraftsInternal(projectId, oldPath, newPath);
+      if (moved.ok) return moved;
+      try {
+        const compensation = await reverseRename(serverResult);
+        if (compensation?.status === "ready") return moved;
+      } catch {
+        // Fall through to the durable recovery error below.
+      }
+      const message = "The server rename succeeded but local draft movement failed; recovery is required and the old draft remains available.";
+      reportDraftPersistenceError(projectId, message);
+      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
+    } catch {
+      const message = "The file rename could not be completed; the local draft was retained.";
+      reportDraftPersistenceError(projectId, message);
+      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
+    }
   });
 }
 
