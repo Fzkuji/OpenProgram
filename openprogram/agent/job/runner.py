@@ -1457,9 +1457,7 @@ class JobRunner:
             current = _store_load(session_id, job.id) or job
             if cancelled:
                 status = JobStatus.CANCELLED
-                reason_code = self._cancel_reason_for_finalization(
-                    job.id, current.reason_code,
-                )
+                reason_code = self._cancel_reason_for_finalization(job.id)
             elif result.failed:
                 status = JobStatus.ERRORED
                 reason_code = _execution_failure_reason(result.error)
@@ -1812,6 +1810,8 @@ class JobRunner:
         )
         if canonical_queued and cur_job.status in (JobStatus.PENDING, JobStatus.QUEUED):
             self._request_canonical_cancel(job_id, reason_code)
+            canonical_reason = self._canonical_cancel_reason(job_id)
+            effective_reason = canonical_reason or reason_code
             try:
                 from openprogram.agent import inbox
                 inbox.discard_job(session_id, job_id)
@@ -1826,7 +1826,7 @@ class JobRunner:
                         "withdrawn before delivery"
                         if info is None else "cancelled before pickup"
                     ),
-                    reason_code=reason_code,
+                    reason_code=effective_reason,
                 )
             except ValueError:
                 updated = _store_load(session_id, job_id)
@@ -1835,7 +1835,7 @@ class JobRunner:
                     return updated
                 try:
                     self._governor.request_stop(
-                        job_id, updated.reason_code or reason_code,
+                        job_id, effective_reason,
                     )
                 except Exception:
                     _log.exception(
@@ -1870,7 +1870,7 @@ class JobRunner:
         # read for the legacy Job DTO returned by this API.
         self._request_canonical_cancel(job_id, reason_code)
         canonical = self._execution_store.get_execution(job_id)
-        persisted_reason = canonical.reason_code if canonical is not None else None
+        persisted_reason = self._canonical_cancel_reason(job_id)
         with self._lock:
             live_info = self._jobs.get(job_id)
             if live_info is not None:
@@ -1886,7 +1886,7 @@ class JobRunner:
             if latest.status == JobStatus.CANCELLED:
                 try:
                     self._governor.request_stop(
-                        job_id, latest.reason_code or effective_reason,
+                        job_id, effective_reason,
                     )
                 except Exception:
                     _log.exception(
@@ -1907,11 +1907,8 @@ class JobRunner:
         # parent, or budget cancellation may arrive after another reason was
         # already persisted; never overwrite that earlier decision in the
         # resource ledger.
-        latest = _store_load(session_id, job_id)
-        effective_reason = (
-            latest.reason_code if latest is not None and latest.reason_code
-            else effective_reason
-        )
+        canonical_reason = self._canonical_cancel_reason(job_id)
+        effective_reason = canonical_reason or effective_reason
         try:
             self._governor.request_stop(job_id, effective_reason)
         except Exception:
@@ -1970,11 +1967,23 @@ class JobRunner:
             name=f"op-job-canonical-terminate-{job_id}",
         ).start()
 
+    def _canonical_cancel_reason(self, job_id: str) -> str | None:
+        command = self._execution_store.get_command(f"execution-cancel:{job_id}")
+        if command is not None and command.kind.value == "execution.cancel":
+            reason = command.payload.get("reason_code")
+            if isinstance(reason, str) and reason:
+                return reason
+        execution = self._execution_store.get_execution(job_id)
+        if execution is not None and execution.reason_code:
+            return execution.reason_code
+        return None
+
     def _cancel_reason_for_finalization(
-        self, job_id: str, persisted_reason: str | None,
+        self, job_id: str, _projected_reason: str | None = None,
     ) -> str:
-        if persisted_reason:
-            return persisted_reason
+        canonical_reason = self._canonical_cancel_reason(job_id)
+        if canonical_reason:
+            return canonical_reason
         with self._lock:
             info = self._jobs.get(job_id)
             in_memory_reason = (
@@ -2608,10 +2617,14 @@ class JobRunner:
                                 self._done_events.pop(claim.job_id, None)
                     if not requeued and not terminal_released:
                         terminal: dict[str, Job | None] = {}
-                        current = _store_load(claim.session_id, claim.job_id)
+                        # The canonical cancel command/execution owns the
+                        # immutable reason.  The JobStore row is only a
+                        # projection and can still contain a competing
+                        # caller's reason during this cleanup race.
                         reason_code = (
-                            current.reason_code if current is not None else None
-                        ) or "cancel.concurrent"
+                            self._canonical_cancel_reason(claim.job_id)
+                            or "cancel.concurrent"
+                        )
                         terminal_fields = _terminal_fields(
                             JobStatus.CANCELLED,
                             reason_code,
@@ -2969,9 +2982,8 @@ class JobRunner:
                 new_status = JobStatus.ERRORED
             else:
                 new_status = JobStatus.COMPLETED
-            current_reason = (_store_load(session_id, job_id) or job).reason_code
             reason_code = (
-                self._cancel_reason_for_finalization(job_id, current_reason)
+                self._cancel_reason_for_finalization(job_id)
                 if new_status == JobStatus.CANCELLED
                 else _execution_failure_reason(result.error)
                 if new_status == JobStatus.ERRORED
@@ -3107,7 +3119,9 @@ class JobRunner:
                     )
                     cur = None
                 self._governor.release_job(
-                    job_id, cur.reason_code if cur is not None else None,
+                    job_id,
+                    self._canonical_cancel_reason(job_id)
+                    if cur is not None and is_terminal(cur.status) else None,
                     owner_instance_id=self._instance_id,
                     lease_generation=lease_generation,
                 )
