@@ -102,6 +102,9 @@ _BINARY_SNIFF_BYTES = 8192
 # human edits in a textarea.
 _WRITE_MAX_BYTES = 5_000_000  # 5 MB
 _IDENTITY_DIGEST_MAX_BYTES = 256 * 1024
+# Editable text reads are capped at 1 MB; their baseline digest must cover
+# the same range. Mutation witnesses stay separately bounded below.
+_READ_DIGEST_MAX_BYTES = _READ_MAX_BYTES
 
 _QUERY_PAGE_SIZE = 100
 _QUERY_MAX_SNAPSHOTS = 256
@@ -163,7 +166,7 @@ def _workspace_mutation_lock(project_id: str):
 
 def _file_digest(target: str) -> str | None:
     try:
-        if os.stat(target).st_size > _IDENTITY_DIGEST_MAX_BYTES:
+        if os.stat(target).st_size > _READ_DIGEST_MAX_BYTES:
             return None
         with open(target, "rb") as stream:
             digest = hashlib.sha256()
@@ -206,10 +209,16 @@ def _mutation_states(project_id: str, action: str, payload: dict) -> tuple[dict,
     path = str(payload.get("path") or "")
     before = {"path": path, "source": _identity(project_id, path)}
     if action == "project_file_write":
-        raw = str(payload.get("content") or "").encode("utf-8")
+        digest = payload.get("content_sha256")
+        if not isinstance(digest, str):
+            raw = str(payload.get("content") or "").encode("utf-8")
+            digest = hashlib.sha256(raw).hexdigest()
         after = {"path": path, "target": {
-            "exists": True, "kind": "file", "digest": hashlib.sha256(raw).hexdigest(),
+            "exists": True, "kind": "file", "digest": digest,
         }}
+        byte_length = payload.get("content_byte_length")
+        if isinstance(byte_length, int) and byte_length >= 0:
+            after["target"]["size"] = byte_length
     elif action == "project_file_create":
         kind = payload.get("kind")
         after = {"path": path, "target": {"exists": True, "kind": kind,
@@ -240,6 +249,10 @@ def _canonical_mutation_payload(payload: dict) -> dict:
         if isinstance(value, str):
             normalized = posixpath.normpath(value.replace("\\", "/"))
             canonical[field] = "" if normalized == "." else normalized
+    if isinstance(canonical.get("content"), str):
+        raw = canonical.pop("content").encode("utf-8")
+        canonical["content_sha256"] = hashlib.sha256(raw).hexdigest()
+        canonical["content_byte_length"] = len(raw)
     return canonical
 
 

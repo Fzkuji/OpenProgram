@@ -611,6 +611,21 @@ def test_write_rejects_content_drift_when_mtime_is_restored(project_root):
     assert target.read_text(encoding="utf-8") == "external\n"
 
 
+def test_write_revision_covers_the_full_editable_read_limit(project_root):
+    target = project_root / "large-text.txt"
+    target.write_bytes(b"x" * (ws_files._IDENTITY_DIGEST_MAX_BYTES + 1))
+    read = _run(ws_files.handle_project_file_read, {
+        "project_id": "p1", "path": "large-text.txt",
+    })["data"]
+    assert read["size"] < ws_files._READ_MAX_BYTES
+    assert len(read["revision"]) == 64
+    result = _write({
+        "project_id": "p1", "path": "large-text.txt", "content": "y" * read["size"],
+        "expected_mtime": read["mtime"], "baseline_revision": read["revision"],
+    })
+    assert result["ok"] is True
+
+
 def test_write_conflict_does_not_write(project_root):
     stale = os.stat(project_root / "apple.txt").st_mtime - 100
     data = _write({"project_id": "p1", "path": "apple.txt",

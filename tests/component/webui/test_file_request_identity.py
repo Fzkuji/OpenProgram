@@ -73,6 +73,8 @@ def test_dispatch_requires_uuid_and_idempotency_key():
 
 
 def test_file_write_replay_collision_and_restart(project):
+    from openprogram.store.file_operations import default_file_operation_store
+
     request_id = str(uuid.uuid4())
     command = {
         "project_id": "p1", "path": "source.txt", "content": "after",
@@ -83,6 +85,11 @@ def test_file_write_replay_collision_and_restart(project):
     first = run(files.handle_project_file_write, command)["data"]
     assert first["ok"] is True
     mtime = (project / "source.txt").stat().st_mtime
+    store = default_file_operation_store()
+    payload = json.loads(store.get(first["operation_id"])["payload_json"])
+    assert "content" not in payload
+    assert payload["content_sha256"] == files._canonical_mutation_payload({"content": "after"})["content_sha256"]
+    assert payload["content_byte_length"] == len("after".encode("utf-8"))
 
     replay = run(files.handle_project_file_write, command)["data"]
     assert replay["operation_id"] == first["operation_id"]
@@ -94,12 +101,13 @@ def test_file_write_replay_collision_and_restart(project):
     assert collision["error_code"] == "IDEMPOTENCY_KEY_CONFLICT"
 
     # A fresh store handle observes the same durable completed record.
-    from openprogram.store.file_operations import default_file_operation_store, fingerprint
-    store = default_file_operation_store()
+    from openprogram.store.file_operations import fingerprint
     row, owner = store.begin(
         "p1", "project_file_write", "write-once",
-        fingerprint({"path": "source.txt", "content": "after",
-                     "expected_mtime": command["expected_mtime"]}),
+        fingerprint(files._canonical_mutation_payload({
+            "path": "source.txt", "content": "after",
+            "expected_mtime": command["expected_mtime"],
+        })),
     )
     assert not owner and store.replay(row)["operation_id"] == first["operation_id"]
 
@@ -162,11 +170,12 @@ def test_inflight_after_image_is_not_assumed_to_be_our_write(project):
     from openprogram.store.file_operations import default_file_operation_store, fingerprint
 
     payload = {"path": "source.txt", "content": "same", "expected_mtime": None}
-    before, after = files._mutation_states("p1", "project_file_write", payload)
+    canonical = files._canonical_mutation_payload(payload)
+    before, after = files._mutation_states("p1", "project_file_write", canonical)
     store = default_file_operation_store()
     row, owner = store.begin(
-        "p1", "project_file_write", "crashed-write", fingerprint(payload),
-        payload=payload, before=before, after=after,
+        "p1", "project_file_write", "crashed-write", fingerprint(canonical),
+        payload=canonical, before=before, after=after,
     )
     assert owner
     # An unrelated writer produces the same bytes after the intent was
@@ -185,11 +194,12 @@ def test_inflight_before_image_is_retried_under_the_lock(project):
     from openprogram.store.file_operations import default_file_operation_store, fingerprint
 
     payload = {"path": "source.txt", "content": "retry", "expected_mtime": None}
-    before, after = files._mutation_states("p1", "project_file_write", payload)
+    canonical = files._canonical_mutation_payload(payload)
+    before, after = files._mutation_states("p1", "project_file_write", canonical)
     store = default_file_operation_store()
     row, owner = store.begin(
-        "p1", "project_file_write", "retry-write", fingerprint(payload),
-        payload=payload, before=before, after=after,
+        "p1", "project_file_write", "retry-write", fingerprint(canonical),
+        payload=canonical, before=before, after=after,
     )
     assert owner
     result = run(files.handle_project_file_write, {
