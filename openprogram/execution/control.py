@@ -269,6 +269,57 @@ def _existing_observed_cancel(
     )
 
 
+async def submit_wait_command(
+    service: "RuntimeControlService",
+    *,
+    action: str,
+    command_id: str,
+    execution_id: str,
+    expected_version: int,
+    actor: Mapping[str, Any],
+    wait_id: str,
+    generation: int,
+    value: Any = None,
+) -> "ControlDispatch":
+    """Submit one authorized answer/decline for one exact durable wait.
+
+    Non-HTTP surfaces use this function instead of writing through
+    ``QuestionRegistry``. Authorization is evaluated against the durable
+    execution and its project/session binding before the wait command runs.
+    """
+    from .authorization import authorize_execution_action
+    from .public import project_id_for_session
+
+    action_to_method = {
+        "execution.wait.answer": service.request_wait_answer,
+        "execution.wait.decline": service.request_wait_decline,
+    }
+    method = action_to_method.get(action)
+    if method is None:
+        raise ExecutionConflict("invalid_command", "unsupported wait action")
+    execution = service.executions.get_execution(execution_id)
+    if execution is None:
+        raise ExecutionConflict("not_found", "execution not found")
+    authorize_execution_action(
+        actor, action, execution,
+        {"project_id": project_id_for_session(execution.session_id),
+         "session_id": execution.session_id},
+    )
+    kwargs: dict[str, Any] = {
+        "command_id": command_id,
+        "execution_id": execution_id,
+        "expected_version": expected_version,
+        "actor": actor,
+        "wait_id": wait_id,
+        "generation": generation,
+    }
+    if action == "execution.wait.answer":
+        kwargs["answer"] = value
+    else:
+        kwargs["reason"] = value
+    return await method(**kwargs)
+
+
 @dataclass(frozen=True)
 class SafePointCompletion:
     command: ControlCommand
@@ -622,6 +673,8 @@ class RuntimeControlService:
                 )
         except AgentSafePointConflict:
             raise
+
+
         except (ExecutionConflict, AttemptConflict) as exc:
             raise AgentSafePointConflict(getattr(exc, "code", "wait_safe_point_failed"), str(exc)) from exc
         self.registry.unbind(execution_id, attempt_id=attempt_id, generation=generation)

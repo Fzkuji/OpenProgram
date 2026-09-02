@@ -51,6 +51,7 @@ from .control import (
     RuntimeControlService,
     SafePointCompletion,
     default_control_service,
+    submit_wait_command,
 )
 from .store import ExecutionStore, ProjectionConflict, default_store
 from .outbox import (
@@ -118,6 +119,7 @@ __all__ = [
     "ControlDispatch",
     "RuntimeControlService",
     "SafePointCompletion",
+    "submit_wait_command",
     "AttemptCompletion",
     "BranchCompletion",
     "ReconciliationCompletion",

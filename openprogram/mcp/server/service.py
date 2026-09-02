@@ -555,7 +555,26 @@ class MCPService:
             if not owns_session:
                 return
             try:
-                questions.resolve(question_id, "declined", None)
+                from openprogram.execution import (
+                    default_control_service, default_store, submit_wait_command,
+                )
+                execution = default_store().get_execution(registry_owner)
+                if execution is None:
+                    return
+                actor = dict(self.context.authority)
+                actor.update({
+                    "project_ids": ["default"],
+                    "session_ids": [session_id],
+                    "execution_actions": ["execution.wait.decline"],
+                })
+                asyncio.run(submit_wait_command(
+                    default_control_service(), action="execution.wait.decline",
+                    command_id=f"mcp-wait:{uuid.uuid4().hex}",
+                    execution_id=registry_owner,
+                    expected_version=execution.status_version,
+                    actor=actor, wait_id=question_id,
+                    generation=int(getattr(pending, "wait_generation", 0)),
+                ))
             except Exception:
                 return
             finally:
@@ -690,24 +709,6 @@ class MCPService:
             except Exception:
                 owns_session = False
             try:
-                if owns_session:
-                    try:
-                        questions = (
-                            record.question_registry
-                            or self._question_registry_getter()
-                        )
-                    except Exception:
-                        questions = None
-                    if questions is not None:
-                        cancel_questions = getattr(
-                            questions, "cancel_execution", None
-                        )
-                        if callable(cancel_questions):
-                            _best_effort(
-                                cancel_questions,
-                                record.session_id,
-                                record.execution_id,
-                            )
                 self._unregister_once(record)
             finally:
                 if owns_session:

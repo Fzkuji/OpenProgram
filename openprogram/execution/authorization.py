@@ -22,6 +22,7 @@ _CONTROL_ACTIONS = frozenset({
     "execution.cancel", "execution.fork", "execution.retry", "execution.wait.answer",
     "execution.wait.decline", "execution.reconcile",
 })
+_WAIT_ACTIONS = frozenset({"execution.wait.answer", "execution.wait.decline"})
 _REVISION_ACTIONS = frozenset({
     "revision.draft.create", "revision.draft.get", "revision.draft.replace",
     "revision.draft.discard", "revision.validate", "revision.approve",
@@ -78,7 +79,11 @@ def authorize_execution_action(
         not isinstance(grants, (list, tuple, frozenset, set)) or action not in grants
     ):
         raise ExecutionAuthorizationError("execution is not visible")
-    capability = "runtime.control" if action in _CONTROL_ACTIONS else "fs.read"
+    capability = (
+        "runtime.wait" if action in _WAIT_ACTIONS
+        else "runtime.control" if action in _CONTROL_ACTIONS
+        else "fs.read"
+    )
     if action in _REVISION_ACTIONS:
         capability = "runtime.control"
     # Local owner authority is the policy root.  Paired and MCP actors do not

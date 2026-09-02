@@ -1,9 +1,12 @@
 """Runtime interaction APIs consume only a durable pre-wait outcome."""
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 import openprogram.execution as execution_module
+from openprogram.execution.attempts import AttemptStore
 from openprogram.agent.questions import (
     DurableWaitSafePointRequired, PendingQuestion, QuestionRegistry,
     get_question_registry,
@@ -139,6 +142,60 @@ def test_registry_is_only_a_wake_notifier(_execution):
     assert not event.is_set()
     reg.wake(wait.wait_id)
     assert event.is_set()
+
+
+def test_registry_removes_terminal_event_after_consume(_execution):
+    store, execution_id, attempt = _execution
+    from openprogram.execution.model import CommandKind
+    from openprogram.execution.waits import DurableWaitStore
+
+    waits = DurableWaitStore(store)
+    wait = waits.open_wait(
+        wait_id="wait_cleanup", execution_id=execution_id,
+        attempt_id=attempt.attempt_id, generation=attempt.generation,
+        kind="ask", request={"prompt": "?"},
+        policy_snapshot={"version": 1}, expires_at=9_999_999_999,
+    )
+    registry = get_question_registry()
+    registry.register(PendingQuestion(
+        id=wait.wait_id, session_id="s", kind="ask", prompt="?",
+        execution_id=execution_id,
+    ))
+    current = store.get_execution(execution_id)
+    assert current is not None
+    waits.resolve_with_command(
+        command_id="answer-cleanup", execution_id=execution_id,
+        expected_version=current.status_version, actor={"surface": "test"},
+        kind=CommandKind.WAIT_ANSWER, wait_id=wait.wait_id,
+        generation=wait.claim_generation, answer="done",
+    )
+    assert registry.consume(wait.wait_id) == ("answered", "done")
+    assert wait.wait_id not in registry._events
+
+
+def test_wait_command_requires_authorized_actor(_execution):
+    store, execution_id, attempt = _execution
+    from openprogram.execution import DriverRegistry, RuntimeControlService, submit_wait_command
+    from openprogram.execution.authorization import ExecutionAuthorizationError
+    from openprogram.execution.waits import DurableWaitStore
+
+    wait = DurableWaitStore(store).open_wait(
+        wait_id="wait_auth", execution_id=execution_id,
+        attempt_id=attempt.attempt_id, generation=attempt.generation,
+        kind="ask", request={"prompt": "?"},
+        policy_snapshot={"version": 1}, expires_at=9_999_999_999,
+    )
+    current = store.get_execution(execution_id)
+    assert current is not None
+    service = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    with pytest.raises(ExecutionAuthorizationError):
+        asyncio.run(submit_wait_command(
+            service, action="execution.wait.answer", command_id="unauth-wait",
+            execution_id=execution_id, expected_version=current.status_version,
+            actor={"surface": "untrusted"}, wait_id=wait.wait_id,
+            generation=wait.claim_generation, value="nope",
+        ))
+    assert store.get_command("unauth-wait") is None
 
 
 def test_agent_loop_stops_before_a_declared_interaction_effect():

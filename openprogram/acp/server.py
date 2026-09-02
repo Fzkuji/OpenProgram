@@ -22,8 +22,8 @@ than as the user's words. ``resource_link`` becomes a bare path mention.
 **Permissions.** OpenProgram's approval gate registers a ``kind="approval"``
 question on the shared QuestionRegistry and blocks. Subscribing to
 ``question.asked`` on the event bus catches those, forwards them as ACP
-``session/request_permission``, and answers with
-``resolve_question_and_broadcast``. Nothing about the gate itself changes,
+``session/request_permission``, and answers with the canonical execution wait
+command. Nothing about the gate itself changes,
 so authority checks, hard constraints, permission rules and the
 ``allow_always`` rule-persistence path all behave exactly as in the web UI.
 
@@ -318,16 +318,8 @@ class ACPServer:
             ]
             for qid in qids:
                 sess.open_questions.pop(qid, None)
-        # Every permission request still in flight must be answered — the
-        # spec requires the "cancelled" outcome, and the tool gate is
-        # blocked on the matching question's Event.
-        from openprogram.agent.questions import resolve_question_and_broadcast
-
-        for qid in qids:
-            try:
-                resolve_question_and_broadcast(qid, "cancelled", None)
-            except Exception:
-                _log.debug("ACP question cancellation failed", exc_info=True)
+        # request_cancel already closes every wait for this exact execution
+        # in the same durable transaction.
         return None
 
     # -- the turn ---------------------------------------------------------
@@ -515,8 +507,6 @@ class ACPServer:
         self, sess: _Session, data: dict,
         expected_execution_id: str | None = None,
     ) -> None:
-        from openprogram.agent.questions import resolve_question_and_broadcast
-
         qid = data.get("id")
         if not qid:
             return
@@ -558,22 +548,38 @@ class ACPServer:
             with sess.lock:
                 sess.open_questions.pop(qid, None)
 
-        outcome = (resp or {}).get("outcome") or {}
-        if outcome.get("outcome") != "selected":
-            # "cancelled" — the client dropped the request; decline so the
-            # gate stops waiting.
-            resolve_question_and_broadcast(qid, "declined", None)
+        if not expected_execution_id:
             return
+        outcome = (resp or {}).get("outcome") or {}
         choice = outcome.get("optionId")
-        if choice in (_ALLOW_ONCE, _ALLOW_ALWAYS):
-            # The gate reads {"answer", "scope"}; scope="always" is what
-            # writes the persistent allow rule.
-            resolve_question_and_broadcast(qid, "answered", {
-                "answer": "允许",
-                "scope": "always" if choice == _ALLOW_ALWAYS else "once",
-            })
-        else:
-            resolve_question_and_broadcast(qid, "declined", None)
+        action = (
+            "execution.wait.answer"
+            if outcome.get("outcome") == "selected"
+            and choice in (_ALLOW_ONCE, _ALLOW_ALWAYS)
+            else "execution.wait.decline"
+        )
+        value = (
+            {"answer": "允许", "scope": "always" if choice == _ALLOW_ALWAYS else "once"}
+            if action == "execution.wait.answer" else None
+        )
+        try:
+            from openprogram.agent.authority import local_owner_authority
+            from openprogram.execution import (
+                default_control_service, default_store, submit_wait_command,
+            )
+            execution = default_store().get_execution(expected_execution_id)
+            if execution is None:
+                return
+            asyncio.run(submit_wait_command(
+                default_control_service(), action=action,
+                command_id=f"acp-wait:{uuid.uuid4().hex}",
+                execution_id=expected_execution_id,
+                expected_version=execution.status_version,
+                actor=local_owner_authority(), wait_id=qid,
+                generation=int(data.get("wait_generation") or 0), value=value,
+            ))
+        except Exception:
+            _log.debug("ACP question resolution failed", exc_info=True)
 
 
 def _locations(raw_input) -> list[dict]:

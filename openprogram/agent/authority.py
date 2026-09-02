@@ -54,6 +54,7 @@ _OWNER_CAPABILITIES = frozenset({
     "network.send",
     "approval.request",
     "runtime.control",
+    "runtime.wait",
     "browser.control",
 })
 # Reading memory is its own capability, separate from ``fs.read``. A
@@ -65,6 +66,7 @@ _OWNER_CAPABILITIES = frozenset({
 # there was to deny both.
 _PAIRED_CAPABILITIES = frozenset({
     "reply", "memory.read", "memory.source.append",
+    "runtime.wait",
 })
 _MCP_BROWSER_CAPABILITIES = frozenset({"browser.control"})
 TIER_CAPABILITIES: Mapping[AuthorityTier, frozenset[str]] = {

@@ -19,13 +19,41 @@ def register(app):
         reconnecting client recover questions whose live frame it missed."""
         from openprogram.execution import default_store
         from openprogram.execution.waits import DurableWaitStore
-        state = request.scope.get("state") if isinstance(request.scope, dict) else None
-        bound_session = state.get("session_id") if isinstance(state, dict) else None
-        if isinstance(bound_session, str) and bound_session:
+        from openprogram.webui.routes.lifecycle import _actor_and_session, _authorize_read
+
+        actor, bound_session = _actor_and_session(request)
+        if bound_session is not None:
             if session_id is not None and session_id != bound_session:
                 return JSONResponse(content={"questions": []}, status_code=404)
             session_id = bound_session
-        pend = DurableWaitStore(default_store()).list_open(session_id=session_id)
+
+        # A reconnect request without a trusted session binding must carry an
+        # explicit session scope. Returning an empty list here would make the
+        # unscoped endpoint an execution/wait enumerator.
+        if session_id is None:
+            scoped_sessions = actor.get("session_ids") if isinstance(actor, dict) else None
+            if not isinstance(scoped_sessions, (list, tuple, set, frozenset)) or not scoped_sessions:
+                return JSONResponse(content={"questions": []}, status_code=404)
+
+        store = default_store()
+        waits = DurableWaitStore(store).list_open(session_id=session_id)
+        if session_id is None:
+            waits = [
+                wait for wait in waits
+                if (
+                    (execution := store.get_execution(wait.execution_id)) is not None
+                    and str(execution.session_id)
+                    in {str(item) for item in scoped_sessions}
+                )
+            ]
+        visible = []
+        for wait in waits:
+            execution = store.get_execution(wait.execution_id)
+            if execution is None or not _authorize_read(
+                actor, session_id, execution, "execution.snapshot"
+            ):
+                continue
+            visible.append(wait)
         return JSONResponse(content={"questions": [
             {
                 "id": q.wait_id, "execution_id": q.execution_id,
@@ -45,5 +73,5 @@ def register(app):
                 "risk_level": q.request.get("risk_level"),
                 "created_at": q.created_at, "expires_at": q.expires_at,
             }
-            for q in pend
+            for q in visible
         ]})

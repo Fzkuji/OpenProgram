@@ -152,8 +152,19 @@ def dispatch_inbound(
     # /answer <qid> <choice> 文本消息回答（聊天软件没有网页那种问题卡片）。
     # 命中且该 qid 属于本 session 才 resolve 并回执，不走 agent dispatch；
     # 否则（不是命令 / qid 不属于本 session）返回 None，照常进 agent。
+    from openprogram.agent.authority import paired_channel_authority
+    _question_actor = paired_channel_authority(
+        channel, account_id, speaker_id or "", speaker_display or user_display,
+    )
+    _question_actor.update({
+        "project_ids": ["default"],
+        "session_ids": [session_key],
+        "execution_actions": ["execution.wait.answer", "execution.wait.decline"],
+    })
     from openprogram.channels._question_commands import try_handle_question_command
-    _receipt = try_handle_question_command(user_text, session_key)
+    _receipt = try_handle_question_command(
+        user_text, session_key, actor=_question_actor,
+    )
     if _receipt is not None:
         return _receipt
 
@@ -289,7 +300,6 @@ def _run_session_turn(
                     break
             _maybe_edit("\n".join(progress_lines))
 
-    from openprogram.agent.authority import paired_channel_authority
     _authority = paired_channel_authority(
         channel, account_id, speaker_id or "",
         speaker_display or user_display,

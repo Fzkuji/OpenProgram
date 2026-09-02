@@ -130,41 +130,15 @@ def test_parent_rejects_forged_wait_owner(_durable_execution, monkeypatch) -> No
     assert DurableWaitStore(store).get_wait(wait.wait_id).status.value == "open"
 
 
-def test_child_blocking_wait_reads_parent_command_after_wake(_durable_execution) -> None:
-    """The parent only relays the terminal projection; child reads SQLite."""
-    from openprogram.agent.process_runner import _bridge_question_to_parent
-
-    store, attempts, execution = _durable_execution
-    event_queue: mp.Queue = mp.get_context("spawn").Queue()
-    answer_queue: mp.Queue = mp.get_context("spawn").Queue()
-    pending, lock = set(), threading.Lock()
-    captured = {}
-
-    def child() -> None:
-        token = set_current_execution_id(execution.execution_id)
-        try:
-            captured["result"] = ask_blocking(
+def test_child_blocking_wait_requires_declared_safe_point(_durable_execution) -> None:
+    """A subprocess cannot create an unfenced wait from a live call stack."""
+    _store, _attempts, execution = _durable_execution
+    token = set_current_execution_id(execution.execution_id)
+    try:
+        with pytest.raises(Q.DurableWaitSafePointRequired):
+            ask_blocking(
                 session_id=execution.session_id, kind="ask", prompt="lib?", timeout=5,
-                on_asked=lambda q: QueueTransport(event_queue).publish({
-                    "id": q.id, "prompt": q.prompt,
-                }),
+                on_asked=lambda _q: None,
             )
-        finally:
-            reset_current_execution_id(token)
-
-    child_thread = threading.Thread(target=child, daemon=True)
-    child_thread.start()
-    envelope = event_queue.get(timeout=2)
-    wait_id = envelope["data"]["id"]
-    _bridge_question_to_parent(
-        envelope["data"], answer_queue, pending, lock,
-        parent_session_id=execution.session_id, execution_id=execution.execution_id,
-    )
-    wait = DurableWaitStore(store).get_wait(wait_id)
-    _answer(store, attempts, execution, wait, "luxon")
-    # The child-side process pump only wakes its local event after the parent
-    # has observed the durable terminal state.
-    message = answer_queue.get(timeout=2)
-    Q.get_question_registry().wake(message["id"])
-    child_thread.join(timeout=2)
-    assert captured["result"] == ("answered", "luxon")
+    finally:
+        reset_current_execution_id(token)
