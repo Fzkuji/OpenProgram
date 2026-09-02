@@ -188,10 +188,23 @@ def test_attach_card_carries_the_subagent_name(isolated_store, monkeypatch):
         subject="后端架构", description="read the backend",
         parent_msg_id="a1", attach_pointer_id=attach_node_id,
     )
-    assert runner.await_job(tid, timeout=5.0) is not None
+    final = runner.await_job(tid, timeout=5.0)
+    assert final is not None
 
-    _, idx = isolated_store._open("p1")
-    md = (idx.nodes_by_id[attach_node_id].metadata or {})
+    # The runner persists the terminal Job before its best-effort attach-card
+    # write.  On a fast worker, await_job can observe the terminal projection
+    # in that short interval, so wait for the public card state instead of
+    # assuming both writes become visible in one operation.
+    deadline = time.monotonic() + 5.0
+    while True:
+        _, idx = isolated_store._open("p1")
+        md = (idx.nodes_by_id[attach_node_id].metadata or {})
+        if (md.get("attach") or {}).get("label") == "后端架构":
+            break
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(0.01, remaining))
     assert (md.get("attach") or {}).get("label") == "后端架构"
     extra = json.loads(md["extra"])
     assert extra["attach"]["label"] == "后端架构"

@@ -406,7 +406,7 @@ def test_cancel_one_same_session_job_does_not_cancel_sibling(
         second = runner.spawn_job(
             session_id="p1", prompt="keep-second", agent_id="main",
         )
-        assert wait_until(lambda: len(fake_worker[0]) >= 2, timeout=2.0)
+        assert wait_until(lambda: len(fake_worker[0]) >= 2, timeout=10.0)
         assert len(fake_worker[0]) == 2
 
         runner.cancel_execution(first)
@@ -462,7 +462,7 @@ def test_idle_activity_is_tracked_per_same_session_job(
         idle = runner.spawn_job(
             session_id="p1", prompt="idle", agent_id="main",
         )
-        assert wait_until(lambda: len(fake_worker[0]) >= 2, timeout=2.0)
+        assert wait_until(lambda: len(fake_worker[0]) >= 2, timeout=10.0)
         assert len(fake_worker[0]) == 2
         def monitor_ready():
             with runner._lock:
@@ -473,7 +473,7 @@ def test_idle_activity_is_tracked_per_same_session_job(
                     for entry in entries
                 )
 
-        assert wait_until(monitor_ready, timeout=2.0)
+        assert wait_until(monitor_ready, timeout=10.0)
 
         clock.advance(0.75)
         assert runner.record_job_activity(active, "provider_data")

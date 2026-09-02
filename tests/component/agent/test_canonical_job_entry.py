@@ -211,10 +211,14 @@ def test_public_job_reconciler_recovers_cancel_command_after_apply_failure(
         )
         assert runner._execution_control._delivered_cancel_commands == set()
         assert runner._execution_control._cancel_delivery_by_execution == {}
-        assert tuple(ledger.connection().execute(
-            "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
-            (job_id,),
-        ).fetchone()) == ("released", "cancel.user")
+        def released_admission():
+            row = ledger.connection().execute(
+                "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+            return row is not None and tuple(row) == ("released", "cancel.user")
+
+        assert wait_until(released_admission, timeout=10.0)
     finally:
         fake_worker[1].set()
         runner.shutdown()

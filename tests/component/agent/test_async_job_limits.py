@@ -93,15 +93,26 @@ def test_budget_reason_survives_cancel_intent_persistence_failure(
             limit_resolver=lambda _sid, _job: resolved,
         ),
         monotonic_clock=clock,
-        budget_poll_seconds=0.01,
+        # This test drives the monitor explicitly after advancing fake time.
+        budget_poll_seconds=60,
     )
     try:
         job_id = runner.spawn_job(
             session_id="p1", prompt="persist-failure", agent_id="main",
         )
-        assert fake_worker[3].wait(1.0)
+        assert fake_worker[3].wait(10.0)
+        def monitor_ready():
+            with runner._lock:
+                entry = runner._jobs.get(job_id, {})
+                return (
+                    entry.get("started_monotonic") is not None
+                    and entry.get("attempt_id") is not None
+                )
+
+        assert wait_until(monitor_ready, timeout=10.0)
         clock.advance(1.1)
-        final = runner.await_job(job_id, timeout=5.0)
+        runner._budget_tick()
+        final = runner.await_job(job_id, timeout=10.0)
 
         assert final.status == JobStatus.CANCELLED
         assert final.reason_code == "budget.runtime_exhausted"

@@ -237,7 +237,9 @@ def test_startup_recovery_drains_more_than_one_bounded_projection_batch(tmp_path
         store, {kind: lambda item: seen.append(item.outbox_id) for kind in PROJECTION_KINDS}
     )
 
-    result = dispatcher.recover_startup(owner_id="startup-worker", limit=100)
+    result = dispatcher.recover_startup(
+        owner_id="startup-worker", limit=100, max_seconds=10
+    )
 
     assert result == type(result)(claimed=104, delivered=104, failed=0)
     assert len(seen) == 104
