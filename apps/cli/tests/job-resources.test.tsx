@@ -6,27 +6,13 @@ import { buildPickerNode, type PickerCtx } from '../src/screens/repl/pickerRoute
 import type { WsEnvelope, WsRequest } from '../src/ws/client.js';
 
 
-const resource = {
-  job_id: 'job-1',
-  status: 'running',
+const canonicalResource = {
   resource_state: 'live',
-  reason_code: 'budget.idle_exhausted',
-  reason_key: 'resource.reason.budget.idle_exhausted',
-  retryable: false,
-  event_cursor: {
-    execution_id: 'job-1',
-    next_sequence: 3,
-    snapshot_status_version: 2,
-  },
-  limits: { scheduler_capacity: 4, limits: {} },
-  capacity: {
-    scheduler_capacity: 4,
-    session_live: { used: 1, limit: 2 },
-    session_queued: { used: 0, limit: 3 },
-    session_jobs: { used: 2, limit: 10 },
-    queue_position: null,
-  },
-  budget: {
+  queue_wait: null,
+  resource_lease_generation: 1,
+  owner_instance_id: 'worker-1',
+  limits: { scheduler_capacity: 4 },
+  usage: {
     scope: 'job_with_shared_ancestors',
     tokens: { actual: 10, reserved: 5, limit: 100 },
     cost_usd: {
@@ -44,6 +30,29 @@ const resource = {
       cost_unknown_events: 1,
     },
   },
+  reservation: null,
+} as const;
+
+const resource = {
+  job_id: 'job-1',
+  execution_id: 'job-1',
+  project_id: 'default',
+  session_id: 'session-1',
+  parent_execution_id: null,
+  status: 'running',
+  status_version: 2,
+  capabilities: {
+    pause: true, step: true, steer: false, fork: false, retry: false,
+    safe_point_kinds: [], state_schema_version: 1,
+  },
+  checkpoint_head_id: null,
+  event_cursor: {
+    execution_id: 'job-1',
+    next_sequence: 3,
+    snapshot_status_version: 2,
+  },
+  execution: { reason_code: 'budget.idle_exhausted' },
+  resource: canonicalResource,
 } as const;
 
 const job = {
@@ -126,15 +135,10 @@ describe('job resource WebSocket contract', () => {
     for (const frame of frames) handleJobEnvelope(frame, ctx);
     expect(selected).toMatchObject({ resource });
 
-    const canonicalResource = {
-      admission_id: 'job-1',
+    const terminalResource = {
+      ...canonicalResource,
       resource_state: 'active',
-      queue_wait: null,
-      resource_lease_generation: 1,
-      owner_instance_id: 'worker-1',
-      limits: {},
       usage: {},
-      reservation: null,
     };
     const cursor = {
       execution_id: 'job-1',
@@ -150,7 +154,7 @@ describe('job resource WebSocket contract', () => {
           },
           execution: {
             execution_id: 'job-1', status: 'cancelled', status_version: 3,
-            resource: canonicalResource,
+            resource: terminalResource,
           },
           event_cursor: cursor,
         },
@@ -165,7 +169,10 @@ describe('job resource WebSocket contract', () => {
       status: 'cancelled',
       status_version: 3,
       event_cursor: cursor,
-      resource: canonicalResource,
+      resource: expect.objectContaining({
+        execution_id: 'job-1',
+        resource: terminalResource,
+      }),
     });
     expect(selected).toMatchObject({ id: 'job-1', status: 'cancelled' });
     expect(picker).toBe('job_detail');
@@ -187,7 +194,7 @@ describe('job resource picker and formatter', () => {
     if (typeof formatJobResource !== 'function') return;
 
     expect(formatJobResource(resource)).toEqual([
-      'Session 1/2 live · 0/3 queued · 2/10 jobs · Scheduler 4',
+      'State: live',
       'Tokens: local 85 · shared 70',
       'Cost: Unknown (1 event)',
       'Runtime: 45s',
@@ -198,18 +205,21 @@ describe('job resource picker and formatter', () => {
 
     const known = {
       ...resource,
-      budget: {
-        ...resource.budget,
-        cost_usd: {
-          ...resource.budget.cost_usd,
-          actual: '0.25',
-          known: true,
-          unknown_events: 0,
-        },
-        shared_remaining: {
-          ...resource.budget.shared_remaining,
-          cost_usd: '0.50',
-          cost_unknown_events: 0,
+      resource: {
+        ...resource.resource,
+        usage: {
+          ...resource.resource.usage,
+          cost_usd: {
+            ...resource.resource.usage.cost_usd,
+            actual: '0.25',
+            known: true,
+            unknown_events: 0,
+          },
+          shared_remaining: {
+            ...resource.resource.usage.shared_remaining,
+            cost_usd: '0.50',
+            cost_unknown_events: 0,
+          },
         },
       },
     };
@@ -230,7 +240,7 @@ describe('job resource picker and formatter', () => {
 
     const list = buildPickerNode({ ...base, pickerKind: 'jobs' } as PickerCtx)!;
     expect(list.type.name).toBe('Picker');
-    expect(list.props.items[0].description).toContain('Session 1/2 live');
+    expect(list.props.items[0].description).toContain('State: live');
     list.props.onSelect(list.props.items[0]);
     expect(send).toHaveBeenCalledWith({ action: 'get_job', job_id: 'job-1' });
 
@@ -251,7 +261,7 @@ describe('job resource picker and formatter', () => {
       action: 'execution.cancel',
       execution_id: 'job-1',
       expected_version: 2,
-      payload: { reason_code: 'cancel.user' },
+      payload: {},
     }));
   });
 
