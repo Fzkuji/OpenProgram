@@ -1,18 +1,46 @@
-const lastSequenceByExecution = new Map<string, number>();
-
-/** Accept a sequenced execution update only when it advances that execution. */
-export function acceptExecutionUpdate(
-  executionId: string,
-  eventSequence: unknown,
-): boolean {
-  const sequence = Number(eventSequence);
-  if (!Number.isSafeInteger(sequence) || sequence < 0) return true;
-  const previous = lastSequenceByExecution.get(executionId);
-  if (previous !== undefined && sequence <= previous) return false;
-  lastSequenceByExecution.set(executionId, sequence);
-  return true;
+export interface ExecutionUpdateOrder {
+  sequence: number;
+  terminal: boolean;
+  sessionId?: string;
 }
 
-export function resetExecutionUpdateOrderForTests(): void {
-  lastSequenceByExecution.clear();
+const TERMINAL_EXECUTION_STATUSES = new Set([
+  "cancelled",
+  "completed",
+  "failed",
+  "interrupted",
+  "error",
+  "done",
+]);
+
+export function decideExecutionUpdateOrder(
+  previous: ExecutionUpdateOrder | undefined,
+  eventSequence: unknown,
+  status: unknown,
+  sessionId?: unknown,
+): { accepted: boolean; next?: ExecutionUpdateOrder } {
+  const sequence = Number(eventSequence);
+  // Legacy senders do not participate in canonical ordering. Their path is
+  // removed with the remaining legacy execution entry points.
+  if (!Number.isSafeInteger(sequence) || sequence < 0) return { accepted: true };
+  if (previous?.terminal || (previous !== undefined && sequence <= previous.sequence)) {
+    return { accepted: false };
+  }
+  return {
+    accepted: true,
+    next: {
+      sequence,
+      terminal: TERMINAL_EXECUTION_STATUSES.has(String(status)),
+      ...(typeof sessionId === "string" && sessionId ? { sessionId } : {}),
+    },
+  };
+}
+
+export function removeExecutionUpdateOrders(
+  orders: Record<string, ExecutionUpdateOrder>,
+  executionIds: Iterable<string>,
+): Record<string, ExecutionUpdateOrder> {
+  const next = { ...orders };
+  for (const executionId of executionIds) delete next[executionId];
+  return next;
 }

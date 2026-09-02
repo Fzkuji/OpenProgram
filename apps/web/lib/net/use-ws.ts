@@ -12,12 +12,11 @@
 import { useEffect } from "react";
 
 import { consumeCommandErrorFrame } from "@/lib/net/action-error";
-import { acceptExecutionUpdate } from "@/lib/net/execution-update-order";
 import type {
   PermissionRulesDetail,
   JobStatusDetail,
 } from "@/lib/net/ws-events";
-import type { PendingDecision } from "@/lib/session-store";
+import { useSessionStore, type PendingDecision } from "@/lib/session-store";
 import {
   loadSessionData,
   onBranchCheckedOut,
@@ -271,7 +270,12 @@ export function useWS(): void {
           const eid = String(execution.execution_id);
           const eventSequence = (d as { event_sequence?: number } | undefined)?.event_sequence
             ?? execution.event_sequence;
-          if (!acceptExecutionUpdate(eid, eventSequence)) return true;
+          if (!useSessionStore.getState().acceptExecutionUpdate(
+            eid,
+            eventSequence,
+            execution.status,
+            execution.session_id,
+          )) return true;
           import("@/lib/session-store").then(({ useSessionStore }) => {
             const store = useSessionStore.getState();
             const sid = String(execution.session_id || "");
