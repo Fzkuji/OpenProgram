@@ -473,7 +473,7 @@ def test_v5_migration_requeues_fixed_projections_for_the_new_read_models(tmp_pat
         for item in migrated.list_projection_outbox(execution_id="exec-1")
     } == {ProjectionOutboxState.PENDING}
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 7
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 8
         tables = {
             row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }

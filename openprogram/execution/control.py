@@ -763,6 +763,11 @@ class RuntimeControlService:
             ended = self.attempts._end_for_owner_loss(
                 connection, current_attempt, outcome=outcome
             )
+            if execution.status in TERMINAL_EXECUTION_STATUSES:
+                connection.execute(
+                    "DELETE FROM execution_finish_repair_slots WHERE execution_id = ?",
+                    (execution.execution_id,),
+                )
             self.executions._append_event(
                 connection,
                 execution_id=execution.execution_id,
@@ -971,6 +976,7 @@ class RuntimeControlService:
                 target=ExecutionStatus.CANCELLED,
                 reason_code=reason_code,
             )
+            self.executions.release_finish_repair_slot(execution.execution_id)
             command = self._mark_applied(command, execution)
             return ControlDispatch(
                 command=command, execution=execution, delivered=False
@@ -2117,6 +2123,7 @@ class RuntimeControlService:
                 target=ExecutionStatus.CANCELLED,
                 reason_code="cancelled_after_reconciliation",
             )
+            self.executions.release_finish_repair_slot(execution.execution_id)
             command = self._mark_applied(command, execution)
         return ReconciliationCompletion(
             effect=effect,

@@ -9,13 +9,14 @@ import sqlite3
 from .model import CapabilitySet
 
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 _LEGACY_SCHEMA_VERSION = 1
 _PREVIOUS_SCHEMA_VERSION = 2
 _FORK_RETRY_SCHEMA_VERSION = 3
 _EXECUTION_CONTROL_SCHEMA_VERSION = 4
 _PROJECTION_OUTBOX_SCHEMA_VERSION = 5
 _PROJECTION_READ_SCHEMA_VERSION = 6
+_FINISH_REPAIR_SLOT_SCHEMA_VERSION = 7
 
 # These are the only projections emitted by the canonical execution store.
 # Adding a projection is a schema/design change, not a caller-defined label.
@@ -48,6 +49,8 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
         _migrate_v5(connection)
     elif current == _PROJECTION_READ_SCHEMA_VERSION:
         _migrate_v6(connection)
+    elif current == _FINISH_REPAIR_SLOT_SCHEMA_VERSION:
+        _migrate_v7(connection)
     elif current == SCHEMA_VERSION:
         _create_current_schema(connection)
     else:
@@ -360,6 +363,40 @@ def _create_finish_repair_schema(connection: sqlite3.Connection) -> None:
     )
 
 
+def _backfill_finish_repair_slots(connection: sqlite3.Connection) -> None:
+    """Reserve one slot for every nonterminal admitted Agent execution."""
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO execution_finish_repair_slots
+            (execution_id, reserved_at, updated_at)
+        SELECT e.execution_id, e.created_at, e.updated_at
+        FROM executions AS e
+        JOIN execution_agent_turn_inputs AS i
+          ON i.execution_id = e.execution_id
+        WHERE e.status NOT IN (?, ?, ?, ?)
+        """,
+        ("completed", "failed", "cancelled", "interrupted"),
+    )
+
+
+def _migrate_v7(connection: sqlite3.Connection) -> None:
+    """Add Agent finish slots and idempotently backfill live executions."""
+    if connection.in_transaction:
+        raise UnsupportedSchema(
+            _FINISH_REPAIR_SLOT_SCHEMA_VERSION,
+            "cannot migrate finish repair slots inside an active transaction",
+        )
+    try:
+        connection.execute("BEGIN")
+        _create_agent_input_schema(connection)
+        _create_finish_repair_schema(connection)
+        _backfill_finish_repair_slots(connection)
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+
+
 def _migrate_v6(connection: sqlite3.Connection) -> None:
     """Add durable Agent activation payloads without rewriting executions."""
     if connection.in_transaction:
@@ -371,6 +408,7 @@ def _migrate_v6(connection: sqlite3.Connection) -> None:
         connection.execute("BEGIN")
         _create_agent_input_schema(connection)
         _create_finish_repair_schema(connection)
+        _backfill_finish_repair_slots(connection)
         connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         connection.commit()
     except BaseException:
@@ -390,6 +428,7 @@ def _migrate_v5(connection: sqlite3.Connection) -> None:
         _create_projection_read_schema(connection)
         _create_agent_input_schema(connection)
         _create_finish_repair_schema(connection)
+        _backfill_finish_repair_slots(connection)
         # v5 had no durable consumers.  Requeue its fixed delivery set so the
         # new idempotent handlers materialize every historical event.
         connection.execute(
@@ -429,7 +468,9 @@ def _migrate_v4(connection: sqlite3.Connection) -> None:
         connection.execute("BEGIN")
         _create_projection_schema(connection)
         _create_projection_read_schema(connection)
+        _create_agent_input_schema(connection)
         _create_finish_repair_schema(connection)
+        _backfill_finish_repair_slots(connection)
         _backfill_projection_outbox(connection)
         connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         connection.commit()

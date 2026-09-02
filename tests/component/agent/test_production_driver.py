@@ -74,6 +74,51 @@ def test_v6_migration_adds_durable_agent_turn_inputs(tmp_path):
     assert "execution_agent_turn_inputs" in tables
 
 
+def test_v7_migration_backfills_agent_finish_slots_idempotently(tmp_path):
+    store, execution = _admitted(tmp_path, execution_id="exec-v7-slot-backfill")
+    with sqlite3.connect(store.path) as connection:
+        connection.execute("DROP TABLE execution_finish_repair_slots")
+        connection.execute("PRAGMA user_version = 7")
+        connection.commit()
+
+    migrated = ExecutionStore(store.path)
+    with sqlite3.connect(migrated.path) as connection:
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+        rows = connection.execute(
+            "SELECT execution_id FROM execution_finish_repair_slots"
+        ).fetchall()
+    assert version == 8
+    assert rows == [(execution.execution_id,)]
+
+    reopened = ExecutionStore(store.path)
+    with sqlite3.connect(reopened.path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM execution_finish_repair_slots"
+        ).fetchone()[0] == 1
+
+
+def test_queued_agent_cancel_releases_reserved_slot_immediately(tmp_path):
+    from openprogram.execution.control import RuntimeControlService
+    from openprogram.execution.driver import DriverRegistry
+
+    store, execution = _admitted(tmp_path, execution_id="exec-queued-slot-cancel")
+    service = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    cancelled = asyncio.run(
+        service.request_cancel(
+            command_id="cancel-queued-slot",
+            execution_id=execution.execution_id,
+            expected_version=execution.status_version,
+            actor={"surface": "test"},
+            reason_code="user_cancelled",
+        )
+    )
+    assert cancelled.execution.status is ExecutionStatus.CANCELLED
+    with sqlite3.connect(store.path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM execution_finish_repair_slots"
+        ).fetchone()[0] == 0
+
+
 def test_agent_driver_has_no_pause_or_safe_point_capabilities():
     from openprogram.agent.production_driver import AgentProductionDriver
 

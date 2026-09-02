@@ -341,7 +341,6 @@ def test_schema_migrates_v4_to_current(tmp_path):
     ExecutionStore(path)
     with sqlite3.connect(path) as connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-        assert SCHEMA_VERSION == 7
         tables = {
             row[0]
             for row in connection.execute(
