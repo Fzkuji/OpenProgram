@@ -1,6 +1,7 @@
 """JobRunner owns live durable-wait expiry and event publication."""
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 
@@ -114,3 +115,59 @@ def test_default_job_driver_publishes_question_events(monkeypatch):
     event = {"type": "question.asked", "data": {"execution_id": "job-1"}}
     driver.event_sink(event)
     assert sent == [event]
+
+
+def test_reconciler_schedules_recovery_on_an_existing_event_loop():
+    from openprogram.agent.job.runner import JobRunner
+
+    recovered = asyncio.Event()
+
+    class _Waits:
+        def reclaim_expired_claims(self):
+            return 0
+
+        def reclaim_orphaned_claims(self):
+            return 0
+
+        def expire_due(self):
+            return 0
+
+    class _Control:
+        async def recover_wait_outcomes(self):
+            recovered.set()
+            return ("execution",)
+
+    runner = JobRunner.__new__(JobRunner)
+    runner._execution_waits = _Waits()
+    runner._execution_control = _Control()
+    runner._dispatch_wake = threading.Event()
+
+    async def _run():
+        runner._reconcile_execution_waits()
+        await asyncio.wait_for(recovered.wait(), timeout=1)
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    asyncio.run(_run())
+    assert runner._wait_recovery_tasks == set()
+    assert runner._dispatch_wake.is_set()
+
+
+def test_startup_recovery_schedules_waits_on_an_existing_event_loop():
+    from openprogram.execution import startup
+
+    recovered = asyncio.Event()
+
+    class _Control:
+        async def recover_wait_outcomes(self):
+            recovered.set()
+            return ()
+
+    async def _run():
+        assert startup._recover_wait_outcomes(_Control()) is None
+        await asyncio.wait_for(recovered.wait(), timeout=1)
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    asyncio.run(_run())
+    assert startup._PENDING_WAIT_RECOVERY_TASKS == set()

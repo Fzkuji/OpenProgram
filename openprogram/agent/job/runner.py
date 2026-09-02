@@ -369,6 +369,7 @@ class JobRunner:
             owner_id=self._instance_id,
         )
         self._execution_waits = DurableWaitStore(self._execution_store)
+        self._wait_recovery_tasks: set[asyncio.Task] = set()
         # Every canonical terminal transition, including a transport-neutral
         # cancel command, must converge the JobStore projection and release
         # its admission.  The observer is attached before startup recovery so
@@ -3199,11 +3200,48 @@ class JobRunner:
             self._execution_waits.reclaim_expired_claims()
             self._execution_waits.reclaim_orphaned_claims()
             expired = self._execution_waits.expire_due()
-            recovered = asyncio.run(self._execution_control.recover_wait_outcomes())
+            recovered = self._recover_wait_outcomes()
             if expired or recovered:
                 self._dispatch_wake.set()
         except Exception:
             _log.exception("failed to reconcile durable execution waits")
+
+    def _recover_wait_outcomes(self) -> tuple[Any, ...] | None:
+        """Run wait recovery without nesting an event loop.
+
+        The reconciler normally runs in its own thread, where a synchronous
+        ``asyncio.run`` is correct.  A REST handler can also initialize the
+        singleton runner while its event loop is active; in that case queue
+        the coroutine on the existing loop and let its completion wake the
+        dispatcher.  Creating the coroutine only in the selected execution
+        path avoids an un-awaited coroutine when ``asyncio.run`` is invalid.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(self._execution_control.recover_wait_outcomes())
+
+        task = loop.create_task(self._execution_control.recover_wait_outcomes())
+        tasks = getattr(self, "_wait_recovery_tasks", None)
+        if tasks is None:
+            tasks = set()
+            self._wait_recovery_tasks = tasks
+        tasks.add(task)
+
+        def _completed(done: asyncio.Task) -> None:
+            tasks.discard(done)
+            try:
+                recovered = done.result()
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                _log.exception("failed to recover durable execution waits")
+                return
+            if recovered:
+                self._dispatch_wake.set()
+
+        task.add_done_callback(_completed)
+        return None
 
     def _recover_deferred_resumes(self) -> None:
         """Publish a staged resume if the Job target save was durable."""

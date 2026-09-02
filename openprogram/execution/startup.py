@@ -3,10 +3,38 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from dataclasses import dataclass
 
 from .outbox import ProjectionDispatchResult, ProjectionDispatcher
+
+
+_log = logging.getLogger(__name__)
+_PENDING_WAIT_RECOVERY_TASKS: set[asyncio.Task] = set()
+
+
+def _recover_wait_outcomes(control_service) -> tuple[object, ...] | None:
+    """Recover waits without nesting ``asyncio.run`` in an active loop."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(control_service.recover_wait_outcomes())
+
+    task = loop.create_task(control_service.recover_wait_outcomes())
+    _PENDING_WAIT_RECOVERY_TASKS.add(task)
+
+    def _completed(done: asyncio.Task) -> None:
+        _PENDING_WAIT_RECOVERY_TASKS.discard(done)
+        try:
+            done.result()
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            _log.exception("failed to recover durable execution waits")
+
+    task.add_done_callback(_completed)
+    return None
 
 
 @dataclass(frozen=True)
@@ -49,7 +77,7 @@ def recover_execution_startup(
     # recording its outcome and leasing the continuation attempt.  Recovery
     # consumes that durable saga after expiry processing; it never reads a
     # process-local question callback.
-    asyncio.run(control_service.recover_wait_outcomes())
+    _recover_wait_outcomes(control_service)
     if projection_dispatcher is None:
         from .store import default_store
         from .projections import projection_handlers
