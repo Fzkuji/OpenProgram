@@ -30,7 +30,11 @@ import {
   type Project,
 } from "@/lib/state/files-shared";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
-import { wsRequest } from "@/lib/net/ws-request";
+import {
+  idempotencyKeyFor,
+  wsMutationRequest,
+  wsRequest,
+} from "@/lib/net/ws-request";
 import { navigate } from "@/lib/navigate";
 import { useSessionStore } from "@/lib/session-store";
 import {
@@ -291,13 +295,19 @@ export function FileTree({
     payload: Record<string, unknown>,
     responseType: string,
     canRun: () => boolean,
+    outerSignal?: AbortSignal,
   ): Promise<T | null> {
     if (!canRun()) return Promise.resolve(null);
     const controller = new AbortController();
+    const onAbort = () => controller.abort();
+    outerSignal?.addEventListener("abort", onAbort, { once: true });
     queryControllers.current.add(controller);
     return filesWsRequest<T>(action, payload, responseType, {
       signal: controller.signal,
-    }).finally(() => queryControllers.current.delete(controller));
+    }).finally(() => {
+      queryControllers.current.delete(controller);
+      outerSignal?.removeEventListener("abort", onAbort);
+    });
   }
 
   const load = useCallback(
@@ -488,15 +498,32 @@ export function FileTree({
     refreshDirs: string[],
   ): Promise<boolean> {
     const generation = queryGeneration.current;
-    const data = await fileQuery<{ project_id?: string; path?: string; ok?: boolean; status?: string; error_code?: string; error?: string }>(
-      `project_file_${op}`,
-      { project_id: projectId, ...payload, idempotency_key: crypto.randomUUID() },
-      `project_file_${op}_result`,
-      () => generation === queryGeneration.current,
+    const operationPayload = { project_id: projectId, ...payload };
+    const operationKey = idempotencyKeyFor(`project_file_${op}`, operationPayload);
+    const operationController = new AbortController();
+    queryControllers.current.add(operationController);
+    const data = await wsMutationRequest<{
+      project_id?: string;
+      path?: string;
+      ok?: boolean;
+      status?: string;
+      error_code?: string;
+      error?: string;
+    }>(
+      operationKey,
+      (signal) => fileQuery<{ project_id?: string; path?: string; ok?: boolean; status?: string; error_code?: string; error?: string }>(
+        `project_file_${op}`,
+        { ...operationPayload, idempotency_key: operationKey },
+        `project_file_${op}_result`,
+        () => generation === queryGeneration.current,
+        signal,
+      ),
+      { signal: operationController.signal },
     );
+    queryControllers.current.delete(operationController);
     if (!data || data.project_id !== projectId || data.path !== payload.path
       || data.error || data.status === "conflict" || data.status === "recovery_required"
-      || data.status === "error") {
+      || data.status === "error" || data.status === "in_progress") {
       if (data?.error || data?.error_code) window.alert(data.error ?? data.error_code);
       return false;
     }

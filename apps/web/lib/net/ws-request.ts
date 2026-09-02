@@ -9,6 +9,120 @@
 import { getSocket } from "@/lib/runtime-bridge/state";
 
 const pendingRequestIds = new Map<string, string>();
+const mutationKeys = new Map<string, { key: string; touchedAt: number }>();
+const pendingMutations = new Map<string, {
+  promise: Promise<unknown>;
+  operationId?: string;
+}>();
+const MAX_MUTATION_KEYS = 128;
+const MAX_MUTATION_ATTEMPTS = 3;
+
+function stableMutationValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableMutationValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, stableMutationValue(item)]),
+    );
+  }
+  return value;
+}
+
+function mutationIdentity(scope: string, payload: Record<string, unknown>): string {
+  return `${scope}:${JSON.stringify(stableMutationValue(payload))}`;
+}
+
+function pruneMutationKeys(): void {
+  if (mutationKeys.size < MAX_MUTATION_KEYS) return;
+  const candidates = [...mutationKeys.entries()]
+    .filter(([, entry]) => !pendingMutations.has(entry.key))
+    .sort(([, left], [, right]) => left.touchedAt - right.touchedAt);
+  while (mutationKeys.size >= MAX_MUTATION_KEYS && candidates.length) {
+    const [identity] = candidates.shift()!;
+    mutationKeys.delete(identity);
+  }
+}
+
+/** Return the stable idempotency key for one logical UI operation. */
+export function idempotencyKeyFor(
+  scope: string,
+  payload: Record<string, unknown>,
+): string {
+  const identity = mutationIdentity(scope, payload);
+  const existing = mutationKeys.get(identity);
+  if (existing) {
+    existing.touchedAt = Date.now();
+    return existing.key;
+  }
+  pruneMutationKeys();
+  const key = requestId();
+  mutationKeys.set(identity, { key, touchedAt: Date.now() });
+  return key;
+}
+
+function forgetMutationKey(key: string): void {
+  for (const [identity, entry] of mutationKeys) {
+    if (entry.key === key) mutationKeys.delete(identity);
+  }
+}
+
+export interface WsMutationOptions {
+  signal?: AbortSignal;
+  maxAttempts?: number;
+}
+
+function mutationIsTerminal(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const status = (value as Record<string, unknown>).status;
+  return status !== "in_progress" && status !== "pending";
+}
+
+/** Retry transient transport/in-progress replies with one idempotency key. */
+export function wsMutationRequest<T>(
+  key: string,
+  send: (signal: AbortSignal) => Promise<T | null>,
+  options: WsMutationOptions = {},
+): Promise<T | null> {
+  const existing = pendingMutations.get(key);
+  if (existing) return existing.promise as Promise<T | null>;
+  const maxAttempts = Math.max(1, Math.min(
+    options.maxAttempts ?? MAX_MUTATION_ATTEMPTS,
+    MAX_MUTATION_ATTEMPTS,
+  ));
+  const run = (async () => {
+    let result: T | null = null;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (options.signal?.aborted) break;
+      const requestController = new AbortController();
+      const onAbort = () => requestController.abort();
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+      try {
+        result = await send(requestController.signal);
+      } catch {
+        result = null;
+      } finally {
+        options.signal?.removeEventListener("abort", onAbort);
+      }
+      const operationId = result && typeof result === "object"
+        ? (result as Record<string, unknown>).operation_id
+        : undefined;
+      if (typeof operationId === "string") {
+        const pending = pendingMutations.get(key);
+        if (pending) pending.operationId = operationId;
+      }
+      if (mutationIsTerminal(result) || options.signal?.aborted) break;
+    }
+    if (mutationIsTerminal(result)) forgetMutationKey(key);
+    return result;
+  })();
+  pendingMutations.set(key, { promise: run });
+  void run.then(
+    () => pendingMutations.delete(key),
+    () => pendingMutations.delete(key),
+  );
+  return run;
+}
 
 /** Used by the shared WS dispatcher to avoid toasting a request-local error. */
 export function isWsRequestPending(requestIdValue: unknown, action?: unknown): boolean {

@@ -8,7 +8,11 @@ import {
   UndoIcon,
 } from "@/components/animated-icons";
 import { useTranslation } from "@/lib/i18n";
-import { wsRequest } from "@/lib/net/ws-request";
+import {
+  idempotencyKeyFor,
+  wsMutationRequest,
+  wsRequest,
+} from "@/lib/net/ws-request";
 import { useSessionStore } from "@/lib/session-store";
 import type {
   AssistantBlock,
@@ -161,18 +165,33 @@ export function TurnFilesChips({
     const responseType = direction === "undo"
       ? "revert_turn_result"
       : "reapply_turn_result";
-    void wsRequest<{ session_id?: string; msg_id?: string; status?: string; errors?: string[]; error?: string; error_code?: string; request_id?: string }>(
-      action,
-      { session_id: sessionId, msg_id: assistantMsgId, idempotency_key: crypto.randomUUID() },
-      responseType,
-      (data) => data.session_id === sessionId && data.msg_id === assistantMsgId,
-      4000,
-      { requestId: true, signal: controller.signal },
+    const operationPayload = { session_id: sessionId, msg_id: assistantMsgId };
+    const operationKey = idempotencyKeyFor(`${action}:${sessionId}`, operationPayload);
+    void wsMutationRequest<{ session_id?: string; msg_id?: string; status?: string; errors?: string[]; error?: string; error_code?: string; request_id?: string }>(
+      operationKey,
+      (signal) => wsRequest(
+        action,
+        { ...operationPayload, idempotency_key: operationKey },
+        responseType,
+        (data) => data.session_id === sessionId && data.msg_id === assistantMsgId,
+        4000,
+        { requestId: true, signal },
+      ),
+      { signal: controller.signal },
     ).then((data) => {
       if (controller.signal.aborted) return;
       if (!data) {
         setBusy(null);
         showToast(text("History action failed: not connected", "历史操作失败：连接已断开"));
+        return;
+      }
+      if (data.status === "in_progress") {
+        setBusy(null);
+        setHistoryState({
+          status: "in_progress",
+          operation: null,
+          error: text("History action is still in progress.", "历史操作仍在进行中。"),
+        });
         return;
       }
         setBusy(null);

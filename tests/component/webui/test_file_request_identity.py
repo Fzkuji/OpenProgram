@@ -193,6 +193,30 @@ def test_large_mutation_witness_is_bounded(project, monkeypatch):
     assert "digest" not in identity
 
 
+def test_owner_process_start_identity_rejects_pid_reuse(project):
+    del project
+    from openprogram.store.file_operations import current_owner_identity
+
+    instance_id, pid, process_start = current_owner_identity()
+    if process_start is None:
+        pytest.skip("process start identity is unavailable on this platform")
+    assert files._owner_process_alive({
+        "owner_instance_id": instance_id,
+        "owner_pid": pid,
+        "owner_process_start": process_start,
+    }) is False, "same-process stale rows must be recoverable when not active"
+    assert files._owner_process_alive({
+        "owner_instance_id": "other-worker",
+        "owner_pid": pid,
+        "owner_process_start": "proc:pid-reused",
+    }) is False
+    assert files._owner_process_alive({
+        "owner_instance_id": "other-worker",
+        "owner_pid": pid,
+        "owner_process_start": process_start,
+    }) is True
+
+
 def test_idempotency_fingerprint_normalizes_alias_paths(project):
     key = str(uuid.uuid4())
     mtime = (project / "source.txt").stat().st_mtime

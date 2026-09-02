@@ -21,6 +21,7 @@ import { useEffect, useRef, useState } from "react";
 import { Download } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
+import { idempotencyKeyFor, wsMutationRequest } from "@/lib/net/ws-request";
 import { fileTabId, useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   type FileReadResult,
@@ -187,16 +188,21 @@ export function FileTabPane({
     setSaveFailed(false);
     const controller = new AbortController();
     saveControllerRef.current = controller;
-    const res = await filesWsRequest<WriteResult>(
-      "project_file_write",
-      {
-        project_id: projectId,
-        path,
-        content: buf.draft,
-        expected_mtime: buf.baseMtime,
-        idempotency_key: crypto.randomUUID(),
-      },
-      "project_file_write_result",
+    const operationPayload = {
+      project_id: projectId,
+      path,
+      content: buf.draft,
+      expected_mtime: buf.baseMtime,
+    };
+    const operationKey = idempotencyKeyFor("project_file_write", operationPayload);
+    const res = await wsMutationRequest<WriteResult>(
+      operationKey,
+      (signal) => filesWsRequest<WriteResult>(
+        "project_file_write",
+        { ...operationPayload, idempotency_key: operationKey },
+        "project_file_write_result",
+        { signal },
+      ),
       { signal: controller.signal },
     );
     if (controller.signal.aborted) {

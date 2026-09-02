@@ -40,8 +40,11 @@ class FakeSocket {
     this.listeners.get(type)?.delete(listener);
   }
 
+  throwOnSend = false;
+
   send(raw) {
     this.sent.push(JSON.parse(raw));
+    if (this.throwOnSend) throw new Error("socket send failed");
   }
 
   emit(type, data) {
@@ -51,6 +54,12 @@ class FakeSocket {
 
 globalThis.WebSocket = FakeSocket;
 const { setSocket } = await import("../lib/runtime-bridge/state.ts");
+const {
+  idempotencyKeyFor,
+  isWsRequestPending,
+  wsMutationRequest,
+  wsRequest,
+} = await import("../lib/net/ws-request.ts");
 const { filesWsRequest, fileResponseMatchesOwner } = await import(
   "../lib/state/files-shared.ts"
 );
@@ -114,4 +123,48 @@ test("owner mismatch remains rejected for stale responses", () => {
     { project_id: "project-a", status: "stale", snapshot_id: "snap-other" },
     { project_id: "project-a", snapshot_id: "snap-a" },
   ), false);
+});
+
+test("close and send failure clean the exact pending request", async () => {
+  const socket = new FakeSocket();
+  setSocket(socket);
+  const closed = wsRequest(
+    "project_file_read",
+    { project_id: "project-a", path: "README.md" },
+    "project_file_read_result",
+    { requestId: true },
+  );
+  const [{ request_id: closedId }] = socket.sent;
+  assert.equal(isWsRequestPending(closedId, "project_file_read"), true);
+  socket.emit("close");
+  assert.equal(await closed, null);
+  assert.equal(isWsRequestPending(closedId, "project_file_read"), false);
+
+  socket.throwOnSend = true;
+  const failed = wsRequest(
+    "project_file_read",
+    { project_id: "project-a", path: "README.md" },
+    "project_file_read_result",
+    { requestId: true },
+  );
+  const [{ request_id: failedId }] = socket.sent.slice(-1);
+  assert.equal(await failed, null);
+  assert.equal(isWsRequestPending(failedId, "project_file_read"), false);
+});
+
+test("mutation retries keep one key until a terminal receipt", async () => {
+  const payload = { project_id: "project-a", path: "notes.txt", content: "v1" };
+  const key = idempotencyKeyFor("project_file_write", payload);
+  assert.equal(idempotencyKeyFor("project_file_write", payload), key);
+  let attempts = 0;
+  const result = await wsMutationRequest(
+    key,
+    async () => {
+      attempts += 1;
+      return attempts === 1 ? null : { status: "ready", operation_id: "op-1" };
+    },
+  );
+  assert.equal(result?.operation_id, "op-1");
+  assert.equal(attempts, 2);
+  assert.notEqual(idempotencyKeyFor("project_file_write", payload), key);
 });

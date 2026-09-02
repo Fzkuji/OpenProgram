@@ -346,13 +346,30 @@ def _request_id(cmd: dict) -> str | None:
 
 
 def _process_alive(pid: object) -> bool:
-    if not isinstance(pid, int) or pid <= 0 or pid == os.getpid():
+    if not isinstance(pid, int) or pid <= 0:
         return False
     try:
         os.kill(pid, 0)
     except OSError:
         return False
     return True
+
+
+def _owner_process_alive(row: dict) -> bool:
+    pid = row.get("owner_pid")
+    start = row.get("owner_process_start")
+    if not isinstance(pid, int) or not isinstance(start, str) or not start:
+        return False
+    from openprogram.store.file_operations import (
+        current_owner_identity, process_start_identity,
+    )
+    instance_id, current_pid, _current_start = current_owner_identity()
+    # The in-process active-operation registry is authoritative for this
+    # worker. A stale record left by an interrupted local task is recoverable
+    # even though its PID and process-start token still identify this process.
+    if row.get("owner_instance_id") == instance_id and pid == current_pid:
+        return False
+    return _process_alive(pid) and process_start_identity(pid) == start
 
 
 def _durable_file_action(project_id: str, action: str, key: object,
@@ -383,7 +400,7 @@ def _durable_file_action(project_id: str, action: str, key: object,
             if row.get("status") in {"completed", "recovery_required", "conflict", "error"}:
                 return store.replay(row)
             operation_id = row["operation_id"]
-            if operation_id in _ACTIVE_OPERATION_IDS or _process_alive(row.get("owner_pid")):
+            if operation_id in _ACTIVE_OPERATION_IDS or _owner_process_alive(row):
                 return {"status": "in_progress", "operation_id": operation_id}
             payload = json.loads(row.get("payload_json") or "{}")
             before = json.loads(row.get("before_json") or "{}")
@@ -398,6 +415,20 @@ def _durable_file_action(project_id: str, action: str, key: object,
             # Preconditions are checked after acquiring the shared lock. An
             # external writer between claim and apply therefore cannot be
             # mistaken for this operation.
+            if not owner and not store.claim_recovery(operation_id):
+                current = store.get(operation_id)
+                if current and current.get("status") in {
+                    "completed", "recovery_required", "conflict", "error",
+                }:
+                    return store.replay(current)
+                return {"status": "in_progress", "operation_id": operation_id}
+            if not store.owned_by_current_process(operation_id):
+                current = store.get(operation_id)
+                if current and current.get("status") in {
+                    "completed", "recovery_required", "conflict", "error",
+                }:
+                    return store.replay(current)
+                return {"status": "in_progress", "operation_id": operation_id}
             if not _mutation_state_matches(project_id, action, payload, before, after=False):
                 result = {"status": "recovery_required", "error_code": "RECOVERY_REQUIRED",
                           "error": "file operation state cannot be reconciled safely"}
