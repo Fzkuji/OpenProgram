@@ -794,7 +794,9 @@ class AgentProductionDriver:
         )
         from openprogram.execution.model import CommandKind
 
-        pending: dict[str, tuple[str, str, str, str | None]] = {}
+        pending: dict[
+            str, tuple[str, str, str, str | None, tuple[dict[str, Any], ...]]
+        ] = {}
         prior_actions: list[dict[str, Any]] = []
         prior_receipts: list[dict[str, Any]] = []
         completed_tool_results: list[dict[str, Any]] = []
@@ -985,6 +987,11 @@ class AgentProductionDriver:
                     # key used for the durable effect reaches SimpleStreamOptions.
                     payload["supports_idempotency_key"] = supports_idempotency_key
                     payload["idempotency_key"] = idempotency_key
+                dispatch_candidates = tuple(
+                    dict(candidate)
+                    for candidate in (payload.get("dispatch_candidates") or ())
+                    if isinstance(candidate, Mapping)
+                )
                 classification = (
                     EffectClassification.IDEMPOTENT
                     if supports_idempotency_key
@@ -1003,12 +1010,16 @@ class AgentProductionDriver:
                     )
                 pending[kind.rsplit(".", 1)[0]] = (
                     effect_id, action_id, input_hash, idempotency_key,
+                    dispatch_candidates,
                 )
                 return False
 
             key = kind.rsplit(".", 1)[0]
             try:
-                effect_id, action_id, input_hash, idempotency_key = pending.pop(key)
+                (
+                    effect_id, action_id, input_hash, idempotency_key,
+                    dispatch_candidates,
+                ) = pending.pop(key)
             except KeyError as exc:
                 raise AgentDriverError("effect_state_invalid", "Agent effect has no durable dispatch intent") from exc
             effect = service.effects.get(effect_id)
@@ -1021,13 +1032,39 @@ class AgentProductionDriver:
                 latest_assistant = dict(message)
                 provider_action_id = action_id
                 completed_tool_results = []
+                actual_identity = {
+                    "api": message.get("api"),
+                    "provider": message.get("provider"),
+                    "model": message.get("model"),
+                }
+                actual_candidate = next(
+                    (
+                        candidate for candidate in dispatch_candidates
+                        if all(
+                            actual_identity[field] == candidate.get(field)
+                            for field in ("api", "provider", "model")
+                        )
+                    ),
+                    None,
+                )
+                actual_supports_idempotency_key = bool(
+                    actual_candidate is not None
+                    and actual_candidate.get("supports_idempotency_key") is True
+                )
+                if not dispatch_candidates:
+                    # Direct callers predating candidate metadata have only
+                    # the effect's dispatch-time capability declaration.
+                    actual_supports_idempotency_key = idempotency_key is not None
                 terminal_receipt = {
+                    **actual_identity,
                     "provider_request_id": payload.get("provider_request_id"),
                     "usage": payload.get("usage"),
                     "message_hash": json_digest(latest_assistant),
-                    "supports_idempotency_key": idempotency_key is not None,
+                    "supports_idempotency_key": actual_supports_idempotency_key,
                 }
-                terminal_receipt["idempotency_key"] = idempotency_key
+                terminal_receipt["idempotency_key"] = (
+                    idempotency_key if actual_supports_idempotency_key else None
+                )
             elif kind == "tool.after":
                 result = payload.get("result")
                 if not isinstance(result, Mapping):

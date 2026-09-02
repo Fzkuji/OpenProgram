@@ -665,6 +665,100 @@ def test_provider_effect_classification_requires_declared_key_support(
         assert payload["idempotency_key"] is None
 
 
+@pytest.mark.parametrize(
+    ("candidates", "actual", "expected_classification", "actual_support"),
+    [
+        (
+            [
+                {"api": "primary-api", "provider": "primary", "model": "p", "supports_idempotency_key": True},
+                {"api": "fallback-api", "provider": "fallback", "model": "f", "supports_idempotency_key": False},
+            ],
+            {"api": "fallback-api", "provider": "fallback", "model": "f"},
+            "nonrepeatable",
+            False,
+        ),
+        (
+            [
+                {"api": "primary-api", "provider": "primary", "model": "p", "supports_idempotency_key": False},
+                {"api": "fallback-api", "provider": "fallback", "model": "f", "supports_idempotency_key": True},
+            ],
+            {"api": "fallback-api", "provider": "fallback", "model": "f"},
+            "nonrepeatable",
+            True,
+        ),
+        (
+            [
+                {"api": "primary-api", "provider": "primary", "model": "p", "supports_idempotency_key": True},
+                {"api": "fallback-api", "provider": "fallback", "model": "f", "supports_idempotency_key": True},
+            ],
+            {"api": "fallback-api", "provider": "fallback", "model": "f"},
+            "idempotent",
+            True,
+        ),
+        (
+            [
+                {"api": "primary-api", "provider": "primary", "model": "p", "supports_idempotency_key": True},
+            ],
+            {"api": "primary-api", "provider": "primary", "model": "p"},
+            "idempotent",
+            True,
+        ),
+    ],
+)
+def test_provider_failover_effect_uses_actual_receipt_identity_and_capability(
+    tmp_path, candidates, actual, expected_classification, actual_support
+):
+    store, _attempts, active, execution = _admitted_agent_execution(tmp_path)
+    from openprogram.agent.production_driver import AgentProductionDriver
+
+    control = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    hook = AgentProductionDriver(store, control_service=control)._safe_point_hook(
+        active,
+        SimpleNamespace(user_msg_id="user-anchor"),
+        threading.Event(),
+    )
+    payload = {
+        "resolved_snapshot": {"model": {"id": "p"}, "system_prompt": "system", "tools": []},
+        "context": {"messages": []},
+        "supports_idempotency_key": all(
+            candidate["supports_idempotency_key"] for candidate in candidates
+        ),
+        "dispatch_candidates": candidates,
+    }
+    assert hook("provider.before", payload) is False
+    if payload["supports_idempotency_key"]:
+        assert payload["idempotency_key"] is not None
+    else:
+        assert payload["idempotency_key"] is None
+
+    with store._connect() as connection:
+        row = connection.execute(
+            "SELECT effect_id, classification, idempotency_key FROM effects "
+            "WHERE execution_id = ?",
+            (execution.execution_id,),
+        ).fetchone()
+    assert row is not None
+    assert row["classification"] == expected_classification
+    assert (row["idempotency_key"] is not None) is payload["supports_idempotency_key"]
+
+    assert hook("provider.after", {
+        "message": {
+            "role": "assistant", "content": [], "timestamp": 1, **actual,
+        },
+        "provider_request_id": "request-fallback",
+        "usage": {},
+    }) is False
+    effect = control.effects.get(row["effect_id"])
+    assert effect is not None and effect.status.value == "committed"
+    assert effect.receipt["api"] == actual["api"]
+    assert effect.receipt["provider"] == actual["provider"]
+    assert effect.receipt["model"] == actual["model"]
+    assert effect.receipt["supports_idempotency_key"] is actual_support
+    assert effect.receipt["idempotency_key"] == (
+        row["idempotency_key"] if actual_support else None
+    )
+
+
 def test_v1_checkpoint_rejects_tampered_state_blob_hash(tmp_path):
     store, _control, _active, _paused, checkpoint, _command = _real_provider_safe_point(tmp_path)
     from openprogram.agent.continuation import AgentCheckpointError, AgentCheckpointV1

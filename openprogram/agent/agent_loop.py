@@ -841,6 +841,12 @@ async def _stream_assistant_response(
     )
 
     fn = stream_fn
+    from openprogram.providers.api_registry import resolve_api_provider_snapshot
+
+    if provider_snapshot is None:
+        provider_snapshot = resolve_api_provider_snapshot(config.model)
+    dispatch_snapshots = {id(config.model): provider_snapshot}
+    dispatch_models = [config.model]
 
     # Provider/model failover — ON by default, conservatively.
     # resolve_fallback_models() defaults to the user's other enabled models of
@@ -852,8 +858,6 @@ async def _stream_assistant_response(
     # wrapped in try/except so failover can never break the normal path.
     if stream_fn is None:
         from openprogram.providers.stream import stream_simple_with_provider
-
-        dispatch_snapshots = {id(config.model): provider_snapshot}
 
         def snapshot_stream(candidate, candidate_context, candidate_options):
             snapshot = dispatch_snapshots.get(id(candidate))
@@ -909,10 +913,26 @@ async def _stream_assistant_response(
                     available.append(fallback)
                     dispatch_snapshots[id(fallback)] = fallback_snapshot
                 _fallbacks = available
+            dispatch_models.extend(_fallbacks)
             if _fallbacks:
                 fn = failover_stream_fn(fn, _fallbacks)
         except Exception:
             pass
+
+    # The effect contract is established before the first provider dispatch.
+    # A stable key is safe only when every candidate that can actually receive
+    # this request advertises support for it. This remains conservative for an
+    # explicit cross-provider chain with mixed capabilities: no candidate gets
+    # a key, and the effect is recorded as nonrepeatable.
+    provider_supports_idempotency_key = bool(
+        dispatch_models
+        and all(
+            snapshot is not None and snapshot.supports_idempotency_key
+            for snapshot in (
+                dispatch_snapshots.get(id(candidate)) for candidate in dispatch_models
+            )
+        )
+    )
 
     assert fn is not None
 
@@ -932,11 +952,6 @@ async def _stream_assistant_response(
         )
 
     from openprogram.providers import SimpleStreamOptions
-    from openprogram.providers.api_registry import resolve_api_provider_snapshot
-    provider_snapshot = resolve_api_provider_snapshot(config.model)
-    provider_supports_idempotency_key = bool(
-        provider_snapshot.supports_idempotency_key
-    )
     stream_opts = SimpleStreamOptions(
         reasoning=config.reasoning,
         thinking_budgets=config.thinking_budgets,
@@ -977,6 +992,18 @@ async def _stream_assistant_response(
         provider_payload = {
             "resolved_snapshot": resolved_snapshot,
             "supports_idempotency_key": provider_supports_idempotency_key,
+            "dispatch_candidates": [
+                {
+                    "api": getattr(candidate, "api", None),
+                    "provider": getattr(candidate, "provider", None),
+                    "model": getattr(candidate, "id", None),
+                    "supports_idempotency_key": bool(
+                        snapshot is not None and snapshot.supports_idempotency_key
+                    ),
+                }
+                for candidate in dispatch_models
+                for snapshot in (dispatch_snapshots.get(id(candidate)),)
+            ],
             "context": {
                 "system_prompt": llm_context.system_prompt,
                 "messages": [_durable_message(message) for message in llm_context.messages],
