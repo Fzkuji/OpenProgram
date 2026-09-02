@@ -1382,7 +1382,14 @@ def test_prompt_send_async_cancellation_cleans_then_reraises_and_drops_late_resu
             await task
         assert _active(service) == ()
         release.set()
-        await asyncio.sleep(0.05)
+        async def wait_for_cleanup():
+            while (
+                sum(name == "cancel" for name, _ in calls) < 1
+                or sum(name == "unregister" for name, _ in calls) < 1
+            ):
+                await asyncio.sleep(0.01)
+
+        await asyncio.wait_for(wait_for_cleanup(), timeout=2)
 
     asyncio.run(scenario())
     assert [name for name, _ in calls].count("cancel") == 1
