@@ -235,6 +235,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     const expectedVersion = executionVersionRef.current;
     if (executionId && typeof expectedVersion === 'number') {
       client.send({
+        type: 'execution.command',
         action: 'execution.cancel',
         command_id: randomLocalId(),
         execution_id: executionId,
@@ -474,6 +475,20 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         currentAgent: agent,
         currentModel: model,
         currentConversation: conversationId,
+        submitExecutionCommand: (operation, payload) => {
+          const executionId = executionIdRef.current || streaming?.executionId;
+          const expectedVersion = executionVersionRef.current;
+          if (!executionId || typeof expectedVersion !== 'number') return false;
+          client.send({
+            type: 'execution.command',
+            action: `execution.${operation}` as 'execution.steer' | 'execution.fork' | 'execution.retry',
+            command_id: randomLocalId(),
+            execution_id: executionId,
+            expected_version: expectedVersion,
+            payload,
+          });
+          return true;
+        },
         setTheme: (name: string) => {
           if (!isThemeSetting(name)) return false;
           setThemeSetting(name);

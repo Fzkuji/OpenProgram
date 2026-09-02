@@ -83,7 +83,7 @@ def register(app):
                 code = 400
         return JSONResponse(content={**update, "data": update}, status_code=code)
 
-    for operation in ("pause", "continue", "step", "cancel"):
+    for operation in ("pause", "continue", "step", "steer", "cancel", "fork", "retry"):
         async def endpoint(request: Request, body: dict = None, _operation=operation):
             return await _command(request, body or {}, _operation)
 

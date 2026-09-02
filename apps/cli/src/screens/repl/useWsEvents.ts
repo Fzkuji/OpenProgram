@@ -140,7 +140,8 @@ export function handleJobEnvelope(ev: WsEnvelope, ctx: JobEnvelopeCtx): boolean 
             ...job,
             execution_id: executionId,
             status: String(execution?.status ?? job.status),
-            status_version: execution?.status_version,
+            status_version: typeof execution?.status_version === 'number'
+              ? execution.status_version : job.status_version,
             event_cursor,
             resource: execution?.resource as JobRow['resource'],
           }
@@ -148,7 +149,12 @@ export function handleJobEnvelope(ev: WsEnvelope, ctx: JobEnvelopeCtx): boolean 
     )));
     ctx.setSelectedJob((job) => (
       job && (job.execution_id ?? job.id) === executionId
-        ? { ...job, status: String(execution?.status ?? job.status), status_version: execution?.status_version }
+        ? {
+            ...job,
+            status: String(execution?.status ?? job.status),
+            status_version: typeof execution?.status_version === 'number'
+              ? execution.status_version : job.status_version,
+          }
         : job
     ));
     return true;
@@ -320,13 +326,6 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         const d = (ev as { data: { attended?: boolean } }).data;
         c.pushSystem(`[mode] ${d.attended ? 'attended — the agent may ask you questions'
           : 'unattended — questions are withheld'}`);
-      } else if (ev.type === 'steer_ack') {
-        const d = (ev as { data: { queued?: boolean; message?: string; code?: string } }).data;
-        c.pushSystem(d.code === 'unsupported_capability'
-          ? '[steer] unsupported until durable checkpoint support is implemented.'
-          : d.queued
-          ? `[steer] queued: ${d.message ?? ''} — the run will pick it up at its next step.`
-          : `[steer] could not queue (no live run for this session?).`);
       } else if (ev.type === 'browser_result') {
         const data = (ev as { data: { verb: string; result: string } }).data;
         c.pushSystem(`[browser ${data.verb}] ${data.result}`);

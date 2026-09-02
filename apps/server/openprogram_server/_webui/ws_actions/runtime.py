@@ -224,6 +224,71 @@ def _trusted_runtime_actor(ws) -> dict | None:
     return trusted_runtime_actor(getattr(ws, "scope", None))
 
 
+_PUBLIC_COMMAND_ACTIONS = {
+    "pause": "execution.pause",
+    "continue": "execution.continue",
+    "step": "execution.step",
+    "steer": "execution.steer",
+    "cancel": "execution.cancel",
+    "fork": "execution.fork",
+    "retry": "execution.retry",
+}
+
+
+def validate_execution_command_request(cmd: dict, operation: str) -> str | None:
+    """Validate the one public command envelope before touching a runtime.
+
+    Target identity, actor, session, project, lease, and capability data are
+    server-owned.  A transport cannot supply any of them as a second control
+    path.
+    """
+    if operation not in _PUBLIC_COMMAND_ACTIONS or not isinstance(cmd, dict):
+        return "invalid_command"
+    if set(cmd) - {"type", "action", "command_id", "execution_id", "expected_version", "payload"}:
+        return "invalid_command"
+    if cmd.get("type") != "execution.command" or cmd.get("action") != _PUBLIC_COMMAND_ACTIONS[operation]:
+        return "invalid_command"
+    command_id = cmd.get("command_id")
+    execution_id = cmd.get("execution_id")
+    expected_version = cmd.get("expected_version")
+    payload = cmd.get("payload", {})
+    if (
+        not isinstance(command_id, str) or not command_id or len(command_id) > 256
+        or not isinstance(execution_id, str) or not execution_id or len(execution_id) > 256
+        or type(expected_version) is not int or expected_version < 0
+        or not isinstance(payload, dict)
+    ):
+        return "invalid_command"
+    if operation in {"pause", "continue", "step", "cancel"}:
+        return None if not payload else "invalid_payload"
+    if operation == "steer":
+        message = payload.get("message")
+        return (
+            None
+            if set(payload) == {"message"} and isinstance(message, str)
+            and message.strip() and len(message) <= 4096
+            else "invalid_payload"
+        )
+    if operation == "retry":
+        checkpoint_id = payload.get("checkpoint_id")
+        return (
+            None
+            if set(payload).issubset({"checkpoint_id"})
+            and (checkpoint_id is None or isinstance(checkpoint_id, str) and checkpoint_id)
+            else "invalid_payload"
+        )
+    if operation == "fork":
+        return (
+            None
+            if set(payload) == {"checkpoint_id", "revision_manifest", "compatible_prefix"}
+            and isinstance(payload.get("checkpoint_id"), str) and payload["checkpoint_id"]
+            and isinstance(payload.get("revision_manifest"), dict)
+            and isinstance(payload.get("compatible_prefix"), list)
+            else "invalid_payload"
+        )
+    return "invalid_command"
+
+
 def _public_execution_snapshot(execution) -> tuple[dict, dict]:
     """Return the one snapshot shape shared by command and reconnect paths."""
     execution_data = execution.to_dict() if hasattr(execution, "to_dict") else dict(execution)
@@ -327,15 +392,15 @@ async def submit_execution_control(
     from openprogram.execution.attempts import AttemptConflict
     from openprogram.execution.state_machine import InvalidCommand
 
+    from openprogram.agent.authority import has_capability, normalize_authority
+
+    actor = normalize_authority(actor)
+    validation_error = validate_execution_command_request(cmd, operation)
     execution_id = cmd.get("execution_id")
     command_id = cmd.get("command_id")
     expected_version = cmd.get("expected_version")
-    if (
-        actor is None or not isinstance(execution_id, str) or not execution_id
-        or not isinstance(command_id, str) or not command_id
-        or type(expected_version) is not int
-    ):
-        return _rejected_command(cmd, "invalid_command"), {
+    if not actor or not has_capability(actor, "runtime.control") or validation_error is not None:
+        return _rejected_command(cmd, validation_error or "unauthorized"), {
             "execution_id": execution_id or "", "status_version": None,
         }
     store = default_store()
@@ -356,15 +421,19 @@ async def submit_execution_control(
 
         job_runner = runner_for_execution_store(store)
         is_job = job_runner is not None and store.get_job_agent_input(execution_id) is not None
-        if operation in {"pause", "continue", "step"}:
+        if operation in {"pause", "continue", "step", "steer", "fork", "retry"}:
             from openprogram.execution.model import CommandKind
             required = {
                 "pause": CommandKind.PAUSE,
                 "continue": CommandKind.CONTINUE,
                 "step": CommandKind.STEP,
+                "steer": CommandKind.STEER,
+                "fork": CommandKind.FORK,
+                "retry": CommandKind.RETRY,
             }[operation]
             if not getattr(execution.capabilities, {
                 "pause": "pause", "continue": "pause", "step": "step",
+                "steer": "steer", "fork": "fork", "retry": "retry",
             }[operation]):
                 raise ExecutionConflict("unsupported", "execution does not support this control command")
         if operation in {"continue", "step"} and service.effects.list_unresolved(execution_id):
@@ -399,6 +468,28 @@ async def submit_execution_control(
                 expected_version=expected_version, actor=actor,
                 reason_code="cancel.user",
             )
+        elif operation == "steer":
+            dispatch = service.request_steer(
+                command_id=command_id, execution_id=execution_id,
+                expected_version=expected_version, actor=actor,
+                payload=dict(cmd["payload"]),
+            )
+        elif operation == "fork":
+            branch = service.request_fork(
+                command_id=command_id, execution_id=execution_id,
+                expected_version=expected_version, actor=actor,
+                checkpoint_id=cmd["payload"]["checkpoint_id"],
+                revision_manifest=cmd["payload"]["revision_manifest"],
+                compatible_prefix=cmd["payload"]["compatible_prefix"],
+            )
+            return branch.command, branch.execution
+        elif operation == "retry":
+            branch = service.request_retry(
+                command_id=command_id, execution_id=execution_id,
+                expected_version=expected_version, actor=actor,
+                checkpoint_id=cmd["payload"].get("checkpoint_id"),
+            )
+            return branch.command, branch.execution
         else:
             request = (
                 service.request_continue if operation == "continue"
@@ -468,6 +559,18 @@ async def handle_execution_continue(ws, cmd: dict):
 
 async def handle_execution_step(ws, cmd: dict):
     await _handle_execution_control(ws, cmd, "step")
+
+
+async def handle_execution_steer(ws, cmd: dict):
+    await _handle_execution_control(ws, cmd, "steer")
+
+
+async def handle_execution_fork(ws, cmd: dict):
+    await _handle_execution_control(ws, cmd, "fork")
+
+
+async def handle_execution_retry(ws, cmd: dict):
+    await _handle_execution_control(ws, cmd, "retry")
 
 
 async def handle_execution_cancel(ws, cmd: dict):
@@ -621,28 +724,6 @@ async def handle_stats(ws, cmd: dict):
     }, default=str))
 
 
-async def handle_steer(ws, cmd: dict):
-    """Reject steering until durable checkpoint support is implemented."""
-    session_id = cmd.get("session_id") or cmd.get("conv_id")
-    message = cmd.get("message") or ""
-    if not session_id:
-        return
-    try:
-        await ws.send_text(json.dumps({
-            "type": "steer_ack",
-            "data": {
-                "session_id": session_id,
-                "request_id": cmd.get("request_id"),
-                "result": "unsupported",
-                "queued": False,
-                "message": message.strip()[:200],
-                "code": "unsupported_capability",
-            },
-        }, default=str))
-    except Exception:
-        pass
-
-
 async def handle_set_attended(ws, cmd: dict):
     """Set whether the agent may ask the user, for this session (TUI/web
     toggle). Broadcasts the new mode so all surfaces show it in sync."""
@@ -673,7 +754,9 @@ ACTIONS = {
     "execution.pause": handle_execution_pause,
     "execution.continue": handle_execution_continue,
     "execution.step": handle_execution_step,
+    "execution.steer": handle_execution_steer,
+    "execution.fork": handle_execution_fork,
+    "execution.retry": handle_execution_retry,
     "stats": handle_stats,
-    "steer": handle_steer,
     "set_attended": handle_set_attended,
 }

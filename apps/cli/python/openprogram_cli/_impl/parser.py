@@ -430,7 +430,10 @@ def build_parser() -> argparse.ArgumentParser:
         ("pause", "Pause at the next safe point"),
         ("continue", "Continue a paused execution"),
         ("step", "Apply exactly one managed action"),
+        ("steer", "Apply a bounded instruction at the next safe point"),
         ("cancel", "Cancel one execution"),
+        ("fork", "Create a child execution from a checkpoint and revision"),
+        ("retry", "Create a same-revision child from a legal checkpoint"),
     ):
         _parser = execution_sub.add_parser(_verb, help=_help)
         _parser.add_argument("execution_id", help="Execution id")
@@ -442,6 +445,14 @@ def build_parser() -> argparse.ArgumentParser:
             "--command-id", default=None,
             help="Caller command id for idempotent retry",
         )
+        if _verb == "steer":
+            _parser.add_argument("--message", required=True, help="Bounded steering instruction")
+        elif _verb == "fork":
+            _parser.add_argument("--checkpoint-id", required=True, help="Published source checkpoint id")
+            _parser.add_argument("--revision-manifest", required=True, help="Path to the published revision manifest JSON")
+            _parser.add_argument("--compatible-prefix", required=True, help="Path to compatible-prefix proof JSON")
+        elif _verb == "retry":
+            _parser.add_argument("--checkpoint-id", default=None, help="Optional published source checkpoint id")
 
     # ---- jobs -------------------------------------------------------------
     p_jobs = sub.add_parser(

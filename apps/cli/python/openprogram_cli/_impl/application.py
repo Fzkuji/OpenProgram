@@ -681,12 +681,33 @@ def main():
         from openprogram.cli.commands.execution import _cmd_execution_control
 
         verb = getattr(args, "execution_verb", None)
-        if verb in {"pause", "continue", "step", "cancel"}:
+        if verb in {"pause", "continue", "step", "steer", "cancel", "fork", "retry"}:
+            import json
+            payload = {}
+            if verb == "steer":
+                payload = {"message": args.message}
+            elif verb == "retry" and args.checkpoint_id:
+                payload = {"checkpoint_id": args.checkpoint_id}
+            elif verb == "fork":
+                try:
+                    with open(args.revision_manifest, encoding="utf-8") as file:
+                        manifest = json.load(file)
+                    with open(args.compatible_prefix, encoding="utf-8") as file:
+                        prefix = json.load(file)
+                except (OSError, ValueError) as exc:
+                    print(f"invalid fork JSON input: {exc}", file=sys.stderr)
+                    sys.exit(2)
+                payload = {
+                    "checkpoint_id": args.checkpoint_id,
+                    "revision_manifest": manifest,
+                    "compatible_prefix": prefix,
+                }
             sys.exit(_cmd_execution_control(
                 verb,
                 args.execution_id,
                 expected_version=args.expected_version,
                 command_id=args.command_id,
+                payload=payload,
             ))
         _need_subcommand(args._cmd_parser)
 

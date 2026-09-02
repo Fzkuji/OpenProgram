@@ -53,6 +53,10 @@ export interface SlashContext {
   currentAgent?: string;
   currentModel?: string;
   currentConversation?: string;
+  submitExecutionCommand?: (
+    operation: 'steer' | 'fork' | 'retry',
+    payload: Record<string, unknown>,
+  ) => boolean;
   /**
    * Tell the REPL that the *next* ``session_aliases`` envelope should
    * be printed to the system area. Used by /aliases — picker
@@ -185,7 +189,39 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
     }
 
     case 'steer': {
-      ctx.pushSystem('[steer] unsupported until durable checkpoint recovery is available.');
+      const message = args.join(' ').trim();
+      if (!message) {
+        ctx.pushSystem('Usage: /steer <instruction>');
+      } else if (!ctx.submitExecutionCommand?.('steer', { message })) {
+        ctx.pushSystem('Steer unavailable: no current execution version.');
+      }
+      return true;
+    }
+
+    case 'retry': {
+      const checkpoint_id = args[0];
+      if (!ctx.submitExecutionCommand?.('retry', checkpoint_id ? { checkpoint_id } : {})) {
+        ctx.pushSystem('Retry unavailable: no current execution version.');
+      }
+      return true;
+    }
+
+    case 'fork': {
+      if (args.length !== 3) {
+        ctx.pushSystem('Usage: /fork <checkpoint-id> <revision-manifest-json> <compatible-prefix-json>');
+        return true;
+      }
+      try {
+        const revision_manifest = JSON.parse(args[1]!);
+        const compatible_prefix = JSON.parse(args[2]!);
+        if (!ctx.submitExecutionCommand?.('fork', {
+          checkpoint_id: args[0]!, revision_manifest, compatible_prefix,
+        })) {
+          ctx.pushSystem('Fork unavailable: no current execution version.');
+        }
+      } catch {
+        ctx.pushSystem('Fork requires valid revision-manifest and compatible-prefix JSON.');
+      }
       return true;
     }
 

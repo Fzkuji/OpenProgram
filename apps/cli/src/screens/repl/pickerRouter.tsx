@@ -250,7 +250,7 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
               expected_version: selectedJob.status_version
                 ?? selectedJob.resource?.status_version
                 ?? 0,
-              payload: { reason_code: 'cancel.user' },
+              payload: {},
             });
           } else if (item.value === 'back') {
             setSelectedJob(null);

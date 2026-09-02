@@ -26,7 +26,7 @@ export type WsRequest =
   | ChatRequest
   | { action: 'stats' }
   | {
-      action: 'execution.pause' | 'execution.continue' | 'execution.step' | 'execution.cancel';
+      action: 'execution.pause' | 'execution.continue' | 'execution.step' | 'execution.steer' | 'execution.cancel' | 'execution.fork' | 'execution.retry';
       type: 'execution.command';
       command_id: string;
       execution_id: string;
@@ -145,6 +145,7 @@ export interface JobRow {
   id: string;
   execution_id?: string;
   status: string;
+  status_version?: number;
   subject?: string;
   parent_session_id?: string;
   reason_code?: string | null;
@@ -487,7 +488,6 @@ export type WsEnvelope =
       data: { key: string; applied?: string; value?: unknown; note?: string; error?: string };
     }
   | { type: 'attended_changed'; data: { session_id: string; attended: boolean } }
-  | { type: 'steer_ack'; data: { session_id: string; queued: boolean; message?: string } }
   | {
       type: 'running_task';
       data: {

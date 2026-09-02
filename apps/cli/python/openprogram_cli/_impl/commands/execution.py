@@ -9,6 +9,17 @@ import uuid
 from typing import Any, Optional
 
 
+_EXECUTION_CONTROL_PATHS = {
+    "pause": "/api/execution/pause",
+    "continue": "/api/execution/continue",
+    "step": "/api/execution/step",
+    "steer": "/api/execution/steer",
+    "cancel": "/api/execution/cancel",
+    "fork": "/api/execution/fork",
+    "retry": "/api/execution/retry",
+}
+
+
 def _require_backend_endpoint():
     from openprogram.backend_endpoint import (
         OwnerAuthError,
@@ -63,17 +74,18 @@ def _cmd_execution_control(
     *,
     expected_version: int,
     command_id: str | None,
+    payload: Optional[dict] = None,
 ) -> int:
     status, payload = _worker_request(
         "POST",
-        f"/api/execution/{operation}",
+        _EXECUTION_CONTROL_PATHS[operation],
         {
             "type": "execution.command",
             "action": f"execution.{operation}",
             "command_id": command_id or f"cli-{operation}-{uuid.uuid4().hex}",
             "execution_id": execution_id,
             "expected_version": expected_version,
-            "payload": {"reason_code": "cancel.user"} if operation == "cancel" else {},
+            "payload": payload or {},
         },
     )
     record = payload.get("execution") if isinstance(payload, dict) else None

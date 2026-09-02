@@ -931,11 +931,13 @@ class RuntimeControlService:
         execution_id: str,
         expected_version: int,
         actor: Mapping[str, Any],
+        checkpoint_id: str | None = None,
         child_execution_id: str | None = None,
-        payload: Mapping[str, Any] | None = None,
     ) -> BranchCompletion:
         """Create a queued same-revision child from the source checkpoint head."""
-        command_payload = dict(payload or {})
+        command_payload: dict[str, Any] = {}
+        if checkpoint_id is not None:
+            command_payload["checkpoint_id"] = checkpoint_id
         if child_execution_id is not None:
             command_payload["child_execution_id"] = child_execution_id
         return self._request_branch(
@@ -946,7 +948,7 @@ class RuntimeControlService:
             kind=CommandKind.RETRY,
             payload=command_payload,
             manifest_id=None,
-            checkpoint_id=None,
+            checkpoint_id=checkpoint_id,
             child_execution_id=child_execution_id,
         )
 
