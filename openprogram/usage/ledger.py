@@ -326,72 +326,66 @@ class UsageLedger:
 
     @staticmethod
     def _migrate_job_admission_columns(conn: sqlite3.Connection) -> None:
-        existing = {
-            str(row[1]) for row in conn.execute("PRAGMA table_info(job_admissions)")
-        }
-        changed = False
-        if existing and "caller_session_id" not in existing:
-            conn.execute(
-                "ALTER TABLE job_admissions ADD COLUMN caller_session_id TEXT"
-            )
-            changed = True
-        if existing and "dispatch_ready" not in existing:
-            conn.execute(
-                "ALTER TABLE job_admissions ADD COLUMN "
-                "dispatch_ready INTEGER NOT NULL DEFAULT 1"
-            )
-            changed = True
-        if existing and "terminal_blocked" not in existing:
-            conn.execute(
-                "ALTER TABLE job_admissions ADD COLUMN "
-                "terminal_blocked INTEGER NOT NULL DEFAULT 0"
-            )
-            changed = True
-        for name, definition in (
-            ("terminal_block_command_id", "TEXT"),
-            ("terminal_block_phase", "TEXT"),
-            ("terminal_block_expires_at", "REAL"),
-            (
-                "terminal_block_prior_dispatch_ready",
-                "INTEGER CHECK (terminal_block_prior_dispatch_ready IN (0, 1))",
-            ),
-        ):
-            if existing and name not in existing:
-                conn.execute(
-                    f"ALTER TABLE job_admissions ADD COLUMN {name} {definition}"
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            existing = {
+                str(row[1])
+                for row in conn.execute("PRAGMA table_info(job_admissions)")
+            }
+            changed = False
+
+            def add_column(name: str, definition: str) -> None:
+                nonlocal changed
+                columns = {
+                    str(row[1])
+                    for row in conn.execute("PRAGMA table_info(job_admissions)")
+                }
+                if columns and name not in columns:
+                    conn.execute(
+                        f"ALTER TABLE job_admissions ADD COLUMN {name} {definition}"
+                    )
+                    changed = True
+
+            if existing:
+                add_column("caller_session_id", "TEXT")
+                add_column(
+                    "dispatch_ready", "INTEGER NOT NULL DEFAULT 1"
                 )
-                changed = True
-        if existing and "borrowed_parent_job_id" not in existing:
-            conn.execute(
-                "ALTER TABLE job_admissions ADD COLUMN borrowed_parent_job_id TEXT"
-            )
-            changed = True
-        if existing and "resume_parent_msg_id" not in existing:
-            conn.execute(
-                "ALTER TABLE job_admissions ADD COLUMN resume_parent_msg_id TEXT"
-            )
-            changed = True
-        if existing and "lease_generation" not in existing:
-            conn.execute(
-                "ALTER TABLE job_admissions ADD COLUMN "
-                "lease_generation INTEGER NOT NULL DEFAULT 0"
-            )
-            changed = True
-        if existing:
-            migrated = conn.execute(
-                """UPDATE job_admissions
-                   SET terminal_block_phase = 'recovery',
-                       terminal_block_expires_at = ?,
-                       terminal_block_prior_dispatch_ready = COALESCE(
-                           terminal_block_prior_dispatch_ready, 0
-                       )
-                   WHERE terminal_blocked = 1
-                     AND terminal_block_phase IS NULL""",
-                (time.time() + 30.0,),
-            )
-            changed = changed or migrated.rowcount > 0
-        if changed or existing:
-            conn.commit()
+                add_column(
+                    "terminal_blocked", "INTEGER NOT NULL DEFAULT 0"
+                )
+                for name, definition in (
+                    ("terminal_block_command_id", "TEXT"),
+                    ("terminal_block_phase", "TEXT"),
+                    ("terminal_block_expires_at", "REAL"),
+                    (
+                        "terminal_block_prior_dispatch_ready",
+                        "INTEGER CHECK (terminal_block_prior_dispatch_ready IN (0, 1))",
+                    ),
+                ):
+                    add_column(name, definition)
+                add_column("borrowed_parent_job_id", "TEXT")
+                add_column("resume_parent_msg_id", "TEXT")
+                add_column(
+                    "lease_generation", "INTEGER NOT NULL DEFAULT 0"
+                )
+                migrated = conn.execute(
+                    """UPDATE job_admissions
+                       SET terminal_block_phase = 'recovery',
+                           terminal_block_expires_at = ?,
+                           terminal_block_prior_dispatch_ready = COALESCE(
+                               terminal_block_prior_dispatch_ready, 0
+                           )
+                       WHERE terminal_blocked = 1
+                         AND terminal_block_phase IS NULL""",
+                    (time.time() + 30.0,),
+                )
+                changed = changed or migrated.rowcount > 0
+            if changed or existing:
+                conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
     def connection(self) -> sqlite3.Connection:
         """Return the process-local connection for governance transactions."""

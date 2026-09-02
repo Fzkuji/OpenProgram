@@ -53,6 +53,22 @@ def _admit_fanout_process(db_path, index, start, output) -> None:
     output.put((decision.accepted, decision.reason_code))
 
 
+def _migrate_admission_schema_process(db_path, start, output) -> None:
+    start.wait()
+    try:
+        ledger = UsageLedger(db_path)
+        columns = {
+            row[1]
+            for row in ledger.connection().execute(
+                "PRAGMA table_info(job_admissions)"
+            )
+        }
+        output.put(("ok", len(columns)))
+        ledger.close()
+    except Exception as exc:  # noqa: BLE001
+        output.put(("error", type(exc).__name__, str(exc)))
+
+
 def test_resource_limits_require_positive_values_or_null() -> None:
     limits = ResourceLimits.from_mapping({
         "max_live_per_session": 3,
@@ -1664,6 +1680,56 @@ def test_legacy_admission_schema_migrates_terminal_barrier_columns(tmp_path):
     assert "terminal_block_phase" in columns
     assert "terminal_block_expires_at" in columns
     assert "terminal_block_prior_dispatch_ready" in columns
+
+
+def test_admission_schema_migration_is_process_serialized(tmp_path):
+    path = tmp_path / "legacy-concurrent.db"
+    conn = sqlite3.connect(path)
+    conn.execute(
+        """CREATE TABLE job_admissions (
+            admission_id TEXT PRIMARY KEY, job_id TEXT UNIQUE NOT NULL,
+            session_id TEXT NOT NULL, parent_job_id TEXT,
+            caller_session_id TEXT, caller_turn_id TEXT,
+            creates_agent INTEGER NOT NULL, request_fingerprint TEXT NOT NULL,
+            budget_scope_id TEXT NOT NULL, dispatch_ready INTEGER NOT NULL DEFAULT 1,
+            borrowed_parent_job_id TEXT, resume_parent_msg_id TEXT,
+            state TEXT NOT NULL, admitted_seq INTEGER NOT NULL,
+            owner_instance_id TEXT, lease_generation INTEGER NOT NULL DEFAULT 0,
+            lease_expires_at REAL, created_at REAL NOT NULL, started_at REAL,
+            last_activity_at REAL, released_at REAL, reason_code TEXT
+        )"""
+    )
+    conn.commit()
+    conn.close()
+    ctx = multiprocessing.get_context("fork")
+    start = ctx.Event()
+    output = ctx.Queue()
+    processes = [
+        ctx.Process(
+            target=_migrate_admission_schema_process,
+            args=(path, start, output),
+        )
+        for _ in range(8)
+    ]
+    for process in processes:
+        process.start()
+    start.set()
+    results = [output.get(timeout=15) for _ in processes]
+    for process in processes:
+        process.join(timeout=15)
+        assert process.exitcode == 0
+    assert all(result[0] == "ok" for result in results), results
+    columns = {
+        row[1]
+        for row in UsageLedger(path).connection().execute(
+            "PRAGMA table_info(job_admissions)"
+        )
+    }
+    assert {
+        "terminal_blocked", "terminal_block_command_id",
+        "terminal_block_phase", "terminal_block_expires_at",
+        "terminal_block_prior_dispatch_ready",
+    }.issubset(columns)
 
 
 def test_legacy_blocked_admission_is_recoverable_after_migration(tmp_path):
