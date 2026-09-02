@@ -680,12 +680,49 @@ def test_new_run_passes_empty_caller_so_decorator_stamps_head(monkeypatch):
         "openprogram.webui.server._default_agent_id", lambda: "main"
     )
 
-    def _stop_dispatch(**kw):
-        captured["anchor"] = kw.get("anchor_msg_id")
-        raise RuntimeError("stop-after-anchor")
-    monkeypatch.setattr(
-        "openprogram.agent.dispatcher.dispatch_forced_tool_call", _stop_dispatch
-    )
+    from openprogram.agent import production_driver
+    from openprogram.execution.model import ExecutionStatus
+    real_adapter = production_driver.CanonicalAgentAdapter
+
+    class _Adapter:
+        def __init__(self, *args, **kwargs):
+            self._real = real_adapter(*args, **kwargs)
+
+        def admit_payload(self, **kwargs):
+            captured.update(kwargs["payload"])
+            return self._real.admit_payload(**kwargs)
+
+        async def activate(self, admission, *, on_activated=None):
+            service = self._real.driver._control_service()
+            attempt, leased = service.attempts.lease(
+                admission.execution_id,
+                expected_version=admission.status_version,
+                owner_id="unit-test",
+                ttl_seconds=30,
+            )
+            active, running = service.attempts.activate(
+                attempt.attempt_id,
+                generation=attempt.generation,
+                expected_execution_version=leased.status_version,
+            )
+            service.finish_attempt(
+                attempt_id=active.attempt_id,
+                generation=active.generation,
+                expected_execution_version=running.status_version,
+                target=ExecutionStatus.COMPLETED,
+                outcome="completed",
+            )
+            activation = SimpleNamespace(
+                admission=admission, status_version=running.status_version,
+            )
+            if on_activated is not None:
+                on_activated(activation)
+            return activation, SimpleNamespace(failed=False, error=None)
+
+        def fail_admission(self, *args, **kwargs):
+            return self._real.fail_admission(*args, **kwargs)
+
+    monkeypatch.setattr(production_driver, "CanonicalAgentAdapter", _Adapter)
     monkeypatch.setattr(
         "openprogram.agentic_programming.function.create_pending_call_node",
         lambda **k: None,
@@ -710,7 +747,7 @@ def test_new_run_passes_empty_caller_so_decorator_stamps_head(monkeypatch):
 
     routes_chat.run_agentic_function_call("word_count", {"text": "hi"}, "s1")
     # Empty caller → decorator's top-level-call branch stamps the head.
-    assert captured.get("anchor") == ""
+    assert captured.get("anchor_msg_id") == ""
 
 
 def test_retry_run_is_sibling_and_only_active_head_renders(tmp_path):

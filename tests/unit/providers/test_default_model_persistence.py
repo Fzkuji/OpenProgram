@@ -247,10 +247,49 @@ def test_restored_session_function_run_uses_its_agent_model(monkeypatch):
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: DB())
 
     captured = {}
-    monkeypatch.setattr(
-        "openprogram.agent.dispatcher.dispatch_forced_tool_call",
-        lambda **kwargs: captured.update(kwargs) or {"ok": False},
-    )
+    from openprogram.agent import production_driver
+    from openprogram.execution.model import ExecutionStatus
+    real_adapter = production_driver.CanonicalAgentAdapter
+
+    class _Adapter:
+        def __init__(self, *args, **kwargs):
+            self._real = real_adapter(*args, **kwargs)
+
+        def admit_payload(self, **kwargs):
+            captured.update(kwargs["payload"])
+            return self._real.admit_payload(**kwargs)
+
+        async def activate(self, admission, *, on_activated=None):
+            service = self._real.driver._control_service()
+            attempt, leased = service.attempts.lease(
+                admission.execution_id,
+                expected_version=admission.status_version,
+                owner_id="unit-test",
+                ttl_seconds=30,
+            )
+            active, running = service.attempts.activate(
+                attempt.attempt_id,
+                generation=attempt.generation,
+                expected_execution_version=leased.status_version,
+            )
+            service.finish_attempt(
+                attempt_id=active.attempt_id,
+                generation=active.generation,
+                expected_execution_version=running.status_version,
+                target=ExecutionStatus.COMPLETED,
+                outcome="completed",
+            )
+            activation = SimpleNamespace(
+                admission=admission, status_version=running.status_version,
+            )
+            if on_activated is not None:
+                on_activated(activation)
+            return activation, SimpleNamespace(failed=False, error=None)
+
+        def fail_admission(self, *args, **kwargs):
+            return self._real.fail_admission(*args, **kwargs)
+
+    monkeypatch.setattr(production_driver, "CanonicalAgentAdapter", _Adapter)
     monkeypatch.setattr(
         "openprogram.agentic_programming.function.create_pending_call_node",
         lambda **k: None,

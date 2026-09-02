@@ -1311,6 +1311,19 @@ def run_agentic_in_subprocess(
             # Preserve the blocking process contract for callers that do not
             # opt into canonical cancellation or a timeout.
             p.join()
+        elif cancel_event is None and timeout is not None:
+            # With no cooperative cancellation channel there is no need to
+            # poll.  A single bounded join also avoids a busy loop for
+            # Process implementations whose timed join returns immediately
+            # (for example, the lightweight process doubles used by callers).
+            p.join(timeout)
+            if p.is_alive():
+                timed_out = True
+                from openprogram._compat import kill_process_tree
+
+                if not kill_process_tree(p.pid):
+                    p.kill()
+                p.join(timeout=5)
         else:
             while p.is_alive():
                 p.join(0.05)

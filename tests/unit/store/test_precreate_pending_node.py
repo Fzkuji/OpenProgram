@@ -15,6 +15,7 @@ These lock:
 """
 from __future__ import annotations
 
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -93,8 +94,97 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
             "surface_context_snapshot"
         )
         return {"runtime_msg_id": None, "ok": True}
+
     monkeypatch.setattr(
-        "openprogram.agent.dispatcher.dispatch_forced_tool_call", _stop_dispatch)
+        "openprogram.agent.dispatcher.dispatch_forced_tool_call", _stop_dispatch,
+    )
+
+    from openprogram.agent import production_driver
+    from openprogram.execution.model import ExecutionStatus
+    real_adapter = production_driver.CanonicalAgentAdapter
+
+    class _Adapter:
+        def __init__(self, *args, **kwargs):
+            self._real = real_adapter(*args, **kwargs)
+
+        def admit_payload(self, **kwargs):
+            payload = kwargs["payload"]
+            captured["anchor"] = payload.get("anchor_msg_id")
+            captured["provider"] = payload.get("provider")
+            captured["model"] = payload.get("model")
+            captured["surface_context_snapshot"] = payload.get(
+                "surface_context_snapshot"
+            )
+            admission = self._real.admit_payload(**kwargs)
+            captured["execution_id"] = admission.execution_id
+            captured["record_exists"] = store.message_exists(
+                "s1", admission.execution_id,
+            )
+            captured["run_active"] = real_is_run_active("s1")
+            return admission
+
+        async def activate(self, admission, *, on_activated=None):
+            service = self._real.driver._control_service()
+            attempt, leased = service.attempts.lease(
+                admission.execution_id,
+                expected_version=admission.status_version,
+                owner_id="unit-test",
+                ttl_seconds=30,
+            )
+            active, running = service.attempts.activate(
+                attempt.attempt_id,
+                generation=attempt.generation,
+                expected_execution_version=leased.status_version,
+            )
+            payload = self._real.store.get_agent_turn_input(
+                admission.execution_id,
+            ) or {}
+            try:
+                from openprogram.agent.dispatcher import dispatch_forced_tool_call
+
+                result = dispatch_forced_tool_call(
+                    session_id=admission.session_id,
+                    anchor_msg_id=str(payload.get("anchor_msg_id") or ""),
+                    tool_name=str(payload.get("tool_name") or ""),
+                    tool_input=dict(payload.get("tool_input") or {}),
+                    work_dir=payload.get("work_dir"),
+                    agent_id=str(payload.get("agent_id") or "main"),
+                    source=str(payload.get("source") or "web"),
+                    provider=payload.get("provider"),
+                    model=payload.get("model"),
+                    response_format=payload.get("response_format"),
+                    execution_id=admission.execution_id,
+                    attempt_id=active.attempt_id,
+                    generation=active.generation,
+                    cancel_event=threading.Event(),
+                    surface_context_snapshot=payload.get(
+                        "surface_context_snapshot"
+                    ),
+                )
+                target = ExecutionStatus.COMPLETED
+                outcome = "completed"
+            except BaseException as exc:
+                result = {"error": f"{type(exc).__name__}: {exc}"}
+                target = ExecutionStatus.FAILED
+                outcome = "failed"
+            service.finish_attempt(
+                attempt_id=active.attempt_id,
+                generation=active.generation,
+                expected_execution_version=running.status_version,
+                target=target,
+                outcome=outcome,
+            )
+            activation = SimpleNamespace(
+                admission=admission, status_version=running.status_version,
+            )
+            if on_activated is not None:
+                on_activated(activation)
+            return activation, result
+
+        def fail_admission(self, *args, **kwargs):
+            return self._real.fail_admission(*args, **kwargs)
+
+    monkeypatch.setattr(production_driver, "CanonicalAgentAdapter", _Adapter)
 
     # Run the dispatch thread inline so the assertions see a finished _run.
     def _inline_thread(target=None, args=(), kwargs=None, daemon=None):
@@ -271,7 +361,11 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     )
     assert res["code"] == "function_start_failed"
     assert res["status_code"] == 500
-    assert captured == {}
+    assert captured["execution_id"].startswith("exec_")
+    from openprogram.execution import default_store as _execution_store
+    assert _execution_store().get_execution(
+        captured["execution_id"]
+    ).status.value == "failed"
     from openprogram.webui import server as _server
     with _server._running_tasks_lock:
         assert "s1" not in _server._running_tasks
@@ -300,7 +394,10 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     )
 
     assert "error" not in res
-    assert captured == {}
+    assert captured["execution_id"].startswith("exec_")
+    assert _execution_store().get_execution(
+        captured["execution_id"]
+    ).status.value == "failed"
     with _server._running_tasks_lock:
         assert "s1" not in _server._running_tasks
     import_failed_node = next(

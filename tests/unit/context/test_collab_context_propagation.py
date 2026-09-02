@@ -56,8 +56,19 @@ def _run_followup(job, monkeypatch, inside=None):
             failed=False, error=None,
         )
 
-    import openprogram.agent.dispatcher as disp
-    monkeypatch.setattr(disp, "process_user_turn", fake_turn)
+    # Follow-ups now enter through the canonical durable Agent adapter.  Keep
+    # this unit test focused on ContextVar propagation by replacing that
+    # boundary with an in-process activation double.
+    class _Adapter:
+        def admit(self, request, **_kwargs):
+            return request
+
+        async def activate(self, request, **_kwargs):
+            fake_turn(request)
+
+    monkeypatch.setattr(
+        "openprogram.agent.production_driver.CanonicalAgentAdapter", _Adapter,
+    )
     monkeypatch.setattr(
         "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
     )
