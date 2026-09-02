@@ -338,5 +338,11 @@ def ask_blocking(
     ev.wait(timeout=timeout)
     outcome, value = consume_or_timeout(q.id)
     if outcome == "timeout":
+        # A timed-out wait is no longer answerable. Claim and consume the
+        # registry entry so reconnecting clients cannot observe a stale card
+        # after the waiter has already returned its timeout outcome.
+        reg = get_question_registry()
+        if reg.resolve(q.id, "timeout", None):
+            reg.consume(q.id)
         retract_question(q.id, transport)
     return outcome, value

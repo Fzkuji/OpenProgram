@@ -584,6 +584,14 @@ async def await_user_approval(
     await asyncio.to_thread(ev.wait, timeout)
     outcome, value = consume_or_timeout(q.id)
     if outcome == "timeout":
+        # Expiry closes the process-local registry entry before retracting the
+        # UI card; otherwise reconnecting clients can still answer an expired
+        # approval after the tool has already returned.
+        from openprogram.agent.questions import get_question_registry
+
+        registry = get_question_registry()
+        if registry.resolve(q.id, "timeout", None):
+            registry.consume(q.id)
         retract_question(q.id, transport)  # 超时收回前端批准卡片
         return False, None, "once"
     if outcome == "answered":
