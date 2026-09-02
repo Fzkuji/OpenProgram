@@ -1,6 +1,4 @@
-"""端到端：runtime.ask 在执行上下文里发出 question.asked 事件、阻塞，
-后台模拟前端答复 → resolve → ask 返回。串起 runtime + 事件层 + registry。
-"""
+"""端到端：runtime.ask 使用 durable wait 恢复并返回用户答案。"""
 from __future__ import annotations
 
 import time
@@ -161,8 +159,32 @@ def test_ask_emits_frame_then_resumes_on_reply(fresh):
     assert asked["options"] == ["dayjs", "luxon"]
     assert asked["session_id"] == "sess-e2e"
 
-    # 通过 canonical wait command 模拟前端答复；这会恢复 execution。
-    assert get_question_registry().resolve(qid, "answered", "luxon")
+    # 通过 canonical execution.wait.answer command 模拟前端答复；这会恢复 execution。
+    from openprogram.agent.authority import owner_authority
+    from openprogram.execution import submit_wait_command
+
+    current = store.get_execution(execution_id)
+    assert current is not None
+    actor = owner_authority("owner/install/0123456789abcdef")
+    dispatch = asyncio.run(submit_wait_command(
+        control,
+        action="execution.wait.answer",
+        command_id="questions-e2e-answer",
+        execution_id=execution_id,
+        expected_version=current.status_version,
+        actor=actor,
+        wait_id=qid,
+        generation=suspension.wait.claim_generation,
+        value="luxon",
+    ))
+    assert dispatch.command.kind.value == "execution.wait.answer"
+    assert dispatch.command.execution_id == execution_id
+    assert dispatch.command.payload == {
+        "wait_id": qid,
+        "generation": suspension.wait.claim_generation,
+        "answer": "luxon",
+    }
+    assert dispatch.command.actor == actor
     resumed = store.get_execution(execution_id)
     assert resumed is not None and resumed.status.value == "running"
 
