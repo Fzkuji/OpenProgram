@@ -371,6 +371,11 @@ def test_history_intent_crash_is_terminalized_on_restart(tmp_path, monkeypatch):
     recovered_intent = journal.read_history_intent("turn-1", "revert", "crash-key")
     assert recovered_intent["status"] == "recovery_required"
     assert recovered_intent["error_code"] == "RECOVERY_REQUIRED"
+    legacy_intent = dict(recovered_intent)
+    legacy_intent.pop("error_code")
+    manifest.save(journal._intent_path("turn-1", "revert", "crash-key"), legacy_intent)
+    recovered_intent = journal.read_history_intent("turn-1", "revert", "crash-key")
+    assert recovered_intent["error_code"] == "RECOVERY_REQUIRED"
 
     class FakeStore:
         def _session_dir(self, session_id):
@@ -423,6 +428,12 @@ def test_rewind_recovery_persists_error_code_for_status(tmp_path, monkeypatch):
     )
     assert recovered[0]["status"] == "recovery_required"
     assert recovered[0]["error_code"] == "RECOVERY_REQUIRED"
+    rewind_path = journal._rewind_intent_path(stored_key)
+    legacy_intent = dict(json.loads(rewind_path.read_text(encoding="utf-8")))
+    legacy_intent.pop("error_code")
+    manifest.save(rewind_path, legacy_intent)
+    normalized = journal.read_rewind_intent(stored_key)
+    assert normalized["error_code"] == "RECOVERY_REQUIRED"
 
     class FakeStore:
         def _session_dir(self, session_id):

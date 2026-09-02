@@ -970,23 +970,31 @@ class CheckpointStore:
         }
 
     def read_rewind_intent(self, key: str) -> dict | None:
-        path = self._rewind_intent_path(key)
+        return self._read_intent(self._rewind_intent_path(key))
+
+    @staticmethod
+    def _read_intent(path: Path) -> dict | None:
         try:
             value = json.loads(path.read_text(encoding="utf-8"))
         except (FileNotFoundError, OSError, json.JSONDecodeError):
             return None
-        return value if isinstance(value, dict) else None
+        if not isinstance(value, dict):
+            return None
+        if value.get("status") == "recovery_required" and not value.get("error_code"):
+            value["error_code"] = "RECOVERY_REQUIRED"
+            try:
+                manifest.save(path, value)
+            except OSError:
+                # The normalized result remains actionable even if a read-only
+                # or damaged profile prevents the migration write.
+                pass
+        return value
 
     def read_history_intent(
         self, turn_id: str, direction: str, key: str,
     ) -> dict | None:
         """Read one single-turn history receipt without applying it."""
-        path = self._intent_path(turn_id, direction, key)
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (FileNotFoundError, OSError, json.JSONDecodeError):
-            return None
-        return value if isinstance(value, dict) else None
+        return self._read_intent(self._intent_path(turn_id, direction, key))
 
     def _recover_rewind_intent(
         self,
