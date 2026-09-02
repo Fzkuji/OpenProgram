@@ -41,6 +41,8 @@ from openprogram.agent.internals._model_tools import (
     resolve_tools as _resolve_tools,
 )
 from openprogram.agent.dispatcher.runtime_attach import _wrap_agentic_runtime_block
+from openprogram.agent.continuation import runtime_contract_snapshot
+from openprogram.agent.continuation import validate_runtime_contract
 
 if TYPE_CHECKING:
     from openprogram.agent.dispatcher.types import EventCallback, TurnRequest
@@ -74,6 +76,57 @@ def _configure_web_use_tools(tools, surface_context):
     if web_use_tool is not None:
         current.append(web_use_tool)
     return current, web_use_tool is not None
+
+
+def resolve_agent_runtime(
+    req: "TurnRequest", *, assistant_msg_id: Optional[str] = None,
+    on_event: Optional["EventCallback"] = None,
+):
+    """Resolve the exact model, prompt, tools, and durable runtime contract."""
+    from openprogram.agent import dispatcher as _dispatcher
+    from openprogram.agent.surface_context import render_for_model as _render_surface_context
+
+    event_sink = on_event or (lambda _event: None)
+    agent_profile = _dispatcher._load_agent_profile(req.agent_id)
+    tools = _resolve_tools(agent_profile, req.tools_override, source=req.source)
+    tools, web_use_enabled = _configure_web_use_tools(tools, req.surface_context)
+    if tools and _plan_mode.is_plan_mode(req.session_id):
+        from openprogram.programs import apply_tool_policy as _apply_policy
+        tools = _apply_policy(tools, source="plan")
+    from openprogram.programs import install_allowed_tool_names
+    install_allowed_tool_names({tool.name for tool in tools or []})
+    _log_resolved_tools(req, tools)
+    if tools:
+        tools = [_wrap_with_approval(tool, req, event_sink) for tool in tools]
+        if assistant_msg_id is not None:
+            wrapped = []
+            for tool in tools:
+                if getattr(tool, "_is_agentic", False):
+                    wrapped.append(_wrap_agentic_runtime_block(
+                        tool, req, event_sink, assistant_msg_id,
+                    ))
+                else:
+                    wrapped.append(tool)
+            tools = wrapped
+    from openprogram.context.components import build_system_prompt
+    recordable_prompt = build_system_prompt(
+        agent_profile,
+        tools=tools,
+        additional_working_dirs=getattr(req, "additional_working_dirs", None),
+        plan_mode=_plan_mode.is_plan_mode(req.session_id),
+    )
+    system_prompt = recordable_prompt
+    surface_prompt = _render_surface_context(
+        req.surface_context, web_use_enabled=web_use_enabled,
+    )
+    if surface_prompt:
+        system_prompt = f"{system_prompt}\n\n{surface_prompt}"
+    model = _dispatcher._resolve_model(agent_profile, req.model_override)
+    contract = runtime_contract_snapshot(
+        model=model, system_prompt=system_prompt, tools=tools, request=req,
+        structured_output=req.response_format, toolset=agent_profile.get("toolset"),
+    )
+    return agent_profile, tools, recordable_prompt, system_prompt, model, contract
 
 
 def run_loop_blocking(
@@ -110,49 +163,14 @@ def run_loop_blocking(
     """
     from openprogram.agent.agent_loop import agent_loop, agent_loop_resume
     from openprogram.agent.types import AgentContext, AgentLoopConfig
-    # Profile / model resolution goes through the package attribute so
-    # test monkeypatches on ``dispatcher._load_agent_profile`` /
-    # ``dispatcher._resolve_model`` keep applying here.
-    from openprogram.agent import dispatcher as _dispatcher
-
     # Resolve agent profile → tools, system_prompt, model.
-    agent_profile = _dispatcher._load_agent_profile(req.agent_id)
-    from openprogram.agent.surface_context import (
-        render_for_model as _render_surface_context,
+    agent_profile, tools, recordable_system_prompt, system_prompt, model, runtime_contract = resolve_agent_runtime(
+        req, assistant_msg_id=assistant_msg_id, on_event=on_event,
     )
-    tools = _resolve_tools(agent_profile, req.tools_override, source=req.source)
-    tools, web_use_enabled = _configure_web_use_tools(tools, req.surface_context)
-    # Plan mode: hide write/mutate tools when the session is currently
-    # in plan mode. ``apply_tool_policy(source="plan", ...)`` filters
-    # out every tool that lists "plan" in its ``unsafe_in`` set — see
-    # the write tools (bash, write, edit, apply_patch, execute_code,
-    # process). Applied AFTER channel filtering so both restrictions
-    # compose: a wechat turn in plan mode hides the union of both
-    # blacklists.
-    if tools and _plan_mode.is_plan_mode(req.session_id):
-        from openprogram.programs import apply_tool_policy as _apply_policy
-        tools = _apply_policy(tools, source="plan")
-    from openprogram.programs import install_allowed_tool_names
-    install_allowed_tool_names({tool.name for tool in tools or []})
-    _log_resolved_tools(req, tools)
-    if tools:
-        tools = [_wrap_with_approval(t, req, on_event) for t in tools]
-        # Route @agentic_function calls through the runtime-block
-        # rendering path (same UX as the manual /run handler): persist
-        # a display=runtime placeholder, set _call_id so the DAG
-        # subtree anchors under it, finalize with the rebuilt exec DAG.
-        if assistant_msg_id is not None:
-            _wrapped: list = []
-            for _t in tools:
-                if getattr(_t, "_is_agentic", False):
-                    if agentic_tool_names_out is not None:
-                        agentic_tool_names_out.add(_t.name)
-                    _wrapped.append(_wrap_agentic_runtime_block(
-                        _t, req, on_event, assistant_msg_id,
-                    ))
-                else:
-                    _wrapped.append(_t)
-            tools = _wrapped
+    if agentic_tool_names_out is not None:
+        agentic_tool_names_out.update(
+            tool.name for tool in tools if getattr(tool, "_is_agentic", False)
+        )
     # One assembler (dag/overview.md §7). The tool-runtime block, the Layer 6
     # deferred-tool catalog and the plan-mode reminder are registered
     # components now — the dispatcher no longer hand-appends anything, so the
@@ -162,21 +180,6 @@ def run_loop_blocking(
     # before every provider call so newly-loaded deferred tools show up with
     # full schema on the next call. The catalog component only lists the
     # *initial* deferred names so the LLM can discover them from turn 1.
-    from openprogram.context.components import build_system_prompt
-    system_prompt = build_system_prompt(
-        agent_profile,
-        tools=tools,
-        additional_working_dirs=getattr(req, "additional_working_dirs", None),
-        plan_mode=_plan_mode.is_plan_mode(req.session_id),
-    )
-    recordable_system_prompt = system_prompt
-    surface_prompt = _render_surface_context(
-        req.surface_context, web_use_enabled=web_use_enabled,
-    )
-    if surface_prompt:
-        system_prompt = f"{system_prompt}\n\n{surface_prompt}"
-    model = _dispatcher._resolve_model(agent_profile, req.model_override)
-
     from openprogram.agent.session_db import default_db
     db = default_db()
     if continuation is not None:
@@ -209,6 +212,7 @@ def run_loop_blocking(
             messages=context_messages,
             tools=tools,
             memory_prefetch="",
+            runtime_contract=runtime_contract,
         )
     else:
         # Route a new user turn through the context engine: applies
@@ -316,7 +320,11 @@ def run_loop_blocking(
             messages=prep.agent_messages,
             tools=tools,
             memory_prefetch=_memory_prefetch,
+            runtime_contract=runtime_contract,
         )
+
+    if continuation is not None:
+        validate_runtime_contract(continuation.resolved_snapshot, runtime_contract)
 
     # _default_convert_to_llm filters out non-LLM messages (e.g. our
     # custom error / system entries) — agent.py already provides this.

@@ -493,7 +493,9 @@ def _real_provider_safe_point(tmp_path, *, tool_calls=True):
     store, attempts, active, running = _admitted_agent_execution(tmp_path)
     from openprogram.agent.dispatcher.types import TurnRequest
     from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.agent.continuation import runtime_contract_snapshot
     from openprogram.execution.model import CommandKind
+    from openprogram.providers.types import Model
 
     control = RuntimeControlService(store, attempts, DriverRegistry())
     driver = AgentProductionDriver(store, control_service=control)
@@ -504,8 +506,15 @@ def _real_provider_safe_point(tmp_path, *, tool_calls=True):
         source="component",
         user_msg_id="user-anchor",
     )
+    request._execution_revision_id = running.revision_id
     hook = driver._safe_point_hook(active, request, threading.Event())
-    snapshot = {"model": {"id": "fake"}, "system_prompt": "system", "tools": []}
+    snapshot = runtime_contract_snapshot(
+        model=Model(
+            id="fake", name="fake", api="openai-completions", provider="openai",
+            base_url="https://example.invalid/v1",
+        ),
+        system_prompt="system", tools=[], request=request,
+    )
     assert hook("provider.before", {"resolved_snapshot": snapshot, "context": {"messages": []}}) is False
     current = store.get_execution(running.execution_id)
     assert current is not None

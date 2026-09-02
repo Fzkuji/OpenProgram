@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import marshal
+import re
 from dataclasses import dataclass
 from typing import Any, Mapping, TYPE_CHECKING
 
@@ -29,6 +31,10 @@ MAX_AGENT_TERMINAL_EFFECT_RECEIPTS = 64
 MAX_AGENT_DELTA_BYTES = 64 * 1024
 MAX_AGENT_REPEAT_FAILURES = 16
 _STATE_REF_PREFIX = "execstate://sha256/"
+RUNTIME_CONTRACT_VERSION = 1
+_DYNAMIC_PROMPT_LINES = (
+    re.compile(r"(?m)^(\s*-?\s*Current working directory:\s*).*$"),
+)
 
 
 class AgentCheckpointError(ValueError):
@@ -48,6 +54,168 @@ def canonical_json_bytes(value: Any) -> bytes:
         raise AgentCheckpointError(
             "checkpoint_schema_invalid", "checkpoint values must be JSON"
         ) from exc
+
+
+def _json_safe(value: Any) -> Any:
+    """Convert runtime metadata to canonical JSON without retaining objects."""
+    if hasattr(value, "model_dump"):
+        value = value.model_dump(mode="json")
+    elif hasattr(value, "to_dict"):
+        value = value.to_dict()
+    try:
+        return json.loads(canonical_json_bytes(value))
+    except AgentCheckpointError:
+        return None
+
+
+def _callable_descriptor(value: Any) -> dict[str, str] | None:
+    if not callable(value):
+        return None
+    code = getattr(value, "__code__", None)
+    module = getattr(value, "__module__", None)
+    qualname = getattr(value, "__qualname__", None)
+    if code is None or not isinstance(module, str) or not isinstance(qualname, str):
+        return None
+    try:
+        code_material = marshal.dumps(code)
+    except ValueError:
+        return None
+    return {
+        "module": module,
+        "qualname": qualname,
+        "code_sha256": hashlib.sha256(code_material).hexdigest(),
+    }
+
+
+def _implementation_descriptor(tool: Any) -> dict[str, Any] | None:
+    declared = getattr(tool, "_runtime_implementation", None)
+    if isinstance(declared, Mapping):
+        value = _json_safe(declared)
+        return value if isinstance(value, dict) else None
+    return _callable_descriptor(getattr(tool, "execute", None))
+
+
+def runtime_contract_snapshot(
+    *,
+    model: Any,
+    system_prompt: str,
+    tools: list[Any] | tuple[Any, ...] | None,
+    request: Any,
+    structured_output: Any = None,
+    toolset: Any = None,
+) -> dict[str, Any]:
+    """Build the immutable runtime contract used by continuation activation."""
+    tool_values: list[dict[str, Any]] = []
+    for tool in tools or ():
+        implementation = _implementation_descriptor(tool)
+        approval = getattr(tool, "_requires_approval", None)
+        approval_value = approval if isinstance(approval, bool) or approval is None else _callable_descriptor(approval)
+        if implementation is None:
+            implementation_value = None
+        else:
+            implementation_value = implementation
+        tool_values.append({
+            "name": getattr(tool, "name", None),
+            "description": getattr(tool, "description", None),
+            "parameters": _json_safe(getattr(tool, "parameters", None)),
+            "cache_control": _json_safe(getattr(tool, "cache_control", None)),
+            "permission": {
+                "mode": getattr(request, "permission_mode", None),
+                "rules": _json_safe(getattr(request, "permission_rules", None)),
+            },
+            "approval": {
+                "requires": approval_value,
+                "accept_edits_safe": bool(getattr(tool, "_accept_edits_safe", False)),
+            },
+            "implementation": implementation_value,
+        })
+    request_semantics = {
+        key: _json_safe(getattr(request, key, None))
+        for key in (
+            "thinking_effort", "service_tier", "tools_override", "response_format",
+            "structured_output", "structured_output_mode", "structured_output_attempt",
+            "additional_working_dirs", "_execution_revision_id",
+        )
+    }
+    model_value = _json_safe(model)
+    if isinstance(model_value, dict) and "endpoint" not in model_value:
+        model_value["endpoint"] = model_value.get("base_url")
+    return {
+        "contract_version": RUNTIME_CONTRACT_VERSION,
+        "model": model_value,
+        "system_prompt": system_prompt,
+        "tools": tool_values,
+        "structured_output": _json_safe(structured_output),
+        "toolset": _json_safe(toolset),
+        "request_semantics": request_semantics,
+    }
+
+
+def _comparable_contract(value: Mapping[str, Any]) -> dict[str, Any]:
+    result = dict(value)
+    prompt = result.get("system_prompt")
+    if isinstance(prompt, str):
+        for pattern in _DYNAMIC_PROMPT_LINES:
+            prompt = pattern.sub(r"\1<runtime-cwd>", prompt)
+        result["system_prompt"] = prompt
+    return result
+
+
+def validate_runtime_contract(
+    expected: Mapping[str, Any], actual: Mapping[str, Any]
+) -> None:
+    """Reject any runtime drift before a continuation can dispatch work."""
+    required = {
+        "contract_version", "model", "system_prompt", "tools",
+        "structured_output", "toolset", "request_semantics",
+    }
+    if (
+        not isinstance(expected, Mapping)
+        or set(expected) != required
+        or expected.get("contract_version") != RUNTIME_CONTRACT_VERSION
+        or not isinstance(expected.get("model"), Mapping)
+        or not isinstance(expected["model"].get("id"), str)
+        or not expected["model"].get("id")
+        or not all(
+            isinstance(expected["model"].get(key), str)
+            and expected["model"].get(key)
+            for key in ("api", "provider", "base_url", "endpoint")
+        )
+        or not isinstance(expected.get("system_prompt"), str)
+        or not isinstance(expected.get("tools"), list)
+        or not isinstance(expected.get("request_semantics"), Mapping)
+        or not isinstance(expected["request_semantics"].get("_execution_revision_id"), str)
+        or not expected["request_semantics"]["_execution_revision_id"]
+        or any(
+            not isinstance(tool, Mapping)
+            or set(tool) != {
+                "name", "description", "parameters", "cache_control",
+                "permission", "approval", "implementation",
+            }
+            or not isinstance(tool.get("name"), str)
+            or not tool.get("name")
+            or not isinstance(tool.get("description"), str)
+            or not isinstance(tool.get("parameters"), Mapping)
+            or not isinstance(tool.get("permission"), Mapping)
+            or set(tool["permission"]) != {"mode", "rules"}
+            or not isinstance(tool.get("approval"), Mapping)
+            or set(tool["approval"]) != {"requires", "accept_edits_safe"}
+            or not isinstance(tool["approval"].get("accept_edits_safe"), bool)
+            or not isinstance(tool.get("implementation"), Mapping)
+            or not all(
+                isinstance(tool["implementation"].get(key), str)
+                and tool["implementation"].get(key)
+                for key in ("module", "qualname", "code_sha256")
+            )
+            for tool in expected["tools"]
+        )
+        or not isinstance(actual, Mapping)
+        or _comparable_contract(expected) != _comparable_contract(actual)
+    ):
+        raise AgentCheckpointError(
+            "continuation_contract_mismatch",
+            "durable Agent runtime contract no longer resolves exactly",
+        )
 
 
 def _descriptor(payload: bytes, *, media_type: str = "application/json", schema_version: int = 1) -> dict[str, Any]:
@@ -154,6 +322,7 @@ class AgentCheckpointV1:
             or not isinstance(resolved_snapshot.get("tools"), list)
         ):
             raise AgentCheckpointError("checkpoint_schema_invalid", "resolved snapshot is invalid")
+        validate_runtime_contract(resolved_snapshot, resolved_snapshot)
 
         blobs: dict[str, bytes] = {}
         refs: dict[str, dict[str, Any]] = {}
@@ -496,6 +665,11 @@ class AgentCheckpointV1:
                 raise AgentCheckpointError(
                     "checkpoint_schema_invalid", "Agent checkpoint state blob is not UTF-8 JSON"
                 ) from exc
+        snapshot = value.read_json_ref(
+            store, checkpoint.execution_id,
+            value.payload["resolved_model_system_tool_snapshot_ref"],
+        )
+        validate_runtime_contract(snapshot, snapshot)
         return value
 
     def read_json_ref(self, store: "ExecutionStore", execution_id: str, descriptor: Mapping[str, Any]) -> Any:
@@ -563,6 +737,7 @@ class AgentContinuation:
             or not isinstance(snapshot.get("tools"), list)
         ):
             raise AgentCheckpointError("checkpoint_schema_invalid", "resolved snapshot is invalid")
+        validate_runtime_contract(snapshot, snapshot)
         return cls(
             request=request,
             checkpoint=checkpoint,

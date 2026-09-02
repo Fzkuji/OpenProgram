@@ -489,7 +489,10 @@ def wrap_with_approval(
     # Carry over sidecar flags the dispatcher reads downstream.
     # _is_agentic in particular is how runtime-block rendering is
     # triggered for LLM-invoked @agentic_function calls.
-    for _attr in ("_is_agentic", "_defer", "_run_in_worker", "_mcp_server"):
+    for _attr in (
+        "_is_agentic", "_defer", "_run_in_worker", "_mcp_server",
+        "_runtime_implementation", "_requires_approval", "_accept_edits_safe",
+    ):
         try:
             setattr(wrapped, _attr, getattr(agent_tool, _attr, None))
         except Exception:

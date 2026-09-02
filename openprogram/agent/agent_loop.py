@@ -195,6 +195,7 @@ def agent_loop(
                 messages=list(context.messages) + list(prompts),
                 tools=context.tools,
                 memory_prefetch=context.memory_prefetch,
+                runtime_contract=context.runtime_contract,
             )
 
             ev_stream.push(AgentEventAgentStart())
@@ -258,6 +259,7 @@ def agent_loop_continue(
                 messages=list(context.messages),
                 tools=context.tools,
                 memory_prefetch=context.memory_prefetch,
+                runtime_contract=context.runtime_contract,
             )
 
             ev_stream.push(AgentEventAgentStart())
@@ -304,6 +306,7 @@ def agent_loop_resume(
                 messages=list(context.messages),
                 tools=context.tools,
                 memory_prefetch=context.memory_prefetch,
+                runtime_contract=context.runtime_contract,
             )
             assistant = continuation.assistant_message
             current_context.messages.append(assistant)
@@ -982,13 +985,20 @@ async def _stream_assistant_response(
     added_partial = False
 
     if config.safe_point_hook is not None:
-        resolved_snapshot = {
-            "model": _durable_message(config.model),
-            "system_prompt": context.system_prompt,
-            "tools": [
-                _durable_message(tool) for tool in (context.tools or [])
-            ],
-        }
+        from openprogram.agent.continuation import runtime_contract_snapshot
+
+        resolved_snapshot = context.runtime_contract
+        if resolved_snapshot is None:
+            # Direct agent_loop callers do not have a TurnRequest.  Keep this
+            # fallback only for non-durable callers; production continuation
+            # always supplies the resolved request contract from the driver.
+            resolved_snapshot = runtime_contract_snapshot(
+                model=config.model,
+                system_prompt=context.system_prompt,
+                tools=context.tools,
+                request=None,
+                structured_output=config.response_format,
+            )
         provider_payload = {
             "resolved_snapshot": resolved_snapshot,
             "supports_idempotency_key": provider_supports_idempotency_key,

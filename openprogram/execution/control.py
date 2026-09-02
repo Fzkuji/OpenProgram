@@ -1447,8 +1447,9 @@ class RuntimeControlService:
                     )
                 )
             return True, None
-        except Exception:
-            return False, "activation_failed"
+        except Exception as exc:
+            issue = getattr(exc, "code", None)
+            return False, issue if issue == "continuation_contract_mismatch" else "activation_failed"
 
     def _bind_driver(self, binding: DriverBinding[Any]) -> None:
         """Commit driver-local activation only after durable registry fencing."""

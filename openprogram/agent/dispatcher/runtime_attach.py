@@ -463,7 +463,10 @@ def _wrap_agentic_runtime_block(
         label=getattr(agent_tool, "label", agent_tool.name) or agent_tool.name,
         execute=_runtime_block_execute,
     )
-    for _attr in ("_is_agentic", "_defer", "_run_in_worker"):
+    for _attr in (
+        "_is_agentic", "_defer", "_run_in_worker", "_mcp_server",
+        "_runtime_implementation", "_requires_approval", "_accept_edits_safe",
+    ):
         # A frozen/slotted tool object rejects the copy; the wrapper just
         # loses an optional marker attribute.
         try:

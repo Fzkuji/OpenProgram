@@ -57,6 +57,7 @@ from openprogram.agent.continuation import (
     AgentCheckpointV1,
     AgentContinuation,
     canonical_json_bytes,
+    validate_runtime_contract,
 )
 
 
@@ -424,6 +425,7 @@ class AgentProductionDriver:
                 "immutable Agent input does not match the execution session",
             )
         request = self._resolve_activation_input(record, activation)
+        setattr(request, "_execution_revision_id", execution.revision_id)
         continuation = None
         if activation is not None and activation.checkpoint is not None:
             if isinstance(request, ForcedToolActivation):
@@ -445,6 +447,12 @@ class AgentProductionDriver:
                         "checkpoint_schema_invalid",
                         "Agent checkpoint branch anchors differ from immutable admission input",
                     )
+                from openprogram.agent.dispatcher.loop_runner import resolve_agent_runtime
+                _profile, _tools, _recordable, _prompt, _model, _contract = resolve_agent_runtime(
+                    request,
+                    assistant_msg_id=continuation.assistant_message_id,
+                )
+                validate_runtime_contract(continuation.resolved_snapshot, _contract)
             except AgentCheckpointError as exc:
                 raise AgentDriverError(exc.code, str(exc)) from exc
         if activation is not None and activation.checkpoint is not None and self.activation_observer is not None:
@@ -702,6 +710,10 @@ class AgentProductionDriver:
             execution_id=attempt.execution_id,
         ):
             raise AgentDriverError("owner_conflict", "Agent execution already has a live runtime")
+        setattr(request, "_execution_revision_id", attempt.execution_id)
+        execution = self.executions.get_execution(attempt.execution_id)
+        if execution is not None:
+            setattr(request, "_execution_revision_id", execution.revision_id)
         session_token = set_current_session_id(request.session_id)
         execution_token = set_current_execution_id(attempt.execution_id)
         bound = current_token(request.session_id, execution_id=attempt.execution_id)

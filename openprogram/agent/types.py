@@ -142,6 +142,9 @@ class AgentContext(BaseModel):
     # also stamps it on the user node); the loop falls back to recalling it
     # itself for entry points that don't.
     memory_prefetch: str | None = None
+    # Resolved immutable runtime contract used by durable safe points.  This
+    # is metadata only; executable tool callbacks never enter the context.
+    runtime_contract: dict[str, Any] | None = None
 
     model_config = {"arbitrary_types_allowed": True}
 

@@ -41,16 +41,34 @@ def _continuation(
     tool_results: tuple[ToolResultMessage, ...] = (),
     next_tool_index: int = 0,
 ) -> AgentContinuation:
+    from openprogram.agent.continuation import runtime_contract_snapshot
+
     request = TurnRequest(
         session_id="session", user_text="run", agent_id="main", source="test",
         user_msg_id="user-1", user_already_persisted=True,
     )
+    request._execution_revision_id = "test-revision"
     decision = decision or _assistant([
         ToolCall(id="tool-1", name="echo", arguments={"value": "saved"}),
     ])
     tool_call_ids = [
         item.id for item in decision.content if isinstance(item, ToolCall)
     ]
+    async def _fixture_execute(_call_id, _args, _cancel, _update):
+        return AgentToolResult(content=[TextContent(text="fixture")])
+
+    fixture_tools = [
+        AgentTool(
+            name=item.name, description=item.name,
+            parameters={"type": "object"}, label=item.name,
+            execute=_fixture_execute,
+        )
+        for item in decision.content if isinstance(item, ToolCall)
+    ]
+    resolved_snapshot = runtime_contract_snapshot(
+        model=_model(), system_prompt="", tools=fixture_tools,
+        request=request,
+    )
     completed_actions = [{"action_id": "provider-action", "input_hash": "context-hash"}]
     receipts = [{
         "effect_id": "effect-provider", "frontier_step_id": "provider:p",
@@ -81,7 +99,7 @@ def _continuation(
         },
         assistant_message=decision.model_dump(mode="json"),
         tool_results=[item.model_dump(mode="json") for item in tool_results],
-        resolved_snapshot={"model": {"id": "fake"}, "system_prompt": "", "tools": []},
+        resolved_snapshot=resolved_snapshot,
         provider_action_id="provider-action", tool_call_ids=tool_call_ids,
         next_tool_index=next_tool_index, repeat_failures={},
         completed_actions=completed_actions,
@@ -90,7 +108,7 @@ def _continuation(
     return AgentContinuation(
         request=request, checkpoint=SimpleNamespace(), state=state,
         assistant_message=decision, tool_results=tool_results,
-        resolved_snapshot={"model": {"id": "fake"}, "system_prompt": "", "tools": []},
+        resolved_snapshot=resolved_snapshot,
     )
 
 

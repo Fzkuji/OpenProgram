@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import threading
 import time
@@ -72,6 +73,9 @@ class _Tools:
         self.wait_timeout = 5.0
         self.wait_started = threading.Event()
         self.wait_finished = threading.Event()
+        self.schema_variant = "initial"
+        self.permission_variant = False
+        self.implementation_variant = "initial"
 
     def tool(self, name: str):
         from openprogram.agent.types import AgentTool, AgentToolResult
@@ -114,10 +118,24 @@ class _Tools:
                 await asyncio.sleep(0)
             return AgentToolResult(content=[TextContent(text=f"{name}:ok")])
 
-        return AgentTool(
+        result = AgentTool(
             name=name, label=name, description=name,
-            parameters={"type": "object", "properties": {}}, execute=execute,
+            parameters={
+                "type": "object",
+                "properties": (
+                    {"changed": {"type": "string"}}
+                    if self.schema_variant != "initial" else {}
+                ),
+            }, execute=execute,
         )
+        result._runtime_implementation = {
+            "module": __name__, "qualname": f"_Tools.tool:{name}",
+            "code_sha256": hashlib.sha256(
+                self.implementation_variant.encode("utf-8")
+            ).hexdigest(),
+        }
+        result._requires_approval = self.permission_variant
+        return result
 
 
 def _wait(predicate, timeout: float = 4.0, detail=None):
@@ -215,7 +233,7 @@ def real_agent_chat(tmp_path, monkeypatch):
     control.activator = activate
     harness = SimpleNamespace(
         store=store, control=control, sessions=sessions, session_id=session_id,
-        provider=provider, tools=tools, server=server, outcomes=outcomes,
+        provider=provider, model=model, tools=tools, server=server, outcomes=outcomes,
         activation_errors=activation_errors, registry=registry, execution_id=None,
     )
     try:
@@ -343,6 +361,91 @@ def test_provider_pause_resume_reuses_saved_terminal_answer(real_agent_chat):
     assert len(users) == 1 and len(replies) == 1
     assert replies[0]["id"] == f"{users[0]['id']}_reply"
     assert replies[0]["content"] == "saved answer"
+
+
+@pytest.mark.parametrize("mutation", ["schema", "permission", "implementation"])
+def test_continue_rejects_changed_tool_runtime_contract(real_agent_chat, mutation):
+    from tests.component.providers.scripted_provider import ScriptedText
+
+    real_agent_chat.provider.add_response(ScriptedText("saved answer"))
+    real_agent_chat.provider.block_calls.add(0)
+    execution = _chat(real_agent_chat)
+    _wait(real_agent_chat.provider.entered.is_set)
+    assert _command(real_agent_chat, "execution.pause", execution, "pause-contract")["status"] in {
+        "accepted", "applying", "applied",
+    }
+    real_agent_chat.provider.release.set()
+    paused = _wait(lambda: (
+        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.PAUSED else None
+    ))
+    checkpoint_id = paused.checkpoint_head_id
+    if mutation == "schema":
+        real_agent_chat.tools.schema_variant = "changed"
+    elif mutation == "permission":
+        real_agent_chat.tools.permission_variant = True
+    else:
+        real_agent_chat.tools.implementation_variant = "changed"
+
+    command = _command(real_agent_chat, "execution.continue", paused, f"continue-{mutation}")
+    current = real_agent_chat.store.get_execution(execution.execution_id)
+    assert command["status"] == "rejected"
+    assert command["rejection_code"] == "continuation_contract_mismatch"
+    assert current is not None and current.status is ExecutionStatus.PAUSED
+    assert current.checkpoint_head_id == checkpoint_id
+    assert real_agent_chat.provider.call_count == 1
+    assert real_agent_chat.tools.calls == []
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("provider", "changed-provider"), ("base_url", "http://changed.invalid")],
+)
+def test_continue_rejects_same_model_id_with_changed_provider_endpoint(
+    real_agent_chat, field, value,
+):
+    from tests.component.providers.scripted_provider import ScriptedText
+
+    real_agent_chat.provider.add_response(ScriptedText("saved answer"))
+    real_agent_chat.provider.block_calls.add(0)
+    execution = _chat(real_agent_chat)
+    _wait(real_agent_chat.provider.entered.is_set)
+    _command(real_agent_chat, "execution.pause", execution, "pause-model-contract")
+    real_agent_chat.provider.release.set()
+    paused = _wait(lambda: (
+        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.PAUSED else None
+    ))
+    setattr(real_agent_chat.model, field, value)
+
+    command = _command(real_agent_chat, "execution.continue", paused, f"continue-{field}")
+    current = real_agent_chat.store.get_execution(execution.execution_id)
+    assert command["status"] == "rejected"
+    assert command["rejection_code"] == "continuation_contract_mismatch"
+    assert current is not None and current.status is ExecutionStatus.PAUSED
+    assert current.checkpoint_head_id == paused.checkpoint_head_id
+    assert real_agent_chat.provider.call_count == 1
+
+
+def test_continue_accepts_an_unchanged_runtime_contract(real_agent_chat):
+    from tests.component.providers.scripted_provider import ScriptedText
+
+    real_agent_chat.provider.add_response(ScriptedText("saved answer"))
+    real_agent_chat.provider.block_calls.add(0)
+    execution = _chat(real_agent_chat)
+    _wait(real_agent_chat.provider.entered.is_set)
+    _command(real_agent_chat, "execution.pause", execution, "pause-unchanged")
+    real_agent_chat.provider.release.set()
+    paused = _wait(lambda: (
+        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.PAUSED else None
+    ))
+    command = _command(real_agent_chat, "execution.continue", paused, "continue-unchanged")
+    assert command["status"] in {"accepted", "applying", "applied"}
+    completed = _wait(lambda: (
+        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status in {
+            ExecutionStatus.COMPLETED, ExecutionStatus.FAILED,
+        } else None
+    ))
+    assert completed.status is ExecutionStatus.COMPLETED
+    assert real_agent_chat.provider.call_count == 1
 
 
 def test_after_tool_continue_runs_only_the_unfinished_tool(real_agent_chat):
