@@ -479,3 +479,114 @@ test("wsMutationRequest automatically starts status reconciliation", async () =>
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.notEqual(idempotencyKeyFor("project_file_write", payload), key);
 });
+
+test("pre-aborted callers do not invoke the durable request", async () => {
+  const payload = { project_id: "project-pre-abort", path: "same.txt", content: "v1" };
+  const key = idempotencyKeyFor("project_file_write", payload);
+  const controller = new AbortController();
+  controller.abort();
+  let sends = 0;
+  assert.equal(await wsMutationRequest(key, async () => {
+    sends += 1;
+    return { status: "ready", operation_id: "unexpected" };
+  }, { signal: controller.signal }), null);
+  assert.equal(sends, 0);
+  assert.equal(idempotencyKeyFor("project_file_write", payload), key);
+});
+
+test("turn reconciliation uses its own receipt action and exact operation", async () => {
+  const payload = { session_id: "session-turn", msg_id: "turn-1" };
+  const key = idempotencyKeyFor("revert_turn:session-turn", payload);
+  const socket = new FakeSocket();
+  setSocket(socket);
+  reconcileWsMutation(key);
+  reconcileWsMutation(key);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(socket.sent.length, 1);
+  const firstFrame = socket.sent[0];
+  assert.equal(firstFrame.action, "turn_operation_status");
+  socket.emit("message", JSON.stringify({
+    type: "turn_operation_status_result",
+    data: {
+      request_id: firstFrame.request_id,
+      action: "turn_operation_status",
+      session_id: payload.session_id,
+      operation_action: "revert_turn",
+      idempotency_key: key,
+      status: "in_progress",
+      operation_id: "turn-op-1",
+    },
+  }));
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const secondFrame = socket.sent.at(-1);
+  socket.emit("message", JSON.stringify({
+    type: "turn_operation_status_result",
+    data: {
+      request_id: secondFrame.request_id,
+      action: "turn_operation_status",
+      session_id: payload.session_id,
+      operation_action: "revert_turn",
+      idempotency_key: key,
+      status: "ready",
+      operation_id: "turn-op-1",
+    },
+  }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.notEqual(idempotencyKeyFor("revert_turn:session-turn", payload), key);
+});
+
+test("turn unknown receipts remain retained until an identified terminal", async () => {
+  const payload = { session_id: "session-turn-unknown", msg_id: "turn-2" };
+  const key = idempotencyKeyFor("reapply_turn:session-turn-unknown", payload);
+  const socket = new FakeSocket();
+  setSocket(socket);
+  reconcileWsMutation(key);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const firstFrame = socket.sent.at(-1);
+  socket.emit("message", JSON.stringify({
+    type: "turn_operation_status_result",
+    data: {
+      request_id: firstFrame.request_id,
+      action: "turn_operation_status",
+      session_id: payload.session_id,
+      operation_action: "reapply_turn",
+      idempotency_key: key,
+      status: "recovery_required",
+      error_code: "RECEIPT_UNAVAILABLE",
+    },
+  }));
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(idempotencyKeyFor("reapply_turn:session-turn-unknown", payload), key);
+  const secondFrame = socket.sent.at(-1);
+  socket.emit("message", JSON.stringify({
+    type: "turn_operation_status_result",
+    data: {
+      request_id: secondFrame.request_id,
+      action: "turn_operation_status",
+      session_id: payload.session_id,
+      operation_action: "reapply_turn",
+      idempotency_key: key,
+      status: "ready",
+      operation_id: "turn-op-unknown",
+    },
+  }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.notEqual(idempotencyKeyFor("reapply_turn:session-turn-unknown", payload), key);
+});
+
+test("reset prevents a pending operation from starting a late reconciler", async () => {
+  const payload = { project_id: "project-reset", path: "same.txt", content: "v1" };
+  const key = idempotencyKeyFor("project_file_write", payload);
+  const socket = new FakeSocket();
+  setSocket(socket);
+  let release;
+  const operation = wsMutationRequest(key, async () => new Promise((resolve) => {
+    release = resolve;
+  }));
+  reconcileWsMutation(key);
+  resetWsMutationReconciliation();
+  release({ status: "ready", operation_id: "op-reset" });
+  assert.equal((await operation)?.status, "ready");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(socket.sent.length, 0);
+});

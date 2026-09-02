@@ -1645,6 +1645,7 @@ _FILE_REQUEST_ACTIONS = frozenset({
     "project_file_copy", "project_file_delete", "project_file_reveal",
     "list_turn_files", "turn_file_diff", "review_scope", "review_file_diff",
     "turn_history_state", "revert_turn", "reapply_turn",
+    "turn_operation_status",
 })
 _FILE_MUTATION_ACTIONS = frozenset({
     "project_file_write", "project_file_create", "project_file_rename",

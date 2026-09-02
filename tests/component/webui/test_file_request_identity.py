@@ -16,6 +16,7 @@ import pytest
 from openprogram.store.project import project_store
 from openprogram.webui import server
 from openprogram.webui.ws_actions import files
+from openprogram.webui.ws_actions import turn_files
 
 
 class FakeWS:
@@ -241,6 +242,18 @@ def test_operation_status_reconciles_inflight_to_terminal(project):
         "request_id": str(uuid.uuid4()),
     })["data"]
     assert terminal["status"] == "ready"
+
+
+def test_turn_operation_status_requires_its_own_identity():
+    frame = run(turn_files.handle_turn_operation_status, {
+        "session_id": "session-a",
+        "operation_action": "revert_turn",
+        "idempotency_key": "turn-key",
+        "request_id": str(uuid.uuid4()),
+    })["data"]
+    assert frame["action"] == "turn_operation_status"
+    assert frame["status"] == "error"
+    assert frame["error_code"] == "RECEIPT_UNAVAILABLE"
 
 
 def test_file_operation_compaction_has_explicit_safe_retention(tmp_path):

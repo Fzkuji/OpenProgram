@@ -32,8 +32,12 @@ const MUTATION_RECONCILE_DEADLINE_MS = 30000;
 const mutationReconciliations = new Map<string, {
   promise: Promise<void>;
   controller: AbortController;
+  resetGeneration: number;
+  keyGeneration: number;
 }>();
 const mutationReconcileRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const mutationReconcileKeyGenerations = new Map<string, number>();
+let mutationReconcileResetGeneration = 0;
 
 export class MutationRegistryCapacityError extends Error {
   constructor() {
@@ -229,6 +233,7 @@ export function wsMutationRequest<T>(
   send: (signal: AbortSignal) => Promise<T | null>,
   options: WsMutationOptions = {},
 ): Promise<T | null> {
+  if (options.signal?.aborted) return Promise.resolve(null);
   const existing = pendingMutations.get(key);
   if (existing) return subscribeMutation(existing.promise as Promise<T | null>, options.signal);
   const maxAttempts = Math.max(1, Math.min(
@@ -343,6 +348,42 @@ function mutationEntryForKey(key: string) {
   return undefined;
 }
 
+function mutationStatusRequest(entry: { action: string; projectId: string | undefined }, key: string): {
+  action: string;
+  responseType: string;
+  payload: Record<string, unknown>;
+  matches: (data: Record<string, unknown>) => boolean;
+} | null {
+  if (entry.action.startsWith("project_file_")) {
+    return {
+      action: "project_file_operation_status",
+      responseType: "project_file_operation_status_result",
+      payload: {
+        project_id: entry.projectId ?? "",
+        operation_action: entry.action,
+        idempotency_key: key,
+      },
+      matches: (data) => data.project_id === entry.projectId
+        && data.operation_action === entry.action
+        && data.idempotency_key === key,
+    };
+  }
+  const turnAction = /^(revert_turn|reapply_turn):/.exec(entry.action)?.[1];
+  if (!turnAction) return null;
+  return {
+    action: "turn_operation_status",
+    responseType: "turn_operation_status_result",
+    payload: {
+      session_id: entry.projectId ?? "",
+      operation_action: turnAction,
+      idempotency_key: key,
+    },
+    matches: (data) => data.session_id === entry.projectId
+      && data.operation_action === turnAction
+      && data.idempotency_key === key,
+  };
+}
+
 function waitForMutationReconcile(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     let done = false;
@@ -373,35 +414,47 @@ function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
  * durable server receipt is queried with fresh request ids at a bounded rate;
  * connection loss simply causes the next scheduled round to try again. */
 export function reconcileWsMutation(key: string): void {
+  const retryTimer = mutationReconcileRetryTimers.get(key);
+  if (retryTimer !== undefined) clearTimeout(retryTimer);
+  mutationReconcileRetryTimers.delete(key);
+  const resetGeneration = mutationReconcileResetGeneration;
+  const keyGeneration = mutationReconcileKeyGenerations.get(key) ?? 0;
   // The shared durable request still owns the receipt; defer reconciliation
   // until that promise settles so status polling never races its request.
   const pending = pendingMutations.get(key);
   if (pending) {
-    void pending.promise.then(() => reconcileWsMutation(key));
+    void pending.promise.then(() => {
+      if (resetGeneration === mutationReconcileResetGeneration
+        && keyGeneration === (mutationReconcileKeyGenerations.get(key) ?? 0)) {
+        reconcileWsMutation(key);
+      }
+    });
     return;
   }
   if (mutationReconciliations.has(key)) return;
   const controller = new AbortController();
   const run = (async () => {
     const deadline = Date.now() + MUTATION_RECONCILE_DEADLINE_MS;
-    while (!controller.signal.aborted && Date.now() < deadline) {
+    while (!controller.signal.aborted
+      && resetGeneration === mutationReconcileResetGeneration
+      && keyGeneration === (mutationReconcileKeyGenerations.get(key) ?? 0)
+      && Date.now() < deadline) {
       const entry = mutationEntryForKey(key);
       if (!entry) return;
       if (pendingMutations.has(key)) return;
+      const statusRequest = mutationStatusRequest(entry, key);
+      if (!statusRequest) return;
+      const statusPayload = {
+        ...statusRequest.payload,
+        ...(entry.operationId ? { operation_id: entry.operationId } : {}),
+      };
       let result: Record<string, unknown> | null = null;
       try {
         result = await wsRequest<Record<string, unknown>>(
-          "project_file_operation_status",
-          {
-            project_id: entry.projectId ?? "",
-            operation_action: entry.action,
-            idempotency_key: key,
-            ...(entry.operationId ? { operation_id: entry.operationId } : {}),
-          },
-          "project_file_operation_status_result",
-          (data) => data.project_id === entry.projectId
-            && data.operation_action === entry.action
-            && data.idempotency_key === key,
+          statusRequest.action,
+          statusPayload,
+          statusRequest.responseType,
+          statusRequest.matches,
           Math.min(4000, Math.max(1, deadline - Date.now())),
           { requestId: true, signal: controller.signal },
         );
@@ -421,9 +474,11 @@ export function reconcileWsMutation(key: string): void {
         entry.operationId = returnedOperationId;
       }
       const identifiedRecovery = status === "recovery_required"
-        && result?.project_id === entry.projectId
-        && result?.operation_action === entry.action
-        && result?.idempotency_key === key;
+        && result !== null
+        && statusRequest.matches(result)
+        && typeof returnedOperationId === "string"
+        && typeof expectedOperationId === "string"
+        && expectedOperationId === returnedOperationId;
       const identifiedTerminal = typeof returnedOperationId === "string"
         && (!expectedOperationId || expectedOperationId === returnedOperationId)
         && (status !== "error" || result?.durable_receipt === true);
@@ -439,12 +494,17 @@ export function reconcileWsMutation(key: string): void {
     // reconnects can observe a server operation that outlives this deadline.
     const retryTimer = setTimeout(() => {
       mutationReconcileRetryTimers.delete(key);
-      reconcileWsMutation(key);
+      if (resetGeneration === mutationReconcileResetGeneration
+        && keyGeneration === (mutationReconcileKeyGenerations.get(key) ?? 0)) {
+        reconcileWsMutation(key);
+      }
     }, MUTATION_RECONCILE_RETRY_MS);
     unrefTimer(retryTimer);
     mutationReconcileRetryTimers.set(key, retryTimer);
   })();
-  const state = { promise: run, controller };
+  const state = {
+    promise: run, controller, resetGeneration, keyGeneration,
+  };
   mutationReconciliations.set(key, state);
   void run.then(
     () => {
@@ -458,6 +518,9 @@ export function reconcileWsMutation(key: string): void {
 
 /** Stop one registry-owned reconciler without releasing its durable key. */
 export function stopWsMutationReconciliation(key: string): void {
+  mutationReconcileKeyGenerations.set(
+    key, (mutationReconcileKeyGenerations.get(key) ?? 0) + 1,
+  );
   mutationReconciliations.get(key)?.controller.abort();
   const timer = mutationReconcileRetryTimers.get(key);
   if (timer !== undefined) clearTimeout(timer);
@@ -466,6 +529,7 @@ export function stopWsMutationReconciliation(key: string): void {
 
 /** Test/process teardown hook: stop background status polling, retain keys. */
 export function resetWsMutationReconciliation(): void {
+  mutationReconcileResetGeneration += 1;
   for (const key of new Set([
     ...mutationReconciliations.keys(),
     ...mutationReconcileRetryTimers.keys(),
@@ -498,6 +562,7 @@ function requestId(): string {
 const CORRELATED_ACTIONS = new Set([
   "project_file_tree", "project_file_search", "project_file_read",
   "project_file_operation_status",
+  "turn_operation_status",
   "project_file_write", "project_file_create", "project_file_rename",
   "project_file_copy", "project_file_delete", "project_file_reveal",
   "list_turn_files", "turn_file_diff", "review_scope", "review_file_diff",

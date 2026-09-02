@@ -1711,6 +1711,72 @@ async def _run(fn) -> Any:
     return await loop.run_in_executor(None, fn)
 
 
+async def handle_turn_operation_status(ws, cmd: dict) -> None:
+    """Read a turn rewind receipt without replaying the mutation payload."""
+    session_id = (cmd.get("session_id") or "").strip()
+    operation_action = cmd.get("operation_action")
+    key = cmd.get("idempotency_key")
+    supplied_operation_id = cmd.get("operation_id")
+    payload = {
+        "session_id": session_id,
+        "operation_action": operation_action,
+        "idempotency_key": key,
+        "request_id": cmd.get("request_id"),
+        "action": "turn_operation_status",
+    }
+    if (not session_id or operation_action not in {"revert_turn", "reapply_turn"}
+            or not isinstance(key, str) or not key):
+        payload.update({"status": "error", "error_code": "INVALID_REQUEST"})
+    else:
+        try:
+            from openprogram.store.session.session_store import default_store
+            from openprogram.store.snapshot.checkpoint import CheckpointStore
+            journal = CheckpointStore(default_store()._session_dir(session_id))
+            direction = "revert" if operation_action == "revert_turn" else "reapply"
+            intent = journal.read_rewind_intent(key)
+            if intent is None:
+                intent = journal.read_rewind_intent(f"turn-closure:{direction}:{key}")
+            if intent is None or intent.get("idempotency_key") not in {key, f"turn-closure:{direction}:{key}"}:
+                payload.update({
+                    "status": "error",
+                    "error_code": "RECEIPT_UNAVAILABLE",
+                })
+            else:
+                expected_target = str(intent.get("target_msg_id") or "")
+                if not expected_target.startswith(f"{direction}:"):
+                    payload.update({"status": "recovery_required", "error_code": "RECOVERY_REQUIRED"})
+                else:
+                    receipt_id = intent.get("transaction_id")
+                    if not isinstance(receipt_id, str) or not receipt_id:
+                        payload.update({"status": "error", "error_code": "RECEIPT_UNAVAILABLE"})
+                    elif isinstance(supplied_operation_id, str) and supplied_operation_id != receipt_id:
+                        payload.update({
+                            "status": "recovery_required",
+                            "error_code": "OPERATION_ID_MISMATCH",
+                            "operation_id": supplied_operation_id,
+                        })
+                    else:
+                        intent_status = intent.get("status")
+                        receipt_status = (
+                            "in_progress" if intent_status in {"prepared", "applying"}
+                            else "ready" if intent_status == "committed"
+                            else "recovery_required" if intent_status == "recovery_required"
+                            else "error"
+                        )
+                        payload.update({
+                            "status": receipt_status,
+                            "operation_id": receipt_id,
+                            "durable_receipt": True,
+                            "error_code": intent.get("error_code"),
+                            "error": intent.get("error"),
+                        })
+        except Exception:
+            payload.update({"status": "error", "error_code": "RECEIPT_UNAVAILABLE"})
+    await ws.send_text(json.dumps({
+        "type": "turn_operation_status_result", "data": payload,
+    }, default=str))
+
+
 def _stable_file_result(result: dict) -> dict:
     """Normalize turn-file replies without exposing exception text as a code."""
     result = dict(result)
@@ -2034,6 +2100,7 @@ async def handle_revert_turn(ws, cmd: dict) -> None:
             "action": "revert_turn",
             "reverted_paths": result.get("restored_paths") or [],
             "status": result.get("status"),
+            "operation_id": result.get("transaction_id"),
             "transaction_id": result.get("transaction_id"),
             "conflicts": result.get("conflicts") or [],
             "unavailable": result.get("unavailable") or [],
@@ -2065,6 +2132,7 @@ async def handle_reapply_turn(ws, cmd: dict) -> None:
             "action": "reapply_turn",
             "reapplied_paths": result.get("restored_paths") or [],
             "status": result.get("status"),
+            "operation_id": result.get("transaction_id"),
             "transaction_id": result.get("transaction_id"),
             "conflicts": result.get("conflicts") or [],
             "unavailable": result.get("unavailable") or [],
@@ -2081,6 +2149,7 @@ ACTIONS = {
     "review_scope": handle_review_scope,
     "review_file_diff": handle_review_file_diff,
     "turn_history_state": handle_turn_history_state,
+    "turn_operation_status": handle_turn_operation_status,
     "revert_turn": handle_revert_turn,
     "reapply_turn": handle_reapply_turn,
 }

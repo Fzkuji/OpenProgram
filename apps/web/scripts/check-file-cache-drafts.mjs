@@ -7,6 +7,7 @@ const viewer = readFileSync(new URL("../components/files/file-viewer.tsx", impor
 const pane = readFileSync(new URL("../components/center-tabs/file-tab-pane.tsx", import.meta.url), "utf8");
 const tree = readFileSync(new URL("../components/files/file-tree.tsx", import.meta.url), "utf8");
 const ws = readFileSync(new URL("../lib/net/ws-request.ts", import.meta.url), "utf8");
+const turnFiles = readFileSync(new URL("../../server/openprogram_server/_webui/ws_actions/turn_files.py", import.meta.url), "utf8");
 const lifecycle = readFileSync(new URL("../components/center-tabs/use-tab-lifecycle.ts", import.meta.url), "utf8");
 const projectMenu = readFileSync(new URL("../components/chat/top-bar/project-menu.tsx", import.meta.url), "utf8");
 const browserTest = readFileSync(new URL("../../../tests/e2e/web/test_file_draft_store_browser.py", import.meta.url), "utf8");
@@ -76,6 +77,8 @@ assert.match(tree, /runServerRenameWithDrafts/);
 assert.match(tree, /mutationControllers/);
 assert.match(tree, /reconcileWsMutation/);
 assert.match(ws, /reconcileWsMutation/);
+assert.match(ws, /turn_operation_status/);
+assert.match(turnFiles, /handle_turn_operation_status/);
 assert.doesNotMatch(ws, /payload: payloadSummary/);
 assert.match(tree, /operation_id/);
 assert.match(tree, /save, export, or discard/);
