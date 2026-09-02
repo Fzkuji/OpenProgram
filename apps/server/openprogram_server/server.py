@@ -36,9 +36,6 @@ from openprogram.agent.run_control import (
     register_active_runtime as _register_active_runtime,
     unregister_active_runtime as _unregister_active_runtime,
     kill_active_runtime as _kill_active_runtime,
-    claim_cancel_event as _claim_cancel_event,
-    unregister_cancel_event as _unregister_cancel_event,
-    current_token as _current_token,
     has_active_runtime as _has_active_runtime,
     set_current_session_id as _set_current_session_id,
     reset_current_session_id as _reset_current_session_id,
@@ -872,7 +869,9 @@ def _try_reserve_run(session_id: str, msg_id: str) -> bool:
             "display_params": "",
             "loaded_func_ref": None,
             "stream_events": [],
-            "execution_id": f"{msg_id}_reply",
+            # Admission mints the canonical execution id. A provisional
+            # reservation must not publish or derive one from msg_id.
+            "execution_id": None,
             "_reserved": True,
         }
     return True
@@ -893,9 +892,9 @@ def _activate_run_reservation(session_id: str, msg_id: str, runtime) -> bool:
         if not (task and task.get("_reserved")
                 and task.get("msg_id") == msg_id):
             return False
-        # run_control uses a separate lock and never acquires
-        # _running_tasks_lock, so the two state writes can remain one visible
-        # transition without a lock-order cycle.
+        # Publish the runtime handoff before clearing the provisional marker.
+        # This closes the observer window in which _is_run_active could treat
+        # an admitted turn as a zombie and allow a duplicate start.
         _register_active_runtime(session_id, runtime)
         task.pop("_reserved", None)
         task["started_at"] = time.time()
@@ -909,8 +908,11 @@ def _finish_owned_run(session_id: str, msg_id: str) -> bool:
         task = _running_tasks.get(session_id)
         if not (task and task.get("msg_id") == msg_id):
             return False
-        _unregister_active_runtime(session_id)
         _running_tasks.pop(session_id, None)
+    # The active-runtime registration is the handoff counterpart to the
+    # provisional reservation.  Retire it only after ownership was matched;
+    # a late finisher must not clear a newer run in the same session.
+    _unregister_active_runtime(session_id)
     return True
 
 
@@ -935,12 +937,10 @@ def _release_session_occupancy_for_execution(execution: dict) -> bool:
         task_msg = task.get("msg_id") if task else None
         task_exec = task.get("execution_id") if task else None
     if task_msg:
-        if task_exec == execution_id or f"{task_msg}_reply" == execution_id:
+        if task_exec == execution_id:
             msg_id = task_msg
         else:
             return False
-    elif execution_id.endswith("_reply"):
-        msg_id = execution_id[:-len("_reply")]
     else:
         return False
     released = _finish_owned_run(session_id, msg_id)
@@ -960,25 +960,7 @@ def _release_session_occupancy_for_execution(execution: dict) -> bool:
             cleared_execution_id=execution_id,
             cleared_msg_id=msg_id,
         )
-    # Occupancy without retiring the token leaves (session, None) cancelled.
-    # The next claim_cancel_event fails, or a reused {msg}_reply is
-    # immediately re-stopped. The old stream still sees its own Event.
-    _retire_execution_cancel_token(session_id, execution_id)
     return released
-
-
-def _retire_execution_cancel_token(session_id: str, execution_id: str) -> None:
-    """Drop this execution's cancel token so a successor can claim."""
-    token = _current_token(session_id, execution_id=execution_id)
-    if token is None:
-        fg = _current_token(session_id)
-        if fg is not None and fg.execution_id == execution_id:
-            token = fg
-    if token is None:
-        return
-    _unregister_cancel_event(
-        session_id, token.event, execution_id=execution_id,
-    )
 
 
 # One wording for every "you can't move HEAD right now" rejection, so

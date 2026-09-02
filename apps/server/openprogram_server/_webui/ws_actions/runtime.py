@@ -216,13 +216,15 @@ async def handle_stop(ws, cmd: dict):
 
     ``mode="force"`` and a second click are the same cancel operation.
     """
-    from openprogram.agent import run_control
-    run_control.set_execution_update_hook(_broadcast_execution)
-
+    from openprogram.webui import server as _s
     session_id = cmd.get("session_id") or cmd.get("conv_id")
     execution_id = (cmd.get("execution_id") or "").strip()
     if not execution_id and session_id:
-        execution_id = run_control.resolve_foreground_execution(session_id) or ""
+        with _s._running_tasks_lock:
+            execution_id = (
+                ((_s._running_tasks.get(session_id) or {}).get("execution_id"))
+                or ""
+            )
     if not execution_id:
         # 静默吞掉会让"点了停止没反应"无迹可查（HTTP 对应入口回 404）。
         await ws.send_text(json.dumps({
@@ -236,36 +238,23 @@ async def handle_stop(ws, cmd: dict):
         return
     from openprogram.agent.production_driver import cancel_canonical_execution
     canonical = await cancel_canonical_execution(execution_id)
-    if canonical is not None:
-        execution = canonical.execution.to_dict()
-        _broadcast_execution(execution)
-        from openprogram.webui import server as _s
-        _s._release_session_occupancy_for_execution(execution)
-        return
-    try:
-        execution = run_control.cancel_execution(execution_id)
-    except (
-        run_control.ExecutionNotFound,
-        run_control.ExecutionNotCancellable,
-    ) as exc:
+    if canonical is None:
         await ws.send_text(json.dumps({
             "type": "error",
             "data": {
-                "code": type(exc).__name__,
-                "message": str(exc),
+                "code": "ExecutionNotFound",
+                "message": "execution not found",
             },
         }))
         return
+    execution = canonical.execution.to_dict()
     _broadcast_execution(execution)
-    from openprogram.webui import server as _s
     _s._release_session_occupancy_for_execution(execution)
 
 
 async def handle_execution_cancel(ws, cmd: dict):
     """Cancel one execution and broadcast its canonical record."""
-    from openprogram.agent import run_control
     from openprogram.webui import server as _s
-    run_control.set_execution_update_hook(_broadcast_execution)
 
     execution_id = (cmd.get("execution_id") or "").strip()
     if not execution_id:
@@ -276,29 +265,17 @@ async def handle_execution_cancel(ws, cmd: dict):
         return
     from openprogram.agent.production_driver import cancel_canonical_execution
     canonical = await cancel_canonical_execution(execution_id)
-    if canonical is not None:
-        execution = canonical.execution.to_dict()
-        _broadcast_execution(execution)
-        _s._release_session_occupancy_for_execution(execution)
-        return
-    try:
-        execution = run_control.cancel_execution(execution_id)
-    except (
-        run_control.ExecutionNotFound,
-        run_control.ExecutionNotCancellable,
-    ) as exc:
+    if canonical is None:
         await ws.send_text(json.dumps({
             "type": "error",
             "data": {
-                "code": type(exc).__name__,
-                "message": str(exc),
+                "code": "ExecutionNotFound",
+                "message": "execution not found",
             },
         }))
         return
-    _s._broadcast(json.dumps({
-        "type": "execution.updated",
-        "execution": execution,
-    }, default=str))
+    execution = canonical.execution.to_dict()
+    _broadcast_execution(execution)
     _s._release_session_occupancy_for_execution(execution)
 
 

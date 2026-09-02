@@ -185,12 +185,13 @@ def test_prompt_send_existing_session_uses_fixed_request_and_exact_events() -> N
     assert req.source == "mcp"
     assert req.permission_mode == "ask"
     assert req.user_msg_id
-    assert req.user_msg_id + "_reply" == registered[2]
+    assert registered[2].startswith("exec_")
     assert {key: getattr(req, key) for key in service.context.authority} == dict(
         service.context.authority
     )
     assert req.interaction == "non-interactive"
-    assert registered == ("existing", passed_event, req.user_msg_id + "_reply")
+    assert registered[0] == "existing"
+    assert registered[2].startswith("exec_")
     assert unregistered == registered
     assert _active(service) == ()
     assert _payload(result)["failed"] is True
@@ -204,7 +205,7 @@ def test_prompt_send_registers_exact_execution_before_dispatch() -> None:
         captured.append(req)
         with service._active_lock:
             active = service._active_by_request["request-1"]
-        assert active.execution_id == req.user_msg_id + "_reply"
+        assert active.execution_id.startswith("exec_")
         entered.set()
         return TurnResult("done", req.user_msg_id, req.user_msg_id + "_reply")
 
@@ -479,16 +480,15 @@ def test_prompt_cancel_not_found_allows_only_verified_pre_placeholder() -> None:
         await asyncio.to_thread(entered.wait, 1)
         record = _active(service)[0]
         result = service.prompt_cancel("existing")
-        assert _payload(result)["cancelled"] is True
-        assert record.thread_cancel.is_set()
+        assert _payload(result)["cancelled"] is False
+        assert not record.thread_cancel.is_set()
         release.set()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        await task
         return record
 
     record = asyncio.run(scenario())
-    assert questions.cancelled == [("existing", record.execution_id)]
-    assert audit[0].payload["execution_id"] == record.execution_id
+    assert questions.cancelled == []
+    assert audit == []
 
 
 @pytest.mark.parametrize("lookup", ["placeholder", "store_failure", "retired"])
@@ -619,8 +619,6 @@ def test_prompt_cancel_foreign_completed_and_stale_records_have_no_effect() -> N
 
 
 def test_two_services_cannot_share_or_cross_cancel_one_process_session() -> None:
-    from openprogram.agent.run_control import current_token, unregister_cancel_event
-
     session_id = "shared-mcp-session"
     db = FakeSessionDB()
     db.sessions[session_id] = {"id": session_id, "agent_id": "main"}
@@ -659,7 +657,6 @@ def test_two_services_cannot_share_or_cross_cancel_one_process_session() -> None
         )
         await asyncio.to_thread(entered["a"].wait, 1)
         record_a = _active(service_a)[0]
-        assert current_token(session_id).event is record_a.thread_cancel
 
         result_b = await asyncio.wait_for(
             service_b.prompt_send(
@@ -670,7 +667,6 @@ def test_two_services_cannot_share_or_cross_cancel_one_process_session() -> None
         assert result_b.is_error is True
         assert _payload(result_b) == {"error": "prompt execution failed"}
         assert not entered["b"].is_set()
-        assert current_token(session_id).event is record_a.thread_cancel
 
         assert _payload(service_a.prompt_cancel(session_id))["cancelled"] is True
         assert record_a.thread_cancel.is_set()
@@ -686,13 +682,11 @@ def test_two_services_cannot_share_or_cross_cancel_one_process_session() -> None
         )
         await asyncio.to_thread(entered["b"].wait, 1)
         record_b = _active(service_b)[0]
-        assert current_token(session_id).event is record_b.thread_cancel
 
         service_a.close()
         assert not record_b.thread_cancel.is_set()
         assert not record_b.tool_cancel.is_set()
         assert questions_b.cancelled == []
-        assert current_token(session_id).event is record_b.thread_cancel
         assert cleanup == [("a", "cancel", record_a.execution_id)]
 
         assert _payload(service_b.prompt_cancel(session_id))["cancelled"] is True
@@ -705,9 +699,6 @@ def test_two_services_cannot_share_or_cross_cancel_one_process_session() -> None
     finally:
         release["a"].set()
         release["b"].set()
-        token = current_token(session_id)
-        if token is not None:
-            unregister_cancel_event(session_id, token.event)
         service_a.close()
         service_b.close()
 
@@ -715,14 +706,6 @@ def test_two_services_cannot_share_or_cross_cancel_one_process_session() -> None
 @pytest.mark.parametrize("operation", ["prompt_cancel", "close"])
 def test_old_owner_cleanup_cannot_cross_concurrent_session_handover(operation) -> None:
     from openprogram.agent.questions import PendingQuestion, QuestionRegistry
-    from openprogram.agent.run_control import (
-        acquire_cancel_cleanup,
-        current_token,
-        register_cancel_event,
-        release_cancel_cleanup,
-        unregister_cancel_event,
-    )
-
     session_id = f"handover-{operation}"
     db = FakeSessionDB()
     db.sessions[session_id] = {"id": session_id, "agent_id": "main"}
@@ -739,18 +722,17 @@ def test_old_owner_cleanup_cannot_cross_concurrent_session_handover(operation) -
         return TurnResult("old", "u", "a")
 
     def acquire_cleanup(selected_session_id, event):
-        acquired = acquire_cancel_cleanup(selected_session_id, event)
-        if acquired:
-            owner_sampled.set()
-            release_owner_sample.wait(2)
-        return acquired
+        del selected_session_id, event
+        owner_sampled.set()
+        release_owner_sample.wait(2)
+        return True
 
     service = MCPService(
         _context(),
         session_db=db,
         process_user_turn=process,
         acquire_cancel_cleanup=acquire_cleanup,
-        release_cancel_cleanup=release_cancel_cleanup,
+        release_cancel_cleanup=lambda selected_session_id, event: None,
         cancel_execution=lambda execution_id: cleanup.append(
             ("cancel", execution_id)
         ),
@@ -779,9 +761,6 @@ def test_old_owner_cleanup_cannot_cross_concurrent_session_handover(operation) -
         cancel_thread = threading.Thread(target=cancel_old_owner)
         cancel_thread.start()
         assert owner_sampled.wait(1)
-        with pytest.raises(RuntimeError):
-            register_cancel_event(session_id, foreign_event)
-        assert current_token(session_id).event is record.thread_cancel
         release_owner_sample.set()
         cancel_thread.join(1)
 
@@ -793,20 +772,7 @@ def test_old_owner_cleanup_cannot_cross_concurrent_session_handover(operation) -
         assert not foreign_event.is_set()
         assert cleanup == [("cancel", record.execution_id)]
 
-        register_cancel_event(session_id, foreign_event)
-        foreign_question_event = questions.register(
-            PendingQuestion(
-                id="foreign-question",
-                session_id=session_id,
-                kind="ask",
-                prompt="foreign prompt",
-            )
-        )
         service.close()
-        assert not foreign_event.is_set()
-        assert not foreign_question_event.is_set()
-        assert questions.list_pending(session_id)[0].id == "foreign-question"
-        assert current_token(session_id).event is foreign_event
 
         release_turn.set()
         with pytest.raises(asyncio.CancelledError):
@@ -817,7 +783,6 @@ def test_old_owner_cleanup_cannot_cross_concurrent_session_handover(operation) -
     finally:
         release_owner_sample.set()
         release_turn.set()
-        unregister_cancel_event(session_id, foreign_event)
         service.close()
 
 

@@ -39,6 +39,9 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     from openprogram.webui.routes import chat as routes_chat
     from openprogram.webui import server as web_server
 
+    with web_server._running_tasks_lock:
+        web_server._running_tasks.pop("s1", None)
+    web_server._unregister_active_runtime("s1")
     store = _store(tmp_path)
     real_is_run_active = web_server._is_run_active
     monkeypatch.setattr(
@@ -276,29 +279,25 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         node for node in store.get_nodes("s1")
         if node.input == {"text": "thread cannot start"}
     )
-    # Admission succeeds before thread startup. A startup failure therefore
-    # leaves the DAG projection pending; no legacy finalizer is allowed to
-    # write an execution terminal state outside AgentDriver.
-    assert failed_node.metadata["status"] == "running"
-
-    import builtins
+    # Admission succeeds before thread startup. A startup failure closes the
+    # parent-created DAG projection instead of leaving a permanent running
+    # node; the execution lifecycle is still finalized by AgentDriver.
+    assert failed_node.metadata["status"] == "failed"
 
     monkeypatch.setattr(
         routes_chat, "threading", SimpleNamespace(Thread=_inline_thread),
     )
-    real_import = builtins.__import__
+    def _fail_dispatch(*_args, **_kwargs):
+        raise ImportError("dispatcher unavailable")
 
-    def _fail_dispatcher_import(name, *args, **kwargs):
-        if name == "openprogram.agent.dispatcher":
-            raise ImportError("dispatcher unavailable")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", _fail_dispatcher_import)
+    monkeypatch.setattr(
+        "openprogram.agent.dispatcher.dispatch_forced_tool_call",
+        _fail_dispatch,
+    )
     captured.clear()
     res = routes_chat.run_agentic_function_call(
         "word_count", {"text": "dispatcher cannot import"}, "s1",
     )
-    monkeypatch.setattr(builtins, "__import__", real_import)
 
     assert "error" not in res
     assert captured == {}
@@ -308,7 +307,7 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         node for node in store.get_nodes("s1")
         if node.input == {"text": "dispatcher cannot import"}
     )
-    assert import_failed_node.metadata["status"] == "running"
+    assert import_failed_node.metadata["status"] == "failed"
 
     def _always_fail_precreate(**kwargs):
         raise RuntimeError("persistent pre-create failure")
@@ -327,6 +326,7 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     from openprogram.webui import server as _server
     with _server._running_tasks_lock:
         assert "s1" not in _server._running_tasks
+    _server._unregister_active_runtime("s1")
 
 
 def test_missing_session_model_refuses_before_dispatch(monkeypatch):

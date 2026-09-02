@@ -759,14 +759,23 @@ async def handle_chat(ws, cmd: dict):
                         },
                     }))
                     return
+                if not _run.get("execution_id"):
+                    await ws.send_text(json.dumps({
+                        "type": "chat_response",
+                        "data": {
+                            "type": "error",
+                            "session_id": session_id,
+                            "code": "execution_admission_failed",
+                            "content": "Function execution was not admitted.",
+                        },
+                    }))
+                    return
                 await ws.send_text(json.dumps({
                     "type": "chat_ack",
                     "data": {
                         "session_id": _run.get("session_id", session_id),
                         "msg_id": _run.get("msg_id", ""),
-                        "execution_id": (
-                            _run.get("execution_id") or _run.get("msg_id", "")
-                        ),
+                        "execution_id": _run["execution_id"],
                         "function_run": True,
                     },
                 }))
@@ -918,6 +927,19 @@ async def handle_chat(ws, cmd: dict):
         _s._release_run_reservation(session_id, msg_id)
         raise
 
+    # The renderer's surface reference is only a hint. Resolve it against
+    # this authenticated websocket and capture a server-owned binding before
+    # durable admission; client-supplied capability fields are never stored.
+    from openprogram.agent.surface_context import (
+        capture as _capture_surface,
+        release_bindings as _release_surface_bindings,
+    )
+    try:
+        surface_context = _capture_surface(surface_ref, ws)
+    except BaseException:
+        _s._release_run_reservation(session_id, msg_id)
+        raise
+
     user_msg = {
         "role": "user",
         "id": msg_id,
@@ -950,31 +972,17 @@ async def handle_chat(ws, cmd: dict):
             for a in attachments
         ]
         user_msg["extra"] = json.dumps({"attachments": manifest}, default=str)
-    try:
-        _s._append_msg(conv, user_msg)
-    except BaseException:
-        _s._release_run_reservation(session_id, msg_id)
-        raise
-
     # Admission is the sole source of execution identity. The message id is
     # retained only as transport/DAG provenance and never becomes ownership.
-    from openprogram.agent.production_driver import (
-        AGENT_TURN_INPUT_VERSION,
-        AgentProductionDriver,
-        CanonicalAgentEntry,
-    )
-    from openprogram.execution import default_control_service, default_store
-    _execution_store = default_store()
-    _driver = AgentProductionDriver(
-        _execution_store,
-        control_service=default_control_service(),
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agent.production_driver import CanonicalAgentAdapter
+    _adapter = CanonicalAgentAdapter(
         event_sink=(
             lambda env: _s._broadcast_envelope(env)
             if hasattr(_s, "_broadcast_envelope")
             else _s._broadcast(json.dumps(env, default=str))
         ),
     )
-    _entry = CanonicalAgentEntry(_execution_store, _driver)
     from openprogram.agent.session_config import tools_override_from_config
     _response_format_payload = (
         response_format.model_dump(mode="json")
@@ -993,7 +1001,7 @@ async def handle_chat(ws, cmd: dict):
         "attachments": attachments,
         "user_msg_id": msg_id,
         "user_already_persisted": True,
-        "surface_context": surface_ref,
+        "surface_context": surface_context,
         "structured_output": (
             {
                 "prompt": parsed.get("prompt") or "",
@@ -1010,22 +1018,29 @@ async def handle_chat(ws, cmd: dict):
         "additional_working_dirs": getattr(run_cfg, "additional_working_dirs", []),
     }
     try:
-        _admission = _entry.admit(
-            session_id=session_id,
-            turn_payload={
-                "version": AGENT_TURN_INPUT_VERSION,
-                "kind": "chat",
-                "request": _request_payload,
-            },
+        _request = TurnRequest(**_request_payload)
+        _admission = _adapter.admit(
+            _request,
             trusted_actor=_local_authority,
             user_message_id=msg_id,
             assistant_message_id=None,
             config_snapshot_ref=f"session:{session_id}",
         )
     except Exception:
+        _release_surface_bindings(surface_context)
         _s._release_run_reservation(session_id, msg_id)
         raise
     execution_id = _admission.execution_id
+
+    # User/DAG content is committed only after the bounded canonical payload
+    # has been admitted. If admission rejects an oversized or malformed
+    # request, no user node is left behind without an execution record.
+    try:
+        _s._append_msg(conv, user_msg)
+    except BaseException:
+        _adapter.fail_admission(_admission, reason_code="user_persist_failed")
+        _s._release_run_reservation(session_id, msg_id)
+        raise
 
     # chat.before_send on the bus — plugin subscribers observe the
     # message about to enter the runtime. emit_safe swallows failures
@@ -1075,13 +1090,19 @@ async def handle_chat(ws, cmd: dict):
     # the task entry (no double running_task with a different started_at).
     import time as _t
     with _s._running_tasks_lock:
-        _s._running_tasks.setdefault(session_id, {
+        _running_task = _s._running_tasks.setdefault(session_id, {
             "msg_id": msg_id, "func_name": "_chat",
             "started_at": _t.time(), "last_event_at": _t.time(),
             "display_params": "", "loaded_func_ref": None,
             "stream_events": [],
             "execution_id": execution_id,
         })
+        # The reservation is created before the admission has an execution
+        # id.  Fill that exact id into the owned task rather than relying on
+        # setdefault (which would leave the provisional None forever and
+        # make stop/cancel unable to match the admitted execution).
+        if _running_task.get("msg_id") == msg_id:
+            _running_task["execution_id"] = execution_id
     _s._emit_running_task_event(session_id)
     try:
         from openprogram.webui.ws_actions.session import broadcast_sessions_list
@@ -1089,24 +1110,36 @@ async def handle_chat(ws, cmd: dict):
     except Exception:
         pass
 
+    def _clear_running_task():
+        try:
+            _s._emit_running_task_event(
+                session_id,
+                cleared_msg_id=msg_id,
+                cleared_execution_id=execution_id,
+            )
+        except Exception:
+            pass
+
     def _make_run_thread(**kwargs):
         try:
             return threading.Thread(**kwargs)
         except BaseException:
+            _release_surface_bindings(surface_context)
+            _adapter.fail_admission(
+                _admission, reason_code="agent_runner_error",
+            )
             _s._release_run_reservation(session_id, msg_id)
+            _clear_running_task()
             raise
 
     def _run_canonical(**_thread_options):
         async def _activate():
-            active = await _entry.activate(_admission)
-            handle = _driver._handles[
-                (active.admission.execution_id, active.attempt_id, active.generation)
-            ]
-            return await handle.done
+            return await _adapter.activate(_admission)
 
         try:
             asyncio.run(_activate())
         finally:
+            _release_surface_bindings(surface_context)
             try:
                 if _s._finish_owned_run(session_id, msg_id):
                     _s._emit_running_task_event(
@@ -1124,9 +1157,22 @@ async def handle_chat(ws, cmd: dict):
         daemon=True,
     )
 
+    if not _s._activate_run_reservation(session_id, msg_id, run_thread):
+        _release_surface_bindings(surface_context)
+        _adapter.fail_admission(_admission, reason_code="agent_runner_error")
+        _s._release_run_reservation(session_id, msg_id)
+        _clear_running_task()
+        raise RuntimeError("chat execution reservation was lost before startup")
+
     try:
         run_thread.start()
     except BaseException:
+        _release_surface_bindings(surface_context)
+        _adapter.fail_admission(
+            _admission, reason_code="agent_runner_error",
+        )
+        if _s._finish_owned_run(session_id, msg_id):
+            _clear_running_task()
         _s._release_run_reservation(session_id, msg_id)
         raise
 

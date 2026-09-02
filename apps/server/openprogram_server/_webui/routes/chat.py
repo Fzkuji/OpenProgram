@@ -434,6 +434,8 @@ def run_agentic_function_call(
     # session head). Mirror the @agentic_function wrapper's resolution so
     # the pre-created node is byte-identical to what the child would write.
     _forced_node_id = None
+    _pending_node = None
+    _pending_node_writer = None
     _canonical_anchor_msg_id = anchor_msg_id or ""
     _pending_nid = uuid.uuid4().hex[:12]
     _precreate_error = None
@@ -502,7 +504,11 @@ def run_agentic_function_call(
                         "expose": "hidden",
                         "execution_control": True,
                     })
-                _shim.append(_node)
+                # Keep the constructed node in memory until the canonical
+                # forced-tool payload has been admitted. This prevents a
+                # rejected/oversized request from leaving a running DAG row.
+                _pending_node = _node
+                _pending_node_writer = _shim
                 _forced_node_id = _pending_nid
                 # Thread the pre-created id to the child so its wrapper
                 # reuses it instead of appending a duplicate top-level node.
@@ -523,38 +529,26 @@ def run_agentic_function_call(
     # admitted separately and is always a random canonical execution id.
     try:
         from openprogram.agent.authority import local_owner_authority
-        from openprogram.agent.production_driver import (
-            AGENT_TURN_INPUT_VERSION,
-            CanonicalAgentEntry,
-            AgentProductionDriver,
-        )
-        from openprogram.execution import default_store, default_control_service
+        from openprogram.agent.production_driver import CanonicalAgentAdapter
 
-        _execution_store = default_store()
         _response_format_payload = (
             response_format.model_dump(mode="json")
             if hasattr(response_format, "model_dump") else response_format
         )
-        _driver = AgentProductionDriver(
-            _execution_store,
-            control_service=default_control_service(),
+        _adapter = CanonicalAgentAdapter(
             event_sink=(
                 lambda env: _s._broadcast_envelope(env)
                 if hasattr(_s, "_broadcast_envelope")
                 else _s._broadcast(__import__("json").dumps(env, default=str))
             ),
         )
-        _entry = CanonicalAgentEntry(_execution_store, _driver)
-        _admission = _entry.admit(
+        _admission = _adapter.admit_payload(
             session_id=session_id,
-            turn_payload={
-                "version": AGENT_TURN_INPUT_VERSION,
+            payload={
+                "version": 1,
                 "kind": "forced_tool",
                 "tool_name": name,
                 "tool_input": kwargs,
-                # The node suffix is DAG provenance used to reuse the
-                # pre-created top-level code node. It is not lifecycle
-                # identity; execution_id remains the canonical owner.
                 "anchor_msg_id": anchor_msg_id or _canonical_anchor_msg_id,
                 "work_dir": work_dir,
                 "agent_id": agent_id,
@@ -569,7 +563,6 @@ def run_agentic_function_call(
             assistant_message_id=_forced_node_id,
             config_snapshot_ref=f"provider:{provider or ''}/model:{model or ''}",
         )
-        execution_id = _admission.execution_id
     except Exception as exc:
         _s._release_run_reservation(session_id, msg_id)
         return {
@@ -577,6 +570,35 @@ def run_agentic_function_call(
             "code": "execution_record_failed",
             "status_code": 500,
         }
+    execution_id = _admission.execution_id
+
+    def _terminalize_pending_node(reason: str, detail: str = "") -> None:
+        """Close a parent-created code node when activation cannot start."""
+        if _pending_node is None or _pending_node_writer is None:
+            return
+        try:
+            _pending_node_writer.update(
+                _forced_node_id,
+                output={"error": detail or reason},
+                metadata={"status": "failed", "reason_code": reason},
+            )
+        except Exception:
+            # The execution admission remains the durable recovery record if
+            # the DAG rewrite itself is unavailable.
+            pass
+
+    if _pending_node is not None:
+        try:
+            _pending_node_writer.append(_pending_node)
+        except Exception as exc:
+            _adapter.fail_admission(_admission, reason_code="execution_record_failed")
+            _terminalize_pending_node("execution_record_failed", str(exc))
+            _s._release_run_reservation(session_id, msg_id)
+            return {
+                "error": f"failed to persist the execution record: {type(exc).__name__}: {exc}",
+                "code": "execution_record_failed",
+                "status_code": 500,
+            }
     with _s._running_tasks_lock:
         _reserved_task = _s._running_tasks.get(session_id)
         if _reserved_task and _reserved_task.get("msg_id") == msg_id:
@@ -617,18 +639,28 @@ def run_agentic_function_call(
         try:
             try:
                 async def _activate():
-                    active = await _entry.activate(_admission)
-                    handle = _driver._handles[
-                        (active.admission.execution_id, active.attempt_id, active.generation)
-                    ]
-                    return await handle.done
+                    _active, result = await _adapter.activate(_admission)
+                    return result
 
                 out = asyncio.run(_activate())
+                if getattr(out, "failed", False) or (
+                    isinstance(out, dict)
+                    and (
+                        out.get("error")
+                        or out.get("killed")
+                        or out.get("page_cleanup_failed")
+                    )
+                ):
+                    _terminalize_pending_node(
+                        "agent_runner_error",
+                        str(getattr(out, "error", None) or out),
+                    )
                 if isinstance(out, dict):
                     out = {"ok": not bool(out.get("error") or out.get("killed")), **out}
                 else:
                     out = {"ok": True, "result": out}
             except Exception as e:  # noqa: BLE001
+                _terminalize_pending_node("agent_runner_error", str(e))
                 _s._broadcast_chat_response(session_id, msg_id, {
                     "type": "error",
                     "content": f"function call failed: {type(e).__name__}: {e}",
@@ -665,9 +697,10 @@ def run_agentic_function_call(
     try:
         worker = threading.Thread(target=_run, daemon=True)
     except BaseException as exc:
-        _driver.fail_admission(
+        _adapter.fail_admission(
             _admission, reason_code="agent_runner_error",
         )
+        _terminalize_pending_node("agent_runner_error", str(exc))
         _s._release_run_reservation(session_id, msg_id)
         return {
             "error": f"failed to create function execution: {type(exc).__name__}: {exc}",
@@ -676,6 +709,8 @@ def run_agentic_function_call(
         }
 
     if not _s._activate_run_reservation(session_id, msg_id, worker):
+        _adapter.fail_admission(_admission, reason_code="agent_runner_error")
+        _s._release_run_reservation(session_id, msg_id)
         return {
             "error": "function execution reservation was lost before startup",
             "code": "function_start_failed",
@@ -686,9 +721,10 @@ def run_agentic_function_call(
     try:
         worker.start()
     except BaseException as exc:  # thread creation/start must roll back occupancy
-        _driver.fail_admission(
+        _adapter.fail_admission(
             _admission, reason_code="agent_runner_error",
         )
+        _terminalize_pending_node("agent_runner_error", str(exc))
         if _s._finish_owned_run(session_id, msg_id):
             _s._emit_running_task_event(
                 session_id,

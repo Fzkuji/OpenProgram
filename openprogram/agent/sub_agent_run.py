@@ -24,6 +24,7 @@ referencing all of them.
 """
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -67,7 +68,8 @@ def _execute_agent_turn(
     (write an attach indicator, surface in chat, kick off a merge).
     """
     from openprogram.agent.session_db import default_db
-    from openprogram.agent.dispatcher import TurnRequest, process_user_turn
+    from openprogram.agent.dispatcher import TurnRequest
+    from openprogram.agent.production_driver import CanonicalAgentAdapter
 
     store = default_db()
     if store._open(session_id) is None:
@@ -110,6 +112,7 @@ def _execute_agent_turn(
     # sub-agent is itself an explicit user act, so the user has
     # already consented to tool use within that turn.
     from openprogram.agent.authority import runtime_authority
+    _authority = runtime_authority(authority or {}, "agent_spawn")
     req = TurnRequest(
         session_id=session_id,
         user_text=prompt,
@@ -133,31 +136,43 @@ def _execute_agent_turn(
         render_range=render_range,
         model_override=model_override,
         thinking_effort=thinking_effort,
-        **runtime_authority(authority or {}, "agent_spawn"),
+        **_authority,
     )
     try:
-        turn = process_user_turn(req)
+        adapter = CanonicalAgentAdapter()
+        admission = adapter.admit(
+            req,
+            trusted_actor=_authority,
+            user_message_id=req.user_msg_id,
+            config_snapshot_ref=f"agent-spawn:{session_id}",
+        )
+        _active, turn = asyncio.run(adapter.activate(admission))
     except Exception as e:  # noqa: BLE001
         return AgentTurnResult(
             failed=True,
             error=f"{type(e).__name__}: {e}",
+        )
+    if turn is None:
+        return AgentTurnResult(
+            failed=True,
+            error="Agent runner failed before returning a turn result",
         )
 
     # dispatcher already stamped ``agent_id`` on the user + assistant
     # rows via ``req.agent_id``. If a label was provided, attach it as
     # a named branch so the right-rail "Branches" panel and the DAG
     # use the human label instead of the bare commit hash.
-    if turn.assistant_msg_id and label:
+    if getattr(turn, "assistant_msg_id", None) and label:
         try:
             store.set_branch_name(session_id, turn.assistant_msg_id, label)
         except Exception:  # noqa: BLE001
             pass
 
     return AgentTurnResult(
-        head_id=turn.assistant_msg_id,
-        final_text=turn.final_text or "",
-        failed=bool(turn.failed),
-        error=turn.error,
+        head_id=getattr(turn, "assistant_msg_id", None),
+        final_text=getattr(turn, "final_text", "") or "",
+        failed=bool(getattr(turn, "failed", False)),
+        error=getattr(turn, "error", None),
     )
 
 

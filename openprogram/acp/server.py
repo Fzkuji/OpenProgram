@@ -34,6 +34,7 @@ authority would auto-deny every gated tool.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -247,71 +248,29 @@ class ACPServer:
         sess = self._sessions.get(params.get("sessionId") or "")
         if sess is None:
             return None
-        from openprogram.agent.run_control import (
-            ExecutionNotCancellable,
-            ExecutionNotFound,
-            cancel_execution,
-        )
-
         with sess.lock:
             execution_id = sess.execution_id
-            cancel_event = sess.cancel_event
         if execution_id is None:
             return None
         try:
-            cancel_execution(execution_id)
-        except ExecutionNotFound:
-            # The runtime lookup can also report NotFound after swallowing a
-            # store failure. Confirm directly against this session before
-            # treating it as the pre-placeholder race.
-            try:
-                from openprogram.agent.session_db import default_db
-
-                nodes = default_db().get_nodes(sess.id)
-                has_placeholder = any(
-                    getattr(node, "id", None) == execution_id for node in nodes
-                )
-            except Exception:
-                _log.warning(
-                    "ACP execution lookup failed for %s", execution_id,
-                    exc_info=True,
-                )
+            from openprogram.agent.production_driver import cancel_canonical_execution
+            cancelled = asyncio.run(cancel_canonical_execution(execution_id))
+            if cancelled is None:
                 return None
-            if has_placeholder:
-                return None
-            not_found = True
-        except ExecutionNotCancellable:
-            # A completed/failed prompt won the race; do not rewrite its
-            # result or release questions belonging to a different state.
-            return None
         except Exception:
             # Notifications have no error response; leave the live prompt
             # untouched and surface infrastructure failures in the log.
             _log.warning("ACP execution cancellation failed for %s",
                          execution_id, exc_info=True)
             return None
-        else:
-            not_found = False
-
         # The service call can race prompt teardown and a successor prompt.
         # Revalidate the identity before touching local event/question state.
-        from openprogram.agent.run_control import current_token
-
         with sess.lock:
             if (
                 sess.execution_id != execution_id
-                or sess.cancel_event is not cancel_event
             ):
                 return None
-            if not_found:
-                token = current_token(sess.id, execution_id=execution_id)
-                if (
-                    token is None
-                    or token.event is not cancel_event
-                    or token.retired
-                ):
-                    return None
-            cancel_event.set()
+            sess.cancel_event.set()
             qids = [
                 qid for qid, question_execution_id in sess.open_questions.items()
                 if question_execution_id == execution_id
@@ -343,50 +302,50 @@ class ACPServer:
             raise RPCError(INVALID_PARAMS, "prompt has no text content")
 
         from openprogram.agent.authority import local_owner_authority
-        from openprogram.agent.dispatcher import TurnRequest, process_user_turn
-        from openprogram.agent.run_control import (
-            claim_cancel_event,
-            unregister_cancel_event,
-        )
+        from openprogram.agent.dispatcher import TurnRequest
+        from openprogram.agent.production_driver import CanonicalAgentAdapter
 
         user_msg_id = uuid.uuid4().hex[:12]
-        execution_id = user_msg_id + "_reply"
-        cancel_event = threading.Event()
+        request = TurnRequest(
+            session_id=sess.id,
+            user_text=text,
+            agent_id=self._agent_id,
+            source="acp",
+            permission_mode=self._permission_mode,
+            attachments=_blocks_to_attachments(blocks) or None,
+            additional_working_dirs=[sess.cwd],
+            user_msg_id=user_msg_id,
+            **local_owner_authority(),
+        )
+        adapter = CanonicalAgentAdapter(
+            event_sink=lambda env: self._on_event(sess, env),
+        )
+        try:
+            admission = adapter.admit(
+                request,
+                trusted_actor=local_owner_authority(),
+                user_message_id=user_msg_id,
+                config_snapshot_ref=f"acp:{sess.id}",
+            )
+        except Exception as exc:
+            raise RPCError(INTERNAL_ERROR, f"prompt admission failed: {exc}") from exc
+        execution_id = admission.execution_id
         with sess.lock:
-            if not claim_cancel_event(
-                sess.id, cancel_event,
-                execution_id=execution_id, foreground=True,
-            ):
+            if sess.execution_id is not None:
+                adapter.fail_admission(
+                    admission, reason_code="agent_runner_error",
+                )
                 raise RPCError(INTERNAL_ERROR, "a prompt turn is already active")
-            sess.cancel_event = cancel_event
+            sess.cancel_event.clear()
             sess.execution_id = execution_id
         try:
-            result = process_user_turn(
-                TurnRequest(
-                    session_id=sess.id,
-                    user_text=text,
-                    agent_id=self._agent_id,
-                    source="acp",
-                    permission_mode=self._permission_mode,
-                    attachments=_blocks_to_attachments(blocks) or None,
-                    additional_working_dirs=[sess.cwd],
-                    user_msg_id=user_msg_id,
-                    **local_owner_authority(),
-                ),
-                on_event=lambda env: self._on_event(sess, env),
-                cancel_event=cancel_event,
-            )
+            _active, result = asyncio.run(adapter.activate(admission))
         finally:
-            # Pass the event back: popping by session id alone would retire a
-            # newer turn's token (see agent/run_control.py).
             with sess.lock:
-                unregister_cancel_event(
-                    sess.id, cancel_event, execution_id=execution_id,
-                )
                 if sess.execution_id == execution_id:
                     sess.execution_id = None
 
-        if cancel_event.is_set():
+        if sess.cancel_event.is_set():
             return {"stopReason": "cancelled"}
         if result.failed:
             return {"stopReason": "refusal"}

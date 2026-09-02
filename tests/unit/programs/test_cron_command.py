@@ -268,7 +268,7 @@ def test_prompt_job_applies_memory_permission_rules(
     monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", fake_turn)
     worker._run_prompt_job(spec, str(tmp_path / f"{rule_kind}.log"))
 
-    assert seen["req"].permission_rules is rules
+    assert seen["req"].permission_rules == rules
     assert seen["result"].details["reason_code"] == reason_code
 
 

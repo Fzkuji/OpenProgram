@@ -210,6 +210,21 @@ class AgentActivationService:
                     "invalid_input",
                     f"Agent admission input requires {required}",
                 )
+        if isinstance(values.get("permission_rules"), Mapping):
+            from openprogram.agent.session_config import _as_permission_rules
+
+            values["permission_rules"] = _as_permission_rules(
+                values["permission_rules"]
+            )
+        if isinstance(values.get("response_format"), Mapping):
+            try:
+                from openprogram.providers.structured_output import normalize_response_format
+
+                values["response_format"] = normalize_response_format(
+                    values["response_format"]
+                )
+            except Exception:
+                pass
         return TurnRequest(session_id=record.session_id, **values)
 
 
@@ -260,8 +275,6 @@ class AgentProductionDriver:
         payload = self.activation._input_resolver(record)
         if not isinstance(payload, Mapping):
             raise AgentDriverError("invalid_input", "Agent admission input must resolve to an object")
-        if "kind" not in payload and "version" not in payload:
-            return self.activation.build_request(record, activation)
         envelope = normalize_agent_turn_payload(payload)
         if envelope["kind"] == "chat":
             return self.activation.build_request(record, activation)
@@ -451,16 +464,21 @@ class AgentProductionDriver:
             else:
                 self._recover_owner_loss(attempt)
             return None
-        except Exception:
+        except Exception as exc:
             if cancel_event.is_set():
                 self._finish_attempt(attempt, None, cancel_event)
             else:
+                failure = type(
+                    "RunnerFailure", (),
+                    {"failed": True, "error": f"{type(exc).__name__}: {exc}"},
+                )()
                 self._finish_attempt(
                     attempt,
-                    type("RunnerFailure", (), {"failed": True})(),
+                    failure,
                     cancel_event,
                     failure_reason="agent_runner_error",
                 )
+                return failure
             return None
         except BaseException:
             # Process-level termination and other non-Exception failures do
@@ -524,7 +542,16 @@ class AgentProductionDriver:
                     ),
                 )
             else:
-                result = self.turn_runner(request=request, cancel_event=cancel_event)
+                runner_kwargs = {
+                    "request": request,
+                    "cancel_event": cancel_event,
+                }
+                try:
+                    if "on_event" in inspect.signature(self.turn_runner).parameters:
+                        runner_kwargs["on_event"] = self.event_sink
+                except (TypeError, ValueError):
+                    pass
+                result = self.turn_runner(**runner_kwargs)
             if inspect.isawaitable(result):
                 raise AgentDriverError("invalid_runner", "Agent turn runner must be synchronous")
             return result
@@ -551,10 +578,11 @@ class AgentProductionDriver:
         with self._handles_lock:
             if key in self._finished:
                 return
-            self._finished.add(key)
         service = self._control_service()
         execution = service.executions.get_execution(attempt.execution_id)
         if execution is None or execution.status in TERMINAL_EXECUTION_STATUSES:
+            with self._handles_lock:
+                self._finished.add(key)
             return
         cancelled = cancel_event.is_set() or execution.status is ExecutionStatus.CANCELLING
         if cancelled and execution.status is not ExecutionStatus.CANCELLING:
@@ -595,9 +623,12 @@ class AgentProductionDriver:
                 ),
             )
         except Exception:
-            # The canonical service owns the retry/recovery decision. A stale
-            # completion must never write a terminal state directly.
+            # Keep the completion eligible for a later recovery/retry. A
+            # transient persistence failure must not be hidden by marking
+            # the attempt finished before the durable transition succeeds.
             return
+        with self._handles_lock:
+            self._finished.add(key)
 
     def _recover_owner_loss(self, attempt: AttemptRecord) -> None:
         try:
@@ -654,10 +685,21 @@ class AgentProductionDriver:
         return handle.execution_id, handle.attempt_id, handle.generation
 
     @staticmethod
-    def _default_turn_runner(*, request: Any, cancel_event: threading.Event) -> Any:
+    def _default_turn_runner(
+        *, request: Any, cancel_event: threading.Event,
+        on_event: Callable[[dict], None] | None = None,
+    ) -> Any:
         from openprogram.agent.dispatcher import process_user_turn
-
-        return process_user_turn(request, cancel_event=cancel_event)
+        kwargs = {}
+        try:
+            params = inspect.signature(process_user_turn).parameters
+            if "on_event" in params:
+                kwargs["on_event"] = on_event
+            if "cancel_event" in params:
+                kwargs["cancel_event"] = cancel_event
+        except (TypeError, ValueError):
+            kwargs = {"on_event": on_event, "cancel_event": cancel_event}
+        return process_user_turn(request, **kwargs)
 
 
 class CanonicalAgentEntry:
@@ -757,6 +799,93 @@ class CanonicalAgentEntry:
         )
 
 
+class CanonicalAgentAdapter:
+    """Transport-neutral adapter for durable Agent chat admission/activation."""
+
+    def __init__(
+        self,
+        *,
+        store: ExecutionStore | None = None,
+        event_sink: Callable[[dict], None] | None = None,
+        turn_runner: TurnRunner | None = None,
+        question_registry: Any | None = None,
+    ) -> None:
+        from openprogram.execution import default_control_service, default_store
+
+        self.store = store or default_store()
+        self.driver = AgentProductionDriver(
+            self.store,
+            control_service=default_control_service(),
+            event_sink=event_sink,
+            turn_runner=turn_runner,
+            question_registry=question_registry,
+        )
+        self.entry = CanonicalAgentEntry(self.store, self.driver)
+
+    @staticmethod
+    def payload_for(request: Any) -> dict[str, Any]:
+        """Build the strict durable chat envelope from a TurnRequest."""
+        from openprogram.agent.dispatcher.types import INHERIT_PARENT
+
+        inherit_parent = getattr(request, "branch_from", None) is INHERIT_PARENT
+        values = asdict(request) if is_dataclass(request) else dict(request)
+        if inherit_parent:
+            values.pop("branch_from", None)
+        return {
+            "version": AGENT_TURN_INPUT_VERSION,
+            "kind": "chat",
+            "request": _json_safe(values),
+        }
+
+    def admit(
+        self,
+        request: Any,
+        *,
+        trusted_actor: Mapping[str, Any],
+        user_message_id: str | None,
+        assistant_message_id: str | None = None,
+        config_snapshot_ref: str,
+    ) -> CanonicalAgentAdmission:
+        return self.admit_payload(
+            session_id=request.session_id,
+            payload=self.payload_for(request),
+            trusted_actor=trusted_actor,
+            user_message_id=user_message_id,
+            assistant_message_id=assistant_message_id,
+            config_snapshot_ref=config_snapshot_ref,
+        )
+
+    def admit_payload(
+        self,
+        *,
+        session_id: str,
+        payload: Mapping[str, Any],
+        trusted_actor: Mapping[str, Any],
+        user_message_id: str | None,
+        assistant_message_id: str | None = None,
+        config_snapshot_ref: str,
+    ) -> CanonicalAgentAdmission:
+        return self.entry.admit(
+            session_id=session_id,
+            turn_payload=payload,
+            trusted_actor=trusted_actor,
+            user_message_id=user_message_id,
+            assistant_message_id=assistant_message_id,
+            config_snapshot_ref=config_snapshot_ref,
+        )
+
+    async def activate(self, admission: CanonicalAgentAdmission) -> Any:
+        active = await self.entry.activate(admission)
+        handle = self.driver._handles[
+            (active.admission.execution_id, active.attempt_id, active.generation)
+        ]
+        result = await handle.done
+        return active, result
+
+    def fail_admission(self, admission: CanonicalAgentAdmission, *, reason_code: str) -> None:
+        self.driver.fail_admission(admission, reason_code=reason_code)
+
+
 async def cancel_canonical_execution(
     execution_id: str, *, reason_code: str = "cancel.user",
 ) -> Any | None:
@@ -788,6 +917,7 @@ __all__ = [
     "AgentDriverHandle",
     "CanonicalAgentActivation",
     "CanonicalAgentAdmission",
+    "CanonicalAgentAdapter",
     "CanonicalAgentEntry",
     "ForcedToolActivation",
     "AGENT_TURN_INPUT_VERSION",

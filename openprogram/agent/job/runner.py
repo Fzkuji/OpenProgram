@@ -2704,9 +2704,8 @@ class JobRunner:
 
         def _go():
             try:
-                from openprogram.agent.dispatcher import (
-                    TurnRequest, process_user_turn,
-                )
+                from openprogram.agent.dispatcher import TurnRequest
+                from openprogram.agent.production_driver import CanonicalAgentAdapter
                 from openprogram.agent.authority import runtime_authority
                 # Followup prompt — push the parent agent to synthesize a
                 # reply, not echo the sub-agent's last line. With an attach
@@ -2755,7 +2754,14 @@ class JobRunner:
                     # docstring describes. Pinning it to the spawning node
                     # is what produced the parallel-branch double answer.
                 )
-                process_user_turn(req)
+                adapter = CanonicalAgentAdapter()
+                admission = adapter.admit(
+                    req,
+                    trusted_actor=runtime_authority(job, "job_followup"),
+                    user_message_id=req.user_msg_id,
+                    config_snapshot_ref=f"job-followup:{job.id}",
+                )
+                asyncio.run(adapter.activate(admission))
             except Exception:
                 # Best-effort — don't blow up the runner if the
                 # caller session is gone / dispatcher errors.

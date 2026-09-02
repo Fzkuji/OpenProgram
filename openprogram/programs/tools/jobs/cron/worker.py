@@ -33,6 +33,7 @@ Design notes:
 from __future__ import annotations
 
 from contextlib import redirect_stderr, redirect_stdout
+import asyncio
 import datetime as dt
 import json
 import logging
@@ -237,10 +238,11 @@ def _run_prompt_job(spec: dict[str, Any], log_path: str) -> None:
                     context = render_context(memory_refs)
                     if context:
                         prompt = f"{prompt}\n\n{context}"
-                from openprogram.agent.dispatcher import TurnRequest, process_user_turn
+                from openprogram.agent.dispatcher import TurnRequest
+                from openprogram.agent.production_driver import CanonicalAgentAdapter
                 from openprogram.programs.permission_rule import load_merged_rules
 
-                result = process_user_turn(TurnRequest(
+                request = TurnRequest(
                     session_id=spec["session_id"],
                     user_text=prompt,
                     agent_id=spec["agent_id"],
@@ -254,11 +256,21 @@ def _run_prompt_job(spec: dict[str, Any], log_path: str) -> None:
                     authority_tier=job_authority["authority_tier"],
                     interaction="non-interactive",
                     permission_rules=load_merged_rules(spec["session_id"]),
-                ))
-                if result.final_text:
+                )
+                adapter = CanonicalAgentAdapter()
+                admission = adapter.admit(
+                    request,
+                    trusted_actor=job_authority,
+                    user_message_id=None,
+                    config_snapshot_ref=f"scheduler:{spec['session_id']}",
+                )
+                _active, result = asyncio.run(adapter.activate(admission))
+                if result is None:
+                    print("# failed: Agent runner returned no result")
+                elif getattr(result, "final_text", None):
                     print(result.final_text)
-                if result.failed:
-                    print(f"# failed: {result.error or 'unknown turn failure'}")
+                if result is not None and getattr(result, "failed", False):
+                    print(f"# failed: {getattr(result, 'error', None) or 'unknown turn failure'}")
             except Exception as exc:
                 print(f"# failed: {type(exc).__name__}: {exc}")
 

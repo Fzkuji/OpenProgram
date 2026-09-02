@@ -30,14 +30,7 @@ def register(app):
     @app.post("/api/stop")
     async def api_stop(body: dict = None):
         """Compatibility stop: resolve the active execution and cancel it."""
-        from openprogram.agent import run_control
-        run_control.set_execution_update_hook(
-            lambda execution: emit_ws_frame({
-                "type": "execution.updated",
-                "execution": execution,
-            }),
-        )
-
+        from openprogram.webui import server as _s
         payload = body or {}
         session_id = payload.get("session_id")
         execution_id = (payload.get("execution_id") or "").strip()
@@ -47,9 +40,11 @@ def register(app):
                     content={"error": "missing execution_id"},
                     status_code=400,
                 )
-            execution_id = run_control.resolve_foreground_execution(
-                session_id,
-            ) or ""
+            with _s._running_tasks_lock:
+                execution_id = (
+                    ((_s._running_tasks.get(session_id) or {}).get("execution_id"))
+                    or ""
+                )
         if not execution_id:
             return JSONResponse(
                 content={"error": "no active execution"},
@@ -57,27 +52,9 @@ def register(app):
             )
         from openprogram.agent.production_driver import cancel_canonical_execution
         canonical = await cancel_canonical_execution(execution_id)
-        if canonical is not None:
-            execution = canonical.execution.to_dict()
-            emit_ws_frame({"type": "execution.updated", "execution": execution})
-            from openprogram.webui import server as _s
-            _s._release_session_occupancy_for_execution(execution)
-            return JSONResponse(content={"execution": execution})
-        try:
-            execution = run_control.cancel_execution(execution_id)
-        except run_control.ExecutionNotFound:
-            return JSONResponse(
-                content={"error": "ExecutionNotFound"},
-                status_code=404,
-            )
-        except run_control.ExecutionNotCancellable as exc:
-            return JSONResponse(
-                content={
-                    "error": "ExecutionNotCancellable",
-                    "execution": exc.execution,
-                },
-                status_code=409,
-            )
+        if canonical is None:
+            return JSONResponse(content={"error": "ExecutionNotFound"}, status_code=404)
+        execution = canonical.execution.to_dict()
         emit_ws_frame({"type": "execution.updated", "execution": execution})
         from openprogram.webui import server as _s
         _s._release_session_occupancy_for_execution(execution)
@@ -86,14 +63,6 @@ def register(app):
     @app.post("/api/execution/cancel")
     async def api_execution_cancel(body: dict = None):
         """Cancel one execution inside the default worker process."""
-        from openprogram.agent import run_control
-        run_control.set_execution_update_hook(
-            lambda execution: emit_ws_frame({
-                "type": "execution.updated",
-                "execution": execution,
-            }),
-        )
-
         payload = body or {}
         execution_id = (payload.get("execution_id") or "").strip()
         if not execution_id:
@@ -103,27 +72,9 @@ def register(app):
             )
         from openprogram.agent.production_driver import cancel_canonical_execution
         canonical = await cancel_canonical_execution(execution_id)
-        if canonical is not None:
-            execution = canonical.execution.to_dict()
-            emit_ws_frame({"type": "execution.updated", "execution": execution})
-            from openprogram.webui import server as _s
-            _s._release_session_occupancy_for_execution(execution)
-            return JSONResponse(content={"execution": execution})
-        try:
-            execution = run_control.cancel_execution(execution_id)
-        except run_control.ExecutionNotFound:
-            return JSONResponse(
-                content={"error": "ExecutionNotFound"},
-                status_code=404,
-            )
-        except run_control.ExecutionNotCancellable as exc:
-            return JSONResponse(
-                content={
-                    "error": "ExecutionNotCancellable",
-                    "execution": exc.execution,
-                },
-                status_code=409,
-            )
+        if canonical is None:
+            return JSONResponse(content={"error": "ExecutionNotFound"}, status_code=404)
+        execution = canonical.execution.to_dict()
         emit_ws_frame({"type": "execution.updated", "execution": execution})
         from openprogram.webui import server as _s
         _s._release_session_occupancy_for_execution(execution)

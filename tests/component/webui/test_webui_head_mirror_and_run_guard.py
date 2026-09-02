@@ -371,6 +371,89 @@ def test_handle_chat_releases_reservation_when_setup_fails(monkeypatch):
         assert session_id not in _s._running_tasks
 
 
+@pytest.mark.parametrize("failure_phase", ["construct", "start"])
+def test_chat_startup_failure_fails_exact_admission_and_clears_task(
+    monkeypatch, failure_phase,
+):
+    """A post-ACK thread failure must not leave a queued execution or task."""
+    from openprogram.webui import server as _s
+    from openprogram.webui.ws_actions import chat as chat_actions
+    from openprogram.webui.ws_actions.chat import handle_chat
+    import openprogram.agent.session_config as session_config
+    import openprogram.agent.session_db as session_db
+    import openprogram.agent.surface_context as surface_context
+    import openprogram.webui.ws_actions.session as session_actions
+    import threading
+
+    session_id = f"startup-failure-{failure_phase}"
+    conv = {"id": session_id, "messages": []}
+    failures: list[tuple[str, str]] = []
+    released: list[object] = []
+    events: list[dict] = []
+
+    class _DB:
+        def get_session(self, _sid):
+            return {"extra_meta": {"_user_titled": True}}
+
+        def update_session(self, _sid, **_fields):
+            return None
+
+    class _Admission:
+        execution_id = "exec_startup_failure"
+        status_version = 0
+
+    class _Adapter:
+        def __init__(self, **_kwargs):
+            pass
+
+        def admit(self, *_args, **_kwargs):
+            return _Admission()
+
+        def fail_admission(self, admission, *, reason_code):
+            failures.append((admission.execution_id, reason_code))
+
+    class _StartFailureThread:
+        def start(self):
+            if failure_phase == "start":
+                raise RuntimeError("thread start unavailable")
+
+    monkeypatch.setattr(_s, "_get_or_create_session", lambda sid, **kw: conv)
+    monkeypatch.setattr(chat_actions, "_db_agent_id", lambda _sid: "main")
+    monkeypatch.setattr(_s, "_append_msg", lambda target, msg: target["messages"].append(msg))
+    monkeypatch.setattr(_s, "_emit_running_task_event", lambda _sid, **kw: events.append(kw))
+    monkeypatch.setattr(session_actions, "broadcast_sessions_list", lambda: None)
+    monkeypatch.setattr(session_db, "default_db", lambda: _DB())
+    monkeypatch.setattr(
+        session_config, "save_session_run_config",
+        lambda *a, **kw: types.SimpleNamespace(
+            tools_enabled=True, tools_override=None, web_search=False,
+            toolset=None, thinking_effort="medium", permission_mode="ask",
+            sandbox_enabled=None,
+        ),
+    )
+    monkeypatch.setattr(surface_context, "capture", lambda *_a, **_kw: {"window_id": "w1"})
+    monkeypatch.setattr(surface_context, "release_bindings", lambda value: released.append(value))
+    monkeypatch.setattr(
+        "openprogram.agent.production_driver.CanonicalAgentAdapter", _Adapter,
+    )
+    monkeypatch.setattr(
+        threading, "Thread",
+        (lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("thread constructor unavailable")))
+        if failure_phase == "construct" else (lambda **_kwargs: _StartFailureThread()),
+    )
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(handle_chat(
+            _FakeWS(), {"text": "hi", "session_id": session_id},
+        ))
+
+    assert failures == [("exec_startup_failure", "agent_runner_error")]
+    assert released == [{"window_id": "w1"}]
+    assert events and events[-1]["cleared_execution_id"] == "exec_startup_failure"
+    with _s._running_tasks_lock:
+        assert session_id not in _s._running_tasks
+
+
 def test_handle_chat_starts_turn_when_ack_socket_is_gone(monkeypatch):
     from openprogram.webui import server as _s
     from openprogram.webui.ws_actions import chat as chat_actions
@@ -557,6 +640,7 @@ def test_chat_ack_echoes_ask_when_permission_mode_missing_or_invalid(
         finally:
             with _s._running_tasks_lock:
                 _s._running_tasks.pop(session_id, None)
+            _s._unregister_active_runtime(session_id)
         return observed.get("permission_mode")
 
     assert _ack_mode({"text": "hi", "session_id": session_id}) == "ask"

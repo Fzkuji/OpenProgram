@@ -29,6 +29,14 @@ import time
 import traceback
 
 
+def _owned_execution_id(server, session_id: str) -> str | None:
+    """Read the admitted execution id before releasing the transport slot."""
+    with server._running_tasks_lock:
+        task = server._running_tasks.get(session_id) or {}
+        value = task.get("execution_id")
+    return value if isinstance(value, str) and value else None
+
+
 def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> bool:
     """User-initiated ``/spawn`` — runs another agent in the same
     session and lands the reply as a branch (or a new root) in the
@@ -263,6 +271,34 @@ def _run_spawn_async(
 
     from openprogram.webui import server as _s
 
+    def _fail_staged_attach(detail: str) -> None:
+        """Close a placeholder if async job admission/submission fails."""
+        try:
+            from openprogram.agent.session_db import default_db
+            from openprogram.store import SessionNodeWriter
+
+            db = default_db()
+            pair = db._open(session_id)  # noqa: SLF001
+            if pair is None:
+                return
+            node = pair[1].nodes_by_id.get(attach_node_id)
+            if node is None:
+                return
+            metadata = dict(node.metadata or {})
+            attach = dict(metadata.get("attach") or {})
+            attach["status"] = "failed"
+            metadata["attach"] = attach
+            metadata["status"] = "failed"
+            metadata["reason_code"] = "agent_runner_error"
+            SessionNodeWriter(db, session_id).update(
+                attach_node_id,
+                output=detail,
+                metadata=metadata,
+            )
+            db.commit_turn(session_id, "spawn agent async failed")
+        except Exception:
+            pass
+
     # 锚点 = 发起调用的节点本身（与同步路径 write_attach_pointer_for_spawn
     # 一致：attach 的 predecessor 就是触发它的那轮）。这里以前抄的是同步
     # 路径的旧版"上溯到调用者父节点"，同步侧早改掉了，这份拷贝漂移了——
@@ -310,6 +346,7 @@ def _run_spawn_async(
                 pass
         store.commit_turn(session_id, f"spawn agent async: {label or chosen_agent}")
     except Exception as e:  # noqa: BLE001
+        _fail_staged_attach(f"async spawn failed to stage: {type(e).__name__}: {e}")
         _s._broadcast_chat_response(session_id, msg_id, {
             "type": "error",
             "content": f"async spawn failed to stage: {type(e).__name__}: {e}",
@@ -334,7 +371,7 @@ def _run_spawn_async(
             caller_msg_id=msg_id,
         )
     except Exception as e:  # noqa: BLE001
-        # Roll back the placeholder by stamping it errored.
+        _fail_staged_attach(f"async spawn submit failed: {type(e).__name__}: {e}")
         _s._broadcast_chat_response(session_id, msg_id, {
             "type": "error",
             "content": f"async spawn submit failed: {type(e).__name__}: {e}",
@@ -666,11 +703,12 @@ def execute_in_context(
         _s._save_session(session_id)
 
     except (Exception, _s._CancelledError) as e:
+        _execution_id = _owned_execution_id(_s, session_id)
         if _s._finish_owned_run(session_id, msg_id):
             _s._emit_running_task_event(
                 session_id,
                 cleared_msg_id=msg_id,
-                cleared_execution_id=f"{msg_id}_reply",
+                cleared_execution_id=_execution_id,
             )
 
         # Cancellation path — either the exception came from /api/stop killing
@@ -762,11 +800,12 @@ def execute_in_context(
         # nothing and stays silent, so no duplicate clear frame goes
         # out. spawn / merge success previously never popped at all,
         # leaving the session stuck "running" until server restart.
+        _execution_id = _owned_execution_id(_s, session_id)
         if _s._finish_owned_run(session_id, msg_id):
             _s._emit_running_task_event(
                 session_id,
                 cleared_msg_id=msg_id,
-                cleared_execution_id=f"{msg_id}_reply",
+                cleared_execution_id=_execution_id,
             )
         _s._reset_current_session_id(_conv_token)
 

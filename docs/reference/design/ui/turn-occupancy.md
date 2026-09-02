@@ -8,7 +8,7 @@ Related: [`interaction-feedback.md`](interaction-feedback.md) (0ms UI),
 [`send-queue-reliability.html`](send-queue-reliability.html) (queue
 mechanics). Code: `use-chat-submit.ts` (`stopSession`),
 `server.py` (`_finish_owned_run` / `_try_reserve_run`),
-`run_control.py` (`cancel_execution`, `CANCEL_GRACE_S`),
+`production_driver.py` (`cancel_canonical_execution`, `CANCEL_GRACE_S`),
 `providers/utils/cancelable_stream.py`.
 
 ## Invariants (from Codex CLI and Claude Code)
@@ -24,7 +24,7 @@ has no intermediate status.
 
 1. **One occupancy source of truth per side.** Client: `runningTasks`
    in the session store, mirrored to the composer. Server:
-   `_running_tasks` + active runtime. Message `status` renders bubbles;
+   `_running_tasks` plus the canonical execution driver. Message `status` renders bubbles;
    it never gates the composer, and the composer state never gates
    bubble rendering.
 2. **Terminal states are irreversible.** Once a message is `cancelled`
@@ -37,8 +37,7 @@ has no intermediate status.
 3. **Placeholders never overwrite identity.** An empty
    `{ msg_id: "" }` occupancy reservation may only be written into an
    empty slot. A slot holding `msg_id` / `execution_id` is what makes
-   stop able to send `execution.cancel`; stomping it downgrades stop
-   to the fallback `stop` action.
+   stop able to send `execution.cancel`.
 4. **Only the turn's own terminal frame releases occupancy.** A
    nested `display:"runtime"` result (inline @agentic_function, spawn
    attach) finalizes its card, not the turn. Late `running_task`
@@ -61,7 +60,7 @@ the model. Do not wait for the next token.
 OpenProgram copies both. The send queue already parks a typed message
 while `runningTask` is set. Stop must:
 
-1. Send `execution.cancel` (or the `stop` fallback).
+1. Send `execution.cancel` for the canonical execution.
 2. Patch the live assistant to `cancelled` (keep streamed text).
 3. `setRunningTaskFor(sessionId, null, "always")` so the queue drains
    at 0ms.
@@ -72,16 +71,13 @@ old bug.
 
 ## Occupancy is released on cancel intent
 
-The session slot is `_running_tasks` **and** the active runtime.
-`_is_run_active` still returns True via `_has_active_runtime` if only
-the task map is popped.
+The session slot is `_running_tasks`, and the canonical driver owns the
+active attempt. The transport slot is not a second lifecycle authority.
 
 When `cancel_execution` succeeds:
 
-- Map `execution_id` to `session_id` + `msg_id` (chat executions are
-  `{msg_id}_reply`).
-- Call `_finish_owned_run(session_id, msg_id)` so both the task entry
-  and the runtime unregister.
+- Match the admitted `execution_id` to `session_id` + `msg_id`.
+- Call `_finish_owned_run(session_id, msg_id)` to remove the transport slot.
 - Broadcast `running_task_clear` so every client matches. The
   clear names the finished turn (`msg_id` / `execution_id`).
 
@@ -95,13 +91,11 @@ stop-and-send.
 reservation is safe. The cancelled turn's `finally` also calls
 `_finish_owned_run`; the second call is a no-op.
 
-Also retire that execution's cancel token. Occupancy is the slot;
-the token is the stop flag. Leaving a cancelled token in
-`_current_tokens` makes the next `claim_cancel_event` fail, or a
-reused `{msg_id}_reply` start already cancelled. The old stream
-still sees its own Event (`opts.signal`), which is already set.
+The canonical Agent driver owns the cooperative cancel event and exact
+attempt generation. Transport reservations do not claim a `run_control`
+token or derive an execution identifier from `{msg_id}_reply`.
 
-Do **not** wait for `process_user_turn` to return before the next
+Do **not** wait for the old driver thread to return before the next
 `_try_reserve_run`.
 
 ## 0ms UI

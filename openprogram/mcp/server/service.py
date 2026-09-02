@@ -41,14 +41,15 @@ class MCPClientContext:
         object.__setattr__(self, "authority", MappingProxyType(expected))
 
 
-@dataclass(frozen=True)
+@dataclass
 class ActiveMCPRequest:
     request_id: str
-    execution_id: str
     session_id: str
     client_id: str
     thread_cancel: threading.Event
     tool_cancel: asyncio.Event
+    execution_id: str = ""
+    question_registry: Any | None = None
     worker_done: threading.Event = field(default_factory=threading.Event)
     outer_abandoned: threading.Event = field(default_factory=threading.Event)
 
@@ -100,53 +101,41 @@ def _default_registry_exposed_names() -> set[str]:
     return exposed_names()
 
 
-def _default_process_user_turn(request, *, cancel_event):
-    from openprogram.agent.dispatcher import process_user_turn
-
-    return process_user_turn(request, cancel_event=cancel_event)
-
-
 def _default_register_cancel_event(
     session_id, event, *, execution_id: str,
 ) -> bool:
-    from openprogram.agent.run_control import claim_cancel_event
-
-    return claim_cancel_event(
-        session_id, event, execution_id=execution_id, foreground=True,
-    )
+    del session_id, event, execution_id
+    return True
 
 
 def _default_unregister_cancel_event(
     session_id, event, *, execution_id: str,
 ) -> None:
-    from openprogram.agent.run_control import unregister_cancel_event
-
-    unregister_cancel_event(session_id, event, execution_id=execution_id)
+    del session_id, event, execution_id
 
 
 def _default_current_cancel_event(session_id, *, execution_id: str):
-    from openprogram.agent.run_control import current_token
-
-    token = current_token(session_id, execution_id=execution_id)
-    return token.event if token is not None else None
+    del session_id, execution_id
+    return None
 
 
 def _default_acquire_cancel_cleanup(session_id, event) -> bool:
-    from openprogram.agent.run_control import acquire_cancel_cleanup
-
-    return acquire_cancel_cleanup(session_id, event)
+    del session_id, event
+    return True
 
 
 def _default_release_cancel_cleanup(session_id, event) -> None:
-    from openprogram.agent.run_control import release_cancel_cleanup
-
-    release_cancel_cleanup(session_id, event)
+    del session_id, event
 
 
 def _default_cancel_execution(execution_id: str) -> Any:
-    from openprogram.agent.run_control import cancel_execution
+    from openprogram.agent.production_driver import cancel_canonical_execution
 
-    return cancel_execution(execution_id)
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(cancel_canonical_execution(execution_id))
+    return loop.create_task(cancel_canonical_execution(execution_id))
 
 
 def _default_question_registry():
@@ -420,6 +409,9 @@ def _web_page_context_tokens(raw: Any) -> list[str]:
 
 
 class MCPService:
+    _process_session_lock = threading.RLock()
+    _process_session_owners: dict[str, ActiveMCPRequest] = {}
+
     def __init__(
         self,
         context: MCPClientContext,
@@ -448,7 +440,10 @@ class MCPService:
         self._registry_exposed_names = (
             registry_exposed_names or _default_registry_exposed_names
         )
-        self._process_user_turn = process_user_turn or _default_process_user_turn
+        if process_user_turn is None:
+            from openprogram.agent.dispatcher import process_user_turn as _canonical_turn_runner
+            process_user_turn = _canonical_turn_runner
+        self._process_user_turn = process_user_turn
         self._register_cancel_event = (
             register_cancel_event or _default_register_cancel_event
         )
@@ -465,6 +460,7 @@ class MCPService:
             release_cancel_cleanup or _default_release_cancel_cleanup
         )
         self._cancel_execution = cancel_execution or _default_cancel_execution
+        self._driver_owns_question_cancel = cancel_execution is None
         self._question_registry_getter = (
             question_registry_getter or _default_question_registry
         )
@@ -512,7 +508,10 @@ class MCPService:
             if self._closed or record is None:
                 return
             try:
-                questions = self._question_registry_getter()
+                questions = (
+                    record.question_registry
+                    or self._question_registry_getter()
+                )
                 pending = next(
                     (
                         question for question in questions.list_pending(session_id)
@@ -549,23 +548,30 @@ class MCPService:
 
     def _unregister_once(self, record: ActiveMCPRequest) -> None:
         with self._active_lock:
-            if self._registered_requests.get(record.request_id) is not record:
-                return
             self._registered_requests.pop(record.request_id, None)
-        _best_effort(
-            self._unregister_cancel_event,
-            record.session_id,
-            record.thread_cancel,
-            execution_id=record.execution_id,
-        )
 
     def _remove_owned(self, record: ActiveMCPRequest) -> bool:
+        removed = False
         with self._active_lock:
             if self._active_by_request.get(record.request_id) is not record:
                 return False
             self._active_by_request.pop(record.request_id, None)
             if self._request_by_session.get(record.session_id) == record.request_id:
                 self._request_by_session.pop(record.session_id, None)
+            removed = True
+        if removed:
+            with self._process_session_lock:
+                if self._process_session_owners.get(record.session_id) is record:
+                    self._process_session_owners.pop(record.session_id, None)
+        return removed
+
+    @classmethod
+    def _claim_process_session(cls, record: ActiveMCPRequest) -> bool:
+        with cls._process_session_lock:
+            current = cls._process_session_owners.get(record.session_id)
+            if current is not None and current is not record:
+                return False
+            cls._process_session_owners[record.session_id] = record
             return True
 
     def _worker_finished(self, record: ActiveMCPRequest) -> None:
@@ -608,48 +614,14 @@ class MCPService:
                 return False
             self._cleaning_sessions.add(record.session_id)
         try:
-            from openprogram.agent.run_control import (
-                ExecutionNotCancellable,
-                ExecutionNotFound,
-            )
-
             try:
-                self._cancel_execution(record.execution_id)
-            except ExecutionNotCancellable:
-                return False
-            except ExecutionNotFound:
-                try:
-                    session = self._session_db.get_session(record.session_id)
-                    nodes = self._session_db.get_nodes(record.session_id)
-                except Exception:
+                if not record.execution_id:
                     return False
-                if (
-                    not isinstance(session, Mapping)
-                    or session.get("id") != record.session_id
-                    or not isinstance(nodes, (list, tuple))
-                    or any(
-                        getattr(node, "id", None) == record.execution_id
-                        for node in nodes
-                    )
-                ):
-                    return False
-                with self._active_lock:
-                    still_active = (
-                        self._active_by_request.get(record.request_id) is record
-                        and self._request_by_session.get(record.session_id)
-                        == record.request_id
-                    )
-                if not still_active:
-                    return False
-                try:
-                    current_event = self._current_cancel_event(
-                        record.session_id,
-                        execution_id=record.execution_id,
-                    )
-                except Exception:
-                    return False
-                if current_event is not record.thread_cancel:
-                    return False
+                result = self._cancel_execution(record.execution_id)
+                if isinstance(result, asyncio.Task):
+                    # The task will signal the live AgentDriver handle; the
+                    # local cooperative events are set below immediately.
+                    pass
             except Exception:
                 return False
 
@@ -671,10 +643,13 @@ class MCPService:
             try:
                 if owns_session:
                     try:
-                        questions = self._question_registry_getter()
+                        questions = (
+                            record.question_registry
+                            or self._question_registry_getter()
+                        )
                     except Exception:
                         questions = None
-                    if questions is not None:
+                    if questions is not None and not self._driver_owns_question_cancel:
                         cancel_questions = getattr(
                             questions, "cancel_execution", None
                         )
@@ -861,31 +836,18 @@ class MCPService:
                     thread_cancel = threading.Event()
                     tool_cancel = asyncio.Event()
                     user_msg_id = uuid.uuid4().hex[:12]
-                    execution_id = user_msg_id + "_reply"
                     record = ActiveMCPRequest(
                         request_id=request_id,
-                        execution_id=execution_id,
                         session_id=selected_session_id,
                         client_id=self.context.client_id,
                         thread_cancel=thread_cancel,
                         tool_cancel=tool_cancel,
                     )
-                    claimed = self._register_cancel_event(
-                        selected_session_id,
-                        thread_cancel,
-                        execution_id=record.execution_id,
-                    )
-                    if claimed is False or (
-                        self._current_cancel_event(
-                            selected_session_id,
-                            execution_id=record.execution_id,
-                        )
-                        is not thread_cancel
-                    ):
-                        raise RuntimeError
                     self._session_db.create_session(
                         selected_session_id, "main", source="mcp"
                     )
+                    if not self._claim_process_session(record):
+                        raise RuntimeError("MCP session is already active")
                     registered = True
                     self._active_by_request[request_id] = record
                     self._request_by_session[selected_session_id] = request_id
@@ -893,13 +855,6 @@ class MCPService:
                 except Exception:
                     registered = False
             if not registered:
-                if record is not None:
-                    _best_effort(
-                        self._unregister_cancel_event,
-                        selected_session_id,
-                        record.thread_cancel,
-                        execution_id=record.execution_id,
-                    )
                 return json_result({"error": "prompt execution failed"}, is_error=True)
         else:
             invalid_session = False
@@ -922,7 +877,6 @@ class MCPService:
             tool_cancel = asyncio.Event()
             record = ActiveMCPRequest(
                 request_id=request_id,
-                execution_id=uuid.uuid4().hex[:12] + "_reply",
                 session_id=selected_session_id,
                 client_id=self.context.client_id,
                 thread_cancel=thread_cancel,
@@ -938,37 +892,19 @@ class MCPService:
                     return json_result(
                         {"error": "prompt execution failed"}, is_error=True
                     )
-                try:
-                    claimed = self._register_cancel_event(
-                        selected_session_id,
-                        thread_cancel,
-                        execution_id=record.execution_id,
-                    )
-                    if claimed is False or (
-                        self._current_cancel_event(
-                            selected_session_id,
-                            execution_id=record.execution_id,
-                        )
-                        is not thread_cancel
-                    ):
-                        raise RuntimeError
-                    registered = True
-                except Exception:
-                    registered = False
+                registered = True
                 if registered:
+                    if not self._claim_process_session(record):
+                        return json_result(
+                            {"error": "prompt execution failed"}, is_error=True
+                        )
                     self._active_by_request[request_id] = record
                     self._request_by_session[selected_session_id] = request_id
                     self._registered_requests[request_id] = record
             if not registered:
-                _best_effort(
-                    self._unregister_cancel_event,
-                    selected_session_id,
-                    thread_cancel,
-                    execution_id=record.execution_id,
-                )
                 return json_result({"error": "prompt execution failed"}, is_error=True)
 
-        user_msg_id = record.execution_id.removesuffix("_reply")
+        user_msg_id = uuid.uuid4().hex[:12]
         try:
             request = TurnRequest(
                 session_id=selected_session_id,
@@ -1007,11 +943,47 @@ class MCPService:
         return prompt_result(selected_session_id, result)
 
     def _run_worker(self, record: ActiveMCPRequest, request: Any) -> Any:
+        registered = False
         try:
-            return self._process_user_turn(
-                request, cancel_event=record.thread_cancel
+            from openprogram.agent.production_driver import CanonicalAgentAdapter
+
+            try:
+                question_registry = self._question_registry_getter()
+            except Exception:
+                # Question observation is auxiliary to turn execution. A
+                # broken registry hook must not prevent the admitted prompt
+                # from running or change its ownership outcome.
+                question_registry = None
+            record.question_registry = question_registry
+            adapter = CanonicalAgentAdapter(
+                turn_runner=lambda *, request, cancel_event: self._process_user_turn(
+                    request, cancel_event=cancel_event,
+                ),
+                question_registry=question_registry,
             )
+            admission = adapter.admit(
+                request,
+                trusted_actor=dict(self.context.authority),
+                user_message_id=request.user_msg_id,
+                config_snapshot_ref=f"mcp:{record.client_id}",
+            )
+            record.execution_id = admission.execution_id
+            self._register_cancel_event(
+                record.session_id,
+                record.thread_cancel,
+                execution_id=record.execution_id,
+            )
+            registered = True
+            _active, result = asyncio.run(adapter.activate(admission))
+            return result
         finally:
+            if registered and record.execution_id:
+                _best_effort(
+                    self._unregister_cancel_event,
+                    record.session_id,
+                    record.thread_cancel,
+                    execution_id=record.execution_id,
+                )
             self._worker_finished(record)
 
     def sessions_list(self) -> AgentToolResult:

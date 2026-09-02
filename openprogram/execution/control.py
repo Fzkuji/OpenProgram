@@ -49,8 +49,13 @@ _default_control_services_lock = RLock()
 def default_control_service() -> RuntimeControlService:
     """Return the canonical control service for the active profile."""
     profile = get_active_profile() or "default"
+    # Test and embedded workers may switch the state directory while keeping
+    # the profile name. Key the service by the actual execution database so
+    # admission and activation cannot read different stores.
+    from openprogram.paths import get_execution_db_path
+    service_key = f"{profile}:{get_execution_db_path()}"
     with _default_control_services_lock:
-        service = _default_control_services.get(profile)
+        service = _default_control_services.get(service_key)
         if service is None:
             executions = default_store()
             service = RuntimeControlService(
@@ -58,7 +63,7 @@ def default_control_service() -> RuntimeControlService:
                 AttemptStore(executions),
                 DriverRegistry(),
             )
-            _default_control_services[profile] = service
+            _default_control_services[service_key] = service
         return service
 
 

@@ -86,14 +86,16 @@ permission_module.load_merged_rules = lambda _session_id: PermissionRules(
 )
 
 from openprogram.agent import dispatcher
+from openprogram.agent.run_control import get_current_execution_id
 from types import SimpleNamespace
 def process_user_turn(request, *, cancel_event):
     record("turn", session_id=request.session_id, prompt=request.user_text,
            speaker_id=request.speaker_id)
-    questions.pending["fixture-question"] = request.user_msg_id + "_reply"
+    execution_id = get_current_execution_id()
+    questions.pending["fixture-question"] = execution_id
     get_event_bus().emit(make_event("question.asked", "agent", {
         "id": "fixture-question", "session_id": request.session_id,
-        "execution_id": request.user_msg_id + "_reply",
+        "execution_id": execution_id,
     }))
     if request.user_text == "wait-for-cancel":
         record("entered", session_id=request.session_id)
