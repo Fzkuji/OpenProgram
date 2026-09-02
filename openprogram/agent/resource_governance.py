@@ -1327,6 +1327,7 @@ class ResourceGovernor:
                        started_at = ?, last_activity_at = ?, lease_expires_at = ?
                    WHERE job_id = ? AND state = 'queued'
                      AND dispatch_ready = 0
+                     AND terminal_blocked = 0
                      AND borrowed_parent_job_id = ?
                      AND owner_instance_id IS NULL""",
                 (
@@ -1770,21 +1771,115 @@ class ResourceGovernor:
                 (job_id,),
             ).rowcount == 1
 
-    def unblock_terminal_dispatch(self, job_id: str) -> bool:
-        """Restore a queued admission after a pre-transition CAS failed."""
+    def unblock_terminal_dispatch(
+        self,
+        job_id: str,
+        *,
+        expected_state: str = "queued",
+        expected_owner_instance_id: str | None = None,
+        expected_lease_generation: int | None = None,
+    ) -> bool:
+        """Restore a queued admission under an exact recovery fence."""
+        owner_clause = (
+            "owner_instance_id IS NULL"
+            if expected_owner_instance_id is None
+            else "owner_instance_id = ?"
+        )
+        generation_clause = (
+            ""
+            if expected_lease_generation is None
+            else " AND lease_generation = ?"
+        )
+        params: list[Any] = [job_id, expected_state]
+        if expected_owner_instance_id is not None:
+            params.append(expected_owner_instance_id)
+        if expected_lease_generation is not None:
+            params.append(expected_lease_generation)
         with self.ledger.immediate() as conn:
             return conn.execute(
-                """UPDATE job_admissions
-                   SET dispatch_ready = 1, terminal_blocked = 0
-                   WHERE job_id = ? AND state = 'queued'
+                f"""UPDATE job_admissions
+                   SET dispatch_ready = CASE
+                           WHEN borrowed_parent_job_id IS NULL THEN 1 ELSE 0 END,
+                       terminal_blocked = 0
+                   WHERE job_id = ? AND state = ?
                      AND terminal_blocked = 1
+                     AND {owner_clause}{generation_clause}
                      AND NOT EXISTS (
                          SELECT 1 FROM job_finalizations
                          WHERE job_finalizations.job_id = job_admissions.job_id
                            AND job_finalizations.state = 'pending'
                      )""",
-                (job_id,),
+                params,
             ).rowcount == 1
+
+    def restore_terminal_dispatch_claim(
+        self,
+        job_id: str,
+        *,
+        expected_state: str,
+        expected_owner_instance_id: str | None,
+        expected_lease_generation: int,
+        target_state: str,
+        owner_instance_id: str | None = None,
+        lease_generation: int | None = None,
+        reason_code: str | None = None,
+    ) -> bool:
+        """Reconcile a pre-cancel fence to a canonical owner/state exactly."""
+        if target_state not in {"live", "stopping", "released"}:
+            raise ValueError("target_state must be live, stopping, or released")
+        if target_state != "released" and (
+            owner_instance_id is None or lease_generation is None
+        ):
+            raise ValueError("an active target requires an owner fence")
+        owner_clause = (
+            "owner_instance_id IS NULL"
+            if expected_owner_instance_id is None
+            else "owner_instance_id = ?"
+        )
+        params: list[Any] = [job_id, expected_state]
+        if expected_owner_instance_id is not None:
+            params.append(expected_owner_instance_id)
+        params.append(expected_lease_generation)
+        with self.ledger.immediate() as conn:
+            if target_state == "released":
+                sql = f"""UPDATE job_admissions
+                           SET state = 'released', terminal_blocked = 0,
+                               dispatch_ready = 0, owner_instance_id = NULL,
+                               lease_expires_at = NULL, released_at = ?,
+                               resume_parent_msg_id = NULL,
+                               reason_code = COALESCE(?, reason_code)
+                           WHERE job_id = ? AND state = ?
+                             AND terminal_blocked = 1
+                             AND {owner_clause}
+                             AND lease_generation = ?
+                             AND NOT EXISTS (
+                                 SELECT 1 FROM job_finalizations
+                                 WHERE job_finalizations.job_id = job_admissions.job_id
+                                   AND job_finalizations.state = 'pending'
+                             )"""
+                release_params = [time.time(), reason_code, *params]
+                return conn.execute(sql, release_params).rowcount == 1
+            now = time.time()
+            sql = f"""UPDATE job_admissions
+                       SET state = ?, terminal_blocked = 0,
+                           dispatch_ready = 0, owner_instance_id = ?,
+                           lease_generation = ?, started_at = COALESCE(started_at, ?),
+                           last_activity_at = ?, lease_expires_at = ?,
+                           reason_code = COALESCE(?, reason_code)
+                       WHERE job_id = ? AND state = ?
+                         AND terminal_blocked = 1
+                         AND {owner_clause}
+                         AND lease_generation = ?
+                         AND NOT EXISTS (
+                             SELECT 1 FROM job_finalizations
+                             WHERE job_finalizations.job_id = job_admissions.job_id
+                               AND job_finalizations.state = 'pending'
+                         )"""
+            active_params = [
+                target_state, owner_instance_id, lease_generation, now, now,
+                now + 30.0, reason_code, *params,
+            ]
+            return conn.execute(sql, active_params).rowcount == 1
 
     def _complete_ownerless_projection(
         self, job_id: str, *, lease_generation: int,
@@ -1873,6 +1968,21 @@ class ResourceGovernor:
                 (job_id,),
             ).fetchone()
         return None if row is None else (row[0], int(row[1]))
+
+    def admission_state(self, job_id: str) -> tuple[str, str | None, int, bool] | None:
+        """Return state and fence fields needed for canonical recovery."""
+        with self.ledger.connection() as conn:
+            row = conn.execute(
+                """SELECT state, owner_instance_id, lease_generation,
+                          terminal_blocked
+                   FROM job_admissions WHERE job_id = ?""",
+                (job_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return (
+            str(row[0]), row[1], int(row[2]), bool(row[3]),
+        )
 
     def complete_pending_finalization(
         self,

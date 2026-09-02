@@ -1478,6 +1478,72 @@ def test_requeue_keeps_pending_finalization_under_its_original_fence(
     ).fetchone()[0] == "completed"
 
 
+def test_terminal_barrier_fences_borrowed_activation_until_reconcile(tmp_path):
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _job: resolved)
+    parent = Job(id="parent", parent_session_id="s1", prompt="p", agent_id="a")
+    governor.admit_job(parent, persist=lambda _job: None)
+    parent_claim = governor.claim_next(owner_instance_id="worker")
+    assert parent_claim is not None
+    child = Job(
+        id="child", parent_session_id="s1", parent_job_id=parent.id,
+        prompt="c", agent_id="a",
+    )
+    governor.admit_job(
+        child,
+        persist=lambda _job: None,
+        dispatch_ready=False,
+        borrowed_claim=(parent.id, "worker", parent_claim.lease_generation),
+    )
+
+    assert governor.block_dispatch(child.id)
+    assert not governor.start_borrowed_job(
+        child.id,
+        parent_job_id=parent.id,
+        owner_instance_id="worker",
+        lease_generation=parent_claim.lease_generation,
+    )
+    assert governor.unblock_terminal_dispatch(
+        child.id,
+        expected_state="queued",
+        expected_owner_instance_id=None,
+    )
+    assert tuple(ledger.connection().execute(
+        "SELECT dispatch_ready, terminal_blocked FROM job_admissions "
+        "WHERE job_id = ?", (child.id,),
+    ).fetchone()) == (0, 0)
+    assert governor.start_borrowed_job(
+        child.id,
+        parent_job_id=parent.id,
+        owner_instance_id="worker",
+        lease_generation=parent_claim.lease_generation,
+    )
+
+def test_terminal_barrier_reconciles_queued_admission_to_exact_owner(tmp_path):
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _job: resolved)
+    job = Job(id="job", parent_session_id="s1", prompt="p", agent_id="a")
+    governor.admit_job(job, persist=lambda _job: None)
+    assert governor.block_dispatch(job.id)
+    fence = governor.admission_fence(job.id)
+    assert fence == (None, 0)
+    assert governor.restore_terminal_dispatch_claim(
+        job.id,
+        expected_state="queued",
+        expected_owner_instance_id=None,
+        expected_lease_generation=fence[1],
+        target_state="live",
+        owner_instance_id="canonical-owner",
+        lease_generation=4,
+    )
+    assert tuple(ledger.connection().execute(
+        "SELECT state, owner_instance_id, lease_generation, terminal_blocked "
+        "FROM job_admissions WHERE job_id = ?", (job.id,),
+    ).fetchone()) == ("live", "canonical-owner", 4, 0)
+
+
 def test_borrowed_pending_finalization_blocks_direct_and_orphan_release(
     tmp_path,
 ) -> None:

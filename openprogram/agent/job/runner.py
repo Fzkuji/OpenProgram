@@ -786,15 +786,78 @@ class JobRunner:
         return completed
 
     def _reconcile_terminal_dispatch_barriers(self) -> None:
-        """Release pre-cancel fences when canonical cancellation did not win."""
+        """Reconcile pre-cancel fences with the canonical execution owner."""
         unblock = getattr(self._governor, "unblock_terminal_dispatch", None)
         if unblock is None:
             return
+        admission_state = getattr(self._governor, "admission_state", None)
+        restore = getattr(
+            self._governor, "restore_terminal_dispatch_claim", None,
+        )
         for execution in self._execution_store.list_nonterminal():
-            if execution.status.value != "queued" or execution.current_attempt_id:
+            if admission_state is None:
+                if (
+                    execution.status.value == "queued"
+                    and execution.current_attempt_id is None
+                ):
+                    try:
+                        unblock(execution.execution_id)
+                    except Exception:
+                        _log.exception(
+                            "failed to reconcile terminal dispatch barrier for %s",
+                            execution.execution_id,
+                        )
                 continue
             try:
-                unblock(execution.execution_id)
+                admission = admission_state(execution.execution_id)
+                if admission is None or not admission[3]:
+                    continue
+                state, owner, lease_generation, _blocked = admission
+                if (
+                    execution.status.value == "queued"
+                    and execution.current_attempt_id is None
+                ):
+                    unblock(
+                        execution.execution_id,
+                        expected_state=state,
+                        expected_owner_instance_id=owner,
+                        expected_lease_generation=lease_generation,
+                    )
+                    continue
+                if restore is None:
+                    continue
+                canonical_owner = execution.owner_lease.get("owner_id")
+                canonical_generation = execution.owner_lease.get("generation")
+                if (
+                    execution.current_attempt_id is not None
+                    and isinstance(canonical_owner, str)
+                    and isinstance(canonical_generation, int)
+                ):
+                    restore(
+                        execution.execution_id,
+                        expected_state=state,
+                        expected_owner_instance_id=owner,
+                        expected_lease_generation=lease_generation,
+                        target_state=(
+                            "stopping"
+                            if execution.status.value == "cancelling"
+                            else "live"
+                        ),
+                        owner_instance_id=canonical_owner,
+                        lease_generation=canonical_generation,
+                        reason_code=execution.reason_code,
+                    )
+                elif execution.status.value in {
+                    "paused", "cancelling", "reconciliation_required",
+                }:
+                    restore(
+                        execution.execution_id,
+                        expected_state=state,
+                        expected_owner_instance_id=owner,
+                        expected_lease_generation=lease_generation,
+                        target_state="released",
+                        reason_code=execution.reason_code,
+                    )
             except Exception:
                 _log.exception(
                     "failed to reconcile terminal dispatch barrier for %s",
