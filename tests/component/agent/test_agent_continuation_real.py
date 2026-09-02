@@ -253,6 +253,11 @@ def test_provider_pause_resume_reuses_saved_terminal_answer(real_agent_chat):
         item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.PAUSED else None
     ))
     assert paused.checkpoint_head_id is not None
+    first_attempt = next(
+        event.payload["attempt"]
+        for event in real_agent_chat.store.list_events(execution.execution_id)
+        if event.kind == "attempt.active"
+    )
     resumed = _command(real_agent_chat, "execution.continue", paused, "continue-provider")
     assert resumed["status"] in {"accepted", "applying", "applied"}
     completed = _wait(lambda: (
@@ -270,6 +275,13 @@ def test_provider_pause_resume_reuses_saved_terminal_answer(real_agent_chat):
     })
     assert completed.status is ExecutionStatus.COMPLETED, real_agent_chat.store.list_events(execution.execution_id)
     assert completed.current_attempt_id is None
+    resumed_attempts = [
+        event.payload["attempt"]
+        for event in real_agent_chat.store.list_events(execution.execution_id)
+        if event.kind == "attempt.active"
+    ]
+    assert resumed_attempts[-1]["attempt_id"] != first_attempt["attempt_id"]
+    assert resumed_attempts[-1]["generation"] > first_attempt["generation"]
     assert real_agent_chat.provider.call_count == 1
     branch = real_agent_chat.sessions.get_branch(real_agent_chat.session_id)
     users = [item for item in branch if item["role"] == "user"]
@@ -313,6 +325,11 @@ def test_after_tool_continue_runs_only_the_unfinished_tool(real_agent_chat):
     })
     assert paused.safe_point["phase"] == "after_tool"
     assert real_agent_chat.tools.calls == ["first"]
+    first_attempt = next(
+        event.payload["attempt"]
+        for event in real_agent_chat.store.list_events(execution.execution_id)
+        if event.kind == "attempt.active"
+    )
     step = _command(real_agent_chat, "execution.step", paused, "step-second")
     duplicate = _command(real_agent_chat, "execution.step", paused, "step-second")
     assert step["status"] in {"accepted", "applying", "applied"}, step
@@ -324,6 +341,13 @@ def test_after_tool_continue_runs_only_the_unfinished_tool(real_agent_chat):
     assert paused_after_step.safe_point["phase"] == "after_tool"
     assert real_agent_chat.tools.calls == ["first", "second"]
     assert real_agent_chat.store.get_command("step-second").result_json["managed_action_id"]
+    step_attempts = [
+        event.payload["attempt"]
+        for event in real_agent_chat.store.list_events(execution.execution_id)
+        if event.kind == "attempt.active"
+    ]
+    assert step_attempts[-1]["attempt_id"] != first_attempt["attempt_id"]
+    assert step_attempts[-1]["generation"] > first_attempt["generation"]
     assert _command(real_agent_chat, "execution.continue", paused_after_step, "continue-final")["status"] in {"accepted", "applying", "applied"}
     _wait(lambda: (
         item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.COMPLETED else None
