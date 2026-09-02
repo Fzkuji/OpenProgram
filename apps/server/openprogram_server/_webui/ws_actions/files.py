@@ -19,13 +19,13 @@ Wire format::
 
     in:  {"action": "project_file_read", "project_id": "...", "path": "src/x.py"}
     out: {"type": "project_file_read_result",
-          "data": {"project_id", "path", "content"?, "size", "mtime",
+          "data": {"project_id", "path", "content"?, "size", "mtime", "revision"?,
                    "truncated"?, "binary"?, "too_large"?, "error"?}}
 
     in:  {"action": "project_file_write", "project_id": "...",
           "path": "src/x.py", "content": "...", "expected_mtime"?: 123.4}
     out: {"type": "project_file_write_result",
-          "data": {"project_id", "path", "ok"?, "mtime"?,
+          "data": {"project_id", "path", "ok"?, "mtime"?, "revision"?,
                    "conflict"?: true, "error"?}}
 
     in:  {"action": "project_file_create", "project_id": "...",
@@ -540,6 +540,7 @@ def _query_page_size(value: object) -> int:
 
 def _query_error(project_id: str, path: str, *, code: str,
                  message: str | None = None, kind: str = "directory") -> dict:
+    status = "stale" if code in {"STALE_SNAPSHOT", "STALE_CURSOR", "CURSOR"} else "error"
     payload = {
         "project_id": project_id,
         "path": path,
@@ -549,7 +550,7 @@ def _query_error(project_id: str, path: str, *, code: str,
         "page_size": _QUERY_PAGE_SIZE,
         "error_code": code,
         "error": message or code,
-        "status": "error",
+        "status": status,
     }
     payload["entries" if kind == "directory" else "results"] = []
     return payload
@@ -1256,6 +1257,7 @@ def _read_file(project_id: str, path: str) -> dict:
     except OSError as e:
         return {"error": f"{type(e).__name__}: {e}"}
     result["content"] = raw.decode("utf-8", errors="replace")
+    result["revision"] = hashlib.sha256(raw).hexdigest()
     return result
 
 
@@ -1287,7 +1289,11 @@ def _write_file(project_id: str, path: str, content: str,
         with open(tmp, "wb") as f:
             f.write(raw)
         os.replace(tmp, target)
-        return {"ok": True, "mtime": os.stat(target).st_mtime}
+        return {
+            "ok": True,
+            "mtime": os.stat(target).st_mtime,
+            "revision": hashlib.sha256(raw).hexdigest(),
+        }
     except OSError as e:
         try:
             os.unlink(tmp)

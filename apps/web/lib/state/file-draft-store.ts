@@ -6,6 +6,7 @@ export interface DraftStoreRecord {
   baselineContent: string;
   baselineMtime: number;
   baselineRevision?: string;
+  save_status?: "pending" | "persisted" | "error";
   bytes: number;
   updatedAt: number;
 }
@@ -128,10 +129,13 @@ export class IndexedDbDraftStore implements DraftStoreAdapter {
   }
 
   repair(): Promise<DraftStoreSnapshot> {
-    return this.mutate((snapshot) => ({
-      drafts: snapshot.drafts,
-      indexes: rebuildDraftIndexes(snapshot),
-    }));
+    return this.mutate((snapshot) => {
+      const drafts = snapshot.drafts.map((record) => ({
+        ...record,
+        save_status: record.save_status ?? "persisted",
+      }));
+      return { drafts, indexes: rebuildDraftIndexes({ drafts, indexes: snapshot.indexes }) };
+    });
   }
 
 }
@@ -167,7 +171,13 @@ export class MemoryDraftStore implements DraftStoreAdapter {
   }
 
   repair(): Promise<DraftStoreSnapshot> {
-    return this.mutate((snapshot) => ({ drafts: snapshot.drafts, indexes: rebuildDraftIndexes(snapshot) }));
+    return this.mutate((snapshot) => {
+      const drafts = snapshot.drafts.map((record) => ({
+        ...record,
+        save_status: record.save_status ?? "persisted",
+      }));
+      return { drafts, indexes: rebuildDraftIndexes({ drafts, indexes: snapshot.indexes }) };
+    });
   }
 
   private maybeFail(): void {

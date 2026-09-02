@@ -28,6 +28,8 @@ import {
   clearFileDraftsForPath,
   filesWsRequest,
   hasDirtyDraftsForPath,
+  invalidateFileRead,
+  loadFileDraft,
   noteFileMtime,
   runServerRenameWithDrafts,
   type Project,
@@ -315,9 +317,15 @@ export function FileTree({
   const searchRows = useRef(new Map<string, SearchResult>());
   const searchLoadingRef = useRef(false);
   const searchLoadingGeneration = useRef<number | null>(null);
+  const searchControllers = useRef(new Set<AbortController>());
   const revealTarget = useRef<string | null>(null);
   const revealScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const revealFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function abortSearchQueries(): void {
+    for (const controller of searchControllers.current) controller.abort();
+    searchControllers.current.clear();
+  }
 
   useEffect(() => {
     directoryPagesRef.current = directoryPages;
@@ -329,16 +337,17 @@ export function FileTree({
     responseType: string,
     canRun: () => boolean,
     outerSignal?: AbortSignal,
+    controllerSet: Set<AbortController> = queryControllers.current,
   ): Promise<T | null> {
     if (!canRun()) return Promise.resolve(null);
     const controller = new AbortController();
     const onAbort = () => controller.abort();
     outerSignal?.addEventListener("abort", onAbort, { once: true });
-    queryControllers.current.add(controller);
+    controllerSet.add(controller);
     return filesWsRequest<T>(action, payload, responseType, {
       signal: controller.signal,
     }).finally(() => {
-      queryControllers.current.delete(controller);
+      controllerSet.delete(controller);
       outerSignal?.removeEventListener("abort", onAbort);
     });
   }
@@ -410,6 +419,7 @@ export function FileTree({
 
   // (Re)load the root whenever the project changes.
   useEffect(() => {
+    abortSearchQueries();
     for (const controller of queryControllers.current) controller.abort();
     queryGeneration.current += 1;
     searchGeneration.current += 1;
@@ -481,6 +491,7 @@ export function FileTree({
   }
 
   function refetchRoot() {
+    abortSearchQueries();
     for (const controller of queryControllers.current) controller.abort();
     queryGeneration.current += 1;
     searchGeneration.current += 1;
@@ -506,6 +517,7 @@ export function FileTree({
     const invalidate = (event: Event) => {
       const detail = (event as CustomEvent<{ project_id?: string }>).detail;
       if (detail?.project_id !== projectId) return;
+      abortSearchQueries();
       for (const controller of queryControllers.current) controller.abort();
       queryGeneration.current += 1;
       searchGeneration.current += 1;
@@ -526,7 +538,7 @@ export function FileTree({
    *  broadcast ``project-files-changed`` (reveal mutates nothing, so it
    *  passes no dirs and skips the event). */
   async function fileOp(
-    op: "create" | "rename" | "copy" | "delete" | "reveal",
+    op: "create" | "rename" | "copy" | "delete" | "write" | "reveal",
     payload: Record<string, unknown>,
     refreshDirs: string[],
   ): Promise<FileOperationResult> {
@@ -574,6 +586,12 @@ export function FileTree({
     // avoid starting directory requests that the event would immediately abort.
     void refreshDirs;
     if (op !== "reveal") {
+      if (op === "rename") {
+        invalidateFileRead(projectId, String(payload.path ?? ""));
+        invalidateFileRead(projectId, String(payload.new_path ?? ""));
+      } else if (op === "delete" || op === "write") {
+        invalidateFileRead(projectId, String(payload.path ?? ""));
+      }
       window.dispatchEvent(new CustomEvent("project-files-changed", {
         detail: { project_id: projectId },
       }));
@@ -773,7 +791,35 @@ export function FileTree({
 
   async function doDelete(path: string) {
     const hasDraft = await hasDirtyDraftsForPath(projectId, path);
-    if (hasDraft && !window.confirm(text("Discard unsaved changes before deleting?", "删除前丢弃未保存的修改？"))) return;
+    if (hasDraft) {
+      const choice = window.prompt(text(
+        "Unsaved changes: type save, export, or discard to continue deleting.",
+        "存在未保存修改：请输入 save（保存）、export（导出保留）或 discard（丢弃）后继续删除。",
+      ), "discard")?.trim().toLowerCase();
+      if (choice === "save") {
+        const draft = await loadFileDraft(projectId, path);
+        if (!draft) return;
+        const saved = await fileOp("write", {
+          path,
+          content: draft.draft,
+          expected_mtime: draft.baselineMtime,
+          baseline_revision: draft.baselineRevision,
+        }, [parentOf(path)]);
+        if (saved.status !== "ready") return;
+      } else if (choice === "export") {
+        const draft = await loadFileDraft(projectId, path);
+        if (!draft) return;
+        const blob = new Blob([draft.draft], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = baseOf(path);
+        anchor.click();
+        URL.revokeObjectURL(url);
+      } else if (choice !== "discard") {
+        return;
+      }
+    }
     const deleted = await fileOp("delete", { path }, [parentOf(path)]);
     if (deleted.status !== "ready") return;
     if (hasDraft) {
@@ -850,6 +896,8 @@ export function FileTree({
           },
           "project_file_search_result",
           () => generation === searchGeneration.current,
+          undefined,
+          searchControllers.current,
         );
         if (generation !== searchGeneration.current) return;
         if (data?.error_code === "STALE_SNAPSHOT" && cursor && !retriedStale) {
@@ -888,6 +936,8 @@ export function FileTree({
   }, [projectId]);
 
   useEffect(() => {
+    for (const controller of searchControllers.current) controller.abort();
+    searchControllers.current.clear();
     const query = filter.trim();
     const generation = ++searchGeneration.current;
     searchQuery.current = query;
@@ -905,7 +955,12 @@ export function FileTree({
       return;
     }
     const timer = setTimeout(() => void fetchSearchPage(generation, true), 200);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      for (const controller of searchControllers.current) controller.abort();
+      searchControllers.current.clear();
+      searchGeneration.current += 1;
+    };
   }, [fetchSearchPage, filter, fuzzySearch, projectId]);
 
   const searchMatches = useMemo(() => {

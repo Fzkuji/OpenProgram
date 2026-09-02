@@ -205,6 +205,7 @@ export interface FileReadResult {
   content?: string;
   size: number;
   mtime: number;
+  revision?: string;
   truncated?: boolean;
   binary?: boolean;
   too_large?: boolean;
@@ -276,7 +277,7 @@ export function noteFileMtime(projectId: string, path: string, mtime: number): v
 export function invalidateFileRead(projectId: string, path: string): void {
   const scope = fileScopeKey(projectId, path);
   for (const key of [...readCache.keys()]) {
-    if (!key.startsWith(`${scope}:`)) continue;
+    if (!key.startsWith(`${scope}:`) && !key.startsWith(`${scope}/`)) continue;
     readCache.delete(key);
     readCacheBytes.delete(key);
   }
@@ -314,6 +315,7 @@ export interface FileDraft {
   baselineContent: string;
   baselineMtime: number;
   baselineRevision?: string;
+  save_status?: "pending" | "persisted" | "error";
 }
 
 export function fileDraftKey(projectId: string, path: string): string {
@@ -388,6 +390,7 @@ function canonicalDraftPayload(key: string, draft: FileDraft, updatedAt = 0, byt
     baselineContent: draft.baselineContent,
     baselineMtime: draft.baselineMtime,
     baselineRevision: draft.baselineRevision ?? null,
+    save_status: draft.save_status ?? "persisted",
     bytes,
     updatedAt,
   };
@@ -420,10 +423,7 @@ function applyDraftStoreSnapshot(snapshot: DraftStoreSnapshot): void {
   const drafts = snapshot.drafts as StoredDraft[];
   const liveEntries = [...fileDrafts.entries()]
     .filter(([key]) => liveDraftBytesByKey.has(key));
-  const normalizedDrafts = drafts.map((entry) => ({
-    ...entry,
-    bytes: storedDraftBytes(entry),
-  }));
+  const normalizedDrafts = drafts.map(normalizeDraftRecord);
   draftBytesByKey = new Map(normalizedDrafts.map((entry) => [entry.key, entry.bytes]));
   draftIndexByProject = new Map(
     rebuildDraftIndexes({ drafts: normalizedDrafts, indexes: snapshot.indexes }).map((index) => [index.projectId, index]),
@@ -435,6 +435,7 @@ function applyDraftStoreSnapshot(snapshot: DraftStoreSnapshot): void {
       baselineContent: entry.baselineContent,
       baselineMtime: entry.baselineMtime,
       baselineRevision: entry.baselineRevision,
+      save_status: entry.save_status ?? "persisted",
     });
     draftClock = Math.max(draftClock, entry.updatedAt ?? 0);
   }
@@ -444,7 +445,8 @@ function applyDraftStoreSnapshot(snapshot: DraftStoreSnapshot): void {
 }
 
 function normalizeDraftRecord(entry: StoredDraft): StoredDraft {
-  return { ...entry, bytes: storedDraftBytes(entry) };
+  const normalized = { ...entry, save_status: entry.save_status ?? "persisted" };
+  return { ...normalized, bytes: storedDraftBytes(normalized) };
 }
 
 function normalizedStoreSnapshot(snapshot: DraftStoreSnapshot): DraftStoreSnapshot {
@@ -551,25 +553,22 @@ export function persistFileDraft(projectId: string, path: string, value: FileDra
   const key = fileDraftKey(projectId, path);
   return enqueueDraft(async () => {
     await hydrateDraftState();
-    if (!canPersistFileDraft(key, value)) {
-      return { ok: false, code: "DRAFT_QUOTA_EXCEEDED", message: "Local dirty-draft storage is full; save, export, or discard a draft first." };
-    }
     const store = await getDraftStore();
     if (!store) {
       const message = "Local dirty-draft storage is unavailable; the dirty buffer was retained.";
-      fileDrafts.set(key, structuredClone(value));
-      liveDraftBytesByKey.set(key, fileDraftBytes(key, value));
+      fileDrafts.set(key, { ...structuredClone(value), save_status: "error" });
+      liveDraftBytesByKey.set(key, fileDraftBytes(key, value, draftClock + 1));
       reportDraftPersistenceError(key, message);
       return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
     }
     const stored: StoredDraft = {
-      ...structuredClone(value), key, projectId, path,
+      ...structuredClone(value), key, projectId, path, save_status: "persisted",
       bytes: 0, updatedAt: ++draftClock,
     };
     stored.bytes = storedDraftBytes(stored);
     // Record the live candidate before the write. If the browser rejects the
     // transaction, close/delete checks still see this unsaved content.
-    fileDrafts.set(key, structuredClone(value));
+    fileDrafts.set(key, { ...structuredClone(value), save_status: "pending" });
     liveDraftBytesByKey.set(key, stored.bytes);
     try {
       const result = await store.mutate((snapshot) => {
@@ -596,6 +595,7 @@ export function persistFileDraft(projectId: string, path: string, value: FileDra
         code: quota ? "DRAFT_QUOTA_EXCEEDED" : "DRAFT_PERSISTENCE_FAILED",
         message: quota ? "Local dirty-draft storage is full; the last saved draft was retained." : "Unable to persist the dirty draft; the last saved draft was retained.",
       };
+      fileDrafts.set(key, { ...structuredClone(value), save_status: "error" });
       reportDraftPersistenceError(key, result.message ?? "Unable to persist the dirty draft.");
       return result;
     }
@@ -904,7 +904,7 @@ export function clearFileDraftsForPath(projectId: string, path: string): Promise
     const store = await getDraftStore();
     if (!store) {
       const message = "Unable to discard the local dirty draft because storage is unavailable.";
-      reportDraftPersistenceError(projectId, message);
+      reportDraftPersistenceError(prefix, message);
       return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
     }
     try {
@@ -927,8 +927,8 @@ export function clearFileDraftsForPath(projectId: string, path: string): Promise
       return { ok: true };
     } catch {
       const message = "Unable to discard the local dirty draft.";
-      reportDraftPersistenceError(projectId, message);
-      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
+      reportDraftPersistenceError(prefix, message);
+      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", status: "recovery_required", message };
     }
   });
 }

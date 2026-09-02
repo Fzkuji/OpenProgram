@@ -37,6 +37,7 @@ const {
   cacheFileRead,
   fileReadCacheKey,
   getCachedFileRead,
+  invalidateFileRead,
   latestFileMtime,
   noteFileMtime,
   readCache,
@@ -80,6 +81,19 @@ test("read cache is project-scoped, mtime-scoped, and LRU bounded", () => {
   assert.equal(getCachedFileRead("project-b", "same.txt", 1)?.content, "other");
 });
 
+test("rename/delete cache invalidation is project-scoped and clears descendants", () => {
+  readCache.clear();
+  latestFileMtime.clear();
+  const result = (project_id, path) => ({ project_id, path, mtime: 1, size: 1, content: "x" });
+  cacheFileRead(result("p", "folder/file.txt"));
+  cacheFileRead(result("p", "other.txt"));
+  cacheFileRead(result("q", "folder/file.txt"));
+  invalidateFileRead("p", "folder");
+  assert.equal(getCachedFileRead("p", "folder/file.txt", 1), undefined);
+  assert.equal(getCachedFileRead("p", "other.txt", 1)?.content, "x");
+  assert.equal(getCachedFileRead("q", "folder/file.txt", 1)?.content, "x");
+});
+
 test("quota failure keeps the live draft visible to delete protection", async () => {
   const store = new MemoryDraftStore();
   setDraftStoreAdapterForTests(store);
@@ -94,11 +108,49 @@ test("quota failure keeps the live draft visible to delete protection", async ()
   assert.match(getDraftPersistenceError("p:dirty.txt"), /last saved draft was retained/);
   assert.equal(await hasDirtyDraftsForPath("p", "dirty.txt"), true);
   store.failNextWrite = true;
-  assert.equal((await clearFileDraftsForPath("p", "dirty.txt")).ok, false);
+  const failedClear = await clearFileDraftsForPath("p", "dirty.txt");
+  assert.equal(failedClear.ok, false);
+  assert.equal(failedClear.status, "recovery_required");
+  assert.match(getDraftPersistenceError("p:dirty.txt"), /Unable to discard/);
   assert.equal(await hasDirtyDraftsForPath("p", "dirty.txt"), true);
   assert.equal((await clearFileDraftsForPath("p", "dirty.txt")).ok, true);
   assert.equal(await hasDirtyDraftsForPath("p", "dirty.txt"), false);
   unsubscribe();
+});
+
+test("quota failure for a new draft retains its live buffer and error status", async () => {
+  const store = new MemoryDraftStore();
+  setDraftStoreAdapterForTests(store);
+  await loadFileDraft("p", "new.txt");
+  store.failNextWrite = true;
+  const value = { draft: "未持久化", baselineContent: "基线", baselineMtime: 1 };
+  const failed = await persistFileDraft("p", "new.txt", value);
+  assert.equal(failed.code, "DRAFT_QUOTA_EXCEEDED");
+  assert.equal((await loadFileDraft("p", "new.txt")).draft, value.draft);
+  assert.equal((await loadFileDraft("p", "new.txt")).save_status, "error");
+  assert.equal(await hasDirtyDraftsForPath("p", "new.txt"), true);
+});
+
+test("persisted drafts retain baseline revision and save status across hydration", async () => {
+  const store = new MemoryDraftStore();
+  setDraftStoreAdapterForTests(store);
+  const value = { draft: "改稿", baselineContent: "基线", baselineMtime: 3, baselineRevision: "rev-3" };
+  assert.equal((await persistFileDraft("p", "revision.txt", value)).ok, true);
+  const restored = await loadFileDraft("p", "revision.txt");
+  assert.equal(restored.baselineRevision, "rev-3");
+  assert.equal(restored.save_status, "persisted");
+});
+
+test("legacy draft records hydrate with an explicit persisted status", async () => {
+  const store = new MemoryDraftStore();
+  store.drafts.set("p:legacy.txt", {
+    key: "p:legacy.txt", projectId: "p", path: "legacy.txt", draft: "改稿",
+    baselineContent: "基线", baselineMtime: 3, bytes: 0, updatedAt: 1,
+  });
+  setDraftStoreAdapterForTests(store);
+  const restored = await loadFileDraft("p", "legacy.txt");
+  assert.equal(restored.save_status, "persisted");
+  assert.equal(store.drafts.get("p:legacy.txt").save_status, "persisted");
 });
 
 test("discarding a failed live expansion preserves the exact A+C index", async () => {

@@ -52,6 +52,7 @@ interface WriteResult {
   path: string;
   ok?: boolean;
   mtime?: number;
+  revision?: string;
   conflict?: boolean;
   status?: string;
   error_code?: string;
@@ -67,6 +68,7 @@ interface EditorBuffer {
   draft: string;
   baseline: string;
   baseMtime: number;
+  baseRevision?: string;
 }
 
 export function FileTabPane({
@@ -132,8 +134,12 @@ export function FileTabPane({
     setDraftHydrated(false);
     setBuffer(null);
     let alive = true;
-    void loadFileDraft(projectId, path).then(() => {
-      if (alive && generation === draftGeneration.current) setDraftHydrated(true);
+    void loadFileDraft(projectId, path).then((saved) => {
+      if (!alive || generation !== draftGeneration.current) return;
+      if (saved?.save_status === "error") {
+        setDraftPersistError(text("The local draft was not fully persisted; export or discard it before closing.", "本地草稿未完全持久化；关闭前请导出或丢弃。"));
+      }
+      setDraftHydrated(true);
     });
     return () => {
       alive = false;
@@ -155,12 +161,14 @@ export function FileTabPane({
             draft: saved.draft,
             baseline: saved.baselineContent,
             baseMtime: saved.baselineMtime,
+            baseRevision: saved.baselineRevision,
           }
         : {
             path,
             draft: loadedForPath.content,
             baseline: loadedForPath.content,
             baseMtime: loadedForPath.mtime,
+            baseRevision: loadedForPath.revision,
           },
     );
   }, [draftHydrated, loadedForPath, projectId, path]);
@@ -178,6 +186,7 @@ export function FileTabPane({
         draft: bufferForPath.draft,
         baselineContent: bufferForPath.baseline,
         baselineMtime: bufferForPath.baseMtime,
+        baselineRevision: bufferForPath.baseRevision,
       };
       if (!canPersistFileDraft(key, draft)) {
         setDraftPersistError(text(
@@ -239,6 +248,7 @@ export function FileTabPane({
       path,
       content: buf.draft,
       expected_mtime: buf.baseMtime,
+      baseline_revision: buf.baseRevision,
     };
     let operationKey: string;
     try {
@@ -251,16 +261,25 @@ export function FileTabPane({
       }
       return;
     }
-    const res = await wsMutationRequest<WriteResult>(
-      operationKey,
-      (signal) => filesWsRequest<WriteResult>(
-        "project_file_write",
-        { ...operationPayload, idempotency_key: operationKey },
-        "project_file_write_result",
-        { signal },
-      ),
-      { signal: controller.signal },
-    );
+    let res: WriteResult | null = null;
+    try {
+      res = await wsMutationRequest<WriteResult>(
+        operationKey,
+        (signal) => filesWsRequest<WriteResult>(
+          "project_file_write",
+          { ...operationPayload, idempotency_key: operationKey },
+          "project_file_write_result",
+          { signal },
+        ),
+        { signal: controller.signal },
+      );
+    } catch {
+      if (generation === draftGeneration.current && !controller.signal.aborted) {
+        setSaving(false);
+        setSaveFailed(true);
+      }
+      return;
+    }
     if (controller.signal.aborted) {
       setSaving(false);
       return;
@@ -276,7 +295,7 @@ export function FileTabPane({
       // write was in flight stay dirty instead of being clobbered.
       setBuffer((prev) =>
         prev && prev.path === path
-          ? { ...prev, baseline: buf.draft, baseMtime: mtime }
+          ? { ...prev, baseline: buf.draft, baseMtime: mtime, baseRevision: res.revision ?? buf.baseRevision }
           : prev,
       );
       // Keep the shared read cache coherent (no remount/refetch): a
@@ -288,6 +307,7 @@ export function FileTabPane({
           ...cached,
           content: buf.draft,
           mtime,
+          revision: res.revision ?? cached.revision,
         });
     } else if (res?.conflict || res?.status === "conflict") {
       setConflict(true);
@@ -333,6 +353,7 @@ export function FileTabPane({
         draft: value,
         baselineContent: current.baseline,
         baselineMtime: current.baseMtime,
+        baselineRevision: current.baseRevision,
       };
       if (!canPersistFileDraft(fileDraftKey(projectId, path), candidate)) {
         setDraftPersistError(text(

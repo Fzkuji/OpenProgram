@@ -144,7 +144,15 @@ def test_tree_cursor_rejects_directory_version_change(project_root):
         "page_size": 1,
     })["data"]
     assert stale["error_code"] == "STALE_SNAPSHOT"
+    assert stale["status"] == "stale"
     assert stale["entries"] == []
+
+
+@pytest.mark.parametrize("code", ["STALE_SNAPSHOT", "STALE_CURSOR", "CURSOR"])
+def test_query_stale_errors_use_canonical_status(code):
+    result = ws_files._query_error("p1", "src", code=code)
+    assert result["status"] == "stale"
+    assert result["error_code"] == code
 
 
 def test_tree_cursor_is_bound_to_project_and_path(project_root, monkeypatch):
@@ -504,6 +512,7 @@ def test_read_text_file(project_root):
     assert data["content"] == "print('hi')\n"
     assert data["size"] == len("print('hi')\n")
     assert data["mtime"] > 0
+    assert len(data["revision"]) == 64
     assert "binary" not in data and "too_large" not in data
 
 
@@ -578,6 +587,7 @@ def test_write_roundtrip(project_root):
                    "content": "fresh\n", "expected_mtime": read["mtime"]})
     assert data["ok"] is True
     assert data["mtime"] > 0
+    assert len(data["revision"]) == 64
     assert "conflict" not in data and "error" not in data
     again = _run(ws_files.handle_project_file_read,
                  {"project_id": "p1", "path": "apple.txt"})["data"]

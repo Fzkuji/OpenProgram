@@ -18,6 +18,8 @@ assert.match(shared, /TextEncoder/);
 assert.match(shared, /DRAFT_MAX_ENTRIES\s*=\s*32/);
 assert.match(shared, /DRAFT_MAX_BYTES\s*=\s*8 \* 1024 \* 1024/);
 assert.match(shared, /QuotaExceededError/);
+assert.match(shared, /save_status/);
+assert.match(shared, /revision\?: string/);
 assert.match(shared, /moveFileDrafts/);
 assert.match(shared, /clearProjectDrafts/);
 assert.match(shared, /status === "error"/);
@@ -66,6 +68,7 @@ assert.match(projectMenu, /project-draft-error/);
 assert.match(tree, /noteFileMtime\(projectId, joinPath\(path, e\.name\), e\.mtime\)/);
 assert.match(tree, /runServerRenameWithDrafts/);
 assert.match(tree, /operation_id/);
+assert.match(tree, /save, export, or discard/);
 assert.match(tree, /await clearFileDraftsForPath\(projectId, path\)/);
 assert.doesNotMatch(tree, /latestFileMtime/);
 

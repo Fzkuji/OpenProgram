@@ -27,6 +27,8 @@ test("FileTree bounds search results and cancels generation-stale queries", () =
   assert.match(source, /const searchCursor = useRef<string \| null>\(null\)/);
   assert.match(source, /const searchSnapshot = useRef<string \| null>\(null\)/);
   assert.match(source, /const searchLoadingGeneration = useRef<number \| null>\(null\)/);
+  assert.match(source, /const searchControllers = useRef\(new Set<AbortController>\(\)\)/);
+  assert.match(source, /for \(const controller of searchControllers\.current\) controller\.abort\(\)/);
   assert.match(source, /try \{[\s\S]*finally \{[\s\S]*searchLoadingGeneration\.current === generation/);
   assert.match(source, /fetchSearchPage\(searchGeneration\.current\)/);
   assert.doesNotMatch(source, /fetchedPages < Math\.min\(searchPage/);
@@ -39,6 +41,7 @@ test("FileTree bounds search results and cancels generation-stale queries", () =
 test("file changes invalidate only the owning project tree", () => {
   assert.match(source, /detail\?\.project_id !== projectId/);
   assert.match(source, /detail: \{ project_id: projectId \}/);
+  assert.match(source, /invalidateFileRead\(projectId, String\(payload\.path/);
 });
 
 test("Filter and Highlight preserve their existing tree semantics", () => {
