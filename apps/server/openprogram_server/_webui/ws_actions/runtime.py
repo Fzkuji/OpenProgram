@@ -300,7 +300,6 @@ async def _handle_execution_control(ws, cmd: dict, operation: str) -> None:
         )
         return
     try:
-        seeded_pause = None
         if operation in {"pause", "continue", "step"}:
             from openprogram.execution.model import CommandKind
             required = {
@@ -321,100 +320,22 @@ async def _handle_execution_control(ws, cmd: dict, operation: str) -> None:
                         generation=generation,
                     )
             raise ExecutionConflict("unresolved_effect", "execution has an unresolved external effect")
-        # A command can reach a just-admitted chat before its handoff thread
-        # has claimed the first lease.  Materialize the initial Agent
-        # continuation boundary under a real, fenced attempt so pause remains
-        # durable rather than depending on that thread winning a race.
-        if execution.status.value == "queued" and operation in {"pause", "continue", "step"}:
-            from openprogram.execution.checkpoints import CheckpointFragment
-            from openprogram.execution.model import CommandKind
-            leased, reserved = service.attempts.lease(
-                execution_id, expected_version=execution.status_version,
-                owner_id="agent-pre-dispatch-safe-point", ttl_seconds=30,
-            )
-            active, running = service.attempts.activate(
-                leased.attempt_id, generation=leased.generation,
-                expected_execution_version=reserved.status_version,
-            )
-            initial_id = command_id if operation == "pause" else f"initial-pause:{command_id}"
-            initial = await service.request_pause(
-                command_id=initial_id, execution_id=execution_id,
-                expected_version=running.status_version, actor=actor,
-            )
-            if initial.command.kind is not CommandKind.PAUSE:
-                raise RuntimeError("initial Agent safe-point command mismatch")
-            state = {
-                "safe_point": {
-                    "kind": "agent.provider.decision.after", "phase": "after_provider",
-                    "step_id": "agent.initial", "sentinel": "resume-from-checkpoint",
-                },
-                "turn": {"user_message_id": "admitted-user", "assistant_message_id": "admitted-user_reply", "base_history_head_id": "admitted-user"},
-                "current_decision": {"provider_action_id": "agent.initial", "assistant_message_ref": "admitted-user_reply", "tool_call_ids": []},
-            }
-            fragment = CheckpointFragment(
-                safe_point_kind="agent.provider.decision.after",
-                frontier=({"kind": "agent.provider.decision.after", "phase": "after_provider", "step_id": "agent.initial", "sentinel": "resume-from-checkpoint"},),
-                state_refs=state,
-                completed_actions=(), effect_receipts=(), child_frontier={},
-            )
-            seeded_pause = service.arrive_safe_point(
-                attempt_id=active.attempt_id, generation=active.generation,
-                command_id=initial.command.command_id,
-                expected_execution_version=initial.execution.status_version,
-                fragment=fragment,
-            )
-            execution = store.get_execution(execution_id)
-            assert execution is not None
         if operation == "pause":
-            if seeded_pause is not None:
-                from openprogram.execution.control import ControlDispatch
-                dispatch = ControlDispatch(
-                    command=seeded_pause.command, execution=seeded_pause.execution,
-                    delivered=True,
-                )
-            else:
-                dispatch = await service.request_pause(
-                    command_id=command_id, execution_id=execution_id,
-                    expected_version=expected_version, actor=actor,
-                )
+            dispatch = await service.request_pause(
+                command_id=command_id, execution_id=execution_id,
+                expected_version=expected_version, actor=actor,
+            )
         else:
+            from openprogram.agent.production_driver import AgentProductionDriver
             request = (
                 service.request_continue if operation == "continue"
                 else service.request_step
             )
             dispatch = await request(
                 command_id=command_id, execution_id=execution_id,
-                expected_version=(execution.status_version if seeded_pause is not None else expected_version),
-                actor=actor,
+                expected_version=expected_version, actor=actor,
+                driver=AgentProductionDriver(store, control_service=service),
             )
-            if operation == "step" and seeded_pause is not None and dispatch.execution.current_attempt_id:
-                from openprogram.execution.checkpoints import CheckpointFragment
-                from openprogram.execution.control import ControlDispatch
-                generation = dispatch.execution.owner_lease.get("generation")
-                completion = service.arrive_step_safe_point(
-                    attempt_id=dispatch.execution.current_attempt_id,
-                    generation=generation,
-                    command_id=command_id,
-                    expected_execution_version=dispatch.execution.status_version,
-                    fragment=CheckpointFragment(
-                        safe_point_kind="agent.provider.decision.after",
-                        frontier=({"kind": "agent.provider.decision.after", "phase": "after_provider", "step_id": "agent.initial.step", "sentinel": "resume-from-checkpoint"},),
-                        state_refs={"safe_point": {"kind": "agent.provider.decision.after", "phase": "after_provider", "sentinel": "resume-from-checkpoint"}},
-                        managed_action={"action_id": "agent.initial.step", "kind": "provider"},
-                    ),
-                )
-                with store._transaction() as connection:
-                    store._append_event(
-                        connection, execution_id=execution_id,
-                        execution_version=completion.execution.status_version,
-                        kind="agent.action.completed",
-                        payload={"action_id": "agent.initial.step"},
-                        created_at=time.time(),
-                    )
-                dispatch = ControlDispatch(
-                    command=completion.command, execution=completion.execution,
-                    delivered=True,
-                )
         await _send_command_update(ws, dispatch.command, dispatch.execution)
     except (ExecutionConflict, CommandConflict, AttemptConflict, InvalidCommand) as exc:
         current = store.get_execution(execution_id)

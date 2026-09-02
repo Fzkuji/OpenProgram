@@ -197,6 +197,7 @@ class RuntimeControlService:
         receipt_blob: bytes,
         checkpoint_state_blob: bytes | None = None,
         command_id: str | None = None,
+        managed_action_id: str | None = None,
         fault_at: str | None = None,
     ) -> SafePointCompletion:
         """Atomically terminalize one effect and publish its Agent frontier."""
@@ -264,6 +265,13 @@ class RuntimeControlService:
                         raise AgentSafePointConflict("command_state_invalid", "safe point command is no longer applying")
                     if stored.kind not in {CommandKind.PAUSE, CommandKind.STEP}:
                         raise AgentSafePointConflict("command_state_invalid", "only pause or step can consume Agent safe point")
+                    if stored.kind is CommandKind.STEP:
+                        if not managed_action_id or stored.result_json.get("managed_action_id"):
+                            raise AgentSafePointConflict("step_permit_consumed", "step permit was already consumed")
+                        connection.execute(
+                            "UPDATE commands SET result_json = ?, updated_at = ? WHERE command_id = ? AND status = ?",
+                            (_json({"managed_action_id": managed_action_id}), now, command_id, CommandStatus.APPLYING.value),
+                        )
                     pausing = self.executions._transition_execution(
                         connection, execution_id, expected_version=updated.status_version,
                         target=ExecutionStatus.PAUSING,
@@ -282,7 +290,7 @@ class RuntimeControlService:
                     command = self.executions._transition_command(
                         connection, command_id, expected_status=CommandStatus.APPLYING,
                         target=CommandStatus.APPLIED, result_version=updated.status_version,
-                        receipt={"checkpoint_id": checkpoint.checkpoint_id, "safe_point": checkpoint.safe_point},
+                        receipt={"checkpoint_id": checkpoint.checkpoint_id, "safe_point": checkpoint.safe_point, "managed_action_id": managed_action_id},
                     )
                 return SafePointCompletion(command=command, execution=updated, attempt=attempt, checkpoint=checkpoint)
         except AgentSafePointConflict:
@@ -448,7 +456,6 @@ class RuntimeControlService:
             current is not None
             and input_record is not None
             and input_record.entrypoint == "openprogram.agent.production_driver:AgentProductionDriver"
-            and not current.capabilities.pause
             and activator is None and driver is None and self.activator is None
         ):
             raise AgentSafePointConflict("activation_unavailable", "Agent continuation requires a production activation owner")
@@ -489,6 +496,14 @@ class RuntimeControlService:
         driver: Any | None = None,
     ) -> ControlDispatch:
         """Create exactly one durable permit and activate a fresh attempt."""
+        current = self.executions.get_execution(execution_id)
+        input_record = self.executions.get_execution_input(execution_id) if current is not None else None
+        if (
+            current is not None and input_record is not None
+            and input_record.entrypoint == "openprogram.agent.production_driver:AgentProductionDriver"
+            and activator is None and driver is None and self.activator is None
+        ):
+            raise AgentSafePointConflict("activation_unavailable", "Agent continuation requires a production activation owner")
         command, execution, attempt, checkpoint, steer_inputs, duplicate = self._resume_transaction(
             command_id=command_id,
             execution_id=execution_id,

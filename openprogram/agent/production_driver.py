@@ -403,15 +403,8 @@ class AgentProductionDriver:
                 "immutable Agent input does not match the execution session",
             )
         request = self._resolve_activation_input(record, activation)
-        if activation is not None and activation.checkpoint is not None:
-            if self.activation_observer is not None:
-                self.activation_observer(activation)
-            done = asyncio.get_running_loop().create_future()
-            done.set_result({"resumed": True})
-            handle = AgentDriverHandle(attempt.execution_id, attempt.attempt_id, attempt.generation, record.session_id, threading.Event(), done)
-            with self._handles_lock:
-                self._handles[self._key(handle)] = handle
-            return DriverBinding(attempt.execution_id, attempt.attempt_id, attempt.generation, self, handle)
+        if activation is not None and activation.checkpoint is not None and self.activation_observer is not None:
+            self.activation_observer(activation)
         cancel_event = threading.Event()
         task = asyncio.create_task(
             self._run_attempt(attempt, request, cancel_event),
@@ -801,11 +794,6 @@ class AgentProductionDriver:
             current = service.executions.get_execution(attempt.execution_id)
             if current is None:
                 raise AgentDriverError("execution_not_found", "execution disappeared at safe point")
-            if command.kind is CommandKind.STEP:
-                service.consume_agent_step_permit(
-                    execution_id=attempt.execution_id, command_id=command.command_id,
-                    action_id=action_id,
-                )
             service.commit_agent_safe_point(
                 execution_id=attempt.execution_id, attempt_id=attempt.attempt_id,
                 generation=attempt.generation, expected_version=current.status_version,
@@ -813,7 +801,7 @@ class AgentProductionDriver:
                 state_refs=state, effect_id=effect_id, terminal_receipt={"payload": dict(payload)},
                 receipt_blob=json.dumps(dict(payload), ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(),
                 checkpoint_state_blob=json.dumps(state, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(),
-                command_id=command.command_id,
+                command_id=command.command_id, managed_action_id=action_id,
             )
             return True
 
