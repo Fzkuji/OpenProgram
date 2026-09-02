@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const shared = readFileSync(new URL("../lib/state/files-shared.ts", import.meta.url), "utf8");
+const shared = readFileSync(new URL("../lib/state/files-shared.ts", import.meta.url), "utf8")
+  + readFileSync(new URL("../lib/state/file-drafts.ts", import.meta.url), "utf8");
 const store = readFileSync(new URL("../lib/state/file-draft-store.ts", import.meta.url), "utf8");
 const viewer = readFileSync(new URL("../components/files/file-viewer.tsx", import.meta.url), "utf8");
 const pane = readFileSync(new URL("../components/center-tabs/file-tab-pane.tsx", import.meta.url), "utf8");
 const tree = readFileSync(new URL("../components/files/file-tree.tsx", import.meta.url), "utf8");
+const treeOperation = readFileSync(new URL("../components/files/file-tree-operation.ts", import.meta.url), "utf8");
 const ws = readFileSync(new URL("../lib/net/ws-request.ts", import.meta.url), "utf8");
 const turnFiles = readFileSync(new URL("../../server/openprogram_server/_webui/ws_actions/turn_files.py", import.meta.url), "utf8");
 const lifecycle = readFileSync(new URL("../components/center-tabs/use-tab-lifecycle.ts", import.meta.url), "utf8");
@@ -80,7 +82,7 @@ assert.match(ws, /reconcileWsMutation/);
 assert.match(ws, /turn_operation_status/);
 assert.match(turnFiles, /handle_turn_operation_status/);
 assert.doesNotMatch(ws, /payload: payloadSummary/);
-assert.match(tree, /operation_id/);
+assert.match(tree + treeOperation, /operation_id/);
 assert.match(tree, /save, export, or discard/);
 assert.match(tree, /loadFileDraftsForPath/);
 assert.match(tree, /for \(const entry of drafts\)/);
