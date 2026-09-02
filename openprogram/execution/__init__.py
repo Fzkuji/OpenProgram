@@ -79,6 +79,7 @@ from .revisions import (
     RevisionManifest,
     RevisionValidation,
 )
+from .waits import DurableWaitStore, WaitRecord, WaitStatus
 
 __all__ = [
     "CommandKind",
@@ -145,4 +146,7 @@ __all__ = [
     "RevisionApproval",
     "RevisionManifest",
     "RevisionControlService",
+    "DurableWaitStore",
+    "WaitRecord",
+    "WaitStatus",
 ]

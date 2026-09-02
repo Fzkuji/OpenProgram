@@ -41,6 +41,8 @@ class CommandKind(str, Enum):
     CANCEL = "execution.cancel"
     FORK = "execution.fork"
     RETRY = "execution.retry"
+    WAIT_ANSWER = "execution.wait.answer"
+    WAIT_DECLINE = "execution.wait.decline"
 
 
 class CommandStatus(str, Enum):

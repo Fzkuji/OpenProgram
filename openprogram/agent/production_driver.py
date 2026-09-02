@@ -607,12 +607,6 @@ class AgentProductionDriver:
         with self._handles_lock:
             self._cancel_commands[self._key(handle)] = command_id
         handle.cancel_event.set()
-        registry = self.question_registry
-        if registry is None:
-            from openprogram.agent.questions import get_question_registry
-
-            registry = get_question_registry()
-        registry.cancel_execution(handle.session_id, handle.execution_id)
         return DriverAck(command_id=command_id, attempt_id=handle.attempt_id)
 
     async def inspect(self, handle: AgentDriverHandle) -> RuntimeSnapshot:
@@ -629,12 +623,6 @@ class AgentProductionDriver:
     ) -> TerminationReceipt:
         self._require_live(handle)
         handle.cancel_event.set()
-        registry = self.question_registry
-        if registry is None:
-            from openprogram.agent.questions import get_question_registry
-
-            registry = get_question_registry()
-        registry.cancel_execution(handle.session_id, handle.execution_id)
         killed = False
         try:
             from openprogram.agent.process_runner import kill_active_subprocess

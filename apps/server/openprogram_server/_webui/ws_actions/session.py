@@ -1109,16 +1109,22 @@ async def handle_load_session(ws, cmd: dict):
         # questions for this session as the SAME frame the live path sends,
         # so the frontend's existing card logic redraws with no extra round trip.
         try:
-            from openprogram.agent.questions import get_question_registry
-            for q in get_question_registry().list_pending(session_id):
+            from openprogram.execution import default_store
+            from openprogram.execution.waits import DurableWaitStore
+            for q in DurableWaitStore(default_store()).list_open(session_id=session_id):
+                request = dict(q.request)
+                execution = default_store().get_execution(q.execution_id)
                 await ws.send_text(json.dumps({
                     "type": "question.asked",
                     "data": {
-                        "id": q.id, "session_id": q.session_id, "kind": q.kind,
-                        "prompt": q.prompt, "options": q.options, "multi": q.multi,
-                        "allow_custom": q.allow_custom, "detail": q.detail,
-                        "schema": q.schema,        # kind="form": replay fields
-                        "questions": q.questions,  # kind="ask_many": replay too
+                        "id": q.wait_id, "session_id": session_id, "kind": q.kind,
+                        "execution_id": q.execution_id,
+                        "wait_generation": q.claim_generation,
+                        "expected_version": execution.status_version if execution is not None else 0,
+                        "prompt": request.get("prompt", ""), "options": request.get("options", []), "multi": request.get("multi", False),
+                        "allow_custom": request.get("allow_custom", True), "detail": request.get("detail", ""),
+                        "schema": request.get("schema", {}),
+                        "questions": request.get("questions", []),
                         "expires_at": q.expires_at,
                     },
                 }, default=str))
@@ -1196,35 +1202,6 @@ async def handle_follow_up_answer(ws, cmd: dict):
         fq = _s._follow_up_queues.get(fq_session_id)
     if fq is not None:
         fq.put(answer)
-
-
-def _resolve_question(qid: str, outcome: str, value=None) -> None:
-    """收口：resolve registry + 广播收回别处 UI。共享实现在 questions.py
-    （channel 的 /answer 也走它），这里保留薄封装供 WS handler 调用。"""
-    from openprogram.agent.questions import resolve_question_and_broadcast
-    resolve_question_and_broadcast(qid, outcome, value)
-
-
-async def handle_question_reply(ws, cmd: dict):
-    """用户回答了 runtime.ask 的问题（user-input-requests.md Phase 1）。
-    approval 的"总是允许"带 scope="always"——打包进 value，await_user_approval
-    会拆出 scope 决定是否写回持久 allow 规则（permission-model.md §6.3）。"""
-    qid = cmd.get("id") or ""
-    answer = cmd.get("answer")
-    scope = cmd.get("scope")
-    if qid:
-        value = {"answer": answer, "scope": scope} if scope else answer
-        _resolve_question(qid, "answered", value)
-
-
-async def handle_question_reject(ws, cmd: dict):
-    """用户拒绝回答（runtime.ask 抛 UserDeclined / confirm 返回 False）。
-    approval 的拒绝可带 reason —— 作为 declined 值，让工具批准把它变成回给
-    模型的错误文本（opencode 做法）。"""
-    qid = cmd.get("id") or ""
-    reason = cmd.get("reason")
-    if qid:
-        _resolve_question(qid, "declined", reason)
 
 
 # 权限规则跟着**项目**走（见 permission-model.md §2.3）。请求可直接带
@@ -1536,8 +1513,6 @@ ACTIONS = {
     "get_full_tool_output": handle_get_full_tool_output,
     "get_run_state": handle_get_run_state,
     "follow_up_answer": handle_follow_up_answer,
-    "question_reply": handle_question_reply,
-    "question_reject": handle_question_reject,
     "set_working_dirs": handle_set_working_dirs,
     "set_sandbox": handle_set_sandbox,
     "search_messages": handle_search_messages,

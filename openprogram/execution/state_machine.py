@@ -102,6 +102,15 @@ _COMMAND_STATES: dict[CommandKind, frozenset[ExecutionStatus]] = {
         }
     ),
     CommandKind.RETRY: frozenset({ExecutionStatus.FAILED, ExecutionStatus.INTERRUPTED}),
+    # A wait outcome changes only its execution-owned wait record.  It does
+    # not invent a second lifecycle state, and may be submitted while the
+    # execution has released its owner and is paused.
+    CommandKind.WAIT_ANSWER: frozenset(
+        set(ExecutionStatus) - set(TERMINAL_EXECUTION_STATUSES)
+    ),
+    CommandKind.WAIT_DECLINE: frozenset(
+        set(ExecutionStatus) - set(TERMINAL_EXECUTION_STATUSES)
+    ),
 }
 
 

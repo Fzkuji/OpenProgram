@@ -232,6 +232,8 @@ _PUBLIC_COMMAND_ACTIONS = {
     "cancel": "execution.cancel",
     "fork": "execution.fork",
     "retry": "execution.retry",
+    "wait_answer": "execution.wait.answer",
+    "wait_decline": "execution.wait.decline",
 }
 
 
@@ -284,6 +286,24 @@ def validate_execution_command_request(cmd: dict, operation: str) -> str | None:
             and isinstance(payload.get("manifest_id"), str) and payload["manifest_id"]
             and isinstance(payload.get("checkpoint_id"), str) and payload["checkpoint_id"]
             and isinstance(payload.get("proof_hash"), str) and payload["proof_hash"]
+            else "invalid_payload"
+        )
+    if operation == "wait_answer":
+        return (
+            None
+            if set(payload) == {"wait_id", "generation", "answer"}
+            and isinstance(payload.get("wait_id"), str) and payload["wait_id"]
+            and type(payload.get("generation")) is int
+            else "invalid_payload"
+        )
+    if operation == "wait_decline":
+        return (
+            None
+            if set(payload).issubset({"wait_id", "generation", "reason"})
+            and {"wait_id", "generation"}.issubset(payload)
+            and isinstance(payload.get("wait_id"), str) and payload["wait_id"]
+            and type(payload.get("generation")) is int
+            and (payload.get("reason") is None or isinstance(payload.get("reason"), str))
             else "invalid_payload"
         )
     return "invalid_command"
@@ -457,7 +477,7 @@ async def submit_execution_control(
         }
     try:
         _authorize_execution(
-            actor, f"execution.{operation}", execution,
+            actor, _PUBLIC_COMMAND_ACTIONS[operation], execution,
             bound_session=bound_session,
         )
     except Exception:
@@ -469,6 +489,24 @@ async def submit_execution_control(
 
         job_runner = runner_for_execution_store(store)
         is_job = job_runner is not None and store.get_job_agent_input(execution_id) is not None
+        if operation in {"wait_answer", "wait_decline"}:
+            payload = cmd.get("payload")
+            if not isinstance(payload, dict):
+                raise ExecutionConflict("invalid_wait", "wait command requires a payload")
+            allowed = (
+                {"wait_id", "generation", "answer"}
+                if operation == "wait_answer" else {"wait_id", "generation", "reason"}
+            )
+            if set(payload) - allowed or not isinstance(payload.get("wait_id"), str) or not payload["wait_id"] or type(payload.get("generation")) is not int:
+                raise ExecutionConflict("invalid_wait", "wait command payload is invalid")
+            request = service.request_wait_answer if operation == "wait_answer" else service.request_wait_decline
+            dispatch = await request(
+                command_id=command_id, execution_id=execution_id,
+                expected_version=expected_version, actor=actor,
+                wait_id=payload["wait_id"], generation=payload["generation"],
+                **({"answer": payload.get("answer")} if operation == "wait_answer" else {"reason": payload.get("reason")}),
+            )
+            return dispatch.command, dispatch.execution
         if operation in {"pause", "continue", "step", "steer", "fork", "retry"}:
             from openprogram.execution.model import CommandKind
             required = {
@@ -670,6 +708,14 @@ async def handle_execution_replay(ws, cmd: dict) -> None:
     }, default=str))
 
 
+async def handle_execution_wait_answer(ws, cmd: dict):
+    await _handle_execution_control(ws, cmd, "wait_answer")
+
+
+async def handle_execution_wait_decline(ws, cmd: dict):
+    await _handle_execution_control(ws, cmd, "wait_decline")
+
+
 async def handle_stats(ws, cmd: dict):
     """Welcome-banner data: agent, programs, skills, tools, providers, channels."""
     from openprogram.webui import server as _s
@@ -850,6 +896,8 @@ ACTIONS = {
     "execution.fork": handle_execution_fork,
     "execution.retry": handle_execution_retry,
     "execution.replay": handle_execution_replay,
+    "execution.wait.answer": handle_execution_wait_answer,
+    "execution.wait.decline": handle_execution_wait_decline,
     "stats": handle_stats,
     "set_attended": handle_set_attended,
 }

@@ -17,10 +17,12 @@ resolve 是 claim-once（第一个答复者赢，跨多前端去重）。stop �
 """
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from typing import Any, Mapping
 
 
 class UserDeclined(Exception):
@@ -52,6 +54,8 @@ class PendingQuestion:
     questions: list = field(default_factory=list)
     created_at: float = 0.0
     expires_at: float = 0.0
+    wait_generation: int = 0
+    execution_version: int = 0
 
 
 # resolve 结果：(outcome, value)
@@ -60,65 +64,120 @@ _Resolution = tuple[str, object]
 
 
 class QuestionRegistry:
-    """进程级待答问题表。线程安全，claim-once。"""
+    """Local wake notifier over the durable execution wait authority.
+
+    The name remains an import seam for runtime callers.  It has no pending
+    question or answer state: all lifecycle reads and writes go to
+    ``execution_waits``.  Its only local state is an Event used to wake a
+    currently blocked thread sooner than its bounded database poll interval.
+    """
 
     def __init__(self) -> None:
-        self._pending: dict[str, PendingQuestion] = {}
         self._events: dict[str, threading.Event] = {}
-        self._results: dict[str, _Resolution] = {}
         self._lock = threading.Lock()
 
     def register(self, q: PendingQuestion) -> threading.Event:
+        """Ensure the supplied presentation record has one durable wait row."""
+        from openprogram.agent.run_control import get_current_execution_id
+        from openprogram.execution import default_store
+        from openprogram.execution.waits import DurableWaitStore
+
+        executions = default_store()
+        waits = DurableWaitStore(executions)
+        existing = waits.get_wait(q.id)
+        if existing is None:
+            execution_id = q.execution_id or get_current_execution_id()
+            execution = executions.get_execution(execution_id or "")
+            if execution is None or execution.current_attempt_id is None:
+                raise RuntimeError("question registration requires a live canonical attempt")
+            generation = execution.owner_lease.get("generation")
+            if not isinstance(generation, int):
+                raise RuntimeError("question registration requires a fenced canonical attempt")
+            now = time.time()
+            waits.open_wait(
+                wait_id=q.id, execution_id=execution.execution_id,
+                attempt_id=execution.current_attempt_id, generation=generation,
+                kind=q.kind, request={
+                    "prompt": q.prompt, "options": q.options, "multi": q.multi,
+                    "allow_custom": q.allow_custom, "detail": q.detail,
+                    "schema": q.schema, "questions": q.questions,
+                }, policy_snapshot={"version": 1, "kind": q.kind},
+                expires_at=q.expires_at if q.expires_at > now else now + 300,
+                checkpoint_id=execution.checkpoint_head_id,
+            )
         ev = threading.Event()
         with self._lock:
-            self._pending[q.id] = q
             self._events[q.id] = ev
         return ev
 
     def resolve(self, qid: str, outcome: str, value: object = None) -> bool:
-        """写入结果并唤醒等待者。返回该 id 是否存在且未被领取过（claim-once）。"""
+        """Compatibility import seam; lifecycle still uses a command record."""
+        return resolve_question_and_broadcast(qid, outcome, value)
+
+    def wake(self, qid: str) -> None:
+        """Wake a local waiter after durable state was changed elsewhere.
+
+        Subprocess bridges use this after receiving a terminal durable wait
+        projection.  It deliberately does not write an answer: only the
+        canonical execution command surface may do that.
+        """
         with self._lock:
-            if qid not in self._events or qid in self._results:
-                return False
-            self._results[qid] = (outcome, value)
-            ev = self._events[qid]
-            self._pending.pop(qid, None)
-        ev.set()
-        return True
+            event = self._events.get(qid)
+        if event is not None:
+            event.set()
 
     def consume(self, qid: str) -> _Resolution | None:
-        with self._lock:
-            return self._results.pop(qid, None)
+        from openprogram.execution import default_store
+        from openprogram.execution.waits import DurableWaitStore
+
+        wait = DurableWaitStore(default_store()).get_wait(qid)
+        if wait is None or wait.status.value in {"open", "claimed"}:
+            return None
+        outcome = {
+            "resolved": "answered", "declined": "declined",
+            "expired": "timeout", "cancelled": "cancelled",
+        }[wait.status.value]
+        return outcome, wait.answer
 
     def list_pending(self, session_id: str | None = None) -> list[PendingQuestion]:
-        with self._lock:
-            ps = list(self._pending.values())
-        if session_id is None:
-            return ps
-        return [p for p in ps if p.session_id == session_id]
+        from openprogram.execution import default_store
+        from openprogram.execution.waits import DurableWaitStore
+
+        records = DurableWaitStore(default_store()).list_open(session_id=session_id)
+        return [_pending_from_wait(record) for record in records]
 
     def cancel_session(self, session_id: str) -> None:
-        """stop 时解除该 session 所有待答问题（按 declined 处理）。"""
-        with self._lock:
-            ids = [qid for qid, p in self._pending.items()
-                   if p.session_id == session_id]
-        for qid in ids:
-            self.resolve(qid, "declined", None)
+        from openprogram.execution import default_store
+        from openprogram.execution.waits import DurableWaitStore
+
+        waits = DurableWaitStore(default_store())
+        execution_ids = {wait.execution_id for wait in waits.list_open(session_id=session_id)}
+        for execution_id in execution_ids:
+            waits.cancel_execution(execution_id)
 
     def cancel_execution(
         self, session_id: str, execution_id: str | None = None,
     ) -> None:
-        """Close waits for one execution as cancelled, not permission-denied."""
+        """Close exact execution waits; session-wide mode remains internal only."""
+        from openprogram.execution import default_store
+        from openprogram.execution.waits import DurableWaitStore
+
+        waits = DurableWaitStore(default_store())
+        if execution_id is not None:
+            ids = {wait.wait_id for wait in waits.list_open(execution_id=execution_id)}
+            waits.cancel_execution(execution_id)
+            self._wake(ids)
+            return
+        for wait in waits.list_open(session_id=session_id):
+            ids = {item.wait_id for item in waits.list_open(execution_id=wait.execution_id)}
+            waits.cancel_execution(wait.execution_id)
+            self._wake(ids)
+
+    def _wake(self, ids: set[str]) -> None:
         with self._lock:
-            ids = []
-            for qid, pending in self._pending.items():
-                if pending.session_id != session_id:
-                    continue
-                if execution_id is not None and pending.execution_id != execution_id:
-                    continue
-                ids.append(qid)
-        for qid in ids:
-            self.resolve(qid, "cancelled", None)
+            events = [event for qid, event in self._events.items() if qid in ids]
+        for event in events:
+            event.set()
 
 
 _registry: QuestionRegistry | None = None
@@ -136,6 +195,24 @@ def get_question_registry() -> QuestionRegistry:
 
 def new_question_id() -> str:
     return uuid.uuid4().hex[:12]
+
+
+def _pending_from_wait(wait) -> PendingQuestion:
+    from openprogram.execution import default_store
+
+    request = dict(wait.request)
+    execution = default_store().get_execution(wait.execution_id)
+    return PendingQuestion(
+        id=wait.wait_id, session_id=(execution.session_id if execution is not None else ""), kind=wait.kind,
+        prompt=str(request.get("prompt") or ""), execution_id=wait.execution_id,
+        options=list(request.get("options") or []), multi=bool(request.get("multi")),
+        allow_custom=bool(request.get("allow_custom", True)),
+        detail=str(request.get("detail") or ""),
+        schema=dict(request.get("schema") or {}), questions=list(request.get("questions") or []),
+        created_at=wait.created_at, expires_at=wait.expires_at,
+        wait_generation=wait.claim_generation,
+        execution_version=(execution.status_version if execution is not None else 0),
+    )
 
 
 # 提问传输（QuestionTransport）
@@ -242,6 +319,8 @@ def open_question(
     detail: str = "",
     schema: dict | None = None,
     questions: list | None = None,
+    request_metadata: Mapping[str, Any] | None = None,
+    policy_snapshot: Mapping[str, Any] | None = None,
     timeout: float = 300.0,
     on_asked,
 ) -> tuple[PendingQuestion, threading.Event]:
@@ -252,6 +331,9 @@ def open_question(
     等同一个 Event，互不阻塞各自的执行模型。on_asked(PendingQuestion) 负责把
     问题送出去（经 transport / 事件层）。
     """
+    from openprogram.execution import default_store
+    from openprogram.execution.waits import DurableWaitStore
+
     reg = get_question_registry()
     now = time.time()
     execution_id = ""
@@ -260,14 +342,40 @@ def open_question(
         execution_id = get_current_execution_id() or ""
     except Exception:
         execution_id = ""
-    q = PendingQuestion(
-        id=new_question_id(), session_id=session_id or "",
-        execution_id=execution_id, kind=kind,
-        prompt=prompt, options=list(options or []), multi=multi,
-        allow_custom=allow_custom, detail=detail, schema=dict(schema or {}),
-        questions=list(questions or []),
-        created_at=now, expires_at=now + timeout,
+    if not execution_id:
+        raise RuntimeError("runtime.ask requires a canonical execution context")
+    executions = default_store()
+    execution = executions.get_execution(execution_id)
+    if execution is None or execution.current_attempt_id is None:
+        raise RuntimeError("runtime.ask requires a live canonical attempt")
+    generation = execution.owner_lease.get("generation")
+    if not isinstance(generation, int):
+        raise RuntimeError("runtime.ask requires a fenced canonical attempt")
+    request = {
+        "prompt": prompt, "options": list(options or []), "multi": multi,
+        "allow_custom": allow_custom, "detail": detail,
+        "schema": dict(schema or {}), "questions": list(questions or []),
+    }
+    metadata = dict(request_metadata or {})
+    conflict = set(metadata).intersection(request)
+    if conflict:
+        raise ValueError(f"question metadata cannot replace request fields: {sorted(conflict)!r}")
+    request.update(metadata)
+    default_policy = {
+        "version": 1, "kind": kind,
+        "on_decline": "deny" if kind == "approval" else "return_declined",
+        "on_timeout": "deny" if kind == "approval" else "return_timeout",
+    }
+    wait = DurableWaitStore(executions).open_wait(
+        wait_id=f"wait_{new_question_id()}", execution_id=execution_id,
+        attempt_id=execution.current_attempt_id, generation=generation, kind=kind,
+        request=request,
+        policy_snapshot=dict(policy_snapshot or default_policy), expires_at=now + timeout,
+        checkpoint_id=execution.checkpoint_head_id,
     )
+    q = _pending_from_wait(wait)
+    # The durable row is already committed above.  The registry only keeps a
+    # process-local wake event; it must not perform a second lifecycle write.
     ev = reg.register(q)
     try:
         on_asked(q)
@@ -279,29 +387,62 @@ def open_question(
 def consume_or_timeout(qid: str) -> _Resolution:
     """等待结束后取结果：被答了返回 (outcome, value)，否则 ("timeout", None)。"""
     res = get_question_registry().consume(qid)
-    return res if res is not None else ("timeout", None)
+    return res if res is not None else ("pending", None)
 
 
 def resolve_question_and_broadcast(qid: str, outcome: str, value=None) -> bool:
-    """收口：resolve registry + 广播 question.replied/rejected 收回别处 UI。
+    """Translate a non-Web surface answer into one canonical wait command.
 
-    跨前端的统一收口——webui WS handler、REST、channel 的 /answer 都走这一个，
-    保证 claim-once（第一个答的赢）且赢的一侧广播一帧让别处 UI（webui 卡片 /
-    其它 channel 消息）收回。放在 questions.py（不在 webui）让 channel 不必反向
-    依赖 webui。返回是否成功 resolve（False = 已被答过 / 不存在）。
+    The caller supplies content only.  Exact execution identity, expected
+    revision and wait generation come from the durable record, never from a
+    process-local question map.
     """
-    ok = get_question_registry().resolve(qid, outcome, value)
-    if ok:
-        try:
-            from openprogram.events import emit_ws_frame
-            emit_ws_frame({
-                "type": "question.replied" if outcome == "answered"
-                        else "question.rejected",
-                "data": {"id": qid},
-            })
-        except Exception:
-            pass
-    return ok
+    from openprogram.execution import default_control_service, default_store
+    from openprogram.execution.attempts import AttemptStore
+    from openprogram.execution.control import RuntimeControlService
+    from openprogram.execution.driver import DriverRegistry
+    from openprogram.execution.waits import DurableWaitStore
+
+    store = default_store()
+    wait = DurableWaitStore(store).get_wait(qid)
+    if wait is None or wait.status.value not in {"open", "claimed"}:
+        return False
+    execution = store.get_execution(wait.execution_id)
+    if execution is None:
+        return False
+    command_id = f"question-bridge-{outcome}-{uuid.uuid4().hex}"
+    service = default_control_service()
+    if service.executions.path != store.path:
+        # Embedded callers may bind a temporary execution store in tests.
+        # The command still goes through the same canonical service class.
+        service = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    try:
+        if outcome == "answered":
+            asyncio.run(service.request_wait_answer(
+                command_id=command_id, execution_id=wait.execution_id,
+                expected_version=execution.status_version,
+                actor={"surface": "question-bridge"}, wait_id=wait.wait_id,
+                generation=wait.claim_generation, answer=value,
+            ))
+        else:
+            asyncio.run(service.request_wait_decline(
+                command_id=command_id, execution_id=wait.execution_id,
+                expected_version=execution.status_version,
+                actor={"surface": "question-bridge"}, wait_id=wait.wait_id,
+                generation=wait.claim_generation, reason=value,
+            ))
+    except Exception:
+        return False
+    get_question_registry().wake(qid)
+    try:
+        from openprogram.events import emit_ws_frame
+        emit_ws_frame({
+            "type": "question.replied" if outcome == "answered" else "question.rejected",
+            "data": {"id": qid},
+        })
+    except Exception:
+        pass
+    return True
 
 
 def ask_blocking(
@@ -335,14 +476,21 @@ def ask_blocking(
         multi=multi, allow_custom=allow_custom, detail=detail, schema=schema,
         questions=questions, timeout=timeout, on_asked=on_asked,
     )
-    ev.wait(timeout=timeout)
-    outcome, value = consume_or_timeout(q.id)
-    if outcome == "timeout":
-        # A timed-out wait is no longer answerable. Claim and consume the
-        # registry entry so reconnecting clients cannot observe a stale card
-        # after the waiter has already returned its timeout outcome.
-        reg = get_question_registry()
-        if reg.resolve(q.id, "timeout", None):
-            reg.consume(q.id)
+    deadline = time.monotonic() + timeout
+    outcome, value = "pending", None
+    while outcome == "pending":
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            from openprogram.execution import default_store
+            from openprogram.execution.waits import DurableWaitStore
+
+            DurableWaitStore(default_store()).expire_due()
+            outcome, value = consume_or_timeout(q.id)
+            break
+        ev.wait(timeout=min(0.25, remaining))
+        ev.clear()
+        outcome, value = consume_or_timeout(q.id)
+    if outcome in {"pending", "timeout"}:
         retract_question(q.id, transport)
+        return "timeout", None
     return outcome, value

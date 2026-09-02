@@ -1096,6 +1096,8 @@ class Runtime:
                     "schema": q.schema,  # kind="form" 时非空
                     "questions": q.questions,  # kind="ask_many" 时非空
                     "execution_id": q.execution_id,
+                    "wait_generation": q.wait_generation,
+                    "expected_version": q.execution_version,
                     "expires_at": q.expires_at,
                 },
                 transport,

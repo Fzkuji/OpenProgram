@@ -12,7 +12,7 @@ from contextvars import ContextVar
 from contextlib import closing, contextmanager
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Collection, Iterator, Mapping
+from typing import Any, Callable, Collection, Iterator, Mapping
 
 from ._schema import PROJECTION_KINDS, SCHEMA_VERSION, UnsupportedSchema, initialize_schema
 from .model import (
@@ -1551,6 +1551,7 @@ class ExecutionStore:
         supersede_kinds: Collection[CommandKind] = (),
         supersede_code: str = "superseded",
         apply_command: bool = False,
+        after_transition: Callable[[sqlite3.Connection, ExecutionRecord], None] | None = None,
     ) -> tuple[ControlCommand, ExecutionRecord, bool]:
         with self._transaction() as connection:
             command, duplicate = self._accept_command(
@@ -1572,6 +1573,8 @@ class ExecutionStore:
                 target=target,
                 reason_code=reason_code,
             )
+            if after_transition is not None:
+                after_transition(connection, execution)
             if supersede_kinds:
                 values = tuple(kind.value for kind in supersede_kinds)
                 placeholders = ",".join("?" for _ in values)

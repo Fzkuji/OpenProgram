@@ -23,6 +23,7 @@ docs/design/ui/composer-interaction-modes.md.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -537,8 +538,8 @@ async def await_user_approval(
 ) -> tuple[bool, "str | None", str]:
     """注册一个 kind="approval" 的问题、经事件层发 question.asked、await 用户答。
     返回 (approved, reason, scope)：approved=是否放行；reason=拒绝理由（可为 None）；
-    scope ∈ {"once","always","always_path"}——"总是允许"经 question_reply 的
-    scope 字段带回；always_path 把被拦路径写入 sandbox.allow_read。
+    scope ∈ {"once","always","always_path"}——"总是允许"经 canonical wait
+    answer command 的 scope 字段带回；always_path 把被拦路径写入 sandbox.allow_read。
 
     审批合流到 QuestionRegistry（docs/design/runtime/user-input-requests.md 点6
     + docs/design/ui/composer-interaction-modes.md）：不再用独立的 ApprovalRegistry
@@ -575,6 +576,8 @@ async def await_user_approval(
             # approval 专属：工具名 + 参数 + 危险分级，给 approval mode 画危险摘要。
             "tool": tool_name, "args": args, "risk_level": _risk_level(tool_name, args),
             "execution_id": q.execution_id,
+            "wait_generation": q.wait_generation,
+            "expected_version": q.execution_version,
         }, transport)
 
     q, ev = open_question(
@@ -582,19 +585,31 @@ async def await_user_approval(
         prompt=f"允许执行 {tool_name}？",
         options=["允许", "拒绝"], multi=False, allow_custom=False,
         detail=_approval_detail(tool_name, args), timeout=timeout,
+        request_metadata={
+            "tool": tool_name, "args": args,
+            "risk_level": _risk_level(tool_name, args),
+        },
+        policy_snapshot={
+            "version": 1, "kind": "approval", "on_decline": "deny",
+            "on_timeout": "deny", "allowed_scopes": ["once", "always", "always_path"],
+        },
         on_asked=_on_asked,
     )
-    await asyncio.to_thread(ev.wait, timeout)
-    outcome, value = consume_or_timeout(q.id)
-    if outcome == "timeout":
-        # Expiry closes the process-local registry entry before retracting the
-        # UI card; otherwise reconnecting clients can still answer an expired
-        # approval after the tool has already returned.
-        from openprogram.agent.questions import get_question_registry
+    deadline = time.monotonic() + timeout
+    outcome, value = "pending", None
+    while outcome == "pending":
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            from openprogram.execution import default_store
+            from openprogram.execution.waits import DurableWaitStore
 
-        registry = get_question_registry()
-        if registry.resolve(q.id, "timeout", None):
-            registry.consume(q.id)
+            DurableWaitStore(default_store()).expire_due()
+            outcome, value = consume_or_timeout(q.id)
+            break
+        await asyncio.to_thread(ev.wait, min(0.25, remaining))
+        ev.clear()
+        outcome, value = consume_or_timeout(q.id)
+    if outcome in {"pending", "timeout"}:
         retract_question(q.id, transport)  # 超时收回前端批准卡片
         return False, None, "once"
     if outcome == "answered":

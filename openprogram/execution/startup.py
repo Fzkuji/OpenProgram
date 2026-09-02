@@ -12,6 +12,8 @@ from .outbox import ProjectionDispatchResult, ProjectionDispatcher
 class StartupRecoveryResult:
     canonical: tuple[object, ...]
     projections: ProjectionDispatchResult
+    waits_reclaimed: int = 0
+    waits_expired: int = 0
 
 
 def recover_execution_startup(
@@ -31,7 +33,17 @@ def recover_execution_startup(
         from openprogram.execution import default_control_service
 
         control_service = default_control_service()
+    # Recovery first fences or closes stale execution owners.  Only then can
+    # a claimed wait be judged orphaned and returned to an authorized client.
+    from .waits import DurableWaitStore
+
+    waits = DurableWaitStore(control_service.executions)
     canonical = tuple(control_service.recover_startup())
+    waits_reclaimed = (
+        waits.reclaim_expired_claims()
+        + waits.reclaim_orphaned_claims()
+    )
+    waits_expired = waits.expire_due()
     if projection_dispatcher is None:
         from .store import default_store
         from .projections import projection_handlers
@@ -40,4 +52,7 @@ def recover_execution_startup(
         projection_dispatcher = ProjectionDispatcher(store, projection_handlers(store))
     owner_id = projection_owner_id or f"execution-startup-{uuid.uuid4().hex}"
     projections = projection_dispatcher.recover_startup(owner_id=owner_id)
-    return StartupRecoveryResult(canonical=canonical, projections=projections)
+    return StartupRecoveryResult(
+        canonical=canonical, projections=projections,
+        waits_reclaimed=waits_reclaimed, waits_expired=waits_expired,
+    )

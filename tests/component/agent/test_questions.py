@@ -6,6 +6,7 @@ import time
 
 import pytest
 
+import openprogram.execution as execution_module
 from openprogram.agent.questions import (
     AskTimeout, PendingQuestion, QuestionRegistry, UserDeclined,
     ask_blocking, get_question_registry, new_question_id,
@@ -13,10 +14,33 @@ from openprogram.agent.questions import (
 
 
 @pytest.fixture(autouse=True)
-def _fresh_registry(monkeypatch):
+def _fresh_registry(monkeypatch, tmp_path):
     import openprogram.agent.questions as Q
+    from openprogram.agent.run_control import reset_current_execution_id, set_current_execution_id
+    from openprogram.execution.attempts import AttemptStore
+    from openprogram.execution.model import CapabilitySet
+    from openprogram.execution.store import ExecutionStore
+
+    store = ExecutionStore(tmp_path / "questions.db")
+    revision = store.create_revision(manifest={"entrypoint": "test"})
+    execution = store.create_execution(
+        execution_id="exec_questions", run_id="run_questions", session_id="s",
+        revision_id=revision.revision_id, capabilities=CapabilitySet(pause=True),
+    )
+    attempts = AttemptStore(store)
+    leased, reserved = attempts.lease(
+        execution.execution_id, expected_version=execution.status_version,
+        owner_id="test", ttl_seconds=30,
+    )
+    _attempt, _running = attempts.activate(
+        leased.attempt_id, generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    monkeypatch.setattr(execution_module, "default_store", lambda: store)
+    token = set_current_execution_id(execution.execution_id)
     monkeypatch.setattr(Q, "_registry", QuestionRegistry())
     yield
+    reset_current_execution_id(token)
 
 
 # registry
@@ -44,44 +68,35 @@ def test_resolve_unknown_id():
 
 def test_list_and_cancel_session():
     reg = get_question_registry()
-    reg.register(PendingQuestion(id="a", session_id="s1", kind="ask", prompt="?"))
-    reg.register(PendingQuestion(id="b", session_id="s2", kind="ask", prompt="?"))
-    assert {p.id for p in reg.list_pending("s1")} == {"a"}
-    reg.cancel_session("s1")
-    assert reg.list_pending("s1") == []
-    assert reg.consume("a") == ("declined", None)
+    reg.register(PendingQuestion(id="a", session_id="s", kind="ask", prompt="?"))
+    reg.register(PendingQuestion(id="b", session_id="s", kind="ask", prompt="?"))
+    assert {p.id for p in reg.list_pending("s")} == {"a", "b"}
+    reg.cancel_session("s")
+    assert reg.list_pending("s") == []
+    assert reg.consume("a") == ("cancelled", None)
 
 
-def test_cancel_execution_exact_owner_does_not_touch_ownerless_or_sibling():
+def test_cancel_execution_closes_exact_durable_owner():
     reg = get_question_registry()
-    owner = PendingQuestion(id="owner", session_id="s", kind="ask", prompt="?",
-                            execution_id="exec-1")
-    sibling = PendingQuestion(id="sibling", session_id="s", kind="ask", prompt="?",
-                              execution_id="exec-2")
-    ownerless = PendingQuestion(id="ownerless", session_id="s", kind="ask",
-                                prompt="?", execution_id="")
-    events = {q.id: reg.register(q) for q in (owner, sibling, ownerless)}
-
-    reg.cancel_execution("s", "exec-1")
-
-    assert events["owner"].is_set()
-    assert not events["sibling"].is_set()
-    assert not events["ownerless"].is_set()
-    assert {q.id for q in reg.list_pending("s")} == {"sibling", "ownerless"}
+    from openprogram.agent.run_control import get_current_execution_id
+    owner = PendingQuestion(id="owner", session_id="s", kind="ask", prompt="?", execution_id=get_current_execution_id())
+    event = reg.register(owner)
+    reg.cancel_execution("s", owner.execution_id)
+    assert event.is_set()
+    assert reg.list_pending("s") == []
     assert reg.consume("owner") == ("cancelled", None)
 
 
-def test_cancel_execution_none_remains_session_wide():
+def test_cancel_execution_none_is_internal_session_cleanup():
     reg = get_question_registry()
-    for qid, execution_id in (("owned", "exec-1"), ("ownerless", "")):
-        reg.register(PendingQuestion(id=qid, session_id="s", kind="ask",
-                                     prompt="?", execution_id=execution_id))
+    for qid in ("owned", "second"):
+        reg.register(PendingQuestion(id=qid, session_id="s", kind="ask", prompt="?"))
 
     reg.cancel_execution("s", None)
 
     assert reg.list_pending("s") == []
     assert reg.consume("owned") == ("cancelled", None)
-    assert reg.consume("ownerless") == ("cancelled", None)
+    assert reg.consume("second") == ("cancelled", None)
 
 
 # ask_blocking 三态

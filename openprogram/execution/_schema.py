@@ -9,7 +9,7 @@ import sqlite3
 from .model import CapabilitySet
 
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 _LEGACY_SCHEMA_VERSION = 1
 _PREVIOUS_SCHEMA_VERSION = 2
 _FORK_RETRY_SCHEMA_VERSION = 3
@@ -22,6 +22,7 @@ _AGENT_STATE_BLOB_REFERENCE_SCHEMA_VERSION = 9
 _RESOURCE_SAGA_SCHEMA_VERSION = 10
 _JOB_DURABLE_SCHEMA_VERSION = 11
 _PARTIAL_RUNTIME_CONTROL_SCHEMA_VERSION = 12
+_RUNTIME_CONTROL_WITHOUT_WAITS_SCHEMA_VERSION = 13
 _FINISH_REPAIR_SLOT_LIMIT = 4096
 
 # These are the only projections emitted by the canonical execution store.
@@ -66,6 +67,7 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
     elif current in {
         _JOB_DURABLE_SCHEMA_VERSION,
         _PARTIAL_RUNTIME_CONTROL_SCHEMA_VERSION,
+        _RUNTIME_CONTROL_WITHOUT_WAITS_SCHEMA_VERSION,
     }:
         _migrate_v11(connection)
     elif current == SCHEMA_VERSION:
@@ -245,6 +247,7 @@ def _create_current_schema(connection: sqlite3.Connection) -> None:
     _create_agent_state_blob_reference_schema(connection)
     _create_resource_saga_schema(connection)
     _create_revision_control_schema(connection)
+    _create_durable_wait_schema(connection)
 
 
 def _create_revision_control_schema(connection: sqlite3.Connection) -> None:
@@ -871,6 +874,7 @@ def _migrate_v10(connection: sqlite3.Connection) -> None:
             "ON execution_events(execution_id, execution_sequence)"
         )
         _create_audit_schema(connection)
+        _create_durable_wait_schema(connection)
         connection.commit()
     except BaseException:
         connection.rollback()
@@ -902,10 +906,54 @@ def _migrate_v11(connection: sqlite3.Connection) -> None:
             "ON execution_events(execution_id, execution_sequence)"
         )
         _create_audit_schema(connection)
+        _create_durable_wait_schema(connection)
         connection.commit()
     except BaseException:
         connection.rollback()
         raise
+
+def _create_durable_wait_schema(connection: sqlite3.Connection) -> None:
+    """Execution-owned question and approval state; never a process inbox."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS execution_waits (
+            wait_id TEXT PRIMARY KEY,
+            execution_id TEXT NOT NULL,
+            attempt_id TEXT NOT NULL,
+            generation INTEGER NOT NULL,
+            checkpoint_id TEXT,
+            kind TEXT NOT NULL,
+            request_ref TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            policy_snapshot_ref TEXT NOT NULL,
+            status TEXT NOT NULL,
+            claim_generation INTEGER NOT NULL DEFAULT 0,
+            claim_owner TEXT,
+            claim_expires_at REAL,
+            answer_ref TEXT,
+            outcome TEXT,
+            created_at REAL NOT NULL,
+            expires_at REAL NOT NULL,
+            resolved_at REAL,
+            updated_at REAL NOT NULL,
+            FOREIGN KEY(execution_id) REFERENCES executions(execution_id),
+            FOREIGN KEY(attempt_id) REFERENCES attempts(attempt_id),
+            FOREIGN KEY(checkpoint_id) REFERENCES checkpoints(checkpoint_id),
+            CHECK(kind IN ('ask', 'confirm', 'approval', 'form', 'ask_many')),
+            CHECK(status IN ('open', 'claimed', 'resolved', 'declined', 'expired', 'cancelled')),
+            CHECK(claim_generation >= 0),
+            CHECK(generation >= 0)
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS execution_waits_execution_status "
+        "ON execution_waits(execution_id, status, created_at)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS execution_waits_claim_expiry "
+        "ON execution_waits(status, claim_expires_at, expires_at)"
+    )
 
 
 def _migrate_v1(connection: sqlite3.Connection) -> None:

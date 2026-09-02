@@ -1,24 +1,43 @@
-"""Phase 4b — channel /answer · /decline command handling + question
-rendering. Pure-logic tests (no live channel adapter): the registry is
-process-level, so we seed it and assert resolve / scope / mapping.
-"""
+"""Channel question commands translate to durable execution wait commands."""
 import pytest
 
+import openprogram.agent.questions as Q
+import openprogram.execution as execution_module
 from openprogram.agent.questions import (
-    PendingQuestion, get_question_registry,
+    PendingQuestion, QuestionRegistry, get_question_registry,
 )
+from openprogram.agent.run_control import reset_current_execution_id, set_current_execution_id
 from openprogram.channels._question_commands import (
     try_handle_question_command, _map_choice,
 )
 from openprogram.channels._question_bridge import _render_question
+from openprogram.execution.attempts import AttemptStore
+from openprogram.execution.model import CapabilitySet
+from openprogram.execution.store import ExecutionStore
 
 
 @pytest.fixture(autouse=True)
-def _clean_registry():
-    reg = get_question_registry()
-    reg._pending.clear(); reg._events.clear(); reg._results.clear()
+def _durable_registry(monkeypatch, tmp_path):
+    store = ExecutionStore(tmp_path / "channels.db")
+    revision = store.create_revision(manifest={"entrypoint": "channel"})
+    execution = store.create_execution(
+        execution_id="exec_channel", run_id="run_channel", session_id="s1",
+        revision_id=revision.revision_id, capabilities=CapabilitySet(pause=True),
+    )
+    attempts = AttemptStore(store)
+    leased, reserved = attempts.lease(
+        execution.execution_id, expected_version=execution.status_version,
+        owner_id="channel", ttl_seconds=30,
+    )
+    _attempt, _running = attempts.activate(
+        leased.attempt_id, generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    monkeypatch.setattr(execution_module, "default_store", lambda: store)
+    monkeypatch.setattr(Q, "_registry", QuestionRegistry())
+    token = set_current_execution_id(execution.execution_id)
     yield
-    reg._pending.clear(); reg._events.clear(); reg._results.clear()
+    reset_current_execution_id(token)
 
 
 def _seed(qid, session_id="s1", kind="ask", options=None, multi=False, schema=None):

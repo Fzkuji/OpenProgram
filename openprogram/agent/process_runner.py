@@ -776,12 +776,10 @@ def _child_entry(
         except Exception:
             pass
 
-    # --- user-input subprocess bridge: answer side (user-input-requests.md Phase 2) ---
-    # The child blocks in runtime.ask on its LOCAL QuestionRegistry. The parent
-    # routes the user's reply back through ``answer_queue``; this pump resolves
-    # the local registry so the blocked ask returns. (The ask SIDE — sending the
-    # question UP — is wired below as a QueueTransport on the child's runtime,
-    # once that runtime exists.)
+    # --- durable user-input subprocess bridge: answer side ---
+    # The parent only forwards a terminal durable-wait projection.  It never
+    # accepts or resolves a question locally; the child wakes its local thread
+    # and reads the canonical row itself.
     def handle_webtab_answer(_message):
         return False
 
@@ -807,10 +805,8 @@ def _child_entry(
                         continue
                     try:
                         qid = msg.get("id")
-                        outcome = msg.get("outcome") or "declined"
-                        value = msg.get("value")
                         if qid:
-                            reg.resolve(qid, outcome, value)
+                            reg.wake(qid)
                     except Exception:
                         pass
 
@@ -1033,17 +1029,10 @@ def _child_entry(
 # user-input subprocess bridge (parent side) — Phase 2
 # ---------------------------------------------------------------------------
 #
-# The child raised a runtime.ask question and pushed its envelope up through
-# the event queue. On the parent side we:
-#   1. register it on the PARENT QuestionRegistry (reusing the child's qid so
-#      the WS reply handler routes the answer to the same id),
-#   2. emit it onto the event layer so the frontend draws the question card
-#      (the same default exit runtime.ask uses in the worker process),
-#   3. wait for the parent registry to be resolved (by the WS handler or by a
-#      stop/cancel), then push the answer back to the child via answer_queue.
-#
-# The parent registry's Event is what the WS handler sets via resolve(); a
-# small waiter thread bridges that to the answer_queue the child blocks on.
+# The child commits a durable wait before it sends this envelope.  On the
+# parent side we verify the child cannot choose another owner, emit the durable
+# request for presentation, then forward only its terminal projection back to
+# the child.  SQLite is the sole lifecycle authority across the two processes.
 
 def _bridge_question_to_parent(
     data, answer_queue, pending_qids, lock, *,
@@ -1051,62 +1040,58 @@ def _bridge_question_to_parent(
     execution_id: str | None = None,
 ) -> None:
     try:
-        from openprogram.agent.questions import (
-            PendingQuestion, get_question_registry, emit_question_asked,
-        )
+        from openprogram.execution import default_store
+        from openprogram.execution.waits import DurableWaitStore
+        from openprogram.agent.questions import emit_question_asked
     except Exception:
         return
 
     qid = data.get("id")
-    if not qid:
+    if not qid or not parent_session_id or not execution_id:
         return
 
-    reg = get_question_registry()
-    if parent_session_id is None:
-        # Legacy helper callers have no parent authority; retain the original
-        # child-owner-first resolution and use the argument only as fallback.
-        resolved_session_id = data.get("session_id") or ""
-        resolved_execution_id = data.get("execution_id") or execution_id or ""
-    else:
-        # Production parent calls own both identities; child data is content
-        # only and cannot redirect the registered question.
-        resolved_session_id = parent_session_id
-        resolved_execution_id = execution_id or ""
-    q = PendingQuestion(
-        id=qid,
-        session_id=resolved_session_id,
-        kind=data.get("kind") or "ask",
-        prompt=data.get("prompt") or "",
-        execution_id=resolved_execution_id,
-        options=list(data.get("options") or []),
-        multi=bool(data.get("multi")),
-        allow_custom=bool(data.get("allow_custom", True)),
-        detail=data.get("detail") or "",
-        schema=dict(data.get("schema") or {}),  # kind="form": carry fields over
-        questions=list(data.get("questions") or []),  # kind="ask_many": carry too
-        created_at=data.get("created_at") or 0.0,
-        expires_at=data.get("expires_at") or 0.0,
-    )
-    ev = reg.register(q)
+    waits = DurableWaitStore(default_store())
+    wait = waits.get_wait(str(qid))
+    if wait is None or wait.execution_id != execution_id:
+        return
+    execution = default_store().get_execution(execution_id)
+    if execution is None or execution.session_id != parent_session_id:
+        return
     with lock:
         pending_qids.add(qid)
 
-    # Draw the frontend card (and put it on the event stream) exactly as an
-    # in-worker runtime.ask would — no transport passed, so this goes through
-    # the default EventLayerTransport.
-    # Forward parent-authoritative ownership. Legacy helper calls fall back to
-    # the child envelope when no parent identity was supplied.
-    forwarded = dict(data)
-    forwarded["session_id"] = q.session_id
-    forwarded["execution_id"] = q.execution_id
+    # The outbound frame is projected from the persisted request, rather than
+    # trusting mutable child envelope fields.
+    forwarded = dict(wait.request)
+    forwarded.update({
+        "id": wait.wait_id,
+        "kind": wait.kind,
+        "session_id": parent_session_id,
+        "execution_id": wait.execution_id,
+        "wait_generation": wait.claim_generation,
+        "expected_version": execution.status_version,
+        "created_at": wait.created_at,
+        "expires_at": wait.expires_at,
+    })
     emit_question_asked(forwarded)
 
     def _wait_and_forward() -> None:
-        try:
-            ev.wait()  # set by registry.resolve() (WS reply / stop)
-            res = reg.consume(qid)
-        except Exception:
-            res = None
+        res = None
+        while res is None:
+            try:
+                current = waits.get_wait(str(qid))
+            except Exception:
+                current = None
+            if current is None:
+                break
+            if current.status.value not in {"open", "claimed"}:
+                outcomes = {
+                    "resolved": "answered", "declined": "declined",
+                    "expired": "timeout", "cancelled": "cancelled",
+                }
+                res = (outcomes[current.status.value], current.answer)
+                break
+            time.sleep(0.1)
         with lock:
             pending_qids.discard(qid)
         outcome, value = res if res is not None else ("declined", None)
@@ -1117,21 +1102,6 @@ def _bridge_question_to_parent(
             pass
 
     threading.Thread(target=_wait_and_forward, daemon=True).start()
-
-
-def _decline_bridged_question(qid: str) -> None:
-    """Child gone (exited / killed) with a question still open — decline it.
-    resolve() wakes the waiter thread (which then no-ops pushing to a dead
-    child) and the WS broadcast retracts the frontend card."""
-    try:
-        from openprogram.webui.ws_actions.session import _resolve_question
-        _resolve_question(qid, "declined", None)
-    except Exception:
-        try:
-            from openprogram.agent.questions import get_question_registry
-            get_question_registry().resolve(qid, "declined", None)
-        except Exception:
-            pass
 
 
 # ---------------------------------------------------------------------------
@@ -1367,13 +1337,9 @@ def run_agentic_in_subprocess(
             event_queue.put({_WEBTAB_DRAIN_STOP: True}, block=False)
         except Exception:
             pass
-        # Child is gone — decline any still-pending questions so their
-        # parent-side waiter threads exit and any open frontend cards get
-        # retracted (question.rejected). Nothing left to answer.
-        with pending_qids_lock:
-            leftover = list(pending_qids)
-        for _qid in leftover:
-            _decline_bridged_question(_qid)
+        # The child may have exited while a durable wait remains open.  Do not
+        # invent a decline here: cancellation and expiry are canonical control
+        # transitions, and restart recovery may later resume this execution.
         page_cleanup_failures = []
         # Only this lock identifies a Page command already in flight. The
         # drain thread also delivers ordinary events, so its liveness must not

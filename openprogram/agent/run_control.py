@@ -896,11 +896,6 @@ def _request_cancel_signals(session_id: str, execution_id: str) -> None:
         request_graceful_stop(session_id, execution_id=execution_id)
     except Exception:
         pass
-    try:
-        from openprogram.agent.questions import get_question_registry
-        get_question_registry().cancel_execution(session_id, execution_id)
-    except Exception:
-        pass
 
 
 def _default_terminate(owner: _OwnerEntry) -> bool:
@@ -1050,11 +1045,6 @@ def _finalize_projections(
                         )
                     except Exception:
                         pass
-    except Exception:
-        pass
-    try:
-        from openprogram.agent.questions import get_question_registry
-        get_question_registry().cancel_execution(session_id, execution_id)
     except Exception:
         pass
 
@@ -1570,16 +1560,6 @@ def _cancel_canonical_execution(execution, *, reason_code: str | None = None):
                 execution.execution_id, current.to_dict(),
             ) from exc
         raise
-    # Question waits are a delivery concern; the canonical command remains
-    # the sole cancellation authority and this only releases the exact wait.
-    try:
-        from openprogram.agent.questions import get_question_registry
-
-        get_question_registry().cancel_execution(
-            execution.session_id, execution.execution_id,
-        )
-    except Exception:
-        pass
     result = dispatch.execution.to_dict()
     if dispatch.command.rejection_code == ProjectionRecoveryRequired.code:
         result["issue_code"] = ProjectionRecoveryRequired.code

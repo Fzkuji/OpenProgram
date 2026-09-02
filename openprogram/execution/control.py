@@ -347,6 +347,56 @@ class RuntimeControlService:
         self._cancel_delivery_by_execution: dict[str, set[str]] = {}
         self._cancel_escalations: dict[str, Timer] = {}
 
+    async def request_wait_answer(
+        self,
+        *,
+        command_id: str,
+        execution_id: str,
+        expected_version: int,
+        actor: Mapping[str, Any],
+        wait_id: str,
+        generation: int,
+        answer: Any,
+    ) -> ControlDispatch:
+        """Commit one exact durable answer through the canonical command log."""
+        from .waits import DurableWaitStore
+
+        command, _wait, duplicate = DurableWaitStore(self.executions).resolve_with_command(
+            command_id=command_id, execution_id=execution_id,
+            expected_version=expected_version, actor=actor,
+            kind=CommandKind.WAIT_ANSWER, wait_id=wait_id,
+            generation=generation, answer=answer,
+        )
+        execution = self.executions.get_execution(execution_id)
+        if execution is None:
+            raise ExecutionConflict("not_found", f"execution not found: {execution_id}")
+        return ControlDispatch(command=command, execution=execution, delivered=False)
+
+    async def request_wait_decline(
+        self,
+        *,
+        command_id: str,
+        execution_id: str,
+        expected_version: int,
+        actor: Mapping[str, Any],
+        wait_id: str,
+        generation: int,
+        reason: Any = None,
+    ) -> ControlDispatch:
+        """Commit one exact durable decline through the canonical command log."""
+        from .waits import DurableWaitStore
+
+        command, _wait, duplicate = DurableWaitStore(self.executions).resolve_with_command(
+            command_id=command_id, execution_id=execution_id,
+            expected_version=expected_version, actor=actor,
+            kind=CommandKind.WAIT_DECLINE, wait_id=wait_id,
+            generation=generation, answer=reason,
+        )
+        execution = self.executions.get_execution(execution_id)
+        if execution is None:
+            raise ExecutionConflict("not_found", f"execution not found: {execution_id}")
+        return ControlDispatch(command=command, execution=execution, delivered=False)
+
     def commit_agent_safe_point(
         self,
         *,
@@ -1648,6 +1698,13 @@ class RuntimeControlService:
                 self._record_terminal_recovery(current, command_id)
                 raise ProjectionRecoveryRequired(execution_id) from exc
             prepared_before_accept = True
+        def close_waits(connection, _execution) -> None:
+            from .waits import DurableWaitStore
+
+            DurableWaitStore(self.executions).cancel_execution_in_transaction(
+                connection, execution_id
+            )
+
         try:
             command, execution, duplicate = self.executions.accept_command_with_transition(
                 command_id=command_id,
@@ -1660,6 +1717,7 @@ class RuntimeControlService:
                 reason_code=reason_code,
                 supersede_kinds=_CANCEL_SUPERSEDES,
                 supersede_code="superseded_by_cancel",
+                after_transition=close_waits,
             )
         except Exception as exc:
             if prepared_before_accept:

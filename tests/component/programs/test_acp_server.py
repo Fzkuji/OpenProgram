@@ -203,6 +203,45 @@ def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
     return db
 
 
+@pytest.fixture
+def bind_durable_question_execution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Bind an ACP permission request to an actual canonical execution."""
+    import openprogram.execution as execution_module
+    from openprogram.agent.run_control import (
+        reset_current_execution_id, set_current_execution_id,
+    )
+    from openprogram.execution.attempts import AttemptStore
+    from openprogram.execution.model import CapabilitySet
+    from openprogram.execution.store import ExecutionStore
+
+    store = ExecutionStore(tmp_path / "acp-question-executions.db")
+    monkeypatch.setattr(execution_module, "default_store", lambda: store)
+    tokens = []
+
+    def bind(session_id: str) -> str:
+        revision = store.create_revision(manifest={"entrypoint": "acp-question"})
+        execution = store.create_execution(
+            execution_id=f"exec_acp_question_{len(tokens)}",
+            run_id=f"run_acp_question_{len(tokens)}", session_id=session_id,
+            revision_id=revision.revision_id, capabilities=CapabilitySet(pause=True),
+        )
+        attempts = AttemptStore(store)
+        leased, reserved = attempts.lease(
+            execution.execution_id, expected_version=execution.status_version,
+            owner_id="acp-test", ttl_seconds=30,
+        )
+        attempts.activate(
+            leased.attempt_id, generation=leased.generation,
+            expected_execution_version=reserved.status_version,
+        )
+        tokens.append(set_current_execution_id(execution.execution_id))
+        return execution.execution_id
+
+    yield bind
+    for token in reversed(tokens):
+        reset_current_execution_id(token)
+
+
 @pytest.fixture(autouse=True)
 def stub_model(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(D, "_resolve_model",
@@ -1034,8 +1073,9 @@ def test_cancel_stops_the_turn(tmp_db, client, tmp_path) -> None:
     assert result["res"]["stopReason"] == "cancelled"
 
 
-def test_permission_request_is_forwarded_and_answered(tmp_db, client,
-                                                      tmp_path) -> None:
+def test_permission_request_is_forwarded_and_answered(
+    tmp_db, client, tmp_path, bind_durable_question_execution,
+) -> None:
     """An approval question raised by the tool gate becomes an ACP
     session/request_permission, and the client's choice resolves it."""
     from openprogram.agent.questions import (
@@ -1048,6 +1088,7 @@ def test_permission_request_is_forwarded_and_answered(tmp_db, client,
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
     sid = c.call("session/new",
                  {"cwd": str(tmp_path), "mcpServers": []})["sessionId"]
+    bind_durable_question_execution(sid)
     c.permission_choice = "allow_always"
 
     q, ev = open_question(
@@ -1076,7 +1117,9 @@ def test_permission_request_is_forwarded_and_answered(tmp_db, client,
         "allow_once", "allow_always", "reject_once"]
 
 
-def test_permission_reject_declines_the_question(tmp_db, client, tmp_path) -> None:
+def test_permission_reject_declines_the_question(
+    tmp_db, client, tmp_path, bind_durable_question_execution,
+) -> None:
     from openprogram.agent.questions import (
         get_question_registry, open_question, emit_question_asked)
 
@@ -1084,6 +1127,7 @@ def test_permission_reject_declines_the_question(tmp_db, client, tmp_path) -> No
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
     sid = c.call("session/new",
                  {"cwd": str(tmp_path), "mcpServers": []})["sessionId"]
+    bind_durable_question_execution(sid)
     c.permission_choice = "reject_once"
 
     q, ev = open_question(
@@ -1097,8 +1141,9 @@ def test_permission_reject_declines_the_question(tmp_db, client, tmp_path) -> No
     assert get_question_registry().consume(q.id)[0] == "declined"
 
 
-def test_non_approval_questions_are_not_forwarded(tmp_db, client,
-                                                  tmp_path) -> None:
+def test_non_approval_questions_are_not_forwarded(
+    tmp_db, client, tmp_path, bind_durable_question_execution,
+) -> None:
     """runtime.ask has no ACP equivalent, so it must not be mistaken for a
     permission prompt."""
     from openprogram.agent.questions import open_question, emit_question_asked
@@ -1107,6 +1152,7 @@ def test_non_approval_questions_are_not_forwarded(tmp_db, client,
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
     sid = c.call("session/new",
                  {"cwd": str(tmp_path), "mcpServers": []})["sessionId"]
+    bind_durable_question_execution(sid)
 
     open_question(session_id=sid, kind="ask", prompt="what colour?",
                   options=["red"], timeout=1.0,

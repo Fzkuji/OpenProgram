@@ -120,6 +120,13 @@ def register(app):
         endpoint.__name__ = f"api_execution_{operation}"
         app.post(f"/api/execution/{operation}")(endpoint)
 
+    for operation, path in (("wait_answer", "answer"), ("wait_decline", "decline")):
+        async def endpoint(request: Request, body: dict = None, _operation=operation):
+            return await _command(request, body or {}, _operation)
+
+        endpoint.__name__ = f"api_execution_{operation}"
+        app.post(f"/api/execution/wait/{path}")(endpoint)
+
     @app.get("/api/execution/{execution_id}")
     async def api_execution_snapshot(execution_id: str, request: Request):
         from openprogram.execution import default_store
