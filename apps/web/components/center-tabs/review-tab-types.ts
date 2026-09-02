@@ -18,7 +18,6 @@ export interface ReviewFile {
   job_id?: string | null;
   job_ids?: string[];
 }
-
 export interface LinkedImpact {
   job_id?: string;
   relation?: string;
@@ -58,4 +57,3 @@ export interface DiffState {
   line_count?: number;
   error?: string;
 }
-

@@ -21,7 +21,6 @@ export function FileGlyph({ name }: { name: string }) {
   }
   return <File size={15} className={styles.treeIcon} />;
 }
-
 export function InlineNameInput({
   initial,
   onCommit,
@@ -73,4 +72,3 @@ export function InlineNameInput({
     />
   );
 }
-

@@ -40,4 +40,3 @@ export function requestReviewScope(
     { signal: values.signal },
   );
 }
-

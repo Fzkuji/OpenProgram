@@ -42,4 +42,3 @@ export function requestReviewDiff(
     { signal: values.signal },
   );
 }
-

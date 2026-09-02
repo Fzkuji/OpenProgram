@@ -11,7 +11,6 @@ export interface FileOperationResult {
   idempotency_key?: string;
   operation_id?: string;
 }
-
 export function asServerRenameResult(
   result: FileOperationResult,
   failureStatus: "error" | "recovery_required" = "error",
@@ -28,4 +27,3 @@ export function asServerRenameResult(
     operation_id: result.operation_id,
   };
 }
-
