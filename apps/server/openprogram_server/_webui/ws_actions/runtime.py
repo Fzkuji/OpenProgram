@@ -551,7 +551,22 @@ async def submit_execution_control(
                 "steer": "steer", "fork": "fork", "retry": "retry",
             }[operation]):
                 raise ExecutionConflict("unsupported", "execution does not support this control command")
-        if operation in {"continue", "step"} and service.effects.list_unresolved(execution_id):
+        # A retry of an already persisted resume command must remain a pure
+        # idempotent read.  During a step, its tool effect is legitimately
+        # ``dispatched`` before the safe point commits it.  Recovering the
+        # owner for the duplicate transport request would fence the live
+        # attempt while it is still executing, so its safe-point commit would
+        # fail with ``stale_attempt`` and force reconciliation.
+        existing_resume = (
+            store.get_command(command_id)
+            if operation in {"continue", "step"}
+            else None
+        )
+        if (
+            operation in {"continue", "step"}
+            and existing_resume is None
+            and service.effects.list_unresolved(execution_id)
+        ):
             if execution.current_attempt_id is not None:
                 generation = execution.owner_lease.get("generation")
                 if isinstance(generation, int):
