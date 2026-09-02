@@ -190,7 +190,7 @@ def test_runner_startup_wakes_dispatcher_before_fallback_poll(
             runner.shutdown()
 
 
-def test_worker_lost_fence_prevents_stale_runner_from_writing_completed(
+def test_worker_lost_fence_recovers_exact_canonical_owner(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
@@ -200,7 +200,6 @@ def test_worker_lost_fence_prevents_stale_runner_from_writing_completed(
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
     from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.store import load_job
     from openprogram.agent.job.types import JobStatus
     from openprogram.usage.ledger import UsageLedger
 
@@ -218,23 +217,18 @@ def test_worker_lost_fence_prevents_stale_runner_from_writing_completed(
             (job_id,),
         )
         ledger.connection().commit()
-
-        reconciled = governor.reconcile(
-            job_lookup=lambda session_id, current_job_id: load_job(
-                session_id, current_job_id,
-            ),
-            mark_worker_lost=runner._mark_worker_lost,
-            owner_is_alive=lambda _owner: False,
-            now=1,
-        )
+        runner._owner_holds_worker_lock = lambda _owner: False
+        runner._reconcile_resources()
         fake_worker[1].set()
         final = runner.await_job(job_id, timeout=5)
 
-        assert reconciled.released_worker_lost == 1
+        assert ledger.connection().execute(
+            "SELECT state FROM job_admissions WHERE job_id = ?", (job_id,),
+        ).fetchone()[0] == "released"
         canonical = runner._execution_store.get_execution(job_id)
         assert canonical is not None
-        assert canonical.status.value == "completed"
-        assert final.status == JobStatus.COMPLETED
+        assert canonical.status.value == "interrupted"
+        assert final.status == JobStatus.ERRORED
     finally:
         fake_worker[1].set()
         runner.shutdown()

@@ -36,7 +36,13 @@ from .model import (
     TERMINAL_EXECUTION_STATUSES,
     _thaw_json,
 )
-from .store import ExecutionConflict, ExecutionStore, _json, default_store
+from .store import (
+    CommandConflict,
+    ExecutionConflict,
+    ExecutionStore,
+    _json,
+    default_store,
+)
 
 
 Activator = Callable[[AttemptRecord, ActivationInput], Any]
@@ -157,6 +163,25 @@ class RuntimeControlService:
         self.activator = activator
         self.owner_id = owner_id
         self.lease_ttl_seconds = lease_ttl_seconds
+        self._terminal_observer: Callable[[ExecutionRecord], object] | None = None
+
+    def set_terminal_observer(
+        self, observer: Callable[[ExecutionRecord], object] | None,
+    ) -> None:
+        """Attach a transport-neutral projection/release observer."""
+        self._terminal_observer = observer
+
+    def _observe_terminal(self, execution: ExecutionRecord) -> None:
+        if execution.status not in TERMINAL_EXECUTION_STATUSES:
+            return
+        observer = self._terminal_observer
+        if observer is not None:
+            try:
+                observer(execution)
+            except Exception:
+                # Canonical state is already durable; projection delivery is
+                # retryable and must not change the command result.
+                pass
 
     async def request_continue(
         self,
@@ -946,18 +971,44 @@ class RuntimeControlService:
         actor: Mapping[str, Any],
         reason_code: str,
     ) -> ControlDispatch:
-        command, execution, duplicate = self.executions.accept_command_with_transition(
-            command_id=command_id,
-            execution_id=execution_id,
-            expected_version=expected_version,
-            kind=CommandKind.CANCEL,
-            target=ExecutionStatus.CANCELLING,
-            payload={"reason_code": reason_code},
-            actor=actor,
-            reason_code=reason_code,
-            supersede_kinds=_CANCEL_SUPERSEDES,
-            supersede_code="superseded_by_cancel",
-        )
+        try:
+            command, execution, duplicate = self.executions.accept_command_with_transition(
+                command_id=command_id,
+                execution_id=execution_id,
+                expected_version=expected_version,
+                kind=CommandKind.CANCEL,
+                target=ExecutionStatus.CANCELLING,
+                payload={"reason_code": reason_code},
+                actor=actor,
+                reason_code=reason_code,
+                supersede_kinds=_CANCEL_SUPERSEDES,
+                supersede_code="superseded_by_cancel",
+            )
+        except CommandConflict as exc:
+            # Every transport uses the same command identity.  If another
+            # cancellation won the race, adopt its durable payload/actor and
+            # retry as the same idempotent command; the first reason remains
+            # authoritative instead of becoming an idempotency error.
+            existing = self.executions.get_command(command_id)
+            if (
+                existing is None
+                or existing.execution_id != execution_id
+                or existing.kind is not CommandKind.CANCEL
+                or getattr(exc, "code", None) != "idempotency_collision"
+            ):
+                raise
+            command, execution, duplicate = self.executions.accept_command_with_transition(
+                command_id=command_id,
+                execution_id=execution_id,
+                expected_version=existing.expected_version,
+                kind=CommandKind.CANCEL,
+                target=ExecutionStatus.CANCELLING,
+                payload=existing.payload,
+                actor=existing.actor,
+                reason_code=existing.payload.get("reason_code") or reason_code,
+                supersede_kinds=_CANCEL_SUPERSEDES,
+                supersede_code="superseded_by_cancel",
+            )
         if duplicate:
             return ControlDispatch(
                 command=command, execution=execution, delivered=False
@@ -972,6 +1023,7 @@ class RuntimeControlService:
                 reason_code=reason_code,
             )
             command = self._mark_applied(command, execution)
+            self._observe_terminal(execution)
             return ControlDispatch(
                 command=command, execution=execution, delivered=False
             )

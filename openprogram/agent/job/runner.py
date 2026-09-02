@@ -352,6 +352,13 @@ class JobRunner:
             self._execution_registry,
             owner_id=f"job-control-{os.getpid()}",
         )
+        # Every canonical terminal transition, including a transport-neutral
+        # cancel command, must converge the JobStore projection and release
+        # its admission.  The observer is attached before startup recovery so
+        # recovery-generated terminal states use the same path.
+        self._execution_control.set_terminal_observer(
+            self._project_canonical_terminal,
+        )
         self._claim_only_job_id: str | None = None
         self._claim_scope_lock = threading.Lock()
         self._instance_id = f"worker_{os.getpid()}_{uuid.uuid4().hex}"
@@ -553,6 +560,16 @@ class JobRunner:
         )
         if continuation is not None:
             job = replace(job, parent_msg_id=continuation)
+        scope_reader = getattr(self._governor, "budget_scope_id", None)
+        if scope_reader is not None:
+            scope_id = scope_reader(job_id)
+            if scope_id:
+                job = replace(job, budget_scope_id=scope_id)
+        limits_reader = getattr(self._governor, "canonical_limits", None)
+        if limits_reader is not None:
+            limits = limits_reader(job_id)
+            if limits:
+                job = replace(job, effective_limits=limits)
         return job
 
     def _recover_orphan_canonical_jobs(self) -> None:
@@ -1512,6 +1529,30 @@ class JobRunner:
         if cur_job is None:
             return None
         canonical_state = self._execution_store.get_execution(job_id)
+        if canonical_state is None:
+            # A JobStore-only row is not executable after the canonical
+            # cutover.  Close it explicitly so it cannot remain queued or be
+            # resurrected by cancellation, and release any leftover ledger
+            # admission.  There is no legacy execution fallback.
+            try:
+                updated = _store_update_status(
+                    session_id,
+                    job_id,
+                    JobStatus.ERRORED,
+                    error="canonical execution admission is missing",
+                    reason_code="error.canonical_missing",
+                )
+            except ValueError:
+                updated = _store_load(session_id, job_id)
+            if updated is not None and is_terminal(updated.status):
+                self._governor.release_job(
+                    job_id, updated.reason_code or "error.canonical_missing",
+                )
+                self._broadcast_job_status(updated)
+                self._wake_done(job_id)
+                self._update_attach_card(updated, error_text=updated.error)
+                _broadcast_session_reload(session_id, reason="job_errored")
+            return updated
         if canonical_state is not None and canonical_state.status.value in {
             "completed", "failed", "cancelled", "interrupted",
         }:
@@ -2247,6 +2288,7 @@ class JobRunner:
                         claim.job_id,
                     )
                     requeued = False
+                    terminal_released = False
                     if current_execution is None or current_execution.status.value not in {
                         "cancelled", "completed", "failed", "interrupted",
                     }:
@@ -2255,9 +2297,31 @@ class JobRunner:
                             owner_instance_id=self._instance_id,
                             lease_generation=claim.lease_generation,
                         )
-                    elif current_execution.status.value == "cancelled":
-                        self._project_canonical_terminal(current_execution)
-                    if not requeued:
+                    elif current_execution is not None:
+                        # Canonical recovery has already ended the exact
+                        # attempt.  Release the matching live/stopping
+                        # admission directly; never requeue a terminal
+                        # execution, including a cancellation race.
+                        if current_execution.status.value == "cancelled":
+                            self._project_canonical_terminal(current_execution)
+                        terminal_released = self._governor.release_job(
+                            claim.job_id,
+                            current_execution.reason_code or "error.execution",
+                            owner_instance_id=self._instance_id,
+                            lease_generation=claim.lease_generation,
+                        )
+                        if terminal_released:
+                            projection = _store_load(
+                                claim.session_id, claim.job_id,
+                            )
+                            if projection is not None:
+                                self._broadcast_job_status(projection)
+                                self._update_attach_card(projection)
+                            self._wake_done(claim.job_id)
+                            with self._lock:
+                                self._jobs.pop(claim.job_id, None)
+                                self._done_events.pop(claim.job_id, None)
+                    if not requeued and not terminal_released:
                         terminal: dict[str, Job | None] = {}
                         current = _store_load(claim.session_id, claim.job_id)
                         reason_code = (
@@ -2880,6 +2944,36 @@ class JobRunner:
                     session_id, reason=f"job_{job.status.value}",
                 )
         for job_id, session_id in result.worker_lost:
+            # Resource reconciliation has fenced and released the legacy
+            # admission, but canonical ownership must be fenced separately.
+            # Recover only the exact current attempt/generation; a late
+            # report from an older worker must not terminate a newer attempt
+            # or allow that worker to finish the execution.
+            execution = self._execution_store.get_execution(job_id)
+            if (
+                execution is not None
+                and execution.status.value in {
+                    "queued", "running", "pausing", "paused", "cancelling",
+                }
+                and execution.current_attempt_id is not None
+            ):
+                generation = execution.owner_lease.get("generation")
+                if isinstance(generation, int):
+                    try:
+                        recovery = self._execution_control.recover_owner_loss(
+                            job_id,
+                            attempt_id=execution.current_attempt_id,
+                            generation=generation,
+                        )
+                        execution = recovery.execution
+                    except Exception:
+                        _log.exception(
+                            "failed to fence lost canonical owner for %s", job_id,
+                        )
+                if execution.status.value in {
+                    "completed", "cancelled", "failed", "interrupted",
+                }:
+                    self._project_canonical_terminal(execution)
             job = _store_load(session_id, job_id)
             if job is not None and is_terminal(job.status):
                 self._broadcast_job_status(job)

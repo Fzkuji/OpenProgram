@@ -1139,24 +1139,47 @@ class ResourceGovernor:
                 (job_id,),
             ).fetchone() is not None
 
+    def budget_scope_id(self, job_id: str) -> str | None:
+        """Return the authoritative budget scope for a canonical Job."""
+        with self.ledger.connection() as conn:
+            row = conn.execute(
+                "SELECT budget_scope_id FROM job_admissions WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+        return str(row[0]) if row is not None and row[0] else None
+
     def canonical_limits(self, job_id: str) -> dict[str, int | float | None]:
         """Read the active Job budget from the authoritative ledger row."""
         with self.ledger.connection() as conn:
-            row = conn.execute(
-                "SELECT b.max_total_tokens, b.max_cost_microusd, "
-                "b.max_runtime_seconds, b.idle_timeout_seconds "
-                "FROM budget_scopes b JOIN job_admissions a "
-                "ON a.budget_scope_id = b.budget_scope_id "
-                "WHERE a.job_id = ?",
+            rows = conn.execute(
+                """WITH RECURSIVE ancestors AS (
+                       SELECT b.*, 0 AS depth
+                       FROM budget_scopes b
+                       JOIN job_admissions a
+                         ON a.budget_scope_id = b.budget_scope_id
+                       WHERE a.job_id = ?
+                       UNION ALL
+                       SELECT parent.*, ancestors.depth + 1
+                       FROM budget_scopes parent
+                       JOIN ancestors
+                         ON ancestors.parent_scope_id = parent.budget_scope_id
+                   )
+                   SELECT max_total_tokens, max_cost_microusd,
+                          max_runtime_seconds, idle_timeout_seconds
+                   FROM ancestors ORDER BY depth""",
                 (job_id,),
-            ).fetchone()
-        if row is None:
+            ).fetchall()
+        if not rows:
             return {}
+        values = [
+            next((row[index] for row in rows if row[index] is not None), None)
+            for index in range(4)
+        ]
         return {
-            "max_total_tokens": row[0],
-            "max_cost_microusd": row[1],
-            "max_runtime_seconds": row[2],
-            "idle_timeout_seconds": row[3],
+            "max_total_tokens": values[0],
+            "max_cost_microusd": values[1],
+            "max_runtime_seconds": values[2],
+            "idle_timeout_seconds": values[3],
         }
 
     def publish_accepted_job(

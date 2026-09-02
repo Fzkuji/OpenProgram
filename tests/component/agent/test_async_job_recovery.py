@@ -620,12 +620,26 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
         "openprogram.agent.sub_agent_run._execute_agent_turn", fake_execute,
     )
 
-    def observe_cancel_intent(execution_id: str) -> None:
-        if child_ids and execution_id == child_ids[0]:
+    original_request_cancel = runner._execution_control.request_cancel
+
+    async def observe_canonical_cancel(**kwargs):
+        dispatch = await original_request_cancel(**kwargs)
+        if (
+            child_ids
+            and kwargs.get("execution_id") == child_ids[0]
+            and kwargs.get("reason_code") == "budget.runtime_exhausted"
+            and not cancel_intent_staged.is_set()
+        ):
+            # The canonical command is durable before the competing user
+            # cancellation is released.  Both callers use the same command
+            # identity and must converge on the first reason.
             cancel_intent_staged.set()
             release_cancel_signal.wait(2.0)
+        return dispatch
 
-    run_control.set_after_intent_hook(observe_cancel_intent)
+    monkeypatch.setattr(
+        runner._execution_control, "request_cancel", observe_canonical_cancel,
+    )
     parent_id = runner.spawn_job(
         session_id="p1", prompt="parent-runtime", agent_id="main",
         parent_msg_id="a1",
@@ -656,10 +670,12 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
         assert cancel_intent_staged.wait(1.0)
         staged_child = runner.get_job(child_id)
         assert staged_child is not None
-        assert staged_child.reason_code == "budget.runtime_exhausted"
-        assert not run_control.is_cancelled(
-            "p1", execution_id=child_id,
-        )
+        # The canonical command is durable first; the JobStore reason is
+        # projected only when the worker reaches its terminal transition.
+        assert staged_child.reason_code is None
+        canonical = runner._execution_store.get_execution(child_id)
+        assert canonical is not None
+        assert canonical.status.value == "cancelling"
 
         def cancel_again_as_user() -> None:
             try:
@@ -691,6 +707,12 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
             assert child_id not in runner._jobs
             assert child_id not in runner._done_events
         assert run_control.current_token("p1", execution_id=child_id) is None
+        commands = runner._execution_store.list_commands(child_id)
+        assert [command.kind.value for command in commands] == [
+            "execution.cancel",
+        ]
+        assert commands[0].payload["reason_code"] == "budget.runtime_exhausted"
+        assert len(child_ids) == 1
         row = runner._governor.ledger.connection().execute(
             "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
             (child_id,),
@@ -698,7 +720,6 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
         assert row[0] == "released"
         assert row[1] == "budget.runtime_exhausted"
     finally:
-        run_control.set_after_intent_hook(None)
         release_cancel_signal.set()
         release_child.set()
         if concurrent_cancel is not None:

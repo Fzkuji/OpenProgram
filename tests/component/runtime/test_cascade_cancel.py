@@ -196,16 +196,7 @@ def test_parent_cancel_stops_running_child(store_fixture, fake_worker,
 
 def test_cancel_request_does_not_resurrect_a_finished_job(
         store_fixture, fake_worker):
-    """The cancel-request stamp must not blind-write a stale snapshot.
-
-    ``_cancel_single`` reads the job, then stamps ``cancel_requested_at``
-    on it. The worker it signalled two lines earlier can reach its own
-    terminal write inside that window; a blind ``save_job`` of the stale
-    snapshot rewrote ``status: running`` over the worker's ``cancelled``
-    and pinned the job non-terminal forever. Forcing the stale read
-    makes the race deterministic — it is otherwise a rare interleaving
-    that only shows up as an occasional ``running != cancelled``.
-    """
+    """A finished JobStore projection is never resurrected by cancel."""
     import openprogram.agent.job.runner as runner_mod
     from openprogram.agent.job import get_runner, JobStatus
     from openprogram.agent.job.store import (
@@ -223,9 +214,8 @@ def test_cancel_request_does_not_resurrect_a_finished_job(
     # The worker wins the race and writes its terminal status.
     update_job_status("p1", "t_resurrect", JobStatus.CANCELLED)
 
-    # Plain setattr, not the monkeypatch fixture: undoing it has to be
-    # scoped to this one call, and monkeypatch.undo() would also drop
-    # store_fixture's / fake_worker's patches.
+    # Plain setattr, not the monkeypatch fixture: this only simulates a stale
+    # projection read while the underlying row is already terminal.
     original = runner_mod._store_load
     runner_mod._store_load = (
         lambda sid, tid: stale if tid == "t_resurrect" else original(sid, tid)
@@ -267,7 +257,7 @@ def test_grandchild_stops_too(store_fixture, fake_worker, monkeypatch):
 
 
 def test_cycle_in_parent_chain_does_not_hang(store_fixture, fake_worker):
-    """A (theoretically impossible) parent_job_id cycle terminates."""
+    """A legacy-only parent cycle is terminalized without execution fallback."""
     from openprogram.agent.job.types import Job, JobStatus
     from openprogram.agent.job.store import save_job
     from openprogram.agent.job import get_runner
@@ -290,8 +280,8 @@ def test_cycle_in_parent_chain_does_not_hang(store_fixture, fake_worker):
 
     threading.Thread(target=_go, daemon=True).start()
     assert done.wait(timeout=5.0), "cancel_job hung on a parent cycle"
-    assert result["job"].status == JobStatus.CANCELLED
-    assert runner.get_job("t_cyc_b").status == JobStatus.CANCELLED
+    assert result["job"].status == JobStatus.ERRORED
+    assert runner.get_job("t_cyc_b").status == JobStatus.ERRORED
 
 
 def test_spawn_inside_job_records_parent(store_fixture, fake_worker,

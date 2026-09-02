@@ -521,13 +521,12 @@ def test_runner_job_coexists_with_mcp_foreground_token(
         fake_worker[1].set()
         runner.shutdown()
 
-def test_runner_releases_stopping_claim_when_cancel_races_busy_requeue(
+def test_runner_releases_claim_when_canonical_cancel_races_activation(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
         "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
     )
-    from openprogram.agent import run_control
     from openprogram.agent.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
@@ -540,60 +539,55 @@ def test_runner_releases_stopping_claim_when_cancel_races_busy_requeue(
     governor = ResourceGovernor(
         ledger, limit_resolver=lambda _sid, _job: resolved,
     )
-    original_requeue = governor.requeue_job
-
-    def cancel_before_requeue(job_id, **fence):
-        governor.request_stop(job_id, "cancel.user")
-        return original_requeue(job_id, **fence)
-
-    monkeypatch.setattr(governor, "requeue_job", cancel_before_requeue)
     runner = JobRunner(max_workers=1, governor=governor)
-    mcp_event = threading.Event()
-    job_id = "job_cancel_race"
-    assert run_control.claim_cancel_event(
-        "p1", mcp_event, execution_id=job_id,
+    activation_entered = threading.Event()
+    allow_activation = threading.Event()
+    original_activate = runner._activate_canonical_claim
+
+    def delayed_activation(claim, cancel_event):
+        activation_entered.set()
+        assert allow_activation.wait(2.0)
+        return original_activate(claim, cancel_event)
+
+    monkeypatch.setattr(
+        runner, "_activate_canonical_claim", delayed_activation,
     )
     try:
-        runner.spawn_job(
-            job_id=job_id, session_id="p1",
+        job_id = runner.spawn_job(
+            session_id="p1",
             prompt="cancel race", agent_id="main",
         )
-        def admission_row():
-            return ledger.connection().execute(
-                "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
-                (job_id,),
-            ).fetchone()
-
+        assert activation_entered.wait(2.0)
+        runner.cancel_job(job_id, reason="cancel.user")
+        allow_activation.set()
         assert wait_until(
             lambda: (
-                (row := admission_row()) is not None
+                (row := ledger.connection().execute(
+                    "SELECT state FROM job_admissions WHERE job_id = ?",
+                    (job_id,),
+                ).fetchone()) is not None
                 and row[0] == "released"
             ),
             timeout=2.0,
         )
-        row = admission_row()
-
+        row = ledger.connection().execute(
+            "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
         assert tuple(row) == ("released", "cancel.user")
         assert runner.get_job(job_id).status == JobStatus.CANCELLED
         assert fake_worker[0] == []
-        assert run_control.current_token(
-            "p1", execution_id=job_id,
-        ).event is mcp_event
     finally:
-        run_control.unregister_cancel_event(
-            "p1", mcp_event, execution_id=job_id,
-        )
+        allow_activation.set()
         fake_worker[1].set()
         runner.shutdown()
 
-def test_runner_recovers_failed_stopping_finalize_and_continues_dispatch(
+def test_runner_repairs_canonical_finish_projection_after_store_failure(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
         "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
     )
-    store_fixture.create_session("p2", "main", title="other")
-    from openprogram.agent import run_control
     from openprogram.agent.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
@@ -603,70 +597,44 @@ def test_runner_recovers_failed_stopping_finalize_and_continues_dispatch(
     from openprogram.usage.ledger import UsageLedger
 
     ledger = UsageLedger(tmp_path / "governance.db")
-    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=2)
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
     governor = ResourceGovernor(
         ledger, limit_resolver=lambda _sid, _job: resolved,
     )
-    original_requeue = governor.requeue_job
     original_store_update = runner_mod._store_update_status
+    fail_projection = True
 
-    def cancel_before_requeue(job_id, **fence):
-        governor.request_stop(job_id, "cancel.user")
-        return original_requeue(job_id, **fence)
-
-    def fail_cancel_store(session_id, job_id, status, **fields):
-        if status == JobStatus.CANCELLED:
+    def fail_completed_projection(session_id, job_id, status, **fields):
+        if fail_projection and status == JobStatus.COMPLETED:
             raise OSError("job store unavailable")
         return original_store_update(session_id, job_id, status, **fields)
 
-    monkeypatch.setattr(governor, "requeue_job", cancel_before_requeue)
-    monkeypatch.setattr(runner_mod, "_store_update_status", fail_cancel_store)
-    runner = JobRunner(max_workers=1, governor=governor)
-    mcp_event = threading.Event()
-    failed_id = "job_failed_requeue"
-    assert run_control.claim_cancel_event(
-        "p1", mcp_event, execution_id=failed_id,
+    monkeypatch.setattr(
+        runner_mod, "_store_update_status", fail_completed_projection,
     )
+    runner = JobRunner(max_workers=1, governor=governor)
     try:
-        runner.spawn_job(
-            job_id=failed_id, session_id="p1",
-            prompt="cancel race", agent_id="main",
+        job_id = runner.spawn_job(
+            session_id="p1", prompt="finish projection", agent_id="main",
         )
-        other_id = runner.spawn_job(
-            session_id="p2", prompt="still dispatch", agent_id="main",
-        )
-
         assert fake_worker[3].wait(2)
-        row = ledger.connection().execute(
-            "SELECT state, owner_instance_id, lease_expires_at, lease_generation "
-            "FROM job_admissions WHERE job_id = ?",
-            (failed_id,),
-        ).fetchone()
-        assert row[0] == "stopping"
-        assert row[1] == runner._instance_id
-        assert row[2] is not None
-        assert row[3] == 1
-        assert ledger.connection().execute(
-            "SELECT state FROM job_finalizations WHERE job_id = ?",
-            (failed_id,),
-        ).fetchone()[0] == "pending"
-        assert [call["session_id"] for call in fake_worker[0]] == ["p2"]
-
-        monkeypatch.setattr(
-            runner_mod, "_store_update_status", original_store_update,
+        fake_worker[1].set()
+        assert wait_until(
+            lambda: (
+                (execution := runner._execution_store.get_execution(job_id))
+                is not None
+                and execution.status.value == "completed"
+            ),
+            timeout=3.0,
         )
+        assert runner.get_job(job_id).status == JobStatus.RUNNING
+        fail_projection = False
         runner._reconcile_resources()
-        assert runner.get_job(failed_id).status == JobStatus.CANCELLED
+        assert runner.get_job(job_id).status == JobStatus.COMPLETED
         assert tuple(ledger.connection().execute(
             "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
-            (failed_id,),
-        ).fetchone()) == ("released", "cancel.user")
-
-        fake_worker[1].set()
-        assert runner.await_job(other_id, timeout=5).status == JobStatus.COMPLETED
+            (job_id,),
+        ).fetchone()) == ("released", "completed")
     finally:
-        run_control.unregister_cancel_event(
-            "p1", mcp_event, execution_id=failed_id,
-        )
         fake_worker[1].set()
         runner.shutdown()
