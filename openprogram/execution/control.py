@@ -80,6 +80,14 @@ def default_control_service() -> RuntimeControlService:
                 AttemptStore(executions),
                 DriverRegistry(),
             )
+            async def _activate_agent(attempt, activation):
+                # Keep activation at the canonical service boundary.  The
+                # resulting driver is retained by DriverRegistry binding,
+                # rather than being a WebSocket-local temporary object.
+                from openprogram.agent.production_driver import AgentProductionDriver
+                driver = AgentProductionDriver(executions, control_service=service)
+                return await driver.activate(attempt, activation)
+            service.activator = _activate_agent
             _default_control_services[service_key] = service
         return service
 

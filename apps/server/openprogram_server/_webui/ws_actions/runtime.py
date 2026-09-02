@@ -326,7 +326,6 @@ async def _handle_execution_control(ws, cmd: dict, operation: str) -> None:
                 expected_version=expected_version, actor=actor,
             )
         else:
-            from openprogram.agent.production_driver import AgentProductionDriver
             request = (
                 service.request_continue if operation == "continue"
                 else service.request_step
@@ -334,7 +333,6 @@ async def _handle_execution_control(ws, cmd: dict, operation: str) -> None:
             dispatch = await request(
                 command_id=command_id, execution_id=execution_id,
                 expected_version=expected_version, actor=actor,
-                driver=AgentProductionDriver(store, control_service=service),
             )
         await _send_command_update(ws, dispatch.command, dispatch.execution)
     except (ExecutionConflict, CommandConflict, AttemptConflict, InvalidCommand) as exc:

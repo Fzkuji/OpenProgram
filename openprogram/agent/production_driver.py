@@ -1320,6 +1320,7 @@ class AgentProductionDriver:
     def _default_turn_runner(
         *, request: Any, cancel_event: threading.Event,
         on_event: Callable[[dict], None] | None = None,
+        execution_context: Mapping[str, Any] | None = None,
     ) -> Any:
         from openprogram.agent.dispatcher import process_user_turn
         kwargs = {}
@@ -1329,8 +1330,10 @@ class AgentProductionDriver:
                 kwargs["on_event"] = on_event
             if "cancel_event" in params:
                 kwargs["cancel_event"] = cancel_event
+            if "execution_context" in params:
+                kwargs["execution_context"] = execution_context
         except (TypeError, ValueError):
-            kwargs = {"on_event": on_event, "cancel_event": cancel_event}
+            kwargs = {"on_event": on_event, "cancel_event": cancel_event, "execution_context": execution_context}
         return process_user_turn(request, **kwargs)
 
 
