@@ -158,8 +158,8 @@ def test_job_negotiates_the_agent_safe_points(durable_job):
         "pause": True,
         "step": True,
         "steer": True,
-        "fork": False,
-        "retry": False,
+        "fork": True,
+        "retry": True,
         "safe_point_kinds": [
             "agent.provider.decision.after",
             "agent.tool.action.after",

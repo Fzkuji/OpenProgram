@@ -191,12 +191,114 @@ def test_agent_driver_declares_only_p0_safe_point_capabilities():
         pause=True,
         step=True,
         steer=True,
+        fork=True,
+        retry=True,
         safe_point_kinds=(
             "agent.provider.decision.after",
             "agent.tool.action.after",
+            "agent.wait.before_tool",
         ),
         state_schema_version=1,
     )
+
+
+def test_ordinary_agent_and_job_advertise_branch_capabilities():
+    from openprogram.agent.job.input import JobAgentInputV1
+    from openprogram.agent.job.types import Job
+    from openprogram.agent.production_driver import AgentProductionDriver
+
+    chat = {
+        "version": 1,
+        "kind": "chat",
+        "request": {
+            "user_text": "ordinary agent turn",
+            "agent_id": "default",
+            "source": "web",
+        },
+    }
+    job = JobAgentInputV1.from_job(
+        Job(id="job-branch-capability", parent_session_id="session-1", prompt="ordinary job", agent_id="default"),
+        run_id="run-branch-capability",
+    ).to_dict()
+
+    for payload in (chat, job):
+        capabilities = AgentProductionDriver.capabilities_for_payload(payload)
+        assert capabilities.fork is True
+        assert capabilities.retry is True
+
+    for text in ("/forced_tool", "/spawn child", "/merge child"):
+        capabilities = AgentProductionDriver.capabilities_for_payload({
+            "version": 1,
+            "kind": "chat",
+            "request": {"user_text": text, "agent_id": "default", "source": "web"},
+        })
+        assert capabilities.fork is False
+        assert capabilities.retry is False
+
+
+def test_public_retry_gate_accepts_an_ordinary_agent_execution(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.execution import ExecutionStore
+    from openprogram.webui.ws_actions.runtime import submit_execution_control
+
+    store = ExecutionStore(tmp_path / "execution.sqlite3")
+    payload = {
+        "version": 1,
+        "kind": "chat",
+        "request": {
+            "user_text": "ordinary agent turn",
+            "agent_id": "default",
+            "source": "web",
+        },
+    }
+    revision = store.create_revision(manifest={"entrypoint": "agent"})
+    execution = store.admit_execution(
+        execution_id="exec-public-branch-capability",
+        run_id="run-public-branch-capability",
+        session_id="session-public-branch-capability",
+        revision_id=revision.revision_id,
+        input_ref="input:public-branch-capability",
+        input_hash="hash-public-branch-capability",
+        entrypoint="openprogram.agent.production_driver:AgentProductionDriver",
+        trusted_actor={"subject": "owner"},
+        config_snapshot_ref="config:public-branch-capability",
+        capabilities=AgentProductionDriver.capabilities_for_payload(payload),
+        agent_turn_payload=payload,
+    )
+    called: list[str] = []
+    command = SimpleNamespace(status=CommandStatus.APPLIED)
+    service = SimpleNamespace(
+        effects=SimpleNamespace(list_unresolved=lambda _execution_id: []),
+        request_retry=lambda **_kwargs: (
+            called.append("retry") or SimpleNamespace(command=command, execution=execution)
+        ),
+    )
+    monkeypatch.setattr("openprogram.execution.default_store", lambda: store)
+    monkeypatch.setattr("openprogram.execution.default_control_service", lambda: service)
+    monkeypatch.setattr("openprogram.agent.job.runner.runner_for_execution_store", lambda _store: None)
+
+    actor = {
+        "speaker_kind": "owner", "speaker_id": "owner/local", "speaker_display": "Owner",
+        "authority_tier": "owner", "principal_id": "owner/install/0123456789abcdef",
+        "interaction": "interactive",
+    }
+    returned, _snapshot = asyncio.run(submit_execution_control(
+        {
+            "type": "execution.command", "action": "execution.retry",
+            "command_id": "retry-public-branch-capability",
+            "execution_id": execution.execution_id,
+            "expected_version": execution.status_version,
+            "payload": {},
+        },
+        "retry",
+        actor=actor,
+        bound_session=execution.session_id,
+    ))
+
+    assert returned is command
+    assert called == ["retry"]
 
 
 def test_production_driver_consumes_running_steer_fifo_at_provider_safe_point(tmp_path):

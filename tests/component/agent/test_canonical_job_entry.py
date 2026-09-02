@@ -32,12 +32,13 @@ def test_public_spawn_creates_job_id_bound_canonical_execution(
         assert execution.capabilities.to_dict() == {
             "pause": True,
             "step": True,
-            "steer": False,
-            "fork": False,
-            "retry": False,
+            "steer": True,
+            "fork": True,
+            "retry": True,
             "safe_point_kinds": [
                 "agent.provider.decision.after",
                 "agent.tool.action.after",
+                "agent.wait.before_tool",
             ],
             "state_schema_version": 1,
         }

@@ -422,6 +422,8 @@ class AgentProductionDriver:
                 pause=True,
                 step=True,
                 steer=True,
+                fork=True,
+                retry=True,
                 safe_point_kinds=AGENT_SAFE_POINT_KINDS,
                 state_schema_version=AGENT_CHECKPOINT_SCHEMA_VERSION,
             )
@@ -439,6 +441,8 @@ class AgentProductionDriver:
             pause=True,
             step=True,
             steer=True,
+            fork=True,
+            retry=True,
             safe_point_kinds=AGENT_SAFE_POINT_KINDS,
             state_schema_version=AGENT_CHECKPOINT_SCHEMA_VERSION,
         )
@@ -453,6 +457,8 @@ class AgentProductionDriver:
             pause=True,
             step=True,
             steer=True,
+            fork=True,
+            retry=True,
             safe_point_kinds=AGENT_SAFE_POINT_KINDS,
             state_schema_version=AGENT_CHECKPOINT_SCHEMA_VERSION,
         )
