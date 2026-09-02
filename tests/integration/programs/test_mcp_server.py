@@ -105,6 +105,12 @@ def process_user_turn(request, *, cancel_event):
     execution = default_store().get_execution(execution_id)
     if execution is None or not execution.current_attempt_id:
         raise RuntimeError("fixture execution is not active")
+    if request.user_text == "wait-for-cancel":
+        record("entered", session_id=request.session_id)
+        while not cancel_event.is_set():
+            threading.Event().wait(0.01)
+        record("late-worker-finished", session_id=request.session_id)
+        return TurnResult("fixture-result", "fixture-user", "fixture-assistant")
     generation = int(execution.owner_lease["generation"])
     wait = DurableWaitStore(default_store()).open_wait(
             execution_id=execution_id,
@@ -144,11 +150,6 @@ def process_user_turn(request, *, cancel_event):
         "expected_version": execution.status_version,
         "expires_at": wait.expires_at,
     }))
-    if request.user_text == "wait-for-cancel":
-        record("entered", session_id=request.session_id)
-        while not cancel_event.is_set():
-            threading.Event().wait(0.01)
-        record("late-worker-finished", session_id=request.session_id)
     return TurnResult("fixture-result", "fixture-user", "fixture-assistant")
 dispatcher.process_user_turn = process_user_turn
 
