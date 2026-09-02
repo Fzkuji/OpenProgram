@@ -388,6 +388,58 @@ def test_history_intent_crash_is_terminalized_on_restart(tmp_path, monkeypatch):
     assert status["error_code"] == "RECOVERY_REQUIRED"
 
 
+def test_rewind_recovery_persists_error_code_for_status(tmp_path, monkeypatch):
+    from openprogram.store.session import session_store
+    from openprogram.store.snapshot.checkpoint import manifest
+    from openprogram.store.snapshot.checkpoint import store as checkpoint_store
+    from openprogram.store.snapshot.checkpoint import CheckpointStore
+
+    session_dir = tmp_path / "session"
+    journal = CheckpointStore(session_dir)
+    original_save = manifest.save
+    saves = 0
+
+    def crash_after_applying(path, value):
+        nonlocal saves
+        saves += 1
+        original_save(path, value)
+        if saves == 2:
+            raise RuntimeError("simulated rewind restart")
+
+    monkeypatch.setattr(checkpoint_store.manifest, "save", crash_after_applying)
+    stored_key = "turn-closure:revert:rewind-key"
+    with pytest.raises(RuntimeError, match="simulated rewind restart"):
+        journal.apply_rewind_operation(
+            [], expected_head_id=None, target_head_id=None,
+            get_head=lambda: None,
+            compare_and_set_head=lambda expected, target: True,
+            idempotency_key=stored_key, target_msg_id="revert:turn-r",
+        )
+
+    monkeypatch.setattr(checkpoint_store.manifest, "save", original_save)
+    recovered = journal.recover_rewind_intents(
+        get_head=lambda: "external",
+        compare_and_set_head=lambda intent, expected, target: False,
+    )
+    assert recovered[0]["status"] == "recovery_required"
+    assert recovered[0]["error_code"] == "RECOVERY_REQUIRED"
+
+    class FakeStore:
+        def _session_dir(self, session_id):
+            assert session_id == "session-a"
+            return session_dir
+
+    monkeypatch.setattr(session_store, "default_store", lambda: FakeStore())
+    status = run(turn_files.handle_turn_operation_status, {
+        "session_id": "session-a", "msg_id": "turn-r",
+        "operation_action": "revert_turn", "idempotency_key": "rewind-key",
+        "operation_id": recovered[0]["transaction_id"],
+        "request_id": str(uuid.uuid4()),
+    })["data"]
+    assert status["status"] == "recovery_required"
+    assert status["error_code"] == "RECOVERY_REQUIRED"
+
+
 def test_file_operation_compaction_has_explicit_safe_retention(tmp_path):
     from openprogram.store.file_operations import (
         FILE_OPERATION_MAX_TERMINAL_RECORDS,

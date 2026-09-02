@@ -954,6 +954,9 @@ class CheckpointStore:
             ] if committed else [],
             "conflicts": intent.get("conflicts", []),
             "unavailable": intent.get("unavailable", []),
+            "error_code": intent.get("error_code") or (
+                "RECOVERY_REQUIRED" if intent.get("status") == "recovery_required" else None
+            ),
             "error": intent.get("error"),
             "new_head_id": intent.get("target_head_id") if committed else None,
             "source_head_id": intent.get("expected_head_id"),
@@ -1024,6 +1027,7 @@ class CheckpointStore:
                     intent, expected_head, target_head,
                 ):
                     intent["status"] = "recovery_required"
+                    intent["error_code"] = "RECOVERY_REQUIRED"
                     intent["error"] = "same-head transaction finalization failed"
                     manifest.save(intent_path, intent)
                     return self._rewind_intent_result(intent, replayed=True)
@@ -1033,6 +1037,7 @@ class CheckpointStore:
                 return self._rewind_intent_result(intent, replayed=True)
             if head not in {expected_head, target_head} or "external" in states:
                 intent["status"] = "recovery_required"
+                intent["error_code"] = "RECOVERY_REQUIRED"
                 intent["error"] = "external state prevents deterministic recovery"
                 manifest.save(intent_path, intent)
                 return self._rewind_intent_result(intent, replayed=True)
@@ -1066,6 +1071,8 @@ class CheckpointStore:
             intent["status"] = (
                 "recovery_required" if recovery_required else "rolled_back"
             )
+            if recovery_required:
+                intent["error_code"] = "RECOVERY_REQUIRED"
             intent["error"] = (
                 "automatic rollback could not complete"
                 if recovery_required else "interrupted rewind rolled back"
@@ -1194,6 +1201,7 @@ class CheckpointStore:
                 return self._intent_result({
                     **existing,
                     "status": "recovery_required",
+                    "error_code": "RECOVERY_REQUIRED",
                     "error": "incomplete durable intent requires recovery",
                 })
             except (OSError, json.JSONDecodeError):
@@ -1296,6 +1304,8 @@ class CheckpointStore:
                 intent["status"] = (
                     "recovery_required" if recovery_required else "rolled_back"
                 )
+                if recovery_required:
+                    intent["error_code"] = "RECOVERY_REQUIRED"
                 intent["error"] = str(exc)
                 manifest.save(intent_path, intent)
                 return self._intent_result(intent)
@@ -1569,6 +1579,8 @@ class CheckpointStore:
                 intent["status"] = (
                     "recovery_required" if recovery_required else "rolled_back"
                 )
+                if recovery_required:
+                    intent["error_code"] = "RECOVERY_REQUIRED"
                 intent["error"] = str(exc)
                 manifest.save(intent_path, intent)
                 return self._rewind_intent_result(intent)
