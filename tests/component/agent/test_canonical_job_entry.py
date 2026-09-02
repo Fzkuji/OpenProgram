@@ -288,6 +288,8 @@ def test_cancel_projection_failure_returns_recovery_required_and_blocks_dispatch
     )
     monkeypatch.setattr(runner_module, "_broadcast", lambda *a, **k: None)
     original_update = runner_module._store_update_status
+    claim_result: list[object] = []
+    claim_done = threading.Event()
 
     def fail_cancel_projection(session_id, job_id, status, **fields):
         if status is JobStatus.CANCELLED:
@@ -302,15 +304,28 @@ def test_cancel_projection_failure_returns_recovery_required_and_blocks_dispatch
     monkeypatch.setattr(runner_module, "_runner", runner)
 
     def fail_enqueue(*_args, **_kwargs):
+        def claim_during_recovery():
+            claim_result.append(
+                runner._governor.claim_next(owner_instance_id=runner._instance_id),
+            )
+            claim_done.set()
+
+        claim_thread = threading.Thread(target=claim_during_recovery)
+        claim_thread.start()
+        assert claim_done.wait(2.0)
+        claim_thread.join(timeout=1.0)
         raise OSError("governance unavailable")
 
     monkeypatch.setattr(
         runner._governor, "enqueue_terminal_projection", fail_enqueue,
     )
     try:
+        runner.spawn_job(
+            session_id="p1", prompt="occupy worker", agent_id="main",
+        )
+        assert fake_worker[3].wait(2.0)
         job_id = runner.spawn_job(
             session_id="p1", prompt="projection failure", agent_id="main",
-            defer_dispatch=True,
         )
         result = run_control.cancel_execution(job_id)
         assert result["status"] == "cancelled"
@@ -328,6 +343,7 @@ def test_cancel_projection_failure_returns_recovery_required_and_blocks_dispatch
             (job_id,),
         ).fetchone()
         assert tuple(admission) == ("queued", 0)
+        assert claim_result == [None]
         assert runner._governor.claim_next(owner_instance_id=runner._instance_id) is None
     finally:
         fake_worker[1].set()
@@ -342,7 +358,6 @@ def test_force_termination_releases_exact_owner_after_background_escalation(
     from openprogram.agent.job.types import JobStatus
     from openprogram.agent.sub_agent_run import AgentTurnResult
     from openprogram.agent.resource_governance import ResourceGovernor
-    from openprogram.execution import TerminationReceipt
     from openprogram.usage.ledger import UsageLedger
     from tests.support.waiting import wait_until
 
@@ -362,19 +377,18 @@ def test_force_termination_releases_exact_owner_after_background_escalation(
         "openprogram.agent.sub_agent_run._execute_agent_turn", hold_worker,
     )
 
-    async def terminate(**_kwargs):
+    def terminate_process(*_args, **_kwargs):
         terminate_called.set()
-        return TerminationReceipt(
-            attempt_id=_kwargs["attempt_id"], terminated=True,
-            reason=_kwargs["reason"],
-        )
+        return True
+
+    monkeypatch.setattr(
+        "openprogram.agent.process_runner.kill_active_subprocess",
+        terminate_process,
+    )
 
     ledger = UsageLedger(tmp_path / "termination-success.db")
     runner = JobRunner(max_workers=1, governor=ResourceGovernor(ledger))
     try:
-        monkeypatch.setattr(
-            runner._execution_control, "terminate_attempt", terminate,
-        )
         real_schedule = runner._schedule_canonical_termination
 
         def schedule(*args, **kwargs):

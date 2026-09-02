@@ -172,12 +172,19 @@ class RuntimeControlService:
         self.owner_id = owner_id
         self.lease_ttl_seconds = lease_ttl_seconds
         self._terminal_observer: Callable[[ExecutionRecord], object] | None = None
+        self._terminal_preparer: Callable[[ExecutionRecord], object] | None = None
 
     def set_terminal_observer(
         self, observer: Callable[[ExecutionRecord], object] | None,
     ) -> None:
         """Attach a transport-neutral projection/release observer."""
         self._terminal_observer = observer
+
+    def set_terminal_preparer(
+        self, preparer: Callable[[ExecutionRecord], object] | None,
+    ) -> None:
+        """Attach a pre-terminal barrier for external resource projections."""
+        self._terminal_preparer = preparer
 
     def _observe_terminal(self, execution: ExecutionRecord) -> None:
         if execution.status not in TERMINAL_EXECUTION_STATUSES:
@@ -1023,6 +1030,29 @@ class RuntimeControlService:
         if execution.current_attempt_id is None and not self.effects.list_unresolved(
             execution.execution_id
         ):
+            try:
+                if self._terminal_preparer is not None:
+                    prepared = self._terminal_preparer(execution)
+                    if prepared is False:
+                        raise RuntimeError("terminal dispatch barrier unavailable")
+            except Exception as exc:
+                try:
+                    command = self.executions.transition_command(
+                        command.command_id,
+                        expected_status=CommandStatus.APPLYING,
+                        target=CommandStatus.REJECTED,
+                        result_version=execution.status_version,
+                        rejection_code=ProjectionRecoveryRequired.code,
+                        receipt={"error": str(exc)},
+                    )
+                except Exception:
+                    _log.exception(
+                        "failed to persist terminal barrier command state for %s",
+                        execution.execution_id,
+                    )
+                raise ProjectionRecoveryRequired(
+                    execution.execution_id,
+                ) from exc
             execution = self.executions.transition_execution(
                 execution.execution_id,
                 expected_version=execution.status_version,

@@ -1725,7 +1725,7 @@ class ResourceGovernor:
             # claim_next while the canonical database remains separate.
             conn.execute(
                 """UPDATE job_admissions SET dispatch_ready = 0
-                   WHERE job_id = ? AND state IN ('preparing', 'queued')""",
+                   WHERE job_id = ? AND state != 'released'""",
                 (job_id,),
             )
             existing = conn.execute(
@@ -1749,11 +1749,11 @@ class ResourceGovernor:
         return True
 
     def block_dispatch(self, job_id: str) -> bool:
-        """Keep a queued admission undispatchable while projection recovers."""
+        """Fence an admission before canonical terminal transition."""
         with self.ledger.immediate() as conn:
             return conn.execute(
                 """UPDATE job_admissions SET dispatch_ready = 0
-                   WHERE job_id = ? AND state IN ('preparing', 'queued')""",
+                   WHERE job_id = ? AND state != 'released'""",
                 (job_id,),
             ).rowcount == 1
 

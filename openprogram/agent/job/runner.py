@@ -359,6 +359,9 @@ class JobRunner:
         self._execution_control.set_terminal_observer(
             self._project_canonical_terminal,
         )
+        self._execution_control.set_terminal_preparer(
+            self._prepare_canonical_terminal,
+        )
         self._claim_only_job_id: str | None = None
         self._claim_scope_lock = threading.Lock()
         self._instance_id = f"worker_{os.getpid()}_{uuid.uuid4().hex}"
@@ -696,6 +699,13 @@ class JobRunner:
         clear_resume = getattr(self._governor, "clear_resume_parent_msg_id", None)
         if clear_resume is not None:
             clear_resume(execution.execution_id)
+
+    def _prepare_canonical_terminal(self, execution) -> bool:
+        """Block queued admission before canonical cancellation can terminalize."""
+        block_dispatch = getattr(self._governor, "block_dispatch", None)
+        if block_dispatch is None:
+            return False
+        return bool(block_dispatch(execution.execution_id))
 
     def _project_pending_canonical_terminal(self, intent) -> bool:
         """Replay one durable terminal intent and then release its exact fence."""
