@@ -378,7 +378,8 @@ class ExecutionStore:
                     )
                     connection.execute(
                         "INSERT INTO execution_finish_repair_slots "
-                        "(execution_id, reserved_at, updated_at) VALUES (?, ?, ?)",
+                        "(execution_id, reserved_at, updated_at, state) "
+                        "VALUES (?, ?, ?, 'reserved')",
                         (record.execution_id, record.created_at, record.created_at),
                     )
             except sqlite3.IntegrityError as exc:
@@ -430,8 +431,14 @@ class ExecutionStore:
         outcome: str,
         reason_code: str | None,
         command_id: str | None = None,
+        retry_count: int = 0,
+        next_attempt_at: float = 0.0,
     ) -> None:
         """Persist a terminal write for bounded retry and startup replay."""
+        if type(retry_count) is not int or retry_count < 0:
+            raise ValueError("finish repair retry_count must be non-negative")
+        if type(next_attempt_at) not in {int, float}:
+            raise ValueError("finish repair next_attempt_at must be numeric")
         now = time.time()
         with self._transaction() as connection:
             # Only terminal or stale rows may be collected. An actionable
@@ -492,19 +499,52 @@ class ExecutionStore:
                 INSERT INTO execution_finish_repairs (
                     execution_id, attempt_id, generation, expected_version,
                     target, outcome, reason_code, created_at, updated_at,
-                    command_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    command_id, retry_count, next_attempt_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(execution_id, attempt_id, generation) DO UPDATE SET
                     expected_version = excluded.expected_version,
                     target = excluded.target,
                     outcome = excluded.outcome,
                     reason_code = excluded.reason_code,
                     command_id = excluded.command_id,
+                    retry_count = excluded.retry_count,
+                    next_attempt_at = excluded.next_attempt_at,
                     updated_at = excluded.updated_at
                 """,
                 (
                     execution_id, attempt_id, generation, expected_version,
                     target, outcome, reason_code, now, now, command_id,
+                    retry_count, next_attempt_at,
+                ),
+            )
+            connection.execute(
+                "UPDATE execution_finish_repair_slots SET state = 'repair', "
+                "updated_at = ? WHERE execution_id = ?",
+                (now, execution_id),
+            )
+
+    def defer_finish_repair(
+        self,
+        execution_id: str,
+        attempt_id: str,
+        generation: int,
+        *,
+        retry_count: int,
+        next_attempt_at: float,
+    ) -> None:
+        """Persist repair backoff without changing its desired outcome."""
+        if type(retry_count) is not int or retry_count < 0:
+            raise ValueError("finish repair retry_count must be non-negative")
+        if type(next_attempt_at) not in {int, float}:
+            raise ValueError("finish repair next_attempt_at must be numeric")
+        with self._transaction() as connection:
+            connection.execute(
+                "UPDATE execution_finish_repairs SET retry_count = ?, "
+                "next_attempt_at = ?, updated_at = ? "
+                "WHERE execution_id = ? AND attempt_id = ? AND generation = ?",
+                (
+                    retry_count, next_attempt_at, time.time(),
+                    execution_id, attempt_id, generation,
                 ),
             )
 
@@ -512,6 +552,7 @@ class ExecutionStore:
         self, *, limit: int = 256, offset: int = 0,
         include_stalled: bool = True,
         after: tuple[float, str, str, int] | None = None,
+        due_before: float | None = None,
     ) -> list[dict[str, Any]]:
         if type(limit) is not int or not 0 < limit <= _FINISH_REPAIR_PAGE_LIMIT:
             raise ValueError("finish repair limit is out of bounds")
@@ -519,6 +560,8 @@ class ExecutionStore:
             raise ValueError("finish repair offset must be non-negative")
         if type(include_stalled) is not bool:
             raise ValueError("include_stalled must be a bool")
+        if due_before is not None and type(due_before) not in {int, float}:
+            raise ValueError("finish repair due_before must be numeric")
         if after is not None and (
             type(after) is not tuple
             or len(after) != 4
@@ -530,6 +573,9 @@ class ExecutionStore:
         with closing(self._connect()) as connection:
             where = "(? OR reason_code IS NULL OR reason_code != ?)"
             values: list[Any] = [include_stalled, "finish_repair_stalled"]
+            if due_before is not None:
+                where += " AND next_attempt_at <= ?"
+                values.append(due_before)
             if after is not None:
                 where += (
                     " AND (created_at > ? OR "
@@ -563,6 +609,25 @@ class ExecutionStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_finish_repair_slots(self, *, limit: int = 4096) -> list[dict[str, Any]]:
+        if type(limit) is not int or not 0 < limit <= _FINISH_REPAIR_PAGE_LIMIT:
+            raise ValueError("finish repair slot limit is out of bounds")
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT * FROM execution_finish_repair_slots "
+                "ORDER BY reserved_at, execution_id LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def has_stalled_finish_repairs(self) -> bool:
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT 1 FROM execution_finish_repairs "
+                "WHERE reason_code = 'finish_repair_stalled' LIMIT 1"
+            ).fetchone()
+        return row is not None
+
     def delete_finish_repair(
         self, execution_id: str, attempt_id: str, generation: int,
     ) -> None:
@@ -572,16 +637,24 @@ class ExecutionStore:
                 "WHERE execution_id = ? AND attempt_id = ? AND generation = ?",
                 (execution_id, attempt_id, generation),
             )
+            # Removing one stale/handled generation does not release the
+            # execution's admission reservation. If no repair remains for a
+            # live execution, expose the reservation as available for a new
+            # repair rather than leaving it marked as an old repair.
             connection.execute(
-                "DELETE FROM execution_finish_repair_slots WHERE execution_id = ?",
-                (execution_id,),
-            )
-
-    def release_finish_repair_slot(self, execution_id: str) -> None:
-        with self._transaction() as connection:
-            connection.execute(
-                "DELETE FROM execution_finish_repair_slots WHERE execution_id = ?",
-                (execution_id,),
+                "UPDATE execution_finish_repair_slots SET state = 'reserved', "
+                "updated_at = ? WHERE execution_id = ? "
+                "AND NOT EXISTS ("
+                "SELECT 1 FROM execution_finish_repairs "
+                "WHERE execution_id = ?"
+                ") AND EXISTS ("
+                "SELECT 1 FROM executions WHERE execution_id = ? "
+                "AND status NOT IN (?, ?, ?, ?)"
+                ")",
+                (
+                    time.time(), execution_id, execution_id, execution_id,
+                    *(status.value for status in TERMINAL_EXECUTION_STATUSES),
+                ),
             )
 
     def _copy_execution_input_in_transaction(
@@ -1380,6 +1453,11 @@ class ExecutionStore:
             )
         if updated.rowcount != 1:
             raise ExecutionConflict("stale_version", "execution changed concurrently")
+        if target in TERMINAL_EXECUTION_STATUSES:
+            connection.execute(
+                "DELETE FROM execution_finish_repair_slots WHERE execution_id = ?",
+                (execution_id,),
+            )
         record = self._require_execution(connection, execution_id)
         self._append_event(
             connection,

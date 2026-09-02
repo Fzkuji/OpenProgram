@@ -90,6 +90,7 @@ AGENT_TURN_INPUT_VERSION = 1
 MAX_AGENT_TURN_INPUT_BYTES = 256 * 1024
 FINISH_RETRY_LIMIT = 8
 FINISH_RETRY_MAX_DELAY = 1.0
+FINISH_REPAIR_RETRY_TIMER_DELAY = 30.0
 _PAYLOAD_KINDS = frozenset({"chat", "forced_tool"})
 _PAYLOAD_ENVELOPE_KEYS = frozenset({"version", "kind", "request", "tool_name", "tool_input", "anchor_msg_id", "work_dir", "agent_id", "source", "provider", "model", "response_format", "surface_context_snapshot"})
 
@@ -715,14 +716,17 @@ class AgentProductionDriver:
             if retries > FINISH_RETRY_LIMIT:
                 self._stall_finish_retry(key)
                 return
-            with self._handles_lock:
+            try:
+                self._handles_lock.acquire()
                 pending = self._pending_finishes.get(key)
                 if pending is None or key in self._finished:
+                    self._handles_lock.release()
                     return
                 (
                     attempt, _expected_version, target, outcome, reason_code,
                     command_id,
                 ) = pending
+                self._handles_lock.release()
                 try:
                     service = self._control_service()
                     execution = service.executions.get_execution(attempt.execution_id)
@@ -819,6 +823,8 @@ class AgentProductionDriver:
                     return
                 time.sleep(delay)
                 delay = min(delay * 2, FINISH_RETRY_MAX_DELAY)
+            finally:
+                pass
 
     def _persist_finish_retry(
         self,
@@ -828,6 +834,8 @@ class AgentProductionDriver:
         outcome: str,
         reason_code: str | None,
         command_id: str | None,
+        retry_count: int = 0,
+        next_attempt_at: float = 0.0,
     ) -> bool:
         if self.executions is None:
             return False
@@ -841,6 +849,8 @@ class AgentProductionDriver:
                 outcome=outcome,
                 reason_code=reason_code,
                 command_id=command_id,
+                retry_count=retry_count,
+                next_attempt_at=next_attempt_at,
             )
             with self._handles_lock:
                 self._finish_repair_metrics["persisted"] += 1
@@ -866,20 +876,23 @@ class AgentProductionDriver:
             outcome,
             "finish_repair_stalled",
             command_id,
+            retry_count=FINISH_RETRY_LIMIT,
+            next_attempt_at=time.time() + FINISH_REPAIR_RETRY_TIMER_DELAY,
         )
+        if not persisted:
+            _log.error(
+                "finish repair %s/%s/%s remains pending after retry budget; "
+                "durable write is unavailable",
+                attempt.execution_id,
+                attempt.attempt_id,
+                attempt.generation,
+            )
+            return
         with self._handles_lock:
             self._pending_finishes.pop(key, None)
             self._finish_repair_stalled.add(key)
             self._finished.add(key)
             self._finish_repair_metrics["stalled"] += 1
-        if not persisted:
-            _log.error(
-                "finish repair %s/%s/%s entered in-memory dead-letter; "
-                "manual recovery is required",
-                attempt.execution_id,
-                attempt.attempt_id,
-                attempt.generation,
-            )
 
     def _schedule_finish_retry_worker(self) -> None:
         with self._handles_lock:
@@ -898,17 +911,32 @@ class AgentProductionDriver:
                 keys = tuple(self._pending_finishes)
             for key in keys:
                 self._retry_finish(key)
+            self._reconcile_stalled_repairs()
         finally:
             with self._handles_lock:
                 self._finish_retry_worker_active = False
                 pending = bool(self._pending_finishes)
-            if pending:
+            stalled = self.executions is not None and self.executions.has_stalled_finish_repairs()
+            if pending or stalled:
                 with self._handles_lock:
                     if self._finish_retry_timer is None:
-                        timer = threading.Timer(1.0, self._finish_retry_timer_fired)
+                        timer = threading.Timer(
+                            FINISH_REPAIR_RETRY_TIMER_DELAY,
+                            self._finish_retry_timer_fired,
+                        )
                         timer.daemon = True
                         self._finish_retry_timer = timer
                         timer.start()
+
+    def _reconcile_stalled_repairs(self) -> None:
+        if self.executions is None:
+            return
+        try:
+            self._control_service().replay_finish_repairs(
+                include_stalled=True, due_only=True,
+            )
+        except Exception:
+            _log.exception("stalled Agent finish repair reconciliation failed")
 
     def _finish_retry_timer_fired(self) -> None:
         with self._handles_lock:

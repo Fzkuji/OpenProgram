@@ -17,6 +17,7 @@ _EXECUTION_CONTROL_SCHEMA_VERSION = 4
 _PROJECTION_OUTBOX_SCHEMA_VERSION = 5
 _PROJECTION_READ_SCHEMA_VERSION = 6
 _FINISH_REPAIR_SLOT_SCHEMA_VERSION = 7
+_FINISH_REPAIR_SLOT_LIMIT = 4096
 
 # These are the only projections emitted by the canonical execution store.
 # Adding a projection is a schema/design change, not a caller-defined label.
@@ -336,6 +337,8 @@ def _create_finish_repair_schema(connection: sqlite3.Connection) -> None:
             command_id TEXT,
             created_at REAL NOT NULL,
             updated_at REAL NOT NULL,
+            retry_count INTEGER NOT NULL DEFAULT 0,
+            next_attempt_at REAL NOT NULL DEFAULT 0,
             PRIMARY KEY(execution_id, attempt_id, generation),
             FOREIGN KEY(execution_id) REFERENCES executions(execution_id),
             FOREIGN KEY(attempt_id) REFERENCES attempts(attempt_id)
@@ -347,12 +350,21 @@ def _create_finish_repair_schema(connection: sqlite3.Connection) -> None:
         "ON execution_finish_repairs(updated_at, execution_id)"
     )
     _add_column_if_missing(connection, "execution_finish_repairs", "command_id TEXT")
+    _add_column_if_missing(
+        connection, "execution_finish_repairs",
+        "retry_count INTEGER NOT NULL DEFAULT 0",
+    )
+    _add_column_if_missing(
+        connection, "execution_finish_repairs",
+        "next_attempt_at REAL NOT NULL DEFAULT 0",
+    )
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS execution_finish_repair_slots (
             execution_id TEXT PRIMARY KEY,
             reserved_at REAL NOT NULL,
             updated_at REAL NOT NULL,
+            state TEXT NOT NULL DEFAULT 'reserved',
             FOREIGN KEY(execution_id) REFERENCES executions(execution_id)
         )
         """
@@ -361,22 +373,54 @@ def _create_finish_repair_schema(connection: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS execution_finish_repair_slots_reserved "
         "ON execution_finish_repair_slots(reserved_at, execution_id)"
     )
+    _add_column_if_missing(
+        connection, "execution_finish_repair_slots",
+        "state TEXT NOT NULL DEFAULT 'reserved'",
+    )
 
 
 def _backfill_finish_repair_slots(connection: sqlite3.Connection) -> None:
     """Reserve one slot for every nonterminal admitted Agent execution."""
-    connection.execute(
+    rows = connection.execute(
         """
-        INSERT OR IGNORE INTO execution_finish_repair_slots
-            (execution_id, reserved_at, updated_at)
-        SELECT e.execution_id, e.created_at, e.updated_at
+        SELECT e.execution_id, e.created_at, e.updated_at,
+               EXISTS(
+                   SELECT 1 FROM execution_finish_repairs AS r
+                   WHERE r.execution_id = e.execution_id
+               ) AS has_repair,
+               EXISTS(
+                   SELECT 1 FROM attempts AS a
+                   WHERE a.execution_id = e.execution_id
+                     AND a.attempt_id = e.current_attempt_id
+                     AND a.status = 'active'
+               ) AS has_active_owner
         FROM executions AS e
         JOIN execution_agent_turn_inputs AS i
           ON i.execution_id = e.execution_id
         WHERE e.status NOT IN (?, ?, ?, ?)
+        ORDER BY has_repair DESC, has_active_owner DESC,
+                 e.created_at, e.execution_id
         """,
         ("completed", "failed", "cancelled", "interrupted"),
+    ).fetchall()
+    selected = rows[:_FINISH_REPAIR_SLOT_LIMIT]
+    connection.executemany(
+        "INSERT OR IGNORE INTO execution_finish_repair_slots "
+        "(execution_id, reserved_at, updated_at, state) VALUES (?, ?, ?, 'reserved')",
+        [(row["execution_id"], row["created_at"], row["updated_at"]) for row in selected],
     )
+    for row in rows[_FINISH_REPAIR_SLOT_LIMIT:]:
+        connection.execute(
+            "UPDATE executions SET status = 'reconciliation_required', "
+            "status_version = status_version + 1, "
+            "reason_code = 'finish_repair_capacity_migration', "
+            "updated_at = ? WHERE execution_id = ? "
+            "AND status NOT IN (?, ?, ?, ?)",
+            (
+                row["updated_at"], row["execution_id"],
+                "completed", "failed", "cancelled", "interrupted",
+            ),
+        )
 
 
 def _migrate_v7(connection: sqlite3.Connection) -> None:

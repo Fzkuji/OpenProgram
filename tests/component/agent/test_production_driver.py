@@ -97,6 +97,51 @@ def test_v7_migration_backfills_agent_finish_slots_idempotently(tmp_path):
         ).fetchone()[0] == 1
 
 
+def test_v7_migration_marks_overflow_nonterminal_agents_for_reconciliation(
+    tmp_path, monkeypatch,
+):
+    from openprogram.execution import _schema
+
+    monkeypatch.setattr(_schema, "_FINISH_REPAIR_SLOT_LIMIT", 1)
+    store, first = _admitted(tmp_path, execution_id="exec-v7-overflow-1")
+    revision = store.create_revision(
+        revision_id="revision-v7-overflow-2", manifest={"entrypoint": "agent", "slot": 2}
+    )
+    second = store.admit_execution(
+        execution_id="exec-v7-overflow-2",
+        run_id="run-v7-overflow-2",
+        session_id="session-v7-overflow-2",
+        revision_id=revision.revision_id,
+        input_ref="input:v7-overflow-2",
+        input_hash="input-hash-v7-overflow-2",
+        entrypoint="openprogram.agent.dispatcher:process_user_turn",
+        trusted_actor={"subject": "test"},
+        config_snapshot_ref="config:v7-overflow-2",
+        agent_turn_payload={
+            "version": 1,
+            "kind": "chat",
+            "request": {"user_text": "run", "agent_id": "default", "source": "test"},
+        },
+    )
+    with sqlite3.connect(store.path) as connection:
+        connection.execute("DROP TABLE execution_finish_repair_slots")
+        connection.execute("PRAGMA user_version = 7")
+        connection.commit()
+
+    migrated = ExecutionStore(store.path)
+
+    with sqlite3.connect(migrated.path) as connection:
+        slots = connection.execute(
+            "SELECT execution_id FROM execution_finish_repair_slots"
+        ).fetchall()
+    assert slots == [(first.execution_id,)]
+    overflow = migrated.get_execution(second.execution_id)
+    assert overflow is not None
+    assert overflow.status is ExecutionStatus.RECONCILIATION_REQUIRED
+    assert overflow.reason_code == "finish_repair_capacity_migration"
+    assert migrated.get_agent_turn_input(second.execution_id) is not None
+
+
 def test_queued_agent_cancel_releases_reserved_slot_immediately(tmp_path):
     from openprogram.execution.control import RuntimeControlService
     from openprogram.execution.driver import DriverRegistry
@@ -597,6 +642,9 @@ def test_finish_retry_re_reads_cancellation_state(tmp_path):
     assert command is not None
     assert command.status is CommandStatus.APPLIED
     assert calls >= 2
+    deadline = time.monotonic() + 1
+    while time.monotonic() < deadline and driver._pending_finishes:
+        time.sleep(0.01)
     assert driver._pending_finishes == {}
 
 
@@ -917,7 +965,8 @@ def test_finish_repair_stalls_after_bounded_attempts_until_manual_reconcile(
     rows = store.list_finish_repairs()
     assert rows and rows[0]["reason_code"] == "finish_repair_stalled"
     assert driver._pending_finishes == {}
-    assert driver._finish_retry_timer is None
+    assert driver._finish_retry_timer is not None
+    driver._finish_retry_timer.cancel()
     service.finish_attempt = original_finish
     assert service.replay_finish_repairs(include_stalled=True) == 1
     assert store.get_execution(execution.execution_id).status is ExecutionStatus.COMPLETED

@@ -255,16 +255,6 @@ class AttemptStore:
                 reason_code=reason_code,
                 clear_owner=True,
             )
-            if finished.status in {
-                ExecutionStatus.COMPLETED,
-                ExecutionStatus.FAILED,
-                ExecutionStatus.CANCELLED,
-                ExecutionStatus.INTERRUPTED,
-            }:
-                connection.execute(
-                    "DELETE FROM execution_finish_repair_slots WHERE execution_id = ?",
-                    (attempt.execution_id,),
-                )
             connection.execute(
                 "UPDATE attempts SET status = ?, outcome = ?, ended_at = ?, "
                 "updated_at = ? WHERE attempt_id = ?",
@@ -310,16 +300,6 @@ class AttemptStore:
             reason_code=reason_code,
             clear_owner=True,
         )
-        if finished.status in {
-            ExecutionStatus.COMPLETED,
-            ExecutionStatus.FAILED,
-            ExecutionStatus.CANCELLED,
-            ExecutionStatus.INTERRUPTED,
-        }:
-            connection.execute(
-                "DELETE FROM execution_finish_repair_slots WHERE execution_id = ?",
-                (attempt.execution_id,),
-            )
         connection.execute(
             "UPDATE attempts SET status = ?, outcome = ?, ended_at = ?, updated_at = ? WHERE attempt_id = ?",
             (AttemptStatus.ENDED.value, outcome, now, now, attempt_id),

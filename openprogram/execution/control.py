@@ -763,11 +763,6 @@ class RuntimeControlService:
             ended = self.attempts._end_for_owner_loss(
                 connection, current_attempt, outcome=outcome
             )
-            if execution.status in TERMINAL_EXECUTION_STATUSES:
-                connection.execute(
-                    "DELETE FROM execution_finish_repair_slots WHERE execution_id = ?",
-                    (execution.execution_id,),
-                )
             self.executions._append_event(
                 connection,
                 execution_id=execution.execution_id,
@@ -976,7 +971,6 @@ class RuntimeControlService:
                 target=ExecutionStatus.CANCELLED,
                 reason_code=reason_code,
             )
-            self.executions.release_finish_repair_slot(execution.execution_id)
             command = self._mark_applied(command, execution)
             return ControlDispatch(
                 command=command, execution=execution, delivered=False
@@ -1695,8 +1689,6 @@ class RuntimeControlService:
             outcome=("reconciliation_required" if unresolved else outcome),
             reason_code=("effect_reconciliation" if unresolved else reason_code),
         )
-        if execution.status in TERMINAL_EXECUTION_STATUSES:
-            self.executions.release_finish_repair_slot(execution.execution_id)
         self.registry.unbind(
             execution.execution_id,
             attempt_id=attempt_id,
@@ -1898,12 +1890,6 @@ class RuntimeControlService:
                     result_version=recovered.status_version,
                     rejection_code="owner_lost_before_checkpoint",
                 )
-            if recovered.status in TERMINAL_EXECUTION_STATUSES:
-                connection.execute(
-                    "DELETE FROM execution_finish_repair_slots WHERE execution_id = ?",
-                    (execution_id,),
-                )
-
         if attempt is not None:
             self.registry.unbind(
                 execution_id,
@@ -1928,15 +1914,58 @@ class RuntimeControlService:
         # retry it once through the same fenced path; if it remains blocked,
         # the marker below prevents generic owner-loss recovery from changing
         # its desired outcome.
-        self.replay_finish_repairs(include_stalled=True)
-        stalled_repairs = {
-            str(repair["execution_id"])
-            for repair in self.executions.list_finish_repairs(limit=4096)
-            if repair.get("reason_code") == "finish_repair_stalled"
-        }
+        self.replay_finish_repairs(include_stalled=True, due_only=True)
+        reserved_recovery = set()
+        for slot in self.executions.list_finish_repair_slots(limit=4096):
+            if slot.get("state") != "reserved":
+                continue
+            execution = self.executions.get_execution(str(slot["execution_id"]))
+            if execution is None or execution.current_attempt_id is None:
+                continue
+            if execution.status not in {
+                ExecutionStatus.RUNNING,
+                ExecutionStatus.PAUSING,
+                ExecutionStatus.CANCELLING,
+            }:
+                continue
+            try:
+                execution = self.executions.transition_execution(
+                    execution.execution_id,
+                    expected_version=execution.status_version,
+                    target=ExecutionStatus.RECONCILIATION_REQUIRED,
+                    reason_code="finish_repair_reserved_recovery",
+                )
+            except (AttemptConflict, ExecutionConflict):
+                execution = self.executions.get_execution(execution.execution_id)
+            if execution is not None:
+                reserved_recovery.add(execution.execution_id)
+        stalled_repairs = set()
+        repair_cursor = None
+        while True:
+            repair_page = self.executions.list_finish_repairs(
+                limit=256,
+                include_stalled=True,
+                after=repair_cursor,
+            )
+            if not repair_page:
+                break
+            for repair in repair_page:
+                repair_cursor = (
+                    float(repair["created_at"]),
+                    str(repair["execution_id"]),
+                    str(repair["attempt_id"]),
+                    int(repair["generation"]),
+                )
+                if repair.get("reason_code") == "finish_repair_stalled":
+                    stalled_repairs.add(str(repair["execution_id"]))
         recoveries = []
         for execution in self.executions.list_nonterminal():
-            if execution.execution_id in stalled_repairs:
+            if (
+                execution.execution_id in stalled_repairs
+                or execution.execution_id in reserved_recovery
+                or execution.reason_code == "finish_repair_capacity_migration"
+                or execution.reason_code == "finish_repair_reserved_recovery"
+            ):
                 # A bounded in-process retry explicitly dead-lettered this
                 # finish. Keep its owner state visible for manual reconcile;
                 # startup owner-loss recovery must not overwrite the repair.
@@ -1966,12 +1995,12 @@ class RuntimeControlService:
                     recovered = self.executions.get_execution(execution.execution_id)
                     if recovered is None:
                         continue
-                if recovered.status in TERMINAL_EXECUTION_STATUSES:
-                    self.executions.release_finish_repair_slot(execution.execution_id)
                 recoveries.append(RecoveryCompletion(execution=recovered))
         return tuple(recoveries)
 
-    def replay_finish_repairs(self, *, include_stalled: bool = False) -> int:
+    def replay_finish_repairs(
+        self, *, include_stalled: bool = False, due_only: bool = False,
+    ) -> int:
         """Replay durable Agent finish intents with current fencing state."""
         repaired = 0
         cursor = None
@@ -1980,6 +2009,7 @@ class RuntimeControlService:
                 limit=256,
                 include_stalled=include_stalled,
                 after=cursor,
+                due_before=time.time() if due_only else None,
             )
             if not repairs:
                 break
@@ -2063,9 +2093,20 @@ class RuntimeControlService:
                         command_id=(str(command_id) if command_id else None),
                         reason_code=reason_code,
                     )
-                except (AttemptConflict, ExecutionConflict):
-                    continue
                 except Exception:
+                    retry_count = int(repair.get("retry_count") or 0) + 1
+                    try:
+                        self.executions.defer_finish_repair(
+                            execution_id,
+                            attempt_id,
+                            generation,
+                            retry_count=retry_count,
+                            next_attempt_at=time.time() + min(
+                                3600.0, 30.0 * (2 ** min(retry_count, 7))
+                            ),
+                        )
+                    except Exception:
+                        continue
                     continue
                 self.executions.delete_finish_repair(
                     execution_id, attempt_id, generation,
@@ -2123,7 +2164,6 @@ class RuntimeControlService:
                 target=ExecutionStatus.CANCELLED,
                 reason_code="cancelled_after_reconciliation",
             )
-            self.executions.release_finish_repair_slot(execution.execution_id)
             command = self._mark_applied(command, execution)
         return ReconciliationCompletion(
             effect=effect,
