@@ -22,7 +22,7 @@ import logging
 import threading
 import time
 import uuid
-from typing import Optional, TYPE_CHECKING
+from typing import Mapping, Optional, TYPE_CHECKING
 
 from openprogram.agent import plan_mode as _plan_mode
 from openprogram.agent.session_config import reasoning_from_config, SessionRunConfig
@@ -344,16 +344,33 @@ def run_loop_blocking(
     # custom error / system entries) — agent.py already provides this.
     from openprogram.agent.agent import _default_convert_to_llm
 
+    canonical_execution = bool((execution_context or {}).get("canonical_execution"))
+    durable_steer_inputs = (execution_context or {}).get("steer_inputs")
+    durable_steer_consumed_ids = (execution_context or {}).get("steer_consumed_ids")
+
     async def _get_steering_messages():
         # Same-session spawned turns are side-branch machinery. Let the
         # foreground chat turn remain the only consumer of its session inbox.
         if req.source == "agent_spawn":
             return []
-        from openprogram.agent import steering
+        command_id = None
+        if canonical_execution:
+            if not isinstance(durable_steer_inputs, list) or not durable_steer_inputs:
+                return []
+            item = durable_steer_inputs.pop(0)
+            payload = item.get("payload") if isinstance(item, Mapping) else None
+            text = payload.get("message") if isinstance(payload, Mapping) else None
+            command_id = item.get("command_id") if isinstance(item, Mapping) else None
+            if not isinstance(text, str) or not text.strip():
+                return []
+            if isinstance(durable_steer_consumed_ids, set) and isinstance(command_id, str):
+                durable_steer_consumed_ids.add(command_id)
+        else:
+            from openprogram.agent import steering
 
-        text = steering.pop(req.session_id)
-        if text is None:
-            return []
+            text = steering.pop(req.session_id)
+            if text is None:
+                return []
         from openprogram.context.nodes import Call, ROLE_USER
         from openprogram.providers.types import TextContent, UserMessage
         from openprogram.store import SessionNodeWriter
@@ -368,6 +385,7 @@ def run_loop_blocking(
         metadata = {
             "source": "web",
             "steering": True,
+            "command_id": command_id,
             "agent_id": req.agent_id,
         }
         try:
@@ -390,7 +408,13 @@ def run_loop_blocking(
         except Exception:
             # Persistence is part of acceptance. Put the text back so the
             # turn-end sweep can deliver it as an ordinary next turn.
-            steering.push(req.session_id, text)
+            if canonical_execution:
+                if isinstance(durable_steer_inputs, list):
+                    durable_steer_inputs.insert(0, item)
+                if isinstance(durable_steer_consumed_ids, set) and isinstance(command_id, str):
+                    durable_steer_consumed_ids.discard(command_id)
+            else:
+                steering.push(req.session_id, text)
             _log.warning(
                 "failed to persist steering for session %s",
                 req.session_id,

@@ -194,6 +194,12 @@ def process_user_turn(
         return _process_turn_once(
             req, on_event=on_event, cancel_event=cancel_event,
             execution_context=execution_context)
+    # Canonical executions use execution-scoped durable steer commands.  They
+    # must not enter the historical session inbox or drain it at turn end.
+    if (execution_context or {}).get("canonical_execution"):
+        return _process_turn_once(
+            req, on_event=on_event, cancel_event=cancel_event,
+            execution_context=execution_context)
     from openprogram.agent import steering
 
     steering.begin_accepting(req.session_id)

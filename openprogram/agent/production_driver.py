@@ -405,6 +405,25 @@ class AgentProductionDriver:
     @staticmethod
     def capabilities_for_payload(payload: Mapping[str, Any]) -> CapabilitySet:
         """Return the admitted capability contract, never a transport guess."""
+        if not isinstance(payload, Mapping):
+            raise AgentDriverError("invalid_input", "Agent admission input must be an object")
+        if payload.get("kind") == "job_agent":
+            # Job input has its own strict envelope.  A Job is still driven by
+            # the same Agent loop, so it exposes the same provider/tool safe
+            # points and durable steering contract as ordinary chat.
+            from openprogram.agent.job.input import JobAgentInputError, JobAgentInputV1
+
+            try:
+                JobAgentInputV1.parse(payload)
+            except JobAgentInputError as exc:
+                raise AgentDriverError("invalid_job_input", str(exc)) from exc
+            return CapabilitySet(
+                pause=True,
+                step=True,
+                steer=True,
+                safe_point_kinds=AGENT_SAFE_POINT_KINDS,
+                state_schema_version=AGENT_CHECKPOINT_SCHEMA_VERSION,
+            )
         envelope = normalize_agent_turn_payload(payload)
         if envelope["kind"] != "chat":
             return CapabilitySet()
@@ -418,6 +437,7 @@ class AgentProductionDriver:
         return CapabilitySet(
             pause=True,
             step=True,
+            steer=True,
             safe_point_kinds=AGENT_SAFE_POINT_KINDS,
             state_schema_version=AGENT_CHECKPOINT_SCHEMA_VERSION,
         )
@@ -431,6 +451,7 @@ class AgentProductionDriver:
         return CapabilitySet(
             pause=True,
             step=True,
+            steer=True,
             safe_point_kinds=AGENT_SAFE_POINT_KINDS,
             state_schema_version=AGENT_CHECKPOINT_SCHEMA_VERSION,
         )
@@ -468,6 +489,7 @@ class AgentProductionDriver:
             )
         request = self._resolve_activation_input(record, activation)
         setattr(request, "_execution_revision_id", execution.revision_id)
+        steer_inputs = tuple(activation.steer_inputs) if activation is not None else ()
         continuation = None
         if activation is not None and activation.checkpoint is not None:
             if isinstance(request, ForcedToolActivation):
@@ -543,7 +565,9 @@ class AgentProductionDriver:
             try:
                 result = asyncio.run(
                     self._run_attempt(
-                        attempt, request, cancel_event, continuation=continuation,
+                        attempt, request, cancel_event,
+                        continuation=continuation,
+                        steer_inputs=steer_inputs,
                     )
                 )
             except BaseException as exc:
@@ -697,6 +721,7 @@ class AgentProductionDriver:
         cancel_event: threading.Event,
         *,
         continuation: AgentContinuation | None = None,
+        steer_inputs: tuple[Mapping[str, Any], ...] = (),
     ) -> Any:
         try:
             result = await asyncio.to_thread(
@@ -705,6 +730,7 @@ class AgentProductionDriver:
                 request,
                 cancel_event,
                 continuation,
+                steer_inputs,
             )
         except asyncio.CancelledError:
             if cancel_event.is_set():
@@ -743,6 +769,7 @@ class AgentProductionDriver:
         request: Any,
         cancel_event: threading.Event,
         continuation: AgentContinuation | None = None,
+        steer_inputs: tuple[Mapping[str, Any], ...] = (),
     ) -> Any:
         from openprogram.agent.run_control import (
             _current_token,
@@ -823,13 +850,21 @@ class AgentProductionDriver:
                             f"Job worktree is unavailable: {worktree_id}",
                         )
                     worktree_token = set_worktree(worktree.worktree_path)
+            steer_queue = [copy.deepcopy(dict(item)) for item in steer_inputs]
+            steer_consumed_ids: set[str] = set()
             if continuation is not None:
                 from openprogram.agent.dispatcher import process_agent_continuation
 
                 execution_context = {
                     "safe_point_hook": self._safe_point_hook(
-                        attempt, request, cancel_event, continuation=continuation,
+                        attempt, request, cancel_event,
+                        continuation=continuation,
+                        steer_queue=steer_queue,
+                        steer_consumed_ids=steer_consumed_ids,
                     ),
+                    "canonical_execution": True,
+                    "steer_inputs": steer_queue,
+                    "steer_consumed_ids": steer_consumed_ids,
                 }
                 if getattr(request, "_job_context", None) is not None:
                     execution_context["job_context"] = copy.deepcopy(request._job_context)
@@ -876,7 +911,12 @@ class AgentProductionDriver:
                         runner_kwargs["execution_context"] = {
                             "safe_point_hook": self._safe_point_hook(
                                 attempt, request, cancel_event,
+                                steer_queue=steer_queue,
+                                steer_consumed_ids=steer_consumed_ids,
                             ),
+                            "canonical_execution": True,
+                            "steer_inputs": steer_queue,
+                            "steer_consumed_ids": steer_consumed_ids,
                         }
                         if getattr(request, "_job_context", None) is not None:
                             runner_kwargs["execution_context"]["job_context"] = copy.deepcopy(request._job_context)
@@ -916,6 +956,8 @@ class AgentProductionDriver:
         cancel_event: threading.Event,
         *,
         continuation: AgentContinuation | None = None,
+        steer_queue: list[dict[str, Any]] | None = None,
+        steer_consumed_ids: set[str] | None = None,
     ) -> Callable[[str, Mapping[str, Any]], bool]:
         """Bind Agent-loop boundaries to the canonical execution owner.
 
@@ -965,10 +1007,16 @@ class AgentProductionDriver:
 
         def current_command(service, execution_id: str):
             commands = service.executions.list_commands(execution_id)
-            priority = (CommandKind.PAUSE, CommandKind.STEP)
+            priority = (CommandKind.PAUSE, CommandKind.STEP, CommandKind.STEER)
             for kind in priority:
                 for command in commands:
-                    if command.kind is kind and command.status is CommandStatus.APPLYING:
+                    if (
+                        command.kind is kind
+                        and command.status in {
+                            CommandStatus.ACCEPTED,
+                            CommandStatus.APPLYING,
+                        }
+                    ):
                         return command
             return None
 
@@ -1225,7 +1273,7 @@ class AgentProductionDriver:
             checkpoint = checkpoint_payload(
                 kind, payload, effect_id, action_id, input_hash, terminal_receipt,
             )
-            service.commit_agent_safe_point(
+            completion = service.commit_agent_safe_point(
                 execution_id=attempt.execution_id, attempt_id=attempt.attempt_id,
                 generation=attempt.generation, expected_version=current.status_version,
                 safe_point_kind=str(checkpoint.payload["safe_point"]["kind"]),
@@ -1235,7 +1283,20 @@ class AgentProductionDriver:
                 agent_checkpoint=checkpoint,
                 command_id=command.command_id, managed_action_id=action_id,
             )
-            return True
+            if command.kind is CommandKind.STEER and steer_queue is not None:
+                consumed = steer_consumed_ids or set()
+                for applied in completion.applied_commands:
+                    if applied.kind is not CommandKind.STEER:
+                        continue
+                    if applied.command_id in consumed:
+                        continue
+                    message = applied.payload.get("message")
+                    if isinstance(message, str) and message.strip():
+                        steer_queue.append({
+                            "command_id": applied.command_id,
+                            "payload": {"message": message},
+                        })
+            return command.kind in {CommandKind.PAUSE, CommandKind.STEP}
 
         return hook
 

@@ -157,7 +157,7 @@ def test_job_negotiates_the_two_agent_safe_points(durable_job):
     assert execution.capabilities.to_dict() == {
         "pause": True,
         "step": True,
-        "steer": False,
+        "steer": True,
         "fork": False,
         "retry": False,
         "safe_point_kinds": [
@@ -262,6 +262,7 @@ def test_ws_pause_uses_complete_execution_command_update_envelope(durable_job, m
     assert frame["execution"]["execution_id"] == job_id
     assert frame["execution"]["resource"] is not None
     assert frame["execution"]["capabilities"]["safe_point_kinds"]
+    assert frame["execution"]["capabilities"]["steer"] is True
     assert frame["event_cursor"]["next_sequence"] > 0
 
 

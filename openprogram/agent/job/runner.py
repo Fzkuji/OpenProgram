@@ -531,9 +531,7 @@ class JobRunner:
             config_snapshot_ref=f"job-config:{job.id}",
             user_message_id=job.caller_msg_id or job.parent_msg_id,
             run_id=run_id,
-            capabilities=AgentProductionDriver.capabilities_for_payload({
-                "version": 1, "kind": "chat", "request": input_payload["turn_request"],
-            }),
+            capabilities=AgentProductionDriver.capabilities_for_payload(input_payload),
             job_agent_payload=input_payload,
         )
 

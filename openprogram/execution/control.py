@@ -654,6 +654,57 @@ class RuntimeControlService:
                     raise AgentSafePointConflict("receipt_invalid", "terminal receipt must be JSON") from exc
                 if len(receipt_json.encode("utf-8")) > 1024 * 1024:
                     raise AgentSafePointConflict("receipt_too_large", "terminal receipt exceeds the size limit")
+                stored = None
+                steering_commands: list[ControlCommand] = []
+                if command_id is not None:
+                    stored = self.executions._get_command(connection, command_id)
+                    if stored is None or stored.execution_id != execution_id:
+                        raise AgentSafePointConflict(
+                            "command_state_invalid",
+                            "safe point command is not owned by this execution",
+                        )
+                    if stored.kind not in {
+                        CommandKind.PAUSE, CommandKind.STEP, CommandKind.STEER,
+                    }:
+                        raise AgentSafePointConflict(
+                            "command_state_invalid",
+                            "unsupported command at Agent safe point",
+                        )
+                    if stored.status not in {
+                        CommandStatus.ACCEPTED, CommandStatus.APPLYING,
+                    }:
+                        if stored.status is CommandStatus.APPLIED:
+                            checkpoint = (
+                                self.checkpoints._get(connection, execution.checkpoint_head_id)
+                                if execution.checkpoint_head_id else None
+                            )
+                            return SafePointCompletion(
+                                command=stored, execution=execution,
+                                attempt=attempt, checkpoint=checkpoint,
+                            )
+                        raise AgentSafePointConflict(
+                            "command_state_invalid",
+                            "safe point command is no longer pending",
+                        )
+                    if stored.kind is CommandKind.STEER:
+                        if self._applying_command(connection, execution_id, CommandKind.CANCEL) is not None:
+                            raise AgentSafePointConflict("superseded_by_cancel", "cancel has priority over steer")
+                        if self._applying_command(connection, execution_id, CommandKind.PAUSE) is not None:
+                            raise AgentSafePointConflict("superseded_by_pause", "pause has priority over steer")
+                        if self._applying_command(connection, execution_id, CommandKind.STEP) is not None:
+                            raise AgentSafePointConflict("superseded_by_step", "step has priority over steer")
+                    if stored.kind is CommandKind.STEER:
+                        steering_rows = connection.execute(
+                            "SELECT * FROM commands WHERE execution_id = ? AND kind = ? "
+                            "AND status IN (?, ?) ORDER BY submitted_at, command_id",
+                            (
+                                execution_id, CommandKind.STEER.value,
+                                CommandStatus.ACCEPTED.value, CommandStatus.APPLYING.value,
+                            ),
+                        ).fetchall()
+                        steering_commands = [
+                            self.executions._command(row) for row in steering_rows
+                        ]
                 receipt_ref = self.executions._put_state_blob_in_transaction(
                     connection, execution_id=execution_id, payload=receipt_blob,
                     media_type="application/json", schema_version=1,
@@ -716,6 +767,16 @@ class RuntimeControlService:
                         connection, execution_id=execution_id, payload=checkpoint_state_blob,
                         media_type="application/json", schema_version=1,
                     )
+                if steering_commands:
+                    steering = list(refs.get("steering", ()))
+                    steering.extend(
+                        {
+                            "command_id": item.command_id,
+                            "payload": dict(item.payload),
+                        }
+                        for item in steering_commands
+                    )
+                    refs["steering"] = steering
                 now = time.time()
                 connection.execute(
                     "UPDATE effects SET status = ?, receipt_json = ?, updated_at = ?, resolved_at = ? WHERE effect_id = ?",
@@ -738,12 +799,50 @@ class RuntimeControlService:
                         kind=CommandKind.PAUSE, payload={}, actor={}, status=CommandStatus.APPLIED,
                         submitted_at=now, updated_at=now,
                     )
+                applied_commands: list[ControlCommand] = []
                 if command_id is not None:
-                    stored = self.executions._get_command(connection, command_id)
-                    if stored is None or stored.execution_id != execution_id or stored.status is not CommandStatus.APPLYING:
+                    assert stored is not None
+                    if stored.kind is CommandKind.STEER:
+                        if execution.status not in {ExecutionStatus.RUNNING, ExecutionStatus.PAUSING}:
+                            raise AgentSafePointConflict(
+                                "execution_state_invalid",
+                                "steer safe point requires a running Agent",
+                            )
+                        steer_receipt = {
+                            "checkpoint_id": checkpoint.checkpoint_id,
+                            "safe_point": checkpoint.safe_point,
+                            "terminal_receipt": dict(terminal_receipt),
+                        }
+                        for steer in steering_commands:
+                            if steer.status is CommandStatus.ACCEPTED:
+                                steer = self.executions._transition_command(
+                                    connection,
+                                    steer.command_id,
+                                    expected_status=CommandStatus.ACCEPTED,
+                                    target=CommandStatus.APPLYING,
+                                )
+                            steer = self.executions._transition_command(
+                                connection,
+                                steer.command_id,
+                                expected_status=CommandStatus.APPLYING,
+                                target=CommandStatus.APPLIED,
+                                result_version=updated.status_version,
+                                receipt=steer_receipt,
+                            )
+                            applied_commands.append(steer)
+                        command = next(
+                            item for item in applied_commands
+                            if item.command_id == command_id
+                        )
+                        return SafePointCompletion(
+                            command=command,
+                            execution=updated,
+                            attempt=attempt,
+                            checkpoint=checkpoint,
+                            applied_commands=tuple(applied_commands),
+                        )
+                    if stored.status is not CommandStatus.APPLYING:
                         raise AgentSafePointConflict("command_state_invalid", "safe point command is no longer applying")
-                    if stored.kind not in {CommandKind.PAUSE, CommandKind.STEP}:
-                        raise AgentSafePointConflict("command_state_invalid", "only pause or step can consume Agent safe point")
                     if stored.kind is CommandKind.STEP:
                         if not managed_action_id or stored.result_json.get("managed_action_id"):
                             raise AgentSafePointConflict("step_permit_consumed", "step permit was already consumed")
@@ -784,9 +883,11 @@ class RuntimeControlService:
                             payload={"action_id": managed_action_id, "command_id": command_id},
                             created_at=now,
                         )
+                    applied_commands.append(command)
                 completion = SafePointCompletion(
                     command=command, execution=updated, attempt=attempt,
                     checkpoint=checkpoint,
+                    applied_commands=tuple(applied_commands),
                 )
             self._observe_paused(completion.execution)
             return completion

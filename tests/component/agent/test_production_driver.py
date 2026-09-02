@@ -4,6 +4,7 @@ import asyncio
 import sqlite3
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -28,6 +29,16 @@ def _admitted(tmp_path, *, execution_id="exec-agent-1"):
         entrypoint="openprogram.agent.dispatcher:process_user_turn",
         trusted_actor={"subject": "user-1", "session_id": "session-agent-1"},
         config_snapshot_ref="config:agent-1",
+        capabilities=CapabilitySet(
+            pause=True,
+            step=True,
+            steer=True,
+            safe_point_kinds=(
+                "agent.provider.decision.after",
+                "agent.tool.action.after",
+            ),
+            state_schema_version=1,
+        ),
         agent_turn_payload={
             "version": 1,
             "kind": "chat",
@@ -179,12 +190,212 @@ def test_agent_driver_declares_only_p0_safe_point_capabilities():
     assert driver.capabilities() == CapabilitySet(
         pause=True,
         step=True,
+        steer=True,
         safe_point_kinds=(
             "agent.provider.decision.after",
             "agent.tool.action.after",
         ),
         state_schema_version=1,
     )
+
+
+def test_production_driver_consumes_running_steer_fifo_at_provider_safe_point(tmp_path):
+    from openprogram.execution.control import RuntimeControlService
+    from openprogram.execution.driver import DriverRegistry
+    from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.agent.continuation import runtime_contract_snapshot
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.providers.types import Model
+
+    store, execution = _admitted(tmp_path, execution_id="exec-running-steer")
+    attempts = AttemptStore(store)
+    leased, reserved = attempts.lease(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        owner_id="owner-steer",
+        ttl_seconds=30,
+    )
+    active, running = attempts.activate(
+        leased.attempt_id,
+        generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    control = RuntimeControlService(store, attempts, DriverRegistry())
+    first = control.request_steer(
+        command_id="steer-first",
+        execution_id=execution.execution_id,
+        expected_version=running.status_version,
+        actor={"surface": "test"},
+        payload={"message": "first instruction"},
+    )
+    second = control.request_steer(
+        command_id="steer-second",
+        execution_id=execution.execution_id,
+        expected_version=running.status_version,
+        actor={"surface": "test"},
+        payload={"message": "second instruction"},
+    )
+    assert first.command.status is CommandStatus.ACCEPTED
+    assert second.command.status is CommandStatus.ACCEPTED
+
+    queue: list[dict] = []
+    consumed: set[str] = set()
+    request = TurnRequest(
+        session_id=running.session_id,
+        user_text="durable agent turn",
+        agent_id="default",
+        source="component",
+        user_msg_id="user-anchor",
+    )
+    request._execution_revision_id = running.revision_id
+    hook = AgentProductionDriver(store, control_service=control)._safe_point_hook(
+        active,
+        request,
+        threading.Event(),
+        steer_queue=queue,
+        steer_consumed_ids=consumed,
+    )
+    snapshot = runtime_contract_snapshot(
+        model=Model(
+            id="fake", name="fake", api="openai-completions", provider="openai",
+            base_url="https://example.invalid/v1",
+        ),
+        system_prompt="system", tools=[],
+        request=request,
+    )
+    assert hook("provider.before", {
+        "resolved_snapshot": snapshot,
+        "context": {"messages": []},
+        "supports_idempotency_key": True,
+    }) is False
+    assert hook("provider.after", {
+        "message": {
+            "role": "assistant", "content": [],
+            "api": "fake", "provider": "fake", "model": "fake",
+        },
+        "provider_request_id": "request-steer",
+        "usage": {},
+    }) is False
+
+    # A later safe point must not re-apply the already applied commands.
+    assert hook("provider.before", {
+        "resolved_snapshot": snapshot,
+        "context": {"messages": ["next"]},
+        "supports_idempotency_key": True,
+    }) is False
+    assert hook("provider.after", {
+        "message": {
+            "role": "assistant", "content": [],
+            "api": "fake", "provider": "fake", "model": "fake",
+        },
+        "provider_request_id": "request-steer-next",
+        "usage": {},
+    }) is False
+
+    assert [item["command_id"] for item in queue] == [
+        "steer-first", "steer-second",
+    ]
+    assert [item["payload"]["message"] for item in queue] == [
+        "first instruction", "second instruction",
+    ]
+    assert all(
+        store.get_command(command_id).status is CommandStatus.APPLIED
+        for command_id in ("steer-first", "steer-second")
+    )
+    current = store.get_execution(execution.execution_id)
+    assert current is not None and current.status is ExecutionStatus.RUNNING
+    assert current.current_attempt_id == active.attempt_id
+
+
+def test_production_pause_precedes_steer_and_paused_steer_is_next_activation_input(tmp_path):
+    from openprogram.execution.control import RuntimeControlService
+    from openprogram.execution.driver import DriverRegistry
+    from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.agent.continuation import runtime_contract_snapshot
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.providers.types import Model
+
+    store, execution = _admitted(tmp_path, execution_id="exec-pause-steer")
+    attempts = AttemptStore(store)
+    leased, reserved = attempts.lease(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        owner_id="owner-pause-steer",
+        ttl_seconds=30,
+    )
+    active, running = attempts.activate(
+        leased.attempt_id,
+        generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    control = RuntimeControlService(store, attempts, DriverRegistry())
+    request = TurnRequest(
+        session_id=running.session_id,
+        user_text="durable agent turn",
+        agent_id="default",
+        source="component",
+        user_msg_id="user-anchor",
+    )
+    request._execution_revision_id = running.revision_id
+    snapshot = runtime_contract_snapshot(
+        model=Model(
+            id="fake", name="fake", api="openai-completions", provider="openai",
+            base_url="https://example.invalid/v1",
+        ),
+        system_prompt="system", tools=[], request=request,
+    )
+    queue: list[dict] = []
+    hook = AgentProductionDriver(store, control_service=control)._safe_point_hook(
+        active, request, threading.Event(), steer_queue=queue,
+        steer_consumed_ids=set(),
+    )
+    hook("provider.before", {
+        "resolved_snapshot": snapshot,
+        "context": {"messages": []},
+        "supports_idempotency_key": True,
+    })
+    steer = control.request_steer(
+        command_id="steer-after-pause",
+        execution_id=execution.execution_id,
+        expected_version=running.status_version,
+        actor={"surface": "test"},
+        payload={"message": "continue with source B"},
+    )
+    asyncio.run(control.request_pause(
+        command_id="pause-before-steer",
+        execution_id=execution.execution_id,
+        expected_version=running.status_version,
+        actor={"surface": "test"},
+    ))
+    assert hook("provider.after", {
+        "message": {
+            "role": "assistant", "content": [],
+            "api": "fake", "provider": "fake", "model": "fake",
+        },
+        "provider_request_id": "request-pause-steer",
+        "usage": {},
+    }) is True
+    paused = store.get_execution(execution.execution_id)
+    assert paused is not None and paused.status is ExecutionStatus.PAUSED
+    assert store.get_command("pause-before-steer").status is CommandStatus.APPLIED
+    assert store.get_command(steer.command.command_id).status is CommandStatus.ACCEPTED
+    assert queue == []
+
+    activation_inputs = []
+
+    async def activate(_attempt, activation):
+        activation_inputs.append(activation)
+
+    continued = asyncio.run(control.request_continue(
+        command_id="continue-after-pause-steer",
+        execution_id=execution.execution_id,
+        expected_version=paused.status_version,
+        actor={"surface": "test"},
+        activator=activate,
+    ))
+    assert continued.command.status is CommandStatus.APPLIED
+    assert len(activation_inputs) == 1
+    assert activation_inputs[0].steer_inputs[0]["command_id"] == steer.command.command_id
 
 
 def test_activation_builds_existing_turn_from_immutable_input(tmp_path):
