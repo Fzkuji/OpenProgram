@@ -495,6 +495,10 @@ async def submit_execution_control(
 
         job_runner = runner_for_execution_store(store)
         is_job = job_runner is not None and store.get_job_agent_input(execution_id) is not None
+        if is_job:
+            # The Job runner owns its resource saga and canonical control
+            # hooks, including transport-neutral resource release.
+            service = job_runner._execution_control
         if operation in {"wait_answer", "wait_decline"}:
             payload = cmd.get("payload")
             if not isinstance(payload, dict):
@@ -614,26 +618,6 @@ async def _handle_execution_control(ws, cmd: dict, operation: str) -> None:
         actor=_trusted_runtime_actor(ws),
         bound_session=bound_session if isinstance(bound_session, str) else None,
     )
-    command_status = (
-        command.status.value
-        if hasattr(getattr(command, "status", None), "value")
-        else command.get("status")
-    )
-    if operation == "pause" and command_status == "applied":
-        try:
-            from openprogram.agent.job.runner import runner_for_execution_store
-            from openprogram.execution import default_store
-
-            runner = runner_for_execution_store(default_store())
-            if runner is not None and getattr(execution, "status", None).value == "paused":
-                runner.release_paused_job_resource(
-                    execution.execution_id, reason_code="pause.queued",
-                )
-        except Exception:
-            # The release intent is durable once recorded; a later runner
-            # reconciliation retries it.  A transport response never rolls
-            # back the canonical pause.
-            pass
     await _send_command_update(ws, command, execution)
     execution_data = execution.to_dict() if hasattr(execution, "to_dict") else dict(execution)
     if operation == "cancel" and execution_data.get("status") in {"cancelling", "cancelled"}:

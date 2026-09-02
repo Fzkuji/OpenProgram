@@ -374,6 +374,9 @@ class JobRunner:
         self._execution_control.set_terminal_observer(
             self._project_canonical_terminal,
         )
+        self._execution_control.set_pause_observer(
+            self._release_paused_canonical_resource,
+        )
         self._execution_control.set_terminal_preparer(
             self._prepare_canonical_terminal,
         )
@@ -1899,6 +1902,13 @@ class JobRunner:
         )
         self._resource_saga.reconcile()
 
+    def _release_paused_canonical_resource(self, execution) -> None:
+        """Release a Job admission after any canonical paused transition."""
+        self.release_paused_job_resource(
+            execution.execution_id,
+            reason_code="pause.canonical",
+        )
+
     def queue_job_resume(
         self,
         *,
@@ -2943,8 +2953,24 @@ class JobRunner:
         except Exception:
             return False
 
-    @staticmethod
-    def _mark_worker_lost(session_id: str, job_id: str) -> None:
+    def _mark_worker_lost(self, session_id: str, job_id: str) -> None:
+        """Project worker loss only after canonical ownership is classified."""
+        execution = self._execution_store.get_execution(job_id)
+        if (
+            execution is not None
+            and execution.status.value in {"paused", "queued"}
+            and execution.current_attempt_id is None
+            and any(
+                command.status.value == "accepted"
+                and command.kind.value in {"execution.continue", "execution.step"}
+                for command in self._execution_store.list_commands(job_id)
+            )
+        ):
+            # A resource lease can expire after ResourceGovernor claimed it
+            # but before RuntimeControlService created an attempt.  The
+            # accepted canonical command still owns recovery; do not write a
+            # contradictory errored Job projection.
+            return
         job = _store_load(session_id, job_id)
         if job is None or is_terminal(job.status):
             return
@@ -2957,6 +2983,78 @@ class JobRunner:
         except ValueError:
             return
 
+    def _recover_unactivated_canonical_resume(self, job_id: str) -> bool:
+        """Requeue a lost resource claim that never activated an attempt."""
+        execution = self._execution_store.get_execution(job_id)
+        job = self._canonical_job(job_id)
+        if (
+            execution is None
+            or job is None
+            or not job.admission_id
+            or execution.current_attempt_id is not None
+            or execution.status.value not in {"paused", "queued"}
+        ):
+            return False
+        commands = [
+            command
+            for command in self._execution_store.list_commands(job_id)
+            if command.kind.value in {"execution.continue", "execution.step"}
+            and command.status.value in {"accepted", "applying"}
+        ]
+        if len(commands) != 1:
+            return False
+        command = commands[0]
+        if command.status.value == "accepted":
+            return self._governor.queue_resume(
+                job_id,
+                admission_id=job.admission_id,
+                command_id=command.command_id,
+                paused=execution.status.value == "paused",
+            )
+        # APPLYING without an attempt cannot be resumed safely: the command
+        # crossed the canonical activation transaction but has no owner to
+        # complete it.  Terminalize the canonical execution so both views
+        # converge instead of leaving a permanently applying command.
+        from openprogram.execution import ExecutionStatus
+
+        try:
+            failed = self._execution_store.transition_execution(
+                job_id,
+                expected_version=execution.status_version,
+                target=ExecutionStatus.FAILED,
+                reason_code="error.activation_owner_lost",
+            )
+        except Exception:
+            return False
+        self._project_canonical_terminal(failed)
+        return True
+
+    def _repair_paused_canonical_resources(self) -> None:
+        """Replay a paused Job release if a post-commit observer was interrupted."""
+        from openprogram.execution.model import CommandKind, CommandStatus
+
+        for execution in self._execution_store.list_nonterminal():
+            if execution.status.value != "paused":
+                continue
+            if self._canonical_job(execution.execution_id) is None:
+                continue
+            pending_resume = self._execution_store.list_commands(
+                execution.execution_id,
+                statuses=(CommandStatus.ACCEPTED, CommandStatus.APPLYING),
+                kinds=(CommandKind.CONTINUE, CommandKind.STEP),
+            )
+            if pending_resume:
+                continue
+            try:
+                self.release_paused_job_resource(
+                    execution.execution_id, reason_code="pause.recovery",
+                )
+            except Exception:
+                _log.exception(
+                    "failed to repair paused Job resource release for %s",
+                    execution.execution_id,
+                )
+
     def _reconcile_resources(self) -> None:
         # Canonical terminal state may have committed immediately before a
         # projection write failed.  Retry it before admission reconciliation;
@@ -2966,6 +3064,7 @@ class JobRunner:
             self._resource_saga.reconcile()
         except Exception:
             _log.exception("failed to reconcile execution resource intents")
+        self._repair_paused_canonical_resources()
         self._reconcile_terminal_dispatch_barriers()
         projected_pending = self._project_existing_canonical_terminals()
         for job_id, session_id in projected_pending:
@@ -2997,6 +3096,9 @@ class JobRunner:
                     session_id, reason=f"job_{job.status.value}",
                 )
         for job_id, session_id in result.worker_lost:
+            if self._recover_unactivated_canonical_resume(job_id):
+                self._dispatch_wake.set()
+                continue
             # Resource reconciliation has fenced and released the legacy
             # admission, but canonical ownership must be fenced separately.
             # Recover only the exact current attempt/generation; a late

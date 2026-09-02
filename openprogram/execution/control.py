@@ -340,6 +340,7 @@ class RuntimeControlService:
         self.lease_ttl_seconds = lease_ttl_seconds
         self.cancel_grace_seconds = max(0.0, float(cancel_grace_seconds))
         self._terminal_observer: Callable[[ExecutionRecord], object] | None = None
+        self._pause_observer: Callable[[ExecutionRecord], object] | None = None
         self._terminal_preparer: Callable[..., object] | None = None
         self._terminal_recovery: Callable[..., object] | None = None
         self._cancel_delivery_lock = RLock()
@@ -573,7 +574,12 @@ class RuntimeControlService:
                             payload={"action_id": managed_action_id, "command_id": command_id},
                             created_at=now,
                         )
-                return SafePointCompletion(command=command, execution=updated, attempt=attempt, checkpoint=checkpoint)
+                completion = SafePointCompletion(
+                    command=command, execution=updated, attempt=attempt,
+                    checkpoint=checkpoint,
+                )
+            self._observe_paused(completion.execution)
+            return completion
         except AgentSafePointConflict:
             raise
         except (ExecutionConflict, AttemptConflict) as exc:
@@ -763,6 +769,12 @@ class RuntimeControlService:
         """Attach a transport-neutral projection/release observer."""
         self._terminal_observer = observer
 
+    def set_pause_observer(
+        self, observer: Callable[[ExecutionRecord], object] | None,
+    ) -> None:
+        """Attach the canonical paused-state resource observer."""
+        self._pause_observer = observer
+
     def set_terminal_preparer(
         self, preparer: Callable[..., object] | None,
     ) -> None:
@@ -785,6 +797,22 @@ class RuntimeControlService:
             # persist that intent is therefore visible to the caller rather
             # than silently losing the release obligation.
             observer(execution)
+
+    def _observe_paused(self, execution: ExecutionRecord) -> None:
+        if execution.status is not ExecutionStatus.PAUSED:
+            return
+        observer = self._pause_observer
+        if observer is not None:
+            try:
+                observer(execution)
+            except Exception:
+                # The canonical pause is already committed.  Startup and the
+                # runner's periodic repair resubmit its idempotent release;
+                # do not turn a completed safe point into a second execution.
+                _log.exception(
+                    "paused-state observer failed for %s",
+                    execution.execution_id,
+                )
 
     async def request_continue(
         self,
@@ -1666,6 +1694,7 @@ class RuntimeControlService:
                 command=command, execution=execution, delivered=False
             )
         if execution.status is ExecutionStatus.PAUSED:
+            self._observe_paused(execution)
             return ControlDispatch(
                 command=command, execution=execution, delivered=False
             )
