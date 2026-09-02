@@ -14,3 +14,12 @@ test("sequenced execution updates cannot move an execution backward", () => {
   assert.equal(acceptExecutionUpdate("exec-1", 4), true);
   assert.equal(acceptExecutionUpdate("exec-2", 1), true);
 });
+
+test("an active execution retains its sequence after more than 1024 other updates", () => {
+  resetExecutionUpdateOrderForTests();
+  assert.equal(acceptExecutionUpdate("exec-active", 7), true);
+  for (let index = 0; index <= 1024; index += 1) {
+    assert.equal(acceptExecutionUpdate(`exec-${index}`, 1), true);
+  }
+  assert.equal(acceptExecutionUpdate("exec-active", 6), false);
+});
