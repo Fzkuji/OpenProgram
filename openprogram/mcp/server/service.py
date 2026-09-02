@@ -478,7 +478,6 @@ class MCPService:
             release_cancel_cleanup or _default_release_cancel_cleanup
         )
         self._cancel_execution = cancel_execution or _default_cancel_execution
-        self._driver_owns_question_cancel = cancel_execution is None
         self._question_registry_getter = (
             question_registry_getter or _default_question_registry
         )
@@ -699,7 +698,7 @@ class MCPService:
                         )
                     except Exception:
                         questions = None
-                    if questions is not None and not self._driver_owns_question_cancel:
+                    if questions is not None:
                         cancel_questions = getattr(
                             questions, "cancel_execution", None
                         )

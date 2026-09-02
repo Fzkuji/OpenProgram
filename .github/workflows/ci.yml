@@ -110,9 +110,9 @@ jobs:
         with:
           enable-cache: true
       - name: Install locked Python dependencies
-        run: uv sync --locked --extra dev
+        run: uv sync --locked --extra dev --extra browser
       - name: Non-browser end-to-end tests
-        run: uv run --locked --extra dev python -m pytest -q -m "not browser" tests/e2e
+        run: uv run --locked --extra dev --extra browser python -m pytest -q -m "not browser" tests/e2e
 
   coverage:
     runs-on: ubuntu-latest
