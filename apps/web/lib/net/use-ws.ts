@@ -56,6 +56,7 @@ import {
 } from "@/lib/runtime-bridge/functions-panel";
 import { refreshStatusSource, setRunning, updateStatus } from "@/lib/runtime-bridge/ui";
 import { refreshChannelBadge } from "@/lib/runtime-bridge/conversations";
+import { loadExecutionCursors, recordExecutionCursor } from "@/lib/net/execution-cursor";
 
 export function useWS(): void {
   useEffect(() => {
@@ -70,6 +71,19 @@ export function useWS(): void {
       type?: string;
       data?: Record<string, unknown>;
     }): boolean {
+      if (msg.type !== "execution.replay") {
+        const frame = msg as { execution?: { event_cursor?: unknown }; event_cursor?: unknown; data?: { event_cursor?: unknown } };
+        const observed = recordExecutionCursor(
+          frame.event_cursor ?? frame.execution?.event_cursor ?? frame.data?.event_cursor,
+        );
+        if (observed.replayAfter !== undefined) {
+          socket?.send(JSON.stringify({
+            action: "execution.replay", execution_id: observed.cursor?.execution_id,
+            after_sequence: observed.replayAfter,
+          }));
+          return true;
+        }
+      }
       if (consumeCommandErrorFrame(msg, translateText)) return true;
       const d = msg.data;
       switch (msg.type) {
@@ -357,6 +371,15 @@ export function useWS(): void {
               setRunning(false);
             }
           });
+          return true;
+        }
+        case "execution.replay": {
+          const replay = d as { snapshot?: Record<string, unknown>; event_cursor?: unknown; recovery?: string } | undefined;
+          const snapshot = replay?.snapshot;
+          if (snapshot && typeof snapshot.execution_id === "string") {
+            recordExecutionCursor(replay?.event_cursor);
+            return dispatch({ type: "execution.updated", execution: snapshot, data: snapshot } as never);
+          }
           return true;
         }
         case "execution.command.updated":
@@ -746,6 +769,12 @@ export function useWS(): void {
           }));
         }
         socket?.send(JSON.stringify({ action: "list_sessions" }));
+        for (const cursor of loadExecutionCursors()) {
+          socket?.send(JSON.stringify({
+            action: "execution.replay", execution_id: cursor.execution_id,
+            after_sequence: cursor.next_sequence - 1,
+          }));
+        }
         if (runtimeState.currentSessionId) {
           socket?.send(
             JSON.stringify({

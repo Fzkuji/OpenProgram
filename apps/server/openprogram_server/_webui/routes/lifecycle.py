@@ -41,6 +41,36 @@ def _actor_and_session(request: Request):
         actor = getattr(auth_state, "authority", None)
     return actor, bound_session if isinstance(bound_session, str) else None
 
+
+def _authorize_read(actor, bound_session, execution, action: str) -> bool:
+    from openprogram.execution.authorization import ExecutionAuthorizationError, authorize_execution_action
+    from openprogram.execution.public import project_id_for_session
+
+    try:
+        if bound_session is not None and bound_session != execution.session_id:
+            return False
+        authorize_execution_action(
+            actor or {}, action, execution,
+            {"project_id": project_id_for_session(execution.session_id),
+             "session_id": execution.session_id},
+        )
+        return True
+    except ExecutionAuthorizationError:
+        return False
+
+
+def _public_event(event):
+    from openprogram.execution.audit import redact_audit_payload
+
+    return {
+        "sequence": event.execution_sequence,
+        "execution_id": event.execution_id,
+        "kind": event.kind,
+        "payload": redact_audit_payload(event.payload),
+        "execution_version": event.execution_version,
+        "command_id": event.command_id,
+    }
+
 def register(app):
     async def _command(request: Request, body: dict, operation: str):
         payload = body or {}
@@ -95,8 +125,8 @@ def register(app):
         from openprogram.execution import default_store
 
         execution = default_store().get_execution(execution_id)
-        _actor, bound_session = _actor_and_session(request)
-        if execution is None or bound_session is not None and bound_session != execution.session_id:
+        actor, bound_session = _actor_and_session(request)
+        if execution is None or not _authorize_read(actor, bound_session, execution, "execution.snapshot"):
             return JSONResponse({"error": "not_found", "execution_id": execution_id}, status_code=404)
         snapshot = _execution_payload(execution)
         return JSONResponse({"type": "execution.snapshot", "snapshot": snapshot, "data": snapshot})
@@ -106,23 +136,39 @@ def register(app):
         from openprogram.execution import default_store
 
         execution = default_store().get_execution(execution_id)
-        _actor, bound_session = _actor_and_session(request)
-        if execution is None or bound_session is not None and bound_session != execution.session_id:
+        actor, bound_session = _actor_and_session(request)
+        if execution is None or not _authorize_read(actor, bound_session, execution, "execution.events"):
             return JSONResponse({"error": "not_found", "execution_id": execution_id}, status_code=404)
-        events = [
-            {"sequence": e.sequence, "execution_id": e.execution_id, "kind": e.kind,
-             "payload": dict(e.payload), "execution_version": e.execution_version,
-             "command_id": e.command_id}
-            for e in default_store().list_events(execution_id)
-            if e.sequence > after_sequence
-        ]
+        try:
+            replay = default_store().read_event_replay(
+                execution_id, after_sequence=after_sequence,
+            )
+        except Exception:
+            return JSONResponse({"error": "not_found", "execution_id": execution_id}, status_code=404)
         snapshot = _execution_payload(execution)
         return JSONResponse({
             "execution_id": execution_id,
-            "events": events,
-            "event_cursor": {
-                "execution_id": execution_id,
-                "next_sequence": int(snapshot.get("event_sequence") or 0) + 1,
-                "snapshot_status_version": snapshot.get("status_version"),
-            },
+            "events": [_public_event(event) for event in replay.events],
+            "event_cursor": replay.cursor.to_dict(),
+            "recovery": replay.recovery,
+            "snapshot": snapshot,
         })
+
+    @app.get("/api/execution/{execution_id}/audit")
+    async def api_execution_audit(execution_id: str, request: Request):
+        from openprogram.execution import default_store
+
+        store = default_store()
+        execution = store.get_execution(execution_id)
+        actor, bound_session = _actor_and_session(request)
+        if execution is None or not _authorize_read(actor, bound_session, execution, "audit.read"):
+            return JSONResponse({"error": "not_found", "execution_id": execution_id}, status_code=404)
+        try:
+            store.append_audit_event(
+                execution_id=execution_id, actor=actor or {}, action="audit.read",
+                result="allowed", surface="rest", payload={"purpose": "view"},
+            )
+            events = store.list_audit_events(execution_id, actor=actor or {})
+        except Exception:
+            return JSONResponse({"error": "not_found", "execution_id": execution_id}, status_code=404)
+        return JSONResponse({"execution_id": execution_id, "events": [event.to_dict() for event in events]})

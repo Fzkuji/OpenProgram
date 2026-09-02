@@ -553,6 +553,7 @@ export class BackendClient {
   private state: ConnectionState = 'connecting';
   private queue: WsRequest[] = [];
   private hasConnected = false;
+  private executionCursors = new Map<string, number>();
 
   constructor(url: string) {
     this.url = url;
@@ -582,11 +583,15 @@ export class BackendClient {
       this.retry = 0;
       const q = this.queue.splice(0);
       for (const a of q) this.send(a);
+      for (const [execution_id, after_sequence] of this.executionCursors) {
+        this.send({ action: 'execution.replay', execution_id, after_sequence });
+      }
     });
     this.ws.on('message', (raw) => {
       try {
         const parsed = JSON.parse(String(raw));
         if (parsed && typeof parsed === 'object' && typeof parsed.type === 'string') {
+          this.trackExecutionCursor(parsed as Record<string, unknown>);
           for (const l of this.listeners) l(parsed as WsEnvelope);
         }
       } catch {
@@ -610,6 +615,20 @@ export class BackendClient {
       return;
     }
     this.ws.send(JSON.stringify(req));
+  }
+
+  private trackExecutionCursor(frame: Record<string, unknown>): void {
+    const data = (frame.data && typeof frame.data === 'object' ? frame.data : frame) as Record<string, unknown>;
+    const raw = data.event_cursor;
+    if (!raw || typeof raw !== 'object') return;
+    const cursor = raw as { execution_id?: unknown; next_sequence?: unknown };
+    if (typeof cursor.execution_id !== 'string' || !Number.isSafeInteger(cursor.next_sequence)) return;
+    const next = Number(cursor.next_sequence);
+    const previous = this.executionCursors.get(cursor.execution_id);
+    this.executionCursors.set(cursor.execution_id, next - 1);
+    if (previous !== undefined && next > previous + 2) {
+      this.send({ action: 'execution.replay', execution_id: cursor.execution_id, after_sequence: previous });
+    }
   }
 
   on(listener: WsListener): () => void {

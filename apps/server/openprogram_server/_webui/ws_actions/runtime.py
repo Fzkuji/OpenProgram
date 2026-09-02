@@ -289,25 +289,70 @@ def validate_execution_command_request(cmd: dict, operation: str) -> str | None:
     return "invalid_command"
 
 
+def _authorize_execution(
+    actor: dict | None,
+    action: str,
+    execution,
+    *,
+    bound_session: str | None = None,
+) -> None:
+    """Authorize one exact target without exposing cross-scope existence."""
+    from openprogram.execution.authorization import authorize_execution_action
+    from openprogram.execution.public import project_id_for_session
+
+    if bound_session is not None and bound_session != execution.session_id:
+        from openprogram.execution.authorization import ExecutionAuthorizationError
+        raise ExecutionAuthorizationError("execution is not visible")
+    authorize_execution_action(
+        actor or {}, action, execution,
+        {"project_id": project_id_for_session(execution.session_id),
+         "session_id": execution.session_id},
+    )
+
+
+def _public_event(event) -> dict:
+    """The reconnect transport never exposes raw prompt/output payloads."""
+    from openprogram.execution.audit import redact_audit_payload
+
+    return {
+        "sequence": event.execution_sequence,
+        "execution_id": event.execution_id,
+        "kind": event.kind,
+        "payload": redact_audit_payload(event.payload),
+        "execution_version": event.execution_version,
+        "command_id": event.command_id,
+    }
+
+
 def _public_execution_snapshot(execution) -> tuple[dict, dict]:
     """Return the one snapshot shape shared by command and reconnect paths."""
+    from openprogram.execution import default_store
+    from openprogram.execution.public import execution_snapshot
+
     execution_data = execution.to_dict() if hasattr(execution, "to_dict") else dict(execution)
-    cursor = {
-        "next_sequence": (execution_data.get("status_version") or 0) + 1,
-        "snapshot_status_version": execution_data.get("status_version"),
-    }
+    resource = None
+    job = None
     try:
         from openprogram.agent.job.runner import runner_for_execution_store
-        from openprogram.execution import default_store
 
         runner = runner_for_execution_store(default_store())
         view = runner.get_job_resource_view(execution_data["execution_id"]) if runner else None
         if view is not None:
-            dto = view.to_dict()
-            execution_data = dict(dto["execution"])
-            cursor = dict(dto["event_cursor"])
+            resource = view.to_dict()
+            job = runner.get_job(execution_data["execution_id"])
     except Exception:
         pass
+    record = execution if hasattr(execution, "execution_id") else default_store().get_execution(execution_data["execution_id"])
+    if record is not None:
+        execution_data = execution_snapshot(
+            record, store=default_store(), resource=resource,
+            job_id=getattr(job, "id", None), job=job,
+        ).to_dict()
+    cursor = {
+        "execution_id": execution_data.get("execution_id"),
+        "next_sequence": int(execution_data.get("event_sequence") or 0) + 1,
+        "snapshot_status_version": execution_data.get("status_version"),
+    }
     return execution_data, cursor
 
 
@@ -410,9 +455,12 @@ async def submit_execution_control(
         return _rejected_command(cmd, "not_found"), {
             "execution_id": execution_id, "status_version": None,
         }
-    # The authenticated session, when supplied by the transport handshake,
-    # must address its own execution.  Do not trust cmd.actor/session fields.
-    if bound_session is not None and bound_session != execution.session_id:
+    try:
+        _authorize_execution(
+            actor, f"execution.{operation}", execution,
+            bound_session=bound_session,
+        )
+    except Exception:
         return _rejected_command(cmd, "not_found"), {
             "execution_id": execution_id, "status_version": None,
         }
@@ -576,6 +624,50 @@ async def handle_execution_retry(ws, cmd: dict):
 async def handle_execution_cancel(ws, cmd: dict):
     """Submit an exact durable cancellation command."""
     await _handle_execution_control(ws, cmd, "cancel")
+
+
+async def handle_execution_replay(ws, cmd: dict) -> None:
+    """Replay one authorized execution after a persisted local cursor."""
+    from openprogram.execution import default_store
+    from openprogram.execution.store import ExecutionConflict
+
+    execution_id = cmd.get("execution_id")
+    after_sequence = cmd.get("after_sequence")
+    if not isinstance(execution_id, str) or not execution_id or type(after_sequence) is not int:
+        await ws.send_text(json.dumps({"type": "execution.replay", "error": "invalid_command"}))
+        return
+    store = default_store()
+    execution = store.get_execution(execution_id)
+    scope = getattr(ws, "scope", None)
+    state = scope.get("state") if isinstance(scope, dict) else None
+    bound_session = state.get("session_id") if isinstance(state, dict) else None
+    try:
+        if execution is None:
+            raise ExecutionConflict("not_found", "execution is not visible")
+        _authorize_execution(
+            _trusted_runtime_actor(ws), "execution.events", execution,
+            bound_session=bound_session if isinstance(bound_session, str) else None,
+        )
+        replay = store.read_event_replay(execution_id, after_sequence=after_sequence)
+    except Exception:
+        await ws.send_text(json.dumps({"type": "execution.replay", "error": "not_found", "execution_id": execution_id}))
+        return
+    snapshot, cursor = _public_execution_snapshot(execution)
+    await ws.send_text(json.dumps({
+        "type": "execution.replay",
+        "execution_id": execution_id,
+        "events": [_public_event(event) for event in replay.events],
+        "event_cursor": replay.cursor.to_dict(),
+        "recovery": replay.recovery,
+        "snapshot": snapshot,
+        "data": {
+            "execution_id": execution_id,
+            "events": [_public_event(event) for event in replay.events],
+            "event_cursor": cursor,
+            "recovery": replay.recovery,
+            "snapshot": snapshot,
+        },
+    }, default=str))
 
 
 async def handle_stats(ws, cmd: dict):
@@ -757,6 +849,7 @@ ACTIONS = {
     "execution.steer": handle_execution_steer,
     "execution.fork": handle_execution_fork,
     "execution.retry": handle_execution_retry,
+    "execution.replay": handle_execution_replay,
     "stats": handle_stats,
     "set_attended": handle_set_attended,
 }
