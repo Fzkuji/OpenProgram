@@ -39,7 +39,8 @@ def test_surfaces_send_execution_cancel_and_use_cancel_copy():
     ).read_text(encoding="utf-8")
 
     assert 'action: "execution.cancel"' in composer
-    assert "command_id: crypto.randomUUID()" in composer
+    assert "const commandId = crypto.randomUUID()" in composer
+    assert "command_id: commandId" in composer
     assert "expected_version: expectedVersion" in composer
     assert 'text("Cancel execution", "取消运行")' in index
     assert 'text("Cancelling…", "正在取消")' in index
@@ -98,6 +99,6 @@ def test_surfaces_send_execution_cancel_and_use_cancel_copy():
         ROOT / "apps/server/openprogram_server/server.py"
     ).read_text(encoding="utf-8")
     assert "cancelling: true" not in composer
-    stop_body = composer.split("export function stopSession")[1][:1600]
+    stop_body = composer.split("export function stopSession", 1)[1]
     assert 'status: "cancelled"' in stop_body
     assert 'setRunningTaskFor(targetSessionId, null, "always")' in stop_body
