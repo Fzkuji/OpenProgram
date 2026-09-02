@@ -154,6 +154,7 @@ export function handleJobEnvelope(ev: WsEnvelope, ctx: JobEnvelopeCtx): boolean 
               event_cursor: event_cursor as JobResourceView["event_cursor"],
               execution,
               resource: execution?.resource as JobResource | null | undefined,
+              job_id: job.resource?.job_id ?? job.id,
             },
           }
         : job
