@@ -1319,6 +1319,12 @@ def cancel_execution(execution_id: str):
     canonical = _canonical_execution(execution_id)
     if canonical is not None:
         return _cancel_canonical_execution(canonical)
+    # A JobStore row is only a read projection after the Job cutover.  Never
+    # interpret it as an executable legacy record when its canonical identity
+    # is absent; callers receive the same stable not-found result as any
+    # unavailable execution.
+    if _find_job(execution_id) is not None:
+        raise ExecutionNotFound(execution_id)
     from openprogram.agent.session_db import default_db
 
     store = default_db()

@@ -386,6 +386,7 @@ class JobRunner:
         except Exception:
             pass
         self._reconcile_resources()
+        self._migrate_orphan_job_projections()
         self._recover_orphan_canonical_jobs()
         for recovery in startup_recovery.canonical:
             if getattr(recovery.execution.status, "value", None) in {
@@ -598,8 +599,34 @@ class JobRunner:
                     execution.execution_id,
                 )
 
+    def _migrate_orphan_job_projections(self) -> None:
+        """Terminalize persisted Job projections without canonical identity."""
+        for job in self.list_jobs():
+            if is_terminal(job.status) or not job.admission_id:
+                continue
+            if self._execution_store.get_execution(job.id) is not None:
+                continue
+            try:
+                updated = _store_update_status(
+                    job.parent_session_id,
+                    job.id,
+                    JobStatus.ERRORED,
+                    error="canonical execution is unavailable",
+                    reason_code="error.canonical_unavailable",
+                )
+                if updated is not None:
+                    self._governor.release_job(
+                        job.id, "error.canonical_unavailable",
+                    )
+            except Exception:
+                _log.exception(
+                    "failed to terminalize orphan Job projection %s", job.id,
+                )
+
     def _project_canonical_terminal(
         self, execution, *, terminal_fields: dict[str, Any] | None = None,
+        admission_owner_instance_id: str | None = None,
+        admission_lease_generation: int | None = None,
     ) -> None:
         from openprogram.execution import ExecutionStatus
 
@@ -624,9 +651,26 @@ class JobRunner:
                 )
             except ValueError:
                 pass
+            except Exception:
+                enqueue = getattr(
+                    self._governor, "enqueue_terminal_projection", None,
+                )
+                if enqueue is None or not enqueue(
+                    execution.execution_id,
+                    terminal_fields or _terminal_fields(
+                        status, execution.reason_code or status.value,
+                    ),
+                ):
+                    raise
+                # The ledger intent is durable; the next reconciliation pass
+                # retries the JobStore write before releasing admission.
+                self._dispatch_wake.set()
+                return
         self._governor.release_job(
             execution.execution_id,
             execution.reason_code or status.value,
+            owner_instance_id=admission_owner_instance_id,
+            lease_generation=admission_lease_generation,
         )
         clear_resume = getattr(self._governor, "clear_resume_parent_msg_id", None)
         if clear_resume is not None:
@@ -1655,6 +1699,7 @@ class JobRunner:
             if attempt_id is not None and attempt_generation is not None:
                 self._schedule_canonical_termination(
                     job_id, attempt_id, attempt_generation, effective_reason,
+                    info.get("lease_generation"),
                 )
 
         # The first durable cancellation intent wins. A concurrent user,
@@ -1683,6 +1728,7 @@ class JobRunner:
         attempt_id: str,
         generation: int,
         reason: str,
+        admission_lease_generation: int | None,
     ) -> None:
         """Escalate through RuntimeControlService after bounded grace."""
         def escalate() -> None:
@@ -1709,7 +1755,11 @@ class JobRunner:
                 recovery = self._execution_control.recover_owner_loss(
                     job_id, attempt_id=attempt_id, generation=generation,
                 )
-                self._project_canonical_terminal(recovery.execution)
+                self._project_canonical_terminal(
+                    recovery.execution,
+                    admission_owner_instance_id=self._instance_id,
+                    admission_lease_generation=admission_lease_generation,
+                )
             except Exception:
                 _log.exception("failed to finalize terminated Job %s", job_id)
 
@@ -2923,6 +2973,11 @@ class JobRunner:
             return
 
     def _reconcile_resources(self) -> None:
+        # Canonical terminal state may have committed immediately before a
+        # projection write failed.  Retry it before admission reconciliation;
+        # failures are persisted by _project_canonical_terminal for the next
+        # pass or a fresh runner.
+        self._project_existing_canonical_terminals()
         try:
             result = self._governor.reconcile(
                 job_lookup=lambda session_id, job_id: _store_load(

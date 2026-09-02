@@ -176,12 +176,11 @@ class RuntimeControlService:
             return
         observer = self._terminal_observer
         if observer is not None:
-            try:
-                observer(execution)
-            except Exception:
-                # Canonical state is already durable; projection delivery is
-                # retryable and must not change the command result.
-                pass
+            # The observer persists a retryable projection intent before it
+            # returns when the JobStore is unavailable.  Any failure to
+            # persist that intent is therefore visible to the caller rather
+            # than silently losing the release obligation.
+            observer(execution)
 
     async def request_continue(
         self,

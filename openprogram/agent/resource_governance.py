@@ -34,6 +34,7 @@ SQLITE_INT64_MAX = 9_223_372_036_854_775_807
 TERMINAL_FIELD_NAMES = frozenset({
     "status", "head_id", "result_text", "error", "reason_code",
 })
+_CANONICAL_PROJECTION_OWNER = "canonical-projection"
 _RETRYABLE_RESOURCE_REASONS = frozenset({
     "quota.accounting_unavailable",
     "quota.parent_claim_unavailable",
@@ -76,6 +77,7 @@ _RESOURCE_REASON_CODES = (
     "error.dispatch_failed",
     "error.runtime_registration",
     "error.job_missing",
+    "error.canonical_unavailable",
     "completed",
 )
 RESOURCE_REASON_METADATA = {
@@ -1690,6 +1692,83 @@ class ResourceGovernor:
             )
             return True
 
+    def enqueue_terminal_projection(
+        self, job_id: str, terminal_fields: Mapping[str, Any],
+    ) -> bool:
+        """Durably queue a canonical terminal projection for retry.
+
+        This ownerless intent is used only when the JobStore write is
+        temporarily unavailable.  It preserves the exact terminal fields;
+        reconciliation performs the projection and admission release later.
+        """
+        fields_json = self._terminal_fields_json(terminal_fields)
+        with self.ledger.immediate() as conn:
+            admission = conn.execute(
+                "SELECT session_id, lease_generation FROM job_admissions "
+                "WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+            if admission is None:
+                return False
+            existing = conn.execute(
+                "SELECT fields_json, state FROM job_finalizations "
+                "WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+            if existing is not None:
+                return existing[0] == fields_json
+            conn.execute(
+                """INSERT INTO job_finalizations (
+                       job_id, session_id, owner_instance_id, lease_generation,
+                       fields_json, state, created_at
+                   ) VALUES (?, ?, ?, ?, ?, 'pending', ?)""",
+                (
+                    job_id, admission["session_id"],
+                    _CANONICAL_PROJECTION_OWNER,
+                    admission["lease_generation"], fields_json, time.time(),
+                ),
+            )
+        return True
+
+    def _complete_ownerless_projection(
+        self, job_id: str, *, lease_generation: int,
+        fields_json: str, reason_code: str | None,
+    ) -> bool:
+        """Complete an ownerless projection intent for a queued admission."""
+        with self.ledger.immediate() as conn:
+            admission = conn.execute(
+                "SELECT state, lease_generation FROM job_admissions "
+                "WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+            if admission is None:
+                return False
+            if admission["state"] != "released":
+                changed = conn.execute(
+                    """UPDATE job_admissions
+                       SET state = 'released', released_at = ?,
+                           lease_expires_at = NULL,
+                           resume_parent_msg_id = NULL,
+                           reason_code = COALESCE(?, reason_code)
+                       WHERE job_id = ? AND state IN ('preparing','queued')
+                         AND lease_generation = ?""",
+                    (time.time(), reason_code, job_id, lease_generation),
+                ).rowcount
+                if changed != 1:
+                    return False
+            changed = conn.execute(
+                """UPDATE job_finalizations
+                   SET state = 'completed', completed_at = ?
+                   WHERE job_id = ? AND owner_instance_id = ?
+                     AND lease_generation = ? AND fields_json = ?
+                     AND state = 'pending'""",
+                (
+                    time.time(), job_id, _CANONICAL_PROJECTION_OWNER,
+                    lease_generation, fields_json,
+                ),
+            ).rowcount
+            return changed == 1
+
     def _finalize_with_intent(
         self,
         job_id: str,
@@ -1798,6 +1877,16 @@ class ResourceGovernor:
             if actual_fields != fields:
                 finalization_conflicts += 1
                 continue
+            if intent["owner_instance_id"] == _CANONICAL_PROJECTION_OWNER:
+                completed = self._complete_ownerless_projection(
+                    intent["job_id"],
+                    lease_generation=intent["lease_generation"],
+                    fields_json=intent["fields_json"],
+                    reason_code=fields["reason_code"],
+                )
+                if completed:
+                    completed_pending.append((intent["job_id"], intent["session_id"]))
+                continue
             completed = self._complete_finalization(
                 intent["job_id"],
                 owner_instance_id=intent["owner_instance_id"],
@@ -1854,6 +1943,20 @@ class ResourceGovernor:
                                    released_at = ?
                                WHERE admission_id = ? AND state = 'queued'""",
                             (current_time, row["admission_id"]),
+                        ).rowcount
+                    released_missing += int(changed == 1)
+                elif is_terminal(job.status):
+                    with self.ledger.immediate() as conn:
+                        changed = conn.execute(
+                            """UPDATE job_admissions
+                               SET state = 'released', released_at = ?,
+                                   resume_parent_msg_id = NULL,
+                                   reason_code = COALESCE(?, reason_code)
+                               WHERE admission_id = ? AND state = 'queued'""",
+                            (
+                                current_time, job.reason_code,
+                                row["admission_id"],
+                            ),
                         ).rowcount
                     released_missing += int(changed == 1)
                 continue
