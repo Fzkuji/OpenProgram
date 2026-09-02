@@ -19,6 +19,13 @@ import type {
 } from "./review-tab-types";
 import { requestReviewScope } from "./use-review-scope";
 import { requestReviewDiff } from "./use-review-diff";
+
+export function ReviewTabPane({
+  sessionId,
+  assistantMsgId,
+  initialScope = "turn",
+  initialPath,
+}: {
   sessionId: string;
   assistantMsgId?: string;
   initialScope?: ReviewScope;
