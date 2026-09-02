@@ -258,6 +258,7 @@ store.setRunningTaskFor(A, {
   session_id: A,
   msg_id: "m",
   execution_id: "m_reply",
+  status_version: 7,
 });
 const stoppedId = enqueueMessage(A, draft("send-after-stop"));
 promoteToHead(A, stoppedId);
@@ -270,6 +271,8 @@ await settle();
 assert.equal(stopFrames.length, 1, "cancel is sent immediately");
 assert.equal(stopFrames[0].action, "execution.cancel");
 assert.equal(stopFrames[0].execution_id, "m_reply");
+assert.equal(typeof stopFrames[0].command_id, "string");
+assert.equal(stopFrames[0].expected_version, 7);
 assert.deepEqual(
   sent.map((m) => m.text),
   ["send-after-stop"],
