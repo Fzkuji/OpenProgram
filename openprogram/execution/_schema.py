@@ -204,6 +204,7 @@ def _create_current_schema(connection: sqlite3.Connection) -> None:
     _create_projection_schema(connection)
     _create_projection_read_schema(connection)
     _create_agent_input_schema(connection)
+    _create_finish_repair_schema(connection)
 
 
 def _create_projection_schema(connection: sqlite3.Connection) -> None:
@@ -317,6 +318,32 @@ def _create_agent_input_schema(connection: sqlite3.Connection) -> None:
     )
 
 
+def _create_finish_repair_schema(connection: sqlite3.Connection) -> None:
+    """Persist Agent terminal writes that need bounded retry/replay."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS execution_finish_repairs (
+            execution_id TEXT NOT NULL,
+            attempt_id TEXT NOT NULL,
+            generation INTEGER NOT NULL,
+            expected_version INTEGER NOT NULL,
+            target TEXT NOT NULL,
+            outcome TEXT NOT NULL,
+            reason_code TEXT,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            PRIMARY KEY(execution_id, attempt_id, generation),
+            FOREIGN KEY(execution_id) REFERENCES executions(execution_id),
+            FOREIGN KEY(attempt_id) REFERENCES attempts(attempt_id)
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS execution_finish_repairs_updated "
+        "ON execution_finish_repairs(updated_at, execution_id)"
+    )
+
+
 def _migrate_v6(connection: sqlite3.Connection) -> None:
     """Add durable Agent activation payloads without rewriting executions."""
     if connection.in_transaction:
@@ -327,6 +354,7 @@ def _migrate_v6(connection: sqlite3.Connection) -> None:
     try:
         connection.execute("BEGIN")
         _create_agent_input_schema(connection)
+        _create_finish_repair_schema(connection)
         connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         connection.commit()
     except BaseException:
@@ -345,6 +373,7 @@ def _migrate_v5(connection: sqlite3.Connection) -> None:
         connection.execute("BEGIN")
         _create_projection_read_schema(connection)
         _create_agent_input_schema(connection)
+        _create_finish_repair_schema(connection)
         # v5 had no durable consumers.  Requeue its fixed delivery set so the
         # new idempotent handlers materialize every historical event.
         connection.execute(
@@ -384,6 +413,7 @@ def _migrate_v4(connection: sqlite3.Connection) -> None:
         connection.execute("BEGIN")
         _create_projection_schema(connection)
         _create_projection_read_schema(connection)
+        _create_finish_repair_schema(connection)
         _backfill_projection_outbox(connection)
         connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         connection.commit()

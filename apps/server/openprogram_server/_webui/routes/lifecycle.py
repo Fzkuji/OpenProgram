@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from fastapi.responses import JSONResponse
 
+from openprogram.events import emit_ws_frame
+
 def register(app):
     @app.post("/api/execution/cancel")
     async def api_execution_cancel(body: dict = None):

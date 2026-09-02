@@ -7,6 +7,9 @@ import json
 import threading
 
 from openprogram.context.nodes import Call, ROLE_CODE
+from openprogram.execution import AttemptStore, ExecutionStore, RuntimeControlService
+from openprogram.execution.driver import DriverRegistry
+from openprogram.execution.model import CapabilitySet, ExecutionStatus
 from openprogram.store import SessionNodeWriter
 from openprogram.store.session.session_store import SessionStore
 
@@ -17,6 +20,104 @@ class FakeWS:
 
     async def send_text(self, text: str) -> None:
         self.frames.append(json.loads(text))
+
+
+def _canonical_execution(tmp_path, *, execution_id="exec-web-cancel"):
+    store = ExecutionStore(tmp_path / "executions.sqlite3")
+    revision = store.create_revision(
+        revision_id=f"revision-{execution_id}", manifest={"entrypoint": "agent"},
+    )
+    record = store.admit_execution(
+        execution_id=execution_id,
+        run_id=f"run-{execution_id}",
+        session_id="session-canonical",
+        revision_id=revision.revision_id,
+        input_ref=f"agent-turn:{execution_id}",
+        input_hash="hash",
+        entrypoint="openprogram.agent.production_driver:AgentProductionDriver",
+        trusted_actor={"subject": "test", "session_id": "session-canonical"},
+        config_snapshot_ref="test",
+        user_message_id="user-canonical",
+        assistant_message_id=None,
+        capabilities=CapabilitySet(),
+        agent_turn_payload={
+            "version": 1,
+            "kind": "chat",
+            "request": {
+                "user_text": "cancel me",
+                "agent_id": "main",
+                "source": "test",
+            },
+        },
+    )
+    return store, record
+
+
+def _patch_canonical_store(monkeypatch, store):
+    service = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    monkeypatch.setattr("openprogram.execution.default_store", lambda: store)
+    monkeypatch.setattr("openprogram.execution.default_control_service", lambda: service)
+    return service
+
+
+def test_ws_execution_cancel_returns_canonical_status_and_releases_occupancy(
+    tmp_path, monkeypatch,
+):
+    store, record = _canonical_execution(tmp_path)
+    _patch_canonical_store(monkeypatch, store)
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import runtime
+
+    released: list[str] = []
+    broadcasts: list[dict] = []
+    monkeypatch.setattr(
+        server, "_release_session_occupancy_for_execution",
+        lambda execution: released.append(execution["execution_id"]),
+    )
+    monkeypatch.setattr(
+        server, "_broadcast", lambda payload: broadcasts.append(json.loads(payload)),
+    )
+    ws = FakeWS()
+
+    asyncio.run(runtime.ACTIONS["execution.cancel"](
+        ws, {"action": "execution.cancel", "execution_id": record.execution_id},
+    ))
+
+    execution = store.get_execution(record.execution_id)
+    assert execution is not None
+    assert execution.status is ExecutionStatus.CANCELLED
+    update = next(frame for frame in broadcasts if frame["type"] == "execution.updated")
+    assert update["execution"]["execution_id"] == record.execution_id
+    assert released == [record.execution_id]
+    assert not any(frame["type"] == "error" for frame in ws.frames)
+
+
+def test_http_execution_cancel_returns_canonical_status_and_body(
+    tmp_path, monkeypatch,
+):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    store, record = _canonical_execution(tmp_path, execution_id="exec-http-cancel")
+    _patch_canonical_store(monkeypatch, store)
+    from openprogram.webui.routes import lifecycle
+
+    released: list[str] = []
+    monkeypatch.setattr(
+        "openprogram.webui.server._release_session_occupancy_for_execution",
+        lambda execution: released.append(execution["execution_id"]),
+    )
+    app = FastAPI()
+    lifecycle.register(app)
+    response = TestClient(app).post(
+        "/api/execution/cancel", json={"execution_id": record.execution_id},
+    )
+
+    assert response.status_code == 200
+    body = response.json()["execution"]
+    assert body["execution_id"] == record.execution_id
+    assert body["status"] == "cancelled"
+    assert released == [record.execution_id]
 
 
 def test_session_reload_preserves_cancelling_execution_status(
@@ -76,4 +177,3 @@ def test_session_reload_preserves_cancelling_execution_status(
     assert execution["status"] == "cancelling"
     assert execution["reason_code"] == "cancel.user"
     assert loaded["data"]["run_active"] is True
-

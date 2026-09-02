@@ -536,6 +536,50 @@ def test_finish_retry_re_reads_cancellation_state(tmp_path):
     assert driver._pending_finishes == {}
 
 
+def test_finish_repair_intent_replays_after_driver_restart(tmp_path):
+    from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.execution.control import RuntimeControlService
+    from openprogram.execution.driver import DriverRegistry
+
+    store, execution = _admitted(tmp_path, execution_id="exec-finish-replay")
+    attempts = AttemptStore(store)
+    attempt, leased = attempts.lease(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        owner_id="agent-owner",
+        ttl_seconds=30,
+    )
+    active, running = attempts.activate(
+        attempt.attempt_id,
+        generation=attempt.generation,
+        expected_execution_version=leased.status_version,
+    )
+    store.upsert_finish_repair(
+        execution_id=execution.execution_id,
+        attempt_id=active.attempt_id,
+        generation=active.generation,
+        expected_version=running.status_version,
+        target=ExecutionStatus.COMPLETED.value,
+        outcome="completed",
+        reason_code=None,
+    )
+
+    # A fresh process's startup control service replays the durable repair
+    # intent before handling any new turn.
+    driver = AgentProductionDriver(
+        executions=store,
+        input_resolver=lambda _record: {},
+        turn_runner=lambda **_kwargs: None,
+    )
+    service = RuntimeControlService(store, attempts, DriverRegistry())
+    assert driver._pending_finishes == {}
+    assert service.replay_finish_repairs() == 1
+    current = store.get_execution(execution.execution_id)
+    assert current is not None
+    assert current.status is ExecutionStatus.COMPLETED
+    assert store.list_finish_repairs() == []
+
+
 def test_startup_terminalizes_admitted_agent_without_attempt(tmp_path):
     from openprogram.execution.control import RuntimeControlService
     from openprogram.execution.driver import DriverRegistry

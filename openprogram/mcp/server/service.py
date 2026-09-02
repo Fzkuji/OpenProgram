@@ -624,10 +624,13 @@ class MCPService:
                     # canonical admission. Record the cancel intent under
                     # the same ownership lock; the worker consumes it after
                     # admission and before activation.
-                    record.cancel_requested = True
-                    record.cancel_reason = reason
-                    record.thread_cancel.set()
-                    record.tool_cancel.set()
+                    with self._active_lock:
+                        if self._active_by_request.get(record.request_id) is not record:
+                            return False
+                        record.cancel_requested = True
+                        record.cancel_reason = reason
+                        record.thread_cancel.set()
+                        record.tool_cancel.set()
                     return True
                 result = self._cancel_execution(record.execution_id)
                 if isinstance(result, asyncio.Task):
@@ -983,6 +986,11 @@ class MCPService:
                 record.execution_id = admission.execution_id
                 cancel_requested = record.cancel_requested
                 cancel_reason = record.cancel_reason or "request_cancelled"
+                if not cancel_requested:
+                    # Publish the identity and close the admission barrier in
+                    # one lock acquisition. A cancel arriving after this
+                    # point is a normal exact execution cancellation.
+                    record.activation_started = True
             if cancel_requested:
                 adapter.fail_admission(
                     admission,
@@ -990,15 +998,6 @@ class MCPService:
                     target=ExecutionStatus.CANCELLED,
                 )
                 return None
-            with self._active_lock:
-                if record.cancel_requested or record.thread_cancel.is_set():
-                    adapter.fail_admission(
-                        admission,
-                        reason_code=record.cancel_reason or "request_cancelled",
-                        target=ExecutionStatus.CANCELLED,
-                    )
-                    return None
-                record.activation_started = True
             self._register_cancel_event(
                 record.session_id,
                 record.thread_cancel,

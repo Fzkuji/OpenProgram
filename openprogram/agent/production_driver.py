@@ -594,6 +594,7 @@ class AgentProductionDriver:
         service = self._control_service()
         execution = service.executions.get_execution(attempt.execution_id)
         if execution is None or execution.status in TERMINAL_EXECUTION_STATUSES:
+            self._delete_persisted_finish(key)
             with self._handles_lock:
                 self._finished.add(key)
             return
@@ -650,6 +651,7 @@ class AgentProductionDriver:
             return
         with self._handles_lock:
             self._finished.add(key)
+        self._delete_persisted_finish(key)
 
     def _queue_finish_retry(
         self,
@@ -667,6 +669,21 @@ class AgentProductionDriver:
             if key in self._finish_retry_threads:
                 return
             self._finish_retry_threads.add(key)
+        if self.executions is not None:
+            try:
+                self.executions.upsert_finish_repair(
+                    execution_id=attempt.execution_id,
+                    attempt_id=attempt.attempt_id,
+                    generation=attempt.generation,
+                    expected_version=expected_execution_version,
+                    target=target.value,
+                    outcome=outcome,
+                    reason_code=reason_code,
+                )
+            except Exception:
+                # The in-process item remains retryable; a later successful
+                # store write will make it available to startup replay.
+                pass
         threading.Thread(
             target=self._retry_finish,
             args=(key,),
@@ -757,9 +774,20 @@ class AgentProductionDriver:
                 self._finish_retry_threads.discard(key)
 
     def _resolve_finish_retry(self, key: tuple[str, str, int]) -> None:
+        self._delete_persisted_finish(key)
         with self._handles_lock:
             self._pending_finishes.pop(key, None)
             self._finished.add(key)
+
+    def _delete_persisted_finish(self, key: tuple[str, str, int]) -> None:
+        execution_id, attempt_id, generation = key
+        if self.executions is not None:
+            try:
+                self.executions.delete_finish_repair(
+                    execution_id, attempt_id, generation,
+                )
+            except Exception:
+                pass
 
     def _recover_owner_loss(self, attempt: AttemptRecord) -> None:
         try:

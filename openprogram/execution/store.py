@@ -393,6 +393,57 @@ class ExecutionStore:
         _validate_agent_turn_payload(payload)
         return _snapshot_json(payload)
 
+    def upsert_finish_repair(
+        self,
+        *,
+        execution_id: str,
+        attempt_id: str,
+        generation: int,
+        expected_version: int,
+        target: str,
+        outcome: str,
+        reason_code: str | None,
+    ) -> None:
+        """Persist a terminal write for bounded retry and startup replay."""
+        now = time.time()
+        with self._transaction() as connection:
+            connection.execute(
+                """
+                INSERT INTO execution_finish_repairs (
+                    execution_id, attempt_id, generation, expected_version,
+                    target, outcome, reason_code, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(execution_id, attempt_id, generation) DO UPDATE SET
+                    expected_version = excluded.expected_version,
+                    target = excluded.target,
+                    outcome = excluded.outcome,
+                    reason_code = excluded.reason_code,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    execution_id, attempt_id, generation, expected_version,
+                    target, outcome, reason_code, now, now,
+                ),
+            )
+
+    def list_finish_repairs(self) -> list[dict[str, Any]]:
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT * FROM execution_finish_repairs "
+                "ORDER BY updated_at, execution_id, attempt_id"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def delete_finish_repair(
+        self, execution_id: str, attempt_id: str, generation: int,
+    ) -> None:
+        with self._transaction() as connection:
+            connection.execute(
+                "DELETE FROM execution_finish_repairs "
+                "WHERE execution_id = ? AND attempt_id = ? AND generation = ?",
+                (execution_id, attempt_id, generation),
+            )
+
     def _copy_execution_input_in_transaction(
         self,
         connection: sqlite3.Connection,
