@@ -324,8 +324,13 @@ def test_default_startup_registers_and_replays_fixed_consumers(tmp_path, monkeyp
     monkeypatch.setattr("openprogram.execution.store.default_store", lambda: store)
 
     class Control:
+        executions = store
+
         def recover_startup(self):
             return ()
+
+        async def recover_wait_outcomes(self):
+            return None
 
     result = recover_execution_startup(
         control_service=Control(), projection_owner_id="startup-worker"

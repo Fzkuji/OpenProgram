@@ -285,13 +285,18 @@ def test_startup_drain_stops_after_a_failed_batch(tmp_path):
     assert calls == ["outbox_1_dag"]
 
 
-def test_startup_entrypoint_recovers_canonical_before_projection_replay():
+def test_startup_entrypoint_recovers_canonical_before_projection_replay(tmp_path):
     calls = []
 
     class Control:
+        executions = ExecutionStore(tmp_path / "startup-order.sqlite3")
+
         def recover_startup(self):
             calls.append("canonical")
             return ("recovered",)
+
+        async def recover_wait_outcomes(self):
+            calls.append("wait-outcomes")
 
     class Dispatcher:
         def recover_startup(self, *, owner_id):
@@ -304,16 +309,21 @@ def test_startup_entrypoint_recovers_canonical_before_projection_replay():
         projection_dispatcher=Dispatcher(),
         projection_owner_id="startup-worker",
     )
-    assert calls == ["canonical", "projection"]
+    assert calls == ["canonical", "wait-outcomes", "projection"]
     assert result.canonical == ("recovered",)
 
 
-def test_default_startup_projection_owner_is_unique_per_recovery():
+def test_default_startup_projection_owner_is_unique_per_recovery(tmp_path):
     owners = []
 
     class Control:
+        executions = ExecutionStore(tmp_path / "startup-owner.sqlite3")
+
         def recover_startup(self):
             return ()
+
+        async def recover_wait_outcomes(self):
+            return None
 
     class Dispatcher:
         def recover_startup(self, *, owner_id):
