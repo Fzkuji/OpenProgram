@@ -845,13 +845,36 @@ class AgentProductionDriver:
         return await self.publish_safe_point(binding, safe_point_kind=safe_point_kind, frontier=({"step_id": phase, "phase": phase},))
 
     async def enter_wait(self, binding, *, kind: str, request_id: str):
-        return SimpleNamespace(execution=self.executions.get_execution(binding.execution_id), kind=kind, request_id=request_id)
+        self._require_live(binding.handle)
+        registry = self.question_registry
+        if registry is None:
+            from openprogram.agent.questions import get_question_registry
+            registry = get_question_registry()
+        expected_kind = "approval" if kind == "approval" else "ask"
+        pending = next(
+            (
+                item for item in registry.list_pending(binding.handle.session_id)
+                if item.id == request_id
+                and item.execution_id == binding.execution_id
+                and item.kind == expected_kind
+            ),
+            None,
+        )
+        if pending is None:
+            raise AgentDriverError("wait_not_found", "Agent wait is not registered for this execution")
+        execution = self.executions.get_execution(binding.execution_id)
+        return SimpleNamespace(execution=execution, kind=kind, request_id=request_id)
 
     async def request_pause_at_wait(self, binding, *, command_id: str):
         execution = self.executions.get_execution(binding.execution_id)
         if execution is None:
             raise AgentDriverError("execution_not_found", "execution missing")
-        return self.executions.transition_execution(execution.execution_id, expected_version=execution.status_version, target=ExecutionStatus.PAUSING)
+        from openprogram.agent.authority import local_owner_authority
+        dispatch = await self._control_service().request_pause(
+            command_id=command_id, execution_id=execution.execution_id,
+            expected_version=execution.status_version, actor=local_owner_authority(),
+        )
+        return dispatch.execution
 
     def _finish_attempt(
         self,
