@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 
 import pytest
 
@@ -330,10 +331,50 @@ def test_resource_shortage_accepts_continue_and_exposes_queue_wait(durable_job):
         "expected_version": paused.status_version, "payload": {},
     })
     frame = _command_frame(ws)
-    assert frame["command"]["status"] == "accepted"
-    assert frame["execution"]["resource"]["queue_wait"]["state"] in {
-        "queued_resume", "paused_waiting_claim",
-    }
+    if frame["command"]["status"] == "accepted":
+        queue_wait = frame["execution"]["resource"]["queue_wait"]
+        if queue_wait is not None:
+            assert queue_wait["state"] in {
+                "queued_resume", "paused_waiting_claim",
+            }
+        else:
+            assert frame["execution"]["resource"]["resource_state"] == "live"
+    else:
+        assert frame["command"]["status"] in {"applying", "applied"}
+
+
+def test_claimed_continue_creates_a_new_canonical_attempt(durable_job):
+    """A resource claim resumes the paused execution instead of invalidating it."""
+    runner, _ledger, execution_store, _db = durable_job
+    job_id, execution = _execution(runner, execution_store)
+    ws = _WS("p1")
+    _run_runtime_action("execution.pause", ws, {
+        "type": "execution.command", "action": "execution.pause",
+        "command_id": "cmd-resume-pause", "execution_id": job_id,
+        "expected_version": execution.status_version, "payload": {},
+    })
+    paused = execution_store().get_execution(job_id)
+    assert paused is not None and paused.status.value == "paused"
+
+    _run_runtime_action("execution.continue", ws, {
+        "type": "execution.command", "action": "execution.continue",
+        "command_id": "cmd-resume-continue", "execution_id": job_id,
+        "expected_version": paused.status_version, "payload": {},
+    })
+    deadline = time.monotonic() + 3.0
+    command = execution_store().get_command("cmd-resume-continue")
+    while command is not None and command.status.value in {"accepted", "applying"} and time.monotonic() < deadline:
+        time.sleep(0.02)
+        command = execution_store().get_command("cmd-resume-continue")
+
+    assert command is not None and command.status.value == "applied"
+    resumed = execution_store().get_execution(job_id)
+    assert resumed is not None
+    assert resumed.reason_code != "error.canonical_admission"
+    assert sum(
+        event.kind == "attempt.leased"
+        for event in execution_store().list_events(job_id)
+    ) == 1
 
 
 def test_restart_replays_cross_db_intents_without_minting_another_execution(

@@ -827,6 +827,54 @@ class RuntimeControlService:
             issue_code=issue,
         )
 
+    async def activate_accepted_job_command(
+        self,
+        *,
+        command_id: str,
+        execution_id: str,
+        owner_id: str,
+        ttl_seconds: float | None = None,
+        activator: Activator | None = None,
+        driver: Any | None = None,
+    ) -> ControlDispatch:
+        """Activate one resource-claimed Job command through the canonical owner.
+
+        Job resource admission may wait after a public continue/step command
+        has been accepted.  This internal entry consumes that exact durable
+        command only after ResourceGovernor has assigned capacity; transports
+        never call it.
+        """
+        command = self.executions.get_command(command_id)
+        if command is None or command.execution_id != execution_id:
+            raise ExecutionConflict("command_not_found", "accepted Job command is unavailable")
+        if command.kind not in {CommandKind.CONTINUE, CommandKind.STEP}:
+            raise ExecutionConflict("invalid_command", "Job activation requires continue or step")
+        command, execution, attempt, checkpoint, steer_inputs, duplicate = self._resume_transaction(
+            command_id=command_id,
+            execution_id=execution_id,
+            expected_version=command.expected_version,
+            actor=command.actor,
+            kind=command.kind,
+            owner_id=owner_id,
+            ttl_seconds=ttl_seconds or self.lease_ttl_seconds,
+            activate_existing_accepted=True,
+            allow_queued_initial_step=True,
+        )
+        if duplicate:
+            return ControlDispatch(command=command, execution=execution, delivered=False)
+        delivered, issue = await self._activate(
+            attempt, checkpoint, steer_inputs, activator=activator, driver=driver,
+        )
+        command, execution = self._finish_activation(
+            attempt, command, delivered=delivered, issue_code=issue,
+        )
+        return ControlDispatch(
+            command=command,
+            execution=execution,
+            delivered=delivered,
+            issue_code=issue,
+        )
+
     def request_steer(
         self,
         *,
@@ -1111,6 +1159,8 @@ class RuntimeControlService:
         kind: CommandKind,
         owner_id: str,
         ttl_seconds: float,
+        activate_existing_accepted: bool = False,
+        allow_queued_initial_step: bool = False,
     ) -> tuple[
         ControlCommand,
         ExecutionRecord,
@@ -1133,15 +1183,39 @@ class RuntimeControlService:
             )
             execution = self.executions._require_execution(connection, execution_id)
             if duplicate:
-                checkpoint = (
-                    self.checkpoints._get(
-                        connection,
-                        execution.checkpoint_head_id or execution.source_checkpoint_id,
+                if not activate_existing_accepted:
+                    checkpoint = (
+                        self.checkpoints._get(
+                            connection,
+                            execution.checkpoint_head_id or execution.source_checkpoint_id,
+                        )
+                        if (execution.checkpoint_head_id or execution.source_checkpoint_id)
+                        else None
                     )
-                    if (execution.checkpoint_head_id or execution.source_checkpoint_id)
-                    else None
+                    return command, execution, None, checkpoint, (), True
+                if command.status is not CommandStatus.ACCEPTED:
+                    checkpoint = (
+                        self.checkpoints._get(
+                            connection,
+                            execution.checkpoint_head_id or execution.source_checkpoint_id,
+                        )
+                        if (execution.checkpoint_head_id or execution.source_checkpoint_id)
+                        else None
+                    )
+                    return command, execution, None, checkpoint, (), True
+                if command.kind is not kind:
+                    raise ExecutionConflict("command_mismatch", "accepted command kind changed")
+            if activate_existing_accepted and (
+                execution.status is not ExecutionStatus.PAUSED and not (
+                    allow_queued_initial_step
+                    and kind is CommandKind.STEP
+                    and execution.status is ExecutionStatus.QUEUED
                 )
-                return command, execution, None, checkpoint, (), True
+            ):
+                raise ExecutionConflict(
+                    "invalid_state",
+                    "accepted Job command no longer has a resumable execution",
+                )
             if execution.current_attempt_id is not None:
                 raise AttemptConflict(
                     "owner_exists",
@@ -1162,7 +1236,14 @@ class RuntimeControlService:
             # owner loss, not a resumable root state.
             initial_activation = (
                 checkpoint is None
-                and kind is CommandKind.CONTINUE
+                and (
+                    kind is CommandKind.CONTINUE
+                    or (
+                        allow_queued_initial_step
+                        and kind is CommandKind.STEP
+                        and execution.status is ExecutionStatus.QUEUED
+                    )
+                )
                 and connection.execute(
                     "SELECT COUNT(*) FROM attempts WHERE execution_id = ?",
                     (execution_id,),

@@ -217,19 +217,14 @@ class ResourceSaga:
                 paused=bool(payload.get("paused", True)),
             ):
                 return None
-            claim = self.governor.claim_execution(
-                str(intent["execution_id"]),
-                owner_instance_id=str(payload["owner_instance_id"]),
-                admission_id=str(intent["admission_id"]),
-                command_id=command_id,
-            )
-            if claim is None:
-                return None
-            self._fault("claim_obtained")
+            # ResourceSaga owns only the durable resource-queue transition.
+            # The runner's dispatcher later claims capacity and asks
+            # RuntimeControlService to create the canonical attempt.  Claiming
+            # here would make the admission live while the execution remained
+            # paused, with no execution owner able to finish the command.
             return {
-                "state": "activation_pending",
-                "resource_lease_generation": claim.lease_generation,
-                "session_id": claim.session_id,
+                "state": "queued",
+                "command_id": command_id,
             }
         if kind == "execution.release.intent":
             return {"state": "recorded"}

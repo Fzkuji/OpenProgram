@@ -22,7 +22,7 @@ def project_id_for_session(session_id: str) -> str:
         if project is not None:
             return project.id
     except Exception:
-        pass
+        return "default"
     # Existing ad-hoc sessions use the default project.  A future admission
     # path may reject an unbound session; public reads remain non-authoritative.
     return "default"
@@ -34,7 +34,7 @@ def _event_sequence(store: Any, execution_id: str, fallback: int) -> int:
         if events:
             return max(int(event.sequence) for event in events)
     except Exception:
-        pass
+        return fallback
     return fallback
 
 
@@ -73,8 +73,13 @@ def _canonical_resource(
     if isinstance(nested, Mapping):
         return dict(nested)
     state = str(resource.get("resource_state") or "untracked")
-    queue_wait = None
-    if state in {"queued", "queued_resume", "paused_waiting_claim"}:
+    supplied_queue_wait = resource.get("queue_wait")
+    queue_wait = (
+        dict(supplied_queue_wait)
+        if isinstance(supplied_queue_wait, Mapping)
+        else None
+    )
+    if queue_wait is None and state in {"queued", "queued_resume", "paused_waiting_claim"}:
         queue_wait = {
             "state": state,
             "reason_code": resource.get("reason_code"),

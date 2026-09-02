@@ -1927,14 +1927,14 @@ class JobRunner:
                 execution_id=execution_id,
                 command_id=command_id,
             )
+        else:
+            self._dispatch_wake.set()
         latest = self._execution_store.get_execution(execution_id)
         assert latest is not None
         return self._execution_store.get_command(command_id) or command, latest
 
     def _activate_initial_step(self, *, execution_id: str, command_id: str) -> None:
         """Activate one resource-claimed queued Job step through Agent driver."""
-        from openprogram.execution.model import CommandStatus
-
         execution = self._execution_store.get_execution(execution_id)
         if execution is None or execution.status.value != "queued":
             return
@@ -1950,13 +1950,8 @@ class JobRunner:
         if claim is None:
             return
         try:
-            self._execution_store.transition_command(
-                command_id,
-                expected_status=CommandStatus.ACCEPTED,
-                target=CommandStatus.APPLYING,
-            )
-            activated = self._activate_canonical_execution(
-                execution_id, threading.Event(),
+            activated = self._activate_claimed_job_command(
+                claim, command_id, threading.Event(),
             )
             if activated is None:
                 return
@@ -2283,7 +2278,6 @@ class JobRunner:
 
     def _activate_canonical_execution(self, execution_id: str, cancel_ev):
         """Lease and activate the canonical attempt for one Job execution."""
-        from openprogram.agent.production_driver import AgentProductionDriver
         from openprogram.execution import ActivationInput
 
         execution = self._execution_store.get_execution(execution_id)
@@ -2301,19 +2295,7 @@ class JobRunner:
                 generation=leased.generation,
                 expected_execution_version=reserved.status_version,
             )
-            driver = (
-                self._agent_driver_factory(
-                    self._execution_store, self._execution_control,
-                )
-                if self._agent_driver_factory is not None
-                else AgentProductionDriver(
-                    self._execution_store,
-                    control_service=self._execution_control,
-                    job_resume_resolver=(
-                        self._governor.continuation_parent_msg_id
-                    ),
-                )
-            )
+            driver = self._agent_driver()
             binding = self._run_control(
                 driver.activate(active, ActivationInput(checkpoint=None)),
             )
@@ -2375,11 +2357,78 @@ class JobRunner:
         """Lease and activate the canonical attempt for one resource claim."""
         return self._activate_canonical_execution(claim.job_id, cancel_ev)
 
+    def _agent_driver(self):
+        """Build the one Agent owner used by canonical Job activations."""
+        from openprogram.agent.production_driver import AgentProductionDriver
+
+        if self._agent_driver_factory is not None:
+            return self._agent_driver_factory(
+                self._execution_store, self._execution_control,
+            )
+        return AgentProductionDriver(
+            self._execution_store,
+            control_service=self._execution_control,
+            job_resume_resolver=self._governor.continuation_parent_msg_id,
+        )
+
+    def _activate_claimed_job_command(self, claim, command_id: str, cancel_ev):
+        """Consume one resource-claimed Job command through RuntimeControlService."""
+        command = self._execution_store.get_command(command_id)
+        if command is None:
+            return None
+        try:
+            driver = self._agent_driver()
+            bindings = []
+
+            async def activate(attempt, activation):
+                binding = await driver.activate(attempt, activation)
+                bindings.append(binding)
+                return binding
+
+            dispatch = self._run_control(
+                self._execution_control.activate_accepted_job_command(
+                    command_id=command_id,
+                    execution_id=claim.job_id,
+                    owner_id=self._instance_id,
+                    activator=activate,
+                ),
+            )
+            if not dispatch.delivered or len(bindings) != 1:
+                return None
+            binding = bindings[0]
+            attempt = self._execution_attempts.get(binding.attempt_id)
+            if attempt is None:
+                return None
+            return attempt, dispatch.execution, binding
+        except Exception:
+            _log.exception(
+                "failed to activate claimed Job command %s for %s",
+                command_id, claim.job_id,
+            )
+            return None
+
+    def _claimed_resume_command_id(self, job_id: str) -> str | None:
+        row = self._governor.ledger.connection().execute(
+            "SELECT resume_command_id FROM job_admissions "
+            "WHERE job_id = ? AND state = 'live'",
+            (job_id,),
+        ).fetchone()
+        value = row["resume_command_id"] if row is not None else None
+        return value if isinstance(value, str) and value else None
+
     def _dispatch_loop(self) -> None:
         """Submit only durably claimed jobs to the executor."""
         while not self._shutdown_event.is_set():
             self._dispatch_wake.wait(0.5)
             self._dispatch_wake.clear()
+            # A continue/step command writes its intent before capacity is
+            # claimed.  Reconcile that hand-off before selecting the next
+            # admission so an available slot starts promptly without a
+            # separate polling delay.
+            try:
+                self._resource_saga.reconcile()
+            except Exception:
+                _log.exception("failed to reconcile pending Job resource claims")
             blocked_sessions: set[str] = set()
             while not self._shutdown_event.is_set():
                 if not self._executor_slots.acquire(blocking=False):
@@ -2398,13 +2447,35 @@ class JobRunner:
                     self._executor_slots.release()
                     break
                 # The durable canonical record is the dispatch gate.  A
-                # missing/non-queued canonical row is never upgraded from a
-                # JobStore projection at dispatch time.
+                # resumed Job remains paused until its resource claim reaches
+                # this dispatcher, where RuntimeControlService creates its
+                # next attempt.  JobStore is never used to upgrade lifecycle.
                 canonical = self._execution_store.get_execution(claim.job_id)
                 canonical_job = self._canonical_job(claim.job_id)
+                resume_command_id = self._claimed_resume_command_id(claim.job_id)
+                resume_command = (
+                    self._execution_store.get_command(resume_command_id)
+                    if resume_command_id is not None else None
+                )
+                claimed_resume = (
+                    canonical is not None
+                    and canonical.status.value in {"paused", "queued"}
+                    and resume_command is not None
+                    and resume_command.status.value == "accepted"
+                    and resume_command.kind.value in {
+                        "execution.continue", "execution.step",
+                    }
+                    and (
+                        canonical.status.value == "paused"
+                        or (
+                            canonical.status.value == "queued"
+                            and resume_command.kind.value == "execution.step"
+                        )
+                    )
+                )
                 if (
                     canonical is None
-                    or canonical.status.value != "queued"
+                    or (canonical.status.value != "queued" and not claimed_resume)
                     or canonical_job is None
                 ):
                     if canonical is not None and canonical.status.value in {
@@ -2506,11 +2577,63 @@ class JobRunner:
                         cancel_ev = entry["event"]
                         done_ev = self._done_events[claim.job_id]
                     ctx = entry["context"]
-                canonical_claim = self._activate_canonical_claim(claim, cancel_ev)
+                canonical_claim = (
+                    self._activate_claimed_job_command(
+                        claim, resume_command_id, cancel_ev,
+                    )
+                    if claimed_resume and resume_command_id is not None
+                    else self._activate_canonical_claim(claim, cancel_ev)
+                )
                 if canonical_claim is None:
                     from openprogram.execution import ExecutionStatus
 
                     current_execution = self._execution_store.get_execution(claim.job_id)
+                    if claimed_resume:
+                        current_command = (
+                            self._execution_store.get_command(resume_command_id)
+                            if resume_command_id is not None else None
+                        )
+                        # An activation fault before RuntimeControlService
+                        # claims the command leaves the canonical execution
+                        # paused and the command accepted.  Return only this
+                        # fenced resource claim to the queue; it is not a
+                        # failed execution and must not be terminalized.
+                        if (
+                            current_execution is not None
+                            and current_execution.status.value == "paused"
+                            and current_command is not None
+                            and current_command.status.value == "accepted"
+                        ):
+                            try:
+                                self._governor.requeue_job(
+                                    claim.job_id,
+                                    owner_instance_id=self._instance_id,
+                                    lease_generation=claim.lease_generation,
+                                )
+                            except Exception:
+                                _log.exception(
+                                    "failed to requeue paused Job resume %s",
+                                    claim.job_id,
+                                )
+                        else:
+                            try:
+                                self._governor.release_job(
+                                    claim.job_id,
+                                    "resume.command_rejected",
+                                    owner_instance_id=self._instance_id,
+                                    lease_generation=claim.lease_generation,
+                                )
+                            except Exception:
+                                _log.exception(
+                                    "failed to release rejected Job resume %s",
+                                    claim.job_id,
+                                )
+                        with self._lock:
+                            self._jobs.pop(claim.job_id, None)
+                            self._done_events.pop(claim.job_id, None)
+                        blocked_sessions.add(claim.session_id)
+                        self._executor_slots.release()
+                        continue
                     if (
                         current_execution is not None
                         and current_execution.status.value == "queued"
