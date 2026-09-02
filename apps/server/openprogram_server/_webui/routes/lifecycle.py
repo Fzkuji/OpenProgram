@@ -180,6 +180,46 @@ def register(app):
             revision_endpoint
         )
 
+    @app.get("/api/execution/{execution_id}/debugger")
+    async def api_execution_debugger_state(execution_id: str, request: Request):
+        """Return the canonical inspection state for one execution.
+
+        The debugger needs the immutable checkpoint history, unresolved
+        execution-owned waits, and revision draft state together with the
+        ordinary execution snapshot.  This read is authorized against the
+        same execution boundary as snapshot/events and never accepts client
+        supplied project or session identifiers.
+        """
+        from openprogram.execution import default_store
+        from openprogram.execution.checkpoints import ExecutionCheckpointStore
+        from openprogram.execution.revision_public import project_draft_state
+        from openprogram.execution.revisions import RevisionControlService
+        from openprogram.execution.waits import DurableWaitStore
+
+        store = default_store()
+        execution = store.get_execution(execution_id)
+        actor, bound_session = _actor_and_session(request)
+        if execution is None or not _authorize_read(
+            actor, bound_session, execution, "execution.snapshot"
+        ):
+            return JSONResponse(
+                {"error": "not_found", "execution_id": execution_id},
+                status_code=404,
+            )
+        checkpoints = ExecutionCheckpointStore(store).list_for_execution(execution_id)
+        revision_service = RevisionControlService(store)
+        drafts = [
+            project_draft_state(revision_service, draft.draft_id)
+            for draft in revision_service.list_drafts_for_execution(execution_id)
+        ]
+        return JSONResponse({
+            "type": "execution.debugger.state",
+            "execution_id": execution_id,
+            "checkpoints": [checkpoint.to_dict() for checkpoint in checkpoints],
+            "waits": [wait.to_dict() for wait in DurableWaitStore(store).list_open(execution_id=execution_id)],
+            "drafts": drafts,
+        })
+
     @app.get("/api/execution/{execution_id}")
     async def api_execution_snapshot(execution_id: str, request: Request):
         from openprogram.execution import default_store

@@ -123,7 +123,7 @@ export type RevisionDraft = {
     error_code?: string | null;
   };
   approval?: { approval_id?: string; approval_ref: string; policy_version: string };
-  manifest?: { manifest_id?: string; revision_id: string; content_hash: string };
+  manifest?: { manifest_id?: string; revision_id: string; content_hash: string; proof_hash?: string };
 };
 
 export type DurableWait = {
@@ -136,6 +136,24 @@ export type DurableWait = {
   status: "open" | "claimed" | "resolved" | "declined" | "expired" | "cancelled";
   expires_at: number | null;
 };
+
+export type DebuggerInspectionState = {
+  checkpoints: Array<{ execution_id: string }>;
+  waits: DurableWait[];
+  drafts: RevisionDraft[];
+};
+
+/** Select only the inspection records owned by the currently selected execution. */
+export function selectDebuggerInspection(
+  state: DebuggerInspectionState,
+  executionId: string,
+): DebuggerInspectionState {
+  return {
+    checkpoints: state.checkpoints.filter((item) => item.execution_id === executionId),
+    waits: state.waits.filter((item) => item.execution_id === executionId),
+    drafts: state.drafts.filter((item) => item.source_execution_id === executionId),
+  };
+}
 
 export type CursorHealth = "healthy" | "reconnecting" | "gap" | "stale";
 

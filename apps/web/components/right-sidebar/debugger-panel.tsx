@@ -52,6 +52,10 @@ export type DebuggerPanelProps = {
     outcome: "answer" | "decline";
     value?: string;
   }) => Promise<void> | void;
+  onCreateDraft?: (input: {
+    execution_id: string;
+    source_checkpoint_id: string;
+  }) => Promise<void> | void;
   onUpdateDraft?: (draft: RevisionDraft, changes: RevisionDraft["changes"]) => Promise<void> | void;
   onDraftAction?: (
     draft: RevisionDraft,
@@ -224,6 +228,7 @@ export function DebuggerPanel({
   onSelectExecution,
   onCommand,
   onRespondWait,
+  onCreateDraft,
   onUpdateDraft,
   onDraftAction,
   onRefresh,
@@ -299,11 +304,11 @@ export function DebuggerPanel({
   const actionPayloads: Partial<Record<ExecutionCommandAction, Record<string, unknown>>> = {
     steer: steerValue.trim() ? { message: steerValue.trim() } : undefined,
     retry: snapshot.checkpoint_head_id ? { checkpoint_id: snapshot.checkpoint_head_id } : undefined,
-    fork: selectedDraft?.status === "published" && selectedDraft.manifest && selectedDraft.validation?.report_hash
+    fork: selectedDraft?.status === "published" && selectedDraft.manifest?.manifest_id && selectedDraft.manifest.proof_hash
       ? {
-        manifest_id: selectedDraft.manifest.revision_id,
+        manifest_id: selectedDraft.manifest.manifest_id,
         checkpoint_id: snapshot.checkpoint_head_id,
-        proof_hash: selectedDraft.validation?.report_hash,
+        proof_hash: selectedDraft.manifest.proof_hash,
       }
       : undefined,
   };
@@ -420,7 +425,17 @@ export function DebuggerPanel({
                 {draftError && <div className={styles.formError} role="alert">{draftError}</div>}
                 {selectedDraft.validation && <div className={styles.validation}><span>Report {shortId(selectedDraft.validation.report_ref)}</span><span>Reusable {selectedDraft.validation.reusable_steps.length}</span><span>Affected {selectedDraft.validation.affected_steps.length}</span>{selectedDraft.validation.error_code && <strong>{selectedDraft.validation.error_code}</strong>}</div>}
               </div>
-            ) : <div className={styles.empty}>Create a draft through the revision service to edit future logic. This view never mutates the source execution.</div>}
+            ) : (
+              <div className={styles.empty}>
+                <span>Create a draft through the revision service to edit future logic. This view never mutates the source execution.</span>
+                {onCreateDraft && snapshot.checkpoint_head_id && (
+                  <button type="button" className={styles.actionButton} onClick={() => { setDraftError(null); void Promise.resolve(onCreateDraft({ execution_id: snapshot.execution_id, source_checkpoint_id: snapshot.checkpoint_head_id! })).catch((error) => setDraftError(error instanceof Error ? error.message : "Draft creation failed.")); }}>
+                    Create draft
+                  </button>
+                )}
+                {draftError && <div className={styles.formError} role="alert">{draftError}</div>}
+              </div>
+            )}
           </section>
         </div>
       </div>

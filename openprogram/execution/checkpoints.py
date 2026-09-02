@@ -347,6 +347,17 @@ class ExecutionCheckpointStore:
         with closing(self.executions._connect()) as connection:
             return self._get(connection, checkpoint_id)
 
+    def list_for_execution(self, execution_id: str) -> list[CheckpointManifest]:
+        """Return published checkpoints for one execution in creation order."""
+        with closing(self.executions._connect()) as connection:
+            rows = connection.execute(
+                "SELECT checkpoint_id FROM checkpoints WHERE execution_id = "
+                "? ORDER BY created_at, checkpoint_id",
+                (execution_id,),
+            ).fetchall()
+            return [checkpoint for row in rows
+                    if (checkpoint := self._get(connection, str(row["checkpoint_id"]))) is not None]
+
     @staticmethod
     def _insert(connection, checkpoint: CheckpointManifest) -> None:
         connection.execute(

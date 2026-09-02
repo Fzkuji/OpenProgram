@@ -275,6 +275,15 @@ def test_rest_and_websocket_actions_expose_only_the_revision_envelope(
     )
     assert response.status_code == 200
     assert response.json()["draft"]["draft_id"] == draft["draft_id"]
+    response = TestClient(app).get(
+        f"/api/execution/{source.execution_id}/debugger",
+    )
+    assert response.status_code == 200
+    debugger = response.json()
+    assert debugger["execution_id"] == source.execution_id
+    assert [item["checkpoint_id"] for item in debugger["checkpoints"]] == [checkpoint.checkpoint_id]
+    assert debugger["waits"] == []
+    assert [item["draft"]["draft_id"] for item in debugger["drafts"]] == [draft["draft_id"]]
 
     class WebSocket:
         scope = {"state": {"authority": _actor("author")}}

@@ -38,6 +38,27 @@ export type RunningExecutionList = {
   now: number;
 };
 
+export type CheckpointInspector = {
+  checkpoint_id: string;
+  execution_id: string;
+  revision_id: string;
+  parent_checkpoint_id?: string | null;
+  source_execution_version?: number;
+  status_version?: number;
+  safe_point?: Record<string, unknown> | null;
+  frontier?: Array<{ step_id: string; status: string; contract_hash?: string }>;
+  pending_inputs?: string[];
+  effect_receipts?: Array<{ effect_id: string; status: string; kind?: string }>;
+};
+
+export type DebuggerStateResponse = {
+  type?: string;
+  execution_id: string;
+  checkpoints?: CheckpointInspector[];
+  waits?: import("@/lib/execution-debugger").DurableWait[];
+  drafts?: RevisionStateResponse[];
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
@@ -81,6 +102,16 @@ export async function getExecutionEvents(
 ): Promise<EventsResponse> {
   return request<EventsResponse>(
     `/api/execution/${encodeURIComponent(executionId)}/events?after_sequence=${Math.max(0, afterSequence)}`,
+    { signal, cache: "no-store" },
+  );
+}
+
+export async function getExecutionDebuggerState(
+  executionId: string,
+  signal?: AbortSignal,
+): Promise<DebuggerStateResponse> {
+  return request<DebuggerStateResponse>(
+    `/api/execution/${encodeURIComponent(executionId)}/debugger`,
     { signal, cache: "no-store" },
   );
 }
@@ -154,7 +185,7 @@ const REVISION_ROUTES: Partial<Record<RevisionAction, { path: string; method: "P
   "revision.publish": { path: "publish", method: "POST" },
 };
 
-function revisionState(body: RevisionStateResponse): RevisionDraft {
+export function parseRevisionState(body: RevisionStateResponse): RevisionDraft {
   const state = body.draft ? body : body.data?.draft ? body.data : body;
   const draft = state.draft;
   if (!draft?.draft_id) {
@@ -191,6 +222,7 @@ function revisionState(body: RevisionStateResponse): RevisionDraft {
         manifest_id: typeof manifest.manifest_id === "string" ? manifest.manifest_id : undefined,
         revision_id: String(manifest.revision_id || ""),
         content_hash: String(manifest.content_hash || ""),
+        proof_hash: typeof manifest.proof_hash === "string" ? manifest.proof_hash : undefined,
       }
       : draft.manifest,
   };
@@ -211,7 +243,7 @@ export async function postRevisionDraftCommand(input: {
       `/api/execution/${encodeURIComponent(input.execution_id)}/revision/draft/${draftId}`,
       { method: "GET", cache: "no-store" },
     );
-    return revisionState(body);
+    return parseRevisionState(body);
   }
   if (input.action !== "revision.draft.create" && !draftId) {
     throw new ExecutionApiError(400, "invalid_command", "A draft id is required.");
@@ -237,7 +269,7 @@ export async function postRevisionDraftCommand(input: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(command),
   });
-  return revisionState(body);
+  return parseRevisionState(body);
 }
 
 export function createRevisionDraft(input: {

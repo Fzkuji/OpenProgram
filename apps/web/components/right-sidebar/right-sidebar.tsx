@@ -326,12 +326,18 @@ export function RightSidebar() {
             executions={debuggerState.executions}
             selectedExecutionId={debuggerState.selectedExecutionId}
             connection={debuggerState.connection}
+            checkpoints={debuggerState.checkpoints}
+            waits={debuggerState.waits}
+            drafts={debuggerState.drafts}
             onSelectExecution={(executionId) => {
               setDebuggerExecutionId(executionId);
               debuggerState.selectExecution(executionId);
             }}
             onCommand={debuggerState.command}
             onRespondWait={debuggerState.respondWait}
+            onCreateDraft={async (input) => {
+              await debuggerState.createDraft(input);
+            }}
             onUpdateDraft={debuggerState.updateDraft}
             onDraftAction={debuggerState.draftAction}
             onRefresh={debuggerState.refresh}

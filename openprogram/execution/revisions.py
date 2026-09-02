@@ -450,6 +450,16 @@ class RevisionControlService:
             ).fetchone()
             return self._draft(row) if row is not None else None
 
+    def list_drafts_for_execution(self, execution_id: str) -> list[RevisionDraft]:
+        """Return all revision drafts rooted at one source execution."""
+        with self.executions._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM revision_drafts WHERE source_execution_id = "
+                "? ORDER BY created_at, draft_id",
+                (execution_id,),
+            ).fetchall()
+            return [self._draft(row) for row in rows]
+
     def get_validation(self, validation_id: str) -> RevisionValidation | None:
         with self.executions._connect() as connection:
             row = connection.execute(
