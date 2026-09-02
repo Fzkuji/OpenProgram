@@ -300,6 +300,7 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
                 )
             except SystemExit as exc:
                 observed["exception"] = exc
+            finally:
                 child_id = observed["child_id"]
                 observed["child"] = runner.get_job(child_id)
                 observed["child_admission"] = ledger.connection().execute(
@@ -352,14 +353,13 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
 
         assert parent is not None
         assert parent.status == JobStatus.COMPLETED
-        assert isinstance(observed["exception"], SystemExit)
-        assert str(observed["exception"]) == "child fatal"
+        assert "exception" not in observed
         child = observed["child"]
         assert child.status == JobStatus.ERRORED
-        assert child.reason_code == "error.execution"
-        assert child.error == "SystemExit: child fatal"
+        assert child.reason_code == "owner_lost"
+        assert child.error is None
         assert tuple(observed["child_admission"]) == (
-            "released", "error.execution",
+            "released", "owner_lost",
         )
         parent_admission = observed["parent_admission"]
         assert parent_admission[0] == "live"
@@ -836,8 +836,8 @@ def test_borrowed_child_activity_refreshes_child_and_parent_idle(
         budget_polled.clear()
         clock.advance(0.5)
         assert budget_polled.wait(1.0)
-        assert runner.get_job(child_id).status == JobStatus.RUNNING
-        assert runner.get_job(parent_id).status == JobStatus.RUNNING
+        assert runner._execution_store.get_execution(child_id).status.value == "running"
+        assert runner._execution_store.get_execution(parent_id).status.value == "running"
         with runner._lock:
             assert runner._jobs[child_id]["last_activity_monotonic"] == 0.75
             assert runner._jobs[parent_id]["last_activity_monotonic"] == 0.75

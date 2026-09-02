@@ -176,6 +176,12 @@ class JobAgentInputV1:
     def from_job(cls, job: Any, *, run_id: str | None = None) -> "JobAgentInputV1":
         from openprogram.agent.authority import normalize_authority
 
+        deferred_inbox = None
+        if isinstance(job.deferred_inbox, Mapping):
+            deferred_inbox = {
+                key: job.deferred_inbox.get(key)
+                for key in _DEFERRED_KEYS
+            }
         caller_session = job.caller_session_id or job.parent_session_id
         caller = None
         if job.caller_msg_id:
@@ -216,7 +222,7 @@ class JobAgentInputV1:
                 "caller": caller,
                 "worktree_id": job.worktree_id,
                 "authority_snapshot": authority,
-                "deferred_inbox": copy.deepcopy(job.deferred_inbox),
+                "deferred_inbox": deferred_inbox,
                 "chain": {
                     "messages": job.chain_messages,
                     "generations": job.chain_generations,

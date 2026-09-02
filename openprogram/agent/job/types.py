@@ -53,6 +53,10 @@ _VALID_TRANSITIONS: frozenset[tuple[JobStatus, JobStatus]] = frozenset({
     (JobStatus.PENDING, JobStatus.CANCELLED),
     (JobStatus.PENDING, JobStatus.ERRORED),
     (JobStatus.QUEUED, JobStatus.RUNNING),
+    # Canonical executions no longer mirror their running transition into
+    # JobStore. The projection may therefore advance directly from queued to
+    # the canonical terminal outcome.
+    (JobStatus.QUEUED, JobStatus.COMPLETED),
     (JobStatus.QUEUED, JobStatus.CANCELLED),
     (JobStatus.QUEUED, JobStatus.ERRORED),
     (JobStatus.RUNNING, JobStatus.COMPLETED),

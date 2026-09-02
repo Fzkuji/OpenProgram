@@ -311,6 +311,7 @@ class AgentProductionDriver:
         question_registry: Any | None = None,
         event_sink: Callable[[dict], None] | None = None,
         activation_observer: Callable[[ActivationInput], None] | None = None,
+        job_resume_resolver: Callable[[str], str | None] | None = None,
     ) -> None:
         self.executions = executions
         self.activation = AgentActivationService(
@@ -321,6 +322,7 @@ class AgentProductionDriver:
         self.question_registry = question_registry
         self.event_sink = event_sink
         self.activation_observer = activation_observer
+        self.job_resume_resolver = job_resume_resolver
         self._handles: dict[tuple[str, str, int], AgentDriverHandle] = {}
         self._handles_lock = threading.RLock()
         self._continuation_start_gates: dict[tuple[str, str, int], threading.Event] = {}
@@ -361,6 +363,10 @@ class AgentProductionDriver:
             raise AgentDriverError("invalid_input", "Agent admission input must resolve to an object")
         if payload.get("kind") == "job_agent":
             resolved = self.activation.build_job_activation(record)
+            if self.job_resume_resolver is not None:
+                resume_parent = self.job_resume_resolver(record.execution_id)
+                if resume_parent is not None:
+                    resolved.request.branch_from = resume_parent
             setattr(resolved.request, "_job_context", resolved.job_context)
             return resolved.request
         envelope = normalize_agent_turn_payload(payload)
@@ -775,7 +781,60 @@ class AgentProductionDriver:
         execution_token = set_current_execution_id(attempt.execution_id)
         bound = current_token(request.session_id, execution_id=attempt.execution_id)
         token_token = _current_token.set(bound) if bound is not None else None
+        job_tokens: list[Any] = []
+        worktree_token = None
         try:
+            job_context = getattr(request, "_job_context", None)
+            if isinstance(job_context, Mapping):
+                from openprogram.agent.job.runner import (
+                    _current_job_governance,
+                    _current_job_id,
+                    _current_job_runner,
+                    runner_for_execution_store,
+                )
+
+                job_runner = runner_for_execution_store(self.executions)
+                if job_runner is None:
+                    raise AgentDriverError(
+                        "job_runner_unavailable",
+                        "canonical Job owner has no resource runner",
+                    )
+                job = job_runner._canonical_job(attempt.execution_id)
+                if job is None:
+                    raise AgentDriverError(
+                        "job_projection_missing",
+                        "canonical Job projection is unavailable",
+                    )
+                job_tokens.extend((
+                    _current_job_id.set(attempt.execution_id),
+                    _current_job_runner.set(job_runner),
+                    _current_job_governance.set(
+                        job_runner._governance_context(job),
+                    ),
+                ))
+                chain = job_context.get("chain")
+                if isinstance(chain, Mapping):
+                    from openprogram.programs.tools.agents.send_message.send_message.depth import (
+                        set_chain_generations,
+                        set_chain_messages,
+                    )
+
+                    job_tokens.extend((
+                        set_chain_messages(int(chain.get("messages") or 0)),
+                        set_chain_generations(int(chain.get("generations") or 0)),
+                    ))
+                worktree_id = job_context.get("worktree_id")
+                if isinstance(worktree_id, str) and worktree_id:
+                    from openprogram.worktree.context import set_worktree
+                    from openprogram.worktree.manager import get_manager
+
+                    worktree = get_manager().get_worktree(worktree_id)
+                    if worktree is None:
+                        raise AgentDriverError(
+                            "worktree_not_found",
+                            f"Job worktree is unavailable: {worktree_id}",
+                        )
+                    worktree_token = set_worktree(worktree.worktree_path)
             if continuation is not None:
                 from openprogram.agent.dispatcher import process_agent_continuation
 
@@ -840,10 +899,22 @@ class AgentProductionDriver:
                 raise AgentDriverError("invalid_runner", "Agent turn runner must be synchronous")
             return result
         finally:
+            if worktree_token is not None:
+                from openprogram.worktree.context import reset_worktree
+
+                reset_worktree(worktree_token)
+            for context_token in reversed(job_tokens):
+                context_token.var.reset(context_token)
             if token_token is not None:
                 _current_token.reset(token_token)
             reset_current_execution_id(execution_token)
             reset_current_session_id(session_token)
+            from openprogram.agent.run_control import unregister_active_runtime
+
+            unregister_active_runtime(
+                request.session_id,
+                execution_id=attempt.execution_id,
+            )
             unregister_cancel_event(
                 request.session_id,
                 cancel_event,
