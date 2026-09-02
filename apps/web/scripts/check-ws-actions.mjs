@@ -82,8 +82,8 @@ function isMethodParameterType(line) {
   return /^\s*\w+\??\([^)]*\baction:\s*["'][^;]+\)\s*:/.test(line);
 }
 
-/** `wsRequest("action", …)` / `filesWsRequest<T>("action", …)` pass the
- *  action as a positional first argument, usually on its own line — the
+/** `wsRequest("action", …)` passes the action as a positional first argument,
+ *  usually on its own line — the
  *  per-line `action:` regex above never sees those. The generic parameter
  *  (`<TreeResult>`, `<{ … }>`) never contains a paren, so `[^(]*?` skips
  *  it safely; the opener and the string may sit on different lines, so

@@ -26,7 +26,7 @@ import {
 import { useTranslation } from "@/lib/i18n";
 import {
   clearFileDraftsForPath,
-  filesWsRequest,
+  fileResponseMatchesOwner,
   invalidateFileRead,
   loadFileDraftsForPath,
   noteFileMtime,
@@ -354,9 +354,14 @@ export function FileTree({
     const onAbort = () => controller.abort();
     outerSignal?.addEventListener("abort", onAbort, { once: true });
     controllerSet.add(controller);
-    return filesWsRequest<T>(action, payload, responseType, {
-      signal: controller.signal,
-    }).finally(() => {
+    return wsRequest<T>(
+      action,
+      payload,
+      responseType,
+      (data) => fileResponseMatchesOwner(data as unknown as Record<string, unknown>, payload),
+      4000,
+      { signal: controller.signal },
+    ).finally(() => {
       controllerSet.delete(controller);
       outerSignal?.removeEventListener("abort", onAbort);
     });

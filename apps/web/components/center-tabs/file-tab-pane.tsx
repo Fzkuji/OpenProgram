@@ -25,6 +25,7 @@ import {
   idempotencyKeyFor,
   MutationRegistryCapacityError,
   wsMutationRequest,
+  wsRequest,
 } from "@/lib/net/ws-request";
 import { fileTabId, useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
@@ -34,7 +35,7 @@ import {
   discardFileDraft,
   fileDraftKey,
   fileDrafts,
-  filesWsRequest,
+  fileResponseMatchesOwner,
   invalidateFileRead,
   loadFileDraft,
   noteFileMtime,
@@ -265,10 +266,15 @@ export function FileTabPane({
     try {
       res = await wsMutationRequest<WriteResult>(
         operationKey,
-        (signal) => filesWsRequest<WriteResult>(
+        (signal) => wsRequest<WriteResult>(
           "project_file_write",
           { ...operationPayload, idempotency_key: operationKey },
           "project_file_write_result",
+          (data) => fileResponseMatchesOwner(data as unknown as Record<string, unknown>, {
+            project_id: projectId,
+            path,
+          }),
+          4000,
           { signal },
         ),
         { signal: controller.signal },

@@ -33,7 +33,7 @@ test("FileTree bounds search results and cancels generation-stale queries", () =
   assert.match(source, /fetchSearchPage\(searchGeneration\.current\)/);
   assert.doesNotMatch(source, /fetchedPages < Math\.min\(searchPage/);
   assert.match(source, /new AbortController\(\)/);
-  assert.match(source, /filesWsRequest/);
+  assert.match(source, /wsRequest/);
   assert.doesNotMatch(source, /queryQueue/);
   assert.match(source, /\(\) => generation === queryGeneration\.current/);
 });

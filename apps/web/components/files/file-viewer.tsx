@@ -30,13 +30,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Download } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
+import { wsRequest } from "@/lib/net/ws-request";
 import { Markdown } from "@/lib/format-utils/markdown";
 import {
   absFileReadUrl,
   absRawFileUrl,
   cacheFileRead,
   type FileReadResult,
-  filesWsRequest,
+  fileResponseMatchesOwner,
   getCachedFileRead,
   latestFileMtime,
   rawFileUrl,
@@ -186,10 +187,15 @@ function TextViewer({
       return;
     }
     setData(null);
-    filesWsRequest<FileReadResult>(
+    wsRequest<FileReadResult>(
       "project_file_read",
       { project_id: projectId, path },
       "project_file_read_result",
+      (data) => fileResponseMatchesOwner(data as unknown as Record<string, unknown>, {
+        project_id: projectId,
+        path,
+      }),
+      4000,
       { signal: controller.signal },
     ).then((res) => {
       if (cancelled) return;

@@ -64,19 +64,22 @@ const {
   wsMutationRequest,
   wsRequest,
 } = await import("../lib/net/ws-request.ts");
-const { filesWsRequest, fileResponseMatchesOwner } = await import(
-  "../lib/state/files-shared.ts"
-);
+const { fileResponseMatchesOwner } = await import("../lib/state/files-shared.ts");
 
 after(() => resetWsMutationReconciliation());
 
 test("stale cursor response is accepted after unrelated same-type frame", async () => {
   const socket = new FakeSocket();
   setSocket(socket);
-  const response = filesWsRequest(
+  const response = wsRequest(
     "project_file_search",
     { project_id: "project-a", query: "needle", cursor: "expired", snapshot_id: "snap-a" },
     "project_file_search_result",
+    (data) => fileResponseMatchesOwner(data, {
+      project_id: "project-a", query: "needle", cursor: "expired", snapshot_id: "snap-a",
+    }),
+    4000,
+    { requestId: true },
   );
   const [{ request_id: requestId }] = socket.sent;
 

@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
-import { wsRequest, type WsRequestOptions } from "@/lib/net/ws-request";
+import { wsRequest } from "@/lib/net/ws-request";
 import { useSessionStore } from "@/lib/session-store";
 import {
   IndexedDbDraftStore,
@@ -167,27 +167,6 @@ export function useCurrentProject(): Project | null | undefined {
   }, [resolve]);
 
   return project;
-}
-
-/* ---- WS helpers shared by file-tree / file-viewer ----------------- */
-
-export function filesWsRequest<T>(
-  action: string,
-  payload: Record<string, unknown>,
-  responseType: string,
-  options: WsRequestOptions = {},
-): Promise<T | null> {
-  const expected = Object.fromEntries(
-    FILE_OWNER_KEYS.filter((key) => payload[key] !== undefined)
-      .map((key) => [key, payload[key]]),
-  );
-  const match = (data: T) => {
-    const owner = data as T & Record<string, unknown>;
-    return fileResponseMatchesOwner(owner, expected);
-  };
-  return wsRequest<T>(action, payload, responseType, match, 4000, {
-    ...options, requestId: true,
-  });
 }
 
 /** Last mtime seen per project-relative file path (fed by the tree
