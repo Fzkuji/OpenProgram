@@ -298,33 +298,33 @@ export function ReviewTabPane({
         return;
       }
       if (data.error === "STALE_SNAPSHOT") {
-          const recoveryKey = `${scope}\u0000${category}\u0000${query}\u0000${sort}\u0000${selectedPath}\u0000${diffCursor ?? ""}`;
-          const retry = staleRecoveryRef.current !== recoveryKey;
-          staleRecoveryRef.current = recoveryKey;
-          clearReviewForStale();
-          if (retry) setRefreshNonce((value) => value + 1);
-          else {
-            setScopeState((current) => ({
-              ...current,
-              loading: false,
-              status: "stale",
-              error: data.error,
-            }));
-          }
-          return;
+        const recoveryKey = `${scope}\u0000${category}\u0000${query}\u0000${sort}\u0000${selectedPath}\u0000${diffCursor ?? ""}`;
+        const retry = staleRecoveryRef.current !== recoveryKey;
+        staleRecoveryRef.current = recoveryKey;
+        clearReviewForStale();
+        if (retry) setRefreshNonce((value) => value + 1);
+        else {
+          setScopeState((current) => ({
+            ...current,
+            loading: false,
+            status: "stale",
+            error: data.error,
+          }));
+        }
+        return;
       }
       if (data.error === "STALE_CURSOR") {
-          const recoveryKey = `${scope}\u0000${category}\u0000${query}\u0000${sort}\u0000${selectedPath}`;
-          const retry = diffCursorRecoveryRef.current !== recoveryKey;
-          diffCursorRecoveryRef.current = recoveryKey;
-          setDiffCursor(null);
-          setDiffHistory([]);
-          if (retry) {
-            setDiffState({ loading: true, path: selectedPath });
-          } else {
-            setDiffState({ loading: false, path: selectedPath, error: data.error });
-          }
-          return;
+        const recoveryKey = `${scope}\u0000${category}\u0000${query}\u0000${sort}\u0000${selectedPath}`;
+        const retry = diffCursorRecoveryRef.current !== recoveryKey;
+        diffCursorRecoveryRef.current = recoveryKey;
+        setDiffCursor(null);
+        setDiffHistory([]);
+        if (retry) {
+          setDiffState({ loading: true, path: selectedPath });
+        } else {
+          setDiffState({ loading: false, path: selectedPath, error: data.error });
+        }
+        return;
       }
       diffCursorRecoveryRef.current = null;
       setDiffState({
