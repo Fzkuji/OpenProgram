@@ -444,7 +444,7 @@ def test_cancel_does_not_override_completed_prompt(
     tmp_db, client, tmp_path, monkeypatch,
 ) -> None:
     """A terminal cancellation rejection leaves the prompt's result intact."""
-    from openprogram.agent import run_control
+    import openprogram.agent.production_driver as production_driver
 
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
@@ -453,15 +453,14 @@ def test_cancel_does_not_override_completed_prompt(
     })["sessionId"]
     sess = c.server._sessions[sid]
     sess.open_questions["q-completed"] = ""
-    calls: list[str] = []
-
-    def _cancel(execution_id):
-        calls.append(execution_id)
-        raise run_control.ExecutionNotCancellable(
-            execution_id, {"status": "completed"},
+    async def _canonical_cancel(execution_id):
+        return SimpleNamespace(
+            execution=SimpleNamespace(status="completed"),
         )
 
-    monkeypatch.setattr(run_control, "cancel_execution", _cancel)
+    monkeypatch.setattr(
+        production_driver, "cancel_canonical_execution", _canonical_cancel,
+    )
     monkeypatch.setattr(
         "openprogram.agent.questions.resolve_question_and_broadcast",
         lambda *args: pytest.fail("terminal rejection must not close questions"),
@@ -477,9 +476,9 @@ def test_cancel_does_not_override_completed_prompt(
         "prompt": [{"type": "text", "text": "done"}],
     })
 
-    assert result == {"stopReason": "cancelled"}
+    assert result == {"stopReason": "end_turn"}
     assert sess.open_questions == {"q-completed": ""}
-    assert sess.cancel_event.is_set()
+    assert not sess.cancel_event.is_set()
     sess.open_questions.clear()
 
 

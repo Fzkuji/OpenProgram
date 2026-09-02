@@ -112,7 +112,12 @@ def build_server(context: MCPClientContext) -> Server:
                     request_id=request_id,
                 )
             elif name == "prompt_cancel":
-                result = service.prompt_cancel(arguments["session_id"])
+                # Cancellation owns a durable canonical intent. Run the
+                # synchronous cleanup boundary off-loop so it cannot return
+                # before an async canonical cancel has completed.
+                result = await asyncio.to_thread(
+                    service.prompt_cancel, arguments["session_id"]
+                )
             elif name == "tools_list":
                 result = service.tools_list()
             elif name == "web_use":

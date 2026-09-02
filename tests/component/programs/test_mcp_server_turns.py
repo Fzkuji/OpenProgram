@@ -512,6 +512,52 @@ def test_prompt_cancel_owned_request_performs_complete_idempotent_cleanup() -> N
     assert "secret" not in repr(audit[0])
 
 
+def test_prompt_cancel_waits_for_async_canonical_cancel_before_cleanup() -> None:
+    process_started = threading.Event()
+    process_release = threading.Event()
+    cancel_started = threading.Event()
+    cancel_release = threading.Event()
+    calls = []
+
+    async def cancel(execution_id):
+        calls.append(("start", execution_id))
+        cancel_started.set()
+        await asyncio.to_thread(cancel_release.wait, 2)
+        calls.append(("done", execution_id))
+        return SimpleNamespace(execution=SimpleNamespace(status="cancelling"))
+
+    def process(req, *, cancel_event):
+        process_started.set()
+        process_release.wait(2)
+        return TurnResult("late", "u", "a")
+
+    service = _service(process=process, cancel=cancel)
+
+    async def scenario():
+        task = asyncio.create_task(
+            service.prompt_send("prompt", session_id="existing", request_id="r1")
+        )
+        await asyncio.to_thread(process_started.wait, 1)
+        record = _active(service)[0]
+        cancel_task = asyncio.create_task(
+            asyncio.to_thread(service.prompt_cancel, "existing")
+        )
+        await asyncio.to_thread(cancel_started.wait, 1)
+        assert not record.thread_cancel.is_set()
+        cancel_release.set()
+        result = await cancel_task
+        assert _payload(result)["cancelled"] is True
+        assert record.thread_cancel.is_set(), calls
+        process_release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        return result
+
+    result = asyncio.run(scenario())
+    assert _payload(result)["cancelled"] is True
+    assert calls[0][0] == "start" and calls[-1][0] == "done"
+
+
 @pytest.mark.parametrize("error", ["terminal", "unexpected"])
 def test_prompt_cancel_service_failure_preserves_live_turn(error) -> None:
     from openprogram.agent import run_control

@@ -274,6 +274,15 @@ class ACPServer:
             _log.warning("ACP execution cancellation failed for %s",
                          execution_id, exc_info=True)
             return None
+        canonical_execution = getattr(cancelled, "execution", None)
+        canonical_status = getattr(canonical_execution, "status", None)
+        if isinstance(canonical_status, ExecutionStatus):
+            canonical_status = canonical_status.value
+        if canonical_status is not None and canonical_status not in {
+            ExecutionStatus.CANCELLING.value,
+            ExecutionStatus.CANCELLED.value,
+        }:
+            return None
         # The service call can race prompt teardown and a successor prompt.
         # Revalidate the identity before touching local event/question state.
         with sess.lock:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import math
 import threading
@@ -140,6 +141,13 @@ def _default_cancel_execution(execution_id: str) -> Any:
     except RuntimeError:
         return asyncio.run(cancel_canonical_execution(execution_id))
     return loop.create_task(cancel_canonical_execution(execution_id))
+
+
+def _consume_cancel_task(task: asyncio.Task[Any]) -> None:
+    try:
+        task.result()
+    except BaseException:
+        pass
 
 
 def _default_question_registry():
@@ -635,11 +643,32 @@ class MCPService:
                 return True
             try:
                 result = self._cancel_execution(execution_id)
-                if isinstance(result, asyncio.Task):
-                    # The task will signal the live AgentDriver handle; the
-                    # local cooperative events are set below immediately.
-                    pass
+                if inspect.isawaitable(result):
+                    try:
+                        asyncio.get_running_loop()
+                    except RuntimeError:
+                        result = asyncio.run(result)
+                    else:
+                        if isinstance(result, asyncio.Task):
+                            # Request cancellation already has a scheduled
+                            # canonical intent on this loop. The caller cannot
+                            # block the loop to await it; retain the established
+                            # cooperative signal path and consume task failures.
+                            result.add_done_callback(_consume_cancel_task)
+                        else:
+                            result.close() if hasattr(result, "close") else None
+                            return False
             except Exception:
+                return False
+
+            execution = getattr(result, "execution", None)
+            status = getattr(execution, "status", None)
+            if isinstance(status, ExecutionStatus):
+                status = status.value
+            if status is not None and status not in {
+                ExecutionStatus.CANCELLING.value,
+                ExecutionStatus.CANCELLED.value,
+            }:
                 return False
 
             with self._active_lock:

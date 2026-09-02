@@ -1912,33 +1912,9 @@ class RuntimeControlService:
         self.replay_finish_repairs()
         # A stalled repair is a durable, explicit recovery item. Startup may
         # retry it once through the same fenced path; if it remains blocked,
-        # the marker below prevents generic owner-loss recovery from changing
-        # its desired outcome.
+        # its marker prevents generic owner-loss recovery from changing the
+        # desired outcome.
         self.replay_finish_repairs(include_stalled=True, due_only=True)
-        reserved_recovery = set()
-        for slot in self.executions.list_finish_repair_slots(limit=4096):
-            if slot.get("state") != "reserved":
-                continue
-            execution = self.executions.get_execution(str(slot["execution_id"]))
-            if execution is None or execution.current_attempt_id is None:
-                continue
-            if execution.status not in {
-                ExecutionStatus.RUNNING,
-                ExecutionStatus.PAUSING,
-                ExecutionStatus.CANCELLING,
-            }:
-                continue
-            try:
-                execution = self.executions.transition_execution(
-                    execution.execution_id,
-                    expected_version=execution.status_version,
-                    target=ExecutionStatus.RECONCILIATION_REQUIRED,
-                    reason_code="finish_repair_reserved_recovery",
-                )
-            except (AttemptConflict, ExecutionConflict):
-                execution = self.executions.get_execution(execution.execution_id)
-            if execution is not None:
-                reserved_recovery.add(execution.execution_id)
         stalled_repairs = set()
         repair_cursor = None
         while True:
@@ -1962,9 +1938,7 @@ class RuntimeControlService:
         for execution in self.executions.list_nonterminal():
             if (
                 execution.execution_id in stalled_repairs
-                or execution.execution_id in reserved_recovery
                 or execution.reason_code == "finish_repair_capacity_migration"
-                or execution.reason_code == "finish_repair_reserved_recovery"
             ):
                 # A bounded in-process retry explicitly dead-lettered this
                 # finish. Keep its owner state visible for manual reconcile;

@@ -991,6 +991,45 @@ def test_startup_terminalizes_admitted_agent_without_attempt(tmp_path):
     assert [item.execution.execution_id for item in recoveries] == [execution.execution_id]
 
 
+def test_startup_recovers_active_agent_owner_loss_without_reserved_slot_reconciliation(
+    tmp_path,
+):
+    from openprogram.execution.control import RuntimeControlService
+    from openprogram.execution.driver import DriverRegistry
+
+    store, execution = _admitted(tmp_path, execution_id="exec-active-owner-loss")
+    attempts = AttemptStore(store)
+    leased, leased_execution = attempts.lease(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        owner_id="crashed-agent",
+        ttl_seconds=30,
+    )
+    active, running = attempts.activate(
+        leased.attempt_id,
+        generation=leased.generation,
+        expected_execution_version=leased_execution.status_version,
+    )
+    service = RuntimeControlService(store, attempts, DriverRegistry())
+
+    recoveries = service.recover_startup()
+
+    current = store.get_execution(execution.execution_id)
+    ended = attempts.get(active.attempt_id)
+    assert current is not None
+    assert current.status is ExecutionStatus.INTERRUPTED
+    assert current.reason_code == "owner_lost"
+    assert current.current_attempt_id is None
+    assert ended is not None and ended.status.value == "ended"
+    with sqlite3.connect(store.path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM execution_finish_repair_slots "
+            "WHERE execution_id = ?",
+            (execution.execution_id,),
+        ).fetchone()[0] == 0
+    assert [item.execution.execution_id for item in recoveries] == [execution.execution_id]
+
+
 def test_startup_recovery_reloads_after_concurrent_transition_conflict(
     tmp_path, monkeypatch,
 ):
