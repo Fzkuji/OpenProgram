@@ -1011,7 +1011,12 @@ class ResourceGovernor:
                        last_activity_at = ?, lease_expires_at = ?,
                        lease_generation = lease_generation + 1
                    WHERE job_id = ? AND state = 'queued'
-                     AND dispatch_ready = 1""",
+                     AND dispatch_ready = 1
+                     AND NOT EXISTS (
+                         SELECT 1 FROM job_finalizations
+                         WHERE job_finalizations.job_id = job_admissions.job_id
+                           AND job_finalizations.state = 'pending'
+                     )""",
                 (owner_instance_id, now, now, now + 30.0, job_id),
             ).rowcount
             return changed == 1
@@ -1031,6 +1036,11 @@ class ResourceGovernor:
             queued = conn.execute(
                 """SELECT job_id, session_id FROM job_admissions
                    WHERE state = 'queued' AND dispatch_ready = 1
+                     AND NOT EXISTS (
+                         SELECT 1 FROM job_finalizations
+                         WHERE job_finalizations.job_id = job_admissions.job_id
+                           AND job_finalizations.state = 'pending'
+                     )
                    ORDER BY admitted_seq"""
             ).fetchall()
             for candidate in queued:
@@ -1710,6 +1720,14 @@ class ResourceGovernor:
             ).fetchone()
             if admission is None:
                 return False
+            # The dispatch fence and the projection intent must commit
+            # together.  This closes the queued-admission race with
+            # claim_next while the canonical database remains separate.
+            conn.execute(
+                """UPDATE job_admissions SET dispatch_ready = 0
+                   WHERE job_id = ? AND state IN ('preparing', 'queued')""",
+                (job_id,),
+            )
             existing = conn.execute(
                 "SELECT fields_json, state FROM job_finalizations "
                 "WHERE job_id = ?",
@@ -1734,8 +1752,21 @@ class ResourceGovernor:
         self, job_id: str, *, lease_generation: int,
         fields_json: str, reason_code: str | None,
     ) -> bool:
-        """Complete an ownerless projection intent for a queued admission."""
+        """Complete an ownerless projection intent under its admission fence."""
         with self.ledger.immediate() as conn:
+            intent = conn.execute(
+                """SELECT state FROM job_finalizations
+                   WHERE job_id = ? AND owner_instance_id = ?
+                     AND lease_generation = ? AND fields_json = ?""",
+                (
+                    job_id, _CANONICAL_PROJECTION_OWNER,
+                    lease_generation, fields_json,
+                ),
+            ).fetchone()
+            if intent is None:
+                return False
+            if intent["state"] == "completed":
+                return True
             admission = conn.execute(
                 "SELECT state, lease_generation FROM job_admissions "
                 "WHERE job_id = ?",
@@ -1750,7 +1781,8 @@ class ResourceGovernor:
                            lease_expires_at = NULL,
                            resume_parent_msg_id = NULL,
                            reason_code = COALESCE(?, reason_code)
-                       WHERE job_id = ? AND state IN ('preparing','queued')
+                       WHERE job_id = ?
+                         AND state IN ('preparing','queued','live','stopping')
                          AND lease_generation = ?""",
                     (time.time(), reason_code, job_id, lease_generation),
                 ).rowcount
@@ -1768,6 +1800,66 @@ class ResourceGovernor:
                 ),
             ).rowcount
             return changed == 1
+
+    def pending_finalization(self, job_id: str):
+        """Return the immutable pending terminal intent, if one exists."""
+        with self.ledger.connection() as conn:
+            row = conn.execute(
+                """SELECT job_id, session_id, owner_instance_id, lease_generation,
+                          fields_json, state
+                   FROM job_finalizations
+                   WHERE job_id = ? AND state = 'pending'""",
+                (job_id,),
+            ).fetchone()
+        return None if row is None else tuple(row)
+
+    def pending_finalizations(self) -> list[tuple[str, str, str, int, str, str]]:
+        """Return all pending terminal intents for projection recovery."""
+        with self.ledger.connection() as conn:
+            rows = conn.execute(
+                """SELECT job_id, session_id, owner_instance_id,
+                          lease_generation, fields_json, state
+                   FROM job_finalizations
+                   WHERE state = 'pending'
+                   ORDER BY created_at"""
+            ).fetchall()
+        return [tuple(row) for row in rows]
+
+    def admission_fence(self, job_id: str) -> tuple[str | None, int] | None:
+        """Return the current admission owner fence for a projection."""
+        with self.ledger.connection() as conn:
+            row = conn.execute(
+                """SELECT owner_instance_id, lease_generation
+                   FROM job_admissions WHERE job_id = ?""",
+                (job_id,),
+            ).fetchone()
+        return None if row is None else (row[0], int(row[1]))
+
+    def complete_pending_finalization(
+        self,
+        job_id: str,
+        *,
+        owner_instance_id: str,
+        lease_generation: int,
+        fields_json: str,
+        reason_code: str | None,
+    ) -> bool:
+        """Release exactly the admission fenced by a pending intent."""
+        if owner_instance_id == _CANONICAL_PROJECTION_OWNER:
+            return self._complete_ownerless_projection(
+                job_id,
+                lease_generation=lease_generation,
+                fields_json=fields_json,
+                reason_code=reason_code,
+            )
+        return self._complete_finalization(
+            job_id,
+            owner_instance_id=owner_instance_id,
+            lease_generation=lease_generation,
+            fields_json=fields_json,
+            reason_code=reason_code,
+            eligible_states=('preparing', 'queued', 'live', 'stopping'),
+        )
 
     def _finalize_with_intent(
         self,

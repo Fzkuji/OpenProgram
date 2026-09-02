@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+
 from tests.component.agent.async_job_support import fake_worker, store_fixture
 
 def test_public_spawn_creates_job_id_bound_canonical_execution(
@@ -180,3 +182,87 @@ def test_terminal_projection_retry_releases_after_store_failure(
             runner2.shutdown()
         else:
             runner.shutdown()
+
+
+def test_failed_termination_keeps_live_owner_until_exact_recovery(
+    tmp_path, store_fixture, fake_worker, monkeypatch,
+):
+    """A failed terminate callback cannot publish a terminal projection."""
+    import openprogram.agent.job.runner as runner_module
+    from openprogram.agent.job.runner import JobRunner
+    from openprogram.agent.sub_agent_run import AgentTurnResult
+    from openprogram.agent.resource_governance import ResourceGovernor
+    from openprogram.execution import TerminationReceipt
+    from openprogram.usage.ledger import UsageLedger
+    from tests.support.waiting import wait_until
+
+    monkeypatch.setattr(runner_module, "_broadcast", lambda *a, **k: None)
+    monkeypatch.setattr(runner_module, "_CANCEL_ESCALATION_SECS", 0.01)
+    entered = threading.Event()
+    release_worker = threading.Event()
+
+    def hold_worker(**_kwargs):
+        entered.set()
+        release_worker.wait(10.0)
+        return AgentTurnResult(final_text="late", head_id="late-head")
+
+    monkeypatch.setattr(
+        "openprogram.agent.sub_agent_run._execute_agent_turn", hold_worker,
+    )
+    async def fail_terminate(**_kwargs):
+        return TerminationReceipt(
+            attempt_id=_kwargs["attempt_id"], terminated=False,
+            reason=_kwargs["reason"],
+        )
+
+    ledger = UsageLedger(tmp_path / "termination-failure.db")
+    runner = JobRunner(max_workers=1, governor=ResourceGovernor(ledger))
+    try:
+        monkeypatch.setattr(
+            runner._execution_control, "terminate_attempt", fail_terminate,
+        )
+        job_id = runner.spawn_job(
+            session_id="p1", prompt="terminate failure", agent_id="main",
+        )
+        assert entered.wait(2.0)
+        runner.cancel_job(job_id)
+        assert wait_until(
+            lambda: runner._execution_store.get_execution(job_id).status.value
+            == "cancelling",
+            timeout=2.0,
+        )
+        execution = runner._execution_store.get_execution(job_id)
+        assert execution is not None and execution.current_attempt_id is not None
+        receipt = runner._run_control(
+            runner._execution_control.terminate_attempt(
+                execution_id=job_id,
+                attempt_id=execution.current_attempt_id,
+                generation=execution.owner_lease["generation"],
+                reason="cancel.user",
+            )
+        )
+        assert receipt.terminated is False
+        admission = ledger.connection().execute(
+            "SELECT state FROM job_admissions WHERE job_id = ?", (job_id,),
+        ).fetchone()
+        assert runner.get_job(job_id).status.value == "running"
+        assert admission[0] == "stopping"
+
+        execution = runner._execution_store.get_execution(job_id)
+        recovery = runner._execution_control.recover_owner_loss(
+            job_id,
+            attempt_id=execution.current_attempt_id,
+            generation=execution.owner_lease["generation"],
+        )
+        runner._project_canonical_terminal(
+            recovery.execution,
+            admission_owner_instance_id=runner._instance_id,
+            admission_lease_generation=runner._governor.admission_fence(job_id)[1],
+        )
+        assert runner.get_job(job_id).status.value in {"cancelled", "errored"}
+        assert ledger.connection().execute(
+            "SELECT state FROM job_admissions WHERE job_id = ?", (job_id,),
+        ).fetchone()[0] == "released"
+    finally:
+        release_worker.set()
+        runner.shutdown(wait=False)

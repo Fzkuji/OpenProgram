@@ -487,6 +487,31 @@ def test_queue_position_follows_global_admission_order(tmp_path) -> None:
     ).capacity["queue_position"] == 2
 
 
+def test_pending_terminal_projection_blocks_dispatch_claim(tmp_path) -> None:
+    ledger = UsageLedger(tmp_path / "usage.db")
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _job: resolved)
+    job = Job(id="terminal-pending", parent_session_id="s1", prompt="p", agent_id="a")
+    assert governor.admit_job(job, persist=lambda _job: None).accepted
+    assert governor.enqueue_terminal_projection(
+        job.id,
+        {
+            "status": JobStatus.CANCELLED.value,
+            "head_id": None,
+            "result_text": None,
+            "error": "cancelled before pickup",
+            "reason_code": "cancel.user",
+        },
+    )
+
+    assert governor.claim_next(owner_instance_id="worker") is None
+    row = ledger.connection().execute(
+        "SELECT state, dispatch_ready FROM job_admissions WHERE job_id = ?",
+        (job.id,),
+    ).fetchone()
+    assert tuple(row) == ("queued", 0)
+
+
 def test_job_runner_exposes_one_canonical_resource_view_read(tmp_path) -> None:
     from openprogram.agent.job.runner import JobRunner
 

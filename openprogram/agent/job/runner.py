@@ -639,6 +639,15 @@ class JobRunner:
         status = status_map.get(execution.status)
         if status is None:
             return
+        # A durable finalization intent is the sole source of terminal
+        # projection fields.  In particular, recovery must not replace a
+        # pending result/error/head with fields reconstructed from the
+        # canonical execution row.
+        pending_lookup = getattr(self._governor, "pending_finalization", None)
+        pending = pending_lookup(execution.execution_id) if pending_lookup else None
+        if pending is not None:
+            self._project_pending_canonical_terminal(pending)
+            return
         job = _store_load(execution.session_id, execution.execution_id)
         if job is not None and not is_terminal(job.status):
             try:
@@ -676,14 +685,83 @@ class JobRunner:
         if clear_resume is not None:
             clear_resume(execution.execution_id)
 
-    def _project_existing_canonical_terminals(self) -> None:
+    def _project_pending_canonical_terminal(self, intent) -> bool:
+        """Replay one durable terminal intent and then release its exact fence."""
+        (
+            job_id, session_id, owner_instance_id,
+            lease_generation, fields_json, _state,
+        ) = intent
+        try:
+            fields = self._governor._terminal_fields(fields_json)
+        except ValueError:
+            _log.error("invalid terminal projection intent for %s", intent)
+            return False
+        job = _store_load(session_id, job_id)
+        if job is None:
+            return False
+        if not is_terminal(job.status):
+            try:
+                _store_write_terminal(session_id, job_id, fields)
+            except ValueError:
+                pass
+            except Exception:
+                return False
+            job = _store_load(session_id, job_id)
+        if job is None or not is_terminal(job.status):
+            return False
+        actual_fields = {
+            "status": job.status.value,
+            "head_id": job.head_id,
+            "result_text": job.result_text,
+            "error": job.error,
+            "reason_code": job.reason_code,
+        }
+        if actual_fields != fields:
+            return False
+        complete = getattr(self._governor, "complete_pending_finalization", None)
+        if complete is None or not complete(
+            job_id,
+            owner_instance_id=owner_instance_id,
+            lease_generation=lease_generation,
+            fields_json=fields_json,
+            reason_code=fields["reason_code"],
+        ):
+            return False
+        clear_resume = getattr(self._governor, "clear_resume_parent_msg_id", None)
+        if clear_resume is not None:
+            clear_resume(job_id)
+        return True
+
+    def _project_existing_canonical_terminals(self) -> list[tuple[str, str]]:
         """Close projection gaps after canonical finish before a crash."""
+        completed: list[tuple[str, str]] = []
+        pending_ids: set[str] = set()
+        pending_list = getattr(self._governor, "pending_finalizations", None)
+        if pending_list is not None:
+            for intent in pending_list():
+                job_id = str(intent[0])
+                pending_ids.add(job_id)
+                if self._project_pending_canonical_terminal(intent):
+                    completed.append((job_id, str(intent[1])))
         for job in self.list_jobs():
+            if job.id in pending_ids:
+                continue
             execution = self._execution_store.get_execution(job.id)
             if execution is not None and execution.status.value in {
                 "completed", "cancelled", "failed", "interrupted",
             }:
-                self._project_canonical_terminal(execution)
+                fence = getattr(self._governor, "admission_fence", None)
+                owner_generation = fence(job.id) if fence is not None else None
+                self._project_canonical_terminal(
+                    execution,
+                    admission_owner_instance_id=(
+                        owner_generation[0] if owner_generation is not None else None
+                    ),
+                    admission_lease_generation=(
+                        owner_generation[1] if owner_generation is not None else None
+                    ),
+                )
+        return completed
 
     def _governance_context(self, job: Job) -> JobGovernanceContext:
         ledger = self._governor.ledger
@@ -2977,7 +3055,15 @@ class JobRunner:
         # projection write failed.  Retry it before admission reconciliation;
         # failures are persisted by _project_canonical_terminal for the next
         # pass or a fresh runner.
-        self._project_existing_canonical_terminals()
+        projected_pending = self._project_existing_canonical_terminals()
+        for job_id, session_id in projected_pending:
+            job = _store_load(session_id, job_id)
+            if job is not None and is_terminal(job.status):
+                self._broadcast_job_status(job)
+                self._update_attach_card(job, error_text=job.error)
+                _broadcast_session_reload(
+                    session_id, reason=f"job_{job.status.value}",
+                )
         try:
             result = self._governor.reconcile(
                 job_lookup=lambda session_id, job_id: _store_load(
