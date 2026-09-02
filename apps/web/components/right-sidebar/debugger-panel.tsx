@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   availableExecutionActions,
   buildExecutionCommand,
@@ -14,6 +14,7 @@ import {
   type ExecutionSnapshot,
   type RevisionDraft,
 } from "@/lib/execution-debugger";
+import { buildWaitAnswer } from "@/lib/execution-wait";
 import styles from "./debugger-panel.module.css";
 
 export type DebuggerConnection = {
@@ -50,7 +51,7 @@ export type DebuggerPanelProps = {
     execution_id: string;
     claim_generation: number;
     outcome: "answer" | "decline";
-    value?: string;
+    value?: unknown;
   }) => Promise<void> | void;
   onCreateDraft?: (input: {
     execution_id: string;
@@ -237,6 +238,7 @@ export function DebuggerPanel({
   const [commandResults, setCommandResults] = useState<Record<string, CommandResult>>({});
   const [pendingActions, setPendingActions] = useState<Set<string>>(new Set());
   const [waitValue, setWaitValue] = useState("");
+  const [approvalScope, setApprovalScope] = useState("");
   const [waitError, setWaitError] = useState<string | null>(null);
   const [steerValue, setSteerValue] = useState("");
   const [draftText, setDraftText] = useState("");
@@ -249,6 +251,11 @@ export function DebuggerPanel({
   const selectedWaits = snapshot ? waits.filter((wait) => wait.execution_id === snapshot.execution_id && ["open", "claimed"].includes(wait.status)) : [];
   const selectedDraft = snapshot ? drafts.find((draft) => draft.source_execution_id === snapshot.execution_id) : undefined;
   const connectionInfo = connectionCopy(connection);
+
+  useEffect(() => {
+    setWaitValue("");
+    setApprovalScope("");
+  }, [selectedWaits.map((wait) => wait.wait_id).join(",")]);
 
   function selectExecution(id: string) {
     setLocalSelectedId(id);
@@ -282,20 +289,28 @@ export function DebuggerPanel({
 
   async function respondWait(wait: DurableWait, outcome: "answer" | "decline") {
     if (!onRespondWait) return;
-    if (outcome === "answer" && !waitValue.trim()) {
-      setWaitError("Enter an answer before responding.");
-      return;
-    }
     setWaitError(null);
     try {
+      let answer: unknown = waitValue.trim();
+      if (outcome === "answer") {
+        if (wait.kind === "form" || wait.kind === "ask_many" || wait.request?.multi) {
+          try {
+            answer = JSON.parse(waitValue);
+          } catch {
+            throw new Error("Enter a valid JSON object or array.");
+          }
+        }
+        answer = buildWaitAnswer(wait, answer, approvalScope);
+      }
       await onRespondWait({
         wait_id: wait.wait_id,
         execution_id: wait.execution_id,
         claim_generation: wait.claim_generation,
         outcome,
-        value: outcome === "answer" ? waitValue.trim() : undefined,
+        value: outcome === "answer" ? answer : undefined,
       });
       setWaitValue("");
+      setApprovalScope("");
     } catch (error) {
       setWaitError(error instanceof Error ? error.message : "Wait response failed.");
     }
@@ -406,7 +421,26 @@ export function DebuggerPanel({
             {selectedWaits.length ? selectedWaits.map((wait) => (
               <div className={styles.waitRow} key={wait.wait_id}>
                 <div><strong>{wait.kind}</strong><span>{shortId(wait.wait_id)} · generation {wait.claim_generation}</span><code>{wait.request_ref}</code></div>
-                <div className={styles.waitControls}><input aria-label={`${wait.kind} answer`} value={waitValue} onChange={(event) => setWaitValue(event.target.value)} placeholder="Answer ref or response" disabled={!onRespondWait} /><button type="button" onClick={() => void respondWait(wait, "answer")} disabled={!onRespondWait}>Answer</button><button type="button" onClick={() => void respondWait(wait, "decline")} disabled={!onRespondWait}>Decline</button></div>
+                <div className={styles.waitControls}>
+                  {wait.kind === "approval" ? (
+                    <select aria-label="Approval scope" value={approvalScope} onChange={(event) => setApprovalScope(event.target.value)} disabled={!onRespondWait}>
+                      <option value="">Choose approval scope</option>
+                      {(wait.policy_snapshot?.allowed_scopes || []).map((scope) => <option key={scope} value={scope}>{scope}</option>)}
+                    </select>
+                  ) : wait.kind === "form" ? (
+                    <textarea aria-label="Form answer" value={waitValue} onChange={(event) => setWaitValue(event.target.value)} placeholder={JSON.stringify(Object.fromEntries(Object.entries(wait.request?.schema || {}).map(([name, field]) => [name, field.default ?? ""])), null, 2)} disabled={!onRespondWait} />
+                  ) : wait.kind === "ask_many" || wait.request?.multi ? (
+                    <textarea aria-label={`${wait.kind} answer`} value={waitValue} onChange={(event) => setWaitValue(event.target.value)} placeholder={'["answer 1", ["answer 2"]]'} disabled={!onRespondWait} />
+                  ) : wait.request?.options?.length ? (
+                    <select aria-label={`${wait.kind} answer`} value={waitValue} onChange={(event) => setWaitValue(event.target.value)} disabled={!onRespondWait}>
+                      <option value="">Choose an answer</option>
+                      {wait.request.options.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select>
+                  ) : (
+                    <input aria-label={`${wait.kind} answer`} value={waitValue} onChange={(event) => setWaitValue(event.target.value)} placeholder="Answer" disabled={!onRespondWait} />
+                  )}
+                  <button type="button" onClick={() => void respondWait(wait, "answer")} disabled={!onRespondWait || (wait.kind === "approval" && !approvalScope)}>Answer</button><button type="button" onClick={() => void respondWait(wait, "decline")} disabled={!onRespondWait}>Decline</button>
+                </div>
               </div>
             )) : <div className={styles.empty}>No unresolved execution-owned waits.</div>}
             {waitError && <div className={styles.formError} role="alert">{waitError}</div>}

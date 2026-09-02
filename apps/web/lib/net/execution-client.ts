@@ -141,7 +141,7 @@ export async function postExecutionWait(input: {
   wait_id: string;
   generation: number;
   outcome: "answer" | "decline";
-  value?: string;
+  value?: unknown;
 }): Promise<CommandResult> {
   const action = input.outcome === "answer" ? "answer" : "decline";
   const command: ExecutionCommand = {
@@ -153,7 +153,7 @@ export async function postExecutionWait(input: {
     payload: {
       wait_id: input.wait_id,
       generation: input.generation,
-      ...(input.outcome === "answer" ? { answer: input.value || "" } : { reason: input.value }),
+      ...(input.outcome === "answer" ? { answer: input.value } : { reason: input.value }),
     },
   };
   return postExecutionCommand(command);

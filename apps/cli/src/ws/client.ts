@@ -412,7 +412,7 @@ export interface QuestionAskedEnvelope {
   type: 'question.asked';
   data: {
     id: string;
-    kind?: 'ask' | 'confirm' | 'approval';
+    kind?: 'ask' | 'confirm' | 'approval' | 'form' | 'ask_many';
     prompt?: string;
     options?: string[];
     multi?: boolean;

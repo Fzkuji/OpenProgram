@@ -129,12 +129,22 @@ export type RevisionDraft = {
 export type DurableWait = {
   wait_id: string;
   execution_id: string;
-  kind: "question" | "approval";
+  kind: "ask" | "confirm" | "approval" | "form" | "ask_many";
   request_ref: string;
   request_hash: string;
   claim_generation: number;
   status: "open" | "claimed" | "resolved" | "declined" | "expired" | "cancelled";
   expires_at: number | null;
+  request?: {
+    prompt?: string;
+    options?: string[];
+    multi?: boolean;
+    allow_custom?: boolean;
+    schema?: Record<string, { type?: "string" | "integer" | "number" | "boolean"; title?: string; description?: string; enum?: string[]; default?: string | number | boolean; minimum?: number; maximum?: number }>;
+    questions?: Array<{ prompt: string; options: string[]; multi: boolean; allow_custom: boolean }>;
+    [key: string]: unknown;
+  };
+  policy_snapshot?: { allowed_scopes?: string[]; [key: string]: unknown };
 };
 
 export type DebuggerInspectionState = {

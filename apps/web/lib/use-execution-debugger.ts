@@ -48,7 +48,7 @@ export type ExecutionDebuggerController = {
     execution_id: string;
     claim_generation: number;
     outcome: "answer" | "decline";
-    value?: string;
+    value?: unknown;
   }) => Promise<void>;
   createDraft: (input: {
     execution_id: string;
