@@ -247,6 +247,7 @@ def test_operation_status_reconciles_inflight_to_terminal(project):
 def test_turn_operation_status_requires_its_own_identity():
     frame = run(turn_files.handle_turn_operation_status, {
         "session_id": "session-a",
+        "msg_id": "turn-1",
         "operation_action": "revert_turn",
         "idempotency_key": "turn-key",
         "request_id": str(uuid.uuid4()),
@@ -254,6 +255,54 @@ def test_turn_operation_status_requires_its_own_identity():
     assert frame["action"] == "turn_operation_status"
     assert frame["status"] == "error"
     assert frame["error_code"] == "RECEIPT_UNAVAILABLE"
+
+
+def test_turn_operation_status_reads_history_intent_by_turn_and_key(tmp_path, monkeypatch):
+    from openprogram.store.session import session_store
+    from openprogram.store.snapshot.checkpoint import CheckpointStore
+
+    session_dir = tmp_path / "session"
+    journal = CheckpointStore(session_dir)
+    intent_path = journal._intent_path("turn-1", "revert", "turn-key")
+    intent_path.parent.mkdir(parents=True, exist_ok=True)
+    intent_path.write_text(json.dumps({
+        "idempotency_key": "turn-key",
+        "turn_id": "turn-1",
+        "direction": "revert",
+        "target_msg_id": None,
+        "transaction_id": "turn-op-1",
+        "status": "committed",
+    }), encoding="utf-8")
+
+    class FakeStore:
+        def _session_dir(self, session_id):
+            assert session_id == "session-a"
+            return session_dir
+
+    monkeypatch.setattr(session_store, "default_store", lambda: FakeStore())
+    terminal = run(turn_files.handle_turn_operation_status, {
+        "session_id": "session-a", "msg_id": "turn-1",
+        "operation_action": "revert_turn", "idempotency_key": "turn-key",
+        "operation_id": "turn-op-1", "request_id": str(uuid.uuid4()),
+    })["data"]
+    assert terminal["status"] == "ready"
+    assert terminal["operation_id"] == "turn-op-1"
+
+    mismatch = run(turn_files.handle_turn_operation_status, {
+        "session_id": "session-a", "msg_id": "turn-1",
+        "operation_action": "revert_turn", "idempotency_key": "turn-key",
+        "operation_id": "other-op", "request_id": str(uuid.uuid4()),
+    })["data"]
+    assert mismatch["status"] == "recovery_required"
+    assert mismatch["error_code"] == "OPERATION_ID_MISMATCH"
+
+    unknown = run(turn_files.handle_turn_operation_status, {
+        "session_id": "session-a", "msg_id": "other-turn",
+        "operation_action": "revert_turn", "idempotency_key": "turn-key",
+        "request_id": str(uuid.uuid4()),
+    })["data"]
+    assert unknown["status"] == "error"
+    assert unknown["error_code"] == "RECEIPT_UNAVAILABLE"
 
 
 def test_file_operation_compaction_has_explicit_safe_retention(tmp_path):

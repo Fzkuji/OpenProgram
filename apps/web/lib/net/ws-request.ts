@@ -13,6 +13,7 @@ const mutationKeys = new Map<string, {
   key: string;
   action: string;
   projectId: string | undefined;
+  targetId: string | undefined;
   touchedAt: number;
   bytes: number;
   terminal: boolean;
@@ -169,6 +170,9 @@ export function idempotencyKeyFor(
     projectId: typeof payload.project_id === "string"
       ? payload.project_id
       : typeof payload.session_id === "string" ? payload.session_id : undefined,
+    targetId: typeof payload.msg_id === "string"
+      ? payload.msg_id
+      : typeof payload.assistant_msg_id === "string" ? payload.assistant_msg_id : undefined,
     touchedAt: Date.now(),
     bytes: registryBytes(identity, key),
     terminal: false,
@@ -348,7 +352,11 @@ function mutationEntryForKey(key: string) {
   return undefined;
 }
 
-function mutationStatusRequest(entry: { action: string; projectId: string | undefined }, key: string): {
+function mutationStatusRequest(entry: {
+  action: string;
+  projectId: string | undefined;
+  targetId: string | undefined;
+}, key: string): {
   action: string;
   responseType: string;
   payload: Record<string, unknown>;
@@ -369,17 +377,19 @@ function mutationStatusRequest(entry: { action: string; projectId: string | unde
     };
   }
   const turnAction = /^(revert_turn|reapply_turn):/.exec(entry.action)?.[1];
-  if (!turnAction) return null;
+  if (!turnAction || !entry.targetId) return null;
   return {
     action: "turn_operation_status",
     responseType: "turn_operation_status_result",
     payload: {
       session_id: entry.projectId ?? "",
+      msg_id: entry.targetId,
       operation_action: turnAction,
       idempotency_key: key,
     },
     matches: (data) => data.session_id === entry.projectId
       && data.operation_action === turnAction
+      && data.msg_id === entry.targetId
       && data.idempotency_key === key,
   };
 }

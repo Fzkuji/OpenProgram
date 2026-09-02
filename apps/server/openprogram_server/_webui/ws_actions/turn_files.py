@@ -1715,16 +1715,19 @@ async def handle_turn_operation_status(ws, cmd: dict) -> None:
     """Read a turn rewind receipt without replaying the mutation payload."""
     session_id = (cmd.get("session_id") or "").strip()
     operation_action = cmd.get("operation_action")
+    msg_id = (cmd.get("msg_id") or "").strip()
     key = cmd.get("idempotency_key")
     supplied_operation_id = cmd.get("operation_id")
     payload = {
         "session_id": session_id,
         "operation_action": operation_action,
+        "msg_id": msg_id,
         "idempotency_key": key,
         "request_id": cmd.get("request_id"),
         "action": "turn_operation_status",
     }
-    if (not session_id or operation_action not in {"revert_turn", "reapply_turn"}
+    if (not session_id or not msg_id
+            or operation_action not in {"revert_turn", "reapply_turn"}
             or not isinstance(key, str) or not key):
         payload.update({"status": "error", "error_code": "INVALID_REQUEST"})
     else:
@@ -1733,17 +1736,23 @@ async def handle_turn_operation_status(ws, cmd: dict) -> None:
             from openprogram.store.snapshot.checkpoint import CheckpointStore
             journal = CheckpointStore(default_store()._session_dir(session_id))
             direction = "revert" if operation_action == "revert_turn" else "reapply"
-            intent = journal.read_rewind_intent(key)
+            intent = journal.read_history_intent(msg_id, direction, key)
             if intent is None:
                 intent = journal.read_rewind_intent(f"turn-closure:{direction}:{key}")
-            if intent is None or intent.get("idempotency_key") not in {key, f"turn-closure:{direction}:{key}"}:
+            if intent is None or intent.get("idempotency_key") not in {
+                key, f"turn-closure:{direction}:{key}"
+            }:
                 payload.update({
                     "status": "error",
                     "error_code": "RECEIPT_UNAVAILABLE",
                 })
             else:
                 expected_target = str(intent.get("target_msg_id") or "")
-                if not expected_target.startswith(f"{direction}:"):
+                if (intent.get("turn_id") not in {None, msg_id}
+                    or intent.get("direction") not in {None, direction}
+                    or (
+                    expected_target and expected_target != f"{direction}:{msg_id}"
+                    )):
                     payload.update({"status": "recovery_required", "error_code": "RECOVERY_REQUIRED"})
                 else:
                     receipt_id = intent.get("transaction_id")

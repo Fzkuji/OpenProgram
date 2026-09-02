@@ -973,6 +973,17 @@ class CheckpointStore:
             return None
         return value if isinstance(value, dict) else None
 
+    def read_history_intent(
+        self, turn_id: str, direction: str, key: str,
+    ) -> dict | None:
+        """Read one single-turn history receipt without applying it."""
+        path = self._intent_path(turn_id, direction, key)
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            return None
+        return value if isinstance(value, dict) else None
+
     def _recover_rewind_intent(
         self,
         intent_path: Path,
