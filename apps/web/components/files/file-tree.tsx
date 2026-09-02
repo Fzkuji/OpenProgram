@@ -29,7 +29,6 @@ import {
   filesWsRequest,
   hasDirtyDraftsForPath,
   noteFileMtime,
-  runAfterServerFileOperation,
   runServerRenameWithDrafts,
   type Project,
   type ServerRenameResult,
@@ -85,6 +84,34 @@ interface SearchResult extends TreeEntry {
   path: string;
   project_id?: string;
   project_name?: string;
+}
+
+interface FileOperationResult {
+  project_id?: string;
+  path?: string;
+  status: "ready" | "error" | "conflict" | "recovery_required" | "in_progress";
+  ok?: boolean;
+  error_code?: string;
+  error?: string;
+  idempotency_key?: string;
+  operation_id?: string;
+}
+
+function asServerRenameResult(
+  result: FileOperationResult,
+  failureStatus: "error" | "recovery_required" = "error",
+): ServerRenameResult {
+  return {
+    status: result.status === "ready"
+      ? "ready"
+      : result.status === "recovery_required"
+        ? "recovery_required"
+        : failureStatus,
+    error_code: result.error_code,
+    error: result.error,
+    idempotency_key: result.idempotency_key,
+    operation_id: result.operation_id,
+  };
 }
 
 interface DirectoryPage {
@@ -502,7 +529,7 @@ export function FileTree({
     op: "create" | "rename" | "copy" | "delete" | "reveal",
     payload: Record<string, unknown>,
     refreshDirs: string[],
-  ): Promise<boolean> {
+  ): Promise<FileOperationResult> {
     const generation = queryGeneration.current;
     const operationPayload = { project_id: projectId, ...payload };
     let operationKey: string;
@@ -512,34 +539,36 @@ export function FileTree({
       if (error instanceof MutationRegistryCapacityError) {
         window.alert(text("Too many file operations are still pending.", "仍有太多文件操作未完成。"));
       }
-      return false;
+      return { status: "error", error_code: "MUTATION_REGISTRY_CAPACITY" };
     }
     const operationController = new AbortController();
     queryControllers.current.add(operationController);
-    const data = await wsMutationRequest<{
-      project_id?: string;
-      path?: string;
-      ok?: boolean;
-      status?: string;
-      error_code?: string;
-      error?: string;
-    }>(
-      operationKey,
-      (signal) => fileQuery<{ project_id?: string; path?: string; ok?: boolean; status?: string; error_code?: string; error?: string }>(
-        `project_file_${op}`,
-        { ...operationPayload, idempotency_key: operationKey },
-        `project_file_${op}_result`,
-        () => generation === queryGeneration.current,
-        signal,
-      ),
-      { signal: operationController.signal },
-    );
-    queryControllers.current.delete(operationController);
+    let data: FileOperationResult | null = null;
+    try {
+      data = await wsMutationRequest<FileOperationResult>(
+        operationKey,
+        (signal) => fileQuery<FileOperationResult>(
+          `project_file_${op}`,
+          { ...operationPayload, idempotency_key: operationKey },
+          `project_file_${op}_result`,
+          () => generation === queryGeneration.current,
+          signal,
+        ),
+        { signal: operationController.signal },
+      );
+    } catch {
+      data = null;
+    } finally {
+      queryControllers.current.delete(operationController);
+    }
+    const result: FileOperationResult = data
+      ? { ...data, status: data.status ?? (data.ok ? "ready" : "error") }
+      : { status: "error", error_code: "TRANSPORT_ERROR" };
     if (!data || data.project_id !== projectId || data.path !== payload.path
-      || data.error || data.status === "conflict" || data.status === "recovery_required"
-      || data.status === "error" || data.status === "in_progress") {
+      || result.error || result.status === "conflict" || result.status === "recovery_required"
+      || result.status === "error" || result.status === "in_progress") {
       if (data?.error || data?.error_code) window.alert(data.error ?? data.error_code);
-      return false;
+      return result;
     }
     // The project-files-changed listener performs one generation-safe refresh;
     // avoid starting directory requests that the event would immediately abort.
@@ -549,7 +578,7 @@ export function FileTree({
         detail: { project_id: projectId },
       }));
     }
-    return true;
+    return result;
   }
 
   /** Expand + lazily load every dir along the "/"-chain ending at
@@ -666,8 +695,8 @@ export function FileTree({
     const { dir, kind } = creating;
     setCreating(null);
     const full = joinPath(dir, name);
-    const ok = await fileOp("create", { path: full, kind }, [dir]);
-    if (ok && kind === "file") openFile(full);
+    const result = await fileOp("create", { path: full, kind }, [dir]);
+    if (result.status === "ready" && kind === "file") openFile(full);
   }
 
   /** After a rename/move, any open center file tab at the old path —
@@ -693,12 +722,14 @@ export function FileTree({
       projectId,
       oldPath,
       newPath,
-      async (): Promise<ServerRenameResult> => (await fileOp("rename", { path: oldPath, new_path: newPath }, [dir]))
-        ? { status: "ready" }
-        : { status: "error", code: "SERVER_RENAME_REJECTED", message: "The server rejected the rename." },
-      async (): Promise<ServerRenameResult> => (await fileOp("rename", { path: newPath, new_path: oldPath }, [dir]))
-        ? { status: "ready" }
-        : { status: "recovery_required", code: "SERVER_RENAME_COMPENSATION_FAILED", message: "The server rename could not be compensated." },
+      async (): Promise<ServerRenameResult> => {
+        const result = await fileOp("rename", { path: oldPath, new_path: newPath }, [dir]);
+        return asServerRenameResult(result);
+      },
+      async (): Promise<ServerRenameResult> => {
+        const result = await fileOp("rename", { path: newPath, new_path: oldPath }, [dir]);
+        return asServerRenameResult(result, "recovery_required");
+      },
     );
     if (result.ok) retargetOpenTabs(oldPath, newPath);
     else if (result.message) window.alert(result.message);
@@ -722,20 +753,14 @@ export function FileTree({
         projectId,
         clip.path,
         dest,
-        async (): Promise<ServerRenameResult> => (await fileOp(
-          "rename",
-          { path: clip.path, new_path: dest },
-          [parentOf(clip.path), targetDir],
-        ))
-          ? { status: "ready" }
-          : { status: "error", code: "SERVER_RENAME_REJECTED", message: "The server rejected the rename." },
-        async (): Promise<ServerRenameResult> => (await fileOp(
-          "rename",
-          { path: dest, new_path: clip.path },
-          [parentOf(clip.path), targetDir],
-        ))
-          ? { status: "ready" }
-          : { status: "recovery_required", code: "SERVER_RENAME_COMPENSATION_FAILED", message: "The server rename could not be compensated." },
+        async (): Promise<ServerRenameResult> => {
+          const result = await fileOp("rename", { path: clip.path, new_path: dest }, [parentOf(clip.path), targetDir]);
+          return asServerRenameResult(result);
+        },
+        async (): Promise<ServerRenameResult> => {
+          const result = await fileOp("rename", { path: dest, new_path: clip.path }, [parentOf(clip.path), targetDir]);
+          return asServerRenameResult(result, "recovery_required");
+        },
       );
       if (result.ok) {
         treeClipboard.current = null;
@@ -749,32 +774,28 @@ export function FileTree({
   async function doDelete(path: string) {
     const hasDraft = await hasDirtyDraftsForPath(projectId, path);
     if (hasDraft && !window.confirm(text("Discard unsaved changes before deleting?", "删除前丢弃未保存的修改？"))) return;
-    await runAfterServerFileOperation(
-      () => fileOp("delete", { path }, [parentOf(path)]),
-      async () => {
-        if (hasDraft) {
-          const cleared = await clearFileDraftsForPath(projectId, path);
-          if (!cleared.ok) {
-            window.alert(cleared.message ?? text("Unable to discard the local draft; tabs remain open.", "无法丢弃本地草稿；文件标签仍保持打开。"));
-            return false;
-          }
-        }
-        // Close any center tab now pointing at a deleted file (the path
-        // itself, or anything under a deleted dir).
-        const s = useCenterTabs.getState();
-        for (const t of [...s.tabs]) {
-          if (
-            t.kind === "file" &&
-            t.projectId === projectId &&
-            t.path &&
-            (t.path === path || t.path.startsWith(path + "/"))
-          ) {
-            s.closeTab(t.id);
-          }
-        }
-        return true;
-      },
-    );
+    const deleted = await fileOp("delete", { path }, [parentOf(path)]);
+    if (deleted.status !== "ready") return;
+    if (hasDraft) {
+      const cleared = await clearFileDraftsForPath(projectId, path);
+      if (!cleared.ok) {
+        window.alert(cleared.message ?? text("Unable to discard the local draft; tabs remain open.", "无法丢弃本地草稿；文件标签仍保持打开。"));
+        return;
+      }
+    }
+    // Close any center tab now pointing at a deleted file (the path
+    // itself, or anything under a deleted dir).
+    const s = useCenterTabs.getState();
+    for (const t of [...s.tabs]) {
+      if (
+        t.kind === "file" &&
+        t.projectId === projectId &&
+        t.path &&
+        (t.path === path || t.path.startsWith(path + "/"))
+      ) {
+        s.closeTab(t.id);
+      }
+    }
   }
 
   function onRowContextMenu(

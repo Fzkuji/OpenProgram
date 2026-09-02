@@ -330,6 +330,10 @@ export interface DraftPersistenceResult {
   ok: boolean;
   code?: DraftPersistenceErrorCode;
   message?: string;
+  status?: string;
+  error_code?: string;
+  idempotency_key?: string;
+  operation_id?: string;
 }
 
 interface StoredDraft extends FileDraft {
@@ -766,10 +770,24 @@ async function preflightMoveFileDraftsInternal(
 
 export type ServerRenameResult = {
   status: "ready" | "error" | "recovery_required";
-  code?: string;
-  message?: string;
+  error_code?: string;
+  error?: string;
   idempotency_key?: string;
+  operation_id?: string;
 };
+
+function withServerMetadata(
+  result: DraftPersistenceResult,
+  serverResult: ServerRenameResult,
+): DraftPersistenceResult {
+  return {
+    ...result,
+    status: serverResult.status,
+    error_code: serverResult.error_code ?? result.error_code ?? result.code,
+    idempotency_key: serverResult.idempotency_key,
+    operation_id: serverResult.operation_id,
+  };
+}
 
 /** Validate local quota, perform the structured server rename, then commit
  * the local move. A failed local commit invokes an idempotent reverse server
@@ -796,37 +814,39 @@ export function runServerRenameWithDrafts(
       if (!serverResult || serverResult.status !== "ready") {
         const message = serverResult?.status === "recovery_required"
           ? "The server rename requires recovery; the local draft was retained."
-          : serverResult?.message ?? "The server rejected the rename; the local draft was retained.";
+          : serverResult?.error ?? "The server rejected the rename; the local draft was retained.";
         reportDraftPersistenceError(projectId, message);
-        return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
+        return withServerMetadata({ ok: false, code: "DRAFT_PERSISTENCE_FAILED", message }, serverResult ?? {
+          status: "error", error_code: "TRANSPORT_ERROR", error: message,
+        });
       }
       const moved = await moveFileDraftsInternal(projectId, oldPath, newPath);
-      if (moved.ok) return moved;
+      if (moved.ok) return withServerMetadata(moved, serverResult);
       try {
         const compensation = await reverseRename(serverResult);
-        if (compensation?.status === "ready") return moved;
+        if (compensation?.status === "ready") {
+          const result = withServerMetadata(moved, compensation);
+          return { ...result, status: "error" };
+        }
+        const message = "The server rename succeeded but local draft movement failed; recovery is required and the old draft remains available.";
+        reportDraftPersistenceError(projectId, message);
+        return withServerMetadata({ ok: false, code: "DRAFT_PERSISTENCE_FAILED", message }, compensation ?? {
+          status: "recovery_required", error_code: "TRANSPORT_ERROR", error: message,
+        });
       } catch {
         // Fall through to the durable recovery error below.
       }
       const message = "The server rename succeeded but local draft movement failed; recovery is required and the old draft remains available.";
       reportDraftPersistenceError(projectId, message);
-      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
+      return withServerMetadata({ ok: false, code: "DRAFT_PERSISTENCE_FAILED", message }, {
+        ...serverResult, status: "recovery_required", error_code: "RENAME_COMPENSATION_FAILED", error: message,
+      });
     } catch {
       const message = "The file rename could not be completed; the local draft was retained.";
       reportDraftPersistenceError(projectId, message);
       return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
     }
   });
-}
-
-/** Shared ordering boundary for file-tree mutations: server success must
- * precede draft movement, and tab retargeting must follow both. */
-export async function runAfterServerFileOperation(
-  serverOperation: () => Promise<boolean>,
-  afterSuccess: () => Promise<boolean> | boolean,
-): Promise<boolean> {
-  if (!(await serverOperation())) return false;
-  return Boolean(await afterSuccess());
 }
 
 /** Shared close boundary: every dirty draft is discarded successfully before

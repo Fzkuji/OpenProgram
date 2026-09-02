@@ -52,7 +52,6 @@ const {
   fileDraftBytes,
   canPersistFileDraft,
   subscribeDraftPersistenceErrors,
-  runAfterServerFileOperation,
   discardFileDraftsBeforeClose,
   collectDirtyFileTabs,
   runServerRenameWithDrafts,
@@ -117,20 +116,8 @@ test("discarding a failed live expansion preserves the exact A+C index", async (
   });
 });
 
-test("file mutation helpers enforce server, draft, and tab ordering", async () => {
+test("file close helper discards every dirty file and finds inactive durable drafts", async () => {
   const events = [];
-  assert.equal(await runAfterServerFileOperation(
-    async () => { events.push("server"); return true; },
-    async () => { events.push("drafts"); events.push("tabs"); return true; },
-  ), true);
-  assert.deepEqual(events, ["server", "drafts", "tabs"]);
-  events.length = 0;
-  assert.equal(await runAfterServerFileOperation(
-    async () => { events.push("server-failed"); return false; },
-    async () => { events.push("drafts"); return true; },
-  ), false);
-  assert.deepEqual(events, ["server-failed"]);
-
   const discarded = await discardFileDraftsBeforeClose([
     { kind: "file", projectId: "p", path: "a.txt", dirty: false },
     { kind: "file", projectId: "p", path: "b.txt", dirty: false },
@@ -139,7 +126,7 @@ test("file mutation helpers enforce server, draft, and tab ordering", async () =
     return { ok: path === "a.txt" };
   }, async () => true);
   assert.equal(discarded, false);
-  assert.deepEqual(events, ["server-failed", "p:a.txt", "p:b.txt"]);
+  assert.deepEqual(events, ["p:a.txt", "p:b.txt"]);
 
   const inactive = await collectDirtyFileTabs(
     [{ kind: "file", projectId: "p", path: "inactive.txt", dirty: false }],
@@ -204,13 +191,16 @@ test("server rename uses structured status and retains old draft on rejection", 
   let reverseCalls = 0;
   const failed = await runServerRenameWithDrafts(
     "p", "old.txt", "new.txt",
-    async () => ({ status: "error", code: "SERVER_RENAME_REJECTED" }),
+    async () => ({ status: "error", error_code: "SERVER_RENAME_REJECTED", idempotency_key: "rename-reject" }),
     async () => { reverseCalls += 1; return { status: "ready" }; },
   );
   assert.equal(failed.ok, false);
   assert.equal(store.drafts.has("p:old.txt"), true);
   assert.equal(store.drafts.has("p:new.txt"), false);
   assert.equal(reverseCalls, 0);
+  assert.equal(failed.status, "error");
+  assert.equal(failed.error_code, "SERVER_RENAME_REJECTED");
+  assert.equal(failed.idempotency_key, "rename-reject");
 });
 
 test("server rename exception and recovery status retain old draft", async () => {
@@ -239,14 +229,17 @@ test("local rename failure compensates the ready server rename", async () => {
   let reverseCalls = 0;
   const result = await runServerRenameWithDrafts(
     "p", "old.txt", "new.txt",
-    async () => { store.failNextWrite = true; return { status: "ready", idempotency_key: "rename-1" }; },
+    async () => { store.failNextWrite = true; return { status: "ready", idempotency_key: "rename-1", operation_id: "op-1" }; },
     async (serverResult) => {
       reverseCalls += 1;
       assert.equal(serverResult.idempotency_key, "rename-1");
-      return { status: "ready", idempotency_key: "rename-1-reverse" };
+      return { status: "ready", idempotency_key: "rename-1-reverse", operation_id: "op-reverse" };
     },
   );
   assert.equal(result.ok, false);
+  assert.equal(result.status, "error");
+  assert.equal(result.error_code, "DRAFT_QUOTA_EXCEEDED");
+  assert.equal(result.operation_id, "op-reverse");
   assert.equal(reverseCalls, 1);
   assert.equal(store.drafts.has("p:old.txt"), true);
   assert.equal(store.drafts.has("p:new.txt"), false);

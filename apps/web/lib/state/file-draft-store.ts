@@ -47,10 +47,6 @@ export interface DraftStoreAdapter {
   load(): Promise<DraftStoreSnapshot>;
   mutate(operation: DraftStoreMutation): Promise<DraftStoreSnapshot>;
   repair(): Promise<DraftStoreSnapshot>;
-  put(record: DraftStoreRecord, index: DraftStoreIndex): Promise<void>;
-  remove(keys: string[], index?: DraftStoreIndex): Promise<void>;
-  move(records: Array<{ oldKey: string; record: DraftStoreRecord }>, index?: DraftStoreIndex): Promise<void>;
-  clear(keys: string[], projectId: string): Promise<void>;
 }
 
 export class DraftStoreQuotaError extends Error {
@@ -138,40 +134,6 @@ export class IndexedDbDraftStore implements DraftStoreAdapter {
     }));
   }
 
-  async put(record: DraftStoreRecord, index: DraftStoreIndex): Promise<void> {
-    await this.mutate((snapshot) => ({
-      drafts: [...snapshot.drafts.filter((entry) => entry.key !== record.key), structuredClone(record)],
-      indexes: [...snapshot.indexes.filter((entry) => entry.projectId !== index.projectId), structuredClone(index)],
-    }));
-  }
-
-  async remove(keys: string[], index?: DraftStoreIndex): Promise<void> {
-    await this.mutate((snapshot) => ({
-      drafts: snapshot.drafts.filter((record) => !keys.includes(record.key)),
-      indexes: index
-        ? [...snapshot.indexes.filter((entry) => entry.projectId !== index.projectId), structuredClone(index)]
-        : snapshot.indexes,
-    }));
-  }
-
-  async move(records: Array<{ oldKey: string; record: DraftStoreRecord }>, index?: DraftStoreIndex): Promise<void> {
-    await this.mutate((snapshot) => ({
-      drafts: [
-        ...snapshot.drafts.filter((entry) => !records.some((item) => item.oldKey === entry.key)),
-        ...records.map(({ record }) => structuredClone(record)),
-      ],
-      indexes: index
-        ? [...snapshot.indexes.filter((entry) => entry.projectId !== index.projectId), structuredClone(index)]
-        : snapshot.indexes,
-    }));
-  }
-
-  async clear(keys: string[], projectId: string): Promise<void> {
-    await this.mutate((snapshot) => ({
-      drafts: snapshot.drafts.filter((record) => !keys.includes(record.key)),
-      indexes: snapshot.indexes.filter((index) => index.projectId !== projectId),
-    }));
-  }
 }
 
 /** Test-only in-memory adapter. Each operation clones its maps first, then
@@ -214,38 +176,4 @@ export class MemoryDraftStore implements DraftStoreAdapter {
     throw new DraftStoreQuotaError();
   }
 
-  async put(record: DraftStoreRecord, index: DraftStoreIndex): Promise<void> {
-    await this.mutate((snapshot) => ({
-      drafts: [...snapshot.drafts.filter((entry) => entry.key !== record.key), structuredClone(record)],
-      indexes: [...snapshot.indexes.filter((entry) => entry.projectId !== index.projectId), structuredClone(index)],
-    }));
-  }
-
-  async remove(keys: string[], index?: DraftStoreIndex): Promise<void> {
-    await this.mutate((snapshot) => ({
-      drafts: snapshot.drafts.filter((record) => !keys.includes(record.key)),
-      indexes: index
-        ? [...snapshot.indexes.filter((entry) => entry.projectId !== index.projectId), structuredClone(index)]
-        : snapshot.indexes,
-    }));
-  }
-
-  async move(records: Array<{ oldKey: string; record: DraftStoreRecord }>, index?: DraftStoreIndex): Promise<void> {
-    await this.mutate((snapshot) => ({
-      drafts: [
-        ...snapshot.drafts.filter((entry) => !records.some((item) => item.oldKey === entry.key)),
-        ...records.map(({ record }) => structuredClone(record)),
-      ],
-      indexes: index
-        ? [...snapshot.indexes.filter((entry) => entry.projectId !== index.projectId), structuredClone(index)]
-        : snapshot.indexes,
-    }));
-  }
-
-  async clear(keys: string[], projectId: string): Promise<void> {
-    await this.mutate((snapshot) => ({
-      drafts: snapshot.drafts.filter((record) => !keys.includes(record.key)),
-      indexes: snapshot.indexes.filter((index) => index.projectId !== projectId),
-    }));
-  }
 }
