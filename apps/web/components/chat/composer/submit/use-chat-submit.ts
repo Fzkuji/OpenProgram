@@ -18,6 +18,7 @@
 import { useCallback } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
+import { runtimeState } from "@/lib/runtime-bridge/state";
 import { parseFunctionInvocation } from "@/lib/function-invocation";
 import { showToast } from "@/lib/format-utils/toast";
 import { enqueueMessage } from "@/lib/state/send-queue";
@@ -286,19 +287,51 @@ export function stopSession(
   const task = store.runningTasks[targetSessionId];
   const executionId = task?.execution_id || "";
   const expectedVersion = task?.status_version;
+  const commandId = crypto.randomUUID();
+  const direct = executionId ? store.messagesById[executionId] : undefined;
+  let optimisticMessage = direct;
+  if (!optimisticMessage) {
+    const ids = store.messageOrder[targetSessionId] || [];
+    for (let i = ids.length - 1; i >= 0; i--) {
+      const m = store.messagesById[ids[i]];
+      if (!m || m.role !== "assistant") continue;
+      if (
+        m.status === "done" || m.status === "completed"
+        || m.status === "cancelled" || m.status === "error"
+        || m.status === "cancelling"
+      ) break;
+      optimisticMessage = m;
+      break;
+    }
+  }
   // 1. Tell the server first so the model HTTP stream can abort.
   if (executionId && typeof expectedVersion === "number") {
-    send({
+    runtimeState._optimisticCancels[commandId] = {
+      sessionId: targetSessionId,
+      task: { ...task },
+      messageId: optimisticMessage?.id,
+      previousMessageStatus: optimisticMessage?.status,
+    };
+    const sent = send({
       action: "execution.cancel",
-      command_id: crypto.randomUUID(),
+      command_id: commandId,
       execution_id: executionId,
       expected_version: expectedVersion,
     });
+    if (!sent) delete runtimeState._optimisticCancels[commandId];
+  } else if (task) {
+    // The Stop button can win the ACK/activation race while the task still
+    // has only its local placeholder. Keep a session-level pending-stop
+    // record so chat_ack
+    // cannot revive that turn without first issuing an exact cancel.
+    runtimeState._optimisticStops[targetSessionId] = {
+      messageId: optimisticMessage?.id,
+      previousMessageStatus: optimisticMessage?.status,
+    };
   }
   // 2. Patch the live assistant to cancelled. Keep streamed text.
   //    Only the server-issued execution identity can identify the exact
   //    assistant message. A message id is not an execution owner.
-  const direct = executionId ? store.messagesById[executionId] : undefined;
   if (direct) {
     const s = direct.status;
     if (s !== "done" && s !== "completed" && s !== "cancelled" && s !== "error") {
@@ -307,20 +340,10 @@ export function stopSession(
     store.setRunningTaskFor(targetSessionId, null, "always");
     return;
   }
-  const ids = store.messageOrder[targetSessionId] || [];
-  for (let i = ids.length - 1; i >= 0; i--) {
-    const m = store.messagesById[ids[i]];
-    if (!m) continue;
-    if (m.role !== "assistant") continue;
-    if (
-      m.status === "done" || m.status === "completed"
-      || m.status === "cancelled" || m.status === "error"
-      || m.status === "cancelling"
-    ) break;
-    store.updateMessage(targetSessionId, m.id, {
+  if (optimisticMessage) {
+    store.updateMessage(targetSessionId, optimisticMessage.id, {
       status: "cancelled",
     });
-    break;
   }
   // 3. Drop the running task so the send queue drains immediately.
   //    Leaving a cancelling flag on the task was the composer lock.

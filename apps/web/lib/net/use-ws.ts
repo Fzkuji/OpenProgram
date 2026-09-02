@@ -28,6 +28,7 @@ import {
   clearHydratedTreePaths,
   handleRunningTask,
   handleRunningTaskClear,
+  handleExecutionCommandUpdated,
   handleSessionsList,
   handleSessionUpdated,
   initChatPage,
@@ -53,7 +54,7 @@ import {
   loadProgramsMeta,
   renderFunctions,
 } from "@/lib/runtime-bridge/functions-panel";
-import { refreshStatusSource, updateStatus } from "@/lib/runtime-bridge/ui";
+import { refreshStatusSource, setRunning, updateStatus } from "@/lib/runtime-bridge/ui";
 import { refreshChannelBadge } from "@/lib/runtime-bridge/conversations";
 
 export function useWS(): void {
@@ -330,9 +331,39 @@ export function useWS(): void {
             ) {
               store.setRunningTaskFor(sid, null, "always");
             }
+            const terminal = new Set(
+              ["cancelled", "completed", "failed", "interrupted", "error", "done"],
+            );
+            if (terminal.has(String(execution.status))) {
+              for (const [commandId, pendingCancel] of Object.entries(
+                runtimeState._optimisticCancels,
+              )) {
+                if (
+                  pendingCancel.sessionId === sid
+                  && pendingCancel.task.execution_id === eid
+                ) delete runtimeState._optimisticCancels[commandId];
+              }
+            }
+            // Stop releases the task optimistically. If the command was
+            // applied, the terminal execution frame is still responsible for
+            // the final legacy/UI cleanup; do not let an old execution clear
+            // a newer task that already occupies this session.
+            if (
+              sid === runtimeState.currentSessionId
+              && terminal.has(String(execution.status))
+              && (!store.runningTasks[sid]
+                || store.runningTasks[sid]?.execution_id === eid)
+            ) {
+              setRunning(false);
+            }
           });
           return true;
         }
+        case "execution.command.updated":
+          // Canonical command frames carry `command` at the envelope root.
+          // Do not fall back to the removed legacy nested payload.
+          handleExecutionCommandUpdated(msg);
+          return true;
         case "running_task":
           handleRunningTask(d);
           return true;

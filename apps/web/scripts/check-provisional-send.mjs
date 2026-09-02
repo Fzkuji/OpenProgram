@@ -722,6 +722,45 @@ const useWs = readFileSync(
   new URL("../lib/net/use-ws.ts", import.meta.url),
   "utf8",
 );
+// Exact execution commands are acknowledged on the canonical WebSocket
+// envelope. A stale rejection must be able to undo stop's optimistic local
+// clear with the authoritative execution snapshot, while a terminal
+// execution update performs the final cleanup.
+assert.match(
+  useWs,
+  /case "execution\.command\.updated":\s*\/\/ Canonical command frames[\s\S]*handleExecutionCommandUpdated\(msg\)/,
+  "Web must route canonical command updates through the runtime bridge",
+);
+assert.doesNotMatch(
+  useWs,
+  /execution\.command\.updated[\s\S]*data\.command/,
+  "Web must not revive the removed legacy command payload",
+);
+assert.match(
+  chatHandlers,
+  /status !== "rejected"[\s\S]*status === "applied"[\s\S]*result_version/,
+  "applied command updates must preserve the canonical running-task version",
+);
+assert.match(
+  chatHandlers,
+  /latest_snapshot[\s\S]*snapshotVersion[\s\S]*setRunningTaskFor\(snapshotSessionId, restoredTask/,
+  "stale command rejection must restore the canonical running task snapshot",
+);
+assert.match(
+  chatHandlers,
+  /setRunning\(true\);\s*setRunActive\(true\)/,
+  "stale command rejection must restore the active composer state",
+);
+assert.match(
+  chatHandlers,
+  /_optimisticStops\[sid\][\s\S]*action: "execution\.cancel"[\s\S]*expected_version: data\.status_version/,
+  "an ACK that follows Stop must issue the exact cancel after activation",
+);
+assert.match(
+  useWs,
+  /terminal\.has\(String\(execution\.status\)\)[\s\S]*setRunning\(false\)/,
+  "terminal execution updates must finish UI cleanup",
+);
 assert.match(
   useWs,
   /case "chat_ack":[\s\S]*applyChatWsMessage\(\{ type: "chat_ack", data: d \}\);[\s\S]*wsHandleChatAck/,
