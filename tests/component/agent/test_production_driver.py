@@ -466,6 +466,76 @@ def test_finish_transient_failure_retries_after_handle_release(tmp_path):
     assert driver._pending_finishes == {}
 
 
+def test_finish_retry_re_reads_cancellation_state(tmp_path):
+    from openprogram.agent.production_driver import AgentProductionDriver
+
+    store, execution = _admitted(tmp_path, execution_id="exec-finish-cancel-race")
+    driver = AgentProductionDriver(
+        executions=store,
+        input_resolver=lambda _record: {
+            "version": 1,
+            "kind": "chat",
+            "request": {"user_text": "run", "agent_id": "default", "source": "test"},
+        },
+        turn_runner=lambda **_kwargs: None,
+    )
+    attempts = AttemptStore(store)
+    attempt, leased = attempts.lease(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        owner_id="agent-owner",
+        ttl_seconds=30,
+    )
+    active, running = attempts.activate(
+        attempt.attempt_id,
+        generation=attempt.generation,
+        expected_execution_version=leased.status_version,
+    )
+    control = driver._control_service()
+    real_finish = control.finish_attempt
+    first_called = threading.Event()
+    release = threading.Event()
+    calls = 0
+
+    def flaky_finish(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            first_called.set()
+            assert release.wait(3)
+            raise OSError("temporary sqlite failure")
+        return real_finish(*args, **kwargs)
+
+    control.finish_attempt = flaky_finish
+    worker = threading.Thread(
+        target=driver._finish_attempt,
+        args=(active, type("Result", (), {"failed": False, "error": None})(), threading.Event()),
+        daemon=True,
+    )
+    worker.start()
+    assert first_called.wait(3)
+    store.transition_execution(
+        execution.execution_id,
+        expected_version=running.status_version,
+        target=ExecutionStatus.CANCELLING,
+        reason_code="cancel.user",
+    )
+    release.set()
+    worker.join(3)
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        current = store.get_execution(execution.execution_id)
+        if current is not None and current.status is ExecutionStatus.CANCELLED:
+            break
+        time.sleep(0.02)
+    current = store.get_execution(execution.execution_id)
+    assert current is not None
+    assert current.status is ExecutionStatus.CANCELLED
+    assert current.reason_code == "cancel.user"
+    assert calls >= 2
+    assert driver._pending_finishes == {}
+
+
 def test_startup_terminalizes_admitted_agent_without_attempt(tmp_path):
     from openprogram.execution.control import RuntimeControlService
     from openprogram.execution.driver import DriverRegistry
@@ -479,6 +549,34 @@ def test_startup_terminalizes_admitted_agent_without_attempt(tmp_path):
     assert current is not None
     assert current.status is ExecutionStatus.FAILED
     assert current.reason_code == "owner_lost_before_activation"
+    assert [item.execution.execution_id for item in recoveries] == [execution.execution_id]
+
+
+def test_startup_recovery_reloads_after_concurrent_transition_conflict(
+    tmp_path, monkeypatch,
+):
+    from openprogram.execution.control import RuntimeControlService
+    from openprogram.execution.driver import DriverRegistry
+    from openprogram.execution.store import ExecutionConflict
+
+    store, execution = _admitted(tmp_path, execution_id="exec-recovery-race")
+    service = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    original = store.transition_execution
+    calls = 0
+
+    def concurrent_transition(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ExecutionConflict("status_conflict", "another recovery won")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(store, "transition_execution", concurrent_transition)
+    recoveries = service.recover_startup()
+
+    current = store.get_execution(execution.execution_id)
+    assert current is not None
+    assert current.status is ExecutionStatus.QUEUED
     assert [item.execution.execution_id for item in recoveries] == [execution.execution_id]
 
 

@@ -244,7 +244,7 @@ runtime.finish_attempt(attempt_id, outcome)</code></pre>
     <tr><td>Admission</td><td>queued execution、immutable TurnRequest payload 和 input message IDs 已提交。</td><td>不发送 ack，不创建运行中任务；输入或 revision 无效时返回明确 admission 错误。</td></tr>
     <tr><td>Activation</td><td>一个 lease、attempt_id 和 generation 绑定到 AgentDriver；running task 只引用该 execution_id。</td><td>activation 失败通过 Control Service 写 failed/interrupted，释放 reservation，不由入口直接写消息 lifecycle。</td></tr>
     <tr><td>运行与等待</td><td>取消通过 exact durable command 唤醒 driver cancel event 与该 execution 的 question wait。</td><td>runner exception 分类为 agent_runner_error；不可判定 owner loss 交给 canonical recovery。</td></tr>
-    <tr><td>完成</td><td>AgentDriver 以 attempt/generation fence 调用 Control Service finish_attempt。</td><td>迟到或重复 completion 不能覆盖 canonical terminal。</td></tr>
+    <tr><td>完成</td><td>AgentDriver 以 attempt/generation fence 调用 Control Service finish_attempt；暂时性存储错误进入有界重试队列。</td><td>每次重试重新读取 execution、attempt、generation 和 status_version；迟到或重复 completion 不能覆盖 canonical terminal，重试耗尽的项目保留 pending 供恢复处理。</td></tr>
   </tbody></table></div>
   <p>此切换期间 AgentDriver 明确声明空 <code>CapabilitySet</code>：不公开 pause、continue、step、steer 或 safe point；没有 durable checkpoint、effect receipt 和 wait 恢复条件时不得把这些能力显示为可用。fork/retry 的 Web 入口已使用 canonical chat admission；其 DAG 分支内容仍由现有投影语义维护，不改变 Agent execution ownership。</p>
 </section>

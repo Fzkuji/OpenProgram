@@ -1933,7 +1933,7 @@ class RuntimeControlService:
                         target=ExecutionStatus.FAILED,
                         reason_code="owner_lost_before_activation",
                     )
-                except AttemptConflict:
+                except (AttemptConflict, ExecutionConflict):
                     recovered = self.executions.get_execution(execution.execution_id)
                     if recovered is None:
                         continue

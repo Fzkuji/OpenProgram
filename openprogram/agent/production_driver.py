@@ -78,6 +78,8 @@ TurnRunner = Callable[..., Any]
 
 AGENT_TURN_INPUT_VERSION = 1
 MAX_AGENT_TURN_INPUT_BYTES = 256 * 1024
+FINISH_RETRY_LIMIT = 8
+FINISH_RETRY_MAX_DELAY = 1.0
 _PAYLOAD_KINDS = frozenset({"chat", "forced_tool"})
 _PAYLOAD_ENVELOPE_KEYS = frozenset({"version", "kind", "request", "tool_name", "tool_input", "anchor_msg_id", "work_dir", "agent_id", "source", "provider", "model", "response_format", "surface_context_snapshot"})
 
@@ -674,13 +676,19 @@ class AgentProductionDriver:
 
     def _retry_finish(self, key: tuple[str, str, int]) -> None:
         delay = 0.05
+        retries = 0
         try:
             while True:
+                retries += 1
+                if retries > FINISH_RETRY_LIMIT:
+                    # Keep the item in the in-process outbox for an explicit
+                    # later retry, but never leave an unbounded daemon loop.
+                    return
                 with self._handles_lock:
                     pending = self._pending_finishes.get(key)
                     if pending is None or key in self._finished:
                         return
-                attempt, expected_version, target, outcome, reason_code = pending
+                attempt, _expected_version, target, outcome, reason_code = pending
                 try:
                     service = self._control_service()
                     execution = service.executions.get_execution(attempt.execution_id)
@@ -700,14 +708,32 @@ class AgentProductionDriver:
                     # recovery or the replacement attempt.
                     self._resolve_finish_retry(key)
                     return
+                current_attempt = service.attempts.get(attempt.attempt_id)
+                if (
+                    current_attempt is None
+                    or current_attempt.status is not AttemptStatus.ACTIVE
+                    or current_attempt.generation != attempt.generation
+                ):
+                    self._resolve_finish_retry(key)
+                    return
+                retry_target = target
+                retry_outcome = outcome
+                retry_reason = reason_code
+                if execution.status is ExecutionStatus.CANCELLING:
+                    # Cancellation intent wins over a completion that was
+                    # computed before the cancel CAS. Re-read the version on
+                    # every attempt so the finish cannot reuse stale state.
+                    retry_target = ExecutionStatus.CANCELLED
+                    retry_outcome = "cancelled"
+                    retry_reason = execution.reason_code or "cancelled"
                 try:
                     service.finish_attempt(
                         attempt_id=attempt.attempt_id,
                         generation=attempt.generation,
-                        expected_execution_version=expected_version,
-                        target=target,
-                        outcome=outcome,
-                        reason_code=reason_code,
+                        expected_execution_version=execution.status_version,
+                        target=retry_target,
+                        outcome=retry_outcome,
+                        reason_code=retry_reason,
                     )
                 except AttemptConflict:
                     current = service.executions.get_execution(attempt.execution_id)
@@ -725,7 +751,7 @@ class AgentProductionDriver:
                     self._resolve_finish_retry(key)
                     return
                 time.sleep(delay)
-                delay = min(delay * 2, 1.0)
+                delay = min(delay * 2, FINISH_RETRY_MAX_DELAY)
         finally:
             with self._handles_lock:
                 self._finish_retry_threads.discard(key)
