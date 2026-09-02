@@ -5,8 +5,8 @@ attach card created by ``_run_spawn_async`` so its
 ``extra.attach.status`` flips from ``running`` to a terminal value
 and ``source_commit_id`` is populated when a ContextCommit exists.
 
-Tests the round-trip without spinning up a real LLM by faking
-``run_agent_turn`` to write a deterministic assistant reply +
+Tests the round-trip without spinning up a real LLM by faking the canonical
+Agent turn runner to write a deterministic assistant reply +
 ContextCommit.
 """
 from __future__ import annotations
@@ -88,7 +88,7 @@ def test_runner_updates_attach_card_on_completion(isolated_store, monkeypatch):
     })
     isolated_store.commit_turn("p1", "spawn async placeholder")
 
-    # 2. Fake run_agent_turn so the worker finishes in milliseconds.
+    # 2. Fake the canonical Agent turn runner so the worker finishes in milliseconds.
     def fake_run(*, request, cancel_event, **_kwargs):
         from openprogram.agent.sub_agent_run import AgentTurnResult
         # Write the assistant_msg the dispatcher would have written.
