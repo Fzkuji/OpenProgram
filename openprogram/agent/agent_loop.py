@@ -133,7 +133,20 @@ def _set_content(msg, value) -> None:
 def _durable_message(message: Any) -> dict[str, Any]:
     """Return JSON data only; checkpoints never retain provider objects."""
     if hasattr(message, "model_dump"):
-        value = message.model_dump(mode="json")
+        try:
+            value = message.model_dump(mode="json")
+        except Exception:
+            # AgentTool contains its executable callback, which is not a
+            # durable value.  A checkpoint needs the resolved public schema,
+            # not a repr of that callback or a process-local object address.
+            if all(hasattr(message, field) for field in ("name", "description", "parameters")):
+                value = {
+                    "name": message.name,
+                    "description": message.description,
+                    "parameters": message.parameters,
+                }
+            else:
+                value = {"repr": str(message)}
     elif isinstance(message, dict):
         value = dict(message)
     else:
@@ -259,6 +272,101 @@ def agent_loop_continue(
             if isinstance(e, ExecInterrupt):
                 if not ev_stream._result_event.is_set():
                     ev_stream.fail(e)
+            else:
+                raise
+
+    ev_stream.attach_producer(asyncio.ensure_future(_run()))
+    return ev_stream
+
+
+def agent_loop_resume(
+    continuation: Any,
+    context: AgentContext,
+    config: AgentLoopConfig,
+    cancel_event: asyncio.Event | None = None,
+    stream_fn: StreamFn | None = None,
+) -> EventStream[AgentEvent, list[AgentMessage]]:
+    """Resume one durable Agent frontier without a provider replay.
+
+    The provider response stored at ``after_provider`` is a completed action.
+    This producer restores that decision and executes only its remaining tools;
+    ``after_tool`` restores the completed result sequence then asks the next
+    provider decision.  It never receives a live stack or stream from the old
+    attempt.
+    """
+    ev_stream = _create_agent_stream()
+
+    async def _run() -> None:
+        new_messages: list[AgentMessage] = []
+        try:
+            current_context = AgentContext(
+                system_prompt=context.system_prompt,
+                messages=list(context.messages),
+                tools=context.tools,
+                memory_prefetch=context.memory_prefetch,
+            )
+            assistant = continuation.assistant_message
+            current_context.messages.append(assistant)
+            ev_stream.push(AgentEventAgentStart())
+            ev_stream.push(AgentEventTurnStart())
+
+            tool_calls = [
+                call for call in assistant.content if isinstance(call, ToolCall)
+            ]
+            if continuation.phase == "after_tool":
+                current_context.messages.extend(continuation.tool_results)
+            elif continuation.phase != "after_provider":
+                raise ValueError("unsupported Agent continuation phase")
+
+            # A provider decision may contain several calls.  An after-tool
+            # checkpoint has committed only the prefix through
+            # ``next_tool_index``; resume that exact suffix instead of asking
+            # the provider again or replaying a completed tool.
+            start_index = continuation.next_tool_index
+            if start_index < len(tool_calls):
+                execution = await _execute_tool_calls(
+                    current_context.tools,
+                    assistant,
+                    cancel_event,
+                    ev_stream,
+                    config.get_steering_messages,
+                    continuation.repeat_failures,
+                    config.safe_point_hook,
+                    start_index=start_index,
+                )
+                tool_results = execution["tool_results"]
+                current_context.messages.extend(tool_results)
+                new_messages.extend(tool_results)
+                if execution.get("stop_at_safe_point"):
+                    ev_stream.push(AgentEventAgentEnd(messages=new_messages))
+                    ev_stream.end(new_messages)
+                    return
+
+            # A completed provider answer with no tool calls is itself the
+            # terminal assistant result.  It must be persisted/finalized by
+            # the continuation dispatcher, not sent through a second provider
+            # request.
+            if continuation.phase == "after_provider" and not tool_calls:
+                new_messages.append(assistant)
+                ev_stream.push(AgentEventAgentEnd(messages=new_messages))
+                ev_stream.end(new_messages)
+                return
+
+            # The restored provider decision is already durable.  Continue
+            # with the next decision only after all stored/remaining tool
+            # results have been installed in the rebuilt context.
+            await _run_loop(
+                current_context, new_messages, config, cancel_event, ev_stream,
+                stream_fn,
+            )
+        except Exception as exc:
+            if not ev_stream._result_event.is_set():
+                ev_stream.fail(exc)
+        except BaseException as exc:
+            from openprogram.providers.utils.errors import ExecInterrupt
+            if isinstance(exc, ExecInterrupt):
+                if not ev_stream._result_event.is_set():
+                    ev_stream.fail(exc)
             else:
                 raise
 
@@ -584,10 +692,12 @@ async def _run_loop(
                     "provider.after",
                     {
                         "message": _durable_message(message),
-                        "tool_call_ids": sorted(
+                        "tool_call_ids": [
                             str(call.id) for call in message.content
                             if isinstance(call, ToolCall)
-                        ),
+                        ],
+                        "next_tool_index": 0,
+                        "usage": _durable_message(message.usage),
                     },
                 ))
 
@@ -851,10 +961,20 @@ async def _stream_assistant_response(
     added_partial = False
 
     if config.safe_point_hook is not None:
-        await config.safe_point_hook("provider.before", {
-            "model": str(config.model),
+        resolved_snapshot = {
+            "model": _durable_message(config.model),
             "system_prompt": context.system_prompt,
-            "tool_names": sorted(tool.name for tool in (context.tools or [])),
+            "tools": [
+                _durable_message(tool) for tool in (context.tools or [])
+            ],
+        }
+        await config.safe_point_hook("provider.before", {
+            "resolved_snapshot": resolved_snapshot,
+            "context": {
+                "system_prompt": llm_context.system_prompt,
+                "messages": [_durable_message(message) for message in llm_context.messages],
+                "tools": [_durable_message(tool) for tool in (llm_context.tools or [])],
+            },
         })
     _record_job_activity("operation_start")
     response_stream = fn(config.model, llm_context, stream_opts)
@@ -982,6 +1102,8 @@ async def _execute_tool_calls(
     get_steering_messages: Any | None = None,
     repeat_failures: dict[str, int] | None = None,
     safe_point_hook: Any | None = None,
+    *,
+    start_index: int = 0,
 ) -> dict[str, Any]:
     """
     Execute tool calls from an assistant message.
@@ -997,7 +1119,7 @@ async def _execute_tool_calls(
     from openprogram.context.cache_aware_microcompact import increment_tool_calls
     increment_tool_calls(len(tool_calls))
 
-    for index, tool_call in enumerate(tool_calls):
+    for index, tool_call in enumerate(tool_calls[start_index:], start=start_index):
         tool = next((t for t in (tools or []) if t.name == tool_call.name), None)
         fail_key = _tool_repeat_key(tool_call.name, tool_call.arguments)
         streak = repeat_failures.get(fail_key, 0)
@@ -1162,6 +1284,9 @@ async def _execute_tool_calls(
                 "tool_call_id": str(tool_call.id), "tool_name": tool_call.name,
                 "result": _durable_message(tool_result_msg),
                 "is_error": bool(result.is_error),
+                "next_tool_index": index + 1,
+                "repeat_failures": dict(repeat_failures),
+                "tool_call_ids": [str(call.id) for call in tool_calls],
             }))
         results.append(tool_result_msg)
         ev_stream.push(AgentEventMessageStart(message=tool_result_msg))

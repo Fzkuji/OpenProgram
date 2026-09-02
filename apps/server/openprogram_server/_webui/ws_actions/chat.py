@@ -1023,7 +1023,11 @@ async def handle_chat(ws, cmd: dict):
             _request,
             trusted_actor=_local_authority,
             user_message_id=msg_id,
-            assistant_message_id=None,
+            # The dispatcher writes this deterministic placeholder before
+            # provider/tool callbacks.  Persist the same anchor at admission
+            # so a resumed Agent checkpoint can fence it against immutable
+            # execution input and finalize it exactly once.
+            assistant_message_id=f"{msg_id}_reply",
             config_snapshot_ref=f"session:{session_id}",
         )
     except BaseException:

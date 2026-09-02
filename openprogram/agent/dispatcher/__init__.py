@@ -271,6 +271,102 @@ def process_user_turn(
             steering.end_accepting(req.session_id)
 
 
+def process_agent_continuation(
+    continuation,
+    *,
+    on_event: Optional[EventCallback] = None,
+    cancel_event: Optional[threading.Event] = None,
+    execution_context: dict | None = None,
+) -> TurnResult:
+    """Resume an Agent checkpoint without replaying dispatcher admission.
+
+    A continuation owns an already-persisted user node and assistant
+    placeholder.  Re-entering ``_process_turn_once`` would append both again,
+    start a second memory write, and run the normal finalizer twice.  This
+    path therefore only rebuilds provider context, executes the durable
+    frontier, and finalizes the original assistant id once it really ends.
+    """
+    from openprogram.agent.dispatcher.loop_runner import run_loop_blocking
+    from openprogram.agent.dispatcher.persistence import persist_assistant_message
+    from openprogram.agent.dispatcher.finalize import finalize_turn
+    from openprogram.agent.dispatcher.turn_writer import TurnWriter
+    from openprogram.agent.session_db import default_db
+    from openprogram.context.persistence import rendered_history
+
+    req = continuation.request
+    on_event = on_event or _noop
+    db = default_db()
+    session = db.get_session(req.session_id)
+    if session is None:
+        raise RuntimeError("continuation session is missing")
+    user_msg_id = continuation.state.payload["turn"]["user_message_id"]
+    assistant_msg_id = continuation.assistant_message_id
+    if not db.message_exists(req.session_id, user_msg_id):
+        raise RuntimeError("continuation user anchor is missing")
+    if not db.message_exists(req.session_id, assistant_msg_id):
+        raise RuntimeError("continuation assistant placeholder is missing")
+    history = rendered_history(db, req.session_id, head_id=user_msg_id) or []
+    context = execution_context if execution_context is not None else {}
+    final_text, usage, tool_calls = run_loop_blocking(
+        req=req,
+        history=history,
+        on_event=on_event,
+        cancel_event=cancel_event,
+        assistant_msg_id=assistant_msg_id,
+        execution_context=context,
+        continuation=continuation,
+    )
+    if context.get("safe_point_committed"):
+        result = TurnResult(
+            final_text="",
+            user_msg_id=user_msg_id,
+            assistant_msg_id=assistant_msg_id,
+        )
+        setattr(result, "_execution_safe_point_handoff", True)
+        return result
+
+    assistant_msg, _blocks, tool_calls, usage = persist_assistant_message(
+        db=db,
+        req=req,
+        session=session,
+        usage=usage,
+        final_text=final_text,
+        history=history,
+        tool_calls=tool_calls,
+        _ordered_blocks=[],
+        _agentic_tool_names=set(),
+        _placeholder_inserted=True,
+        cancel_event=cancel_event,
+        assistant_msg_id=assistant_msg_id,
+        user_msg_id=user_msg_id,
+    )
+    writer = TurnWriter(db, req)
+    finalize_turn(
+        db=db,
+        req=req,
+        session=session,
+        usage=usage,
+        assistant_msg=assistant_msg,
+        assistant_msg_id=assistant_msg_id,
+        _project_baseline=None,
+        agent_profile=None,
+        ctx_win=None,
+        on_event=on_event,
+        head_id=writer.head_for_finalize(assistant_msg_id),
+    )
+    on_event({"type": "chat_response", "data": {
+        "type": "result", "session_id": req.session_id,
+        "msg_id": user_msg_id, "content": final_text,
+    }})
+    return TurnResult(
+        final_text=final_text,
+        user_msg_id=user_msg_id,
+        assistant_msg_id=assistant_msg_id,
+        tool_calls=tool_calls,
+        usage=usage,
+    )
+
+
 def _process_turn_once(
     req: TurnRequest,
     *,
@@ -536,6 +632,15 @@ def _process_turn_once(
         # exception, AND inside the early-return above (finally fires
         # before return is actually executed).
         _bindings.release()
+
+    if execution_context is not None and execution_context.get("safe_point_committed"):
+        result = TurnResult(
+            final_text="",
+            user_msg_id=user_msg_id,
+            assistant_msg_id=assistant_msg_id,
+        )
+        setattr(result, "_execution_safe_point_handoff", True)
+        return result
 
     # 4b. Files the turn handed back via ``send_file`` become attachment
     #     markers on the end of the reply text. Doing it here — on the

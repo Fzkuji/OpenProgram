@@ -87,6 +87,7 @@ def run_loop_blocking(
     agentic_tool_names_out: Optional[set[str]] = None,
     ordered_blocks_out: Optional[list[dict]] = None,
     execution_context: Optional[dict] = None,
+    continuation=None,
 ) -> tuple[str, dict, list[dict]]:
     """Build AgentContext, kick off agent_loop, drain its EventStream.
 
@@ -107,7 +108,7 @@ def run_loop_blocking(
     see tests/unit/agent/test_dispatcher_integration.py. None means use
     the default (real provider via stream_simple).
     """
-    from openprogram.agent.agent_loop import agent_loop, agent_loop_continue
+    from openprogram.agent.agent_loop import agent_loop, agent_loop_resume
     from openprogram.agent.types import AgentContext, AgentLoopConfig
     # Profile / model resolution goes through the package attribute so
     # test monkeypatches on ``dispatcher._load_agent_profile`` /
@@ -176,131 +177,146 @@ def run_loop_blocking(
         system_prompt = f"{system_prompt}\n\n{surface_prompt}"
     model = _dispatcher._resolve_model(agent_profile, req.model_override)
 
-    # Route history through the context engine: applies tool-result
-    # aging in-memory, computes an accurate token budget against the
-    # model's real context window, surfaces whether auto-compact should
-    # fire before we burn tokens on this turn.
-    from openprogram.context import resolve_engine_for
     from openprogram.agent.session_db import default_db
-    _ctx_engine = resolve_engine_for(agent_profile)
-    _ctx_engine.on_session_start(req.session_id)
     db = default_db()
-    # The prompt is recorded, not implied (dag/overview.md §7): append a
-    # context/system_prompt node whenever the assembled text's hash moves.
-    # No-op when it didn't — a stable prompt records once per session.
-    from openprogram.context.system_prompt_node import record_system_prompt
-    record_system_prompt(db, req.session_id, recordable_system_prompt)
-    session = db.get_session(req.session_id) or {}
-    prep = _ctx_engine.prepare(
-        agent=agent_profile,
-        session=session,
-        history=history,
-        model=model,
-        tools=tools,
-        system_prompt=system_prompt,
-    )
+    if continuation is not None:
+        # Resume is not a new user turn.  Re-running the context engine would
+        # perform its normal auto-compact/system-prompt bookkeeping and could
+        # change the provider prefix captured by the checkpoint.  Render the
+        # persisted branch directly at the user anchor and use the resolved
+        # prompt stored by the original provider boundary.
+        snapshot = continuation.resolved_snapshot
+        durable_prompt = snapshot.get("system_prompt")
+        durable_model = snapshot.get("model")
+        if not isinstance(durable_prompt, str) or not isinstance(durable_model, dict):
+            raise ValueError("Agent checkpoint resolved snapshot is invalid")
+        if durable_model.get("id") != getattr(model, "id", None):
+            raise ValueError("Agent checkpoint model no longer resolves")
+        from openprogram.context.nodes import render_context
+        from openprogram.context.render import render_dag_messages
+        from openprogram.store.session.session_node_writer import SessionNodeWriter
 
-    # Auto-compact FIRST: the durable fix. It writes a summary node
-    # into the DAG, so the shrink survives this turn (panel, next
-    # turns, reload). Snip runs only as a fallback below — the old
-    # snip-first order let the free in-memory trim drop the budget
-    # back under the threshold every turn, so the LLM compact never
-    # fired and the graph grew without bound.
-    if req.history_override is None and _ctx_engine.should_auto_compact(prep):
-        try:
-            loop = asyncio.new_event_loop()
-            try:
-                compact_res = loop.run_until_complete(
-                    _ctx_engine.compact(
-                        agent=agent_profile,
-                        session_id=req.session_id,
-                        model=model,
-                        on_event=on_event,
-                        user_initiated=False,
-                    )
-                )
-            finally:
-                loop.close()
-            if compact_res.summary_id:
-                # Re-load the post-compact view (summary + kept
-                # tail) so the LLM call sees the shorter context.
-                from openprogram.context.persistence import rendered_history
-                history = rendered_history(db, req.session_id) or history
-                prep = _ctx_engine.prepare(
-                    agent=agent_profile,
-                    session=db.get_session(req.session_id) or session,
-                    history=history,
-                    model=model,
-                    tools=tools,
-                    system_prompt=system_prompt,
-                )
-        except Exception as e:  # noqa: BLE001
-            # Auto-compact must never crash the turn.
-            on_event({"type": "chat_response",
-                      "data": {"type": "compaction_failed",
-                               "session_id": req.session_id,
-                               "error": f"{type(e).__name__}: {e}",
-                               "user_initiated": False}})
-
-    # Snip fallback: compact failed, was skipped (<4 messages), or the
-    # summary alone didn't free enough. Free in-memory trim of the
-    # oldest turns so THIS request still fits the window. Not written
-    # to the DAG — it only shapes what ships now.
-    if req.history_override is None and _ctx_engine.should_auto_compact(prep):
-        try:
-            from openprogram.context.snip import snip
-            from openprogram.context.tokens import count_tokens
-            snipped, n_snipped = snip(
-                prep.history_dicts,
-                token_counter=lambda msgs: count_tokens(msgs, model),
-                context_window=prep.context_window,
-            )
-            if n_snipped > 0:
-                history = snipped
-                prep = _ctx_engine.prepare(
-                    agent=agent_profile,
-                    session=db.get_session(req.session_id) or session,
-                    history=history,
-                    model=model,
-                    tools=tools,
-                    system_prompt=system_prompt,
-                )
-                on_event({"type": "chat_response",
-                          "data": {"type": "snip",
-                                   "session_id": req.session_id,
-                                   "turns_removed": n_snipped}})
-        except Exception:
-            # Failing to snip means the oversized context goes to the model
-            # and the provider rejects it — worth knowing about.
-            _log.warning(
-                "history snip failed for session %s",
-                req.session_id, exc_info=True,
-            )
-
-    # Memory recalled for this turn (dag/overview.md §7). ``process_user_turn``
-    # stamped it on the user node; read it back from the branch so the block
-    # the loop renders is byte-identical to the one replay will reproduce.
-    _memory_prefetch = ""
-    _prefetch_history = history
-    _prefetch_head = assistant_msg_id or req.user_msg_id
-    if _prefetch_head:
-        # ``history`` intentionally excludes the current user node. Follow the
-        # current branch to that node so we reuse the exact persisted recall
-        # instead of issuing a second search.
-        _prefetch_history = (
-            db.get_branch(req.session_id, _prefetch_head) or history
+        graph = SessionNodeWriter(db, req.session_id).load()
+        anchor = continuation.state.payload["turn"]["user_message_id"]
+        if anchor not in graph.nodes:
+            raise ValueError("Agent checkpoint user anchor is not in the session graph")
+        context_messages = render_dag_messages(
+            graph,
+            render_context(graph, head_id=anchor, frame_entry_seq=-1),
         )
-    for _m in reversed(_prefetch_history or []):
-        if _m.get("role") == "user":
-            _memory_prefetch = _m.get("memory_prefetch") or ""
-            break
+        context = AgentContext(
+            system_prompt=durable_prompt,
+            messages=context_messages,
+            tools=tools,
+            memory_prefetch="",
+        )
+    else:
+        # Route a new user turn through the context engine: applies
+        # tool-result aging in-memory and computes the provider budget.
+        from openprogram.context import resolve_engine_for
+        _ctx_engine = resolve_engine_for(agent_profile)
+        _ctx_engine.on_session_start(req.session_id)
+        # The prompt is recorded for new turns only.  A continuation reuses
+        # the checkpointed resolved prompt instead.
+        from openprogram.context.system_prompt_node import record_system_prompt
+        record_system_prompt(db, req.session_id, recordable_system_prompt)
+        session = db.get_session(req.session_id) or {}
+        prep = _ctx_engine.prepare(
+            agent=agent_profile,
+            session=session,
+            history=history,
+            model=model,
+            tools=tools,
+            system_prompt=system_prompt,
+        )
 
-    context = AgentContext(
-        system_prompt=system_prompt,
-        messages=prep.agent_messages,
-        tools=tools,
-        memory_prefetch=_memory_prefetch,
-    )
+        # Auto-compact FIRST: the durable fix. It writes a summary node
+        # into the DAG, so the shrink survives this turn (panel, next
+        # turns, reload). Snip runs only as a fallback below.
+        if req.history_override is None and _ctx_engine.should_auto_compact(prep):
+            try:
+                loop = asyncio.new_event_loop()
+                try:
+                    compact_res = loop.run_until_complete(
+                        _ctx_engine.compact(
+                            agent=agent_profile,
+                            session_id=req.session_id,
+                            model=model,
+                            on_event=on_event,
+                            user_initiated=False,
+                        )
+                    )
+                finally:
+                    loop.close()
+                if compact_res.summary_id:
+                    # Re-load the post-compact view (summary + kept
+                    # tail) so the LLM call sees the shorter context.
+                    from openprogram.context.persistence import rendered_history
+                    history = rendered_history(db, req.session_id) or history
+                    prep = _ctx_engine.prepare(
+                        agent=agent_profile,
+                        session=db.get_session(req.session_id) or session,
+                        history=history,
+                        model=model,
+                        tools=tools,
+                        system_prompt=system_prompt,
+                    )
+            except Exception as e:  # noqa: BLE001
+                # Auto-compact must never crash a new user turn.
+                on_event({"type": "chat_response",
+                          "data": {"type": "compaction_failed",
+                                   "session_id": req.session_id,
+                                   "error": f"{type(e).__name__}: {e}",
+                                   "user_initiated": False}})
+
+        # Snip fallback: compact failed, was skipped (<4 messages), or the
+        # summary alone didn't free enough. This is only for a new turn.
+        if req.history_override is None and _ctx_engine.should_auto_compact(prep):
+            try:
+                from openprogram.context.snip import snip
+                from openprogram.context.tokens import count_tokens
+                snipped, n_snipped = snip(
+                    prep.history_dicts,
+                    token_counter=lambda msgs: count_tokens(msgs, model),
+                    context_window=prep.context_window,
+                )
+                if n_snipped > 0:
+                    history = snipped
+                    prep = _ctx_engine.prepare(
+                        agent=agent_profile,
+                        session=db.get_session(req.session_id) or session,
+                        history=history,
+                        model=model,
+                        tools=tools,
+                        system_prompt=system_prompt,
+                    )
+                    on_event({"type": "chat_response",
+                              "data": {"type": "snip",
+                                       "session_id": req.session_id,
+                                       "turns_removed": n_snipped}})
+            except Exception:
+                _log.warning(
+                    "history snip failed for session %s",
+                    req.session_id, exc_info=True,
+                )
+
+        # Memory recalled for a new turn. ``process_user_turn`` stamped it on
+        # the user node; the resume path must not perform another read/write.
+        _memory_prefetch = ""
+        _prefetch_history = history
+        _prefetch_head = assistant_msg_id or req.user_msg_id
+        if _prefetch_head:
+            _prefetch_history = db.get_branch(req.session_id, _prefetch_head) or history
+        for _m in reversed(_prefetch_history or []):
+            if _m.get("role") == "user":
+                _memory_prefetch = _m.get("memory_prefetch") or ""
+                break
+        context = AgentContext(
+            system_prompt=system_prompt,
+            messages=prep.agent_messages,
+            tools=tools,
+            memory_prefetch=_memory_prefetch,
+        )
 
     # _default_convert_to_llm filters out non-LLM messages (e.g. our
     # custom error / system entries) — agent.py already provides this.
@@ -379,16 +395,33 @@ def run_loop_blocking(
         )]
 
     safe_point_callback = (execution_context or {}).get("safe_point_hook")
+    last_safe_point_snapshot: dict[str, object] = {}
 
     async def _safe_point_hook(kind: str, payload: dict) -> bool:
+        nonlocal last_safe_point_snapshot
         if safe_point_callback is None:
             return False
-        result = safe_point_callback(kind, payload)
+        durable_payload = dict(payload)
+        snapshot = durable_payload.get("resolved_snapshot")
+        if isinstance(snapshot, dict):
+            last_safe_point_snapshot = dict(snapshot)
+        elif last_safe_point_snapshot:
+            durable_payload["resolved_snapshot"] = dict(last_safe_point_snapshot)
+        durable_payload["turn"] = {
+            "user_message_id": req.user_msg_id or "",
+            "assistant_message_id": assistant_msg_id or "",
+            "base_history_head_id": req.user_msg_id or "",
+            "branch_id": "main",
+        }
+        result = safe_point_callback(kind, durable_payload)
         if inspect.isawaitable(result):
             result = await result
         # AgentLoop treats a true result as an ownership hand-off.  Preserve
         # it verbatim so no later tool, persistence, or finalize stage runs.
-        return bool(result)
+        handed_off = bool(result)
+        if handed_off and execution_context is not None:
+            execution_context["safe_point_committed"] = True
+        return handed_off
 
     config = AgentLoopConfig(
         model=model,
@@ -447,7 +480,8 @@ def run_loop_blocking(
                 target=_watch, daemon=True, name="turn-cancel-bridge",
             ).start()
 
-        # Single code path: history (trimmed of the new user_msg)
+        # Normal turns add their prompt once. A continuation already owns a
+        # persisted user anchor and restores its provider decision directly.
         # plus UserMessage prompt added by agent_loop exactly once.
         # The old user_already_persisted branch used agent_loop_continue
         # with history that included the duplicated user_msg as both
@@ -458,35 +492,37 @@ def run_loop_blocking(
         from openprogram.providers.types import (
             ImageContent, TextContent, UserMessage,
         )
-        content_blocks: list = []
-        if req.user_text:
-            from openprogram.agent.authority import render_model_input_from
-            content_blocks.append(TextContent(
-                text=render_model_input_from(req, req.user_text)
-            ))
-        for att in (req.attachments or []):
-            if not isinstance(att, dict):
-                continue
-            if att.get("type") == "image":
-                try:
-                    content_blocks.append(ImageContent(
-                        data=att.get("data") or "",
-                        mime_type=att.get("media_type") or "image/png",
-                    ))
-                except Exception:
-                    # Malformed attachment — drop it rather than abort the
-                    # whole turn. The user sent an image and the model will
-                    # not see it, so this is not a quiet loss.
-                    _log.warning("image attachment dropped for session %s",
-                                 req.session_id, exc_info=True)
-        if not content_blocks:
-            content_blocks = [TextContent(text="")]
-        prompt = UserMessage(
-            content=content_blocks,
-            timestamp=int(time.time() * 1000),
-        )
-        ev_stream = agent_loop([prompt], context, config,
-                                loop_cancel, stream_fn)
+        if continuation is None:
+            content_blocks: list = []
+            if req.user_text:
+                from openprogram.agent.authority import render_model_input_from
+                content_blocks.append(TextContent(
+                    text=render_model_input_from(req, req.user_text)
+                ))
+            for att in (req.attachments or []):
+                if not isinstance(att, dict):
+                    continue
+                if att.get("type") == "image":
+                    try:
+                        content_blocks.append(ImageContent(
+                            data=att.get("data") or "",
+                            mime_type=att.get("media_type") or "image/png",
+                        ))
+                    except Exception:
+                        _log.warning("image attachment dropped for session %s",
+                                     req.session_id, exc_info=True)
+            if not content_blocks:
+                content_blocks = [TextContent(text="")]
+            prompt = UserMessage(
+                content=content_blocks,
+                timestamp=int(time.time() * 1000),
+            )
+            ev_stream = agent_loop([prompt], context, config,
+                                   loop_cancel, stream_fn)
+        else:
+            ev_stream = agent_loop_resume(
+                continuation, context, config, loop_cancel, stream_fn,
+            )
 
         final_text_parts: list[str] = []
         usage_total: dict[str, int] = {
@@ -495,6 +531,29 @@ def run_loop_blocking(
             "provider_request_count": 0, "agent_iteration_count": 0,
         }
         tool_calls: list[dict] = []
+        if continuation is not None:
+            for block in continuation.assistant_message.content:
+                if getattr(block, "type", None) == "text" and getattr(block, "text", ""):
+                    final_text_parts.append(block.text)
+                    if ordered_blocks_out is not None:
+                        ordered_blocks_out.append({"type": "text", "text": block.text})
+            prior_usage = continuation.assistant_message.usage
+            usage_total.update({
+                "input_tokens": int(getattr(prior_usage, "input", 0) or 0),
+                "output_tokens": int(getattr(prior_usage, "output", 0) or 0),
+                "cache_read_tokens": int(getattr(prior_usage, "cache_read", 0) or 0),
+                "cache_write_tokens": int(getattr(prior_usage, "cache_write", 0) or 0),
+                "provider_request_count": 1,
+                "agent_iteration_count": 1,
+            })
+            for result in continuation.tool_results:
+                tool_calls.append({
+                    "id": result.tool_call_id,
+                    "tool_call_id": result.tool_call_id,
+                    "tool": result.tool_name,
+                    "result": _shorten(result),
+                    "is_error": result.is_error,
+                })
         # Capture tool_use inputs so we can rebuild the same
         # collapsible scaffold on reload. tool_execution_end events
         # don't carry the input args, so we stash them at start time.

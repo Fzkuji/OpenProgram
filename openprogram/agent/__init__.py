@@ -17,7 +17,7 @@ The Runtime layer composes these to build whatever agent behavior is needed.
 """
 
 from .agent import Agent, AgentOptions
-from .agent_loop import agent_loop, agent_loop_continue
+from .agent_loop import agent_loop, agent_loop_continue, agent_loop_resume
 from .exec import ExecOptions, ExecResult, exec_command
 from .messages import (
     BRANCH_SUMMARY_PREFIX,
@@ -73,6 +73,7 @@ __all__ = [
     # Loop functions
     "agent_loop",
     "agent_loop_continue",
+    "agent_loop_resume",
     # Session
     "AgentSession",
     # Retry
