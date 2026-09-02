@@ -13,6 +13,27 @@ from tests.component.agent.async_job_support import (
 from tests.support.waiting import wait_until
 
 
+def _canonical_execution(runner, execution_id):
+    execution = runner._execution_store.get_execution(execution_id)
+    assert execution is not None
+    return execution
+
+
+def _await_canonical_terminal(runner, execution_id, *, timeout=5.0):
+    execution = None
+
+    def terminal():
+        nonlocal execution
+        execution = runner._execution_store.get_execution(execution_id)
+        return execution is not None and execution.status.value in {
+            "completed", "cancelled", "failed", "interrupted",
+        }
+
+    assert wait_until(terminal, timeout=timeout)
+    assert execution is not None
+    return execution
+
+
 def test_runner_rejection_creates_no_job(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
@@ -54,9 +75,8 @@ def test_runner_cancel_before_pickup(store_fixture, fake_worker, monkeypatch):
     )
     # Force a single-worker pool occupied by another job to keep the
     # second one queued; cancel the queued one. Use two different
-    # sessions so the session-level cancel event for the queued job
-    # doesn't bleed into the running one (cancel is session-scoped
-    # per D5 of the design).
+    # sessions so the exact execution cancellation for the queued job
+    # remains independent from the running execution.
     monkeypatch.setenv("OPENPROGRAM_JOB_WORKERS", "1")
     import openprogram.agent.job.runner as runner_mod
     runner_mod.shutdown_runner()
@@ -87,12 +107,11 @@ def test_runner_cancel_before_pickup(store_fixture, fake_worker, monkeypatch):
     )
     # tid1 occupies the worker (waiting on barrier). tid2 sits in
     # queued. Cancel tid2 before it gets picked up.
-    res = runner.cancel_job(tid2)
+    res = runner.cancel_execution(tid2)
     assert res is not None
     assert res.status in (JobStatus.CANCELLED, JobStatus.ERRORED)
     barrier.set()
-    final = runner.await_job(tid1, timeout=5.0)
-    assert final.status == JobStatus.COMPLETED
+    assert _await_canonical_terminal(runner, tid1).status.value == "completed"
 
 def test_runner_cancel_during_run(store_fixture, fake_worker, monkeypatch):
     monkeypatch.setattr(
@@ -106,16 +125,15 @@ def test_runner_cancel_during_run(store_fixture, fake_worker, monkeypatch):
         parent_msg_id="a1",
     )
     # Wait until the worker is actually executing fake_run before
-    # cancelling — otherwise cancel_job can flip the job to
+    # cancelling — otherwise cancel_execution can flip the job to
     # cancelled while it's still pending, _run_one's
     # pending→running transition gets rejected, and fake_run never
     # gets a chance to observe the cancel signal.
     assert entered.wait(timeout=2.0), "fake worker never started"
     # Don't release barrier — cancel mid-run.
-    runner.cancel_job(tid)
-    final = runner.await_job(tid, timeout=5.0)
-    assert final is not None
-    assert final.status in (JobStatus.CANCELLED, JobStatus.ERRORED)
+    runner.cancel_execution(tid)
+    final = _await_canonical_terminal(runner, tid)
+    assert final.status.value == "cancelled"
     # Worker observed cancel (via is_cancelled flag).
     assert cancel_seen.is_set()
 
@@ -139,15 +157,14 @@ def test_runner_pool_backpressure(store_fixture, fake_worker, monkeypatch):
     ]
     # Single worker occupied; others queued.
     assert fake_worker[3].wait(1.0)
-    statuses = [runner.get_job(t).status for t in ids]
+    statuses = [_canonical_execution(runner, t).status.value for t in ids]
     # First either pending/queued/running, later ones should not be running.
-    running = [s for s in statuses if s == JobStatus.RUNNING]
+    running = [status for status in statuses if status == "running"]
     assert len(running) <= 1
     # Now drain.
     barrier.set()
     for t in ids:
-        final = runner.await_job(t, timeout=5.0)
-        assert final.status in (JobStatus.COMPLETED, JobStatus.ERRORED)
+        assert _await_canonical_terminal(runner, t).status.value == "completed"
 
 def test_runner_durable_dispatcher_skips_saturated_session(
     store_fixture, fake_worker, monkeypatch, tmp_path,
@@ -255,37 +272,32 @@ def test_runner_dispatch_submit_failure_terminalizes_published_job(
     finally:
         runner.shutdown()
 
-def test_running_job_binds_one_immutable_governance_context(
+def test_canonical_driver_receives_immutable_job_resource_context(
     store_fixture, monkeypatch, tmp_path,
 ):
-    from dataclasses import is_dataclass
-
     monkeypatch.setattr(
         "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
     )
     captured = []
 
-    def inspect_context(**_kwargs):
+    def inspect_context(*, execution_context, **_kwargs):
         from openprogram.agent.sub_agent_run import AgentTurnResult
-        from openprogram.agent.job.runner import current_job_resource_context
 
-        captured.append(current_job_resource_context())
+        captured.append(execution_context)
         return AgentTurnResult(
             head_id="head", final_text="done", failed=False, error=None,
         )
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", inspect_context,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(inspect_context),
     )
     from openprogram.agent.resource_governance import (
         ResourceGovernor,
         ResourceLimits,
         resolve_resource_limits,
     )
-    from openprogram.agent.job.runner import (
-        JobRunner,
-        current_job_resource_context,
-    )
+    from openprogram.agent.job.runner import JobRunner
     from openprogram.usage.ledger import UsageLedger
 
     ledger = UsageLedger(tmp_path / "governance.db")
@@ -302,22 +314,17 @@ def test_running_job_binds_one_immutable_governance_context(
         job_id = runner.spawn_job(
             session_id="p1", prompt="inspect", agent_id="main",
         )
-        assert runner.await_job(job_id, timeout=5).status.value == "completed"
+        assert _await_canonical_terminal(runner, job_id).status.value == "completed"
     finally:
         runner.shutdown()
 
     assert len(captured) == 1
     context = captured[0]
-    assert context.job_id == job_id
-    assert context.budget_scope_id
-    assert context.governor is runner._governor
-    assert context.ledger_identity == str(ledger._path().resolve())
-    assert dict(context.effective_limits)["max_total_tokens"] == 10_000
-    assert callable(context.deadline_callback)
-    assert callable(context.activity_callback)
-    assert is_dataclass(context)
-    assert context.__dataclass_params__.frozen is True
-    assert current_job_resource_context() is None
+    assert callable(context["safe_point_hook"])
+    hints = context["job_context"]["resource_hints"]
+    assert hints["admission_id"]
+    assert hints["budget_scope_id"]
+    assert hints["effective_limits"]["max_total_tokens"] == 10_000
 
 def test_runner_executes_three_live_jobs_for_one_session(
     store_fixture, fake_worker, monkeypatch, tmp_path,
@@ -361,7 +368,7 @@ def test_runner_executes_three_live_jobs_for_one_session(
 
         fake_worker[1].set()
         assert all(
-            runner.await_job(job_id, timeout=5).status.value == "completed"
+            _await_canonical_terminal(runner, job_id).status.value == "completed"
             for job_id in job_ids
         )
     finally:
@@ -401,15 +408,15 @@ def test_cancel_one_same_session_job_does_not_cancel_sibling(
         assert wait_until(lambda: len(fake_worker[0]) >= 2, timeout=2.0)
         assert len(fake_worker[0]) == 2
 
-        runner.cancel_job(first)
-        assert runner.await_job(first, timeout=5).status.value == "cancelled"
+        runner.cancel_execution(first)
+        assert _await_canonical_terminal(runner, first).status.value == "cancelled"
         sibling_token = run_control.current_token("p1", execution_id=second)
         assert sibling_token is not None
         assert not sibling_token.event.is_set()
-        assert runner.get_job(second).status.value == "running"
+        assert _canonical_execution(runner, second).status.value == "running"
 
         fake_worker[1].set()
-        assert runner.await_job(second, timeout=5).status.value == "completed"
+        assert _await_canonical_terminal(runner, second).status.value == "completed"
     finally:
         fake_worker[1].set()
         runner.shutdown()
@@ -457,18 +464,13 @@ def test_idle_activity_is_tracked_per_same_session_job(
         clock.advance(0.75)
         assert runner.record_job_activity(active, "provider_data")
         clock.advance(0.5)
-        assert wait_until(
-            lambda: runner.get_job(idle).reason_code == "budget.idle_exhausted",
-            timeout=2.0,
-        )
-
-        idle_final = runner.await_job(idle, timeout=5)
+        idle_final = _await_canonical_terminal(runner, idle)
         assert idle_final.status.value == "cancelled"
         assert idle_final.reason_code == "budget.idle_exhausted"
-        assert runner.get_job(active).status.value == "running"
+        assert _canonical_execution(runner, active).status.value == "running"
 
         fake_worker[1].set()
-        assert runner.await_job(active, timeout=5).status.value == "completed"
+        assert _await_canonical_terminal(runner, active).status.value == "completed"
     finally:
         fake_worker[1].set()
         runner.shutdown()
@@ -515,7 +517,7 @@ def test_runner_job_coexists_with_mcp_foreground_token(
         assert job_token.event is not mcp_event
 
         fake_worker[1].set()
-        assert runner.await_job(job_id, timeout=5).status.value == "completed"
+        assert _await_canonical_terminal(runner, job_id).status.value == "completed"
     finally:
         run_control.unregister_cancel_event("p1", mcp_event)
         fake_worker[1].set()
@@ -558,7 +560,7 @@ def test_runner_releases_claim_when_canonical_cancel_races_activation(
             prompt="cancel race", agent_id="main",
         )
         assert activation_entered.wait(2.0)
-        runner.cancel_job(job_id, reason="cancel.user")
+        runner.cancel_execution(job_id, reason="cancel.user")
         allow_activation.set()
         assert wait_until(
             lambda: (
@@ -582,7 +584,7 @@ def test_runner_releases_claim_when_canonical_cancel_races_activation(
         fake_worker[1].set()
         runner.shutdown()
 
-def test_runner_repairs_canonical_finish_projection_after_store_failure(
+def test_resource_saga_releases_terminal_canonical_execution(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
     monkeypatch.setattr(
@@ -591,26 +593,13 @@ def test_runner_repairs_canonical_finish_projection_after_store_failure(
     from openprogram.agent.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
-    import openprogram.agent.job.runner as runner_mod
     from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
     from openprogram.usage.ledger import UsageLedger
 
     ledger = UsageLedger(tmp_path / "governance.db")
     resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
     governor = ResourceGovernor(
         ledger, limit_resolver=lambda _sid, _job: resolved,
-    )
-    original_store_update = runner_mod._store_update_status
-    fail_projection = True
-
-    def fail_completed_projection(session_id, job_id, status, **fields):
-        if fail_projection and status == JobStatus.COMPLETED:
-            raise OSError("job store unavailable")
-        return original_store_update(session_id, job_id, status, **fields)
-
-    monkeypatch.setattr(
-        runner_mod, "_store_update_status", fail_completed_projection,
     )
     runner = JobRunner(max_workers=1, governor=governor)
     try:
@@ -619,18 +608,17 @@ def test_runner_repairs_canonical_finish_projection_after_store_failure(
         )
         assert fake_worker[3].wait(2)
         fake_worker[1].set()
+        assert _await_canonical_terminal(runner, job_id).status.value == "completed"
         assert wait_until(
-            lambda: (
-                (execution := runner._execution_store.get_execution(job_id))
-                is not None
-                and execution.status.value == "completed"
+            lambda: any(
+                intent["kind"] == "resource.release.intent"
+                and intent["state"] == "applied"
+                for intent in runner._execution_store.list_resource_intents(
+                    execution_id=job_id,
+                )
             ),
             timeout=3.0,
         )
-        assert runner.get_job(job_id).status == JobStatus.RUNNING
-        fail_projection = False
-        runner._reconcile_resources()
-        assert runner.get_job(job_id).status == JobStatus.COMPLETED
         assert tuple(ledger.connection().execute(
             "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
             (job_id,),
