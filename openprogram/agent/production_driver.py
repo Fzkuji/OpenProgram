@@ -205,6 +205,12 @@ class ForcedToolActivation:
     surface_context_snapshot: Mapping[str, Any] | None = None
 
 
+@dataclass(frozen=True)
+class JobAgentActivation:
+    request: Any
+    job_context: Mapping[str, Any]
+
+
 class AgentActivationService:
     """Resolve one immutable admission input into an existing Agent turn."""
 
@@ -273,6 +279,19 @@ class AgentActivationService:
                 pass
         return TurnRequest(session_id=record.session_id, **values)
 
+    def build_job_activation(self, record: Any) -> JobAgentActivation:
+        from openprogram.agent.job.input import JobAgentInputError, JobAgentInputV1
+
+        payload = self._input_resolver(record)
+        if not isinstance(payload, Mapping):
+            raise AgentDriverError("invalid_input", "Job Agent input must resolve to an object")
+        try:
+            value = JobAgentInputV1.parse(payload)
+            request = value.to_turn_request(session_id=record.session_id)
+        except JobAgentInputError as exc:
+            raise AgentDriverError("invalid_job_input", str(exc)) from exc
+        return JobAgentActivation(request, copy.deepcopy(dict(value.job_context)))
+
 
 class AgentProductionDriver:
     """Internal Agent execution driver with exact owner fencing.
@@ -326,6 +345,8 @@ class AgentProductionDriver:
             raise AgentDriverError("store_required", "Agent activation requires an execution store")
         payload = self.executions.get_agent_turn_input(record.execution_id)
         if payload is None:
+            payload = self.executions.get_job_agent_input(record.execution_id)
+        if payload is None:
             raise AgentDriverError(
                 "input_not_found",
                 f"durable Agent turn input is missing for {record.execution_id}",
@@ -338,6 +359,10 @@ class AgentProductionDriver:
         payload = self.activation._input_resolver(record)
         if not isinstance(payload, Mapping):
             raise AgentDriverError("invalid_input", "Agent admission input must resolve to an object")
+        if payload.get("kind") == "job_agent":
+            resolved = self.activation.build_job_activation(record)
+            setattr(resolved.request, "_job_context", resolved.job_context)
+            return resolved.request
         envelope = normalize_agent_turn_payload(payload)
         if envelope["kind"] == "chat":
             return self.activation.build_request(record, activation)
@@ -359,6 +384,17 @@ class AgentProductionDriver:
             response_format=envelope.get("response_format"),
             surface_context_snapshot=envelope.get("surface_context_snapshot"),
         )
+
+    def resolve_existing_job(self, execution_id: str) -> JobAgentActivation:
+        """Resolve existing immutable Job input without admitting an execution."""
+        if self.executions is None:
+            raise AgentDriverError("store_required", "Job activation requires an execution store")
+        record = self.executions.get_execution_input(execution_id)
+        if record is None:
+            raise AgentDriverError("input_not_found", f"immutable Job input is missing for {execution_id}")
+        if self.executions.get_job_agent_input(execution_id) is None:
+            raise AgentDriverError("wrong_input_kind", f"execution {execution_id} is not a Job Agent input")
+        return self.activation.build_job_activation(record)
 
     @staticmethod
     def capabilities_for_payload(payload: Mapping[str, Any]) -> CapabilitySet:
@@ -729,15 +765,18 @@ class AgentProductionDriver:
             if continuation is not None:
                 from openprogram.agent.dispatcher import process_agent_continuation
 
+                execution_context = {
+                    "safe_point_hook": self._safe_point_hook(
+                        attempt, request, cancel_event, continuation=continuation,
+                    ),
+                }
+                if getattr(request, "_job_context", None) is not None:
+                    execution_context["job_context"] = copy.deepcopy(request._job_context)
                 result = process_agent_continuation(
                     continuation,
                     on_event=self.event_sink,
                     cancel_event=cancel_event,
-                    execution_context={
-                        "safe_point_hook": self._safe_point_hook(
-                            attempt, request, cancel_event, continuation=continuation,
-                        ),
-                    },
+                    execution_context=execution_context,
                 )
             elif isinstance(request, ForcedToolActivation):
                 from openprogram.agent.dispatcher import dispatch_forced_tool_call
@@ -778,6 +817,8 @@ class AgentProductionDriver:
                                 attempt, request, cancel_event,
                             ),
                         }
+                        if getattr(request, "_job_context", None) is not None:
+                            runner_kwargs["execution_context"]["job_context"] = copy.deepcopy(request._job_context)
                 except (TypeError, ValueError):
                     pass
                 result = self.turn_runner(**runner_kwargs)
@@ -1709,6 +1750,28 @@ class CanonicalAgentEntry:
             status_version=running.status_version,
         )
 
+    async def activate_existing_job(
+        self,
+        execution_id: str,
+        admission_id: str | None,
+        expected_version: int,
+    ) -> CanonicalAgentActivation | None:
+        """Activate an already-admitted Job identity and immutable input only."""
+        execution = self.store.get_execution(execution_id)
+        if execution is None:
+            raise AgentDriverError("execution_not_found", f"Job execution is missing: {execution_id}")
+        if execution.status_version != expected_version:
+            raise AgentDriverError("stale_version", "Job execution version is stale")
+        resolved = self.driver.resolve_existing_job(execution_id)
+        expected_admission = resolved.job_context["resource_hints"]["admission_id"]
+        if expected_admission != admission_id:
+            raise AgentDriverError("admission_mismatch", "Job admission id does not match immutable input")
+        return await self.activate(CanonicalAgentAdmission(
+            execution_id=execution.execution_id,
+            session_id=execution.session_id,
+            status_version=execution.status_version,
+        ))
+
 
 class CanonicalAgentAdapter:
     """Transport-neutral adapter for durable Agent chat admission/activation."""
@@ -1823,6 +1886,7 @@ __all__ = [
     "CanonicalAgentAdapter",
     "CanonicalAgentEntry",
     "ForcedToolActivation",
+    "JobAgentActivation",
     "AGENT_TURN_INPUT_VERSION",
     "MAX_AGENT_TURN_INPUT_BYTES",
     "normalize_agent_turn_payload",

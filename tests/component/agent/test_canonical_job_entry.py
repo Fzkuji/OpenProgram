@@ -30,13 +30,16 @@ def test_public_spawn_creates_job_id_bound_canonical_execution(
         assert execution.execution_id == job_id
         assert execution.status.value in {"queued", "running", "completed"}
         assert execution.capabilities.to_dict() == {
-            "pause": False,
-            "step": False,
+            "pause": True,
+            "step": True,
             "steer": False,
             "fork": False,
             "retry": False,
-            "safe_point_kinds": [],
-            "state_schema_version": None,
+            "safe_point_kinds": [
+                "agent.provider.decision.after",
+                "agent.tool.action.after",
+            ],
+            "state_schema_version": 1,
         }
     finally:
         fake_worker[1].set()

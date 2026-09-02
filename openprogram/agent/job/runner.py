@@ -440,22 +440,12 @@ class JobRunner:
         self._dispatch_wake.set()
 
     @staticmethod
-    def _canonical_input(job: Job) -> tuple[str, str]:
-        # Admission metadata and terminal fields are projections, not part of
-        # the immutable execution input.  In particular, idempotent retries
-        # reconstructing a Job must hash identically after the governor has
-        # assigned admission/budget fields.
-        immutable = job.to_dict()
-        immutable["status"] = JobStatus.QUEUED.value
-        for field in (
-            "queued_at", "started_at", "completed_at",
-            "cancel_requested_at", "head_id", "result_text", "error",
-            "attempt", "admission_id", "budget_scope_id",
-            "effective_limits", "resolved_limits_snapshot", "reason_code",
-        ):
-            immutable[field] = None
+    def _canonical_input(job: Job, *, run_id: str | None) -> tuple[str, str, dict[str, Any]]:
+        from openprogram.agent.job.input import JobAgentInputV1
+
+        immutable = JobAgentInputV1.from_job(job, run_id=run_id).to_dict()
         payload = json.dumps(
-            {"version": 1, "job": immutable},
+            immutable,
             ensure_ascii=False,
             allow_nan=False,
             sort_keys=True,
@@ -467,49 +457,34 @@ class JobRunner:
         return (
             f"job-input-v1:{payload}",
             hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+            immutable,
         )
 
     def _admit_canonical_job(self, job: Job) -> None:
         """Admit one public Job under its own canonical execution identity."""
-        from openprogram.execution import CapabilitySet
+        from openprogram.agent.production_driver import AgentProductionDriver
         from openprogram.agent.authority import normalize_authority
 
         existing = self._execution_store.get_execution(job.id)
-        input_ref, input_hash = self._canonical_input(job)
-        if existing is not None:
-            record = self._execution_store.get_execution_input(job.id)
-            if record is None:
-                raise RuntimeError(f"canonical execution identity conflict: {job.id}")
-            if record.input_hash != input_hash:
-                # Deferred resume changes only the durable continuation target;
-                # the original execution input remains immutable.
-                raw = record.input_ref.removeprefix("job-input-v1:")
-                try:
-                    original = Job.from_dict(json.loads(raw)["job"])
-                except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-                    raise RuntimeError(
-                        f"canonical execution identity conflict: {job.id}"
-                    ) from None
-                candidate = replace(job, parent_msg_id=original.parent_msg_id)
-                original_ref, _ = self._canonical_input(original)
-                candidate_ref, _ = self._canonical_input(candidate)
-                if record.input_ref != original_ref or candidate_ref != original_ref:
-                    raise RuntimeError(
-                        f"canonical execution identity conflict: {job.id}"
-                    )
-            return
         parent = (
             self._execution_store.get_execution(job.parent_job_id)
             if job.parent_job_id else None
         )
         if parent is not None and parent.session_id != job.parent_session_id:
             parent = None
+        run_id = parent.run_id if parent is not None else f"job-run-{job.id}"
+        input_ref, input_hash, input_payload = self._canonical_input(job, run_id=run_id)
+        if existing is not None:
+            record = self._execution_store.get_job_agent_input(job.id)
+            if record is None:
+                raise RuntimeError(f"canonical execution identity conflict: {job.id}")
+            return
         revision = self._execution_store.create_revision(
             revision_id=f"job-revision-{input_hash[:24]}",
             manifest={
                 "kind": "job",
                 "job_id": job.id,
-                "entrypoint": "openprogram.agent.job.runner:JobRunner._run_one",
+                "entrypoint": "openprogram.agent.production_driver:AgentProductionDriver",
             },
         )
         actor = normalize_authority(job) or {
@@ -519,38 +494,33 @@ class JobRunner:
         }
         self._execution_store.admit_execution(
             execution_id=job.id,
-            run_id=parent.run_id if parent is not None else None,
             parent_execution_id=parent.execution_id if parent is not None else None,
             session_id=job.parent_session_id,
             revision_id=revision.revision_id,
             input_ref=input_ref,
             input_hash=input_hash,
-            entrypoint="openprogram.agent.job.runner:JobRunner._run_one",
+            entrypoint="openprogram.agent.production_driver:AgentProductionDriver",
             trusted_actor=actor,
             config_snapshot_ref=f"job-config:{job.id}",
             user_message_id=job.caller_msg_id or job.parent_msg_id,
-            capabilities=CapabilitySet(),
+            run_id=run_id,
+            capabilities=AgentProductionDriver.capabilities_for_payload({
+                "version": 1, "kind": "chat", "request": input_payload["turn_request"],
+            }),
+            job_agent_payload=input_payload,
         )
 
     def _canonical_job(self, job_id: str) -> Job | None:
         record = self._execution_store.get_execution_input(job_id)
-        if record is None or not record.input_ref.startswith("job-input-v1:"):
-            return None
-        payload_text = record.input_ref[len("job-input-v1:"):]
-        if len(payload_text.encode("utf-8")) > _MAX_CANONICAL_JOB_INPUT_BYTES:
-            return None
-        if hashlib.sha256(payload_text.encode("utf-8")).hexdigest() != record.input_hash:
+        payload = self._execution_store.get_job_agent_input(job_id)
+        if record is None or payload is None:
             return None
         try:
-            payload = json.loads(payload_text)
-            if (
-                not isinstance(payload, dict)
-                or payload.get("version") != 1
-                or not isinstance(payload.get("job"), dict)
-            ):
-                return None
-            job = Job.from_dict(payload["job"])
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            from openprogram.agent.job.input import JobAgentInputV1
+            job = JobAgentInputV1.parse(payload).to_job(
+                execution_id=job_id, session_id=record.session_id,
+            )
+        except (KeyError, TypeError, ValueError):
             return None
         if not all(
             isinstance(value, str) and value

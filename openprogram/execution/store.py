@@ -101,6 +101,14 @@ def _validate_agent_turn_payload(payload: Mapping[str, Any]) -> None:
         raise ExecutionConflict("agent_input_too_large", "Agent turn input exceeds the size limit")
 
 
+def _validate_job_agent_payload(payload: Mapping[str, Any]) -> None:
+    try:
+        from openprogram.agent.job.input import normalize_job_agent_input
+        normalize_job_agent_input(payload)
+    except ValueError as exc:
+        raise ExecutionConflict("invalid_job_agent_input", str(exc)) from exc
+
+
 def _object(raw: str | None) -> dict[str, Any]:
     if not raw:
         return {}
@@ -304,6 +312,7 @@ class ExecutionStore:
         source_checkpoint_id: str | None = None,
         capabilities: CapabilitySet = CapabilitySet(),
         agent_turn_payload: Mapping[str, Any] | None = None,
+        job_agent_payload: Mapping[str, Any] | None = None,
     ) -> ExecutionRecord:
         """Admit one execution and its immutable input in one transaction."""
         if not input_ref or not input_hash or not entrypoint or not config_snapshot_ref:
@@ -313,15 +322,27 @@ class ExecutionStore:
         if not isinstance(trusted_actor, Mapping):
             raise ExecutionConflict("invalid_actor", "trusted_actor must be an object")
         actor_snapshot = _snapshot_json(trusted_actor)
+        if agent_turn_payload is not None and job_agent_payload is not None:
+            raise ExecutionConflict("invalid_input", "execution input has two Agent payloads")
         if agent_turn_payload is not None and not isinstance(agent_turn_payload, Mapping):
             raise ExecutionConflict("invalid_agent_input", "Agent turn input must be an object")
         if agent_turn_payload is not None:
             _validate_agent_turn_payload(agent_turn_payload)
+        if job_agent_payload is not None and not isinstance(job_agent_payload, Mapping):
+            raise ExecutionConflict("invalid_job_agent_input", "Job Agent input must be an object")
+        if job_agent_payload is not None:
+            _validate_job_agent_payload(job_agent_payload)
         agent_payload_json = (
             _json(dict(agent_turn_payload)) if agent_turn_payload is not None else None
         )
+        job_payload_json = (
+            _json(dict(job_agent_payload)) if job_agent_payload is not None else None
+        )
+        durable_payload_json = agent_payload_json or job_payload_json
+        if job_payload_json is not None and hashlib.sha256(job_payload_json.encode("utf-8")).hexdigest() != input_hash:
+            raise ExecutionConflict("input_hash_mismatch", "durable Job Agent input does not match input_hash")
         with self._transaction() as connection:
-            if agent_payload_json is not None:
+            if durable_payload_json is not None:
                 connection.execute(
                     "DELETE FROM execution_finish_repair_slots "
                     "WHERE execution_id NOT IN (SELECT execution_id FROM executions) "
@@ -367,15 +388,15 @@ class ExecutionStore:
                         created_at=record.created_at,
                     ),
                 )
-                if agent_payload_json is not None:
+                if durable_payload_json is not None:
                     connection.execute(
                         "INSERT INTO execution_agent_turn_inputs "
                         "(execution_id, payload_json, content_hash, created_at) "
                         "VALUES (?, ?, ?, ?)",
                         (
                             record.execution_id,
-                            agent_payload_json,
-                            hashlib.sha256(agent_payload_json.encode("utf-8")).hexdigest(),
+                            durable_payload_json,
+                            hashlib.sha256(durable_payload_json.encode("utf-8")).hexdigest(),
                             record.created_at,
                         ),
                     )
@@ -407,6 +428,20 @@ class ExecutionStore:
             return self._execution_input(row) if row is not None else None
 
     def get_agent_turn_input(self, execution_id: str) -> Mapping[str, Any] | None:
+        payload = self._get_durable_agent_input(execution_id)
+        if payload is None or payload.get("kind") == "job_agent":
+            return None
+        _validate_agent_turn_payload(payload)
+        return _snapshot_json(payload)
+
+    def get_job_agent_input(self, execution_id: str) -> Mapping[str, Any] | None:
+        payload = self._get_durable_agent_input(execution_id)
+        if payload is None or payload.get("kind") != "job_agent":
+            return None
+        _validate_job_agent_payload(payload)
+        return _snapshot_json(payload)
+
+    def _get_durable_agent_input(self, execution_id: str) -> dict[str, Any] | None:
         with closing(self._connect()) as connection:
             row = connection.execute(
                 "SELECT payload_json, content_hash FROM execution_agent_turn_inputs WHERE execution_id = ?",
@@ -420,8 +455,7 @@ class ExecutionStore:
         payload = json.loads(payload_raw)
         if not isinstance(payload, dict):
             raise ExecutionConflict("invalid_agent_input", "stored Agent turn input must be an object")
-        _validate_agent_turn_payload(payload)
-        return _snapshot_json(payload)
+        return payload
 
     def put_state_blob(
         self,

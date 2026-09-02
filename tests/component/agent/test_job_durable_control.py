@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 
 import pytest
 
@@ -96,7 +97,7 @@ def test_background_spawn_has_one_canonical_execution_and_no_inner_exec_identity
     identities = {
         value
         for value in json.dumps(payload).split('"')
-        if value.startswith(("exec_", "job_", "j_"))
+        if re.fullmatch(r"(?:exec|j)_[A-Za-z0-9]+", value)
     }
     assert identities <= {job_id}
 
