@@ -23,8 +23,9 @@ _CONTROL_ACTIONS = frozenset({
     "execution.wait.decline", "execution.reconcile",
 })
 _REVISION_ACTIONS = frozenset({
-    "revision.draft.create", "revision.draft.write", "revision.validate",
-    "revision.approve", "revision.publish",
+    "revision.draft.create", "revision.draft.get", "revision.draft.replace",
+    "revision.draft.discard", "revision.validate", "revision.approve",
+    "revision.publish",
 })
 _KNOWN_ACTIONS = _READ_ACTIONS | _CONTROL_ACTIONS | _REVISION_ACTIONS
 

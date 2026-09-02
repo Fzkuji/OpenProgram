@@ -706,6 +706,56 @@ async def handle_execution_wait_decline(ws, cmd: dict):
     await _handle_execution_control(ws, cmd, "wait_decline")
 
 
+async def _handle_revision_control(ws, cmd: dict, action: str) -> None:
+    """Serve revision editor actions without granting a second control path."""
+    from openprogram.execution import default_store
+    from openprogram.execution.revision_public import (
+        RevisionPublicError,
+        submit_revision_request,
+    )
+
+    scope = getattr(ws, "scope", None)
+    state = scope.get("state") if isinstance(scope, dict) else None
+    bound_session = state.get("session_id") if isinstance(state, dict) else None
+    try:
+        result = submit_revision_request(
+            default_store(), cmd, action, actor=_trusted_runtime_actor(ws),
+            bound_session=bound_session if isinstance(bound_session, str) else None,
+            surface="ws",
+        )
+    except RevisionPublicError as exc:
+        result = {"type": "revision.draft.rejected", "error": exc.code}
+    await ws.send_text(json.dumps({**result, "data": result}, default=str))
+
+
+async def handle_revision_draft_create(ws, cmd: dict):
+    await _handle_revision_control(ws, cmd, "revision.draft.create")
+
+
+async def handle_revision_draft_get(ws, cmd: dict):
+    await _handle_revision_control(ws, cmd, "revision.draft.get")
+
+
+async def handle_revision_draft_replace(ws, cmd: dict):
+    await _handle_revision_control(ws, cmd, "revision.draft.replace")
+
+
+async def handle_revision_draft_discard(ws, cmd: dict):
+    await _handle_revision_control(ws, cmd, "revision.draft.discard")
+
+
+async def handle_revision_validate(ws, cmd: dict):
+    await _handle_revision_control(ws, cmd, "revision.validate")
+
+
+async def handle_revision_approve(ws, cmd: dict):
+    await _handle_revision_control(ws, cmd, "revision.approve")
+
+
+async def handle_revision_publish(ws, cmd: dict):
+    await _handle_revision_control(ws, cmd, "revision.publish")
+
+
 async def handle_stats(ws, cmd: dict):
     """Welcome-banner data: agent, programs, skills, tools, providers, channels."""
     from openprogram.webui import server as _s
@@ -888,6 +938,13 @@ ACTIONS = {
     "execution.replay": handle_execution_replay,
     "execution.wait.answer": handle_execution_wait_answer,
     "execution.wait.decline": handle_execution_wait_decline,
+    "revision.draft.create": handle_revision_draft_create,
+    "revision.draft.get": handle_revision_draft_get,
+    "revision.draft.replace": handle_revision_draft_replace,
+    "revision.draft.discard": handle_revision_draft_discard,
+    "revision.validate": handle_revision_validate,
+    "revision.approve": handle_revision_approve,
+    "revision.publish": handle_revision_publish,
     "stats": handle_stats,
     "set_attended": handle_set_attended,
 }

@@ -72,6 +72,25 @@ def _public_event(event):
     }
 
 def register(app):
+    async def _revision(request: Request, body: dict, action: str):
+        """Use the same strict revision envelope as the WebSocket surface."""
+        from openprogram.execution import default_store
+        from openprogram.execution.revision_public import (
+            RevisionPublicError,
+            submit_revision_request,
+        )
+
+        actor, bound_session = _actor_and_session(request)
+        try:
+            state = submit_revision_request(
+                default_store(), body, action, actor=actor,
+                bound_session=bound_session, surface="rest",
+            )
+        except RevisionPublicError as exc:
+            status = 404 if exc.code == "not_found" else 400 if exc.code.startswith("invalid_") else 409
+            return JSONResponse({"error": exc.code}, status_code=status)
+        return JSONResponse({**state, "data": state})
+
     async def _command(request: Request, body: dict, operation: str):
         payload = body or {}
         from openprogram.webui.ws_actions.runtime import (
@@ -126,6 +145,37 @@ def register(app):
 
         endpoint.__name__ = f"api_execution_{operation}"
         app.post(f"/api/execution/wait/{path}")(endpoint)
+
+    @app.post("/api/execution/revision/draft")
+    async def api_revision_draft_create(request: Request, body: dict = None):
+        return await _revision(request, body or {}, "revision.draft.create")
+
+    @app.get("/api/execution/{execution_id}/revision/draft/{draft_id}")
+    async def api_revision_draft_get(execution_id: str, draft_id: str, request: Request):
+        return await _revision(request, {
+            "type": "revision.draft", "action": "revision.draft.get",
+            "execution_id": execution_id, "draft_id": draft_id,
+        }, "revision.draft.get")
+
+    for action, path, method in (
+        ("revision.draft.replace", "replace", "put"),
+        ("revision.draft.discard", "discard", "post"),
+        ("revision.validate", "validate", "post"),
+        ("revision.approve", "approve", "post"),
+        ("revision.publish", "publish", "post"),
+    ):
+        async def revision_endpoint(
+            request: Request, draft_id: str, body: dict = None, _action=action
+        ):
+            payload = body or {}
+            if payload.get("draft_id") != draft_id:
+                return JSONResponse({"error": "invalid_command"}, status_code=400)
+            return await _revision(request, payload, _action)
+
+        revision_endpoint.__name__ = "api_" + action.replace(".", "_")
+        getattr(app, method)(f"/api/execution/revision/draft/{{draft_id}}/{path}")(
+            revision_endpoint
+        )
 
     @app.get("/api/execution/{execution_id}")
     async def api_execution_snapshot(execution_id: str, request: Request):

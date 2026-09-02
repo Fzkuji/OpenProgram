@@ -442,6 +442,66 @@ class RevisionControlService:
         with self.executions._connect() as connection:
             return self._get_manifest(connection, manifest_id)
 
+    def get_draft(self, draft_id: str) -> RevisionDraft | None:
+        """Read a draft without treating its terminal status as an error."""
+        with self.executions._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM revision_drafts WHERE draft_id = ?", (draft_id,)
+            ).fetchone()
+            return self._draft(row) if row is not None else None
+
+    def get_validation(self, validation_id: str) -> RevisionValidation | None:
+        with self.executions._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM revision_validations WHERE validation_id = ?",
+                (validation_id,),
+            ).fetchone()
+            return self._validation(row) if row is not None else None
+
+    def get_approval(self, approval_id: str) -> RevisionApproval | None:
+        with self.executions._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM revision_approvals WHERE approval_id = ?",
+                (approval_id,),
+            ).fetchone()
+            return self._approval(row) if row is not None else None
+
+    def draft_state(
+        self, draft_id: str
+    ) -> tuple[RevisionDraft, RevisionValidation | None, RevisionApproval | None, RevisionManifest | None] | None:
+        """Return the canonical objects a debugger needs for one draft.
+
+        This is read-only and deliberately includes terminal drafts.  Public
+        callers still authorize the source execution before receiving it.
+        """
+        with self.executions._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM revision_drafts WHERE draft_id = ?", (draft_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            draft = self._draft(row)
+            validation_row = connection.execute(
+                "SELECT * FROM revision_validations WHERE draft_id = ? "
+                "AND draft_version = ? ORDER BY created_at DESC LIMIT 1",
+                (draft_id, draft.draft_version),
+            ).fetchone()
+            approval_row = connection.execute(
+                "SELECT * FROM revision_approvals WHERE draft_id = ? "
+                "AND draft_version = ? ORDER BY created_at DESC LIMIT 1",
+                (draft_id, draft.draft_version),
+            ).fetchone()
+            manifest = (
+                self._get_manifest(connection, draft.published_manifest_id)
+                if draft.published_manifest_id else None
+            )
+            return (
+                draft,
+                self._validation(validation_row) if validation_row is not None else None,
+                self._approval(approval_row) if approval_row is not None else None,
+                manifest,
+            )
+
     def require_fork_manifest(
         self, connection: sqlite3.Connection, *, manifest_id: str, source_execution_id: str,
         checkpoint_id: str, proof_hash: str,
