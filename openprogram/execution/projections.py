@@ -280,11 +280,11 @@ class ExecutionProjectionWorker:
     def wake(self) -> None:
         self._wake.set()
 
-    def stop(self, *, timeout: float = 5.0) -> None:
+    def stop(self) -> None:
         self._stopped.set()
         self._wake.set()
         if threading.current_thread() is not self._thread:
-            self._thread.join(timeout=timeout)
+            self._thread.join()
 
     def _run(self) -> None:
         while not self._stopped.is_set():
@@ -314,7 +314,7 @@ def start_projection_worker(
     key = _worker_key(store)
     with _workers_lock:
         existing = _workers.get(key)
-        if existing is not None and existing.is_alive:
+        if existing is not None:
             return existing
         worker = ExecutionProjectionWorker(
             store,
@@ -323,8 +323,8 @@ def start_projection_worker(
             idle_wait_seconds=idle_wait_seconds,
         )
         _workers[key] = worker
-    worker.start()
-    return worker
+        worker.start()
+        return worker
 
 
 def wake_projection_worker(path) -> None:
@@ -339,13 +339,14 @@ def stop_projection_worker(store=None) -> None:
     """Stop one worker, or every worker during process shutdown."""
     with _workers_lock:
         if store is None:
-            workers = list(_workers.values())
-            _workers.clear()
+            entries = list(_workers.items())
         else:
-            worker = _workers.pop(_worker_key(store), None)
-            workers = [worker] if worker is not None else []
-    for worker in workers:
-        worker.stop()
+            key = _worker_key(store)
+            worker = _workers.get(key)
+            entries = [(key, worker)] if worker is not None else []
+        for key, worker in entries:
+            worker.stop()
+            _workers.pop(key, None)
 
 
 def projection_handlers(store) -> dict[str, object]:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 
 from .outbox import ProjectionDispatchResult, ProjectionDispatcher
@@ -17,7 +18,7 @@ def recover_execution_startup(
     *,
     control_service=None,
     projection_dispatcher: ProjectionDispatcher | None = None,
-    projection_owner_id: str = "execution-startup",
+    projection_owner_id: str | None = None,
 ) -> StartupRecoveryResult:
     """Recover canonical state first, then reclaim and replay projections.
 
@@ -37,5 +38,6 @@ def recover_execution_startup(
 
         store = default_store()
         projection_dispatcher = ProjectionDispatcher(store, projection_handlers(store))
-    projections = projection_dispatcher.recover_startup(owner_id=projection_owner_id)
+    owner_id = projection_owner_id or f"execution-startup-{uuid.uuid4().hex}"
+    projections = projection_dispatcher.recover_startup(owner_id=owner_id)
     return StartupRecoveryResult(canonical=canonical, projections=projections)

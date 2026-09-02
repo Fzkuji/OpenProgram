@@ -283,6 +283,27 @@ def test_startup_entrypoint_recovers_canonical_before_projection_replay():
     assert result.canonical == ("recovered",)
 
 
+def test_default_startup_projection_owner_is_unique_per_recovery():
+    owners = []
+
+    class Control:
+        def recover_startup(self):
+            return ()
+
+    class Dispatcher:
+        def recover_startup(self, *, owner_id):
+            owners.append(owner_id)
+            return type("Result", (), {"claimed": 0, "delivered": 0, "failed": 0})()
+
+    for _ in range(2):
+        recover_execution_startup(
+            control_service=Control(), projection_dispatcher=Dispatcher()
+        )
+
+    assert len(set(owners)) == 2
+    assert all(owner.startswith("execution-startup-") for owner in owners)
+
+
 def test_schema_migrates_v4_to_current(tmp_path):
     path = tmp_path / "legacy.sqlite3"
     store = ExecutionStore(path)

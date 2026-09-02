@@ -1736,7 +1736,6 @@ async def _recover_execution_control() -> None:
 
     result = await asyncio.to_thread(
         recover_execution_startup,
-        projection_owner_id="server-execution-startup",
     )
     if result.canonical:
         _log(f"[startup] recovered {len(result.canonical)} canonical execution(s)")
@@ -1745,7 +1744,7 @@ async def _recover_execution_control() -> None:
             f"[startup] projection replay deferred for "
             f"{result.projections.failed} item(s)"
         )
-    start_projection_worker(default_store(), owner_id="server-projection-worker")
+    start_projection_worker(default_store())
 
 
 def create_app(*, owner_auth=None, port: int = 18100):

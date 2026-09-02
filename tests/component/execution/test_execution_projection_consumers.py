@@ -164,6 +164,40 @@ def test_projection_worker_wakes_after_a_runtime_transition(tmp_path, monkeypatc
     assert not worker.is_alive
 
 
+def test_projection_worker_startup_and_shutdown_keep_one_worker_per_store(tmp_path):
+    from openprogram.execution.projections import (
+        start_projection_worker,
+        stop_projection_worker,
+    )
+
+    store = _store(tmp_path)
+    barrier = threading.Barrier(3)
+    workers = []
+
+    def start():
+        barrier.wait()
+        workers.append(start_projection_worker(store, idle_wait_seconds=30))
+
+    starters = [threading.Thread(target=start) for _ in range(2)]
+    for starter in starters:
+        starter.start()
+    barrier.wait()
+    for starter in starters:
+        starter.join()
+
+    assert workers[0] is workers[1]
+    first = workers[0]
+    stop_projection_worker(store)
+    assert not first.is_alive
+    second = start_projection_worker(store, idle_wait_seconds=30)
+    try:
+        assert second is not first
+        assert second.is_alive
+    finally:
+        stop_projection_worker(store)
+    assert not second.is_alive
+
+
 def test_v5_migration_requeues_fixed_projections_for_the_new_read_models(tmp_path):
     from openprogram.execution._schema import SCHEMA_VERSION
     from openprogram.execution.outbox import ProjectionOutboxState
