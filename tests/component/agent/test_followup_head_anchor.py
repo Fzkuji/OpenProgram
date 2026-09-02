@@ -19,14 +19,45 @@ from openprogram.agent.job.types import Job, JobStatus
 
 
 @pytest.fixture(autouse=True)
-def _runner_lifecycle(monkeypatch):
-    """Keep the singleton pool and its control threads inside each test."""
+def _runner_lifecycle(monkeypatch, tmp_path):
+    """Keep runner and canonical state isolated from preceding component tests.
+
+    The component suite shares one Python process.  A preceding transport test
+    may leave a terminal non-Job execution in the default execution database;
+    a fresh ``JobRunner`` must not replay that record as a Job projection.
+    Use per-test temporary execution/session stores and reset the
+    profile-independent/default store caches before constructing the runner.
+    """
     from openprogram.agent.job import runner as runner_mod
+    from openprogram.execution import control as control_mod
+    from openprogram.execution import store as execution_store_mod
+    from openprogram.store.session.session_store import SessionStore
+    from openprogram.store.session import session_store
+    from openprogram.agent import session_db as session_db_mod
 
     runner_mod.shutdown_runner()
+    isolated_store = SessionStore(tmp_path / "sessions")
+    monkeypatch.setattr(
+        "openprogram.paths.get_execution_db_path",
+        lambda: tmp_path / "executions.db",
+    )
+    monkeypatch.setattr(session_db_mod, "default_store", lambda: isolated_store)
+    monkeypatch.setattr(
+        "openprogram.store.session.session_store.default_store",
+        lambda: isolated_store,
+    )
+    monkeypatch.setattr("openprogram.store.default_store", lambda: isolated_store)
+    with control_mod._default_control_services_lock:
+        control_mod._default_control_services.clear()
+    execution_store_mod._store_for_path.cache_clear()
+    session_store._default_store = None
     monkeypatch.setattr("openprogram.worker.lock.is_held_by", lambda _pid: True)
     yield
     runner_mod.shutdown_runner()
+    with control_mod._default_control_services_lock:
+        control_mod._default_control_services.clear()
+    execution_store_mod._store_for_path.cache_clear()
+    session_store._default_store = None
 
 
 def _make_job(**kw):
