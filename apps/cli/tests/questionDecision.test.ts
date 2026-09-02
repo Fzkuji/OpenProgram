@@ -7,6 +7,11 @@ import {
 } from '../src/screens/repl/questionDecision.js';
 import type { PendingDecision } from '../src/screens/repl/types.js';
 
+const mk = (id: string): PendingDecision => ({
+  id, executionId: 'exec_1', waitGeneration: 0, expectedVersion: 1,
+  kind: 'ask', prompt: '', options: [], multi: false, allow_custom: true,
+});
+
 describe('decisionFromFrame', () => {
   it('maps a full ask frame', () => {
     const d = decisionFromFrame({
@@ -56,11 +61,6 @@ describe('decisionFromFrame', () => {
 });
 
 describe('enqueueDecision', () => {
-  const mk = (id: string): PendingDecision => ({
-    id, executionId: 'exec_1', waitGeneration: 0, expectedVersion: 1,
-    kind: 'ask', prompt: '', options: [], multi: false, allow_custom: true,
-  });
-
   it('appends a new decision', () => {
     expect(enqueueDecision([], mk('a'))).toHaveLength(1);
     expect(enqueueDecision([mk('a')], mk('b')).map((d) => d.id)).toEqual(['a', 'b']);
