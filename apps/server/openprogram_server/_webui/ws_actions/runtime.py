@@ -366,7 +366,10 @@ def _public_execution_snapshot(execution) -> tuple[dict, dict]:
         runner = runner_for_execution_store(default_store())
         view = runner.get_job_resource_view(execution_data["execution_id"]) if runner else None
         if view is not None:
-            resource = view.to_dict()
+            # ExecutionSnapshot.resource contains only the resource
+            # projection.  JobResourceDTO remains the enclosing job view on
+            # dedicated job surfaces.
+            resource = view.resource
             job = runner.get_job(execution_data["execution_id"])
     except Exception:
         pass

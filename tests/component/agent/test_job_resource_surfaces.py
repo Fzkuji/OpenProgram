@@ -71,21 +71,6 @@ class _ResourceView:
                 "status_version": 0,
                 "resource": resource,
             },
-            legacy={
-                "resource_state": "queued",
-                "reason_code": "quota.queue_full",
-                "reason_key": "resource.reason.quota.queue_full",
-                "retryable": True,
-                "limits": {"scheduler_capacity": 4, "limits": {}},
-                "capacity": {
-                    "scheduler_capacity": 4,
-                    "session_live": {"used": 1, "limit": 2},
-                    "session_queued": {"used": 2, "limit": 8},
-                    "session_jobs": {"used": 3, "limit": 100},
-                    "queue_position": 2,
-                },
-                "budget": {},
-            },
         ).to_dict()
 
 
@@ -157,6 +142,39 @@ def test_job_status_broadcast_uses_canonical_resource_and_omits_failed_read(
 
     assert "resource" not in sent[-1]["data"]
     assert sent[-1]["data"]["status"] == "queued"
+
+
+def test_runtime_snapshot_uses_the_nested_resource_projection(monkeypatch):
+    from openprogram.webui.ws_actions import runtime
+
+    resource = {"resource_state": "active"}
+    execution = SimpleNamespace(
+        execution_id="job-1",
+        to_dict=lambda: {"execution_id": "job-1"},
+    )
+    runner = SimpleNamespace(
+        get_job_resource_view=lambda _job_id: SimpleNamespace(resource=resource),
+        get_job=lambda _job_id: None,
+    )
+    monkeypatch.setattr(
+        "openprogram.execution.default_store", lambda: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.job.runner.runner_for_execution_store",
+        lambda _store: runner,
+    )
+
+    def fake_snapshot(_execution, **kwargs):
+        assert kwargs["resource"] is resource
+        return SimpleNamespace(to_dict=lambda: {
+            "execution_id": "job-1", "resource": kwargs["resource"],
+        })
+
+    monkeypatch.setattr(
+        "openprogram.execution.public.execution_snapshot", fake_snapshot,
+    )
+    snapshot, _cursor = runtime._public_execution_snapshot(execution)
+    assert snapshot["resource"] == resource
 
 
 def test_tui_settings_keep_configured_value_and_add_session_effective_source(

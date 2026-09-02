@@ -334,13 +334,16 @@ def test_resource_shortage_accepts_continue_and_exposes_queue_wait(durable_job):
     })
     frame = _command_frame(ws)
     if frame["command"]["status"] == "accepted":
-        queue_wait = frame["execution"]["resource"]["queue_wait"]
+        resource = frame["execution"]["resource"]
+        assert "job_id" not in resource
+        assert "capabilities" not in resource
+        queue_wait = resource["queue_wait"]
         if queue_wait is not None:
             assert queue_wait["state"] in {
                 "queued_resume", "paused_waiting_claim",
             }
         else:
-            assert frame["execution"]["resource"]["resource_state"] == "live"
+            assert resource["resource_state"] == "live"
     else:
         assert frame["command"]["status"] in {"applying", "applied"}
 
