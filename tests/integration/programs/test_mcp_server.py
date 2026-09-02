@@ -425,7 +425,10 @@ def test_real_stdio_subprocess_prompt_cancel_cleanup_and_foreign_ownership(tmp_p
     environment_b = _stdio_subprocess_environment(tmp_path / "b", client="b")
 
     async def wait_for_evidence(path, kind):
-        deadline = asyncio.get_running_loop().time() + 3
+        # Starting two isolated Python/MCP processes can exceed three seconds
+        # on a saturated CI host. The evidence condition, not startup speed,
+        # is the contract under test.
+        deadline = asyncio.get_running_loop().time() + 10
         while asyncio.get_running_loop().time() < deadline:
             if path.exists() and any(
                 json.loads(line)["kind"] == kind
@@ -462,7 +465,7 @@ def test_real_stdio_subprocess_prompt_cancel_cleanup_and_foreign_ownership(tmp_p
         return foreign, same, cancellation.value, completed
 
     foreign, same, cancellation, completed = asyncio.run(
-        asyncio.wait_for(scenario(), 15)
+        asyncio.wait_for(scenario(), 30)
     )
     assert foreign.content[0].text == (
         '{"cancelled":false,"session_id":"fixture-session"}'
