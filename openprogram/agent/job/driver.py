@@ -1,8 +1,8 @@
 """Canonical execution driver bridge for the existing Job worker.
 
-This slice only establishes the Job execution contract.  Public job spawn and
-dispatcher admission still use the legacy JobRunner path until their complete
-cutover can be made atomic.
+Public Job spawn and dispatcher admission use the canonical execution identity;
+the legacy JobStore is retained only as a read projection for existing UI and
+resource-governance surfaces.
 """
 
 from __future__ import annotations
