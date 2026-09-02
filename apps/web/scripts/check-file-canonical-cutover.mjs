@@ -17,6 +17,7 @@ assert.doesNotMatch(tree, /filesWsRequest/);
 assert.doesNotMatch(pane, /filesWsRequest/);
 assert.doesNotMatch(review, /getSocket|registerWsRequest|\.send\(/);
 assert.doesNotMatch(ws, /filesWsRequest|list_turn_files|turn_file_diff/);
+assert.doesNotMatch(ws, /registerWsRequest/);
 assert.doesNotMatch(turnFiles, /def _list_files\b|def handle_list_turn_files\b|def handle_turn_file_diff\b|def _turn_lineage_file_diff\b/);
 assert.doesNotMatch(turnFiles, /"list_turn_files"\s*:|"turn_file_diff"\s*:/);
 assert.doesNotMatch(server, /"list_turn_files"|"turn_file_diff"/);
