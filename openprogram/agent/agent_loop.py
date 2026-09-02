@@ -1179,10 +1179,24 @@ async def _execute_tool_calls(
             args=tool_call.arguments,
         ))
         if safe_point_hook is not None:
-            await safe_point_hook("tool.before", {
+            interaction_manifest = getattr(tool, "_interaction_manifest", None)
+            pre_wait = (
+                interaction_manifest(tool_call.id, tool_call.arguments)
+                if callable(interaction_manifest) else None
+            )
+            safe_payload = {
                 "tool_call_id": str(tool_call.id), "tool_name": tool_call.name,
-                "arguments": tool_call.arguments,
-            })
+                "arguments": tool_call.arguments, "next_tool_index": index,
+                "pre_wait": pre_wait,
+            }
+            stop_at_safe_point = bool(await safe_point_hook("tool.before", safe_payload))
+            if stop_at_safe_point:
+                break
+            if tool is not None:
+                object.__setattr__(
+                    tool, "_preapproved_wait_id",
+                    safe_payload.get("preapproved_wait_id"),
+                )
 
         # 事件层：tool.before 一份事件，观察（异步总线）+ 问询（同步 gate）共用。
         # plugin 的 tool.before handler 就是 gate 订阅者（plugins/hooks.py）。
@@ -1254,14 +1268,32 @@ async def _execute_tool_calls(
 
             _record_job_activity("operation_start")
             timeout = _job_operation_timeout(None)
-            operation = tool.execute(
-                tool_call.id, validated_args, cancel_event, on_update,
-            )
-            result = (
-                await operation
-                if timeout is None
-                else await asyncio.wait_for(operation, timeout=timeout)
-            )
+            preapproved_wait_id = getattr(tool, "_preapproved_wait_id", None)
+            if preapproved_wait_id:
+                from openprogram.agent.run_control import (
+                    reset_preapproved_wait_id, set_preapproved_wait_id,
+                )
+                token = set_preapproved_wait_id(preapproved_wait_id)
+                try:
+                    operation = tool.execute(
+                        tool_call.id, validated_args, cancel_event, on_update,
+                    )
+                    result = (
+                        await operation
+                        if timeout is None
+                        else await asyncio.wait_for(operation, timeout=timeout)
+                    )
+                finally:
+                    reset_preapproved_wait_id(token)
+            else:
+                operation = tool.execute(
+                    tool_call.id, validated_args, cancel_event, on_update,
+                )
+                result = (
+                    await operation
+                    if timeout is None
+                    else await asyncio.wait_for(operation, timeout=timeout)
+                )
         except _SkipExecute:
             pass
         except Exception as e:

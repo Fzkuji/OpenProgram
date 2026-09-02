@@ -33,6 +33,15 @@ class AskTimeout(Exception):
     """等待超时且没有 default（runtime.ask 抛出）。"""
 
 
+class DurableWaitSafePointRequired(RuntimeError):
+    """A runtime interaction was reached without its declared pre-wait."""
+
+    code = "runtime_interaction_requires_safe_point"
+
+    def __init__(self, message: str):
+        super().__init__(f"{self.code}: {message}")
+
+
 @dataclass
 class PendingQuestion:
     id: str
@@ -77,33 +86,19 @@ class QuestionRegistry:
         self._lock = threading.Lock()
 
     def register(self, q: PendingQuestion) -> threading.Event:
-        """Ensure the supplied presentation record has one durable wait row."""
-        from openprogram.agent.run_control import get_current_execution_id
+        """Register only a local wake notification for an existing wait.
+
+        Opening a wait is an execution-control transaction at a declared
+        Agent safe point.  The registry is never allowed to create one from a
+        live Python frame because that would leave an unfenced owner running.
+        """
         from openprogram.execution import default_store
         from openprogram.execution.waits import DurableWaitStore
 
-        executions = default_store()
-        waits = DurableWaitStore(executions)
-        existing = waits.get_wait(q.id)
+        existing = DurableWaitStore(default_store()).get_wait(q.id)
         if existing is None:
-            execution_id = q.execution_id or get_current_execution_id()
-            execution = executions.get_execution(execution_id or "")
-            if execution is None or execution.current_attempt_id is None:
-                raise RuntimeError("question registration requires a live canonical attempt")
-            generation = execution.owner_lease.get("generation")
-            if not isinstance(generation, int):
-                raise RuntimeError("question registration requires a fenced canonical attempt")
-            now = time.time()
-            waits.open_wait(
-                wait_id=q.id, execution_id=execution.execution_id,
-                attempt_id=execution.current_attempt_id, generation=generation,
-                kind=q.kind, request={
-                    "prompt": q.prompt, "options": q.options, "multi": q.multi,
-                    "allow_custom": q.allow_custom, "detail": q.detail,
-                    "schema": q.schema, "questions": q.questions,
-                }, policy_snapshot={"version": 1, "kind": q.kind},
-                expires_at=q.expires_at if q.expires_at > now else now + 300,
-                checkpoint_id=execution.checkpoint_head_id,
+            raise DurableWaitSafePointRequired(
+                "question registration requires an already published durable wait"
             )
         ev = threading.Event()
         with self._lock:
@@ -324,63 +319,50 @@ def open_question(
     timeout: float = 300.0,
     on_asked,
 ) -> tuple[PendingQuestion, threading.Event]:
-    """注册一个问题 + emit（不等）。返回 (PendingQuestion, 唤醒 Event)。
+    """Consume a pre-published question wait and emit its durable projection.
 
     把"注册 + 发问"从"怎么等答案"里拆出来：同步调用方（runtime.ask）拿 Event
     阻塞，async 调用方（工具批准，跑在 asyncio loop 上）用 asyncio.to_thread
     等同一个 Event，互不阻塞各自的执行模型。on_asked(PendingQuestion) 负责把
     问题送出去（经 transport / 事件层）。
     """
+    del request_metadata, policy_snapshot, timeout
+    from openprogram.agent.run_control import get_preapproved_wait_id
     from openprogram.execution import default_store
-    from openprogram.execution.waits import DurableWaitStore
+    from openprogram.execution.waits import DurableWaitStore, WaitStatus
 
-    reg = get_question_registry()
-    now = time.time()
-    execution_id = ""
-    try:
-        from openprogram.agent.run_control import get_current_execution_id
-        execution_id = get_current_execution_id() or ""
-    except Exception:
-        execution_id = ""
-    if not execution_id:
-        raise RuntimeError("runtime.ask requires a canonical execution context")
-    executions = default_store()
-    execution = executions.get_execution(execution_id)
-    if execution is None or execution.current_attempt_id is None:
-        raise RuntimeError("runtime.ask requires a live canonical attempt")
-    generation = execution.owner_lease.get("generation")
-    if not isinstance(generation, int):
-        raise RuntimeError("runtime.ask requires a fenced canonical attempt")
-    request = {
+    wait_id = get_preapproved_wait_id()
+    if not wait_id:
+        raise DurableWaitSafePointRequired(
+            "runtime.ask/form/confirm requires a declared pre-wait safe point"
+        )
+    wait = DurableWaitStore(default_store()).get_wait(wait_id)
+    if wait is None or wait.kind != kind:
+        raise DurableWaitSafePointRequired(
+            "runtime interaction does not match its declared durable wait"
+        )
+    if wait.status is not WaitStatus.RESOLVED:
+        raise DurableWaitSafePointRequired(
+            "runtime interaction resumed without a resolved durable wait"
+        )
+    request = wait.request
+    expected = {
         "prompt": prompt, "options": list(options or []), "multi": multi,
         "allow_custom": allow_custom, "detail": detail,
         "schema": dict(schema or {}), "questions": list(questions or []),
     }
-    metadata = dict(request_metadata or {})
-    conflict = set(metadata).intersection(request)
-    if conflict:
-        raise ValueError(f"question metadata cannot replace request fields: {sorted(conflict)!r}")
-    request.update(metadata)
-    default_policy = {
-        "version": 1, "kind": kind,
-        "on_decline": "deny" if kind == "approval" else "return_declined",
-        "on_timeout": "deny" if kind == "approval" else "return_timeout",
-    }
-    wait = DurableWaitStore(executions).open_wait(
-        wait_id=f"wait_{new_question_id()}", execution_id=execution_id,
-        attempt_id=execution.current_attempt_id, generation=generation, kind=kind,
-        request=request,
-        policy_snapshot=dict(policy_snapshot or default_policy), expires_at=now + timeout,
-        checkpoint_id=execution.checkpoint_head_id,
-    )
+    if any(request.get(key) != value for key, value in expected.items()):
+        raise DurableWaitSafePointRequired(
+            "runtime interaction differs from its declared durable wait"
+        )
+    reg = get_question_registry()
     q = _pending_from_wait(wait)
-    # The durable row is already committed above.  The registry only keeps a
-    # process-local wake event; it must not perform a second lifecycle write.
     ev = reg.register(q)
-    try:
-        on_asked(q)
-    except Exception:
-        pass
+    # The record was emitted before the old attempt ended.  Re-emission on
+    # continuation is intentionally avoided; the caller only receives the
+    # resolved value through ``consume_or_timeout``.
+    del on_asked
+    reg.wake(q.id)
     return q, ev
 
 

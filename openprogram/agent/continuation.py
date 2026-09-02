@@ -447,12 +447,12 @@ class AgentCheckpointV1:
             or safe_point.get("sentinel") != "resume-from-checkpoint"
         ):
             raise AgentCheckpointError("checkpoint_schema_invalid", "checkpoint safe point is invalid")
-        expected_kind = (
-            "agent.provider.decision.after"
+        expected_kinds = (
+            {"agent.provider.decision.after", "agent.wait.before_tool"}
             if safe_point["phase"] == "after_provider"
-            else "agent.tool.action.after"
+            else {"agent.tool.action.after"}
         )
-        if safe_point.get("kind") != expected_kind:
+        if safe_point.get("kind") not in expected_kinds:
             raise AgentCheckpointError("checkpoint_schema_invalid", "checkpoint safe point kind is invalid")
         frontier = value["frontier"]
         if (

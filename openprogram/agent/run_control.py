@@ -203,6 +203,25 @@ _current_execution_id: ContextVar = ContextVar(
 # turn for another session is running elsewhere in the process.
 _current_token: ContextVar = ContextVar("_current_token", default=None)
 
+# A resumed tool call receives the durable approval identity selected by the
+# Agent safe-point transaction.  It is scoped to one tool invocation and
+# contains no answer or lifecycle state; those remain in execution_waits.
+_preapproved_wait_id: ContextVar[str | None] = ContextVar(
+    "_preapproved_wait_id", default=None,
+)
+
+
+def set_preapproved_wait_id(wait_id: str):
+    return _preapproved_wait_id.set(wait_id)
+
+
+def reset_preapproved_wait_id(token) -> None:
+    _preapproved_wait_id.reset(token)
+
+
+def get_preapproved_wait_id() -> str | None:
+    return _preapproved_wait_id.get()
+
 
 def begin_turn(
     session_id: str, turn_id: str | None = None,

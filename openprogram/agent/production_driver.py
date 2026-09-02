@@ -121,6 +121,7 @@ MAX_AGENT_TURN_INPUT_BYTES = 256 * 1024
 AGENT_SAFE_POINT_KINDS = (
     "agent.provider.decision.after",
     "agent.tool.action.after",
+    "agent.wait.before_tool",
 )
 FINISH_RETRY_LIMIT = 8
 FINISH_RETRY_MAX_DELAY = 1.0
@@ -977,6 +978,9 @@ class AgentProductionDriver:
         prior_receipts: list[dict[str, Any]] = []
         completed_tool_results: list[dict[str, Any]] = []
         provider_action_id = ""
+        provider_effect_id = ""
+        provider_input_hash = ""
+        provider_terminal_receipt: dict[str, Any] | None = None
         latest_assistant: dict[str, Any] | None = None
         latest_snapshot: dict[str, Any] = {}
         if continuation is not None:
@@ -997,6 +1001,21 @@ class AgentProductionDriver:
             provider_action_id = continuation.provider_action_id
             latest_assistant = continuation.assistant_message.model_dump(mode="json")
             latest_snapshot = dict(continuation.resolved_snapshot)
+            for action in prior_actions:
+                if action.get("action_id") == provider_action_id:
+                    candidate_hash = action.get("input_hash")
+                    if isinstance(candidate_hash, str):
+                        provider_input_hash = candidate_hash
+                    break
+            for receipt in prior_receipts:
+                if receipt.get("action_id") == provider_action_id:
+                    candidate_effect = receipt.get("effect_id")
+                    candidate_receipt = receipt.get("receipt")
+                    if isinstance(candidate_effect, str):
+                        provider_effect_id = candidate_effect
+                    if isinstance(candidate_receipt, Mapping):
+                        provider_terminal_receipt = dict(candidate_receipt)
+                    break
 
         def digest(*parts: str) -> str:
             value = "\x1f".join(parts).encode("utf-8")
@@ -1023,13 +1042,14 @@ class AgentProductionDriver:
         def checkpoint_payload(
             kind: str,
             payload: Mapping[str, Any],
-            effect_id: str,
-            action_id: str,
-            input_hash: str,
-            terminal_receipt: Mapping[str, Any],
+            effect_id: str | None = None,
+            action_id: str | None = None,
+            input_hash: str | None = None,
+            terminal_receipt: Mapping[str, Any] | None = None,
         ) -> AgentCheckpointV1:
-            phase = "after_provider" if kind == "provider.after" else "after_tool"
+            phase = "after_provider" if kind in {"provider.after", "wait.before_tool"} else "after_tool"
             point_kind = (
+                "agent.wait.before_tool" if kind == "wait.before_tool" else
                 "agent.provider.decision.after" if phase == "after_provider"
                 else "agent.tool.action.after"
             )
@@ -1071,20 +1091,32 @@ class AgentProductionDriver:
             next_tool_index = payload.get("next_tool_index")
             if not isinstance(next_tool_index, int):
                 next_tool_index = 0 if phase == "after_provider" else len(completed_tool_results)
-            action_values = [
-                *prior_actions,
-                {"action_id": action_id, "input_hash": input_hash},
-            ]
-            receipt_values = [
-                *prior_receipts,
-                {
+            action_values = [*prior_actions]
+            receipt_values = [*prior_receipts]
+            if kind == "wait.before_tool":
+                if not provider_effect_id or not provider_input_hash or provider_terminal_receipt is None:
+                    raise AgentDriverError("checkpoint_schema_invalid", "wait has no committed provider decision")
+                if not any(item.get("action_id") == provider_action_id for item in action_values):
+                    action_values.append({"action_id": provider_action_id, "input_hash": provider_input_hash})
+                if not any(item.get("effect_id") == provider_effect_id for item in receipt_values):
+                    receipt_values.append({
+                        "effect_id": provider_effect_id,
+                        "frontier_step_id": f"after_provider:{provider_action_id}",
+                        "action_id": provider_action_id,
+                        "outcome": "committed",
+                        "receipt": dict(provider_terminal_receipt),
+                    })
+            if effect_id is not None:
+                if action_id is None or input_hash is None or terminal_receipt is None:
+                    raise AgentDriverError("checkpoint_schema_invalid", "effect safe point is missing a receipt")
+                action_values.append({"action_id": action_id, "input_hash": input_hash})
+                receipt_values.append({
                     "effect_id": effect_id,
                     "frontier_step_id": f"{phase}:{action_id}",
                     "action_id": action_id,
                     "outcome": "committed",
                     "receipt": dict(terminal_receipt),
-                },
-            ]
+                })
             pending_commands = [
                 command.command_id
                 for command in self._control_service().executions.list_commands(attempt.execution_id)
@@ -1094,12 +1126,18 @@ class AgentProductionDriver:
                 return AgentCheckpointV1.build(
                     safe_point={
                         "kind": point_kind,
-                        "step_id": f"{phase}:{action_id}",
+                        "step_id": (
+                            f"wait:{payload.get('tool_call_id')}"
+                            if kind == "wait.before_tool" else f"{phase}:{action_id}"
+                        ),
                         "phase": phase,
                         "sentinel": "resume-from-checkpoint",
                     },
                     frontier=[{
-                        "step_id": f"{phase}:{action_id}",
+                        "step_id": (
+                            f"wait:{payload.get('tool_call_id')}"
+                            if kind == "wait.before_tool" else f"{phase}:{action_id}"
+                        ),
                         "phase": phase,
                         "branch_id": str(raw_turn.get("branch_id") or "main"),
                     }],
@@ -1123,8 +1161,94 @@ class AgentProductionDriver:
                 raise AgentDriverError(exc.code, str(exc)) from exc
 
         def hook(kind: str, payload: Mapping[str, Any]) -> bool:
-            nonlocal provider_action_id, latest_assistant, latest_snapshot, completed_tool_results
+            nonlocal provider_action_id, provider_effect_id, provider_input_hash, provider_terminal_receipt, latest_assistant, latest_snapshot, completed_tool_results
             service = self._control_service()
+            if kind == "tool.before" and isinstance(payload.get("pre_wait"), Mapping):
+                from openprogram.execution.checkpoints import CheckpointFragment
+                from openprogram.execution.waits import DurableWaitStore, WaitStatus
+
+                pre_wait = dict(payload["pre_wait"])
+                tool_call_id = str(payload.get("tool_call_id") or "")
+                if not provider_action_id or not tool_call_id:
+                    raise AgentDriverError("checkpoint_schema_invalid", "wait has no stable provider or tool identity")
+                wait_kind = str(pre_wait.get("kind") or "")
+                if wait_kind not in {"approval", "ask", "ask_many", "confirm", "form"}:
+                    raise AgentDriverError("invalid_wait", "wait kind is not supported at an Agent tool boundary")
+                wait_id = "wait_" + digest(
+                    attempt.execution_id, provider_action_id, tool_call_id, wait_kind,
+                )[:32]
+                existing = DurableWaitStore(self.executions).get_wait(wait_id)
+                if existing is not None:
+                    if existing.status is WaitStatus.RESOLVED:
+                        payload["preapproved_wait_id"] = wait_id
+                        return False
+                    # Decline/timeout/cancel policies settle the execution
+                    # before a replacement attempt can reach this boundary.
+                    # Do not dispatch the protected tool from an unresolved
+                    # or non-approved record.
+                    return True
+                checkpoint = checkpoint_payload("wait.before_tool", payload)
+                current = service.executions.get_execution(attempt.execution_id)
+                if current is None:
+                    raise AgentDriverError("execution_not_found", "execution disappeared before wait")
+                request_metadata = pre_wait.get("request_metadata", {})
+                if not isinstance(request_metadata, Mapping):
+                    raise AgentDriverError("invalid_wait", "wait request metadata is invalid")
+                wait_request = {
+                    "prompt": str(pre_wait.get("prompt") or ""),
+                    "options": list(pre_wait.get("options") or ()),
+                    "multi": bool(pre_wait.get("multi", False)),
+                    "allow_custom": bool(pre_wait.get("allow_custom", True)),
+                    "detail": str(pre_wait.get("detail") or ""),
+                    "schema": dict(pre_wait.get("schema") or {}),
+                    "questions": list(pre_wait.get("questions") or []),
+                }
+                reserved = set(wait_request).intersection(request_metadata)
+                if reserved:
+                    raise AgentDriverError("invalid_wait", "wait metadata cannot replace presentation fields")
+                wait_request.update(dict(request_metadata))
+                timeout = pre_wait.get("timeout", 300.0)
+                if type(timeout) not in {int, float} or timeout <= 0:
+                    raise AgentDriverError("invalid_wait", "approval wait timeout is invalid")
+                policy = pre_wait.get("policy_snapshot")
+                if not isinstance(policy, Mapping):
+                    raise AgentDriverError("invalid_wait_policy", "approval wait policy is invalid")
+                suspension = service.open_wait_at_safe_point(
+                    execution_id=attempt.execution_id,
+                    attempt_id=attempt.attempt_id,
+                    generation=attempt.generation,
+                    expected_version=current.status_version,
+                    fragment=CheckpointFragment(
+                        safe_point_kind="agent.wait.before_tool",
+                        frontier=tuple(checkpoint.payload["frontier"]),
+                        state_refs={},
+                        completed_actions=tuple(), effect_receipts=tuple(),
+                        pending_command_ids=tuple(checkpoint.payload["pending_command_ids"]),
+                    ),
+                    kind=wait_kind, request=wait_request,
+                    policy_snapshot=dict(policy), expires_at=time.time() + float(timeout),
+                    wait_id=wait_id, agent_checkpoint=checkpoint,
+                )
+                try:
+                    if self.event_sink is None:
+                        return True
+                    self.event_sink({"type": "question.asked", "data": {
+                        "id": suspension.wait.wait_id,
+                        "session_id": request.session_id,
+                        "kind": wait_kind, "prompt": wait_request["prompt"],
+                        "options": wait_request["options"], "multi": wait_request["multi"],
+                        "allow_custom": wait_request["allow_custom"], "detail": wait_request["detail"],
+                        "schema": wait_request["schema"], "questions": wait_request["questions"],
+                        "tool": wait_request.get("tool"), "args": wait_request.get("args"),
+                        "risk_level": wait_request.get("risk_level"),
+                        "execution_id": attempt.execution_id,
+                        "wait_generation": suspension.wait.claim_generation,
+                        "expected_version": suspension.execution.status_version,
+                        "expires_at": suspension.wait.expires_at,
+                    }})
+                except Exception:
+                    _log.exception("failed to publish durable approval wait")
+                return True
             if kind.endswith(".before"):
                 execution = service.executions.get_execution(attempt.execution_id)
                 if execution is None:
@@ -1247,6 +1371,9 @@ class AgentProductionDriver:
                 terminal_receipt["idempotency_key"] = (
                     idempotency_key if actual_supports_idempotency_key else None
                 )
+                provider_effect_id = effect_id
+                provider_input_hash = input_hash
+                provider_terminal_receipt = dict(terminal_receipt)
             elif kind == "tool.after":
                 result = payload.get("result")
                 if not isinstance(result, Mapping):

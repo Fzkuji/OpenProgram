@@ -236,6 +236,59 @@ def wrap_with_approval(
     orig_execute = agent_tool.execute
     name = agent_tool.name
 
+    def _interaction_manifest(call_id: str, args: dict) -> dict | None:
+        """Describe an approval before the Agent loop dispatches its effect."""
+        hard_violation = _hard_constraint_violation(name, args, req)
+        if hard_violation:
+            return None
+        from openprogram.agent.authority import decide_tool_authority
+        if not decide_tool_authority(req, name, args).allowed:
+            return None
+        verdict = _match_rule(getattr(req, "permission_rules", None), name, args)
+        if verdict == "deny" or req.source in _NON_INTERACTIVE_SOURCES:
+            return None
+        force_ask = name in _FORCE_APPROVAL_TOOLS
+        if name == "web_use":
+            from openprogram.agent.surface_context import web_use_available
+            if web_use_available(getattr(req, "surface_context", None)):
+                return None
+        if req.permission_mode == "bypass" or verdict == "allow":
+            return None
+        if req.source in {"cron", "scheduler"} and name in _SCHEDULED_MEMORY_TOOLS:
+            return None
+        from openprogram.agent.internals._auto_classifier import SAFE_AUTO_ALLOWLIST
+        if name in SAFE_AUTO_ALLOWLIST:
+            return None
+        if (
+            req.permission_mode == "acceptEdits"
+            and getattr(agent_tool, "_accept_edits_safe", False)
+            and _path_is_safe(name, args, req)
+        ):
+            return None
+        # Auto classification either permits or denies in the existing
+        # execution path; it never asks a human.
+        if req.permission_mode == "auto":
+            return None
+        if not (force_ask or verdict == "ask" or req.permission_mode != "auto"):
+            return None
+        return {
+            "kind": "approval",
+            "prompt": f"允许执行 {name}？",
+            "options": ["允许", "拒绝"],
+            "allow_custom": False,
+            "detail": _approval_detail(name, args),
+            "request_metadata": {
+                "tool": name, "args": args, "tool_call_id": str(call_id),
+                "risk_level": _risk_level(name, args),
+            },
+            "policy_snapshot": {
+                "version": 1, "kind": "approval", "on_answer": "continue",
+                "on_decline": "fail", "on_timeout": "fail",
+                "allowed_scopes": ["once", "always", "always_path"],
+            },
+            "timeout": 300.0,
+        }
+
     def _denied(
         text: str,
         reason_code: str,
@@ -498,6 +551,7 @@ def wrap_with_approval(
             setattr(wrapped, _attr, getattr(agent_tool, _attr, None))
         except Exception:
             pass
+    object.__setattr__(wrapped, "_interaction_manifest", _interaction_manifest)
     return wrapped
 
 
@@ -550,75 +604,32 @@ async def await_user_approval(
     用 ``asyncio.to_thread`` 等 threading.Event，asyncio loop 不被阻塞（工具
     execute 是协程，并发工具的进度事件照常处理）。
     """
-    from openprogram.agent.questions import (
-        open_question, consume_or_timeout, emit_question_asked,
-        retract_question,
+    from openprogram.agent.run_control import get_preapproved_wait_id
+    preapproved_wait_id = get_preapproved_wait_id()
+    if preapproved_wait_id:
+        from openprogram.execution import default_store
+        from openprogram.execution.waits import DurableWaitStore, WaitStatus
+
+        wait = DurableWaitStore(default_store()).get_wait(preapproved_wait_id)
+        if wait is None or wait.kind != "approval":
+            raise RuntimeError("preapproved wait is unavailable")
+        if wait.status is WaitStatus.RESOLVED:
+            value = wait.answer
+            answer, scope = (
+                (value.get("answer"), value.get("scope", "once"))
+                if isinstance(value, dict) else (value, "once")
+            )
+            allowed = (
+                answer.strip() in ("允许", "approve", "yes", "y", "true", "ok", "是")
+                if isinstance(answer, str) else bool(answer)
+            )
+            return allowed, None, (
+                scope if scope in ("once", "always", "always_path") else "once"
+            )
+        if wait.status in {WaitStatus.DECLINED, WaitStatus.EXPIRED, WaitStatus.CANCELLED}:
+            return False, None, "once"
+        raise RuntimeError("approval continuation has no durable outcome")
+
+    raise RuntimeError(
+        "tool approval requires a pre-dispatch durable wait safe point"
     )
-
-    # 跟 runtime.ask 一致：如果当前执行上下文有 runtime（@agentic_function 跑在
-    # 子进程，runtime 上装了 QueueTransport），用它的 transport 把问题送回父进程；
-    # 否则（主 agent loop 里 gate LLM 工具调用）走默认事件层。
-    transport = None
-    try:
-        from openprogram.agentic_programming.function import _current_runtime
-        rt = _current_runtime.get(None)
-        if rt is not None:
-            transport = getattr(rt, "_question_transport", None)
-    except Exception:
-        pass
-
-    def _on_asked(q) -> None:
-        emit_question_asked({
-            "id": q.id, "session_id": q.session_id, "kind": q.kind,
-            "prompt": q.prompt, "options": q.options, "multi": q.multi,
-            "allow_custom": q.allow_custom, "detail": q.detail,
-            "expires_at": q.expires_at,
-            # approval 专属：工具名 + 参数 + 危险分级，给 approval mode 画危险摘要。
-            "tool": tool_name, "args": args, "risk_level": _risk_level(tool_name, args),
-            "execution_id": q.execution_id,
-            "wait_generation": q.wait_generation,
-            "expected_version": q.execution_version,
-        }, transport)
-
-    q, ev = open_question(
-        session_id=req.session_id, kind="approval",
-        prompt=f"允许执行 {tool_name}？",
-        options=["允许", "拒绝"], multi=False, allow_custom=False,
-        detail=_approval_detail(tool_name, args), timeout=timeout,
-        request_metadata={
-            "tool": tool_name, "args": args,
-            "risk_level": _risk_level(tool_name, args),
-        },
-        policy_snapshot={
-            "version": 1, "kind": "approval", "on_decline": "deny",
-            "on_timeout": "deny", "allowed_scopes": ["once", "always", "always_path"],
-        },
-        on_asked=_on_asked,
-    )
-    deadline = time.monotonic() + timeout
-    outcome, value = "pending", None
-    while outcome == "pending":
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            from openprogram.execution import default_store
-            from openprogram.execution.waits import DurableWaitStore
-
-            DurableWaitStore(default_store()).expire_due()
-            outcome, value = consume_or_timeout(q.id)
-            break
-        await asyncio.to_thread(ev.wait, min(0.25, remaining))
-        ev.clear()
-        outcome, value = consume_or_timeout(q.id)
-    if outcome in {"pending", "timeout"}:
-        retract_question(q.id, transport)  # 超时收回前端批准卡片
-        return False, None, "once"
-    if outcome == "answered":
-        # value 可能是纯 answer 串，或前端带 scope 的 dict {"answer","scope"}。
-        answer, scope = (value.get("answer"), value.get("scope", "once")) \
-            if isinstance(value, dict) else (value, "once")
-        ok = (answer.strip() in ("允许", "approve", "yes", "y", "true", "ok", "是")
-              if isinstance(answer, str) else bool(answer))
-        return ok, None, (scope if scope in ("once", "always", "always_path") else "once")
-    # declined：value 可能是用户填的拒绝理由（reason）。
-    reason = value if (outcome == "declined" and isinstance(value, str)) else None
-    return False, reason, "once"

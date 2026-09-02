@@ -61,6 +61,7 @@ class ScriptedAgentOwner:
             safe_point_kinds=(
                 "agent.provider.decision.after",
                 "agent.tool.action.after",
+                "agent.wait.before_tool",
             ),
             state_schema_version=1,
         )
@@ -239,6 +240,7 @@ def _agent_execution(
             safe_point_kinds=(
                 "agent.provider.decision.after",
                 "agent.tool.action.after",
+                "agent.wait.before_tool",
             ),
             state_schema_version=1,
         ),
@@ -459,6 +461,7 @@ def _admitted_agent_execution(tmp_path, *, execution_id: str = "exec-restart-1")
             safe_point_kinds=(
                 "agent.provider.decision.after",
                 "agent.tool.action.after",
+                "agent.wait.before_tool",
             ),
             state_schema_version=1,
         ),
@@ -637,6 +640,78 @@ def test_terminal_gc_deletes_unreferenced_agent_state_blob(tmp_path):
     assert finished.execution.status is ExecutionStatus.COMPLETED
     assert store.gc_state_blobs(execution.execution_id) == 1
     assert store.get_state_blob(execution.execution_id, orphan["ref"]) is None
+
+
+def test_approval_wait_hands_off_before_tool_effect_and_resumes_from_checkpoint(tmp_path):
+    """An approval is created before tool dispatch, never by a blocked tool."""
+    store, attempts, active, running = _admitted_agent_execution(tmp_path)
+    from openprogram.agent.continuation import runtime_contract_snapshot
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.execution.waits import DurableWaitStore, WaitStatus
+    from openprogram.providers.types import Model
+
+    request = TurnRequest(
+        session_id=running.session_id, user_text="approve", agent_id="main",
+        source="component", user_msg_id="user-anchor",
+    )
+    request._execution_revision_id = running.revision_id
+    snapshot = runtime_contract_snapshot(
+        model=Model(
+            id="fake", name="fake", api="openai-completions", provider="openai",
+            base_url="https://example.invalid/v1",
+        ),
+        system_prompt="system", tools=[], request=request,
+    )
+    activations = []
+
+    async def activate(next_attempt, activation):
+        activations.append(activation.checkpoint.checkpoint_id)
+        return None
+
+    control = RuntimeControlService(store, attempts, DriverRegistry(), activator=activate)
+    hook = AgentProductionDriver(store, control_service=control)._safe_point_hook(
+        active, request, threading.Event(),
+    )
+    assert hook("provider.before", {"resolved_snapshot": snapshot, "context": {"messages": []}}) is False
+    assert hook("provider.after", {
+        "message": {
+            "role": "assistant", "content": [{
+                "type": "toolCall", "id": "tool-approval", "name": "write", "arguments": {"path": "x"},
+            }], "api": "openai-completions", "provider": "openai", "model": "fake", "timestamp": 1,
+        },
+        "resolved_snapshot": snapshot,
+        "turn": {"user_message_id": "user-anchor", "assistant_message_id": "assistant-anchor", "base_history_head_id": "user-anchor", "branch_id": "main"},
+        "tool_call_ids": ["tool-approval"], "next_tool_index": 0,
+    }) is False
+    assert hook("tool.before", {
+        "tool_call_id": "tool-approval", "tool_name": "write", "arguments": {"path": "x"},
+        "next_tool_index": 0,
+        "pre_wait": {
+            "kind": "approval", "prompt": "Allow?", "options": ["允许", "拒绝"],
+            "detail": "write", "request_metadata": {"tool": "write", "tool_call_id": "tool-approval"},
+            "policy_snapshot": {"version": 1, "on_answer": "continue", "on_decline": "fail", "on_timeout": "fail"},
+        },
+    }) is True
+    paused = store.get_execution(running.execution_id)
+    assert paused is not None and paused.status is ExecutionStatus.PAUSED
+    waits = DurableWaitStore(store).list_open(execution_id=running.execution_id)
+    assert len(waits) == 1 and waits[0].checkpoint_id == paused.checkpoint_head_id
+    with store._connect() as connection:
+        states = [row["status"] for row in connection.execute(
+            "SELECT status FROM effects WHERE execution_id = ?", (running.execution_id,)
+        )]
+    assert states == [EffectStatus.COMMITTED.value]
+
+    dispatch = asyncio.run(control.request_wait_answer(
+        command_id="answer-approval", execution_id=running.execution_id,
+        expected_version=paused.status_version, actor={"surface": "test"},
+        wait_id=waits[0].wait_id, generation=waits[0].claim_generation,
+        answer="允许",
+    ))
+    assert dispatch.execution.status is ExecutionStatus.RUNNING
+    assert activations == [paused.checkpoint_head_id]
+    assert DurableWaitStore(store).get_wait(waits[0].wait_id).status is WaitStatus.RESOLVED
 
 
 @pytest.mark.parametrize("supports_key", [True, False])

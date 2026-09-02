@@ -506,6 +506,7 @@ class RuntimeControlService:
         policy_snapshot: Mapping[str, Any],
         expires_at: float,
         wait_id: str | None = None,
+        agent_checkpoint: Any | None = None,
     ) -> WaitSuspension:
         """Publish a checkpoint, open a wait, and end its owner atomically.
 
@@ -545,6 +546,30 @@ class RuntimeControlService:
                     raise AgentSafePointConflict("stale_version", "wait safe point has a stale execution version")
                 if fragment.safe_point_kind not in execution.capabilities.safe_point_kinds:
                     raise AgentSafePointConflict("invalid_safe_point", "wait is not at a declared execution safe point")
+                state_refs = dict(fragment.state_refs)
+                if agent_checkpoint is not None:
+                    from openprogram.agent.continuation import AgentCheckpointV1
+
+                    if not isinstance(agent_checkpoint, AgentCheckpointV1):
+                        raise AgentSafePointConflict("checkpoint_schema_invalid", "wait checkpoint must use AgentCheckpointV1")
+                    agent_checkpoint.validate()
+                    for descriptor_ref, payload in agent_checkpoint.blob_payloads.items():
+                        descriptor = self.executions._put_state_blob_in_transaction(
+                            connection, execution_id=execution_id, payload=payload,
+                            media_type="application/json", schema_version=1,
+                        )
+                        if descriptor["ref"] != descriptor_ref:
+                            raise AgentSafePointConflict("state_ref_invalid", "Agent checkpoint blob descriptor does not match payload")
+                    descriptor = self.executions._put_state_blob_in_transaction(
+                        connection, execution_id=execution_id,
+                        payload=agent_checkpoint.to_bytes(),
+                        media_type="application/json", schema_version=1,
+                    )
+                    state_refs["agent_checkpoint"] = descriptor
+                    state_refs["agent_checkpoint_v1"] = {
+                        key: agent_checkpoint.payload[key]
+                        for key in ("safe_point", "frontier", "turn", "current_decision", "next_tool_index")
+                    }
                 checkpoint, updated = self.checkpoints._publish_in_transaction(
                     connection,
                     execution_id=execution_id,
@@ -553,7 +578,7 @@ class RuntimeControlService:
                     parent_checkpoint_id=execution.checkpoint_head_id,
                     frontier=fragment.frontier,
                     completed_frontier=fragment.completed_frontier,
-                    state_refs=fragment.state_refs,
+                    state_refs=state_refs,
                     completed_actions=fragment.completed_actions,
                     effect_receipts=fragment.effect_receipts,
                     child_frontier=fragment.child_frontier,
