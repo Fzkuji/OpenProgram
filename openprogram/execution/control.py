@@ -172,7 +172,8 @@ class RuntimeControlService:
         self.owner_id = owner_id
         self.lease_ttl_seconds = lease_ttl_seconds
         self._terminal_observer: Callable[[ExecutionRecord], object] | None = None
-        self._terminal_preparer: Callable[[ExecutionRecord], object] | None = None
+        self._terminal_preparer: Callable[..., object] | None = None
+        self._terminal_recovery: Callable[..., object] | None = None
 
     def set_terminal_observer(
         self, observer: Callable[[ExecutionRecord], object] | None,
@@ -181,10 +182,16 @@ class RuntimeControlService:
         self._terminal_observer = observer
 
     def set_terminal_preparer(
-        self, preparer: Callable[[ExecutionRecord], object] | None,
+        self, preparer: Callable[..., object] | None,
     ) -> None:
         """Attach a pre-terminal barrier for external resource projections."""
         self._terminal_preparer = preparer
+
+    def set_terminal_recovery(
+        self, recovery: Callable[..., object] | None,
+    ) -> None:
+        """Attach recovery recording for a failed canonical CAS."""
+        self._terminal_recovery = recovery
 
     def _observe_terminal(self, execution: ExecutionRecord) -> None:
         if execution.status not in TERMINAL_EXECUTION_STATUSES:
@@ -996,10 +1003,11 @@ class RuntimeControlService:
         )
         if terminal_candidate and self._terminal_preparer is not None:
             try:
-                prepared = self._terminal_preparer(current)
+                prepared = self._terminal_preparer(current, command_id)
                 if prepared is False:
                     raise RuntimeError("terminal dispatch barrier unavailable")
             except Exception as exc:
+                self._record_terminal_recovery(current, command_id)
                 raise ProjectionRecoveryRequired(execution_id) from exc
             prepared_before_accept = True
         try:
@@ -1028,6 +1036,7 @@ class RuntimeControlService:
                 or getattr(exc, "code", None) != "idempotency_collision"
             ):
                 if prepared_before_accept:
+                    self._record_terminal_recovery(current, command_id)
                     raise ProjectionRecoveryRequired(execution_id) from exc
                 raise
             try:
@@ -1045,8 +1054,14 @@ class RuntimeControlService:
                 )
             except CommandConflict as retry_exc:
                 if prepared_before_accept:
+                    self._record_terminal_recovery(current, command_id)
                     raise ProjectionRecoveryRequired(execution_id) from retry_exc
                 raise
+        except Exception as exc:
+            if prepared_before_accept:
+                self._record_terminal_recovery(current, command_id)
+                raise ProjectionRecoveryRequired(execution_id) from exc
+            raise
         if duplicate:
             return ControlDispatch(
                 command=command, execution=execution, delivered=False
@@ -1085,6 +1100,20 @@ class RuntimeControlService:
                 command=command, execution=execution, delivered=False
             )
         return await self._dispatch(command, execution, operation="cancel")
+
+    def _record_terminal_recovery(
+        self, execution: ExecutionRecord, command_id: str,
+    ) -> None:
+        recovery = self._terminal_recovery
+        if recovery is None:
+            return
+        try:
+            recovery(execution, command_id)
+        except Exception:
+            _log.exception(
+                "failed to persist terminal barrier recovery for %s",
+                execution.execution_id,
+            )
 
     async def terminate_attempt(
         self,

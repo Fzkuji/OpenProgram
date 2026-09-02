@@ -81,6 +81,11 @@ CREATE TABLE IF NOT EXISTS job_admissions (
         CHECK (dispatch_ready IN (0, 1)),
     terminal_blocked INTEGER NOT NULL DEFAULT 0
         CHECK (terminal_blocked IN (0, 1)),
+    terminal_block_command_id TEXT,
+    terminal_block_phase TEXT,
+    terminal_block_expires_at REAL,
+    terminal_block_prior_dispatch_ready INTEGER
+        CHECK (terminal_block_prior_dispatch_ready IN (0, 1)),
     borrowed_parent_job_id TEXT,
     resume_parent_msg_id TEXT,
     state TEXT NOT NULL CHECK (state IN ('preparing','queued','live','stopping','released')),
@@ -341,6 +346,20 @@ class UsageLedger:
                 "terminal_blocked INTEGER NOT NULL DEFAULT 0"
             )
             changed = True
+        for name, definition in (
+            ("terminal_block_command_id", "TEXT"),
+            ("terminal_block_phase", "TEXT"),
+            ("terminal_block_expires_at", "REAL"),
+            (
+                "terminal_block_prior_dispatch_ready",
+                "INTEGER CHECK (terminal_block_prior_dispatch_ready IN (0, 1))",
+            ),
+        ):
+            if existing and name not in existing:
+                conn.execute(
+                    f"ALTER TABLE job_admissions ADD COLUMN {name} {definition}"
+                )
+                changed = True
         if existing and "borrowed_parent_job_id" not in existing:
             conn.execute(
                 "ALTER TABLE job_admissions ADD COLUMN borrowed_parent_job_id TEXT"

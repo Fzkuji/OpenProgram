@@ -1290,6 +1290,10 @@ class ResourceGovernor:
             return conn.execute(
                 """UPDATE job_admissions
                    SET state = 'released', terminal_blocked = 0,
+                       terminal_block_command_id = NULL,
+                       terminal_block_phase = NULL,
+                       terminal_block_expires_at = NULL,
+                       terminal_block_prior_dispatch_ready = NULL,
                        released_at = ?, reason_code = ?,
                        lease_expires_at = NULL, resume_parent_msg_id = NULL
                    WHERE job_id = ? AND state = 'queued'
@@ -1413,6 +1417,10 @@ class ResourceGovernor:
                 conn.execute(
                     """UPDATE job_admissions
                        SET state = 'released', terminal_blocked = 0,
+                           terminal_block_command_id = NULL,
+                           terminal_block_phase = NULL,
+                           terminal_block_expires_at = NULL,
+                           terminal_block_prior_dispatch_ready = NULL,
                            released_at = ?,
                            resume_parent_msg_id = NULL,
                            reason_code = 'error.borrowed_parent_lost'
@@ -1516,6 +1524,18 @@ class ResourceGovernor:
                        terminal_blocked = CASE
                            WHEN state IN ('preparing','queued') THEN 0
                            ELSE terminal_blocked END,
+                       terminal_block_command_id = CASE
+                           WHEN state IN ('preparing','queued') THEN NULL
+                           ELSE terminal_block_command_id END,
+                       terminal_block_phase = CASE
+                           WHEN state IN ('preparing','queued') THEN NULL
+                           ELSE terminal_block_phase END,
+                       terminal_block_expires_at = CASE
+                           WHEN state IN ('preparing','queued') THEN NULL
+                           ELSE terminal_block_expires_at END,
+                       terminal_block_prior_dispatch_ready = CASE
+                           WHEN state IN ('preparing','queued') THEN NULL
+                           ELSE terminal_block_prior_dispatch_ready END,
                        reason_code = ?,
                        released_at = CASE
                            WHEN state IN ('preparing','queued')
@@ -1541,6 +1561,10 @@ class ResourceGovernor:
             return conn.execute(
                 """UPDATE job_admissions
                    SET state = 'released', terminal_blocked = 0,
+                       terminal_block_command_id = NULL,
+                       terminal_block_phase = NULL,
+                       terminal_block_expires_at = NULL,
+                       terminal_block_prior_dispatch_ready = NULL,
                        released_at = ?, lease_expires_at = NULL,
                        resume_parent_msg_id = NULL,
                        reason_code = COALESCE(?, reason_code)
@@ -1694,6 +1718,10 @@ class ResourceGovernor:
             changed = conn.execute(
                 f"""UPDATE job_admissions
                     SET state = 'released', terminal_blocked = 0,
+                        terminal_block_command_id = NULL,
+                        terminal_block_phase = NULL,
+                        terminal_block_expires_at = NULL,
+                        terminal_block_prior_dispatch_ready = NULL,
                         released_at = ?, lease_expires_at = NULL,
                         resume_parent_msg_id = NULL,
                         reason_code = COALESCE(?, reason_code)
@@ -1737,9 +1765,18 @@ class ResourceGovernor:
             # claim_next while the canonical database remains separate.
             conn.execute(
                 """UPDATE job_admissions
-                   SET dispatch_ready = 0, terminal_blocked = 1
+                   SET dispatch_ready = 0, terminal_blocked = 1,
+                       terminal_block_phase = COALESCE(
+                           terminal_block_phase, 'projection'
+                       ),
+                       terminal_block_expires_at = COALESCE(
+                           terminal_block_expires_at, ?
+                       ),
+                       terminal_block_prior_dispatch_ready = COALESCE(
+                           terminal_block_prior_dispatch_ready, dispatch_ready
+                       )
                    WHERE job_id = ? AND state != 'released'""",
-                (job_id,),
+                (time.time() + 30.0, job_id),
             )
             existing = conn.execute(
                 "SELECT fields_json, state FROM job_finalizations "
@@ -1761,14 +1798,50 @@ class ResourceGovernor:
             )
         return True
 
-    def block_dispatch(self, job_id: str) -> bool:
+    def block_dispatch(
+        self,
+        job_id: str,
+        *,
+        command_id: str | None = None,
+        phase: str = "recovery",
+    ) -> bool:
         """Fence an admission before canonical terminal transition."""
+        if phase not in {"prepared", "recovery", "projection"}:
+            raise ValueError("invalid terminal barrier phase")
+        now = time.time()
         with self.ledger.immediate() as conn:
             return conn.execute(
                 """UPDATE job_admissions
-                   SET dispatch_ready = 0, terminal_blocked = 1
+                   SET dispatch_ready = 0, terminal_blocked = 1,
+                       terminal_block_command_id = COALESCE(
+                           terminal_block_command_id, ?
+                       ),
+                       terminal_block_phase = CASE
+                           WHEN terminal_blocked = 1 THEN terminal_block_phase
+                           ELSE ? END,
+                       terminal_block_expires_at = CASE
+                           WHEN terminal_blocked = 1
+                           THEN terminal_block_expires_at
+                           ELSE ? END,
+                       terminal_block_prior_dispatch_ready = COALESCE(
+                           terminal_block_prior_dispatch_ready, dispatch_ready
+                       )
                    WHERE job_id = ? AND state != 'released'""",
-                (job_id,),
+                (command_id, phase, now + 30.0, job_id),
+            ).rowcount == 1
+
+    def mark_terminal_dispatch_recovery(
+        self, job_id: str, *, command_id: str,
+    ) -> bool:
+        """Record that the canonical cancel CAS failed after preparation."""
+        with self.ledger.immediate() as conn:
+            return conn.execute(
+                """UPDATE job_admissions
+                   SET terminal_block_phase = 'recovery',
+                       terminal_block_expires_at = ?
+                   WHERE job_id = ? AND terminal_blocked = 1
+                     AND terminal_block_command_id = ?""",
+                (time.time() + 30.0, job_id, command_id),
             ).rowcount == 1
 
     def unblock_terminal_dispatch(
@@ -1795,15 +1868,28 @@ class ResourceGovernor:
             params.append(expected_owner_instance_id)
         if expected_lease_generation is not None:
             params.append(expected_lease_generation)
+        params.append(time.time())
         with self.ledger.immediate() as conn:
             return conn.execute(
                 f"""UPDATE job_admissions
-                   SET dispatch_ready = CASE
-                           WHEN borrowed_parent_job_id IS NULL THEN 1 ELSE 0 END,
-                       terminal_blocked = 0
+                   SET dispatch_ready = COALESCE(
+                           terminal_block_prior_dispatch_ready, dispatch_ready
+                       ),
+                       terminal_blocked = 0,
+                       terminal_block_command_id = NULL,
+                       terminal_block_phase = NULL,
+                       terminal_block_expires_at = NULL,
+                       terminal_block_prior_dispatch_ready = NULL
                    WHERE job_id = ? AND state = ?
                      AND terminal_blocked = 1
                      AND {owner_clause}{generation_clause}
+                     AND (
+                         terminal_block_phase = 'recovery'
+                         OR (
+                             terminal_block_phase = 'prepared'
+                             AND terminal_block_expires_at <= ?
+                         )
+                     )
                      AND NOT EXISTS (
                          SELECT 1 FROM job_finalizations
                          WHERE job_finalizations.job_id = job_admissions.job_id
@@ -1840,6 +1926,7 @@ class ResourceGovernor:
         if expected_owner_instance_id is not None:
             params.append(expected_owner_instance_id)
         params.append(expected_lease_generation)
+        params.append(time.time())
         with self.ledger.immediate() as conn:
             if target_state == "released":
                 sql = f"""UPDATE job_admissions
@@ -1847,11 +1934,22 @@ class ResourceGovernor:
                                dispatch_ready = 0, owner_instance_id = NULL,
                                lease_expires_at = NULL, released_at = ?,
                                resume_parent_msg_id = NULL,
+                               terminal_block_command_id = NULL,
+                               terminal_block_phase = NULL,
+                               terminal_block_expires_at = NULL,
+                               terminal_block_prior_dispatch_ready = NULL,
                                reason_code = COALESCE(?, reason_code)
                            WHERE job_id = ? AND state = ?
                              AND terminal_blocked = 1
                              AND {owner_clause}
                              AND lease_generation = ?
+                             AND (
+                                 terminal_block_phase = 'recovery'
+                                 OR (
+                                     terminal_block_phase = 'prepared'
+                                     AND terminal_block_expires_at <= ?
+                                 )
+                             )
                              AND NOT EXISTS (
                                  SELECT 1 FROM job_finalizations
                                  WHERE job_finalizations.job_id = job_admissions.job_id
@@ -1865,11 +1963,22 @@ class ResourceGovernor:
                            dispatch_ready = 0, owner_instance_id = ?,
                            lease_generation = ?, started_at = COALESCE(started_at, ?),
                            last_activity_at = ?, lease_expires_at = ?,
+                           terminal_block_command_id = NULL,
+                           terminal_block_phase = NULL,
+                           terminal_block_expires_at = NULL,
+                           terminal_block_prior_dispatch_ready = NULL,
                            reason_code = COALESCE(?, reason_code)
                        WHERE job_id = ? AND state = ?
                          AND terminal_blocked = 1
                          AND {owner_clause}
                          AND lease_generation = ?
+                         AND (
+                             terminal_block_phase = 'recovery'
+                             OR (
+                                 terminal_block_phase = 'prepared'
+                                 AND terminal_block_expires_at <= ?
+                             )
+                         )
                          AND NOT EXISTS (
                              SELECT 1 FROM job_finalizations
                              WHERE job_finalizations.job_id = job_admissions.job_id
@@ -1910,8 +2019,12 @@ class ResourceGovernor:
             if admission["state"] != "released":
                 changed = conn.execute(
                     """UPDATE job_admissions
-                       SET state = 'released', terminal_blocked = 0,
-                           released_at = ?,
+                           SET state = 'released', terminal_blocked = 0,
+                               terminal_block_command_id = NULL,
+                               terminal_block_phase = NULL,
+                               terminal_block_expires_at = NULL,
+                               terminal_block_prior_dispatch_ready = NULL,
+                               released_at = ?,
                            lease_expires_at = NULL,
                            resume_parent_msg_id = NULL,
                            reason_code = COALESCE(?, reason_code)
@@ -1969,19 +2082,24 @@ class ResourceGovernor:
             ).fetchone()
         return None if row is None else (row[0], int(row[1]))
 
-    def admission_state(self, job_id: str) -> tuple[str, str | None, int, bool] | None:
+    def admission_state(
+        self, job_id: str,
+    ) -> tuple[str, str | None, int, bool, str | None, float | None, str | None, int | None] | None:
         """Return state and fence fields needed for canonical recovery."""
         with self.ledger.connection() as conn:
             row = conn.execute(
                 """SELECT state, owner_instance_id, lease_generation,
-                          terminal_blocked
+                          terminal_blocked, terminal_block_phase,
+                          terminal_block_expires_at, terminal_block_command_id,
+                          terminal_block_prior_dispatch_ready
                    FROM job_admissions WHERE job_id = ?""",
                 (job_id,),
             ).fetchone()
         if row is None:
             return None
         return (
-            str(row[0]), row[1], int(row[2]), bool(row[3]),
+            str(row[0]), row[1], int(row[2]), bool(row[3]), row[4],
+            row[5], row[6], row[7],
         )
 
     def complete_pending_finalization(
@@ -2180,6 +2298,10 @@ class ResourceGovernor:
                         changed = conn.execute(
                             """UPDATE job_admissions
                                SET state = 'released', terminal_blocked = 0,
+                                   terminal_block_command_id = NULL,
+                                   terminal_block_phase = NULL,
+                                   terminal_block_expires_at = NULL,
+                                   terminal_block_prior_dispatch_ready = NULL,
                                    reason_code = 'error.job_missing',
                                    resume_parent_msg_id = NULL,
                                    released_at = ?
@@ -2192,6 +2314,10 @@ class ResourceGovernor:
                         changed = conn.execute(
                             """UPDATE job_admissions
                                SET state = 'released', terminal_blocked = 0,
+                                   terminal_block_command_id = NULL,
+                                   terminal_block_phase = NULL,
+                                   terminal_block_expires_at = NULL,
+                                   terminal_block_prior_dispatch_ready = NULL,
                                    released_at = ?,
                                    resume_parent_msg_id = NULL,
                                    reason_code = COALESCE(?, reason_code)
@@ -2235,6 +2361,10 @@ class ResourceGovernor:
                 changed = conn.execute(
                     """UPDATE job_admissions
                        SET state = 'released', terminal_blocked = 0,
+                       terminal_block_command_id = NULL,
+                       terminal_block_phase = NULL,
+                       terminal_block_expires_at = NULL,
+                       terminal_block_prior_dispatch_ready = NULL,
                            released_at = ?, lease_expires_at = NULL,
                            resume_parent_msg_id = NULL
                        WHERE admission_id = ? AND state = 'stopping'
