@@ -291,6 +291,7 @@ def test_cancel_delivery_dedupe_is_cleared_after_terminal_and_recovery(
         executions, "_transition_command", original_transition_command,
     )
     assert executions.get_execution(execution.execution_id).status is ExecutionStatus.CANCELLED
+    assert executions.get_command("cancel_1").status is CommandStatus.APPLYING
     assert owner._delivered_cancel_commands == set()
     assert owner._cancel_delivery_by_execution == {}
     assert asyncio.run(
@@ -305,6 +306,17 @@ def test_cancel_delivery_dedupe_is_cleared_after_terminal_and_recovery(
     ).execution.status is ExecutionStatus.CANCELLED
     assert owner._delivered_cancel_commands == set()
     assert owner._cancel_delivery_by_execution == {}
+    recovered_command = executions.get_command("cancel_1")
+    assert recovered_command.status is CommandStatus.APPLIED
+    assert recovered_command.result_version == executions.get_execution(
+        execution.execution_id,
+    ).status_version
+    applied_event = next(
+        event for event in reversed(executions.list_events(execution.execution_id))
+        if event.kind == "command.applied"
+        and event.command_id == "cancel_1"
+    )
+    assert applied_event.payload["receipt"]["recovered"] == "terminal_execution"
 
     revision = executions.create_revision(manifest={"entrypoint": "chat-2"})
     second = executions.create_execution(

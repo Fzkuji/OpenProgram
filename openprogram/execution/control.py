@@ -218,6 +218,58 @@ class RuntimeControlService:
             if command is None or command.status in TERMINAL_COMMAND_STATUSES:
                 self._forget_cancel_delivery(execution_id, command_id)
 
+    def _reconcile_terminal_cancel(
+        self, execution: ExecutionRecord, connection=None,
+    ) -> None:
+        """Finish applying cancel commands after a terminal execution CAS."""
+        if connection is None:
+            commands = self.executions.list_commands(
+                execution.execution_id,
+                statuses=(CommandStatus.APPLYING,),
+                kinds=(CommandKind.CANCEL,),
+            )
+        else:
+            rows = connection.execute(
+                "SELECT * FROM commands WHERE execution_id = ? AND kind = ? "
+                "AND status = ? ORDER BY submitted_at, command_id",
+                (
+                    execution.execution_id,
+                    CommandKind.CANCEL.value,
+                    CommandStatus.APPLYING.value,
+                ),
+            ).fetchall()
+            commands = [self.executions._command(row) for row in rows]
+        if not commands:
+            return
+        if execution.status is ExecutionStatus.CANCELLED:
+            target = CommandStatus.APPLIED
+            rejection_code = None
+            receipt = {"recovered": "terminal_execution"}
+        else:
+            target = CommandStatus.REJECTED
+            rejection_code = "execution_terminal"
+            receipt = {"recovered": "terminal_execution"}
+        for command in commands:
+            if connection is None:
+                self.executions.transition_command(
+                    command.command_id,
+                    expected_status=CommandStatus.APPLYING,
+                    target=target,
+                    result_version=execution.status_version,
+                    rejection_code=rejection_code,
+                    receipt=receipt,
+                )
+            else:
+                self.executions._transition_command(
+                    connection,
+                    command.command_id,
+                    expected_status=CommandStatus.APPLYING,
+                    target=target,
+                    result_version=execution.status_version,
+                    rejection_code=rejection_code,
+                    receipt=receipt,
+                )
+
     def set_terminal_observer(
         self, observer: Callable[[ExecutionRecord], object] | None,
     ) -> None:
@@ -1161,6 +1213,7 @@ class RuntimeControlService:
         if execution is None:
             return None
         if execution.status in TERMINAL_EXECUTION_STATUSES:
+            self._reconcile_terminal_cancel(execution)
             self._forget_cancel_delivery(execution_id)
             return None
         self._prune_cancel_delivery(execution_id)
@@ -1998,11 +2051,15 @@ class RuntimeControlService:
             if attempt_id is not None and (
                 execution.current_attempt_id != attempt_id
                 or execution.owner_lease.get("generation") != generation
-            ):
+                ):
                 raise AttemptConflict(
                     "stale_owner",
                     "owner-loss report does not match the current execution owner",
                 )
+            if execution.status in TERMINAL_EXECUTION_STATUSES:
+                self._reconcile_terminal_cancel(execution, connection)
+                self._forget_cancel_delivery(execution_id)
+                return RecoveryCompletion(execution=execution)
             if (
                 execution.status is ExecutionStatus.PAUSED
                 and execution.current_attempt_id is None
