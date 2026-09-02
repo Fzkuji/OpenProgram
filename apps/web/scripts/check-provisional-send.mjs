@@ -635,7 +635,7 @@ assert.doesNotMatch(
 );
 assert.match(
   composer,
-  /action: "execution.cancel",[\s\S]*command_id: crypto\.randomUUID\(\),[\s\S]*execution_id: executionId,[\s\S]*expected_version: expectedVersion/,
+  /const commandId = crypto\.randomUUID\(\);[\s\S]*action: "execution.cancel",[\s\S]*command_id: commandId,[\s\S]*execution_id: executionId,[\s\S]*expected_version: expectedVersion/,
 );
 assert.match(composer, /text\("Cancel execution", "取消运行"\)/);
 const wsSendBody = composer.slice(
@@ -738,7 +738,7 @@ assert.doesNotMatch(
 );
 assert.match(
   chatHandlers,
-  /status !== "rejected"[\s\S]*status === "applied"[\s\S]*result_version/,
+  /status !== "rejected"[\s\S]*result_version[\s\S]*status === "applied"/,
   "applied command updates must preserve the canonical running-task version",
 );
 assert.match(
