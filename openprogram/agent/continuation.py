@@ -190,7 +190,9 @@ class AgentCheckpointV1:
             content = value.pop("content", None)
             if content is None:
                 raise AgentCheckpointError("checkpoint_schema_invalid", "pending message content is missing")
-            value["content_ref"] = add(f"pending_message.{index}", content)
+            value["content_ref"] = add(
+                f"pending_message.{index}", content, cap=MAX_AGENT_DELTA_BYTES,
+            )
             if (
                 not isinstance(value.get("message_id"), str)
                 or type(value.get("sequence")) is not int

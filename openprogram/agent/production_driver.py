@@ -794,7 +794,7 @@ class AgentProductionDriver:
         )
         from openprogram.execution.model import CommandKind
 
-        pending: dict[str, tuple[str, str, str]] = {}
+        pending: dict[str, tuple[str, str, str, str | None]] = {}
         prior_actions: list[dict[str, Any]] = []
         prior_receipts: list[dict[str, Any]] = []
         completed_tool_results: list[dict[str, Any]] = []
@@ -975,15 +975,26 @@ class AgentProductionDriver:
                 else:
                     raise AgentDriverError("invalid_safe_point", "unsupported Agent effect boundary")
                 effect_id = f"effect_{action_id[:32]}"
+                supports_idempotency_key = (
+                    kind == "provider.before"
+                    and payload.get("supports_idempotency_key") is True
+                )
+                idempotency_key = action_id if supports_idempotency_key else None
+                if kind == "provider.before":
+                    # The callback mutates the request payload so the exact
+                    # key used for the durable effect reaches SimpleStreamOptions.
+                    payload["supports_idempotency_key"] = supports_idempotency_key
+                    payload["idempotency_key"] = idempotency_key
                 classification = (
-                    EffectClassification.IDEMPOTENT if kind == "provider.before"
+                    EffectClassification.IDEMPOTENT
+                    if supports_idempotency_key
                     else EffectClassification.NONREPEATABLE
                 )
                 effect = service.effects.register(
                     effect_id=effect_id, execution_id=attempt.execution_id,
                     attempt_id=attempt.attempt_id, action_id=action_id,
                     classification=classification,
-                    idempotency_key=action_id if classification is EffectClassification.IDEMPOTENT else None,
+                    idempotency_key=idempotency_key,
                     metadata={"kind": kind, "payload": dict(payload)},
                 )
                 if effect.status is EffectStatus.PLANNED:
@@ -991,13 +1002,13 @@ class AgentProductionDriver:
                         effect.effect_id, expected_status=EffectStatus.PLANNED,
                     )
                 pending[kind.rsplit(".", 1)[0]] = (
-                    effect_id, action_id, input_hash,
+                    effect_id, action_id, input_hash, idempotency_key,
                 )
                 return False
 
             key = kind.rsplit(".", 1)[0]
             try:
-                effect_id, action_id, input_hash = pending.pop(key)
+                effect_id, action_id, input_hash, idempotency_key = pending.pop(key)
             except KeyError as exc:
                 raise AgentDriverError("effect_state_invalid", "Agent effect has no durable dispatch intent") from exc
             effect = service.effects.get(effect_id)
@@ -1014,7 +1025,9 @@ class AgentProductionDriver:
                     "provider_request_id": payload.get("provider_request_id"),
                     "usage": payload.get("usage"),
                     "message_hash": json_digest(latest_assistant),
+                    "supports_idempotency_key": idempotency_key is not None,
                 }
+                terminal_receipt["idempotency_key"] = idempotency_key
             elif kind == "tool.after":
                 result = payload.get("result")
                 if not isinstance(result, Mapping):

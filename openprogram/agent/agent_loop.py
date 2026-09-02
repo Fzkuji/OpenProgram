@@ -932,6 +932,11 @@ async def _stream_assistant_response(
         )
 
     from openprogram.providers import SimpleStreamOptions
+    from openprogram.providers.api_registry import resolve_api_provider_snapshot
+    provider_snapshot = resolve_api_provider_snapshot(config.model)
+    provider_supports_idempotency_key = bool(
+        provider_snapshot.supports_idempotency_key
+    )
     stream_opts = SimpleStreamOptions(
         reasoning=config.reasoning,
         thinking_budgets=config.thinking_budgets,
@@ -955,6 +960,7 @@ async def _stream_assistant_response(
         ),
         web_search=config.web_search,
         response_format=provider_response_format,
+        supports_idempotency_key=provider_supports_idempotency_key,
     )
 
     partial_message: AssistantMessage | None = None
@@ -968,14 +974,20 @@ async def _stream_assistant_response(
                 _durable_message(tool) for tool in (context.tools or [])
             ],
         }
-        await config.safe_point_hook("provider.before", {
+        provider_payload = {
             "resolved_snapshot": resolved_snapshot,
+            "supports_idempotency_key": provider_supports_idempotency_key,
             "context": {
                 "system_prompt": llm_context.system_prompt,
                 "messages": [_durable_message(message) for message in llm_context.messages],
                 "tools": [_durable_message(tool) for tool in (llm_context.tools or [])],
             },
-        })
+        }
+        await config.safe_point_hook("provider.before", provider_payload)
+        if provider_payload.get("supports_idempotency_key") is True:
+            stream_opts.idempotency_key = provider_payload.get("idempotency_key")
+        else:
+            stream_opts.idempotency_key = None
     _record_job_activity("operation_start")
     response_stream = fn(config.model, llm_context, stream_opts)
 

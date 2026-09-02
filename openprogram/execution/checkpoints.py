@@ -283,6 +283,7 @@ class ExecutionCheckpointStore:
         refs: set[str] = set()
         self.executions._collect_state_refs(dict(state_refs), refs)
         self.executions._collect_state_refs(list(effect_receipts), refs)
+        self.executions._expand_state_blob_refs(connection, execution_id, refs)
         for ref in refs:
             row = connection.execute(
                 "SELECT sha256, payload, byte_length, media_type, schema_version "

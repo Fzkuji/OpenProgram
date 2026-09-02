@@ -476,10 +476,12 @@ class ExecutionStore:
             ):
                 for raw in (row["state_refs_json"], row["effect_receipts_json"]):
                     self._collect_state_refs(json.loads(raw), referenced)
+            self._expand_state_blob_refs(connection, execution_id, referenced)
             for row in connection.execute(
                 "SELECT receipt_json FROM effects WHERE execution_id = ?", (execution_id,),
             ):
                 self._collect_state_refs(json.loads(row["receipt_json"]), referenced)
+            self._expand_state_blob_refs(connection, execution_id, referenced)
             if referenced:
                 placeholders = ",".join("?" for _ in referenced)
                 result = connection.execute(
@@ -511,6 +513,46 @@ class ExecutionStore:
         elif isinstance(value, list):
             for item in value:
                 cls._collect_state_refs(item, refs)
+
+    @classmethod
+    def _expand_state_blob_refs(
+        cls, connection: sqlite3.Connection, execution_id: str, refs: set[str],
+    ) -> None:
+        """Expand the child refs of the one versioned Agent checkpoint schema.
+
+        A checkpoint manifest stores the Agent payload as one immutable blob;
+        that payload stores descriptors for message deltas, snapshots, and
+        receipts.  GC must resolve that schema before deciding which blobs are
+        unreachable.  Other JSON state blobs remain opaque by design.
+        """
+        pending = list(refs)
+        visited: set[str] = set()
+        while pending:
+            ref = pending.pop()
+            if ref in visited:
+                continue
+            visited.add(ref)
+            row = connection.execute(
+                "SELECT payload, media_type, schema_version FROM execution_state_blobs "
+                "WHERE execution_id = ? AND ref = ?",
+                (execution_id, ref),
+            ).fetchone()
+            if row is None or row["media_type"] != "application/json" or int(row["schema_version"]) != 1:
+                continue
+            try:
+                value = json.loads(bytes(row["payload"]).decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if not isinstance(value, Mapping) or value.get("schema_version") != 1:
+                continue
+            if not all(key in value for key in ("safe_point", "frontier", "turn", "current_decision", "state_refs")):
+                continue
+            before = len(refs)
+            state_refs = value.get("state_refs")
+            if isinstance(state_refs, Mapping):
+                cls._collect_state_refs(state_refs, refs)
+            if len(refs) > before:
+                pending.extend(refs - visited)
 
     def get_agent_wait(self, execution_id: str, kind: str) -> None:
         """Agent P0 does not persist waits; this explicit query stays empty."""

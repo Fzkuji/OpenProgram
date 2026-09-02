@@ -52,6 +52,8 @@ def build_base_options(
         parallel_tool_calls=options.parallel_tool_calls if options else None,
         web_search=options.web_search if options else None,
         response_format=options.response_format if options else None,
+        supports_idempotency_key=(options.supports_idempotency_key if options else False),
+        idempotency_key=(options.idempotency_key if options else None),
     )
 
 

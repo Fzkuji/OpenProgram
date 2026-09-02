@@ -416,6 +416,7 @@ def run_loop_blocking(
         result = safe_point_callback(kind, durable_payload)
         if inspect.isawaitable(result):
             result = await result
+        payload.update(durable_payload)
         # AgentLoop treats a true result as an ownership hand-off.  Preserve
         # it verbatim so no later tool, persistence, or finalize stage runs.
         handed_off = bool(result)

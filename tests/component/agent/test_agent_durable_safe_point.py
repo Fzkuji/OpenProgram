@@ -564,6 +564,107 @@ def test_real_provider_callback_persists_v1_content_addressed_checkpoint(tmp_pat
     assert state.payload["resolved_model_system_tool_snapshot_ref"]["media_type"] == "application/json"
 
 
+def test_published_agent_checkpoint_children_survive_terminal_gc_and_load(tmp_path):
+    """Terminal GC keeps every blob reachable through the Agent schema."""
+    store, control, _active, paused, checkpoint, _command = _real_provider_safe_point(tmp_path)
+    from openprogram.agent.continuation import AgentCheckpointV1
+
+    state = AgentCheckpointV1.load(store, checkpoint)
+    child_refs = {
+        descriptor["ref"] for descriptor in state.payload["state_refs"].values()
+    }
+    with store._connect() as connection:
+        registered = {
+            row["ref"] for row in connection.execute(
+                "SELECT ref FROM execution_state_blob_refs WHERE execution_id = ? "
+                "AND reference_kind = 'checkpoint' AND reference_id = ?",
+                (paused.execution_id, checkpoint.checkpoint_id),
+            )
+        }
+    assert child_refs <= registered
+
+    async def activate(attempt, _activation):
+        return DriverBinding(
+            execution_id=attempt.execution_id,
+            attempt_id=attempt.attempt_id,
+            generation=attempt.generation,
+            driver=SimpleNamespace(),
+            handle=object(),
+        )
+
+    resumed = asyncio.run(control.request_continue(
+        command_id="continue-for-gc",
+        execution_id=paused.execution_id,
+        expected_version=paused.status_version,
+        actor={"subject": "agent-owner"},
+        activator=activate,
+    ))
+    active = control.attempts.get(resumed.execution.current_attempt_id)
+    assert active is not None
+    finished = control.finish_attempt(
+        attempt_id=active.attempt_id,
+        generation=active.generation,
+        expected_execution_version=resumed.execution.status_version,
+        target=ExecutionStatus.COMPLETED,
+        outcome="completed",
+    )
+    assert finished.execution.status is ExecutionStatus.COMPLETED
+    assert control.state_blobs.gc(execution_id=paused.execution_id) == 0
+    loaded = AgentCheckpointV1.load(store, checkpoint)
+    assert loaded.payload == state.payload
+
+
+def test_terminal_gc_deletes_unreferenced_agent_state_blob(tmp_path):
+    store, _attempts, _active, execution = _agent_execution(tmp_path)
+    orphan = store.put_state_blob(execution.execution_id, b'{"orphan":true}')
+    control = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    finished = control.finish_attempt(
+        attempt_id=execution.current_attempt_id,
+        generation=execution.owner_lease["generation"],
+        expected_execution_version=execution.status_version,
+        target=ExecutionStatus.COMPLETED,
+        outcome="completed",
+    )
+    assert finished.execution.status is ExecutionStatus.COMPLETED
+    assert store.gc_state_blobs(execution.execution_id) == 1
+    assert store.get_state_blob(execution.execution_id, orphan["ref"]) is None
+
+
+@pytest.mark.parametrize("supports_key", [True, False])
+def test_provider_effect_classification_requires_declared_key_support(
+    tmp_path, supports_key
+):
+    store, _attempts, active, execution = _admitted_agent_execution(tmp_path)
+    from openprogram.agent.production_driver import AgentProductionDriver
+
+    control = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    hook = AgentProductionDriver(store, control_service=control)._safe_point_hook(
+        active,
+        SimpleNamespace(user_msg_id="user-anchor"),
+        threading.Event(),
+    )
+    payload = {
+        "resolved_snapshot": {"model": {"id": "fake"}, "system_prompt": "system", "tools": []},
+        "context": {"messages": []},
+        "supports_idempotency_key": supports_key,
+    }
+    assert hook("provider.before", payload) is False
+    with store._connect() as connection:
+        row = connection.execute(
+            "SELECT classification, idempotency_key, metadata_json FROM effects "
+            "WHERE execution_id = ?",
+            (execution.execution_id,),
+        ).fetchone()
+    assert row is not None
+    assert row["classification"] == ("idempotent" if supports_key else "nonrepeatable")
+    if supports_key:
+        assert row["idempotency_key"]
+        assert payload["idempotency_key"] == row["idempotency_key"]
+    else:
+        assert row["idempotency_key"] is None
+        assert payload["idempotency_key"] is None
+
+
 def test_v1_checkpoint_rejects_tampered_state_blob_hash(tmp_path):
     store, _control, _active, _paused, checkpoint, _command = _real_provider_safe_point(tmp_path)
     from openprogram.agent.continuation import AgentCheckpointError, AgentCheckpointV1

@@ -76,8 +76,11 @@ def stream_openai_responses(
                 or resolve_provider_key(model.provider) or ""
             conn_base_url = _conn.base_url if _conn and _conn.base_url else None
             conn_headers = _conn.headers if _conn else {}
+            options_headers = dict(opts.get("headers") or {})
+            if opts.get("supports_idempotency_key") and opts.get("idempotency_key"):
+                options_headers["Idempotency-Key"] = opts["idempotency_key"]
             client = _create_client(
-                model, context, api_key, opts.get("headers"),
+                model, context, api_key, options_headers,
                 conn_base_url=conn_base_url, conn_headers=conn_headers,
             )
             params = _build_params(model, context, opts)
