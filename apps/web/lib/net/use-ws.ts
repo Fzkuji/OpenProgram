@@ -12,6 +12,7 @@
 import { useEffect } from "react";
 
 import { consumeCommandErrorFrame } from "@/lib/net/action-error";
+import { acceptExecutionUpdate } from "@/lib/net/execution-update-order";
 import type {
   PermissionRulesDetail,
   JobStatusDetail,
@@ -264,12 +265,16 @@ export function useWS(): void {
             session_id?: string;
             status?: string;
             reason_code?: string;
+            event_sequence?: number;
           } }).execution || d;
           if (!execution?.execution_id) return true;
+          const eid = String(execution.execution_id);
+          const eventSequence = (d as { event_sequence?: number } | undefined)?.event_sequence
+            ?? execution.event_sequence;
+          if (!acceptExecutionUpdate(eid, eventSequence)) return true;
           import("@/lib/session-store").then(({ useSessionStore }) => {
             const store = useSessionStore.getState();
             const sid = String(execution.session_id || "");
-            const eid = String(execution.execution_id);
             if (sid) {
               const current = store.messagesById[eid];
               // 终态不可回退：stopSession 已乐观把消息标 cancelled，服务端

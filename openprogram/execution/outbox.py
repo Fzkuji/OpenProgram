@@ -59,6 +59,7 @@ class ProjectionDispatcher:
         owner_id: str,
         limit: int = 100,
         lease_ttl_seconds: float = 30.0,
+        should_stop: Callable[[], bool] | None = None,
     ) -> ProjectionDispatchResult:
         claimed = self.store.claim_projection_outbox(
             owner_id=owner_id,
@@ -69,6 +70,8 @@ class ProjectionDispatcher:
         delivered = 0
         failed = 0
         for item in claimed:
+            if should_stop is not None and should_stop():
+                break
             handler = self.handlers.get(item.projection_kind)
             if handler is None:
                 continue
@@ -131,6 +134,7 @@ class ProjectionDispatcher:
         lease_ttl_seconds: float = 30.0,
         max_batches: int | None = None,
         max_seconds: float | None = None,
+        should_stop: Callable[[], bool] | None = None,
     ) -> ProjectionDispatchResult:
         """Deliver bounded batches until caught up or one batch fails.
 
@@ -144,10 +148,15 @@ class ProjectionDispatcher:
         claimed = delivered = failed = batches = 0
         deadline = time.monotonic() + max_seconds if max_seconds is not None else None
         while True:
+            if should_stop is not None and should_stop():
+                return ProjectionDispatchResult(
+                    claimed=claimed, delivered=delivered, failed=failed
+                )
             result = self.dispatch_once(
                 owner_id=owner_id,
                 limit=limit,
                 lease_ttl_seconds=lease_ttl_seconds,
+                should_stop=should_stop,
             )
             claimed += result.claimed
             delivered += result.delivered

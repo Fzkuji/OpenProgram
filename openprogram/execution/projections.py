@@ -169,6 +169,7 @@ class ExecutionProjectionReadModel:
         source = self.store.get_execution_input(execution.execution_id)
         entrypoint = source.entrypoint if source is not None else None
         payload: dict[str, Any] = {
+            "event_sequence": event.sequence,
             "event": {
                 "sequence": event.sequence,
                 "kind": event.kind,
@@ -275,22 +276,35 @@ class ExecutionProjectionWorker:
     def wake(self) -> None:
         self._wake.set()
 
-    def stop(self) -> None:
+    def stop(self, *, timeout: float = 1.0) -> bool:
         self._stopped.set()
         self._wake.set()
         if threading.current_thread() is not self._thread:
-            self._thread.join()
+            self._thread.join(timeout=timeout)
+        return not self.is_alive
 
     def _run(self) -> None:
         while not self._stopped.is_set():
+            result = None
             try:
-                self._dispatcher.drain(
+                result = self._dispatcher.drain(
                     owner_id=self.owner_id,
                     limit=self.batch_size,
+                    max_batches=1,
+                    max_seconds=0.25,
+                    should_stop=self._stopped.is_set,
                 )
             except Exception:
                 _log.exception("execution projection worker batch failed")
-            self._wake.wait(self.idle_wait_seconds)
+            wait_seconds = (
+                0.01
+                if result is not None
+                and result.claimed >= self.batch_size
+                and not result.failed
+                and not self._stopped.is_set()
+                else self.idle_wait_seconds
+            )
+            self._wake.wait(wait_seconds)
             self._wake.clear()
 
 
@@ -310,7 +324,9 @@ def start_projection_worker(
     with _workers_lock:
         existing = _workers.get(key)
         if existing is not None:
-            return existing
+            if existing.is_alive:
+                return existing
+            _workers.pop(key, None)
         worker = ExecutionProjectionWorker(
             store,
             owner_id=owner_id,
@@ -330,8 +346,8 @@ def wake_projection_worker(path) -> None:
         worker.wake()
 
 
-def stop_projection_worker(store=None) -> None:
-    """Stop one worker, or every worker during process shutdown."""
+def stop_projection_worker(store=None) -> bool:
+    """Request bounded shutdown; return whether every selected worker stopped."""
     with _workers_lock:
         if store is None:
             entries = list(_workers.items())
@@ -339,9 +355,13 @@ def stop_projection_worker(store=None) -> None:
             key = _worker_key(store)
             worker = _workers.get(key)
             entries = [(key, worker)] if worker is not None else []
+        stopped = True
         for key, worker in entries:
-            worker.stop()
-            _workers.pop(key, None)
+            if worker.stop():
+                _workers.pop(key, None)
+            else:
+                stopped = False
+        return stopped
 
 
 def projection_handlers(store) -> dict[str, object]:

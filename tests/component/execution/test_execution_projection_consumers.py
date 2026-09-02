@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 
 from openprogram.execution import CapabilitySet, ExecutionStatus, ExecutionStore
 from openprogram.execution.outbox import ProjectionDispatcher
@@ -141,6 +142,82 @@ def test_late_ui_projection_cannot_emit_or_replace_a_newer_snapshot(tmp_path, mo
     assert [frame["data"]["execution"]["status"] for frame in frames] == ["completed"]
 
 
+def test_interleaved_ui_emissions_carry_sequences_for_the_client_order_guard(
+    tmp_path, monkeypatch
+):
+    from openprogram.execution.projections import ExecutionProjectionReadModel
+
+    store = _store(tmp_path)
+    execution = _admit(store)
+    running = store.transition_execution(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        target=ExecutionStatus.RUNNING,
+    )
+    store.transition_execution(
+        execution.execution_id,
+        expected_version=running.status_version,
+        target=ExecutionStatus.COMPLETED,
+    )
+    ui_items = [
+        item
+        for item in store.list_projection_outbox(execution_id=execution.execution_id)
+        if item.projection_kind == "ui"
+    ]
+    old_emit_entered = threading.Event()
+    release_old_emit = threading.Event()
+    frames = []
+
+    def emit(frame):
+        if frame["data"]["event_sequence"] == ui_items[0].event_sequence:
+            old_emit_entered.set()
+            assert release_old_emit.wait(2)
+        frames.append(frame)
+
+    monkeypatch.setattr("openprogram.events.emit_ws_frame", emit)
+    older = ExecutionProjectionReadModel(store)
+    newer = ExecutionProjectionReadModel(store)
+    old_thread = threading.Thread(
+        target=older.apply, args=(ui_items[0],), kwargs={"expected_kind": "ui"}
+    )
+    old_thread.start()
+    assert old_emit_entered.wait(2)
+    newer.apply(ui_items[-1], expected_kind="ui")
+    release_old_emit.set()
+    old_thread.join()
+
+    assert [frame["data"]["event_sequence"] for frame in frames] == [
+        ui_items[-1].event_sequence,
+        ui_items[0].event_sequence,
+    ]
+
+
+def test_projection_worker_stop_is_bounded_and_stops_new_claims(tmp_path):
+    from openprogram.execution.projections import ExecutionProjectionWorker
+
+    store = _store(tmp_path)
+    _admit(store)
+    handler_started = threading.Event()
+    release_handler = threading.Event()
+    calls = []
+
+    def slow_handler(item):
+        calls.append(item.outbox_id)
+        handler_started.set()
+        assert release_handler.wait(2)
+
+    worker = ExecutionProjectionWorker(store, batch_size=1, idle_wait_seconds=30)
+    worker._dispatcher = ProjectionDispatcher(store, {"dag": slow_handler})
+    worker.start()
+    assert handler_started.wait(2)
+    started_at = time.monotonic()
+    assert worker.stop(timeout=0.01) is False
+    assert time.monotonic() - started_at < 0.5
+    release_handler.set()
+    assert worker.stop(timeout=1) is True
+    assert calls == ["outbox_1_dag"]
+
+
 def test_projection_snapshot_lookup_does_not_scan_the_execution_event_history(
     tmp_path, monkeypatch
 ):
@@ -255,11 +332,19 @@ def test_projection_worker_finishes_backlog_left_by_bounded_startup(tmp_path, mo
     )
     try:
         assert delivered.wait(2)
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            if all(
+                item.state.value == "delivered"
+                for item in store.list_projection_outbox()
+            ):
+                break
+            threading.Event().wait(0.01)
+        assert all(
+            item.state.value == "delivered" for item in store.list_projection_outbox()
+        )
     finally:
         stop_projection_worker(store)
-    assert all(
-        item.state.value == "delivered" for item in store.list_projection_outbox()
-    )
     assert not worker.is_alive
 
 
