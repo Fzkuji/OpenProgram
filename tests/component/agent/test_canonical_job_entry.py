@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.component.agent.async_job_support import fake_worker, store_fixture
+
 def test_public_spawn_creates_job_id_bound_canonical_execution(
     tmp_path, store_fixture, fake_worker, monkeypatch,
 ):

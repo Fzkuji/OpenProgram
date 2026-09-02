@@ -1113,13 +1113,31 @@ class ResourceGovernor:
         with self.ledger.immediate() as conn:
             return conn.execute(
                 """UPDATE job_admissions
-                   SET dispatch_ready = 1, resume_parent_msg_id = NULL
+                   SET dispatch_ready = 1
                    WHERE job_id = ? AND admission_id = ?
                      AND state = 'queued' AND dispatch_ready = 0
                      AND resume_parent_msg_id = ?
                      AND borrowed_parent_job_id IS NULL""",
                 (job_id, admission_id, parent_msg_id),
             ).rowcount == 1
+
+    def continuation_parent_msg_id(self, job_id: str) -> str | None:
+        """Return the durable deferred-resume target for canonical input."""
+        with self.ledger.connection() as conn:
+            row = conn.execute(
+                "SELECT resume_parent_msg_id FROM job_admissions "
+                "WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+        return row[0] if row is not None else None
+
+    def admission_exists(self, job_id: str) -> bool:
+        """Check whether the resource ledger owns an admission for a Job."""
+        with self.ledger.connection() as conn:
+            return conn.execute(
+                "SELECT 1 FROM job_admissions WHERE job_id = ? LIMIT 1",
+                (job_id,),
+            ).fetchone() is not None
 
     def publish_accepted_job(
         self,

@@ -1316,6 +1316,9 @@ def cancel_session_executions(session_id: str) -> list[dict[str, Any]]:
 
 def cancel_execution(execution_id: str):
     """Cancel exactly one execution and its active ``caller`` descendants."""
+    canonical = _canonical_execution(execution_id)
+    if canonical is not None:
+        return _cancel_canonical_execution(canonical)
     from openprogram.agent.session_db import default_db
 
     store = default_db()
@@ -1452,6 +1455,116 @@ def cancel_execution(execution_id: str):
     for node_id in to_grace:
         _ensure_grace_watch(node_id)
     return result
+
+
+def _canonical_execution(execution_id: str):
+    """Return the canonical record when this id belongs to the new runtime."""
+    from openprogram.execution import default_store
+
+    return default_store().get_execution(execution_id)
+
+
+def _run_control_awaitable(awaitable):
+    """Bridge canonical async control from both sync and event-loop callers."""
+    import asyncio
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(awaitable)
+    result: list[Any] = []
+    failure: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            result.append(asyncio.run(awaitable))
+        except BaseException as exc:  # noqa: BLE001
+            failure.append(exc)
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join()
+    if failure:
+        raise failure[0]
+    return result[0]
+
+
+def _cancel_canonical_execution(execution, *, reason_code: str | None = None):
+    """Submit one canonical cancel command for every canonical public surface."""
+    from openprogram.execution.model import TERMINAL_EXECUTION_STATUSES
+
+    if execution.status in TERMINAL_EXECUTION_STATUSES:
+        if execution.status.value == "cancelled":
+            return execution.to_dict()
+        raise ExecutionNotCancellable(execution.execution_id, execution.to_dict())
+    reason_code = reason_code or _cancel_reason.get() or "cancel.user"
+    try:
+        from openprogram.execution import default_store
+
+        descendants = [
+            item for item in default_store().list_nonterminal()
+            if item.parent_execution_id == execution.execution_id
+        ]
+    except Exception:
+        descendants = []
+    for child in descendants:
+        _cancel_canonical_execution(child, reason_code="cancel.parent")
+    service = _canonical_control_service(execution.execution_id)
+    try:
+        dispatch = _run_control_awaitable(
+            service.request_cancel(
+                command_id=f"execution-cancel:{execution.execution_id}",
+                execution_id=execution.execution_id,
+                expected_version=execution.status_version,
+                actor={"source": "run_control"},
+                reason_code=reason_code,
+            )
+        )
+    except Exception as exc:
+        from openprogram.execution.store import ExecutionConflict
+
+        current = _canonical_execution(execution.execution_id)
+        if current is not None and current.status.value == "cancelled":
+            return current.to_dict()
+        if current is not None and current.status.value == "cancelling":
+            return current.to_dict()
+        if isinstance(exc, ExecutionConflict) and current is not None:
+            raise ExecutionNotCancellable(
+                execution.execution_id, current.to_dict(),
+            ) from exc
+        raise
+    # Question waits are a delivery concern; the canonical command remains
+    # the sole cancellation authority and this only releases the exact wait.
+    try:
+        from openprogram.agent.questions import get_question_registry
+
+        get_question_registry().cancel_execution(
+            execution.session_id, execution.execution_id,
+        )
+    except Exception:
+        pass
+    return dispatch.execution.to_dict()
+
+
+def _canonical_control_service(execution_id: str):
+    """Use the JobRunner's live registry when this is a public Job."""
+    from openprogram.execution import default_control_service
+
+    try:
+        from openprogram.agent.job.runner import _runner
+
+        if _runner is not None:
+            canonical = _runner._execution_store.get_execution(execution_id)
+            input_record = _runner._execution_store.get_execution_input(execution_id)
+            if (
+                canonical is not None
+                and input_record is not None
+                and input_record.input_ref.startswith("job-input-v1:")
+            ):
+                return _runner._execution_control
+    except Exception:
+        pass
+    return default_control_service()
 
 
 def is_cancelled(
