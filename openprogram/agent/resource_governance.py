@@ -1139,6 +1139,26 @@ class ResourceGovernor:
                 (job_id,),
             ).fetchone() is not None
 
+    def canonical_limits(self, job_id: str) -> dict[str, int | float | None]:
+        """Read the active Job budget from the authoritative ledger row."""
+        with self.ledger.connection() as conn:
+            row = conn.execute(
+                "SELECT b.max_total_tokens, b.max_cost_microusd, "
+                "b.max_runtime_seconds, b.idle_timeout_seconds "
+                "FROM budget_scopes b JOIN job_admissions a "
+                "ON a.budget_scope_id = b.budget_scope_id "
+                "WHERE a.job_id = ?",
+                (job_id,),
+            ).fetchone()
+        if row is None:
+            return {}
+        return {
+            "max_total_tokens": row[0],
+            "max_cost_microusd": row[1],
+            "max_runtime_seconds": row[2],
+            "idle_timeout_seconds": row[3],
+        }
+
     def publish_accepted_job(
         self,
         job_id: str,
@@ -1231,7 +1251,7 @@ class ResourceGovernor:
             return conn.execute(
                 """UPDATE job_admissions
                    SET state = 'released', released_at = ?, reason_code = ?,
-                       lease_expires_at = NULL
+                       lease_expires_at = NULL, resume_parent_msg_id = NULL
                    WHERE job_id = ? AND state = 'queued'
                      AND borrowed_parent_job_id = ?
                      AND NOT EXISTS (
@@ -1352,6 +1372,7 @@ class ResourceGovernor:
                 conn.execute(
                     """UPDATE job_admissions
                        SET state = 'released', released_at = ?,
+                           resume_parent_msg_id = NULL,
                            reason_code = 'error.borrowed_parent_lost'
                        WHERE job_id = ? AND state = 'queued'
                          AND NOT EXISTS (
@@ -1475,6 +1496,7 @@ class ResourceGovernor:
             return conn.execute(
                 """UPDATE job_admissions
                    SET state = 'released', released_at = ?, lease_expires_at = NULL,
+                       resume_parent_msg_id = NULL,
                        reason_code = COALESCE(?, reason_code)
                    WHERE job_id = ? AND state != 'released'
                      AND (state IN ('preparing','queued')
@@ -1626,6 +1648,7 @@ class ResourceGovernor:
             changed = conn.execute(
                 f"""UPDATE job_admissions
                     SET state = 'released', released_at = ?, lease_expires_at = NULL,
+                        resume_parent_msg_id = NULL,
                         reason_code = COALESCE(?, reason_code)
                     WHERE job_id = ? AND owner_instance_id = ?
                       AND lease_generation = ? AND state IN ({placeholders})""",
@@ -1804,6 +1827,7 @@ class ResourceGovernor:
                         changed = conn.execute(
                             """UPDATE job_admissions
                                SET state = 'released', reason_code = 'error.job_missing',
+                                   resume_parent_msg_id = NULL,
                                    released_at = ?
                                WHERE admission_id = ? AND state = 'queued'""",
                             (current_time, row["admission_id"]),
@@ -1841,7 +1865,8 @@ class ResourceGovernor:
             with self.ledger.immediate() as conn:
                 changed = conn.execute(
                     """UPDATE job_admissions
-                       SET state = 'released', released_at = ?, lease_expires_at = NULL
+                       SET state = 'released', released_at = ?, lease_expires_at = NULL,
+                           resume_parent_msg_id = NULL
                        WHERE admission_id = ? AND state = 'stopping'
                          AND owner_instance_id IS NULL
                          AND lease_generation = ?

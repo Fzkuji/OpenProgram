@@ -977,6 +977,26 @@ class RuntimeControlService:
             )
         return await self._dispatch(command, execution, operation="cancel")
 
+    async def terminate_attempt(
+        self,
+        *,
+        execution_id: str,
+        attempt_id: str,
+        generation: int,
+        reason: str,
+    ):
+        """Invoke exact driver's termination hook after cancellation grace."""
+        execution = self.executions.get_execution(execution_id)
+        if execution is None or (
+            execution.current_attempt_id != attempt_id
+            or execution.owner_lease.get("generation") != generation
+        ):
+            raise AttemptConflict("stale_owner", "termination owner is stale")
+        binding = self.registry.resolve(
+            execution_id, attempt_id=attempt_id, generation=generation,
+        )
+        return await binding.driver.terminate(binding.handle, reason)
+
     def arrive_safe_point(
         self,
         *,

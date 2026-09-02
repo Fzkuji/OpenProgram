@@ -37,6 +37,7 @@ def test_public_spawn_creates_job_id_bound_canonical_execution(
             "state_schema_version": None,
         }
     finally:
+        fake_worker[1].set()
         runner.shutdown()
 
 

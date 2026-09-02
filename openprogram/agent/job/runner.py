@@ -60,6 +60,7 @@ _log = logging.getLogger(__name__)
 
 _DEFAULT_MAX_WORKERS = 4
 _MAX_CANONICAL_JOB_INPUT_BYTES = 1_000_000
+_CANCEL_ESCALATION_SECS = 30.0
 # Delay before reporting that a worker has not honoured cancellation. The
 # ownership fence remains live until that worker exits or lease recovery wins.
 _LEASE_RENEW_SECS = 10.0
@@ -360,7 +361,9 @@ class JobRunner:
         # projection/legacy reconciliation below must not hide a canonical
         # recovery failure.
         from openprogram.execution import recover_execution_startup
-        recover_execution_startup(control_service=self._execution_control)
+        startup_recovery = recover_execution_startup(
+            control_service=self._execution_control,
+        )
         # Reconcile orphans before opening the pool so any "running"
         # job from a previous process is flipped to errored. The
         # state-machine transition rules cover (running, errored).
@@ -377,6 +380,11 @@ class JobRunner:
             pass
         self._reconcile_resources()
         self._recover_orphan_canonical_jobs()
+        for recovery in startup_recovery.canonical:
+            if getattr(recovery.execution.status, "value", None) in {
+                "completed", "cancelled", "failed", "interrupted",
+            }:
+                self._project_canonical_terminal(recovery.execution)
         self._pool = ThreadPoolExecutor(
             max_workers=max_workers,
             thread_name_prefix="op-job",
@@ -391,6 +399,7 @@ class JobRunner:
         # HEAD; without this they read the same HEAD and write siblings.
         # See ``_dispatch_followup``.
         self._followup_locks: dict[str, threading.Lock] = {}
+        self._project_existing_canonical_terminals()
         self._executor_slots = threading.BoundedSemaphore(max_workers)
         self._dispatcher_thread = threading.Thread(
             target=self._dispatch_loop,
@@ -536,7 +545,12 @@ class JobRunner:
             return None
         if job.id != job_id or job.parent_session_id != record.session_id:
             return None
-        continuation = self._governor.continuation_parent_msg_id(job_id)
+        continuation_reader = getattr(
+            self._governor, "continuation_parent_msg_id", None,
+        )
+        continuation = (
+            continuation_reader(job_id) if continuation_reader is not None else None
+        )
         if continuation is not None:
             job = replace(job, parent_msg_id=continuation)
         return job
@@ -567,14 +581,62 @@ class JobRunner:
                     execution.execution_id,
                 )
 
+    def _project_canonical_terminal(
+        self, execution, *, terminal_fields: dict[str, Any] | None = None,
+    ) -> None:
+        from openprogram.execution import ExecutionStatus
+
+        status_map = {
+            ExecutionStatus.COMPLETED: JobStatus.COMPLETED,
+            ExecutionStatus.CANCELLED: JobStatus.CANCELLED,
+            ExecutionStatus.FAILED: JobStatus.ERRORED,
+            ExecutionStatus.INTERRUPTED: JobStatus.ERRORED,
+        }
+        status = status_map.get(execution.status)
+        if status is None:
+            return
+        job = _store_load(execution.session_id, execution.execution_id)
+        if job is not None and not is_terminal(job.status):
+            try:
+                _store_write_terminal(
+                    execution.session_id,
+                    execution.execution_id,
+                    terminal_fields or _terminal_fields(
+                        status, execution.reason_code or status.value,
+                    ),
+                )
+            except ValueError:
+                pass
+        self._governor.release_job(
+            execution.execution_id,
+            execution.reason_code or status.value,
+        )
+        clear_resume = getattr(self._governor, "clear_resume_parent_msg_id", None)
+        if clear_resume is not None:
+            clear_resume(execution.execution_id)
+
+    def _project_existing_canonical_terminals(self) -> None:
+        """Close projection gaps after canonical finish before a crash."""
+        for job in self.list_jobs():
+            execution = self._execution_store.get_execution(job.id)
+            if execution is not None and execution.status.value in {
+                "completed", "cancelled", "failed", "interrupted",
+            }:
+                self._project_canonical_terminal(execution)
+
     def _governance_context(self, job: Job) -> JobGovernanceContext:
         ledger = self._governor.ledger
+        canonical_limits = getattr(self._governor, "canonical_limits", None)
+        effective_limits = (
+            canonical_limits(job.id)
+            if canonical_limits is not None else (job.effective_limits or {})
+        )
         return JobGovernanceContext(
             job_id=job.id,
             budget_scope_id=job.budget_scope_id or "",
             governor=self._governor,
             ledger_identity=str(ledger._path().resolve()),
-            effective_limits=tuple(sorted((job.effective_limits or {}).items())),
+            effective_limits=tuple(sorted(effective_limits.items())),
             deadline_callback=lambda declared: self.bounded_operation_timeout(
                 job.id, declared,
             ),
@@ -1300,9 +1362,9 @@ class JobRunner:
         }:
             return
         try:
-            self._run_control(
+            dispatch = self._run_control(
                 self._execution_control.request_cancel(
-                    command_id=f"job-cancel:{job_id}",
+                    command_id=f"execution-cancel:{job_id}",
                     execution_id=job_id,
                     expected_version=execution.status_version,
                     actor={
@@ -1312,6 +1374,10 @@ class JobRunner:
                     reason_code=reason_code,
                 )
             )
+            if getattr(dispatch.execution.status, "value", None) in {
+                "cancelled", "failed", "interrupted",
+            }:
+                self._project_canonical_terminal(dispatch.execution)
         except Exception:
             _log.exception("failed to persist canonical cancel for job %s", job_id)
             raise
@@ -1543,6 +1609,12 @@ class JobRunner:
             return latest
         if info is not None:
             info["event"].set()
+            attempt_id = info.get("attempt_id")
+            attempt_generation = info.get("attempt_generation")
+            if attempt_id is not None and attempt_generation is not None:
+                self._schedule_canonical_termination(
+                    job_id, attempt_id, attempt_generation, effective_reason,
+                )
 
         # The first durable cancellation intent wins. A concurrent user,
         # parent, or budget cancellation may arrive after another reason was
@@ -1563,6 +1635,48 @@ class JobRunner:
             cur_job = latest
 
         return _store_load(session_id, job_id) or cur_job
+
+    def _schedule_canonical_termination(
+        self,
+        job_id: str,
+        attempt_id: str,
+        generation: int,
+        reason: str,
+    ) -> None:
+        """Escalate through RuntimeControlService after bounded grace."""
+        def escalate() -> None:
+            if self._shutdown_event.wait(_CANCEL_ESCALATION_SECS):
+                return
+            execution = self._execution_store.get_execution(job_id)
+            if execution is None or execution.status.value != "cancelling":
+                return
+            try:
+                receipt = self._run_control(
+                    self._execution_control.terminate_attempt(
+                        execution_id=job_id,
+                        attempt_id=attempt_id,
+                        generation=generation,
+                        reason=reason,
+                    )
+                )
+            except Exception:
+                _log.exception("canonical termination failed for %s", job_id)
+                return
+            if not receipt.terminated:
+                return
+            try:
+                recovery = self._execution_control.recover_owner_loss(
+                    job_id, attempt_id=attempt_id, generation=generation,
+                )
+                self._project_canonical_terminal(recovery.execution)
+            except Exception:
+                _log.exception("failed to finalize terminated Job %s", job_id)
+
+        threading.Thread(
+            target=escalate,
+            daemon=True,
+            name=f"op-job-canonical-terminate-{job_id}",
+        ).start()
 
     def _cancel_reason_for_finalization(
         self, job_id: str, persisted_reason: str | None,
@@ -1750,9 +1864,10 @@ class JobRunner:
             result_text=fields.get("result_text"),
             error=fields.get("error"),
         )
+        canonical_completion = None
         if attempt_id is not None and attempt_generation is not None:
             try:
-                self._finish_canonical_attempt(
+                canonical_completion = self._finish_canonical_attempt(
                     job_id,
                     attempt_id,
                     attempt_generation,
@@ -1775,6 +1890,11 @@ class JobRunner:
             )
         except ValueError:
             return None
+        if canonical_completion is not None:
+            self._project_canonical_terminal(
+                canonical_completion.execution,
+                terminal_fields=terminal_fields,
+            )
         return terminal.get("job")
 
     def _finish_canonical_attempt(
@@ -2010,6 +2130,18 @@ class JobRunner:
                         if canonical is not None and canonical.reason_code
                         else "error.canonical_admission"
                     )
+                    projection = _store_load(claim.session_id, claim.job_id)
+                    if projection is not None and not is_terminal(projection.status):
+                        try:
+                            _store_update_status(
+                                claim.session_id,
+                                claim.job_id,
+                                JobStatus.ERRORED,
+                                error="canonical execution admission is missing",
+                                reason_code=reason_code,
+                            )
+                        except ValueError:
+                            pass
                     try:
                         released = self._governor.release_job(
                             claim.job_id,
@@ -2060,12 +2192,38 @@ class JobRunner:
                     ctx = entry["context"]
                 canonical_claim = self._activate_canonical_claim(claim, cancel_ev)
                 if canonical_claim is None:
+                    from openprogram.execution import ExecutionStatus
+
+                    current_execution = self._execution_store.get_execution(claim.job_id)
+                    if (
+                        current_execution is not None
+                        and current_execution.status.value == "queued"
+                    ):
+                        try:
+                            current_execution = self._execution_store.transition_execution(
+                                claim.job_id,
+                                expected_version=current_execution.status_version,
+                                target=ExecutionStatus.FAILED,
+                                reason_code="error.activation_failed",
+                            )
+                        except Exception:
+                            current_execution = self._execution_store.get_execution(
+                                claim.job_id,
+                            )
+                    activation_reason = (
+                        current_execution.reason_code
+                        if current_execution is not None
+                        and current_execution.reason_code
+                        else "error.worker_lost"
+                    )
                     self._governor.release_job(
                         claim.job_id,
-                        "error.worker_lost",
+                        activation_reason,
                         owner_instance_id=self._instance_id,
                         lease_generation=claim.lease_generation,
                     )
+                    if current_execution is not None:
+                        self._project_canonical_terminal(current_execution)
                     self._executor_slots.release()
                     self._dispatch_wake.set()
                     continue
@@ -2085,11 +2243,20 @@ class JobRunner:
                             "failed to recover cancelled canonical job %s",
                             claim.job_id,
                         )
-                    requeued = self._governor.requeue_job(
+                    current_execution = self._execution_store.get_execution(
                         claim.job_id,
-                        owner_instance_id=self._instance_id,
-                        lease_generation=claim.lease_generation,
                     )
+                    requeued = False
+                    if current_execution is None or current_execution.status.value not in {
+                        "cancelled", "completed", "failed", "interrupted",
+                    }:
+                        requeued = self._governor.requeue_job(
+                            claim.job_id,
+                            owner_instance_id=self._instance_id,
+                            lease_generation=claim.lease_generation,
+                        )
+                    elif current_execution.status.value == "cancelled":
+                        self._project_canonical_terminal(current_execution)
                     if not requeued:
                         terminal: dict[str, Job | None] = {}
                         current = _store_load(claim.session_id, claim.job_id)
