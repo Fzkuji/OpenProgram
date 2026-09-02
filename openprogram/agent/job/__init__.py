@@ -30,7 +30,6 @@ from openprogram.agent.job.types import (
     can_transition,
 )
 from openprogram.agent.job.runner import JobRunner, get_runner
-from openprogram.agent.job.driver import JobActivationBridge, JobDriver, JobDriverHandle
 
 __all__ = [
     "Job",
@@ -40,7 +39,4 @@ __all__ = [
     "can_transition",
     "JobRunner",
     "get_runner",
-    "JobActivationBridge",
-    "JobDriver",
-    "JobDriverHandle",
 ]
