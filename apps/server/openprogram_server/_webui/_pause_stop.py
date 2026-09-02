@@ -1,5 +1,5 @@
 """
-Pause / resume / cancel / kill-runtime primitives used by the web UI.
+Cancel / kill-runtime primitives used by the web UI.
 
 These were originally inline in server.py but live here so server.py stays
 focused on FastAPI routes and the execution dispatcher.
@@ -19,30 +19,8 @@ from openprogram.agentic_programming.function import (
 
 
 # ---------------------------------------------------------------------------
-# Pause/resume — cooperative: only blocks at `node_created` event hooks.
-# ---------------------------------------------------------------------------
-
-_pause_event = threading.Event()
-_pause_event.set()  # starts un-paused
-
-
-def pause_execution() -> None:
-    """Block agentic functions from proceeding (cooperative)."""
-    _pause_event.clear()
-
-
-def resume_execution() -> None:
-    """Resume blocked agentic functions."""
-    _pause_event.set()
-
-
-def wait_if_paused() -> None:
-    """Called by the event hook; blocks until resumed."""
-    _pause_event.wait()
-
-
-# ---------------------------------------------------------------------------
-# Cancel flags — per-conversation. Set by /api/stop, checked by the exception
+# Cancel flags — per-conversation. Set by canonical execution cancellation,
+# checked by the exception
 # path in _execute_in_context and by the pre-invocation hook below.
 # ---------------------------------------------------------------------------
 
@@ -113,7 +91,7 @@ def _cancel_hook() -> None:
     """Pre-invocation hook: raise CancelledError if the current conv is stopped.
 
     Registered with agentic_function's hook list, so every @agentic_function
-    entry (and every Runtime.exec call) aborts once /api/stop fires.
+    entry (and every Runtime.exec call) aborts once execution cancellation fires.
     """
     cid = _current_session_id.get(None)
     if cid and is_cancelled(cid):
@@ -139,7 +117,8 @@ add_pre_invocation_hook(_cancel_hook)
 
 
 # ---------------------------------------------------------------------------
-# Active exec runtimes — keep track so /api/stop can kill the CLI subprocess.
+# Active exec runtimes — keep track so execution cancellation can kill the CLI
+# subprocess.
 # ---------------------------------------------------------------------------
 
 _active_exec_runtimes: dict[str, Any] = {}
@@ -191,5 +170,3 @@ def kill_active_runtime(session_id: str) -> None:
                     pass
     except Exception:
         pass
-
-

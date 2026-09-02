@@ -36,7 +36,7 @@ The Runtime layer composes these to build whatever agent behavior is needed.
 - **`questions.py`** — User-input requests
 - **`resource_governance.py`** — Resource-limit parsing, inheritance, and read-only job diagnostics
 - **`retry.py`** — Retry logic for agent errors
-- **`run_control.py`** — Run control for turn execution: pause / cancel / session binding /
+- **`run_control.py`** — Run control for turn execution: cancel / session binding /
 - **`session.py`** — AgentSession
 - **`session_config.py`** — Per-session run configuration shared by TUI, web, and channels
 - **`session_db.py`** — session_db

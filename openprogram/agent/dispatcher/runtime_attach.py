@@ -141,7 +141,8 @@ def _wrap_agentic_runtime_block(
                 "OPENPROGRAM_IN_AGENTIC_SUBPROCESS"
             ) == "1"
             if _is_agentic_tool and not _run_in_worker and not _in_subproc:
-                # Route through a fork()'d subprocess so handle_stop's
+                # Route through a fork()'d subprocess so canonical
+                # execution cancellation's
                 # SIGKILL kills the tool in milliseconds. The child
                 # re-installs the wrapper itself and bridges events
                 # back, but to keep the runtime-block we already

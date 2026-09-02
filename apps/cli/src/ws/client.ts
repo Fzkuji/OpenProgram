@@ -25,9 +25,7 @@ export type JsonSchemaOutput = {
 export type WsRequest =
   | ChatRequest
   | { action: 'stats' }
-  | { action: 'stop'; session_id: string; mode?: 'graceful' | 'force' }
   | { action: 'execution.cancel'; execution_id: string }
-  | { action: 'steer'; session_id: string; message: string }
   | { action: 'set_attended'; session_id: string; attended: boolean }
   | { action: 'browser'; verb: string; args?: Record<string, unknown> }
   | { action: 'list_models' }

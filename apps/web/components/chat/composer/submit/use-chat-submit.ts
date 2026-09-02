@@ -284,18 +284,14 @@ export function stopSession(
 ): void {
   const store = useSessionStore.getState();
   const task = store.runningTasks[targetSessionId];
-  const executionId =
-    task?.execution_id
-    || (task?.msg_id ? `${task.msg_id}_reply` : "");
+  const executionId = task?.execution_id || "";
   // 1. Tell the server first so the model HTTP stream can abort.
   if (executionId) {
     send({ action: "execution.cancel", execution_id: executionId });
-  } else {
-    send({ action: "stop", session_id: targetSessionId });
   }
   // 2. Patch the live assistant to cancelled. Keep streamed text.
-  //    优先补丁 runningTask 指向的那条（execution_id / {msg_id}_reply）：
-  //    从后往前扫在末尾有已完成 runtime 行时会提前 break，父气泡漏标。
+  //    Only the server-issued execution identity can identify the exact
+  //    assistant message. A message id is not an execution owner.
   const direct = executionId ? store.messagesById[executionId] : undefined;
   if (direct) {
     const s = direct.status;

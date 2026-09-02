@@ -218,7 +218,52 @@ def test_prompt_send_registers_exact_execution_before_dispatch() -> None:
     assert result.is_error is False
     request = captured[0]
     assert request.user_msg_id
-    assert _payload(result)["assistant_msg_id"] == request.user_msg_id + "_reply"
+
+
+def test_cancel_barrier_before_admission_never_activates_prompt(monkeypatch) -> None:
+    """A cancel racing the worker admission is consumed before activation."""
+    from openprogram.agent.production_driver import CanonicalAgentAdmission
+
+    admitted = threading.Event()
+    release = threading.Event()
+    activated = threading.Event()
+    failed: list[tuple[str, str]] = []
+
+    class Adapter:
+        def __init__(self, **_kwargs):
+            pass
+
+        def admit(self, *_args, **_kwargs):
+            admitted.set()
+            assert release.wait(2)
+            return CanonicalAgentAdmission("exec-barrier", "existing", 0)
+
+        def fail_admission(self, admission, *, reason_code, target=None):
+            failed.append((admission.execution_id, reason_code))
+
+        async def activate(self, _admission):
+            activated.set()
+
+    monkeypatch.setattr(
+        "openprogram.agent.production_driver.CanonicalAgentAdapter", Adapter,
+    )
+    service = _service()
+
+    async def scenario():
+        task = asyncio.create_task(
+            service.prompt_send("prompt", session_id="existing", request_id="r1")
+        )
+        await asyncio.to_thread(admitted.wait, 1)
+        assert service.prompt_cancel("existing").content[0].text == (
+            '{"cancelled":true,"session_id":"existing"}'
+        )
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(scenario())
+    assert activated.is_set() is False
+    assert failed == [("exec-barrier", "prompt_cancel")]
     assert _active(service) == ()
 
 

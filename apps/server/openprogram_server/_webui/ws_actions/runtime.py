@@ -1,4 +1,4 @@
-"""Runtime / misc WS actions: list_models, switch_model, browser, stop,
+"""Runtime / misc WS actions: list_models, switch_model, browser,
 stats, sync. Mirrors several REST endpoints for ws-only clients (the
 Ink CLI) plus the reconnect-sync handshake.
 """
@@ -199,57 +199,12 @@ async def handle_browser(ws, cmd: dict):
     }, default=str))
 
 
-# Compatibility: WS ``stop`` resolves the current execution and calls
-# cancel_execution. ``mode="force"`` is ignored as a distinct user action.
-
-
 def _broadcast_execution(execution: dict) -> None:
     from openprogram.webui import server as _s
     _s._broadcast(json.dumps({
         "type": "execution.updated",
         "execution": execution,
     }, default=str))
-
-
-async def handle_stop(ws, cmd: dict):
-    """Compatibility session stop: resolve the active execution and cancel it.
-
-    ``mode="force"`` and a second click are the same cancel operation.
-    """
-    from openprogram.webui import server as _s
-    session_id = cmd.get("session_id") or cmd.get("conv_id")
-    execution_id = (cmd.get("execution_id") or "").strip()
-    if not execution_id and session_id:
-        with _s._running_tasks_lock:
-            execution_id = (
-                ((_s._running_tasks.get(session_id) or {}).get("execution_id"))
-                or ""
-            )
-    if not execution_id:
-        # 静默吞掉会让"点了停止没反应"无迹可查（HTTP 对应入口回 404）。
-        await ws.send_text(json.dumps({
-            "type": "error",
-            "data": {
-                "code": "ExecutionNotFound",
-                "message": "stop: no active execution for session "
-                           f"{session_id or '(none)'}",
-            },
-        }))
-        return
-    from openprogram.agent.production_driver import cancel_canonical_execution
-    canonical = await cancel_canonical_execution(execution_id)
-    if canonical is None:
-        await ws.send_text(json.dumps({
-            "type": "error",
-            "data": {
-                "code": "ExecutionNotFound",
-                "message": "execution not found",
-            },
-        }))
-        return
-    execution = canonical.execution.to_dict()
-    _broadcast_execution(execution)
-    _s._release_session_occupancy_for_execution(execution)
 
 
 async def handle_execution_cancel(ws, cmd: dict):
@@ -426,42 +381,21 @@ async def handle_stats(ws, cmd: dict):
 
 
 async def handle_steer(ws, cmd: dict):
-    """Mid-run steering from TUI/web: drop a course-correction into a live run.
-
-    Writes to the per-session steering inbox (a file dir under the session),
-    which normal chat and program loops drain at their own checkpoints. It is
-    the same inbox the CLI ``steer`` subcommand uses, so it works across
-    processes."""
+    """Reject steering until durable checkpoint support is implemented."""
     session_id = cmd.get("session_id") or cmd.get("conv_id")
     message = cmd.get("message") or ""
-    if not session_id or not message.strip():
+    if not session_id:
         return
-    from openprogram.webui import server as _s
-    result = "not_running"
-    if _s._is_run_active(session_id):
-        try:
-            from openprogram.agent import steering
-            accepted = steering.push_if_accepting(session_id, message)
-            if accepted is None:
-                # A normal web chat between its final sweep and server-side
-                # occupancy release is no longer injectable. Other programs
-                # (research/goal) have their own file-inbox consumers.
-                with _s._running_tasks_lock:
-                    task = _s._running_tasks.get(session_id) or {}
-                if task.get("func_name") != "_chat":
-                    accepted = steering.push(session_id, message)
-            result = "accepted" if accepted else "not_running"
-        except Exception:
-            result = "not_running"
     try:
         await ws.send_text(json.dumps({
             "type": "steer_ack",
             "data": {
                 "session_id": session_id,
                 "request_id": cmd.get("request_id"),
-                "result": result,
-                "queued": result == "accepted",
+                "result": "unsupported",
+                "queued": False,
                 "message": message.strip()[:200],
+                "code": "unsupported_capability",
             },
         }, default=str))
     except Exception:
@@ -494,7 +428,6 @@ ACTIONS = {
     "list_models": handle_list_models,
     "switch_model": handle_switch_model,
     "browser": handle_browser,
-    "stop": handle_stop,
     "execution.cancel": handle_execution_cancel,
     "stats": handle_stats,
     "steer": handle_steer,

@@ -25,11 +25,8 @@ from openprogram.programs.workflow.ask_user import set_ask_user, ask_user
 from openprogram.agentic_programming.function import agentic_function
 from openprogram.agentic_programming.runtime import Runtime
 
-# Pause / stop / cancel primitives live in openprogram.agent.run_control
+# Stop / cancel primitives live in openprogram.agent.run_control
 from openprogram.agent.run_control import (
-    pause_execution,
-    resume_execution,
-    wait_if_paused,
     mark_cancelled as _mark_cancelled,
     is_cancelled as _is_cancelled,
     clear_cancel as _clear_cancel,

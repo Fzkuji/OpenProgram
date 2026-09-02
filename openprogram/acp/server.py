@@ -50,6 +50,7 @@ from openprogram.acp.jsonrpc import (
     Connection,
     RPCError,
 )
+from openprogram.execution.model import ExecutionStatus
 
 _log = logging.getLogger(__name__)
 
@@ -129,6 +130,11 @@ class _Session:
         self.cwd = cwd
         self.cancel_event = threading.Event()
         self.execution_id: str | None = None
+        # Cancellation may arrive while durable admission is in progress,
+        # before the execution identity can be published to the session.
+        self.prompt_pending = False
+        self.cancel_requested = False
+        self.cancel_reason = ""
         # Question ids forwarded to the client and still unanswered — a
         # cancel must resolve them or the tool gate sits on its Event for
         # the full 300s timeout.
@@ -250,8 +256,13 @@ class ACPServer:
             return None
         with sess.lock:
             execution_id = sess.execution_id
-        if execution_id is None:
-            return None
+            if execution_id is None:
+                if not sess.prompt_pending:
+                    return None
+                sess.cancel_requested = True
+                sess.cancel_reason = "prompt_cancel"
+                sess.cancel_event.set()
+                return None
         try:
             from openprogram.agent.production_driver import cancel_canonical_execution
             cancelled = asyncio.run(cancel_canonical_execution(execution_id))
@@ -320,6 +331,13 @@ class ACPServer:
         adapter = CanonicalAgentAdapter(
             event_sink=lambda env: self._on_event(sess, env),
         )
+        with sess.lock:
+            if sess.execution_id is not None or sess.prompt_pending:
+                raise RPCError(INTERNAL_ERROR, "a prompt turn is already active")
+            sess.prompt_pending = True
+            sess.cancel_requested = False
+            sess.cancel_reason = ""
+            sess.cancel_event.clear()
         try:
             admission = adapter.admit(
                 request,
@@ -328,16 +346,26 @@ class ACPServer:
                 config_snapshot_ref=f"acp:{sess.id}",
             )
         except Exception as exc:
+            with sess.lock:
+                sess.prompt_pending = False
             raise RPCError(INTERNAL_ERROR, f"prompt admission failed: {exc}") from exc
         execution_id = admission.execution_id
         with sess.lock:
-            if sess.execution_id is not None:
-                adapter.fail_admission(
-                    admission, reason_code="agent_runner_error",
-                )
-                raise RPCError(INTERNAL_ERROR, "a prompt turn is already active")
-            sess.cancel_event.clear()
-            sess.execution_id = execution_id
+            cancelled_before_activation = sess.cancel_requested
+            cancel_reason = sess.cancel_reason or "prompt_cancel"
+            if not cancelled_before_activation:
+                sess.prompt_pending = False
+                sess.execution_id = execution_id
+        if cancelled_before_activation:
+            adapter.fail_admission(
+                admission, reason_code=cancel_reason,
+                target=ExecutionStatus.CANCELLED,
+            )
+            with sess.lock:
+                sess.prompt_pending = False
+                sess.cancel_requested = False
+                sess.cancel_reason = ""
+            return {"stopReason": "cancelled"}
         try:
             _active, result = asyncio.run(adapter.activate(admission))
         finally:

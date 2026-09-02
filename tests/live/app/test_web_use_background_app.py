@@ -500,8 +500,7 @@ def test_public_gui_agent_creates_and_cleans_its_background_page():
     finally:
         if shell_page is not None and session_id and execution_id:
             try:
-                _fetch_json(shell_page, "/api/stop", {
-                    "session_id": session_id,
+                _fetch_json(shell_page, "/api/execution/cancel", {
                     "execution_id": execution_id,
                 })
             except Exception:

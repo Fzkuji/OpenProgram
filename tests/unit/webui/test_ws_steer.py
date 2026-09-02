@@ -32,16 +32,9 @@ def test_steer_after_turn_end_returns_not_running(monkeypatch) -> None:
     }))
 
     assert pushed == []
-    assert ws.frames == [{
-        "type": "steer_ack",
-        "data": {
-            "session_id": "finished",
-            "request_id": "request-1",
-            "result": "not_running",
-            "queued": False,
-            "message": "late",
-        },
-    }]
+    assert ws.frames[0]["data"]["result"] == "unsupported"
+    assert ws.frames[0]["data"]["queued"] is False
+    assert ws.frames[0]["data"]["code"] == "unsupported_capability"
 
 
 def test_steer_after_chat_sweep_returns_not_running(monkeypatch) -> None:
@@ -65,7 +58,7 @@ def test_steer_after_chat_sweep_returns_not_running(monkeypatch) -> None:
     }))
 
     assert pushed == []
-    assert ws.frames[0]["data"]["result"] == "not_running"
+    assert ws.frames[0]["data"]["result"] == "unsupported"
 
 
 def test_steer_ack_accepts_registered_chat(tmp_path, monkeypatch) -> None:
@@ -87,5 +80,5 @@ def test_steer_ack_accepts_registered_chat(tmp_path, monkeypatch) -> None:
     finally:
         pending = steering.close_and_drain("active")
 
-    assert ws.frames[0]["data"]["result"] == "accepted"
-    assert pending == ["change direction"]
+    assert ws.frames[0]["data"]["result"] == "unsupported"
+    assert pending == []

@@ -264,7 +264,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
           if (executionId) {
             client.send({ action: 'execution.cancel', execution_id: executionId });
           } else {
-            client.send({ action: 'stop', session_id: conversationId });
+            pushSystem('Cancel unavailable: no canonical execution id');
           }
           pushSystem('Cancel execution');
           exitTimerRef.current = setTimeout(() => {
@@ -496,7 +496,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     if (executionId) {
       client.send({ action: 'execution.cancel', execution_id: executionId });
     } else {
-      client.send({ action: 'stop', session_id: conversationId });
+      pushSystem('Cancel unavailable: no canonical execution id');
     }
     pushSystem('Cancel execution');
   };

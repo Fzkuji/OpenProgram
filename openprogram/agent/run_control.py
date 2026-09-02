@@ -1,5 +1,5 @@
 """
-Run control for turn execution: pause / cancel / session binding /
+Run control for turn execution: cancel / session binding /
 active-runtime registry.
 
 This is turn-execution state, not a UI concern — the web UI, the job
@@ -26,29 +26,6 @@ from openprogram.agentic_programming.function import (
     set_cancellation_check,
     set_session_id_provider,
 )
-
-
-# ---------------------------------------------------------------------------
-# Pause/resume — cooperative: only blocks at `node_created` event hooks.
-# ---------------------------------------------------------------------------
-
-_pause_event = threading.Event()
-_pause_event.set()  # starts un-paused
-
-
-def pause_execution() -> None:
-    """Block agentic functions from proceeding (cooperative)."""
-    _pause_event.clear()
-
-
-def resume_execution() -> None:
-    """Resume blocked agentic functions."""
-    _pause_event.set()
-
-
-def wait_if_paused() -> None:
-    """Called by the event hook; blocks until resumed."""
-    _pause_event.wait()
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +91,7 @@ class CancellationToken:
             return self._retired
 
 
-# Compatibility during the execution-cancellation migration.
+# Internal token alias retained for code that imports the cancellation type.
 CancelToken = CancellationToken
 
 
@@ -387,8 +364,8 @@ def unregister_cancel_event(
     registration is removed; a mismatch means a newer turn already
     replaced (and retired) ours via register_cancel_event, so there is
     nothing left to do. ``ev=None`` keeps the unconditional force-clear
-    for callers that explicitly want to tear down whatever is current
-    (the /api/stop handler).
+    for internal cleanup callers that explicitly want to tear down whatever
+    is current.
     """
     if ev is None:
         end_turn(session_id)
@@ -432,40 +409,37 @@ def is_turn_running(session_id: str) -> bool:
 
 
 def mark_cancelled(session_id: str, *, execution_id: str | None = None) -> None:
-    """Compatibility: cancel an exact execution, or trip a session token.
+    """Signal the exact in-process token when no canonical record is present.
 
-    MCP/ACP still call this helper. When an execution id or in-process owner
-    is known, the unified service persists cancellation intent before it
-    publishes the signal. The direct token trip remains an idempotent fallback
-    when no persisted execution can be resolved or persistence fails.
-    Session-only calls have no exact record to persist and signal directly.
+    Public transports never call this session-scoped helper; they submit an
+    exact canonical execution command. Internal legacy DAG/workflow cleanup
+    still uses it for a best-effort local token signal.
     """
-    with _cancel_flags_lock:
-        token = _current_tokens.get((session_id, execution_id))
-        if token is None and execution_id is None:
+    if not execution_id:
+        with _cancel_flags_lock:
             token = _current_tokens.get((session_id, None))
-    target = execution_id or (token.execution_id if token is not None else None)
-    if target:
-        try:
-            result = cancel_execution(target)
-        except ExecutionNotCancellable:
-            return
-        except ExecutionNotFound:
-            if token is not None:
-                token.cancel()
-            return
-        except Exception:
-            if token is not None:
-                token.cancel()
-            return
-        status = (
-            result.get("status") if isinstance(result, dict)
-            else getattr(result, "status", None)
-        )
-        if token is not None and status not in _TERMINAL_STATUSES:
+        if token is not None:
             token.cancel()
         return
-    if token is not None:
+    with _cancel_flags_lock:
+        token = _current_tokens.get((session_id, execution_id))
+    try:
+        result = cancel_execution(execution_id)
+    except ExecutionNotCancellable:
+        return
+    except ExecutionNotFound:
+        if token is not None:
+            token.cancel()
+        return
+    except Exception:
+        if token is not None:
+            token.cancel()
+        return
+    status = (
+        result.get("status") if isinstance(result, dict)
+        else getattr(result, "status", None)
+    )
+    if token is not None and status not in _TERMINAL_STATUSES:
         token.cancel()
     if _session_index.get(session_id):
         try:
@@ -1599,7 +1573,8 @@ set_session_id_provider(get_current_session_id)
 
 
 # ---------------------------------------------------------------------------
-# Active exec runtimes — keep track so /api/stop can kill the CLI subprocess.
+# Active exec runtimes — keep track so canonical execution cancellation can
+# kill the CLI subprocess.
 # ---------------------------------------------------------------------------
 
 _active_exec_runtimes: dict[tuple[str, str | None], Any] = {}

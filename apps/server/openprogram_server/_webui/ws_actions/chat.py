@@ -1026,7 +1026,7 @@ async def handle_chat(ws, cmd: dict):
             assistant_message_id=None,
             config_snapshot_ref=f"session:{session_id}",
         )
-    except Exception:
+    except BaseException:
         _release_surface_bindings(surface_context)
         _s._release_run_reservation(session_id, msg_id)
         raise
@@ -1039,6 +1039,7 @@ async def handle_chat(ws, cmd: dict):
         _s._append_msg(conv, user_msg)
     except BaseException:
         _adapter.fail_admission(_admission, reason_code="user_persist_failed")
+        _release_surface_bindings(surface_context)
         _s._release_run_reservation(session_id, msg_id)
         raise
 
@@ -1055,7 +1056,8 @@ async def handle_chat(ws, cmd: dict):
             "attachments": bool(attachments),
         }, {"session": session_id})
     except BaseException:
-        _mark_setup_interrupted()
+        _adapter.fail_admission(_admission, reason_code="chat_event_failed")
+        _release_surface_bindings(surface_context)
         _s._release_run_reservation(session_id, msg_id)
         raise
 
@@ -1089,21 +1091,30 @@ async def handle_chat(ws, cmd: dict):
     # _running_tasks[...] = {...} overwrite stays the single source of
     # the task entry (no double running_task with a different started_at).
     import time as _t
-    with _s._running_tasks_lock:
-        _running_task = _s._running_tasks.setdefault(session_id, {
-            "msg_id": msg_id, "func_name": "_chat",
-            "started_at": _t.time(), "last_event_at": _t.time(),
-            "display_params": "", "loaded_func_ref": None,
-            "stream_events": [],
-            "execution_id": execution_id,
-        })
-        # The reservation is created before the admission has an execution
-        # id.  Fill that exact id into the owned task rather than relying on
-        # setdefault (which would leave the provisional None forever and
-        # make stop/cancel unable to match the admitted execution).
-        if _running_task.get("msg_id") == msg_id:
-            _running_task["execution_id"] = execution_id
-    _s._emit_running_task_event(session_id)
+    try:
+        with _s._running_tasks_lock:
+            _running_task = _s._running_tasks.setdefault(session_id, {
+                "msg_id": msg_id, "func_name": "_chat",
+                "started_at": _t.time(), "last_event_at": _t.time(),
+                "display_params": "", "loaded_func_ref": None,
+                "stream_events": [],
+                "execution_id": execution_id,
+            })
+            # The reservation is created before the admission has an execution
+            # id. Fill that exact id into the owned task rather than relying on
+            # setdefault, which would leave a provisional value unable to
+            # match the admitted execution.
+            if _running_task.get("msg_id") == msg_id:
+                _running_task["execution_id"] = execution_id
+        _s._emit_running_task_event(session_id)
+    except BaseException:
+        with _s._running_tasks_lock:
+            if (_s._running_tasks.get(session_id) or {}).get("msg_id") == msg_id:
+                _s._running_tasks.pop(session_id, None)
+        _adapter.fail_admission(_admission, reason_code="chat_handoff_failed")
+        _release_surface_bindings(surface_context)
+        _s._release_run_reservation(session_id, msg_id)
+        raise
     try:
         from openprogram.webui.ws_actions.session import broadcast_sessions_list
         broadcast_sessions_list()

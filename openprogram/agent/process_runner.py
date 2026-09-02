@@ -3,7 +3,8 @@ button can SIGKILL the entire process group in milliseconds without
 waiting for cooperative cancel points.
 
 Why this exists: the chat-path / forced-tool-call wrapper used to run
-the tool body on the worker's own thread. ``handle_stop`` could mark
+the tool body on the worker's own thread. Canonical execution cancellation
+can mark
 the session cancelled and the @agentic_function pre-invocation hook
 would eventually raise CancelledError — but only at the *next* hook
 point, which for a gui_agent in the middle of a vision call could be

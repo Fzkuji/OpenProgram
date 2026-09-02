@@ -275,8 +275,10 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         c.pushSystem(`[mode] ${d.attended ? 'attended — the agent may ask you questions'
           : 'unattended — questions are withheld'}`);
       } else if (ev.type === 'steer_ack') {
-        const d = (ev as { data: { queued?: boolean; message?: string } }).data;
-        c.pushSystem(d.queued
+        const d = (ev as { data: { queued?: boolean; message?: string; code?: string } }).data;
+        c.pushSystem(d.code === 'unsupported_capability'
+          ? '[steer] unsupported until durable checkpoint support is implemented.'
+          : d.queued
           ? `[steer] queued: ${d.message ?? ''} — the run will pick it up at its next step.`
           : `[steer] could not queue (no live run for this session?).`);
       } else if (ev.type === 'browser_result') {

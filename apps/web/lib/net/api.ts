@@ -130,24 +130,6 @@ export const api = {
   listHistory: () =>
     jsonFetch<{ id: string; title: string; created_at?: number }[]>("/api/history"),
 
-  pause: (session_id: string) =>
-    jsonFetch<{ ok: true }>("/api/pause", {
-      method: "POST",
-      body: JSON.stringify({ session_id }),
-    }),
-
-  resume: (session_id: string) =>
-    jsonFetch<{ ok: true }>("/api/resume", {
-      method: "POST",
-      body: JSON.stringify({ session_id }),
-    }),
-
-  stop: (session_id: string) =>
-    jsonFetch<{ ok: true }>("/api/stop", {
-      method: "POST",
-      body: JSON.stringify({ session_id }),
-    }),
-
   // Pin a (provider, model) for this conversation. ``session_id`` is
   // required — without it the backend only updates the global default
   // and the active conversation keeps using its old runtime (the bug

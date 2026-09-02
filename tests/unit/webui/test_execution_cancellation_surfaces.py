@@ -64,12 +64,24 @@ def test_surfaces_send_execution_cancel_and_use_cancel_copy():
     assert 'dest="execution_verb"' in parser
     assert '"cancel", help="Cancel one execution by id"' in parser
     assert "execution_id" in parser
-    assert "cancel_execution" in runtime
+    assert "cancel_canonical_execution" in runtime
     assert 'cmd.get("mode") == "force"' not in runtime
+    assert "handle_stop" not in runtime
+    assert '"stop":' not in runtime
     lifecycle = (
         ROOT / "apps/server/openprogram_server/_webui/routes/lifecycle.py"
     ).read_text(encoding="utf-8")
     assert '@app.post("/api/execution/cancel")' in lifecycle
+    assert '@app.post("/api/pause")' not in lifecycle
+    assert '@app.post("/api/resume")' not in lifecycle
+    assert '@app.post("/api/stop")' not in lifecycle
+    run_control = (
+        ROOT / "openprogram/agent/run_control.py"
+    ).read_text(encoding="utf-8")
+    assert "def pause_execution" not in run_control
+    assert "def resume_execution" not in run_control
+    assert "_pause_event" not in run_control
+    assert "msg_id}_reply" not in composer
     assert '"execution_id": task.get("execution_id")' in (
         ROOT / "apps/server/openprogram_server/server.py"
     ).read_text(encoding="utf-8")

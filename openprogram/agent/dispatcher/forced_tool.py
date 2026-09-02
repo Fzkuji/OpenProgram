@@ -89,7 +89,8 @@ def dispatch_forced_tool_call(
             "agentic tools can be forced via this path"
         )
 
-    # New path: forked subprocess so handle_stop can SIGKILL the
+    # New path: forked subprocess so canonical execution cancellation can
+    # SIGKILL the
     # entire process group in milliseconds. The child re-installs the
     # session ContextVars and re-wraps the tool with
     # _wrap_agentic_runtime_block; events are bridged back via an

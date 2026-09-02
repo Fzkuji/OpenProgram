@@ -25,6 +25,7 @@ from openprogram.agent.authority import (
 )
 from openprogram.agent.session_db import SessionDB, default_db
 from openprogram.agent.types import AgentTool, AgentToolResult
+from openprogram.execution.model import ExecutionStatus
 from openprogram.mcp.server.tools import json_result, prompt_result, to_mcp_content
 from openprogram.providers.types import TextContent
 
@@ -50,6 +51,9 @@ class ActiveMCPRequest:
     tool_cancel: asyncio.Event
     execution_id: str = ""
     question_registry: Any | None = None
+    cancel_requested: bool = False
+    cancel_reason: str = ""
+    activation_started: bool = False
     worker_done: threading.Event = field(default_factory=threading.Event)
     outer_abandoned: threading.Event = field(default_factory=threading.Event)
 
@@ -616,7 +620,15 @@ class MCPService:
         try:
             try:
                 if not record.execution_id:
-                    return False
+                    # The request is accepted before the worker can finish
+                    # canonical admission. Record the cancel intent under
+                    # the same ownership lock; the worker consumes it after
+                    # admission and before activation.
+                    record.cancel_requested = True
+                    record.cancel_reason = reason
+                    record.thread_cancel.set()
+                    record.tool_cancel.set()
+                    return True
                 result = self._cancel_execution(record.execution_id)
                 if isinstance(result, asyncio.Task):
                     # The task will signal the live AgentDriver handle; the
@@ -967,7 +979,26 @@ class MCPService:
                 user_message_id=request.user_msg_id,
                 config_snapshot_ref=f"mcp:{record.client_id}",
             )
-            record.execution_id = admission.execution_id
+            with self._active_lock:
+                record.execution_id = admission.execution_id
+                cancel_requested = record.cancel_requested
+                cancel_reason = record.cancel_reason or "request_cancelled"
+            if cancel_requested:
+                adapter.fail_admission(
+                    admission,
+                    reason_code=cancel_reason,
+                    target=ExecutionStatus.CANCELLED,
+                )
+                return None
+            with self._active_lock:
+                if record.cancel_requested or record.thread_cancel.is_set():
+                    adapter.fail_admission(
+                        admission,
+                        reason_code=record.cancel_reason or "request_cancelled",
+                        target=ExecutionStatus.CANCELLED,
+                    )
+                    return None
+                record.activation_started = True
             self._register_cancel_event(
                 record.session_id,
                 record.thread_cancel,

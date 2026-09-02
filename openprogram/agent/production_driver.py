@@ -14,11 +14,17 @@ import hashlib
 import inspect
 import json
 import threading
+import time
 import uuid
 from dataclasses import asdict, dataclass, fields, is_dataclass
 from typing import Any, Callable, Mapping
 
-from openprogram.execution.attempts import AttemptRecord, AttemptStatus, AttemptStore
+from openprogram.execution.attempts import (
+    AttemptConflict,
+    AttemptRecord,
+    AttemptStatus,
+    AttemptStore,
+)
 from openprogram.execution.control import RuntimeControlService
 from openprogram.execution.driver import (
     ActivationInput,
@@ -257,6 +263,10 @@ class AgentProductionDriver:
         self._handles: dict[tuple[str, str, int], AgentDriverHandle] = {}
         self._handles_lock = threading.RLock()
         self._finished: set[tuple[str, str, int]] = set()
+        # Completion is an in-process durable outbox: releasing a driver
+        # handle must not discard a terminal write that failed transiently.
+        self._pending_finishes: dict[tuple[str, str, int], tuple[AttemptRecord, int, ExecutionStatus, str, str | None]] = {}
+        self._finish_retry_threads: set[tuple[str, str, int]] = set()
 
     def _resolve_durable_input(self, record: Any) -> Mapping[str, Any]:
         if self.executions is None:
@@ -410,6 +420,7 @@ class AgentProductionDriver:
 
     def fail_admission(
         self, admission: CanonicalAgentAdmission, *, reason_code: str,
+        target: ExecutionStatus = ExecutionStatus.FAILED,
     ) -> None:
         """Finish an admitted turn that could not create a live owner.
 
@@ -435,8 +446,8 @@ class AgentProductionDriver:
                 attempt_id=active.attempt_id,
                 generation=active.generation,
                 expected_execution_version=running.status_version,
-                target=ExecutionStatus.FAILED,
-                outcome="failed",
+                target=target,
+                outcome="cancelled" if target is ExecutionStatus.CANCELLED else "failed",
                 reason_code=reason_code,
             )
         except Exception:
@@ -607,6 +618,13 @@ class AgentProductionDriver:
         outcome = "cancelled" if cancelled else "failed" if failed else "completed"
         if failed and failure_reason is None:
             failure_reason = "agent_runner_error"
+        reason_code = (
+            "cancelled"
+            if cancelled
+            else failure_reason
+            if failed
+            else None
+        )
         try:
             service.finish_attempt(
                 attempt_id=attempt.attempt_id,
@@ -614,20 +632,107 @@ class AgentProductionDriver:
                 expected_execution_version=execution.status_version,
                 target=target,
                 outcome=outcome,
-                reason_code=(
-                    "cancelled"
-                    if cancelled
-                    else failure_reason
-                    if failed
-                    else None
-                ),
+                reason_code=reason_code,
             )
         except Exception:
             # Keep the completion eligible for a later recovery/retry. A
             # transient persistence failure must not be hidden by marking
             # the attempt finished before the durable transition succeeds.
+            self._queue_finish_retry(
+                attempt,
+                execution.status_version,
+                target,
+                outcome,
+                reason_code,
+            )
             return
         with self._handles_lock:
+            self._finished.add(key)
+
+    def _queue_finish_retry(
+        self,
+        attempt: AttemptRecord,
+        expected_execution_version: int,
+        target: ExecutionStatus,
+        outcome: str,
+        reason_code: str | None,
+    ) -> None:
+        key = (attempt.execution_id, attempt.attempt_id, attempt.generation)
+        with self._handles_lock:
+            self._pending_finishes[key] = (
+                attempt, expected_execution_version, target, outcome, reason_code
+            )
+            if key in self._finish_retry_threads:
+                return
+            self._finish_retry_threads.add(key)
+        threading.Thread(
+            target=self._retry_finish,
+            args=(key,),
+            name=f"openprogram-agent-finish-{attempt.execution_id}",
+            daemon=True,
+        ).start()
+
+    def _retry_finish(self, key: tuple[str, str, int]) -> None:
+        delay = 0.05
+        try:
+            while True:
+                with self._handles_lock:
+                    pending = self._pending_finishes.get(key)
+                    if pending is None or key in self._finished:
+                        return
+                attempt, expected_version, target, outcome, reason_code = pending
+                try:
+                    service = self._control_service()
+                    execution = service.executions.get_execution(attempt.execution_id)
+                except Exception:
+                    time.sleep(delay)
+                    delay = min(delay * 2, 1.0)
+                    continue
+                if execution is None or execution.status in TERMINAL_EXECUTION_STATUSES:
+                    self._resolve_finish_retry(key)
+                    return
+                if (
+                    execution.current_attempt_id != attempt.attempt_id
+                    or execution.owner_lease.get("generation") != attempt.generation
+                ):
+                    # A newer owner won the fence. The old completion must not
+                    # overwrite it; the canonical record is already owned by
+                    # recovery or the replacement attempt.
+                    self._resolve_finish_retry(key)
+                    return
+                try:
+                    service.finish_attempt(
+                        attempt_id=attempt.attempt_id,
+                        generation=attempt.generation,
+                        expected_execution_version=expected_version,
+                        target=target,
+                        outcome=outcome,
+                        reason_code=reason_code,
+                    )
+                except AttemptConflict:
+                    current = service.executions.get_execution(attempt.execution_id)
+                    if (
+                        current is None
+                        or current.status in TERMINAL_EXECUTION_STATUSES
+                        or current.current_attempt_id != attempt.attempt_id
+                        or current.owner_lease.get("generation") != attempt.generation
+                    ):
+                        self._resolve_finish_retry(key)
+                        return
+                except Exception:
+                    pass
+                else:
+                    self._resolve_finish_retry(key)
+                    return
+                time.sleep(delay)
+                delay = min(delay * 2, 1.0)
+        finally:
+            with self._handles_lock:
+                self._finish_retry_threads.discard(key)
+
+    def _resolve_finish_retry(self, key: tuple[str, str, int]) -> None:
+        with self._handles_lock:
+            self._pending_finishes.pop(key, None)
             self._finished.add(key)
 
     def _recover_owner_loss(self, attempt: AttemptRecord) -> None:
@@ -882,18 +987,22 @@ class CanonicalAgentAdapter:
         result = await handle.done
         return active, result
 
-    def fail_admission(self, admission: CanonicalAgentAdmission, *, reason_code: str) -> None:
-        self.driver.fail_admission(admission, reason_code=reason_code)
+    def fail_admission(
+        self,
+        admission: CanonicalAgentAdmission,
+        *,
+        reason_code: str,
+        target: ExecutionStatus = ExecutionStatus.FAILED,
+    ) -> None:
+        self.driver.fail_admission(
+            admission, reason_code=reason_code, target=target,
+        )
 
 
 async def cancel_canonical_execution(
     execution_id: str, *, reason_code: str = "cancel.user",
 ) -> Any | None:
-    """Cancel a canonical Agent execution through the control service.
-
-    ``None`` means the id belongs to the legacy DAG namespace; callers may
-    then apply their non-Agent compatibility behavior where still required.
-    """
+    """Cancel one canonical execution through the control service."""
     from openprogram.agent.authority import local_owner_authority
     from openprogram.execution import default_control_service, default_store
 

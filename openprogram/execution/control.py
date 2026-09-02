@@ -1904,7 +1904,12 @@ class RuntimeControlService:
         )
 
     def recover_startup(self) -> tuple[RecoveryCompletion, ...]:
-        """Recover nonterminal executions whose previous owner is gone."""
+        """Recover nonterminal executions whose previous owner is gone.
+
+        An admitted Agent execution is normally activated immediately. If a
+        process stops after admission but before an attempt is leased, startup
+        terminalizes that record instead of leaving it queued forever.
+        """
         recoveries = []
         for execution in self.executions.list_nonterminal():
             if execution.status in {
@@ -1916,6 +1921,23 @@ class RuntimeControlService:
                 and execution.current_attempt_id is not None
             ):
                 recoveries.append(self.recover_owner_loss(execution.execution_id))
+            elif (
+                execution.status is ExecutionStatus.QUEUED
+                and execution.current_attempt_id is None
+                and self.executions.get_agent_turn_input(execution.execution_id) is not None
+            ):
+                try:
+                    recovered = self.executions.transition_execution(
+                        execution.execution_id,
+                        expected_version=execution.status_version,
+                        target=ExecutionStatus.FAILED,
+                        reason_code="owner_lost_before_activation",
+                    )
+                except AttemptConflict:
+                    recovered = self.executions.get_execution(execution.execution_id)
+                    if recovered is None:
+                        continue
+                recoveries.append(RecoveryCompletion(execution=recovered))
         return tuple(recoveries)
 
     def resolve_effect(

@@ -48,7 +48,7 @@ def _collect() -> list[dict]:
         for sid, task in tasks.items():
             items.append({
                 "kind": "run",
-                "id": task.get("execution_id") or task.get("msg_id") or sid,
+                "id": task.get("execution_id") or "",
                 "session_id": sid,
                 "execution_id": task.get("execution_id"),
                 "label": task.get("func_name") or "chat",

@@ -237,7 +237,7 @@ def test_unregister_with_matching_event_pops_own_registration():
 
 
 def test_unregister_without_event_keeps_force_clear_semantics():
-    """ev=None is the explicit force-clear used by /api/stop."""
+    """Internal cleanup may explicitly clear the current registration."""
     ev = threading.Event()
     ps.register_cancel_event("s1", ev)
 

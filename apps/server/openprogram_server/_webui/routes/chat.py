@@ -347,7 +347,7 @@ def run_agentic_function_call(
         }
     try:
         provider, model = _s._runtime_management._resolve_session_provider_model(conv)
-    except Exception as exc:
+    except BaseException as exc:
         _s._release_run_reservation(session_id, msg_id)
         return {
             "error": f"failed to resolve the session model: {type(exc).__name__}: {exc}",
@@ -515,7 +515,7 @@ def run_agentic_function_call(
                 anchor_msg_id = f"{anchor_msg_id}|node:{_pending_nid}"
             _precreate_error = None
             break
-        except Exception as exc:
+        except BaseException as exc:
             _precreate_error = exc
     if _precreate_error is not None:
         _s._release_run_reservation(session_id, msg_id)
@@ -563,7 +563,7 @@ def run_agentic_function_call(
             assistant_message_id=_forced_node_id,
             config_snapshot_ref=f"provider:{provider or ''}/model:{model or ''}",
         )
-    except Exception as exc:
+    except BaseException as exc:
         _s._release_run_reservation(session_id, msg_id)
         return {
             "error": f"failed to persist the execution record: {type(exc).__name__}: {exc}",
@@ -590,7 +590,7 @@ def run_agentic_function_call(
     if _pending_node is not None:
         try:
             _pending_node_writer.append(_pending_node)
-        except Exception as exc:
+        except BaseException as exc:
             _adapter.fail_admission(_admission, reason_code="execution_record_failed")
             _terminalize_pending_node("execution_record_failed", str(exc))
             _s._release_run_reservation(session_id, msg_id)
@@ -659,7 +659,8 @@ def run_agentic_function_call(
                     out = {"ok": not bool(out.get("error") or out.get("killed")), **out}
                 else:
                     out = {"ok": True, "result": out}
-            except Exception as e:  # noqa: BLE001
+            except BaseException as e:  # noqa: BLE001
+                _adapter.fail_admission(_admission, reason_code="agent_runner_error")
                 _terminalize_pending_node("agent_runner_error", str(e))
                 _s._broadcast_chat_response(session_id, msg_id, {
                     "type": "error",
@@ -710,13 +711,26 @@ def run_agentic_function_call(
 
     if not _s._activate_run_reservation(session_id, msg_id, worker):
         _adapter.fail_admission(_admission, reason_code="agent_runner_error")
+        _terminalize_pending_node("agent_runner_error", "function reservation was lost")
         _s._release_run_reservation(session_id, msg_id)
         return {
             "error": "function execution reservation was lost before startup",
             "code": "function_start_failed",
             "status_code": 409,
         }
-    _s._emit_running_task_event(session_id)
+    try:
+        _s._emit_running_task_event(session_id)
+    except BaseException as exc:
+        _adapter.fail_admission(_admission, reason_code="function_handoff_failed")
+        _terminalize_pending_node("function_handoff_failed", str(exc))
+        if _s._finish_owned_run(session_id, msg_id):
+            _s._emit_running_task_event(
+                session_id,
+                cleared_msg_id=msg_id,
+                cleared_execution_id=execution_id,
+            )
+        _s._release_run_reservation(session_id, msg_id)
+        raise
 
     try:
         worker.start()

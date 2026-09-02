@@ -711,7 +711,8 @@ def execute_in_context(
                 cleared_execution_id=_execution_id,
             )
 
-        # Cancellation path — either the exception came from /api/stop killing
+        # Cancellation path — either the exception came from canonical
+        # execution cancellation killing
         # the subprocess, or a CancelledError was raised by the cancel hook
         # (e.g. loops between exec calls). Mark any still-running tree nodes
         # as cancelled and emit a "stopped" result instead of an error message.

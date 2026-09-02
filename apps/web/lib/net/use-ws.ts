@@ -306,7 +306,6 @@ export function useWS(): void {
             const matches = Boolean(
               task && (
                 task.execution_id === eid
-                || (task.msg_id && `${task.msg_id}_reply` === eid)
               ),
             );
             // cancelling 中间态不写回 runningTask（不许留 cancelling:true，

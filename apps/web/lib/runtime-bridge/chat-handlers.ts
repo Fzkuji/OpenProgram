@@ -170,8 +170,7 @@ export function wsHandleChatAck(data: ChatAckData): void {
       .setRunningTaskFor(sid, {
         session_id: sid,
         msg_id: data.msg_id || "",
-        execution_id: data.execution_id
-          || (data.msg_id ? `${data.msg_id}_reply` : undefined),
+        execution_id: data.execution_id,
       });
     if (isActive) {
       void loadAgentSettings();

@@ -339,6 +339,57 @@ def test_prompt_binds_exact_execution_identity(tmp_db, client, tmp_path,
     assert c.server._sessions[sid].execution_id is None
 
 
+def test_cancel_during_admission_is_not_lost(tmp_db, client, tmp_path, monkeypatch):
+    """ACP cancellation is retained until the admitted execution is bound."""
+    from openprogram.agent.production_driver import CanonicalAgentAdmission
+
+    c = client()
+    c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
+    sid = c.call("session/new", {"cwd": str(tmp_path), "mcpServers": []})["sessionId"]
+    admitted = threading.Event()
+    release = threading.Event()
+    activated = threading.Event()
+    failed: list[tuple[str, str]] = []
+
+    class Adapter:
+        def __init__(self, **_kwargs):
+            pass
+
+        def admit(self, *_args, **_kwargs):
+            admitted.set()
+            assert release.wait(5)
+            return CanonicalAgentAdmission("acp-barrier", sid, 0)
+
+        def fail_admission(self, admission, *, reason_code, target=None):
+            failed.append((admission.execution_id, reason_code))
+
+        async def activate(self, _admission):
+            activated.set()
+
+    monkeypatch.setattr(
+        "openprogram.agent.production_driver.CanonicalAgentAdapter", Adapter,
+    )
+    result: dict = {}
+
+    def prompt() -> None:
+        result["value"] = c.call("session/prompt", {
+            "sessionId": sid, "prompt": [{"type": "text", "text": "pending"}],
+        })
+
+    thread = threading.Thread(target=prompt, daemon=True)
+    thread.start()
+    assert admitted.wait(5)
+    c.server._session_cancel({"sessionId": sid})
+    release.set()
+    thread.join(10)
+
+    assert not thread.is_alive()
+    assert result["value"]["stopReason"] == "cancelled"
+    assert not activated.is_set()
+    assert failed == [("acp-barrier", "prompt_cancel")]
+    assert c.server._sessions[sid].execution_id is None
+
+
 def test_cancel_calls_exact_execution_before_setting_event(
     tmp_db, client, tmp_path, monkeypatch,
 ) -> None:
