@@ -8,7 +8,7 @@ import time
 import pytest
 
 from openprogram.execution import AttemptStore, CapabilitySet, ExecutionStore
-from openprogram.execution.model import ExecutionStatus
+from openprogram.execution.model import CommandKind, CommandStatus, ExecutionStatus
 
 
 def _admitted(tmp_path, *, execution_id="exec-agent-1"):
@@ -298,10 +298,14 @@ def test_cancel_targets_exact_handle_and_releases_its_question_wait(tmp_path):
         assert await asyncio.to_thread(entered.wait, 2)
         current = store.get_execution(execution.execution_id)
         assert current is not None
-        store.transition_execution(
-            execution.execution_id,
+        store.accept_command_with_transition(
+            command_id="cancel-agent-1",
+            execution_id=execution.execution_id,
             expected_version=current.status_version,
+            kind=CommandKind.CANCEL,
             target=ExecutionStatus.CANCELLING,
+            payload={"reason_code": "cancel.user"},
+            actor={"surface": "test"},
             reason_code="cancel.user",
         )
         ack = await driver.request_cancel(handle, "cancel-agent-1")
@@ -318,6 +322,10 @@ def test_cancel_targets_exact_handle_and_releases_its_question_wait(tmp_path):
     cancelled = store.get_execution(execution.execution_id)
     assert cancelled is not None
     assert cancelled.status is ExecutionStatus.CANCELLED
+    command = store.get_command("cancel-agent-1")
+    assert command is not None
+    assert command.status is CommandStatus.APPLIED
+    assert driver._cancel_commands == {}
 
 
 def test_cancel_rejects_a_handle_from_another_attempt(tmp_path):
@@ -463,6 +471,9 @@ def test_finish_transient_failure_retries_after_handle_release(tmp_path):
     assert current is not None
     assert current.status is ExecutionStatus.COMPLETED
     assert calls >= 2
+    deadline = time.monotonic() + 1
+    while time.monotonic() < deadline and driver._pending_finishes:
+        time.sleep(0.01)
     assert driver._pending_finishes == {}
 
 
@@ -514,10 +525,14 @@ def test_finish_retry_re_reads_cancellation_state(tmp_path):
     )
     worker.start()
     assert first_called.wait(3)
-    store.transition_execution(
-        execution.execution_id,
+    store.accept_command_with_transition(
+        command_id="cancel-finish-race",
+        execution_id=execution.execution_id,
         expected_version=running.status_version,
+        kind=CommandKind.CANCEL,
         target=ExecutionStatus.CANCELLING,
+        payload={"reason_code": "cancel.user"},
+        actor={"surface": "test"},
         reason_code="cancel.user",
     )
     release.set()
@@ -532,6 +547,9 @@ def test_finish_retry_re_reads_cancellation_state(tmp_path):
     assert current is not None
     assert current.status is ExecutionStatus.CANCELLED
     assert current.reason_code == "cancel.user"
+    command = store.get_command("cancel-finish-race")
+    assert command is not None
+    assert command.status is CommandStatus.APPLIED
     assert calls >= 2
     assert driver._pending_finishes == {}
 
@@ -577,6 +595,53 @@ def test_finish_repair_intent_replays_after_driver_restart(tmp_path):
     current = store.get_execution(execution.execution_id)
     assert current is not None
     assert current.status is ExecutionStatus.COMPLETED
+    assert store.list_finish_repairs() == []
+
+
+def test_finish_repair_replay_binds_current_cancel_command(tmp_path):
+    from openprogram.execution.control import RuntimeControlService
+    from openprogram.execution.driver import DriverRegistry
+
+    store, execution = _admitted(tmp_path, execution_id="exec-finish-cancel-replay")
+    attempts = AttemptStore(store)
+    attempt, leased = attempts.lease(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        owner_id="agent-owner",
+        ttl_seconds=30,
+    )
+    active, running = attempts.activate(
+        attempt.attempt_id,
+        generation=attempt.generation,
+        expected_execution_version=leased.status_version,
+    )
+    _command, cancelling, duplicate = store.accept_command_with_transition(
+        command_id="cancel-replay",
+        execution_id=execution.execution_id,
+        expected_version=running.status_version,
+        kind=CommandKind.CANCEL,
+        target=ExecutionStatus.CANCELLING,
+        payload={"reason_code": "cancel.user"},
+        actor={"surface": "test"},
+        reason_code="cancel.user",
+    )
+    assert not duplicate
+    store.upsert_finish_repair(
+        execution_id=execution.execution_id,
+        attempt_id=active.attempt_id,
+        generation=active.generation,
+        expected_version=cancelling.status_version,
+        target=ExecutionStatus.COMPLETED.value,
+        outcome="completed",
+        reason_code=None,
+    )
+
+    service = RuntimeControlService(store, attempts, DriverRegistry())
+    assert service.replay_finish_repairs() == 1
+    current = store.get_execution(execution.execution_id)
+    command = store.get_command("cancel-replay")
+    assert current is not None and current.status is ExecutionStatus.CANCELLED
+    assert command is not None and command.status is CommandStatus.APPLIED
     assert store.list_finish_repairs() == []
 
 

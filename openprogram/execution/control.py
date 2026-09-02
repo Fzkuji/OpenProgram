@@ -1979,6 +1979,31 @@ class RuntimeControlService:
                 target = ExecutionStatus.CANCELLED
                 outcome = "cancelled"
                 reason_code = execution.reason_code or "cancelled"
+                applying_cancels = self.executions.list_commands(
+                    execution_id,
+                    statuses=(CommandStatus.APPLYING,),
+                    kinds=(CommandKind.CANCEL,),
+                )
+                command_id = (
+                    applying_cancels[0].command_id
+                    if applying_cancels
+                    else None
+                )
+                if command_id is None:
+                    # A cancelling execution with an active attempt must be
+                    # completed through its applying cancel command. Keep the
+                    # repair durable until that command is visible.
+                    continue
+                self.executions.upsert_finish_repair(
+                    execution_id=execution_id,
+                    attempt_id=attempt_id,
+                    generation=generation,
+                    expected_version=execution.status_version,
+                    target=target.value,
+                    outcome=outcome,
+                    reason_code=reason_code,
+                    command_id=command_id,
+                )
             try:
                 self.finish_attempt(
                     attempt_id=attempt_id,

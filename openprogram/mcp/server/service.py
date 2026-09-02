@@ -626,8 +626,13 @@ class MCPService:
                 record.cancel_reason = reason
                 record.thread_cancel.set()
                 record.tool_cancel.set()
-                return True
         try:
+            if not execution_id:
+                # Keep the pending intent, but always pass through the
+                # finally block so a later prompt is not permanently blocked
+                # by the cleaning-session guard.
+                self._audit_cancellation(record, reason)
+                return True
             try:
                 result = self._cancel_execution(execution_id)
                 if isinstance(result, asyncio.Task):

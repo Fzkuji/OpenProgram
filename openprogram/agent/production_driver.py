@@ -33,7 +33,13 @@ from openprogram.execution.driver import (
     RuntimeSnapshot,
     TerminationReceipt,
 )
-from openprogram.execution.model import CapabilitySet, ExecutionStatus, TERMINAL_EXECUTION_STATUSES
+from openprogram.execution.model import (
+    CapabilitySet,
+    CommandKind,
+    CommandStatus,
+    ExecutionStatus,
+    TERMINAL_EXECUTION_STATUSES,
+)
 from openprogram.execution.store import ExecutionStore
 
 
@@ -268,7 +274,8 @@ class AgentProductionDriver:
         # Completion is an in-process durable outbox: releasing a driver
         # handle must not discard a terminal write that failed transiently.
         self._pending_finishes: dict[tuple[str, str, int], tuple[AttemptRecord, int, ExecutionStatus, str, str | None, str | None]] = {}
-        self._finish_retry_threads: set[tuple[str, str, int]] = set()
+        self._finish_retry_worker_active = False
+        self._finish_retry_timer: threading.Timer | None = None
         self._cancel_commands: dict[tuple[str, str, int], str] = {}
 
     def _resolve_durable_input(self, record: Any) -> Mapping[str, Any]:
@@ -386,13 +393,12 @@ class AgentProductionDriver:
         self, handle: AgentDriverHandle, command_id: str
     ) -> DriverAck:
         self._require_live(handle)
-        try:
-            command = self._control_service().executions.get_command(command_id)
-        except Exception:
-            command = None
-        if command is not None:
-            with self._handles_lock:
-                self._cancel_commands[self._key(handle)] = command_id
+        # The canonical control service has already fenced and dispatched this
+        # exact command_id to this owner. Retain it even if a diagnostic read
+        # of the command row is temporarily unavailable; finish/repair must
+        # carry the same identity to the durable command transition.
+        with self._handles_lock:
+            self._cancel_commands[self._key(handle)] = command_id
         handle.cancel_event.set()
         registry = self.question_registry
         if registry is None:
@@ -597,16 +603,17 @@ class AgentProductionDriver:
     ) -> None:
         key = (attempt.execution_id, attempt.attempt_id, attempt.generation)
         with self._handles_lock:
-            if key in self._finished:
-                return
+            already_finished = key in self._finished
+        if already_finished:
+            # A duplicate completion can arrive after the durable transition
+            # succeeded. It must also resolve any in-process or persisted
+            # repair state associated with that exact owner.
+            self._resolve_finish_retry(key)
+            return
         service = self._control_service()
         execution = service.executions.get_execution(attempt.execution_id)
         if execution is None or execution.status in TERMINAL_EXECUTION_STATUSES:
-            self._delete_persisted_finish(key)
-            with self._handles_lock:
-                self._finished.add(key)
-                self._pending_finishes.pop(key, None)
-                self._cancel_commands.pop(key, None)
+            self._resolve_finish_retry(key)
             return
         cancelled = cancel_event.is_set() or execution.status is ExecutionStatus.CANCELLING
         if cancelled and execution.status is not ExecutionStatus.CANCELLING:
@@ -663,9 +670,7 @@ class AgentProductionDriver:
                 cancel_command_id,
             )
             return
-        with self._handles_lock:
-            self._finished.add(key)
-        self._delete_persisted_finish(key)
+        self._resolve_finish_retry(key)
 
     def _queue_finish_retry(
         self,
@@ -682,46 +687,26 @@ class AgentProductionDriver:
                 attempt, expected_execution_version, target, outcome, reason_code,
                 command_id,
             )
-            if key in self._finish_retry_threads:
-                return
-            self._finish_retry_threads.add(key)
         if self.executions is not None:
-            try:
-                self.executions.upsert_finish_repair(
-                    execution_id=attempt.execution_id,
-                    attempt_id=attempt.attempt_id,
-                    generation=attempt.generation,
-                    expected_version=expected_execution_version,
-                    target=target.value,
-                    outcome=outcome,
-                    reason_code=reason_code,
-                    command_id=command_id,
-                )
-            except Exception:
-                # The in-process item remains retryable; a later successful
-                # store write will make it available to startup replay.
-                pass
-        threading.Thread(
-            target=self._retry_finish,
-            args=(key,),
-            name=f"openprogram-agent-finish-{attempt.execution_id}",
-            daemon=True,
-        ).start()
+            self._persist_finish_retry(
+                attempt, expected_execution_version, target, outcome,
+                reason_code, command_id,
+            )
+        self._schedule_finish_retry_worker()
 
     def _retry_finish(self, key: tuple[str, str, int]) -> None:
         delay = 0.05
         retries = 0
-        try:
-            while True:
-                retries += 1
-                if retries > FINISH_RETRY_LIMIT:
-                    # Keep the item in the in-process outbox for an explicit
-                    # later retry, but never leave an unbounded daemon loop.
+        while True:
+            retries += 1
+            if retries > FINISH_RETRY_LIMIT:
+                # Keep the item in the in-process outbox for an explicit
+                # later retry, but never leave an unbounded daemon loop.
+                return
+            with self._handles_lock:
+                pending = self._pending_finishes.get(key)
+                if pending is None or key in self._finished:
                     return
-                with self._handles_lock:
-                    pending = self._pending_finishes.get(key)
-                    if pending is None or key in self._finished:
-                        return
                 (
                     attempt, _expected_version, target, outcome, reason_code,
                     command_id,
@@ -763,6 +748,38 @@ class AgentProductionDriver:
                     retry_target = ExecutionStatus.CANCELLED
                     retry_outcome = "cancelled"
                     retry_reason = execution.reason_code or "cancelled"
+                    # A finish may have failed before the cancel request was
+                    # associated with this owner. Resolve the currently
+                    # applying canonical cancel command before finishing, so
+                    # the command cannot remain APPLYING after cancellation.
+                    command_id = self._current_cancel_command_id(
+                        service.executions,
+                        execution.execution_id,
+                        fallback=command_id,
+                    )
+                    if command_id is None:
+                        time.sleep(delay)
+                        delay = min(delay * 2, FINISH_RETRY_MAX_DELAY)
+                        continue
+                    with self._handles_lock:
+                        current_pending = self._pending_finishes.get(key)
+                        if current_pending is not None:
+                            self._pending_finishes[key] = (
+                                current_pending[0],
+                                current_pending[1],
+                                current_pending[2],
+                                current_pending[3],
+                                current_pending[4],
+                                command_id,
+                            )
+                self._persist_finish_retry(
+                    attempt,
+                    execution.status_version,
+                    retry_target,
+                    retry_outcome,
+                    retry_reason,
+                    command_id,
+                )
                 try:
                     service.finish_attempt(
                         attempt_id=attempt.attempt_id,
@@ -790,9 +807,68 @@ class AgentProductionDriver:
                     return
                 time.sleep(delay)
                 delay = min(delay * 2, FINISH_RETRY_MAX_DELAY)
+
+    def _persist_finish_retry(
+        self,
+        attempt: AttemptRecord,
+        expected_execution_version: int,
+        target: ExecutionStatus,
+        outcome: str,
+        reason_code: str | None,
+        command_id: str | None,
+    ) -> None:
+        if self.executions is None:
+            return
+        try:
+            self.executions.upsert_finish_repair(
+                execution_id=attempt.execution_id,
+                attempt_id=attempt.attempt_id,
+                generation=attempt.generation,
+                expected_version=expected_execution_version,
+                target=target.value,
+                outcome=outcome,
+                reason_code=reason_code,
+                command_id=command_id,
+            )
+        except Exception:
+            # The bounded retry keeps the intent in memory and retries this
+            # write on every pass; the single repair worker continues after
+            # the initial eight attempts without creating one thread per key.
+            pass
+
+    def _schedule_finish_retry_worker(self) -> None:
+        with self._handles_lock:
+            if self._finish_retry_worker_active:
+                return
+            self._finish_retry_worker_active = True
+        threading.Thread(
+            target=self._run_finish_retry_worker,
+            name="openprogram-agent-finish-repair",
+            daemon=True,
+        ).start()
+
+    def _run_finish_retry_worker(self) -> None:
+        try:
+            with self._handles_lock:
+                keys = tuple(self._pending_finishes)
+            for key in keys:
+                self._retry_finish(key)
         finally:
             with self._handles_lock:
-                self._finish_retry_threads.discard(key)
+                self._finish_retry_worker_active = False
+                pending = bool(self._pending_finishes)
+            if pending:
+                with self._handles_lock:
+                    if self._finish_retry_timer is None:
+                        timer = threading.Timer(1.0, self._finish_retry_timer_fired)
+                        timer.daemon = True
+                        self._finish_retry_timer = timer
+                        timer.start()
+
+    def _finish_retry_timer_fired(self) -> None:
+        with self._handles_lock:
+            self._finish_retry_timer = None
+        self._schedule_finish_retry_worker()
 
     def _resolve_finish_retry(self, key: tuple[str, str, int]) -> None:
         self._delete_persisted_finish(key)
@@ -800,6 +876,32 @@ class AgentProductionDriver:
             self._pending_finishes.pop(key, None)
             self._finished.add(key)
             self._cancel_commands.pop(key, None)
+
+    @staticmethod
+    def _current_cancel_command_id(
+        executions: ExecutionStore,
+        execution_id: str,
+        *,
+        fallback: str | None,
+    ) -> str | None:
+        """Return the applying cancel command for the current execution."""
+        commands = executions.list_commands(
+            execution_id,
+            statuses=(CommandStatus.APPLYING,),
+            kinds=(CommandKind.CANCEL,),
+        )
+        if commands:
+            return commands[0].command_id
+        if fallback:
+            command = executions.get_command(fallback)
+            if (
+                command is not None
+                and command.execution_id == execution_id
+                and command.kind is CommandKind.CANCEL
+                and command.status is CommandStatus.APPLYING
+            ):
+                return command.command_id
+        return None
 
     def _delete_persisted_finish(self, key: tuple[str, str, int]) -> None:
         execution_id, attempt_id, generation = key
@@ -860,6 +962,7 @@ class AgentProductionDriver:
             if self._handles.get(key) is handle:
                 self._handles.pop(key, None)
             self._finished.discard(key)
+            self._cancel_commands.pop(key, None)
 
     @staticmethod
     def _key(handle: AgentDriverHandle) -> tuple[str, str, int]:

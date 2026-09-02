@@ -265,6 +265,70 @@ def test_cancel_barrier_before_admission_never_activates_prompt(monkeypatch) -> 
     assert activated.is_set() is False
     assert failed == [("exec-barrier", "prompt_cancel")]
     assert _active(service) == ()
+    with service._active_lock:
+        assert service._cleaning_sessions == set()
+
+
+def test_pre_admission_cancel_cleans_guard_before_next_prompt(monkeypatch) -> None:
+    from openprogram.agent.production_driver import CanonicalAgentAdmission
+
+    first_admit = threading.Event()
+    release_first = threading.Event()
+    second_active = threading.Event()
+    release_second = threading.Event()
+    admissions = 0
+
+    class Adapter:
+        def __init__(self, **_kwargs):
+            pass
+
+        def admit(self, *_args, **_kwargs):
+            nonlocal admissions
+            admissions += 1
+            if admissions == 1:
+                first_admit.set()
+                assert release_first.wait(2)
+                return CanonicalAgentAdmission("exec-first", "existing", 0)
+            return CanonicalAgentAdmission("exec-second", "existing", 0)
+
+        def fail_admission(self, *_args, **_kwargs):
+            return None
+
+        async def activate(self, admission):
+            if admission.execution_id == "exec-second":
+                second_active.set()
+                await asyncio.to_thread(release_second.wait, 2)
+            return None, TurnResult("done", "u", "a")
+
+    monkeypatch.setattr(
+        "openprogram.agent.production_driver.CanonicalAgentAdapter", Adapter,
+    )
+    service = _service(cancel=lambda _execution_id: None)
+
+    async def scenario():
+        first = asyncio.create_task(
+            service.prompt_send("first", session_id="existing", request_id="first")
+        )
+        await asyncio.to_thread(first_admit.wait, 1)
+        assert _payload(service.prompt_cancel("existing"))["cancelled"] is True
+        release_first.set()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        with service._active_lock:
+            assert service._cleaning_sessions == set()
+
+        second = asyncio.create_task(
+            service.prompt_send("second", session_id="existing", request_id="second")
+        )
+        await asyncio.to_thread(second_active.wait, 1)
+        assert _payload(service.prompt_cancel("existing"))["cancelled"] is True
+        release_second.set()
+        with pytest.raises(asyncio.CancelledError):
+            await second
+
+    asyncio.run(scenario())
+    assert admissions == 2
+    assert _active(service) == ()
 
 
 @pytest.mark.parametrize("session_id", ["unknown", "malformed"])

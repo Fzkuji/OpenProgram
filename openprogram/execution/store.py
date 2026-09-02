@@ -58,6 +58,7 @@ class ProjectionConflict(ExecutionStoreError):
 _AGENT_TURN_INPUT_VERSION = 1
 _AGENT_TURN_INPUT_MAX_BYTES = 256 * 1024
 _AGENT_TURN_INPUT_KINDS = frozenset({"chat", "forced_tool"})
+_FINISH_REPAIR_MAX_ROWS = 4096
 _AGENT_TURN_INPUT_KEYS = frozenset({
     "version", "kind", "request", "tool_name", "tool_input",
     "anchor_msg_id", "work_dir", "agent_id", "source", "provider", "model",
@@ -408,6 +409,30 @@ class ExecutionStore:
         """Persist a terminal write for bounded retry and startup replay."""
         now = time.time()
         with self._transaction() as connection:
+            # Terminal repairs are no longer actionable. Remove them before
+            # admitting a new repair, and keep this recovery table bounded
+            # even if a process repeatedly loses ownership.
+            connection.execute(
+                "DELETE FROM execution_finish_repairs "
+                "WHERE execution_id IN ("
+                "SELECT execution_id FROM executions WHERE status IN (?, ?, ?, ?)"
+                ")",
+                tuple(status.value for status in TERMINAL_EXECUTION_STATUSES),
+            )
+            count = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM execution_finish_repairs"
+                ).fetchone()[0]
+            )
+            if count >= _FINISH_REPAIR_MAX_ROWS:
+                connection.execute(
+                    "DELETE FROM execution_finish_repairs WHERE rowid IN ("
+                    "SELECT rowid FROM execution_finish_repairs "
+                    "ORDER BY updated_at, execution_id, attempt_id "
+                    "LIMIT ?"
+                    ")",
+                    (count - _FINISH_REPAIR_MAX_ROWS + 1,),
+                )
             connection.execute(
                 """
                 INSERT INTO execution_finish_repairs (
@@ -429,11 +454,19 @@ class ExecutionStore:
                 ),
             )
 
-    def list_finish_repairs(self) -> list[dict[str, Any]]:
+    def list_finish_repairs(
+        self, *, limit: int = 256, offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        if type(limit) is not int or not 0 < limit <= _FINISH_REPAIR_MAX_ROWS:
+            raise ValueError("finish repair limit is out of bounds")
+        if type(offset) is not int or offset < 0:
+            raise ValueError("finish repair offset must be non-negative")
         with closing(self._connect()) as connection:
             rows = connection.execute(
                 "SELECT * FROM execution_finish_repairs "
-                "ORDER BY updated_at, execution_id, attempt_id"
+                "ORDER BY updated_at, execution_id, attempt_id "
+                "LIMIT ? OFFSET ?",
+                (limit, offset),
             ).fetchall()
         return [dict(row) for row in rows]
 
