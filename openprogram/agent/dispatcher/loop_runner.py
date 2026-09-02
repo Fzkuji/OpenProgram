@@ -163,10 +163,24 @@ def run_loop_blocking(
     """
     from openprogram.agent.agent_loop import agent_loop, agent_loop_resume
     from openprogram.agent.types import AgentContext, AgentLoopConfig
-    # Resolve agent profile → tools, system_prompt, model.
-    agent_profile, tools, recordable_system_prompt, system_prompt, model, runtime_contract = resolve_agent_runtime(
-        req, assistant_msg_id=assistant_msg_id, on_event=on_event,
-    )
+    # A continuation runs on its own thread, outside TurnBindings. Bind the
+    # current durable project/worktree while resolving the contract so the
+    # raw system prompt contains the same cwd that will be dispatched.
+    _worktree_token = None
+    if continuation is not None:
+        from openprogram.agent.internals._workdir import runtime_location_for
+        from openprogram.worktree.context import reset_worktree, set_worktree
+        _worktree_token = set_worktree(
+            runtime_location_for(req.session_id, use_context=False)["workdir"],
+        )
+    try:
+        # Resolve agent profile → tools, system_prompt, model.
+        agent_profile, tools, recordable_system_prompt, system_prompt, model, runtime_contract = resolve_agent_runtime(
+            req, assistant_msg_id=assistant_msg_id, on_event=on_event,
+        )
+    finally:
+        if _worktree_token is not None:
+            reset_worktree(_worktree_token)
     if agentic_tool_names_out is not None:
         agentic_tool_names_out.update(
             tool.name for tool in tools if getattr(tool, "_is_agentic", False)

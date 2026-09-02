@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 import json
 import marshal
-import re
 from dataclasses import dataclass
 from typing import Any, Mapping, TYPE_CHECKING
 
@@ -32,9 +31,6 @@ MAX_AGENT_DELTA_BYTES = 64 * 1024
 MAX_AGENT_REPEAT_FAILURES = 16
 _STATE_REF_PREFIX = "execstate://sha256/"
 RUNTIME_CONTRACT_VERSION = 1
-_DYNAMIC_PROMPT_LINES = (
-    re.compile(r"(?m)^(\s*-?\s*Current working directory:\s*).*$"),
-)
 
 
 class AgentCheckpointError(ValueError):
@@ -137,6 +133,10 @@ def runtime_contract_snapshot(
             "additional_working_dirs", "_execution_revision_id",
         )
     }
+    from openprogram.agent.internals._workdir import runtime_location_for
+    request_semantics["execution_location"] = runtime_location_for(
+        getattr(request, "session_id", ""),
+    )
     model_value = _json_safe(model)
     if isinstance(model_value, dict) and "endpoint" not in model_value:
         model_value["endpoint"] = model_value.get("base_url")
@@ -149,16 +149,6 @@ def runtime_contract_snapshot(
         "toolset": _json_safe(toolset),
         "request_semantics": request_semantics,
     }
-
-
-def _comparable_contract(value: Mapping[str, Any]) -> dict[str, Any]:
-    result = dict(value)
-    prompt = result.get("system_prompt")
-    if isinstance(prompt, str):
-        for pattern in _DYNAMIC_PROMPT_LINES:
-            prompt = pattern.sub(r"\1<runtime-cwd>", prompt)
-        result["system_prompt"] = prompt
-    return result
 
 
 def validate_runtime_contract(
@@ -186,6 +176,7 @@ def validate_runtime_contract(
         or not isinstance(expected.get("request_semantics"), Mapping)
         or not isinstance(expected["request_semantics"].get("_execution_revision_id"), str)
         or not expected["request_semantics"]["_execution_revision_id"]
+        or not isinstance(expected["request_semantics"].get("execution_location"), Mapping)
         or any(
             not isinstance(tool, Mapping)
             or set(tool) != {
@@ -210,7 +201,7 @@ def validate_runtime_contract(
             for tool in expected["tools"]
         )
         or not isinstance(actual, Mapping)
-        or _comparable_contract(expected) != _comparable_contract(actual)
+        or dict(expected) != dict(actual)
     ):
         raise AgentCheckpointError(
             "continuation_contract_mismatch",

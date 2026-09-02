@@ -425,6 +425,37 @@ def test_continue_rejects_same_model_id_with_changed_provider_endpoint(
     assert real_agent_chat.provider.call_count == 1
 
 
+def test_continue_rejects_changed_session_project_workdir(real_agent_chat, tmp_path):
+    from openprogram.store.project import project_store
+    from tests.component.providers.scripted_provider import ScriptedText
+
+    real_agent_chat.provider.add_response(ScriptedText("saved answer"))
+    real_agent_chat.provider.block_calls.add(0)
+    execution = _chat(real_agent_chat)
+    _wait(real_agent_chat.provider.entered.is_set)
+    _command(real_agent_chat, "execution.pause", execution, "pause-project")
+    real_agent_chat.provider.release.set()
+    paused = _wait(lambda: (
+        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status is ExecutionStatus.PAUSED else None
+    ))
+    checkpoint_id = paused.checkpoint_head_id
+
+    changed_path = tmp_path / "changed-project"
+    changed_path.mkdir()
+    changed_project = project_store.resolve_project(changed_path)
+    project_store.unbind_session(real_agent_chat.session_id)
+    project_store.bind_session(real_agent_chat.session_id, changed_project.id)
+
+    command = _command(real_agent_chat, "execution.continue", paused, "continue-project")
+    current = real_agent_chat.store.get_execution(execution.execution_id)
+    assert command["status"] == "rejected"
+    assert command["rejection_code"] == "continuation_contract_mismatch"
+    assert current is not None and current.status is ExecutionStatus.PAUSED
+    assert current.checkpoint_head_id == checkpoint_id
+    assert real_agent_chat.provider.call_count == 1
+    assert real_agent_chat.tools.calls == []
+
+
 def test_continue_accepts_an_unchanged_runtime_contract(real_agent_chat):
     from tests.component.providers.scripted_provider import ScriptedText
 

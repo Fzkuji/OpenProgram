@@ -448,10 +448,17 @@ class AgentProductionDriver:
                         "Agent checkpoint branch anchors differ from immutable admission input",
                     )
                 from openprogram.agent.dispatcher.loop_runner import resolve_agent_runtime
-                _profile, _tools, _recordable, _prompt, _model, _contract = resolve_agent_runtime(
-                    request,
-                    assistant_msg_id=continuation.assistant_message_id,
-                )
+                from openprogram.agent.internals._workdir import runtime_location_for
+                from openprogram.worktree.context import reset_worktree, set_worktree
+                _location = runtime_location_for(request.session_id, use_context=False)
+                _workdir_token = set_worktree(_location["workdir"])
+                try:
+                    _profile, _tools, _recordable, _prompt, _model, _contract = resolve_agent_runtime(
+                        request,
+                        assistant_msg_id=continuation.assistant_message_id,
+                    )
+                finally:
+                    reset_worktree(_workdir_token)
                 validate_runtime_contract(continuation.resolved_snapshot, _contract)
             except AgentCheckpointError as exc:
                 raise AgentDriverError(exc.code, str(exc)) from exc
