@@ -5,7 +5,8 @@
 > TaskList / TaskGet / TaskUpdate / TaskStop。
 >
 > 它所依托的底盘 WebUI 已经具备：每个 session 一个 worker thread
-> （`_execute_in_context`）、一个 `_cancel_events` dict（`_pause_stop.py`），
+> （`_execute_in_context`），以及 `openprogram.agent.run_control` 中按 execution
+> 精确登记的 token，
 > 一个供 UI spinner 用的 `_running_tasks` dict。`run_agent_turn`
 > （`openprogram/agent/sub_agent_run.py`）是那条同步路径，`/task` tool、
 > `/spawn` WS action、`_merge.process_merge_turn` 都复用它；task 抽象在其之上
@@ -91,9 +92,13 @@ task 在 startup 时一律标记 `errored`（error="worker died before completio
 Cancel API 触发时：
 
 1. 写 `cancel_requested_at` 到 entity，状态转 `cancelled`（如果还在 queued / pending），或保持 `running` 等 worker 自然退出。
-2. `cancel_event.set()` — 通过 `_pause_stop.register_cancel_event` 已经定义的 contract，传到 `process_user_turn(cancel_event=...)`。
+2. `cancel_event.set()` — 通过 `openprogram.agent.run_control` 的精确 execution 登记，
+   传到 `process_user_turn(cancel_event=...)`。
 3. `process_user_turn` 已经把 cancel_event bridge 进 asyncio.Event（`agent_loop` 调用），LLM provider stream 会在下一个 chunk 检查到 cancel 然后中断。
-4. BashTool / 其他 subprocess：复用 `_pause_stop.kill_active_runtime`（已有）。Tool 层的 cancel 是合作式：每个 `@agentic_function` 的 pre-invocation hook 检查 `is_cancelled`（已有），下一个 tool call 入口会 raise `CancelledError`。
+4. BashTool / 其他 subprocess 使用精确 execution id 调用
+   `process_runner.kill_active_subprocess`。Tool 层的 cancel 是合作式：每个
+   `@agentic_function` 的 pre-invocation hook 检查 `is_cancelled`，下一个 tool call
+   入口会 raise `CancelledError`。
 5. 兜底 timeout：cancel 后 30 秒 worker 还没退出，runner 把 entity 标 `cancelled`（error="cancel timed out, worker may be stuck"），然后 detach worker thread（不强杀，等 GC）。
 
 工具自身原子操作（比如一个 `Write` 写一半）不中断，等当前 atomic 完成再退出。

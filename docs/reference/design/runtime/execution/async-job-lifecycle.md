@@ -6,7 +6,8 @@
 > TaskGet / TaskUpdate / TaskStop.
 >
 > The chassis it builds on already exists in the WebUI: one worker thread per
-> session (`_execute_in_context`), a `_cancel_events` dict (`_pause_stop.py`),
+> session (`_execute_in_context`) and the exact execution token registry in
+> `openprogram.agent.run_control`,
 > and a `_running_tasks` dict for the UI spinner. `run_agent_turn`
 > (`openprogram/agent/sub_agent_run.py`) is the synchronous path that the
 > `/task` tool, the `/spawn` WS action, and `_merge.process_merge_turn` all
@@ -97,9 +98,14 @@ Each running task has a `threading.Event` inside the runner (not stored in the
 entity). When the Cancel API fires:
 
 1. Write `cancel_requested_at` to the entity and transition status to `cancelled` (if still queued / pending), or keep it `running` and wait for the worker to exit naturally.
-2. `cancel_event.set()` — via the contract already defined by `_pause_stop.register_cancel_event`, this propagates to `process_user_turn(cancel_event=...)`.
+2. `cancel_event.set()` — via the exact execution registration in
+   `openprogram.agent.run_control`, this propagates to
+   `process_user_turn(cancel_event=...)`.
 3. `process_user_turn` already bridges cancel_event into an asyncio.Event (the `agent_loop` call), and the LLM provider stream checks for the cancel on the next chunk and then breaks.
-4. BashTool / other subprocesses: reuse `_pause_stop.kill_active_runtime` (already exists). Cancellation at the tool layer is cooperative: each `@agentic_function`'s pre-invocation hook checks `is_cancelled` (already exists), and the next tool-call entry raises `CancelledError`.
+4. BashTool / other subprocesses use the exact execution id with
+   `process_runner.kill_active_subprocess`. Cancellation at the tool layer is
+   cooperative: each `@agentic_function`'s pre-invocation hook checks
+   `is_cancelled`, and the next tool-call entry raises `CancelledError`.
 5. Fallback timeout: if the worker still hasn't exited 30 seconds after the cancel, the runner marks the entity `cancelled` (error="cancel timed out, worker may be stuck") and detaches the worker thread (no hard kill; let GC handle it).
 
 A tool's own atomic operation (e.g. a `Write` halfway through) is not

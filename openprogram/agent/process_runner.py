@@ -48,7 +48,6 @@ from openprogram.agent.surface_context import (
 # compatibility session-level lookup still finds the current owner.
 _active: dict[str, mp.Process] = {}
 _active_stop_q: dict[str, "mp.Queue"] = {}
-_session_execution: dict[str, str] = {}
 _active_lock = threading.Lock()
 
 _BOUNDED_AGENTIC_TOOLS = {"browser_agent", "gui_agent"}
@@ -1193,7 +1192,6 @@ def run_agentic_in_subprocess(
     with _active_lock:
         _active[eid] = p
         _active_stop_q[eid] = stop_queue
-        _session_execution[session_id] = eid
     try:
         from openprogram.agent.run_control import register_execution_owner
         register_execution_owner(
@@ -1382,8 +1380,6 @@ def run_agentic_in_subprocess(
             if _active.get(eid) is p:
                 _active.pop(eid, None)
             _active_stop_q.pop(eid, None)
-            if _session_execution.get(session_id) == eid:
-                _session_execution.pop(session_id, None)
         try:
             from openprogram.agent.run_control import retire_execution_owner
             retire_execution_owner(eid)
@@ -1428,36 +1424,32 @@ def run_agentic_in_subprocess(
     return out
 
 
-def _execution_key(session_id: str, execution_id: str | None = None) -> str:
-    if execution_id:
-        return execution_id
-    with _active_lock:
-        return _session_execution.get(session_id) or session_id
+def _execution_key(session_id: str, execution_id: str) -> str:
+    """Return the exact process owner key for one execution."""
+    del session_id
+    if not execution_id:
+        raise ValueError("execution_id is required for process control")
+    return execution_id
 
 
 def is_subprocess_alive(
-    session_id: str, *, execution_id: str | None = None,
+    session_id: str, *, execution_id: str,
 ) -> bool:
     """True if there's a live in-flight subprocess for this execution."""
     key = _execution_key(session_id, execution_id)
     with _active_lock:
         p = _active.get(key)
-        if p is None and execution_id is None:
-            p = _active.get(session_id)
     return p is not None and p.is_alive()
 
 
 def request_graceful_stop(
-    session_id: str, *, execution_id: str | None = None,
+    session_id: str, *, execution_id: str,
 ) -> bool:
     """Ask the in-flight subprocess to stop cooperatively via its stop queue."""
     key = _execution_key(session_id, execution_id)
     with _active_lock:
         q = _active_stop_q.get(key)
         p = _active.get(key)
-        if q is None and execution_id is None:
-            q = _active_stop_q.get(session_id)
-            p = _active.get(session_id)
     if q is None or p is None or not p.is_alive():
         return False
     try:
@@ -1468,18 +1460,13 @@ def request_graceful_stop(
 
 
 def kill_active_subprocess(
-    session_id: str, *, execution_id: str | None = None,
+    session_id: str, *, execution_id: str,
 ) -> bool:
     """SIGKILL the process group of the in-flight subprocess for this execution."""
     key = _execution_key(session_id, execution_id)
     with _active_lock:
         p = _active.pop(key, None)
         _active_stop_q.pop(key, None)
-        if p is None and execution_id is None:
-            p = _active.pop(session_id, None)
-            _active_stop_q.pop(session_id, None)
-        if _session_execution.get(session_id) == key:
-            _session_execution.pop(session_id, None)
     if p is None:
         return False
     if not p.is_alive():

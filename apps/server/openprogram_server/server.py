@@ -27,7 +27,6 @@ from openprogram.agentic_programming.runtime import Runtime
 
 # Stop / cancel primitives live in openprogram.agent.run_control
 from openprogram.agent.run_control import (
-    mark_cancelled as _mark_cancelled,
     is_cancelled as _is_cancelled,
     clear_cancel as _clear_cancel,
     register_active_runtime as _register_active_runtime,
