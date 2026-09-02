@@ -344,6 +344,20 @@ def _create_finish_repair_schema(connection: sqlite3.Connection) -> None:
         "ON execution_finish_repairs(updated_at, execution_id)"
     )
     _add_column_if_missing(connection, "execution_finish_repairs", "command_id TEXT")
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS execution_finish_repair_slots (
+            execution_id TEXT PRIMARY KEY,
+            reserved_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            FOREIGN KEY(execution_id) REFERENCES executions(execution_id)
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS execution_finish_repair_slots_reserved "
+        "ON execution_finish_repair_slots(reserved_at, execution_id)"
+    )
 
 
 def _migrate_v6(connection: sqlite3.Connection) -> None:

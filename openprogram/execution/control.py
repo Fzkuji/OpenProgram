@@ -1689,6 +1689,8 @@ class RuntimeControlService:
             outcome=("reconciliation_required" if unresolved else outcome),
             reason_code=("effect_reconciliation" if unresolved else reason_code),
         )
+        if execution.status in TERMINAL_EXECUTION_STATUSES:
+            self.executions.release_finish_repair_slot(execution.execution_id)
         self.registry.unbind(
             execution.execution_id,
             attempt_id=attempt_id,
@@ -1890,6 +1892,11 @@ class RuntimeControlService:
                     result_version=recovered.status_version,
                     rejection_code="owner_lost_before_checkpoint",
                 )
+            if recovered.status in TERMINAL_EXECUTION_STATUSES:
+                connection.execute(
+                    "DELETE FROM execution_finish_repair_slots WHERE execution_id = ?",
+                    (execution_id,),
+                )
 
         if attempt is not None:
             self.registry.unbind(
@@ -1953,6 +1960,8 @@ class RuntimeControlService:
                     recovered = self.executions.get_execution(execution.execution_id)
                     if recovered is None:
                         continue
+                if recovered.status in TERMINAL_EXECUTION_STATUSES:
+                    self.executions.release_finish_repair_slot(execution.execution_id)
                 recoveries.append(RecoveryCompletion(execution=recovered))
         return tuple(recoveries)
 

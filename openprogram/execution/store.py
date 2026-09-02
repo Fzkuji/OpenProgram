@@ -319,26 +319,23 @@ class ExecutionStore:
         )
         with self._transaction() as connection:
             if agent_payload_json is not None:
-                actionable_repairs = int(
+                connection.execute(
+                    "DELETE FROM execution_finish_repair_slots "
+                    "WHERE execution_id NOT IN (SELECT execution_id FROM executions) "
+                    "OR execution_id IN ("
+                    "SELECT execution_id FROM executions WHERE status IN (?, ?, ?, ?)"
+                    ")",
+                    tuple(status.value for status in TERMINAL_EXECUTION_STATUSES),
+                )
+                reserved_slots = int(
                     connection.execute(
-                        """
-                        SELECT COUNT(*)
-                        FROM execution_finish_repairs AS r
-                        JOIN executions AS e ON e.execution_id = r.execution_id
-                        JOIN attempts AS a ON a.attempt_id = r.attempt_id
-                        WHERE e.status NOT IN (?, ?, ?, ?)
-                          AND e.current_attempt_id = a.attempt_id
-                          AND a.execution_id = r.execution_id
-                          AND a.generation = r.generation
-                          AND a.status = 'active'
-                        """,
-                        tuple(status.value for status in TERMINAL_EXECUTION_STATUSES),
+                        "SELECT COUNT(*) FROM execution_finish_repair_slots"
                     ).fetchone()[0]
                 )
-                if actionable_repairs >= _FINISH_REPAIR_HIGH_WATERMARK:
+                if reserved_slots >= _FINISH_REPAIR_HIGH_WATERMARK:
                     raise ExecutionConflict(
                         "finish_repair_capacity",
-                        "Agent admission is paused while finish repairs drain",
+                        "Agent admission is paused while finish-repair slots drain",
                     )
             record = self._create_execution_in_transaction(
                 connection,
@@ -378,6 +375,11 @@ class ExecutionStore:
                             hashlib.sha256(agent_payload_json.encode("utf-8")).hexdigest(),
                             record.created_at,
                         ),
+                    )
+                    connection.execute(
+                        "INSERT INTO execution_finish_repair_slots "
+                        "(execution_id, reserved_at, updated_at) VALUES (?, ?, ?)",
+                        (record.execution_id, record.created_at, record.created_at),
                     )
             except sqlite3.IntegrityError as exc:
                 raise ExecutionConflict(
@@ -473,6 +475,18 @@ class ExecutionStore:
                     "WHERE execution_id = ? AND attempt_id = ? AND generation = ?",
                     stale_key,
                 )
+                execution_status = connection.execute(
+                    "SELECT status FROM executions WHERE execution_id = ?",
+                    (stale_key[0],),
+                ).fetchone()
+                if (
+                    execution_status is None
+                    or execution_status["status"] in terminal_values
+                ):
+                    connection.execute(
+                        "DELETE FROM execution_finish_repair_slots WHERE execution_id = ?",
+                        (stale_key[0],),
+                    )
             connection.execute(
                 """
                 INSERT INTO execution_finish_repairs (
@@ -557,6 +571,17 @@ class ExecutionStore:
                 "DELETE FROM execution_finish_repairs "
                 "WHERE execution_id = ? AND attempt_id = ? AND generation = ?",
                 (execution_id, attempt_id, generation),
+            )
+            connection.execute(
+                "DELETE FROM execution_finish_repair_slots WHERE execution_id = ?",
+                (execution_id,),
+            )
+
+    def release_finish_repair_slot(self, execution_id: str) -> None:
+        with self._transaction() as connection:
+            connection.execute(
+                "DELETE FROM execution_finish_repair_slots WHERE execution_id = ?",
+                (execution_id,),
             )
 
     def _copy_execution_input_in_transaction(
