@@ -168,6 +168,62 @@ def test_activation_uses_the_durable_agent_turn_payload_by_default(tmp_path):
     assert seen["request"].source == "web"
 
 
+def test_internal_canonical_entry_admits_before_activation_with_exact_identity(tmp_path):
+    from openprogram.agent.production_driver import (
+        AgentProductionDriver,
+        CanonicalAgentEntry,
+    )
+
+    store = ExecutionStore(tmp_path / "executions.sqlite3")
+    seen = {}
+    entered = threading.Event()
+    release = threading.Event()
+
+    def run_turn(*, request, cancel_event):
+        seen["request"] = request
+        assert cancel_event is not None
+        entered.set()
+        assert release.wait(2)
+        return type("Result", (), {"failed": False, "error": None})()
+
+    driver = AgentProductionDriver(executions=store, turn_runner=run_turn)
+    entry = CanonicalAgentEntry(store, driver)
+    admission = entry.admit(
+        session_id="session-entry",
+        turn_payload={
+            "user_text": "canonical public turn",
+            "agent_id": "default",
+            "source": "web",
+            "permission_mode": "ask",
+        },
+        trusted_actor={"subject": "user-1"},
+        user_message_id="msg-user",
+        assistant_message_id="msg-assistant",
+        config_snapshot_ref="config:entry",
+    )
+    queued = store.get_execution(admission.execution_id)
+    assert queued is not None
+    assert queued.status is ExecutionStatus.QUEUED
+    assert admission.execution_id.startswith("exec_")
+    assert admission.execution_id != "msg-user_reply"
+    assert store.get_agent_turn_input(admission.execution_id)["user_text"] == "canonical public turn"
+
+    async def run():
+        active = await entry.activate(admission)
+        assert await asyncio.to_thread(entered.wait, 2)
+        handle = driver._handles[(active.admission.execution_id, active.attempt_id, active.generation)]
+        release.set()
+        await handle.done
+        return active
+
+    active = asyncio.run(run())
+    assert active.admission.execution_id == admission.execution_id
+    assert seen["request"].user_text == "canonical public turn"
+    completed = store.get_execution(admission.execution_id)
+    assert completed is not None
+    assert completed.status is ExecutionStatus.COMPLETED
+
+
 def test_cancel_targets_exact_handle_and_releases_its_question_wait(tmp_path):
     from openprogram.agent.production_driver import AgentProductionDriver
     from openprogram.agent.questions import PendingQuestion, QuestionRegistry

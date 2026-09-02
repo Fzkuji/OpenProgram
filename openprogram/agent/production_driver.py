@@ -11,8 +11,11 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import hashlib
 import inspect
+import json
 import threading
+import uuid
 from dataclasses import dataclass, fields
 from typing import Any, Callable, Mapping
 
@@ -47,6 +50,22 @@ class AgentDriverHandle:
     session_id: str
     cancel_event: threading.Event
     done: asyncio.Future[Any]
+
+
+@dataclass(frozen=True)
+class CanonicalAgentAdmission:
+    """Durably admitted Agent turn before its attempt is activated."""
+
+    execution_id: str
+    session_id: str
+    status_version: int
+
+
+@dataclass(frozen=True)
+class CanonicalAgentActivation:
+    admission: CanonicalAgentAdmission
+    attempt_id: str
+    generation: int
 
 
 InputResolver = Callable[[Any], Mapping[str, Any]]
@@ -454,9 +473,102 @@ class AgentProductionDriver:
         return process_user_turn(request, cancel_event=cancel_event)
 
 
+class CanonicalAgentEntry:
+    """Internal durable admission and activation boundary for Agent turns.
+
+    Public transports do not use this class until every Agent entry point can
+    switch together.  It has no fallback to a message-derived execution id.
+    """
+
+    _ENTRYPOINT = "openprogram.agent.production_driver:AgentProductionDriver"
+    _REVISION_MANIFEST = {"entrypoint": _ENTRYPOINT, "turn_input_schema": 1}
+
+    def __init__(self, store: ExecutionStore, driver: AgentProductionDriver):
+        if driver.executions is not store:
+            raise ValueError("Agent driver must use the admission execution store")
+        self.store = store
+        self.driver = driver
+        self.control = driver._control_service()
+
+    def admit(
+        self,
+        *,
+        session_id: str,
+        turn_payload: Mapping[str, Any],
+        trusted_actor: Mapping[str, Any],
+        user_message_id: str | None,
+        assistant_message_id: str | None,
+        config_snapshot_ref: str,
+    ) -> CanonicalAgentAdmission:
+        payload = copy.deepcopy(dict(turn_payload))
+        supplied_session = payload.pop("session_id", None)
+        if supplied_session is not None and supplied_session != session_id:
+            raise AgentDriverError(
+                "input_session_mismatch", "Agent admission input belongs to another session"
+            )
+        for required in ("user_text", "agent_id", "source"):
+            if not payload.get(required):
+                raise AgentDriverError(
+                    "invalid_input", f"Agent admission input requires {required}"
+                )
+        encoded = json.dumps(
+            payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+        content_hash = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        revision = self.store.create_revision(manifest=self._REVISION_MANIFEST)
+        record = self.store.admit_execution(
+            execution_id=f"exec_{uuid.uuid4().hex}",
+            run_id=f"run_{uuid.uuid4().hex}",
+            session_id=session_id,
+            revision_id=revision.revision_id,
+            input_ref=f"agent-turn:{content_hash}",
+            input_hash=content_hash,
+            entrypoint=self._ENTRYPOINT,
+            trusted_actor=trusted_actor,
+            config_snapshot_ref=config_snapshot_ref,
+            user_message_id=user_message_id,
+            assistant_message_id=assistant_message_id,
+            capabilities=self.driver.capabilities(),
+            agent_turn_payload=payload,
+        )
+        return CanonicalAgentAdmission(
+            execution_id=record.execution_id,
+            session_id=record.session_id,
+            status_version=record.status_version,
+        )
+
+    async def activate(self, admission: CanonicalAgentAdmission) -> CanonicalAgentActivation:
+        attempt, leased = self.control.attempts.lease(
+            admission.execution_id,
+            expected_version=admission.status_version,
+            owner_id=f"agent-entry-{uuid.uuid4().hex}",
+            ttl_seconds=30,
+        )
+        active, _running = self.control.attempts.activate(
+            attempt.attempt_id,
+            generation=attempt.generation,
+            expected_execution_version=leased.status_version,
+        )
+        delivered, issue = await self.control._activate(
+            active, None, (), activator=self.driver.activate
+        )
+        if not delivered:
+            raise AgentDriverError(
+                issue or "activation_failed", "canonical Agent activation failed"
+            )
+        return CanonicalAgentActivation(
+            admission=admission,
+            attempt_id=active.attempt_id,
+            generation=active.generation,
+        )
+
+
 __all__ = [
     "AgentActivationService",
     "AgentDriverError",
     "AgentDriverHandle",
+    "CanonicalAgentActivation",
+    "CanonicalAgentAdmission",
+    "CanonicalAgentEntry",
     "AgentProductionDriver",
 ]
