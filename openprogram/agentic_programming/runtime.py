@@ -2244,7 +2244,7 @@ class Runtime:
             # inside some agentic function body. Recover that function's
             # name from the recursion-depth tracker (innermost = deepest)
             # so the situational/self-recursion guidance is injected here
-            # too — otherwise standalone calls get no steering.
+            # too — otherwise standalone calls receive no situational guidance.
             standalone_prefix: list = []
             try:
                 from openprogram.agentic_programming.function import (
