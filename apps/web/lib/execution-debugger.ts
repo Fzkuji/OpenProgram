@@ -108,18 +108,22 @@ export type RevisionDraft = {
   base_revision_id: string;
   base_revision_hash: string;
   source_checkpoint_id: string;
+  project_binding?: Record<string, string>;
+  frontier_mapping?: Array<Record<string, unknown>>;
+  requested_by?: Record<string, string>;
   draft_version: number;
   changes: RevisionChange[];
-  status: "draft" | "validated" | "approved" | "published" | "rejected";
+  status: "draft" | "validated" | "approved" | "published" | "discarded" | "rejected";
   validation?: {
+    validation_id?: string;
     report_ref: string;
     report_hash: string;
     reusable_steps: string[];
     affected_steps: string[];
     error_code?: string | null;
   };
-  approval?: { approval_ref: string; policy_version: string };
-  manifest?: { revision_id: string; content_hash: string };
+  approval?: { approval_id?: string; approval_ref: string; policy_version: string };
+  manifest?: { manifest_id?: string; revision_id: string; content_hash: string };
 };
 
 export type DurableWait = {

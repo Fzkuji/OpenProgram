@@ -128,29 +128,187 @@ export async function postExecutionWait(input: {
   return postExecutionCommand(command);
 }
 
-/**
- * Revision authoring is intentionally a typed boundary even while the server
- * route is being delivered. A missing route is surfaced as an API error in
- * the panel; the UI never reports a local draft as persisted.
- */
+type RevisionAction =
+  | "revision.draft.create"
+  | "revision.draft.get"
+  | "revision.draft.replace"
+  | "revision.draft.discard"
+  | "revision.validate"
+  | "revision.approve"
+  | "revision.publish";
+
+type RevisionStateResponse = {
+  draft?: RevisionDraft;
+  validation?: RevisionDraft["validation"] | null;
+  approval?: RevisionDraft["approval"] | null;
+  manifest?: RevisionDraft["manifest"] | null;
+  data?: RevisionStateResponse;
+};
+
+function revisionState(body: RevisionStateResponse): RevisionDraft {
+  const state = body.draft ? body : body.data?.draft ? body.data : body;
+  const draft = state.draft;
+  if (!draft?.draft_id) {
+    throw new ExecutionApiError(200, "invalid_draft", "The revision draft response is invalid.");
+  }
+  // The service returns draft, validation, approval, and manifest as one
+  // canonical state. Keep that state together for the debugger projection.
+  const validation = state.validation as (Record<string, unknown> & {
+    report?: Record<string, unknown>;
+  }) | null | undefined;
+  const approval = state.approval as Record<string, unknown> | null | undefined;
+  const manifest = state.manifest as Record<string, unknown> | null | undefined;
+  return {
+    ...draft,
+    validation: validation
+      ? {
+        validation_id: typeof validation.validation_id === "string" ? validation.validation_id : undefined,
+        report_ref: String(validation.validation_id || ""),
+        report_hash: String(validation.report_hash || ""),
+        reusable_steps: Array.isArray(validation.report?.reusable_steps) ? validation.report.reusable_steps as string[] : [],
+        affected_steps: Array.isArray(validation.report?.affected_steps) ? validation.report.affected_steps as string[] : [],
+        error_code: typeof validation.report?.error_code === "string" ? validation.report.error_code : null,
+      }
+      : draft.validation,
+    approval: approval
+      ? {
+        approval_id: typeof approval.approval_id === "string" ? approval.approval_id : undefined,
+        approval_ref: String(approval.approval_id || ""),
+        policy_version: String(approval.policy_version || ""),
+      }
+      : draft.approval,
+    manifest: manifest
+      ? {
+        manifest_id: typeof manifest.manifest_id === "string" ? manifest.manifest_id : undefined,
+        revision_id: String(manifest.revision_id || ""),
+        content_hash: String(manifest.content_hash || ""),
+      }
+      : draft.manifest,
+  };
+}
+
+/** Submit exactly one canonical revision envelope over the REST transport. */
 export async function postRevisionDraftCommand(input: {
-  source_execution_id: string;
+  execution_id: string;
+  action: RevisionAction;
   draft_id?: string;
-  action: "create" | "write" | "validate" | "approve" | "publish";
-  changes?: RevisionChange[];
-  expected_version?: number;
+  expected_draft_version?: number;
+  payload?: Record<string, unknown>;
 }): Promise<RevisionDraft> {
-  const path = input.draft_id
-    ? `/api/revision/drafts/${encodeURIComponent(input.draft_id)}/${input.action}`
-    : "/api/revision/drafts";
-  const body = await request<{ draft?: RevisionDraft; data?: RevisionDraft }>(path, {
-    method: "POST",
+  const draftId = input.draft_id ? encodeURIComponent(input.draft_id) : "";
+  if (input.action === "revision.draft.get") {
+    if (!draftId) throw new ExecutionApiError(400, "invalid_command", "A draft id is required.");
+    const body = await request<RevisionStateResponse>(
+      `/api/execution/${encodeURIComponent(input.execution_id)}/revision/draft/${draftId}`,
+      { method: "GET", cache: "no-store" },
+    );
+    return revisionState(body);
+  }
+  const path = input.action === "revision.draft.create"
+    ? "/api/execution/revision/draft"
+    : `/api/execution/revision/draft/${draftId}/${input.action === "revision.draft.replace" ? "replace" : input.action === "revision.draft.discard" ? "discard" : input.action === "revision.validate" ? "validate" : input.action === "revision.approve" ? "approve" : "publish"}`;
+  if (input.action !== "revision.draft.create" && !draftId) {
+    throw new ExecutionApiError(400, "invalid_command", "A draft id is required.");
+  }
+  const command = {
+    type: "revision.draft" as const,
+    action: input.action,
+    execution_id: input.execution_id,
+    ...(input.action === "revision.draft.create" ? {} : { draft_id: input.draft_id }),
+    expected_draft_version: input.expected_draft_version ?? 0,
+    payload: input.payload ?? {},
+  };
+  const body = await request<RevisionStateResponse>(path, {
+    method: input.action === "revision.draft.replace" ? "PUT" : "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify(command),
   });
-  const draft = body.draft || body.data;
-  if (!draft?.draft_id) throw new ExecutionApiError(200, "invalid_draft", "The revision draft response is invalid.");
-  return draft;
+  return revisionState(body);
+}
+
+export function createRevisionDraft(input: {
+  execution_id: string;
+  source_checkpoint_id: string;
+  changes: RevisionChange[];
+  frontier_mapping: Array<Record<string, unknown>>;
+}): Promise<RevisionDraft> {
+  return postRevisionDraftCommand({
+    ...input,
+    action: "revision.draft.create",
+    expected_draft_version: 0,
+    payload: {
+      source_checkpoint_id: input.source_checkpoint_id,
+      changes: input.changes,
+      frontier_mapping: input.frontier_mapping,
+    },
+  });
+}
+
+export function getRevisionDraft(executionId: string, draftId: string): Promise<RevisionDraft> {
+  return postRevisionDraftCommand({ execution_id: executionId, draft_id: draftId, action: "revision.draft.get" });
+}
+
+export function replaceRevisionDraft(input: {
+  execution_id: string;
+  draft_id: string;
+  expected_draft_version: number;
+  changes: RevisionChange[];
+  frontier_mapping: Array<Record<string, unknown>>;
+}): Promise<RevisionDraft> {
+  return postRevisionDraftCommand({
+    execution_id: input.execution_id,
+    draft_id: input.draft_id,
+    action: "revision.draft.replace",
+    expected_draft_version: input.expected_draft_version,
+    payload: { changes: input.changes, frontier_mapping: input.frontier_mapping },
+  });
+}
+
+export function discardRevisionDraft(input: {
+  execution_id: string;
+  draft_id: string;
+  expected_draft_version: number;
+}): Promise<RevisionDraft> {
+  return postRevisionDraftCommand({
+    ...input,
+    action: "revision.draft.discard",
+    payload: {},
+  });
+}
+
+export function validateRevisionDraft(input: {
+  execution_id: string;
+  draft_id: string;
+  expected_draft_version: number;
+}): Promise<RevisionDraft> {
+  return postRevisionDraftCommand({ ...input, action: "revision.validate", payload: {} });
+}
+
+export function approveRevisionDraft(input: {
+  execution_id: string;
+  draft_id: string;
+  expected_draft_version: number;
+  validation_id: string;
+}): Promise<RevisionDraft> {
+  return postRevisionDraftCommand({
+    ...input,
+    action: "revision.approve",
+    payload: { validation_id: input.validation_id },
+  });
+}
+
+export function publishRevisionDraft(input: {
+  execution_id: string;
+  draft_id: string;
+  expected_draft_version: number;
+  validation_id: string;
+  approval_id: string;
+}): Promise<RevisionDraft> {
+  return postRevisionDraftCommand({
+    ...input,
+    action: "revision.publish",
+    payload: { validation_id: input.validation_id, approval_id: input.approval_id },
+  });
 }
 
 export async function getExecutionAudit(executionId: string, signal?: AbortSignal): Promise<Record<string, unknown>[]> {

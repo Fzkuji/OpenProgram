@@ -194,7 +194,16 @@ export function useExecutionDebugger(active: boolean, requestedExecutionId?: str
   }, [recover, snapshots]);
 
   const updateDraft = useCallback(async (draft: RevisionDraft, changes: RevisionChange[]) => {
-    await postRevisionDraftCommand({ source_execution_id: draft.source_execution_id, draft_id: draft.draft_id, action: "write", changes, expected_version: draft.draft_version });
+    await postRevisionDraftCommand({
+      execution_id: draft.source_execution_id,
+      draft_id: draft.draft_id,
+      action: "revision.draft.replace",
+      expected_draft_version: draft.draft_version,
+      payload: {
+        changes,
+        frontier_mapping: draft.frontier_mapping || [],
+      },
+    });
   }, []);
 
   const draftAction = useCallback(async (draft: RevisionDraft, action: "validate" | "approve" | "publish" | "fork") => {
@@ -210,7 +219,25 @@ export function useExecutionDebugger(active: boolean, requestedExecutionId?: str
       await command(forkCommand);
       return;
     }
-    await postRevisionDraftCommand({ source_execution_id: draft.source_execution_id, draft_id: draft.draft_id, action });
+    const validationId = draft.validation?.validation_id;
+    const approvalId = draft.approval?.approval_id;
+    if (action === "approve" && !validationId) {
+      throw new ExecutionApiError(409, "validation_required", "A validation report is required before approval.");
+    }
+    if (action === "publish" && (!validationId || !approvalId)) {
+      throw new ExecutionApiError(409, "approval_required", "A validation report and approval are required before publication.");
+    }
+    await postRevisionDraftCommand({
+      execution_id: draft.source_execution_id,
+      draft_id: draft.draft_id,
+      action: `revision.${action}` as "revision.validate" | "revision.approve" | "revision.publish",
+      expected_draft_version: draft.draft_version,
+      payload: action === "validate"
+        ? {}
+        : action === "approve"
+          ? { validation_id: validationId }
+          : { validation_id: validationId, approval_id: approvalId },
+    });
   }, [command, snapshots]);
   return {
     executions,
