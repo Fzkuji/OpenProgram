@@ -56,7 +56,15 @@ _TRANSITIONS: dict[ExecutionStatus, frozenset[ExecutionStatus]] = {
         }
     ),
     ExecutionStatus.PAUSED: frozenset(
-        {ExecutionStatus.RUNNING, ExecutionStatus.CANCELLING}
+        {
+            ExecutionStatus.RUNNING,
+            ExecutionStatus.CANCELLING,
+            # A durable wait can settle while its suspended owner is absent.
+            # Its persisted decline/timeout policy may then make the paused
+            # execution terminal without manufacturing a replacement owner.
+            ExecutionStatus.FAILED,
+            ExecutionStatus.INTERRUPTED,
+        }
     ),
     ExecutionStatus.CANCELLING: frozenset(
         {

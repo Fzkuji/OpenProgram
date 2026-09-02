@@ -383,6 +383,15 @@ class JobRunner:
         self._execution_control.set_terminal_recovery(
             self._recover_canonical_terminal_prepare,
         )
+        self._execution_control.set_wait_suspension_observer(
+            lambda suspension: self.release_paused_job_resource(
+                suspension.execution.execution_id,
+                reason_code="wait.safe_point",
+            ),
+        )
+        self._execution_control.set_wait_resume_scheduler(
+            self._queue_wait_resume,
+        )
         self._claim_only_job_id: str | None = None
         self._claim_scope_lock = threading.Lock()
         self._dispatch_wake = threading.Event()
@@ -1907,6 +1916,16 @@ class JobRunner:
         self.release_paused_job_resource(
             execution.execution_id,
             reason_code="pause.canonical",
+        )
+
+    def _queue_wait_resume(self, wait, execution) -> None:
+        """Re-admit a resolved Job wait through the normal resource queue."""
+        self.queue_job_resume(
+            command_id=f"wait-resume:{wait.wait_id}:{wait.outcome}",
+            execution_id=execution.execution_id,
+            expected_version=execution.status_version,
+            actor={"surface": "durable-wait", "wait_id": wait.wait_id},
+            step=False,
         )
 
     def queue_job_resume(

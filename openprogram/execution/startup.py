@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from dataclasses import dataclass
 
@@ -44,6 +45,11 @@ def recover_execution_startup(
         + waits.reclaim_orphaned_claims()
     )
     waits_expired = waits.expire_due()
+    # A committed answer/decline/timeout can survive a process stop between
+    # recording its outcome and leasing the continuation attempt.  Recovery
+    # consumes that durable saga after expiry processing; it never reads a
+    # process-local question callback.
+    asyncio.run(control_service.recover_wait_outcomes())
     if projection_dispatcher is None:
         from .store import default_store
         from .projections import projection_handlers

@@ -106,6 +106,43 @@ class DurableWaitStore:
         checkpoint_id: str | None = None,
         wait_id: str | None = None,
     ) -> WaitRecord:
+        with self.executions._transaction() as connection:
+            wait_id = self._open_in_transaction(
+                connection,
+                execution_id=execution_id,
+                attempt_id=attempt_id,
+                generation=generation,
+                kind=kind,
+                request=request,
+                policy_snapshot=policy_snapshot,
+                expires_at=expires_at,
+                checkpoint_id=checkpoint_id,
+                wait_id=wait_id,
+            )
+        record = self.get_wait(wait_id)
+        assert record is not None
+        return record
+
+    def _open_in_transaction(
+        self,
+        connection,
+        *,
+        execution_id: str,
+        attempt_id: str,
+        generation: int,
+        kind: str,
+        request: Mapping[str, Any],
+        policy_snapshot: Mapping[str, Any],
+        expires_at: float,
+        checkpoint_id: str | None = None,
+        wait_id: str | None = None,
+    ) -> str:
+        """Write one open wait while the caller holds the execution transaction.
+
+        The public ``open_wait`` method and a safe-point handoff use the
+        same validation and write path.  The latter publishes its checkpoint,
+        wait, execution state, and ended attempt in one SQLite transaction.
+        """
         if kind not in _WAIT_KINDS:
             raise ExecutionConflict("invalid_wait_kind", "unsupported wait kind")
         if not execution_id or not attempt_id or type(generation) is not int:
@@ -118,59 +155,56 @@ class DurableWaitStore:
         if expires_at <= now:
             raise ExecutionConflict("invalid_wait_expiry", "wait expiry must be in the future")
         wait_id = wait_id or f"wait_{uuid.uuid4().hex}"
-        with self.executions._transaction() as connection:
-            execution = self.executions._require_execution(connection, execution_id)
-            if execution.status in {
-                ExecutionStatus.COMPLETED, ExecutionStatus.FAILED,
-                ExecutionStatus.CANCELLED, ExecutionStatus.INTERRUPTED,
-            }:
-                raise ExecutionConflict("terminal", "terminal execution cannot open a wait")
-            if (
-                execution.current_attempt_id != attempt_id
-                or execution.owner_lease.get("generation") != generation
-            ):
-                raise ExecutionConflict("stale_attempt", "wait owner is not the current attempt")
-            attempt = connection.execute(
-                "SELECT execution_id, generation, status FROM attempts WHERE attempt_id = ?",
-                (attempt_id,),
+        execution = self.executions._require_execution(connection, execution_id)
+        if execution.status in {
+            ExecutionStatus.COMPLETED, ExecutionStatus.FAILED,
+            ExecutionStatus.CANCELLED, ExecutionStatus.INTERRUPTED,
+        }:
+            raise ExecutionConflict("terminal", "terminal execution cannot open a wait")
+        if (
+            execution.current_attempt_id != attempt_id
+            or execution.owner_lease.get("generation") != generation
+        ):
+            raise ExecutionConflict("stale_attempt", "wait owner is not the current attempt")
+        attempt = connection.execute(
+            "SELECT execution_id, generation, status FROM attempts WHERE attempt_id = ?",
+            (attempt_id,),
+        ).fetchone()
+        if attempt is None or attempt["execution_id"] != execution_id or int(attempt["generation"]) != generation or attempt["status"] != "active":
+            raise ExecutionConflict("stale_attempt", "wait attempt is no longer active")
+        if checkpoint_id is not None:
+            checkpoint = connection.execute(
+                "SELECT execution_id FROM checkpoints WHERE checkpoint_id = ?", (checkpoint_id,)
             ).fetchone()
-            if attempt is None or attempt["execution_id"] != execution_id or int(attempt["generation"]) != generation or attempt["status"] != "active":
-                raise ExecutionConflict("stale_attempt", "wait attempt is no longer active")
-            if checkpoint_id is not None:
-                checkpoint = connection.execute(
-                    "SELECT execution_id FROM checkpoints WHERE checkpoint_id = ?", (checkpoint_id,)
-                ).fetchone()
-                if checkpoint is None or checkpoint["execution_id"] != execution_id:
-                    raise ExecutionConflict("invalid_checkpoint", "wait checkpoint belongs to another execution")
-            request_blob = self.executions._put_state_blob_in_transaction(
-                connection, execution_id=execution_id, payload=request_bytes,
-                media_type="application/json", schema_version=1,
+            if checkpoint is None or checkpoint["execution_id"] != execution_id:
+                raise ExecutionConflict("invalid_checkpoint", "wait checkpoint belongs to another execution")
+        request_blob = self.executions._put_state_blob_in_transaction(
+            connection, execution_id=execution_id, payload=request_bytes,
+            media_type="application/json", schema_version=1,
+        )
+        policy_blob = self.executions._put_state_blob_in_transaction(
+            connection, execution_id=execution_id, payload=policy_bytes,
+            media_type="application/json", schema_version=1,
+        )
+        try:
+            connection.execute(
+                "INSERT INTO execution_waits (wait_id, execution_id, attempt_id, generation, checkpoint_id, kind, request_ref, request_hash, policy_snapshot_ref, status, claim_generation, claim_owner, claim_expires_at, answer_ref, outcome, created_at, expires_at, resolved_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 0, NULL, NULL, NULL, NULL, ?, ?, NULL, ?)",
+                (wait_id, execution_id, attempt_id, generation, checkpoint_id, kind,
+                 request_blob["ref"], hashlib.sha256(request_bytes).hexdigest(),
+                 policy_blob["ref"], now, float(expires_at), now),
             )
-            policy_blob = self.executions._put_state_blob_in_transaction(
-                connection, execution_id=execution_id, payload=policy_bytes,
-                media_type="application/json", schema_version=1,
+        except Exception as exc:
+            raise ExecutionConflict("wait_exists", f"wait already exists: {wait_id}") from exc
+        for ref, name in ((request_blob["ref"], "request"), (policy_blob["ref"], "policy")):
+            connection.execute(
+                "INSERT OR IGNORE INTO execution_state_blob_refs (execution_id, ref, name, reference_kind, reference_id, created_at) VALUES (?, ?, ?, 'wait', ?, ?)",
+                (execution_id, ref, name, wait_id, now),
             )
-            request_hash = hashlib.sha256(request_bytes).hexdigest()
-            try:
-                connection.execute(
-                    "INSERT INTO execution_waits (wait_id, execution_id, attempt_id, generation, checkpoint_id, kind, request_ref, request_hash, policy_snapshot_ref, status, claim_generation, claim_owner, claim_expires_at, answer_ref, outcome, created_at, expires_at, resolved_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 0, NULL, NULL, NULL, NULL, ?, ?, NULL, ?)",
-                    (wait_id, execution_id, attempt_id, generation, checkpoint_id, kind,
-                     request_blob["ref"], request_hash, policy_blob["ref"], now, float(expires_at), now),
-                )
-            except Exception as exc:
-                raise ExecutionConflict("wait_exists", f"wait already exists: {wait_id}") from exc
-            for ref, name in ((request_blob["ref"], "request"), (policy_blob["ref"], "policy")):
-                connection.execute(
-                    "INSERT OR IGNORE INTO execution_state_blob_refs (execution_id, ref, name, reference_kind, reference_id, created_at) VALUES (?, ?, ?, 'wait', ?, ?)",
-                    (execution_id, ref, name, wait_id, now),
-                )
-            self.executions._append_event(
-                connection, execution_id=execution_id, execution_version=execution.status_version,
-                kind="execution.wait.opened", payload={"wait_id": wait_id, "kind": kind, "expires_at": float(expires_at)}, created_at=now,
-            )
-        record = self.get_wait(wait_id)
-        assert record is not None
-        return record
+        self.executions._append_event(
+            connection, execution_id=execution_id, execution_version=execution.status_version,
+            kind="execution.wait.opened", payload={"wait_id": wait_id, "kind": kind, "expires_at": float(expires_at)}, created_at=now,
+        )
+        return wait_id
 
     def _decode_ref(self, execution_id: str, ref: str | None) -> Any:
         if not ref:
@@ -221,6 +255,15 @@ class DurableWaitStore:
             rows = connection.execute(
                 "SELECT w.* FROM execution_waits AS w JOIN executions AS e ON e.execution_id = w.execution_id WHERE "
                 + " AND ".join(clauses) + " ORDER BY w.created_at, w.wait_id", values,
+            ).fetchall()
+        return [self._record(row) for row in rows]
+
+    def list_outcomes(self) -> list[WaitRecord]:
+        """Return durable non-cancel outcomes for recovery scheduling."""
+        with self.executions._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM execution_waits WHERE status IN ('resolved', 'declined', 'expired') "
+                "ORDER BY resolved_at, wait_id"
             ).fetchall()
         return [self._record(row) for row in rows]
 

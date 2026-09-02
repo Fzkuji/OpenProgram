@@ -8,6 +8,7 @@ import pytest
 import openprogram.execution as execution_module
 from openprogram.execution.attempts import AttemptStore
 from openprogram.execution.control import RuntimeControlService
+from openprogram.execution.checkpoints import CheckpointFragment
 from openprogram.execution.driver import DriverRegistry
 from openprogram.execution.model import CapabilitySet, CommandKind
 from openprogram.execution.store import ExecutionConflict, ExecutionStore
@@ -20,7 +21,11 @@ def _active_execution(tmp_path):
     execution = executions.create_execution(
         execution_id="exec_wait", run_id="run_wait", session_id="session_wait",
         revision_id=revision.revision_id,
-        capabilities=CapabilitySet(pause=True, state_schema_version=1),
+        capabilities=CapabilitySet(
+            pause=True,
+            safe_point_kinds=("agent.provider.decision.after",),
+            state_schema_version=1,
+        ),
     )
     attempts = AttemptStore(executions)
     leased, reserved = attempts.lease(
@@ -178,3 +183,159 @@ def test_ws_public_command_requires_exact_wait_generation(monkeypatch, tmp_path)
     assert command.kind is CommandKind.WAIT_ANSWER
     assert command.status.value == "applied"
     assert updated.execution_id == execution.execution_id
+
+
+def test_wait_safe_point_publishes_checkpoint_and_releases_owner_atomically(tmp_path) -> None:
+    executions, attempts, execution, attempt = _active_execution(tmp_path)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    observed = []
+    service.set_wait_suspension_observer(
+        lambda suspension: observed.append(
+            (suspension.execution.status.value, suspension.execution.current_attempt_id)
+        )
+    )
+
+    suspended = service.open_wait_at_safe_point(
+        execution_id=execution.execution_id,
+        attempt_id=attempt.attempt_id,
+        generation=attempt.generation,
+        expected_version=execution.status_version,
+        fragment=CheckpointFragment(
+            safe_point_kind="agent.provider.decision.after",
+            frontier=({"step_id": "provider:decision", "phase": "after_provider"},),
+            state_refs={"continuation": {"version": 1}},
+        ),
+        kind="approval",
+        request={"prompt": "Allow?"},
+        policy_snapshot={"version": 1, "on_answer": "continue", "on_decline": "fail", "on_timeout": "fail"},
+        expires_at=9_999_999_999,
+        wait_id="wait_safe_point",
+    )
+
+    assert suspended.wait.checkpoint_id == suspended.checkpoint.checkpoint_id
+    assert suspended.execution.status.value == "paused"
+    assert suspended.execution.current_attempt_id is None
+    assert attempts.get(attempt.attempt_id).status.value == "ended"
+    restored = DurableWaitStore(ExecutionStore(tmp_path / "executions.db")).get_wait("wait_safe_point")
+    assert restored is not None
+    assert restored.checkpoint_id == suspended.checkpoint.checkpoint_id
+    assert restored.status is WaitStatus.OPEN
+    assert observed == [("paused", None)]
+
+
+def test_answer_reactivates_exact_wait_checkpoint_without_replaying_wait_attempt(tmp_path) -> None:
+    executions, attempts, execution, attempt = _active_execution(tmp_path)
+    activated = []
+
+    async def activate(next_attempt, activation):
+        activated.append((next_attempt, activation.checkpoint))
+        return None
+
+    service = RuntimeControlService(
+        executions, attempts, DriverRegistry(), activator=activate,
+    )
+    suspended = service.open_wait_at_safe_point(
+        execution_id=execution.execution_id,
+        attempt_id=attempt.attempt_id,
+        generation=attempt.generation,
+        expected_version=execution.status_version,
+        fragment=CheckpointFragment(
+            safe_point_kind="agent.provider.decision.after",
+            frontier=({"step_id": "provider:decision", "phase": "after_provider"},),
+            state_refs={"continuation": {"version": 1}},
+        ),
+        kind="ask",
+        request={"prompt": "Continue?"},
+        policy_snapshot={"version": 1, "on_answer": "continue", "on_decline": "fail", "on_timeout": "fail"},
+        expires_at=9_999_999_999,
+        wait_id="wait_resume",
+    )
+
+    dispatch = asyncio.run(service.request_wait_answer(
+        command_id="answer_resume", execution_id=execution.execution_id,
+        expected_version=suspended.execution.status_version, actor={"surface": "test"},
+        wait_id=suspended.wait.wait_id, generation=suspended.wait.claim_generation,
+        answer="yes",
+    ))
+
+    assert dispatch.command.status.value == "applied"
+    assert dispatch.execution.status.value == "running"
+    assert len(activated) == 1
+    next_attempt, checkpoint = activated[0]
+    assert next_attempt.attempt_id != attempt.attempt_id
+    assert checkpoint.checkpoint_id == suspended.checkpoint.checkpoint_id
+    assert DurableWaitStore(executions).get_wait("wait_resume").outcome == "answered"
+
+
+def test_startup_recovers_committed_wait_outcome_once(tmp_path) -> None:
+    from openprogram.execution.startup import recover_execution_startup
+
+    executions, attempts, execution, attempt = _active_execution(tmp_path)
+    activations = []
+
+    async def activate(next_attempt, activation):
+        activations.append((next_attempt.attempt_id, activation.checkpoint.checkpoint_id))
+        return None
+
+    service = RuntimeControlService(executions, attempts, DriverRegistry(), activator=activate)
+    suspended = service.open_wait_at_safe_point(
+        execution_id=execution.execution_id,
+        attempt_id=attempt.attempt_id,
+        generation=attempt.generation,
+        expected_version=execution.status_version,
+        fragment=CheckpointFragment(
+            safe_point_kind="agent.provider.decision.after",
+            frontier=({"step_id": "provider:decision", "phase": "after_provider"},),
+            state_refs={"continuation": {"version": 1}},
+        ),
+        kind="ask",
+        request={"prompt": "Continue?"},
+        policy_snapshot={"version": 1, "on_answer": "continue", "on_decline": "fail", "on_timeout": "fail"},
+        expires_at=9_999_999_999,
+        wait_id="wait_restart",
+    )
+    DurableWaitStore(executions).resolve_with_command(
+        command_id="answer_before_restart", execution_id=execution.execution_id,
+        expected_version=suspended.execution.status_version, actor={"surface": "test"},
+        kind=CommandKind.WAIT_ANSWER, wait_id="wait_restart", generation=0,
+        answer="yes",
+    )
+
+    recover_execution_startup(control_service=service)
+    # The saga scan is safe to repeat while the resumed owner is active.
+    asyncio.run(service.recover_wait_outcomes())
+
+    assert len(activations) == 1
+    assert activations[0][1] == suspended.checkpoint.checkpoint_id
+    assert executions.get_execution(execution.execution_id).status.value == "running"
+
+
+def test_timeout_policy_is_persisted_and_settled_on_startup(tmp_path) -> None:
+    from openprogram.execution.startup import recover_execution_startup
+
+    executions, attempts, execution, attempt = _active_execution(tmp_path)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    suspended = service.open_wait_at_safe_point(
+        execution_id=execution.execution_id,
+        attempt_id=attempt.attempt_id,
+        generation=attempt.generation,
+        expected_version=execution.status_version,
+        fragment=CheckpointFragment(
+            safe_point_kind="agent.provider.decision.after",
+            frontier=({"step_id": "provider:decision", "phase": "after_provider"},),
+            state_refs={"continuation": {"version": 1}},
+        ),
+        kind="approval",
+        request={"prompt": "Allow?"},
+        policy_snapshot={"version": 1, "on_answer": "continue", "on_decline": "fail", "on_timeout": "fail"},
+        expires_at=9_999_999_999,
+        wait_id="wait_timeout",
+    )
+    with executions._transaction() as connection:
+        connection.execute("UPDATE execution_waits SET expires_at = 0 WHERE wait_id = ?", (suspended.wait.wait_id,))
+
+    recover_execution_startup(control_service=service)
+
+    timed_out = DurableWaitStore(executions).get_wait("wait_timeout")
+    assert timed_out is not None and timed_out.status is WaitStatus.EXPIRED
+    assert executions.get_execution(execution.execution_id).status.value == "failed"
