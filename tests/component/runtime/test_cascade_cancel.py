@@ -1,4 +1,4 @@
-"""Cascading cancel — cancel_job stops the whole parent_job_id subtree.
+"""Cascading cancel — cancel_execution stops the whole parent_job_id subtree.
 
 Covers (design: agent-collaboration.md §5.3):
   * cancelling a parent flips its pending/queued children to cancelled
@@ -54,21 +54,23 @@ def store_fixture(tmp_path, monkeypatch):
 
 @pytest.fixture
 def fake_worker(monkeypatch):
-    """Deterministic run_agent_turn stand-in: blocks on a barrier,
-    drops out when the session-level cancel flag fires."""
+    """Deterministic canonical turn runner: blocks on a barrier,
+    drops out when the execution cancel event fires."""
     calls = []
     barrier = threading.Event()
     cancel_seen = threading.Event()
+    entered = threading.Event()
 
-    def fake_run(*, session_id, prompt, agent_id, branch_from=None,
-                 label=None, spawn_caller=None, advance_head=True):
+    def fake_run(*, request, cancel_event, **_kwargs):
         from openprogram.agent.sub_agent_run import AgentTurnResult
-        from openprogram.agent.run_control import is_cancelled
-        calls.append({"session_id": session_id, "prompt": prompt})
+        calls.append({
+            "session_id": request.session_id, "prompt": request.user_text,
+        })
+        entered.set()
         for _ in range(100):
             if barrier.is_set():
                 break
-            if is_cancelled(session_id):
+            if cancel_event.is_set():
                 cancel_seen.set()
                 return AgentTurnResult(head_id="head_x", final_text="",
                                        failed=True, error="cancelled")
@@ -78,24 +80,23 @@ def fake_worker(monkeypatch):
 
     import openprogram.agent.job.runner as runner_mod
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_run),
     )
     monkeypatch.setattr(
         "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
     )
-    yield calls, barrier, cancel_seen
+    yield calls, barrier, cancel_seen, entered
     runner_mod.shutdown_runner()
 
 
-def _wait_status(runner, tid, statuses, timeout=5.0):
-    from openprogram.agent.job.types import JobStatus  # noqa: F401
+def _wait_for_calls(calls, count, timeout=5.0):
     deadline = time.time() + timeout
     while time.time() < deadline:
-        t = runner.get_job(tid)
-        if t is not None and t.status in statuses:
-            return t
+        if len(calls) >= count:
+            return True
         time.sleep(0.02)
-    return runner.get_job(tid)
+    return len(calls) >= count
 
 
 def test_parent_cancel_dequeues_pending_child(store_fixture, fake_worker,
@@ -104,7 +105,7 @@ def test_parent_cancel_dequeues_pending_child(store_fixture, fake_worker,
     monkeypatch.setenv("OPENPROGRAM_JOB_WORKERS", "1")
     import openprogram.agent.job.runner as runner_mod
     runner_mod.shutdown_runner()
-    calls, barrier, _ = fake_worker
+    calls, barrier, _, entered = fake_worker
     from openprogram.agent.job import get_runner, JobStatus
     runner = get_runner()
 
@@ -112,13 +113,13 @@ def test_parent_cancel_dequeues_pending_child(store_fixture, fake_worker,
         session_id="p1", prompt="parent", agent_id="main",
         parent_msg_id="a_p1",
     )
-    # Wait until the parent occupies the single worker.
-    _wait_status(runner, parent, {JobStatus.RUNNING})
+    # Wait until the canonical driver is executing the parent.
+    assert entered.wait(timeout=5.0), "parent worker never started"
     child = runner.spawn_job(
         session_id="p2", prompt="child", agent_id="main",
         parent_msg_id="a_p2", parent_job_id=parent,
     )
-    runner.cancel_job(parent)
+    runner.cancel_execution(parent)
     p = runner.await_job(parent, timeout=5.0)
     c = runner.await_job(child, timeout=5.0)
     assert p.status == JobStatus.CANCELLED
@@ -139,7 +140,7 @@ def test_pending_child_cannot_slip_into_the_freed_slot(
     monkeypatch.setenv("OPENPROGRAM_JOB_WORKERS", "1")
     import openprogram.agent.job.runner as runner_mod
     runner_mod.shutdown_runner()
-    calls, _barrier, _ = fake_worker
+    calls, _barrier, _, entered = fake_worker
     from openprogram.agent.job import get_runner, JobStatus
     runner = get_runner()
 
@@ -153,12 +154,12 @@ def test_pending_child_cannot_slip_into_the_freed_slot(
         session_id="p1", prompt="parent", agent_id="main",
         parent_msg_id="a_p1",
     )
-    _wait_status(runner, parent, {JobStatus.RUNNING})
+    assert entered.wait(timeout=5.0), "parent worker never started"
     child = runner.spawn_job(
         session_id="p2", prompt="child", agent_id="main",
         parent_msg_id="a_p2", parent_job_id=parent,
     )
-    runner.cancel_job(parent)
+    runner.cancel_execution(parent)
     runner.await_job(parent, timeout=5.0)
     assert runner.await_job(child, timeout=5.0).status == JobStatus.CANCELLED
     assert all(call["prompt"] != "child" for call in calls), calls
@@ -171,7 +172,7 @@ def test_parent_cancel_stops_running_child(store_fixture, fake_worker,
     monkeypatch.setenv("OPENPROGRAM_JOB_WORKERS", "2")
     import openprogram.agent.job.runner as runner_mod
     runner_mod.shutdown_runner()
-    _, barrier, cancel_seen = fake_worker
+    _, barrier, cancel_seen, entered = fake_worker
     from openprogram.agent.job import get_runner, JobStatus
     runner = get_runner()
 
@@ -183,10 +184,10 @@ def test_parent_cancel_stops_running_child(store_fixture, fake_worker,
         session_id="p2", prompt="child", agent_id="main",
         parent_msg_id="a_p2", parent_job_id=parent,
     )
-    assert _wait_status(runner, parent, {JobStatus.RUNNING}).status == JobStatus.RUNNING
-    assert _wait_status(runner, child, {JobStatus.RUNNING}).status == JobStatus.RUNNING
+    assert entered.wait(timeout=5.0), "parent worker never started"
+    assert _wait_for_calls(fake_worker[0], 2), "child worker never started"
 
-    runner.cancel_job(parent)
+    runner.cancel_execution(parent)
     p = runner.await_job(parent, timeout=5.0)
     c = runner.await_job(child, timeout=5.0)
     assert p.status == JobStatus.CANCELLED
@@ -233,7 +234,7 @@ def test_grandchild_stops_too(store_fixture, fake_worker, monkeypatch):
     monkeypatch.setenv("OPENPROGRAM_JOB_WORKERS", "1")
     import openprogram.agent.job.runner as runner_mod
     runner_mod.shutdown_runner()
-    _, barrier, _ = fake_worker
+    _, barrier, _, entered = fake_worker
     from openprogram.agent.job import get_runner, JobStatus
     runner = get_runner()
 
@@ -241,7 +242,7 @@ def test_grandchild_stops_too(store_fixture, fake_worker, monkeypatch):
         session_id="p1", prompt="parent", agent_id="main",
         parent_msg_id="a_p1",
     )
-    _wait_status(runner, parent, {JobStatus.RUNNING})
+    assert entered.wait(timeout=5.0), "parent worker never started"
     child = runner.spawn_job(
         session_id="p2", prompt="child", agent_id="main",
         parent_msg_id="a_p2", parent_job_id=parent,
@@ -250,7 +251,7 @@ def test_grandchild_stops_too(store_fixture, fake_worker, monkeypatch):
         session_id="p3", prompt="grandchild", agent_id="main",
         parent_msg_id="a_p3", parent_job_id=child,
     )
-    runner.cancel_job(parent)
+    runner.cancel_execution(parent)
     for tid in (parent, child, grandchild):
         final = runner.await_job(tid, timeout=5.0)
         assert final.status == JobStatus.CANCELLED, tid
@@ -275,13 +276,15 @@ def test_cycle_in_parent_chain_does_not_hang(store_fixture, fake_worker):
     result = {}
 
     def _go():
-        result["job"] = runner.cancel_job("t_cyc_a")
+        result["job"] = runner.cancel_execution("t_cyc_a")
         done.set()
 
     threading.Thread(target=_go, daemon=True).start()
-    assert done.wait(timeout=5.0), "cancel_job hung on a parent cycle"
+    assert done.wait(timeout=5.0), "cancel_execution hung on a parent cycle"
     assert result["job"].status == JobStatus.ERRORED
+    assert result["job"].error == "canonical execution admission is missing"
     assert runner.get_job("t_cyc_b").status == JobStatus.ERRORED
+    assert runner.get_job("t_cyc_b").error == "canonical execution admission is missing"
 
 
 def test_spawn_inside_job_records_parent(store_fixture, fake_worker,
@@ -293,13 +296,12 @@ def test_spawn_inside_job_records_parent(store_fixture, fake_worker,
     runner = get_runner()
     recorded = {}
 
-    def fake_run(*, session_id, prompt, agent_id, branch_from=None,
-                 label=None, spawn_caller=None, advance_head=True):
+    def fake_run(*, request, cancel_event, **_kwargs):
         from openprogram.agent.sub_agent_run import AgentTurnResult
         # Simulate only the outer turn's tool call. Letting the same fake
         # spawn from the child would replace this direct-child id with a
         # recursively created descendant before the assertion runs.
-        if prompt == "outer":
+        if request.user_text == "outer":
             recorded["child_id"] = runner.spawn_job(
                 session_id="p2", prompt="inner child", agent_id="main",
                 parent_msg_id="a_p2",
@@ -308,7 +310,8 @@ def test_spawn_inside_job_records_parent(store_fixture, fake_worker,
                                failed=False, error=None)
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_run),
     )
     parent = runner.spawn_job(
         session_id="p1", prompt="outer", agent_id="main",
@@ -333,14 +336,13 @@ def test_concurrent_spawns_keep_their_own_parent(store_fixture, fake_worker,
     parents_ready = threading.Barrier(2)
     children = {}
 
-    def fake_run(*, session_id, prompt, agent_id, branch_from=None,
-                 label=None, spawn_caller=None, advance_head=True):
-        if prompt in {"outer-1", "outer-2"}:
+    def fake_run(*, request, cancel_event, **_kwargs):
+        if request.user_text in {"outer-1", "outer-2"}:
             parents_ready.wait(timeout=5.0)
-            child_session = "p2" if prompt == "outer-1" else "p3"
-            children[prompt] = runner.spawn_job(
+            child_session = "p2" if request.user_text == "outer-1" else "p3"
+            children[request.user_text] = runner.spawn_job(
                 session_id=child_session,
-                prompt=f"child-of-{prompt}",
+                prompt=f"child-of-{request.user_text}",
                 agent_id="main",
                 parent_msg_id=f"a_{child_session}",
             )
@@ -349,7 +351,8 @@ def test_concurrent_spawns_keep_their_own_parent(store_fixture, fake_worker,
         )
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_run),
     )
     parent_1 = runner.spawn_job(
         session_id="p1", prompt="outer-1", agent_id="main",
