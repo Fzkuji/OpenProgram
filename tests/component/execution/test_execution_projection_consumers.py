@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 
 from openprogram.execution import CapabilitySet, ExecutionStatus, ExecutionStore
 from openprogram.execution.outbox import ProjectionDispatcher
@@ -130,6 +131,37 @@ def test_default_startup_registers_and_replays_fixed_consumers(tmp_path, monkeyp
     )
     assert result.projections.delivered == 4
     assert ExecutionProjectionReadModel(store).get_current("ui", "exec-1") is not None
+
+
+def test_projection_worker_wakes_after_a_runtime_transition(tmp_path, monkeypatch):
+    from openprogram.execution.projections import (
+        ExecutionProjectionReadModel,
+        projection_handlers,
+        start_projection_worker,
+        stop_projection_worker,
+    )
+
+    store = _store(tmp_path)
+    execution = _admit(store)
+    ProjectionDispatcher(store, projection_handlers(store)).drain(owner_id="setup-worker")
+    delivered = threading.Event()
+    monkeypatch.setattr("openprogram.events.emit_ws_frame", lambda _frame: delivered.set())
+    worker = start_projection_worker(
+        store, owner_id="test-projection-worker", idle_wait_seconds=30
+    )
+    try:
+        store.transition_execution(
+            execution.execution_id,
+            expected_version=execution.status_version,
+            target=ExecutionStatus.RUNNING,
+        )
+        assert delivered.wait(2)
+        current = ExecutionProjectionReadModel(store).get_current("ui", execution.execution_id)
+        assert current is not None
+        assert current.status == "running"
+    finally:
+        stop_projection_worker(store)
+    assert not worker.is_alive
 
 
 def test_v5_migration_requeues_fixed_projections_for_the_new_read_models(tmp_path):

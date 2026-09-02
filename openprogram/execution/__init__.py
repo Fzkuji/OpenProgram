@@ -57,8 +57,12 @@ from .outbox import (
 from .projections import (
     ExecutionProjectionReadModel,
     ExecutionProjectionRecord,
+    ExecutionProjectionWorker,
     list_running_execution_projections,
     projection_handlers,
+    start_projection_worker,
+    stop_projection_worker,
+    wake_projection_worker,
 )
 from .startup import StartupRecoveryResult, recover_execution_startup
 
@@ -106,7 +110,11 @@ __all__ = [
     "ProjectionOutboxState",
     "ExecutionProjectionReadModel",
     "ExecutionProjectionRecord",
+    "ExecutionProjectionWorker",
     "projection_handlers",
+    "start_projection_worker",
+    "stop_projection_worker",
+    "wake_projection_worker",
     "list_running_execution_projections",
     "StartupRecoveryResult",
     "recover_execution_startup",

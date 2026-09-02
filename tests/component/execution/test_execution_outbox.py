@@ -217,9 +217,47 @@ def test_dispatcher_startup_recovery_reclaims_then_replays(tmp_path):
         store, {kind: lambda item: seen.append(item.outbox_id) for kind in PROJECTION_KINDS}
     )
     result = dispatcher.recover_startup(owner_id="new-worker", limit=1)
-    assert result.claimed == 1
-    assert result.delivered == 1
-    assert seen == [first.outbox_id]
+    assert result.claimed == 4
+    assert result.delivered == 4
+    assert seen[0] == first.outbox_id
+
+
+def test_startup_recovery_drains_more_than_one_bounded_projection_batch(tmp_path):
+    store = _store(tmp_path)
+    for index in range(26):
+        _admit(
+            store,
+            execution_id=f"exec-{index}",
+            run_id=f"run-{index}",
+            revision_id=f"revision-{index}",
+            entrypoint=f"openprogram.programs.workflow:run-{index}",
+        )
+    seen = []
+    dispatcher = ProjectionDispatcher(
+        store, {kind: lambda item: seen.append(item.outbox_id) for kind in PROJECTION_KINDS}
+    )
+
+    result = dispatcher.recover_startup(owner_id="startup-worker", limit=100)
+
+    assert result == type(result)(claimed=104, delivered=104, failed=0)
+    assert len(seen) == 104
+
+
+def test_startup_drain_stops_after_a_failed_batch(tmp_path):
+    store = _store(tmp_path)
+    _admit(store)
+    calls = []
+
+    def fail(item):
+        calls.append(item.outbox_id)
+        raise RuntimeError("projection unavailable")
+
+    result = ProjectionDispatcher(store, {"dag": fail}).recover_startup(
+        owner_id="startup-worker", limit=1
+    )
+
+    assert result == type(result)(claimed=1, delivered=0, failed=1)
+    assert calls == ["outbox_1_dag"]
 
 
 def test_startup_entrypoint_recovers_canonical_before_projection_replay():

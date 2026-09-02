@@ -1731,7 +1731,8 @@ def _web_config() -> dict:
 
 async def _recover_execution_control() -> None:
     """Recover canonical executions and projections before legacy reconciliation."""
-    from openprogram.execution import recover_execution_startup
+    from openprogram.execution import default_store, recover_execution_startup
+    from openprogram.execution.projections import start_projection_worker
 
     result = await asyncio.to_thread(
         recover_execution_startup,
@@ -1744,6 +1745,7 @@ async def _recover_execution_control() -> None:
             f"[startup] projection replay deferred for "
             f"{result.projections.failed} item(s)"
         )
+    start_projection_worker(default_store(), owner_id="server-projection-worker")
 
 
 def create_app(*, owner_auth=None, port: int = 18100):
@@ -1871,6 +1873,11 @@ def create_app(*, owner_auth=None, port: int = 18100):
         except Exception as e:  # noqa: BLE001
             _log(f"[mcp] shutdown failed: {type(e).__name__}: {e}")
 
+    async def _stop_execution_projection_worker():
+        from openprogram.execution.projections import stop_projection_worker
+
+        stop_projection_worker()
+
     # Startup runs in listed order, shutdown in reverse — same semantics
     # the eight @app.on_event handlers had before the deprecated API was
     # dropped. _capture_loop MUST stay first: everything downstream that
@@ -1885,7 +1892,7 @@ def create_app(*, owner_auth=None, port: int = 18100):
         _start_skills_watcher,
         _start_plugin_autoupdate,
     )
-    _SHUTDOWN = (_stop_mcp_servers,)
+    _SHUTDOWN = (_stop_mcp_servers, _stop_execution_projection_worker)
 
     @asynccontextmanager
     async def _lifespan(_app):

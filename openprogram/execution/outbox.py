@@ -112,8 +112,35 @@ class ProjectionDispatcher:
         # cannot be acknowledged by a real projection handler.
         if not self.handlers:
             return ProjectionDispatchResult(claimed=0, delivered=0, failed=0)
-        return self.dispatch_once(
+        return self.drain(
             owner_id=owner_id,
             limit=limit,
             lease_ttl_seconds=lease_ttl_seconds,
         )
+
+    def drain(
+        self,
+        *,
+        owner_id: str,
+        limit: int = 100,
+        lease_ttl_seconds: float = 30.0,
+    ) -> ProjectionDispatchResult:
+        """Deliver bounded batches until caught up or one batch fails.
+
+        A failed delivery stays pending.  Stopping at that batch prevents a
+        permanently failing consumer from spinning its own retry loop.
+        """
+        claimed = delivered = failed = 0
+        while True:
+            result = self.dispatch_once(
+                owner_id=owner_id,
+                limit=limit,
+                lease_ttl_seconds=lease_ttl_seconds,
+            )
+            claimed += result.claimed
+            delivered += result.delivered
+            failed += result.failed
+            if result.claimed < limit or result.failed:
+                return ProjectionDispatchResult(
+                    claimed=claimed, delivered=delivered, failed=failed
+                )

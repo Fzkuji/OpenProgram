@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
+import threading
+import uuid
 from contextlib import closing
 from dataclasses import dataclass
 from typing import Any, Mapping
 
 from ._schema import PROJECTION_KINDS
 from .model import ExecutionEvent, ExecutionRecord
-from .outbox import ProjectionOutboxRecord
+from .outbox import (
+    ProjectionDispatcher,
+    ProjectionOutboxRecord,
+)
 
 
 _RUNNING_STATUSES = {
@@ -20,6 +26,9 @@ _RUNNING_STATUSES = {
     "cancelling",
     "reconciliation_required",
 }
+_workers: dict[str, "ExecutionProjectionWorker"] = {}
+_workers_lock = threading.Lock()
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -232,6 +241,111 @@ class ExecutionProjectionReadModel:
     def _validate_kind(projection_kind: str) -> None:
         if projection_kind not in PROJECTION_KINDS:
             raise ValueError(f"unsupported projection kind: {projection_kind}")
+
+
+class ExecutionProjectionWorker:
+    """One bounded polling worker for one execution database."""
+
+    def __init__(
+        self,
+        store,
+        *,
+        owner_id: str | None = None,
+        batch_size: int = 100,
+        idle_wait_seconds: float = 1.0,
+    ):
+        if batch_size <= 0 or idle_wait_seconds <= 0:
+            raise ValueError("batch_size and idle_wait_seconds must be positive")
+        self.store = store
+        self.owner_id = owner_id or f"projection-worker-{uuid.uuid4().hex}"
+        self.batch_size = batch_size
+        self.idle_wait_seconds = idle_wait_seconds
+        self._dispatcher = ProjectionDispatcher(store, projection_handlers(store))
+        self._wake = threading.Event()
+        self._stopped = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run,
+            name=f"openprogram-projection-{self.owner_id}",
+            daemon=True,
+        )
+
+    @property
+    def is_alive(self) -> bool:
+        return self._thread.is_alive()
+
+    def start(self) -> None:
+        self._wake.set()
+        self._thread.start()
+
+    def wake(self) -> None:
+        self._wake.set()
+
+    def stop(self, *, timeout: float = 5.0) -> None:
+        self._stopped.set()
+        self._wake.set()
+        if threading.current_thread() is not self._thread:
+            self._thread.join(timeout=timeout)
+
+    def _run(self) -> None:
+        while not self._stopped.is_set():
+            try:
+                self._dispatcher.drain(
+                    owner_id=self.owner_id,
+                    limit=self.batch_size,
+                )
+            except Exception:
+                _log.exception("execution projection worker batch failed")
+            self._wake.wait(self.idle_wait_seconds)
+            self._wake.clear()
+
+
+def _worker_key(store) -> str:
+    return str(store.path.resolve())
+
+
+def start_projection_worker(
+    store,
+    *,
+    owner_id: str | None = None,
+    batch_size: int = 100,
+    idle_wait_seconds: float = 1.0,
+) -> ExecutionProjectionWorker:
+    """Start the one projection worker for this durable execution store."""
+    key = _worker_key(store)
+    with _workers_lock:
+        existing = _workers.get(key)
+        if existing is not None and existing.is_alive:
+            return existing
+        worker = ExecutionProjectionWorker(
+            store,
+            owner_id=owner_id,
+            batch_size=batch_size,
+            idle_wait_seconds=idle_wait_seconds,
+        )
+        _workers[key] = worker
+    worker.start()
+    return worker
+
+
+def wake_projection_worker(path) -> None:
+    """Wake the registered worker after an outbox-producing transaction commits."""
+    with _workers_lock:
+        worker = _workers.get(str(path.resolve()))
+    if worker is not None:
+        worker.wake()
+
+
+def stop_projection_worker(store=None) -> None:
+    """Stop one worker, or every worker during process shutdown."""
+    with _workers_lock:
+        if store is None:
+            workers = list(_workers.values())
+            _workers.clear()
+        else:
+            worker = _workers.pop(_worker_key(store), None)
+            workers = [worker] if worker is not None else []
+    for worker in workers:
+        worker.stop()
 
 
 def projection_handlers(store) -> dict[str, object]:

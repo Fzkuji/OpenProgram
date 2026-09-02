@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import sqlite3
 import time
 import uuid
+from contextvars import ContextVar
 from contextlib import closing, contextmanager
 from functools import lru_cache
 from pathlib import Path
@@ -30,6 +32,9 @@ from .model import (
     _snapshot_json,
 )
 from .state_machine import validate_command, validate_transition
+
+
+_log = logging.getLogger(__name__)
 
 
 class ExecutionStoreError(RuntimeError):
@@ -63,6 +68,11 @@ def _fingerprint(value: Mapping[str, Any]) -> str:
     return hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
 
 
+_projection_event_written: ContextVar[bool] = ContextVar(
+    "execution_projection_event_written", default=False
+)
+
+
 class ExecutionStore:
     """Transactional store with append-only events and materialized records."""
 
@@ -92,14 +102,25 @@ class ExecutionStore:
     @contextmanager
     def _transaction(self) -> Iterator[sqlite3.Connection]:
         connection = self._connect()
+        event_token = _projection_event_written.set(False)
         try:
             connection.execute("BEGIN IMMEDIATE")
             yield connection
             connection.commit()
+            if _projection_event_written.get():
+                try:
+                    from .projections import wake_projection_worker
+
+                    wake_projection_worker(self.path)
+                except Exception:
+                    # The outbox is durable; a missed in-process wake is
+                    # recovered by the startup scan or worker idle poll.
+                    _log.debug("projection worker wake failed", exc_info=True)
         except BaseException:
             connection.rollback()
             raise
         finally:
+            _projection_event_written.reset(event_token)
             connection.close()
 
     def create_execution(
@@ -1088,6 +1109,7 @@ class ExecutionStore:
             ),
         )
         sequence = int(cursor.lastrowid)
+        _projection_event_written.set(True)
         # Every canonical event is fanned out to the fixed projection set in
         # the same SQLite transaction.  Consumers are independently retryable.
         for projection_kind in PROJECTION_KINDS:
