@@ -24,7 +24,7 @@ from openprogram.execution.model import (
     CommandStatus,
     ExecutionStatus,
 )
-from openprogram.execution.store import ExecutionStore
+from openprogram.execution.store import CommandConflict, ExecutionStore
 
 
 class RecordingDriver:
@@ -178,8 +178,12 @@ def test_pause_without_local_owner_remains_durable_and_recoverable(tmp_path) -> 
     assert result.issue_code == "owner_not_local"
 
 
-def test_protocol_cancel_retries_one_stale_observation_with_same_intent_id(
-    tmp_path,
+@pytest.mark.parametrize(
+    ("surface", "reason_code"),
+    (("mcp", "request_cancelled"), ("acp", "prompt_cancel")),
+)
+def test_protocol_cancel_stale_success_replays_same_intent_id(
+    tmp_path, surface, reason_code,
 ) -> None:
     executions, attempts, observed, attempt = _execution(tmp_path, active=True)
     registry = DriverRegistry()
@@ -191,23 +195,60 @@ def test_protocol_cancel_retries_one_stale_observation_with_same_intent_id(
     stale_version = observed.status_version - 2
     result = asyncio.run(submit_observed_cancel(
         service,
-        command_id="mcp-cancel-intent",
+        command_id=f"{surface}-cancel-intent",
         execution_id=observed.execution_id,
         expected_version=stale_version,
-        actor={"surface": "mcp"},
-        reason_code="request_cancelled",
+        actor={"surface": surface},
+        reason_code=reason_code,
+    ))
+    duplicate = asyncio.run(submit_observed_cancel(
+        service,
+        command_id=f"{surface}-cancel-intent",
+        execution_id=observed.execution_id,
+        expected_version=stale_version,
+        actor={"surface": surface},
+        reason_code=reason_code,
     ))
 
-    assert result.accepted
+    assert result.accepted and duplicate.accepted
     assert result.retried_stale_observation
     assert result.command is not None
-    assert result.command.command_id == "mcp-cancel-intent"
+    assert result.command.command_id == f"{surface}-cancel-intent"
     assert result.command.expected_version == observed.status_version
+    assert duplicate.command == result.command
     assert result.execution is not None
     assert result.execution.status is ExecutionStatus.CANCELLING
     assert driver.observed == [
         ("cancel", ExecutionStatus.CANCELLING, CommandStatus.APPLYING)
     ]
+
+
+def test_protocol_cancel_intent_collision_rejects_changed_reason_or_actor(
+    tmp_path,
+) -> None:
+    executions, attempts, execution, _ = _execution(tmp_path, active=False)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    first = asyncio.run(submit_observed_cancel(
+        service,
+        command_id="shared-protocol-cancel",
+        execution_id=execution.execution_id,
+        expected_version=execution.status_version,
+        actor={"surface": "mcp"},
+        reason_code="request_cancelled",
+    ))
+
+    with pytest.raises(CommandConflict) as caught:
+        asyncio.run(submit_observed_cancel(
+            service,
+            command_id="shared-protocol-cancel",
+            execution_id=execution.execution_id,
+            expected_version=execution.status_version,
+            actor={"surface": "acp"},
+            reason_code="prompt_cancel",
+        ))
+
+    assert first.accepted
+    assert caught.value.code == "idempotency_collision"
 
 
 def test_protocol_cancel_replay_and_late_terminal_cancel_do_not_create_local_intents(

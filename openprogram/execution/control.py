@@ -147,6 +147,16 @@ async def submit_observed_cancel(
     snapshot but retaining the same command id, actor, and reason.
     """
 
+    existing = service.executions.get_command(command_id)
+    if existing is not None:
+        return _existing_observed_cancel(
+            service,
+            command=existing,
+            execution_id=execution_id,
+            actor=actor,
+            reason_code=reason_code,
+        )
+
     observed_version = expected_version
     retried = False
     while True:
@@ -177,6 +187,18 @@ async def submit_observed_cancel(
             observed_version = latest.status_version
             retried = True
             continue
+        except CommandConflict:
+            existing = service.executions.get_command(command_id)
+            if existing is None:
+                raise
+            return _existing_observed_cancel(
+                service,
+                command=existing,
+                execution_id=execution_id,
+                actor=actor,
+                reason_code=reason_code,
+                retried_stale_observation=retried,
+            )
         except ProjectionRecoveryRequired:
             latest = service.executions.get_execution(execution_id)
             return ObservedCancelSubmission(
@@ -211,6 +233,39 @@ async def submit_observed_cancel(
             accepted=accepted,
             retried_stale_observation=retried,
         )
+
+
+def _existing_observed_cancel(
+    service: "RuntimeControlService",
+    *,
+    command: ControlCommand,
+    execution_id: str,
+    actor: Mapping[str, Any],
+    reason_code: str,
+    retried_stale_observation: bool = False,
+) -> ObservedCancelSubmission:
+    """Return a prior protocol intent without weakening command collisions."""
+
+    if (
+        command.execution_id != execution_id
+        or command.kind is not CommandKind.CANCEL
+        or dict(command.payload) != {"reason_code": reason_code}
+        or dict(command.actor) != dict(actor)
+    ):
+        raise CommandConflict(
+            "idempotency_collision",
+            f"command_id was already used for a different request: "
+            f"{command.command_id}",
+        )
+    return ObservedCancelSubmission(
+        command=command,
+        execution=service.executions.get_execution(execution_id),
+        accepted=command.status in {
+            CommandStatus.APPLYING,
+            CommandStatus.APPLIED,
+        },
+        retried_stale_observation=retried_stale_observation,
+    )
 
 
 @dataclass(frozen=True)

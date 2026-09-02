@@ -278,7 +278,7 @@ runtime.finish_attempt(attempt_id, outcome)</code></pre>
       <tr><td>Reload</td><td>canonical snapshot + event cursor</td><td>先快照后订阅；本地 spinner 不能覆盖 server state。</td></tr>
     </tbody>
   </table></div>
-  <p>CLI/TUI 使用相同词汇：<code>openprogram execution pause &lt;execution_id&gt;</code>、<code>continue</code>、<code>step</code>、<code>steer</code>、<code>cancel</code>、<code>fork</code>、<code>retry</code>。ACP/MCP 保存 request/turn 与 execution 的 exact mapping；协议 cancel 只能取消映射到的 execution。每个协议取消意图保存自己的稳定 <code>command_id</code>、首个 reason 与 admission 时观察到的 <code>status_version</code>；不得按 execution 生成固定 ID 或在首次提交前重读版本。只有收到 <code>stale_version</code> 时才可用最新 snapshot 重试一次，重试仍使用同一 intent ID、actor 和 reason；<code>applied</code>/<code>applying</code> 才解除本地 wait，<code>rejected</code>、terminal late cancel 与服务失败只返回最新 snapshot，不取消本地任务。</p>
+  <p>CLI/TUI 使用相同词汇：<code>openprogram execution pause &lt;execution_id&gt;</code>、<code>continue</code>、<code>step</code>、<code>steer</code>、<code>cancel</code>、<code>fork</code>、<code>retry</code>。ACP/MCP 保存 request/turn 与 execution 的 exact mapping；协议 cancel 只能取消映射到的 execution。每个协议取消意图保存自己的稳定 <code>command_id</code>、首个 reason 与 admission 时观察到的 <code>status_version</code>；不得按 execution 生成固定 ID 或在首次提交前重读版本。只有收到 <code>stale_version</code> 时才可用最新 snapshot 重试一次，重试仍使用同一 intent ID、actor 和 reason；若该 ID 已有 command，先严格核对 execution、cancel kind、reason 和 actor，再返回既有结果，不将旧 admission version 视为另一意图。<code>applied</code>/<code>applying</code> 才解除本地 wait，<code>rejected</code>、terminal late cancel 与服务失败只返回最新 snapshot，不取消本地任务。</p>
 </section>
 
 <section id="security">
