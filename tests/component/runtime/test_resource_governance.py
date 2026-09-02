@@ -25,6 +25,7 @@ from openprogram.agent.session_db import SessionDB
 from openprogram.agent.job.types import Job, JobStatus
 from openprogram.usage.event import UsageEvent
 from openprogram.usage.ledger import UsageLedger
+from tests.component.agent.async_job_support import store_fixture  # noqa: F401
 
 
 @pytest.fixture(autouse=True)
@@ -529,7 +530,9 @@ def test_pending_terminal_projection_blocks_dispatch_claim(tmp_path) -> None:
     assert tuple(row) == ("queued", 0)
 
 
-def test_job_runner_exposes_one_canonical_resource_view_read(tmp_path) -> None:
+def test_job_runner_exposes_one_canonical_resource_view_read(
+    tmp_path, store_fixture, monkeypatch,
+) -> None:
     from openprogram.agent.job.runner import JobRunner
 
     ledger = UsageLedger(tmp_path / "usage.db")
@@ -537,18 +540,24 @@ def test_job_runner_exposes_one_canonical_resource_view_read(tmp_path) -> None:
         ResourceLimits(max_total_tokens=100), scheduler_capacity=4,
     )
     governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _job: resolved)
-    job = Job(id="target", parent_session_id="s1", prompt="p", agent_id="a")
-    assert governor.admit_job(job, persist=lambda _job: None).accepted
-    runner = JobRunner.__new__(JobRunner)
-    runner._governor = governor
-    runner.get_job = lambda job_id: job if job_id == job.id else None
+    monkeypatch.setattr(
+        "openprogram.paths.get_execution_db_path",
+        lambda: tmp_path / "executions.sqlite3",
+    )
+    runner = JobRunner(max_workers=1, governor=governor)
+    job_id = runner.spawn_job(
+        session_id="p1", prompt="p", agent_id="a", parent_msg_id="a1",
+        defer_dispatch=True,
+    )
 
-    view = runner.get_job_resource_view(job.id)
+    view = runner.get_job_resource_view(job_id)
 
     assert view is not None
-    assert view.job_id == job.id
-    assert view.limits == resolved.to_dict()
+    assert view.job_id == job_id
+    assert view.resource is not None
+    assert view.resource["limits"] == resolved.to_dict()
     assert runner.get_job_resource_view("missing") is None
+    runner.shutdown()
 
 
 def test_resource_view_reports_live_runtime_and_idle_usage(tmp_path, monkeypatch) -> None:

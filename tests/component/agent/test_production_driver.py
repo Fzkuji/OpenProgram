@@ -233,6 +233,7 @@ def test_activation_builds_existing_turn_from_immutable_input(tmp_path):
 
     async def run():
         binding = await driver.activate(active_attempt, activation=None)
+        driver.activation_committed(binding)
         handle = binding.handle
         await handle.done
         return handle
@@ -276,6 +277,7 @@ def test_activation_uses_the_durable_agent_turn_payload_by_default(tmp_path):
 
     async def run():
         binding = await driver.activate(active, activation=None)
+        driver.activation_committed(binding)
         await binding.handle.done
 
     asyncio.run(run())
@@ -396,6 +398,7 @@ def test_cancel_targets_exact_handle_and_releases_its_question_wait(tmp_path):
     )
     async def run():
         binding = await driver.activate(active, activation=None)
+        driver.activation_committed(binding)
         handle = binding.handle
         assert await asyncio.to_thread(entered.wait, 2)
         current = store.get_execution(execution.execution_id)
@@ -464,6 +467,7 @@ def test_cancel_rejects_a_handle_from_another_attempt(tmp_path):
 
     async def run():
         binding = await driver.activate(active, activation=None)
+        driver.activation_committed(binding)
         await binding.handle.done
         return binding.handle
 
@@ -510,6 +514,7 @@ def test_runner_exception_finishes_as_failed(tmp_path):
 
     async def run():
         binding = await driver.activate(active, activation=None)
+        driver.activation_committed(binding)
         handle = binding.handle
         await handle.done
         return handle

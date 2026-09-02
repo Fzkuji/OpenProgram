@@ -11,6 +11,8 @@ import {
   WsEnvelope,
   StatsEnvelope,
   ConnectionState,
+  JobResource,
+  JobResourceView,
   JobRow,
 } from '../../ws/client.js';
 import { Turn } from '../../components/Turn.js';
@@ -143,7 +145,16 @@ export function handleJobEnvelope(ev: WsEnvelope, ctx: JobEnvelopeCtx): boolean 
             status_version: typeof execution?.status_version === 'number'
               ? execution.status_version : job.status_version,
             event_cursor,
-            resource: execution?.resource as JobRow['resource'],
+            resource: {
+              ...(job.resource || {}),
+              execution_id: executionId,
+              status: String(execution?.status ?? job.status),
+              status_version: typeof execution?.status_version === 'number'
+                ? execution.status_version : job.status_version,
+              event_cursor: event_cursor as JobResourceView["event_cursor"],
+              execution,
+              resource: execution?.resource as JobResource | null | undefined,
+            },
           }
         : job
     )));
@@ -163,7 +174,6 @@ export function handleJobEnvelope(ev: WsEnvelope, ctx: JobEnvelopeCtx): boolean 
   const patch: Partial<JobRow> = {
     status: ev.data.status ?? 'unknown',
     ...(ev.data.resource ? { resource: ev.data.resource } : {}),
-    ...('reason_code' in ev.data ? { reason_code: ev.data.reason_code } : {}),
   };
   ctx.setJobsList((rows) => rows.map((job) => (
     job.id === ev.data.job_id ? { ...job, ...patch } : job

@@ -537,15 +537,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print human-readable summary instead of JSON")
 
     p_sa_list = subagent_sub.add_parser("list",
-        help="List resource views for jobs in a session.")
+        help="List canonical resource views for jobs in a session.")
     p_sa_list.add_argument("--session", required=True,
         help="Session id whose jobs should be listed")
     p_sa_list.add_argument("--json", action="store_true",
         help="Print the canonical job resource views as JSON")
 
     p_sa_show = subagent_sub.add_parser("show",
-        help="Show one job's resource view.")
-    p_sa_show.add_argument("job_id", help="Job id to inspect")
+        help="Show one job's canonical resource view.")
+    p_sa_show.add_argument("job_id", help="Execution id to inspect")
     p_sa_show.add_argument("--json", action="store_true",
         help="Print the canonical job resource view as JSON")
 

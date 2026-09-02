@@ -267,8 +267,7 @@ def _dispatch_to_existing(
     No branch is created: the task runs as the target branch's next
     turn (send_message's addressing + delivery path), but unlike a
     message it is a formal task — a Task entity is created, the
-    dispatcher gets a job_id (``job_output`` waits, while the canonical
-    execution control surface cancels), and the result flows back like a spawn's.
+    dispatcher gets an execution id, and the result flows back like a spawn's.
     Busy target → the task queues in the target's inbox and runs when
     its current turn ends. Always asynchronous.
     """
@@ -347,7 +346,7 @@ def _dispatch_to_existing(
     delivery_message = job_header(sid, aid) + prompt
 
     # Busy target → pre-create the Task (so the dispatcher holds a real
-    # job_id while the work waits) and queue the dispatch in the
+    # execution id while the work waits) and queue the dispatch in the
     # target's inbox; drain runs it, reusing the id. Same cross-session-
     # only reasoning as send_message: a same-session dispatch runs
     # inside the dispatcher's own turn, whose token is the one the busy
@@ -437,11 +436,12 @@ def _dispatch_to_existing(
                 except Exception:
                     pass
             return (
-                f"[job dispatched, queued] job_id={job.id} "
+                f"[job dispatched, queued] execution_id={job.id} "
                 f"target={run_session}:{target_tip} — the target is busy "
                 "running a turn; your task runs when it ends and the "
-                "result comes back automatically. job_output(job_id) "
-                "waits for it; the execution cancel control withdraws it."
+        "result comes back automatically; use job_output for the reply and "
+        "the canonical execution resource and control surfaces to inspect "
+        "or manage it."
             )
 
     from openprogram.events import emit_safe
@@ -475,11 +475,12 @@ def _dispatch_to_existing(
     except Exception as e:  # noqa: BLE001
         return f"[agent error] {type(e).__name__}: {e}"
     return (
-        f"[job dispatched] job_id={job_id} "
+        f"[job dispatched] execution_id={job_id} "
         f"target={run_session}:{target_tip}\n"
         "The target branch is running your task as its next turn; the "
-        "result comes back to you automatically. job_output(job_id) "
-        "waits for it; the execution cancel control cancels it."
+        "result comes back to you automatically. Use job_output for the reply "
+        "and the canonical execution resource and control surfaces to inspect "
+        "or manage it."
     )
 
 
@@ -508,7 +509,7 @@ def _agent_impl(
                 "later with archive_agent."
             )
         # Dispatch to an EXISTING agent — always async, returns a
-        # job_id immediately; run_in_background is meaningless here
+        # execution id immediately; run_in_background is meaningless here
         # and ignored.
         return _dispatch_to_existing(
             prompt=prompt,
@@ -632,9 +633,8 @@ def _agent_impl(
         )
 
     if run_in_background:
-        # Background path: submit and return the job_id. Caller can
-        # invoke job_output / get_task or the execution controls. The runner is
-        # responsible for state transitions + attach card update.
+        # Background path: submit and return the execution id. The runner is
+        # responsible for state transitions and attach card updates.
         try:
             from openprogram.agent.sub_agent_run import (
                 emit_spawn_event,
@@ -715,9 +715,10 @@ def _agent_impl(
             _release_after_spawn_failure(sid, aid, e)
             return f"[agent error] {type(e).__name__}: {e}"
         return (
-            f"[agent spawned async] job_id={job_id}\n"
-            f"Call job_output(job_id={job_id!r}) to retrieve result, "
-            f"or cancel execution {job_id!r} through the execution control surface."
+            f"[agent spawned async] execution_id={job_id}\n"
+            f"Use job_output({job_id!r}) for the final reply, and the "
+            f"canonical execution resource and control surfaces for execution "
+            f"{job_id!r}."
         )
 
     # Announce the spawn BEFORE running it: a synchronous spawn blocks
@@ -877,13 +878,12 @@ def agent(
 
     Without ``to``: spawns a new agent. ``run_in_background=False``
     (default) blocks until it finishes and returns its final reply;
-    ``run_in_background=True`` returns immediately with a job_id;
-    call :func:`job_output` to retrieve the result, or use the canonical
-    execution control surface to stop it.
+    ``run_in_background=True`` returns immediately with an execution id;
+    use the canonical execution resource and control surfaces.
 
     With ``to``: no agent is created — the task is dispatched to the
     named EXISTING branch and runs as its next turn. Always
-    asynchronous: returns a job_id immediately (``run_in_background``
+    asynchronous: returns an execution id immediately (``run_in_background``
     is ignored); the result comes back automatically.
 
     Args:
@@ -898,7 +898,7 @@ def agent(
             ``"SID:MSG_ID"`` ⇒ forks off that exact node. Mutually
             exclusive with ``to``.
         run_in_background: False (default) blocks for the final
-            reply. True returns ``job_id`` immediately for parallel
+            reply. True returns an execution id immediately for parallel
             execution; completion notifies the caller automatically.
             Ignored when ``to`` is set (always async).
         to: dispatch target — an existing branch, addressed as

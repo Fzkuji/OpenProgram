@@ -1,8 +1,4 @@
-"""list_jobs — list this session's background agent tasks.
-
-Named verb-object to pair with ``list_agents``. Todo planning uses the
-separate ``todo_*`` prefix.
-"""
+"""list_jobs — list this session's background agent tasks."""
 from __future__ import annotations
 
 from openprogram.agent.types import AgentToolResult
@@ -16,12 +12,9 @@ _SUBJECT_CLIP = 80
 @function(
     name="list_jobs",
     description=(
-        "List the background tasks of the current session — everything "
-        "spawned here with agent(run_in_background=true), newest first: "
-        "task id, status (queued/running/completed/cancelled/errored) "
-        "and the task's subject. Use it to check on parallel work you "
-        "dispatched: fetch a result with job_output(job_id), stop one "
-        "with job_stop(job_id)."
+        "List the background tasks of the current session, newest first. "
+        "Each row includes its execution id, status, subject, and the "
+        "canonical nested resource view."
     ),
     toolset=["core"],
 )
@@ -31,8 +24,7 @@ def list_jobs() -> str | AgentToolResult:
 
 
 def _list_jobs_impl() -> str | AgentToolResult:
-    """Implementation body — kept apart from the @function binding so
-    tests can call it directly (the binding object is not callable)."""
+    """Implementation body kept separate for direct tests."""
     from openprogram.agent.run_control import _current_session_id
     sid = _current_session_id.get(None)
     if not sid:
@@ -47,15 +39,15 @@ def _list_jobs_impl() -> str | AgentToolResult:
         )
     lines = []
     details = []
-    for t in tasks:
-        subject = (t.subject or t.prompt or "").strip().replace("\n", " ")
+    for task in tasks:
+        subject = (task.subject or task.prompt or "").strip().replace("\n", " ")
         if len(subject) > _SUBJECT_CLIP:
             subject = subject[:_SUBJECT_CLIP] + "…"
-        lines.append(f"- {t.id}  [{t.status.value}]  {subject}")
-        view = runner.get_job_resource_view(t.id)
+        lines.append(f"- {task.id}  [{task.status.value}]  {subject}")
+        view = runner.get_job_resource_view(task.id)
         details.append({
-            "job_id": t.id,
-            "status": t.status.value,
+            "job_id": task.id,
+            "status": task.status.value,
             "resource": view.to_dict() if view is not None else None,
         })
     return AgentToolResult(

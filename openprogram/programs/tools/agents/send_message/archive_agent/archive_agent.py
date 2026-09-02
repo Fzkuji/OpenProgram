@@ -12,8 +12,7 @@ still forks it. Archiving stops new deliveries, it keeps the history.
 There is no unarchive: to reuse an archived agent's memory, fork it.
 
 Any session may archive any branch. Archiving interrupts nothing that
-is running and deletes nothing, so it is not gated the way job_stop
-is (§5.10).
+is running and deletes nothing, so it does not cancel an active execution.
 
 Design: docs/reference/design/runtime/agent-collaboration.md.
 """

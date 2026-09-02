@@ -87,6 +87,39 @@ export type WsRequest =
   | { action: 'get_job'; job_id: string }
   | { action: 'execution.replay'; execution_id: string; after_sequence: number };
 
+export interface JobResource {
+  admission_id?: string | null;
+  resource_state: string;
+  queue_wait?: {
+    state: string;
+    reason_code?: string | null;
+    since?: number | null;
+    position?: number | null;
+  } | null;
+  resource_lease_generation?: number | null;
+  owner_instance_id?: string | null;
+  limits: Record<string, unknown>;
+  usage: {
+    scope?: string;
+    tokens?: { actual: number | null; reserved: number | null; limit: number | null };
+    cost_usd?: {
+      actual: string | null;
+      reserved: string | null;
+      limit: string | null;
+      known: boolean | null;
+      unknown_events: number | null;
+    };
+    runtime_seconds?: { used: number | null; limit: number | null };
+    idle_seconds?: { used: number | null; limit: number | null };
+    shared_remaining?: {
+      tokens: number | null;
+      cost_usd: string | null;
+      cost_unknown_events: number | null;
+    };
+  };
+  reservation?: Record<string, unknown> | null;
+}
+
 export interface JobResourceView {
   job_id: string;
   execution_id?: string;
@@ -101,38 +134,8 @@ export interface JobResourceView {
   checkpoint_head_id?: string | null;
   event_cursor?: { execution_id: string; next_sequence: number; snapshot_status_version: number };
   execution?: Record<string, unknown>;
-  resource?: Record<string, unknown> | null;
+  resource?: JobResource | null;
   status: string;
-  resource_state: string;
-  reason_code: string | null;
-  reason_key: string | null;
-  retryable: boolean;
-  limits: Record<string, unknown>;
-  capacity: {
-    scheduler_capacity: number;
-    session_live: { used: number; limit: number | null };
-    session_queued: { used: number; limit: number | null };
-    session_jobs: { used: number; limit: number | null };
-    queue_position: number | null;
-  };
-  budget: {
-    scope: string;
-    tokens: { actual: number | null; reserved: number | null; limit: number | null };
-    cost_usd: {
-      actual: string | null;
-      reserved: string | null;
-      limit: string | null;
-      known: boolean | null;
-      unknown_events: number | null;
-    };
-    runtime_seconds: { used: number | null; limit: number | null };
-    idle_seconds: { used: number | null; limit: number | null };
-    shared_remaining: {
-      tokens: number | null;
-      cost_usd: string | null;
-      cost_unknown_events: number | null;
-    };
-  };
 }
 
 export interface JobRow {
@@ -142,7 +145,6 @@ export interface JobRow {
   status_version?: number;
   subject?: string;
   parent_session_id?: string;
-  reason_code?: string | null;
   resource?: JobResourceView;
   [key: string]: unknown;
 }
@@ -465,7 +467,6 @@ export type WsEnvelope =
         job_id: string;
         session_id?: string;
         status: string;
-        reason_code?: string | null;
         resource?: JobResourceView;
       };
     }

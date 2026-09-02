@@ -66,43 +66,8 @@ def _active_children(store: Any, execution_id: str) -> tuple[str, ...]:
 
 def _canonical_resource(
     resource: Mapping[str, Any] | None,
-    *,
-    job_id: str,
-    status: str,
-    job: Any = None,
 ) -> dict[str, Any] | None:
-    if not isinstance(resource, Mapping):
-        return None
-    nested = resource.get("resource")
-    if isinstance(nested, Mapping):
-        return dict(nested)
-    state = str(resource.get("resource_state") or "untracked")
-    supplied_queue_wait = resource.get("queue_wait")
-    queue_wait = (
-        dict(supplied_queue_wait)
-        if isinstance(supplied_queue_wait, Mapping)
-        else None
-    )
-    if queue_wait is None and state in {"queued", "queued_resume", "paused_waiting_claim"}:
-        queue_wait = {
-            "state": state,
-            "reason_code": resource.get("reason_code"),
-            "since": (
-                getattr(job, "queued_at", None)
-                or getattr(job, "created_at", None)
-            ),
-            "position": (resource.get("capacity") or {}).get("queue_position"),
-        }
-    return {
-        "admission_id": getattr(job, "admission_id", None) or job_id,
-        "resource_state": state,
-        "queue_wait": queue_wait,
-        "resource_lease_generation": resource.get("resource_lease_generation"),
-        "owner_instance_id": resource.get("owner_instance_id"),
-        "limits": resource.get("limits") or {},
-        "usage": resource.get("budget") or {},
-        "reservation": resource.get("reservation"),
-    }
+    return dict(resource) if isinstance(resource, Mapping) else None
 
 
 def execution_snapshot(
@@ -131,9 +96,6 @@ def execution_snapshot(
         owner_lease=dict(execution.owner_lease) or None,
         resource=_canonical_resource(
             resource,
-            job_id=job_id or execution.execution_id,
-            status=execution.status.value,
-            job=job,
         ),
         checkpoint_head_id=execution.checkpoint_head_id,
         safe_point=dict(execution.safe_point) or None,
@@ -186,7 +148,6 @@ def job_resource_dto(
             snapshot_status_version=execution.status_version,
         ),
         execution=snapshot_data,
-        legacy=dict(resource or {}),
     )
 
 

@@ -497,9 +497,6 @@ class JobResourceDTO:
     resource: Mapping[str, Any] | None
     event_cursor: EventCursor
     execution: Mapping[str, Any]
-    # Existing resource counters remain available to old renderers.  They are
-    # projections of ``resource`` and are not lifecycle authorities.
-    legacy: Mapping[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         value = {
@@ -521,5 +518,4 @@ class JobResourceDTO:
             "event_cursor": self.event_cursor.to_dict(),
             "execution": _snapshot_json(self.execution),
         }
-        value.update(_snapshot_json(self.legacy))
         return value

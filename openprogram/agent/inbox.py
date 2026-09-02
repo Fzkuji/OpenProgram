@@ -134,7 +134,7 @@ def enqueue(
     pre-created pending Job this entry will run when drained. Drain
     reuses the id (the dispatcher already holds it), delivers with the
     job header, and skips the entry if the job was withdrawn
-    (``job_stop``) while queued.
+    (execution cancellation) while queued.
 
     Returns ``"queued"`` or ``"duplicate"`` (identical message from the
     same sender session already queued within DEDUP_WINDOW_SECS).
@@ -214,7 +214,7 @@ def _notify_sender(entry: dict[str, Any], content: str) -> None:
 
 def discard_job(session_id: str, job_id: str) -> bool:
     """Withdraw a tracked-job entry (``agent(to=…)``) from the target's
-    inbox — job_stop on a still-queued dispatch. Returns True when an
+    inbox — cancellation of a still-queued dispatch. Returns True when an
     entry was removed."""
     path = _inbox_path(session_id)
     if path is None or not path.exists():
@@ -272,7 +272,7 @@ def clear(session_id: str, *, reason: str = "the target session was stopped") ->
         ))
         # A tracked-job entry has a pending Job entity waiting on the
         # delivery — flip it to cancelled so the dispatcher's
-        # job_output doesn't wait forever on work that will never run.
+        # The tracked execution does not wait forever on work that will never run.
         tid = entry.get("job_id")
         if tid:
             try:
@@ -301,7 +301,7 @@ def drain(session_id: str) -> int:
         return 0
     delivered = 0
     for entry in entries:
-        # A tracked-job entry whose job was withdrawn (job_stop while
+        # A tracked-job entry whose execution was withdrawn while
         # queued) or otherwise finished must not run — drop the entry.
         tid = entry.get("job_id")
         if tid and _job_is_terminal(session_id, str(tid)):

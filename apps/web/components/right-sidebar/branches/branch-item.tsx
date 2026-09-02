@@ -85,7 +85,9 @@ export function BranchItem({
   const isPending = branch.head_msg_id.startsWith("__pending_job__:");
   const queueSummary = chip ? null : queueResourceSummary(jobResource);
   const resourceDetails = jobResourceDetails(jobResource);
-  const finishingReason = finishing ? jobResource?.reason_code : null;
+  const finishingReason = finishing
+    ? (jobResource?.execution?.reason_code as string | null | undefined)
+    : null;
   const executionId = canonicalExecutionId(jobResource);
 
   function control(action: "pause" | "continue" | "step" | "cancel") {
@@ -256,10 +258,8 @@ export function BranchItem({
             execution_id: executionId,
             event_cursor: jobResource.event_cursor,
             capabilities: jobResource.capabilities,
-            resource_state: jobResource.resource_state,
-            reason_code: jobResource.reason_code,
-            capacity: jobResource.capacity,
-            budget: jobResource.budget,
+            resource: jobResource.resource,
+            execution: jobResource.execution,
           }, null, 2)}</pre>
         </details>
       ) : null}

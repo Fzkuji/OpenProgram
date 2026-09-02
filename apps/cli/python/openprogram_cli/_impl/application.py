@@ -1049,9 +1049,15 @@ def main():
                 as_json=as_json,
             ))
         if verb == "list":
-            sys.exit(_cmd_subagent_list(args.session, as_json=args.json))
+            sys.exit(_cmd_subagent_list(
+                session=args.session,
+                as_json=getattr(args, "json", False),
+            ))
         if verb == "show":
-            sys.exit(_cmd_subagent_show(args.job_id, as_json=args.json))
+            sys.exit(_cmd_subagent_show(
+                job_id=args.job_id,
+                as_json=getattr(args, "json", False),
+            ))
         _need_subcommand(args._cmd_parser)
 
     if args.command in ("scheduler-worker", "cron-worker"):
@@ -1137,10 +1143,10 @@ from openprogram.cli.commands.browser import (  # noqa: E402,F401
     _cmd_browser_rm,
 )
 from openprogram.cli.commands.subagent import (  # noqa: E402,F401
-    _cmd_subagent_list,
     _cmd_subagent_spawn,
-    _cmd_subagent_show,
     _cmd_subagent_merge,
+    _cmd_subagent_list,
+    _cmd_subagent_show,
 )
 
 from openprogram.cli.commands.sessions import (  # noqa: E402,F401

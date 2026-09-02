@@ -20,10 +20,8 @@ def _source(path: str) -> str:
 def test_legacy_job_lifecycle_controls_are_removed_from_public_surfaces() -> None:
     public_sources = (
         "openprogram/agent/job/runner.py",
-        "openprogram/programs/tools/agents/agent/job_stop/job_stop.py",
         "openprogram/programs/tools/agents/agent/agent/agent.py",
         "apps/server/openprogram_server/_webui/ws_actions/job.py",
-        "apps/server/openprogram_server/_webui/ws_actions/sub_agent.py",
         "apps/cli/src/ws/client.ts",
         "apps/cli/src/screens/repl/useWsEvents.ts",
     )
@@ -31,6 +29,10 @@ def test_legacy_job_lifecycle_controls_are_removed_from_public_surfaces() -> Non
     for path in public_sources:
         source = _source(path)
         assert not any(token in source for token in old_tokens), path
+    for path in (
+        "openprogram/programs/tools/agents/agent/job_stop/job_stop.py",
+    ):
+        assert not (ROOT / path).exists(), path
 
 
 def test_job_runner_delegates_activation_to_agent_production_driver() -> None:

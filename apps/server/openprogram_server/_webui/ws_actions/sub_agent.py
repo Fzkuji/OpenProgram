@@ -1,30 +1,4 @@
-"""Spawn-agent WS action — same-session multi-agent.
-
-Wire format::
-
-    in:  {"action": "spawn_agent",
-          "session_id": "...",                 // session
-          "parent_msg_id": "..." | null,       // node to fork off, null = new root
-          "prompt": "...",
-          "agent_id": "main",
-          "context": "inherit" | "clean",      // default: inherit
-          "label": "..."}
-    out: {"type": "spawn_agent_result",
-          "data": {"session_id", "parent_msg_id", "context",
-                   "head_id", "final_text", "failed", "error"?}}
-
-``context="inherit"``: the spawned agent forks off ``parent_msg_id``
-and inherits the chain that led to it. ``head_id`` is the new
-branch tip in the same session.
-
-``context="clean"``: the spawned agent starts at a new root inside
-the same session (``caller=null``). It sees only the prompt.
-Result lands as an independent DAG tree alongside the original
-conversation.
-
-The legacy action name and parameter aliases are intentionally not accepted;
-new background work is represented by the canonical Job resource API.
-"""
+"""WebSocket action for a same-session Agent spawn."""
 from __future__ import annotations
 
 import asyncio
@@ -40,12 +14,13 @@ def _run(
     context: str,
 ) -> dict:
     from openprogram.agent.sub_agent_run import run_agent_turn
-    pid = parent_msg_id if context == "inherit" else None
+
+    branch_from = parent_msg_id if context == "inherit" else None
     result = run_agent_turn(
         session_id=session_id,
         prompt=prompt,
         agent_id=agent_id,
-        branch_from=pid,
+        branch_from=branch_from,
         label=label,
     )
     return {
@@ -65,11 +40,7 @@ async def handle_spawn_agent(ws, cmd: dict) -> None:
     label = cmd.get("label")
     if isinstance(label, str):
         label = label.strip() or None
-    raw = (cmd.get("context") or "inherit").strip().lower()
-    if raw == "clean":
-        context = "clean"
-    else:
-        context = "inherit"
+    context = "clean" if (cmd.get("context") or "inherit").strip().lower() == "clean" else "inherit"
 
     if not session_id or not prompt:
         payload = {
@@ -111,6 +82,4 @@ async def handle_spawn_agent(ws, cmd: dict) -> None:
     }, default=str))
 
 
-ACTIONS = {
-    "spawn_agent": handle_spawn_agent,
-}
+ACTIONS = {"spawn_agent": handle_spawn_agent}

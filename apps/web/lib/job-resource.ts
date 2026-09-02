@@ -16,24 +16,17 @@ export function nextReplaySequence(resource: JobResourceView | undefined): numbe
   return resource?.event_cursor?.next_sequence;
 }
 
-function capacityValue(value: { used: number; limit: number | null }): string {
-  return `${value.used}/${value.limit ?? "∞"}`;
-}
-
 export function queueResourceSummary(
   resource: JobResourceView | undefined,
 ): string | null {
-  if (!resource || resource.status !== "queued") return null;
-  const { capacity } = resource;
-  const position = capacity.queue_position == null
+  const canonical = resource?.resource;
+  if (!resource || !canonical || resource.status !== "queued") return null;
+  const position = canonical.queue_wait?.position == null
     ? "?"
-    : String(capacity.queue_position);
+    : String(canonical.queue_wait.position);
   return [
     `Queue #${position}`,
-    `Session ${capacityValue(capacity.session_live)} live`,
-    `${capacityValue(capacity.session_queued)} queued`,
-    `${capacityValue(capacity.session_jobs)} jobs`,
-    `Scheduler ${capacity.scheduler_capacity}`,
+    canonical.queue_wait?.state || "queued",
   ].join(" · ");
 }
 
@@ -102,63 +95,68 @@ function costRemaining(
 export function jobResourceDetails(
   resource: JobResourceView | undefined,
 ): JobResourceDetail[] {
-  if (!resource) return [];
-  if (resource.resource_state === "legacy/unmetered") {
+  const canonical = resource?.resource;
+  if (!resource || !canonical) return [];
+  if (canonical.resource_state === "legacy/unmetered") {
     const legacy: JobResourceDetail[] = [
       { key: "state", value: "Legacy / unmetered" },
     ];
-    if (resource.reason_code) {
-      legacy.push({ key: "reason", value: resource.reason_code });
+    const reason = resource.execution?.reason_code;
+    if (typeof reason === "string" && reason) {
+      legacy.push({ key: "reason", value: reason });
     }
     return legacy;
   }
-  const { budget } = resource;
+  const usage = canonical.usage;
   const unknownEvents = Math.max(
-    budget.cost_usd.unknown_events ?? 0,
-    budget.shared_remaining.cost_unknown_events ?? 0,
+    usage.cost_usd?.unknown_events ?? 0,
+    usage.shared_remaining?.cost_unknown_events ?? 0,
   );
   let cost: string;
-  if (budget.cost_usd.known !== true || unknownEvents > 0) {
+  if (usage.cost_usd?.known !== true || unknownEvents > 0) {
     cost = `Unknown cost${unknownEvents ? ` (${unknownEvents} events)` : ""}`;
   } else {
     cost = costRemaining(
       localCostRemaining(
-        budget.cost_usd.limit,
-        budget.cost_usd.actual,
-        budget.cost_usd.reserved,
+        usage.cost_usd?.limit ?? null,
+        usage.cost_usd?.actual ?? null,
+        usage.cost_usd?.reserved ?? null,
       ),
-      microUsd(budget.shared_remaining.cost_usd),
+      microUsd(usage.shared_remaining?.cost_usd ?? null),
     );
   }
   const details: JobResourceDetail[] = [
-    { key: "state", value: resource.resource_state },
+    { key: "state", value: canonical.resource_state },
     {
       key: "tokens",
       value: remaining(
         remainingValue(
-          budget.tokens.limit,
-          budget.tokens.actual,
-          budget.tokens.reserved,
+          usage.tokens?.limit ?? null,
+          usage.tokens?.actual ?? null,
+          usage.tokens?.reserved ?? null,
         ),
-        budget.shared_remaining.tokens,
+        usage.shared_remaining?.tokens,
       ),
     },
     { key: "cost", value: cost },
     {
       key: "runtime",
       value: secondsRemaining(
-        budget.runtime_seconds.limit, budget.runtime_seconds.used,
+        usage.runtime_seconds?.limit ?? null,
+        usage.runtime_seconds?.used ?? null,
       ),
     },
     {
       key: "idle",
       value: secondsRemaining(
-        budget.idle_seconds.limit, budget.idle_seconds.used,
+        usage.idle_seconds?.limit ?? null,
+        usage.idle_seconds?.used ?? null,
       ),
     },
   ];
-  if (resource.reason_code) {
-    details.push({ key: "reason", value: resource.reason_code });
+  const reason = resource.execution?.reason_code;
+  if (typeof reason === "string" && reason) {
+    details.push({ key: "reason", value: reason });
   }
   return details;
 }
