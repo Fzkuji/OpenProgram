@@ -8,22 +8,58 @@ import time
 
 import pytest
 
+import openprogram.execution as execution_module
 from openprogram.events import WS_FRAME_EVENT, create_event_bus, get_event_bus
 from openprogram.agent.questions import QuestionRegistry, get_question_registry
+from openprogram.agent.run_control import (
+    reset_current_execution_id,
+    reset_current_session_id,
+    set_current_execution_id,
+    set_current_session_id,
+)
 from openprogram.agentic_programming.runtime import Runtime
+from openprogram.execution.attempts import AttemptStore
+from openprogram.execution.model import CapabilitySet
+from openprogram.execution.store import ExecutionStore
 
 
 @pytest.fixture
-def fresh(monkeypatch):
+def fresh(monkeypatch, tmp_path):
     import openprogram.agent.questions as Q
+
+    store = ExecutionStore(tmp_path / "questions-e2e.db")
+    revision = store.create_revision(manifest={"entrypoint": "questions-e2e"})
+    execution = store.create_execution(
+        execution_id="exec_questions_e2e",
+        run_id="run_questions_e2e",
+        session_id="sess-e2e",
+        revision_id=revision.revision_id,
+        capabilities=CapabilitySet(pause=True),
+    )
+    attempts = AttemptStore(store)
+    leased, reserved = attempts.lease(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        owner_id="questions-e2e",
+        ttl_seconds=30,
+    )
+    attempts.activate(
+        leased.attempt_id,
+        generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    monkeypatch.setattr(execution_module, "default_store", lambda: store)
+
     monkeypatch.setattr(Q, "_registry", QuestionRegistry())
     # 隔离总线，抓 ws.frame
     bus = create_event_bus()
     import openprogram.events.bus as EB
     monkeypatch.setattr(EB, "_event_bus", bus)
-    # 假装在 webui 执行上下文里（有 current_session_id）
-    monkeypatch.setattr(Runtime, "_ui_session_id", lambda self: "sess-e2e")
-    return bus
+    session_token = set_current_session_id("sess-e2e")
+    execution_token = set_current_execution_id(execution.execution_id)
+    yield bus, execution.execution_id
+    reset_current_execution_id(execution_token)
+    reset_current_session_id(session_token)
 
 
 class _RT(Runtime):
@@ -32,7 +68,7 @@ class _RT(Runtime):
 
 
 def test_ask_emits_frame_then_resumes_on_reply(fresh):
-    bus = fresh
+    bus, execution_id = fresh
     frames = []
     bus.subscribe(lambda ev: frames.append(ev.payload.get("frame")), types={WS_FRAME_EVENT})
 
@@ -40,7 +76,15 @@ def test_ask_emits_frame_then_resumes_on_reply(fresh):
     result = {}
 
     def run_func():
-        result["answer"] = rt.ask("用哪个库？", options=["dayjs", "luxon"], timeout=5)
+        session_token = set_current_session_id("sess-e2e")
+        execution_token = set_current_execution_id(execution_id)
+        try:
+            result["answer"] = rt.ask(
+                "用哪个库？", options=["dayjs", "luxon"], timeout=5
+            )
+        finally:
+            reset_current_execution_id(execution_token)
+            reset_current_session_id(session_token)
 
     t = threading.Thread(target=run_func, daemon=True)
     t.start()
@@ -70,6 +114,7 @@ def test_ask_emits_frame_then_resumes_on_reply(fresh):
 
 
 def test_confirm_timeout_returns_default(fresh):
+    _bus, _execution_id = fresh
     rt = _RT()
     # 没人答，超时 → default
     assert rt.confirm("继续？", timeout=0.05, default=False) is False
