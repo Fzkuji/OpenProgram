@@ -108,18 +108,21 @@ dispatcher.process_user_turn = process_user_turn
 class Questions:
     pending = {}
 
-    def resolve(self, question_id, outcome, value=None):
-        record("question", question_id=question_id, outcome=outcome, value=value)
-        return True
     def list_pending(self, session_id):
-        return [SimpleNamespace(id=qid, execution_id=execution_id)
+        return [SimpleNamespace(id=qid, execution_id=execution_id,
+                                wait_generation=0)
                 for qid, execution_id in self.pending.items()]
-    def cancel_execution(self, session_id, execution_id):
-        record("question_cancel", session_id=session_id, execution_id=execution_id)
 
 questions = Questions()
 import openprogram.agent.questions as question_module
 question_module.get_question_registry = lambda: questions
+import openprogram.execution as execution_module
+async def submit_wait_command(**kwargs):
+    record("question", question_id=kwargs["wait_id"], outcome="declined",
+           action=kwargs["action"], execution_id=kwargs["execution_id"],
+           generation=kwargs["generation"], actor=dict(kwargs["actor"]))
+    return SimpleNamespace(command=SimpleNamespace(status="applied"))
+execution_module.submit_wait_command = submit_wait_command
 def audit(event):
     from openprogram.agent.run_control import current_token
     record("audit", payload=event.payload,
@@ -422,10 +425,10 @@ def test_real_stdio_subprocess_prompt_cancel_cleanup_and_foreign_ownership(tmp_p
         .read_text(encoding="utf-8")
         .splitlines()
     ]
-    assert [item["outcome"] for item in evidence if item["kind"] == "question"] == [
-        "declined"
-    ]
-    assert len([item for item in evidence if item["kind"] == "question_cancel"]) == 1
+    # Cancellation closes the durable wait in the canonical cancel
+    # transaction; no registry-level answer or cancellation callback runs.
+    assert [item for item in evidence if item["kind"] == "question"] == []
+    assert [item for item in evidence if item["kind"] == "question_cancel"] == []
     audits = [item for item in evidence if item["kind"] == "audit"]
     assert len(audits) == 1
     assert audits[0]["payload"]["reason"] == "prompt_cancel"
@@ -774,20 +777,12 @@ def test_sdk_cancellation_reaches_prompt_handler_without_application_result():
 
     class Questions:
         def __init__(self):
-            self.cancelled = []
-            self.resolved = []
             self.pending = {}
-
-        def cancel_execution(self, session_id, execution_id):
-            self.cancelled.append((session_id, execution_id))
 
         def list_pending(self, session_id):
             return [SimpleNamespace(id=qid, execution_id=execution_id)
                     for qid, execution_id in self.pending.items()]
 
-        def resolve(self, question_id, outcome, value=None):
-            self.resolved.append((question_id, outcome, value))
-            return True
 
     questions = Questions()
     bus = create_event_bus()
@@ -839,7 +834,7 @@ def test_sdk_cancellation_reaches_prompt_handler_without_application_result():
                         },
                     )
                 )
-                assert questions.resolved == [("general-question", "declined", None)]
+                assert questions.pending["general-question"] == record.execution_id
                 await session.send_notification(
                     mcp_types.CancelledNotification(
                         params=mcp_types.CancelledNotificationParams(requestId=1)
@@ -850,7 +845,6 @@ def test_sdk_cancellation_reaches_prompt_handler_without_application_result():
                 assert "cancel" in str(caught.value).lower()
                 assert service._active_by_request == {}
                 assert current_token(session_id) is None
-                assert questions.cancelled == [(session_id, record.execution_id)]
                 assert len(audit) == 1
             await client_to_server_send.aclose()
             group.cancel_scope.cancel()

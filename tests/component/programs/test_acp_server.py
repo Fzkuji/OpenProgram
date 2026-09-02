@@ -210,12 +210,16 @@ def bind_durable_question_execution(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     from openprogram.agent.run_control import (
         reset_current_execution_id, set_current_execution_id,
     )
+    from openprogram.execution import RuntimeControlService
     from openprogram.execution.attempts import AttemptStore
+    from openprogram.execution.driver import DriverRegistry
     from openprogram.execution.model import CapabilitySet
     from openprogram.execution.store import ExecutionStore
 
     store = ExecutionStore(tmp_path / "acp-question-executions.db")
     monkeypatch.setattr(execution_module, "default_store", lambda: store)
+    service = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    monkeypatch.setattr(execution_module, "default_control_service", lambda: service)
     tokens = []
 
     def bind(session_id: str) -> str:
@@ -230,16 +234,40 @@ def bind_durable_question_execution(tmp_path: Path, monkeypatch: pytest.MonkeyPa
             execution.execution_id, expected_version=execution.status_version,
             owner_id="acp-test", ttl_seconds=30,
         )
-        attempts.activate(
+        active, _running = attempts.activate(
             leased.attempt_id, generation=leased.generation,
             expected_execution_version=reserved.status_version,
         )
         tokens.append(set_current_execution_id(execution.execution_id))
-        return execution.execution_id
+        return execution, active
 
     yield bind
     for token in reversed(tokens):
         reset_current_execution_id(token)
+
+
+def _open_acp_question(store, execution, attempt, *, wait_id, kind="approval",
+                       prompt="允许执行 bash？", options=None, detail=""):
+    from openprogram.agent.questions import PendingQuestion, get_question_registry
+    from openprogram.execution.waits import DurableWaitStore
+
+    wait = DurableWaitStore(store).open_wait(
+        wait_id=wait_id, execution_id=execution.execution_id,
+        attempt_id=attempt.attempt_id, generation=attempt.generation,
+        kind=kind, request={
+            "prompt": prompt, "options": list(options or []),
+            "multi": False, "allow_custom": False, "detail": detail,
+            "schema": {}, "questions": [], "tool": "bash", "args": {},
+        }, policy_snapshot={"version": 1}, expires_at=time.time() + 60,
+    )
+    get_question_registry().register(PendingQuestion(
+        id=wait.wait_id, session_id=execution.session_id, kind=kind,
+        prompt=prompt, execution_id=execution.execution_id,
+        options=list(options or []), detail=detail,
+        wait_generation=wait.claim_generation,
+        execution_version=execution.status_version,
+    ))
+    return wait
 
 
 @pytest.fixture(autouse=True)
@@ -510,10 +538,6 @@ def test_cancel_does_not_override_completed_prompt(
     monkeypatch.setattr(
         "openprogram.acp.server.submit_observed_cancel", _submitted,
     )
-    monkeypatch.setattr(
-        "openprogram.agent.questions.resolve_question_and_broadcast",
-        lambda *args: pytest.fail("terminal rejection must not close questions"),
-    )
 
     def _process(req, **kwargs):
         c.server._session_cancel({"sessionId": sid})
@@ -549,10 +573,6 @@ def test_cancel_does_not_locally_cancel_on_service_failure(
         run_control, "cancel_execution",
         lambda _execution_id: (_ for _ in ()).throw(RuntimeError("store down")),
     )
-    monkeypatch.setattr(
-        "openprogram.agent.questions.resolve_question_and_broadcast",
-        lambda *args: pytest.fail("service failure must not close questions"),
-    )
 
     def _process(req, **kwargs):
         c.server._session_cancel({"sessionId": sid})
@@ -586,21 +606,15 @@ def test_cancel_resolves_open_questions_as_cancelled(
     sess.open_questions["q-cancel"] = sess.execution_id
     event = threading.Event()
     sess.cancel_event = event
-    outcomes: list[tuple] = []
     monkeypatch.setattr(
         run_control, "cancel_execution",
         lambda execution_id: {"execution_id": execution_id,
                                "status": "cancelling"},
     )
-    monkeypatch.setattr(
-        "openprogram.agent.questions.resolve_question_and_broadcast",
-        lambda *args: outcomes.append(args),
-    )
 
     c.server._session_cancel({"sessionId": sid})
 
     assert not event.is_set()
-    assert outcomes == []
     assert sess.open_questions == {"q-cancel": sess.execution_id}
 
 
@@ -626,21 +640,15 @@ def test_cancel_keeps_sibling_questions_for_same_session(
         "foreground-question": execution_id,
         "sibling-question": sibling_id,
     }
-    outcomes: list[tuple] = []
     monkeypatch.setattr(
         run_control, "cancel_execution",
         lambda target: {"execution_id": target, "status": "cancelling"},
-    )
-    monkeypatch.setattr(
-        "openprogram.agent.questions.resolve_question_and_broadcast",
-        lambda *args: outcomes.append(args),
     )
 
     c.server._session_cancel({"sessionId": sid})
 
     assert not event.is_set()
     assert not sibling_event.is_set()
-    assert outcomes == []
     assert sess.open_questions == {
         "foreground-question": execution_id,
         "sibling-question": sibling_id,
@@ -1078,32 +1086,31 @@ def test_permission_request_is_forwarded_and_answered(
 ) -> None:
     """An approval question raised by the tool gate becomes an ACP
     session/request_permission, and the client's choice resolves it."""
-    from openprogram.agent.questions import (
-        get_question_registry,
-        open_question,
-        emit_question_asked,
-    )
+    from openprogram.agent.questions import get_question_registry
 
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
     sid = c.call("session/new",
                  {"cwd": str(tmp_path), "mcpServers": []})["sessionId"]
-    bind_durable_question_execution(sid)
-    c.permission_choice = "allow_always"
-
-    q, ev = open_question(
-        session_id=sid, kind="approval", prompt="允许执行 bash？",
-        options=["允许", "拒绝"], allow_custom=False, detail="bash\nrm -rf x",
-        timeout=20.0,
-        on_asked=lambda qq: emit_question_asked({
-            "id": qq.id, "session_id": qq.session_id, "kind": qq.kind,
-            "prompt": qq.prompt, "options": qq.options,
-            "detail": qq.detail, "tool": "bash",
-            "args": {"command": "rm -rf x"}, "risk_level": "high"}),
+    execution, attempt = bind_durable_question_execution(sid)
+    store = __import__("openprogram.execution", fromlist=["default_store"]).default_store()
+    from openprogram.execution.waits import DurableWaitStore
+    waits = DurableWaitStore(store)
+    _open_acp_question(
+        store,
+        execution, attempt, wait_id="wait_acp_allow", options=["允许", "拒绝"],
+        detail="bash\nrm -rf x",
     )
-
-    assert c.pump(ev.is_set), "the gate's question was never answered"
-    outcome, value = get_question_registry().consume(q.id)
+    c.server._sessions[sid].execution_id = execution.execution_id
+    c.permission_choice = "allow_always"
+    c.server._on_question(SimpleNamespace(payload={
+        "id": "wait_acp_allow", "session_id": sid,
+        "execution_id": execution.execution_id, "kind": "approval",
+        "prompt": "允许执行 bash？", "tool": "bash", "args": {},
+        "wait_generation": 0,
+    }))
+    assert c.pump(lambda: waits.get_wait("wait_acp_allow") is not None and waits.get_wait("wait_acp_allow").status.value == "resolved"), "the gate's question was never answered"
+    outcome, value = get_question_registry().consume("wait_acp_allow")
     assert outcome == "answered"
     # "always" is what makes the gate persist an allow rule.
     assert value == {"answer": "允许", "scope": "always"}
@@ -1120,25 +1127,27 @@ def test_permission_request_is_forwarded_and_answered(
 def test_permission_reject_declines_the_question(
     tmp_db, client, tmp_path, bind_durable_question_execution,
 ) -> None:
-    from openprogram.agent.questions import (
-        get_question_registry, open_question, emit_question_asked)
+    from openprogram.agent.questions import get_question_registry
 
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
     sid = c.call("session/new",
                  {"cwd": str(tmp_path), "mcpServers": []})["sessionId"]
-    bind_durable_question_execution(sid)
+    execution, attempt = bind_durable_question_execution(sid)
+    store = __import__("openprogram.execution", fromlist=["default_store"]).default_store()
+    from openprogram.execution.waits import DurableWaitStore
+    waits = DurableWaitStore(store)
+    _open_acp_question(store, execution, attempt, wait_id="wait_acp_decline", options=["允许", "拒绝"])
+    c.server._sessions[sid].execution_id = execution.execution_id
     c.permission_choice = "reject_once"
-
-    q, ev = open_question(
-        session_id=sid, kind="approval", prompt="允许执行 bash？",
-        options=["允许", "拒绝"], allow_custom=False, timeout=20.0,
-        on_asked=lambda qq: emit_question_asked({
-            "id": qq.id, "session_id": qq.session_id, "kind": "approval",
-            "prompt": qq.prompt, "tool": "bash", "args": {}}),
-    )
-    assert c.pump(ev.is_set)
-    assert get_question_registry().consume(q.id)[0] == "declined"
+    c.server._on_question(SimpleNamespace(payload={
+        "id": "wait_acp_decline", "session_id": sid,
+        "execution_id": execution.execution_id, "kind": "approval",
+        "prompt": "允许执行 bash？", "tool": "bash", "args": {},
+        "wait_generation": 0,
+    }))
+    assert c.pump(lambda: waits.get_wait("wait_acp_decline") is not None and waits.get_wait("wait_acp_decline").status.value == "declined")
+    assert get_question_registry().consume("wait_acp_decline")[0] == "declined"
 
 
 def test_non_approval_questions_are_not_forwarded(
@@ -1146,21 +1155,23 @@ def test_non_approval_questions_are_not_forwarded(
 ) -> None:
     """runtime.ask has no ACP equivalent, so it must not be mistaken for a
     permission prompt."""
-    from openprogram.agent.questions import open_question, emit_question_asked
+    from openprogram.agent.questions import PendingQuestion, get_question_registry
 
     c = client()
     c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
     sid = c.call("session/new",
                  {"cwd": str(tmp_path), "mcpServers": []})["sessionId"]
-    bind_durable_question_execution(sid)
-
-    open_question(session_id=sid, kind="ask", prompt="what colour?",
-                  options=["red"], timeout=1.0,
-                  on_asked=lambda qq: emit_question_asked({
-                      "id": qq.id, "session_id": sid, "kind": "ask",
-                      "prompt": qq.prompt}))
+    execution, attempt = bind_durable_question_execution(sid)
+    _open_acp_question(
+        __import__("openprogram.execution", fromlist=["default_store"]).default_store(),
+        execution, attempt, wait_id="wait_acp_ask", kind="ask", options=["red"],
+    )
+    c.server._on_question(SimpleNamespace(payload={
+        "id": "wait_acp_ask", "session_id": sid,
+        "execution_id": execution.execution_id, "kind": "ask",
+        "prompt": "what colour?", "wait_generation": 0,
+    }))
     time.sleep(0.3)
-    c.call("initialize", {"protocolVersion": PROTOCOL_VERSION})
     assert c.permission_requests == []
 
 
