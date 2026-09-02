@@ -149,6 +149,87 @@ def test_stale_activation_cannot_replace_owner_before_registry_fencing(tmp_path)
     assert worker_cancel.is_set()
 
 
+def test_cancel_waits_for_atomic_registry_and_driver_activation_commit(tmp_path) -> None:
+    store, attempts, service, execution = _service(tmp_path)
+    leased, reserved = attempts.lease(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        owner_id="job-owner",
+        ttl_seconds=30,
+    )
+    active, running = attempts.activate(
+        leased.attempt_id,
+        generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    worker_cancel = threading.Event()
+    driver = JobDriver(
+        execution_id=execution.execution_id,
+        cancel_event=worker_cancel,
+    )
+    bridge = JobActivationBridge(driver)
+    commit_entered = threading.Event()
+    release_commit = threading.Event()
+    resolve_entered = threading.Event()
+    original_commit = driver.activation_committed
+    original_resolve = service.registry.resolve
+
+    def delayed_commit(binding):
+        commit_entered.set()
+        assert release_commit.wait(2)
+        original_commit(binding)
+
+    def traced_resolve(*args, **kwargs):
+        resolve_entered.set()
+        return original_resolve(*args, **kwargs)
+
+    driver.activation_committed = delayed_commit
+    service.registry.resolve = traced_resolve
+    activation_result: dict[str, object] = {}
+    cancel_result: dict[str, object] = {}
+
+    def activate() -> None:
+        activation_result["result"] = asyncio.run(
+            service._activate(
+                active,
+                None,
+                (),
+                activator=bridge.activate,
+            )
+        )
+
+    activation_thread = threading.Thread(
+        target=activate,
+    )
+
+    def cancel() -> None:
+        cancel_result["result"] = asyncio.run(
+            service.request_cancel(
+                command_id="cancel-race",
+                execution_id=active.execution_id,
+                expected_version=running.status_version,
+                actor={},
+                reason_code="cancel.user",
+            )
+        )
+
+    activation_thread.start()
+    assert commit_entered.wait(2)
+    cancel_thread = threading.Thread(target=cancel)
+    cancel_thread.start()
+    assert resolve_entered.wait(2)
+    release_commit.set()
+    activation_thread.join(timeout=2)
+    cancel_thread.join(timeout=2)
+
+    assert not activation_thread.is_alive()
+    assert not cancel_thread.is_alive()
+    assert activation_result["result"] == (True, None)
+    dispatch = cancel_result["result"]
+    assert dispatch.delivered is True
+    assert worker_cancel.is_set()
+
+
 def test_termination_requires_and_returns_the_real_worker_receipt(tmp_path) -> None:
     store, attempts, service, driver, active, running, handle, worker_cancel = _activate(tmp_path)
     reasons: list[str] = []

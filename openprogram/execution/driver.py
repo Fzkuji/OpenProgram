@@ -130,10 +130,23 @@ class DriverRegistry:
         with self._lock:
             self._owner_resolver = resolver
 
-    def bind(self, binding: DriverBinding[HandleT]) -> DriverBinding[HandleT]:
+    def bind(
+        self,
+        binding: DriverBinding[HandleT],
+        *,
+        on_bound: Callable[[], None] | None = None,
+    ) -> DriverBinding[HandleT]:
+        """Publish a binding and optionally finalize it under the registry lock.
+
+        A driver may need a local commit after durable fencing.  Running that
+        commit before releasing this lock prevents resolve/dispatch from
+        observing a binding whose driver is not ready to serve it.
+        """
         with self._lock:
             current = self._bindings.get(binding.execution_id)
             if current is binding:
+                if on_bound is not None:
+                    on_bound()
                 return binding
             durable_owner = None
             if self._owner_resolver is not None:
@@ -149,12 +162,26 @@ class DriverRegistry:
                     current.generation,
                 ):
                     self._bindings[binding.execution_id] = binding
+                    if on_bound is not None:
+                        try:
+                            on_bound()
+                        except BaseException:
+                            if self._bindings.get(binding.execution_id) is binding:
+                                del self._bindings[binding.execution_id]
+                            raise
                     return binding
                 raise DriverRegistryConflict(
                     "owner_exists",
                     "execution already has a live driver binding",
                 )
             self._bindings[binding.execution_id] = binding
+            if on_bound is not None:
+                try:
+                    on_bound()
+                except BaseException:
+                    if self._bindings.get(binding.execution_id) is binding:
+                        del self._bindings[binding.execution_id]
+                    raise
             return binding
 
     def resolve(

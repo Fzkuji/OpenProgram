@@ -864,24 +864,17 @@ class RuntimeControlService:
 
     def _bind_driver(self, binding: DriverBinding[Any]) -> None:
         """Commit driver-local activation only after durable registry fencing."""
-        try:
-            self.registry.bind(binding)
-        except Exception:
-            aborted = getattr(binding.driver, "activation_aborted", None)
-            if callable(aborted):
-                aborted(binding)
-            raise
         committed = getattr(binding.driver, "activation_committed", None)
-        if not callable(committed):
-            return
         try:
-            committed(binding)
-        except Exception:
-            self.registry.unbind(
-                binding.execution_id,
-                attempt_id=binding.attempt_id,
-                generation=binding.generation,
+            self.registry.bind(
+                binding,
+                on_bound=(
+                    (lambda: committed(binding))
+                    if callable(committed)
+                    else None
+                ),
             )
+        except Exception:
             aborted = getattr(binding.driver, "activation_aborted", None)
             if callable(aborted):
                 aborted(binding)
