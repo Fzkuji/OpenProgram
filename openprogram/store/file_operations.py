@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 import time
 import uuid
@@ -40,6 +41,7 @@ class FileOperationStore:
                     idempotency_key TEXT NOT NULL,
                     fingerprint TEXT NOT NULL,
                     operation_id TEXT NOT NULL UNIQUE,
+                    owner_pid INTEGER,
                     status TEXT NOT NULL,
                     phase TEXT NOT NULL DEFAULT 'prepared',
                     payload_json TEXT NOT NULL DEFAULT '{}',
@@ -57,6 +59,7 @@ class FileOperationStore:
                 ("payload_json", "TEXT NOT NULL DEFAULT '{}'"),
                 ("before_json", "TEXT NOT NULL DEFAULT '{}'"),
                 ("after_json", "TEXT NOT NULL DEFAULT '{}'"),
+                ("owner_pid", "INTEGER"),
             ):
                 if name not in columns:
                     db.execute(f"ALTER TABLE file_operations ADD COLUMN {name} {definition}")
@@ -95,10 +98,11 @@ class FileOperationStore:
             operation_id = f"fileop_{uuid.uuid4().hex}"
             db.execute(
                 "INSERT INTO file_operations(project_id, action, idempotency_key, "
-                "fingerprint, operation_id, status, phase, payload_json, before_json, "
+                "fingerprint, operation_id, status, phase, owner_pid, payload_json, before_json, "
                 "after_json, result_json, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, 'in_flight', 'prepared', ?, ?, ?, NULL, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, 'in_flight', 'prepared', ?, ?, ?, ?, NULL, ?, ?)",
                 (project_id, action, key, request_fingerprint, operation_id,
+                 os.getpid(),
                  json.dumps(dict(payload or {}), sort_keys=True, separators=(",", ":"), default=str),
                  json.dumps(dict(before or {}), sort_keys=True, separators=(",", ":"), default=str),
                  json.dumps(dict(after or {}), sort_keys=True, separators=(",", ":"), default=str),

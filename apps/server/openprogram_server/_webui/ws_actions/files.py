@@ -84,6 +84,7 @@ import errno
 import hashlib
 import json
 import os
+import posixpath
 import secrets
 import shutil
 import stat
@@ -100,6 +101,7 @@ _BINARY_SNIFF_BYTES = 8192
 # Writes come from the in-browser editor; 5 MB is far past any file a
 # human edits in a textarea.
 _WRITE_MAX_BYTES = 5_000_000  # 5 MB
+_IDENTITY_DIGEST_MAX_BYTES = 256 * 1024
 
 _QUERY_PAGE_SIZE = 100
 _QUERY_MAX_SNAPSHOTS = 256
@@ -114,6 +116,8 @@ _SEARCH_IGNORED_DIRS = frozenset({
 })
 _MUTATION_LOCKS: dict[str, threading.RLock] = {}
 _MUTATION_LOCKS_GUARD = threading.Lock()
+_ACTIVE_OPERATION_IDS: set[str] = set()
+_ACTIVE_OPERATION_IDS_LOCK = threading.Lock()
 
 
 def _mutation_lock(project_id: str) -> threading.RLock:
@@ -159,6 +163,8 @@ def _workspace_mutation_lock(project_id: str):
 
 def _file_digest(target: str) -> str | None:
     try:
+        if os.stat(target).st_size > _IDENTITY_DIGEST_MAX_BYTES:
+            return None
         with open(target, "rb") as stream:
             digest = hashlib.sha256()
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):
@@ -177,11 +183,14 @@ def _identity(project_id: str, path: str) -> dict:
     except OSError:
         return {"exists": False}
     kind = "dir" if stat.S_ISDIR(info.st_mode) else "file"
-    return {
+    identity = {
         "exists": True, "kind": kind, "dev": info.st_dev, "ino": info.st_ino,
         "mtime_ns": info.st_mtime_ns,
-        "digest": _file_digest(target) if kind == "file" else None,
+        "size": info.st_size,
     }
+    if kind == "file" and info.st_size <= _IDENTITY_DIGEST_MAX_BYTES:
+        identity["digest"] = _file_digest(target)
+    return identity
 
 
 def _identity_matches(actual: dict, expected: dict) -> bool:
@@ -190,7 +199,7 @@ def _identity_matches(actual: dict, expected: dict) -> bool:
     if not actual.get("exists"):
         return True
     return all(field not in expected or actual.get(field) == expected.get(field)
-               for field in ("kind", "dev", "ino", "mtime_ns", "digest"))
+               for field in ("kind", "dev", "ino", "mtime_ns", "size", "digest"))
 
 
 def _mutation_states(project_id: str, action: str, payload: dict) -> tuple[dict, dict]:
@@ -212,6 +221,8 @@ def _mutation_states(project_id: str, action: str, payload: dict) -> tuple[dict,
         source = before["source"]
         target = {"exists": True, "kind": source.get("kind"),
                   "digest": source.get("digest")}
+        if source.get("kind") == "file":
+            target["size"] = source.get("size")
         # rename preserves the filesystem identity; copy intentionally does
         # not.  Its durable proof is the destination kind/content digest.
         if action == "project_file_rename":
@@ -220,6 +231,16 @@ def _mutation_states(project_id: str, action: str, payload: dict) -> tuple[dict,
     else:
         after = {"path": path, "target": {"exists": False}}
     return before, after
+
+
+def _canonical_mutation_payload(payload: dict) -> dict:
+    canonical = dict(payload)
+    for field in ("path", "new_path"):
+        value = canonical.get(field)
+        if isinstance(value, str):
+            normalized = posixpath.normpath(value.replace("\\", "/"))
+            canonical[field] = "" if normalized == "." else normalized
+    return canonical
 
 
 def _mutation_state_matches(project_id: str, action: str, payload: dict,
@@ -324,6 +345,16 @@ def _request_id(cmd: dict) -> str | None:
     return str(parsed) if str(parsed) == value else None
 
 
+def _process_alive(pid: object) -> bool:
+    if not isinstance(pid, int) or pid <= 0 or pid == os.getpid():
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
 def _durable_file_action(project_id: str, action: str, key: object,
                          payload: dict, fn):
     """Claim, execute, and persist one retry-safe file mutation."""
@@ -333,9 +364,14 @@ def _durable_file_action(project_id: str, action: str, key: object,
         FileOperationConflict, default_file_operation_store, fingerprint,
     )
     store = default_file_operation_store()
-    with _workspace_mutation_lock(project_id):
-        before, after = _mutation_states(project_id, action, payload)
+    payload = _canonical_mutation_payload(payload)
+    before, after = _mutation_states(project_id, action, payload)
+    with _ACTIVE_OPERATION_IDS_LOCK:
         try:
+            # Claim/read is intentionally outside the filesystem lock. A retry
+            # of an active operation gets a terminal in-progress receipt
+            # immediately. Holding this small registry lock through begin also
+            # closes the gap before the owner is visible to same-process retry.
             row, owner = store.begin(
                 project_id, action, key, fingerprint(payload),
                 payload=payload, before=before, after=after,
@@ -346,49 +382,57 @@ def _durable_file_action(project_id: str, action: str, key: object,
         if not owner:
             if row.get("status") in {"completed", "recovery_required", "conflict", "error"}:
                 return store.replay(row)
-            stored_payload = json.loads(row.get("payload_json") or "{}")
-            stored_before = json.loads(row.get("before_json") or "{}")
-            # An in-flight record has no durable receipt proving that the FS
-            # operation completed.  Even if the current state equals the
-            # intended after-image, another writer could have produced it.
-            # Only a stored completed receipt permits replay.
-            if not _mutation_state_matches(project_id, action, stored_payload, stored_before, after=False):
+            operation_id = row["operation_id"]
+            if operation_id in _ACTIVE_OPERATION_IDS or _process_alive(row.get("owner_pid")):
+                return {"status": "in_progress", "operation_id": operation_id}
+            payload = json.loads(row.get("payload_json") or "{}")
+            before = json.loads(row.get("before_json") or "{}")
+            after = json.loads(row.get("after_json") or "{}")
+            _ACTIVE_OPERATION_IDS.add(operation_id)
+        else:
+            operation_id = row["operation_id"]
+            _ACTIVE_OPERATION_IDS.add(operation_id)
+
+    try:
+        with _workspace_mutation_lock(project_id):
+            # Preconditions are checked after acquiring the shared lock. An
+            # external writer between claim and apply therefore cannot be
+            # mistaken for this operation.
+            if not _mutation_state_matches(project_id, action, payload, before, after=False):
                 result = {"status": "recovery_required", "error_code": "RECOVERY_REQUIRED",
                           "error": "file operation state cannot be reconciled safely"}
-                store.complete(row["operation_id"], result)
-                result["operation_id"] = row["operation_id"]
+                store.finish(operation_id, result, status="recovery_required",
+                             phase="recovery_required")
+                result["operation_id"] = operation_id
                 return result
-            # The previous process recorded its intent but did not change the
-            # filesystem. Continue under the same workspace lock.
-            payload = stored_payload
-        store.mark_applying(row["operation_id"])
-        try:
-            result = fn()
-        except Exception as exc:
-            # The journal is an intent record, not an in-memory lease.  A
-            # handler exception must leave a terminal, explainable record so
-            # a restart cannot expose a permanent in_flight operation.
-            if _mutation_state_matches(project_id, action, payload, after, after=True):
-                result = _replayed_mutation_result(project_id, action, payload)
-                terminal = "completed"
-            elif _mutation_state_matches(project_id, action, payload, before, after=False):
-                result = {"error": f"{type(exc).__name__}: file operation failed",
-                          "error_code": "IO_ERROR"}
-                terminal = "error"
-            else:
-                result = {"status": "recovery_required",
-                          "error_code": "RECOVERY_REQUIRED",
-                          "error": "file operation state cannot be reconciled safely"}
-                terminal = "recovery_required"
-            store.finish(row["operation_id"], result, status=terminal, phase=terminal)
+            store.mark_applying(operation_id)
+            try:
+                result = fn()
+            except Exception as exc:
+                # The journal is an intent record, not an in-memory lease.  A
+                # handler exception must leave a terminal, explainable record so
+                # a restart cannot expose a permanent in_flight operation.
+                if _mutation_state_matches(project_id, action, payload, before, after=False):
+                    result = {"error": f"{type(exc).__name__}: file operation failed",
+                              "error_code": "IO_ERROR"}
+                    terminal = "error"
+                else:
+                    result = {"status": "recovery_required",
+                              "error_code": "RECOVERY_REQUIRED",
+                              "error": "file operation state cannot be reconciled safely"}
+                    terminal = "recovery_required"
+                store.finish(operation_id, result, status=terminal, phase=terminal)
+                result = _normalise_mutation_result(result)
+                result["operation_id"] = operation_id
+                return result
             result = _normalise_mutation_result(result)
-            result["operation_id"] = row["operation_id"]
+            store.complete(operation_id, result)
+            result = dict(result)
+            result["operation_id"] = operation_id
             return result
-        result = _normalise_mutation_result(result)
-        store.complete(row["operation_id"], result)
-        result = dict(result)
-        result["operation_id"] = row["operation_id"]
-        return result
+    finally:
+        with _ACTIVE_OPERATION_IDS_LOCK:
+            _ACTIVE_OPERATION_IDS.discard(operation_id)
 
 
 @dataclass(frozen=True)

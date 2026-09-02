@@ -16,6 +16,31 @@ export interface Project {
   is_default: boolean;
 }
 
+const FILE_OWNER_KEYS = [
+  "project_id", "session_id", "assistant_msg_id", "path", "snapshot_id",
+] as const;
+
+/**
+ * Correlate a file reply after wsRequest has already checked request_id and
+ * action.  A stale/error reply is still the reply for this request even
+ * when the server cannot provide a snapshot id (for example an expired
+ * cursor), so snapshot_id is optional for those terminal states.  Other
+ * owner fields remain strict to prevent cross-project/session updates.
+ */
+export function fileResponseMatchesOwner(
+  data: Record<string, unknown>,
+  payload: Record<string, unknown>,
+): boolean {
+  const staleOrError = data.status === "stale"
+    || data.status === "error"
+    || typeof data.error_code === "string";
+  return FILE_OWNER_KEYS.every((key) => {
+    if (payload[key] === undefined) return true;
+    if (key === "snapshot_id" && staleOrError && data[key] == null) return true;
+    return data[key] === payload[key];
+  });
+}
+
 /**
  * Resolve the conversation's current project (id + path). Returns
  * undefined while resolving, null when nothing browsable is bound.
@@ -92,16 +117,13 @@ export function filesWsRequest<T>(
   responseType: string,
   options: WsRequestOptions = {},
 ): Promise<T | null> {
-  const ownerKeys = [
-    "project_id", "session_id", "assistant_msg_id", "path", "snapshot_id",
-  ] as const;
   const expected = Object.fromEntries(
-    ownerKeys.filter((key) => payload[key] !== undefined)
+    FILE_OWNER_KEYS.filter((key) => payload[key] !== undefined)
       .map((key) => [key, payload[key]]),
   );
   const match = (data: T) => {
     const owner = data as T & Record<string, unknown>;
-    return Object.entries(expected).every(([key, value]) => owner[key] === value);
+    return fileResponseMatchesOwner(owner, expected);
   };
   return wsRequest<T>(action, payload, responseType, match, 4000, {
     ...options, requestId: true,

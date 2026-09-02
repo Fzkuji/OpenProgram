@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
+import threading
 import types
 import uuid
 from pathlib import Path
@@ -64,6 +66,10 @@ def test_dispatch_requires_uuid_and_idempotency_key():
         server._validate_file_request({"request_id": "request-1"}, "project_file_read")
     with pytest.raises(OperationError):
         server._validate_file_request({"request_id": str(uuid.uuid4())}, "project_file_write")
+    with pytest.raises(OperationError):
+        server._validate_file_request({
+            "request_id": str(uuid.uuid4()), "idempotency_key": "human-key",
+        }, "project_file_write")
 
 
 def test_file_write_replay_collision_and_restart(project):
@@ -174,6 +180,57 @@ def test_inflight_before_image_is_retried_under_the_lock(project):
     assert result["status"] == "ready"
     assert result["operation_id"] == row["operation_id"]
     assert (project / "source.txt").read_text(encoding="utf-8") == "retry"
+
+
+def test_large_mutation_witness_is_bounded(project, monkeypatch):
+    large = project / "large.bin"
+    large.write_bytes(b"x" * (files._IDENTITY_DIGEST_MAX_BYTES + 1))
+    monkeypatch.setattr(files, "_file_digest", lambda _target: pytest.fail(
+        "large-file witness must not read file content"
+    ))
+    identity = files._identity("p1", "large.bin")
+    assert identity["size"] == files._IDENTITY_DIGEST_MAX_BYTES + 1
+    assert "digest" not in identity
+
+
+def test_idempotency_fingerprint_normalizes_alias_paths(project):
+    key = str(uuid.uuid4())
+    mtime = (project / "source.txt").stat().st_mtime
+    first = run(files.handle_project_file_write, {
+        "project_id": "p1", "path": "./source.txt", "content": "alias",
+        "expected_mtime": mtime, "idempotency_key": key,
+        "request_id": str(uuid.uuid4()),
+    })["data"]
+    replay = run(files.handle_project_file_write, {
+        "project_id": "p1", "path": "source.txt", "content": "alias",
+        "expected_mtime": mtime, "idempotency_key": key,
+        "request_id": str(uuid.uuid4()),
+    })["data"]
+    assert replay["operation_id"] == first["operation_id"]
+
+
+def test_active_same_key_retry_returns_in_progress_without_waiting(project):
+    from openprogram.webui.ws_actions.files import _durable_file_action
+
+    started = threading.Event()
+    release = threading.Event()
+    key = str(uuid.uuid4())
+    payload = {"path": "source.txt", "content": "held", "expected_mtime": None}
+
+    def held():
+        started.set()
+        release.wait(timeout=5)
+        return {"ok": True}
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(_durable_file_action, "p1", "project_file_write",
+                             key, payload, held)
+        assert started.wait(timeout=2)
+        retry = _durable_file_action("p1", "project_file_write", key, payload,
+                                     lambda: {"ok": True})
+        assert retry["status"] == "in_progress"
+        release.set()
+        assert future.result()["status"] == "ready"
 
 
 def test_review_stale_states_keep_their_protocol_code():

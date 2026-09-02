@@ -79,6 +79,7 @@ export function wsRequest<T = unknown>(
       if (timeout !== undefined) clearTimeout(timeout);
       if (id) pendingRequestIds.delete(id);
       ws.removeEventListener("message", onMsg);
+      ws.removeEventListener("close", onClose);
       requestOptions.signal?.removeEventListener("abort", onAbort);
       resolve(value);
     };
@@ -109,12 +110,19 @@ export function wsRequest<T = unknown>(
         /* ignore non-JSON frames */
       }
     };
+    const onClose = () => finish(null);
     const onAbort = () => finish(null);
     ws.addEventListener("message", onMsg);
+    ws.addEventListener("close", onClose);
     requestOptions.signal?.addEventListener("abort", onAbort, { once: true });
-    ws.send(JSON.stringify({
-      action, ...payload, ...(id ? { request_id: id } : {}),
-    }));
+    try {
+      ws.send(JSON.stringify({
+        action, ...payload, ...(id ? { request_id: id } : {}),
+      }));
+    } catch {
+      finish(null);
+      return;
+    }
     timeout = setTimeout(() => {
       finish(null);
     }, timeoutMs);

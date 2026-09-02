@@ -1670,7 +1670,7 @@ def _validate_file_request(cmd: dict, action: str) -> None:
         raise OperationError("invalid_request", scope="system")
     if action in _FILE_MUTATION_ACTIONS:
         key = cmd.get("idempotency_key")
-        if not isinstance(key, str) or not key or len(key) > 256 or not key.isprintable():
+        if not _valid_uuid_request_id(key):
             raise OperationError("invalid_request", scope="system")
 
 
