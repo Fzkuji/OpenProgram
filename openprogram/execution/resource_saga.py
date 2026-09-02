@@ -72,21 +72,24 @@ class ResourceSaga:
             "dispatch_ready": dispatch_ready,
         }
         key = f"admission:{admission_id}"
-        self.store.enqueue_resource_intent(
+        self.store.enqueue_resource_intents(
             execution_id,
-            kind="execution.admission.intent",
-            idempotency_key=f"execution:{key}",
-            fingerprint=fingerprint,
-            admission_id=admission_id,
-            payload={"admission_id": admission_id, "request_fingerprint": fingerprint},
-        )
-        self.store.enqueue_resource_intent(
-            execution_id,
-            kind="resource.admission.intent",
-            idempotency_key=f"resource:{key}",
-            fingerprint=self._fingerprint(payload),
-            admission_id=admission_id,
-            payload=payload,
+            intents=(
+                {
+                    "kind": "execution.admission.intent",
+                    "idempotency_key": f"execution:{key}",
+                    "fingerprint": fingerprint,
+                    "admission_id": admission_id,
+                    "payload": {"admission_id": admission_id, "request_fingerprint": fingerprint},
+                },
+                {
+                    "kind": "resource.admission.intent",
+                    "idempotency_key": f"resource:{key}",
+                    "fingerprint": self._fingerprint(payload),
+                    "admission_id": admission_id,
+                    "payload": payload,
+                },
+            ),
         )
         self._fault("execution_written")
         return admission_id
@@ -109,20 +112,24 @@ class ResourceSaga:
         }
         claim_id = f"{admission_id}:{command_id}"
         fingerprint = self._fingerprint(payload)
-        for kind, prefix in (
-            ("execution.claim.intent", "execution"),
-            ("resource.claim.intent", "resource"),
-        ):
-            self.store.enqueue_resource_intent(
-                execution_id,
-                kind=kind,
-                idempotency_key=f"{prefix}:claim:{claim_id}",
-                fingerprint=fingerprint,
-                admission_id=admission_id,
-                attempt_id=attempt_id,
-                generation=generation,
-                payload=payload,
-            )
+        self.store.enqueue_resource_intents(
+            execution_id,
+            intents=tuple(
+                {
+                    "kind": kind,
+                    "idempotency_key": f"{prefix}:claim:{claim_id}",
+                    "fingerprint": fingerprint,
+                    "admission_id": admission_id,
+                    "attempt_id": attempt_id,
+                    "generation": generation,
+                    "payload": payload,
+                }
+                for kind, prefix in (
+                    ("execution.claim.intent", "execution"),
+                    ("resource.claim.intent", "resource"),
+                )
+            ),
+        )
         self._fault("resume_accepted")
         return claim_id
 
@@ -145,26 +152,31 @@ class ResourceSaga:
         )
         payload = {"reason_code": reason_code, "terminal_version": terminal_version}
         fingerprint = self._fingerprint(payload)
-        for kind, prefix in (
-            ("execution.release.intent", "execution"),
-            ("resource.release.intent", "resource"),
-        ):
-            self.store.enqueue_resource_intent(
-                execution_id,
-                kind=kind,
-                idempotency_key=f"{prefix}:release:{release_id}",
-                fingerprint=fingerprint,
-                admission_id=admission_id,
-                attempt_id=attempt_id,
-                generation=generation,
-                resource_lease_generation=resource_lease_generation,
-                payload=payload,
-            )
+        self.store.enqueue_resource_intents(
+            execution_id,
+            intents=tuple(
+                {
+                    "kind": kind,
+                    "idempotency_key": f"{prefix}:release:{release_id}",
+                    "fingerprint": fingerprint,
+                    "admission_id": admission_id,
+                    "attempt_id": attempt_id,
+                    "generation": generation,
+                    "resource_lease_generation": resource_lease_generation,
+                    "payload": payload,
+                }
+                for kind, prefix in (
+                    ("execution.release.intent", "execution"),
+                    ("resource.release.intent", "resource"),
+                )
+            ),
+        )
         self._fault("checkpoint_paused" if terminal_version is None else "terminal_written")
         return release_id
 
     def reconcile(self, *, limit: int = 100) -> int:
         """Replay claimed resource intents.  A crash leaves the lease reclaimable."""
+        self.store.repair_resource_claim_release_pairs()
         completed = 0
         for intent in self.store.claim_resource_intents(owner_id=self.owner_id, limit=limit):
             kind = intent["kind"]

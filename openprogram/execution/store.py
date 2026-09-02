@@ -975,45 +975,148 @@ class ExecutionStore:
         This transaction deliberately does not call ResourceGovernor.  The
         resulting row is the durable hand-off between the two SQLite files.
         """
-        if kind not in RESOURCE_INTENT_KINDS:
-            raise ExecutionConflict("invalid_resource_intent", f"unsupported resource intent: {kind}")
-        if not idempotency_key or not fingerprint:
-            raise ExecutionConflict("invalid_resource_intent", "idempotency_key and fingerprint are required")
-        encoded = _json(dict(payload or {}))
-        now = time.time()
+        return self.enqueue_resource_intents(
+            execution_id,
+            intents=({
+                "kind": kind,
+                "idempotency_key": idempotency_key,
+                "fingerprint": fingerprint,
+                "admission_id": admission_id,
+                "attempt_id": attempt_id,
+                "generation": generation,
+                "resource_lease_generation": resource_lease_generation,
+                "payload": payload or {},
+            },),
+        )[0]
+
+    def enqueue_resource_intents(
+        self,
+        execution_id: str,
+        *,
+        intents: Collection[Mapping[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Atomically persist one complete cross-authority intent set.
+
+        A ResourceSaga operation is only recoverable when both of its
+        execution and resource records exist.  This method is deliberately
+        all-or-nothing: retries return the original rows, while a partial
+        legacy row is completed in the same transaction as its counterpart.
+        """
+        values = [dict(intent) for intent in intents]
+        if not values:
+            raise ExecutionConflict("invalid_resource_intent", "at least one resource intent is required")
+        keys: set[str] = set()
+        for intent in values:
+            kind = intent.get("kind")
+            key = intent.get("idempotency_key")
+            fingerprint = intent.get("fingerprint")
+            if kind not in RESOURCE_INTENT_KINDS:
+                raise ExecutionConflict("invalid_resource_intent", f"unsupported resource intent: {kind}")
+            if not isinstance(key, str) or not key or not isinstance(fingerprint, str) or not fingerprint:
+                raise ExecutionConflict("invalid_resource_intent", "idempotency_key and fingerprint are required")
+            if key in keys:
+                raise ExecutionConflict("invalid_resource_intent", "resource intent keys must be unique")
+            keys.add(key)
         with self._transaction() as connection:
             execution = self._require_execution(connection, execution_id)
-            existing = connection.execute(
-                "SELECT * FROM execution_resource_intents WHERE execution_id = ? AND idempotency_key = ?",
-                (execution_id, idempotency_key),
-            ).fetchone()
-            if existing is not None:
-                if (
-                    existing["kind"] != kind
-                    or existing["fingerprint"] != fingerprint
-                    or existing["payload_json"] != encoded
-                ):
-                    raise ExecutionConflict("resource_intent_collision", "resource idempotency key was reused with different content")
-                return self._resource_intent(existing)
-            intent_id = f"resource-intent-{uuid.uuid4().hex}"
-            connection.execute(
-                "INSERT INTO execution_resource_intents (intent_id, execution_id, kind, idempotency_key, fingerprint, admission_id, attempt_id, generation, resource_lease_generation, payload_json, state, claim_owner, claim_expires_at, attempts, result_json, last_error, created_at, updated_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, 0, '{}', NULL, ?, ?, NULL)",
-                (intent_id, execution_id, kind, idempotency_key, fingerprint, admission_id, attempt_id, generation, resource_lease_generation, encoded, now, now),
-            )
-            row = connection.execute(
-                "SELECT * FROM execution_resource_intents WHERE intent_id = ?", (intent_id,)
-            ).fetchone()
-            assert row is not None
-            intent = self._resource_intent(row)
-            self._append_event(
-                connection,
-                execution_id=execution_id,
-                execution_version=execution.status_version,
-                kind=kind,
-                payload={"intent": intent},
-                created_at=now,
-            )
-            return intent
+            result: list[dict[str, Any]] = []
+            for intent in values:
+                kind = str(intent["kind"])
+                key = str(intent["idempotency_key"])
+                fingerprint = str(intent["fingerprint"])
+                encoded = _json(dict(intent.get("payload") or {}))
+                existing = connection.execute(
+                    "SELECT * FROM execution_resource_intents WHERE execution_id = ? AND idempotency_key = ?",
+                    (execution_id, key),
+                ).fetchone()
+                if existing is not None:
+                    if (
+                        existing["kind"] != kind
+                        or existing["fingerprint"] != fingerprint
+                        or existing["payload_json"] != encoded
+                    ):
+                        raise ExecutionConflict("resource_intent_collision", "resource idempotency key was reused with different content")
+                    result.append(self._resource_intent(existing))
+                    continue
+                now = time.time()
+                intent_id = f"resource-intent-{uuid.uuid4().hex}"
+                connection.execute(
+                    "INSERT INTO execution_resource_intents (intent_id, execution_id, kind, idempotency_key, fingerprint, admission_id, attempt_id, generation, resource_lease_generation, payload_json, state, claim_owner, claim_expires_at, attempts, result_json, last_error, created_at, updated_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, 0, '{}', NULL, ?, ?, NULL)",
+                    (
+                        intent_id, execution_id, kind, key, fingerprint,
+                        intent.get("admission_id"), intent.get("attempt_id"),
+                        intent.get("generation"), intent.get("resource_lease_generation"),
+                        encoded, now, now,
+                    ),
+                )
+                row = connection.execute(
+                    "SELECT * FROM execution_resource_intents WHERE intent_id = ?", (intent_id,)
+                ).fetchone()
+                assert row is not None
+                persisted = self._resource_intent(row)
+                self._append_event(
+                    connection,
+                    execution_id=execution_id,
+                    execution_version=execution.status_version,
+                    kind=kind,
+                    payload={"intent": persisted},
+                    created_at=now,
+                )
+                result.append(persisted)
+            return result
+
+    def repair_resource_claim_release_pairs(self) -> int:
+        """Complete one-sided claim/release records left by older writers."""
+        pairs = {
+            "execution.claim.intent": "resource.claim.intent",
+            "resource.claim.intent": "execution.claim.intent",
+            "execution.release.intent": "resource.release.intent",
+            "resource.release.intent": "execution.release.intent",
+        }
+        repaired = 0
+        with self._transaction() as connection:
+            rows = connection.execute(
+                "SELECT * FROM execution_resource_intents WHERE kind IN (?, ?, ?, ?) ORDER BY created_at, intent_id",
+                tuple(pairs),
+            ).fetchall()
+            for row in rows:
+                kind = str(row["kind"])
+                prefix, separator, suffix = str(row["idempotency_key"]).partition(":")
+                if prefix not in {"execution", "resource"} or not separator:
+                    continue
+                counterpart_key = f"{'resource' if prefix == 'execution' else 'execution'}:{suffix}"
+                counterpart = connection.execute(
+                    "SELECT 1 FROM execution_resource_intents WHERE execution_id = ? AND idempotency_key = ?",
+                    (row["execution_id"], counterpart_key),
+                ).fetchone()
+                if counterpart is not None:
+                    continue
+                execution = self._require_execution(connection, str(row["execution_id"]))
+                now = time.time()
+                intent_id = f"resource-intent-{uuid.uuid4().hex}"
+                counterpart_kind = pairs[kind]
+                connection.execute(
+                    "INSERT INTO execution_resource_intents (intent_id, execution_id, kind, idempotency_key, fingerprint, admission_id, attempt_id, generation, resource_lease_generation, payload_json, state, claim_owner, claim_expires_at, attempts, result_json, last_error, created_at, updated_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, 0, '{}', NULL, ?, ?, NULL)",
+                    (
+                        intent_id, row["execution_id"], counterpart_kind,
+                        counterpart_key, row["fingerprint"], row["admission_id"],
+                        row["attempt_id"], row["generation"],
+                        row["resource_lease_generation"], row["payload_json"], now, now,
+                    ),
+                )
+                persisted = self._resource_intent(connection.execute(
+                    "SELECT * FROM execution_resource_intents WHERE intent_id = ?", (intent_id,)
+                ).fetchone())
+                self._append_event(
+                    connection,
+                    execution_id=str(row["execution_id"]),
+                    execution_version=execution.status_version,
+                    kind=counterpart_kind,
+                    payload={"intent": persisted, "repaired": True},
+                    created_at=now,
+                )
+                repaired += 1
+        return repaired
 
     def list_resource_intents(
         self, *, execution_id: str | None = None, states: Collection[str] = (), limit: int | None = None,
@@ -1917,6 +2020,23 @@ class ExecutionStore:
             and execution.capabilities.step
         ):
             validate_command(kind, execution.status, execution.capabilities)
+        if kind in {CommandKind.CONTINUE, CommandKind.STEP}:
+            pending = connection.execute(
+                "SELECT command_id FROM commands WHERE execution_id = ? "
+                "AND kind IN (?, ?) AND status IN (?, ?) LIMIT 1",
+                (
+                    execution_id,
+                    CommandKind.CONTINUE.value,
+                    CommandKind.STEP.value,
+                    CommandStatus.ACCEPTED.value,
+                    CommandStatus.APPLYING.value,
+                ),
+            ).fetchone()
+            if pending is not None:
+                raise CommandConflict(
+                    "continuation_pending",
+                    "a continue or step command already owns this execution version",
+                )
         now = time.time()
         command = ControlCommand(
             command_id=command_id,
