@@ -425,7 +425,8 @@ def test_durable_worker_baseexception_persists_terminal_before_release(
         assert wait_until(lambda: find_terminal() is not None)
         terminal = find_terminal()
         assert terminal is not None
-        assert terminal["data"]["resource"]["resource_state"] == "released"
+        assert "resource_state" not in terminal["data"]["resource"]
+        assert terminal["data"]["resource"]["resource"]["resource_state"] == "released"
     finally:
         runner.shutdown(wait=False)
 
@@ -480,7 +481,8 @@ def test_running_status_write_failure_reconciles_terminal_and_releases(
         ]
         assert len(terminal) == 1
         assert terminal[0]["data"]["status"] == "errored"
-        assert terminal[0]["data"]["resource"]["resource_state"] == "released"
+        assert "resource_state" not in terminal[0]["data"]["resource"]
+        assert terminal[0]["data"]["resource"]["resource"]["resource_state"] == "released"
         reloads = [item for item in broadcasts if item.get("type") == "session_reload"]
         assert len(reloads) == 1
         assert reloads[0]["data"]["reason"] == "job_errored"

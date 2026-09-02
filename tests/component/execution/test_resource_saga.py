@@ -89,7 +89,20 @@ def test_claim_and_release_replay_are_fenced_and_idempotent(saga_parts):
         item for item in store.list_resource_intents(execution_id="job-1")
         if item["kind"] == "resource.claim.intent"
     )
-    generation = claim["result"]["resource_lease_generation"]
+    assert claim["result"] == {
+        "state": "queued",
+        "command_id": "continue-1",
+    }
+    # ResourceSaga queues the continuation. The dispatcher obtains the
+    # capacity lease only after the canonical execution is ready to activate.
+    dispatch_claim = governor.claim_execution(
+        "job-1",
+        owner_instance_id="saga-owner",
+        admission_id=admission_id,
+        command_id="continue-1",
+    )
+    assert dispatch_claim is not None
+    generation = dispatch_claim.lease_generation
     assert generation == 1
 
     saga.request_release(
@@ -118,14 +131,18 @@ def test_resume_wait_and_terminal_release_are_durable(saga_parts):
     )
     assert claim_intent["state"] == "pending"
     saga.reconcile()
-    lease_generation = next(
-        item["result"]["resource_lease_generation"]
+    claim_result = next(
+        item["result"]
         for item in store.list_resource_intents(execution_id="job-1")
         if item["kind"] == "resource.claim.intent" and item["idempotency_key"].endswith("continue-2")
     )
+    assert claim_result == {
+        "state": "queued",
+        "command_id": "continue-2",
+    }
     saga.request_release(
         "job-1", admission_id=admission_id, reason_code="completed",
-        resource_lease_generation=lease_generation, terminal_version=3,
+        terminal_version=3,
     )
     saga.reconcile()
     assert governor.ledger.resource_counts("session-1", "job-1")["resource_state"] == "released"

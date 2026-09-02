@@ -268,7 +268,8 @@ def test_runner_dispatch_submit_failure_terminalizes_published_job(
         assert wait_until(lambda: find_terminal() is not None)
         terminal = find_terminal()
         assert terminal is not None
-        assert terminal["data"]["resource"]["resource_state"] == "released"
+        assert "resource_state" not in terminal["data"]["resource"]
+        assert terminal["data"]["resource"]["resource"]["resource_state"] == "released"
     finally:
         runner.shutdown()
 
