@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import json
 import logging
 import threading
@@ -85,6 +86,7 @@ def run_loop_blocking(
     assistant_msg_id: Optional[str] = None,
     agentic_tool_names_out: Optional[set[str]] = None,
     ordered_blocks_out: Optional[list[dict]] = None,
+    execution_context: Optional[dict] = None,
 ) -> tuple[str, dict, list[dict]]:
     """Build AgentContext, kick off agent_loop, drain its EventStream.
 
@@ -376,6 +378,15 @@ def run_loop_blocking(
             timestamp=int(timestamp * 1000),
         )]
 
+    safe_point_callback = (execution_context or {}).get("safe_point_hook")
+
+    async def _safe_point_hook(kind: str, payload: dict) -> None:
+        if safe_point_callback is None:
+            return
+        result = safe_point_callback(kind, payload)
+        if inspect.isawaitable(result):
+            await result
+
     config = AgentLoopConfig(
         model=model,
         convert_to_llm=_default_convert_to_llm,
@@ -401,6 +412,7 @@ def run_loop_blocking(
         ),
         response_format=req.response_format,
         get_steering_messages=_get_steering_messages,
+        safe_point_hook=_safe_point_hook if safe_point_callback is not None else None,
     )
 
     # Async drain that forwards each AgentEvent → on_event envelope.

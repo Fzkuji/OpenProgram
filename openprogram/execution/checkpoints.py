@@ -82,7 +82,7 @@ class CheckpointManifest:
         object.__setattr__(self, "child_frontier", _freeze_json(self.child_frontier))
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "checkpoint_id": self.checkpoint_id,
             "execution_id": self.execution_id,
             "revision_id": self.revision_id,
@@ -106,6 +106,14 @@ class CheckpointManifest:
             "schema_version": self.schema_version,
             "created_at": self.created_at,
         }
+        # AgentCheckpointV1 is retained as a state reference in the generic
+        # manifest.  Mirror its durable routing fields for transports and
+        # diagnostics without adding a second checkpoint schema or store.
+        state = _thaw_json(self.state_refs)
+        for key in ("safe_point", "turn", "current_decision", "next_tool_index"):
+            if key in state:
+                value[key] = state[key]
+        return value
 
 
 class CheckpointConflict(RuntimeError):

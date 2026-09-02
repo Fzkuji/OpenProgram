@@ -166,7 +166,7 @@ def test_queued_agent_cancel_releases_reserved_slot_immediately(tmp_path):
         ).fetchone()[0] == 0
 
 
-def test_agent_driver_has_no_pause_or_safe_point_capabilities():
+def test_agent_driver_declares_only_p0_safe_point_capabilities():
     from openprogram.agent.production_driver import AgentProductionDriver
 
     driver = AgentProductionDriver(
@@ -175,7 +175,15 @@ def test_agent_driver_has_no_pause_or_safe_point_capabilities():
         turn_runner=lambda **_kwargs: None,
     )
 
-    assert driver.capabilities() == CapabilitySet()
+    assert driver.capabilities() == CapabilitySet(
+        pause=True,
+        step=True,
+        safe_point_kinds=(
+            "agent.provider.decision.after",
+            "agent.tool.action.after",
+        ),
+        state_schema_version=1,
+    )
 
 
 def test_activation_builds_existing_turn_from_immutable_input(tmp_path):

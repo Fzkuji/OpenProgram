@@ -196,13 +196,6 @@ class AgentActivationService:
         record: Any,
         activation: ActivationInput | None,
     ) -> Any:
-        if activation is not None and (
-            activation.checkpoint is not None or activation.steer_inputs
-        ):
-            raise AgentDriverError(
-                "unsupported_activation_state",
-                "Agent driver does not support checkpoint or steering activation",
-            )
         payload = self._input_resolver(record)
         if not isinstance(payload, Mapping):
             raise AgentDriverError(
@@ -325,7 +318,7 @@ class AgentProductionDriver:
         if activation is not None and (activation.checkpoint is not None or activation.steer_inputs):
             raise AgentDriverError(
                 "unsupported_activation_state",
-                "Agent driver does not support checkpoint or steering activation",
+                "forced-tool activations do not support Agent checkpoints",
             )
         return ForcedToolActivation(
             session_id=record.session_id,
@@ -628,8 +621,15 @@ class AgentProductionDriver:
                     "cancel_event": cancel_event,
                 }
                 try:
-                    if "on_event" in inspect.signature(self.turn_runner).parameters:
+                    parameters = inspect.signature(self.turn_runner).parameters
+                    if "on_event" in parameters:
                         runner_kwargs["on_event"] = self.event_sink
+                    if "execution_context" in parameters:
+                        runner_kwargs["execution_context"] = {
+                            "safe_point_hook": self._safe_point_hook(
+                                attempt, request, cancel_event,
+                            ),
+                        }
                 except (TypeError, ValueError):
                     pass
                 result = self.turn_runner(**runner_kwargs)
@@ -646,6 +646,156 @@ class AgentProductionDriver:
                 cancel_event,
                 execution_id=attempt.execution_id,
             )
+
+    def _safe_point_hook(
+        self,
+        attempt: AttemptRecord,
+        request: Any,
+        cancel_event: threading.Event,
+    ) -> Callable[[str, Mapping[str, Any]], bool]:
+        """Bind Agent-loop boundaries to the canonical execution owner.
+
+        The closure carries only durable identifiers and JSON payloads.  It
+        deliberately retains no provider stream, coroutine, tool object, or
+        dispatcher-local state for a future attempt.
+        """
+        from openprogram.execution.checkpoints import CheckpointFragment
+        from openprogram.execution.effects import (
+            EffectClassification, EffectStatus,
+        )
+        from openprogram.execution.model import CommandKind
+
+        pending: dict[str, tuple[str, str]] = {}
+
+        def digest(*parts: str) -> str:
+            value = "\x1f".join(parts).encode("utf-8")
+            return hashlib.sha256(value).hexdigest()
+
+        def current_command(service, execution_id: str):
+            commands = service.executions.list_commands(execution_id)
+            priority = (CommandKind.PAUSE, CommandKind.STEP)
+            for kind in priority:
+                for command in commands:
+                    if command.kind is kind and command.status is CommandStatus.APPLYING:
+                        return command
+            return None
+
+        def checkpoint_payload(kind: str, payload: Mapping[str, Any], effect_id: str, action_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+            phase = "after_provider" if kind == "provider.after" else "after_tool"
+            point_kind = (
+                "agent.provider.decision.after" if phase == "after_provider"
+                else "agent.tool.action.after"
+            )
+            user_message_id = str(getattr(request, "user_msg_id", "") or "durable-user")
+            assistant_message_id = user_message_id + "_reply"
+            state = {
+                "schema_version": AGENT_CHECKPOINT_SCHEMA_VERSION,
+                "safe_point": {
+                    "kind": point_kind, "step_id": f"{phase}:{action_id}",
+                    "phase": phase, "sentinel": "resume-from-checkpoint",
+                },
+                "frontier": [{"step_id": f"{phase}:{action_id}", "phase": phase, "branch_id": "main"}],
+                "turn": {
+                    "user_message_id": user_message_id,
+                    "assistant_message_id": assistant_message_id,
+                    "base_history_head_id": user_message_id,
+                },
+                "current_decision": {
+                    "provider_action_id": action_id if phase == "after_provider" else "",
+                    "assistant_message_ref": assistant_message_id,
+                    "tool_call_ids": sorted(str(value) for value in payload.get("tool_call_ids", ())),
+                },
+                "next_tool_index": 0,
+                "repeat_failures": 0,
+                "pending_messages": [], "completed_actions": [{"action_id": action_id}],
+                "terminal_effect_receipts": [{
+                    "effect_id": effect_id, "frontier_step_id": f"{phase}:{action_id}",
+                    "action_id": action_id, "outcome": "committed",
+                }],
+                "payload": dict(payload),
+            }
+            raw = json.dumps(state, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            if len(raw.encode("utf-8")) > MAX_AGENT_CHECKPOINT_BYTES:
+                raise AgentDriverError("checkpoint_too_large", "Agent checkpoint exceeds the size limit")
+            return state, {
+                "safe_point_kind": point_kind,
+                "frontier": tuple(state["frontier"]),
+                "completed_actions": tuple(state["completed_actions"]),
+                "effect_receipts": tuple(state["terminal_effect_receipts"]),
+            }
+
+        def hook(kind: str, payload: Mapping[str, Any]) -> bool:
+            service = self._control_service()
+            if kind.endswith(".before"):
+                normalized = json.dumps(dict(payload), ensure_ascii=False, sort_keys=True, default=str)
+                action_id = digest(
+                    attempt.execution_id, attempt.attempt_id, str(attempt.generation), kind, normalized,
+                )
+                effect_id = f"effect_{action_id[:32]}"
+                classification = (
+                    EffectClassification.IDEMPOTENT if kind == "provider.before"
+                    else EffectClassification.NONREPEATABLE
+                )
+                effect = service.effects.register(
+                    effect_id=effect_id, execution_id=attempt.execution_id,
+                    attempt_id=attempt.attempt_id, action_id=action_id,
+                    classification=classification,
+                    idempotency_key=action_id if classification is EffectClassification.IDEMPOTENT else None,
+                    metadata={"kind": kind, "payload": dict(payload)},
+                )
+                if effect.status is EffectStatus.PLANNED:
+                    service.effects.mark_dispatched(
+                        effect.effect_id, expected_status=EffectStatus.PLANNED,
+                    )
+                pending[kind.rsplit(".", 1)[0]] = (effect_id, action_id)
+                return False
+
+            key = kind.rsplit(".", 1)[0]
+            effect_id, action_id = pending.pop(key)
+            effect = service.effects.get(effect_id)
+            if effect is None or effect.status is not EffectStatus.DISPATCHED:
+                raise AgentDriverError("effect_state_invalid", "Agent effect is not dispatchable")
+            service.effects.resolve(
+                effect_id, expected_status=EffectStatus.DISPATCHED,
+                outcome=EffectStatus.COMMITTED, receipt={"payload": dict(payload)},
+            )
+            state, fragment_data = checkpoint_payload(kind, payload, effect_id, action_id)
+            blob = self.executions.put_state_blob(
+                attempt.execution_id,
+                json.dumps(state, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                schema_version=AGENT_CHECKPOINT_SCHEMA_VERSION,
+            )
+            command = current_command(service, attempt.execution_id)
+            if command is None:
+                return False
+            fragment = CheckpointFragment(
+                safe_point_kind=fragment_data["safe_point_kind"],
+                frontier=fragment_data["frontier"],
+                state_refs={"agent_checkpoint": blob, **state},
+                completed_actions=fragment_data["completed_actions"],
+                effect_receipts=fragment_data["effect_receipts"],
+                managed_action={"action_id": action_id, "kind": kind},
+            )
+            current = service.executions.get_execution(attempt.execution_id)
+            if current is None:
+                raise AgentDriverError("execution_not_found", "execution disappeared at safe point")
+            if command.kind is CommandKind.STEP:
+                service.arrive_step_safe_point(
+                    attempt_id=attempt.attempt_id, generation=attempt.generation,
+                    command_id=command.command_id,
+                    expected_execution_version=current.status_version,
+                    fragment=fragment,
+                )
+            else:
+                service.arrive_safe_point(
+                    attempt_id=attempt.attempt_id, generation=attempt.generation,
+                    command_id=command.command_id,
+                    expected_execution_version=current.status_version,
+                    fragment=fragment,
+                )
+            return True
+
+        return hook
 
     def _finish_attempt(
         self,

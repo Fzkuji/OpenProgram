@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 
 # WELCOME_STATS_SESSION_LIMIT lives on the server module — we read it lazily.
 
@@ -205,6 +206,203 @@ def _broadcast_execution(execution: dict) -> None:
         "type": "execution.updated",
         "execution": execution,
     }, default=str))
+
+
+def _trusted_runtime_actor(ws) -> dict | None:
+    """Resolve runtime-control authority from the authenticated socket only."""
+    from openprogram.agent.authority import normalize_authority
+
+    scope = getattr(ws, "scope", None)
+    state = scope.get("state") if isinstance(scope, dict) else None
+    authority = state.get("authority") if isinstance(state, dict) else None
+    actor = normalize_authority(authority)
+    if not actor or actor.get("authority_tier") != "owner":
+        return None
+    return actor
+
+
+async def _send_command_update(ws, command, execution) -> None:
+    command_data = command.to_dict() if hasattr(command, "to_dict") else dict(command)
+    execution_data = execution.to_dict() if hasattr(execution, "to_dict") else dict(execution)
+    await ws.send_text(json.dumps({
+        "type": "execution.command.updated", "command": command_data,
+        "data": {"command": command_data},
+    }, default=str))
+    await ws.send_text(json.dumps({
+        "type": "execution.updated", "execution": execution_data,
+        "data": {"execution": execution_data},
+    }, default=str))
+    _broadcast_execution(execution_data)
+
+
+def _rejected_command(cmd: dict, code: str) -> dict:
+    return {
+        "command_id": str(cmd.get("command_id") or ""),
+        "execution_id": str(cmd.get("execution_id") or ""),
+        "status": "rejected", "result_version": None,
+        "rejection_code": code,
+    }
+
+
+async def _handle_execution_control(ws, cmd: dict, operation: str) -> None:
+    """Submit an exact durable runtime command; drivers never see WS input."""
+    from openprogram.execution import default_control_service, default_store
+    from openprogram.execution.store import ExecutionConflict, CommandConflict
+    from openprogram.execution.attempts import AttemptConflict
+    from openprogram.execution.state_machine import InvalidCommand
+
+    actor = _trusted_runtime_actor(ws)
+    execution_id = cmd.get("execution_id")
+    command_id = cmd.get("command_id")
+    expected_version = cmd.get("expected_version")
+    if (
+        actor is None or not isinstance(execution_id, str) or not execution_id
+        or not isinstance(command_id, str) or not command_id
+        or type(expected_version) is not int
+    ):
+        await _send_command_update(ws, _rejected_command(cmd, "invalid_command"), {
+            "execution_id": execution_id or "", "status_version": None,
+        })
+        return
+    store = default_store()
+    service = default_control_service()
+    execution = store.get_execution(execution_id)
+    if execution is None:
+        await _send_command_update(ws, _rejected_command(cmd, "not_found"), {
+            "execution_id": execution_id, "status_version": None,
+        })
+        return
+    existing = store.get_command(command_id)
+    if existing is not None:
+        if existing.execution_id == execution_id:
+            await _send_command_update(ws, existing, execution)
+            return
+    try:
+        seeded_pause = None
+        if operation in {"continue", "step"} and service.effects.list_unresolved(execution_id):
+            if execution.current_attempt_id is not None:
+                generation = execution.owner_lease.get("generation")
+                if isinstance(generation, int):
+                    service.recover_owner_loss(
+                        execution_id, attempt_id=execution.current_attempt_id,
+                        generation=generation,
+                    )
+            raise ExecutionConflict("unresolved_effect", "execution has an unresolved external effect")
+        # A command can reach a just-admitted chat before its handoff thread
+        # has claimed the first lease.  Materialize the initial Agent
+        # continuation boundary under a real, fenced attempt so pause remains
+        # durable rather than depending on that thread winning a race.
+        if execution.status.value == "queued" and operation in {"pause", "continue", "step"}:
+            from openprogram.execution.checkpoints import CheckpointFragment
+            from openprogram.execution.model import CommandKind
+            leased, reserved = service.attempts.lease(
+                execution_id, expected_version=execution.status_version,
+                owner_id="agent-pre-dispatch-safe-point", ttl_seconds=30,
+            )
+            active, running = service.attempts.activate(
+                leased.attempt_id, generation=leased.generation,
+                expected_execution_version=reserved.status_version,
+            )
+            initial_id = command_id if operation == "pause" else f"initial-pause:{command_id}"
+            initial = await service.request_pause(
+                command_id=initial_id, execution_id=execution_id,
+                expected_version=running.status_version, actor=actor,
+            )
+            if initial.command.kind is not CommandKind.PAUSE:
+                raise RuntimeError("initial Agent safe-point command mismatch")
+            state = {
+                "safe_point": {
+                    "kind": "agent.provider.decision.after", "phase": "after_provider",
+                    "step_id": "agent.initial", "sentinel": "resume-from-checkpoint",
+                },
+                "turn": {"user_message_id": "admitted-user", "assistant_message_id": "admitted-user_reply", "base_history_head_id": "admitted-user"},
+                "current_decision": {"provider_action_id": "agent.initial", "assistant_message_ref": "admitted-user_reply", "tool_call_ids": []},
+            }
+            fragment = CheckpointFragment(
+                safe_point_kind="agent.provider.decision.after",
+                frontier=({"kind": "agent.provider.decision.after", "phase": "after_provider", "step_id": "agent.initial", "sentinel": "resume-from-checkpoint"},),
+                state_refs=state,
+                completed_actions=(), effect_receipts=(), child_frontier={},
+            )
+            seeded_pause = service.arrive_safe_point(
+                attempt_id=active.attempt_id, generation=active.generation,
+                command_id=initial.command.command_id,
+                expected_execution_version=initial.execution.status_version,
+                fragment=fragment,
+            )
+            execution = store.get_execution(execution_id)
+            assert execution is not None
+        if operation == "pause":
+            if seeded_pause is not None:
+                from openprogram.execution.control import ControlDispatch
+                dispatch = ControlDispatch(
+                    command=seeded_pause.command, execution=seeded_pause.execution,
+                    delivered=True,
+                )
+            else:
+                dispatch = await service.request_pause(
+                    command_id=command_id, execution_id=execution_id,
+                    expected_version=expected_version, actor=actor,
+                )
+        else:
+            request = (
+                service.request_continue if operation == "continue"
+                else service.request_step
+            )
+            dispatch = await request(
+                command_id=command_id, execution_id=execution_id,
+                expected_version=(execution.status_version if seeded_pause is not None else expected_version),
+                actor=actor,
+            )
+            if operation == "step" and seeded_pause is not None and dispatch.execution.current_attempt_id:
+                from openprogram.execution.checkpoints import CheckpointFragment
+                from openprogram.execution.control import ControlDispatch
+                generation = dispatch.execution.owner_lease.get("generation")
+                completion = service.arrive_step_safe_point(
+                    attempt_id=dispatch.execution.current_attempt_id,
+                    generation=generation,
+                    command_id=command_id,
+                    expected_execution_version=dispatch.execution.status_version,
+                    fragment=CheckpointFragment(
+                        safe_point_kind="agent.provider.decision.after",
+                        frontier=({"kind": "agent.provider.decision.after", "phase": "after_provider", "step_id": "agent.initial.step", "sentinel": "resume-from-checkpoint"},),
+                        state_refs={"safe_point": {"kind": "agent.provider.decision.after", "phase": "after_provider", "sentinel": "resume-from-checkpoint"}},
+                        managed_action={"action_id": "agent.initial.step", "kind": "provider"},
+                    ),
+                )
+                with store._transaction() as connection:
+                    store._append_event(
+                        connection, execution_id=execution_id,
+                        execution_version=completion.execution.status_version,
+                        kind="agent.action.completed",
+                        payload={"action_id": "agent.initial.step"},
+                        created_at=time.time(),
+                    )
+                dispatch = ControlDispatch(
+                    command=completion.command, execution=completion.execution,
+                    delivered=True,
+                )
+        await _send_command_update(ws, dispatch.command, dispatch.execution)
+    except (ExecutionConflict, CommandConflict, AttemptConflict, InvalidCommand) as exc:
+        current = store.get_execution(execution_id)
+        await _send_command_update(
+            ws, _rejected_command(cmd, getattr(exc, "code", "command_rejected")),
+            current.to_dict() if current is not None else {
+                "execution_id": execution_id, "status_version": None,
+            },
+        )
+
+
+async def handle_execution_pause(ws, cmd: dict):
+    await _handle_execution_control(ws, cmd, "pause")
+
+
+async def handle_execution_continue(ws, cmd: dict):
+    await _handle_execution_control(ws, cmd, "continue")
+
+
+async def handle_execution_step(ws, cmd: dict):
+    await _handle_execution_control(ws, cmd, "step")
 
 
 async def handle_execution_cancel(ws, cmd: dict):
@@ -429,6 +627,9 @@ ACTIONS = {
     "switch_model": handle_switch_model,
     "browser": handle_browser,
     "execution.cancel": handle_execution_cancel,
+    "execution.pause": handle_execution_pause,
+    "execution.continue": handle_execution_continue,
+    "execution.step": handle_execution_step,
     "stats": handle_stats,
     "steer": handle_steer,
     "set_attended": handle_set_attended,

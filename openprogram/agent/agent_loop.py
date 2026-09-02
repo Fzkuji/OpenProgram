@@ -130,6 +130,17 @@ def _set_content(msg, value) -> None:
         msg.content = value
 
 
+def _durable_message(message: Any) -> dict[str, Any]:
+    """Return JSON data only; checkpoints never retain provider objects."""
+    if hasattr(message, "model_dump"):
+        value = message.model_dump(mode="json")
+    elif isinstance(message, dict):
+        value = dict(message)
+    else:
+        value = {"repr": str(message)}
+    return json.loads(json.dumps(value, ensure_ascii=False, sort_keys=True, default=str))
+
+
 def _create_agent_stream() -> EventStream[AgentEvent, list[AgentMessage]]:
     return EventStream(
         is_done=lambda e: e.type == "agent_end",
@@ -567,6 +578,25 @@ async def _run_loop(
 
             commit_assistant(message)
 
+            stop_at_safe_point = False
+            if config.safe_point_hook is not None:
+                stop_at_safe_point = bool(await config.safe_point_hook(
+                    "provider.after",
+                    {
+                        "message": _durable_message(message),
+                        "tool_call_ids": sorted(
+                            str(call.id) for call in message.content
+                            if isinstance(call, ToolCall)
+                        ),
+                    },
+                ))
+
+            if stop_at_safe_point:
+                ev_stream.push(AgentEventTurnEnd(message=message, tool_results=[]))
+                ev_stream.push(AgentEventAgentEnd(messages=new_messages))
+                ev_stream.end(new_messages)
+                return
+
             tool_results: list[ToolResultMessage] = []
             if has_more_tool_calls:
                 execution = await _execute_tool_calls(
@@ -576,6 +606,7 @@ async def _run_loop(
                     ev_stream,
                     config.get_steering_messages,
                     repeat_failures,
+                    config.safe_point_hook,
                 )
                 tool_results.extend(execution["tool_results"])
                 steering_after_tools = execution.get("steering_messages")
@@ -583,6 +614,12 @@ async def _run_loop(
                 for result in tool_results:
                     current_context.messages.append(result)
                     new_messages.append(result)
+
+                if execution.get("stop_at_safe_point"):
+                    ev_stream.push(AgentEventTurnEnd(message=message, tool_results=tool_results))
+                    ev_stream.push(AgentEventAgentEnd(messages=new_messages))
+                    ev_stream.end(new_messages)
+                    return
 
             ev_stream.push(AgentEventTurnEnd(message=message, tool_results=tool_results))
 
@@ -813,6 +850,12 @@ async def _stream_assistant_response(
     partial_message: AssistantMessage | None = None
     added_partial = False
 
+    if config.safe_point_hook is not None:
+        await config.safe_point_hook("provider.before", {
+            "model": str(config.model),
+            "system_prompt": context.system_prompt,
+            "tool_names": sorted(tool.name for tool in (context.tools or [])),
+        })
     _record_job_activity("operation_start")
     response_stream = fn(config.model, llm_context, stream_opts)
 
@@ -938,6 +981,7 @@ async def _execute_tool_calls(
     ev_stream: EventStream[AgentEvent, list[AgentMessage]],
     get_steering_messages: Any | None = None,
     repeat_failures: dict[str, int] | None = None,
+    safe_point_hook: Any | None = None,
 ) -> dict[str, Any]:
     """
     Execute tool calls from an assistant message.
@@ -946,6 +990,7 @@ async def _execute_tool_calls(
     tool_calls = [c for c in assistant_message.content if isinstance(c, ToolCall)]
     results: list[ToolResultMessage] = []
     steering_messages: list[AgentMessage] | None = None
+    stop_at_safe_point = False
     if repeat_failures is None:
         repeat_failures = {}
 
@@ -962,6 +1007,11 @@ async def _execute_tool_calls(
             tool_name=tool_call.name,
             args=tool_call.arguments,
         ))
+        if safe_point_hook is not None:
+            await safe_point_hook("tool.before", {
+                "tool_call_id": str(tool_call.id), "tool_name": tool_call.name,
+                "arguments": tool_call.arguments,
+            })
 
         # 事件层：tool.before 一份事件，观察（异步总线）+ 问询（同步 gate）共用。
         # plugin 的 tool.before handler 就是 gate 订阅者（plugins/hooks.py）。
@@ -1107,9 +1157,18 @@ async def _execute_tool_calls(
             is_error=result.is_error,
             timestamp=int(time.time() * 1000),
         )
+        if safe_point_hook is not None:
+            stop_at_safe_point = bool(await safe_point_hook("tool.after", {
+                "tool_call_id": str(tool_call.id), "tool_name": tool_call.name,
+                "result": _durable_message(tool_result_msg),
+                "is_error": bool(result.is_error),
+            }))
         results.append(tool_result_msg)
         ev_stream.push(AgentEventMessageStart(message=tool_result_msg))
         ev_stream.push(AgentEventMessageEnd(message=tool_result_msg))
+
+        if stop_at_safe_point:
+            break
 
         # Check for steering messages after each tool execution
         if get_steering_messages:
@@ -1122,7 +1181,10 @@ async def _execute_tool_calls(
                     results.append(_skip_tool_call(skipped, ev_stream))
                 break
 
-    return {"tool_results": results, "steering_messages": steering_messages}
+    return {
+        "tool_results": results, "steering_messages": steering_messages,
+        "stop_at_safe_point": stop_at_safe_point,
+    }
 
 
 def _skip_tool_call(

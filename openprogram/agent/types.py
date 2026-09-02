@@ -82,6 +82,11 @@ class AgentLoopConfig(SimpleStreamOptions):
     # Returns follow-up messages after agent would stop
     get_follow_up_messages: Callable[[], Awaitable[list[AgentMessage]]] | None = None
 
+    # Driver-owned durable boundary hook.  It receives only completed
+    # provider/tool data or an explicit pre-dispatch intent; it never receives
+    # a provider stream, task, stack frame, or other process-local object.
+    safe_point_hook: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None
+
     model_config = {"arbitrary_types_allowed": True}
 
 

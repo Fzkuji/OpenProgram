@@ -180,6 +180,7 @@ def process_user_turn(
     *,
     on_event: Optional[EventCallback] = None,
     cancel_event: Optional[threading.Event] = None,
+    execution_context: dict | None = None,
 ) -> TurnResult:
     """Run one full agent turn, then the ordinary ``turn.stop`` gate.
 
@@ -191,14 +192,16 @@ def process_user_turn(
     # so they do not enter the top-level turn.stop gate.
     if req.source == "agent_spawn":
         return _process_turn_once(
-            req, on_event=on_event, cancel_event=cancel_event)
+            req, on_event=on_event, cancel_event=cancel_event,
+            execution_context=execution_context)
     from openprogram.agent import steering
 
     steering.begin_accepting(req.session_id)
     accepting = True
     try:
         result = _process_turn_once(
-            req, on_event=on_event, cancel_event=cancel_event)
+            req, on_event=on_event, cancel_event=cancel_event,
+            execution_context=execution_context)
         # Hooks may deny the stop and force ordinary continuation turns.
         try:
             from openprogram.agent.dispatcher.stop_hook import (
@@ -273,6 +276,7 @@ def _process_turn_once(
     *,
     on_event: Optional[EventCallback] = None,
     cancel_event: Optional[threading.Event] = None,
+    execution_context: dict | None = None,
 ) -> TurnResult:
     """Synchronous wrapper that runs one full agent turn.
 
@@ -479,6 +483,7 @@ def _process_turn_once(
                 assistant_msg_id=assistant_msg_id,
                 agentic_tool_names_out=_agentic_tool_names,
                 ordered_blocks_out=_ordered_blocks,
+                execution_context=execution_context,
             )
         except Exception as _loop_exc:
             from openprogram.context.reactive import is_overflow_error, reactive_compact
@@ -504,6 +509,7 @@ def _process_turn_once(
                         assistant_msg_id=assistant_msg_id,
                         agentic_tool_names_out=_agentic_tool_names,
                         ordered_blocks_out=_ordered_blocks,
+                        execution_context=execution_context,
                     )
                 else:
                     raise
