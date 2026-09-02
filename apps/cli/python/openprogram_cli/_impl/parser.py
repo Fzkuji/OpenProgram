@@ -432,6 +432,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_execution_cancel.add_argument(
         "execution_id", help="Execution id to cancel",
     )
+    p_execution_cancel.add_argument(
+        "--expected-version", required=True, type=int,
+        help="Exact execution status_version observed by the caller",
+    )
+    p_execution_cancel.add_argument(
+        "--command-id", default=None,
+        help="Caller command id for idempotent retry",
+    )
 
     # ---- jobs -------------------------------------------------------------
     p_jobs = sub.add_parser(

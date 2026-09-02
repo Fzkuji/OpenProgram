@@ -1104,6 +1104,7 @@ async def handle_chat(ws, cmd: dict):
                 "display_params": "", "loaded_func_ref": None,
                 "stream_events": [],
                 "execution_id": execution_id,
+                "status_version": _admission.status_version,
             })
             # The reservation is created before the admission has an execution
             # id. Fill that exact id into the owned task rather than relying on
@@ -1111,6 +1112,7 @@ async def handle_chat(ws, cmd: dict):
             # match the admitted execution.
             if _running_task.get("msg_id") == msg_id:
                 _running_task["execution_id"] = execution_id
+                _running_task["status_version"] = _admission.status_version
         _s._emit_running_task_event(session_id)
     except BaseException:
         with _s._running_tasks_lock:
@@ -1149,8 +1151,15 @@ async def handle_chat(ws, cmd: dict):
             raise
 
     def _run_canonical(**_thread_options):
+        def _publish_activation(active):
+            with _s._running_tasks_lock:
+                task = _s._running_tasks.get(session_id)
+                if task and task.get("execution_id") == active.admission.execution_id:
+                    task["status_version"] = active.status_version
+            _s._emit_running_task_event(session_id)
+
         async def _activate():
-            return await _adapter.activate(_admission)
+            return await _adapter.activate(_admission, on_activated=_publish_activation)
 
         try:
             asyncio.run(_activate())

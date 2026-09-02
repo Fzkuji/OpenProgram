@@ -7,6 +7,7 @@ import json
 import threading
 
 from openprogram.context.nodes import Call, ROLE_CODE
+from openprogram.agent.authority import owner_authority
 from openprogram.execution import AttemptStore, ExecutionStore, RuntimeControlService
 from openprogram.execution.driver import DriverRegistry
 from openprogram.execution.model import CapabilitySet, ExecutionStatus
@@ -17,6 +18,9 @@ from openprogram.store.session.session_store import SessionStore
 class FakeWS:
     def __init__(self) -> None:
         self.frames: list[dict] = []
+        self.scope = {
+            "state": {"authority": owner_authority("owner/install/0123456789abcdef")},
+        }
 
     async def send_text(self, text: str) -> None:
         self.frames.append(json.loads(text))
@@ -80,7 +84,12 @@ def test_ws_execution_cancel_returns_canonical_status_and_releases_occupancy(
     ws = FakeWS()
 
     asyncio.run(runtime.ACTIONS["execution.cancel"](
-        ws, {"action": "execution.cancel", "execution_id": record.execution_id},
+        ws, {
+            "action": "execution.cancel",
+            "command_id": "cancel-web-1",
+            "execution_id": record.execution_id,
+            "expected_version": record.status_version,
+        },
     ))
 
     execution = store.get_execution(record.execution_id)
@@ -88,14 +97,33 @@ def test_ws_execution_cancel_returns_canonical_status_and_releases_occupancy(
     assert execution.status is ExecutionStatus.CANCELLED
     update = next(frame for frame in broadcasts if frame["type"] == "execution.updated")
     assert update["execution"]["execution_id"] == record.execution_id
+    command = next(frame for frame in ws.frames if frame["type"] == "execution.command.updated")
+    assert command["command"]["status"] == "applied"
     assert released == [record.execution_id]
     assert not any(frame["type"] == "error" for frame in ws.frames)
 
     # Repeating the exact cancel is idempotent after the terminal transition.
     asyncio.run(runtime.ACTIONS["execution.cancel"](
-        ws, {"action": "execution.cancel", "execution_id": record.execution_id},
+        ws, {
+            "action": "execution.cancel",
+            "command_id": "cancel-web-1",
+            "execution_id": record.execution_id,
+            "expected_version": record.status_version,
+        },
     ))
     assert not any(frame["type"] == "error" for frame in ws.frames)
+
+    asyncio.run(runtime.ACTIONS["execution.cancel"](
+        ws, {
+            "action": "execution.cancel",
+            "command_id": "cancel-web-stale",
+            "execution_id": record.execution_id,
+            "expected_version": 999,
+        },
+    ))
+    rejected = ws.frames[-2]["command"]
+    assert rejected["status"] == "rejected"
+    assert rejected["latest_snapshot"]["status_version"] == execution.status_version
 
 
 def test_http_execution_cancel_returns_canonical_status_and_body(
@@ -114,21 +142,47 @@ def test_http_execution_cancel_returns_canonical_status_and_body(
         lambda execution: released.append(execution["execution_id"]),
     )
     app = FastAPI()
+    app.state.owner_auth = type("OwnerAuth", (), {
+        "authority": owner_authority("owner/install/0123456789abcdef"),
+    })()
     lifecycle.register(app)
     response = TestClient(app).post(
-        "/api/execution/cancel", json={"execution_id": record.execution_id},
+        "/api/execution/cancel", json={
+            "command_id": "cancel-http-1",
+            "execution_id": record.execution_id,
+            "expected_version": record.status_version,
+        },
     )
 
     assert response.status_code == 200
-    body = response.json()["execution"]
+    result = response.json()
+    body = result["execution"]
     assert body["execution_id"] == record.execution_id
     assert body["status"] == "cancelled"
+    assert result["command"]["status"] == "applied"
     assert released == [record.execution_id]
     repeated = TestClient(app).post(
-        "/api/execution/cancel", json={"execution_id": record.execution_id},
+        "/api/execution/cancel", json={
+            "command_id": "cancel-http-1",
+            "execution_id": record.execution_id,
+            "expected_version": record.status_version,
+        },
     )
     assert repeated.status_code == 200
     assert repeated.json()["execution"]["status"] == "cancelled"
+
+    stale = TestClient(app).post(
+        "/api/execution/cancel", json={
+            "command_id": "cancel-http-stale",
+            "execution_id": record.execution_id,
+            "expected_version": 999,
+        },
+    )
+    assert stale.status_code == 409
+    assert stale.json()["command"]["status"] == "rejected"
+    latest = store.get_execution(record.execution_id)
+    assert latest is not None
+    assert stale.json()["command"]["latest_snapshot"]["status_version"] == latest.status_version
 
 
 def test_session_reload_preserves_cancelling_execution_status(

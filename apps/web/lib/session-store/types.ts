@@ -236,6 +236,9 @@ export interface ChatMsg {
       | "errored" | "cancelled";
     /** Cross-reference to the Job entity that owns this attach. */
     job_id?: string;
+    /** Canonical execution identity and optimistic-concurrency version. */
+    execution_id?: string;
+    status_version?: number;
   };
   /** Which agent produced this turn. Same-session multi-agent: a
    *  conversation can have N agents writing branches in the same

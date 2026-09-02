@@ -542,9 +542,15 @@ export function SubAgentStep({ card }: { card: ChatMsg }) {
   }
   function cancel(e: React.MouseEvent) {
     e.stopPropagation();
-    const executionId = attach.job_id || card.id;
-    if (executionId) {
-      wsSend({ action: "execution.cancel", execution_id: executionId });
+    const executionId = attach.execution_id;
+    const expectedVersion = attach.status_version;
+    if (executionId && typeof expectedVersion === "number") {
+      wsSend({
+        action: "execution.cancel",
+        command_id: crypto.randomUUID(),
+        execution_id: executionId,
+        expected_version: expectedVersion,
+      });
     }
   }
   const preview = card.content || "";
@@ -568,7 +574,9 @@ export function SubAgentStep({ card }: { card: ChatMsg }) {
       actions={
         <>
           <MessageTimestamp timestamp={card.timestamp} />
-          {(running || cancelling) && (attach.job_id || card.id) ? (
+          {(running || cancelling)
+            && attach.execution_id
+            && typeof attach.status_version === "number" ? (
             <button
               type="button"
               className="tl-btn"

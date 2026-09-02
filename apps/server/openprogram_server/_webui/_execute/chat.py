@@ -310,8 +310,17 @@ def run_query(
             task = _s._running_tasks.get(session_id)
             if isinstance(task, dict):
                 task["execution_id"] = _admission.execution_id
+                task["status_version"] = _admission.status_version
         _s._emit_running_task_event(session_id)
-        _active, turn_result = asyncio.run(_adapter.activate(_admission))
+        def _publish_activation(active):
+            with _s._running_tasks_lock:
+                task = _s._running_tasks.get(session_id)
+                if task and task.get("execution_id") == active.admission.execution_id:
+                    task["status_version"] = active.status_version
+            _s._emit_running_task_event(session_id)
+        _active, turn_result = asyncio.run(
+            _adapter.activate(_admission, on_activated=_publish_activation)
+        )
     finally:
         _release_surface_bindings(surface_context)
         _chat_execution_id = locals().get("_admission").execution_id if locals().get("_admission") else None

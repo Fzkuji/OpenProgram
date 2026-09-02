@@ -415,6 +415,7 @@ export function handleRunningTask(rt: unknown): void {
     display_params?: string;
     stream_events?: unknown[];
     execution_id?: string;
+    status_version?: number;
   };
 
   // 先做 cancelled 守卫，再碰任何 occupancy。旧代码先 setRunning(true)
@@ -425,7 +426,11 @@ export function handleRunningTask(rt: unknown): void {
   const mid = t.msg_id;
   const store = useSessionStore.getState();
   const replyId = mid ? mid + "_reply" : "";
-  const executionId = t.execution_id || replyId;
+  const priorTask = sid ? store.runningTasks[sid] : undefined;
+  const executionId = t.execution_id || priorTask?.execution_id || replyId;
+  const statusVersion = typeof t.status_version === "number"
+    ? t.status_version
+    : priorTask?.status_version;
   const targetId = executionId && store.messagesById[executionId]
     ? executionId
     : replyId && store.messagesById[replyId]
@@ -462,6 +467,7 @@ export function handleRunningTask(rt: unknown): void {
     func_name: t.func_name,
     started_at: t.started_at,
     execution_id: executionId,
+    status_version: statusVersion,
   });
 }
 

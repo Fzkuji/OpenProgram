@@ -177,10 +177,20 @@ def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | N
         task = _srv._running_tasks.get(session_id)
         if task and task.get("msg_id") == new_msg_id:
             task["execution_id"] = admission.execution_id
+            task["status_version"] = admission.status_version
 
     def _run_canonical():
+        def _publish_activation(active):
+            with _srv._running_tasks_lock:
+                task = _srv._running_tasks.get(session_id)
+                if task and task.get("execution_id") == active.admission.execution_id:
+                    task["status_version"] = active.status_version
+            _srv._emit_running_task_event(session_id)
+
         async def _activate():
-            _active, result = await adapter.activate(admission)
+            _active, result = await adapter.activate(
+                admission, on_activated=_publish_activation,
+            )
             return result
 
         import asyncio
@@ -212,6 +222,7 @@ def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | N
         task = _srv._running_tasks.get(session_id)
         if task and task.get("msg_id") == new_msg_id:
             task["execution_id"] = admission.execution_id
+            task["status_version"] = admission.status_version
     if not _srv._activate_run_reservation(session_id, new_msg_id, worker):
         adapter.fail_admission(admission, reason_code="agent_runner_error")
         _srv._release_run_reservation(session_id, new_msg_id)

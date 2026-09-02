@@ -3695,6 +3695,10 @@ class JobRunner:
             attach["session_id"] = target_session
             attach["job_id"] = job.id
             attach["status"] = job.status.value
+            execution = self._execution_store.get_execution(job.id)
+            if execution is not None:
+                attach["execution_id"] = execution.execution_id
+                attach["status_version"] = execution.status_version
             if job.head_id:
                 attach["head_id"] = job.head_id
             # The human name of the sub-agent ("后端架构"). It lives on the

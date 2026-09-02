@@ -682,7 +682,11 @@ def main():
 
         verb = getattr(args, "execution_verb", None)
         if verb == "cancel":
-            sys.exit(_cmd_execution_cancel(args.execution_id))
+            sys.exit(_cmd_execution_cancel(
+                args.execution_id,
+                expected_version=args.expected_version,
+                command_id=args.command_id,
+            ))
         _need_subcommand(args._cmd_parser)
 
     if args.command == "jobs":

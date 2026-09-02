@@ -5,6 +5,7 @@ import json
 import sys
 import urllib.error
 import urllib.request
+import uuid
 from typing import Any, Optional
 
 
@@ -56,20 +57,32 @@ def _worker_request(method: str, path: str,
         sys.exit(1)
 
 
-def _cmd_execution_cancel(execution_id: str) -> int:
+def _cmd_execution_cancel(
+    execution_id: str,
+    *,
+    expected_version: int,
+    command_id: str | None,
+) -> int:
     status, payload = _worker_request(
         "POST",
         "/api/execution/cancel",
-        {"execution_id": execution_id},
+        {
+            "command_id": command_id or f"cli-cancel-{uuid.uuid4().hex}",
+            "execution_id": execution_id,
+            "expected_version": expected_version,
+        },
     )
     record = payload.get("execution") if isinstance(payload, dict) else None
-    if status == 404 or (isinstance(payload, dict) and payload.get("error") == "ExecutionNotFound"):
+    command = payload.get("command") if isinstance(payload, dict) else None
+    if status == 404 or (isinstance(command, dict) and command.get("rejection_code") == "not_found"):
         print(f"execution {execution_id}: not found")
         return 1
+    if isinstance(command, dict) and command.get("status") == "rejected":
+        latest = command.get("latest_snapshot")
+        version = latest.get("status_version") if isinstance(latest, dict) else None
+        print(f"execution {execution_id}: rejected ({command.get('rejection_code')}); latest_version={version}")
+        return 1
     if not isinstance(record, dict):
-        if status == 409:
-            print(f"execution {execution_id}: not cancellable")
-            return 1
         detail = payload.get("error") if isinstance(payload, dict) else payload
         print(f"execution {execution_id}: {detail or f'worker returned {status}'}")
         return 1

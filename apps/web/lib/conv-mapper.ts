@@ -127,6 +127,8 @@ export interface AttachMeta {
   /** Cross-reference to the Job entity that produced this attach
    *  (when one exists — manual attaches don't have a job). */
   job_id?: string;
+  execution_id?: string;
+  status_version?: number;
 }
 
 function _readAttach(m: LegacyMsg): AttachMeta | undefined {

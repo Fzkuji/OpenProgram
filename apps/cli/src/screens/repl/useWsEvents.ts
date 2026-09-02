@@ -103,6 +103,7 @@ export interface WsEventsCtx {
   sessionAliasesPrintRef: React.MutableRefObject<boolean>;
   sessionAliasesRef: React.MutableRefObject<SessionAliasRow[]>;
   executionIdRef: React.MutableRefObject<string | undefined>;
+  executionVersionRef: React.MutableRefObject<number | undefined>;
 }
 
 type JobEnvelopeCtx = Pick<
@@ -144,7 +145,7 @@ export function handleJobEnvelope(ev: WsEnvelope, ctx: JobEnvelopeCtx): boolean 
 
 type RunningTaskEnvelopeCtx = Pick<
   WsEventsCtx,
-  'conversationId' | 'executionIdRef' | 'setStreaming'
+  'conversationId' | 'executionIdRef' | 'executionVersionRef' | 'setStreaming'
 >;
 
 type OperationErrorEnvelopeCtx = Pick<
@@ -194,6 +195,9 @@ export function handleRunningTaskEnvelope(
   const executionId = ev.data.execution_id;
   if (executionId) {
     ctx.executionIdRef.current = executionId;
+    if (typeof ev.data.status_version === 'number') {
+      ctx.executionVersionRef.current = ev.data.status_version;
+    }
     ctx.setStreaming((streaming) => (
       streaming ? { ...streaming, executionId } : streaming
     ));
@@ -225,12 +229,18 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         const executionId = ev.data.execution_id;
         if (executionId) {
           c.executionIdRef.current = executionId;
+          if (typeof ev.data.status_version === 'number') {
+            c.executionVersionRef.current = ev.data.status_version;
+          }
           c.setStreaming((s) => (s ? { ...s, executionId } : s));
         }
       } else if (ev.type === 'execution.updated') {
         const execution = ev.execution;
         const currentId = c.executionIdRef.current;
         if (execution?.execution_id && currentId && execution.execution_id === currentId) {
+          if (typeof execution.status_version === 'number') {
+            c.executionVersionRef.current = execution.status_version;
+          }
           if (
             execution.status === 'cancelled'
             || execution.status === 'failed'
@@ -240,6 +250,17 @@ export function useWsEvents(ctx: WsEventsCtx): void {
           ) {
             c.finishTurn();
           }
+        }
+      } else if (ev.type === 'execution.command.updated') {
+        const command = ev.command ?? ev.data?.command;
+        const snapshot = command?.latest_snapshot;
+        if (
+          command?.status === 'rejected'
+          && snapshot
+          && snapshot?.execution_id === c.executionIdRef.current
+          && typeof snapshot.status_version === 'number'
+        ) {
+          c.executionVersionRef.current = snapshot.status_version;
         }
       } else if (ev.type === 'chat_response') {
         handleChatResponse(ev.data, c, markSessionLive);

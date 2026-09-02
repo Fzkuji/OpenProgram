@@ -531,7 +531,7 @@ def test_handle_chat_starts_turn_when_ack_socket_is_gone(monkeypatch):
 def test_chat_ack_exposes_only_a_durable_cancellable_execution(
     monkeypatch, tmp_path,
 ):
-    from openprogram.agent.production_driver import cancel_canonical_execution
+    from openprogram.agent.authority import owner_authority
     from openprogram.execution import default_store
     from openprogram.store.session.session_store import SessionStore
     from openprogram.webui import server as _s
@@ -551,7 +551,19 @@ def test_chat_ack_exposes_only_a_durable_cancellable_execution(
     monkeypatch.setattr(store_module, "_default_store", store)
     monkeypatch.setattr(_s, "_get_or_create_session", lambda sid, **kw: conv)
     monkeypatch.setattr(chat_actions, "_db_agent_id", lambda sid: "main")
-    monkeypatch.setattr(_s, "_emit_running_task_event", lambda sid: None)
+    running_frames: list[dict] = []
+
+    def _emit_running_task_event(sid, **_kwargs):
+        with _s._running_tasks_lock:
+            task = dict(_s._running_tasks.get(sid) or {})
+        if task:
+            running_frames.append({"type": "running_task", "data": {
+                "session_id": sid,
+                "execution_id": task.get("execution_id"),
+                "status_version": task.get("status_version"),
+            }})
+
+    monkeypatch.setattr(_s, "_emit_running_task_event", _emit_running_task_event)
     monkeypatch.setattr(session_actions, "broadcast_sessions_list", lambda: None)
     monkeypatch.setattr(
         session_config,
@@ -584,10 +596,8 @@ def test_chat_ack_exposes_only_a_durable_cancellable_execution(
                 return
             execution_id = frame["data"]["execution_id"]
             observed["execution_id"] = execution_id
+            observed["status_version"] = frame["data"]["status_version"]
             observed["record_exists"] = default_store().get_execution(execution_id) is not None
-            observed["cancel"] = (
-                await cancel_canonical_execution(execution_id)
-            ).execution.to_dict()
 
     try:
         asyncio.run(handle_chat(
@@ -599,7 +609,33 @@ def test_chat_ack_exposes_only_a_durable_cancellable_execution(
 
     assert observed["execution_id"]
     assert observed["record_exists"] is True
-    assert observed["cancel"]["status"] == "cancelled"
+    assert running_frames[-1]["data"] == {
+        "session_id": session_id,
+        "execution_id": observed["execution_id"],
+        "status_version": observed["status_version"],
+    }
+
+    class _ControlWS:
+        def __init__(self):
+            self.scope = {"state": {
+                "authority": owner_authority("owner/install/0123456789abcdef"),
+            }}
+            self.sent: list[dict] = []
+
+        async def send_text(self, text: str) -> None:
+            self.sent.append(json.loads(text))
+
+    control_ws = _ControlWS()
+    from openprogram.webui.ws_actions import runtime
+    asyncio.run(runtime.ACTIONS["execution.cancel"](control_ws, {
+        "action": "execution.cancel",
+        "command_id": "chat-ack-stop",
+        "execution_id": running_frames[-1]["data"]["execution_id"],
+        "expected_version": running_frames[-1]["data"]["status_version"],
+    }))
+    command = next(frame for frame in control_ws.sent
+                   if frame["type"] == "execution.command.updated")
+    assert command["command"]["status"] == "applied"
 
 
 def test_chat_ack_echoes_ask_when_permission_mode_missing_or_invalid(

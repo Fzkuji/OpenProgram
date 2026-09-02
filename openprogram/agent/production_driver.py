@@ -109,6 +109,7 @@ class CanonicalAgentActivation:
     admission: CanonicalAgentAdmission
     attempt_id: str
     generation: int
+    status_version: int
 
 
 InputResolver = Callable[[Any], Mapping[str, Any]]
@@ -1659,7 +1660,7 @@ class CanonicalAgentEntry:
             owner_id=f"agent-entry-{uuid.uuid4().hex}",
             ttl_seconds=30,
         )
-        active, _running = self.control.attempts.activate(
+        active, running = self.control.attempts.activate(
             attempt.attempt_id,
             generation=attempt.generation,
             expected_execution_version=leased.status_version,
@@ -1686,6 +1687,7 @@ class CanonicalAgentEntry:
             admission=admission,
             attempt_id=active.attempt_id,
             generation=active.generation,
+            status_version=running.status_version,
         )
 
 
@@ -1764,10 +1766,17 @@ class CanonicalAgentAdapter:
             config_snapshot_ref=config_snapshot_ref,
         )
 
-    async def activate(self, admission: CanonicalAgentAdmission) -> Any:
+    async def activate(
+        self,
+        admission: CanonicalAgentAdmission,
+        *,
+        on_activated: Callable[[CanonicalAgentActivation], None] | None = None,
+    ) -> Any:
         active = await self.entry.activate(admission)
         if active is None:
             return None
+        if on_activated is not None:
+            on_activated(active)
         handle = self.driver._handles[
             (active.admission.execution_id, active.attempt_id, active.generation)
         ]
@@ -1787,45 +1796,31 @@ class CanonicalAgentAdapter:
 
 
 async def cancel_canonical_execution(
-    execution_id: str, *, reason_code: str = "cancel.user",
+    execution_id: str,
+    *,
+    reason_code: str = "cancel.user",
+    command_id: str | None = None,
 ) -> Any | None:
-    """Cancel one canonical execution through the control service."""
+    """Cancel one canonical execution through its durable command ledger."""
     from types import SimpleNamespace
 
     from openprogram.agent.authority import local_owner_authority
     from openprogram.execution import default_control_service, default_store
-    from openprogram.execution.attempts import AttemptConflict
-    from openprogram.execution.store import ExecutionConflict
 
     store = default_store()
     service = default_control_service()
-    for attempt_number in range(2):
-        execution = store.get_execution(execution_id)
-        if execution is None:
-            return None
-        if execution.status in TERMINAL_EXECUTION_STATUSES or execution.status is ExecutionStatus.CANCELLING:
-            return SimpleNamespace(execution=execution)
-        try:
-            return await service.request_cancel(
-                command_id=f"cancel_{uuid.uuid4().hex}",
-                execution_id=execution_id,
-                expected_version=execution.status_version,
-                actor=local_owner_authority(),
-                reason_code=reason_code,
-            )
-        except (AttemptConflict, ExecutionConflict):
-            latest = store.get_execution(execution_id)
-            if latest is None:
-                return None
-            if (
-                latest.status in TERMINAL_EXECUTION_STATUSES
-                or latest.status is ExecutionStatus.CANCELLING
-            ):
-                return SimpleNamespace(execution=latest)
-            if attempt_number == 0:
-                continue
-            raise
-    return None
+    execution = store.get_execution(execution_id)
+    if execution is None:
+        return None
+    if execution.status in TERMINAL_EXECUTION_STATUSES or execution.status is ExecutionStatus.CANCELLING:
+        return SimpleNamespace(execution=execution)
+    return await service.request_cancel(
+        command_id=command_id or f"canonical-cancel:{execution_id}",
+        execution_id=execution_id,
+        expected_version=execution.status_version,
+        actor=local_owner_authority(),
+        reason_code=reason_code,
+    )
 
 
 __all__ = [

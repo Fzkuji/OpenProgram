@@ -199,12 +199,14 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     setActivity({ verb, startedAt: Date.now() });
 
   const executionIdRef = useRef<string | undefined>(undefined);
+  const executionVersionRef = useRef<number | undefined>(undefined);
   const stopStageRef = useRef<0 | 1 | 2>(0);
 
   const finishTurn = () => {
     setActivity(null);
     stopStageRef.current = 0;  // reset three-stage stop for the next turn
     executionIdRef.current = undefined;
+    executionVersionRef.current = undefined;
   };
 
 
@@ -225,7 +227,24 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     setChannelActivityByConv,
     agentSetRef, sessionAliasesPrintRef, sessionAliasesRef,
     executionIdRef,
+    executionVersionRef,
   });
+
+  const cancelCurrentExecution = () => {
+    const executionId = executionIdRef.current || streaming?.executionId;
+    const expectedVersion = executionVersionRef.current;
+    if (executionId && typeof expectedVersion === 'number') {
+      client.send({
+        action: 'execution.cancel',
+        command_id: randomLocalId(),
+        execution_id: executionId,
+        expected_version: expectedVersion,
+      });
+      return true;
+    }
+    pushSystem('Cancel unavailable: no current execution version');
+    return false;
+  };
 
 
   // Double-press Ctrl+C to exit (Claude Code / Hermes pattern).
@@ -260,13 +279,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
           }, 1500);
         } else {
           stopStageRef.current = 2;
-          const executionId = executionIdRef.current || streaming.executionId;
-          if (executionId) {
-            client.send({ action: 'execution.cancel', execution_id: executionId });
-          } else {
-            pushSystem('Cancel unavailable: no canonical execution id');
-          }
-          pushSystem('Cancel execution');
+          if (cancelCurrentExecution()) pushSystem('Cancel execution');
           exitTimerRef.current = setTimeout(() => {
             exitTimerRef.current = null;
             stopStageRef.current = 0;
@@ -492,13 +505,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
 
   const onCancel = () => {
     if (!conversationId) return;
-    const executionId = executionIdRef.current || streaming?.executionId;
-    if (executionId) {
-      client.send({ action: 'execution.cancel', execution_id: executionId });
-    } else {
-      pushSystem('Cancel unavailable: no canonical execution id');
-    }
-    pushSystem('Cancel execution');
+    if (cancelCurrentExecution()) pushSystem('Cancel execution');
   };
 
   const elapsed = activity ? (Date.now() - activity.startedAt) / 1000 : undefined;

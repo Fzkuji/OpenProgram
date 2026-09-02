@@ -605,6 +605,7 @@ def run_agentic_function_call(
             _reserved_task.update({
                 "func_name": name,
                 "execution_id": execution_id,
+                "status_version": _admission.status_version,
             })
 
     # Stage-1 title (immediate placeholder): the call signature, so
@@ -638,8 +639,17 @@ def run_agentic_function_call(
     def _run():
         try:
             try:
+                def _publish_activation(active):
+                    with _s._running_tasks_lock:
+                        task = _s._running_tasks.get(session_id)
+                        if task and task.get("execution_id") == active.admission.execution_id:
+                            task["status_version"] = active.status_version
+                    _s._emit_running_task_event(session_id)
+
                 async def _activate():
-                    _active, result = await _adapter.activate(_admission)
+                    _active, result = await _adapter.activate(
+                        _admission, on_activated=_publish_activation,
+                    )
                     return result
 
                 out = asyncio.run(_activate())

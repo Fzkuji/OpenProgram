@@ -247,6 +247,7 @@ def _emit_running_task_event(
                     "started_at": task.get("started_at"),
                     "display_params": task.get("display_params", ""),
                     "execution_id": task.get("execution_id"),
+                    "status_version": task.get("status_version"),
                 },
             }
         else:

@@ -208,17 +208,20 @@ def _broadcast_execution(execution: dict) -> None:
     }, default=str))
 
 
-def _trusted_runtime_actor(ws) -> dict | None:
-    """Resolve runtime-control authority from the authenticated socket only."""
+def trusted_runtime_actor(scope) -> dict | None:
+    """Resolve runtime-control authority from authenticated transport state."""
     from openprogram.agent.authority import normalize_authority
 
-    scope = getattr(ws, "scope", None)
     state = scope.get("state") if isinstance(scope, dict) else None
     authority = state.get("authority") if isinstance(state, dict) else None
     actor = normalize_authority(authority)
     if not actor or actor.get("authority_tier") != "owner":
         return None
     return actor
+
+
+def _trusted_runtime_actor(ws) -> dict | None:
+    return trusted_runtime_actor(getattr(ws, "scope", None))
 
 
 async def _send_command_update(ws, command, execution) -> None:
@@ -247,14 +250,19 @@ def _rejected_command(cmd: dict, code: str, latest_snapshot: dict | None = None)
     return value
 
 
-async def _handle_execution_control(ws, cmd: dict, operation: str) -> None:
-    """Submit an exact durable runtime command; drivers never see WS input."""
+async def submit_execution_control(
+    cmd: dict,
+    operation: str,
+    *,
+    actor: dict | None,
+    bound_session: str | None = None,
+):
+    """Submit one authenticated exact command through RuntimeControlService."""
     from openprogram.execution import default_control_service, default_store
     from openprogram.execution.store import ExecutionConflict, CommandConflict
     from openprogram.execution.attempts import AttemptConflict
     from openprogram.execution.state_machine import InvalidCommand
 
-    actor = _trusted_runtime_actor(ws)
     execution_id = cmd.get("execution_id")
     command_id = cmd.get("command_id")
     expected_version = cmd.get("expected_version")
@@ -263,27 +271,22 @@ async def _handle_execution_control(ws, cmd: dict, operation: str) -> None:
         or not isinstance(command_id, str) or not command_id
         or type(expected_version) is not int
     ):
-        await _send_command_update(ws, _rejected_command(cmd, "invalid_command"), {
+        return _rejected_command(cmd, "invalid_command"), {
             "execution_id": execution_id or "", "status_version": None,
-        })
-        return
+        }
     store = default_store()
     service = default_control_service()
     execution = store.get_execution(execution_id)
     if execution is None:
-        await _send_command_update(ws, _rejected_command(cmd, "not_found"), {
+        return _rejected_command(cmd, "not_found"), {
             "execution_id": execution_id, "status_version": None,
-        })
-        return
-    # The authenticated session, when supplied by the websocket handshake,
+        }
+    # The authenticated session, when supplied by the transport handshake,
     # must address its own execution.  Do not trust cmd.actor/session fields.
-    state = ws.scope.get("state") if isinstance(getattr(ws, "scope", None), dict) else None
-    bound_session = state.get("session_id") if isinstance(state, dict) else None
     if bound_session is not None and bound_session != execution.session_id:
-        await _send_command_update(ws, _rejected_command(cmd, "not_found"), {
+        return _rejected_command(cmd, "not_found"), {
             "execution_id": execution_id, "status_version": None,
-        })
-        return
+        }
     try:
         if operation in {"pause", "continue", "step"}:
             from openprogram.execution.model import CommandKind
@@ -328,19 +331,34 @@ async def _handle_execution_control(ws, cmd: dict, operation: str) -> None:
                 command_id=command_id, execution_id=execution_id,
                 expected_version=expected_version, actor=actor,
             )
-        await _send_command_update(ws, dispatch.command, dispatch.execution)
+        return dispatch.command, dispatch.execution
     except (ExecutionConflict, CommandConflict, AttemptConflict, InvalidCommand) as exc:
         current = store.get_execution(execution_id)
-        await _send_command_update(
-            ws, _rejected_command(
-                cmd,
-                "unsupported_capability" if getattr(exc, "code", None) == "unsupported" else getattr(exc, "code", "command_rejected"),
-                current.to_dict() if current is not None else None,
-            ),
-            current.to_dict() if current is not None else {
-                "execution_id": execution_id, "status_version": None,
-            },
-        )
+        return _rejected_command(
+            cmd,
+            "unsupported_capability" if getattr(exc, "code", None) == "unsupported" else getattr(exc, "code", "command_rejected"),
+            current.to_dict() if current is not None else None,
+        ), current if current is not None else {
+            "execution_id": execution_id, "status_version": None,
+        }
+
+
+async def _handle_execution_control(ws, cmd: dict, operation: str) -> None:
+    """Submit an exact durable runtime command; drivers never see WS input."""
+    scope = getattr(ws, "scope", None)
+    state = scope.get("state") if isinstance(scope, dict) else None
+    bound_session = state.get("session_id") if isinstance(state, dict) else None
+    command, execution = await submit_execution_control(
+        cmd,
+        operation,
+        actor=_trusted_runtime_actor(ws),
+        bound_session=bound_session if isinstance(bound_session, str) else None,
+    )
+    await _send_command_update(ws, command, execution)
+    execution_data = execution.to_dict() if hasattr(execution, "to_dict") else dict(execution)
+    if operation == "cancel" and execution_data.get("status") in {"cancelling", "cancelled"}:
+        from openprogram.webui import server as _s
+        _s._release_session_occupancy_for_execution(execution_data)
 
 
 async def handle_execution_pause(ws, cmd: dict):

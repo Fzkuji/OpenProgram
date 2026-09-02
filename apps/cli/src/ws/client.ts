@@ -25,7 +25,12 @@ export type JsonSchemaOutput = {
 export type WsRequest =
   | ChatRequest
   | { action: 'stats' }
-  | { action: 'execution.cancel'; execution_id: string }
+  | {
+      action: 'execution.cancel';
+      command_id: string;
+      execution_id: string;
+      expected_version: number;
+    }
   | { action: 'set_attended'; session_id: string; attended: boolean }
   | { action: 'browser'; verb: string; args?: Record<string, unknown> }
   | { action: 'list_models' }
@@ -133,7 +138,12 @@ export interface JobRow {
 
 export interface ChatAck {
   type: 'chat_ack';
-  data: { session_id: string; msg_id: string; execution_id?: string };
+  data: {
+    session_id: string;
+    msg_id: string;
+    execution_id?: string;
+    status_version?: number;
+  };
 }
 
 export interface ChatResponse {
@@ -461,7 +471,16 @@ export type WsEnvelope =
     }
   | { type: 'attended_changed'; data: { session_id: string; attended: boolean } }
   | { type: 'steer_ack'; data: { session_id: string; queued: boolean; message?: string } }
-  | { type: 'running_task'; data: { session_id: string; msg_id?: string; func_name?: string; execution_id?: string } }
+  | {
+      type: 'running_task';
+      data: {
+        session_id: string;
+        msg_id?: string;
+        func_name?: string;
+        execution_id?: string;
+        status_version?: number;
+      };
+    }
   | { type: 'running_task_clear'; data: { session_id: string } }
   | {
       type: 'execution.updated';
@@ -470,6 +489,24 @@ export type WsEnvelope =
         session_id?: string;
         status?: string;
         reason_code?: string;
+        status_version?: number;
+      };
+    }
+  | {
+      type: 'execution.command.updated';
+      command?: {
+        command_id?: string;
+        execution_id?: string;
+        status?: string;
+        latest_snapshot?: { execution_id?: string; status_version?: number };
+      };
+      data?: {
+        command?: {
+          command_id?: string;
+          execution_id?: string;
+          status?: string;
+          latest_snapshot?: { execution_id?: string; status_version?: number };
+        };
       };
     }
   | { type: 'spawn_job_result'; data: Record<string, unknown> }
