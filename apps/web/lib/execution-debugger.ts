@@ -148,7 +148,7 @@ export function canExecuteAction(
   }
   if (action === "pause") return snapshot.status === "queued" || snapshot.status === "running";
   if (action === "step") return snapshot.status === "paused" && snapshot.capabilities.step;
-  if (action === "steer") return snapshot.status === "paused" && snapshot.capabilities.steer;
+  if (action === "steer") return ["running", "paused"].includes(snapshot.status) && snapshot.capabilities.steer;
   if (action === "fork") return ["paused", "completed", "failed", "interrupted"].includes(snapshot.status)
     && snapshot.capabilities.fork;
   return ["failed", "interrupted"].includes(snapshot.status) && snapshot.capabilities.retry;
