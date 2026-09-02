@@ -1726,7 +1726,7 @@ async def handle_turn_operation_status(ws, cmd: dict) -> None:
         "request_id": cmd.get("request_id"),
         "action": "turn_operation_status",
     }
-    if (not session_id or not msg_id
+    if (not session_id or not _valid_turn_id(msg_id)
             or operation_action not in {"revert_turn", "reapply_turn"}
             or not isinstance(key, str) or not key):
         payload.update({"status": "error", "error_code": "INVALID_REQUEST"})

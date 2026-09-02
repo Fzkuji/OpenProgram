@@ -263,16 +263,24 @@ def test_turn_operation_status_reads_history_intent_by_turn_and_key(tmp_path, mo
 
     session_dir = tmp_path / "session"
     journal = CheckpointStore(session_dir)
-    intent_path = journal._intent_path("turn-1", "revert", "turn-key")
-    intent_path.parent.mkdir(parents=True, exist_ok=True)
-    intent_path.write_text(json.dumps({
-        "idempotency_key": "turn-key",
-        "turn_id": "turn-1",
-        "direction": "revert",
-        "target_msg_id": None,
-        "transaction_id": "turn-op-1",
-        "status": "committed",
-    }), encoding="utf-8")
+    target = tmp_path / "history.txt"
+    target.write_text("before", encoding="utf-8")
+    journal.backup_before_edit("turn-1", str(target))
+    target.write_text("after", encoding="utf-8")
+    journal.commit_after_edit("turn-1", str(target), operation="edit")
+    ordinary = journal.apply_history_operation(
+        "turn-1", "revert", idempotency_key="turn-key",
+    )
+    assert ordinary["status"] == "committed"
+
+    closure_key = "turn-closure:revert:closure-key"
+    closure = journal.apply_rewind_operation(
+        [], expected_head_id=None, target_head_id=None,
+        get_head=lambda: None,
+        compare_and_set_head=lambda expected, target: expected is None and target is None,
+        idempotency_key=closure_key, target_msg_id="revert:turn-2",
+    )
+    assert closure["status"] == "committed"
 
     class FakeStore:
         def _session_dir(self, session_id):
@@ -283,10 +291,10 @@ def test_turn_operation_status_reads_history_intent_by_turn_and_key(tmp_path, mo
     terminal = run(turn_files.handle_turn_operation_status, {
         "session_id": "session-a", "msg_id": "turn-1",
         "operation_action": "revert_turn", "idempotency_key": "turn-key",
-        "operation_id": "turn-op-1", "request_id": str(uuid.uuid4()),
+        "operation_id": ordinary["transaction_id"], "request_id": str(uuid.uuid4()),
     })["data"]
     assert terminal["status"] == "ready"
-    assert terminal["operation_id"] == "turn-op-1"
+    assert terminal["operation_id"] == ordinary["transaction_id"]
 
     mismatch = run(turn_files.handle_turn_operation_status, {
         "session_id": "session-a", "msg_id": "turn-1",
@@ -303,6 +311,22 @@ def test_turn_operation_status_reads_history_intent_by_turn_and_key(tmp_path, mo
     })["data"]
     assert unknown["status"] == "error"
     assert unknown["error_code"] == "RECEIPT_UNAVAILABLE"
+
+    unsafe = run(turn_files.handle_turn_operation_status, {
+        "session_id": "session-a", "msg_id": "../turn-1",
+        "operation_action": "revert_turn", "idempotency_key": "turn-key",
+        "request_id": str(uuid.uuid4()),
+    })["data"]
+    assert unsafe["status"] == "error"
+    assert unsafe["error_code"] == "INVALID_REQUEST"
+
+    global_terminal = run(turn_files.handle_turn_operation_status, {
+        "session_id": "session-a", "msg_id": "turn-2",
+        "operation_action": "revert_turn", "idempotency_key": "closure-key",
+        "operation_id": closure["transaction_id"], "request_id": str(uuid.uuid4()),
+    })["data"]
+    assert global_terminal["status"] == "ready"
+    assert global_terminal["operation_id"] == closure["transaction_id"]
 
 
 def test_file_operation_compaction_has_explicit_safe_retention(tmp_path):
