@@ -238,3 +238,26 @@ test("in-progress mutation reaches recovery_required at its deadline", async () 
   assert.equal(result?.operation_id, "op-deadline");
   assert.equal(idempotencyKeyFor("project_file_write", payload), key);
 });
+
+test("aborting a request retains its key for a later durable replay", async () => {
+  // Reuse a retained identity from the capacity test; no new registry entry
+  // is needed to verify that an abort preserves the durable key.
+  const payload = { project_id: "project-capacity", path: "file-1.txt", content: "pending" };
+  const key = idempotencyKeyFor("project_file_write", payload);
+  const controller = new AbortController();
+  const first = wsMutationRequest(key, (signal) => new Promise((resolve) => {
+    signal.addEventListener("abort", () => resolve(null), { once: true });
+  }), { signal: controller.signal, maxAttempts: 1 });
+  controller.abort();
+  assert.equal(await first, null);
+  assert.equal(idempotencyKeyFor("project_file_write", payload), key);
+
+  let serverCalls = 0;
+  const replay = await wsMutationRequest(key, async () => {
+    serverCalls += 1;
+    return { status: "ready", operation_id: "op-abort-replay" };
+  });
+  assert.equal(replay?.operation_id, "op-abort-replay");
+  assert.equal(serverCalls, 1);
+  assert.notEqual(idempotencyKeyFor("project_file_write", payload), key);
+});

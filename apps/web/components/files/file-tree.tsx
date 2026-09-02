@@ -37,7 +37,6 @@ import {
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   idempotencyKeyFor,
-  forgetWsMutation,
   MutationRegistryCapacityError,
   wsMutationRequest,
   wsRequest,
@@ -309,8 +308,8 @@ export function FileTree({
   const directoryPagesRef = useRef<Record<string, DirectoryPage>>({});
   const queryControllers = useRef(new Set<AbortController>());
   const mutationControllers = useRef(new Set<AbortController>());
-  const mutationKeys = useRef(new Set<string>());
   const queryGeneration = useRef(0);
+  const mutationLifecycleGeneration = useRef(0);
   const searchGeneration = useRef(0);
   const searchCursor = useRef<string | null>(null);
   const searchSnapshot = useRef<string | null>(null);
@@ -331,9 +330,7 @@ export function FileTree({
 
   function abortMutationRequests(): void {
     for (const controller of mutationControllers.current) controller.abort();
-    for (const key of mutationKeys.current) forgetWsMutation(key);
     mutationControllers.current.clear();
-    mutationKeys.current.clear();
   }
 
   useEffect(() => {
@@ -461,6 +458,7 @@ export function FileTree({
       for (const controller of queryControllers.current) controller.abort();
       abortMutationRequests();
       queryGeneration.current += 1;
+      mutationLifecycleGeneration.current += 1;
     };
   }, [load]);
 
@@ -552,6 +550,7 @@ export function FileTree({
     payload: Record<string, unknown>,
     refreshDirs: string[],
   ): Promise<FileOperationResult> {
+    const lifecycleGeneration = mutationLifecycleGeneration.current;
     const operationPayload = { project_id: projectId, ...payload };
     let operationKey: string;
     try {
@@ -563,7 +562,6 @@ export function FileTree({
       return { status: "error", error_code: "MUTATION_REGISTRY_CAPACITY" };
     }
     const operationController = new AbortController();
-    mutationKeys.current.add(operationKey);
     mutationControllers.current.add(operationController);
     let data: FileOperationResult | null = null;
     try {
@@ -586,11 +584,14 @@ export function FileTree({
       data = null;
     } finally {
       mutationControllers.current.delete(operationController);
-      mutationKeys.current.delete(operationKey);
     }
     const result: FileOperationResult = data
       ? { ...data, status: data.status ?? (data.ok ? "ready" : "error") }
       : { status: "error", error_code: "TRANSPORT_ERROR" };
+    // The server may still have accepted the durable operation after this
+    // component was replaced. Keep its idempotency key for replay, but do not
+    // let the old component alert or broadcast into the new project view.
+    if (lifecycleGeneration !== mutationLifecycleGeneration.current) return result;
     if (!data || data.project_id !== projectId || data.path !== payload.path
       || result.error || result.status === "conflict" || result.status === "recovery_required"
       || result.status === "error" || result.status === "in_progress") {

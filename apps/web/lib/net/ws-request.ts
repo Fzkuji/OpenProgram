@@ -156,11 +156,6 @@ function forgetMutationKey(key: string): void {
   }
 }
 
-/** Release a component-owned idempotency entry when its lifecycle ends. */
-export function forgetWsMutation(key: string): void {
-  forgetMutationKey(key);
-}
-
 export interface WsMutationOptions {
   signal?: AbortSignal;
   maxAttempts?: number;
