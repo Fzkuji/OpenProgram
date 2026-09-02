@@ -198,6 +198,7 @@ const data = await requestReviewScope({
     }
     setDiffState({ loading: true, path: selectedPath });
     const controller = new AbortController();
+    const snapshotId = scopeState.snapshot_id;
     void (async () => {
       const data = await requestReviewDiff({
         sessionId,
@@ -208,7 +209,7 @@ const data = await requestReviewScope({
         sort,
         path: selectedPath,
         cursor: diffCursor,
-        snapshotId: scopeState.snapshot_id,
+        snapshotId,
         signal: controller.signal,
       });
       if (controller.signal.aborted) return;

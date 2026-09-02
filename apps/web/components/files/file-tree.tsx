@@ -28,6 +28,7 @@ import {
   noteFileMtime,
   runServerRenameWithDrafts,
   type Project,
+  type ServerRenameResult,
 } from "@/lib/state/files-shared";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
@@ -498,17 +499,15 @@ export function FileTree({
     // The project-files-changed listener performs one generation-safe refresh;
     // avoid starting directory requests that the event would immediately abort.
     void refreshDirs;
-    if (op !== "reveal") {
-      if (op === "rename") {
-        invalidateFileRead(projectId, String(payload.path ?? ""));
-        invalidateFileRead(projectId, String(payload.new_path ?? ""));
-      } else if (op === "delete" || op === "write") {
-        invalidateFileRead(projectId, String(payload.path ?? ""));
-      }
-      window.dispatchEvent(new CustomEvent("project-files-changed", {
-        detail: { project_id: projectId },
-      }));
+    if (op === "rename") {
+      invalidateFileRead(projectId, String(payload.path ?? ""));
+      invalidateFileRead(projectId, String(payload.new_path ?? ""));
+    } else if (op === "delete" || op === "write") {
+      invalidateFileRead(projectId, String(payload.path ?? ""));
     }
+    window.dispatchEvent(new CustomEvent("project-files-changed", {
+      detail: { project_id: projectId },
+    }));
     return result;
   }
 

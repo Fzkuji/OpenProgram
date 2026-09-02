@@ -287,7 +287,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   });
   const { unattended, toggleUnattended } = useUnattendedMode(
     currentSessionId,
-    sendWaitCommand,
+    send,
   );
   const { sandbox, sandboxAvailable, sandboxReason, toggleSandbox } =
     useSandboxToggle(activeChatKey ?? currentSessionId);
@@ -378,7 +378,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     boundSessionId: bound,
     input,
     textareaRef,
-    sendWaitCommand,
+    send,
     openContextPanel: () => setContextPanelOpen(true),
   });
 

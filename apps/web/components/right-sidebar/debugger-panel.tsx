@@ -44,7 +44,7 @@ export type DebuggerPanelProps = {
   waits?: DurableWait[];
   drafts?: RevisionDraft[];
   onSelectExecution?: (executionId: string) => void;
-  onCommand?: (command: ExecutionCommand) => Promise<CommandResult> | CommandResult | void;
+  onCommand?: (command: ExecutionCommand) => Promise<CommandResult | void> | CommandResult | void;
   onRespondWait?: (input: {
     wait_id: string;
     execution_id: string;
@@ -182,7 +182,7 @@ function ActionButton({
   pending: boolean;
   payload?: Record<string, unknown>;
   ready?: boolean;
-  onCommand?: (command: ExecutionCommand) => Promise<CommandResult> | CommandResult | void;
+  onCommand?: (command: ExecutionCommand) => Promise<CommandResult | void> | CommandResult | void;
 }) {
   const available = availableExecutionActions(snapshot).includes(action);
   const disabled = !available || !ready || !onCommand || pending;

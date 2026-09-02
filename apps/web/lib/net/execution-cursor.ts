@@ -35,15 +35,17 @@ export function recordExecutionCursor(value: unknown): {
 } {
   if (!value || typeof value !== "object") return {};
   const raw = value as Partial<ExecutionCursor>;
+  const nextSequence = raw.next_sequence;
+  const snapshotStatusVersion = raw.snapshot_status_version;
   if (
     typeof raw.execution_id !== "string" || !raw.execution_id
-    || !Number.isSafeInteger(raw.next_sequence) || raw.next_sequence < 1
-    || !Number.isSafeInteger(raw.snapshot_status_version)
+    || typeof nextSequence !== "number" || !Number.isSafeInteger(nextSequence) || nextSequence < 1
+    || typeof snapshotStatusVersion !== "number" || !Number.isSafeInteger(snapshotStatusVersion)
   ) return {};
   const cursor: ExecutionCursor = {
     execution_id: raw.execution_id,
-    next_sequence: raw.next_sequence,
-    snapshot_status_version: raw.snapshot_status_version,
+    next_sequence: nextSequence,
+    snapshot_status_version: snapshotStatusVersion,
   };
   const previous = cursors.get(cursor.execution_id);
   cursors.set(cursor.execution_id, cursor);
