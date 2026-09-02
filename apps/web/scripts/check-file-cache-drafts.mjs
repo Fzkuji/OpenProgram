@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const shared = readFileSync(new URL("../lib/state/files-shared.ts", import.meta.url), "utf8")
+const shared = readFileSync(new URL("../lib/state/file-state-shared.ts", import.meta.url), "utf8")
+  + readFileSync(new URL("../lib/state/files-shared.ts", import.meta.url), "utf8")
   + readFileSync(new URL("../lib/state/file-drafts.ts", import.meta.url), "utf8");
 const store = readFileSync(new URL("../lib/state/file-draft-store.ts", import.meta.url), "utf8");
 const viewer = readFileSync(new URL("../components/files/file-viewer.tsx", import.meta.url), "utf8");

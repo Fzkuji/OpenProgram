@@ -8,17 +8,10 @@ import stat
 import subprocess
 import sys
 
-from .files import (
-    _BINARY_SNIFF_BYTES, _READ_MAX_BYTES, _WRITE_MAX_BYTES, _file_digest,
+from .files_shared import (
+    _BINARY_SNIFF_BYTES, _READ_MAX_BYTES, _WRITE_MAX_BYTES, _file_digest, _open,
 )
 from .files_query import _resolve
-
-
-def _open(*args, **kwargs):
-    # Keep the established files-module injection point usable by component
-    # tests while the implementation lives in this module.
-    from . import files as owner
-    return owner.open(*args, **kwargs)
 
 def _read_file(project_id: str, path: str) -> dict:
     target, error = _resolve(project_id, path)
@@ -224,4 +217,3 @@ def _reveal_entry(project_id: str, path: str) -> dict:
     except OSError as e:
         return {"error": f"{type(e).__name__}: {e}"}
     return {"ok": True}
-

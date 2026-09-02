@@ -8,38 +8,15 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 
 import { wsRequest } from "@/lib/net/ws-request";
 import { useSessionStore } from "@/lib/session-store";
+import {
+  fileScopeKey,
+  getDraftPersistenceError,
+  subscribeDraftPersistenceErrors,
+  type FileReadResult,
+  type Project,
+} from "./file-state-shared";
 
-export interface Project {
-  id: string;
-  name: string;
-  path: string;
-  is_default: boolean;
-}
-
-const FILE_OWNER_KEYS = [
-  "project_id", "session_id", "assistant_msg_id", "path", "snapshot_id",
-] as const;
-
-/**
- * Correlate a file reply after wsRequest has already checked request_id and
- * action.  A stale/error reply is still the reply for this request even
- * when the server cannot provide a snapshot id (for example an expired
- * cursor), so snapshot_id is optional for those terminal states.  Other
- * owner fields remain strict to prevent cross-project/session updates.
- */
-export function fileResponseMatchesOwner(
-  data: Record<string, unknown>,
-  payload: Record<string, unknown>,
-): boolean {
-  const staleOrError = data.status === "stale"
-    || data.status === "error"
-    || typeof data.error_code === "string";
-  return FILE_OWNER_KEYS.every((key) => {
-    if (payload[key] === undefined) return true;
-    if (key === "snapshot_id" && staleOrError && data[key] == null) return true;
-    return data[key] === payload[key];
-  });
-}
+export * from "./file-state-shared";
 
 interface ProjectListResponse {
   projects: Project[] | null;
@@ -50,39 +27,12 @@ interface ProjectListResponse {
   error?: string | null;
 }
 
-/** Last cleanup failure is retained for the existing file error surfaces. */
-export const draftPersistenceErrors = new Map<string, string>();
-const draftErrorListeners = new Set<() => void>();
-
-export function notifyDraftErrorListeners(): void {
-  for (const listener of draftErrorListeners) listener();
-}
-
-export function getDraftPersistenceError(scope: string): string | null {
-  return draftPersistenceErrors.get(scope) ?? null;
-}
-
-export function subscribeDraftPersistenceErrors(listener: () => void): () => void {
-  draftErrorListeners.add(listener);
-  return () => draftErrorListeners.delete(listener);
-}
-
 export function useDraftPersistenceError(scope: string): string | null {
   return useSyncExternalStore(
     subscribeDraftPersistenceErrors,
     () => getDraftPersistenceError(scope),
     () => getDraftPersistenceError(scope),
   );
-}
-
-export function reportDraftPersistenceError(scope: string, message: string): void {
-  draftPersistenceErrors.set(scope, message);
-  notifyDraftErrorListeners();
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("project-draft-error", {
-      detail: { scope, message },
-    }));
-  }
 }
 
 /**
@@ -169,33 +119,11 @@ export const LATEST_MTIME_MAX_ENTRIES = 256;
 
 export const READ_CACHE_MAX_ENTRIES = 64;
 export const READ_CACHE_MAX_BYTES = 16 * 1024 * 1024;
-export const DRAFT_MAX_ENTRIES = 32;
-export const DRAFT_MAX_BYTES = 8 * 1024 * 1024;
-
 const utf8 = new TextEncoder();
-
-/** A project/path key is never shared with another project. */
-export function fileScopeKey(projectId: string, path: string): string {
-  return `${projectId}:${path}`;
-}
 
 /** Read cache revisions use mtime as the worker's content identity. */
 export function fileReadCacheKey(projectId: string, path: string, mtime: number): string {
   return `${fileScopeKey(projectId, path)}:${mtime}`;
-}
-
-/** Wire shape of a ``project_file_read_result`` reply. */
-export interface FileReadResult {
-  project_id: string;
-  path: string;
-  content?: string;
-  size: number;
-  mtime: number;
-  revision?: string;
-  truncated?: boolean;
-  binary?: boolean;
-  too_large?: boolean;
-  error?: string;
 }
 
 /** Read-result cache. Production writes use cacheFileRead to enforce bounds. */

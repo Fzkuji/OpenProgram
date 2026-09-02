@@ -6,7 +6,7 @@ import {
   DRAFT_MAX_BYTES,
   reportDraftPersistenceError,
   notifyDraftErrorListeners,
-} from "./files-shared";
+} from "./file-state-shared";
 import {
   IndexedDbDraftStore,
   DraftStoreQuotaError,

@@ -15,22 +15,22 @@ import threading
 import time
 from dataclasses import dataclass
 
-_QUERY_PAGE_SIZE = 100
-_QUERY_MAX_SNAPSHOTS = 256
-_QUERY_MAX_SNAPSHOT_ITEMS = 10_000
-_QUERY_MAX_TOTAL_ITEMS = 50_000
-_QUERY_MAX_TOTAL_BYTES = 16 * 1024 * 1024
-_QUERY_MAX_CURSORS = 100_000
-_QUERY_SNAPSHOT_TTL = 300.0
-_SEARCH_IGNORED_DIRS = frozenset({
-    "node_modules", ".git", "dist", ".next", "__pycache__",
-    ".venv", "venv", ".cache", "target", "build",
-})
+from . import files_shared as _shared
+from .files_shared import _resolve
 
 def _setting(name: str):
-    """Read test-adjustable limits from the public action module."""
-    from . import files as owner
-    return getattr(owner, name, globals()[name])
+    """Read limits from the dependency-free shared configuration layer."""
+    return getattr(_shared, name)
+
+
+_QUERY_PAGE_SIZE = _shared._QUERY_PAGE_SIZE
+_QUERY_MAX_SNAPSHOTS = _shared._QUERY_MAX_SNAPSHOTS
+_QUERY_MAX_SNAPSHOT_ITEMS = _shared._QUERY_MAX_SNAPSHOT_ITEMS
+_QUERY_MAX_TOTAL_ITEMS = _shared._QUERY_MAX_TOTAL_ITEMS
+_QUERY_MAX_TOTAL_BYTES = _shared._QUERY_MAX_TOTAL_BYTES
+_QUERY_MAX_CURSORS = _shared._QUERY_MAX_CURSORS
+_QUERY_SNAPSHOT_TTL = _shared._QUERY_SNAPSHOT_TTL
+_SEARCH_IGNORED_DIRS = _shared._SEARCH_IGNORED_DIRS
 
 @dataclass(frozen=True)
 class _QuerySnapshot:
@@ -59,27 +59,6 @@ class _UnsafeQueryPath(ValueError):
 
 class _QueryLimitError(OSError):
     pass
-
-
-def _resolve(project_id: str, path: str) -> tuple[str | None, str | None]:
-    """Resolve a project-relative ``path`` to an absolute filesystem path
-    INSIDE the project root. Returns ``(absolute_path, error)``; exactly
-    one side is non-None. Shared by both WS actions and ``/files/raw``.
-    """
-    path = path or ""
-    # Absolute paths are never valid client input — reject up front, even
-    # ones that would resolve inside the root.
-    if os.path.isabs(path):
-        return None, "path escapes project root"
-    from openprogram.store.project import project_store as _projects
-    proj = _projects.get_project(project_id)
-    if proj is None or not proj.path:
-        return None, f"unknown project {project_id!r}"
-    root = os.path.realpath(os.path.expanduser(proj.path))
-    target = os.path.realpath(os.path.join(root, path))
-    if target != root and not target.startswith(root + os.sep):
-        return None, "path escapes project root"
-    return target, None
 
 
 def _query_path(path: object) -> tuple[str | None, str | None]:

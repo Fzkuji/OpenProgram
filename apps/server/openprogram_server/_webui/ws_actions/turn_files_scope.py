@@ -12,20 +12,22 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .turn_files import (
+from . import turn_files_shared as _shared
+from .turn_files_shared import (
     _MAX_SCOPE_FILES, _SCOPE_PAGE_SIZE, _MAX_REVIEW_SNAPSHOTS,
     _MAX_REVIEW_SNAPSHOT_BYTES, _MAX_REVIEW_SNAPSHOT_ITEMS,
     _REVIEW_SNAPSHOT_TTL, _MAX_REVIEW_SNAPSHOT_TOMBSTONES,
     _MAX_REVIEW_CURSORS, _MAX_REVIEW_TEXT_BYTES, _REVIEW_CATEGORIES,
     _REVIEW_SORTS, _REVIEW_SCOPES, _REVIEW_SNAPSHOTS, _REVIEW_CURSORS,
     _REVIEW_SNAPSHOT_EPOCHS, _REVIEW_REGISTRY_LOCK,
-    _REVIEW_SNAPSHOT_NONCE,
+    _setting, _valid_turn_id,
 )
+from .turn_files_diff_shared import _net_stats, _same_state
 
 
-def _setting(name: str):
-    from . import turn_files as owner
-    return getattr(owner, name, globals()[name])
+def _project_root(session_id: str) -> Path | None:
+    return _shared._project_root(session_id)
+
 
 class _OutputLimitError(OSError):
     pass
@@ -58,23 +60,6 @@ def _open_session(session_id: str):
     return store, git, index, store._session_dir(session_id)
 
 
-def _project_root(session_id: str) -> Path | None:
-    # Resolve through the public module so lifecycle/test overrides remain
-    # visible after the implementation moved out of turn_files.py.
-    from . import turn_files as owner
-    if owner.__dict__.get("_project_root") is not _project_root:
-        return owner.__dict__["_project_root"](session_id)
-    try:
-        from openprogram.store.project.project_store import project_for_session
-
-        project = project_for_session(session_id)
-        if project and project.path:
-            return Path(project.path).expanduser().resolve()
-    except Exception:
-        pass
-    return None
-
-
 def _relative(path: str, root: Path | None) -> str:
     if root is not None:
         try:
@@ -91,17 +76,6 @@ def _manifest_mutations(session_dir: Path, turn_id: str) -> list[dict]:
         return []
     return CheckpointStore(session_dir).list_mutations(turn_id)
 
-
-def _valid_turn_id(turn_id: str) -> bool:
-    return bool(
-        turn_id
-        and turn_id not in {".", ".."}
-        and not any(ord(char) < 32 or 0x7f <= ord(char) <= 0x9f for char in turn_id)
-        and not Path(turn_id).is_absolute()
-        and Path(turn_id).name == turn_id
-        and "/" not in turn_id
-        and "\\" not in turn_id
-    )
 
 def _normalise_file(row: dict, root: Path | None) -> dict:
     stats = row.get("stats") or {}
@@ -245,14 +219,13 @@ def _tombstone_review_snapshot(snapshot_id: str, entry: dict) -> None:
 
 
 def _snapshot_instance_id(basis_hash: str) -> str:
-    global _REVIEW_SNAPSHOT_NONCE
     with _REVIEW_REGISTRY_LOCK:
         _expire_review_registry()
         for snapshot_id, entry in _REVIEW_SNAPSHOTS.items():
             if entry.get("basis_hash") == basis_hash:
                 return snapshot_id
-        _REVIEW_SNAPSHOT_NONCE += 1
-        return f"sha256:{basis_hash}:{_REVIEW_SNAPSHOT_NONCE}"
+        _shared._REVIEW_SNAPSHOT_NONCE += 1
+        return f"sha256:{basis_hash}:{_shared._REVIEW_SNAPSHOT_NONCE}"
 
 
 def _expire_review_registry(now: float | None = None) -> None:
@@ -806,16 +779,6 @@ def _branch_scope(
             "turn_ids": lineage["turn_ids"],
         } for lineage in lineages.values()],
     )
-
-
-def _same_state(*args, **kwargs):
-    from .turn_files_diff import _same_state as implementation
-    return implementation(*args, **kwargs)
-
-
-def _net_stats(*args, **kwargs):
-    from .turn_files_diff import _net_stats as implementation
-    return implementation(*args, **kwargs)
 
 
 __all__ = [

@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from .files import (
+from .files_shared import (
     _durable_file_action, _normalise_file_result, _normalise_mutation_result,
     _request_id,
 )

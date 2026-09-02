@@ -5,8 +5,18 @@ import asyncio
 import json
 from typing import Any
 
-from .turn_files_scope import *
-from .turn_files_diff import *
+from .turn_files_shared import (
+    _MAX_DIFF_LINES, _MAX_REVIEW_TEXT_BYTES, _REVIEW_CATEGORIES,
+    _REVIEW_SCOPES, _REVIEW_SORTS, _SCOPE_PAGE_SIZE, _valid_turn_id,
+)
+from .turn_files_scope import (
+    _branch_scope, _get_review_snapshot, _history_eligibility, _page_scope,
+    _turn_scope,
+)
+from .turn_files_diff import (
+    _bind_diff_page, _branch_file_diff, _resolve_diff_cursor,
+    _review_turn_file_diff, _workspace_file_diff, _workspace_scope,
+)
 async def _run(fn) -> Any:
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, fn)
@@ -416,4 +426,3 @@ ACTIONS = {
     "revert_turn": handle_revert_turn,
     "reapply_turn": handle_reapply_turn,
 }
-
