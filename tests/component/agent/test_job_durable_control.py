@@ -668,4 +668,13 @@ def test_runtime_control_rejects_forged_project_session_attempt_and_capability(
     })
     frame = _command_frame(ws)
     assert frame["command"]["status"] == "rejected"
+    assert frame["command"]["rejection_code"] == "invalid_command"
+
+    _run_runtime_action("execution.pause", ws, {
+        "type": "execution.command", "action": "execution.pause",
+        "command_id": "cmd-cross-session", "execution_id": job_id,
+        "expected_version": execution.status_version, "payload": {},
+    })
+    frame = _command_frame(ws)
+    assert frame["command"]["status"] == "rejected"
     assert frame["command"]["rejection_code"] == "not_found"

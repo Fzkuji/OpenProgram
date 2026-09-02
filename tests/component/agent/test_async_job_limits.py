@@ -277,7 +277,10 @@ def test_canonical_driver_termination_returns_exact_receipt(monkeypatch, tmp_pat
     driver.activation_aborted(binding)
     assert receipt.attempt_id == "attempt-1"
     assert receipt.terminated is True
-    assert questions.cancelled == [("session-1", "job-1")]
+    # Durable waits are closed by the canonical cancel transaction. Driver
+    # termination only stops the exact runtime owner and never mutates wait
+    # lifecycle through the process-local wake registry.
+    assert questions.cancelled == []
 
 def test_runtime_budget_moves_live_job_to_stopping_until_worker_exits(
     store_fixture, monkeypatch, tmp_path,
