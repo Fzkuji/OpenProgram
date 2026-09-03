@@ -474,6 +474,23 @@ def test_idle_activity_is_tracked_per_same_session_job(
         budget_poll_seconds=60,
     )
     try:
+        original_admit = runner.admit_job_entity
+        forced_early_dispatch = False
+
+        def admit_after_dispatch_started(*args, **kwargs):
+            nonlocal forced_early_dispatch
+            decision = original_admit(*args, **kwargs)
+            if not forced_early_dispatch:
+                forced_early_dispatch = True
+                assert fake_worker[3].wait(10.0)
+            return decision
+
+        # Force the dispatcher to activate the first Job before spawn_job()
+        # installs its local runtime entry. The spawn path must preserve the
+        # dispatcher's enriched entry instead of replacing it.
+        monkeypatch.setattr(
+            runner, "admit_job_entity", admit_after_dispatch_started,
+        )
         active = runner.spawn_job(
             session_id="p1", prompt="active", agent_id="main",
         )
@@ -496,7 +513,20 @@ def test_idle_activity_is_tracked_per_same_session_job(
         # The provider threads may start before the Job projection records its
         # monitor metadata.  Isolation above guarantees these are this test's
         # jobs; wait for the separate projection boundary explicitly.
-        assert wait_until(monitor_ready, timeout=30.0)
+        if not wait_until(monitor_ready, timeout=30.0):
+            with runner._lock:
+                snapshot = {
+                    job_id: {
+                        field: runner._jobs.get(job_id, {}).get(field)
+                        for field in (
+                            "started_monotonic",
+                            "attempt_id",
+                            "lease_generation",
+                        )
+                    }
+                    for job_id in (active, idle)
+                }
+            pytest.fail(f"Job monitor metadata was not ready: {snapshot!r}")
 
         clock.advance(0.75)
         assert runner.record_job_activity(active, "provider_data")

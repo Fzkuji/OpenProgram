@@ -1222,27 +1222,30 @@ class JobRunner:
         if not idempotent:
             self._broadcast_job_status(job)
 
-        # Done-event for await_job / await_jobs callers.
-        done_ev = threading.Event()
-        cancel_ev = threading.Event()
-        # Copy the current ContextVars so things like
-        # ``run_control._current_session_id`` set by the spawning
-        # thread don't leak into the worker. Each job gets its own
-        # context — the worker function rebinds session_id explicitly.
-        ctx = contextvars.copy_context()
-        # Register *before* submitting: a fast job can reach the
-        # finally-pop in _run_one before this thread gets the lock,
-        # which would leave the entry orphaned in _jobs forever.
-        # "future" is filled in right after submit, under the same lock.
-        entry: dict = {
-            "event": cancel_ev,
-            "future": None,
-            "session_id": session_id,
-            "context": ctx,
-        }
+        # Admission can make a Job visible to the dispatcher before this
+        # caller returns.  In that case the dispatcher has already created
+        # and may have enriched the runtime entry.  Reuse it instead of
+        # replacing monitor and canonical-attempt state with a fresh shell.
         with self._lock:
-            self._jobs[job.id] = entry
-            self._done_events[job.id] = done_ev
+            entry = self._jobs.get(job.id)
+            if entry is None:
+                done_ev = threading.Event()
+                cancel_ev = threading.Event()
+                # Copy the current ContextVars so things like
+                # ``run_control._current_session_id`` set by the spawning
+                # thread don't leak into the worker. Each job gets its own
+                # context — the worker function rebinds session_id explicitly.
+                entry = {
+                    "event": cancel_ev,
+                    "future": None,
+                    "session_id": session_id,
+                    "context": contextvars.copy_context(),
+                }
+                self._jobs[job.id] = entry
+                self._done_events[job.id] = done_ev
+            else:
+                cancel_ev = entry["event"]
+                done_ev = self._done_events.setdefault(job.id, threading.Event())
         if on_accepted is not None and not idempotent:
             if not self._governor.publish_accepted_job(
                 job.id,
