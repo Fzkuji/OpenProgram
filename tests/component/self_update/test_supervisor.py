@@ -246,6 +246,52 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
     assert (root / "su_supervisor" / "artifact.json").is_file()
 
 
+@pytest.mark.macos
+def test_candidate_sandbox_cannot_read_installed_app(tmp_path: Path) -> None:
+    from openprogram.self_update import supervisor
+
+    sandbox = Path("/usr/bin/sandbox-exec")
+    installed_app = Path("/Applications/OpenProgram.app")
+    if not sandbox.is_file() or not installed_app.is_dir():
+        pytest.skip("requires macOS sandbox-exec and the canonical installed App")
+    candidate = tmp_path / "candidate"
+    artifact_root = tmp_path / "update" / "artifact"
+    build_home = tmp_path / "update" / "build-home"
+    build_tmp = tmp_path / "update" / "build-tmp"
+    for directory in (candidate, artifact_root, build_home, build_tmp):
+        directory.mkdir(parents=True, exist_ok=True)
+    profile = tmp_path / "update" / "sandbox.sb"
+    profile.write_text(
+        supervisor._sandbox_profile(
+            candidate, artifact_root, build_home, build_tmp
+        ),
+        encoding="utf-8",
+    )
+    readable = artifact_root / "install-dir-readable"
+    allowed = artifact_root / "staging-write-allowed"
+    command = (
+        f'/bin/ls "{installed_app}" >/dev/null 2>&1 '
+        f'&& /usr/bin/touch "{readable}"; '
+        f'/usr/bin/touch "{allowed}"'
+    )
+
+    result = subprocess.run(
+        [str(sandbox), "-f", str(profile), "/bin/sh", "-c", command],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "HOME": str(build_home),
+            "TMPDIR": str(build_tmp),
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert readable.exists() is False
+    assert allowed.is_file()
+
+
 def test_artifact_digest_rejects_symlink_outside_bundle(tmp_path: Path) -> None:
     from openprogram.self_update import supervisor
 

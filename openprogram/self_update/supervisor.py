@@ -85,6 +85,50 @@ def _wait_for_staging(store: SelfUpdateStore, update_id: str) -> UpdateRecord | 
     return record if record.state.phase is UpdatePhase.STAGING else None
 
 
+def _sandbox_profile(
+    candidate: Path,
+    artifact_root: Path,
+    build_home: Path,
+    build_tmp: Path,
+) -> str:
+    def quoted(path: Path) -> str:
+        return json.dumps(str(path))
+
+    return "\n".join((
+        "(version 1)",
+        "(deny default)",
+        "(allow file-read*)",
+        "(allow process-exec process-fork)",
+        "(allow process-info* (target same-sandbox))",
+        "(allow signal (target same-sandbox))",
+        "(allow ipc-posix-sem ipc-posix-shm)",
+        "(allow sysctl-read (sysctl-name-prefix \"hw.\"))",
+        "(deny network*)",
+        f"(deny file-read* (subpath {quoted(Path.home() / '.openprogram')}))",
+        f"(deny file-read* (subpath {quoted(Path.home() / '.ssh')}))",
+        f"(deny file-read* (subpath {quoted(Path.home() / '.aws')}))",
+        f"(deny file-read* (subpath {quoted(Path.home() / '.gnupg')}))",
+        f"(deny file-read* (subpath {quoted(Path.home() / '.claude')}))",
+        f"(deny file-read* (subpath {quoted(Path.home() / '.config')}))",
+        f"(deny file-read* (literal {quoted(Path.home() / '.claude.json')}))",
+        f"(deny file-read* (literal {quoted(Path.home() / '.netrc')}))",
+        f"(deny file-read* (subpath {quoted(Path.home() / 'Library/Keychains')}))",
+        '(allow file-ioctl file-read-data file-write-data (literal "/dev/null"))',
+        '(allow file-read-data (literal "/dev/zero"))',
+        '(allow file-read-data (literal "/dev/random"))',
+        '(allow file-read-data (literal "/dev/urandom"))',
+        f"(allow file-write* (subpath {quoted(candidate)}))",
+        f"(allow file-write* (subpath {quoted(artifact_root)}))",
+        f"(allow file-write* (subpath {quoted(build_home)}))",
+        f"(allow file-write* (subpath {quoted(build_tmp)}))",
+        f"(allow file-read* (subpath {quoted(artifact_root)}))",
+        f"(allow file-read* (subpath {quoted(build_home)}))",
+        f"(allow file-read* (subpath {quoted(build_tmp)}))",
+        '(deny file-read* (subpath "/Applications/OpenProgram.app"))',
+        '(deny file-read* (regex #".*/\\.env($|/).*$"))',
+    )) + "\n"
+
+
 def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
     from openprogram.programs.tools.system.self_update import (
         _recorded_path,
@@ -122,41 +166,7 @@ def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
     if artifact.exists() or artifact.is_symlink():
         raise RuntimeError("candidate artifact path already exists")
 
-    def quoted(path: Path) -> str:
-        return json.dumps(str(path))
-
-    profile = "\n".join((
-        "(version 1)",
-        "(deny default)",
-        "(allow file-read*)",
-        "(allow process-exec process-fork)",
-        "(allow process-info* (target same-sandbox))",
-        "(allow signal (target same-sandbox))",
-        "(allow ipc-posix-sem ipc-posix-shm)",
-        "(allow sysctl-read (sysctl-name-prefix \"hw.\"))",
-        "(deny network*)",
-        f"(deny file-read* (subpath {quoted(Path.home() / '.openprogram')}))",
-        f"(deny file-read* (subpath {quoted(Path.home() / '.ssh')}))",
-        f"(deny file-read* (subpath {quoted(Path.home() / '.aws')}))",
-        f"(deny file-read* (subpath {quoted(Path.home() / '.gnupg')}))",
-        f"(deny file-read* (subpath {quoted(Path.home() / '.claude')}))",
-        f"(deny file-read* (subpath {quoted(Path.home() / '.config')}))",
-        f"(deny file-read* (literal {quoted(Path.home() / '.claude.json')}))",
-        f"(deny file-read* (literal {quoted(Path.home() / '.netrc')}))",
-        f"(deny file-read* (subpath {quoted(Path.home() / 'Library/Keychains')}))",
-        '(allow file-ioctl file-read-data file-write-data (literal "/dev/null"))',
-        '(allow file-read-data (literal "/dev/zero"))',
-        '(allow file-read-data (literal "/dev/random"))',
-        '(allow file-read-data (literal "/dev/urandom"))',
-        f"(allow file-write* (subpath {quoted(candidate)}))",
-        f"(allow file-write* (subpath {quoted(artifact_root)}))",
-        f"(allow file-write* (subpath {quoted(build_home)}))",
-        f"(allow file-write* (subpath {quoted(build_tmp)}))",
-        f"(allow file-read* (subpath {quoted(artifact_root)}))",
-        f"(allow file-read* (subpath {quoted(build_home)}))",
-        f"(allow file-read* (subpath {quoted(build_tmp)}))",
-        '(deny file-read* (regex #".*/\\.env($|/).*$"))',
-    )) + "\n"
+    profile = _sandbox_profile(candidate, artifact_root, build_home, build_tmp)
     profile_path = update_dir / "sandbox.sb"
     atomic_write_text(profile_path, profile)
     environment = {
