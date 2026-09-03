@@ -246,15 +246,18 @@ def test_concurrent_launch_submits_only_once(tmp_path: Path, monkeypatch) -> Non
     _source, installer_sha256 = _trusted_installer(tmp_path, monkeypatch)
     monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
     calls: list[tuple[str, ...]] = []
+    registered = False
 
     def launchctl(*args: str) -> tuple[int, str]:
+        nonlocal registered
         calls.append(args)
         if args[0] == "submit":
+            registered = True
             (profile / "self-updates" / "su_launch" / "supervisor.ready").write_text(
                 _ready("su_launch", installer_sha256), encoding="utf-8"
             )
             return 0, ""
-        return 113, "not found"
+        return (0, "loaded") if registered else (113, "not found")
 
     monkeypatch.setattr(launcher, "_launchctl", launchctl)
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -262,3 +265,32 @@ def test_concurrent_launch_submits_only_once(tmp_path: Path, monkeypatch) -> Non
 
     assert sum(call[0] == "submit" for call in calls) == 1
     assert sorted(result.submitted for result in results) == [False, True]
+
+
+def test_launch_resubmits_after_controller_and_service_exit(tmp_path, monkeypatch) -> None:
+    from openprogram import paths
+    from openprogram.self_update import launcher
+
+    profile = tmp_path / "profile"
+    _request(profile)
+    _source, installer_sha256 = _trusted_installer(tmp_path, monkeypatch)
+    monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
+    marker = profile / "self-updates" / "su_launch" / "supervisor.ready"
+    submissions = 0
+
+    def launchctl(*args: str) -> tuple[int, str]:
+        nonlocal submissions
+        if args[0] == "submit":
+            submissions += 1
+            marker.write_text(_ready("su_launch", installer_sha256), encoding="utf-8")
+            return 0, ""
+        return 113, "not found"
+
+    monkeypatch.setattr(launcher, "_launchctl", launchctl)
+    assert launch_supervisor("su_launch").submitted is True
+    stale = json.loads(marker.read_text(encoding="utf-8"))
+    stale["pid"] = 999999999
+    marker.write_text(json.dumps(stale), encoding="utf-8")
+
+    assert launch_supervisor("su_launch").submitted is True
+    assert submissions == 2

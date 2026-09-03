@@ -142,20 +142,6 @@ def _submit_supervisor(
     controller.chmod(0o700)
 
     label = f"ai.openprogram.self-update.{update_id}"
-    receipt = update_dir / "launch.json"
-    submitted_record = {
-        "schema": 1,
-        "label": label,
-        "installer_sha256": installer_sha256,
-    }
-    if receipt.exists() or receipt.is_symlink():
-        if (
-            receipt.is_symlink()
-            or not receipt.is_file()
-            or json.loads(receipt.read_text(encoding="utf-8")) != submitted_record
-        ):
-            raise LaunchError("supervisor submission receipt does not match")
-        return LaunchResult(label, submitted=False, already_running=True), installer_sha256
     domain = f"gui/{os.getuid()}/{label}"
     rc, message = _launchctl("print", domain)
     if rc == 0:
@@ -178,7 +164,6 @@ def _submit_supervisor(
     )
     if rc != 0:
         raise LaunchError(f"launchctl submit failed ({rc}): {message}")
-    atomic_write_text(receipt, json.dumps(submitted_record, sort_keys=True) + "\n")
     return LaunchResult(label, submitted=True, already_running=False), installer_sha256
 
 
