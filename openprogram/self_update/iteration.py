@@ -18,6 +18,7 @@ _PROTECTED_PATHS = (
     "openprogram/agent/internals/_model_tools.py", "openprogram/programs/__init__.py",
     "openprogram/sandbox/*", "openprogram/security/*", "openprogram/auth/*",
     "openprogram/protected_paths.py", "openprogram/programs/_runtime/*",
+    "openprogram/programs/_runtime.py",
     "apps/desktop/scripts/*", "scripts/release/*", "scripts/refresh-local-app.sh",
 )
 _DEPENDENCY_FILES = (

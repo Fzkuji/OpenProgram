@@ -69,6 +69,7 @@ def test_stopping_conditions(overrides, reason) -> None:
     "openprogram/agent/dispatcher/__init__.py", "openprogram/agent/dispatcher/loop_runner.py",
     "openprogram/agent/agent_loop.py", "openprogram/agent/internals/_model_tools.py",
     "openprogram/programs/__init__.py",
+    "openprogram/programs/_runtime.py",
     "openprogram/self_update/supervisor.py", "openprogram/sandbox/__init__.py",
     "apps/desktop/scripts/install-app.sh",
 ])
