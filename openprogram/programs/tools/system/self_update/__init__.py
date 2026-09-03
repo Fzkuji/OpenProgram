@@ -34,6 +34,11 @@ from openprogram.worktree.types import WorktreeStatus
 
 _NON_INTERACTIVE_SOURCES = frozenset({"agent_spawn", "cron", "scheduler", "mcp"})
 _GIT_TIMEOUT_SECONDS = 10
+_GIT_CONFIG_OVERRIDES = (
+    "core.fsmonitor=false",
+    "core.hooksPath=/dev/null",
+    "core.pager=cat",
+)
 
 
 class SelfUpdateToolError(RuntimeError):
@@ -59,13 +64,27 @@ def _require_local_owner(req: Any) -> dict[str, str]:
 
 
 def _git(cwd: Path, *args: str) -> str:
+    environment = {
+        "PATH": os.environ.get(
+            "PATH", "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
+        ),
+        "HOME": os.environ.get("HOME", "/var/empty"),
+        "LC_ALL": "C",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+    }
+    command = ["git", "--no-optional-locks"]
+    for value in _GIT_CONFIG_OVERRIDES:
+        command.extend(("-c", value))
+    command.extend(args)
     try:
         result = subprocess.run(
-            ["git", *args],
+            command,
             cwd=str(cwd),
             capture_output=True,
             text=True,
             timeout=_GIT_TIMEOUT_SECONDS,
+            env=environment,
         )
     except (OSError, UnicodeError, subprocess.TimeoutExpired) as exc:
         raise SelfUpdateToolError(f"git validation failed: {type(exc).__name__}") from exc
@@ -124,6 +143,49 @@ def _git_directory(cwd: Path) -> Path:
     return value.resolve()
 
 
+def _recorded_path(value: str, name: str) -> Path:
+    raw = Path(value).expanduser()
+    if not raw.is_absolute():
+        raise SelfUpdateToolError(f"{name} must be an absolute path")
+    lexical = Path(os.path.normpath(str(raw)))
+    try:
+        resolved = lexical.resolve(strict=True)
+    except OSError as exc:
+        raise SelfUpdateToolError(f"{name} is unavailable") from exc
+    if resolved != lexical:
+        raise SelfUpdateToolError(f"{name} must not contain symlinks")
+    return resolved
+
+
+def _validate_registered_worktree(
+    source: Path, candidate: Path, candidate_sha: str, branch_name: str
+) -> None:
+    entries = _git(source, "worktree", "list", "--porcelain", "-z").split("\0\0")
+    expected = {
+        "worktree": str(candidate),
+        "HEAD": candidate_sha,
+        "branch": f"refs/heads/{branch_name}",
+    }
+    for entry in entries:
+        fields = {}
+        for line in entry.split("\0"):
+            key, separator, value = line.partition(" ")
+            if separator:
+                fields[key] = value
+        if fields.get("worktree") == str(candidate):
+            if all(fields.get(key) == value for key, value in expected.items()):
+                return
+            break
+    raise SelfUpdateToolError("candidate does not match its registered Git worktree")
+
+
+def _validate_candidate_snapshot(candidate: Path, candidate_sha: str) -> None:
+    if _git(candidate, "status", "--porcelain=v1", "--untracked-files=all"):
+        raise SelfUpdateToolError("candidate worktree is dirty")
+    if _git(candidate, "rev-parse", "HEAD") != candidate_sha:
+        raise SelfUpdateToolError("candidate_sha is not the worktree HEAD")
+
+
 def _prepare_update(
     *,
     worktree_id: str,
@@ -165,8 +227,8 @@ def _prepare_update(
     if worktree.parent_session != req.session_id:
         raise SelfUpdateToolError("candidate worktree is not owned by this session")
 
-    source = Path(worktree.source_repo).expanduser().resolve()
-    candidate = Path(worktree.worktree_path).expanduser().resolve()
+    source = _recorded_path(worktree.source_repo, "source repo")
+    candidate = _recorded_path(worktree.worktree_path, "candidate worktree")
     _validate_openprogram_repo(source, candidate)
     candidate_common = Path(_git(candidate, "rev-parse", "--git-common-dir"))
     if not candidate_common.is_absolute():
@@ -175,11 +237,10 @@ def _prepare_update(
         raise SelfUpdateToolError("candidate worktree is not linked to its source repo")
     if Path(_git(candidate, "rev-parse", "--show-toplevel")).resolve() != candidate:
         raise SelfUpdateToolError("candidate path is not the worktree root")
-    if _git(candidate, "status", "--porcelain=v1", "--untracked-files=all"):
-        raise SelfUpdateToolError("candidate worktree is dirty")
-    actual_sha = _git(candidate, "rev-parse", "HEAD")
-    if actual_sha != candidate_sha:
-        raise SelfUpdateToolError("candidate_sha is not the worktree HEAD")
+    _validate_registered_worktree(
+        source, candidate, candidate_sha, worktree.branch_name
+    )
+    _validate_candidate_snapshot(candidate, candidate_sha)
 
     base_sha = _git(source, "rev-parse", "HEAD")
     if base_sha == candidate_sha:
@@ -244,6 +305,24 @@ def _prepare_update(
         raise SelfUpdateToolError(str(exc)) from exc
     except (SelfUpdateError, ValueError) as exc:
         raise SelfUpdateToolError(str(exc)) from exc
+    try:
+        _validate_registered_worktree(
+            source, candidate, candidate_sha, worktree.branch_name
+        )
+        _validate_candidate_snapshot(candidate, candidate_sha)
+    except SelfUpdateToolError as exc:
+        try:
+            store.transition(
+                request.update_id,
+                UpdatePhase.ABORTED,
+                expected_phase=UpdatePhase.PREPARING,
+                detail={"reason": "candidate drifted during prepare"},
+            )
+        except SelfUpdateError as abort_exc:
+            raise SelfUpdateToolError(
+                f"{exc}; failed to abort prepared request: {abort_exc}"
+            ) from abort_exc
+        raise
     return {
         "update_id": request.update_id,
         "phase": state.phase.value,

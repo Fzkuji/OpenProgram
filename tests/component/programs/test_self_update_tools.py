@@ -16,6 +16,7 @@ from openprogram.programs.tools.system.self_update import (
     _prepare_update,
     _status_update,
 )
+from openprogram.programs.tools.system import self_update as self_update_module
 
 
 @pytest.fixture(autouse=True)
@@ -208,6 +209,64 @@ def test_prepare_rejects_worktree_from_another_git_common_directory(
 
     with pytest.raises(SelfUpdateToolError, match="linked to its source"):
         _prepare(forged, candidate_sha, SelfUpdateStore(tmp_path / "state"))
+
+
+def test_prepare_rejects_symlinked_registered_worktree(tmp_path: Path) -> None:
+    worktree, _base_sha, candidate_sha = _candidate(tmp_path)
+    link = tmp_path / "candidate-link"
+    link.symlink_to(worktree.worktree_path, target_is_directory=True)
+    forged = replace(worktree, worktree_path=str(link))
+
+    with pytest.raises(SelfUpdateToolError, match="must not contain symlinks"):
+        _prepare(forged, candidate_sha, SelfUpdateStore(tmp_path / "state"))
+
+
+def test_prepare_disables_repository_fsmonitor_hook(tmp_path: Path) -> None:
+    worktree, _base_sha, candidate_sha = _candidate(tmp_path)
+    candidate = Path(worktree.worktree_path)
+    marker = tmp_path / "fsmonitor-executed"
+    hook = candidate / "fsmonitor.sh"
+    hook.write_text(f"#!/bin/sh\ntouch '{marker}'\n", encoding="utf-8")
+    hook.chmod(0o755)
+    _git(candidate, "add", "fsmonitor.sh")
+    _git(candidate, "commit", "-m", "add fsmonitor probe")
+    candidate_sha = _git(candidate, "rev-parse", "HEAD")
+    _git(candidate, "config", "core.fsmonitor", str(hook))
+
+    _prepare(worktree, candidate_sha, SelfUpdateStore(tmp_path / "state"))
+
+    assert marker.exists() is False
+
+
+def test_prepare_aborts_if_head_changes_during_persistence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    worktree, _base_sha, candidate_sha = _candidate(tmp_path)
+    candidate = Path(worktree.worktree_path)
+    store = SelfUpdateStore(tmp_path / "state")
+    original_git = self_update_module._git
+    head_reads = 0
+
+    def racing_git(cwd: Path, *args: str) -> str:
+        nonlocal head_reads
+        value = original_git(cwd, *args)
+        if cwd == candidate and args == ("rev-parse", "HEAD"):
+            head_reads += 1
+            if head_reads == 1:
+                (candidate / "later.txt").write_text("later\n", encoding="utf-8")
+                _git(candidate, "add", "later.txt")
+                _git(candidate, "commit", "-m", "concurrent change")
+        return value
+
+    monkeypatch.setattr(self_update_module, "_git", racing_git)
+
+    with pytest.raises(SelfUpdateToolError, match="candidate"):
+        _prepare(worktree, candidate_sha, store)
+
+    assert store.load_active() is None
+    records = [path.name for path in (tmp_path / "state").glob("su_*")]
+    assert len(records) == 1
+    assert store.load(records[0]).state.phase is UpdatePhase.ABORTED
 
 
 @pytest.mark.parametrize(
