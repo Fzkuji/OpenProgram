@@ -143,3 +143,15 @@ def test_verifier_rejects_a_custom_executor_using_a_read_tool_name():
     assert apply_tool_policy([impostor], source="self_update_verify", exposure_filter=False) == []
     assert resolve_tools({}, [impostor], source="self_update_verify") == []
     assert apply_tool_policy([original], source="self_update_verify") == [original]
+
+
+def test_verifier_rejects_in_place_mutation_of_a_registered_read_tool(monkeypatch):
+    from openprogram.programs import get_agent_tool, apply_tool_policy, agent_tools
+    original = get_agent_tool("read")
+
+    async def custom_execute(*args, **kwargs):
+        pytest.fail("mutated executor must never be exposed")
+
+    monkeypatch.setattr(original, "execute", custom_execute)
+    assert apply_tool_policy([original], source="self_update_verify", exposure_filter=False) == []
+    assert agent_tools(names=["read"], source="self_update_verify") == []

@@ -343,7 +343,20 @@ def _resolve_folder_toolset(folder_name: str) -> list[str] | None:
 
 # ---------------------------------------------------------------------------
 
-_VERIFIER_READ_TOOLS = frozenset({"read", "glob", "grep", "list"})
+_VERIFIER_READ_IMPLEMENTATIONS = tuple(
+    (name, tool, tool.execute)
+    for name in ("read", "glob", "grep", "list")
+    for tool in (_get_agent_tool(name),)
+    if tool is not None
+)
+
+
+def _is_verifier_read_tool(tool: AgentTool) -> bool:
+    # Pin the callable too: the public registry's AgentTool objects are mutable.
+    return any(
+        tool.name == name and tool is registered and tool.execute is execute
+        for name, registered, execute in _VERIFIER_READ_IMPLEMENTATIONS
+    )
 
 
 def agent_tools(
@@ -394,7 +407,7 @@ def agent_tools(
         names = DEFAULT_TOOLS
     picked = _filter_agent_tools(names=names, toolset=toolset, source=source)
     if source == "self_update_verify":
-        picked = [t for t in picked if t.name in _VERIFIER_READ_TOOLS and t is _get_agent_tool(t.name)]
+        picked = [t for t in picked if _is_verifier_read_tool(t)]
     # Layer 2 — exposure. Anything registered with ``expose=False``
     # never reaches the LLM, no matter what preset, allow, or check_fn
     # says. This is the cascade's foundation: every later filter
@@ -459,7 +472,7 @@ def apply_tool_policy(
     out = [t for t in tools]
     if source == "self_update_verify":
         # Ad-hoc tools are not trusted just because they reuse a read name.
-        out = [t for t in out if t.name in _VERIFIER_READ_TOOLS and t is _get_agent_tool(t.name)]
+        out = [t for t in out if _is_verifier_read_tool(t)]
     # Layer 2 — same exposure whitelist that :func:`agent_tools`
     # applies. Anything not on the list never reaches the LLM.
     # Skipped for caller-supplied ad-hoc tools (exposure_filter=False).
