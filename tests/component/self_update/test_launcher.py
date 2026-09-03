@@ -35,11 +35,20 @@ def _request(profile: Path, update_id: str = "su_launch") -> SelfUpdateStore:
 
 
 def _trusted_installer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, str]:
-    from openprogram.self_update import launcher
+    from openprogram.self_update import controller_bundle
 
-    installer = tmp_path / "trusted-install-app.sh"
+    resources = tmp_path / "resources"
+    (resources / "update").mkdir(parents=True)
+    runtime = resources / "runtime"
+    runtime.mkdir()
+    python = runtime / "python"
+    python.write_text("trusted interpreter")
+    python.chmod(0o755)
+    (runtime / "runtime-manifest.json").write_text(json.dumps({"schema": 2, "python": "python"}))
+    installer = resources / "update/install-app.sh"
     installer.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    monkeypatch.setattr(launcher, "_trusted_installer_source", lambda: installer)
+    monkeypatch.setattr(controller_bundle, "_installed_resources", lambda: resources)
+    monkeypatch.setattr(controller_bundle, "_probe_runtime", lambda *_: None)
     return installer, hashlib.sha256(installer.read_bytes()).hexdigest()
 
 
@@ -75,12 +84,11 @@ def test_launch_writes_private_fixed_controller_and_submits_once(
         return (113, "not found") if args[0] == "print" else (0, "")
 
     monkeypatch.setattr(launcher, "_launchctl", launchctl)
-    monkeypatch.setattr(launcher.sys, "executable", "/trusted/runtime/python")
     monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
 
     result = launch_supervisor("su_launch")
     script = root / "su_launch" / "supervisor.sh"
-    installer = root / "su_launch" / "install-app.sh"
+    installer = root / "su_launch" / "controller" / "install-app.sh"
 
     assert result.submitted is True
     assert result.label == "ai.openprogram.self-update.su_launch"
@@ -88,7 +96,8 @@ def test_launch_writes_private_fixed_controller_and_submits_once(
     assert installer.stat().st_mode & 0o777 == 0o700
     assert hashlib.sha256(installer.read_bytes()).hexdigest() == installer_sha256
     body = script.read_text(encoding="utf-8")
-    assert "/trusted/runtime/python" in body
+    assert str(root / "su_launch/controller/runtime/python") in body
+    assert "/usr/bin/env -i" in body
     assert "openprogram.self_update.supervisor" in body
     assert "su_launch" in body
     assert installer_sha256 in body
@@ -291,6 +300,26 @@ def test_launch_resubmits_after_controller_and_service_exit(tmp_path, monkeypatc
     stale = json.loads(marker.read_text(encoding="utf-8"))
     stale["pid"] = 999999999
     marker.write_text(json.dumps(stale), encoding="utf-8")
+    # The installed App can be replaced between controller process lifetimes.
+    _source.write_text("replacement installer", encoding="utf-8")
 
     assert launch_supervisor("su_launch").submitted is True
     assert submissions == 2
+
+
+def test_runtime_snapshot_failure_never_submits_launchd(tmp_path, monkeypatch):
+    from openprogram import paths
+    from openprogram.self_update import launcher, controller_bundle
+
+    profile = tmp_path / "profile"
+    store = _request(profile)
+    _trusted_installer(tmp_path, monkeypatch)
+    monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
+    monkeypatch.setattr(launcher, "_launchctl", lambda *_: pytest.fail("must not contact launchd"))
+    def fail(*_):
+        raise ValueError("copied runtime failed")
+    monkeypatch.setattr(controller_bundle, "_probe_runtime", fail)
+    with pytest.raises(LaunchError, match="copied runtime failed"):
+        launch_supervisor("su_launch")
+    assert store.load("su_launch").state.phase.value == "preparing"
+    assert not (store.root / "su_launch/controller").exists()

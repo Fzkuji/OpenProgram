@@ -35,7 +35,8 @@ def _staging(root: Path) -> SelfUpdateStore:
 
 
 def _installer(root: Path) -> str:
-    path = root / "su_supervisor" / "install-app.sh"
+    path = root / "su_supervisor" / "controller" / "install-app.sh"
+    path.parent.mkdir()
     path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -377,7 +378,7 @@ def test_activate_uses_hash_pinned_snapshot_and_deferred_mode(
     assert supervisor._activate(artifact, update_dir, installer_sha256) == transaction
     assert calls[0][0] == [
         "/bin/bash",
-        str(update_dir / "install-app.sh"),
+        str(update_dir / "controller" / "install-app.sh"),
         "--defer-commit",
         str(app),
     ]
@@ -394,7 +395,7 @@ def test_activate_rejects_installer_or_artifact_drift(tmp_path: Path) -> None:
     content.write_text("candidate", encoding="utf-8")
     artifact = Artifact(app, supervisor._tree_digest(app))
     installer_sha256 = _installer_at(update_dir)
-    (update_dir / "install-app.sh").write_text("changed", encoding="utf-8")
+    (update_dir / "controller" / "install-app.sh").write_text("changed", encoding="utf-8")
     with pytest.raises(RuntimeError, match="installer snapshot changed"):
         supervisor._activate(artifact, update_dir, installer_sha256)
 
@@ -405,7 +406,7 @@ def test_activate_rejects_installer_or_artifact_drift(tmp_path: Path) -> None:
 
 
 def _installer_at(update_dir: Path) -> str:
-    path = update_dir / "install-app.sh"
+    path = update_dir / "controller" / "install-app.sh"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     return hashlib.sha256(path.read_bytes()).hexdigest()

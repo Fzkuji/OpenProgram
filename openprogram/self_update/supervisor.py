@@ -304,7 +304,7 @@ def _activate(
 
 
 def _installer_snapshot(update_dir: Path, installer_sha256: str) -> Path:
-    installer = update_dir / "install-app.sh"
+    installer = update_dir / "controller" / "install-app.sh"
     if not installer.is_file() or installer.is_symlink():
         raise RuntimeError("trusted self-update installer snapshot is unavailable")
     if hashlib.sha256(installer.read_bytes()).hexdigest() != installer_sha256:

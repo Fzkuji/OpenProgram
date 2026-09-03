@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
 import json
 import os
 from pathlib import Path
 import shlex
 import subprocess
-import sys
 import time
 
 from openprogram.self_update.store import SelfUpdateStore
@@ -47,39 +45,12 @@ def _launchctl(*args: str) -> tuple[int, str]:
     return result.returncode, (result.stdout + result.stderr).strip()
 
 
-def _trusted_installer_source() -> Path:
-    return Path(
-        "/Applications/OpenProgram.app/Contents/Resources/update/install-app.sh"
-    )
-
-
-def _snapshot_installer(update_dir: Path) -> tuple[Path, str]:
-    source = _trusted_installer_source()
-    if not source.is_file() or source.is_symlink():
-        raise LaunchError("trusted installed self-update installer is unavailable")
-    try:
-        content = source.read_bytes()
-        content.decode("utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
-        raise LaunchError("trusted installed self-update installer is unreadable") from exc
-    digest = hashlib.sha256(content).hexdigest()
-    target = update_dir / "install-app.sh"
-    if target.exists() or target.is_symlink():
-        if (
-            not target.is_file()
-            or target.is_symlink()
-            or hashlib.sha256(target.read_bytes()).hexdigest() != digest
-        ):
-            raise LaunchError("existing installer snapshot does not match trusted content")
-    else:
-        atomic_write_text(target, content.decode("utf-8"))
-    target.chmod(0o700)
-    return target, digest
-
-
-def _controller_body(update_id: str, root: Path, installer_sha256: str) -> str:
+def _controller_body(update_id: str, root: Path, installer_sha256: str, python: Path) -> str:
+    from .controller_bundle import controller_environment
     arguments = [
-        sys.executable,
+        "/usr/bin/env", "-i",
+        *(f"{name}={value}" for name, value in controller_environment().items()),
+        str(python),
         "-I",
         "-B",
         "-m",
@@ -126,12 +97,17 @@ def _submit_supervisor(
     store: SelfUpdateStore, update_id: str
 ) -> tuple[LaunchResult, str]:
     update_dir = store.root / update_id
-    _installer, installer_sha256 = _snapshot_installer(update_dir)
+    from .controller_bundle import prepare_controller
+    try:
+        bundle = prepare_controller(update_dir)
+    except Exception as exc:
+        raise LaunchError(f"trusted controller bundle is unavailable: {exc}") from exc
+    installer_sha256 = bundle.installer_sha256
     controller = update_dir / "supervisor.sh"
     log = update_dir / "supervisor.log"
     if log.is_symlink() or (log.exists() and not log.is_file()):
         raise LaunchError("supervisor log path is not a regular file")
-    body = _controller_body(update_id, store.root, installer_sha256)
+    body = _controller_body(update_id, store.root, installer_sha256, bundle.python)
     if controller.is_symlink() or (controller.exists() and not controller.is_file()):
         raise LaunchError("supervisor controller path is not a regular file")
     if controller.exists() and controller.read_text(encoding="utf-8") != body:

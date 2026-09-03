@@ -10,6 +10,7 @@ that releases a prepared request only after its origin turn is durable.
 
 ## Files in this directory
 
+- **`controller_bundle.py`** — Freeze the installed controller runtime outside the replaceable App
 - **`handoff.py`** — Durable release of a prepared update after its origin turn commits
 - **`iteration.py`** — Deterministic authorization checks for a proposed self-update iteration
 - **`launcher.py`** — Submit one trusted, one-shot self-update supervisor through launchd
