@@ -87,7 +87,7 @@ def _probe_system(record: UpdateRecord, revision: str | None, timeout: float, ob
             def bounded_get(path, *, authenticated=True, params=None, limit=1_048_576):
                 request_headers = headers if authenticated else {"Accept-Encoding": "identity"}
                 with client.stream("GET", origin + path, headers=request_headers, params=params,
-                                   timeout=min(20, remaining())) as response:
+                                   timeout=min(20, remaining()), follow_redirects=False) as response:
                     if response.headers.get("content-encoding", "identity").lower() != "identity":
                         raise ValueError
                     body = bytearray()

@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI, WebSocket
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from openprogram.self_update import SelfUpdateStore, UpdateRequest, UpdatePhase
 from tests.component.agent.async_job_support import store_fixture  # noqa: F401
@@ -50,7 +50,14 @@ def live(tmp_path, monkeypatch):
         await ws.send_text(json.dumps({"type": "pong" if flags["ws"] else "failure"}))
         await ws.close()
     state = OwnerAuthState.start(state_dir=profile, bind_host="127.0.0.1", port=port, allowed_origins=(), raw_token=bytes(range(32)), owner_principal_id=owner)
-    monkeypatch.setattr(listener, "_app", lambda _: OwnerAuthMiddleware(app, auth_state=state))
+    authenticated_app = OwnerAuthMiddleware(app, auth_state=state)
+    async def controlled_redirect(scope, receive, send):
+        if scope["type"] == "http":
+            flags.setdefault("requests", []).append(scope["path"])
+            if scope["path"] == flags.get("redirect_entry"):
+                return await RedirectResponse("/redirect-target", status_code=302)(scope, receive, send)
+        return await authenticated_app(scope, receive, send)
+    monkeypatch.setattr(listener, "_app", lambda _: controlled_redirect)
     store = SelfUpdateStore()
     request = UpdateRequest(update_id="su_probe", session_id="s", origin_turn_id="u", origin_assistant_id="a", agent_id="main",
                             repo=str(tmp_path), worktree_id="wt", base_sha="1" * 40, candidate_sha="2" * 40,

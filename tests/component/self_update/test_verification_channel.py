@@ -177,6 +177,20 @@ def test_observer_requires_real_running_job_context(verifier):
     assert consume(verifier) is None  # Missing Job is pending, not success.
 
 
+@pytest.mark.parametrize("entry", ["/api/auth/challenge", "/api/diagnostics", "/api/commands"])
+def test_observer_never_follows_redirects(verifier, entry):
+    v = verifier
+    v.flags["requests"].clear()
+    v.flags["redirect_entry"] = entry
+    v.control["entry"] = "/api/commands"
+    v.run()
+    assert v.flags["requests"].count(entry) == 1
+    assert "/redirect-target" not in v.flags["requests"]
+    assert v.control["tool_result"].is_error
+    assert not (v.store.root / v.request.update_id / "observations").exists()
+    assert consume(v)["verdict"] == "inconclusive"
+
+
 @pytest.mark.parametrize("oversize", [300_000, 1_100_000])
 def test_large_observation_or_system_response_does_not_publish_evidence(verifier, oversize):
     v = verifier
