@@ -2,6 +2,7 @@
 from dataclasses import replace
 import json
 import os
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -9,6 +10,7 @@ from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
 
 from openprogram.self_update import SelfUpdateStore, UpdateRequest, UpdatePhase
+from tests.component.agent.async_job_support import store_fixture  # noqa: F401
 
 
 @pytest.fixture
@@ -109,3 +111,90 @@ def test_empty_or_incomplete_doctor_is_not_success(live, monkeypatch, empty):
     monkeypatch.setattr(doctor, "run_checks", lambda: [] if empty else rows[:-1])
     with pytest.raises(SystemProbeError, match="doctor"):
         probe_system(record)
+
+
+@pytest.mark.parametrize("doctor_ok", [True, False])
+def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypatch, doctor_ok):
+    """Actual controller -> HTTP/WS -> durable receipt -> startup -> real Job."""
+    import hashlib
+    from openprogram.agent import authority
+    from openprogram.agent.dispatcher import TurnResult
+    from openprogram.agent.job.runner import JobRunner
+    from openprogram.agent.job.types import JobStatus
+    from openprogram.self_update import supervisor, recovery
+    from openprogram.self_update.verifier_config import freeze_verifier_config, config_evidence
+
+    record, flags, _ = live
+    flags["doctor"] = doctor_ok
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store_fixture)
+    store = SelfUpdateStore()
+    # The listener fixture has no worker or session side effects. Replace its
+    # example update with a fully frozen request at the public STAGING entry.
+    store.transition(record.request.update_id, UpdatePhase.NEEDS_MANUAL_RECOVERY)
+    request = replace(record.request, update_id="su_handoff", session_id="p1",
+                      origin_turn_id="u1", origin_assistant_id="a1")
+    monkeypatch.setattr("openprogram.agent.internals._model_tools.load_agent_profile",
+                        lambda _: {"id": "main", "system_prompt": "frozen"})
+    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+                        lambda *a: SimpleNamespace(provider="fake", id="fixed"))
+    turn = SimpleNamespace(agent_id="main", **authority.local_owner_authority())
+    config = freeze_verifier_config(request, turn)
+    request = replace(request, pre_update_evidence=(*request.pre_update_evidence, config_evidence(config)))
+    store.create(request, verifier_config=config)
+    store.transition(request.update_id, UpdatePhase.STAGING)
+    update_dir = store.root / request.update_id
+    installer = update_dir / "controller/install-app.sh"
+    installer.parent.mkdir()
+    installer.write_text("#!/bin/sh\nexit 0\n")
+    digest = hashlib.sha256(installer.read_bytes()).hexdigest()
+    artifact = update_dir / "artifact/OpenProgram.app"
+    artifact.mkdir(parents=True)
+    transaction = update_dir / "transaction"
+    transaction.mkdir()
+    monkeypatch.setattr(supervisor, "_build_candidate", lambda *_: supervisor.Artifact(artifact, "a" * 64))
+    monkeypatch.setattr(supervisor, "_prepare_install", lambda *_: str(transaction))
+    monkeypatch.setattr(supervisor, "_validate_transaction_path", lambda path: path)
+    monkeypatch.setattr(supervisor, "_wait_for_quiescence", lambda *_: True)
+    monkeypatch.setattr("openprogram.agent.job.runner._broadcast", lambda *a, **k: None)
+    calls = []
+    def execute(req):
+        calls.append(req)
+        return TurnResult("inconclusive", "verify_u", "verify_a")
+    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", execute)
+    runner = JobRunner(max_workers=1)
+    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
+    startup_result = []
+    thread = threading.Thread(target=lambda: startup_result.append(recovery.recover_pending_updates()))
+    def activate(*_):
+        assert store.load(request.update_id).state.phase is UpdatePhase.ACTIVATING
+        thread.start()  # As with installation, Web is serving before recovery.
+        return str(transaction)
+    monkeypatch.setattr(supervisor, "_activate", activate)
+    try:
+        result = supervisor.run_supervisor(request.update_id, state_root=store.root, installer_sha256=digest)
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+        assert startup_result == [True]
+        current = store.load(request.update_id)
+        assert current.state.detail["transaction_dir"] == str(transaction)
+        if doctor_ok:
+            assert result == 0 and current.state.phase is UpdatePhase.VERIFYING
+            recovery._check_gate(current)
+            job_id = f"self-update:{request.update_id}:verify:1"
+            job = runner.await_job(job_id, timeout=5)
+            assert job is not None and job.status is JobStatus.COMPLETED, job
+            assert recovery.recover_pending_updates() is True
+            assert len(calls) == 1 and len(runner.list_jobs("p1")) == 1
+            assert calls[0].source == "self_update_verify"
+            assert calls[0].model_override == "fake/fixed"
+            assert calls[0].branch_from is None and calls[0].advance_head is False
+        else:
+            assert result == 1 and current.state.phase is UpdatePhase.NEEDS_MANUAL_RECOVERY
+            assert current.state.detail["error"] == "system probe failed: doctor"
+            assert "system_gate" not in current.state.detail
+            assert runner.list_jobs("p1") == [] and calls == []
+    finally:
+        if thread.is_alive():
+            store.transition(request.update_id, UpdatePhase.NEEDS_MANUAL_RECOVERY)
+            thread.join(timeout=5)
+        runner.shutdown()

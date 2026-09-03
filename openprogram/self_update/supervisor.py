@@ -362,7 +362,9 @@ def run_supervisor(
     state_root: Path,
     installer_sha256: str,
 ) -> int:
-    """Advance one request through build, quiescence, and deferred activation."""
+    """Build and activate a candidate, then release system-gated verification."""
+    from openprogram.self_update.system_probe import probe_system
+
     if (
         len(installer_sha256) != 64
         or any(character not in "0123456789abcdef" for character in installer_sha256)
@@ -443,6 +445,9 @@ def run_supervisor(
                 },
             )
             _activate(transaction, update_dir, installer_sha256)
+            # Startup recovery waits in ACTIVATING. Publish the receipt and
+            # VERIFYING together, never an observable ungated verifying state.
+            system_gate = probe_system(store.load(update_id))
             store.transition(
                 update_id,
                 UpdatePhase.VERIFYING,
@@ -451,6 +456,7 @@ def run_supervisor(
                     "artifact_sha256": artifact.sha256,
                     "transaction_dir": str(transaction),
                     "rollback_available": True,
+                    "system_gate": system_gate,
                 },
             )
             return 0

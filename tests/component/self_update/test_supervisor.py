@@ -100,6 +100,14 @@ def test_success_persists_transaction_before_verifying(
         return str(transaction)
     monkeypatch.setattr(supervisor, "_activate", activate)
     monkeypatch.setattr(supervisor, "_validate_transaction_path", lambda path: path)
+    gate = {"receipt": "real-probe-boundary"}
+    observations = []
+    def probe(record):
+        assert record.state.phase is UpdatePhase.ACTIVATING
+        assert record.state.detail["transaction_dir"] == str(transaction)
+        observations.append(record.request.candidate_sha)
+        return gate
+    monkeypatch.setattr("openprogram.self_update.system_probe.probe_system", probe)
 
     assert run_supervisor(
         "su_supervisor", state_root=root, installer_sha256=installer_sha256
@@ -108,6 +116,8 @@ def test_success_persists_transaction_before_verifying(
     assert record.state.phase is UpdatePhase.VERIFYING
     assert record.state.detail["transaction_dir"] == str(transaction)
     assert record.state.detail["artifact_sha256"] == artifact.sha256
+    assert observations == [record.request.candidate_sha]
+    assert record.state.detail["system_gate"] == gate
     assert (root / "maintenance.json").exists() is True
 
 
