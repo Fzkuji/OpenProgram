@@ -69,6 +69,10 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "scripts/install-app.sh",
+        "to": "update/install-app.sh"
       }
     ],
     "mac": {

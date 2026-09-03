@@ -38,6 +38,8 @@ def test_desktop_targets_and_embedded_runtime_are_declared() -> None:
     assert "linux" not in build
     assert "dist:linux" not in package["scripts"]
     assert {item["to"] for item in build["extraResources"]} >= {"runtime"}
+    resources = {item["to"]: item["from"] for item in build["extraResources"]}
+    assert resources["update/install-app.sh"] == "scripts/install-app.sh"
     assert "worker-recovery-state.js" in build["files"]
     assert "tab-transfer-validation.js" in build["files"]
     assert package["desktopName"] == "ai.openprogram.OpenProgram.desktop"

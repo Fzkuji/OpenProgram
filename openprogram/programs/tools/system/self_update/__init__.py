@@ -45,6 +45,12 @@ class SelfUpdateToolError(RuntimeError):
     """A stable validation error safe to return through the tool runtime."""
 
 
+def _launch_supervisor(update_id: str) -> None:
+    from openprogram.self_update.launcher import launch_supervisor
+
+    launch_supervisor(update_id)
+
+
 def _require_local_owner(req: Any) -> dict[str, str]:
     authority = normalize_authority(req)
     try:
@@ -323,6 +329,21 @@ def _prepare_update(
                 f"{exc}; failed to abort prepared request: {abort_exc}"
             ) from abort_exc
         raise
+    try:
+        _launch_supervisor(request.update_id)
+    except Exception as exc:
+        try:
+            store.transition(
+                request.update_id,
+                UpdatePhase.ABORTED,
+                expected_phase=UpdatePhase.PREPARING,
+                detail={"reason": "supervisor launch failed", "error": str(exc)[:1000]},
+            )
+        except SelfUpdateError as abort_exc:
+            raise SelfUpdateToolError(
+                f"supervisor launch failed: {exc}; request abort failed: {abort_exc}"
+            ) from abort_exc
+        raise SelfUpdateToolError(f"supervisor launch failed: {exc}") from exc
     return {
         "update_id": request.update_id,
         "phase": state.phase.value,

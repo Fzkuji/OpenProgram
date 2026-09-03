@@ -298,6 +298,30 @@ def _process_turn_once(
     on_event = on_event or _noop
     user_msg_id = req.user_msg_id or uuid.uuid4().hex[:12]
     req.user_msg_id = user_msg_id
+    from openprogram.self_update.maintenance import maintenance_blocks
+
+    if maintenance_blocks(req.source):
+        assistant_msg_id = user_msg_id + "_reply"
+        message = "OpenProgram is entering an approved update; new turns are temporarily disabled."
+        on_event({
+            "type": "chat_response",
+            "data": {
+                "type": "error",
+                "session_id": req.session_id,
+                "msg_id": user_msg_id,
+                "content": message,
+                "reason_code": "SELF_UPDATE_MAINTENANCE",
+            },
+        })
+        return TurnResult(
+            final_text="",
+            user_msg_id=user_msg_id,
+            assistant_msg_id=assistant_msg_id,
+            failed=True,
+            error=message,
+            error_reason="SELF_UPDATE_MAINTENANCE",
+            error_retryable=True,
+        )
 
     # Usage metering: label every LLM call in this turn with its source.
     # Default to "chat", but DON'T clobber a source an outer scope already

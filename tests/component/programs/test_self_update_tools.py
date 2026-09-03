@@ -26,6 +26,7 @@ def _isolated_owner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "profile")
     authority._reset_owner_cache_for_tests()
+    monkeypatch.setattr(self_update_module, "_launch_supervisor", lambda _update_id: None)
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -299,6 +300,26 @@ def test_prepare_atomically_rejects_second_active_update(tmp_path: Path) -> None
 
     with pytest.raises(SelfUpdateToolError, match="active update"):
         _prepare(worktree, candidate_sha, store)
+
+
+def test_prepare_aborts_request_when_supervisor_submission_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    worktree, _base_sha, candidate_sha = _candidate(tmp_path)
+    store = SelfUpdateStore(tmp_path / "state")
+    monkeypatch.setattr(
+        self_update_module,
+        "_launch_supervisor",
+        lambda _update_id: (_ for _ in ()).throw(RuntimeError("launch denied")),
+    )
+
+    with pytest.raises(SelfUpdateToolError, match="supervisor launch failed"):
+        _prepare(worktree, candidate_sha, store)
+
+    assert store.load_active() is None
+    update_dirs = list((tmp_path / "state").glob("su_*"))
+    assert len(update_dirs) == 1
+    assert store.load(update_dirs[0].name).state.phase is UpdatePhase.ABORTED
 
 
 def test_status_and_cancel_are_scoped_to_origin_session(tmp_path: Path) -> None:
