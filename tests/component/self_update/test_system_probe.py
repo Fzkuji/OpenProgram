@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI, WebSocket
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 
 from openprogram.self_update import SelfUpdateStore, UpdateRequest, UpdatePhase
 from tests.component.agent.async_job_support import store_fixture  # noqa: F401
@@ -39,6 +39,16 @@ def live(tmp_path, monkeypatch):
     ])
     app = FastAPI()
     misc.register(app)
+    @app.middleware("http")
+    async def echoed_credential(request, call_next):
+        response = await call_next(request)
+        if request.url.path == "/api/diagnostics" and flags.get("echo_secret"):
+            data = json.loads(b"".join([chunk async for chunk in response.body_iterator]))
+            secret = request.headers["authorization"] if flags["echo_secret"] == "owner" else flags["echo_secret"]
+            if flags["echo_field"] == "body":
+                return JSONResponse({**data, "echoed": secret})
+            return JSONResponse(data, headers={"content-type": "application/json; echoed=" + secret})
+        return response
     @app.get("/chat")
     async def chat():
         return HTMLResponse(('<script src="/_next/test.js"></script>' + flags.get("padding", "")) if flags["web"] else "unavailable", status_code=200 if flags["web"] else 503)

@@ -156,6 +156,8 @@ def observe(entry: str) -> dict:
     with store._locked():
         record, grant = _observation_context(store)
     observed = observe_system(record, entry)
+    if grant["token"] in json.dumps(observed, allow_nan=False):
+        raise ValueError("observation contains a private verification credential")
     with store._locked():
         current, current_grant = _observation_context(store)
         if current.request.update_id != record.request.update_id or current_grant != grant:

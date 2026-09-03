@@ -191,6 +191,24 @@ def test_observer_never_follows_redirects(verifier, entry):
     assert consume(v)["verdict"] == "inconclusive"
 
 
+@pytest.mark.parametrize("credential", ["owner", "grant"])
+@pytest.mark.parametrize("field", ["body", "header"])
+def test_echoed_credentials_never_reach_model_or_evidence(verifier, credential, field):
+    from openprogram.backend_endpoint import read_web_token
+    v = verifier
+    secret = read_web_token() if credential == "owner" else v.grant["token"]
+    v.flags.update(echo_secret="owner" if credential == "owner" else secret, echo_field=field)
+    job = v.run()
+    output = v.control["tool_result"]
+    assert secret not in output.content[0].text
+    assert output.is_error
+    assert secret not in (job.result_text or "")
+    assert not (v.store.root / v.request.update_id / "observations").exists()
+    receipt = consume(v)
+    assert receipt["verdict"] == "inconclusive"
+    assert secret not in json.dumps(receipt)
+
+
 @pytest.mark.parametrize("oversize", [300_000, 1_100_000])
 def test_large_observation_or_system_response_does_not_publish_evidence(verifier, oversize):
     v = verifier

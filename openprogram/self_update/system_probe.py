@@ -96,6 +96,8 @@ def _probe_system(record: UpdateRecord, revision: str | None, timeout: float, ob
                         body.extend(chunk)
                         if len(body) > limit:
                             raise ValueError
+                    if token.encode() in body or any(token in value for value in response.headers.values()):
+                        raise ValueError  # Never retain or expose a peer-echoed owner credential.
                     return httpx.Response(response.status_code, headers=response.headers, content=bytes(body), request=response.request)
             nonce = secrets.token_urlsafe(32)
             # Legacy/dirty old revisions use the same owner proof followed by
