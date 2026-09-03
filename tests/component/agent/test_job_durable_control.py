@@ -254,7 +254,7 @@ def test_ws_pause_uses_complete_execution_command_update_envelope(durable_job, m
         "command_id": "cmd-job-pause",
         "execution_id": job_id,
         "expected_version": execution.status_version,
-        "payload": {"reason_code": "pause.user"},
+        "payload": {},
     }
 
     _run_runtime_action("execution.pause", ws, command)
