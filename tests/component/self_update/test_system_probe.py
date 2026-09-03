@@ -41,7 +41,7 @@ def live(tmp_path, monkeypatch):
     misc.register(app)
     @app.get("/chat")
     async def chat():
-        return HTMLResponse('<script src="/_next/test.js"></script>' if flags["web"] else "unavailable", status_code=200 if flags["web"] else 503)
+        return HTMLResponse(('<script src="/_next/test.js"></script>' + flags.get("padding", "")) if flags["web"] else "unavailable", status_code=200 if flags["web"] else 503)
     @app.websocket("/ws")
     async def websocket(ws: WebSocket):
         await ws.accept()
@@ -140,7 +140,7 @@ def test_empty_or_incomplete_doctor_is_not_success(live, monkeypatch, empty):
         probe_system(record)
 
 
-@pytest.mark.parametrize("scenario", ["success", "rollback", "wrong_restored"])
+@pytest.mark.parametrize("scenario", ["success", "rollback", "wrong_restored", "goal_pass", "goal_fail", "forged_evidence"])
 @pytest.mark.parametrize("native_install", [False, pytest.param(True, marks=[pytest.mark.macos, MACOS_DESKTOP_INSTALL])])
 def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypatch, scenario, native_install, request):
     """Actual controller -> HTTP/WS -> durable receipt -> startup -> real Job."""
@@ -154,7 +154,8 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
     from openprogram.webui.routes import misc
 
     fixtures = request
-    doctor_ok = scenario == "success"
+    goal_case = scenario in {"goal_pass", "goal_fail", "forged_evidence"}
+    doctor_ok = scenario == "success" or goal_case
     record, flags, _ = live
     monkeypatch.setattr(misc, "_HEAD_SHA", "3" * 40)  # Old live SHA differs from source base.
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store_fixture)
@@ -164,6 +165,8 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
     store.transition(record.request.update_id, UpdatePhase.NEEDS_MANUAL_RECOVERY)
     request = replace(record.request, update_id="su_handoff", session_id="p1",
                       origin_turn_id="u1", origin_assistant_id="a1")
+    if goal_case:
+        request = replace(request, goal="Diagnostics reports a working database", assertions=("database_ok is true",))
     monkeypatch.setattr("openprogram.agent.internals._model_tools.load_agent_profile",
                         lambda _: {"id": "main", "system_prompt": "frozen"})
     monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
@@ -205,10 +208,29 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
     artifact_digest = supervisor._tree_digest(artifact)
     monkeypatch.setattr(supervisor, "_build_candidate", lambda *_: supervisor.Artifact(artifact, artifact_digest))
     monkeypatch.setattr(supervisor, "_wait_for_quiescence", lambda *_: True)
+    if not goal_case:
+        monkeypatch.setattr(supervisor, "_finish_verification", lambda *_: 0)  # System-gate tests only.
     monkeypatch.setattr("openprogram.agent.job.runner._broadcast", lambda *a, **k: None)
     calls = []
     def execute(req):
         calls.append(req)
+        if goal_case:
+            import asyncio
+            from openprogram.programs import get_agent_tool
+            from openprogram.agent.turn_request_context import set_turn_request, reset_turn_request
+            token = set_turn_request(req)
+            try:
+                output = asyncio.run(get_agent_tool("self_update_observe").execute("observe-live", {"entry": "/api/diagnostics"}, None, None))
+                assert not output.is_error, output
+                observation = json.loads(output.content[0].text)
+                assert json.loads(observation["body"])["database_ok"] is True
+                status = "fail" if scenario == "goal_fail" else "pass"
+                reference = "forged" if scenario == "forged_evidence" else observation["evidence_ref"]
+                return TurnResult(json.dumps(dict(schema=1, update_id=request.update_id, candidate_sha=request.candidate_sha,
+                    attempt=1, verdict=status, assertions=[dict(id="acceptance-1", status=status, entry=observation["entry"],
+                    observation="Actual authenticated database check", evidence_refs=[reference], observed_at=observation["observed_at"])])), "verify_u", "verify_a")
+            finally:
+                reset_turn_request(token)
         return TurnResult("inconclusive", "verify_u", "verify_a")
     monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", execute)
     runner = JobRunner(max_workers=1)
@@ -232,6 +254,8 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
     monkeypatch.setattr(supervisor, "_activate", activate)
     native_installer = supervisor._installer_command
     def installer_command(argument, directory, sha, mode):
+        if mode == "--commit" and not native_install:
+            return str(transaction)
         if mode != "--rollback":
             return native_installer(argument, directory, sha, mode)
         assert (update_dir / "rollback-1.json").is_file()
@@ -250,8 +274,8 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
         assert startup_result == [scenario != "wrong_restored"]
         current = store.load(request.update_id)
         assert current.state.detail["transaction_dir"] == str(transaction)
-        if doctor_ok:
-            assert result == 0 and current.state.phase is UpdatePhase.VERIFYING
+        if scenario in {"success", "goal_pass"}:
+            assert result == 0 and current.state.phase is (UpdatePhase.SUCCEEDED if goal_case else UpdatePhase.VERIFYING)
             recovery._check_gate(current)
             job_id = f"self-update:{request.update_id}:verify:1"
             job = runner.await_job(job_id, timeout=5)
@@ -261,12 +285,23 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
             assert calls[0].source == "self_update_verify"
             assert calls[0].model_override == "fake/fixed"
             assert calls[0].branch_from is None and calls[0].advance_head is False
+            if goal_case:
+                assert current.state.detail["verifier_verdict"] == "pass"
+                assert not (store.root / "maintenance.json").exists()
+                if native_install:
+                    assert phase(transaction) == "committed" and version(target) == "0.6.2"
+                    assert not (transaction / "previous.app").exists()
         else:
             old_thread.join(timeout=5)
             assert not old_thread.is_alive() and old_startup_result == [scenario != "wrong_restored"]
             expected_phase = UpdatePhase.NEEDS_MANUAL_RECOVERY if scenario == "wrong_restored" else UpdatePhase.ROLLED_BACK
             assert result == 1 and current.state.phase is expected_phase
-            assert current.state.detail["error"] == "system probe failed: doctor"
+            if goal_case:
+                verdict = "fail" if scenario == "goal_fail" else "inconclusive"
+                assert current.state.detail["verifier_verdict"] == verdict
+                assert current.state.detail["error"] == f"verifier result: {verdict}"
+            else:
+                assert current.state.detail["error"] == "system probe failed: doctor"
             assert current.state.detail["previous_system_gate"]["candidate_sha"] == "3" * 40
             if scenario == "wrong_restored":
                 assert "recovery_error" in current.state.detail
@@ -274,11 +309,16 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
             else:
                 assert current.state.detail["restored_system_gate"]["candidate_sha"] == "3" * 40
             assert (store.root / "maintenance.json").exists() is (scenario == "wrong_restored")
-            assert "system_gate" not in current.state.detail
-            assert runner.list_jobs("p1") == [] and calls == []
+            if goal_case:
+                assert len(calls) == 1 and len(runner.list_jobs("p1")) == 1
+            else:
+                assert "system_gate" not in current.state.detail
+                assert runner.list_jobs("p1") == [] and calls == []
     finally:
         if thread.is_alive() or old_thread.is_alive():
-            store.transition(request.update_id, UpdatePhase.NEEDS_MANUAL_RECOVERY)
+            from openprogram.self_update.types import TERMINAL_PHASES
+            if store.load(request.update_id).state.phase not in TERMINAL_PHASES:
+                store.transition(request.update_id, UpdatePhase.NEEDS_MANUAL_RECOVERY)
             for started in (thread, old_thread):
                 if started.ident is not None:
                     started.join(timeout=5)

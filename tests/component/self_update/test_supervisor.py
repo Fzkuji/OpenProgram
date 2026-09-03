@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 import subprocess
 import time
@@ -104,7 +105,7 @@ def test_success_persists_transaction_before_verifying(
     monkeypatch.setattr(supervisor, "_validate_transaction_path", lambda path: path)
     monkeypatch.setattr("openprogram.self_update.system_probe.probe_current_system",
                         lambda *_: {"candidate_sha": "3" * 40})
-    gate = {"receipt": "real-probe-boundary"}
+    gate = {"worker_pid": os.getpid(), "receipt": "real-probe-boundary"}
     observations = []
     def probe(record):
         assert record.state.phase is UpdatePhase.ACTIVATING
@@ -112,6 +113,7 @@ def test_success_persists_transaction_before_verifying(
         observations.append(record.request.candidate_sha)
         return gate
     monkeypatch.setattr("openprogram.self_update.system_probe.probe_system", probe)
+    monkeypatch.setattr(supervisor, "_finish_verification", lambda *_: 0)  # Isolate gate publication.
 
     assert run_supervisor(
         "su_supervisor", state_root=root, installer_sha256=installer_sha256

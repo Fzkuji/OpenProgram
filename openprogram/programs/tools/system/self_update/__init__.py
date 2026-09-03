@@ -496,4 +496,17 @@ def self_update_cancel(
     )
 
 
-__all__ = ["self_update_prepare", "self_update_status", "self_update_cancel"]
+@function(
+    name="self_update_observe",
+    description=("For the active post-update verifier only: observe a read-only local HTTP entry "
+                 "and save identity-bound evidence. Entries: /api/commands, /api/diagnostics, "
+                 "/api/doctor, /healthz, /chat. HTML is not rendered UI evidence."),
+    toolset=["core"],
+    path_params={},
+)
+def self_update_observe(entry: str) -> dict[str, Any]:
+    from openprogram.self_update.verification_channel import observe
+    return observe(entry)
+
+
+__all__ = ["self_update_prepare", "self_update_status", "self_update_cancel", "self_update_observe"]

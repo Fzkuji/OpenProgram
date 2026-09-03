@@ -111,6 +111,12 @@ def test_verifier_policy_cannot_be_expanded_by_explicit_tools():
     assert {tool.name for tool in agent_tools(names=[t.name for t in tools], source="self_update_verify")} == {"read"}
 
 
+def test_verifier_has_a_canonical_live_observer_but_no_write_capability():
+    from openprogram.programs import agent_tools
+    names = {t.name for t in agent_tools(names=["self_update_observe", "bash", "write", "web_fetch"], source="self_update_verify")}
+    assert names == {"self_update_observe"}
+
+
 @pytest.mark.parametrize("overrides", [
     {"advance_head": True}, {"context_mode": "inherit", "parent_msg_id": "a1"},
 ])
@@ -134,10 +140,11 @@ def test_verifier_requires_provider_qualified_model(runner, monkeypatch):
     assert "verifier requires" in result.error
 
 
-def test_verifier_rejects_a_custom_executor_using_a_read_tool_name():
+@pytest.mark.parametrize("name", ["read", "self_update_observe"])
+def test_verifier_rejects_a_custom_executor_using_a_read_tool_name(name):
     from openprogram.programs import get_agent_tool, apply_tool_policy
     from openprogram.agent.internals._model_tools import resolve_tools
-    original = get_agent_tool("read")
+    original = get_agent_tool(name)
 
     async def custom_execute(*args, **kwargs):
         pytest.fail("custom executor must never be exposed")
@@ -148,13 +155,14 @@ def test_verifier_rejects_a_custom_executor_using_a_read_tool_name():
     assert apply_tool_policy([original], source="self_update_verify") == [original]
 
 
-def test_verifier_rejects_in_place_mutation_of_a_registered_read_tool(monkeypatch):
+@pytest.mark.parametrize("name", ["read", "self_update_observe"])
+def test_verifier_rejects_in_place_mutation_of_a_registered_read_tool(monkeypatch, name):
     from openprogram.programs import get_agent_tool, apply_tool_policy, agent_tools
-    original = get_agent_tool("read")
+    original = get_agent_tool(name)
 
     async def custom_execute(*args, **kwargs):
         pytest.fail("mutated executor must never be exposed")
 
     monkeypatch.setattr(original, "execute", custom_execute)
     assert apply_tool_policy([original], source="self_update_verify", exposure_filter=False) == []
-    assert agent_tools(names=["read"], source="self_update_verify") == []
+    assert agent_tools(names=[name], source="self_update_verify") == []

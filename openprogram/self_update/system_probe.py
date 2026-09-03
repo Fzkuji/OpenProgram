@@ -12,6 +12,8 @@ from .recovery import SYSTEM_CHECKS
 from .types import UpdateRecord
 
 _PORT = 18100
+OBSERVATION_ENTRIES = frozenset({"/api/commands", "/api/diagnostics", "/api/doctor", "/healthz", "/chat"})
+_OBSERVATION_BYTES = 262_144
 
 
 class SystemProbeError(RuntimeError):
@@ -41,7 +43,16 @@ def probe_restored_system(record: UpdateRecord, revision: str) -> dict:
     return _probe_system(record, revision, 60)
 
 
-def _probe_system(record: UpdateRecord, revision: str | None, timeout: float) -> dict:
+def observe_system(record: UpdateRecord, entry: str) -> dict:
+    """Read a reviewed local entry with identity checks before and after I/O."""
+    if entry not in OBSERVATION_ENTRIES:
+        raise ValueError("unsupported read-only observation entry")
+    return _probe_system(record, record.request.candidate_sha,
+                         min(60, record.request.created_at + record.request.timeout_seconds - time.time()), entry)
+
+
+def _probe_system(record: UpdateRecord, revision: str | None, timeout: float, observation_entry: str | None = None) -> dict:
+    import httpx
     from openprogram.agent.authority import owner_principal_id
     from openprogram.backend_endpoint import read_active_web_access, read_web_token, create_owner_challenge_proof
     from openprogram.paths import get_active_profile
@@ -72,12 +83,26 @@ def _probe_system(record: UpdateRecord, revision: str | None, timeout: float) ->
         security = OutboundSecurityConfig(owner_exceptions=(OwnerURLException(consumer="runtime.local_probe", origin=origin),))
         with safe_client("runtime.local_probe", configured_origin=origin, security=security,
                          timeout=min(20, remaining()), overall_timeout=remaining()) as client:
-            headers = {"Authorization": f"Bearer {token}", "Origin": origin}
+            headers = {"Authorization": f"Bearer {token}", "Origin": origin, "Accept-Encoding": "identity"}
+            def bounded_get(path, *, authenticated=True, params=None, limit=1_048_576):
+                request_headers = headers if authenticated else {"Accept-Encoding": "identity"}
+                with client.stream("GET", origin + path, headers=request_headers, params=params,
+                                   timeout=min(20, remaining())) as response:
+                    if response.headers.get("content-encoding", "identity").lower() != "identity":
+                        raise ValueError
+                    body = bytearray()
+                    for chunk in response.iter_bytes(chunk_size=8192):
+                        remaining()
+                        body.extend(chunk)
+                        if len(body) > limit:
+                            raise ValueError
+                    return httpx.Response(response.status_code, headers=response.headers, content=bytes(body), request=response.request)
             nonce = secrets.token_urlsafe(32)
             # Legacy/dirty old revisions use the same owner proof followed by
             # strict authenticated diagnostics. Candidate proof stays SHA-bound.
             challenge_revision = revision if revision and re.fullmatch(r"[0-9a-f]{40}", revision) else ""
-            proof = client.get(origin + "/api/auth/challenge", params={"nonce": nonce, "revision": challenge_revision}, timeout=min(5, remaining()))
+            proof = bounded_get("/api/auth/challenge", authenticated=False,
+                                params={"nonce": nonce, "revision": challenge_revision}, limit=4096)
             proof.raise_for_status()
             expected = create_owner_challenge_proof(token=token, nonce=nonce, revision=challenge_revision)
             value = proof.json().get("proof")
@@ -85,7 +110,7 @@ def _probe_system(record: UpdateRecord, revision: str | None, timeout: float) ->
                 raise ValueError
 
             def get(path):
-                response = client.get(origin + path, headers=headers, timeout=min(20, remaining()))
+                response = bounded_get(path)
                 if response.status_code != 200 or str(response.url) != origin + path:
                     raise ValueError
                 return response
@@ -141,11 +166,21 @@ def _probe_system(record: UpdateRecord, revision: str | None, timeout: float) ->
                     ws.send("ping")
                     while json.loads(ws.recv(timeout=min(5, remaining()))).get("type") != "pong":
                         remaining()
+            observation = None
+            if observation_entry is not None:
+                stage = "observation"
+                response = bounded_get(observation_entry, limit=_OBSERVATION_BYTES)
+                if str(response.url) != origin + observation_entry:
+                    raise ValueError
+                observation = {"entry": observation_entry, "status": response.status_code,
+                               "content_type": response.headers.get("content-type", "")[:256],
+                               "body": response.content.decode("utf-8", errors="replace"), "observed_at": time.time()}
             stage = "identity"
             if identity() != (pid, observed_revision) or read_active_web_access() != access:
                 raise ValueError
             remaining()
-        return {"schema": 1, "candidate_sha": observed_revision, "attempt": record.state.attempt,
+        gate = {"schema": 1, "candidate_sha": observed_revision, "attempt": record.state.attempt,
                 "worker_pid": pid, "verified_at": time.time(), "checks": {name: True for name in SYSTEM_CHECKS}}
+        return gate if observation_entry is None else {"system_gate": gate, "observation": observation}
     except Exception:
         raise SystemProbeError(f"system probe failed: {stage}") from None

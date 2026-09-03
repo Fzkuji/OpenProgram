@@ -345,7 +345,7 @@ def _resolve_folder_toolset(folder_name: str) -> list[str] | None:
 
 _VERIFIER_READ_IMPLEMENTATIONS = tuple(
     (name, tool, tool.execute)
-    for name in ("read", "glob", "grep", "list")
+    for name in ("read", "glob", "grep", "list", "self_update_observe")
     for tool in (_get_agent_tool(name),)
     if tool is not None
 )
