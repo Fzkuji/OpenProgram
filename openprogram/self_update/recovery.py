@@ -39,6 +39,40 @@ def _check_gate(record) -> None:
         raise ValueError("system gate did not pass for this worker and attempt")
 
 
+def require_verifier_execution(*, session_id, spawn_caller, **inputs) -> None:
+    """Check restored Jobs at execution, not only at startup admission."""
+    from openprogram.agent.run_control import get_current_execution_id
+
+    store = SelfUpdateStore()
+    with store._locked():
+        record = store._load_active_unlocked()
+        if record is None or record.state.phase is not UpdatePhase.VERIFYING:
+            raise ValueError("verifier execution requires an active verifying update")
+        _check_gate(record)
+        dispatch = record.state.dispatch
+        job_id = f"self-update:{record.request.update_id}:verify:{record.state.attempt}"
+        if (
+            dispatch is None or dispatch.job_id != job_id
+            or get_current_execution_id() != job_id
+            or dispatch.claimed_by != f"worker:{os.getpid()}"
+            or dispatch.lease_until <= time.time()
+            or time.time() >= record.request.created_at + record.request.timeout_seconds
+            or session_id != record.request.session_id
+            or spawn_caller != record.request.origin_assistant_id
+        ):
+            raise ValueError("verifier execution does not own the current startup claim")
+        error_path = store.root / record.request.update_id / f"startup-error-{record.state.attempt}.json"
+        if error_path.exists() or error_path.is_symlink():
+            raise ValueError("verifier startup already failed")
+        config = load_verifier_config(store, record)
+        expected = {key: config[key] for key in (
+            "agent_id", "profile_snapshot", "model_override", "tools_override", "response_format", "authority",
+        )}
+        expected["prompt"] = verifier_prompt(record)
+        if inputs != expected:
+            raise ValueError("verifier execution inputs differ from the frozen request")
+
+
 def recover_pending_updates() -> bool:
     """Return whether ordinary Scheduler startup may proceed.
 

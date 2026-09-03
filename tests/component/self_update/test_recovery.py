@@ -17,17 +17,17 @@ from openprogram.self_update.verifier_config import freeze_verifier_config, conf
 def environment(tmp_path, monkeypatch, store_fixture):
     from openprogram.agent import authority
     from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.sub_agent_run import AgentTurnResult
+    from openprogram.agent.dispatcher import TurnResult
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "profile")
     authority._reset_owner_cache_for_tests()
     monkeypatch.setattr("openprogram.agent.internals._model_tools.load_agent_profile", lambda _: {"id": "main", "system_prompt": "frozen"})
     monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model", lambda *a: SimpleNamespace(provider="fake", id="fixed"))
     monkeypatch.setattr("openprogram.agent.job.runner._broadcast", lambda *a, **k: None)
     calls = []
-    def execute(**kwargs):
-        calls.append(kwargs)
-        return AgentTurnResult(final_text="inconclusive")
-    monkeypatch.setattr("openprogram.agent.sub_agent_run._execute_agent_turn", execute)
+    def execute(req):
+        calls.append(vars(req))
+        return TurnResult("inconclusive", "verify_u", "verify_a")
+    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", execute)
     runner = JobRunner(max_workers=1)
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
     request = UpdateRequest(
@@ -110,6 +110,52 @@ def test_terminal_orphan_job_is_not_reexecuted(environment):
                       source="self_update_verify", status=JobStatus.ERRORED, error="orphaned"))
     assert recover_pending_updates() is True
     assert calls == []
+
+
+@pytest.mark.parametrize("gate", ["missing", "old_worker", "rolled_back", "valid"])
+def test_persisted_queue_checks_gate_before_model_execution(environment, monkeypatch, gate):
+    from openprogram.agent.job.runner import JobRunner
+    from openprogram.agent.job.types import JobStatus
+    from openprogram.self_update.verifier_config import load_verifier_config, verifier_prompt
+
+    store, runner, calls, request, release = environment
+    if gate == "missing":
+        store.transition(request.update_id, UpdatePhase.VERIFYING)
+    else:
+        release(**({"worker_pid": -1} if gate == "old_worker" else {}))
+    claim = store.claim_verifier(request.update_id, owner=f"worker:{os.getpid()}", lease_seconds=15)
+    record = store.load(request.update_id)
+    config = load_verifier_config(store, record)
+    runner.spawn_job(
+        job_id=claim.job_id, session_id="p1", prompt=verifier_prompt(record), agent_id="main",
+        source="self_update_verify", context_mode="clean", spawn_caller="a1", advance_head=False,
+        wait=True, defer_dispatch=True, creates_agent=False,
+        **{key: config[key] for key in (
+            "profile_snapshot", "model_override", "tools_override", "response_format", "authority",
+        )},
+    )
+    runner.shutdown()
+    # Simulate process loss after durable ready publication, before pickup.
+    with runner._governor.ledger.immediate() as conn:
+        conn.execute("UPDATE job_admissions SET dispatch_ready = 1 WHERE job_id = ?", (claim.job_id,))
+    if gate == "rolled_back":
+        store.transition(request.update_id, UpdatePhase.ROLLED_BACK)
+    recovered = JobRunner(max_workers=1, governor=runner._governor)
+    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: recovered)
+    try:
+        # No startup hook has run: JobRunner alone recovers persisted work.
+        result = recovered.await_job(claim.job_id, timeout=5)
+        assert result is not None
+        if gate == "valid":
+            assert result.status is JobStatus.COMPLETED, result.error
+            assert len(calls) == 1
+        else:
+            assert result.status is JobStatus.ERRORED, result.error
+            assert calls == []
+        recover_pending_updates()
+        assert len(recovered.list_jobs("p1")) == 1  # Never retry a rejected Job.
+    finally:
+        recovered.shutdown()
 
 
 def test_tampered_snapshot_fails_before_claim(environment):

@@ -56,6 +56,9 @@ def test_normal_and_borrowed_jobs_preserve_verifier_request(runner, store_fixtur
     from openprogram.agent import sub_agent_run
     captured = []
     execute = sub_agent_run._execute_agent_turn
+    # This test isolates Job option transport. Startup authorization is covered
+    # with real durable update/Job state in test_recovery.py.
+    monkeypatch.setattr("openprogram.self_update.recovery.require_verifier_execution", lambda **_: None)
 
     def dispatch(req):
         captured.append(req)

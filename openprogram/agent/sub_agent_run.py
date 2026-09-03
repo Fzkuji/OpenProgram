@@ -83,6 +83,21 @@ def _execute_agent_turn(
         )
     from openprogram.providers.structured_output import normalize_response_format
     output_format = normalize_response_format(response_format) if response_format is not None else None
+    if source == "self_update_verify":
+        from dataclasses import asdict
+        from openprogram.agent.authority import normalize_authority
+        from openprogram.self_update.recovery import require_verifier_execution
+        try:
+            require_verifier_execution(
+                session_id=session_id, spawn_caller=spawn_caller,
+                prompt=prompt, agent_id=agent_id, profile_snapshot=profile_snapshot,
+                model_override=model_override, tools_override=tools_override,
+                response_format=asdict(output_format), authority=normalize_authority(authority or {}),
+            )
+        except Exception as exc:
+            return AgentTurnResult(
+                failed=True, error=str(exc) if isinstance(exc, ValueError) else type(exc).__name__,
+            )
     store = default_db()
     if store._open(session_id) is None:
         return AgentTurnResult(
