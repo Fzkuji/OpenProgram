@@ -51,7 +51,7 @@ class SelfUpdateStore:
             root = get_state_dir() / "self-updates"
         self.root = Path(root)
 
-    def create(self, request: UpdateRequest) -> UpdateState:
+    def create(self, request: UpdateRequest, *, verifier_config: Mapping[str, Any] | None = None) -> UpdateState:
         with self._locked():
             current = self._load_active_unlocked()
             if current is not None and not is_terminal(current.state.phase):
@@ -82,6 +82,8 @@ class SelfUpdateStore:
             staged.mkdir(mode=0o700)
             try:
                 self._write_json(staged / "request.json", request.to_dict())
+                if verifier_config is not None:
+                    self._write_json(staged / "verifier-config.json", verifier_config)
                 self._write_json(staged / "state.json", state.to_dict())
                 self._write_events(staged / "events.jsonl", created_event)
                 os.replace(staged, target)

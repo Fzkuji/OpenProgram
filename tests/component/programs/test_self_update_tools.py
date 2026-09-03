@@ -27,6 +27,9 @@ def _isolated_owner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "profile")
     authority._reset_owner_cache_for_tests()
     monkeypatch.setattr(self_update_module, "_launch_supervisor", lambda _update_id: None)
+    from types import SimpleNamespace
+    monkeypatch.setattr("openprogram.agent.internals._model_tools.load_agent_profile", lambda _: {"id": "main"})
+    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model", lambda *a: SimpleNamespace(provider="fake", id="fixed"))
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -349,3 +352,36 @@ def test_status_and_cancel_are_scoped_to_origin_session(tmp_path: Path) -> None:
     )
     assert cancelled["phase"] == "aborted"
     assert store.load(prepared["update_id"]).state.phase is UpdatePhase.ABORTED
+
+
+def test_prepare_publishes_bound_verifier_config_before_launch(tmp_path, monkeypatch):
+    from openprogram.self_update.verifier_config import load_verifier_config, config_evidence
+    worktree, _, candidate_sha = _candidate(tmp_path)
+    store = SelfUpdateStore(tmp_path / "state")
+    seen = []
+    def launch(update_id):
+        record = store.load(update_id)
+        config = load_verifier_config(store, record)
+        assert config_evidence(config) in record.request.pre_update_evidence
+        assert config["model_override"] == "fake/fixed"
+        assert config["tools_override"] == ["read", "glob", "grep", "list"]
+        seen.append(update_id)
+    monkeypatch.setattr(self_update_module, "_launch_supervisor", launch)
+    result = _prepare(worktree, candidate_sha, store)
+    assert seen == [result["update_id"]]
+
+
+def test_snapshot_write_failure_does_not_publish_partial_update(tmp_path, monkeypatch):
+    worktree, _, candidate_sha = _candidate(tmp_path)
+    store = SelfUpdateStore(tmp_path / "state")
+    original_write = store._write_json
+    def fail_config(path, value):
+        if path.name == "verifier-config.json":
+            raise OSError("disk write failed")
+        return original_write(path, value)
+    monkeypatch.setattr(store, "_write_json", fail_config)
+    monkeypatch.setattr(self_update_module, "_launch_supervisor", lambda _: pytest.fail("partial update launched"))
+    with pytest.raises(OSError, match="disk write failed"):
+        _prepare(worktree, candidate_sha, store)
+    assert store.load_active() is None
+    assert not list(store.root.glob("su_*"))

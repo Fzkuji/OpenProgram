@@ -14,3 +14,10 @@ def test_worker_keeps_durable_job_dispatcher_alive() -> None:
 
     assert lock_acquired < dispatcher_started < web_started
     assert dispatcher_stopped < lock_released
+
+
+def test_self_update_recovery_precedes_scheduler_but_not_web() -> None:
+    source = Path("openprogram/worker/runner.py").read_text(encoding="utf-8")
+    assert source.index("get_job_runner()") < source.index("recover_pending_updates()")
+    assert source.index("start_web(port=port, open_browser=False)") < source.index("recover_pending_updates()")
+    assert source.index("recover_pending_updates()") < source.index("scheduler_stop, scheduler_thread = start_in_worker()")

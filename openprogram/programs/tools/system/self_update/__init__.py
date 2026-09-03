@@ -8,6 +8,7 @@ external supervisor rather than this worker process.
 from __future__ import annotations
 
 import fnmatch
+from dataclasses import replace
 import os
 from pathlib import Path
 import subprocess
@@ -306,7 +307,10 @@ def _prepare_update(
         iteration_policy=policy,
     )
     try:
-        state = store.create(request)
+        from openprogram.self_update.verifier_config import freeze_verifier_config, config_evidence
+        verifier_config = freeze_verifier_config(request, req)
+        request = replace(request, pre_update_evidence=(*request.pre_update_evidence, config_evidence(verifier_config)))
+        state = store.create(request, verifier_config=verifier_config)
     except ActiveUpdateError as exc:
         raise SelfUpdateToolError(str(exc)) from exc
     except (SelfUpdateError, ValueError) as exc:
