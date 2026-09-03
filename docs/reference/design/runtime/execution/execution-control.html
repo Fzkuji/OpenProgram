@@ -326,6 +326,7 @@ runtime.finish_attempt(attempt_id, outcome)</code></pre>
       <tr><td>修改后续逻辑</td><td>revision editor + prefix validation</td><td>保存生成新 revision，再 fork；原 execution 保留。</td></tr>
       <tr><td>Steer</td><td>durable command status</td><td>显示 accepted、applied step 或 rejection，不只显示“已发送”。</td></tr>
       <tr><td>Reload</td><td>canonical snapshot + event cursor</td><td>先快照后订阅；本地 spinner 不能覆盖 server state。</td></tr>
+      <tr><td>空运行集</td><td>authorized execution list</td><td>没有可选 execution 时先渲染稳定空状态，再计算 checkpoint、capability 或命令参数；不得读取空 snapshot，也不得使整个客户端页面失败。</td></tr>
     </tbody>
   </table></div>
   <p>CLI/TUI 使用相同词汇：<code>openprogram execution pause &lt;execution_id&gt;</code>、<code>continue</code>、<code>step</code>、<code>steer</code>、<code>cancel</code>、<code>fork</code>、<code>retry</code>。ACP/MCP 保存 request/turn 与 execution 的 exact mapping；协议 cancel 只能取消映射到的 execution。每个协议取消意图保存自己的稳定 <code>command_id</code>、首个 reason 与 admission 时观察到的 <code>status_version</code>；不得按 execution 生成固定 ID 或在首次提交前重读版本。只有收到 <code>stale_version</code> 时才可用最新 snapshot 重试一次，重试仍使用同一 intent ID、actor 和 reason；若该 ID 已有 command，先严格核对 execution、cancel kind、reason 和 actor，再返回既有结果，不将旧 admission version 视为另一意图。<code>applied</code>/<code>applying</code> 才解除本地 wait，<code>rejected</code>、terminal late cancel 与服务失败只返回最新 snapshot，不取消本地任务。</p>
@@ -850,6 +851,7 @@ Tests / checks:
       <tr><td>Scheduler</td><td>scheduled prompt admission 生成一次 Job/execution；重复 tick 使用 admission idempotency；pause/continue/step/cancel 使用 snapshot cursor。</td><td><code>tests/component/scheduler/test_scheduler.py</code>、<code>apps/web/scripts/check-scheduler.mjs</code>。</td></tr>
       <tr><td>Web Job card</td><td>spawn/get/list 与 runtime command 只渲染 JobResourceDTO；Job card 在 accepted wait、activation applied、safe-point paused 和 terminal race 中不维护本地 truth。</td><td><code>tests/component/agent/test_canonical_job_entry.py</code>、<code>tests/unit/webui/test_webui_job_resource_view.py</code>、<code>apps/web/scripts/check-job-resources.mjs</code>。</td></tr>
       <tr><td>Running snapshot</td><td><code>GET /api/running</code> 只返回 execution snapshot/projection；snapshot+cursor gap、重连、迟到 terminal event 和跨 project auth 均保持顺序与隔离。</td><td><code>tests/component/webui/test_running_snapshot.py</code>、<code>tests/component/webui/test_webui_head_mirror_and_run_guard.py</code>、<code>apps/web/scripts/check-job-resource-view.mjs</code>。</td></tr>
+      <tr><td>Web Debugger 空状态</td><td>authorized execution 列表为空或当前选择不存在时，Debugger 直接显示 <code>No execution selected</code>；在空状态返回前不得读取 <code>checkpoint_head_id</code>、capability 或构造 command payload。</td><td><code>apps/web/tests/debugger-panel-wiring.test.mjs</code> 与默认 App/18100 浏览器验收。</td></tr>
     </tbody>
   </table></div>
   <ol>

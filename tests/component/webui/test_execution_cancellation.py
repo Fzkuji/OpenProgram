@@ -98,6 +98,9 @@ def test_ws_execution_cancel_returns_canonical_status_and_releases_occupancy(
     assert execution.status is ExecutionStatus.CANCELLED
     update = next(frame for frame in broadcasts if frame["type"] == "execution.updated")
     assert update["execution"]["execution_id"] == record.execution_id
+    assert update["event_cursor"]["execution_id"] == record.execution_id
+    assert update["data"]["execution"] == update["execution"]
+    assert update["data"]["event_cursor"] == update["event_cursor"]
     command = next(frame for frame in ws.frames if frame["type"] == "execution.command.updated")
     assert command["command"]["status"] == "applied"
     assert released == [record.execution_id]
@@ -129,6 +132,39 @@ def test_ws_execution_cancel_returns_canonical_status_and_releases_occupancy(
     assert rejected["latest_snapshot"]["status_version"] == execution.status_version
 
 
+def test_ws_rejected_control_does_not_publish_an_unauthorized_snapshot(
+    tmp_path, monkeypatch,
+):
+    store, record = _canonical_execution(tmp_path, execution_id="exec-private")
+    _patch_canonical_store(monkeypatch, store)
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import runtime
+
+    broadcasts: list[dict] = []
+    monkeypatch.setattr(
+        server, "_broadcast", lambda payload: broadcasts.append(json.loads(payload)),
+    )
+    ws = FakeWS()
+    ws.scope = {"state": {}}
+
+    asyncio.run(runtime.ACTIONS["execution.cancel"](
+        ws, {
+            "type": "execution.command",
+            "action": "execution.cancel",
+            "command_id": "cancel-private",
+            "execution_id": record.execution_id,
+            "expected_version": record.status_version,
+        },
+    ))
+
+    assert len(ws.frames) == 1
+    assert ws.frames[0]["type"] == "execution.command.updated"
+    assert ws.frames[0]["command"]["rejection_code"] == "unauthorized"
+    assert "execution" not in ws.frames[0]
+    assert "execution" not in ws.frames[0]["data"]
+    assert broadcasts == []
+
+
 def test_http_execution_cancel_returns_canonical_status_and_body(
     tmp_path, monkeypatch,
 ):
@@ -140,6 +176,8 @@ def test_http_execution_cancel_returns_canonical_status_and_body(
     from openprogram.webui.routes import lifecycle
 
     released: list[str] = []
+    emitted: list[dict] = []
+    monkeypatch.setattr(lifecycle, "emit_ws_frame", emitted.append)
     monkeypatch.setattr(
         "openprogram.webui.server._release_session_occupancy_for_execution",
         lambda execution: released.append(execution["execution_id"]),
@@ -165,6 +203,10 @@ def test_http_execution_cancel_returns_canonical_status_and_body(
     assert body["execution_id"] == record.execution_id
     assert body["status"] == "cancelled"
     assert result["command"]["status"] == "applied"
+    update = next(frame for frame in emitted if frame["type"] == "execution.updated")
+    assert update["event_cursor"]["execution_id"] == record.execution_id
+    assert update["data"]["execution"] == update["execution"]
+    assert update["data"]["event_cursor"] == update["event_cursor"]
     assert released == [record.execution_id]
     repeated = TestClient(app).post(
         "/api/execution/cancel", json={

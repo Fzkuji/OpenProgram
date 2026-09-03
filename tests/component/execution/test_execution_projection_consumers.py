@@ -48,6 +48,8 @@ def test_fixed_consumers_materialize_idempotent_projection_history_and_running_v
 
     assert dispatcher.dispatch_once(owner_id="projection-worker").delivered == 4
     assert frames[0]["type"] == "execution.updated"
+    assert frames[0]["execution"]["execution_id"] == execution.execution_id
+    assert frames[0]["event_cursor"]["next_sequence"] == 2
     assert frames[0]["data"]["execution"]["execution_id"] == execution.execution_id
     assert frames[0]["data"]["input"] == {
         "entrypoint": "workflow.run",

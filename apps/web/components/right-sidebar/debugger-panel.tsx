@@ -243,8 +243,12 @@ export function DebuggerPanel({
   const [steerValue, setSteerValue] = useState("");
   const [draftText, setDraftText] = useState("");
   const [draftError, setDraftError] = useState<string | null>(null);
-  const selectedId = selectedExecutionId ?? localSelectedId;
-  const snapshot = executions.find((execution) => execution.execution_id === selectedId) || executions[0] || null;
+  const selectedId = selectedExecutionId !== undefined
+    ? selectedExecutionId
+    : localSelectedId ?? executions[0]?.execution_id ?? null;
+  const snapshot = selectedId
+    ? executions.find((execution) => execution.execution_id === selectedId) ?? null
+    : null;
   const selectedCheckpoint = snapshot?.checkpoint_head_id
     ? checkpoints.find((checkpoint) => checkpoint.checkpoint_id === snapshot.checkpoint_head_id)
     : undefined;
@@ -316,6 +320,15 @@ export function DebuggerPanel({
     }
   }
 
+  if (!snapshot) {
+    return (
+      <section className={styles.panel} aria-label="Debugger">
+        <header className={styles.header}><div><p className={styles.kicker}>Runtime control</p><h2>Debugger</h2></div><span className={styles.connectionBadge}>{connectionInfo.label}</span></header>
+        <div className={styles.emptyState}><strong>No execution selected</strong><span>Open an execution from Running or a conversation node to inspect its canonical state.</span></div>
+      </section>
+    );
+  }
+
   const actionPayloads: Partial<Record<ExecutionCommandAction, Record<string, unknown>>> = {
     steer: steerValue.trim() ? { message: steerValue.trim() } : undefined,
     retry: snapshot.checkpoint_head_id ? { checkpoint_id: snapshot.checkpoint_head_id } : undefined,
@@ -331,15 +344,6 @@ export function DebuggerPanel({
   const health: CursorHealth = connection.state === "connected"
     ? "healthy"
     : connection.state === "conflict" ? "stale" : connection.state;
-
-  if (!snapshot) {
-    return (
-      <section className={styles.panel} aria-label="Debugger">
-        <header className={styles.header}><div><p className={styles.kicker}>Runtime control</p><h2>Debugger</h2></div><span className={styles.connectionBadge}>{connectionInfo.label}</span></header>
-        <div className={styles.emptyState}><strong>No execution selected</strong><span>Open an execution from Running or a conversation node to inspect its canonical state.</span></div>
-      </section>
-    );
-  }
 
   return (
     <section className={styles.panel} aria-label="Debugger">

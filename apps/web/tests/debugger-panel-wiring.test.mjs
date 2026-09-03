@@ -29,6 +29,23 @@ test("debugger loads and recovers from authorized snapshots and cursor gaps", ()
   assert.match(client, /events\?after_sequence=/);
 });
 
+test("debugger renders its empty state before reading execution fields", () => {
+  const emptyGuard = panel.indexOf("if (!snapshot)");
+  const actionPayloads = panel.indexOf("const actionPayloads");
+  assert.ok(emptyGuard >= 0, "debugger must guard an empty execution selection");
+  assert.ok(actionPayloads >= 0, "debugger must build canonical action payloads");
+  assert.ok(
+    emptyGuard < actionPayloads,
+    "empty execution state must return before action payloads read snapshot fields",
+  );
+  assert.match(panel, /No execution selected/);
+  assert.doesNotMatch(
+    panel,
+    /executions\.find\(\(execution\) => execution\.execution_id === selectedId\) \|\| executions\[0\]/,
+    "an invalid explicit selection must not silently select another execution",
+  );
+});
+
 test("debugger actions use the single execution command and wait clients", () => {
   assert.match(panel, /steerValue\.trim\(\) \? \{ message:/);
   assert.match(hook, /postExecutionCommand/);

@@ -17,6 +17,36 @@ import time
 from fastapi.responses import JSONResponse
 
 
+def _canonical_snapshot(execution_id: str) -> dict | None:
+    """Read the complete public snapshot for one running item."""
+    from openprogram.execution import default_store
+    from openprogram.execution.public import execution_snapshot
+
+    store = default_store()
+    execution = store.get_execution(execution_id)
+    if execution is None:
+        return None
+    resource = None
+    job = None
+    try:
+        from openprogram.agent.job.runner import runner_for_execution_store
+
+        runner = runner_for_execution_store(store)
+        if runner is not None:
+            view = runner.get_job_resource_view(execution_id)
+            resource = view.resource if view is not None else None
+            job = runner.get_job(execution_id)
+    except Exception:
+        pass
+    return execution_snapshot(
+        execution,
+        store=store,
+        resource=resource,
+        job_id=getattr(job, "id", None),
+        job=job,
+    ).to_dict()
+
+
 def _collect() -> list[dict]:
     items: list[dict] = []
 
@@ -26,7 +56,9 @@ def _collect() -> list[dict]:
         for projection in list_running_execution_projections():
             payload = projection.payload
             execution = payload.get("execution") or {}
-            snapshot = payload.get("snapshot") or execution
+            snapshot = payload.get("snapshot") or _canonical_snapshot(
+                projection.execution_id,
+            )
             ui = payload.get("ui") or {}
             item = {
                 "kind": "execution",
@@ -35,9 +67,9 @@ def _collect() -> list[dict]:
                 "session_id": projection.session_id,
                 "label": ui.get("label") or "execution",
                 "status": projection.status,
-                "started_at": snapshot.get("created_at"),
+                "started_at": execution.get("created_at"),
             }
-            if payload.get("snapshot"):
+            if snapshot is not None:
                 item.update({
                     "snapshot": snapshot,
                     "capabilities": snapshot.get("capabilities") or {},

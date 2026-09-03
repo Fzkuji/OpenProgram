@@ -70,6 +70,26 @@ def _canonical_resource(
     return dict(resource) if isinstance(resource, Mapping) else None
 
 
+def execution_update_frame(
+    execution: Mapping[str, Any],
+    event_cursor: Mapping[str, Any],
+    *,
+    data: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the canonical execution.updated transport envelope."""
+    execution_data = dict(execution)
+    cursor_data = dict(event_cursor)
+    detail = dict(data or {})
+    detail["execution"] = execution_data
+    detail["event_cursor"] = cursor_data
+    return {
+        "type": "execution.updated",
+        "execution": execution_data,
+        "event_cursor": cursor_data,
+        "data": detail,
+    }
+
+
 def execution_snapshot(
     execution: ExecutionRecord,
     *,
@@ -152,6 +172,7 @@ def job_resource_dto(
 
 
 __all__ = [
+    "execution_update_frame",
     "execution_snapshot",
     "job_resource_dto",
     "project_id_for_session",

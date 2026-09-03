@@ -108,8 +108,11 @@ class ExecutionProjectionReadModel:
             # The durable snapshot above remains the reconnect source of
             # truth.  This frame only updates already-connected clients.
             from openprogram.events import emit_ws_frame
+            from openprogram.execution.public import execution_update_frame
 
-            emit_ws_frame({"type": "execution.updated", "data": payload})
+            emit_ws_frame(execution_update_frame(
+                payload["execution"], payload["event_cursor"], data=payload,
+            ))
 
     def get_current(
         self, projection_kind: str, execution_id: str

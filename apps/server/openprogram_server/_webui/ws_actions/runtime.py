@@ -201,12 +201,12 @@ async def handle_browser(ws, cmd: dict):
     }, default=str))
 
 
-def _broadcast_execution(execution: dict) -> None:
+def _broadcast_execution(execution: dict, event_cursor: dict) -> None:
+    from openprogram.execution.public import execution_update_frame
     from openprogram.webui import server as _s
-    _s._broadcast(json.dumps({
-        "type": "execution.updated",
-        "execution": execution,
-    }, default=str))
+    _s._broadcast(json.dumps(
+        execution_update_frame(execution, event_cursor), default=str,
+    ))
 
 
 def trusted_runtime_actor(scope, *, surface: str | None = None) -> dict | None:
@@ -373,7 +373,10 @@ def _public_execution_snapshot(execution) -> tuple[dict, dict]:
             job = runner.get_job(execution_data["execution_id"])
     except Exception:
         pass
-    record = execution if hasattr(execution, "execution_id") else default_store().get_execution(execution_data["execution_id"])
+    # Dict inputs are rejection placeholders, not authorized records.  Never
+    # resolve them through the store here: doing so would turn an unauthorized
+    # command into a readable execution snapshot.
+    record = execution if hasattr(execution, "execution_id") else None
     if record is not None:
         execution_data = execution_snapshot(
             record, store=default_store(), resource=resource,
@@ -393,28 +396,32 @@ async def _send_command_update(ws, command, execution) -> None:
     # until the command status is stable, so a response never combines an old
     # accepted command with a newer terminal resource snapshot.
     command_data = command.to_dict() if hasattr(command, "to_dict") else dict(command)
-    execution_data, cursor = _public_execution_snapshot(execution)
-    for _ in range(3):
-        try:
-            from openprogram.execution import default_store
+    has_public_snapshot = hasattr(execution, "execution_id")
+    execution_data: dict = {}
+    cursor: dict = {}
+    if has_public_snapshot:
+        execution_data, cursor = _public_execution_snapshot(execution)
+        for _ in range(3):
+            try:
+                from openprogram.execution import default_store
 
-            store = default_store()
-            latest_command = store.get_command(command_data.get("command_id", ""))
-            latest_execution = store.get_execution(command_data.get("execution_id", ""))
-            if latest_command is not None and command_data.get("status") != "rejected":
-                command = latest_command
-                command_data = latest_command.to_dict()
-            if latest_execution is not None:
-                execution = latest_execution
-        except Exception:
-            break
-        execution_data, cursor = _public_execution_snapshot(execution)
-        current = store.get_command(command_data.get("command_id", ""))
-        if current is None or current.to_dict() == command_data:
-            break
-        command = current
-    else:
-        execution_data, cursor = _public_execution_snapshot(execution)
+                store = default_store()
+                latest_command = store.get_command(command_data.get("command_id", ""))
+                latest_execution = store.get_execution(command_data.get("execution_id", ""))
+                if latest_command is not None and command_data.get("status") != "rejected":
+                    command = latest_command
+                    command_data = latest_command.to_dict()
+                if latest_execution is not None:
+                    execution = latest_execution
+            except Exception:
+                break
+            execution_data, cursor = _public_execution_snapshot(execution)
+            current = store.get_command(command_data.get("command_id", ""))
+            if current is None or current.to_dict() == command_data:
+                break
+            command = current
+        else:
+            execution_data, cursor = _public_execution_snapshot(execution)
     if command_data.get("kind") == "execution.step":
         checkpoint_id = getattr(execution, "checkpoint_head_id", None)
         if checkpoint_id:
@@ -429,18 +436,22 @@ async def _send_command_update(ws, command, execution) -> None:
                 command_data["managed_action_count"] = 0
         else:
             command_data["managed_action_count"] = 0
-    await ws.send_text(json.dumps({
+    update = {
         "type": "execution.command.updated", "command": command_data,
-        "execution": execution_data, "event_cursor": cursor,
-        "data": {"command": command_data, "execution": execution_data,
-                 "event_cursor": cursor},
-    }, default=str))
-    await ws.send_text(json.dumps({
-        "type": "execution.updated", "execution": execution_data,
-        "event_cursor": cursor,
-        "data": {"execution": execution_data, "event_cursor": cursor},
-    }, default=str))
-    _broadcast_execution(execution_data)
+    }
+    if has_public_snapshot:
+        update.update({"execution": execution_data, "event_cursor": cursor})
+    update["data"] = {
+        key: value for key, value in update.items() if key != "type"
+    }
+    await ws.send_text(json.dumps(update, default=str))
+    if not has_public_snapshot:
+        return
+    from openprogram.execution.public import execution_update_frame
+    await ws.send_text(json.dumps(
+        execution_update_frame(execution_data, cursor), default=str,
+    ))
+    _broadcast_execution(execution_data, cursor)
 
 
 def _rejected_command(cmd: dict, code: str, latest_snapshot: dict | None = None) -> dict:

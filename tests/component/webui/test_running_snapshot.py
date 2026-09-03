@@ -58,6 +58,18 @@ def test_collect_includes_canonical_ui_projection(monkeypatch):
         "openprogram.execution.projections.list_running_execution_projections",
         lambda: [projection],
     )
+    snapshot = {
+        "execution_id": "exec-canonical",
+        "status": "running",
+        "status_version": 7,
+        "created_at": 123.0,
+        "capabilities": {"pause": True},
+        "resource": None,
+        "event_sequence": 7,
+    }
+    monkeypatch.setattr(
+        running, "_canonical_snapshot", lambda _execution_id: snapshot,
+    )
 
     item = next(item for item in running._collect() if item["id"] == "exec-canonical")
     assert item == {
@@ -68,6 +80,14 @@ def test_collect_includes_canonical_ui_projection(monkeypatch):
         "label": "workflow.run",
         "status": "running",
         "started_at": 123.0,
+        "snapshot": snapshot,
+        "capabilities": {"pause": True},
+        "resource": None,
+        "event_cursor": {
+            "execution_id": "exec-canonical",
+            "next_sequence": 8,
+            "snapshot_status_version": 7,
+        },
     }
 
 

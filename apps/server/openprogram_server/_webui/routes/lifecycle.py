@@ -109,25 +109,25 @@ def register(app):
             surface="rest",
         )
         command_data = command.to_dict() if hasattr(command, "to_dict") else dict(command)
-        execution_data = (
-            _execution_payload(execution)
-            if hasattr(execution, "execution_id") else dict(execution)
-        )
-        cursor = {
-            "execution_id": execution_data.get("execution_id"),
-            "next_sequence": int(execution_data.get("event_sequence") or execution_data.get("status_version") or 0) + 1,
-            "snapshot_status_version": execution_data.get("status_version"),
-        }
+        has_public_snapshot = hasattr(execution, "execution_id")
         update = {
             "type": "execution.command.updated",
             "command": command_data,
-            "execution": execution_data,
-            "event_cursor": cursor,
         }
+        if has_public_snapshot:
+            execution_data = _execution_payload(execution)
+            cursor = {
+                "execution_id": execution_data.get("execution_id"),
+                "next_sequence": int(execution_data.get("event_sequence") or execution_data.get("status_version") or 0) + 1,
+                "snapshot_status_version": execution_data.get("status_version"),
+            }
+            update.update({"execution": execution_data, "event_cursor": cursor})
         emit_ws_frame({**update, "data": update})
-        emit_ws_frame({"type": "execution.updated", "execution": execution_data, "data": {"execution": execution_data}})
+        if has_public_snapshot:
+            from openprogram.execution.public import execution_update_frame
+            emit_ws_frame(execution_update_frame(execution_data, cursor))
         from openprogram.webui import server as _s
-        if execution_data.get("status") in {"cancelling", "cancelled"}:
+        if has_public_snapshot and execution_data.get("status") in {"cancelling", "cancelled"}:
             _s._release_session_occupancy_for_execution(execution_data)
         code = 200
         if command_data.get("status") == "rejected":
