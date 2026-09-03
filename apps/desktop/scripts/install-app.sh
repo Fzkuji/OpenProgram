@@ -60,10 +60,10 @@ fi
 target_app="$applications_dir/OpenProgram.app"
 launch_services_register="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
-validate_app() {
+validate_app_metadata() {
   local app_path="$1"
   local plist="$app_path/Contents/Info.plist"
-  local identifier version executable runtime_manifest runtime_python metadata_version
+  local identifier version executable runtime_manifest runtime_python
   [[ -d "$app_path" && -f "$plist" ]] || return 1
   identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist" 2>/dev/null)" || return 1
   version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist" 2>/dev/null)" || return 1
@@ -84,6 +84,15 @@ if (manifest.schema !== 2 || manifest.openprogram !== process.argv[3]) {
 NODE
   runtime_python="$(app_runtime_python "$app_path")" || return 1
   [[ -x "$runtime_python" ]] || return 1
+}
+
+validate_app() {
+  local app_path="$1"
+  local plist="$app_path/Contents/Info.plist"
+  local version runtime_python metadata_version
+  validate_app_metadata "$app_path" || return 1
+  version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist" 2>/dev/null)" || return 1
+  runtime_python="$(app_runtime_python "$app_path")" || return 1
   metadata_version="$(
     env -i PATH=/usr/bin:/bin HOME=/dev/null \
       "$runtime_python" -I -B -c \
@@ -187,6 +196,7 @@ NODE
 }
 
 reject_downgrade() {
+  [[ "$action" == "install" ]] || return 0
   local candidate_app="${1:-$source_app}"
   [[ -e "$target_app" || -L "$target_app" ]] || return 0
   validate_app "$target_app" || {
@@ -202,7 +212,11 @@ reject_downgrade() {
   fi
 }
 
-[[ "$action" != "install" ]] || reject_downgrade "$source_app"
+if [[ "$defer_commit" == 1 && ! -d "$target_app" ]]; then
+  printf 'deferred App installation requires an existing OpenProgram App\n' >&2
+  exit 1
+fi
+reject_downgrade "$source_app"
 
 mkdir -p "$applications_dir"
 install_lock_file="$applications_dir/.openprogram-app-install.lock"
@@ -230,18 +244,28 @@ install_lock_owned=1
 trap release_install_lock EXIT
 
 validate_transaction_dir() {
-  local candidate="$1"
+  local candidate="$1" expected actual
   [[ "$candidate" == /* && -d "$candidate" && ! -L "$candidate" ]] || return 1
   [[ "$(dirname -- "$candidate")" == "$applications_dir" ]] || return 1
   [[ "$(basename -- "$candidate")" == .openprogram-app-install.* ]] || return 1
   [[ -O "$candidate" ]] || return 1
   [[ -f "$candidate/deferred" && ! -L "$candidate/deferred" ]] || return 1
   [[ -f "$candidate/active.sha256" && ! -L "$candidate/active.sha256" ]] || return 1
+  if [[ -f "$candidate/had-previous" && ! -L "$candidate/had-previous" ]]; then
+    [[ -d "$candidate/previous.app" && ! -L "$candidate/previous.app" ]] || return 1
+    [[ -f "$candidate/previous.sha256" && ! -L "$candidate/previous.sha256" ]] || return 1
+    expected="$(sed -n '1p' "$candidate/previous.sha256")"
+    [[ "$expected" =~ ^[a-f0-9]{64}$ ]] || return 1
+    actual="$(app_identity "$candidate/previous.app")" || return 1
+    [[ "$actual" == "$expected" ]] || return 1
+  elif [[ -e "$candidate/previous.app" || -e "$candidate/previous.sha256" ]]; then
+    return 1
+  fi
 }
 
 active_app_matches_transaction() {
   local expected actual
-  validate_app "$target_app" || return 1
+  validate_app_metadata "$target_app" || return 1
   expected="$(sed -n '1p' "$transaction_dir/active.sha256")"
   [[ "$expected" =~ ^[a-f0-9]{64}$ ]] || return 1
   actual="$(app_identity "$target_app")" || return 1
@@ -249,7 +273,7 @@ active_app_matches_transaction() {
 }
 
 stop_active_runtime() {
-  local active_python worker_pid worker_state_file
+  local control_python worker_pid worker_state_file
   if pgrep -f "$target_app/Contents/MacOS/OpenProgram" >/dev/null 2>&1; then
     osascript -e 'tell application id "ai.openprogram.desktop" to quit' >/dev/null 2>&1 || :
     for _ in {1..40}; do
@@ -258,15 +282,15 @@ stop_active_runtime() {
     done
     pgrep -f "$target_app/Contents/MacOS/OpenProgram" >/dev/null 2>&1 && return 1
   fi
-  active_python="$(app_runtime_python "$target_app")" || return 1
+  control_python="$(app_runtime_python "$transaction_dir/previous.app")" || return 1
   if [[ -f "$HOME/Library/LaunchAgents/ai.openprogram.worker.plist" ]]; then
-    "$active_python" -I -B -m openprogram worker uninstall >/dev/null 2>&1 || return 1
+    "$control_python" -I -B -m openprogram worker uninstall >/dev/null 2>&1 || return 1
   fi
   for worker_state_file in "${OPENPROGRAM_HOME:-$HOME/.openprogram}/worker.lock" \
                            "${OPENPROGRAM_HOME:-$HOME/.openprogram}/worker.pid"; do
     worker_pid="$(sed -n '1p' "$worker_state_file" 2>/dev/null || :)"
     if [[ "$worker_pid" =~ ^[0-9]+$ ]] && kill -0 "$worker_pid" 2>/dev/null; then
-      "$active_python" -I -B -m openprogram worker stop >/dev/null 2>&1 || return 1
+      "$control_python" -I -B -m openprogram worker stop >/dev/null 2>&1 || return 1
       break
     fi
   done
@@ -444,6 +468,7 @@ if [[ -e "$target_app" ]]; then
   mv "$target_app" "$previous_app"
   old_moved=1
   : > "$transaction_dir/had-previous"
+  app_identity "$previous_app" > "$transaction_dir/previous.sha256"
 fi
 if ! mv "$staged_app" "$target_app"; then
   printf 'failed to activate the new OpenProgram app\n' >&2
