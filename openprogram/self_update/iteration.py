@@ -14,6 +14,8 @@ from .types import IterationMode, UpdateRequest, _GIT_SHA, _required_text, _vali
 _PROTECTED_PATHS = (
     "openprogram/self_update/*", "openprogram/programs/tools/system/self_update/*",
     "openprogram/agent/internals/_approval*", "openprogram/agent/authority.py",
+    "openprogram/agent/dispatcher/*", "openprogram/agent/agent_loop.py",
+    "openprogram/agent/internals/_model_tools.py", "openprogram/programs/__init__.py",
     "openprogram/sandbox/*", "openprogram/security/*", "openprogram/auth/*",
     "openprogram/protected_paths.py", "openprogram/programs/_runtime/*",
     "apps/desktop/scripts/*", "scripts/release/*", "scripts/refresh-local-app.sh",
